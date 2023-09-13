@@ -11,7 +11,6 @@ configure.scan
 config.h.in~
 autoscan.log
 autom4te.cache/
-aclocal.m4
 config.log
 config.status
 depcomp
