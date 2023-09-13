@@ -9,3 +9,10 @@ Run:
  $ make all
  $ make install
 ```
+
+# Example
+
+```
+ $ cd test/mgr-sysL3
+ $ mpirun -np 1 ../../hypre_app mgr-sysL3.yml
+```

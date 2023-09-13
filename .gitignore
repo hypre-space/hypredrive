@@ -1,6 +1,7 @@
 *.o
 *.btr
 .deps
+.dirstamp
 
 hypre_app
 

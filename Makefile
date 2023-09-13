@@ -88,7 +88,7 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = x86_64-pc-linux-gnu
 host_triplet = x86_64-pc-linux-gnu
-bin_PROGRAMS = hypre-app$(EXEEXT)
+bin_PROGRAMS = hypre_app$(EXEEXT)
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -418,8 +418,8 @@ src/solver.$(OBJEXT): src/$(am__dirstamp) \
 src/args.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
 src/main.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
 
-hypre-app$(EXEEXT): $(hypre_app_OBJECTS) $(hypre_app_DEPENDENCIES) $(EXTRA_hypre_app_DEPENDENCIES) 
-	@rm -f hypre-app$(EXEEXT)
+hypre_app$(EXEEXT): $(hypre_app_OBJECTS) $(hypre_app_DEPENDENCIES) $(EXTRA_hypre_app_DEPENDENCIES) 
+	@rm -f hypre_app$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(hypre_app_OBJECTS) $(hypre_app_LDADD) $(LIBS)
 
 mostlyclean-compile:
