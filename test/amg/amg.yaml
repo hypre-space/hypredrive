@@ -1,0 +1,35 @@
+general:
+  warmup: no
+  num_repetitions: 1
+
+linear_system: ij
+  rhs_filename: IJ.out.b
+  matrix_filename: IJ.out.A
+  num_partitions: 1
+
+solver: pcg
+  tolerance: 1.0e-3
+  max_iterations: 500
+  print_level: 3
+
+preconditioner: boomeramg
+  print_level: 1
+  smooth_num_levels: 1
+  smoother: fsai
+    fill_level: 1
+  # coarsening: HMIS
+  #   strength: 0.25
+  # agg_coarsening:
+  #   num_levels: 2
+  #   num_paths: 1
+  #   interpolation: 2stg-MM-ext+i
+  #   max_elements: 4
+  # interpolation: MM-ext+i
+  #   trunc_factor: 0.1
+  #   max_elements: 4
+  # relaxation: chebyshev
+  # smoother: ilu
+  #   num_levels: 2
+  #   type: iluk
+  #   level: 0
+  #   sweeps: 1

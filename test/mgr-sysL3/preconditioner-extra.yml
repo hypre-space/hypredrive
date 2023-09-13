@@ -1,0 +1,27 @@
+preconditioner: mgr
+  print_level: 1
+  pmax: 0
+  level: 0
+    f_dofs: [0]
+    f_relaxation: jacobi
+      sweeps: 1
+    g_relaxation: none
+    prolongation: jacobi
+    restriction: injection
+    coarse_grid: galerkin
+
+  level: 1
+    f_dofs: [1]
+    f_relaxation: none
+    g_relaxation: ilu
+      sweeps: 1
+      type: iluk
+      fill: 0
+    prolongation: jacobi
+    restriction: injection
+    coarse_grid: galerkin
+
+  coarse_solver: boomeramg
+    print_level: 0
+    strong_th: 0.3
+    pmax: 6

@@ -1,0 +1,12 @@
+general:
+  warmup: no
+  num_repetitions: 1
+
+linear_system: ij
+  rhs_filename: IJ.out.b
+  matrix_filename: IJ.out.A
+  dofmap_filename: dofmap
+  num_partitions: 1 # TODO: remove this parameter
+
+solver_include: solver-extra.yml
+preconditioner_include: preconditioner-extra.yml
