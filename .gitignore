@@ -9,7 +9,6 @@ stamp-*
 configure~
 configure.scan
 config.h.in~
-Makefile.in
 autoscan.log
 autom4te.cache/
 aclocal.m4
