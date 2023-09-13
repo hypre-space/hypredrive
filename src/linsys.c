@@ -104,6 +104,7 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
 
          case 1:
             /* TODO: Vector of ones */
+            break;
       }
    }
    else

@@ -3,8 +3,8 @@ Driver application for solving linear systems with hypre through the IJ interfac
 
 # Build instructions
 
-Run:
 ```
+ $ ./autogen.sh
  $ ./configure --prefix=${DEST_INSTALL_PATH} --with-hypre-include=${HYPRE_INSTALL_DIR}/include --with-hypre-lib=${HYPRE_INSTALL_DIR}/lib
  $ make all
  $ make install
