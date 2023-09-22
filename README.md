@@ -13,8 +13,9 @@ Currently, the driver only supports linear systems written in hypre's IJ concept
 ```
 
 Note:
-1. The first step `./autogen.sh` must be executed only once after cloning this repository.
-2. An installation prefix can be passed to `./configure` such as `--prefix=${INSTALL_PATH}`.  
+1. These instructions assume that [hypre](https://github.com/hypre-space/hypre) has been installed at `${HYPRE_INSTALL_DIR}`
+2. The first step `./autogen.sh` must be executed only once after cloning this repository.
+3. An installation prefix can be passed to `./configure` such as `--prefix=${INSTALL_PATH}`.  
    For more configure options, type `./configure -help`.
 
 # Example
