@@ -47,6 +47,7 @@ typedef struct MGR_args_struct {
    HYPRE_Int     coarse_grid_types[MAX_MGR_LEVELS];
    HYPRE_Int     frelax_types[MAX_MGR_LEVELS];
    HYPRE_Int     grelax_types[MAX_MGR_LEVELS];
+   HYPRE_Int     relax_type; /* TODO: we shouldn't need this */
 
    relax_args    frelax[MAX_MGR_LEVELS];
    relax_args    grelax[MAX_MGR_LEVELS];

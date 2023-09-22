@@ -12,6 +12,11 @@
 #include "linsys.h"
 #include "info.h"
 
+#define ANNOTATE_REGION_BEGIN()
+#define ANNOTATE_REGION_END()
+#define ANNOTATE_ITER_BEGIN(i)
+#define ANNOTATE_ITER_END(i)
+
 int main(int argc, char **argv)
 {
    MPI_Comm         comm = MPI_COMM_WORLD;
@@ -56,9 +61,6 @@ int main(int argc, char **argv)
     *-----------------------------------------------------------*/
 
    InputArgsParse(comm, argc, argv, &iargs);
-   /* iargs.precon.amg.max_iter = 10; */
-   /* iargs.precon.amg.print_level = 1; */
-   /* printf("max_iter: %d\n", iargs.precon.amg.max_iter); */
 
    /*-----------------------------------------------------------
     * Build and solve linear system(s)
@@ -70,20 +72,30 @@ int main(int argc, char **argv)
    }
 
    /* Build linear system */
+   ANNOTATE_REGION_BEGIN();
    LinearSystemReadMatrix(comm, &iargs->ls, &mat_A);
    LinearSystemSetRHS(comm, &iargs->ls, mat_A, &rhs);
    LinearSystemSetInitialGuess(comm, &iargs->ls, mat_A, rhs, &sol);
    LinearSystemSetPrecMatrix(comm, &iargs->ls, mat_A, &mat_M);
    LinearSystemReadDofmap(comm, &iargs->ls, &dofmap);
+   ANNOTATE_REGION_END();
 
    /* Solve linear system */
    for (i = 0; i < iargs->num_repetitions; i++)
    {
+      /* Setup phase */
+      ANNOTATE_ITER_BEGIN(i);
       PreconCreate(iargs->precon_method, &iargs->precon, &dofmap, &precon);
       SolverCreate(comm, iargs->solver_method, &iargs->solver, &solver);
       SolverSetup(iargs->precon_method, iargs->solver_method, precon, solver, mat_M, rhs, sol);
-      SolverApply(iargs->solver_method, solver, mat_A, rhs, sol);
+      ANNOTATE_ITER_END(i);
 
+      /* Solve phase */
+      ANNOTATE_ITER_BEGIN(i);
+      SolverApply(iargs->solver_method, solver, mat_A, rhs, sol);
+      ANNOTATE_ITER_END(i);
+
+      /* Destroy phase */
       PreconDestroy(iargs->precon_method, &precon);
       SolverDestroy(iargs->solver_method, &solver);
    }

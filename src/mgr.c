@@ -21,13 +21,14 @@ MGRSetDefaultArgs(MGR_args *args)
    args->pmax = 0;
    args->tol = 0.0;
    args->coarse_th = 0.0;
+   args->relax_type = 7;
 
    for (int i = 0; i < MAX_MGR_LEVELS; i++)
    {
       args->num_f_dofs[i] = 0;
       args->f_dofs[i] = NULL;
-      args->frelax_types[i] = 0;
-      args->grelax_types[i] =
+      args->frelax_types[i] = 0;  /* TODO: replace with MGR_FRELAX_NONE? */
+      args->grelax_types[i] = -1; /* TODO: replace with MGR_GRELAX_NONE? */
       args->num_grelax_sweeps[i] = 0;
       args->num_frelax_sweeps[i] = 0;
       args->prolongation_types[i] = 0;
@@ -60,19 +61,20 @@ MGRSetFRelaxArgsFromYAML(MGR_args *args, YAMLnode *parent)
    YAML_CALL_IF_CLOSE()
 
    /* Set F-relaxation codes */
+   /* TODO: we shouldn't need separate logics involving relax_type and frelax_types[lvl] */
    YAML_SET_IF_OPEN()
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "jacobi", 7, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->relax_type, "jacobi", 7, parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "v(1,0)", 1, parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "boomeramg", 2, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "h-fgs", 3, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "h-bgs", 4, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "h-ssor", 6, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "hl1-ssor", 8, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->relax_type, "h-fgs", 3, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->relax_type, "h-bgs", 4, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->relax_type, "h-ssor", 6, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->relax_type, "hl1-ssor", 8, parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "ge", 9, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "l1-fgs", 13, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "l1-bgs", 14, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "chebyshev", 16, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "l1-jacobi", 18, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->relax_type, "l1-fgs", 13, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->relax_type, "l1-bgs", 14, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->relax_type, "chebyshev", 16, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->relax_type, "l1-jacobi", 18, parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "ge-piv", 99, parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "ge-inv", 199, parent)
    YAML_SET_IF_CLOSE_(parent)
@@ -144,11 +146,11 @@ MGRSetRestrictionArgsFromYAML(MGR_args *args, YAMLnode *parent)
 
    /* Set prolongation codes */
    YAML_SET_IF_OPEN()
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "injection", 0, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "jacobi", 2, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "approx-inv", 3, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "blk-jacobi", 12, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "cpr-like", 13, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->restriction_types[lvl], "injection", 0, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->restriction_types[lvl], "jacobi", 2, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->restriction_types[lvl], "approx-inv", 3, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->restriction_types[lvl], "blk-jacobi", 12, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->restriction_types[lvl], "cpr-like", 13, parent)
    YAML_SET_IF_CLOSE_(parent)
 
    return EXIT_SUCCESS;
@@ -165,11 +167,11 @@ MGRSetCoarseGridArgsFromYAML(MGR_args *args, YAMLnode *parent)
 
    /* Set prolongation codes */
    YAML_SET_IF_OPEN()
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "galerkin", 0, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "non-galerkin", 2, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "cpr-like-diag", 3, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "cpr-like-bdiag", 12, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "approx-inv", 13, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->coarse_grid_types[lvl], "rap", 0, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->coarse_grid_types[lvl], "non-galerkin", 1, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->coarse_grid_types[lvl], "cpr-like-diag", 2, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->coarse_grid_types[lvl], "cpr-like-bdiag", 3, parent)
+   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->coarse_grid_types[lvl], "approx-inv", 4, parent)
    YAML_SET_IF_CLOSE_(parent)
 
    return EXIT_SUCCESS;
@@ -342,6 +344,7 @@ MGRCreate(MGR_args *args, HYPRE_IntArray *dofmap, HYPRE_Solver *precon_ptr)
    HYPRE_MGRSetTol(precon, args->tol);
    HYPRE_MGRSetTruncateCoarseGridThreshold(precon, args->coarse_th);
    HYPRE_MGRSetLevelFRelaxType(precon, args->frelax_types);
+   HYPRE_MGRSetRelaxType(precon, args->relax_type); /* TODO: we shouldn't need this */
    HYPRE_MGRSetLevelNumRelaxSweeps(precon, args->num_frelax_sweeps);
    HYPRE_MGRSetLevelSmoothIters(precon, args->num_grelax_sweeps);
    HYPRE_MGRSetLevelSmoothType(precon, args->grelax_types);

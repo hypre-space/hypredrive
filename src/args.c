@@ -23,16 +23,8 @@ InputArgsCreate(const char* precon, const char* solver, input_args **iargs_ptr)
    iargs->warmup = 0;
    iargs->num_repetitions = 1;
 
-   /* Set linear system default options */
-   strcpy(iargs->ls.matrix_filename, "");
-   strcpy(iargs->ls.precmat_filename, "");
-   strcpy(iargs->ls.rhs_filename, "");
-   strcpy(iargs->ls.x0_filename, "");
-   strcpy(iargs->ls.sol_filename, "");
-   strcpy(iargs->ls.dofmap_filename, "");
-   iargs->ls.num_partitions = -1;
-   iargs->ls.init_guess_mode = 0;
-   iargs->ls.rhs_mode = 0;
+   /* Set default Linear System options */
+   LinearSystemSetDefaultArgs(&iargs->ls);
 
    /* Set preconditioner method */
    if (precon)
@@ -177,80 +169,14 @@ int
 InputArgsParseLinearSystem(input_args *iargs, YAMLtree *params)
 {
    YAMLnode    *parent;
-   YAMLnode    *child;
 
    parent = YAMLfindNodeByKey(params->root, "linear_system");
    if (!parent)
    {
-      return EXIT_SUCCESS;
+      return EXIT_FAILURE;
    }
 
-   child  = parent->children;
-   while (child)
-   {
-      if (!strcmp(child->key, "matrix_filename"))
-      {
-         strcpy(iargs->ls.matrix_filename, child->val);
-      }
-      else if (!strcmp(child->key, "precmat_filename"))
-      {
-         strcpy(iargs->ls.precmat_filename, child->val);
-      }
-      else if (!strcmp(child->key, "rhs_filename"))
-      {
-         strcpy(iargs->ls.rhs_filename, child->val);
-      }
-      else if (!strcmp(child->key, "x0_filename"))
-      {
-         strcpy(iargs->ls.x0_filename, child->val);
-      }
-      else if (!strcmp(child->key, "sol_filename"))
-      {
-         strcpy(iargs->ls.sol_filename, child->val);
-      }
-      else if (!strcmp(child->key, "dofmap_filename"))
-      {
-         strcpy(iargs->ls.dofmap_filename, child->val);
-      }
-      else if (!strcmp(child->key, "num_partitions"))
-      {
-         iargs->ls.num_partitions = (HYPRE_Int) atoi(child->val);
-      }
-      else if (!strcmp(child->key, "init_guess_mode"))
-      {
-         iargs->ls.init_guess_mode = (HYPRE_Int) atoi(child->val);
-      }
-      else if (!strcmp(child->key, "rhs_mode"))
-      {
-         iargs->ls.rhs_mode = (HYPRE_Int) atoi(child->val);
-      }
-#if 0
-      else if (!strcmp(child->key, "format"))
-      {
-         if (!strcmp(child->val, "ascii") ||
-             !strcmp(child->val, "txt"))
-         {
-            iargs->ls.format = 0;
-         }
-         else if (!strcmp(child->val, "binary") ||
-                  !strcmp(child->val, "bin"))
-         {
-            iargs->ls.format = 1;
-         }
-         else
-         {
-            iargs->ls.format = 1;
-            ErrorMsgAddInvalidKeyValPair(child->key, child->val);
-         }
-      }
-#endif
-      else
-      {
-         ErrorMsgAddUnknownKey(child->key);
-      }
-
-      child = child->next;
-   }
+   LinearSystemSetArgsFromYAML(&iargs->ls, parent);
 
    return EXIT_SUCCESS;
 }

@@ -11,23 +11,8 @@
 #include <HYPRE_utilities.h>
 #include "precon.h"
 #include "solver.h"
+#include "linsys.h"
 #include "utils.h"
-
-/*--------------------------------------------------------------------------
- * Linear system arguments struct
- *--------------------------------------------------------------------------*/
-
-typedef struct LS_args_struct {
-   char          matrix_filename[MAX_FILENAME_LENGTH];
-   char          precmat_filename[MAX_FILENAME_LENGTH];
-   char          rhs_filename[MAX_FILENAME_LENGTH];
-   char          x0_filename[MAX_FILENAME_LENGTH];
-   char          sol_filename[MAX_FILENAME_LENGTH];
-   char          dofmap_filename[MAX_FILENAME_LENGTH];
-   HYPRE_Int     num_partitions;
-   HYPRE_Int     init_guess_mode;
-   HYPRE_Int     rhs_mode;
-} LS_args;
 
 /*--------------------------------------------------------------------------
  * Input arguments struct

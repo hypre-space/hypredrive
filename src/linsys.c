@@ -8,6 +8,86 @@
 #include "linsys.h"
 
 /*-----------------------------------------------------------------------------
+ * LinearSystemSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+int
+LinearSystemSetDefaultArgs(LS_args *args)
+{
+   strcpy(args->matrix_filename, "");
+   strcpy(args->precmat_filename, "");
+   strcpy(args->rhs_filename, "");
+   strcpy(args->x0_filename, "");
+   strcpy(args->sol_filename, "");
+   strcpy(args->dofmap_filename, "");
+   args->init_guess_mode = 0;
+   args->rhs_mode = 0;
+   args->type = 0;
+
+   return EXIT_SUCCESS;
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemSetArgsFromYAML
+ *-----------------------------------------------------------------------------*/
+
+int
+LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
+{
+   YAMLnode    *child;
+
+   child = parent->children;
+   while (child)
+   {
+      if (!strcmp(child->key, "matrix_filename"))
+      {
+         strcpy(args->matrix_filename, child->val);
+      }
+      else if (!strcmp(child->key, "precmat_filename"))
+      {
+         strcpy(args->precmat_filename, child->val);
+      }
+      else if (!strcmp(child->key, "rhs_filename"))
+      {
+         strcpy(args->rhs_filename, child->val);
+      }
+      else if (!strcmp(child->key, "x0_filename"))
+      {
+         strcpy(args->x0_filename, child->val);
+      }
+      else if (!strcmp(child->key, "sol_filename"))
+      {
+         strcpy(args->sol_filename, child->val);
+      }
+      else if (!strcmp(child->key, "dofmap_filename"))
+      {
+         strcpy(args->dofmap_filename, child->val);
+      }
+      else if (!strcmp(child->key, "init_guess_mode"))
+      {
+         args->init_guess_mode = (HYPRE_Int) atoi(child->val);
+      }
+      else if (!strcmp(child->key, "rhs_mode"))
+      {
+         args->rhs_mode = (HYPRE_Int) atoi(child->val);
+      }
+      else if (!strcmp(child->key, "type"))
+      {
+         args->type = (HYPRE_Int) atoi(child->val);
+      }
+      else
+      {
+         ErrorMsgAddUnknownKey(child->key);
+      }
+
+      child = child->next;
+   }
+
+
+   return EXIT_SUCCESS;
+}
+
+/*-----------------------------------------------------------------------------
  * LinearSystemReadMatrix
  *-----------------------------------------------------------------------------*/
 

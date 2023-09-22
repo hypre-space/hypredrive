@@ -139,5 +139,7 @@ IntArrayRead(MPI_Comm comm, const char* prefix, HYPRE_IntArray *int_array)
    MPI_Allreduce(&num_unique_entries, &(int_array->num_unique_entries),
                  1, MPI_INT, MPI_MAX, comm);
 
+   /* TODO - Fix num_unique_entries computation */
+
    return EXIT_SUCCESS;
 }
