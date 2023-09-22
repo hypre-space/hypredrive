@@ -1,5 +1,7 @@
 # hypre_app
-Driver application for solving linear systems with hypre through the IJ interface
+Driver application for solving linear systems read from file with hypre.
+
+Currently, the driver only supports linear systems written in hypre's IJ conceptual interface format.
 
 # Build instructions
 
@@ -9,6 +11,8 @@ Driver application for solving linear systems with hypre through the IJ interfac
  $ make all
  $ make install
 ```
+
+Note: the first step `./autogen.sh` must be executed only once after cloning this repository.
 
 # Example
 
