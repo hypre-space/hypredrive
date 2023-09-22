@@ -16,7 +16,7 @@ AC_ARG_WITH([hypre-include],
 
 AC_ARG_WITH([hypre-lib],
             [AS_HELP_STRING([--with-hypre-lib=DIR], [Path to HYPRE library directory])],
-            [LDFLAGS+=" -L$withval"],
+            [LDFLAGS+=" -L$withval -Wl,-rpath,${withval}"],
             [])
 
 AC_CHECK_LIB([m], [sin],
