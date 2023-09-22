@@ -5,12 +5,25 @@
 
 hypre_app
 
-stamp-*
-configure~
-configure.scan
-config.h.in~
+aclocal.m4
 autoscan.log
 autom4te.cache/
+configure~
+configure.scan
+config.guess
+config.h
+config.h.in
+config.h.in~
 config.log
 config.status
+config.sub
+configure
+configure~
+configure.scan
+compile
 depcomp
+install-sh
+Makefile
+Makefile.in
+missing
+stamp-*
