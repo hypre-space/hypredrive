@@ -24,6 +24,52 @@ static uint32_t global_error_code;
 static uint32_t global_error_count[ERROR_CODE_NUM_ENTRIES] = {0};
 
 /*-----------------------------------------------------------------------------
+ * ErrorCodeCountIncrement
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorCodeCountIncrement(ErrorCode code)
+{
+   int index;
+
+   index = 1;
+   while (code > 1)
+   {
+      code >>= 1;
+      index++;
+   }
+
+   if (index > 0 && index < 32)
+   {
+      global_error_count[index]++;
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeCountGet
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+ErrorCodeCountGet(ErrorCode code)
+{
+   int index;
+
+   index = 1;
+   while (code > 1)
+   {
+      code >>= 1;
+      index++;
+   }
+
+   if (index > 0 && index < 32)
+   {
+      return global_error_count[index];
+   }
+
+   return -1;
+}
+
+/*-----------------------------------------------------------------------------
  * ErrorCodeSet
  *-----------------------------------------------------------------------------*/
 
@@ -31,7 +77,7 @@ void
 ErrorCodeSet(ErrorCode code)
 {
    global_error_code |= (int) code;
-   global_error_count[code]++;
+   ErrorCodeCountIncrement(code);
 }
 
 /*-----------------------------------------------------------------------------
@@ -45,6 +91,16 @@ ErrorCodeGet(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * ErrorCodeActive
+ *-----------------------------------------------------------------------------*/
+
+bool
+ErrorCodeActive(void)
+{
+   return (global_error_code == ERROR_NONE) ? false : true;
+}
+
+/*-----------------------------------------------------------------------------
  * ErrorCodeDescribe
  *-----------------------------------------------------------------------------*/
 
@@ -53,7 +109,12 @@ ErrorCodeDescribe(void)
 {
    if (global_error_code & ERROR_YAML_INVALID_INDENT)
    {
-      ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_INDENT, "invalid indendation in line");
+      ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_INDENT, "invalid indendation");
+   }
+
+   if (global_error_code & ERROR_YAML_INVALID_DIVISOR)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_DIVISOR, "invalid divisor");
    }
 
    if (global_error_code & ERROR_INVALID_KEY)
@@ -126,11 +187,11 @@ void
 ErrorMsgAddCodeWithCount(ErrorCode code, const char* suffix)
 {
    char        *msg;
-   const char  *plural = (global_error_count[code] > 1) ? "s" : "";
+   const char  *plural = (ErrorCodeCountGet(code) > 1) ? "s" : "";
    int          length = strlen(suffix) + 24;
 
    msg = (char*) malloc(length);
-   sprintf(msg, "Found %d %s%s!", global_error_count[code], suffix, plural);
+   sprintf(msg, "Found %d %s%s!", ErrorCodeCountGet(code), suffix, plural);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -300,4 +361,17 @@ ErrorMsgClear()
       free(temp);
    }
    global_error_msg_head = NULL;
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorMsgPrintAndAbort
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorMsgPrintAndAbort(MPI_Comm comm)
+{
+   ErrorCodeDescribe();
+   ErrorMsgPrint();
+   ErrorMsgClear();
+   MPI_Abort(comm, ErrorCodeGet());
 }

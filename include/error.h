@@ -8,16 +8,19 @@
 #ifndef ERROR_H
 #define ERROR_H
 
+#include "mpi.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef enum ErrorCode_enum
 {
    ERROR_NONE                  = 0x00000000, // No error
    ERROR_YAML_INVALID_INDENT   = 0x00000001, // 1st  bit
-   ERROR_YAML_TREE_NULL        = 0x00000002, // 2nd  bit
+   ERROR_YAML_INVALID_DIVISOR  = 0x00000002, // 2nd  bit
+   ERROR_YAML_TREE_NULL        = 0x00000004, // 3rd  bit
 
    ERROR_INVALID_KEY        = 0x00000010, // 1st  bit
    ERROR_INVALID_VAL        = 0x00000020, // 2nd  bit
@@ -34,6 +37,7 @@ typedef enum ErrorCode_enum
 
 void ErrorCodeSet(ErrorCode);
 uint32_t ErrorCodeGet(void);
+bool ErrorCodeActive(void);
 void ErrorCodeDescribe(void);
 void ErrorCodeReset(uint32_t);
 void ErrorCodeResetAll(void);
@@ -54,5 +58,6 @@ void ErrorMsgAddInvalidString(const char*);
 void ErrorMsgAddInvalidFilename(const char*); // TODO: Remove me
 void ErrorMsgPrint();
 void ErrorMsgClear();
+void ErrorMsgPrintAndAbort(MPI_Comm);
 
 #endif

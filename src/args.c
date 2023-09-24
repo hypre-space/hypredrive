@@ -409,13 +409,10 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    YAMLbuildTree(text, &params);
 
    /* Return earlier if YAML tree was not built properly */
-   if (!myid && ErrorCodeGet())
+   if (!myid && ErrorCodeActive())
    {
-      YAMLprintTree(params, YAML_MODE_INVALID);
-      ErrorCodeDescribe();
-      ErrorMsgPrint();
-      ErrorMsgClear();
-      MPI_Abort(comm, ErrorCodeGet());
+      YAMLprintTree(params, YAML_MODE_ANY);
+      ErrorMsgPrintAndAbort(comm);
    }
    MPI_Barrier(comm);
 
@@ -433,14 +430,11 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    /* Rank 0: Print tree to stdout */
    if (!myid)
    {
-      YAMLprintTree(params, YAML_MODE_INVALID);
+      YAMLprintTree(params, YAML_MODE_ANY);
 
-      if (ErrorCodeGet() > 0)
+      if (ErrorCodeActive())
       {
-         ErrorCodeDescribe();
-         ErrorMsgPrint();
-         ErrorMsgClear();
-         MPI_Abort(comm, ErrorCodeGet());
+         ErrorMsgPrintAndAbort(comm);
       }
    }
    MPI_Barrier(comm);

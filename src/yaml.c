@@ -59,6 +59,7 @@ YAMLbuildTree(char *text, YAMLtree **tree_ptr)
    int         count, pos, indent;
    int         nlines;
    int         next;
+   bool        divisor_is_ok;
 
    tree = YAMLcreateTree();
    remaining = text;
@@ -119,16 +120,20 @@ YAMLbuildTree(char *text, YAMLtree **tree_ptr)
       level = indent / 2;
 
       /* Check for divisor character */
-      if ((sep = strchr(line, ':')) == NULL)
-      {
-         fprintf(stderr, "Invalid YAML syntax in line: %s\n", line);
-         continue;
-      }
+      divisor_is_ok = ((sep = strchr(line, ':')) == NULL) ? false : true;
 
       /* Extract (key, val) pair */
-      *sep = '\0';
-      key  = line + indent;
-      val  = sep + 1;
+      if (divisor_is_ok)
+      {
+         *sep = '\0';
+         key  = line + indent;
+         val  = sep + 1;
+      }
+      else
+      {
+         key = line + indent;
+         val = line + strlen(line);
+      }
 
       /* Trim leading spaces */
       while (*key == ' ') key++;
@@ -147,11 +152,16 @@ YAMLbuildTree(char *text, YAMLtree **tree_ptr)
       /* Append entry to tree */
       YAMLappendNode(node, &parent);
 
-      /* Check if indentation is correct */
+      /* Set error code if indentation is incorrect */
       if (indent % 2 != 0)
       {
-         ErrorCodeSet(ERROR_YAML_INVALID_INDENT);
          YAML_NODE_SET_INVALID_INDENT(node);
+      }
+
+      /* Set error code if divisor character is incorrect */
+      if (!divisor_is_ok)
+      {
+         YAML_NODE_SET_INVALID_DIVISOR(node);
       }
    }
 
@@ -341,10 +351,22 @@ YAMLprintNode(YAMLnode *node, YAMLmode mode)
    {
       switch (mode)
       {
-         case YAML_MODE_INVALID:
+         case YAML_MODE_ANY:
             if (node->valid == YAML_NODE_VALID)
             {
                YAMLprintNodeHelper(node, TEXT_GREEN, TEXT_GREEN, "");
+            }
+            else if (node->valid == YAML_NODE_INVALID_INDENT)
+            {
+               YAMLprintNodeHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
+                                   TEXT_BOLD " <-- * FIX INDENTATION *");
+               ErrorCodeSet(ERROR_YAML_INVALID_INDENT);
+            }
+            else if (node->valid == YAML_NODE_INVALID_DIVISOR)
+            {
+               YAMLprintNodeHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
+                                   TEXT_BOLD " <-- * FIX DIVISOR *");
+               ErrorCodeSet(ERROR_YAML_INVALID_DIVISOR);
             }
             else if (node->valid == YAML_NODE_INVALID_KEY)
             {
@@ -359,22 +381,16 @@ YAMLprintNode(YAMLnode *node, YAMLmode mode)
                                    TEXT_BOLD " <-- * FIX VALUE *");
                ErrorCodeSet(ERROR_INVALID_VAL);
             }
-            else if (node->valid == YAML_NODE_INVALID_INDENT)
-            {
-               YAMLprintNodeHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
-                                   TEXT_BOLD " <-- * FIX INDENTATION *");
-               ErrorCodeSet(ERROR_INVALID_VAL);
-            }
             break;
 
-         case YAML_MODE_VALID:
+         case YAML_MODE_ONLY_VALID:
             if (node->valid == YAML_NODE_VALID)
             {
                YAMLprintNodeHelper(node, "", "", "");
             }
             break;
 
-         case YAML_MODE_ANY:
+         case YAML_MODE_NONE:
          default:
             YAMLprintNodeHelper(node, "", "", "");
             break;

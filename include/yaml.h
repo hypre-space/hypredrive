@@ -28,12 +28,17 @@ typedef enum YAMLvalidity_enum {
    YAML_NODE_INVALID_KEY,
    YAML_NODE_INVALID_VAL,
    YAML_NODE_INVALID_INDENT,
+   YAML_NODE_INVALID_DIVISOR,
 } YAMLvalidity;
 
+/*-----------------------------------------------------------------------------
+ * YAML mode enum (for printing purposes)
+ *-----------------------------------------------------------------------------*/
+
 typedef enum YAMLmode_enum {
+   YAML_MODE_NONE,
+   YAML_MODE_ONLY_VALID,
    YAML_MODE_ANY,
-   YAML_MODE_VALID,
-   YAML_MODE_INVALID,
 } YAMLmode;
 
 /*-----------------------------------------------------------------------------
@@ -84,7 +89,9 @@ int YAMLStringToIntArray(const char*, int*, int**);
  *-----------------------------------------------------------------------------*/
 
 #define YAML_VALIDATE_NODE(_node, _callA, _callB) \
-   do { \
+   if ((_node->valid != YAML_NODE_INVALID_DIVISOR) && \
+       (_node->valid != YAML_NODE_INVALID_INDENT)) \
+   { \
       StrArray _keys = _callA(); \
       if (StrArrayEntryExists(_keys, _node->key)) \
       { \
@@ -109,7 +116,7 @@ int YAMLStringToIntArray(const char*, int*, int**);
       { \
          _node->valid = YAML_NODE_INVALID_KEY; \
       } \
-   } while(0)
+   }
 
 #define YAML_SET_ARG(_node, _args, _call) \
    if (_node->valid == YAML_NODE_VALID) \
@@ -125,6 +132,7 @@ int YAMLStringToIntArray(const char*, int*, int**);
 
 #define YAML_NODE_SET_VALID(_node) _node->valid = YAML_NODE_VALID
 #define YAML_NODE_SET_INVALID_INDENT(_node) _node->valid = YAML_NODE_INVALID_INDENT
+#define YAML_NODE_SET_INVALID_DIVISOR(_node) _node->valid = YAML_NODE_INVALID_DIVISOR
 
 
 #define YAML_CALL_IF_OPEN() if (0) {}
