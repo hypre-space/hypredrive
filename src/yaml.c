@@ -169,6 +169,19 @@ YAMLtreeBuild(char *text, YAMLtree **tree_ptr)
 }
 
 /*-----------------------------------------------------------------------------
+ * YAMLtreeUpdate
+ *
+ * Update a YAML tree with information passed via command line
+ *-----------------------------------------------------------------------------*/
+
+void
+YAMLtreeUpdate(int argc, char** argv, YAMLtree *tree)
+{
+   /* TODO */
+   return;
+}
+
+/*-----------------------------------------------------------------------------
  * YAMLtreePrint
  *
  * Prints all nodes in a tree

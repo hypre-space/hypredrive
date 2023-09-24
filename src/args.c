@@ -383,6 +383,11 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    /* TODO: check if any config option has been passed in via CLI.
             If so, overwrite the data stored in the YAMLtree object
             with it. */
+   if (argc > 2)
+   {
+      /* Update YAML tree with command line arguments info */
+      YAMLtreeUpdate(argc, argv, tree);
+   }
 
    /*--------------------------------------------
     * Parse file sections
