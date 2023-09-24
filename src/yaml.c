@@ -211,9 +211,9 @@ YAMLcreateNode(char *key, char* val, int level)
 
    node           = (YAMLnode*) malloc(sizeof(YAMLnode));
    node->level    = level;
-   node->key      = strdup(key);
-   node->val      = strdup(val);
-   node->valid    = YAML_NODE_VALID;
+   node->key      = strdup(key); // TODO: transform to lower case
+   node->val      = strdup(val); // TODO: transform to lower case
+   node->valid    = YAML_NODE_VALID; // We assume nodes are valid by default
    node->parent   = NULL;
    node->children = NULL;
    node->next     = NULL;
@@ -343,41 +343,51 @@ YAMLprintNodeHelper(YAMLnode *node, const char *cKey, const char *cVal, const ch
  *-----------------------------------------------------------------------------*/
 
 int
-YAMLprintNode(YAMLnode *node, YAMLmode validity)
+YAMLprintNode(YAMLnode *node, YAMLmode mode)
 {
    YAMLnode *child;
 
-
    if (node)
    {
-      if ((validity == YAML_MODE_ANY) ||
-          (validity == YAML_MODE_VALID && node->valid == YAML_NODE_VALID) )
+      switch (mode)
       {
-         YAMLprintNodeHelper(node, "", "", "");
-      }
-      else if (validity == YAML_MODE_INVALID)
-      {
-         if (node->valid == YAML_NODE_VALID)
-         {
-            YAMLprintNodeHelper(node, TEXT_GREEN, TEXT_GREEN, "");
-         }
-         else if (node->valid == YAML_NODE_INVALID_KEY)
-         {
-            YAMLprintNodeHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD, TEXT_BOLD " <-- * FIX ME *");
-            ErrorCodeSet(ERROR_INVALID_KEY);
-            ErrorCodeSet(ERROR_MAYBE_INVALID_VAL);
-         }
-         else if (node->valid == YAML_NODE_INVALID_VAL)
-         {
-            YAMLprintNodeHelper(node, TEXT_GREEN, TEXT_REDBOLD, TEXT_BOLD " <-- * FIX ME *");
-            ErrorCodeSet(ERROR_INVALID_VAL);
-         }
+         case YAML_MODE_INVALID:
+            if (node->valid == YAML_NODE_VALID)
+            {
+               YAMLprintNodeHelper(node, TEXT_GREEN, TEXT_GREEN, "");
+            }
+            else if (node->valid == YAML_NODE_INVALID_KEY)
+            {
+               YAMLprintNodeHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD,
+                                   TEXT_BOLD " <-- * FIX ME *");
+               ErrorCodeSet(ERROR_INVALID_KEY);
+               ErrorCodeSet(ERROR_MAYBE_INVALID_VAL);
+            }
+            else if (node->valid == YAML_NODE_INVALID_VAL)
+            {
+               YAMLprintNodeHelper(node, TEXT_GREEN, TEXT_REDBOLD,
+                                   TEXT_BOLD " <-- * FIX ME *");
+               ErrorCodeSet(ERROR_INVALID_VAL);
+            }
+            break;
+
+         case YAML_MODE_VALID:
+            if (node->valid == YAML_NODE_VALID)
+            {
+               YAMLprintNodeHelper(node, "", "", "");
+            }
+            break;
+
+         case YAML_MODE_ANY:
+         default:
+            YAMLprintNodeHelper(node, "", "", "");
+            break;
       }
       child = node->children;
 
       while (child != NULL)
       {
-         YAMLprintNode(child, validity);
+         YAMLprintNode(child, mode);
          child = child->next;
       }
    }
@@ -422,7 +432,7 @@ YAMLfindNodeByKey(YAMLnode* node, const char* key)
 /*-----------------------------------------------------------------------------
  * YAMLfindChildNodeByKey
  *
- * Finds a node by key from the children's list of a parent node.
+ * Finds a node by key in the parent's children list.
  *-----------------------------------------------------------------------------*/
 
 YAMLnode*
@@ -449,7 +459,7 @@ YAMLfindChildNodeByKey(YAMLnode* parent, const char* key)
 /*-----------------------------------------------------------------------------
  * YAMLfindChildValueByKey
  *
- * Finds a value by key from the children's list of a parent node.
+ * Finds a value by key in the parent's children list.
  *-----------------------------------------------------------------------------*/
 
 char*

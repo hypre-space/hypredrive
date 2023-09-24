@@ -33,8 +33,8 @@ typedef struct PCG_args_struct {
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-int PCGSetDefaultArgs(PCG_args*);
-int PCGSetArgsFromYAML(PCG_args*, YAMLnode*);
-int PCGCreate(MPI_Comm, PCG_args*, HYPRE_Solver*);
+void PCGSetDefaultArgs(PCG_args*);
+void PCGSetArgsFromYAML(void*, YAMLnode*);
+void PCGCreate(MPI_Comm, PCG_args*, HYPRE_Solver*);
 
 #endif

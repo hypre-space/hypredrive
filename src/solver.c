@@ -7,11 +7,83 @@
 
 #include "solver.h"
 
+static const FieldOffsetMap solver_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(solver_args, pcg, FIELD_TYPE_STRUCT, PCGSetArgsFromYAML),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, gmres, FIELD_TYPE_STRUCT, GMRESSetArgsFromYAML),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, fgmres, FIELD_TYPE_STRUCT, FGMRESSetArgsFromYAML),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, bicgstab, FIELD_TYPE_STRUCT, BiCGSTABSetArgsFromYAML),
+};
+
+#define SOLVER_NUM_FIELDS (sizeof(solver_field_offset_map) / sizeof(solver_field_offset_map[0]))
+
+/*-----------------------------------------------------------------------------
+ * SolverSetFieldByName
+ *-----------------------------------------------------------------------------*/
+
+void
+SolverSetFieldByName(solver_args *args, const char *name, YAMLnode *node)
+{
+   for (size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
+   {
+      /* Which union type are we trying to set? */
+      if (!strcmp(solver_field_offset_map[i].name, name))
+      {
+         solver_field_offset_map[i].setter(
+            (void*)((char*) args + solver_field_offset_map[i].offset),
+            node);
+         return;
+      }
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * SolverGetValidKeys
+ *-----------------------------------------------------------------------------*/
+
+StrArray
+SolverGetValidKeys(void)
+{
+   static const char* keys[SOLVER_NUM_FIELDS];
+
+   for(size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
+   {
+      keys[i] = solver_field_offset_map[i].name;
+   }
+
+   return STR_ARRAY_CREATE(keys);
+}
+
+/*-----------------------------------------------------------------------------
+ * SolverGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+SolverGetValidValues(const char* key)
+{
+   /* The "solver" enry does not hold values, so we create a void map */
+   return STR_INT_MAP_ARRAY_VOID();
+}
+
+/*-----------------------------------------------------------------------------
+ * SolverGetValidTypeIntMap
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+SolverGetValidTypeIntMap(void)
+{
+   static StrIntMap map[] = {{"pcg",      (int) SOLVER_PCG},
+                             {"gmres",    (int) SOLVER_GMRES},
+                             {"fgmres",   (int) SOLVER_FGMRES},
+                             {"bicgstab", (int) SOLVER_BICGSTAB}};
+
+   return STR_INT_MAP_ARRAY_CREATE(map);
+}
+
 /*-----------------------------------------------------------------------------
  * SolverSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 SolverSetDefaultArgs(solver_t solver_method, solver_args *args)
 {
    switch (solver_method)
@@ -33,11 +105,8 @@ SolverSetDefaultArgs(solver_t solver_method, solver_args *args)
          break;
 
       default:
-         ErrorMsgAddInvalidSolverOption((int) solver_method);
-         return EXIT_FAILURE;
+         return;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
@@ -45,8 +114,25 @@ SolverSetDefaultArgs(solver_t solver_method, solver_args *args)
  *-----------------------------------------------------------------------------*/
 
 int
-SolverSetArgsFromYAML(solver_t solver_method, solver_args *args, YAMLnode *node)
+SolverSetArgsFromYAML(solver_args *args, YAMLnode *parent)
 {
+   YAMLnode    *child;
+
+   child = parent->children;
+   while (child)
+   {
+      YAML_VALIDATE_NODE(child,
+                         SolverGetValidKeys,
+                         SolverGetValidValues);
+
+      YAML_SET_ARG_STRUCT(child,
+                          args,
+                          SolverSetFieldByName);
+
+      child = child->next;
+   }
+
+#if 0
    switch (solver_method)
    {
       case SOLVER_PCG:
@@ -69,6 +155,7 @@ SolverSetArgsFromYAML(solver_t solver_method, solver_args *args, YAMLnode *node)
          ErrorMsgAddInvalidSolverOption((int) solver_method);
          return EXIT_FAILURE;
    }
+#endif
 
    return EXIT_SUCCESS;
 }

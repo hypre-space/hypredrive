@@ -10,6 +10,7 @@
 
 #include "yaml.h"
 #include "utils.h"
+#include "field.h"
 #include "HYPRE_utilities.h"
 #include "HYPRE_IJ_mv.h"
 #include "HYPRE.h"

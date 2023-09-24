@@ -11,7 +11,7 @@
  * PCGSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 PCGSetDefaultArgs(PCG_args *args)
 {
    args->max_iter = 100;
@@ -24,18 +24,17 @@ PCGSetDefaultArgs(PCG_args *args)
    args->atol = 0.0;
    args->res_tol = 0.0;
    args->cf_tol = 0.0;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * PCGSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
-PCGSetArgsFromYAML(PCG_args *args, YAMLnode *parent)
+void
+PCGSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
-   YAMLnode *child;
+   PCG_args  *args = (PCG_args*) vargs;
+   YAMLnode  *child;
 
    child = parent->children;
    while (child)
@@ -55,15 +54,13 @@ PCGSetArgsFromYAML(PCG_args *args, YAMLnode *parent)
 
       child = child->next;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * PCGCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 PCGCreate(MPI_Comm comm, PCG_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
@@ -81,6 +78,4 @@ PCGCreate(MPI_Comm comm, PCG_args *args, HYPRE_Solver *solver_ptr)
    HYPRE_PCGSetConvergenceFactorTol(solver, args->cf_tol);
 
    *solver_ptr = solver;
-
-   return EXIT_SUCCESS;
 }

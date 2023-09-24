@@ -11,7 +11,7 @@
  * BiCGSTABSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 BiCGSTABSetDefaultArgs(BICGSTAB_args *args)
 {
    args->min_iter = 0;
@@ -22,18 +22,17 @@ BiCGSTABSetDefaultArgs(BICGSTAB_args *args)
    args->rtol = 1.0e-6;
    args->atol = 0.0;
    args->cf_tol = 0.0;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * BiCGSTABSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
-BiCGSTABSetArgsFromYAML(BICGSTAB_args *args, YAMLnode *parent)
+void
+BiCGSTABSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
-   YAMLnode *child;
+   BICGSTAB_args  *args = (BICGSTAB_args*) vargs;
+   YAMLnode       *child;
 
    child = parent->children;
    while (child)
@@ -51,15 +50,13 @@ BiCGSTABSetArgsFromYAML(BICGSTAB_args *args, YAMLnode *parent)
 
       child = child->next;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * BiCGSTABCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 BiCGSTABCreate(MPI_Comm comm, BICGSTAB_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
@@ -75,6 +72,4 @@ BiCGSTABCreate(MPI_Comm comm, BICGSTAB_args *args, HYPRE_Solver *solver_ptr)
    HYPRE_BiCGSTABSetConvergenceFactorTol(solver, args->cf_tol);
 
    *solver_ptr = solver;
-
-   return EXIT_SUCCESS;
 }

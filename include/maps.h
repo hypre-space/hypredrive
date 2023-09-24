@@ -11,7 +11,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <stddef.h>
 #include <string.h>
 #include <limits.h>
 
@@ -64,25 +63,5 @@ typedef struct StrStrIntMap_struct
    const char *strB;
    int         num;
 } StrStrIntMap;
-
-/******************************************************************************
- *****************************************************************************/
-
-typedef enum FieldType_enum {
-   FIELD_TYPE_INT,
-   FIELD_TYPE_DOUBLE,
-   FIELD_TYPE_CHAR,
-   FIELD_TYPE_STRING
-} FieldType;
-
-typedef struct FieldOffsetMap_struct
-{
-   const char  *name;
-   size_t       offset;
-   FieldType    type;
-} FieldOffsetMap;
-
-#define FIELD_OFFSET_MAP_ENTRY(st, fieldName, fieldType) \
-   {#fieldName, offsetof(st, fieldName), fieldType}
 
 #endif /* MAPS_HEADER */

@@ -7,6 +7,8 @@
 
 #include "error.h"
 
+#define ERROR_CODE_NUM_ENTRIES 32
+
 /* Struct for storing an error message in a linked list */
 typedef struct ErrorMsgNode
 {
@@ -19,7 +21,7 @@ static ErrorMsgNode *global_error_msg_head = NULL;
 
 /* Global error code variable */
 static uint32_t global_error_code;
-static uint32_t global_error_count[ERROR_CODE_MAX] = {0};
+static uint32_t global_error_count[ERROR_CODE_NUM_ENTRIES] = {0};
 
 /*-----------------------------------------------------------------------------
  * ErrorCodeSet
@@ -74,7 +76,7 @@ ErrorCodeReset(uint32_t code)
 {
    uint32_t i, bit;
 
-   for (i = 1; i < ERROR_CODE_MAX; i++)
+   for (i = 1; i < ERROR_CODE_NUM_ENTRIES; i++)
    {
       bit = 1u << i;
 
@@ -187,6 +189,22 @@ ErrorMsgAddMissingKey(const char *key)
 
    msg = (char*) malloc(length);
    sprintf(msg, "Missing key: %s", key);
+   ErrorMsgAdd(msg);
+   free(msg);
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorMsgAddExtraKey
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorMsgAddExtraKey(const char *key)
+{
+   char *msg;
+   int   length = strlen(key) + 24;
+
+   msg = (char*) malloc(length);
+   sprintf(msg, "Extra (unused) key: %s", key);
    ErrorMsgAdd(msg);
    free(msg);
 }

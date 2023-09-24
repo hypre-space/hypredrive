@@ -23,6 +23,7 @@
  *-----------------------------------------------------------------------------*/
 
 typedef enum YAMLvalidity_enum {
+   YAML_NODE_UNKNOWN,
    YAML_NODE_VALID,
    YAML_NODE_INVALID_KEY,
    YAML_NODE_INVALID_VAL,
@@ -114,6 +115,15 @@ int YAMLStringToIntArray(const char*, int*, int**);
    { \
       _call(_args, _node->key, _node->val); \
    }
+
+#define YAML_SET_ARG_STRUCT(_node, _args, _call) \
+   if (_node->valid == YAML_NODE_VALID) \
+   { \
+      _call(_args, _node->key, _node); \
+   }
+
+#define YAML_SET_VALID(_node) _node->valid = YAML_NODE_VALID
+
 
 #define YAML_CALL_IF_OPEN() if (0) {}
 #define YAML_CALL_IF_CLOSE(_node) else {}

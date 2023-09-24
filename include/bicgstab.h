@@ -31,8 +31,8 @@ typedef struct BICGSTAB_args_struct {
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-int BiCGSTABSetDefaultArgs(BICGSTAB_args*);
-int BiCGSTABSetArgsFromYAML(BICGSTAB_args*, YAMLnode*);
-int BiCGSTABCreate(MPI_Comm, BICGSTAB_args*, HYPRE_Solver*);
+void BiCGSTABSetDefaultArgs(BICGSTAB_args*);
+void BiCGSTABSetArgsFromYAML(void*, YAMLnode*);
+void BiCGSTABCreate(MPI_Comm, BICGSTAB_args*, HYPRE_Solver*);
 
 #endif

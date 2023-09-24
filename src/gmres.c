@@ -11,7 +11,7 @@
  * GMRESSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 GMRESSetDefaultArgs(GMRES_args *args)
 {
    args->min_iter = 0;
@@ -25,18 +25,17 @@ GMRESSetDefaultArgs(GMRES_args *args)
    args->rtol = 1.0e-6;
    args->atol = 0.0;
    args->cf_tol = 0.0;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * GMRESSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
-GMRESSetArgsFromYAML(GMRES_args *args, YAMLnode *parent)
+void
+GMRESSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
-   YAMLnode *child;
+   GMRES_args *args = (GMRES_args*) vargs;
+   YAMLnode   *child;
 
    child = parent->children;
    while (child)
@@ -57,15 +56,13 @@ GMRESSetArgsFromYAML(GMRES_args *args, YAMLnode *parent)
 
       child = child->next;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * GMRESCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 GMRESCreate(MPI_Comm comm, GMRES_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
@@ -84,6 +81,4 @@ GMRESCreate(MPI_Comm comm, GMRES_args *args, HYPRE_Solver *solver_ptr)
    HYPRE_GMRESSetConvergenceFactorTol(solver, args->cf_tol);
 
    *solver_ptr = solver;
-
-   return EXIT_SUCCESS;
 }

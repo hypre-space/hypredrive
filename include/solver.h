@@ -14,6 +14,7 @@
 #include "fgmres.h"
 #include "bicgstab.h"
 #include "yaml.h"
+#include "field.h"
 #include "HYPRE_parcsr_ls.h"
 #include "HYPRE_krylov.h"
 
@@ -43,8 +44,12 @@ typedef union solver_args_union {
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-int SolverSetDefaultArgs(solver_t, solver_args*);
-int SolverSetArgsFromYAML(solver_t, solver_args*, YAMLnode*);
+StrArray SolverGetValidKeys(void);
+StrIntMapArray SolverGetValidValues(const char*);
+StrIntMapArray SolverGetValidTypeIntMap(void);
+
+void SolverSetDefaultArgs(solver_t, solver_args*);
+int SolverSetArgsFromYAML(solver_args*, YAMLnode*);
 int SolverCreate(MPI_Comm, solver_t, solver_args*, HYPRE_Solver*);
 int SolverSetup(precon_t, solver_t, HYPRE_Solver, HYPRE_Solver,
                 HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector);

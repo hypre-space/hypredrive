@@ -8,15 +8,15 @@
 #include "linsys.h"
 
 static const FieldOffsetMap ls_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FIELD_TYPE_STRING),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_filename, FIELD_TYPE_STRING),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_filename, FIELD_TYPE_STRING),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, x0_filename, FIELD_TYPE_STRING),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, sol_filename, FIELD_TYPE_STRING),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FIELD_TYPE_STRING),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FIELD_TYPE_INT),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FIELD_TYPE_INT),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, type, FIELD_TYPE_INT)
+   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FIELD_TYPE_STRING, NULL),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_filename, FIELD_TYPE_STRING, NULL),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_filename, FIELD_TYPE_STRING, NULL),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, x0_filename, FIELD_TYPE_STRING, NULL),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, sol_filename, FIELD_TYPE_STRING, NULL),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FIELD_TYPE_STRING, NULL),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FIELD_TYPE_INT, NULL),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FIELD_TYPE_INT, NULL),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, type, FIELD_TYPE_INT, NULL)
 };
 
 #define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
@@ -97,8 +97,10 @@ LinearSystemGetValidValues(const char* key)
                                 {"random", 3}};
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-
-   return STR_INT_MAP_ARRAY_VOID();
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
 }
 
 /*-----------------------------------------------------------------------------

@@ -11,7 +11,7 @@
  * FGMRESSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 FGMRESSetDefaultArgs(FGMRES_args *args)
 {
    args->min_iter = 0;
@@ -21,18 +21,17 @@ FGMRESSetDefaultArgs(FGMRES_args *args)
    args->print_level = 1;
    args->rtol = 1.0e-6;
    args->atol = 0.0;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * FGMRESSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
-FGMRESSetArgsFromYAML(FGMRES_args *args, YAMLnode *parent)
+void
+FGMRESSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
-   YAMLnode *child;
+   FGMRES_args *args = (FGMRES_args*) vargs;
+   YAMLnode    *child;
 
    child = parent->children;
    while (child)
@@ -49,15 +48,13 @@ FGMRESSetArgsFromYAML(FGMRES_args *args, YAMLnode *parent)
 
       child = child->next;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * FGMRESCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 FGMRESCreate(MPI_Comm comm, FGMRES_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
@@ -72,6 +69,4 @@ FGMRESCreate(MPI_Comm comm, FGMRES_args *args, HYPRE_Solver *solver_ptr)
    HYPRE_FlexGMRESSetAbsoluteTol(solver, args->atol);
 
    *solver_ptr = solver;
-
-   return EXIT_SUCCESS;
 }

@@ -13,8 +13,6 @@
 #include <string.h>
 #include <stdint.h>
 
-#define ERROR_CODE_MAX 32
-
 typedef enum ErrorCode_enum
 {
    ERROR_NONE               = 0x00000000, // No error
@@ -22,9 +20,12 @@ typedef enum ErrorCode_enum
    ERROR_INVALID_VAL        = 0x00000002, // 2nd  bit
    ERROR_MAYBE_INVALID_VAL  = 0x00000004, // 3rd  bit
    ERROR_MISSING_KEY        = 0x00000008, // 4th  bit
-   ERROR_INVALID_SOLVER     = 0x00000010, // 5th  bit
-   ERROR_INVALID_PRECON     = 0x00000020, // 6th  bit
-   ERROR_FILE_NOT_FOUND     = 0x00000040, // 7th  bit
+   ERROR_EXTRA_KEY          = 0x00000010, // 5th  bit
+   ERROR_MISSING_SOLVER     = 0x00000020, // 6th  bit
+   ERROR_MISSING_PRECON     = 0x00000040, // 7th  bit
+   ERROR_INVALID_SOLVER     = 0x00000080, // 8th  bit
+   ERROR_INVALID_PRECON     = 0x00000100, // 9th  bit
+   ERROR_FILE_NOT_FOUND     = 0x00000120, // 10th bit
    ERROR_UNKNOWN            = 0x40000000  // 31th bit
 } ErrorCode;
 
@@ -42,7 +43,8 @@ void ErrorMsgAddCodeWithCount(ErrorCode, const char*);
 void ErrorMsgAddInvalidKeyValPair(const char*, const char*); // TODO: Remove me
 void ErrorMsgAddUnknownKey(const char*); // TODO: Remove me
 void ErrorMsgAddUnknownVal(const char*); // TODO: Remove me
-void ErrorMsgAddMissingKey(const char*); // TODO: Remove me
+void ErrorMsgAddMissingKey(const char*);
+void ErrorMsgAddExtraKey(const char*);
 void ErrorMsgAddInvalidSolverOption(int); // TODO: Remove me
 void ErrorMsgAddInvalidPreconOption(int); // TODO: Remove me
 void ErrorMsgAddInvalidString(const char*);

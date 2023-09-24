@@ -54,6 +54,7 @@ InputArgsCreate(const char* precon, const char* solver, input_args **iargs_ptr)
    /* Set default preconditioner options */
    PreconSetDefaultArgs(iargs->precon_method, &iargs->precon);
 
+#if 0
    /* Set solver method */
    if (solver)
    {
@@ -88,6 +89,7 @@ InputArgsCreate(const char* precon, const char* solver, input_args **iargs_ptr)
 
    /* Set default solver options */
    SolverSetDefaultArgs(iargs->solver_method, &iargs->solver);
+#endif
 
    *iargs_ptr = iargs;
 
@@ -168,7 +170,7 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *params)
  * InputArgsParseLinearSystem
  *-----------------------------------------------------------------------------*/
 
-int
+void
 InputArgsParseLinearSystem(input_args *iargs, YAMLtree *params)
 {
    YAMLnode    *parent;
@@ -176,28 +178,59 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *params)
    parent = YAMLfindNodeByKey(params->root, "linear_system");
    if (!parent)
    {
-      return EXIT_FAILURE;
+      ErrorCodeSet(ERROR_MISSING_KEY);
+      ErrorMsgAddMissingKey("linear_system");
+      return;
+   }
+   else
+   {
+      YAML_SET_VALID(parent);
    }
 
    LinearSystemSetArgsFromYAML(&iargs->ls, parent);
    ErrorMsgPrint();
    ErrorMsgClear();
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * InputArgsParseSolver
  *-----------------------------------------------------------------------------*/
 
-int
-InputArgsParseSolver(input_args *iargs, YAMLnode *node)
+void
+InputArgsParseSolver(input_args *iargs, YAMLtree *params)
 {
-   SolverSetArgsFromYAML(iargs->solver_method, &iargs->solver, node);
-   ErrorMsgPrint();
-   ErrorMsgClear();
+   YAMLnode  *parent;
 
-   return EXIT_SUCCESS;
+   parent = YAMLfindNodeByKey(params->root, "solver");
+   if (!parent)
+   {
+      ErrorCodeSet(ERROR_MISSING_KEY);
+      ErrorMsgAddMissingKey("solver");
+      return;
+   }
+   else
+   {
+      YAML_SET_VALID(parent);
+   }
+
+   /* Check if a solver type was set */
+   if (!parent->children)
+   {
+      ErrorCodeSet(ERROR_MISSING_SOLVER);
+      return;
+   }
+
+   /* Check if more than one solver type was set (this is not supported!) */
+   if (parent->children->next)
+   {
+      ErrorCodeSet(ERROR_EXTRA_KEY);
+      ErrorMsgAddExtraKey(parent->children->next->key);
+      return;
+   }
+
+   iargs->solver_method = StrIntMapArrayGetImage(SolverGetValidTypeIntMap(), parent->children->key);
+   SolverSetDefaultArgs(iargs->solver_method, &iargs->solver);
+   SolverSetArgsFromYAML(&iargs->solver, parent);
 }
 
 /*-----------------------------------------------------------------------------
@@ -380,10 +413,10 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    precon_node = YAMLfindNodeByKey(params->root, "preconditioner");
 
    /* Parse file sections */
-   InputArgsCreate(precon_node->val, solver_node->val, &iargs);
+   InputArgsCreate(precon_node->val, solver_node->children->key, &iargs);
    InputArgsParseGeneral(iargs, params);
    InputArgsParseLinearSystem(iargs, params);
-   InputArgsParseSolver(iargs, solver_node);
+   InputArgsParseSolver(iargs, params);
    InputArgsParsePrecon(iargs, precon_node);
 
    /* Rank 0: Print tree to stdout */
@@ -399,6 +432,7 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
          MPI_Abort(comm, ErrorCodeGet());
       }
    }
+   MPI_Barrier(comm);
 
    /* TODO: check if any config option has been passed in via CLI.
             If so, overwrite the data stored in the YAMLtree object
