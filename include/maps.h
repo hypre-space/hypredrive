@@ -28,6 +28,7 @@ typedef struct StrArray_struct
    (StrArray){.array = str, .size = sizeof(str) / sizeof(str[0])}
 
 bool StrArrayEntryExists(const StrArray, const char*);
+void StrToIntArray(const char*, int*, int**);
 
 /*--------------------------------------------------------------------------
  * StrIntMap struct (str <-> num)

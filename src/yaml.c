@@ -8,43 +8,43 @@
 #include "yaml.h"
 
 /*-----------------------------------------------------------------------------
- * YAMLcreateTree
+ * YAMLtreeCreate
  *-----------------------------------------------------------------------------*/
 
 YAMLtree*
-YAMLcreateTree(void)
+YAMLtreeCreate(void)
 {
    YAMLtree *tree;
 
    tree = malloc(sizeof(YAMLtree));
-   tree->root = YAMLcreateNode("", "", -1);
+   tree->root = YAMLnodeCreate("", "", -1);
 
    return tree;
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLdestroyTree
+ * YAMLtreeDestroy
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLdestroyTree(YAMLtree** tree_ptr)
+YAMLtreeDestroy(YAMLtree** tree_ptr)
 {
    YAMLtree *tree = *tree_ptr;
 
    if (tree)
    {
-      YAMLdestroyNode(tree->root);
+      YAMLnodeDestroy(tree->root);
       free(tree);
       *tree_ptr = NULL;
    }
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLbuildTree
+ * YAMLtreeBuild
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLbuildTree(char *text, YAMLtree **tree_ptr)
+YAMLtreeBuild(char *text, YAMLtree **tree_ptr)
 {
    YAMLnode   *node;
    YAMLnode   *parent;
@@ -61,7 +61,7 @@ YAMLbuildTree(char *text, YAMLtree **tree_ptr)
    int         next;
    bool        divisor_is_ok;
 
-   tree = YAMLcreateTree();
+   tree = YAMLtreeCreate();
    remaining = text;
    nlines = 0; parent = tree->root;
    while ((line = strtok_r(remaining, "\n", &remaining)))
@@ -147,10 +147,10 @@ YAMLbuildTree(char *text, YAMLtree **tree_ptr)
       }
 
       /* Create node entry */
-      node = YAMLcreateNode(key, val, level);
+      node = YAMLnodeCreate(key, val, level);
 
       /* Append entry to tree */
-      YAMLappendNode(node, &parent);
+      YAMLnodeAppend(node, &parent);
 
       /* Set error code if indentation is incorrect */
       if (indent % 2 != 0)
@@ -169,13 +169,13 @@ YAMLbuildTree(char *text, YAMLtree **tree_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLprintTree
+ * YAMLtreePrint
  *
  * Prints all nodes in a tree
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLprintTree(YAMLtree *tree, YAMLmode validity)
+YAMLtreePrint(YAMLtree *tree, YAMLmode validity)
 {
    YAMLnode *child;
    int       i, divisor = 80;
@@ -191,7 +191,7 @@ YAMLprintTree(YAMLtree *tree, YAMLmode validity)
    child = tree->root->children;
    while (child != NULL)
    {
-      YAMLprintNode(child, validity);
+      YAMLnodePrint(child, validity);
       child = child->next;
    }
    for (i = 0; i < divisor; i++) { printf("-"); } printf("\n");
@@ -201,11 +201,11 @@ YAMLprintTree(YAMLtree *tree, YAMLmode validity)
  *******************************************************************************/
 
 /*-----------------------------------------------------------------------------
- * YAMLcreateNode
+ * YAMLnodeCreate
  *-----------------------------------------------------------------------------*/
 
 YAMLnode*
-YAMLcreateNode(char *key, char* val, int level)
+YAMLnodeCreate(char *key, char* val, int level)
 {
    YAMLnode *node;
 
@@ -222,47 +222,42 @@ YAMLcreateNode(char *key, char* val, int level)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLdestroyNode
+ * YAMLnodeDestroy
  *
  * Destroys a node via depth-first search (DFS)
  *-----------------------------------------------------------------------------*/
 
-int
-YAMLdestroyNode(YAMLnode* node)
+void
+YAMLnodeDestroy(YAMLnode* node)
 {
    YAMLnode  *child;
    YAMLnode  *next;
 
    if (node == NULL)
    {
-      return EXIT_SUCCESS;
+      return;
    }
 
    child = node->children;
    while (child != NULL)
    {
       next = child->next;
-      if (YAMLdestroyNode(child) != EXIT_SUCCESS)
-      {
-         return EXIT_FAILURE;
-      }
+      YAMLnodeDestroy(child);
       child = next;
    }
    free(node->key);
    free(node->val);
    free(node);
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLaddChildNode
+ * YAMLnodeAddChild
  *
  * Adds a "child" node as the first child of the "parent" node.
  *-----------------------------------------------------------------------------*/
 
-int
-YAMLaddChildNode(YAMLnode *parent, YAMLnode *child)
+void
+YAMLnodeAddChild(YAMLnode *parent, YAMLnode *child)
 {
    YAMLnode *node;
 
@@ -280,18 +275,16 @@ YAMLaddChildNode(YAMLnode *parent, YAMLnode *child)
       }
       node->next = child;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLappendNode
+ * YAMLnodeAppend
  *
  * Appends a node to the tree
  *-----------------------------------------------------------------------------*/
 
-int
-YAMLappendNode(YAMLnode *node, YAMLnode **previous_ptr)
+void
+YAMLnodeAppend(YAMLnode *node, YAMLnode **previous_ptr)
 {
    YAMLnode  *previous = *previous_ptr;
    int        previous_level = previous->level;
@@ -299,12 +292,12 @@ YAMLappendNode(YAMLnode *node, YAMLnode **previous_ptr)
    if (node->level > previous_level)
    {
       /* Add child to current parent */
-      YAMLaddChildNode(previous, node);
+      YAMLnodeAddChild(previous, node);
    }
    else if (node->level == previous_level)
    {
       /* Add sibling to children's list and keep the current parent */
-      YAMLaddChildNode(previous->parent, node);
+      YAMLnodeAddChild(previous->parent, node);
    }
    else
    {
@@ -315,21 +308,19 @@ YAMLappendNode(YAMLnode *node, YAMLnode **previous_ptr)
       }
 
       /* Add ancestor */
-      YAMLaddChildNode(previous->parent, node);
+      YAMLnodeAddChild(previous->parent, node);
    }
 
    /* Update pointer to previous node */
    *previous_ptr = node;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLprintNodeHelper
+ * YAMLnodePrintHelper
  *-----------------------------------------------------------------------------*/
 
 static inline void
-YAMLprintNodeHelper(YAMLnode *node, const char *cKey, const char *cVal, const char *suffix)
+YAMLnodePrintHelper(YAMLnode *node, const char *cKey, const char *cVal, const char *suffix)
 {
    int offset = 2 * node->level + (int) strlen(node->key);
 
@@ -339,11 +330,11 @@ YAMLprintNodeHelper(YAMLnode *node, const char *cKey, const char *cVal, const ch
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLprintNode
+ * YAMLnodePrint
  *-----------------------------------------------------------------------------*/
 
-int
-YAMLprintNode(YAMLnode *node, YAMLmode mode)
+void
+YAMLnodePrint(YAMLnode *node, YAMLmode mode)
 {
    YAMLnode *child;
 
@@ -354,30 +345,30 @@ YAMLprintNode(YAMLnode *node, YAMLmode mode)
          case YAML_MODE_ANY:
             if (node->valid == YAML_NODE_VALID)
             {
-               YAMLprintNodeHelper(node, TEXT_GREEN, TEXT_GREEN, "");
+               YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_GREEN, "");
             }
             else if (node->valid == YAML_NODE_INVALID_INDENT)
             {
-               YAMLprintNodeHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
+               YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
                                    TEXT_BOLD " <-- * FIX INDENTATION *");
                ErrorCodeSet(ERROR_YAML_INVALID_INDENT);
             }
             else if (node->valid == YAML_NODE_INVALID_DIVISOR)
             {
-               YAMLprintNodeHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
+               YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
                                    TEXT_BOLD " <-- * FIX DIVISOR *");
                ErrorCodeSet(ERROR_YAML_INVALID_DIVISOR);
             }
             else if (node->valid == YAML_NODE_INVALID_KEY)
             {
-               YAMLprintNodeHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD,
+               YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD,
                                    TEXT_BOLD " <-- * FIX KEY *");
                ErrorCodeSet(ERROR_INVALID_KEY);
                ErrorCodeSet(ERROR_MAYBE_INVALID_VAL);
             }
             else if (node->valid == YAML_NODE_INVALID_VAL)
             {
-               YAMLprintNodeHelper(node, TEXT_GREEN, TEXT_REDBOLD,
+               YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
                                    TEXT_BOLD " <-- * FIX VALUE *");
                ErrorCodeSet(ERROR_INVALID_VAL);
             }
@@ -386,42 +377,40 @@ YAMLprintNode(YAMLnode *node, YAMLmode mode)
          case YAML_MODE_ONLY_VALID:
             if (node->valid == YAML_NODE_VALID)
             {
-               YAMLprintNodeHelper(node, "", "", "");
+               YAMLnodePrintHelper(node, "", "", "");
             }
             break;
 
          case YAML_MODE_NONE:
          default:
-            YAMLprintNodeHelper(node, "", "", "");
+            YAMLnodePrintHelper(node, "", "", "");
             break;
       }
       child = node->children;
 
       while (child != NULL)
       {
-         YAMLprintNode(child, mode);
+         YAMLnodePrint(child, mode);
          child = child->next;
       }
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLfindNodeByKey
+ * YAMLnodeFindByKey
  *
  * Finds a node by key starting from the input "node" via DFS.
  *-----------------------------------------------------------------------------*/
 
 YAMLnode*
-YAMLfindNodeByKey(YAMLnode* node, const char* key)
+YAMLnodeFindByKey(YAMLnode* node, const char* key)
 {
    YAMLnode *child;
    YAMLnode *found;
 
    if (node)
    {
-      if (strcmp(node->key, key) == 0)
+      if (!strcmp(node->key, key))
       {
          return node;
       }
@@ -429,7 +418,7 @@ YAMLfindNodeByKey(YAMLnode* node, const char* key)
       child = node->children;
       while (child)
       {
-         found = YAMLfindNodeByKey(child, key);
+         found = YAMLnodeFindByKey(child, key);
          if (found)
          {
             return found;
@@ -442,13 +431,13 @@ YAMLfindNodeByKey(YAMLnode* node, const char* key)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLfindChildNodeByKey
+ * YAMLnodeFindChildByKey
  *
  * Finds a node by key in the parent's children list.
  *-----------------------------------------------------------------------------*/
 
 YAMLnode*
-YAMLfindChildNodeByKey(YAMLnode* parent, const char* key)
+YAMLnodeFindChildByKey(YAMLnode* parent, const char* key)
 {
    YAMLnode *child;
 
@@ -457,7 +446,7 @@ YAMLfindChildNodeByKey(YAMLnode* parent, const char* key)
       child = parent->children;
       while (child)
       {
-         if (strcmp(child->key, key) == 0)
+         if (!strcmp(child->key, key))
          {
             return child;
          }
@@ -469,13 +458,13 @@ YAMLfindChildNodeByKey(YAMLnode* parent, const char* key)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLfindChildValueByKey
+ * YAMLnodeFindChildValueByKey
  *
  * Finds a value by key in the parent's children list.
  *-----------------------------------------------------------------------------*/
 
 char*
-YAMLfindChildValueByKey(YAMLnode* parent, const char* key)
+YAMLnodeFindChildValueByKey(YAMLnode* parent, const char* key)
 {
    YAMLnode *child;
 
@@ -493,45 +482,4 @@ YAMLfindChildValueByKey(YAMLnode* parent, const char* key)
    }
 
    return NULL;
-}
-
-/*-----------------------------------------------------------------------------
- * YAMLStringToIntArray
- *-----------------------------------------------------------------------------*/
-
-int
-YAMLStringToIntArray(const char* string, int *count_ptr, int **array_ptr)
-{
-   char   *buffer;
-   char   *token;
-   int    *array;
-   int     count;
-
-   /* Find number of elements in array */
-   buffer = strdup(string);
-   token  = strtok(buffer, "[], ");
-   count  = 0;
-   while (token)
-   {
-      count++;
-      token = strtok(NULL, "[], ");
-   }
-   free(buffer);
-   *count_ptr = count;
-
-   /* Build array */
-   buffer = strdup(string);
-   array  = (int*) malloc(count*sizeof(int));
-   token  = strtok(buffer, "[], ");
-   count  = 0;
-   while (token)
-   {
-      array[count] = atoi(token);
-      count++;
-      token = strtok(NULL, "[], ");
-   }
-   free(buffer);
-   *array_ptr = array;
-
-   return EXIT_SUCCESS;
 }

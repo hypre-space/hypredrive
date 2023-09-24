@@ -119,7 +119,7 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *params)
    YAMLnode    *parent;
    YAMLnode    *child;
 
-   parent = YAMLfindNodeByKey(params->root, "general");
+   parent = YAMLnodeFindByKey(params->root, "general");
    if (!parent)
    {
       return EXIT_SUCCESS;
@@ -175,7 +175,7 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *params)
 {
    YAMLnode    *parent;
 
-   parent = YAMLfindNodeByKey(params->root, "linear_system");
+   parent = YAMLnodeFindByKey(params->root, "linear_system");
    if (!parent)
    {
       ErrorCodeSet(ERROR_MISSING_KEY);
@@ -201,7 +201,7 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *params)
 {
    YAMLnode  *parent;
 
-   parent = YAMLfindNodeByKey(params->root, "solver");
+   parent = YAMLnodeFindByKey(params->root, "solver");
    if (!parent)
    {
       ErrorCodeSet(ERROR_MISSING_KEY);
@@ -406,19 +406,19 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
 
    /* Build YAML tree */
-   YAMLbuildTree(text, &params);
+   YAMLtreeBuild(text, &params);
 
    /* Return earlier if YAML tree was not built properly */
    if (!myid && ErrorCodeActive())
    {
-      YAMLprintTree(params, YAML_MODE_ANY);
+      YAMLtreePrint(params, YAML_MODE_ANY);
       ErrorMsgPrintAndAbort(comm);
    }
    MPI_Barrier(comm);
 
    /* Find preconditioner and solver nodes */
-   solver_node = YAMLfindNodeByKey(params->root, "solver");
-   precon_node = YAMLfindNodeByKey(params->root, "preconditioner");
+   solver_node = YAMLnodeFindByKey(params->root, "solver");
+   precon_node = YAMLnodeFindByKey(params->root, "preconditioner");
 
    /* Parse file sections */
    InputArgsCreate(precon_node->val, solver_node->children->key, &iargs);
@@ -430,7 +430,7 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    /* Rank 0: Print tree to stdout */
    if (!myid)
    {
-      YAMLprintTree(params, YAML_MODE_ANY);
+      YAMLtreePrint(params, YAML_MODE_ANY);
 
       if (ErrorCodeActive())
       {
@@ -444,7 +444,7 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
             with it. */
 
    *args_ptr = iargs;
-   YAMLdestroyTree(&params);
+   YAMLtreeDestroy(&params);
    free(text);
 
    return EXIT_SUCCESS;

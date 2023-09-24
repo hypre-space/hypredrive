@@ -67,22 +67,19 @@ typedef struct YAMLtree_struct {
  * Public prototypes - TODO: change names (YAMLcreateTree -> YAMLTreeCreate)
  *-----------------------------------------------------------------------------*/
 
-YAMLtree* YAMLcreateTree(void);
-void YAMLdestroyTree(YAMLtree**);
-void YAMLbuildTree(char*, YAMLtree**);
-void YAMLprintTree(YAMLtree*, YAMLmode);
-/* int YAMLfindIntegerByKey(const YAMLdict *, const char*, int, int); */
+YAMLtree* YAMLtreeCreate(void);
+void YAMLtreeDestroy(YAMLtree**);
+void YAMLtreeBuild(char*, YAMLtree**);
+void YAMLtreePrint(YAMLtree*, YAMLmode);
 
-YAMLnode* YAMLcreateNode(char*, char*, int);
-int YAMLdestroyNode(YAMLnode*);
-int YAMLaddChildNode(YAMLnode*, YAMLnode*);
-int YAMLappendNode(YAMLnode*, YAMLnode**);
-int YAMLprintNode(YAMLnode*, YAMLmode);
-YAMLnode* YAMLfindNodeByKey(YAMLnode*, const char*);
-YAMLnode* YAMLfindChildNodeByKey(YAMLnode*, const char*);
-char* YAMLfindChildValueByKey(YAMLnode*, const char*);
-
-int YAMLStringToIntArray(const char*, int*, int**);
+YAMLnode* YAMLnodeCreate(char*, char*, int);
+void YAMLnodeDestroy(YAMLnode*);
+void YAMLnodeAddChild(YAMLnode*, YAMLnode*);
+void YAMLnodeAppend(YAMLnode*, YAMLnode**);
+void YAMLnodePrint(YAMLnode*, YAMLmode);
+YAMLnode* YAMLnodeFindByKey(YAMLnode*, const char*);
+YAMLnode* YAMLnodeFindChildByKey(YAMLnode*, const char*);
+char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
 
 /*-----------------------------------------------------------------------------
  * Public macros
@@ -143,7 +140,7 @@ int YAMLStringToIntArray(const char*, int*, int**);
 #define YAML_SET_INTEGER_IF_KEY_MATCHES(_var, _key, _node) \
    else if (!strcmp(_node->key, _key)) { _var = atoi(_node->val); }
 #define YAML_SET_INTARRAY_IF_KEY_MATCHES(_count, _array, _key, _node) \
-   else if (!strcmp(_node->key, _key)) { YAMLStringToIntArray(_node->val, _count, _array); }
+   else if (!strcmp(_node->key, _key)) { StrToIntArray(_node->val, _count, _array); }
 #define YAML_SET_REAL_IF_KEY_MATCHES(_var, _key, _node) \
    else if (!strcmp(_node->key, _key)) { _var = atof(_node->val); }
 #define YAML_SET_STRING_IF_KEY_MATCHES(_var, _key, _node) \
@@ -155,7 +152,7 @@ int YAMLStringToIntArray(const char*, int*, int**);
 #define YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(_var, _val0, _val1, _node) \
    else if (!strcmp(_node->val, _val0) || !strcmp(_node->val, #_val1)) { _var = _val1; }
 #define YAML_SET_INTEGER_IF_KEY_EXISTS(_var, _key, _node) \
-   {char *val = YAMLfindChildValueByKey(_node, _key); if (val != NULL) { _var = atoi(val); }}
+   {char *val = YAMLnodeFindChildValueByKey(_node, _key); if (val != NULL) { _var = atoi(val); }}
 #define YAML_CALL_IF_KEY_MATCHES(_call, _args, _node, _key) \
    else if (!strcmp(_node->key, _key)) { _call(_args, _node); }
 #define YAML_CALL_IF_VAL_MATCHES(_call, _args, _node, _val) \

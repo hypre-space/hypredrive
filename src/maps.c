@@ -119,3 +119,42 @@ StrIntMapArrayDomainEntryExists(const StrIntMapArray valid, const char *string)
       return false;
    }
 }
+
+/*-----------------------------------------------------------------------------
+ * StrToIntArray
+ *-----------------------------------------------------------------------------*/
+
+void
+StrToIntArray(const char* string, int *count_ptr, int **array_ptr)
+{
+   char   *buffer;
+   char   *token;
+   int    *array;
+   int     count;
+
+   /* Find number of elements in array */
+   buffer = strdup(string);
+   token  = strtok(buffer, "[], ");
+   count  = 0;
+   while (token)
+   {
+      count++;
+      token = strtok(NULL, "[], ");
+   }
+   free(buffer);
+   *count_ptr = count;
+
+   /* Build array */
+   buffer = strdup(string);
+   array  = (int*) malloc(count * sizeof(int));
+   token  = strtok(buffer, "[], ");
+   count  = 0;
+   while (token)
+   {
+      array[count] = atoi(token);
+      count++;
+      token = strtok(NULL, "[], ");
+   }
+   free(buffer);
+   *array_ptr = array;
+}
