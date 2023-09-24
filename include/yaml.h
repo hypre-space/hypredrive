@@ -81,8 +81,33 @@ int YAMLStringToIntArray(const char*, int*, int**);
  * Public macros
  *-----------------------------------------------------------------------------*/
 
-#define YAML_VALIDATE_NODE(_node, _call) \
-   _node->valid = _call(_node->key, _node->val);
+#define YAML_VALIDATE_NODE(_node, _callA, _callB) \
+   { \
+      StrArray _keys = _callA(); \
+      if (StrArrayEntryExists(_keys, _node->key)) \
+      { \
+         StrIntMapArray _map_array = _callB(_node->key); \
+         if (_map_array.size > 0) \
+         { \
+            if (StrIntMapArrayDomainEntryExists(_map_array, _node->val)) \
+            { \
+               _node->valid = YAML_NODE_VALID; \
+            } \
+            else \
+            { \
+               _node->valid = YAML_NODE_INVALID_VAL; \
+            } \
+         } \
+         else \
+         { \
+            _node->valid = YAML_NODE_VALID; \
+         } \
+      } \
+      else \
+      { \
+         _node->valid = YAML_NODE_INVALID_KEY; \
+      } \
+   }
 
 #define YAML_CALL_IF_OPEN() if (0) {}
 #define YAML_CALL_IF_CLOSE(_node) else {}

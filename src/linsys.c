@@ -69,37 +69,6 @@ LinearSystemGetValidValues(const char* key)
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemCheckValidMapping
- *-----------------------------------------------------------------------------*/
-
-YAMLvalidity
-LinearSystemCheckValidMapping(const char* key, const char* val)
-{
-   StrArray keys = LinearSystemGetValidKeys();
-
-   if (StrArrayEntryExists(keys, key))
-   {
-      StrIntMapArray map_array = LinearSystemGetValidValues(key);
-
-      if (map_array.size > 0)
-      {
-         if (StrIntMapArrayDomainEntryExists(map_array, val))
-         {
-            return YAML_NODE_VALID;
-         }
-         else
-         {
-            return YAML_NODE_INVALID_VAL;
-         }
-      }
-
-      return YAML_NODE_VALID;
-   }
-
-   return YAML_NODE_INVALID_KEY;
-}
-
-/*-----------------------------------------------------------------------------
  * LinearSystemSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
@@ -131,7 +100,9 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
    child = parent->children;
    while (child)
    {
-      YAML_VALIDATE_NODE(child, LinearSystemCheckValidMapping);
+      YAML_VALIDATE_NODE(child,
+                         LinearSystemGetValidKeys,
+                         LinearSystemGetValidValues);
 
       if (!strcmp(child->key, "matrix_filename"))
       {

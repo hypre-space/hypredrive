@@ -36,7 +36,7 @@ ErrorCodeSet(ErrorCode code)
  * ErrorCodeGet
  *-----------------------------------------------------------------------------*/
 
-int
+uint32_t
 ErrorCodeGet(void)
 {
    return global_error_code;
