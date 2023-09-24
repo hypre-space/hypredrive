@@ -7,20 +7,56 @@
 
 #include "linsys.h"
 
-#if 0
+static const FieldOffsetMap ls_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FIELD_TYPE_STRING),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_filename, FIELD_TYPE_STRING),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_filename, FIELD_TYPE_STRING),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, x0_filename, FIELD_TYPE_STRING),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, sol_filename, FIELD_TYPE_STRING),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FIELD_TYPE_STRING),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FIELD_TYPE_INT),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FIELD_TYPE_INT),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, type, FIELD_TYPE_INT)
+};
+
+#define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
+
 /*-----------------------------------------------------------------------------
- * LinearSystemGetValidTypes
+ * LinearSystemSetFieldByName
  *-----------------------------------------------------------------------------*/
 
-StrIntMap*
-LinearSystemGetValidTypes(void)
+void
+LinearSystemSetFieldByName(LS_args *args, const char *name, const char *value)
 {
-   static StrIntMap out[] = {{"ij", 1},
-                             {"parcsr", 2}};
+   size_t i;
 
-   return out;
+   for (i = 0; i < LS_NUM_FIELDS; i++)
+   {
+      if (!strcmp(ls_field_offset_map[i].name, name))
+      {
+         switch (ls_field_offset_map[i].type)
+         {
+            case FIELD_TYPE_INT:
+               sscanf(value, "%d", (int*)((char*) args + ls_field_offset_map[i].offset));
+               break;
+
+            case FIELD_TYPE_DOUBLE:
+               sscanf(value, "%lf", (double*)((char*) args + ls_field_offset_map[i].offset));
+                    break;
+
+            case FIELD_TYPE_CHAR:
+               sscanf(value, "%c", (char*)((char*) args + ls_field_offset_map[i].offset));
+               break;
+
+            case FIELD_TYPE_STRING:
+               snprintf((char*) args + ls_field_offset_map[i].offset,
+                        MAX_FILENAME_LENGTH, "%s", value);
+               break;
+         }
+         return;
+      }
+   }
 }
-#endif
 
 /*-----------------------------------------------------------------------------
  * LinearSystemGetValidKeys
@@ -68,6 +104,28 @@ LinearSystemGetValidValues(const char* key)
    return STR_INT_MAP_ARRAY_VOID();
 }
 
+#if 0
+/*-----------------------------------------------------------------------------
+ * LinearSystemGetDataTypes
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+LinearSystemGetDataTypes(void)
+{
+   static StrIntMap map[] = {{"matrix_filename",  DATA_TYPE_CHAR},
+                             {"precmat_filename", DATA_TYPE_CHAR},
+                             {"rhs_filename",     DATA_TYPE_CHAR},
+                             {"x0_filename",      DATA_TYPE_CHAR},
+                             {"sol_filename",     DATA_TYPE_CHAR},
+                             {"dofmap_filename",  DATA_TYPE_CHAR},
+                             {"init_guess_mode",  DATA_TYPE_INT},
+                             {"rhs_mode",         DATA_TYPE_INT},
+                             {"type",             DATA_TYPE_INT}};
+
+   return STR_INT_MAP_ARRAY_CREATE(map);
+}
+#endif
+
 /*-----------------------------------------------------------------------------
  * LinearSystemSetDefaultArgs
  *-----------------------------------------------------------------------------*/
@@ -104,6 +162,11 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
                          LinearSystemGetValidKeys,
                          LinearSystemGetValidValues);
 
+      YAML_SET_ARG(args,
+                   child,
+                   LinearSystemSetFieldByName);
+
+#if 0
       if (!strcmp(child->key, "matrix_filename"))
       {
          strcpy(args->matrix_filename, child->val);
@@ -144,6 +207,7 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
       {
          ErrorMsgAddUnknownKey(child->key);
       }
+#endif
 
       child = child->next;
    }

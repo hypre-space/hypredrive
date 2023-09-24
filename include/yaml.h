@@ -82,7 +82,7 @@ int YAMLStringToIntArray(const char*, int*, int**);
  *-----------------------------------------------------------------------------*/
 
 #define YAML_VALIDATE_NODE(_node, _callA, _callB) \
-   { \
+   do { \
       StrArray _keys = _callA(); \
       if (StrArrayEntryExists(_keys, _node->key)) \
       { \
@@ -107,6 +107,12 @@ int YAMLStringToIntArray(const char*, int*, int**);
       { \
          _node->valid = YAML_NODE_INVALID_KEY; \
       } \
+   } while(0)
+
+#define YAML_SET_ARG(_args, _node, _callA) \
+   if (_node->valid == YAML_NODE_VALID) \
+   { \
+      _callA(_args, _node->key, _node->val); \
    }
 
 #define YAML_CALL_IF_OPEN() if (0) {}
