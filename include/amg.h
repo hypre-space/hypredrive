@@ -85,9 +85,7 @@ typedef struct AMG_args_struct {
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-int AMGSetDefaultArgs(AMG_args*);
-int AMGSetArgsFromYAML(AMG_args*, YAMLnode*);
-int AMGSetArgs(AMG_args*, YAMLnode*);
-int AMGCreate(AMG_args*, HYPRE_Solver*);
+void AMGSetArgs(void*, YAMLnode*);
+void AMGCreate(AMG_args*, HYPRE_Solver*);
 
 #endif

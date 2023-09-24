@@ -32,14 +32,14 @@ typedef enum YAMLvalidity_enum {
 } YAMLvalidity;
 
 /*-----------------------------------------------------------------------------
- * YAML mode enum (for printing purposes)
+ * YAML print mode enum (for printing the tree)
  *-----------------------------------------------------------------------------*/
 
-typedef enum YAMLmode_enum {
-   YAML_MODE_NONE,
-   YAML_MODE_ONLY_VALID,
-   YAML_MODE_ANY,
-} YAMLmode;
+typedef enum YAMLprintMode_enum {
+   YAML_PRINT_MODE_NONE,
+   YAML_PRINT_MODE_ONLY_VALID,
+   YAML_PRINT_MODE_ANY,
+} YAMLprintMode;
 
 /*-----------------------------------------------------------------------------
  * YAML node struct
@@ -70,13 +70,13 @@ typedef struct YAMLtree_struct {
 YAMLtree* YAMLtreeCreate(void);
 void YAMLtreeDestroy(YAMLtree**);
 void YAMLtreeBuild(char*, YAMLtree**);
-void YAMLtreePrint(YAMLtree*, YAMLmode);
+void YAMLtreePrint(YAMLtree*, YAMLprintMode);
 
 YAMLnode* YAMLnodeCreate(char*, char*, int);
 void YAMLnodeDestroy(YAMLnode*);
 void YAMLnodeAddChild(YAMLnode*, YAMLnode*);
 void YAMLnodeAppend(YAMLnode*, YAMLnode**);
-void YAMLnodePrint(YAMLnode*, YAMLmode);
+void YAMLnodePrint(YAMLnode*, YAMLprintMode);
 YAMLnode* YAMLnodeFindByKey(YAMLnode*, const char*);
 YAMLnode* YAMLnodeFindChildByKey(YAMLnode*, const char*);
 char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
@@ -158,7 +158,7 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
 #define YAML_CALL_IF_VAL_MATCHES(_call, _args, _node, _val) \
    else if (!strcmp(_node->val, _val)) { _call(_args, _node); }
 #define YAML_RETURN_IF_VAL_MATCHES(_node, _val) \
-   if (!strcmp(_node->val, _val)) { return EXIT_SUCCESS; }
+   if (!strcmp(_node->val, _val)) { return; }
 #define YAML_INC_INTEGER_IF_KEY_EXISTS(_var, _key, p) \
    { YAMLnode* c = p->children; while (c) { if (!strcmp(c->key, _key)) { _var++; } c = c->next; } }
 #endif

@@ -11,7 +11,7 @@
  * ILUSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 ILUSetDefaultArgs(ILU_args *args)
 {
    args->max_iter = 1;
@@ -25,22 +25,20 @@ ILUSetDefaultArgs(ILU_args *args)
    args->max_row_nnz = 1000;
    args->schur_max_iter = 3;
    args->droptol = 1.0e-02;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * ILUSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 ILUSetArgsFromYAML(ILU_args *args, YAMLnode *parent)
 {
    YAMLnode *child;
 
    if (!parent)
    {
-      return EXIT_SUCCESS;
+      return;
    }
 
    child = parent->children;
@@ -62,28 +60,26 @@ ILUSetArgsFromYAML(ILU_args *args, YAMLnode *parent)
 
       child = child->next;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * ILUSetArgs
  *-----------------------------------------------------------------------------*/
 
-int
-ILUSetArgs(ILU_args *args, YAMLnode *parent)
+void
+ILUSetArgs(void *vargs, YAMLnode *parent)
 {
+   ILU_args *args = (ILU_args*) vargs;
+
    ILUSetDefaultArgs(args);
    ILUSetArgsFromYAML(args, parent);
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * ILUCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 ILUCreate(ILU_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver precon;
@@ -91,6 +87,4 @@ ILUCreate(ILU_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_ILUCreate(&precon);
 
    *precon_ptr = precon;
-
-   return EXIT_SUCCESS;
 }

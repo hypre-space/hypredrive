@@ -35,7 +35,7 @@ typedef struct input_args_struct {
  * Public prototypes
  *-----------------------------------------------------------------------------*/
 
-int InputArgsCreate(const char*, const char*, input_args**);
+int InputArgsCreate(input_args**);
 int InputArgsDestroy(input_args**);
 int InputArgsParse(MPI_Comm, int, char**, input_args**);
 

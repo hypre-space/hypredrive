@@ -15,7 +15,7 @@
  *-----------------------------------------------------------------------------*/
 
 int
-InputArgsCreate(const char* precon, const char* solver, input_args **iargs_ptr)
+InputArgsCreate(input_args **iargs_ptr)
 {
    input_args *iargs = (input_args*) malloc(sizeof(input_args));
 
@@ -26,70 +26,9 @@ InputArgsCreate(const char* precon, const char* solver, input_args **iargs_ptr)
    /* Set default Linear System options */
    LinearSystemSetDefaultArgs(&iargs->ls);
 
-   /* Set preconditioner method */
-   if (precon)
-   {
-      if (!strcmp(precon, "boomeramg"))
-      {
-         iargs->precon_method = PRECON_BOOMERAMG;
-      }
-      else if (!strcmp(precon, "mgr"))
-      {
-         iargs->precon_method = PRECON_MGR;
-      }
-      else if (!strcmp(precon, "ilu"))
-      {
-         iargs->precon_method = PRECON_ILU;
-      }
-      else
-      {
-         iargs->precon_method = PRECON_BOOMERAMG;
-      }
-   }
-   else
-   {
-      iargs->precon_method = PRECON_NONE;
-   }
-
-   /* Set default preconditioner options */
-   PreconSetDefaultArgs(iargs->precon_method, &iargs->precon);
-
-#if 0
-   /* Set solver method */
-   if (solver)
-   {
-      if (!strcmp(solver, "pcg"))
-      {
-         iargs->solver_method = SOLVER_PCG;
-      }
-      else if (!strcmp(solver, "gmres"))
-      {
-         iargs->solver_method = SOLVER_GMRES;
-      }
-      else if (!strcmp(solver, "fgmres"))
-      {
-         iargs->solver_method = SOLVER_FGMRES;
-      }
-      else if (!strcmp(solver, "bicgstab"))
-      {
-         iargs->solver_method = SOLVER_BICGSTAB;
-      }
-      else
-      {
-         ErrorMsgAddInvalidString(solver);
-         *iargs_ptr = iargs;
-
-         return EXIT_FAILURE;
-      }
-   }
-   else
-   {
-      iargs->solver_method = SOLVER_GMRES;
-   }
-
-   /* Set default solver options */
-   SolverSetDefaultArgs(iargs->solver_method, &iargs->solver);
-#endif
+   /* Set default preconditioner and solver */
+   iargs->solver_method = SOLVER_PCG;
+   iargs->precon_method = PRECON_BOOMERAMG;
 
    *iargs_ptr = iargs;
 
@@ -114,12 +53,12 @@ InputArgsDestroy(input_args **iargs_ptr)
  *-----------------------------------------------------------------------------*/
 
 int
-InputArgsParseGeneral(input_args *iargs, YAMLtree *params)
+InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 {
    YAMLnode    *parent;
    YAMLnode    *child;
 
-   parent = YAMLnodeFindByKey(params->root, "general");
+   parent = YAMLnodeFindByKey(tree->root, "general");
    if (!parent)
    {
       return EXIT_SUCCESS;
@@ -171,11 +110,11 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *params)
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsParseLinearSystem(input_args *iargs, YAMLtree *params)
+InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
 {
    YAMLnode    *parent;
 
-   parent = YAMLnodeFindByKey(params->root, "linear_system");
+   parent = YAMLnodeFindByKey(tree->root, "linear_system");
    if (!parent)
    {
       ErrorCodeSet(ERROR_MISSING_KEY);
@@ -197,11 +136,11 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *params)
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsParseSolver(input_args *iargs, YAMLtree *params)
+InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
 {
    YAMLnode  *parent;
 
-   parent = YAMLnodeFindByKey(params->root, "solver");
+   parent = YAMLnodeFindByKey(tree->root, "solver");
    if (!parent)
    {
       ErrorCodeSet(ERROR_MISSING_KEY);
@@ -237,14 +176,41 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *params)
  * InputArgsParsePrecon
  *-----------------------------------------------------------------------------*/
 
-int
-InputArgsParsePrecon(input_args *iargs, YAMLnode *node)
+void
+InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
 {
-   PreconSetArgsFromYAML(iargs->precon_method, &iargs->precon, node);
-   ErrorMsgPrint();
-   ErrorMsgClear();
+   YAMLnode  *parent;
 
-   return EXIT_SUCCESS;
+   parent = YAMLnodeFindByKey(tree->root, "preconditioner");
+   if (!parent)
+   {
+      ErrorCodeSet(ERROR_MISSING_KEY);
+      ErrorMsgAddMissingKey("preconditioner");
+      return;
+   }
+   else
+   {
+      YAML_NODE_SET_VALID(parent);
+   }
+
+   /* Check if a preconditioner type was set */
+   if (!parent->children)
+   {
+      ErrorCodeSet(ERROR_MISSING_PRECON);
+      return;
+   }
+
+   /* Check if more than one preconditioner type was set (this is not supported!) */
+   if (parent->children->next)
+   {
+      ErrorCodeSet(ERROR_EXTRA_KEY);
+      ErrorMsgAddExtraKey(parent->children->next->key);
+      return;
+   }
+
+   iargs->precon_method = StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
+                                                 parent->children->key);
+   PreconSetArgsFromYAML(&iargs->precon, parent);
 }
 
 /*-----------------------------------------------------------------------------
@@ -378,9 +344,7 @@ int
 InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
 {
    input_args   *iargs;
-   YAMLtree     *params;
-   YAMLnode     *solver_node;
-   YAMLnode     *precon_node;
+   YAMLtree     *tree;
 
    int           text_size;
    char         *text = NULL;
@@ -406,31 +370,27 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
 
    /* Build YAML tree */
-   YAMLtreeBuild(text, &params);
+   YAMLtreeBuild(text, &tree);
 
    /* Return earlier if YAML tree was not built properly */
    if (!myid && ErrorCodeActive())
    {
-      YAMLtreePrint(params, YAML_MODE_ANY);
+      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
       ErrorMsgPrintAndAbort(comm);
    }
    MPI_Barrier(comm);
 
-   /* Find preconditioner and solver nodes */
-   solver_node = YAMLnodeFindByKey(params->root, "solver");
-   precon_node = YAMLnodeFindByKey(params->root, "preconditioner");
-
    /* Parse file sections */
-   InputArgsCreate(precon_node->val, solver_node->children->key, &iargs);
-   InputArgsParseGeneral(iargs, params);
-   InputArgsParseLinearSystem(iargs, params);
-   InputArgsParseSolver(iargs, params);
-   InputArgsParsePrecon(iargs, precon_node);
+   InputArgsCreate(&iargs);
+   InputArgsParseGeneral(iargs, tree);
+   InputArgsParseLinearSystem(iargs, tree);
+   InputArgsParseSolver(iargs, tree);
+   InputArgsParsePrecon(iargs, tree);
 
    /* Rank 0: Print tree to stdout */
    if (!myid)
    {
-      YAMLtreePrint(params, YAML_MODE_ANY);
+      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
 
       if (ErrorCodeActive())
       {
@@ -444,7 +404,7 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
             with it. */
 
    *args_ptr = iargs;
-   YAMLtreeDestroy(&params);
+   YAMLtreeDestroy(&tree);
    free(text);
 
    return EXIT_SUCCESS;

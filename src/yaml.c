@@ -175,7 +175,7 @@ YAMLtreeBuild(char *text, YAMLtree **tree_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLtreePrint(YAMLtree *tree, YAMLmode validity)
+YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
 {
    YAMLnode *child;
    int       i, divisor = 80;
@@ -191,7 +191,7 @@ YAMLtreePrint(YAMLtree *tree, YAMLmode validity)
    child = tree->root->children;
    while (child != NULL)
    {
-      YAMLnodePrint(child, validity);
+      YAMLnodePrint(child, print_mode);
       child = child->next;
    }
    for (i = 0; i < divisor; i++) { printf("-"); } printf("\n");
@@ -334,15 +334,15 @@ YAMLnodePrintHelper(YAMLnode *node, const char *cKey, const char *cVal, const ch
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLnodePrint(YAMLnode *node, YAMLmode mode)
+YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
 {
    YAMLnode *child;
 
    if (node)
    {
-      switch (mode)
+      switch (print_mode)
       {
-         case YAML_MODE_ANY:
+         case YAML_PRINT_MODE_ANY:
             if (node->valid == YAML_NODE_VALID)
             {
                YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_GREEN, "");
@@ -374,14 +374,14 @@ YAMLnodePrint(YAMLnode *node, YAMLmode mode)
             }
             break;
 
-         case YAML_MODE_ONLY_VALID:
+         case YAML_PRINT_MODE_ONLY_VALID:
             if (node->valid == YAML_NODE_VALID)
             {
                YAMLnodePrintHelper(node, "", "", "");
             }
             break;
 
-         case YAML_MODE_NONE:
+         case YAML_PRINT_MODE_NONE:
          default:
             YAMLnodePrintHelper(node, "", "", "");
             break;
@@ -390,7 +390,7 @@ YAMLnodePrint(YAMLnode *node, YAMLmode mode)
 
       while (child != NULL)
       {
-         YAMLnodePrint(child, mode);
+         YAMLnodePrint(child, print_mode);
          child = child->next;
       }
    }

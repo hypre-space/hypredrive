@@ -11,7 +11,7 @@
  * MGRSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRSetDefaultArgs(MGR_args *args)
 {
    args->max_iter = 1;
@@ -35,15 +35,13 @@ MGRSetDefaultArgs(MGR_args *args)
       args->restriction_types[i] = 0;
       args->coarse_grid_types[i] = 0;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * MGRSetFRelaxArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRSetFRelaxArgsFromYAML(MGR_args *args, YAMLnode *parent)
 {
    HYPRE_Int lvl = args->lvl;
@@ -78,15 +76,13 @@ MGRSetFRelaxArgsFromYAML(MGR_args *args, YAMLnode *parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "ge-piv", 99, parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "ge-inv", 199, parent)
    YAML_SET_IF_CLOSE_(parent)
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * MGRSetGRelaxArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRSetGRelaxArgsFromYAML(MGR_args *args, YAMLnode *parent)
 {
    HYPRE_Int lvl = args->lvl;
@@ -109,15 +105,13 @@ MGRSetGRelaxArgsFromYAML(MGR_args *args, YAMLnode *parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->grelax_types[lvl], "jacobi", 1, parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->grelax_types[lvl], "ilu", 16, parent)
    YAML_SET_IF_CLOSE_(parent)
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * MGRSetProlongationArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRSetProlongationArgsFromYAML(MGR_args *args, YAMLnode *parent)
 {
    HYPRE_Int lvl = args->lvl;
@@ -131,15 +125,13 @@ MGRSetProlongationArgsFromYAML(MGR_args *args, YAMLnode *parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "approx-inv", 4, parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "blk-jacobi", 12, parent)
    YAML_SET_IF_CLOSE_(parent)
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * MGRSetRestrictionArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRSetRestrictionArgsFromYAML(MGR_args *args, YAMLnode *parent)
 {
    HYPRE_Int lvl = args->lvl;
@@ -152,15 +144,13 @@ MGRSetRestrictionArgsFromYAML(MGR_args *args, YAMLnode *parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->restriction_types[lvl], "blk-jacobi", 12, parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->restriction_types[lvl], "cpr-like", 13, parent)
    YAML_SET_IF_CLOSE_(parent)
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * MGRSetCoarseGridArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRSetCoarseGridArgsFromYAML(MGR_args *args, YAMLnode *parent)
 {
    HYPRE_Int lvl = args->lvl;
@@ -173,15 +163,13 @@ MGRSetCoarseGridArgsFromYAML(MGR_args *args, YAMLnode *parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->coarse_grid_types[lvl], "cpr-like-bdiag", 3, parent)
    YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->coarse_grid_types[lvl], "approx-inv", 4, parent)
    YAML_SET_IF_CLOSE_(parent)
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * MGRSetCoarseSolverArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRSetCoarseSolverArgsFromYAML(MGR_args *args, YAMLnode *parent)
 {
    HYPRE_Int lvl = args->num_levels - 1;
@@ -197,22 +185,20 @@ MGRSetCoarseSolverArgsFromYAML(MGR_args *args, YAMLnode *parent)
       args->grelax_types[lvl] = 0;
    }
    /* TODO: Add SuperLU */
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * MGRSetLevelArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *parent)
 {
    YAMLnode *child;
 
    if (!parent)
    {
-      return EXIT_SUCCESS;
+      return;
    }
 
    /* Which MGR level am I? */
@@ -234,22 +220,20 @@ MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *parent)
 
       child = child->next;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * MGRSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
 {
    YAMLnode *child;
 
    if (!parent)
    {
-      return EXIT_SUCCESS;
+      return;
    }
 
    /* Compute num_levels */
@@ -271,15 +255,26 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
 
       child = child->next;
    }
+}
 
-   return EXIT_SUCCESS;
+/*-----------------------------------------------------------------------------
+ * MGRSetArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+MGRSetArgs(void *vargs, YAMLnode *parent)
+{
+   MGR_args *args = (MGR_args*) vargs;
+
+   MGRSetDefaultArgs(args);
+   MGRSetArgsFromYAML(args, parent);
 }
 
 /*-----------------------------------------------------------------------------
  * MGRDestroyArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRDestroyArgs(MGR_args **args_ptr)
 {
    MGR_args *args;
@@ -291,15 +286,13 @@ MGRDestroyArgs(MGR_args **args_ptr)
    }
 
    *args_ptr = NULL;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * MGRCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRCreate(MGR_args *args, HYPRE_IntArray *dofmap, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver   precon;
@@ -375,6 +368,4 @@ MGRCreate(MGR_args *args, HYPRE_IntArray *dofmap, HYPRE_Solver *precon_ptr)
    {
       free(c_dofs[lvl]);
    }
-
-   return EXIT_SUCCESS;
 }

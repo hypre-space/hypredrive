@@ -57,9 +57,8 @@ typedef struct MGR_args_struct {
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-int MGRSetDefaultArgs(MGR_args*);
-int MGRSetArgsFromYAML(MGR_args*, YAMLnode*);
-int MGRCreate(MGR_args*, HYPRE_IntArray*, HYPRE_Solver*);
-int MGRDestroyArgs(MGR_args**);
+void MGRSetArgs(void*, YAMLnode*);
+void MGRCreate(MGR_args*, HYPRE_IntArray*, HYPRE_Solver*);
+void MGRDestroyArgs(MGR_args**);
 
 #endif

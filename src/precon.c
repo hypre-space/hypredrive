@@ -7,34 +7,74 @@
 
 #include "precon.h"
 
+static const FieldOffsetMap precon_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(precon_args, amg, FIELD_TYPE_STRUCT, AMGSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(precon_args, mgr, FIELD_TYPE_STRUCT, MGRSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(precon_args, ilu, FIELD_TYPE_STRUCT, ILUSetArgs),
+};
+
+#define PRECON_NUM_FIELDS (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
+
 /*-----------------------------------------------------------------------------
- * PreconSetDefaultArgs
+ * PreconSetFieldByName
  *-----------------------------------------------------------------------------*/
 
-int
-PreconSetDefaultArgs(precon_t     precon_method,
-                     precon_args *args)
+void
+PreconSetFieldByName(precon_args *args, const char *name, YAMLnode *node)
 {
-   switch (precon_method)
+   for (size_t i = 0; i < PRECON_NUM_FIELDS; i++)
    {
-      case PRECON_BOOMERAMG:
-         AMGSetDefaultArgs(&args->amg);
-         break;
+      /* Which union type are we trying to set? */
+      if (!strcmp(precon_field_offset_map[i].name, name))
+      {
+         precon_field_offset_map[i].setter(
+            (void*)((char*) args + precon_field_offset_map[i].offset),
+            node);
+         return;
+      }
+   }
+}
 
-      case PRECON_MGR:
-         MGRSetDefaultArgs(&args->mgr);
-         break;
+/*-----------------------------------------------------------------------------
+ * PreconGetValidKeys
+ *-----------------------------------------------------------------------------*/
 
-      case PRECON_ILU:
-         ILUSetDefaultArgs(&args->ilu);
-         break;
+StrArray
+PreconGetValidKeys(void)
+{
+   static const char* keys[PRECON_NUM_FIELDS];
 
-      default:
-         ErrorMsgAddInvalidPreconOption((int) precon_method);
-         return EXIT_FAILURE;
+   for(size_t i = 0; i < PRECON_NUM_FIELDS; i++)
+   {
+      keys[i] = precon_field_offset_map[i].name;
    }
 
-   return EXIT_SUCCESS;
+   return STR_ARRAY_CREATE(keys);
+}
+
+/*-----------------------------------------------------------------------------
+ * PreconGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+PreconGetValidValues(const char* key)
+{
+   /* The "preconditioner" enry does not hold values, so we create a void map */
+   return STR_INT_MAP_ARRAY_VOID();
+}
+
+/*-----------------------------------------------------------------------------
+ * PreconGetValidTypeIntMap
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+PreconGetValidTypeIntMap(void)
+{
+   static StrIntMap map[] = {{"amg", (int) PRECON_BOOMERAMG},
+                             {"mgr", (int) PRECON_MGR},
+                             {"ilu", (int) PRECON_ILU}};
+
+   return STR_INT_MAP_ARRAY_CREATE(map);
 }
 
 /*-----------------------------------------------------------------------------
@@ -42,27 +82,22 @@ PreconSetDefaultArgs(precon_t     precon_method,
  *-----------------------------------------------------------------------------*/
 
 int
-PreconSetArgsFromYAML(precon_t      precon_method,
-                      precon_args  *args,
-                      YAMLnode     *node)
+PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 {
-   switch (precon_method)
+   YAMLnode    *child;
+
+   child = parent->children;
+   while (child)
    {
-      case PRECON_BOOMERAMG:
-         AMGSetArgsFromYAML(&args->amg, node);
-         break;
+      YAML_VALIDATE_NODE(child,
+                         PreconGetValidKeys,
+                         PreconGetValidValues);
 
-      case PRECON_MGR:
-         MGRSetArgsFromYAML(&args->mgr, node);
-         break;
+      YAML_SET_ARG_STRUCT(child,
+                          args,
+                          PreconSetFieldByName);
 
-      case PRECON_ILU:
-         ILUSetArgsFromYAML(&args->ilu, node);
-         break;
-
-      default:
-         ErrorMsgAddInvalidPreconOption((int) precon_method);
-         return EXIT_FAILURE;
+      child = child->next;
    }
 
    return EXIT_SUCCESS;

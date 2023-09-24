@@ -33,9 +33,7 @@ typedef struct ILU_args_struct {
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-int ILUSetDefaultArgs(ILU_args*);
-int ILUSetArgsFromYAML(ILU_args*, YAMLnode*);
-int ILUSetArgs(ILU_args*, YAMLnode*);
-int ILUCreate(ILU_args*, HYPRE_Solver*);
+void ILUSetArgs(void*, YAMLnode*);
+void ILUCreate(ILU_args*, HYPRE_Solver*);
 
 #endif

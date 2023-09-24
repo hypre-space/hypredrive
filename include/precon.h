@@ -11,6 +11,8 @@
 #include "ilu.h"
 #include "amg.h"
 #include "mgr.h"
+#include "yaml.h"
+#include "field.h"
 
 /*--------------------------------------------------------------------------
  * Preconditioner types enum
@@ -28,8 +30,8 @@ typedef enum precon_type_enum {
  *--------------------------------------------------------------------------*/
 
 typedef union precon_args_union {
-   MGR_args      mgr;
    AMG_args      amg;
+   MGR_args      mgr;
    ILU_args      ilu;
 } precon_args;
 
@@ -37,8 +39,11 @@ typedef union precon_args_union {
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-int PreconSetDefaultArgs(precon_t, precon_args*);
-int PreconSetArgsFromYAML(precon_t, precon_args*, YAMLnode*);
+StrArray PreconGetValidKeys(void);
+StrIntMapArray PreconGetValidValues(const char*);
+StrIntMapArray PreconGetValidTypeIntMap(void);
+
+int PreconSetArgsFromYAML(precon_args*, YAMLnode*); /* TODO: change name to PreconSetArgs */
 int PreconCreate(precon_t, precon_args*, HYPRE_IntArray*, HYPRE_Solver*);
 int PreconDestroy(precon_t, HYPRE_Solver*);
 

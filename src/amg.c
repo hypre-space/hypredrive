@@ -11,7 +11,7 @@
  * AMGSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 AMGSetDefaultArgs(AMG_args *args)
 {
    args->interp_type = 6;
@@ -67,8 +67,6 @@ AMGSetDefaultArgs(AMG_args *args)
    args->fsai_th = 1.0e-3;
    args->fsai_kap_tol = 1.0e-3;
 
-   ILUSetDefaultArgs(&args->ilu);
-
    args->smooth_type = 5;
    args->smooth_num_levels = 0;
    args->smooth_num_sweeps = 1;
@@ -81,20 +79,18 @@ AMGSetDefaultArgs(AMG_args *args)
    args->tol = 0.0;
    args->max_iter = 1;
    args->print_level = 0;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * AMGSetSmootherArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 AMGSetSmootherArgsFromYAML(AMG_args *args, YAMLnode *node)
 {
    /* Call specific SetArgsFromYAML function */
    YAML_CALL_IF_OPEN()
-   YAML_CALL_IF_VAL_MATCHES(ILUSetArgsFromYAML, &args->ilu, node, "ilu")
+   YAML_CALL_IF_VAL_MATCHES(ILUSetArgs, &args->ilu, node, "ilu")
    YAML_CALL_IF_CLOSE()
 
    /* Set smoother codes */
@@ -102,22 +98,20 @@ AMGSetSmootherArgsFromYAML(AMG_args *args, YAMLnode *node)
    YAML_SET_INTEGER_IF_VAL_MATCHES_TWO(args->smooth_type, "ilu", 5, node)
    YAML_SET_INTEGER_IF_VAL_MATCHES_TWO(args->smooth_type, "fsai", 4, node)
    YAML_SET_IF_CLOSE_(node)
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * AMGSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 AMGSetArgsFromYAML(AMG_args *args, YAMLnode *parent)
 {
    YAMLnode *child;
 
    if (!parent)
    {
-      return EXIT_SUCCESS;
+      return;
    }
 
    child = parent->children;
@@ -183,28 +177,26 @@ AMGSetArgsFromYAML(AMG_args *args, YAMLnode *parent)
 
       child = child->next;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * AMGSetArgs
  *-----------------------------------------------------------------------------*/
 
-int
-AMGSetArgs(AMG_args *args, YAMLnode *parent)
+void
+AMGSetArgs(void *vargs, YAMLnode *parent)
 {
+   AMG_args *args = (AMG_args*) vargs;
+
    AMGSetDefaultArgs(args);
    AMGSetArgsFromYAML(args, parent);
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * AMGCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver precon;
@@ -275,6 +267,4 @@ AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetKeepTranspose(precon, args->keep_transpose);
 
    *precon_ptr = precon;
-
-   return EXIT_SUCCESS;
 }

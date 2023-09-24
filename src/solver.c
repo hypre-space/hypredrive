@@ -132,31 +132,6 @@ SolverSetArgsFromYAML(solver_args *args, YAMLnode *parent)
       child = child->next;
    }
 
-#if 0
-   switch (solver_method)
-   {
-      case SOLVER_PCG:
-         PCGSetArgsFromYAML(&args->pcg, node);
-         break;
-
-      case SOLVER_GMRES:
-         GMRESSetArgsFromYAML(&args->gmres, node);
-         break;
-
-      case SOLVER_FGMRES:
-         FGMRESSetArgsFromYAML(&args->fgmres, node);
-         break;
-
-      case SOLVER_BICGSTAB:
-         BiCGSTABSetArgsFromYAML(&args->bicgstab, node);
-         break;
-
-      default:
-         ErrorMsgAddInvalidSolverOption((int) solver_method);
-         return EXIT_FAILURE;
-   }
-#endif
-
    return EXIT_SUCCESS;
 }
 
