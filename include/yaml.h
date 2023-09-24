@@ -109,10 +109,10 @@ int YAMLStringToIntArray(const char*, int*, int**);
       } \
    } while(0)
 
-#define YAML_SET_ARG(_args, _node, _callA) \
+#define YAML_SET_ARG(_node, _args, _call) \
    if (_node->valid == YAML_NODE_VALID) \
    { \
-      _callA(_args, _node->key, _node->val); \
+      _call(_args, _node->key, _node->val); \
    }
 
 #define YAML_CALL_IF_OPEN() if (0) {}

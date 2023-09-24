@@ -42,7 +42,7 @@ LinearSystemSetFieldByName(LS_args *args, const char *name, const char *value)
 
             case FIELD_TYPE_DOUBLE:
                sscanf(value, "%lf", (double*)((char*) args + ls_field_offset_map[i].offset));
-                    break;
+               break;
 
             case FIELD_TYPE_CHAR:
                sscanf(value, "%c", (char*)((char*) args + ls_field_offset_map[i].offset));
@@ -65,15 +65,12 @@ LinearSystemSetFieldByName(LS_args *args, const char *name, const char *value)
 StrArray
 LinearSystemGetValidKeys(void)
 {
-   static const char* keys[] = {"matrix_filename",
-                                "precmat_filename",
-                                "rhs_filename",
-                                "x0_filename",
-                                "sol_filename",
-                                "dofmap_filename",
-                                "init_guess_mode",
-                                "rhs_mode",
-                                "type"};
+   static const char* keys[LS_NUM_FIELDS];
+
+   for(size_t i = 0; i < LS_NUM_FIELDS; i++)
+   {
+      keys[i] = ls_field_offset_map[i].name;
+   }
 
    return STR_ARRAY_CREATE(keys);
 }
@@ -103,28 +100,6 @@ LinearSystemGetValidValues(const char* key)
 
    return STR_INT_MAP_ARRAY_VOID();
 }
-
-#if 0
-/*-----------------------------------------------------------------------------
- * LinearSystemGetDataTypes
- *-----------------------------------------------------------------------------*/
-
-StrIntMapArray
-LinearSystemGetDataTypes(void)
-{
-   static StrIntMap map[] = {{"matrix_filename",  DATA_TYPE_CHAR},
-                             {"precmat_filename", DATA_TYPE_CHAR},
-                             {"rhs_filename",     DATA_TYPE_CHAR},
-                             {"x0_filename",      DATA_TYPE_CHAR},
-                             {"sol_filename",     DATA_TYPE_CHAR},
-                             {"dofmap_filename",  DATA_TYPE_CHAR},
-                             {"init_guess_mode",  DATA_TYPE_INT},
-                             {"rhs_mode",         DATA_TYPE_INT},
-                             {"type",             DATA_TYPE_INT}};
-
-   return STR_INT_MAP_ARRAY_CREATE(map);
-}
-#endif
 
 /*-----------------------------------------------------------------------------
  * LinearSystemSetDefaultArgs
@@ -162,56 +137,12 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
                          LinearSystemGetValidKeys,
                          LinearSystemGetValidValues);
 
-      YAML_SET_ARG(args,
-                   child,
+      YAML_SET_ARG(child,
+                   args,
                    LinearSystemSetFieldByName);
-
-#if 0
-      if (!strcmp(child->key, "matrix_filename"))
-      {
-         strcpy(args->matrix_filename, child->val);
-      }
-      else if (!strcmp(child->key, "precmat_filename"))
-      {
-         strcpy(args->precmat_filename, child->val);
-      }
-      else if (!strcmp(child->key, "rhs_filename"))
-      {
-         strcpy(args->rhs_filename, child->val);
-      }
-      else if (!strcmp(child->key, "x0_filename"))
-      {
-         strcpy(args->x0_filename, child->val);
-      }
-      else if (!strcmp(child->key, "sol_filename"))
-      {
-         strcpy(args->sol_filename, child->val);
-      }
-      else if (!strcmp(child->key, "dofmap_filename"))
-      {
-         strcpy(args->dofmap_filename, child->val);
-      }
-      else if (!strcmp(child->key, "init_guess_mode"))
-      {
-         args->init_guess_mode = (HYPRE_Int) atoi(child->val);
-      }
-      else if (!strcmp(child->key, "rhs_mode"))
-      {
-         args->rhs_mode = (HYPRE_Int) atoi(child->val);
-      }
-      else if (!strcmp(child->key, "type"))
-      {
-         args->type = (HYPRE_Int) atoi(child->val);
-      }
-      else
-      {
-         ErrorMsgAddUnknownKey(child->key);
-      }
-#endif
 
       child = child->next;
    }
-
 
    return EXIT_SUCCESS;
 }
