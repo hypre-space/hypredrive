@@ -7,6 +7,98 @@
 
 #include "linsys.h"
 
+#if 0
+/*-----------------------------------------------------------------------------
+ * LinearSystemGetValidTypes
+ *-----------------------------------------------------------------------------*/
+
+StrIntMap*
+LinearSystemGetValidTypes(void)
+{
+   static StrIntMap out[] = {{"ij", 1},
+                             {"parcsr", 2}};
+
+   return out;
+}
+#endif
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemGetValidKeys
+ *-----------------------------------------------------------------------------*/
+
+StrArray
+LinearSystemGetValidKeys(void)
+{
+   static const char* keys[] = {"matrix_filename",
+                                "precmat_filename",
+                                "rhs_filename",
+                                "x0_filename",
+                                "sol_filename",
+                                "dofmap_filename",
+                                "init_guess_mode",
+                                "rhs_mode",
+                                "type"};
+
+   return STR_ARRAY_CREATE(keys);
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+LinearSystemGetValidValues(const char* key)
+{
+   if (!strcmp(key, "type"))
+   {
+      static StrIntMap map[] = {{"ij",     1},
+                                {"parcsr", 2}};
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "rhs_mode") ||
+            !strcmp(key, "init_guess_mode") )
+   {
+      static StrIntMap map[] = {{"zeros",  0},
+                                {"ones",   1},
+                                {"file",   2},
+                                {"random", 3}};
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+
+   return STR_INT_MAP_ARRAY_VOID();
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemCheckValidMapping
+ *-----------------------------------------------------------------------------*/
+
+YAMLvalidity
+LinearSystemCheckValidMapping(const char* key, const char* val)
+{
+   StrArray keys = LinearSystemGetValidKeys();
+
+   if (StrArrayEntryExists(keys, key))
+   {
+      StrIntMapArray map_array = LinearSystemGetValidValues(key);
+
+      if (map_array.size > 0)
+      {
+         if (StrIntMapArrayDomainEntryExists(map_array, val))
+         {
+            return YAML_NODE_VALID;
+         }
+         else
+         {
+            return YAML_NODE_INVALID_VAL;
+         }
+      }
+
+      return YAML_NODE_VALID;
+   }
+
+   return YAML_NODE_INVALID_KEY;
+}
+
 /*-----------------------------------------------------------------------------
  * LinearSystemSetDefaultArgs
  *-----------------------------------------------------------------------------*/
@@ -39,6 +131,8 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
    child = parent->children;
    while (child)
    {
+      YAML_VALIDATE_NODE(child, LinearSystemCheckValidMapping);
+
       if (!strcmp(child->key, "matrix_filename"))
       {
          strcpy(args->matrix_filename, child->val);

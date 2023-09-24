@@ -158,6 +158,9 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *params)
       child = child->next;
    }
 
+   ErrorMsgPrint();
+   ErrorMsgClear();
+
    return EXIT_SUCCESS;
 }
 
@@ -177,6 +180,8 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *params)
    }
 
    LinearSystemSetArgsFromYAML(&iargs->ls, parent);
+   ErrorMsgPrint();
+   ErrorMsgClear();
 
    return EXIT_SUCCESS;
 }
@@ -189,6 +194,8 @@ int
 InputArgsParseSolver(input_args *iargs, YAMLnode *node)
 {
    SolverSetArgsFromYAML(iargs->solver_method, &iargs->solver, node);
+   ErrorMsgPrint();
+   ErrorMsgClear();
 
    return EXIT_SUCCESS;
 }
@@ -201,6 +208,8 @@ int
 InputArgsParsePrecon(input_args *iargs, YAMLnode *node)
 {
    PreconSetArgsFromYAML(iargs->precon_method, &iargs->precon, node);
+   ErrorMsgPrint();
+   ErrorMsgClear();
 
    return EXIT_SUCCESS;
 }
@@ -366,12 +375,6 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    /* Build YAML tree */
    YAMLbuildTree(text, &params);
 
-   /* Rank 0: Print tree to stdout */
-   if (!myid)
-   {
-      YAMLprintTree(params);
-   }
-
    /* Find preconditioner and solver nodes */
    solver_node = YAMLfindNodeByKey(params->root, "solver");
    precon_node = YAMLfindNodeByKey(params->root, "preconditioner");
@@ -382,6 +385,20 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    InputArgsParseLinearSystem(iargs, params);
    InputArgsParseSolver(iargs, solver_node);
    InputArgsParsePrecon(iargs, precon_node);
+
+   /* Rank 0: Print tree to stdout */
+   if (!myid)
+   {
+      YAMLprintTree(params, YAML_MODE_INVALID);
+
+      if (ErrorCodeGet() > 0)
+      {
+         ErrorCodeDescribe();
+         ErrorMsgPrint();
+         ErrorMsgClear();
+         MPI_Abort(comm, ErrorCodeGet());
+      }
+   }
 
    /* TODO: check if any config option has been passed in via CLI.
             If so, overwrite the data stored in the YAMLtree object

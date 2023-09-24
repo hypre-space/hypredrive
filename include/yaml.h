@@ -8,13 +8,31 @@
 #ifndef YAML_HEADER
 #define YAML_HEADER
 
+#include <limits.h>
 #include <string.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <limits.h>
 #include "error.h"
+#include "utils.h"
 
 #define MAX_LINE_LENGTH 1024
+
+/*-----------------------------------------------------------------------------
+ * YAML validity enum
+ *-----------------------------------------------------------------------------*/
+
+typedef enum YAMLvalidity_enum {
+   YAML_NODE_VALID,
+   YAML_NODE_INVALID_KEY,
+   YAML_NODE_INVALID_VAL,
+} YAMLvalidity;
+
+typedef enum YAMLmode_enum {
+   YAML_MODE_ANY,
+   YAML_MODE_VALID,
+   YAML_MODE_INVALID,
+} YAMLmode;
 
 /*-----------------------------------------------------------------------------
  * YAML node struct
@@ -24,6 +42,7 @@ typedef struct YAMLnode_struct {
    char                     *key;
    char                     *val;
    int                       level;
+   YAMLvalidity              valid;
    struct YAMLnode_struct   *parent;
    struct YAMLnode_struct   *children;
    struct YAMLnode_struct   *next;
@@ -44,14 +63,14 @@ typedef struct YAMLtree_struct {
 YAMLtree* YAMLcreateTree(void);
 int YAMLdestroyTree(YAMLtree**);
 int YAMLbuildTree(char*, YAMLtree**);
-int YAMLprintTree(YAMLtree*);
+int YAMLprintTree(YAMLtree*, YAMLmode);
 /* int YAMLfindIntegerByKey(const YAMLdict *, const char*, int, int); */
 
 YAMLnode* YAMLcreateNode(char*, char*, int);
 int YAMLdestroyNode(YAMLnode*);
 int YAMLaddChildNode(YAMLnode*, YAMLnode*);
 int YAMLappendNode(YAMLnode*, YAMLnode**);
-int YAMLprintNode(YAMLnode*);
+int YAMLprintNode(YAMLnode*, YAMLmode);
 YAMLnode* YAMLfindNodeByKey(YAMLnode*, const char*);
 YAMLnode* YAMLfindChildNodeByKey(YAMLnode*, const char*);
 char* YAMLfindChildValueByKey(YAMLnode*, const char*);
@@ -61,6 +80,9 @@ int YAMLStringToIntArray(const char*, int*, int**);
 /*-----------------------------------------------------------------------------
  * Public macros
  *-----------------------------------------------------------------------------*/
+
+#define YAML_VALIDATE_NODE(_node, _call) \
+   _node->valid = _call(_node->key, _node->val);
 
 #define YAML_CALL_IF_OPEN() if (0) {}
 #define YAML_CALL_IF_CLOSE(_node) else {}

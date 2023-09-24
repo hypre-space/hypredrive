@@ -175,7 +175,7 @@ YAMLbuildTree(char *text, YAMLtree **tree_ptr)
  *-----------------------------------------------------------------------------*/
 
 int
-YAMLprintTree(YAMLtree *tree)
+YAMLprintTree(YAMLtree *tree, YAMLmode validity)
 {
    YAMLnode *child;
    int       i, divisor = 80;
@@ -189,7 +189,7 @@ YAMLprintTree(YAMLtree *tree)
    child = tree->root->children;
    while (child != NULL)
    {
-      YAMLprintNode(child);
+      YAMLprintNode(child, validity);
       child = child->next;
    }
    for (i = 0; i < divisor; i++) { printf("-"); } printf("\n");
@@ -213,6 +213,7 @@ YAMLcreateNode(char *key, char* val, int level)
    node->level    = level;
    node->key      = strdup(key);
    node->val      = strdup(val);
+   node->valid    = YAML_NODE_VALID;
    node->parent   = NULL;
    node->children = NULL;
    node->next     = NULL;
@@ -324,23 +325,59 @@ YAMLappendNode(YAMLnode *node, YAMLnode **previous_ptr)
 }
 
 /*-----------------------------------------------------------------------------
+ * YAMLprintNodeHelper
+ *-----------------------------------------------------------------------------*/
+
+static inline void
+YAMLprintNodeHelper(YAMLnode *node, const char *cKey, const char *cVal, const char *suffix)
+{
+   int offset = 2 * node->level + (int) strlen(node->key);
+
+   printf("%s%*s%s: %s%s%s%s%s\n",
+          cKey, offset, node->key, TEXT_RESET,
+          cVal, node->val, TEXT_RESET, suffix, TEXT_RESET);
+}
+
+/*-----------------------------------------------------------------------------
  * YAMLprintNode
  *-----------------------------------------------------------------------------*/
 
 int
-YAMLprintNode(YAMLnode *node)
+YAMLprintNode(YAMLnode *node, YAMLmode validity)
 {
    YAMLnode *child;
 
+
    if (node)
    {
-      for (int i = 0; i < node->level; i++) printf(" ");
-      printf("%s: %s\n", node->key, node->val);
+      if ((validity == YAML_MODE_ANY) ||
+          (validity == YAML_MODE_VALID && node->valid == YAML_NODE_VALID) )
+      {
+         YAMLprintNodeHelper(node, "", "", "");
+      }
+      else if (validity == YAML_MODE_INVALID)
+      {
+         if (node->valid == YAML_NODE_VALID)
+         {
+            YAMLprintNodeHelper(node, TEXT_GREEN, TEXT_GREEN, "");
+         }
+         else if (node->valid == YAML_NODE_INVALID_KEY)
+         {
+            YAMLprintNodeHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD, TEXT_BOLD " <-- * FIX ME *");
+            ErrorCodeSet(ERROR_INVALID_KEY);
+            ErrorCodeSet(ERROR_MAYBE_INVALID_VAL);
+         }
+         else if (node->valid == YAML_NODE_INVALID_VAL)
+         {
+            YAMLprintNodeHelper(node, TEXT_GREEN, TEXT_REDBOLD, TEXT_BOLD " <-- * FIX ME *");
+            ErrorCodeSet(ERROR_INVALID_VAL);
+         }
+      }
       child = node->children;
 
       while (child != NULL)
       {
-         YAMLprintNode(child);
+         YAMLprintNode(child, validity);
          child = child->next;
       }
    }

@@ -34,6 +34,12 @@ typedef struct LS_args_struct {
  * Public prototypes
  *-----------------------------------------------------------------------------*/
 
+//StrIntMap* LinearSystemGetValidTypes(void);
+//int LinearSystemFindValid(LS_args*);
+StrArray LinearSystemGetValidKeys(void);
+StrIntMapArray LinearSystemGetValidValues(const char*);
+YAMLvalidity LinearSystemCheckValidMapping(const char*, const char*);
+
 int LinearSystemSetDefaultArgs(LS_args*);
 int LinearSystemSetArgsFromYAML(LS_args*, YAMLnode*);
 int LinearSystemReadMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix*);

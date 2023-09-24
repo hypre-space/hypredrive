@@ -8,13 +8,93 @@
 #include "error.h"
 
 /* Struct for storing an error message in a linked list */
-typedef struct ErrorMsgNode {
-    char *message;
-    struct ErrorMsgNode *next;
+typedef struct ErrorMsgNode
+{
+   char                *message;
+   struct ErrorMsgNode *next;
 } ErrorMsgNode;
 
 /* The head of the linked list of error messages */
-static ErrorMsgNode *errorMsgHead = NULL;
+static ErrorMsgNode *global_error_msg_head = NULL;
+
+/* Global error code variable */
+static uint32_t global_error_code;
+static uint32_t global_error_count[ERROR_CODE_MAX] = {0};
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeSet
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorCodeSet(ErrorCode code)
+{
+   global_error_code |= (int) code;
+   global_error_count[code]++;
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeGet
+ *-----------------------------------------------------------------------------*/
+
+int
+ErrorCodeGet(void)
+{
+   return global_error_code;
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeDescribe
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorCodeDescribe(void)
+{
+   if (global_error_code & ERROR_INVALID_KEY)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_INVALID_KEY, "invalid key");
+   }
+
+   if (global_error_code & ERROR_INVALID_VAL)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_INVALID_VAL, "invalid value");
+   }
+
+   if (global_error_code & ERROR_MAYBE_INVALID_VAL)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_MAYBE_INVALID_VAL, "possible invalid value");
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeReset
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorCodeReset(uint32_t code)
+{
+   uint32_t i, bit;
+
+   for (i = 1; i < ERROR_CODE_MAX; i++)
+   {
+      bit = 1u << i;
+
+      if ((bit & code) != 0)
+      {
+         global_error_code &= ~bit; /* Set n-th bit to zero */
+         global_error_count[i] = 0; /* Reset counter */
+      }
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeResetAll
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorCodeResetAll(void)
+{
+   ErrorCodeReset(0x7FFFFFFFu);
+}
 
 /*-----------------------------------------------------------------------------
  * ErrorMsgAdd
@@ -26,8 +106,25 @@ ErrorMsgAdd(const char *message)
    ErrorMsgNode *new = (ErrorMsgNode *) malloc(sizeof(ErrorMsgNode));
    new->message = (char *) malloc(strlen(message) + 1);
    strcpy(new->message, message);
-   new->next = errorMsgHead;
-   errorMsgHead = new;
+   new->next = global_error_msg_head;
+   global_error_msg_head = new;
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorMsgAddCodeWithCount
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorMsgAddCodeWithCount(ErrorCode code, const char* suffix)
+{
+   char        *msg;
+   const char  *plural = (global_error_count[code] > 1) ? "s" : "";
+   int          length = strlen(suffix) + 24;
+
+   msg = (char*) malloc(length);
+   sprintf(msg, "Found %d %s%s!", global_error_count[code], suffix, plural);
+   ErrorMsgAdd(msg);
+   free(msg);
 }
 
 /*-----------------------------------------------------------------------------
@@ -153,7 +250,7 @@ ErrorMsgAddInvalidFilename(const char* string)
 void
 ErrorMsgPrint()
 {
-   ErrorMsgNode *current = errorMsgHead;
+   ErrorMsgNode *current = global_error_msg_head;
    while (current)
    {
       printf("%s\n", current->message);
@@ -168,7 +265,7 @@ ErrorMsgPrint()
 void
 ErrorMsgClear()
 {
-   ErrorMsgNode *current = errorMsgHead;
+   ErrorMsgNode *current = global_error_msg_head;
    while (current)
    {
       ErrorMsgNode *temp = current;
@@ -176,5 +273,5 @@ ErrorMsgClear()
       free(temp->message);
       free(temp);
    }
-   errorMsgHead = NULL;
+   global_error_msg_head = NULL;
 }
