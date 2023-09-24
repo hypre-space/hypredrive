@@ -26,7 +26,7 @@ YAMLcreateTree(void)
  * YAMLdestroyTree
  *-----------------------------------------------------------------------------*/
 
-int
+void
 YAMLdestroyTree(YAMLtree** tree_ptr)
 {
    YAMLtree *tree = *tree_ptr;
@@ -37,15 +37,13 @@ YAMLdestroyTree(YAMLtree** tree_ptr)
       free(tree);
       *tree_ptr = NULL;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * YAMLbuildTree
  *-----------------------------------------------------------------------------*/
 
-int
+void
 YAMLbuildTree(char *text, YAMLtree **tree_ptr)
 {
    YAMLnode   *node;
@@ -115,19 +113,6 @@ YAMLbuildTree(char *text, YAMLtree **tree_ptr)
             pos += (8 - pos % 8);
          }
          count++;
-
-         if (indent > 128)
-         {
-            fprintf(stderr, "Indentation is too long in line: %s\n", line);
-            return EXIT_FAILURE;
-         }
-      }
-
-      /* Check if indentation is correct */
-      if (indent % 2 != 0)
-      {
-         fprintf(stderr, "Invalid indentation in line: %s\n", line);
-         return EXIT_FAILURE;
       }
 
       /* Calculate node level */
@@ -161,11 +146,16 @@ YAMLbuildTree(char *text, YAMLtree **tree_ptr)
 
       /* Append entry to tree */
       YAMLappendNode(node, &parent);
+
+      /* Check if indentation is correct */
+      if (indent % 2 != 0)
+      {
+         ErrorCodeSet(ERROR_YAML_INVALID_INDENT);
+         YAML_NODE_SET_INVALID_INDENT(node);
+      }
    }
 
    *tree_ptr = tree;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
@@ -174,7 +164,7 @@ YAMLbuildTree(char *text, YAMLtree **tree_ptr)
  * Prints all nodes in a tree
  *-----------------------------------------------------------------------------*/
 
-int
+void
 YAMLprintTree(YAMLtree *tree, YAMLmode validity)
 {
    YAMLnode *child;
@@ -182,7 +172,9 @@ YAMLprintTree(YAMLtree *tree, YAMLmode validity)
 
    if (!tree)
    {
-      return EXIT_FAILURE;
+      ErrorCodeSet(ERROR_YAML_TREE_NULL);
+      ErrorMsgAdd("Cannot print a void YAML tree!");
+      return;
    }
 
    for (i = 0; i < divisor; i++) { printf("-"); } printf("\n");
@@ -193,8 +185,6 @@ YAMLprintTree(YAMLtree *tree, YAMLmode validity)
       child = child->next;
    }
    for (i = 0; i < divisor; i++) { printf("-"); } printf("\n");
-
-   return EXIT_SUCCESS;
 }
 
 /******************************************************************************
@@ -359,14 +349,20 @@ YAMLprintNode(YAMLnode *node, YAMLmode mode)
             else if (node->valid == YAML_NODE_INVALID_KEY)
             {
                YAMLprintNodeHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD,
-                                   TEXT_BOLD " <-- * FIX ME *");
+                                   TEXT_BOLD " <-- * FIX KEY *");
                ErrorCodeSet(ERROR_INVALID_KEY);
                ErrorCodeSet(ERROR_MAYBE_INVALID_VAL);
             }
             else if (node->valid == YAML_NODE_INVALID_VAL)
             {
                YAMLprintNodeHelper(node, TEXT_GREEN, TEXT_REDBOLD,
-                                   TEXT_BOLD " <-- * FIX ME *");
+                                   TEXT_BOLD " <-- * FIX VALUE *");
+               ErrorCodeSet(ERROR_INVALID_VAL);
+            }
+            else if (node->valid == YAML_NODE_INVALID_INDENT)
+            {
+               YAMLprintNodeHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
+                                   TEXT_BOLD " <-- * FIX INDENTATION *");
                ErrorCodeSet(ERROR_INVALID_VAL);
             }
             break;

@@ -184,7 +184,7 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *params)
    }
    else
    {
-      YAML_SET_VALID(parent);
+      YAML_NODE_SET_VALID(parent);
    }
 
    LinearSystemSetArgsFromYAML(&iargs->ls, parent);
@@ -210,7 +210,7 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *params)
    }
    else
    {
-      YAML_SET_VALID(parent);
+      YAML_NODE_SET_VALID(parent);
    }
 
    /* Check if a solver type was set */
@@ -407,6 +407,17 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
 
    /* Build YAML tree */
    YAMLbuildTree(text, &params);
+
+   /* Return earlier if YAML tree was not built properly */
+   if (!myid && ErrorCodeGet())
+   {
+      YAMLprintTree(params, YAML_MODE_INVALID);
+      ErrorCodeDescribe();
+      ErrorMsgPrint();
+      ErrorMsgClear();
+      MPI_Abort(comm, ErrorCodeGet());
+   }
+   MPI_Barrier(comm);
 
    /* Find preconditioner and solver nodes */
    solver_node = YAMLfindNodeByKey(params->root, "solver");

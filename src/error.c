@@ -51,6 +51,11 @@ ErrorCodeGet(void)
 void
 ErrorCodeDescribe(void)
 {
+   if (global_error_code & ERROR_YAML_INVALID_INDENT)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_INDENT, "invalid indendation in line");
+   }
+
    if (global_error_code & ERROR_INVALID_KEY)
    {
       ErrorMsgAddCodeWithCount(ERROR_INVALID_KEY, "invalid key");
@@ -106,6 +111,7 @@ void
 ErrorMsgAdd(const char *message)
 {
    ErrorMsgNode *new = (ErrorMsgNode *) malloc(sizeof(ErrorMsgNode));
+
    new->message = (char *) malloc(strlen(message) + 1);
    strcpy(new->message, message);
    new->next = global_error_msg_head;
@@ -269,6 +275,7 @@ void
 ErrorMsgPrint()
 {
    ErrorMsgNode *current = global_error_msg_head;
+
    while (current)
    {
       printf("%s\n", current->message);
@@ -284,6 +291,7 @@ void
 ErrorMsgClear()
 {
    ErrorMsgNode *current = global_error_msg_head;
+
    while (current)
    {
       ErrorMsgNode *temp = current;

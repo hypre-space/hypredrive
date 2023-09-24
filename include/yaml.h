@@ -27,6 +27,7 @@ typedef enum YAMLvalidity_enum {
    YAML_NODE_VALID,
    YAML_NODE_INVALID_KEY,
    YAML_NODE_INVALID_VAL,
+   YAML_NODE_INVALID_INDENT,
 } YAMLvalidity;
 
 typedef enum YAMLmode_enum {
@@ -62,9 +63,9 @@ typedef struct YAMLtree_struct {
  *-----------------------------------------------------------------------------*/
 
 YAMLtree* YAMLcreateTree(void);
-int YAMLdestroyTree(YAMLtree**);
-int YAMLbuildTree(char*, YAMLtree**);
-int YAMLprintTree(YAMLtree*, YAMLmode);
+void YAMLdestroyTree(YAMLtree**);
+void YAMLbuildTree(char*, YAMLtree**);
+void YAMLprintTree(YAMLtree*, YAMLmode);
 /* int YAMLfindIntegerByKey(const YAMLdict *, const char*, int, int); */
 
 YAMLnode* YAMLcreateNode(char*, char*, int);
@@ -122,7 +123,8 @@ int YAMLStringToIntArray(const char*, int*, int**);
       _call(_args, _node->key, _node); \
    }
 
-#define YAML_SET_VALID(_node) _node->valid = YAML_NODE_VALID
+#define YAML_NODE_SET_VALID(_node) _node->valid = YAML_NODE_VALID
+#define YAML_NODE_SET_INVALID_INDENT(_node) _node->valid = YAML_NODE_INVALID_INDENT
 
 
 #define YAML_CALL_IF_OPEN() if (0) {}

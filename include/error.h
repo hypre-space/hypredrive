@@ -15,17 +15,20 @@
 
 typedef enum ErrorCode_enum
 {
-   ERROR_NONE               = 0x00000000, // No error
-   ERROR_INVALID_KEY        = 0x00000001, // 1st  bit
-   ERROR_INVALID_VAL        = 0x00000002, // 2nd  bit
-   ERROR_MAYBE_INVALID_VAL  = 0x00000004, // 3rd  bit
-   ERROR_MISSING_KEY        = 0x00000008, // 4th  bit
-   ERROR_EXTRA_KEY          = 0x00000010, // 5th  bit
-   ERROR_MISSING_SOLVER     = 0x00000020, // 6th  bit
-   ERROR_MISSING_PRECON     = 0x00000040, // 7th  bit
-   ERROR_INVALID_SOLVER     = 0x00000080, // 8th  bit
-   ERROR_INVALID_PRECON     = 0x00000100, // 9th  bit
-   ERROR_FILE_NOT_FOUND     = 0x00000120, // 10th bit
+   ERROR_NONE                  = 0x00000000, // No error
+   ERROR_YAML_INVALID_INDENT   = 0x00000001, // 1st  bit
+   ERROR_YAML_TREE_NULL        = 0x00000002, // 2nd  bit
+
+   ERROR_INVALID_KEY        = 0x00000010, // 1st  bit
+   ERROR_INVALID_VAL        = 0x00000020, // 2nd  bit
+   ERROR_MAYBE_INVALID_VAL  = 0x00000040, // 3rd  bit
+   ERROR_MISSING_KEY        = 0x00000080, // 4th  bit
+   ERROR_EXTRA_KEY          = 0x00000100, // 5th  bit
+   ERROR_MISSING_SOLVER     = 0x00000110, // 6th  bit
+   ERROR_MISSING_PRECON     = 0x00000120, // 7th  bit
+   ERROR_INVALID_SOLVER     = 0x00000140, // 8th  bit
+   ERROR_INVALID_PRECON     = 0x00000180, // 9th  bit
+   ERROR_FILE_NOT_FOUND     = 0x00000200, // 10th bit
    ERROR_UNKNOWN            = 0x40000000  // 31th bit
 } ErrorCode;
 
