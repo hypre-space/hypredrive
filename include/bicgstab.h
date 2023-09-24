@@ -13,10 +13,10 @@
 #include "HYPRE_krylov.h"
 
 /*--------------------------------------------------------------------------
- * BICGSTAB solver arguments struct
+ * BiCGSTAB solver arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct BICGSTAB_args_struct {
+typedef struct BiCGSTAB_args_struct {
    HYPRE_Int     min_iter;
    HYPRE_Int     max_iter;
    HYPRE_Int     stop_crit;
@@ -25,14 +25,13 @@ typedef struct BICGSTAB_args_struct {
    HYPRE_Real    rtol;
    HYPRE_Real    atol;
    HYPRE_Real    cf_tol;
-} BICGSTAB_args;
+} BiCGSTAB_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void BiCGSTABSetDefaultArgs(BICGSTAB_args*);
-void BiCGSTABSetArgsFromYAML(void*, YAMLnode*);
-void BiCGSTABCreate(MPI_Comm, BICGSTAB_args*, HYPRE_Solver*);
+void BiCGSTABSetArgs(void*, YAMLnode*);
+void BiCGSTABCreate(MPI_Comm, BiCGSTAB_args*, HYPRE_Solver*);
 
 #endif

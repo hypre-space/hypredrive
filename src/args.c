@@ -167,8 +167,8 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
       return;
    }
 
-   iargs->solver_method = StrIntMapArrayGetImage(SolverGetValidTypeIntMap(), parent->children->key);
-   SolverSetDefaultArgs(iargs->solver_method, &iargs->solver);
+   iargs->solver_method = StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
+                                                 parent->children->key);
    SolverSetArgsFromYAML(&iargs->solver, parent);
 }
 

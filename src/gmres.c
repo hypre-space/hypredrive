@@ -32,9 +32,8 @@ GMRESSetDefaultArgs(GMRES_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-GMRESSetArgsFromYAML(void *vargs, YAMLnode *parent)
+GMRESSetArgsFromYAML(GMRES_args *args, YAMLnode *parent)
 {
-   GMRES_args *args = (GMRES_args*) vargs;
    YAMLnode   *child;
 
    child = parent->children;
@@ -56,6 +55,19 @@ GMRESSetArgsFromYAML(void *vargs, YAMLnode *parent)
 
       child = child->next;
    }
+}
+
+/*-----------------------------------------------------------------------------
+ * GMRESSetArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+GMRESSetArgs(void *vargs, YAMLnode *parent)
+{
+   GMRES_args  *args = (GMRES_args*) vargs;
+
+   GMRESSetDefaultArgs(args);
+   GMRESSetArgsFromYAML(args, parent);
 }
 
 /*-----------------------------------------------------------------------------

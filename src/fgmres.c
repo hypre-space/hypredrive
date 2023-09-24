@@ -28,9 +28,8 @@ FGMRESSetDefaultArgs(FGMRES_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-FGMRESSetArgsFromYAML(void *vargs, YAMLnode *parent)
+FGMRESSetArgsFromYAML(FGMRES_args *args, YAMLnode *parent)
 {
-   FGMRES_args *args = (FGMRES_args*) vargs;
    YAMLnode    *child;
 
    child = parent->children;
@@ -48,6 +47,19 @@ FGMRESSetArgsFromYAML(void *vargs, YAMLnode *parent)
 
       child = child->next;
    }
+}
+
+/*-----------------------------------------------------------------------------
+ * FGMRESSetArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+FGMRESSetArgs(void *vargs, YAMLnode *parent)
+{
+   FGMRES_args  *args = (FGMRES_args*) vargs;
+
+   FGMRESSetDefaultArgs(args);
+   FGMRESSetArgsFromYAML(args, parent);
 }
 
 /*-----------------------------------------------------------------------------

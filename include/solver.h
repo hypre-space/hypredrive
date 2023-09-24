@@ -37,7 +37,7 @@ typedef union solver_args_union {
    PCG_args        pcg;
    GMRES_args      gmres;
    FGMRES_args     fgmres;
-   BICGSTAB_args   bicgstab;
+   BiCGSTAB_args   bicgstab;
 } solver_args;
 
 /*--------------------------------------------------------------------------
@@ -48,7 +48,6 @@ StrArray SolverGetValidKeys(void);
 StrIntMapArray SolverGetValidValues(const char*);
 StrIntMapArray SolverGetValidTypeIntMap(void);
 
-void SolverSetDefaultArgs(solver_t, solver_args*);
 int SolverSetArgsFromYAML(solver_args*, YAMLnode*);
 int SolverCreate(MPI_Comm, solver_t, solver_args*, HYPRE_Solver*);
 int SolverSetup(precon_t, solver_t, HYPRE_Solver, HYPRE_Solver,

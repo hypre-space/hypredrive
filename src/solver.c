@@ -8,10 +8,10 @@
 #include "solver.h"
 
 static const FieldOffsetMap solver_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(solver_args, pcg, FIELD_TYPE_STRUCT, PCGSetArgsFromYAML),
-   FIELD_OFFSET_MAP_ENTRY(solver_args, gmres, FIELD_TYPE_STRUCT, GMRESSetArgsFromYAML),
-   FIELD_OFFSET_MAP_ENTRY(solver_args, fgmres, FIELD_TYPE_STRUCT, FGMRESSetArgsFromYAML),
-   FIELD_OFFSET_MAP_ENTRY(solver_args, bicgstab, FIELD_TYPE_STRUCT, BiCGSTABSetArgsFromYAML),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, pcg, FIELD_TYPE_STRUCT, PCGSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, gmres, FIELD_TYPE_STRUCT, GMRESSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, fgmres, FIELD_TYPE_STRUCT, FGMRESSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, bicgstab, FIELD_TYPE_STRUCT, BiCGSTABSetArgs),
 };
 
 #define SOLVER_NUM_FIELDS (sizeof(solver_field_offset_map) / sizeof(solver_field_offset_map[0]))
@@ -77,36 +77,6 @@ SolverGetValidTypeIntMap(void)
                              {"bicgstab", (int) SOLVER_BICGSTAB}};
 
    return STR_INT_MAP_ARRAY_CREATE(map);
-}
-
-/*-----------------------------------------------------------------------------
- * SolverSetDefaultArgs
- *-----------------------------------------------------------------------------*/
-
-void
-SolverSetDefaultArgs(solver_t solver_method, solver_args *args)
-{
-   switch (solver_method)
-   {
-      case SOLVER_PCG:
-         PCGSetDefaultArgs(&args->pcg);
-         break;
-
-      case SOLVER_GMRES:
-         GMRESSetDefaultArgs(&args->gmres);
-         break;
-
-      case SOLVER_FGMRES:
-         FGMRESSetDefaultArgs(&args->fgmres);
-         break;
-
-      case SOLVER_BICGSTAB:
-         BiCGSTABSetDefaultArgs(&args->bicgstab);
-         break;
-
-      default:
-         return;
-   }
 }
 
 /*-----------------------------------------------------------------------------

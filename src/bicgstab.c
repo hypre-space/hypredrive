@@ -12,7 +12,7 @@
  *-----------------------------------------------------------------------------*/
 
 void
-BiCGSTABSetDefaultArgs(BICGSTAB_args *args)
+BiCGSTABSetDefaultArgs(BiCGSTAB_args *args)
 {
    args->min_iter = 0;
    args->max_iter = 100;
@@ -29,9 +29,8 @@ BiCGSTABSetDefaultArgs(BICGSTAB_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-BiCGSTABSetArgsFromYAML(void *vargs, YAMLnode *parent)
+BiCGSTABSetArgsFromYAML(BiCGSTAB_args *args, YAMLnode *parent)
 {
-   BICGSTAB_args  *args = (BICGSTAB_args*) vargs;
    YAMLnode       *child;
 
    child = parent->children;
@@ -53,11 +52,24 @@ BiCGSTABSetArgsFromYAML(void *vargs, YAMLnode *parent)
 }
 
 /*-----------------------------------------------------------------------------
+ * BiCGSTABSetArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+BiCGSTABSetArgs(void *vargs, YAMLnode *parent)
+{
+   BiCGSTAB_args  *args = (BiCGSTAB_args*) vargs;
+
+   BiCGSTABSetDefaultArgs(args);
+   BiCGSTABSetArgsFromYAML(args, parent);
+}
+
+/*-----------------------------------------------------------------------------
  * BiCGSTABCreate
  *-----------------------------------------------------------------------------*/
 
 void
-BiCGSTABCreate(MPI_Comm comm, BICGSTAB_args *args, HYPRE_Solver *solver_ptr)
+BiCGSTABCreate(MPI_Comm comm, BiCGSTAB_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
 

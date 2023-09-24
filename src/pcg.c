@@ -31,9 +31,8 @@ PCGSetDefaultArgs(PCG_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-PCGSetArgsFromYAML(void *vargs, YAMLnode *parent)
+PCGSetArgsFromYAML(PCG_args *args, YAMLnode *parent)
 {
-   PCG_args  *args = (PCG_args*) vargs;
    YAMLnode  *child;
 
    child = parent->children;
@@ -54,6 +53,19 @@ PCGSetArgsFromYAML(void *vargs, YAMLnode *parent)
 
       child = child->next;
    }
+}
+
+/*-----------------------------------------------------------------------------
+ * PCGSetArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+PCGSetArgs(void *vargs, YAMLnode *parent)
+{
+   PCG_args  *args = (PCG_args*) vargs;
+
+   PCGSetDefaultArgs(args);
+   PCGSetArgsFromYAML(args, parent);
 }
 
 /*-----------------------------------------------------------------------------
