@@ -380,7 +380,14 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    }
    MPI_Barrier(comm);
 
-   /* Parse file sections */
+   /* TODO: check if any config option has been passed in via CLI.
+            If so, overwrite the data stored in the YAMLtree object
+            with it. */
+
+   /*--------------------------------------------
+    * Parse file sections
+    *-------------------------------------------*/
+
    InputArgsCreate(&iargs);
    InputArgsParseGeneral(iargs, tree);
    InputArgsParseLinearSystem(iargs, tree);
@@ -398,10 +405,6 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
       }
    }
    MPI_Barrier(comm);
-
-   /* TODO: check if any config option has been passed in via CLI.
-            If so, overwrite the data stored in the YAMLtree object
-            with it. */
 
    *args_ptr = iargs;
    YAMLtreeDestroy(&tree);
