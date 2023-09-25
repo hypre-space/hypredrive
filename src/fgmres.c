@@ -48,7 +48,7 @@ FGMRESGetValidKeys(void)
 {
    static const char* keys[FGMRES_NUM_FIELDS];
 
-   for(size_t i = 0; i < FGMRES_NUM_FIELDS; i++)
+   for (size_t i = 0; i < FGMRES_NUM_FIELDS; i++)
    {
       keys[i] = fgmres_field_offset_map[i].name;
    }
@@ -75,7 +75,7 @@ void
 FGMRESSetDefaultArgs(FGMRES_args *args)
 {
    args->min_iter     = 0;
-   args->max_iter     = 100;
+   args->max_iter     = 300;
    args->krylov_dim   = 30;
    args->logging      = 1;
    args->print_level  = 1;

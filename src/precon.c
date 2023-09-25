@@ -44,7 +44,7 @@ PreconGetValidKeys(void)
 {
    static const char* keys[PRECON_NUM_FIELDS];
 
-   for(size_t i = 0; i < PRECON_NUM_FIELDS; i++)
+   for (size_t i = 0; i < PRECON_NUM_FIELDS; i++)
    {
       keys[i] = precon_field_offset_map[i].name;
    }

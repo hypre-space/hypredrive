@@ -49,7 +49,7 @@ LinearSystemGetValidKeys(void)
 {
    static const char* keys[LS_NUM_FIELDS];
 
-   for(size_t i = 0; i < LS_NUM_FIELDS; i++)
+   for (size_t i = 0; i < LS_NUM_FIELDS; i++)
    {
       keys[i] = ls_field_offset_map[i].name;
    }

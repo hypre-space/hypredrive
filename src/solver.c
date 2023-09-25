@@ -45,7 +45,7 @@ SolverGetValidKeys(void)
 {
    static const char* keys[SOLVER_NUM_FIELDS];
 
-   for(size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
+   for (size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
    {
       keys[i] = solver_field_offset_map[i].name;
    }

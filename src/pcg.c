@@ -51,7 +51,7 @@ PCGGetValidKeys(void)
 {
    static const char* keys[PCG_NUM_FIELDS];
 
-   for(size_t i = 0; i < PCG_NUM_FIELDS; i++)
+   for (size_t i = 0; i < PCG_NUM_FIELDS; i++)
    {
       keys[i] = pcg_field_offset_map[i].name;
    }
