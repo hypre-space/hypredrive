@@ -112,23 +112,24 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 void
 InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode    *parent;
-
-   parent = YAMLnodeFindByKey(tree->root, "linear_system");
+   const char key[] = {"linear_system"};
+   YAMLnode *parent = YAMLnodeFindByKey(tree->root, key);
    if (!parent)
    {
       ErrorCodeSet(ERROR_MISSING_KEY);
-      ErrorMsgAddMissingKey("linear_system");
+      ErrorMsgAddMissingKey(key);
       return;
    }
    else
    {
-      YAML_NODE_SET_VALID(parent);
+      YAML_NODE_SET_VALID_IF_NO_VAL(parent);
+      if (YAML_NODE_GET_VALIDITY(parent) == YAML_NODE_INVALID_UNEXPECTED_VAL)
+      {
+         ErrorMsgAddUnexpectedVal(key);
+      }
    }
 
    LinearSystemSetArgsFromYAML(&iargs->ls, parent);
-   ErrorMsgPrint();
-   ErrorMsgClear();
 }
 
 /*-----------------------------------------------------------------------------

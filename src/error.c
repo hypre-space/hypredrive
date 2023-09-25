@@ -127,6 +127,11 @@ ErrorCodeDescribe(void)
       ErrorMsgAddCodeWithCount(ERROR_INVALID_VAL, "invalid value");
    }
 
+   if (global_error_code & ERROR_INVALID_UNEXPECTED_VAL)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_INVALID_UNEXPECTED_VAL, "unexpected value");
+   }
+
    if (global_error_code & ERROR_MAYBE_INVALID_VAL)
    {
       ErrorMsgAddCodeWithCount(ERROR_MAYBE_INVALID_VAL, "possible invalid value");
@@ -272,6 +277,22 @@ ErrorMsgAddExtraKey(const char *key)
 
    msg = (char*) malloc(length);
    sprintf(msg, "Extra (unused) key: %s", key);
+   ErrorMsgAdd(msg);
+   free(msg);
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorMsgAddUnexpectedVal
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorMsgAddUnexpectedVal(const char *key)
+{
+   char *msg;
+   int   length = strlen(key) + 40;
+
+   msg = (char*) malloc(length);
+   sprintf(msg, "Unexpected value associated with key: %s", key);
    ErrorMsgAdd(msg);
    free(msg);
 }
