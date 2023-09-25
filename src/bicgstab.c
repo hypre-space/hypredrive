@@ -7,6 +7,68 @@
 
 #include "bicgstab.h"
 
+static const FieldOffsetMap bicgstab_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(BiCGSTAB_args, min_iter, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(BiCGSTAB_args, max_iter, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(BiCGSTAB_args, stop_crit, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(BiCGSTAB_args, logging, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(BiCGSTAB_args, print_level, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(BiCGSTAB_args, relative_tol, FieldTypeDoubleSet),
+   FIELD_OFFSET_MAP_ENTRY(BiCGSTAB_args, absolute_tol, FieldTypeDoubleSet),
+   FIELD_OFFSET_MAP_ENTRY(BiCGSTAB_args, conv_fac_tol, FieldTypeDoubleSet)
+};
+
+#define BICGSTAB_NUM_FIELDS (sizeof(bicgstab_field_offset_map) /\
+                             sizeof(bicgstab_field_offset_map[0]))
+
+/*-----------------------------------------------------------------------------
+ * BiCGSTABSetFieldByName
+ *-----------------------------------------------------------------------------*/
+
+void
+BiCGSTABSetFieldByName(BiCGSTAB_args *args, YAMLnode *node)
+{
+   for (size_t i = 0; i < BICGSTAB_NUM_FIELDS; i++)
+   {
+      /* Which field from the arguments list are we trying to set? */
+      if (!strcmp(bicgstab_field_offset_map[i].name, node->key))
+      {
+         bicgstab_field_offset_map[i].setter(
+            (void*)((char*) args + bicgstab_field_offset_map[i].offset),
+            node);
+         return;
+      }
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * BiCGSTABGetValidKeys
+ *-----------------------------------------------------------------------------*/
+
+StrArray
+BiCGSTABGetValidKeys(void)
+{
+   static const char* keys[BICGSTAB_NUM_FIELDS];
+
+   for (size_t i = 0; i < BICGSTAB_NUM_FIELDS; i++)
+   {
+      keys[i] = bicgstab_field_offset_map[i].name;
+   }
+
+   return STR_ARRAY_CREATE(keys);
+}
+
+/*-----------------------------------------------------------------------------
+ * BiCGSTABGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+BiCGSTABGetValidValues(const char* key)
+{
+   /* Don't impose any restrictions, so we create a void map */
+   return STR_INT_MAP_ARRAY_VOID();
+}
+
 /*-----------------------------------------------------------------------------
  * BiCGSTABSetDefaultArgs
  *-----------------------------------------------------------------------------*/
@@ -14,14 +76,14 @@
 void
 BiCGSTABSetDefaultArgs(BiCGSTAB_args *args)
 {
-   args->min_iter = 0;
-   args->max_iter = 100;
-   args->stop_crit = 0;
-   args->logging = 1;
-   args->print_level = 1;
-   args->rtol = 1.0e-6;
-   args->atol = 0.0;
-   args->cf_tol = 0.0;
+   args->min_iter     = 0;
+   args->max_iter     = 100;
+   args->stop_crit    = 0;
+   args->logging      = 1;
+   args->print_level  = 1;
+   args->relative_tol = 1.0e-6;
+   args->absolute_tol = 0.0;
+   args->conv_fac_tol = 0.0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -31,23 +93,15 @@ BiCGSTABSetDefaultArgs(BiCGSTAB_args *args)
 void
 BiCGSTABSetArgsFromYAML(BiCGSTAB_args *args, YAMLnode *parent)
 {
-   YAMLnode       *child;
-
-   child = parent->children;
-   while (child)
+   YAML_NODE_ITERATE(parent, child)
    {
-      YAML_SET_IF_OPEN()
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "min_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "max_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->stop_crit, "stop_crit", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->logging, "logging", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->print_level, "print_level", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->rtol, "rtol", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->atol, "atol", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->cf_tol, "cf_tol", child)
-      YAML_SET_IF_CLOSE(child)
+      YAML_NODE_VALIDATE(child,
+                         BiCGSTABGetValidKeys,
+                         BiCGSTABGetValidValues);
 
-      child = child->next;
+      YAML_NODE_SET_FIELD(child,
+                          args,
+                          BiCGSTABSetFieldByName);
    }
 }
 
@@ -79,9 +133,9 @@ BiCGSTABCreate(MPI_Comm comm, BiCGSTAB_args *args, HYPRE_Solver *solver_ptr)
    HYPRE_BiCGSTABSetStopCrit(solver, args->stop_crit);
    HYPRE_BiCGSTABSetLogging(solver, args->logging);
    HYPRE_BiCGSTABSetPrintLevel(solver, args->print_level);
-   HYPRE_BiCGSTABSetTol(solver, args->rtol);
-   HYPRE_BiCGSTABSetAbsoluteTol(solver, args->atol);
-   HYPRE_BiCGSTABSetConvergenceFactorTol(solver, args->cf_tol);
+   HYPRE_BiCGSTABSetTol(solver, args->relative_tol);
+   HYPRE_BiCGSTABSetAbsoluteTol(solver, args->absolute_tol);
+   HYPRE_BiCGSTABSetConvergenceFactorTol(solver, args->conv_fac_tol);
 
    *solver_ptr = solver;
 }

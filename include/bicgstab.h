@@ -9,6 +9,7 @@
 #define BICGSTAB_HEADER
 
 #include "yaml.h"
+#include "field.h"
 #include "HYPRE_parcsr_ls.h"
 #include "HYPRE_krylov.h"
 
@@ -22,9 +23,9 @@ typedef struct BiCGSTAB_args_struct {
    HYPRE_Int     stop_crit;
    HYPRE_Int     logging;
    HYPRE_Int     print_level;
-   HYPRE_Real    rtol;
-   HYPRE_Real    atol;
-   HYPRE_Real    cf_tol;
+   HYPRE_Real    relative_tol;
+   HYPRE_Real    absolute_tol;
+   HYPRE_Real    conv_fac_tol;
 } BiCGSTAB_args;
 
 /*--------------------------------------------------------------------------
