@@ -11,6 +11,7 @@ static const FieldOffsetMap precon_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(precon_args, amg, AMGSetArgs),
    FIELD_OFFSET_MAP_ENTRY(precon_args, mgr, MGRSetArgs),
    FIELD_OFFSET_MAP_ENTRY(precon_args, ilu, ILUSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(precon_args, fsai, FSAISetArgs),
 };
 
 #define PRECON_NUM_FIELDS (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
@@ -70,9 +71,10 @@ PreconGetValidValues(const char* key)
 StrIntMapArray
 PreconGetValidTypeIntMap(void)
 {
-   static StrIntMap map[] = {{"amg", (int) PRECON_BOOMERAMG},
-                             {"mgr", (int) PRECON_MGR},
-                             {"ilu", (int) PRECON_ILU}};
+   static StrIntMap map[] = {{"amg",  (int) PRECON_BOOMERAMG},
+                             {"mgr",  (int) PRECON_MGR},
+                             {"ilu",  (int) PRECON_ILU},
+                             {"fsai", (int) PRECON_FSAI}};
 
    return STR_INT_MAP_ARRAY_CREATE(map);
 }
@@ -120,6 +122,10 @@ PreconCreate(precon_t         precon_method,
          ILUCreate(&args->ilu, precon_ptr);
          break;
 
+      case PRECON_FSAI:
+         FSAICreate(&args->fsai, precon_ptr);
+         break;
+
       default:
          *precon_ptr = NULL;
    }
@@ -147,6 +153,10 @@ PreconDestroy(precon_t      precon_method,
 
          case PRECON_ILU:
             HYPRE_ILUDestroy(*precon_ptr);
+            break;
+
+         case PRECON_FSAI:
+            HYPRE_FSAIDestroy(*precon_ptr);
             break;
 
          default:

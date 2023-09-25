@@ -11,6 +11,7 @@
 #include "ilu.h"
 #include "amg.h"
 #include "mgr.h"
+#include "fsai.h"
 #include "yaml.h"
 #include "field.h"
 
@@ -22,6 +23,7 @@ typedef enum precon_type_enum {
    PRECON_BOOMERAMG,
    PRECON_MGR,
    PRECON_ILU,
+   PRECON_FSAI,
    PRECON_NONE
 } precon_t;
 
@@ -33,6 +35,7 @@ typedef union precon_args_union {
    AMG_args      amg;
    MGR_args      mgr;
    ILU_args      ilu;
+   FSAI_args     fsai;
 } precon_args;
 
 /*--------------------------------------------------------------------------

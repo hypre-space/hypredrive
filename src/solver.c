@@ -142,10 +142,12 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
    HYPRE_ParVector          par_b, par_x;
    HYPRE_PtrToParSolverFcn  setup_ptrs[] = {HYPRE_BoomerAMGSetup,
                                             HYPRE_MGRSetup,
-                                            HYPRE_ILUSetup};
+                                            HYPRE_ILUSetup,
+                                            HYPRE_FSAISetup};
    HYPRE_PtrToParSolverFcn  solve_ptrs[] = {HYPRE_BoomerAMGSolve,
                                             HYPRE_MGRSolve,
-                                            HYPRE_ILUSolve};
+                                            HYPRE_ILUSolve,
+                                            HYPRE_FSAISolve};
 
    HYPRE_IJMatrixGetObject(M, &vM); par_M = (HYPRE_ParCSRMatrix) vM;
    HYPRE_IJVectorGetObject(b, &vb); par_b = (HYPRE_ParVector) vb;
