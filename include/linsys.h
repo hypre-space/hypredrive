@@ -38,8 +38,8 @@ typedef struct LS_args_struct {
 StrArray LinearSystemGetValidKeys(void);
 StrIntMapArray LinearSystemGetValidValues(const char*);
 
-int LinearSystemSetDefaultArgs(LS_args*);
-int LinearSystemSetArgsFromYAML(LS_args*, YAMLnode*);
+void LinearSystemSetDefaultArgs(LS_args*);
+void LinearSystemSetArgsFromYAML(LS_args*, YAMLnode*);
 int LinearSystemReadMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix*);
 int LinearSystemSetRHS(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector*);
 int LinearSystemSetInitialGuess(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector*);

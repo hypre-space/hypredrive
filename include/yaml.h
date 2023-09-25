@@ -87,7 +87,7 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
  * Public macros
  *-----------------------------------------------------------------------------*/
 
-#define YAML_VALIDATE_NODE(_node, _callA, _callB) \
+#define YAML_NODE_VALIDATE(_node, _callA, _callB) \
    if ((_node->valid != YAML_NODE_INVALID_DIVISOR) && \
        (_node->valid != YAML_NODE_INVALID_INDENT)) \
    { \
@@ -117,7 +117,7 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
       } \
    }
 
-#define YAML_SET_FIELD(_node, _args, _call) \
+#define YAML_NODE_SET_FIELD(_node, _args, _call) \
    if (_node->valid == YAML_NODE_VALID) \
    { \
       _call(_args, _node); \
@@ -130,6 +130,8 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
 #define YAML_NODE_SET_VALID_IF_NO_VAL(_node) \
     _node->valid = (!strcmp(_node->val, "")) ? YAML_NODE_VALID : YAML_NODE_INVALID_UNEXPECTED_VAL
 
+#define YAML_NODE_ITERATE(_parent, _child) \
+    for (YAMLnode* (_child) = (_parent)->children; (_child) != NULL; (_child) = (_child)->next)
 
 // TODO: Remove the following macros:
 

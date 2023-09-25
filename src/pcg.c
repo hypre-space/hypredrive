@@ -96,20 +96,15 @@ PCGSetDefaultArgs(PCG_args *args)
 void
 PCGSetArgsFromYAML(PCG_args *args, YAMLnode *parent)
 {
-   YAMLnode *child;
-
-   child = parent->children;
-   while (child)
+   YAML_NODE_ITERATE(parent, child)
    {
-      YAML_VALIDATE_NODE(child,
+      YAML_NODE_VALIDATE(child,
                          PCGGetValidKeys,
                          PCGGetValidValues);
 
-      YAML_SET_FIELD(child,
-                     args,
-                     PCGSetFieldByName);
-
-      child = child->next;
+      YAML_NODE_SET_FIELD(child,
+                          args,
+                          PCGSetFieldByName);
    }
 }
 

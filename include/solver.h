@@ -48,11 +48,11 @@ StrArray SolverGetValidKeys(void);
 StrIntMapArray SolverGetValidValues(const char*);
 StrIntMapArray SolverGetValidTypeIntMap(void);
 
-int SolverSetArgsFromYAML(solver_args*, YAMLnode*);
-int SolverCreate(MPI_Comm, solver_t, solver_args*, HYPRE_Solver*);
-int SolverSetup(precon_t, solver_t, HYPRE_Solver, HYPRE_Solver,
-                HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector);
-int SolverApply(solver_t, HYPRE_Solver, HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector);
-int SolverDestroy(solver_t, HYPRE_Solver*);
+void SolverSetArgsFromYAML(solver_args*, YAMLnode*);
+void SolverCreate(MPI_Comm, solver_t, solver_args*, HYPRE_Solver*);
+void SolverSetup(precon_t, solver_t, HYPRE_Solver, HYPRE_Solver,
+                 HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector);
+void SolverApply(solver_t, HYPRE_Solver, HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector);
+void SolverDestroy(solver_t, HYPRE_Solver*);
 
 #endif

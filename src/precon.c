@@ -81,33 +81,26 @@ PreconGetValidTypeIntMap(void)
  * PreconSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 {
-   YAMLnode    *child;
-
-   child = parent->children;
-   while (child)
+   YAML_NODE_ITERATE(parent, child)
    {
-      YAML_VALIDATE_NODE(child,
+      YAML_NODE_VALIDATE(child,
                          PreconGetValidKeys,
                          PreconGetValidValues);
 
-      YAML_SET_FIELD(child,
-                     args,
-                     PreconSetFieldByName);
-
-      child = child->next;
+      YAML_NODE_SET_FIELD(child,
+                          args,
+                          PreconSetFieldByName);
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * PreconCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 PreconCreate(precon_t         precon_method,
              precon_args     *args,
              HYPRE_IntArray  *dofmap,
@@ -129,18 +122,14 @@ PreconCreate(precon_t         precon_method,
 
       default:
          *precon_ptr = NULL;
-         ErrorMsgAddInvalidPreconOption((int) precon_method);
-         return EXIT_FAILURE;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * PreconDestroy
  *-----------------------------------------------------------------------------*/
 
-int
+void
 PreconDestroy(precon_t      precon_method,
               HYPRE_Solver *precon_ptr)
 {
@@ -161,13 +150,9 @@ PreconDestroy(precon_t      precon_method,
             break;
 
          default:
-            *precon_ptr = NULL;
-            ErrorMsgAddInvalidPreconOption((int) precon_method);
-            return EXIT_FAILURE;
+            return;
       }
 
       *precon_ptr = NULL;
    }
-
-   return EXIT_SUCCESS;
 }

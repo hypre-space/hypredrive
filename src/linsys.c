@@ -89,7 +89,7 @@ LinearSystemGetValidValues(const char* key)
  * LinearSystemSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 LinearSystemSetDefaultArgs(LS_args *args)
 {
    strcpy(args->matrix_filename, "");
@@ -101,34 +101,25 @@ LinearSystemSetDefaultArgs(LS_args *args)
    args->init_guess_mode = 0;
    args->rhs_mode = 0;
    args->type = 0;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * LinearSystemSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
 {
-   YAMLnode    *child;
-
-   child = parent->children;
-   while (child)
+   YAML_NODE_ITERATE(parent, child)
    {
-      YAML_VALIDATE_NODE(child,
+      YAML_NODE_VALIDATE(child,
                          LinearSystemGetValidKeys,
                          LinearSystemGetValidValues);
 
-      YAML_SET_FIELD(child,
-                     args,
-                     LinearSystemSetFieldByName);
-
-      child = child->next;
+      YAML_NODE_SET_FIELD(child,
+                          args,
+                          LinearSystemSetFieldByName);
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
