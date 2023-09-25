@@ -8,10 +8,10 @@
 #include "solver.h"
 
 static const FieldOffsetMap solver_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(solver_args, pcg, FIELD_TYPE_STRUCT, PCGSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(solver_args, gmres, FIELD_TYPE_STRUCT, GMRESSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(solver_args, fgmres, FIELD_TYPE_STRUCT, FGMRESSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(solver_args, bicgstab, FIELD_TYPE_STRUCT, BiCGSTABSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, pcg, PCGSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, gmres, GMRESSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, fgmres, FGMRESSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, bicgstab, BiCGSTABSetArgs),
 };
 
 #define SOLVER_NUM_FIELDS (sizeof(solver_field_offset_map) / sizeof(solver_field_offset_map[0]))
@@ -21,12 +21,12 @@ static const FieldOffsetMap solver_field_offset_map[] = {
  *-----------------------------------------------------------------------------*/
 
 void
-SolverSetFieldByName(solver_args *args, const char *name, YAMLnode *node)
+SolverSetFieldByName(solver_args *args, YAMLnode *node)
 {
    for (size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
    {
       /* Which union type are we trying to set? */
-      if (!strcmp(solver_field_offset_map[i].name, name))
+      if (!strcmp(solver_field_offset_map[i].name, node->key))
       {
          solver_field_offset_map[i].setter(
             (void*)((char*) args + solver_field_offset_map[i].offset),
@@ -95,9 +95,9 @@ SolverSetArgsFromYAML(solver_args *args, YAMLnode *parent)
                          SolverGetValidKeys,
                          SolverGetValidValues);
 
-      YAML_SET_ARG_STRUCT(child,
-                          args,
-                          SolverSetFieldByName);
+      YAML_SET_FIELD(child,
+                     args,
+                     SolverSetFieldByName);
 
       child = child->next;
    }

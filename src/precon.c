@@ -8,9 +8,9 @@
 #include "precon.h"
 
 static const FieldOffsetMap precon_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(precon_args, amg, FIELD_TYPE_STRUCT, AMGSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(precon_args, mgr, FIELD_TYPE_STRUCT, MGRSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(precon_args, ilu, FIELD_TYPE_STRUCT, ILUSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(precon_args, amg, AMGSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(precon_args, mgr, MGRSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(precon_args, ilu, ILUSetArgs),
 };
 
 #define PRECON_NUM_FIELDS (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
@@ -20,12 +20,12 @@ static const FieldOffsetMap precon_field_offset_map[] = {
  *-----------------------------------------------------------------------------*/
 
 void
-PreconSetFieldByName(precon_args *args, const char *name, YAMLnode *node)
+PreconSetFieldByName(precon_args *args, YAMLnode *node)
 {
    for (size_t i = 0; i < PRECON_NUM_FIELDS; i++)
    {
       /* Which union type are we trying to set? */
-      if (!strcmp(precon_field_offset_map[i].name, name))
+      if (!strcmp(precon_field_offset_map[i].name, node->key))
       {
          precon_field_offset_map[i].setter(
             (void*)((char*) args + precon_field_offset_map[i].offset),
@@ -93,9 +93,9 @@ PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
                          PreconGetValidKeys,
                          PreconGetValidValues);
 
-      YAML_SET_ARG_STRUCT(child,
-                          args,
-                          PreconSetFieldByName);
+      YAML_SET_FIELD(child,
+                     args,
+                     PreconSetFieldByName);
 
       child = child->next;
    }

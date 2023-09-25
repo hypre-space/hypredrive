@@ -117,16 +117,10 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
       } \
    }
 
-#define YAML_SET_ARG(_node, _args, _call) \
+#define YAML_SET_FIELD(_node, _args, _call) \
    if (_node->valid == YAML_NODE_VALID) \
    { \
-      _call(_args, _node->key, _node->val); \
-   }
-
-#define YAML_SET_ARG_STRUCT(_node, _args, _call) \
-   if (_node->valid == YAML_NODE_VALID) \
-   { \
-      _call(_args, _node->key, _node); \
+      _call(_args, _node); \
    }
 
 #define YAML_NODE_GET_VALIDITY(_node) _node->valid
@@ -134,7 +128,11 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
 #define YAML_NODE_SET_INVALID_INDENT(_node) _node->valid = YAML_NODE_INVALID_INDENT
 #define YAML_NODE_SET_INVALID_DIVISOR(_node) _node->valid = YAML_NODE_INVALID_DIVISOR
 #define YAML_NODE_SET_VALID_IF_NO_VAL(_node) \
-    _node->valid = (!strcmp(_node->key, "")) ? YAML_NODE_VALID : YAML_NODE_INVALID_UNEXPECTED_VAL
+    _node->valid = (!strcmp(_node->val, "")) ? YAML_NODE_VALID : YAML_NODE_INVALID_UNEXPECTED_VAL
+
+
+// TODO: Remove the following macros:
+
 
 #define YAML_CALL_IF_OPEN() if (0) {}
 #define YAML_CALL_IF_CLOSE(_node) else {}

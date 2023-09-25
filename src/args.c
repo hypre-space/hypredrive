@@ -112,8 +112,9 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 void
 InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
 {
-   const char key[] = {"linear_system"};
-   YAMLnode *parent = YAMLnodeFindByKey(tree->root, key);
+   const char   key[]  = {"linear_system"};
+   YAMLnode    *parent = YAMLnodeFindByKey(tree->root, key);
+
    if (!parent)
    {
       ErrorCodeSet(ERROR_MISSING_KEY);

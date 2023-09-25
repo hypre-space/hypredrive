@@ -12,26 +12,25 @@
 #include "maps.h"
 #include "yaml.h"
 
-//typedef void (*SetterFnc)(void* obj, const char* field_name, YAMLnode* node);
 typedef void (*SetterFnc)(void*, YAMLnode*);
-
-typedef enum FieldType_enum {
-   FIELD_TYPE_INT,
-   FIELD_TYPE_DOUBLE,
-   FIELD_TYPE_CHAR,
-   FIELD_TYPE_STRING,
-   FIELD_TYPE_STRUCT
-} FieldType;
 
 typedef struct FieldOffsetMap_struct
 {
    const char  *name;
    size_t       offset;
-   FieldType    type;
    SetterFnc    setter;
 } FieldOffsetMap;
 
-#define FIELD_OFFSET_MAP_ENTRY(_st, _field_name, _field_type, _setter) \
-   {#_field_name, offsetof(_st, _field_name), _field_type, _setter}
+#define FIELD_OFFSET_MAP_ENTRY(_st, _field_name, _setter) \
+   {#_field_name, offsetof(_st, _field_name), _setter}
+
+/*-----------------------------------------------------------------------------
+ * Prototypes
+ *-----------------------------------------------------------------------------*/
+
+void FieldTypeIntSet(void*, YAMLnode*);
+void FieldTypeDoubleSet(void*, YAMLnode*);
+void FieldTypeCharSet(void*, YAMLnode*);
+void FieldTypeStringSet(void*, YAMLnode*);
 
 #endif /* FIELD_HEADER */

@@ -8,15 +8,15 @@
 #include "linsys.h"
 
 static const FieldOffsetMap ls_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FIELD_TYPE_STRING, NULL),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_filename, FIELD_TYPE_STRING, NULL),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_filename, FIELD_TYPE_STRING, NULL),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, x0_filename, FIELD_TYPE_STRING, NULL),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, sol_filename, FIELD_TYPE_STRING, NULL),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FIELD_TYPE_STRING, NULL),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FIELD_TYPE_INT, NULL),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FIELD_TYPE_INT, NULL),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, type, FIELD_TYPE_INT, NULL)
+   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, x0_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, sol_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet)
 };
 
 #define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
@@ -26,33 +26,17 @@ static const FieldOffsetMap ls_field_offset_map[] = {
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetFieldByName(LS_args *args, const char *name, const char *value)
+LinearSystemSetFieldByName(LS_args *args, YAMLnode *node)
 {
    size_t i;
 
    for (i = 0; i < LS_NUM_FIELDS; i++)
    {
-      if (!strcmp(ls_field_offset_map[i].name, name))
+      if (!strcmp(ls_field_offset_map[i].name, node->key))
       {
-         switch (ls_field_offset_map[i].type)
-         {
-            case FIELD_TYPE_INT:
-               sscanf(value, "%d", (int*)((char*) args + ls_field_offset_map[i].offset));
-               break;
-
-            case FIELD_TYPE_DOUBLE:
-               sscanf(value, "%lf", (double*)((char*) args + ls_field_offset_map[i].offset));
-               break;
-
-            case FIELD_TYPE_CHAR:
-               sscanf(value, "%c", (char*)((char*) args + ls_field_offset_map[i].offset));
-               break;
-
-            case FIELD_TYPE_STRING:
-               snprintf((char*) args + ls_field_offset_map[i].offset,
-                        MAX_FILENAME_LENGTH, "%s", value);
-               break;
-         }
+         ls_field_offset_map[i].setter(
+            (void*)((char*) args + ls_field_offset_map[i].offset),
+            node);
          return;
       }
    }
@@ -139,9 +123,9 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
                          LinearSystemGetValidKeys,
                          LinearSystemGetValidValues);
 
-      YAML_SET_ARG(child,
-                   args,
-                   LinearSystemSetFieldByName);
+      YAML_SET_FIELD(child,
+                     args,
+                     LinearSystemSetFieldByName);
 
       child = child->next;
    }
