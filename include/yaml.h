@@ -49,6 +49,7 @@ typedef enum YAMLprintMode_enum {
 typedef struct YAMLnode_struct {
    char                     *key;
    char                     *val;
+   char                     *mapped_val;
    int                       level;
    YAMLvalidity              valid;
    struct YAMLnode_struct   *parent;
@@ -99,6 +100,17 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
          { \
             if (StrIntMapArrayDomainEntryExists(_map_array, _node->val)) \
             { \
+               int _mapped = StrIntMapArrayGetImage(_map_array, _node->val); \
+               int _length = snprintf(NULL, 0, "%d", _mapped) + 1; \
+               if (!_node->mapped_val) \
+               { \
+                  _node->mapped_val = (char*) malloc(_length * sizeof(char)); \
+               } \
+               else if (_length > strlen(_node->mapped_val)) \
+               { \
+                  _node->mapped_val = (char*) realloc(_node->mapped_val, _length * sizeof(char)); \
+               } \
+               snprintf(_node->mapped_val, _length, "%d", _mapped); \
                _node->valid = YAML_NODE_VALID; \
             } \
             else \
@@ -108,6 +120,10 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
          } \
          else \
          { \
+            if (!_node->mapped_val) \
+            { \
+               _node->mapped_val = strdup(_node->val); \
+            } \
             _node->valid = YAML_NODE_VALID; \
          } \
       } \

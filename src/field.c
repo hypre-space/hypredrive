@@ -14,7 +14,7 @@
 void
 FieldTypeIntSet(void *field, YAMLnode *node)
 {
-   sscanf(node->val, "%d", (int*) field);
+   sscanf(node->mapped_val, "%d", (int*) field);
 }
 
 /*-----------------------------------------------------------------------------
@@ -24,7 +24,7 @@ FieldTypeIntSet(void *field, YAMLnode *node)
 void
 FieldTypeDoubleSet(void *field, YAMLnode *node)
 {
-   sscanf(node->val, "%lf", (double*) field);
+   sscanf(node->mapped_val, "%lf", (double*) field);
 }
 
 /*-----------------------------------------------------------------------------
@@ -34,7 +34,7 @@ FieldTypeDoubleSet(void *field, YAMLnode *node)
 void
 FieldTypeCharSet(void *field, YAMLnode *node)
 {
-   sscanf(node->val, "%c", (char*) field);
+   sscanf(node->mapped_val, "%c", (char*) field);
 }
 
 /*-----------------------------------------------------------------------------
@@ -44,5 +44,5 @@ FieldTypeCharSet(void *field, YAMLnode *node)
 void
 FieldTypeStringSet(void *field, YAMLnode *node)
 {
-   snprintf((char*) field, MAX_FILENAME_LENGTH, "%s", node->val);
+   snprintf((char*) field, MAX_FILENAME_LENGTH, "%s", node->mapped_val);
 }

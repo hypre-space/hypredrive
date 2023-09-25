@@ -9,6 +9,7 @@
 #define AMG_HEADER
 
 #include "yaml.h"
+#include "field.h"
 #include "ilu.h"
 #include "HYPRE_parcsr_ls.h"
 

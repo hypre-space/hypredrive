@@ -222,14 +222,15 @@ YAMLnodeCreate(char *key, char* val, int level)
 {
    YAMLnode *node;
 
-   node           = (YAMLnode*) malloc(sizeof(YAMLnode));
-   node->level    = level;
-   node->key      = strdup(key); // TODO: transform to lower case
-   node->val      = strdup(val); // TODO: transform to lower case
-   node->valid    = YAML_NODE_VALID; // We assume nodes are valid by default
-   node->parent   = NULL;
-   node->children = NULL;
-   node->next     = NULL;
+   node             = (YAMLnode*) malloc(sizeof(YAMLnode));
+   node->level      = level;
+   node->key        = strdup(key); // TODO: transform to lower case
+   node->val        = strdup(val); // TODO: transform to lower case
+   node->mapped_val = NULL;
+   node->valid      = YAML_NODE_VALID; // We assume nodes are valid by default
+   node->parent     = NULL;
+   node->children   = NULL;
+   node->next       = NULL;
 
    return node;
 }
@@ -260,6 +261,7 @@ YAMLnodeDestroy(YAMLnode* node)
    }
    free(node->key);
    free(node->val);
+   free(node->mapped_val);
    free(node);
 }
 
