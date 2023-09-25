@@ -7,6 +7,66 @@
 
 #include "fgmres.h"
 
+static const FieldOffsetMap fgmres_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(FGMRES_args, min_iter, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(FGMRES_args, max_iter, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(FGMRES_args, krylov_dim, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(FGMRES_args, logging, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(FGMRES_args, print_level, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(FGMRES_args, relative_tol, FieldTypeDoubleSet),
+   FIELD_OFFSET_MAP_ENTRY(FGMRES_args, absolute_tol, FieldTypeDoubleSet),
+};
+
+#define FGMRES_NUM_FIELDS (sizeof(fgmres_field_offset_map) / sizeof(fgmres_field_offset_map[0]))
+
+/*-----------------------------------------------------------------------------
+ * FGMRESSetFieldByName
+ *-----------------------------------------------------------------------------*/
+
+void
+FGMRESSetFieldByName(FGMRES_args *args, YAMLnode *node)
+{
+   for (size_t i = 0; i < FGMRES_NUM_FIELDS; i++)
+   {
+      /* Which field from the arguments list are we trying to set? */
+      if (!strcmp(fgmres_field_offset_map[i].name, node->key))
+      {
+         fgmres_field_offset_map[i].setter(
+            (void*)((char*) args + fgmres_field_offset_map[i].offset),
+            node);
+         return;
+      }
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * FGMRESGetValidKeys
+ *-----------------------------------------------------------------------------*/
+
+StrArray
+FGMRESGetValidKeys(void)
+{
+   static const char* keys[FGMRES_NUM_FIELDS];
+
+   for(size_t i = 0; i < FGMRES_NUM_FIELDS; i++)
+   {
+      keys[i] = fgmres_field_offset_map[i].name;
+   }
+
+   return STR_ARRAY_CREATE(keys);
+}
+
+/*-----------------------------------------------------------------------------
+ * FGMRESGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+FGMRESGetValidValues(const char* key)
+{
+   /* Don't impose any restrictions, so we create a void map */
+   return STR_INT_MAP_ARRAY_VOID();
+}
+
 /*-----------------------------------------------------------------------------
  * FGMRESSetDefaultArgs
  *-----------------------------------------------------------------------------*/
@@ -14,13 +74,13 @@
 void
 FGMRESSetDefaultArgs(FGMRES_args *args)
 {
-   args->min_iter = 0;
-   args->max_iter = 100;
-   args->krylov_dimension = 30;
-   args->logging = 1;
-   args->print_level = 1;
-   args->rtol = 1.0e-6;
-   args->atol = 0.0;
+   args->min_iter     = 0;
+   args->max_iter     = 100;
+   args->krylov_dim   = 30;
+   args->logging      = 1;
+   args->print_level  = 1;
+   args->relative_tol = 1.0e-6;
+   args->absolute_tol = 0.0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -30,22 +90,15 @@ FGMRESSetDefaultArgs(FGMRES_args *args)
 void
 FGMRESSetArgsFromYAML(FGMRES_args *args, YAMLnode *parent)
 {
-   YAMLnode    *child;
-
-   child = parent->children;
-   while (child)
+   YAML_NODE_ITERATE(parent, child)
    {
-      YAML_SET_IF_OPEN()
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "min_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "max_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->krylov_dimension, "krylov_dimension", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->logging, "logging", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->print_level, "print_level", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->rtol, "rtol", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->atol, "atol", child)
-      YAML_SET_IF_CLOSE(child)
+      YAML_NODE_VALIDATE(child,
+                         FGMRESGetValidKeys,
+                         FGMRESGetValidValues);
 
-      child = child->next;
+      YAML_NODE_SET_FIELD(child,
+                          args,
+                          FGMRESSetFieldByName);
    }
 }
 
@@ -74,11 +127,11 @@ FGMRESCreate(MPI_Comm comm, FGMRES_args *args, HYPRE_Solver *solver_ptr)
    HYPRE_ParCSRFlexGMRESCreate(comm, &solver);
    HYPRE_FlexGMRESSetMinIter(solver, args->min_iter);
    HYPRE_FlexGMRESSetMaxIter(solver, args->max_iter);
-   HYPRE_FlexGMRESSetKDim(solver, args->krylov_dimension);
+   HYPRE_FlexGMRESSetKDim(solver, args->krylov_dim);
    HYPRE_FlexGMRESSetLogging(solver, args->logging);
    HYPRE_FlexGMRESSetPrintLevel(solver, args->print_level);
-   HYPRE_FlexGMRESSetTol(solver, args->rtol);
-   HYPRE_FlexGMRESSetAbsoluteTol(solver, args->atol);
+   HYPRE_FlexGMRESSetTol(solver, args->relative_tol);
+   HYPRE_FlexGMRESSetAbsoluteTol(solver, args->absolute_tol);
 
    *solver_ptr = solver;
 }
