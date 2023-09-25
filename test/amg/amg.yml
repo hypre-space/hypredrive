@@ -9,8 +9,8 @@ linear_system:
 
 solver:
   pcg:
-    tolerance: 1.0e-3
-    max_iterations: 500
+    relative_tol: 1.0e-3
+    max_iter: 500
     print_level: 3
 
 preconditioner:

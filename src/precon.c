@@ -59,7 +59,7 @@ PreconGetValidKeys(void)
 StrIntMapArray
 PreconGetValidValues(const char* key)
 {
-   /* The "preconditioner" enry does not hold values, so we create a void map */
+   /* The "preconditioner" entry does not hold values, so we create a void map */
    return STR_INT_MAP_ARRAY_VOID();
 }
 

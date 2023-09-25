@@ -9,6 +9,7 @@
 #define PCG_HEADER
 
 #include "yaml.h"
+#include "field.h"
 #include "HYPRE_parcsr_ls.h"
 #include "HYPRE_krylov.h"
 
@@ -23,10 +24,10 @@ typedef struct PCG_args_struct {
    HYPRE_Int     rel_change;
    HYPRE_Int     print_level;
    HYPRE_Int     recompute_res;
-   HYPRE_Real    rtol;
-   HYPRE_Real    atol;
-   HYPRE_Real    res_tol;
-   HYPRE_Real    cf_tol;
+   HYPRE_Real    relative_tol;
+   HYPRE_Real    absolute_tol;
+   HYPRE_Real    residual_tol;
+   HYPRE_Real    conv_fac_tol;
 } PCG_args;
 
 /*--------------------------------------------------------------------------

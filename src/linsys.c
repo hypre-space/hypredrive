@@ -28,9 +28,7 @@ static const FieldOffsetMap ls_field_offset_map[] = {
 void
 LinearSystemSetFieldByName(LS_args *args, YAMLnode *node)
 {
-   size_t i;
-
-   for (i = 0; i < LS_NUM_FIELDS; i++)
+   for (size_t i = 0; i < LS_NUM_FIELDS; i++)
    {
       if (!strcmp(ls_field_offset_map[i].name, node->key))
       {
