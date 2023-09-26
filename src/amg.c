@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "amg.h"
+#include "gen_macros.h"
 
 /*-----------------------------------------------------------------------------
  * Define Field/Offset mappings
@@ -136,14 +137,14 @@ AMGintSetDefaultArgs(AMGint_args *args)
 void
 AMGcsnSetDefaultArgs(AMGcsn_args *args)
 {
-   args->type           = 10;
-   args->rap2           = 0;
+   args->type            = 10;
+   args->rap2            = 0;
 #if defined (HYPRE_USING_GPU)
-   args->mod_rap2       = 1;
-   args->keep_transpose = 1;
+   args->mod_rap2        = 1;
+   args->keep_transpose  = 1;
 #else
-   args->mod_rap2       = 0;
-   args->keep_transpose = 0;
+   args->mod_rap2        = 0;
+   args->keep_transpose  = 0;
 #endif
    args->num_functions   = 1;
    args->seq_amg_th      = 0;
