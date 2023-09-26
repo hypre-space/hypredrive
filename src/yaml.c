@@ -387,11 +387,11 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
                                    TEXT_BOLD " <-- * FIX VALUE *");
                ErrorCodeSet(ERROR_INVALID_VAL);
             }
-            else if (node->valid == YAML_NODE_INVALID_UNEXPECTED_VAL)
+            else if (node->valid == YAML_NODE_UNEXPECTED_VAL)
             {
                YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
                                    TEXT_BOLD " <-- * FIX VALUE *");
-               ErrorCodeSet(ERROR_INVALID_UNEXPECTED_VAL);
+               ErrorCodeSet(ERROR_UNEXPECTED_VAL);
             }
             break;
 
@@ -402,7 +402,7 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
             }
             break;
 
-         case YAML_PRINT_MODE_NONE:
+         case YAML_PRINT_MODE_NO_CHECKING:
          default:
             YAMLnodePrintHelper(node, "", "", "");
             break;

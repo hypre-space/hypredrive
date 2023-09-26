@@ -28,6 +28,7 @@ typedef struct Cheby_args_struct {
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
+void ChebySetDefaultArgs(Cheby_args*);
 void ChebySetArgs(void*, YAMLnode*);
 
 #endif

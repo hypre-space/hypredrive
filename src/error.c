@@ -30,9 +30,8 @@ static uint32_t global_error_count[ERROR_CODE_NUM_ENTRIES] = {0};
 void
 ErrorCodeCountIncrement(ErrorCode code)
 {
-   int index;
+   int index = 1;
 
-   index = 1;
    while (code > 1)
    {
       code >>= 1;
@@ -52,9 +51,8 @@ ErrorCodeCountIncrement(ErrorCode code)
 uint32_t
 ErrorCodeCountGet(ErrorCode code)
 {
-   int index;
+   int index = 1;
 
-   index = 1;
    while (code > 1)
    {
       code >>= 1;
@@ -76,7 +74,7 @@ ErrorCodeCountGet(ErrorCode code)
 void
 ErrorCodeSet(ErrorCode code)
 {
-   global_error_code |= (int) code;
+   global_error_code |= (uint32_t) code;
    ErrorCodeCountIncrement(code);
 }
 
@@ -127,9 +125,9 @@ ErrorCodeDescribe(void)
       ErrorMsgAddCodeWithCount(ERROR_INVALID_VAL, "invalid value");
    }
 
-   if (global_error_code & ERROR_INVALID_UNEXPECTED_VAL)
+   if (global_error_code & ERROR_UNEXPECTED_VAL)
    {
-      ErrorMsgAddCodeWithCount(ERROR_INVALID_UNEXPECTED_VAL, "unexpected value");
+      ErrorMsgAddCodeWithCount(ERROR_UNEXPECTED_VAL, "unexpected value");
    }
 
    if (global_error_code & ERROR_MAYBE_INVALID_VAL)
@@ -358,11 +356,13 @@ ErrorMsgPrint()
 {
    ErrorMsgNode *current = global_error_msg_head;
 
+   printf("\n");
    while (current)
    {
-      printf("%s\n", current->message);
+      printf("--> %s\n", current->message);
       current = current->next;
    }
+   printf("\n");
 }
 
 /*-----------------------------------------------------------------------------

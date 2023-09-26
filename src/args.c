@@ -124,7 +124,7 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
    else
    {
       YAML_NODE_SET_VALID_IF_NO_VAL(parent);
-      if (YAML_NODE_GET_VALIDITY(parent) == YAML_NODE_INVALID_UNEXPECTED_VAL)
+      if (YAML_NODE_GET_VALIDITY(parent) == YAML_NODE_UNEXPECTED_VAL)
       {
          ErrorMsgAddUnexpectedVal(key);
       }

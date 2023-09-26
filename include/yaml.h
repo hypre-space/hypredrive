@@ -27,7 +27,7 @@ typedef enum YAMLvalidity_enum {
    YAML_NODE_VALID,
    YAML_NODE_INVALID_KEY,
    YAML_NODE_INVALID_VAL,
-   YAML_NODE_INVALID_UNEXPECTED_VAL,
+   YAML_NODE_UNEXPECTED_VAL,
    YAML_NODE_INVALID_INDENT,
    YAML_NODE_INVALID_DIVISOR,
 } YAMLvalidity;
@@ -37,7 +37,7 @@ typedef enum YAMLvalidity_enum {
  *-----------------------------------------------------------------------------*/
 
 typedef enum YAMLprintMode_enum {
-   YAML_PRINT_MODE_NONE,
+   YAML_PRINT_MODE_NO_CHECKING,
    YAML_PRINT_MODE_ONLY_VALID,
    YAML_PRINT_MODE_ANY,
 } YAMLprintMode;
@@ -144,7 +144,7 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
 #define YAML_NODE_SET_INVALID_INDENT(_node) _node->valid = YAML_NODE_INVALID_INDENT
 #define YAML_NODE_SET_INVALID_DIVISOR(_node) _node->valid = YAML_NODE_INVALID_DIVISOR
 #define YAML_NODE_SET_VALID_IF_NO_VAL(_node) \
-    _node->valid = (!strcmp(_node->val, "")) ? YAML_NODE_VALID : YAML_NODE_INVALID_UNEXPECTED_VAL
+    _node->valid = (!strcmp(_node->val, "")) ? YAML_NODE_VALID : YAML_NODE_UNEXPECTED_VAL
 
 #define YAML_NODE_ITERATE(_parent, _child) \
     for (YAMLnode* (_child) = (_parent)->children; (_child) != NULL; (_child) = (_child)->next)

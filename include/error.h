@@ -23,7 +23,7 @@ typedef enum ErrorCode_enum
    ERROR_YAML_TREE_NULL         = 0x00000004, // 3rd  bit
    ERROR_INVALID_KEY            = 0x00000008, // 4th  bit
    ERROR_INVALID_VAL            = 0x00000010, // 5th  bit
-   ERROR_INVALID_UNEXPECTED_VAL = 0x00000020, // 6th  bit
+   ERROR_UNEXPECTED_VAL         = 0x00000020, // 6th  bit
    ERROR_MAYBE_INVALID_VAL      = 0x00000040, // 7th  bit
    ERROR_MISSING_KEY            = 0x00000080, // 8th  bit
    ERROR_EXTRA_KEY              = 0x00000100, // 9th  bit

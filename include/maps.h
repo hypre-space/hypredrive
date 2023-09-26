@@ -24,8 +24,8 @@ typedef struct StrArray_struct
    size_t        size;
 } StrArray;
 
-#define STR_ARRAY_CREATE(str) \
-   (StrArray){.array = str, .size = sizeof(str) / sizeof(str[0])}
+#define STR_ARRAY_CREATE(_str) \
+   (StrArray){.array = _str, .size = sizeof(_str) / sizeof(_str[0])}
 
 bool StrArrayEntryExists(const StrArray, const char*);
 void StrToIntArray(const char*, int*, int**);

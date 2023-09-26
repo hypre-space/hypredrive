@@ -8,189 +8,225 @@
 #include "amg.h"
 
 /*-----------------------------------------------------------------------------
+ * Define Field/Offset mappings
+ *-----------------------------------------------------------------------------*/
+
+/* AMG's interpolation */
+static const FieldOffsetMap AMGint_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(AMGint_args, prolongation_type, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGint_args, restriction_type, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGint_args, max_nnz_row, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGint_args, max_row_sum, FieldTypeDoubleSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGint_args, trunc_factor, FieldTypeDoubleSet),
+};
+
+/* AMG's coarsening */
+static const FieldOffsetMap AMGcsn_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, type, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, rap2, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, mod_rap2, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, keep_transpose, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, num_functions, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, seq_amg_th, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, min_coarse_size, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, max_coarse_size, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, max_levels, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, strong_th, FieldTypeDoubleSet)
+};
+
+/* AMG's aggressive coarsening */
+static const FieldOffsetMap AMGagg_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, num_levels, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, num_paths, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, prolongation_type, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, max_nnz_row, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, P12_max_elements, FieldTypeDoubleSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, P12_trunc_factor, FieldTypeDoubleSet)
+};
+
+/* AMG's relaxation */
+static const FieldOffsetMap AMGrlx_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, down_type, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, up_type, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, coarse_type, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, down_sweeps, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, up_sweeps, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, coarse_sweeps, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, num_sweeps, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, order, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, weight, FieldTypeDoubleSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, outer_weight, FieldTypeDoubleSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, chebyshev, ChebySetArgs)
+};
+
+/* AMG's complex smoother */
+static const FieldOffsetMap AMGsmt_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(AMGsmt_args, type, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGsmt_args, num_levels, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGsmt_args, num_sweeps, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMGsmt_args, fsai, FSAISetArgs),
+   FIELD_OFFSET_MAP_ENTRY(AMGsmt_args, ilu, ILUSetArgs)
+};
+
+#define AMGint_NUM_FIELDS (sizeof(AMGint_field_offset_map) / sizeof(AMGint_field_offset_map[0]))
+#define AMGcsn_NUM_FIELDS (sizeof(AMGcsn_field_offset_map) / sizeof(AMGcsn_field_offset_map[0]))
+#define AMGagg_NUM_FIELDS (sizeof(AMGagg_field_offset_map) / sizeof(AMGagg_field_offset_map[0]))
+#define AMGrlx_NUM_FIELDS (sizeof(AMGrlx_field_offset_map) / sizeof(AMGrlx_field_offset_map[0]))
+#define AMGsmt_NUM_FIELDS (sizeof(AMGsmt_field_offset_map) / sizeof(AMGsmt_field_offset_map[0]))
+
+#define AMG_PREFIX_LIST \
+   X(AMGint) \
+   X(AMGcsn) \
+   X(AMGagg) \
+   X(AMGrlx) \
+   X(AMGsmt) \
+
+#define X(prefix) \
+   DEFINE_SET_FIELD_BY_NAME_FUNC(prefix##SetFieldByName, \
+                                 prefix##_args, \
+                                 prefix##_field_offset_map, \
+                                 prefix##_NUM_FIELDS); \
+   DEFINE_GET_VALID_KEYS_FUNC(prefix##GetValidKeys, \
+                              prefix##_NUM_FIELDS, \
+                              prefix##_field_offset_map); \
+   DECLARE_GET_VALID_VALUES_FUNC(prefix); \
+   DECLARE_SET_DEFAULT_ARGS_FUNC(prefix); \
+   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix); \
+   DEFINE_SET_ARGS_FUNC(prefix); \
+
+/* Iterates over each prefix in the PREFIX_LIST and
+   generates the function declarations/definitions */
+AMG_PREFIX_LIST
+
+/* AMG */
+static const FieldOffsetMap AMG_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(AMG_args, max_iter, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMG_args, print_level, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(AMG_args, tolerance, FieldTypeDoubleSet),
+   FIELD_OFFSET_MAP_ENTRY(AMG_args, interpolation, AMGintSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(AMG_args, aggressive, AMGaggSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(AMG_args, coarsening, AMGcsnSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(AMG_args, relaxation, AMGrlxSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(AMG_args, smoother, AMGsmtSetArgs)
+};
+#define AMG_NUM_FIELDS (sizeof(AMG_field_offset_map) / sizeof(AMG_field_offset_map[0]))
+
+/* Generates the AMG function declarations/definitions */
+X(AMG)
+#undef X
+
+/*-----------------------------------------------------------------------------
+ * AMGintSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+AMGintSetDefaultArgs(AMGint_args *args)
+{
+   args->prolongation_type = 6;
+   args->restriction_type  = 0;
+   args->max_nnz_row       = 4;
+   args->max_row_sum       = 0.9;
+   args->trunc_factor      = 0.0;
+}
+
+/*-----------------------------------------------------------------------------
+ * AMGcsnSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+AMGcsnSetDefaultArgs(AMGcsn_args *args)
+{
+   args->type           = 10;
+   args->rap2           = 0;
+#if defined (HYPRE_USING_GPU)
+   args->mod_rap2       = 1;
+   args->keep_transpose = 1;
+#else
+   args->mod_rap2       = 0;
+   args->keep_transpose = 0;
+#endif
+   args->num_functions   = 1;
+   args->seq_amg_th      = 0;
+   args->min_coarse_size = 9;
+   args->max_coarse_size = 1;
+   args->max_levels      = 25;
+   args->strong_th       = 0.25;
+}
+
+/*-----------------------------------------------------------------------------
+ * AMGaggSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+AMGaggSetDefaultArgs(AMGagg_args *args)
+{
+   args->num_levels        = 0;
+   args->num_paths         = 1;
+   args->prolongation_type = 4;
+   args->max_nnz_row       = 0;
+   args->P12_max_elements  = 0;
+   args->P12_trunc_factor  = 0.0;
+   args->trunc_factor      = 0.0;
+}
+
+/*-----------------------------------------------------------------------------
+ * AMGrlxSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+AMGrlxSetDefaultArgs(AMGrlx_args *args)
+{
+   args->down_type     = 13;
+   args->up_type       = 14;
+   args->coarse_type   = 9;
+   args->down_sweeps   = -1;
+   args->up_sweeps     = -1;
+   args->coarse_sweeps = -1;
+   args->num_sweeps    = 1;
+   args->order         = 0;
+   args->weight        = 1.0;
+   args->outer_weight  = 1.0;
+
+   ChebySetDefaultArgs(&args->chebyshev);
+}
+
+/*-----------------------------------------------------------------------------
+ * AMGsmtSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+AMGsmtSetDefaultArgs(AMGsmt_args *args)
+{
+   args->type       = 5;
+   args->num_levels = 0;
+   args->num_sweeps = 1;
+}
+
+/*-----------------------------------------------------------------------------
  * AMGSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
 void
 AMGSetDefaultArgs(AMG_args *args)
 {
-   args->interp_type = 6;
-   args->trunc_factor = 0.0;
-   args->pmax = 4;
-   args->restrict_type = 0;
-   args->rap2 = 0;
-#if defined (HYPRE_USING_GPU)
-   args->mod_rap2 = 1;
-   args->keep_transpose = 1;
-#else
-   args->mod_rap2 = 0;
-   args->keep_transpose = 0;
-#endif
-
-   args->coarsen_type = 8;
-   args->strong_th = 0.25;
-   args->max_row_sum = 0.9;
-   args->num_functions = 1;
-
-   args->agg_num_levels = 0;
-   args->agg_num_paths = 1;
-   args->agg_interp_type = 4;
-   args->agg_trunc_factor = 0.0;
-   args->agg_P12_trunc_factor = 0.0;
-   args->agg_pmax = 0;
-   args->agg_P12_max_elements = 0;
-
-   args->relax_num_sweeps = 1;
-   args->relax_down = 18;
-   args->relax_up = 18;
-   args->relax_coarse = 9;
-   args->relax_down_sweeps = -1;
-   args->relax_up_sweeps = -1;
-   args->relax_coarse_sweeps = 1;
-   args->relax_order = 1;
-   args->relax_weight = 1.0;
-   args->relax_outer_weight = 1.0;
-
-   args->cheby_order = 2;
-   args->cheby_fraction = 0.3;
-   args->cheby_eig_est = 10;
-   args->cheby_variant = 0;
-   args->cheby_scale = 1;
-
-   args->fsai_algo_type = 1;
-   args->fsai_ls_type = 1;
-   args->fsai_max_steps = 5;
-   args->fsai_max_step_size = 3;
-   args->fsai_max_nnz_row = 15;
-   args->fsai_num_levels = 1;
-   args->fsai_eig_max_iters = 5;
-   args->fsai_th = 1.0e-3;
-   args->fsai_kap_tol = 1.0e-3;
-
-   args->smooth_type = 5;
-   args->smooth_num_levels = 0;
-   args->smooth_num_sweeps = 1;
-
-   args->seq_th = 0;
-   args->max_coarse_size = 9;
-   args->min_coarse_size = 0;
-   args->max_levels = 25;
-
-   args->tol = 0.0;
-   args->max_iter = 1;
+   args->max_iter    = 1;
    args->print_level = 0;
+   args->tolerance   = 0.0;
+
+   AMGintSetDefaultArgs(&args->interpolation);
+   AMGaggSetDefaultArgs(&args->aggressive);
+   AMGcsnSetDefaultArgs(&args->coarsening);
+   AMGrlxSetDefaultArgs(&args->relaxation);
+   AMGsmtSetDefaultArgs(&args->smoother);
 }
 
-/*-----------------------------------------------------------------------------
- * AMGSetSmootherArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-void
-AMGSetSmootherArgsFromYAML(AMG_args *args, YAMLnode *node)
-{
-   /* Call specific SetArgsFromYAML function */
-   YAML_CALL_IF_OPEN()
-   YAML_CALL_IF_VAL_MATCHES(ILUSetArgs, &args->ilu, node, "ilu")
-   YAML_CALL_IF_CLOSE()
-
-   /* Set smoother codes */
-   YAML_SET_IF_OPEN()
-   YAML_SET_INTEGER_IF_VAL_MATCHES_TWO(args->smooth_type, "ilu", 5, node)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_TWO(args->smooth_type, "fsai", 4, node)
-   YAML_SET_IF_CLOSE_(node)
-}
-
-/*-----------------------------------------------------------------------------
- * AMGSetArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-void
-AMGSetArgsFromYAML(AMG_args *args, YAMLnode *parent)
-{
-   YAMLnode *child;
-
-   if (!parent)
-   {
-      return;
-   }
-
-   child = parent->children;
-   while (child)
-   {
-      YAML_SET_IF_OPEN()
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->interp_type, "interp_type", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->trunc_factor, "trunc_factor", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->pmax, "pmax", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->restrict_type, "restrict_type", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->rap2, "rap2", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->mod_rap2, "mod_rap2", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->keep_transpose, "keep_transpose", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->coarsen_type, "coarsen_type", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->strong_th, "strong_th", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->max_row_sum, "max_row_sum", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->num_functions, "num_functions", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->agg_num_levels, "agg_num_levels", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->agg_num_paths, "agg_num_paths", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->agg_interp_type, "agg_interp_type", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->agg_trunc_factor, "agg_trunc_factor", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->agg_P12_trunc_factor, "agg_P12_trunc_factor", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->agg_pmax, "agg_pmax", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->agg_P12_max_elements, "agg_P12_max_elements", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->relax_num_sweeps, "relax_num_sweeps", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->relax_down, "relax_down", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->relax_up, "relax_up", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->relax_coarse, "relax_coarse", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->relax_down_sweeps, "relax_down_sweeps", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->relax_up_sweeps, "relax_up_sweeps", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->relax_coarse_sweeps, "relax_coarse_sweeps", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->relax_order, "relax_order", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->relax_weight, "relax_weight", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->relax_outer_weight, "relax_outer_weight", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->cheby_order, "cheby_order", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->cheby_fraction, "cheby_fraction", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->cheby_eig_est, "cheby_eig_est", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->cheby_variant, "cheby_variant", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->cheby_scale, "cheby_scale", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->fsai_algo_type, "fsai_algo_type", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->fsai_ls_type, "fsai_ls_type", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->fsai_max_steps, "fsai_max_steps", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->fsai_max_step_size, "fsai_max_step_size", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->fsai_max_nnz_row, "fsai_max_nnz_row", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->fsai_num_levels, "fsai_num_levels", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->fsai_eig_max_iters, "fsai_eig_max_iters", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->fsai_th, "fsai_th", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->fsai_kap_tol, "fsai_kap_tol", child)
-
-      YAML_CALL_IF_KEY_MATCHES(AMGSetSmootherArgsFromYAML, args, child, "smoother")
-
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->smooth_type, "smooth_type", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->smooth_num_levels, "smooth_num_levels", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->smooth_num_sweeps, "smooth_num_sweeps", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->seq_th, "seq_th", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_coarse_size, "max_coarse_size", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->min_coarse_size, "min_coarse_size", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_levels, "max_levels", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->tol, "tol", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "max_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->print_level, "print_level", child)
-      YAML_SET_IF_CLOSE(child)
-
-      child = child->next;
-   }
-}
-
-/*-----------------------------------------------------------------------------
- * AMGSetArgs
- *-----------------------------------------------------------------------------*/
-
-void
-AMGSetArgs(void *vargs, YAMLnode *parent)
-{
-   AMG_args *args = (AMG_args*) vargs;
-
-   AMGSetDefaultArgs(args);
-   AMGSetArgsFromYAML(args, parent);
-}
+/* TODO */
+StrIntMapArray AMGintGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
+StrIntMapArray AMGcsnGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
+StrIntMapArray AMGaggGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
+StrIntMapArray AMGrlxGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
+StrIntMapArray AMGsmtGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
+StrIntMapArray AMGGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
 
 /*-----------------------------------------------------------------------------
  * AMGCreate
@@ -202,69 +238,74 @@ AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_Solver precon;
 
    HYPRE_BoomerAMGCreate(&precon);
-   HYPRE_BoomerAMGSetInterpType(precon, args->interp_type);
-   HYPRE_BoomerAMGSetRestriction(precon, args->restrict_type);
-   HYPRE_BoomerAMGSetCoarsenType(precon, args->coarsen_type);
-   HYPRE_BoomerAMGSetTol(precon, args->tol);
-   HYPRE_BoomerAMGSetStrongThreshold(precon, args->strong_th);
-   HYPRE_BoomerAMGSetSeqThreshold(precon, args->seq_th);
-   HYPRE_BoomerAMGSetMaxCoarseSize(precon, args->max_coarse_size);
-   HYPRE_BoomerAMGSetMinCoarseSize(precon, args->min_coarse_size);
-   HYPRE_BoomerAMGSetTruncFactor(precon, args->trunc_factor);
-   HYPRE_BoomerAMGSetPMaxElmts(precon, args->pmax);
+   HYPRE_BoomerAMGSetInterpType(precon, args->interpolation.prolongation_type);
+   HYPRE_BoomerAMGSetRestriction(precon, args->interpolation.restriction_type);
+   HYPRE_BoomerAMGSetCoarsenType(precon, args->coarsening.type);
+   HYPRE_BoomerAMGSetTol(precon, args->tolerance);
+   HYPRE_BoomerAMGSetStrongThreshold(precon, args->coarsening.strong_th);
+   HYPRE_BoomerAMGSetSeqThreshold(precon, args->coarsening.seq_amg_th);
+   HYPRE_BoomerAMGSetMaxCoarseSize(precon, args->coarsening.max_coarse_size);
+   HYPRE_BoomerAMGSetMinCoarseSize(precon, args->coarsening.min_coarse_size);
+   HYPRE_BoomerAMGSetTruncFactor(precon, args->interpolation.trunc_factor);
+   HYPRE_BoomerAMGSetPMaxElmts(precon, args->interpolation.max_nnz_row);
    HYPRE_BoomerAMGSetPrintLevel(precon, args->print_level);
-   HYPRE_BoomerAMGSetNumSweeps(precon, args->relax_num_sweeps);
-   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relax_down, 1);
-   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relax_up, 2);
-   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relax_coarse, 3);
-   HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relax_coarse_sweeps, 3);
-   if (args->relax_down_sweeps > -1)
-   {
-      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relax_down_sweeps, 1);
-   }
-   if (args->relax_up_sweeps > -1)
-   {
-      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relax_up_sweeps, 2);
-   }
-   HYPRE_BoomerAMGSetChebyOrder(precon, args->cheby_order);
-   HYPRE_BoomerAMGSetChebyFraction(precon, args->cheby_fraction);
-   HYPRE_BoomerAMGSetChebyEigEst(precon, args->cheby_eig_est);
-   HYPRE_BoomerAMGSetChebyVariant(precon, args->cheby_variant);
-   HYPRE_BoomerAMGSetChebyScale(precon, args->cheby_scale);
-   HYPRE_BoomerAMGSetRelaxOrder(precon, args->relax_order);
-   HYPRE_BoomerAMGSetRelaxWt(precon, args->relax_weight);
-   HYPRE_BoomerAMGSetOuterWt(precon, args->relax_outer_weight);
-   HYPRE_BoomerAMGSetMaxLevels(precon, args->max_levels);
-   HYPRE_BoomerAMGSetSmoothType(precon, args->smooth_type);
-   HYPRE_BoomerAMGSetSmoothNumSweeps(precon, args->smooth_num_sweeps);
-   HYPRE_BoomerAMGSetSmoothNumLevels(precon, args->smooth_num_levels);
-   HYPRE_BoomerAMGSetMaxRowSum(precon, args->max_row_sum);
-   HYPRE_BoomerAMGSetILUType(precon, args->ilu.type);
-   HYPRE_BoomerAMGSetILULevel(precon, args->ilu.fill_level);
-   HYPRE_BoomerAMGSetILUDroptol(precon, args->ilu.droptol);
-   HYPRE_BoomerAMGSetILUMaxRowNnz(precon, args->ilu.max_row_nnz);
-   HYPRE_BoomerAMGSetILUMaxIter(precon, args->smooth_num_sweeps);
-   HYPRE_BoomerAMGSetFSAIAlgoType(precon, args->fsai_algo_type);
-   HYPRE_BoomerAMGSetFSAILocalSolveType(precon, args->fsai_ls_type);
-   HYPRE_BoomerAMGSetFSAIMaxSteps(precon, args->fsai_max_steps);
-   HYPRE_BoomerAMGSetFSAIMaxStepSize(precon, args->fsai_max_step_size);
-   HYPRE_BoomerAMGSetFSAIMaxNnzRow(precon, args->fsai_max_nnz_row);
-   HYPRE_BoomerAMGSetFSAINumLevels(precon, args->fsai_num_levels);
-   HYPRE_BoomerAMGSetFSAIThreshold(precon, args->fsai_th);
-   HYPRE_BoomerAMGSetFSAIEigMaxIters(precon, args->fsai_eig_max_iters);
-   HYPRE_BoomerAMGSetFSAIKapTolerance(precon, args->fsai_kap_tol);
-   HYPRE_BoomerAMGSetNumFunctions(precon, args->num_functions);
-   HYPRE_BoomerAMGSetAggNumLevels(precon, args->agg_num_levels);
-   HYPRE_BoomerAMGSetAggInterpType(precon, args->agg_interp_type);
-   HYPRE_BoomerAMGSetAggTruncFactor(precon, args->agg_trunc_factor);
-   HYPRE_BoomerAMGSetAggP12TruncFactor(precon, args->agg_P12_trunc_factor);
-   HYPRE_BoomerAMGSetAggPMaxElmts(precon, args->agg_pmax);
-   HYPRE_BoomerAMGSetAggP12MaxElmts(precon, args->agg_P12_max_elements);
-   HYPRE_BoomerAMGSetNumPaths(precon, args->agg_num_paths);
+   HYPRE_BoomerAMGSetNumSweeps(precon, args->relaxation.num_sweeps);
+   HYPRE_BoomerAMGSetChebyOrder(precon, args->relaxation.chebyshev.order);
+   HYPRE_BoomerAMGSetChebyFraction(precon, args->relaxation.chebyshev.fraction);
+   HYPRE_BoomerAMGSetChebyEigEst(precon, args->relaxation.chebyshev.eig_est);
+   HYPRE_BoomerAMGSetChebyVariant(precon, args->relaxation.chebyshev.variant);
+   HYPRE_BoomerAMGSetChebyScale(precon, args->relaxation.chebyshev.scale);
+   HYPRE_BoomerAMGSetRelaxOrder(precon, args->relaxation.order);
+   HYPRE_BoomerAMGSetRelaxWt(precon, args->relaxation.weight);
+   HYPRE_BoomerAMGSetOuterWt(precon, args->relaxation.outer_weight);
+   HYPRE_BoomerAMGSetMaxLevels(precon, args->coarsening.max_levels);
+   HYPRE_BoomerAMGSetSmoothType(precon, args->smoother.type);
+   HYPRE_BoomerAMGSetSmoothNumSweeps(precon, args->smoother.num_sweeps);
+   HYPRE_BoomerAMGSetSmoothNumLevels(precon, args->smoother.num_levels);
+   HYPRE_BoomerAMGSetMaxRowSum(precon, args->interpolation.max_row_sum);
+   HYPRE_BoomerAMGSetILUType(precon, args->smoother.ilu.type);
+   HYPRE_BoomerAMGSetILULevel(precon, args->smoother.ilu.fill_level);
+   HYPRE_BoomerAMGSetILUDroptol(precon, args->smoother.ilu.droptol);
+   HYPRE_BoomerAMGSetILUMaxRowNnz(precon, args->smoother.ilu.max_row_nnz);
+   HYPRE_BoomerAMGSetILUMaxIter(precon, args->smoother.num_sweeps);
+   HYPRE_BoomerAMGSetFSAIAlgoType(precon, args->smoother.fsai.algo_type);
+   HYPRE_BoomerAMGSetFSAILocalSolveType(precon, args->smoother.fsai.ls_type);
+   HYPRE_BoomerAMGSetFSAIMaxSteps(precon, args->smoother.fsai.max_steps);
+   HYPRE_BoomerAMGSetFSAIMaxStepSize(precon, args->smoother.fsai.max_step_size);
+   HYPRE_BoomerAMGSetFSAIMaxNnzRow(precon, args->smoother.fsai.max_nnz_row);
+   HYPRE_BoomerAMGSetFSAINumLevels(precon, args->smoother.fsai.num_levels);
+   HYPRE_BoomerAMGSetFSAIThreshold(precon, args->smoother.fsai.threshold);
+   HYPRE_BoomerAMGSetFSAIEigMaxIters(precon, args->smoother.fsai.eig_max_iters);
+   HYPRE_BoomerAMGSetFSAIKapTolerance(precon, args->smoother.fsai.kap_tolerance);
+   HYPRE_BoomerAMGSetNumFunctions(precon, args->coarsening.num_functions);
+   HYPRE_BoomerAMGSetAggNumLevels(precon, args->aggressive.num_levels);
+   HYPRE_BoomerAMGSetAggInterpType(precon, args->aggressive.prolongation_type);
+   HYPRE_BoomerAMGSetAggTruncFactor(precon, args->aggressive.trunc_factor);
+   HYPRE_BoomerAMGSetAggP12TruncFactor(precon, args->aggressive.P12_trunc_factor);
+   HYPRE_BoomerAMGSetAggPMaxElmts(precon, args->aggressive.max_nnz_row);
+   HYPRE_BoomerAMGSetAggP12MaxElmts(precon, args->aggressive.P12_max_elements);
+   HYPRE_BoomerAMGSetNumPaths(precon, args->aggressive.num_paths);
    HYPRE_BoomerAMGSetMaxIter(precon, args->max_iter);
-   HYPRE_BoomerAMGSetRAP2(precon, args->rap2);
-   HYPRE_BoomerAMGSetModuleRAP2(precon, args->mod_rap2);
-   HYPRE_BoomerAMGSetKeepTranspose(precon, args->keep_transpose);
+   HYPRE_BoomerAMGSetRAP2(precon, args->coarsening.rap2);
+   HYPRE_BoomerAMGSetModuleRAP2(precon, args->coarsening.mod_rap2);
+   HYPRE_BoomerAMGSetKeepTranspose(precon, args->coarsening.keep_transpose);
+
+   /* Specific relaxation info (down, up, coarsest) */
+   if (args->relaxation.down_sweeps > -1)
+   {
+      HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.down_type, 1);
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.down_sweeps, 1);
+   }
+   if (args->relaxation.up_sweeps > -1)
+   {
+      HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.up_type, 2);
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.up_sweeps, 2);
+   }
+   if (args->relaxation.coarse_sweeps > -1)
+   {
+      HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.coarse_type, 3);
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.coarse_sweeps, 3);
+   }
 
    *precon_ptr = precon;
 }
