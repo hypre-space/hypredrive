@@ -173,7 +173,7 @@
 /**
  * @def GENERATE_PREFIXED_COMPONENTS(prefix)
  *
- * @brief An X-macro macro for generating a series of component definitions, declarations,
+ * @brief An X-macro for generating a series of component definitions, declarations,
  * and initializations based on the provided prefix.
  *
  * @details This is an aggregate macro that generates several utility functions, declarations
@@ -181,7 +181,7 @@
  * amount of redundant code needed when creating multiple sets of similar components.
  * The generated components include:
  *
- * - A (Field, Offset, SetterFnc) map.
+ * - A FieldOffsetMap object named after the given prefix.
  * - A function definition to set fields by name.
  * - A function definition to get valid keys.
  * - A function declaration for getting valid values.
@@ -196,12 +196,13 @@
  *
  * Usage:
  * @code
- * GENERATE_PREFIXED_COMPONENTS(AMGint)
+ * GENERATE_PREFIXED_COMPONENTS(AMG)
  * @endcode
  *
- * In this example, the macro will generate function definitions like `AMGintSetFieldByName`,
- * `AMGintGetValidKeys`, etc., and function declarations like AMGintGetValidValues(const char*),
- * AMGintSetDefaultArgs(void), and AMGintSetDefaultArgs(void, YAMLnode*)
+ * In this example, the macro will generate a FieldOffsetMap object named `AMG_field_offset_map`;
+ * function definitions like `AMGSetFieldByName`, `AMGGetValidKeys`, etc.; and function
+ * declarations like `AMGGetValidValues(const char*)`, `AMGSetDefaultArgs(void)`, and
+ * `AMGSetDefaultArgs(void, YAMLnode*)`.
  */
 #define GENERATE_PREFIXED_COMPONENTS(prefix) \
    DEFINE_FIELD_OFFSET_MAP(prefix); \
@@ -217,4 +218,4 @@
    DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix); \
    DEFINE_SET_ARGS_FUNC(prefix); \
 
-#endif /* GEN_MACROS */
+#endif /* GEN_MACROS_HEADER */

@@ -29,7 +29,7 @@
 /* Define num_fields macro */
 #define FSAI_NUM_FIELDS (sizeof(FSAI_field_offset_map) / sizeof(FSAI_field_offset_map[0]))
 
-/* Generate the various function declarations/definitions */
+/* Generate the various function declarations/definitions and the field_offset_map object */
 GENERATE_PREFIXED_COMPONENTS(FSAI)
 
 /*-----------------------------------------------------------------------------

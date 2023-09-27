@@ -93,7 +93,7 @@
 #define AMG_NUM_FIELDS    (sizeof(AMG_field_offset_map)    / sizeof(AMG_field_offset_map[0]))
 
 /* Iterates over each prefix in the list and
-   generates the various function declarations/definitions */
+   generates the various function declarations/definitions and field_offset_map object */
 GENERATE_PREFIXED_LIST_AMG
 
 /*-----------------------------------------------------------------------------
