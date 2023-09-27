@@ -48,15 +48,11 @@ typedef struct StrIntMapArray_struct
 
 #define STR_INT_MAP_ARRAY_CREATE(map) \
    (StrIntMapArray){.array = map, .size = sizeof(map) / sizeof(map[0])}
-#define STR_INT_MAP_ARRAY_CREATE_ON_OFF() \
-   (StrIntMapArray) { \
-      .array = (const StrIntMap[]){{"on",  1}, {"yes", 1}, {"true",  1},\
-                                   {"off", 0}, {"no",  0}, {"false", 0}}, \
-      .size = 6 \
-   }
+#define STR_INT_MAP_ARRAY_CREATE_ON_OFF() OnOffMapArray
 #define STR_INT_MAP_ARRAY_VOID() \
    (StrIntMapArray){.array = NULL, .size = 0}
 
+extern const StrIntMapArray OnOffMapArray;
 int  StrIntMapArrayGetImage(const StrIntMapArray, const char*);
 bool StrIntMapArrayDomainEntryExists(const StrIntMapArray, const char*);
 
