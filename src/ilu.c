@@ -6,61 +6,32 @@
  ******************************************************************************/
 
 #include "ilu.h"
-
-static const FieldOffsetMap ilu_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, max_iter, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, print_level, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, fill_level, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, reordering, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, tri_solve, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, lower_jac_iters, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, upper_jac_iters, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, max_row_nnz, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, schur_max_iter, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, droptol, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, nsh_droptol, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(ILU_args, tolerance, FieldTypeDoubleSet)
-};
-
-#define ILU_NUM_FIELDS (sizeof(ilu_field_offset_map) / sizeof(ilu_field_offset_map[0]))
+#include "gen_macros.h"
 
 /*-----------------------------------------------------------------------------
- * ILUSetFieldByName
+ * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-void
-ILUSetFieldByName(ILU_args *args, YAMLnode *node)
-{
-   for (size_t i = 0; i < ILU_NUM_FIELDS; i++)
-   {
-      /* Which field from the arguments list are we trying to set? */
-      if (!strcmp(ilu_field_offset_map[i].name, node->key))
-      {
-         ilu_field_offset_map[i].setter(
-            (void*)((char*) args + ilu_field_offset_map[i].offset),
-            node);
-         return;
-      }
-   }
-}
+#define ILU_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fill_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, reordering, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tri_solve, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, lower_jac_iters, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, upper_jac_iters, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_nnz, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, schur_max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, droptol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, nsh_droptol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet)
 
-/*-----------------------------------------------------------------------------
- * ILUGetValidKeys
- *-----------------------------------------------------------------------------*/
+/* Define num_fields macro */
+#define ILU_NUM_FIELDS (sizeof(ILU_field_offset_map) / sizeof(ILU_field_offset_map[0]))
 
-StrArray
-ILUGetValidKeys(void)
-{
-   static const char* keys[ILU_NUM_FIELDS];
-
-   for (size_t i = 0; i < ILU_NUM_FIELDS; i++)
-   {
-      keys[i] = ilu_field_offset_map[i].name;
-   }
-
-   return STR_ARRAY_CREATE(keys);
-}
+/* Generate the various function declarations/definitions and the field_offset_map object */
+GENERATE_PREFIXED_COMPONENTS(ILU)
 
 /*-----------------------------------------------------------------------------
  * ILUGetValidValues
@@ -116,38 +87,6 @@ ILUSetDefaultArgs(ILU_args *args)
    args->droptol         = 1.0e-02;
    args->nsh_droptol     = 1.0e-02;
    args->tolerance       = 0.0;
-}
-
-/*-----------------------------------------------------------------------------
- * ILUSetArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-void
-ILUSetArgsFromYAML(ILU_args *args, YAMLnode *parent)
-{
-   YAML_NODE_ITERATE(parent, child)
-   {
-      YAML_NODE_VALIDATE(child,
-                         ILUGetValidKeys,
-                         ILUGetValidValues);
-
-      YAML_NODE_SET_FIELD(child,
-                          args,
-                          ILUSetFieldByName);
-   }
-}
-
-/*-----------------------------------------------------------------------------
- * ILUSetArgs
- *-----------------------------------------------------------------------------*/
-
-void
-ILUSetArgs(void *vargs, YAMLnode *parent)
-{
-   ILU_args *args = (ILU_args*) vargs;
-
-   ILUSetDefaultArgs(args);
-   ILUSetArgsFromYAML(args, parent);
 }
 
 /*-----------------------------------------------------------------------------
