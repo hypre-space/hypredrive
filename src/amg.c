@@ -82,35 +82,18 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, relaxation, AMGrlxSetArgs) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, smoother, AMGsmtSetArgs)
 
-/* Define prefix list */
-#define AMG_PREFIX_LIST \
-   X(AMGint) \
-   X(AMGcsn) \
-   X(AMGagg) \
-   X(AMGrlx) \
-   X(AMGsmt) \
-   X(AMG)
-
-/* Define an X-macro for generating  */
-#define X(prefix) \
-   DEFINE_FIELD_OFFSET_MAP(prefix); \
-   DEFINE_SET_FIELD_BY_NAME_FUNC(prefix##SetFieldByName, \
-                                 prefix##_args, \
-                                 prefix##_field_offset_map, \
-                                 prefix##_NUM_FIELDS); \
-   DEFINE_GET_VALID_KEYS_FUNC(prefix##GetValidKeys, \
-                              prefix##_NUM_FIELDS, \
-                              prefix##_field_offset_map); \
-   DECLARE_GET_VALID_VALUES_FUNC(prefix); \
-   DECLARE_SET_DEFAULT_ARGS_FUNC(prefix); \
-   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix); \
-   DEFINE_SET_ARGS_FUNC(prefix); \
+/* Define the prefix list */
+#define GENERATE_PREFIX_LIST_AMG \
+   GENERATE_PREFIXED_COMPONENTS(AMGint) \
+   GENERATE_PREFIXED_COMPONENTS(AMGcsn) \
+   GENERATE_PREFIXED_COMPONENTS(AMGagg) \
+   GENERATE_PREFIXED_COMPONENTS(AMGrlx) \
+   GENERATE_PREFIXED_COMPONENTS(AMGsmt) \
+   GENERATE_PREFIXED_COMPONENTS(AMG)
 
 /* Iterates over each prefix in the list and
    generates the various function declarations/definitions */
-AMG_PREFIX_LIST
-
-#undef X
+GENERATE_PREFIX_LIST_AMG
 
 /*-----------------------------------------------------------------------------
  * AMGintSetDefaultArgs

@@ -170,4 +170,52 @@
  */
 #define CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, _args, _yaml) _prefix##SetArgsFromYAML(_args, _yaml)
 
+/**
+ * @def GENERATE_PREFIXED_COMPONENTS(prefix)
+ *
+ * @brief An X-macro macro for generating a series of component definitions, declarations,
+ * and initializations based on the provided prefix.
+ *
+ * @details This is an aggregate macro that generates several utility functions, declarations
+ * and a field offset map, all prefixed by the passed parameter. It is designed to reduce the
+ * amount of redundant code needed when creating multiple sets of similar components.
+ * The generated components include:
+ *
+ * - A (Field, Offset, SetterFnc) map.
+ * - A function definition to set fields by name.
+ * - A function definition to get valid keys.
+ * - A function declaration for getting valid values.
+ * - A function declaration for setting default arguments.
+ * - A function to set arguments from YAML.
+ * - A function to set arguments (from YAML + default).
+ *
+ * @param prefix The prefix to be appended to the names of the generated components.
+ *
+ * @note The prefix parameter should be a valid identifier and should correspond to the
+ * intended naming convention for the generated components.
+ *
+ * Usage:
+ * @code
+ * GENERATE_PREFIXED_COMPONENTS(AMGint)
+ * @endcode
+ *
+ * In this example, the macro will generate function definitions like `AMGintSetFieldByName`,
+ * `AMGintGetValidKeys`, etc., and function declarations like AMGintGetValidValues(const char*),
+ * AMGintSetDefaultArgs(void), and AMGintSetDefaultArgs(void, YAMLnode*)
+ */
+#define GENERATE_PREFIXED_COMPONENTS(prefix) \
+   DEFINE_FIELD_OFFSET_MAP(prefix); \
+   DEFINE_SET_FIELD_BY_NAME_FUNC(prefix##SetFieldByName, \
+                                 prefix##_args, \
+                                 prefix##_field_offset_map, \
+                                 prefix##_NUM_FIELDS); \
+   DEFINE_GET_VALID_KEYS_FUNC(prefix##GetValidKeys, \
+                              prefix##_NUM_FIELDS, \
+                              prefix##_field_offset_map); \
+   DECLARE_GET_VALID_VALUES_FUNC(prefix); \
+   DECLARE_SET_DEFAULT_ARGS_FUNC(prefix); \
+   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix); \
+   DEFINE_SET_ARGS_FUNC(prefix); \
+
+
 #endif /* GEN_MACROS */
