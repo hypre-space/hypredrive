@@ -76,7 +76,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, smoother, AMGsmtSetArgs)
 
 /* Define the prefix list */
-#define GENERATE_PREFIX_LIST_AMG \
+#define GENERATE_PREFIXED_LIST_AMG \
    GENERATE_PREFIXED_COMPONENTS(AMGint) \
    GENERATE_PREFIXED_COMPONENTS(AMGcsn) \
    GENERATE_PREFIXED_COMPONENTS(AMGagg) \
@@ -84,7 +84,7 @@
    GENERATE_PREFIXED_COMPONENTS(AMGsmt) \
    GENERATE_PREFIXED_COMPONENTS(AMG)
 
-/* Define num_fields macros for each struct */
+/* Define num_fields macros for each struct prefix */
 #define AMGint_NUM_FIELDS (sizeof(AMGint_field_offset_map) / sizeof(AMGint_field_offset_map[0]))
 #define AMGcsn_NUM_FIELDS (sizeof(AMGcsn_field_offset_map) / sizeof(AMGcsn_field_offset_map[0]))
 #define AMGagg_NUM_FIELDS (sizeof(AMGagg_field_offset_map) / sizeof(AMGagg_field_offset_map[0]))
@@ -94,7 +94,7 @@
 
 /* Iterates over each prefix in the list and
    generates the various function declarations/definitions */
-GENERATE_PREFIX_LIST_AMG
+GENERATE_PREFIXED_LIST_AMG
 
 /*-----------------------------------------------------------------------------
  * AMGintSetDefaultArgs
