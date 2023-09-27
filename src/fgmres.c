@@ -8,6 +8,10 @@
 #include "fgmres.h"
 #include "gen_macros.h"
 
+/*-----------------------------------------------------------------------------
+ * Define Field/Offset/Setter mapping
+ *-----------------------------------------------------------------------------*/
+
 #define FGMRES_FIELDS(_prefix) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
