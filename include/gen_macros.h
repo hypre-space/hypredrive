@@ -69,6 +69,21 @@
    StrIntMapArray _prefix##GetValidValues(const char*); \
 
 /**
+ * @brief Declares a function to get valid values.
+ *
+ * @details This macro generates a function that retrieves valid values
+ * as a StrIntMapArray object type. No restrictions are imposed on the
+ * valid values, so we create a void map
+ *
+ * @param _prefix Prefix used in the naming of the declared function.
+ */
+#define DEFINE_VOID_GET_VALID_VALUES_FUNC(_prefix) \
+   StrIntMapArray _prefix##GetValidValues(const char* key) \
+   { \
+      return STR_INT_MAP_ARRAY_VOID(); \
+   }
+
+/**
  * @brief Declares a function to set default arguments.
  *
  * @details This macro generates a forward declaration for a function

@@ -30,17 +30,7 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object */
 GENERATE_PREFIXED_COMPONENTS(GMRES)
-
-/*-----------------------------------------------------------------------------
- * GMRESGetValidValues
- *-----------------------------------------------------------------------------*/
-
-StrIntMapArray
-GMRESGetValidValues(const char* key)
-{
-   /* Don't impose any restrictions, so we create a void map */
-   return STR_INT_MAP_ARRAY_VOID();
-}
+DEFINE_VOID_GET_VALID_VALUES_FUNC(GMRES)
 
 /*-----------------------------------------------------------------------------
  * GMRESSetDefaultArgs
