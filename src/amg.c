@@ -9,80 +9,91 @@
 #include "gen_macros.h"
 
 /*-----------------------------------------------------------------------------
- * Define Field/Offset mappings
+ * Define Field/Offset/Setter mappings
  *-----------------------------------------------------------------------------*/
-
-/* AMG's interpolation */
-static const FieldOffsetMap AMGint_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(AMGint_args, prolongation_type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGint_args, restriction_type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGint_args, max_nnz_row, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGint_args, max_row_sum, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGint_args, trunc_factor, FieldTypeDoubleSet),
-};
-
-/* AMG's coarsening */
-static const FieldOffsetMap AMGcsn_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, rap2, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, mod_rap2, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, keep_transpose, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, num_functions, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, seq_amg_th, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, min_coarse_size, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, max_coarse_size, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, max_levels, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGcsn_args, strong_th, FieldTypeDoubleSet)
-};
-
-/* AMG's aggressive coarsening */
-static const FieldOffsetMap AMGagg_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, num_levels, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, num_paths, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, prolongation_type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, max_nnz_row, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, P12_max_elements, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGagg_args, P12_trunc_factor, FieldTypeDoubleSet)
-};
-
-/* AMG's relaxation */
-static const FieldOffsetMap AMGrlx_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, down_type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, up_type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, coarse_type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, down_sweeps, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, up_sweeps, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, coarse_sweeps, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, num_sweeps, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, order, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, weight, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, outer_weight, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGrlx_args, chebyshev, ChebySetArgs)
-};
-
-/* AMG's complex smoother */
-static const FieldOffsetMap AMGsmt_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(AMGsmt_args, type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGsmt_args, num_levels, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGsmt_args, num_sweeps, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMGsmt_args, fsai, FSAISetArgs),
-   FIELD_OFFSET_MAP_ENTRY(AMGsmt_args, ilu, ILUSetArgs)
-};
 
 #define AMGint_NUM_FIELDS (sizeof(AMGint_field_offset_map) / sizeof(AMGint_field_offset_map[0]))
 #define AMGcsn_NUM_FIELDS (sizeof(AMGcsn_field_offset_map) / sizeof(AMGcsn_field_offset_map[0]))
 #define AMGagg_NUM_FIELDS (sizeof(AMGagg_field_offset_map) / sizeof(AMGagg_field_offset_map[0]))
 #define AMGrlx_NUM_FIELDS (sizeof(AMGrlx_field_offset_map) / sizeof(AMGrlx_field_offset_map[0]))
 #define AMGsmt_NUM_FIELDS (sizeof(AMGsmt_field_offset_map) / sizeof(AMGsmt_field_offset_map[0]))
+#define AMG_NUM_FIELDS    (sizeof(AMG_field_offset_map)    / sizeof(AMG_field_offset_map[0]))
 
+/* AMG's interpolation fields */
+#define AMGint_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_sum, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, FieldTypeDoubleSet)
+
+/* AMG's coarsening fields */
+#define AMGcsn_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rap2, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, mod_rap2, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, keep_transpose, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_functions, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, seq_amg_th, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, min_coarse_size, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_coarse_size, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_levels, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, strong_th, FieldTypeDoubleSet)
+
+/* AMG's aggressive coarsening fields */
+#define AMGagg_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_paths, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, P12_max_elements, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, P12_trunc_factor, FieldTypeDoubleSet)
+
+/* AMG's relaxation fields */
+#define AMGrlx_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, down_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, up_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, down_sweeps, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, up_sweeps, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_sweeps, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, order, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, weight, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, outer_weight, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, chebyshev, ChebySetArgs)
+
+/* AMG's complex smoother fields */
+#define AMGsmt_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, FSAISetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
+
+/* AMG */
+#define AMG_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, interpolation, AMGintSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, aggressive, AMGaggSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsening, AMGcsnSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relaxation, AMGrlxSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, smoother, AMGsmtSetArgs)
+
+/* Define prefix list */
 #define AMG_PREFIX_LIST \
    X(AMGint) \
    X(AMGcsn) \
    X(AMGagg) \
    X(AMGrlx) \
    X(AMGsmt) \
+   X(AMG)
 
+/* Define an X-macro for generating  */
 #define X(prefix) \
+   DEFINE_FIELD_OFFSET_MAP(prefix); \
    DEFINE_SET_FIELD_BY_NAME_FUNC(prefix##SetFieldByName, \
                                  prefix##_args, \
                                  prefix##_field_offset_map, \
@@ -95,25 +106,10 @@ static const FieldOffsetMap AMGsmt_field_offset_map[] = {
    DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix); \
    DEFINE_SET_ARGS_FUNC(prefix); \
 
-/* Iterates over each prefix in the PREFIX_LIST and
-   generates the function declarations/definitions */
+/* Iterates over each prefix in the list and
+   generates the various function declarations/definitions */
 AMG_PREFIX_LIST
 
-/* AMG */
-static const FieldOffsetMap AMG_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(AMG_args, max_iter, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMG_args, print_level, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(AMG_args, tolerance, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(AMG_args, interpolation, AMGintSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(AMG_args, aggressive, AMGaggSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(AMG_args, coarsening, AMGcsnSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(AMG_args, relaxation, AMGrlxSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(AMG_args, smoother, AMGsmtSetArgs)
-};
-#define AMG_NUM_FIELDS (sizeof(AMG_field_offset_map) / sizeof(AMG_field_offset_map[0]))
-
-/* Generates the AMG function declarations/definitions */
-X(AMG)
 #undef X
 
 /*-----------------------------------------------------------------------------

@@ -103,6 +103,51 @@
    }
 
 /**
+ * @brief Defines a function to set arguments of a generic struct.
+ *
+ * @details This macro generates a function that sets default arguments
+ * and then sets arguments from a YAML node.
+ *
+ * @param _prefix Prefix used in the naming of the generated function.
+ */
+#define DEFINE_SET_ARGS_FUNC(_prefix) \
+   void _prefix##SetArgs(void *vargs, YAMLnode *parent) \
+   { \
+      _prefix##_args *args = (_prefix##_args*) vargs; \
+      CALL_SET_DEFAULT_ARGS_FUNC(_prefix, args); \
+      CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, args, parent); \
+   }
+
+/**
+ * @brief Adds an entry in the field offset map.
+ *
+ * @details X-macro used to generate an entry in a field offset map array,
+ *          associating a structure member with a setter. It is designed to work in
+ *          conjunction with the DEFINE_FIELD_OFFSET_MAP macro
+ *
+ * @param _prefix The prefix to be concatenated with _field to form the structure member.
+ * @param _field The field/member of the structure.
+ * @param _setter The function or macro to set the value of the field/member.
+ */
+#define ADD_FIELD_OFFSET_ENTRY(_prefix, _field, _setter) \
+   FIELD_OFFSET_MAP_ENTRY(_prefix##_args, _field, _setter),
+
+/**
+ * @brief A macro to define a field offset map for a given prefix.
+ *
+ * @details This macro generates a static array of FieldOffsetMap, containing
+ *          entries created by ADD_FIELD_OFFSET_ENTRY macro, each associating
+ *          a structure field with a setter.
+ *
+ * @param _prefix The prefix used to identify the structure and its fields/members.
+ */
+#define DEFINE_FIELD_OFFSET_MAP(_prefix) \
+   static const FieldOffsetMap _prefix##_field_offset_map[] = \
+   { \
+      _prefix##_FIELDS(_prefix) \
+   };
+
+/**
  * @brief Calls a function to set default arguments.
  *
  * @details This macro abstracts the calling pattern of the function
@@ -124,21 +169,5 @@
  * @param _yaml Pointer to the YAML node structure.
  */
 #define CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, _args, _yaml) _prefix##SetArgsFromYAML(_args, _yaml)
-
-/**
- * @brief Defines a function to set arguments of a generic struct.
- *
- * @details This macro generates a function that sets default arguments
- * and then sets arguments from a YAML node.
- *
- * @param _prefix Prefix used in the naming of the generated function.
- */
-#define DEFINE_SET_ARGS_FUNC(_prefix) \
-   void _prefix##SetArgs(void *vargs, YAMLnode *parent) \
-   { \
-      _prefix##_args *args = (_prefix##_args*) vargs; \
-      CALL_SET_DEFAULT_ARGS_FUNC(_prefix, args); \
-      CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, args, parent); \
-   }
 
 #endif /* GEN_MACROS */
