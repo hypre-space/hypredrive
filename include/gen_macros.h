@@ -217,5 +217,4 @@
    DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix); \
    DEFINE_SET_ARGS_FUNC(prefix); \
 
-
 #endif /* GEN_MACROS */

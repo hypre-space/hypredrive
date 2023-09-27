@@ -12,13 +12,6 @@
  * Define Field/Offset/Setter mappings
  *-----------------------------------------------------------------------------*/
 
-#define AMGint_NUM_FIELDS (sizeof(AMGint_field_offset_map) / sizeof(AMGint_field_offset_map[0]))
-#define AMGcsn_NUM_FIELDS (sizeof(AMGcsn_field_offset_map) / sizeof(AMGcsn_field_offset_map[0]))
-#define AMGagg_NUM_FIELDS (sizeof(AMGagg_field_offset_map) / sizeof(AMGagg_field_offset_map[0]))
-#define AMGrlx_NUM_FIELDS (sizeof(AMGrlx_field_offset_map) / sizeof(AMGrlx_field_offset_map[0]))
-#define AMGsmt_NUM_FIELDS (sizeof(AMGsmt_field_offset_map) / sizeof(AMGsmt_field_offset_map[0]))
-#define AMG_NUM_FIELDS    (sizeof(AMG_field_offset_map)    / sizeof(AMG_field_offset_map[0]))
-
 /* AMG's interpolation fields */
 #define AMGint_FIELDS(_prefix) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
@@ -90,6 +83,14 @@
    GENERATE_PREFIXED_COMPONENTS(AMGrlx) \
    GENERATE_PREFIXED_COMPONENTS(AMGsmt) \
    GENERATE_PREFIXED_COMPONENTS(AMG)
+
+/* Define num_fields macros for each struct */
+#define AMGint_NUM_FIELDS (sizeof(AMGint_field_offset_map) / sizeof(AMGint_field_offset_map[0]))
+#define AMGcsn_NUM_FIELDS (sizeof(AMGcsn_field_offset_map) / sizeof(AMGcsn_field_offset_map[0]))
+#define AMGagg_NUM_FIELDS (sizeof(AMGagg_field_offset_map) / sizeof(AMGagg_field_offset_map[0]))
+#define AMGrlx_NUM_FIELDS (sizeof(AMGrlx_field_offset_map) / sizeof(AMGrlx_field_offset_map[0]))
+#define AMGsmt_NUM_FIELDS (sizeof(AMGsmt_field_offset_map) / sizeof(AMGsmt_field_offset_map[0]))
+#define AMG_NUM_FIELDS    (sizeof(AMG_field_offset_map)    / sizeof(AMG_field_offset_map[0]))
 
 /* Iterates over each prefix in the list and
    generates the various function declarations/definitions */
