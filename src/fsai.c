@@ -6,60 +6,31 @@
  ******************************************************************************/
 
 #include "fsai.h"
-
-static const FieldOffsetMap fsai_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, max_iter, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, print_level, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, algo_type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, ls_type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, max_steps, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, max_step_size, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, max_nnz_row, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, num_levels, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, eig_max_iters, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, threshold, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, kap_tolerance, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(FSAI_args, tolerance, FieldTypeDoubleSet)
-};
-
-#define FSAI_NUM_FIELDS (sizeof(fsai_field_offset_map) / sizeof(fsai_field_offset_map[0]))
+#include "gen_macros.h"
 
 /*-----------------------------------------------------------------------------
- * FSAISetFieldByName
+ * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-void
-FSAISetFieldByName(FSAI_args *args, YAMLnode *node)
-{
-   for (size_t i = 0; i < FSAI_NUM_FIELDS; i++)
-   {
-      /* Which field from the arguments list are we trying to set? */
-      if (!strcmp(fsai_field_offset_map[i].name, node->key))
-      {
-         fsai_field_offset_map[i].setter(
-            (void*)((char*) args + fsai_field_offset_map[i].offset),
-            node);
-         return;
-      }
-   }
-}
+#define FSAI_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, algo_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ls_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_steps, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_step_size, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, eig_max_iters, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, threshold, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, kap_tolerance, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet)
 
-/*-----------------------------------------------------------------------------
- * FSAIGetValidKeys
- *-----------------------------------------------------------------------------*/
+/* Define num_fields macro */
+#define FSAI_NUM_FIELDS (sizeof(FSAI_field_offset_map) / sizeof(FSAI_field_offset_map[0]))
 
-StrArray
-FSAIGetValidKeys(void)
-{
-   static const char* keys[FSAI_NUM_FIELDS];
-
-   for (size_t i = 0; i < FSAI_NUM_FIELDS; i++)
-   {
-      keys[i] = fsai_field_offset_map[i].name;
-   }
-
-   return STR_ARRAY_CREATE(keys);
-}
+/* Generate the various function declarations/definitions */
+GENERATE_PREFIXED_COMPONENTS(FSAI)
 
 /*-----------------------------------------------------------------------------
  * FSAIGetValidValues
@@ -101,38 +72,6 @@ FSAISetDefaultArgs(FSAI_args *args)
    args->threshold       = 1.0e-3;
    args->kap_tolerance   = 1.0e-3;
    args->tolerance       = 0.0;
-}
-
-/*-----------------------------------------------------------------------------
- * FSAISetArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-void
-FSAISetArgsFromYAML(FSAI_args *args, YAMLnode *parent)
-{
-   YAML_NODE_ITERATE(parent, child)
-   {
-      YAML_NODE_VALIDATE(child,
-                         FSAIGetValidKeys,
-                         FSAIGetValidValues);
-
-      YAML_NODE_SET_FIELD(child,
-                          args,
-                          FSAISetFieldByName);
-   }
-}
-
-/*-----------------------------------------------------------------------------
- * FSAISetArgs
- *-----------------------------------------------------------------------------*/
-
-void
-FSAISetArgs(void *vargs, YAMLnode *parent)
-{
-   FSAI_args *args = (FSAI_args*) vargs;
-
-   FSAISetDefaultArgs(args);
-   FSAISetArgsFromYAML(args, parent);
 }
 
 /*-----------------------------------------------------------------------------
