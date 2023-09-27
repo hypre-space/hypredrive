@@ -6,59 +6,30 @@
  ******************************************************************************/
 
 #include "gmres.h"
-
-static const FieldOffsetMap gmres_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(GMRES_args, min_iter, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(GMRES_args, max_iter, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(GMRES_args, stop_crit, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(GMRES_args, skip_real_res_check, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(GMRES_args, krylov_dim, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(GMRES_args, rel_change, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(GMRES_args, logging, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(GMRES_args, print_level, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(GMRES_args, relative_tol, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(GMRES_args, absolute_tol, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(GMRES_args, conv_fac_tol, FieldTypeDoubleSet)
-};
-
-#define GMRES_NUM_FIELDS (sizeof(gmres_field_offset_map) / sizeof(gmres_field_offset_map[0]))
+#include "gen_macros.h"
 
 /*-----------------------------------------------------------------------------
- * GMRESSetFieldByName
+ * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-void
-GMRESSetFieldByName(GMRES_args *args, YAMLnode *node)
-{
-   for (size_t i = 0; i < GMRES_NUM_FIELDS; i++)
-   {
-      /* Which field from the arguments list are we trying to set? */
-      if (!strcmp(gmres_field_offset_map[i].name, node->key))
-      {
-         gmres_field_offset_map[i].setter(
-            (void*)((char*) args + gmres_field_offset_map[i].offset),
-            node);
-         return;
-      }
-   }
-}
+#define GMRES_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, skip_real_res_check, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, FieldTypeDoubleSet)
 
-/*-----------------------------------------------------------------------------
- * GMRESGetValidKeys
- *-----------------------------------------------------------------------------*/
+/* Define num_fields macro */
+#define GMRES_NUM_FIELDS (sizeof(GMRES_field_offset_map) / sizeof(GMRES_field_offset_map[0]))
 
-StrArray
-GMRESGetValidKeys(void)
-{
-   static const char* keys[GMRES_NUM_FIELDS];
-
-   for (size_t i = 0; i < GMRES_NUM_FIELDS; i++)
-   {
-      keys[i] = gmres_field_offset_map[i].name;
-   }
-
-   return STR_ARRAY_CREATE(keys);
-}
+/* Generate the various function declarations/definitions and the field_offset_map object */
+GENERATE_PREFIXED_COMPONENTS(GMRES)
 
 /*-----------------------------------------------------------------------------
  * GMRESGetValidValues
@@ -89,38 +60,6 @@ GMRESSetDefaultArgs(GMRES_args *args)
    args->relative_tol        = 1.0e-6;
    args->absolute_tol        = 0.0;
    args->conv_fac_tol        = 0.0;
-}
-
-/*-----------------------------------------------------------------------------
- * GMRESSetArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-void
-GMRESSetArgsFromYAML(GMRES_args *args, YAMLnode *parent)
-{
-   YAML_NODE_ITERATE(parent, child)
-   {
-      YAML_NODE_VALIDATE(child,
-                         GMRESGetValidKeys,
-                         GMRESGetValidValues);
-
-      YAML_NODE_SET_FIELD(child,
-                          args,
-                          GMRESSetFieldByName);
-   }
-}
-
-/*-----------------------------------------------------------------------------
- * GMRESSetArgs
- *-----------------------------------------------------------------------------*/
-
-void
-GMRESSetArgs(void *vargs, YAMLnode *parent)
-{
-   GMRES_args  *args = (GMRES_args*) vargs;
-
-   GMRESSetDefaultArgs(args);
-   GMRESSetArgsFromYAML(args, parent);
 }
 
 /*-----------------------------------------------------------------------------
