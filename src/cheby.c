@@ -6,64 +6,25 @@
  ******************************************************************************/
 
 #include "cheby.h"
-
-static const FieldOffsetMap cheby_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(Cheby_args, order, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(Cheby_args, eig_est, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(Cheby_args, variant, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(Cheby_args, scale, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(Cheby_args, fraction, FieldTypeDoubleSet)
-};
-
-#define CHEBY_NUM_FIELDS (sizeof(cheby_field_offset_map) / sizeof(cheby_field_offset_map[0]))
+#include "gen_macros.h"
 
 /*-----------------------------------------------------------------------------
- * ChebySetFieldByName
+ * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-void
-ChebySetFieldByName(Cheby_args *args, YAMLnode *node)
-{
-   for (size_t i = 0; i < CHEBY_NUM_FIELDS; i++)
-   {
-      /* Which field from the arguments list are we trying to set? */
-      if (!strcmp(cheby_field_offset_map[i].name, node->key))
-      {
-         cheby_field_offset_map[i].setter(
-            (void*)((char*) args + cheby_field_offset_map[i].offset),
-            node);
-         return;
-      }
-   }
-}
+#define Cheby_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, order, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, eig_est, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, variant, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, scale, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fraction, FieldTypeDoubleSet)
 
-/*-----------------------------------------------------------------------------
- * ChebyGetValidKeys
- *-----------------------------------------------------------------------------*/
+/* Define num_fields macro */
+#define Cheby_NUM_FIELDS (sizeof(Cheby_field_offset_map) / sizeof(Cheby_field_offset_map[0]))
 
-StrArray
-ChebyGetValidKeys(void)
-{
-   static const char* keys[CHEBY_NUM_FIELDS];
-
-   for (size_t i = 0; i < CHEBY_NUM_FIELDS; i++)
-   {
-      keys[i] = cheby_field_offset_map[i].name;
-   }
-
-   return STR_ARRAY_CREATE(keys);
-}
-
-/*-----------------------------------------------------------------------------
- * ChebyGetValidValues
- *-----------------------------------------------------------------------------*/
-
-StrIntMapArray
-ChebyGetValidValues(const char* key)
-{
-   /* Don't impose any restrictions, so we create a void map */
-   return STR_INT_MAP_ARRAY_VOID();
-}
+/* Generate the various function declarations/definitions and the field_offset_map object */
+GENERATE_PREFIXED_COMPONENTS(Cheby)
+DEFINE_VOID_GET_VALID_VALUES_FUNC(Cheby)
 
 /*-----------------------------------------------------------------------------
  * ChebySetDefaultArgs
@@ -77,36 +38,4 @@ ChebySetDefaultArgs(Cheby_args *args)
    args->variant  = 0;
    args->scale    = 1;
    args->fraction = 0.3;
-}
-
-/*-----------------------------------------------------------------------------
- * ChebySetArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-void
-ChebySetArgsFromYAML(Cheby_args *args, YAMLnode *parent)
-{
-   YAML_NODE_ITERATE(parent, child)
-   {
-      YAML_NODE_VALIDATE(child,
-                         ChebyGetValidKeys,
-                         ChebyGetValidValues);
-
-      YAML_NODE_SET_FIELD(child,
-                          args,
-                          ChebySetFieldByName);
-   }
-}
-
-/*-----------------------------------------------------------------------------
- * ChebySetArgs
- *-----------------------------------------------------------------------------*/
-
-void
-ChebySetArgs(void *vargs, YAMLnode *parent)
-{
-   Cheby_args *args = (Cheby_args*) vargs;
-
-   ChebySetDefaultArgs(args);
-   ChebySetArgsFromYAML(args, parent);
 }
