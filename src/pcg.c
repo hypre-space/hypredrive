@@ -6,69 +6,30 @@
  ******************************************************************************/
 
 #include "pcg.h"
-
-static const FieldOffsetMap pcg_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(PCG_args, max_iter, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(PCG_args, two_norm, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(PCG_args, stop_crit, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(PCG_args, rel_change, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(PCG_args, print_level, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(PCG_args, recompute_res, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(PCG_args, relative_tol, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(PCG_args, absolute_tol, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(PCG_args, residual_tol, FieldTypeDoubleSet),
-   FIELD_OFFSET_MAP_ENTRY(PCG_args, conv_fac_tol, FieldTypeDoubleSet)
-};
-
-#define PCG_NUM_FIELDS (sizeof(pcg_field_offset_map) / sizeof(pcg_field_offset_map[0]))
+#include "gen_macros.h"
 
 /*-----------------------------------------------------------------------------
- * PCGSetFieldByName
+ * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-void
-PCGSetFieldByName(PCG_args *args, YAMLnode *node)
-{
-   for (size_t i = 0; i < PCG_NUM_FIELDS; i++)
-   {
-      /* Which field from the arguments list are we trying to set? */
-      if (!strcmp(pcg_field_offset_map[i].name, node->key))
-      {
-         pcg_field_offset_map[i].setter(
-            (void*)((char*) args + pcg_field_offset_map[i].offset),
-            node);
-         return;
-      }
-   }
-}
+#define PCG_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, two_norm, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, recompute_res, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, residual_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, FieldTypeDoubleSet)
 
-/*-----------------------------------------------------------------------------
- * PCGGetValidKeys
- *-----------------------------------------------------------------------------*/
+/* Define num_fields macro */
+#define PCG_NUM_FIELDS (sizeof(PCG_field_offset_map) / sizeof(PCG_field_offset_map[0]))
 
-StrArray
-PCGGetValidKeys(void)
-{
-   static const char* keys[PCG_NUM_FIELDS];
-
-   for (size_t i = 0; i < PCG_NUM_FIELDS; i++)
-   {
-      keys[i] = pcg_field_offset_map[i].name;
-   }
-
-   return STR_ARRAY_CREATE(keys);
-}
-
-/*-----------------------------------------------------------------------------
- * PCGGetValidValues
- *-----------------------------------------------------------------------------*/
-
-StrIntMapArray
-PCGGetValidValues(const char* key)
-{
-   /* Don't impose any restrictions, so we create a void map */
-   return STR_INT_MAP_ARRAY_VOID();
-}
+/* Generate the various function declarations/definitions and the field_offset_map object */
+GENERATE_PREFIXED_COMPONENTS(PCG)
+DEFINE_VOID_GET_VALID_VALUES_FUNC(PCG)
 
 /*-----------------------------------------------------------------------------
  * PCGSetDefaultArgs
@@ -87,38 +48,6 @@ PCGSetDefaultArgs(PCG_args *args)
    args->absolute_tol  = 0.0;
    args->residual_tol  = 0.0;
    args->conv_fac_tol  = 0.0;
-}
-
-/*-----------------------------------------------------------------------------
- * PCGSetArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-void
-PCGSetArgsFromYAML(PCG_args *args, YAMLnode *parent)
-{
-   YAML_NODE_ITERATE(parent, child)
-   {
-      YAML_NODE_VALIDATE(child,
-                         PCGGetValidKeys,
-                         PCGGetValidValues);
-
-      YAML_NODE_SET_FIELD(child,
-                          args,
-                          PCGSetFieldByName);
-   }
-}
-
-/*-----------------------------------------------------------------------------
- * PCGSetArgs
- *-----------------------------------------------------------------------------*/
-
-void
-PCGSetArgs(void *vargs, YAMLnode *parent)
-{
-   PCG_args  *args = (PCG_args*) vargs;
-
-   PCGSetDefaultArgs(args);
-   PCGSetArgsFromYAML(args, parent);
 }
 
 /*-----------------------------------------------------------------------------
