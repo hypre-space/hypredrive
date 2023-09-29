@@ -8,7 +8,7 @@
 #ifndef GEN_MACROS_HEADER
 #define GEN_MACROS_HEADER
 
-#include "maps.h"
+#include "containers.h"
 #include "yaml.h"
 
 /**
@@ -66,7 +66,7 @@
  * @param _prefix Prefix used in the naming of the declared function.
  */
 #define DECLARE_GET_VALID_VALUES_FUNC(_prefix) \
-   StrIntMapArray _prefix##GetValidValues(const char*); \
+   StrIntMapArray _prefix##GetValidValues(const char*);
 
 /**
  * @brief Declares a function to get valid values.
@@ -87,12 +87,23 @@
  * @brief Declares a function to set default arguments.
  *
  * @details This macro generates a forward declaration for a function
- * that sets default arguments for a structure holding.
+ * that sets default arguments for a structure named as `_prefix_args`.
  *
  * @param _prefix Prefix used in the naming of the declared function.
  */
 #define DECLARE_SET_DEFAULT_ARGS_FUNC(_prefix) \
-   void _prefix##SetDefaultArgs(_prefix##_args*); \
+   void _prefix##SetDefaultArgs(_prefix##_args*);
+
+/**
+ * @brief Declares a function to set arguments from a YAML input.
+ *
+ * @details This macro generates a forward declaration for a function
+ * that sets arguments for a structure named as `_prefix_args`.
+ *
+ * @param _prefix Prefix used in the naming of the declared function.
+ */
+#define DECLARE_SET_ARGS_FROM_YAML_FUNC(_prefix) \
+   void _prefix##SetArgsFromYAML(_prefix##_args*, YAMLnode*);
 
 /**
  * @brief Defines a function to set arguments from a YAML node.
@@ -105,15 +116,37 @@
 #define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix) \
    void _prefix##SetArgsFromYAML(_prefix##_args *args, YAMLnode *parent) \
    { \
-      YAML_NODE_ITERATE(parent, child) \
+      if (parent->children) \
       { \
-         YAML_NODE_VALIDATE(child, \
+         YAML_NODE_ITERATE(parent, child) \
+         { \
+            YAML_NODE_VALIDATE(child, \
+                               _prefix##GetValidKeys, \
+                               _prefix##GetValidValues); \
+            \
+            YAML_NODE_SET_FIELD(child, \
+                                args, \
+                                _prefix##SetFieldByName); \
+         } \
+      } \
+      else \
+      { \
+         char *temp_key = strdup(parent->key); \
+         free(parent->key); \
+         parent->key = (char*) malloc(5*sizeof(char)); \
+         sprintf(parent->key, "type"); \
+         \
+         YAML_NODE_VALIDATE(parent, \
                             _prefix##GetValidKeys, \
                             _prefix##GetValidValues); \
          \
-         YAML_NODE_SET_FIELD(child, \
+         YAML_NODE_SET_FIELD(parent, \
                              args, \
                              _prefix##SetFieldByName); \
+         \
+         free(parent->key); \
+         parent->key = strdup(temp_key); \
+         free(temp_key); \
       } \
    }
 
@@ -232,5 +265,113 @@
    DECLARE_SET_DEFAULT_ARGS_FUNC(prefix); \
    DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix); \
    DEFINE_SET_ARGS_FUNC(prefix); \
+
+/**
+ * @brief A macro to handle level attributes based on their names and types.
+ *
+ * This macro simplifies the process of comparing attribute names and accessing the corresponding
+ * attributes from a structure. It takes a buffer and a type, generates the attribute string by
+ * replacing '.' with ':', and compares it with a string variable name, assumed to be defined in
+ * the caller function. If they match, the buffer is populated with the values from the structure's
+ * attributes and it is returned. This macro is used for setting up the input parameters of MGR.
+ *
+ * @details Here is an example of how to use this macro (assuming that ibuf and rbuf are statically
+ *          allocated variables defined in the caller function):
+ *
+ * @code
+ *    HANDLE_MGR_LEVEL_ATTRIBUTE(ibuf, f_relaxation.type)
+ *    HANDLE_MGR_LEVEL_ATTRIBUTE(ibuf, f_relaxation.num_sweeps)
+ *    HANDLE_MGR_LEVEL_ATTRIBUTE(rbuf, f_relaxation.weights)
+ * @endcode
+ *
+ * In the above example, if name is "f_relaxation:type", "f_relaxation:num_sweeps", or
+ * "f_relaxation:weights", the corresponding attribute values will be stored in the buffers
+ * (ibuf or rbuf).
+ *
+ * @param _buffer The buffer to store the attribute values. It should be of the correct type to
+ *                hold the attribute values.
+ * @param _type   The type and name of the attribute in the structure, using '.' notation to
+ *                access nested attributes, e.g., struct_name.attribute_name.
+ * @return        A buffer containing the attribute values if the names match, NULL otherwise.
+ */
+#define HANDLE_MGR_LEVEL_ATTRIBUTE(_buffer, _type) \
+   { \
+      char str[] = #_type; \
+      for (size_t i = 0; i < sizeof(str); i++) if (str[i] == '.') str[i] = ':'; \
+      if (!strcmp(str, name)) \
+      { \
+         if (!strcmp(#_type, "f_relaxation.num_sweeps")) \
+         { \
+            for (size_t i = 0; i < args->num_levels - 1; i++) \
+            { \
+               _buffer[i] = (args->level[i].f_relaxation.type >= 0) ? args->level[i]._type : 0; \
+            } \
+         } \
+         else if (!strcmp(#_type, "g_relaxation.num_sweeps")) \
+         { \
+            for (size_t i = 0; i < args->num_levels - 1; i++) \
+            { \
+               _buffer[i] = (args->level[i].g_relaxation.type >= 0) ? args->level[i]._type : 0; \
+            } \
+         } \
+         else \
+         { \
+            for (size_t i = 0; i < args->num_levels - 1; i++) \
+            { \
+               _buffer[i] = args->level[i]._type; \
+            } \
+            if (!strcmp(#_type, "f_relaxation.type")) \
+            { \
+               for (size_t i = 0; i < args->num_levels - 1; i++) \
+               { \
+                  if (args->level[i].f_relaxation.amg.max_iter > 0) \
+                  { \
+                     args->level[i].f_relaxation.type = _buffer[i] = 2; \
+                     if (args->level[i].f_relaxation.num_sweeps < 1) \
+                     { \
+                        args->level[i].f_relaxation.num_sweeps = \
+                           args->level[i].f_relaxation.amg.max_iter; \
+                     } \
+                  } \
+                  else if (args->level[i].f_relaxation.ilu.max_iter > 0) \
+                  { \
+                     args->level[i].f_relaxation.type = _buffer[i] = 16; \
+                     if (args->level[i].f_relaxation.num_sweeps < 1) \
+                     { \
+                        args->level[i].f_relaxation.num_sweeps = \
+                           args->level[i].f_relaxation.ilu.max_iter; \
+                     } \
+                  } \
+                  else if (args->level[i].f_relaxation.type > -1 && \
+                           args->level[i].f_relaxation.num_sweeps < 1) \
+                  { \
+                     args->level[i].f_relaxation.num_sweeps = 1; \
+                  } \
+               } \
+            } \
+            else if (!strcmp(#_type, "g_relaxation.type")) \
+            { \
+               for (size_t i = 0; i < args->num_levels - 1; i++) \
+               { \
+                  if (args->level[i].g_relaxation.ilu.max_iter > 0) \
+                  { \
+                     args->level[i].g_relaxation.type = _buffer[i] = 16; \
+                     if (args->level[i].g_relaxation.num_sweeps < 1) \
+                     { \
+                        args->level[i].g_relaxation.num_sweeps = \
+                           args->level[i].g_relaxation.ilu.max_iter; \
+                     } \
+                  } \
+                  else if (args->level[i].g_relaxation.type > -1 && \
+                           args->level[i].g_relaxation.num_sweeps < 1) \
+                  { \
+                     args->level[i].g_relaxation.num_sweeps = 1; \
+                  } \
+               } \
+            } \
+         } \
+         return _buffer; \
+      } \
+   }
 
 #endif /* GEN_MACROS_HEADER */

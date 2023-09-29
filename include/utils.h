@@ -14,7 +14,7 @@
 #include "HYPRE_config.h"
 #include "HYPRE_utilities.h"
 #include "error.h"
-#include "maps.h"
+#include "containers.h"
 
 #define MAX_FILENAME_LENGTH 2048
 

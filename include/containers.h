@@ -5,14 +5,27 @@
  * SPDX-License-Identifier: (Apache-2.0 OR MIT)
  ******************************************************************************/
 
-#ifndef MAPS_HEADER
-#define MAPS_HEADER
+#ifndef CONTAINERS_HEADER
+#define CONTAINERS_HEADER
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
 #include <limits.h>
+
+/*--------------------------------------------------------------------------
+ * IntArray struct
+ *--------------------------------------------------------------------------*/
+
+typedef struct IntArray_struct
+{
+   int      *array;
+   size_t    size;
+} IntArray;
+
+IntArray* IntArrayCreate(size_t);
+void IntArrayDestroy(IntArray**);
 
 /*--------------------------------------------------------------------------
  * StrArray struct
@@ -28,7 +41,7 @@ typedef struct StrArray_struct
    (StrArray){.array = _str, .size = sizeof(_str) / sizeof(_str[0])}
 
 bool StrArrayEntryExists(const StrArray, const char*);
-void StrToIntArray(const char*, int*, int**);
+void StrToIntArray(const char*, IntArray**);
 
 /*--------------------------------------------------------------------------
  * StrIntMap struct (str <-> num)
@@ -67,4 +80,4 @@ typedef struct StrStrIntMap_struct
    int         num;
 } StrStrIntMap;
 
-#endif /* MAPS_HEADER */
+#endif /* CONTAINERS_HEADER_HEADER */

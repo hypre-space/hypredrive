@@ -66,7 +66,7 @@ typedef struct YAMLtree_struct {
 } YAMLtree;
 
 /*-----------------------------------------------------------------------------
- * Public prototypes - TODO: change names (YAMLcreateTree -> YAMLTreeCreate)
+ * Public prototypes
  *-----------------------------------------------------------------------------*/
 
 YAMLtree* YAMLtreeCreate(void);
@@ -88,44 +88,51 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
  * Public macros
  *-----------------------------------------------------------------------------*/
 
+#define YAML_NODE_VALIDATE_HELPER(_node, _map_array) \
+   do { \
+      if (StrIntMapArrayDomainEntryExists(_map_array, _node->val)) \
+      { \
+         int _mapped = StrIntMapArrayGetImage(_map_array, _node->val); \
+         int _length = snprintf(NULL, 0, "%d", _mapped) + 1; \
+         if (!_node->mapped_val) \
+         { \
+            _node->mapped_val = (char*) malloc(_length * sizeof(char)); \
+         } \
+         else if (_length > strlen(_node->mapped_val)) \
+         { \
+            _node->mapped_val = (char*) realloc(_node->mapped_val, _length * sizeof(char)); \
+         } \
+         snprintf(_node->mapped_val, _length, "%d", _mapped); \
+         _node->valid = YAML_NODE_VALID; \
+      } \
+      else \
+      { \
+         _node->valid = YAML_NODE_INVALID_VAL; \
+      } \
+   } while (0);
+
 #define YAML_NODE_VALIDATE(_node, _callA, _callB) \
    if ((_node->valid != YAML_NODE_INVALID_DIVISOR) && \
        (_node->valid != YAML_NODE_INVALID_INDENT)) \
    { \
       StrArray _keys = _callA(); \
+      StrIntMapArray _map_array_type; \
       if (StrArrayEntryExists(_keys, _node->key)) \
       { \
-         StrIntMapArray _map_array = _callB(_node->key); \
-         if (_map_array.size > 0) \
+         StrIntMapArray _map_array_key = _callB(_node->key); \
+         if (_map_array_key.size > 0) \
          { \
-            if (StrIntMapArrayDomainEntryExists(_map_array, _node->val)) \
-            { \
-               int _mapped = StrIntMapArrayGetImage(_map_array, _node->val); \
-               int _length = snprintf(NULL, 0, "%d", _mapped) + 1; \
-               if (!_node->mapped_val) \
-               { \
-                  _node->mapped_val = (char*) malloc(_length * sizeof(char)); \
-               } \
-               else if (_length > strlen(_node->mapped_val)) \
-               { \
-                  _node->mapped_val = (char*) realloc(_node->mapped_val, _length * sizeof(char)); \
-               } \
-               snprintf(_node->mapped_val, _length, "%d", _mapped); \
-               _node->valid = YAML_NODE_VALID; \
-            } \
-            else \
-            { \
-               _node->valid = YAML_NODE_INVALID_VAL; \
-            } \
+            YAML_NODE_VALIDATE_HELPER(_node, _map_array_key) \
          } \
          else \
          { \
-            if (!_node->mapped_val) \
-            { \
-               _node->mapped_val = strdup(_node->val); \
-            } \
+            if (!_node->mapped_val) _node->mapped_val = strdup(_node->val); \
             _node->valid = YAML_NODE_VALID; \
          } \
+      } \
+      else if ((_map_array_type = _callB("type")), _map_array_type.size > 0) \
+      { \
+         YAML_NODE_VALIDATE_HELPER(_node, _map_array_type) \
       } \
       else \
       { \
@@ -141,13 +148,24 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
 
 #define YAML_NODE_GET_VALIDITY(_node) _node->valid
 #define YAML_NODE_SET_VALID(_node) _node->valid = YAML_NODE_VALID
+#define YAML_NODE_SET_INVALID_KEY(_node) _node->valid = YAML_NODE_INVALID_KEY
+#define YAML_NODE_SET_INVALID_VAL(_node) _node->valid = YAML_NODE_INVALID_VAL
 #define YAML_NODE_SET_INVALID_INDENT(_node) _node->valid = YAML_NODE_INVALID_INDENT
 #define YAML_NODE_SET_INVALID_DIVISOR(_node) _node->valid = YAML_NODE_INVALID_DIVISOR
 #define YAML_NODE_SET_VALID_IF_NO_VAL(_node) \
-    _node->valid = (!strcmp(_node->val, "")) ? YAML_NODE_VALID : YAML_NODE_UNEXPECTED_VAL
+   _node->valid = (!strcmp(_node->val, "")) ? YAML_NODE_VALID : YAML_NODE_UNEXPECTED_VAL
 
 #define YAML_NODE_ITERATE(_parent, _child) \
-    for (YAMLnode* (_child) = (_parent)->children; (_child) != NULL; (_child) = (_child)->next)
+   for (YAMLnode* (_child) = (_parent)->children; (_child) != NULL; (_child) = (_child)->next)
+
+#define YAML_NODE_DEBUG(_node) \
+   do { \
+      printf("YAMLnode address = %p, {key = %s (%p), val = %s, mapped_val = %s, ", \
+         (void*) _node, _node->key, (void*) _node->key, _node->val, _node->mapped_val); \
+      printf("level = %d, valid = %d, parent = %p, children = %p, next = %p}\n", \
+         _node->level, _node->valid, (void*) _node->parent, (void*) _node->children, \
+         (void*) _node->next); \
+    } while(0)
 
 // TODO: Remove the following macros:
 
@@ -181,4 +199,6 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
    if (!strcmp(_node->val, _val)) { return; }
 #define YAML_INC_INTEGER_IF_KEY_EXISTS(_var, _key, p) \
    { YAMLnode* c = p->children; while (c) { if (!strcmp(c->key, _key)) { _var++; } c = c->next; } }
+
+
 #endif

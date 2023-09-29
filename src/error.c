@@ -290,7 +290,7 @@ ErrorMsgAddUnexpectedVal(const char *key)
    int   length = strlen(key) + 40;
 
    msg = (char*) malloc(length);
-   sprintf(msg, "Unexpected value associated with key: %s", key);
+   sprintf(msg, "Unexpected value associated with %s key", key);
    ErrorMsgAdd(msg);
    free(msg);
 }

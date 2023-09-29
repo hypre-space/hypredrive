@@ -9,7 +9,7 @@
 #define FIELD_HEADER
 
 #include <stddef.h>
-#include "maps.h"
+#include "containers.h"
 #include "yaml.h"
 
 typedef void (*SetterFnc)(void*, YAMLnode*);
@@ -17,7 +17,6 @@ typedef void (*SetterFnc)(void*, YAMLnode*);
 typedef struct FieldOffsetMap_struct
 {
    const char  *name;
-   /* const char  *value; */
    size_t       offset;
    SetterFnc    setter;
 } FieldOffsetMap;
@@ -29,14 +28,12 @@ typedef struct FieldOffsetMap_struct
 #define FIELD_OFFSET_MAP_ENTRY(_st, _field_name, _setter) \
    {#_field_name, offsetof(_st, _field_name), _setter}
 
-/* #define FIELD_VAL_OFFSET_MAP_ENTRY(_st, _field_name, _value, _setter) \ */
-/*    {#_field_name, #_value, offsetof(_st, _field_name), _setter} */
-
 /*-----------------------------------------------------------------------------
  * Prototypes
  *-----------------------------------------------------------------------------*/
 
 void FieldTypeIntSet(void*, YAMLnode*);
+void FieldTypeIntArraySet(void*, YAMLnode*);
 void FieldTypeDoubleSet(void*, YAMLnode*);
 void FieldTypeCharSet(void*, YAMLnode*);
 void FieldTypeStringSet(void*, YAMLnode*);

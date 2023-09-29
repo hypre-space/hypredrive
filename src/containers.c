@@ -5,46 +5,78 @@
  * SPDX-License-Identifier: (Apache-2.0 OR MIT)
  ******************************************************************************/
 
-#include "maps.h"
+#include "containers.h"
 
-#if 0
 /*--------------------------------------------------------------------------
- * StrIntMapFind
+ * IntArrayCreate
  *--------------------------------------------------------------------------*/
 
-static inline int
-StrIntMapFind(const StrIntMap* valid, const char *string, size_t size)
+IntArray*
+IntArrayCreate(size_t size)
 {
-   char     *end_ptr;
-   long int  string_num = strtol(string, &end_ptr, 10);
-   size_t    i;
+   IntArray* int_array;
 
-   if (*end_ptr == '\0')
-   {
-      /* valid number string */
-      for (i = 0; i < size; i++)
-      {
-         if (valid[i].num == string_num)
-         {
-            return (int) string_num;
-         }
-      }
-   }
-   else
-   {
-      /* not a number string */
-      for (i = 0; i < size; i++)
-      {
-         if (!strcmp(valid[i].str, string))
-         {
-            return valid[i].num;
-         }
-      }
-   }
+   int_array = (IntArray*) malloc(sizeof(IntArray));
+   int_array->array = (int*) malloc(size * sizeof(int));
+   int_array->size  = size;
 
-   return INT_MIN;
+   return int_array;
 }
-#endif
+
+/*--------------------------------------------------------------------------
+ * IntArrayDestroy
+ *--------------------------------------------------------------------------*/
+
+void
+IntArrayDestroy(IntArray **int_array_ptr)
+{
+   free((*int_array_ptr)->array);
+   free(*int_array_ptr);
+   *int_array_ptr = NULL;
+}
+
+/*-----------------------------------------------------------------------------
+ * StrToIntArray
+ *-----------------------------------------------------------------------------*/
+
+void
+StrToIntArray(const char* string, IntArray **int_array_ptr)
+{
+   char      *buffer;
+   char      *token;
+   int       *array;
+   int        count;
+   IntArray  *int_array;
+
+   /* Find number of elements in array */
+   buffer = strdup(string);
+   token  = strtok(buffer, "[], ");
+   count  = 0;
+   while (token)
+   {
+      count++;
+      token = strtok(NULL, "[], ");
+   }
+   free(buffer);
+
+   /* Create IntArray */
+   int_array = IntArrayCreate(count);
+
+   /* Build array */
+   buffer = strdup(string);
+   token  = strtok(buffer, "[], ");
+   count  = 0;
+   while (token)
+   {
+      int_array->array[count] = atoi(token);
+      count++;
+      token = strtok(NULL, "[], ");
+   }
+   free(buffer);
+
+   /* Set output pointer */
+   *int_array_ptr = int_array;
+}
 
 /*--------------------------------------------------------------------------
  * OnOffMapArray
@@ -129,43 +161,4 @@ StrIntMapArrayDomainEntryExists(const StrIntMapArray valid, const char *string)
    {
       return false;
    }
-}
-
-/*-----------------------------------------------------------------------------
- * StrToIntArray
- *-----------------------------------------------------------------------------*/
-
-void
-StrToIntArray(const char* string, int *count_ptr, int **array_ptr)
-{
-   char   *buffer;
-   char   *token;
-   int    *array;
-   int     count;
-
-   /* Find number of elements in array */
-   buffer = strdup(string);
-   token  = strtok(buffer, "[], ");
-   count  = 0;
-   while (token)
-   {
-      count++;
-      token = strtok(NULL, "[], ");
-   }
-   free(buffer);
-   *count_ptr = count;
-
-   /* Build array */
-   buffer = strdup(string);
-   array  = (int*) malloc(count * sizeof(int));
-   token  = strtok(buffer, "[], ");
-   count  = 0;
-   while (token)
-   {
-      array[count] = atoi(token);
-      count++;
-      token = strtok(NULL, "[], ");
-   }
-   free(buffer);
-   *array_ptr = array;
 }
