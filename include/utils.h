@@ -32,6 +32,7 @@ typedef struct HYPRE_IntArray_struct {
  * Public prototypes
  *-----------------------------------------------------------------------------*/
 
+char* StrToLowerCase(char*);
 int CheckBinaryDataExists(const char* prefix);
 int IntArrayRead(MPI_Comm, const char*, HYPRE_IntArray*);
 

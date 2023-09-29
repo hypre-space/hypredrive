@@ -224,13 +224,23 @@ YAMLnodeCreate(char *key, char* val, int level)
 
    node             = (YAMLnode*) malloc(sizeof(YAMLnode));
    node->level      = level;
-   node->key        = strdup(key); // TODO: transform to lower case
-   node->val        = strdup(val); // TODO: transform to lower case
+   node->key        = strdup(key);
    node->mapped_val = NULL;
    node->valid      = YAML_NODE_VALID; // We assume nodes are valid by default
    node->parent     = NULL;
    node->children   = NULL;
    node->next       = NULL;
+
+   /* If the key contains "filename", "node->val" will be the same as "val".
+      Otherwise, "node->val" will be set as "val" with all lowercase letters */
+   if (strstr(key, "filename") != NULL)
+   {
+      node->val     = strdup(val);
+   }
+   else
+   {
+      node->val     = StrToLowerCase(strdup(val));
+   }
 
    return node;
 }
