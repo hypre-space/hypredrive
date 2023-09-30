@@ -137,6 +137,8 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
             HYPRE_Solver precon, HYPRE_Solver solver,
             HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x)
 {
+   ExecTimesStart("prec");
+
    void                    *vM, *vb, *vx;
    HYPRE_ParCSRMatrix       par_M;
    HYPRE_ParVector          par_b, par_x;
@@ -188,8 +190,11 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
          break;
 
       default:
+         ExecTimesFinish("prec");
          return;
    }
+
+   ExecTimesFinish("prec");
 }
 
 /*-----------------------------------------------------------------------------
@@ -200,6 +205,8 @@ void
 SolverApply(solver_t solver_method, HYPRE_Solver solver,
             HYPRE_IJMatrix A, HYPRE_IJVector b, HYPRE_IJVector x)
 {
+   ExecTimesStart("solve");
+
    void               *vA, *vb, *vx;
    HYPRE_ParCSRMatrix  par_A;
    HYPRE_ParVector     par_b, par_x;
@@ -227,8 +234,11 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver,
          break;
 
       default:
+         ExecTimesFinish("solve");
          return;
    }
+
+   ExecTimesFinish("solve");
 }
 
 /*-----------------------------------------------------------------------------

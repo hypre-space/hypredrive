@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include "error.h"
 #include "containers.h"
+#include "timing.h"
 
 /*-----------------------------------------------------------------------------
  * Public prototypes

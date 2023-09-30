@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "linsys.h"
+#include "HYPRE_parcsr_mv.h" /* TODO: remove after implementing IJVectorClone/Copy */
 
 static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FieldTypeStringSet),
@@ -129,6 +130,8 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
 void
 LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 {
+   ExecTimesStart("matrix");
+
    /* Read matrix */
    if (args->matrix_filename[0] != '\0')
    {
@@ -153,6 +156,8 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       ErrorMsgAddInvalidFilename(args->matrix_filename);
    }
+
+   ExecTimesFinish("matrix");
 }
 
 /*-----------------------------------------------------------------------------
@@ -162,6 +167,8 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 void
 LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVector *rhs_ptr)
 {
+   ExecTimesStart("rhs");
+
    HYPRE_BigInt    ilower, iupper;
    HYPRE_BigInt    jlower, jupper;
 
@@ -199,6 +206,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
          ErrorMsgAddInvalidFilename(args->rhs_filename);
       }
    }
+
+   ExecTimesFinish("rhs");
 }
 
 /*-----------------------------------------------------------------------------
@@ -210,7 +219,8 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
                             LS_args *args,
                             HYPRE_IJMatrix mat,
                             HYPRE_IJVector rhs,
-                            HYPRE_IJVector *x0_ptr)
+                            HYPRE_IJVector *x0_ptr,
+                            HYPRE_IJVector *x_ptr)
 {
    HYPRE_BigInt    jlower, jupper;
 
@@ -244,6 +254,32 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
          HYPRE_IJVectorRead(args->x0_filename, comm, HYPRE_PARCSR, x0_ptr);
       }
    }
+
+   /* TODO: implement HYPRE_IJVectorClone in hypre */
+   HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
+   HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
+   HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize(*x_ptr);
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemResetInitialGuess
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr,
+                              HYPRE_IJVector x_ptr)
+{
+   HYPRE_ParVector   par_x0, par_x;
+   void             *obj_x0, *obj_x;
+
+   /* TODO: implement HYPRE_IJVectorCopy in hypre */
+   HYPRE_IJVectorGetObject(x0_ptr, &obj_x0);
+   HYPRE_IJVectorGetObject(x_ptr, &obj_x);
+   par_x0 = (HYPRE_ParVector) obj_x0;
+   par_x  = (HYPRE_ParVector) obj_x;
+
+   HYPRE_ParVectorCopy(par_x0, par_x);
 }
 
 /*-----------------------------------------------------------------------------
@@ -273,6 +309,7 @@ LinearSystemSetPrecMatrix(MPI_Comm comm,
 void
 LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 {
+   ExecTimesStart("dofmap");
    if (args->dofmap_filename[0] == '\0')
    {
       *dofmap_ptr = IntArrayCreate(0);
@@ -283,4 +320,5 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
    }
 
    /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks */
+   ExecTimesFinish("dofmap");
 }
