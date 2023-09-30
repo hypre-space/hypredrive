@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include "error.h"
 #include "containers.h"
-#include "timing.h"
+#include "stats.h"
 
 /*-----------------------------------------------------------------------------
  * Public prototypes
