@@ -22,6 +22,7 @@ InputArgsCreate(input_args **iargs_ptr)
    /* Set general default options */
    iargs->warmup = 0;
    iargs->num_repetitions = 1;
+   iargs->statistics = 1;
 
    /* Set default Linear System options */
    LinearSystemSetDefaultArgs(&iargs->ls);
@@ -68,23 +69,47 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
    child = parent->children;
    while (child)
    {
-      if (!strcmp(child->key, "warmup"))
+      if (!strcmp(child->key, "warmup") ||
+          !strcmp(child->key, "statistics"))
       {
-         if (!strcmp(child->val, "no") ||
+         if (!strcmp(child->val, "off") ||
+             !strcmp(child->val, "no") ||
              !strcmp(child->val, "0")  ||
              !strcmp(child->val, "n"))
          {
-            iargs->warmup = 0;
+            if (!strcmp(child->key, "warmup"))
+            {
+               iargs->warmup = 0;
+            }
+            else
+            {
+               iargs->statistics = 0;
+            }
          }
-         else if (!strcmp(child->val, "yes") ||
+         else if (!strcmp(child->val, "on") ||
+                  !strcmp(child->val, "yes") ||
                   !strcmp(child->val, "1")  ||
                   !strcmp(child->val, "y"))
          {
-            iargs->warmup = 0;
+            if (!strcmp(child->key, "warmup"))
+            {
+               iargs->warmup = 1;
+            }
+            else
+            {
+               iargs->statistics = 1;
+            }
          }
          else
          {
-            iargs->warmup = 0;
+            if (!strcmp(child->key, "warmup"))
+            {
+               iargs->warmup = 0;
+            }
+            else
+            {
+               iargs->statistics = 0;
+            }
             ErrorCodeSet(ERROR_INVALID_VAL);
          }
       }

@@ -19,8 +19,9 @@
  *--------------------------------------------------------------------------*/
 
 typedef struct input_args_struct {
-   HYPRE_Int     warmup; /* TODO: move this to separate struct */
-   HYPRE_Int     num_repetitions; /* TODO: move this to separate struct */
+   int           warmup; /* TODO: move this to separate struct */
+   int           num_repetitions; /* TODO: move this to separate struct */
+   int           statistics; /* TODO: move this to separate struct */
 
    LS_args       ls;
 

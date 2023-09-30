@@ -93,7 +93,6 @@ int main(int argc, char **argv)
     * Finalize driver
     *-----------------------------------------------------------*/
 
-   InputArgsDestroy(&iargs);
    if (mat_A != mat_M)
    {
       HYPRE_IJMatrixDestroy(mat_M);
@@ -105,8 +104,9 @@ int main(int argc, char **argv)
    HYPRE_Finalize();
    MPI_Finalize();
 
-   if (!myid) ExecTimesPrint();
+   if (!myid) StatsPrint(iargs->statistics);
    if (!myid) PrintExitInfo(argv[0]);
+   InputArgsDestroy(&iargs);
 
    return EXIT_SUCCESS;
 }

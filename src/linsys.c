@@ -130,7 +130,7 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
 void
 LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 {
-   ExecTimesStart("matrix");
+   StatsTimerStart("matrix");
 
    /* Read matrix */
    if (args->matrix_filename[0] != '\0')
@@ -157,7 +157,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       ErrorMsgAddInvalidFilename(args->matrix_filename);
    }
 
-   ExecTimesFinish("matrix");
+   StatsTimerFinish("matrix");
 }
 
 /*-----------------------------------------------------------------------------
@@ -167,7 +167,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 void
 LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVector *rhs_ptr)
 {
-   ExecTimesStart("rhs");
+   StatsTimerStart("rhs");
 
    HYPRE_BigInt    ilower, iupper;
    HYPRE_BigInt    jlower, jupper;
@@ -207,7 +207,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
       }
    }
 
-   ExecTimesFinish("rhs");
+   StatsTimerFinish("rhs");
 }
 
 /*-----------------------------------------------------------------------------
@@ -309,7 +309,7 @@ LinearSystemSetPrecMatrix(MPI_Comm comm,
 void
 LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 {
-   ExecTimesStart("dofmap");
+   StatsTimerStart("dofmap");
    if (args->dofmap_filename[0] == '\0')
    {
       *dofmap_ptr = IntArrayCreate(0);
@@ -320,5 +320,5 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
    }
 
    /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks */
-   ExecTimesFinish("dofmap");
+   StatsTimerFinish("dofmap");
 }

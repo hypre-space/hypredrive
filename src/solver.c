@@ -137,7 +137,7 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
             HYPRE_Solver precon, HYPRE_Solver solver,
             HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x)
 {
-   ExecTimesStart("prec");
+   StatsTimerStart("prec");
 
    void                    *vM, *vb, *vx;
    HYPRE_ParCSRMatrix       par_M;
@@ -190,11 +190,11 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
          break;
 
       default:
-         ExecTimesFinish("prec");
+         StatsTimerFinish("prec");
          return;
    }
 
-   ExecTimesFinish("prec");
+   StatsTimerFinish("prec");
 }
 
 /*-----------------------------------------------------------------------------
@@ -205,11 +205,12 @@ void
 SolverApply(solver_t solver_method, HYPRE_Solver solver,
             HYPRE_IJMatrix A, HYPRE_IJVector b, HYPRE_IJVector x)
 {
-   ExecTimesStart("solve");
+   StatsTimerStart("solve");
 
    void               *vA, *vb, *vx;
    HYPRE_ParCSRMatrix  par_A;
    HYPRE_ParVector     par_b, par_x;
+   HYPRE_Int           iters = 0;
 
    HYPRE_IJMatrixGetObject(A, &vA); par_A = (HYPRE_ParCSRMatrix) vA;
    HYPRE_IJVectorGetObject(b, &vb); par_b = (HYPRE_ParVector) vb;
@@ -219,26 +220,32 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver,
    {
       case SOLVER_PCG:
          HYPRE_ParCSRPCGSolve(solver, par_A, par_b, par_x);
+         HYPRE_PCGGetNumIterations(solver, &iters);
          break;
 
       case SOLVER_GMRES:
          HYPRE_ParCSRGMRESSolve(solver, par_A, par_b, par_x);
+         HYPRE_GMRESGetNumIterations(solver, &iters);
          break;
 
       case SOLVER_FGMRES:
          HYPRE_ParCSRFlexGMRESSolve(solver, par_A, par_b, par_x);
+         HYPRE_FlexGMRESGetNumIterations(solver, &iters);
          break;
 
       case SOLVER_BICGSTAB:
          HYPRE_ParCSRBiCGSTABSolve(solver, par_A, par_b, par_x);
+         HYPRE_BiCGSTABGetNumIterations(solver, &iters);
          break;
 
       default:
-         ExecTimesFinish("solve");
+         StatsIterSet((int) iters);
+         StatsTimerFinish("solve");
          return;
    }
 
-   ExecTimesFinish("solve");
+   StatsIterSet((int) iters);
+   StatsTimerFinish("solve");
 }
 
 /*-----------------------------------------------------------------------------
