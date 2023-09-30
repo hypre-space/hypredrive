@@ -48,15 +48,9 @@ void ErrorCodeResetAll(void);
 
 void ErrorMsgAdd(const char*);
 void ErrorMsgAddCodeWithCount(ErrorCode, const char*);
-void ErrorMsgAddInvalidKeyValPair(const char*, const char*); // TODO: Remove me
-void ErrorMsgAddUnknownKey(const char*); // TODO: Remove me
-void ErrorMsgAddUnknownVal(const char*); // TODO: Remove me
 void ErrorMsgAddMissingKey(const char*);
 void ErrorMsgAddExtraKey(const char*);
 void ErrorMsgAddUnexpectedVal(const char*);
-void ErrorMsgAddInvalidSolverOption(int); // TODO: Remove me
-void ErrorMsgAddInvalidPreconOption(int); // TODO: Remove me
-void ErrorMsgAddInvalidString(const char*);
 void ErrorMsgAddInvalidFilename(const char*);
 void ErrorMsgPrint();
 void ErrorMsgClear();

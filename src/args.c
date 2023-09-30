@@ -85,7 +85,7 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
          else
          {
             iargs->warmup = 0;
-            ErrorMsgAddInvalidKeyValPair(child->key, child->val);
+            ErrorCodeSet(ERROR_INVALID_VAL);
          }
       }
       else if (!strcmp(child->key, "num_repetitions"))
@@ -94,7 +94,7 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
       }
       else
       {
-         ErrorMsgAddUnknownKey(child->key);
+         ErrorCodeSet(ERROR_INVALID_KEY);
       }
 
       child = child->next;
