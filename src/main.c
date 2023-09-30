@@ -32,12 +32,6 @@ int main(int argc, char **argv)
 
    HYPRE_Int        i;
 
-   if (argc < 1)
-   {
-      if (!myid) PrintUsage(argv[0]);
-      return EXIT_FAILURE;
-   }
-
    /*-----------------------------------------------------------
     * Initialize driver
     *-----------------------------------------------------------*/
@@ -45,6 +39,12 @@ int main(int argc, char **argv)
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
    HYPRE_Initialize();
+
+   if (argc < 1)
+   {
+      if (!myid) PrintUsage(argv[0]);
+      return EXIT_FAILURE;
+   }
 
    /*-----------------------------------------------------------
     * Print libraries/driver info
