@@ -35,4 +35,4 @@ typedef struct BiCGSTAB_args_struct {
 void BiCGSTABSetArgs(void*, YAMLnode*);
 void BiCGSTABCreate(MPI_Comm, BiCGSTAB_args*, HYPRE_Solver*);
 
-#endif
+#endif /* BICGSTAB_HEADER */

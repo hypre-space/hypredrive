@@ -39,4 +39,4 @@ void InputArgsCreate(input_args**);
 void InputArgsDestroy(input_args**);
 void InputArgsParse(MPI_Comm, int, char**, input_args**);
 
-#endif
+#endif /* ARGS_HEADER */

@@ -34,4 +34,4 @@ typedef struct FGMRES_args_struct {
 void FGMRESSetArgs(void*, YAMLnode*);
 void FGMRESCreate(MPI_Comm, FGMRES_args*, HYPRE_Solver*);
 
-#endif
+#endif /* FGMRES_HEADER */

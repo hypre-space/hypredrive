@@ -38,4 +38,4 @@ typedef struct FSAI_args_struct {
 void FSAISetArgs(void*, YAMLnode*);
 void FSAICreate(FSAI_args*, HYPRE_Solver*);
 
-#endif
+#endif /* FSAI_HEADER */

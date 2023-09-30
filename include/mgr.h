@@ -93,4 +93,4 @@ void MGRSetDofmap(MGR_args*, IntArray*);
 void MGRCreate(MGR_args*, HYPRE_Solver*);
 void MGRDestroyArgs(MGR_args**);
 
-#endif
+#endif /* MGR_HEADER */

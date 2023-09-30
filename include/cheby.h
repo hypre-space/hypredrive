@@ -31,4 +31,4 @@ typedef struct Cheby_args_struct {
 void ChebySetDefaultArgs(Cheby_args*);
 void ChebySetArgs(void*, YAMLnode*);
 
-#endif
+#endif /* CHEBY_HEADER */

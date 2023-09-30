@@ -37,4 +37,4 @@ typedef struct PCG_args_struct {
 void PCGSetArgs(void*, YAMLnode*);
 void PCGCreate(MPI_Comm, PCG_args*, HYPRE_Solver*);
 
-#endif
+#endif /* PCG_HEADER */

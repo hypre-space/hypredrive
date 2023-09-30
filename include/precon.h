@@ -50,4 +50,4 @@ void PreconSetArgsFromYAML(precon_args*, YAMLnode*); /* TODO: change name to Pre
 void PreconCreate(precon_t, precon_args*, IntArray*, HYPRE_Solver*);
 void PreconDestroy(precon_t, HYPRE_Solver*);
 
-#endif
+#endif /* PRECON_HEADER */

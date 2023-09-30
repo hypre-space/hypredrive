@@ -112,4 +112,4 @@ void AMGSetDefaultArgs(AMG_args*);
 void AMGSetArgs(void*, YAMLnode*);
 void AMGCreate(AMG_args*, HYPRE_Solver*);
 
-#endif
+#endif /* AMG_HEADER */

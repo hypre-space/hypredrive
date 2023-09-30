@@ -88,4 +88,4 @@ typedef struct StrStrIntMap_struct
    int         num;
 } StrStrIntMap;
 
-#endif /* CONTAINERS_HEADER_HEADER */
+#endif /* CONTAINERS_HEADER */

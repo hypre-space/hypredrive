@@ -40,4 +40,4 @@ void ILUSetDefaultArgs(ILU_args*);
 void ILUSetArgs(void*, YAMLnode*);
 void ILUCreate(ILU_args*, HYPRE_Solver*);
 
-#endif
+#endif /* ILU_HEADER */

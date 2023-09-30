@@ -46,4 +46,4 @@ void LinearSystemSetInitialGuess(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVec
 void LinearSystemSetPrecMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJMatrix*);
 void LinearSystemReadDofmap(MPI_Comm, LS_args*, IntArray**);
 
-#endif
+#endif /* LINSYS_HEADER */

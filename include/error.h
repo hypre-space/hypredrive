@@ -56,4 +56,4 @@ void ErrorMsgPrint();
 void ErrorMsgClear();
 void ErrorMsgPrintAndAbort(MPI_Comm);
 
-#endif
+#endif /* ERROR_H */

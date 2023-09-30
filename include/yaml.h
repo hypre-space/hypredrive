@@ -167,4 +167,4 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
          (void*) _node->next); \
     } while(0)
 
-#endif
+#endif /* YAML_HEADER */

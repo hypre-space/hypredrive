@@ -38,4 +38,4 @@ typedef struct GMRES_args_struct {
 void GMRESSetArgs(void*, YAMLnode*);
 void GMRESCreate(MPI_Comm, GMRES_args*, HYPRE_Solver*);
 
-#endif
+#endif /* GMRES_HEADER */

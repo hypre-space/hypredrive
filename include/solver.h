@@ -55,4 +55,4 @@ void SolverSetup(precon_t, solver_t, HYPRE_Solver, HYPRE_Solver,
 void SolverApply(solver_t, HYPRE_Solver, HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector);
 void SolverDestroy(solver_t, HYPRE_Solver*);
 
-#endif
+#endif /* SOLVER_HEADER */
