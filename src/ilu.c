@@ -6,91 +6,113 @@
  ******************************************************************************/
 
 #include "ilu.h"
+#include "gen_macros.h"
+
+/*-----------------------------------------------------------------------------
+ * Define Field/Offset/Setter mapping
+ *-----------------------------------------------------------------------------*/
+
+#define ILU_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fill_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, reordering, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tri_solve, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, lower_jac_iters, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, upper_jac_iters, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_nnz, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, schur_max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, droptol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, nsh_droptol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet)
+
+/* Define num_fields macro */
+#define ILU_NUM_FIELDS (sizeof(ILU_field_offset_map) / sizeof(ILU_field_offset_map[0]))
+
+/* Generate the various function declarations/definitions and the field_offset_map object */
+GENERATE_PREFIXED_COMPONENTS(ILU)
+
+/*-----------------------------------------------------------------------------
+ * ILUGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+ILUGetValidValues(const char* key)
+{
+   if (!strcmp(key, "type"))
+   {
+      static StrIntMap map[] = {{"bj-iluk",          0},
+                                {"bj-ilut",          1},
+                                {"gmres-iluk",      10},
+                                {"gmres-ilut",      11},
+                                {"nsh-iluk",        20},
+                                {"nsh-ilut",        21},
+                                {"ras-iluk",        30},
+                                {"ras-ilut",        31},
+                                {"ddpq-gmres-iluk", 40},
+                                {"ddpq-gmres-ilut", 41},
+                                {"rap-mod-ilu0",    50}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "reordering") ||
+            !strcmp(key, "tri_solve"))
+   {
+      return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
 
 /*-----------------------------------------------------------------------------
  * ILUSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 ILUSetDefaultArgs(ILU_args *args)
 {
-   args->max_iter = 1;
-   args->print_level = 0;
-   args->type = 0;
-   args->fill_level = 0;
-   args->reordering = 0;
-   args->tri_solve = 1;
+   args->max_iter        = 1;
+   args->print_level     = 0;
+   args->type            = 0;
+   args->fill_level      = 0;
+   args->reordering      = 0;
+   args->tri_solve       = 1;
    args->lower_jac_iters = 5;
    args->upper_jac_iters = 5;
-   args->max_row_nnz = 1000;
-   args->schur_max_iter = 3;
-   args->droptol = 1.0e-02;
-
-   return EXIT_SUCCESS;
-}
-
-/*-----------------------------------------------------------------------------
- * ILUSetArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-int
-ILUSetArgsFromYAML(ILU_args *args, YAMLnode *parent)
-{
-   YAMLnode *child;
-
-   if (!parent)
-   {
-      return EXIT_SUCCESS;
-   }
-
-   child = parent->children;
-   while (child)
-   {
-      YAML_SET_IF_OPEN()
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "max_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->print_level, "print_level", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->type, "type", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->fill_level, "fill_level", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->reordering, "reordering", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->tri_solve, "tri_solve", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->lower_jac_iters, "lower_jac_iters", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->upper_jac_iters, "upper_jac_iters", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_row_nnz, "max_row_nnz", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->schur_max_iter, "schur_max_iter", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->droptol, "droptol", child)
-      YAML_SET_IF_CLOSE(child)
-
-      child = child->next;
-   }
-
-   return EXIT_SUCCESS;
-}
-
-/*-----------------------------------------------------------------------------
- * ILUSetArgs
- *-----------------------------------------------------------------------------*/
-
-int
-ILUSetArgs(ILU_args *args, YAMLnode *parent)
-{
-   ILUSetDefaultArgs(args);
-   ILUSetArgsFromYAML(args, parent);
-
-   return EXIT_SUCCESS;
+   args->max_row_nnz     = 1000;
+   args->schur_max_iter  = 3;
+   args->droptol         = 1.0e-02;
+   args->nsh_droptol     = 1.0e-02;
+   args->tolerance       = 0.0;
 }
 
 /*-----------------------------------------------------------------------------
  * ILUCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 ILUCreate(ILU_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver precon;
 
    HYPRE_ILUCreate(&precon);
 
-   *precon_ptr = precon;
+   HYPRE_ILUSetType(precon, args->type);
+   HYPRE_ILUSetLevelOfFill(precon, args->fill_level);
+   HYPRE_ILUSetLocalReordering(precon, args->reordering);
+   HYPRE_ILUSetTriSolve(precon, args->tri_solve);
+   HYPRE_ILUSetLowerJacobiIters(precon, args->lower_jac_iters);
+   HYPRE_ILUSetUpperJacobiIters(precon, args->upper_jac_iters);
+   HYPRE_ILUSetPrintLevel(precon, args->print_level);
+   HYPRE_ILUSetMaxIter(precon, args->max_iter);
+   HYPRE_ILUSetTol(precon, args->tolerance);
+   HYPRE_ILUSetMaxNnzPerRow(precon, args->max_row_nnz);
+   HYPRE_ILUSetDropThreshold(precon, args->droptol);
+   HYPRE_ILUSetSchurMaxIter(precon, args->schur_max_iter);
+   HYPRE_ILUSetNSHDropThreshold(precon, args->nsh_droptol);
 
-   return EXIT_SUCCESS;
+   *precon_ptr = precon;
 }

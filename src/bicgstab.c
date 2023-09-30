@@ -6,61 +6,53 @@
  ******************************************************************************/
 
 #include "bicgstab.h"
+#include "gen_macros.h"
+
+/*-----------------------------------------------------------------------------
+ * Define Field/Offset/Setter mapping
+ *-----------------------------------------------------------------------------*/
+
+#define BiCGSTAB_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, FieldTypeDoubleSet)
+
+/* Define num_fields macro */
+#define BiCGSTAB_NUM_FIELDS (sizeof(BiCGSTAB_field_offset_map) /\
+                             sizeof(BiCGSTAB_field_offset_map[0]))
+
+/* Generate the various function declarations/definitions and the field_offset_map object */
+GENERATE_PREFIXED_COMPONENTS(BiCGSTAB)
+DEFINE_VOID_GET_VALID_VALUES_FUNC(BiCGSTAB)
 
 /*-----------------------------------------------------------------------------
  * BiCGSTABSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
-BiCGSTABSetDefaultArgs(BICGSTAB_args *args)
+void
+BiCGSTABSetDefaultArgs(BiCGSTAB_args *args)
 {
-   args->min_iter = 0;
-   args->max_iter = 100;
-   args->stop_crit = 0;
-   args->logging = 1;
-   args->print_level = 1;
-   args->rtol = 1.0e-6;
-   args->atol = 0.0;
-   args->cf_tol = 0.0;
-
-   return EXIT_SUCCESS;
-}
-
-/*-----------------------------------------------------------------------------
- * BiCGSTABSetArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-int
-BiCGSTABSetArgsFromYAML(BICGSTAB_args *args, YAMLnode *parent)
-{
-   YAMLnode *child;
-
-   child = parent->children;
-   while (child)
-   {
-      YAML_SET_IF_OPEN()
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "min_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "max_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->stop_crit, "stop_crit", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->logging, "logging", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->print_level, "print_level", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->rtol, "rtol", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->atol, "atol", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->cf_tol, "cf_tol", child)
-      YAML_SET_IF_CLOSE(child)
-
-      child = child->next;
-   }
-
-   return EXIT_SUCCESS;
+   args->min_iter     = 0;
+   args->max_iter     = 100;
+   args->stop_crit    = 0;
+   args->logging      = 1;
+   args->print_level  = 1;
+   args->relative_tol = 1.0e-6;
+   args->absolute_tol = 0.0;
+   args->conv_fac_tol = 0.0;
 }
 
 /*-----------------------------------------------------------------------------
  * BiCGSTABCreate
  *-----------------------------------------------------------------------------*/
 
-int
-BiCGSTABCreate(MPI_Comm comm, BICGSTAB_args *args, HYPRE_Solver *solver_ptr)
+void
+BiCGSTABCreate(MPI_Comm comm, BiCGSTAB_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
 
@@ -70,11 +62,9 @@ BiCGSTABCreate(MPI_Comm comm, BICGSTAB_args *args, HYPRE_Solver *solver_ptr)
    HYPRE_BiCGSTABSetStopCrit(solver, args->stop_crit);
    HYPRE_BiCGSTABSetLogging(solver, args->logging);
    HYPRE_BiCGSTABSetPrintLevel(solver, args->print_level);
-   HYPRE_BiCGSTABSetTol(solver, args->rtol);
-   HYPRE_BiCGSTABSetAbsoluteTol(solver, args->atol);
-   HYPRE_BiCGSTABSetConvergenceFactorTol(solver, args->cf_tol);
+   HYPRE_BiCGSTABSetTol(solver, args->relative_tol);
+   HYPRE_BiCGSTABSetAbsoluteTol(solver, args->absolute_tol);
+   HYPRE_BiCGSTABSetConvergenceFactorTol(solver, args->conv_fac_tol);
 
    *solver_ptr = solver;
-
-   return EXIT_SUCCESS;
 }

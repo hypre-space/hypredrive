@@ -7,75 +7,105 @@
 
 #include "precon.h"
 
+static const FieldOffsetMap precon_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(precon_args, amg, AMGSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(precon_args, mgr, MGRSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(precon_args, ilu, ILUSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(precon_args, fsai, FSAISetArgs),
+};
+
+#define PRECON_NUM_FIELDS (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
+
 /*-----------------------------------------------------------------------------
- * PreconSetDefaultArgs
+ * PreconSetFieldByName
  *-----------------------------------------------------------------------------*/
 
-int
-PreconSetDefaultArgs(precon_t     precon_method,
-                     precon_args *args)
+void
+PreconSetFieldByName(precon_args *args, YAMLnode *node)
 {
-   switch (precon_method)
+   for (size_t i = 0; i < PRECON_NUM_FIELDS; i++)
    {
-      case PRECON_BOOMERAMG:
-         AMGSetDefaultArgs(&args->amg);
-         break;
+      /* Which union type are we trying to set? */
+      if (!strcmp(precon_field_offset_map[i].name, node->key))
+      {
+         precon_field_offset_map[i].setter(
+            (void*)((char*) args + precon_field_offset_map[i].offset),
+            node);
+         return;
+      }
+   }
+}
 
-      case PRECON_MGR:
-         MGRSetDefaultArgs(&args->mgr);
-         break;
+/*-----------------------------------------------------------------------------
+ * PreconGetValidKeys
+ *-----------------------------------------------------------------------------*/
 
-      case PRECON_ILU:
-         ILUSetDefaultArgs(&args->ilu);
-         break;
+StrArray
+PreconGetValidKeys(void)
+{
+   static const char* keys[PRECON_NUM_FIELDS];
 
-      default:
-         ErrorMsgAddInvalidPreconOption((int) precon_method);
-         return EXIT_FAILURE;
+   for (size_t i = 0; i < PRECON_NUM_FIELDS; i++)
+   {
+      keys[i] = precon_field_offset_map[i].name;
    }
 
-   return EXIT_SUCCESS;
+   return STR_ARRAY_CREATE(keys);
+}
+
+/*-----------------------------------------------------------------------------
+ * PreconGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+PreconGetValidValues(const char* key)
+{
+   /* The "preconditioner" entry does not hold values, so we create a void map */
+   return STR_INT_MAP_ARRAY_VOID();
+}
+
+/*-----------------------------------------------------------------------------
+ * PreconGetValidTypeIntMap
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+PreconGetValidTypeIntMap(void)
+{
+   static StrIntMap map[] = {{"amg",  (int) PRECON_BOOMERAMG},
+                             {"mgr",  (int) PRECON_MGR},
+                             {"ilu",  (int) PRECON_ILU},
+                             {"fsai", (int) PRECON_FSAI}};
+
+   return STR_INT_MAP_ARRAY_CREATE(map);
 }
 
 /*-----------------------------------------------------------------------------
  * PreconSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
-PreconSetArgsFromYAML(precon_t      precon_method,
-                      precon_args  *args,
-                      YAMLnode     *node)
+void
+PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 {
-   switch (precon_method)
+   YAML_NODE_ITERATE(parent, child)
    {
-      case PRECON_BOOMERAMG:
-         AMGSetArgsFromYAML(&args->amg, node);
-         break;
+      YAML_NODE_VALIDATE(child,
+                         PreconGetValidKeys,
+                         PreconGetValidValues);
 
-      case PRECON_MGR:
-         MGRSetArgsFromYAML(&args->mgr, node);
-         break;
-
-      case PRECON_ILU:
-         ILUSetArgsFromYAML(&args->ilu, node);
-         break;
-
-      default:
-         ErrorMsgAddInvalidPreconOption((int) precon_method);
-         return EXIT_FAILURE;
+      YAML_NODE_SET_FIELD(child,
+                          args,
+                          PreconSetFieldByName);
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * PreconCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 PreconCreate(precon_t         precon_method,
              precon_args     *args,
-             HYPRE_IntArray  *dofmap,
+             IntArray        *dofmap,
              HYPRE_Solver    *precon_ptr)
 {
    switch (precon_method)
@@ -85,27 +115,28 @@ PreconCreate(precon_t         precon_method,
          break;
 
       case PRECON_MGR:
-         MGRCreate(&args->mgr, dofmap, precon_ptr);
+         MGRSetDofmap(&args->mgr, dofmap);
+         MGRCreate(&args->mgr, precon_ptr);
          break;
 
       case PRECON_ILU:
          ILUCreate(&args->ilu, precon_ptr);
          break;
 
+      case PRECON_FSAI:
+         FSAICreate(&args->fsai, precon_ptr);
+         break;
+
       default:
          *precon_ptr = NULL;
-         ErrorMsgAddInvalidPreconOption((int) precon_method);
-         return EXIT_FAILURE;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * PreconDestroy
  *-----------------------------------------------------------------------------*/
 
-int
+void
 PreconDestroy(precon_t      precon_method,
               HYPRE_Solver *precon_ptr)
 {
@@ -125,14 +156,14 @@ PreconDestroy(precon_t      precon_method,
             HYPRE_ILUDestroy(*precon_ptr);
             break;
 
+         case PRECON_FSAI:
+            HYPRE_FSAIDestroy(*precon_ptr);
+            break;
+
          default:
-            *precon_ptr = NULL;
-            ErrorMsgAddInvalidPreconOption((int) precon_method);
-            return EXIT_FAILURE;
+            return;
       }
 
       *precon_ptr = NULL;
    }
-
-   return EXIT_SUCCESS;
 }

@@ -2,21 +2,23 @@ general:
   warmup: no
   num_repetitions: 1
 
-linear_system: ij
+linear_system:
+  type: ij
   rhs_filename: IJ.out.b
   matrix_filename: IJ.out.A
-  num_partitions: 1
 
-solver: pcg
-  tolerance: 1.0e-3
-  max_iterations: 500
-  print_level: 3
+solver:
+  pcg:
+    relative_tol: 1.0e-3
+    max_iter: 500
+    print_level: 3
 
-preconditioner: boomeramg
-  print_level: 1
-  smooth_num_levels: 1
-  smoother: fsai
-    fill_level: 1
+preconditioner:
+  amg:
+    print_level: 1
+    smooth_num_levels: 1
+    smoother: fsai
+      fill_level: 1
   # coarsening: HMIS
   #   strength: 0.25
   # agg_coarsening:

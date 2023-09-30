@@ -15,50 +15,82 @@
 #define MAX_MGR_LEVELS 32
 
 /*--------------------------------------------------------------------------
- * Generic Relaxation methods arguments struct
+ * Coarsest level solver arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef union relax_args_union {
+typedef struct MGRcls_args_struct {
+   HYPRE_Int     type;
+
+   AMG_args      amg;
+} MGRcls_args;
+
+/*--------------------------------------------------------------------------
+ * F-Relaxation arguments struct
+ *--------------------------------------------------------------------------*/
+
+typedef struct MGRfrlx_args_struct {
+   HYPRE_Int     type;
+   HYPRE_Int     num_sweeps;
+
+   /* TODO: Ideally, these should be inside a union */
    AMG_args      amg;
    ILU_args      ilu;
-} relax_args;
+} MGRfrlx_args;
+
+/*--------------------------------------------------------------------------
+ * Global-Relaxation arguments struct
+ *--------------------------------------------------------------------------*/
+
+typedef struct MGRgrlx_args_struct {
+   HYPRE_Int     type;
+   HYPRE_Int     num_sweeps;
+
+   /* TODO: Ideally, these should be inside a union */
+   ILU_args      ilu;
+} MGRgrlx_args;
+
+/*--------------------------------------------------------------------------
+ * MGR level arguments struct
+ *--------------------------------------------------------------------------*/
+
+typedef struct MGRlvl_args_struct {
+   IntArray      *f_dofs;
+
+   HYPRE_Int      prolongation_type;
+   HYPRE_Int      restriction_type;
+   HYPRE_Int      coarse_level_type;
+
+   MGRfrlx_args   f_relaxation;
+   MGRgrlx_args   g_relaxation;
+} MGRlvl_args;
 
 /*--------------------------------------------------------------------------
  * MGR preconditioner arguments struct
  *--------------------------------------------------------------------------*/
 
 typedef struct MGR_args_struct {
-   HYPRE_Int     lvl;
+   IntArray     *dofmap;
+
    HYPRE_Int     non_c_to_f;
    HYPRE_Int     pmax;
    HYPRE_Int     max_iter;
    HYPRE_Int     num_levels;
+   HYPRE_Int     relax_type;   /* TODO: we shouldn't need this */
    HYPRE_Int     print_level;
-   HYPRE_Real    tol;
+   HYPRE_Real    tolerance;
    HYPRE_Real    coarse_th;
 
-   HYPRE_Int     num_f_dofs[MAX_MGR_LEVELS];
-   HYPRE_Int    *f_dofs[MAX_MGR_LEVELS];
-
-   HYPRE_Int     num_frelax_sweeps[MAX_MGR_LEVELS];
-   HYPRE_Int     num_grelax_sweeps[MAX_MGR_LEVELS];
-   HYPRE_Int     prolongation_types[MAX_MGR_LEVELS];
-   HYPRE_Int     restriction_types[MAX_MGR_LEVELS];
-   HYPRE_Int     coarse_grid_types[MAX_MGR_LEVELS];
-   HYPRE_Int     frelax_types[MAX_MGR_LEVELS];
-   HYPRE_Int     grelax_types[MAX_MGR_LEVELS];
-
-   relax_args    frelax[MAX_MGR_LEVELS];
-   relax_args    grelax[MAX_MGR_LEVELS];
+   MGRlvl_args   level[MAX_MGR_LEVELS - 1];
+   MGRcls_args   coarsest_level;
 } MGR_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-int MGRSetDefaultArgs(MGR_args*);
-int MGRSetArgsFromYAML(MGR_args*, YAMLnode*);
-int MGRCreate(MGR_args*, HYPRE_IntArray*, HYPRE_Solver*);
-int MGRDestroyArgs(MGR_args**);
+void MGRSetArgs(void*, YAMLnode*);
+void MGRSetDofmap(MGR_args*, IntArray*);
+void MGRCreate(MGR_args*, HYPRE_Solver*);
+void MGRDestroyArgs(MGR_args**);
 
-#endif
+#endif /* MGR_HEADER */

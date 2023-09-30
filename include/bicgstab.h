@@ -9,30 +9,30 @@
 #define BICGSTAB_HEADER
 
 #include "yaml.h"
+#include "field.h"
 #include "HYPRE_parcsr_ls.h"
 #include "HYPRE_krylov.h"
 
 /*--------------------------------------------------------------------------
- * BICGSTAB solver arguments struct
+ * BiCGSTAB solver arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct BICGSTAB_args_struct {
+typedef struct BiCGSTAB_args_struct {
    HYPRE_Int     min_iter;
    HYPRE_Int     max_iter;
    HYPRE_Int     stop_crit;
    HYPRE_Int     logging;
    HYPRE_Int     print_level;
-   HYPRE_Real    rtol;
-   HYPRE_Real    atol;
-   HYPRE_Real    cf_tol;
-} BICGSTAB_args;
+   HYPRE_Real    relative_tol;
+   HYPRE_Real    absolute_tol;
+   HYPRE_Real    conv_fac_tol;
+} BiCGSTAB_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-int BiCGSTABSetDefaultArgs(BICGSTAB_args*);
-int BiCGSTABSetArgsFromYAML(BICGSTAB_args*, YAMLnode*);
-int BiCGSTABCreate(MPI_Comm, BICGSTAB_args*, HYPRE_Solver*);
+void BiCGSTABSetArgs(void*, YAMLnode*);
+void BiCGSTABCreate(MPI_Comm, BiCGSTAB_args*, HYPRE_Solver*);
 
-#endif
+#endif /* BICGSTAB_HEADER */

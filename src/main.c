@@ -12,27 +12,25 @@
 #include "linsys.h"
 #include "info.h"
 
+#define ANNOTATE_REGION_BEGIN()
+#define ANNOTATE_REGION_END()
+#define ANNOTATE_ITER_BEGIN(i)
+#define ANNOTATE_ITER_END(i)
+
 int main(int argc, char **argv)
 {
    MPI_Comm         comm = MPI_COMM_WORLD;
    int              myid;
+   IntArray        *dofmap;
    input_args      *iargs;
    HYPRE_IJMatrix   mat_A;
    HYPRE_IJMatrix   mat_M;
    HYPRE_IJVector   rhs;
    HYPRE_IJVector   sol;
-   HYPRE_IntArray   dofmap;
    HYPRE_Solver     precon;
    HYPRE_Solver     solver;
 
    HYPRE_Int        i;
-
-   if (argc < 1)
-   {
-      fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
-      fprintf(stderr, "  filename: config file in YAML format\n");
-      return EXIT_FAILURE;
-   }
 
    /*-----------------------------------------------------------
     * Initialize driver
@@ -42,23 +40,23 @@ int main(int argc, char **argv)
    MPI_Comm_rank(comm, &myid);
    HYPRE_Initialize();
 
+   if (argc < 1)
+   {
+      if (!myid) PrintUsage(argv[0]);
+      return EXIT_FAILURE;
+   }
+
    /*-----------------------------------------------------------
-    * Print driver info
+    * Print libraries/driver info
     *-----------------------------------------------------------*/
 
-   if (myid == 0)
-   {
-      PrintInfo();
-   }
+   if (!myid) PrintLibInfo();
 
    /*-----------------------------------------------------------
     * Parse input parameters
     *-----------------------------------------------------------*/
 
    InputArgsParse(comm, argc, argv, &iargs);
-   /* iargs.precon.amg.max_iter = 10; */
-   /* iargs.precon.amg.print_level = 1; */
-   /* printf("max_iter: %d\n", iargs.precon.amg.max_iter); */
 
    /*-----------------------------------------------------------
     * Build and solve linear system(s)
@@ -70,20 +68,30 @@ int main(int argc, char **argv)
    }
 
    /* Build linear system */
+   ANNOTATE_REGION_BEGIN();
    LinearSystemReadMatrix(comm, &iargs->ls, &mat_A);
    LinearSystemSetRHS(comm, &iargs->ls, mat_A, &rhs);
    LinearSystemSetInitialGuess(comm, &iargs->ls, mat_A, rhs, &sol);
    LinearSystemSetPrecMatrix(comm, &iargs->ls, mat_A, &mat_M);
    LinearSystemReadDofmap(comm, &iargs->ls, &dofmap);
+   ANNOTATE_REGION_END();
 
    /* Solve linear system */
    for (i = 0; i < iargs->num_repetitions; i++)
    {
-      PreconCreate(iargs->precon_method, &iargs->precon, &dofmap, &precon);
+      /* Setup phase */
+      ANNOTATE_ITER_BEGIN(i);
+      PreconCreate(iargs->precon_method, &iargs->precon, dofmap, &precon);
       SolverCreate(comm, iargs->solver_method, &iargs->solver, &solver);
       SolverSetup(iargs->precon_method, iargs->solver_method, precon, solver, mat_M, rhs, sol);
-      SolverApply(iargs->solver_method, solver, mat_A, rhs, sol);
+      ANNOTATE_ITER_END(i);
 
+      /* Solve phase */
+      ANNOTATE_ITER_BEGIN(i);
+      SolverApply(iargs->solver_method, solver, mat_A, rhs, sol);
+      ANNOTATE_ITER_END(i);
+
+      /* Destroy phase */
       PreconDestroy(iargs->precon_method, &precon);
       SolverDestroy(iargs->solver_method, &solver);
    }
@@ -104,10 +112,7 @@ int main(int argc, char **argv)
    HYPRE_Finalize();
    MPI_Finalize();
 
-   if (!myid)
-   {
-      PrintExitInfo(argv[0]);
-   }
+   if (!myid) PrintExitInfo(argv[0]);
 
    return EXIT_SUCCESS;
 }

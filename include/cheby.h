@@ -5,37 +5,30 @@
  * SPDX-License-Identifier: (Apache-2.0 OR MIT)
  ******************************************************************************/
 
-#ifndef GMRES_HEADER
-#define GMRES_HEADER
+#ifndef CHEBY_HEADER
+#define CHEBY_HEADER
 
 #include "yaml.h"
 #include "field.h"
 #include "HYPRE_parcsr_ls.h"
-#include "HYPRE_krylov.h"
 
 /*--------------------------------------------------------------------------
- * GMRES solver arguments struct
+ * Chebyshev smoother arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct GMRES_args_struct {
-   HYPRE_Int     min_iter;
-   HYPRE_Int     max_iter;
-   HYPRE_Int     stop_crit;
-   HYPRE_Int     skip_real_res_check;
-   HYPRE_Int     krylov_dim;
-   HYPRE_Int     rel_change;
-   HYPRE_Int     logging;
-   HYPRE_Int     print_level;
-   HYPRE_Real    relative_tol;
-   HYPRE_Real    absolute_tol;
-   HYPRE_Real    conv_fac_tol;
-} GMRES_args;
+typedef struct Cheby_args_struct {
+   HYPRE_Int    order;
+   HYPRE_Int    eig_est;
+   HYPRE_Int    variant;
+   HYPRE_Int    scale;
+   HYPRE_Real   fraction;
+} Cheby_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void GMRESSetArgs(void*, YAMLnode*);
-void GMRESCreate(MPI_Comm, GMRES_args*, HYPRE_Solver*);
+void ChebySetDefaultArgs(Cheby_args*);
+void ChebySetArgs(void*, YAMLnode*);
 
-#endif /* GMRES_HEADER */
+#endif /* CHEBY_HEADER */

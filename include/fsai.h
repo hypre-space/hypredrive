@@ -5,37 +5,37 @@
  * SPDX-License-Identifier: (Apache-2.0 OR MIT)
  ******************************************************************************/
 
-#ifndef GMRES_HEADER
-#define GMRES_HEADER
+#ifndef FSAI_HEADER
+#define FSAI_HEADER
 
 #include "yaml.h"
 #include "field.h"
 #include "HYPRE_parcsr_ls.h"
-#include "HYPRE_krylov.h"
 
 /*--------------------------------------------------------------------------
- * GMRES solver arguments struct
+ * FSAI preconditioner arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct GMRES_args_struct {
-   HYPRE_Int     min_iter;
+typedef struct FSAI_args_struct {
    HYPRE_Int     max_iter;
-   HYPRE_Int     stop_crit;
-   HYPRE_Int     skip_real_res_check;
-   HYPRE_Int     krylov_dim;
-   HYPRE_Int     rel_change;
-   HYPRE_Int     logging;
    HYPRE_Int     print_level;
-   HYPRE_Real    relative_tol;
-   HYPRE_Real    absolute_tol;
-   HYPRE_Real    conv_fac_tol;
-} GMRES_args;
+   HYPRE_Int     algo_type;
+   HYPRE_Int     ls_type;
+   HYPRE_Int     max_steps;
+   HYPRE_Int     max_step_size;
+   HYPRE_Int     max_nnz_row;
+   HYPRE_Int     num_levels;
+   HYPRE_Int     eig_max_iters;
+   HYPRE_Real    threshold;
+   HYPRE_Real    kap_tolerance;
+   HYPRE_Real    tolerance;
+} FSAI_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void GMRESSetArgs(void*, YAMLnode*);
-void GMRESCreate(MPI_Comm, GMRES_args*, HYPRE_Solver*);
+void FSAISetArgs(void*, YAMLnode*);
+void FSAICreate(FSAI_args*, HYPRE_Solver*);
 
-#endif /* GMRES_HEADER */
+#endif /* FSAI_HEADER */

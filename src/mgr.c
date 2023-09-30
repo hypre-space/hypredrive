@@ -6,12 +6,131 @@
  ******************************************************************************/
 
 #include "mgr.h"
+#include "gen_macros.h"
+
+#define MGRcls_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs)
+
+#define MGRfrlx_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
+
+#define MGRgrlx_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
+
+#define MGRlvl_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, FieldTypeIntArraySet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_level_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, f_relaxation, MGRfrlxSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, g_relaxation, MGRgrlxSetArgs)
+
+#define MGR_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, non_c_to_f, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, pmax, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relax_type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_th, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsest_level, MGRclsSetArgs)
+
+#define MGRcls_NUM_FIELDS  (sizeof(MGRcls_field_offset_map)  / sizeof(MGRcls_field_offset_map[0]))
+#define MGRfrlx_NUM_FIELDS (sizeof(MGRfrlx_field_offset_map) / sizeof(MGRfrlx_field_offset_map[0]))
+#define MGRgrlx_NUM_FIELDS (sizeof(MGRgrlx_field_offset_map) / sizeof(MGRgrlx_field_offset_map[0]))
+#define MGRlvl_NUM_FIELDS  (sizeof(MGRlvl_field_offset_map)  / sizeof(MGRlvl_field_offset_map[0]))
+#define MGR_NUM_FIELDS     (sizeof(MGR_field_offset_map)     / sizeof(MGR_field_offset_map[0]))
+
+/* Define the prefix list */
+#define GENERATE_PREFIXED_LIST_MGR \
+   GENERATE_PREFIXED_COMPONENTS(MGRcls) \
+   GENERATE_PREFIXED_COMPONENTS(MGRfrlx) \
+   GENERATE_PREFIXED_COMPONENTS(MGRgrlx) \
+   GENERATE_PREFIXED_COMPONENTS(MGRlvl)
+
+/* Iterates over each prefix in the list and
+   generates the various function declarations/definitions and field_offset_map object */
+GENERATE_PREFIXED_LIST_MGR
+
+DEFINE_FIELD_OFFSET_MAP(MGR);
+DEFINE_SET_FIELD_BY_NAME_FUNC(MGRSetFieldByName,
+                              MGR_args,
+                              MGR_field_offset_map,
+                              MGR_NUM_FIELDS);
+DEFINE_GET_VALID_KEYS_FUNC(MGRGetValidKeys,
+                           MGR_NUM_FIELDS,
+                           MGR_field_offset_map);
+DECLARE_GET_VALID_VALUES_FUNC(MGR);
+DECLARE_SET_DEFAULT_ARGS_FUNC(MGR);
+DECLARE_SET_ARGS_FROM_YAML_FUNC(MGR);
+DEFINE_SET_ARGS_FUNC(MGR);
+
+/*-----------------------------------------------------------------------------
+ * MGRclsSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+MGRclsSetDefaultArgs(MGRcls_args *args)
+{
+   args->type = 0;
+
+   AMGSetDefaultArgs(&args->amg);
+}
+
+/*-----------------------------------------------------------------------------
+ * MGRfrlxSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
+{
+   args->type = 0;
+   args->num_sweeps = 1;
+
+   AMGSetDefaultArgs(&args->amg); args->amg.max_iter = 0;
+   ILUSetDefaultArgs(&args->ilu); args->ilu.max_iter = 0;
+}
+
+/*-----------------------------------------------------------------------------
+ * MGRgrlxSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+MGRgrlxSetDefaultArgs(MGRgrlx_args *args)
+{
+   args->type = 2;
+   args->num_sweeps = 0;
+
+   ILUSetDefaultArgs(&args->ilu); args->ilu.max_iter = 0;
+}
+
+/*-----------------------------------------------------------------------------
+ * MGRlvlSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+MGRlvlSetDefaultArgs(MGRlvl_args *args)
+{
+   args->f_dofs             = NULL;
+   args->prolongation_type  = 0;
+   args->restriction_type   = 0;
+   args->coarse_level_type  = 0;
+
+   MGRfrlxSetDefaultArgs(&args->f_relaxation);
+   MGRgrlxSetDefaultArgs(&args->g_relaxation);
+}
 
 /*-----------------------------------------------------------------------------
  * MGRSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRSetDefaultArgs(MGR_args *args)
 {
    args->max_iter = 1;
@@ -19,308 +138,329 @@ MGRSetDefaultArgs(MGR_args *args)
    args->print_level = 0;
    args->non_c_to_f = 1;
    args->pmax = 0;
-   args->tol = 0.0;
+   args->tolerance = 0.0;
    args->coarse_th = 0.0;
+   args->relax_type = 7;
 
-   for (int i = 0; i < MAX_MGR_LEVELS; i++)
+   for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
    {
-      args->num_f_dofs[i] = 0;
-      args->f_dofs[i] = NULL;
-      args->frelax_types[i] = 0;
-      args->grelax_types[i] =
-      args->num_grelax_sweeps[i] = 0;
-      args->num_frelax_sweeps[i] = 0;
-      args->prolongation_types[i] = 0;
-      args->restriction_types[i] = 0;
-      args->coarse_grid_types[i] = 0;
+      MGRlvlSetDefaultArgs(&args->level[i]);
    }
-
-   return EXIT_SUCCESS;
+   MGRclsSetDefaultArgs(&args->coarsest_level);
 }
 
 /*-----------------------------------------------------------------------------
- * MGRSetFRelaxArgsFromYAML
+ * MGRclsGetValidValues
  *-----------------------------------------------------------------------------*/
 
-int
-MGRSetFRelaxArgsFromYAML(MGR_args *args, YAMLnode *parent)
+StrIntMapArray
+MGRclsGetValidValues(const char* key)
 {
-   HYPRE_Int lvl = args->lvl;
-
-   /* Return if value is "none" */
-   YAML_RETURN_IF_VAL_MATCHES(parent, "none")
-
-   /* If f-relax key is present, the default number of sweeps is one */
-   args->num_frelax_sweeps[lvl] = 1;
-   YAML_SET_INTEGER_IF_KEY_EXISTS(args->num_frelax_sweeps[lvl], "sweeps", parent)
-
-   /* Call specific SetArgs function */
-   YAML_CALL_IF_OPEN()
-   YAML_CALL_IF_VAL_MATCHES(AMGSetArgs, &args->frelax[lvl].amg, parent, "boomeramg")
-   YAML_CALL_IF_CLOSE()
-
-   /* Set F-relaxation codes */
-   YAML_SET_IF_OPEN()
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "jacobi", 7, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "v(1,0)", 1, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "boomeramg", 2, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "h-fgs", 3, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "h-bgs", 4, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "h-ssor", 6, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "hl1-ssor", 8, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "ge", 9, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "l1-fgs", 13, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "l1-bgs", 14, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "chebyshev", 16, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "l1-jacobi", 18, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "ge-piv", 99, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->frelax_types[lvl], "ge-inv", 199, parent)
-   YAML_SET_IF_CLOSE_(parent)
-
-   return EXIT_SUCCESS;
-}
-
-/*-----------------------------------------------------------------------------
- * MGRSetGRelaxArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-int
-MGRSetGRelaxArgsFromYAML(MGR_args *args, YAMLnode *parent)
-{
-   HYPRE_Int lvl = args->lvl;
-
-   /* Return if value is "none" */
-   YAML_RETURN_IF_VAL_MATCHES(parent, "none")
-
-   /* If g-relax key is present, the default number of sweeps is one */
-   args->num_grelax_sweeps[lvl] = 1;
-   YAML_SET_INTEGER_IF_KEY_EXISTS(args->num_grelax_sweeps[lvl], "sweeps", parent)
-
-   /* Call specific SetArgs function */
-   YAML_CALL_IF_OPEN()
-   YAML_CALL_IF_VAL_MATCHES(ILUSetArgs, &args->grelax[lvl].ilu, parent, "ilu")
-   YAML_CALL_IF_CLOSE()
-
-   /* Set Global relaxation codes */
-   YAML_SET_IF_OPEN()
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->grelax_types[lvl], "blk-jacobi", 0, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->grelax_types[lvl], "jacobi", 1, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->grelax_types[lvl], "ilu", 16, parent)
-   YAML_SET_IF_CLOSE_(parent)
-
-   return EXIT_SUCCESS;
-}
-
-/*-----------------------------------------------------------------------------
- * MGRSetProlongationArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-int
-MGRSetProlongationArgsFromYAML(MGR_args *args, YAMLnode *parent)
-{
-   HYPRE_Int lvl = args->lvl;
-
-   /* Set prolongation codes */
-   YAML_SET_IF_OPEN()
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "injection", 0, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "l1-jacobi", 1, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "jacobi", 2, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "classical-mod", 3, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "approx-inv", 4, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "blk-jacobi", 12, parent)
-   YAML_SET_IF_CLOSE_(parent)
-
-   return EXIT_SUCCESS;
-}
-
-/*-----------------------------------------------------------------------------
- * MGRSetRestrictionArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-int
-MGRSetRestrictionArgsFromYAML(MGR_args *args, YAMLnode *parent)
-{
-   HYPRE_Int lvl = args->lvl;
-
-   /* Set prolongation codes */
-   YAML_SET_IF_OPEN()
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "injection", 0, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "jacobi", 2, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "approx-inv", 3, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "blk-jacobi", 12, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "cpr-like", 13, parent)
-   YAML_SET_IF_CLOSE_(parent)
-
-   return EXIT_SUCCESS;
-}
-
-/*-----------------------------------------------------------------------------
- * MGRSetCoarseGridArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-int
-MGRSetCoarseGridArgsFromYAML(MGR_args *args, YAMLnode *parent)
-{
-   HYPRE_Int lvl = args->lvl;
-
-   /* Set prolongation codes */
-   YAML_SET_IF_OPEN()
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "galerkin", 0, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "non-galerkin", 2, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "cpr-like-diag", 3, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "cpr-like-bdiag", 12, parent)
-   YAML_SET_INTEGER_IF_VAL_MATCHES_ANYTWO(args->prolongation_types[lvl], "approx-inv", 13, parent)
-   YAML_SET_IF_CLOSE_(parent)
-
-   return EXIT_SUCCESS;
-}
-
-/*-----------------------------------------------------------------------------
- * MGRSetCoarseSolverArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-int
-MGRSetCoarseSolverArgsFromYAML(MGR_args *args, YAMLnode *parent)
-{
-   HYPRE_Int lvl = args->num_levels - 1;
-
-   /* If coarse_solver key is present, the default number of sweeps is one */
-   args->num_grelax_sweeps[lvl] = 1;
-   YAML_SET_INTEGER_IF_KEY_EXISTS(args->num_grelax_sweeps[lvl], "sweeps", parent)
-
-   /* Call specific SetArgs functions */
-   if (!strcmp(parent->val, "boomeramg") || !strcmp(parent->val, "0"))
+   if (!strcmp(key, "type"))
    {
-      AMGSetArgs(&args->grelax[lvl].amg, parent);
-      args->grelax_types[lvl] = 0;
-   }
-   /* TODO: Add SuperLU */
+      static StrIntMap map[] = {{"amg", 0}};
 
-   return EXIT_SUCCESS;
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
 }
 
 /*-----------------------------------------------------------------------------
- * MGRSetLevelArgsFromYAML
+ * MGRfrlxGetValidValues
  *-----------------------------------------------------------------------------*/
 
-int
-MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *parent)
+StrIntMapArray
+MGRfrlxGetValidValues(const char* key)
 {
-   YAMLnode *child;
-
-   if (!parent)
+   if (!strcmp(key, "type"))
    {
-      return EXIT_SUCCESS;
+      static StrIntMap map[] = {{"",        -1},
+                                {"none",    -1},
+                                {"single",   0},
+                                {"v(1,0)",   1},
+                                {"amg",      2},
+                                {"ilu",     16},
+                                {"ge",       9},
+                                {"ge-piv",  99},
+                                {"ge-inv", 199}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
    }
-
-   /* Which MGR level am I? */
-   args->lvl = atoi(parent->val);
-
-   /* Set MGR level options */
-   child = parent->children;
-   while (child)
+   else
    {
-      YAML_SET_IF_OPEN()
-      YAML_SET_INTARRAY_IF_KEY_MATCHES(&args->num_f_dofs[args->lvl],
-                                       &args->f_dofs[args->lvl], "f_dofs", child)
-      YAML_CALL_IF_KEY_MATCHES(MGRSetFRelaxArgsFromYAML, args, child, "f_relaxation")
-      YAML_CALL_IF_KEY_MATCHES(MGRSetGRelaxArgsFromYAML, args, child, "g_relaxation")
-      YAML_CALL_IF_KEY_MATCHES(MGRSetProlongationArgsFromYAML, args, child, "prolongation")
-      YAML_CALL_IF_KEY_MATCHES(MGRSetRestrictionArgsFromYAML, args, child, "restriction")
-      YAML_CALL_IF_KEY_MATCHES(MGRSetCoarseGridArgsFromYAML, args, child, "coarse_grid")
-      YAML_SET_IF_CLOSE(child)
-
-      child = child->next;
+      return STR_INT_MAP_ARRAY_VOID();
    }
+}
 
-   return EXIT_SUCCESS;
+/*-----------------------------------------------------------------------------
+ * MGRgrlxGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+MGRgrlxGetValidValues(const char* key)
+{
+   if (!strcmp(key, "type"))
+   {
+      static StrIntMap map[] = {{"",           -1},
+                                {"none",       -1},
+                                {"blk-jacobi",  0},
+                                {"blk-gs",      1},
+                                {"mixed-gs",    2},
+                                {"h-fgs",       3},
+                                {"h-bgs",       4},
+                                {"ch-gs",       5},
+                                {"h-ssor",      6},
+                                {"euclid",      8},
+                                {"2stg-fgs",   11},
+                                {"2stg-bgs",   12},
+                                {"l1-hfgs",    13},
+                                {"l1-hbgs",    14},
+                                {"ilu",        16},
+                                {"l1-hsgs",    88}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * MGRlvlGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+MGRlvlGetValidValues(const char* key)
+{
+   if (!strcmp(key, "prolongation_type"))
+   {
+      static StrIntMap map[] = {{"injection",      0},
+                                {"l1-jacobi",      1},
+                                {"jacobi",         2},
+                                {"classical-mod",  3},
+                                {"approx-inv",     4},
+                                {"blk-jacobi",    12}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "restriction_type"))
+   {
+      static StrIntMap map[] = {{"injection",   0},
+                                {"jacobi",      2},
+                                {"approx-inv",  3},
+                                {"blk-jacobi", 12},
+                                {"cpr-like",   13}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "coarse_level_type"))
+   {
+      static StrIntMap map[] = {{"rap",            0},
+                                {"non-galerkin",   1},
+                                {"cpr-like-diag",  2},
+                                {"cpr-like-bdiag", 3},
+                                {"approx-inv",     4}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "f_relaxation"))
+   {
+      return MGRfrlxGetValidValues("type");
+   }
+   else if (!strcmp(key, "g_relaxation"))
+   {
+      return MGRgrlxGetValidValues("type");
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * MGRGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+MGRGetValidValues(const char* key)
+{
+   if (!strcmp(key, "relax_type"))
+   {
+      static StrIntMap map[] = {{"jacobi",     7},
+                                {"h-fgs",      3},
+                                {"h-bgs",      4},
+                                {"ch-gs",      5},
+                                {"h-ssor",     6},
+                                {"hl1-ssor",   8},
+                                {"l1-fgs",    13},
+                                {"l1-bgs",    14},
+                                {"chebyshev", 16},
+                                {"l1-jacobi", 18}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
 }
 
 /*-----------------------------------------------------------------------------
  * MGRSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
 {
-   YAMLnode *child;
-
-   if (!parent)
+   YAML_NODE_ITERATE(parent, child)
    {
-      return EXIT_SUCCESS;
+      if (!strcmp(child->key, "level"))
+      {
+         YAML_NODE_ITERATE(child, grandchild)
+         {
+            int lvl = atoi(grandchild->key);
+
+            if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1)
+            {
+               YAML_NODE_ITERATE(grandchild, great_grandchild)
+               {
+                  YAML_NODE_VALIDATE(great_grandchild,
+                                     MGRlvlGetValidKeys,
+                                     MGRlvlGetValidValues);
+
+                  YAML_NODE_SET_FIELD(great_grandchild,
+                                      &args->level[lvl],
+                                      MGRlvlSetFieldByName);
+               }
+
+               args->num_levels++;
+               YAML_NODE_SET_VALID(grandchild);
+            }
+            else
+            {
+               YAML_NODE_SET_INVALID_KEY(grandchild);
+            }
+         }
+      }
+      else
+      {
+         if (!strcmp(child->key, "coarsest_level"))
+         {
+            args->num_levels++;
+         }
+
+         YAML_NODE_VALIDATE(child,
+                            MGRGetValidKeys,
+                            MGRGetValidValues);
+
+         YAML_NODE_SET_FIELD(child,
+                             args,
+                             MGRSetFieldByName);
+      }
    }
-
-   /* Compute num_levels */
-   YAML_INC_INTEGER_IF_KEY_EXISTS(args->num_levels, "level", parent)
-   YAML_INC_INTEGER_IF_KEY_EXISTS(args->num_levels, "coarse_solver", parent)
-
-   child = parent->children;
-   while (child)
-   {
-      YAML_SET_IF_OPEN()
-      YAML_SET_REAL_IF_KEY_MATCHES(args->tol, "tol", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->coarse_th, "coarse_th", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->pmax, "pmax", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "max_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->print_level, "print_level", child)
-      YAML_CALL_IF_KEY_MATCHES(MGRSetLevelArgsFromYAML, args, child, "level")
-      YAML_CALL_IF_KEY_MATCHES(MGRSetCoarseSolverArgsFromYAML, args, child, "coarse_solver")
-      YAML_SET_IF_CLOSE(child)
-
-      child = child->next;
-   }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * MGRDestroyArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 MGRDestroyArgs(MGR_args **args_ptr)
 {
    MGR_args *args;
 
    args = *args_ptr;
-   for (int i = 0; i < args->num_levels; i++)
+   for (int i = 0; i < args->num_levels - 1; i++)
    {
-      free(args->f_dofs[i]);
+      IntArrayDestroy(&args->level[i].f_dofs);
    }
 
    *args_ptr = NULL;
+}
 
-   return EXIT_SUCCESS;
+/*-----------------------------------------------------------------------------
+ * MGRConvertArgInt
+ *-----------------------------------------------------------------------------*/
+
+HYPRE_Int*
+MGRConvertArgInt(MGR_args *args, const char* name)
+{
+   static HYPRE_Int buf[MAX_MGR_LEVELS - 1];
+
+   /* Sanity check */
+   if (args->num_levels >= (MAX_MGR_LEVELS - 1))
+   {
+      return NULL;
+   }
+
+   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, f_relaxation.type)
+   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, f_relaxation.num_sweeps)
+   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, g_relaxation.type)
+   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, g_relaxation.num_sweeps)
+   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, prolongation_type)
+   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, restriction_type)
+   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, coarse_level_type)
+
+   /* If we haven't returned yet, return a NULL pointer */
+   return NULL;
+}
+
+/*-----------------------------------------------------------------------------
+ * MGRSetDofmap
+ *-----------------------------------------------------------------------------*/
+
+void
+MGRSetDofmap(MGR_args *args, IntArray *dofmap)
+{
+   args->dofmap = dofmap;
 }
 
 /*-----------------------------------------------------------------------------
  * MGRCreate
  *-----------------------------------------------------------------------------*/
 
-int
-MGRCreate(MGR_args *args, HYPRE_IntArray *dofmap, HYPRE_Solver *precon_ptr)
+void
+MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver   precon;
    HYPRE_Solver   csolver;
    HYPRE_Solver   frelax;
-   HYPRE_Int      num_dofs = dofmap->num_unique_entries;
-   HYPRE_Int      num_dofs_last = num_dofs;
-   HYPRE_Int      num_levels = args->num_levels;
+   IntArray      *dofmap;
+   HYPRE_Int      num_dofs;
+   HYPRE_Int      num_dofs_last;
+   HYPRE_Int      num_levels;
    HYPRE_Int      num_c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int     *c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int     *inactive_dofs;
    HYPRE_Int      lvl, i, j;
 
+   /* Sanity checks */
+   if (!args->dofmap)
+   {
+      ErrorCodeSet(ERROR_MISSING_DOFMAP);
+      return;
+   }
+
+   /* Initialize variables */
+   dofmap     = args->dofmap;
+   num_dofs   = dofmap->num_unique_entries;
+   num_levels = args->num_levels;
+
    /* Compute num_c_dofs and c_dofs */
+   num_dofs_last = num_dofs;
    inactive_dofs = (HYPRE_Int*) calloc(num_dofs, sizeof(HYPRE_Int));
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
       c_dofs[lvl] = (HYPRE_Int*) malloc(num_dofs * sizeof(HYPRE_Int));
-      num_c_dofs[lvl] = num_dofs_last - args->num_f_dofs[lvl];
+      num_c_dofs[lvl] = num_dofs_last - args->level[lvl].f_dofs->size;
 
-      for (i = 0; i < args->num_f_dofs[lvl]; i++)
+      for (i = 0; i < args->level[lvl].f_dofs->size; i++)
       {
-         inactive_dofs[args->f_dofs[lvl][i]] = 1;
+         inactive_dofs[args->level[lvl].f_dofs->data[i]] = 1;
          --num_dofs_last;
       }
 
@@ -339,27 +479,30 @@ MGRCreate(MGR_args *args, HYPRE_IntArray *dofmap, HYPRE_Solver *precon_ptr)
                                          num_c_dofs, c_dofs, dofmap->data);
    HYPRE_MGRSetNonCpointsToFpoints(precon, args->non_c_to_f);
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
-   HYPRE_MGRSetTol(precon, args->tol);
+   HYPRE_MGRSetTol(precon, args->tolerance);
    HYPRE_MGRSetTruncateCoarseGridThreshold(precon, args->coarse_th);
-   HYPRE_MGRSetLevelFRelaxType(precon, args->frelax_types);
-   HYPRE_MGRSetLevelNumRelaxSweeps(precon, args->num_frelax_sweeps);
-   HYPRE_MGRSetLevelSmoothIters(precon, args->num_grelax_sweeps);
-   HYPRE_MGRSetLevelSmoothType(precon, args->grelax_types);
-   HYPRE_MGRSetLevelInterpType(precon, args->prolongation_types);
-   HYPRE_MGRSetLevelRestrictType(precon, args->restriction_types);
-   HYPRE_MGRSetCoarseGridMethod(precon, args->coarse_grid_types);
+   HYPRE_MGRSetRelaxType(precon, args->relax_type); /* TODO: we shouldn't need this */
+
+   /* Set level parameters */
+   HYPRE_MGRSetLevelFRelaxType(precon, MGRConvertArgInt(args, "f_relaxation:type"));
+   HYPRE_MGRSetLevelNumRelaxSweeps(precon, MGRConvertArgInt(args, "f_relaxation:num_sweeps"));
+   HYPRE_MGRSetLevelSmoothType(precon, MGRConvertArgInt(args, "g_relaxation:type"));
+   HYPRE_MGRSetLevelSmoothIters(precon, MGRConvertArgInt(args, "g_relaxation:num_sweeps"));
+   HYPRE_MGRSetLevelInterpType(precon, MGRConvertArgInt(args, "prolongation_type"));
+   HYPRE_MGRSetLevelRestrictType(precon, MGRConvertArgInt(args, "restriction_type"));
+   HYPRE_MGRSetCoarseGridMethod(precon, MGRConvertArgInt(args, "coarse_level_type"));
 
    /* Config finest level f-relaxation */
-   if (args->frelax_types[0] == 2)
+   if (args->level[0].f_relaxation.type == 2)
    {
-      AMGCreate(&args->frelax[0].amg, &frelax);
+      AMGCreate(&args->level[0].f_relaxation.amg, &frelax);
       HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, frelax);
    }
 
    /* Config coarsest level solver */
-   if (args->grelax_types[num_levels - 1] == 0)
+   if (args->coarsest_level.type == 0)
    {
-      AMGCreate(&args->grelax[num_levels - 1].amg, &csolver);
+      AMGCreate(&args->coarsest_level.amg, &csolver);
       HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, csolver);
    }
 
@@ -372,6 +515,4 @@ MGRCreate(MGR_args *args, HYPRE_IntArray *dofmap, HYPRE_Solver *precon_ptr)
    {
       free(c_dofs[lvl]);
    }
-
-   return EXIT_SUCCESS;
 }

@@ -5,38 +5,37 @@
  * SPDX-License-Identifier: (Apache-2.0 OR MIT)
  ******************************************************************************/
 
-#include "utils.h"
-#include <ctype.h>
+#ifndef FIELD_HEADER
+#define FIELD_HEADER
+
+#include <stddef.h>
+#include "containers.h"
+#include "yaml.h"
+
+typedef void (*SetterFnc)(void*, YAMLnode*);
+
+typedef struct FieldOffsetMap_struct
+{
+   const char  *name;
+   size_t       offset;
+   SetterFnc    setter;
+} FieldOffsetMap;
 
 /*-----------------------------------------------------------------------------
- * CheckBinaryDataExists
+ * Macros
  *-----------------------------------------------------------------------------*/
 
-char*
-StrToLowerCase(char* str)
-{
-   for (int i = 0; str[i]; i++)
-   {
-      str[i] = tolower((unsigned char) str[i]);
-   }
-   return str;
-}
+#define FIELD_OFFSET_MAP_ENTRY(_st, _field_name, _setter) \
+   {#_field_name, offsetof(_st, _field_name), _setter}
 
 /*-----------------------------------------------------------------------------
- * CheckBinaryDataExists
+ * Prototypes
  *-----------------------------------------------------------------------------*/
 
-int
-CheckBinaryDataExists(const char* prefix)
-{
-   char   filename[MAX_FILENAME_LENGTH];
-   int    is_binary;
-   FILE  *fp;
+void FieldTypeIntSet(void*, YAMLnode*);
+void FieldTypeIntArraySet(void*, YAMLnode*);
+void FieldTypeDoubleSet(void*, YAMLnode*);
+void FieldTypeCharSet(void*, YAMLnode*);
+void FieldTypeStringSet(void*, YAMLnode*);
 
-   /* Check if binary data exist */
-   sprintf(filename, "%s.00000.bin", prefix);
-   is_binary = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-   if (fp) fclose(fp);
-
-   return is_binary;
-}
+#endif /* FIELD_HEADER */

@@ -11,6 +11,9 @@
 #include "ilu.h"
 #include "amg.h"
 #include "mgr.h"
+#include "fsai.h"
+#include "yaml.h"
+#include "field.h"
 
 /*--------------------------------------------------------------------------
  * Preconditioner types enum
@@ -20,6 +23,7 @@ typedef enum precon_type_enum {
    PRECON_BOOMERAMG,
    PRECON_MGR,
    PRECON_ILU,
+   PRECON_FSAI,
    PRECON_NONE
 } precon_t;
 
@@ -28,18 +32,22 @@ typedef enum precon_type_enum {
  *--------------------------------------------------------------------------*/
 
 typedef union precon_args_union {
-   MGR_args      mgr;
    AMG_args      amg;
+   MGR_args      mgr;
    ILU_args      ilu;
+   FSAI_args     fsai;
 } precon_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-int PreconSetDefaultArgs(precon_t, precon_args*);
-int PreconSetArgsFromYAML(precon_t, precon_args*, YAMLnode*);
-int PreconCreate(precon_t, precon_args*, HYPRE_IntArray*, HYPRE_Solver*);
-int PreconDestroy(precon_t, HYPRE_Solver*);
+StrArray PreconGetValidKeys(void);
+StrIntMapArray PreconGetValidValues(const char*);
+StrIntMapArray PreconGetValidTypeIntMap(void);
 
-#endif
+void PreconSetArgsFromYAML(precon_args*, YAMLnode*); /* TODO: change name to PreconSetArgs */
+void PreconCreate(precon_t, precon_args*, IntArray*, HYPRE_Solver*);
+void PreconDestroy(precon_t, HYPRE_Solver*);
+
+#endif /* PRECON_HEADER */

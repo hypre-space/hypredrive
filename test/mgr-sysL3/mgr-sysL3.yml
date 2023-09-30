@@ -2,41 +2,47 @@ general:
   warmup: no
   num_repetitions: 1
 
-linear_system: ij
+linear_system:
+  type: ij
   rhs_filename: IJ.out.b
   matrix_filename: IJ.out.A
   dofmap_filename: dofmap
-  num_partitions: 1 # TODO: remove this parameter
 
-solver: fgmres
-  tolerance: 1.0e-3
-  max_iterations: 500
-  print_level: 2
+solver:
+  fgmres:
+    max_iter: 500
+    relative_tol: 1.0e-3
+    print_level: 2
 
-preconditioner: mgr
-  print_level: 1
-  pmax: 0
-  level: 0
-    f_dofs: [0]
-    f_relaxation: jacobi
-      sweeps: 1
-    g_relaxation: none
-    prolongation: jacobi
-    restriction: injection
-    coarse_grid: galerkin
+preconditioner:
+  mgr:
+    print_level: 1
+    level:
+      0:
+        f_dofs: [0]
+        f_relaxation: single
+          sweeps: 1
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: rap
 
-  level: 1
-    f_dofs: [1]
-    f_relaxation: none
-    g_relaxation: ilu
-      sweeps: 1
-      type: iluk
-      fill: 0
-    prolongation: jacobi
-    restriction: injection
-    coarse_grid: galerkin
+      1:
+        f_dofs: [1]
+        f_relaxation: none
+        g_relaxation:
+          ilu:
+            num_sweeps: 1
+            type: bj-iluk
+            fill: 0
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: rap
 
-  coarse_solver: boomeramg
-    print_level: 0
-    strong_th: 0.3
-    pmax: 6
+    coarsest_level:
+      amg:
+        print_level: 0
+        coarsening:
+          strong_th: 0.3
+        interpolation:
+          max_nnz_row: 6

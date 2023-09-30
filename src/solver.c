@@ -7,77 +7,102 @@
 
 #include "solver.h"
 
+static const FieldOffsetMap solver_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(solver_args, pcg, PCGSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, gmres, GMRESSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, fgmres, FGMRESSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(solver_args, bicgstab, BiCGSTABSetArgs),
+};
+
+#define SOLVER_NUM_FIELDS (sizeof(solver_field_offset_map) / sizeof(solver_field_offset_map[0]))
+
 /*-----------------------------------------------------------------------------
- * SolverSetDefaultArgs
+ * SolverSetFieldByName
  *-----------------------------------------------------------------------------*/
 
-int
-SolverSetDefaultArgs(solver_t solver_method, solver_args *args)
+void
+SolverSetFieldByName(solver_args *args, YAMLnode *node)
 {
-   switch (solver_method)
+   for (size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
    {
-      case SOLVER_PCG:
-         PCGSetDefaultArgs(&args->pcg);
-         break;
+      /* Which union type are we trying to set? */
+      if (!strcmp(solver_field_offset_map[i].name, node->key))
+      {
+         solver_field_offset_map[i].setter(
+            (void*)((char*) args + solver_field_offset_map[i].offset),
+            node);
+         return;
+      }
+   }
+}
 
-      case SOLVER_GMRES:
-         GMRESSetDefaultArgs(&args->gmres);
-         break;
+/*-----------------------------------------------------------------------------
+ * SolverGetValidKeys
+ *-----------------------------------------------------------------------------*/
 
-      case SOLVER_FGMRES:
-         FGMRESSetDefaultArgs(&args->fgmres);
-         break;
+StrArray
+SolverGetValidKeys(void)
+{
+   static const char* keys[SOLVER_NUM_FIELDS];
 
-      case SOLVER_BICGSTAB:
-         BiCGSTABSetDefaultArgs(&args->bicgstab);
-         break;
-
-      default:
-         ErrorMsgAddInvalidSolverOption((int) solver_method);
-         return EXIT_FAILURE;
+   for (size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
+   {
+      keys[i] = solver_field_offset_map[i].name;
    }
 
-   return EXIT_SUCCESS;
+   return STR_ARRAY_CREATE(keys);
+}
+
+/*-----------------------------------------------------------------------------
+ * SolverGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+SolverGetValidValues(const char* key)
+{
+   /* The "solver" entry does not hold values, so we create a void map */
+   return STR_INT_MAP_ARRAY_VOID();
+}
+
+/*-----------------------------------------------------------------------------
+ * SolverGetValidTypeIntMap
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+SolverGetValidTypeIntMap(void)
+{
+   static StrIntMap map[] = {{"pcg",      (int) SOLVER_PCG},
+                             {"gmres",    (int) SOLVER_GMRES},
+                             {"fgmres",   (int) SOLVER_FGMRES},
+                             {"bicgstab", (int) SOLVER_BICGSTAB}};
+
+   return STR_INT_MAP_ARRAY_CREATE(map);
 }
 
 /*-----------------------------------------------------------------------------
  * SolverSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-int
-SolverSetArgsFromYAML(solver_t solver_method, solver_args *args, YAMLnode *node)
+void
+SolverSetArgsFromYAML(solver_args *args, YAMLnode *parent)
 {
-   switch (solver_method)
+   YAML_NODE_ITERATE(parent, child)
    {
-      case SOLVER_PCG:
-         PCGSetArgsFromYAML(&args->pcg, node);
-         break;
+      YAML_NODE_VALIDATE(child,
+                         SolverGetValidKeys,
+                         SolverGetValidValues);
 
-      case SOLVER_GMRES:
-         GMRESSetArgsFromYAML(&args->gmres, node);
-         break;
-
-      case SOLVER_FGMRES:
-         FGMRESSetArgsFromYAML(&args->fgmres, node);
-         break;
-
-      case SOLVER_BICGSTAB:
-         BiCGSTABSetArgsFromYAML(&args->bicgstab, node);
-         break;
-
-      default:
-         ErrorMsgAddInvalidSolverOption((int) solver_method);
-         return EXIT_FAILURE;
+      YAML_NODE_SET_FIELD(child,
+                          args,
+                          SolverSetFieldByName);
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * SolverCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args, HYPRE_Solver *solver_ptr)
 {
    switch (solver_method)
@@ -100,18 +125,14 @@ SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args, HYPRE_Sol
 
       default:
          *solver_ptr = NULL;
-         ErrorMsgAddInvalidSolverOption((int) solver_method);
-         return EXIT_FAILURE;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * SolverSetup
  *-----------------------------------------------------------------------------*/
 
-int
+void
 SolverSetup(precon_t precon_method, solver_t solver_method,
             HYPRE_Solver precon, HYPRE_Solver solver,
             HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x)
@@ -121,10 +142,12 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
    HYPRE_ParVector          par_b, par_x;
    HYPRE_PtrToParSolverFcn  setup_ptrs[] = {HYPRE_BoomerAMGSetup,
                                             HYPRE_MGRSetup,
-                                            HYPRE_ILUSetup};
+                                            HYPRE_ILUSetup,
+                                            HYPRE_FSAISetup};
    HYPRE_PtrToParSolverFcn  solve_ptrs[] = {HYPRE_BoomerAMGSolve,
                                             HYPRE_MGRSolve,
-                                            HYPRE_ILUSolve};
+                                            HYPRE_ILUSolve,
+                                            HYPRE_FSAISolve};
 
    HYPRE_IJMatrixGetObject(M, &vM); par_M = (HYPRE_ParCSRMatrix) vM;
    HYPRE_IJVectorGetObject(b, &vb); par_b = (HYPRE_ParVector) vb;
@@ -165,18 +188,15 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
          break;
 
       default:
-         ErrorMsgAddInvalidSolverOption((int) solver_method);
-         return EXIT_FAILURE;
+         return;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * SolverApply
  *-----------------------------------------------------------------------------*/
 
-int
+void
 SolverApply(solver_t solver_method, HYPRE_Solver solver,
             HYPRE_IJMatrix A, HYPRE_IJVector b, HYPRE_IJVector x)
 {
@@ -207,44 +227,41 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver,
          break;
 
       default:
-         ErrorMsgAddInvalidSolverOption((int) solver_method);
-         return EXIT_FAILURE;
+         return;
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * SolverDestroy
  *-----------------------------------------------------------------------------*/
 
-int
+void
 SolverDestroy(solver_t solver_method, HYPRE_Solver *solver_ptr)
 {
-   switch (solver_method)
+   if (*solver_ptr)
    {
-      case SOLVER_PCG:
-         HYPRE_ParCSRPCGDestroy(*solver_ptr);
-         break;
+      switch (solver_method)
+      {
+         case SOLVER_PCG:
+            HYPRE_ParCSRPCGDestroy(*solver_ptr);
+            break;
 
-      case SOLVER_GMRES:
-         HYPRE_ParCSRGMRESDestroy(*solver_ptr);
-         break;
+         case SOLVER_GMRES:
+            HYPRE_ParCSRGMRESDestroy(*solver_ptr);
+            break;
 
-      case SOLVER_FGMRES:
-         HYPRE_ParCSRFlexGMRESDestroy(*solver_ptr);
-         break;
+         case SOLVER_FGMRES:
+            HYPRE_ParCSRFlexGMRESDestroy(*solver_ptr);
+            break;
 
-      case SOLVER_BICGSTAB:
-         HYPRE_ParCSRBiCGSTABDestroy(*solver_ptr);
-         break;
+         case SOLVER_BICGSTAB:
+            HYPRE_ParCSRBiCGSTABDestroy(*solver_ptr);
+            break;
 
-      default:
-         ErrorMsgAddInvalidSolverOption((int) solver_method);
-         return EXIT_FAILURE;
+         default:
+            return;
+      }
+
+      *solver_ptr = NULL;
    }
-
-   *solver_ptr = NULL;
-
-   return EXIT_SUCCESS;
 }

@@ -7,14 +7,170 @@
 
 #include "error.h"
 
+#define ERROR_CODE_NUM_ENTRIES 32
+
 /* Struct for storing an error message in a linked list */
-typedef struct ErrorMsgNode {
-    char *message;
-    struct ErrorMsgNode *next;
+typedef struct ErrorMsgNode
+{
+   char                *message;
+   struct ErrorMsgNode *next;
 } ErrorMsgNode;
 
 /* The head of the linked list of error messages */
-static ErrorMsgNode *errorMsgHead = NULL;
+static ErrorMsgNode *global_error_msg_head = NULL;
+
+/* Global error code variable */
+static uint32_t global_error_code;
+static uint32_t global_error_count[ERROR_CODE_NUM_ENTRIES] = {0};
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeCountIncrement
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorCodeCountIncrement(ErrorCode code)
+{
+   int index = 1;
+
+   while (code > 1)
+   {
+      code >>= 1;
+      index++;
+   }
+
+   if (index > 0 && index < 32)
+   {
+      global_error_count[index]++;
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeCountGet
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+ErrorCodeCountGet(ErrorCode code)
+{
+   int index = 1;
+
+   while (code > 1)
+   {
+      code >>= 1;
+      index++;
+   }
+
+   if (index > 0 && index < 32)
+   {
+      return global_error_count[index];
+   }
+
+   return -1;
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeSet
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorCodeSet(ErrorCode code)
+{
+   global_error_code |= (uint32_t) code;
+   ErrorCodeCountIncrement(code);
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeGet
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+ErrorCodeGet(void)
+{
+   return global_error_code;
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeActive
+ *-----------------------------------------------------------------------------*/
+
+bool
+ErrorCodeActive(void)
+{
+   return (global_error_code == ERROR_NONE) ? false : true;
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeDescribe
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorCodeDescribe(void)
+{
+   if (global_error_code & ERROR_YAML_INVALID_INDENT)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_INDENT, "invalid indendation");
+   }
+
+   if (global_error_code & ERROR_YAML_INVALID_DIVISOR)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_DIVISOR, "invalid divisor");
+   }
+
+   if (global_error_code & ERROR_INVALID_KEY)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_INVALID_KEY, "invalid key");
+   }
+
+   if (global_error_code & ERROR_INVALID_VAL)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_INVALID_VAL, "invalid value");
+   }
+
+   if (global_error_code & ERROR_UNEXPECTED_VAL)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_UNEXPECTED_VAL, "unexpected value");
+   }
+
+   if (global_error_code & ERROR_MAYBE_INVALID_VAL)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_MAYBE_INVALID_VAL, "possible invalid value");
+   }
+
+   if (global_error_code & ERROR_MISSING_DOFMAP)
+   {
+      ErrorMsgAdd("Missing dofmap info needed by MGR!");
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeReset
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorCodeReset(uint32_t code)
+{
+   uint32_t i, bit;
+
+   for (i = 1; i < ERROR_CODE_NUM_ENTRIES; i++)
+   {
+      bit = 1u << i;
+
+      if ((bit & code) != 0)
+      {
+         global_error_code &= ~bit; /* Set n-th bit to zero */
+         global_error_count[i] = 0; /* Reset counter */
+      }
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeResetAll
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorCodeResetAll(void)
+{
+   ErrorCodeReset(0x7FFFFFFFu);
+}
 
 /*-----------------------------------------------------------------------------
  * ErrorMsgAdd
@@ -24,56 +180,26 @@ void
 ErrorMsgAdd(const char *message)
 {
    ErrorMsgNode *new = (ErrorMsgNode *) malloc(sizeof(ErrorMsgNode));
+
    new->message = (char *) malloc(strlen(message) + 1);
    strcpy(new->message, message);
-   new->next = errorMsgHead;
-   errorMsgHead = new;
+   new->next = global_error_msg_head;
+   global_error_msg_head = new;
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorMsgAddInvalidKeyValPair
+ * ErrorMsgAddCodeWithCount
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAddInvalidKeyValPair(const char *key, const char* val)
+ErrorMsgAddCodeWithCount(ErrorCode code, const char* suffix)
 {
-   char *msg;
-   int   length = strlen(key) + strlen(val) + 32;
+   char        *msg;
+   const char  *plural = (ErrorCodeCountGet(code) > 1) ? "s" : "";
+   int          length = strlen(suffix) + 24;
 
    msg = (char*) malloc(length);
-   sprintf(msg, "Invalid (key, val) pair: (%s, %s)", key, val);
-   ErrorMsgAdd(msg);
-   free(msg);
-}
-
-/*-----------------------------------------------------------------------------
- * ErrorMsgAddUnknownKey
- *-----------------------------------------------------------------------------*/
-
-void
-ErrorMsgAddUnknownKey(const char *key)
-{
-   char *msg;
-   int   length = strlen(key) + 16;
-
-   msg = (char*) malloc(length);
-   sprintf(msg, "Unknown key: %s", key);
-   ErrorMsgAdd(msg);
-   free(msg);
-}
-
-/*-----------------------------------------------------------------------------
- * ErrorMsgAddUnknownVal
- *-----------------------------------------------------------------------------*/
-
-void
-ErrorMsgAddUnknownVal(const char *val)
-{
-   char *msg;
-   int   length = strlen(val) + 16;
-
-   msg = (char*) malloc(length);
-   sprintf(msg, "Unknown val: %s", val);
+   sprintf(msg, "Found %d %s%s!", ErrorCodeCountGet(code), suffix, plural);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -95,42 +221,35 @@ ErrorMsgAddMissingKey(const char *key)
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorMsgAddInvalidSolverOption
+ * ErrorMsgAddExtraKey
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAddInvalidSolverOption(int option)
+ErrorMsgAddExtraKey(const char *key)
 {
-   char  msg[64];
+   char *msg;
+   int   length = strlen(key) + 24;
 
-   sprintf(msg, "Invalid solver option: %d", option);
+   msg = (char*) malloc(length);
+   sprintf(msg, "Extra (unused) key: %s", key);
    ErrorMsgAdd(msg);
+   free(msg);
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorMsgAddInvalidPreconOption
+ * ErrorMsgAddUnexpectedVal
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAddInvalidPreconOption(int option)
+ErrorMsgAddUnexpectedVal(const char *key)
 {
-   char  msg[64];
+   char *msg;
+   int   length = strlen(key) + 40;
 
-   sprintf(msg, "Invalid preconditioner option: %d", option);
+   msg = (char*) malloc(length);
+   sprintf(msg, "Unexpected value associated with %s key", key);
    ErrorMsgAdd(msg);
-}
-
-/*-----------------------------------------------------------------------------
- * ErrorMsgAddInvalidString
- *-----------------------------------------------------------------------------*/
-
-void
-ErrorMsgAddInvalidString(const char* string)
-{
-   char  msg[1024];
-
-   sprintf(msg, "Invalid option: %s", string);
-   ErrorMsgAdd(msg);
+   free(msg);
 }
 
 /*-----------------------------------------------------------------------------
@@ -153,12 +272,15 @@ ErrorMsgAddInvalidFilename(const char* string)
 void
 ErrorMsgPrint()
 {
-   ErrorMsgNode *current = errorMsgHead;
+   ErrorMsgNode *current = global_error_msg_head;
+
+   printf("\n");
    while (current)
    {
-      printf("%s\n", current->message);
+      printf("--> %s\n", current->message);
       current = current->next;
    }
+   printf("\n");
 }
 
 /*-----------------------------------------------------------------------------
@@ -168,7 +290,8 @@ ErrorMsgPrint()
 void
 ErrorMsgClear()
 {
-   ErrorMsgNode *current = errorMsgHead;
+   ErrorMsgNode *current = global_error_msg_head;
+
    while (current)
    {
       ErrorMsgNode *temp = current;
@@ -176,5 +299,19 @@ ErrorMsgClear()
       free(temp->message);
       free(temp);
    }
-   errorMsgHead = NULL;
+   global_error_msg_head = NULL;
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorMsgPrintAndAbort
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorMsgPrintAndAbort(MPI_Comm comm)
+{
+   /* TODO: check error codes in other processes? */
+   ErrorCodeDescribe();
+   ErrorMsgPrint();
+   ErrorMsgClear();
+   MPI_Abort(comm, ErrorCodeGet());
 }

@@ -7,11 +7,126 @@
 
 #include "linsys.h"
 
+static const FieldOffsetMap ls_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, x0_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, sol_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet)
+};
+
+#define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemSetFieldByName
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemSetFieldByName(LS_args *args, YAMLnode *node)
+{
+   for (size_t i = 0; i < LS_NUM_FIELDS; i++)
+   {
+      if (!strcmp(ls_field_offset_map[i].name, node->key))
+      {
+         ls_field_offset_map[i].setter(
+            (void*)((char*) args + ls_field_offset_map[i].offset),
+            node);
+         return;
+      }
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemGetValidKeys
+ *-----------------------------------------------------------------------------*/
+
+StrArray
+LinearSystemGetValidKeys(void)
+{
+   static const char* keys[LS_NUM_FIELDS];
+
+   for (size_t i = 0; i < LS_NUM_FIELDS; i++)
+   {
+      keys[i] = ls_field_offset_map[i].name;
+   }
+
+   return STR_ARRAY_CREATE(keys);
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+LinearSystemGetValidValues(const char* key)
+{
+   if (!strcmp(key, "type"))
+   {
+      static StrIntMap map[] = {{"ij",     1},
+                                {"parcsr", 2}};
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "rhs_mode") ||
+            !strcmp(key, "init_guess_mode") )
+   {
+      static StrIntMap map[] = {{"zeros",  0},
+                                {"ones",   1},
+                                {"file",   2},
+                                {"random", 3}};
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemSetDefaultArgs(LS_args *args)
+{
+   strcpy(args->matrix_filename, "");
+   strcpy(args->precmat_filename, "");
+   strcpy(args->rhs_filename, "");
+   strcpy(args->x0_filename, "");
+   strcpy(args->sol_filename, "");
+   strcpy(args->dofmap_filename, "");
+   args->init_guess_mode = 0;
+   args->rhs_mode = 0;
+   args->type = 0;
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemSetArgsFromYAML
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
+{
+   YAML_NODE_ITERATE(parent, child)
+   {
+      YAML_NODE_VALIDATE(child,
+                         LinearSystemGetValidKeys,
+                         LinearSystemGetValidValues);
+
+      YAML_NODE_SET_FIELD(child,
+                          args,
+                          LinearSystemSetFieldByName);
+   }
+}
+
 /*-----------------------------------------------------------------------------
  * LinearSystemReadMatrix
  *-----------------------------------------------------------------------------*/
 
-int
+void
 LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 {
    /* Read matrix */
@@ -25,20 +140,26 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       {
          HYPRE_IJMatrixRead(args->matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
       }
+
+      /* Check if hypre had problems reading the input file */
+      if (HYPRE_GetError())
+      {
+         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         ErrorMsgAddInvalidFilename(args->matrix_filename);
+      }
    }
    else
    {
-      return EXIT_FAILURE;
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAddInvalidFilename(args->matrix_filename);
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * LinearSystemSetRHS
  *-----------------------------------------------------------------------------*/
 
-int
+void
 LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVector *rhs_ptr)
 {
    HYPRE_BigInt    ilower, iupper;
@@ -70,16 +191,21 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
       {
          HYPRE_IJVectorRead(args->rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
       }
-   }
 
-   return EXIT_SUCCESS;
+      /* Check if hypre had problems reading the input file */
+      if (HYPRE_GetError())
+      {
+         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         ErrorMsgAddInvalidFilename(args->rhs_filename);
+      }
+   }
 }
 
 /*-----------------------------------------------------------------------------
  * LinearSystemSetInitialGuess
  *-----------------------------------------------------------------------------*/
 
-int
+void
 LinearSystemSetInitialGuess(MPI_Comm comm,
                             LS_args *args,
                             HYPRE_IJMatrix mat,
@@ -118,15 +244,13 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
          HYPRE_IJVectorRead(args->x0_filename, comm, HYPRE_PARCSR, x0_ptr);
       }
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * LinearSystemSetPrecMatrix
  *-----------------------------------------------------------------------------*/
 
-int
+void
 LinearSystemSetPrecMatrix(MPI_Comm comm,
                           LS_args *args,
                           HYPRE_IJMatrix mat,
@@ -140,29 +264,23 @@ LinearSystemSetPrecMatrix(MPI_Comm comm,
    {
       HYPRE_IJMatrixRead(args->precmat_filename, comm, HYPRE_PARCSR, precmat_ptr);
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * LinearSystemReadDofmap
  *-----------------------------------------------------------------------------*/
 
-int
-LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, HYPRE_IntArray *dofmap_ptr)
+void
+LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 {
    if (args->dofmap_filename[0] == '\0')
    {
-      dofmap_ptr->num_entries = 0;
-      dofmap_ptr->num_unique_entries = 0;
-      dofmap_ptr->data = NULL;
+      *dofmap_ptr = IntArrayCreate(0);
    }
    else
    {
-      return IntArrayRead(comm, args->dofmap_filename, dofmap_ptr);
+      IntArrayParRead(comm, args->dofmap_filename, dofmap_ptr);
    }
 
    /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks */
-
-   return EXIT_SUCCESS;
 }

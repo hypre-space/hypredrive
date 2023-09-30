@@ -6,58 +6,49 @@
  ******************************************************************************/
 
 #include "fgmres.h"
+#include "gen_macros.h"
+
+/*-----------------------------------------------------------------------------
+ * Define Field/Offset/Setter mapping
+ *-----------------------------------------------------------------------------*/
+
+#define FGMRES_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet)
+
+/* Define num_fields macro */
+#define FGMRES_NUM_FIELDS (sizeof(FGMRES_field_offset_map) / sizeof(FGMRES_field_offset_map[0]))
+
+/* Generate the various function declarations/definitions and the field_offset_map object */
+GENERATE_PREFIXED_COMPONENTS(FGMRES)
+DEFINE_VOID_GET_VALID_VALUES_FUNC(FGMRES)
 
 /*-----------------------------------------------------------------------------
  * FGMRESSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 FGMRESSetDefaultArgs(FGMRES_args *args)
 {
-   args->min_iter = 0;
-   args->max_iter = 100;
-   args->krylov_dimension = 30;
-   args->logging = 1;
-   args->print_level = 1;
-   args->rtol = 1.0e-6;
-   args->atol = 0.0;
-
-   return EXIT_SUCCESS;
-}
-
-/*-----------------------------------------------------------------------------
- * FGMRESSetArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-int
-FGMRESSetArgsFromYAML(FGMRES_args *args, YAMLnode *parent)
-{
-   YAMLnode *child;
-
-   child = parent->children;
-   while (child)
-   {
-      YAML_SET_IF_OPEN()
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "min_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "max_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->krylov_dimension, "krylov_dimension", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->logging, "logging", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->print_level, "print_level", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->rtol, "rtol", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->atol, "atol", child)
-      YAML_SET_IF_CLOSE(child)
-
-      child = child->next;
-   }
-
-   return EXIT_SUCCESS;
+   args->min_iter     = 0;
+   args->max_iter     = 300;
+   args->krylov_dim   = 30;
+   args->logging      = 1;
+   args->print_level  = 1;
+   args->relative_tol = 1.0e-6;
+   args->absolute_tol = 0.0;
 }
 
 /*-----------------------------------------------------------------------------
  * FGMRESCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 FGMRESCreate(MPI_Comm comm, FGMRES_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
@@ -65,13 +56,11 @@ FGMRESCreate(MPI_Comm comm, FGMRES_args *args, HYPRE_Solver *solver_ptr)
    HYPRE_ParCSRFlexGMRESCreate(comm, &solver);
    HYPRE_FlexGMRESSetMinIter(solver, args->min_iter);
    HYPRE_FlexGMRESSetMaxIter(solver, args->max_iter);
-   HYPRE_FlexGMRESSetKDim(solver, args->krylov_dimension);
+   HYPRE_FlexGMRESSetKDim(solver, args->krylov_dim);
    HYPRE_FlexGMRESSetLogging(solver, args->logging);
    HYPRE_FlexGMRESSetPrintLevel(solver, args->print_level);
-   HYPRE_FlexGMRESSetTol(solver, args->rtol);
-   HYPRE_FlexGMRESSetAbsoluteTol(solver, args->atol);
+   HYPRE_FlexGMRESSetTol(solver, args->relative_tol);
+   HYPRE_FlexGMRESSetAbsoluteTol(solver, args->absolute_tol);
 
    *solver_ptr = solver;
-
-   return EXIT_SUCCESS;
 }

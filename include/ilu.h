@@ -9,6 +9,7 @@
 #define ILU_HEADER
 
 #include "yaml.h"
+#include "field.h"
 #include "HYPRE_parcsr_ls.h"
 
 /*--------------------------------------------------------------------------
@@ -27,15 +28,16 @@ typedef struct ILU_args_struct {
    HYPRE_Int     max_row_nnz;
    HYPRE_Int     schur_max_iter;
    HYPRE_Real    droptol;
+   HYPRE_Real    nsh_droptol;
+   HYPRE_Real    tolerance;
 } ILU_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-int ILUSetDefaultArgs(ILU_args*);
-int ILUSetArgsFromYAML(ILU_args*, YAMLnode*);
-int ILUSetArgs(ILU_args*, YAMLnode*);
-int ILUCreate(ILU_args*, HYPRE_Solver*);
+void ILUSetDefaultArgs(ILU_args*);
+void ILUSetArgs(void*, YAMLnode*);
+void ILUCreate(ILU_args*, HYPRE_Solver*);
 
-#endif
+#endif /* ILU_HEADER */

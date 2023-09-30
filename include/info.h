@@ -5,10 +5,20 @@
  * SPDX-License-Identifier: (Apache-2.0 OR MIT)
  ******************************************************************************/
 
+#ifndef INFO_HEADER
+#define INFO_HEADER
+
 #include <stdio.h>
 #include <time.h>
 #include "HYPRE.h"
 #include "HYPRE_config.h"
 
-void PrintInfo(void);
-void PrintExitInfo(char*);
+/*--------------------------------------------------------------------------
+ * Prototypes
+ *--------------------------------------------------------------------------*/
+
+void PrintUsage(const char*);
+void PrintLibInfo(void);
+void PrintExitInfo(const char*);
+
+#endif /* INFO_HEADER */

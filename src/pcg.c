@@ -6,64 +6,55 @@
  ******************************************************************************/
 
 #include "pcg.h"
+#include "gen_macros.h"
+
+/*-----------------------------------------------------------------------------
+ * Define Field/Offset/Setter mapping
+ *-----------------------------------------------------------------------------*/
+
+#define PCG_FIELDS(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, two_norm, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, recompute_res, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, residual_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, FieldTypeDoubleSet)
+
+/* Define num_fields macro */
+#define PCG_NUM_FIELDS (sizeof(PCG_field_offset_map) / sizeof(PCG_field_offset_map[0]))
+
+/* Generate the various function declarations/definitions and the field_offset_map object */
+GENERATE_PREFIXED_COMPONENTS(PCG)
+DEFINE_VOID_GET_VALID_VALUES_FUNC(PCG)
 
 /*-----------------------------------------------------------------------------
  * PCGSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
-int
+void
 PCGSetDefaultArgs(PCG_args *args)
 {
-   args->max_iter = 100;
-   args->two_norm = 1;
-   args->stop_crit = 0;
-   args->rel_change = 0;
-   args->print_level = 1;
+   args->max_iter      = 100;
+   args->two_norm      = 1;
+   args->stop_crit     = 0;
+   args->rel_change    = 0;
+   args->print_level   = 1;
    args->recompute_res = 0;
-   args->rtol = 1.0e-6;
-   args->atol = 0.0;
-   args->res_tol = 0.0;
-   args->cf_tol = 0.0;
-
-   return EXIT_SUCCESS;
-}
-
-/*-----------------------------------------------------------------------------
- * PCGSetArgsFromYAML
- *-----------------------------------------------------------------------------*/
-
-int
-PCGSetArgsFromYAML(PCG_args *args, YAMLnode *parent)
-{
-   YAMLnode *child;
-
-   child = parent->children;
-   while (child)
-   {
-      YAML_SET_IF_OPEN()
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->max_iter, "max_iter", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->two_norm, "two_norm", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->stop_crit, "stop_crit", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->rel_change, "rel_change", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->print_level, "print_level", child)
-      YAML_SET_INTEGER_IF_KEY_MATCHES(args->recompute_res, "recompute_res", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->rtol, "rtol", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->atol, "atol", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->res_tol, "res_tol", child)
-      YAML_SET_REAL_IF_KEY_MATCHES(args->cf_tol, "cf_tol", child)
-      YAML_SET_IF_CLOSE(child)
-
-      child = child->next;
-   }
-
-   return EXIT_SUCCESS;
+   args->relative_tol  = 1.0e-6;
+   args->absolute_tol  = 0.0;
+   args->residual_tol  = 0.0;
+   args->conv_fac_tol  = 0.0;
 }
 
 /*-----------------------------------------------------------------------------
  * PCGCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 PCGCreate(MPI_Comm comm, PCG_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
@@ -75,12 +66,10 @@ PCGCreate(MPI_Comm comm, PCG_args *args, HYPRE_Solver *solver_ptr)
    HYPRE_PCGSetRelChange(solver, args->rel_change);
    HYPRE_PCGSetPrintLevel(solver, args->print_level);
    HYPRE_PCGSetRecomputeResidual(solver, args->recompute_res);
-   HYPRE_PCGSetTol(solver, args->rtol);
-   HYPRE_PCGSetAbsoluteTol(solver, args->atol);
-   HYPRE_PCGSetResidualTol(solver, args->res_tol);
-   HYPRE_PCGSetConvergenceFactorTol(solver, args->cf_tol);
+   HYPRE_PCGSetTol(solver, args->relative_tol);
+   HYPRE_PCGSetAbsoluteTol(solver, args->absolute_tol);
+   HYPRE_PCGSetResidualTol(solver, args->residual_tol);
+   HYPRE_PCGSetConvergenceFactorTol(solver, args->conv_fac_tol);
 
    *solver_ptr = solver;
-
-   return EXIT_SUCCESS;
 }
