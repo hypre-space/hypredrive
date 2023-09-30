@@ -19,8 +19,8 @@
  *--------------------------------------------------------------------------*/
 
 typedef struct input_args_struct {
-   HYPRE_Int     warmup;
-   HYPRE_Int     num_repetitions;
+   HYPRE_Int     warmup; /* TODO: move this to separate struct */
+   HYPRE_Int     num_repetitions; /* TODO: move this to separate struct */
 
    LS_args       ls;
 
@@ -35,8 +35,8 @@ typedef struct input_args_struct {
  * Public prototypes
  *-----------------------------------------------------------------------------*/
 
-int InputArgsCreate(input_args**);
-int InputArgsDestroy(input_args**);
-int InputArgsParse(MPI_Comm, int, char**, input_args**);
+void InputArgsCreate(input_args**);
+void InputArgsDestroy(input_args**);
+void InputArgsParse(MPI_Comm, int, char**, input_args**);
 
 #endif

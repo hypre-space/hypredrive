@@ -7,11 +7,27 @@
 
 #include "info.h"
 
-void PrintInfo(void)
+/*--------------------------------------------------------------------------
+ * PrintUsage
+ *--------------------------------------------------------------------------*/
+
+void
+PrintUsage(const char *argv0)
 {
-   time_t t;
-   struct tm *tm_info;
-   char buffer[100];
+   fprintf(stderr, "Usage: %s <filename>\n", argv0);
+   fprintf(stderr, "  filename: config file in YAML format\n");
+}
+
+/*--------------------------------------------------------------------------
+ * PrintLibInfo
+ *--------------------------------------------------------------------------*/
+
+void
+PrintLibInfo(void)
+{
+   time_t      t;
+   struct tm  *tm_info;
+   char        buffer[100];
 
    /* Get current time */
    time(&t);
@@ -36,13 +52,16 @@ void PrintInfo(void)
 #endif
 }
 
-void PrintExitInfo(char *argv0)
+/*--------------------------------------------------------------------------
+ * PrintExitInfo
+ *--------------------------------------------------------------------------*/
+
+void
+PrintExitInfo(const char *argv0)
 {
    time_t t;
    struct tm *tm_info;
    char buffer[100];
-
-   printf("\%s done!\n", argv0);
 
    /* Get current time */
    time(&t);
@@ -50,5 +69,5 @@ void PrintExitInfo(char *argv0)
 
    /* Format and print the date and time */
    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
-   printf("Date and time: %s\n", buffer);
+   printf("Date and time: %s\n\%s done!\n", buffer, argv0);
 }

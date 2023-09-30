@@ -134,6 +134,11 @@ ErrorCodeDescribe(void)
    {
       ErrorMsgAddCodeWithCount(ERROR_MAYBE_INVALID_VAL, "possible invalid value");
    }
+
+   if (global_error_code & ERROR_MISSING_DOFMAP)
+   {
+      ErrorMsgAdd("Missing dofmap info needed by MGR!");
+   }
 }
 
 /*-----------------------------------------------------------------------------
@@ -391,6 +396,7 @@ ErrorMsgClear()
 void
 ErrorMsgPrintAndAbort(MPI_Comm comm)
 {
+   /* TODO: check error codes in other processes? */
    ErrorCodeDescribe();
    ErrorMsgPrint();
    ErrorMsgClear();

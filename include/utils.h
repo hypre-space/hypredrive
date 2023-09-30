@@ -10,23 +10,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "HYPRE.h"
-#include "HYPRE_config.h"
-#include "HYPRE_utilities.h"
 #include "error.h"
 #include "containers.h"
-
-#define MAX_FILENAME_LENGTH 2048
-
-/*--------------------------------------------------------------------------
- * HYPRE_Int array struct
- *--------------------------------------------------------------------------*/
-
-typedef struct HYPRE_IntArray_struct {
-   HYPRE_Int     num_entries;
-   HYPRE_Int     num_unique_entries;
-   HYPRE_Int    *data;
-} HYPRE_IntArray;
 
 /*-----------------------------------------------------------------------------
  * Public prototypes
@@ -34,7 +19,6 @@ typedef struct HYPRE_IntArray_struct {
 
 char* StrToLowerCase(char*);
 int CheckBinaryDataExists(const char* prefix);
-int IntArrayRead(MPI_Comm, const char*, HYPRE_IntArray*);
 
 /*******************************************************************************
  *******************************************************************************/

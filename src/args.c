@@ -14,7 +14,7 @@
  * InputArgsCreate
  *-----------------------------------------------------------------------------*/
 
-int
+void
 InputArgsCreate(input_args **iargs_ptr)
 {
    input_args *iargs = (input_args*) malloc(sizeof(input_args));
@@ -31,28 +31,27 @@ InputArgsCreate(input_args **iargs_ptr)
    iargs->precon_method = PRECON_BOOMERAMG;
 
    *iargs_ptr = iargs;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * InputArgsDestroy
  *-----------------------------------------------------------------------------*/
 
-int
+void
 InputArgsDestroy(input_args **iargs_ptr)
 {
-   free(*iargs_ptr);
-   *iargs_ptr = NULL;
-
-   return EXIT_SUCCESS;
+   if (*iargs_ptr)
+   {
+      free(*iargs_ptr);
+      *iargs_ptr = NULL;
+   }
 }
 
 /*-----------------------------------------------------------------------------
  * InputArgsParseGeneral
  *-----------------------------------------------------------------------------*/
 
-int
+void
 InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 {
    YAMLnode    *parent;
@@ -61,10 +60,12 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
    parent = YAMLnodeFindByKey(tree->root, "general");
    if (!parent)
    {
-      return EXIT_SUCCESS;
+      /* The "general" key is not mandatory,
+         so we don't set an error code if it's not found. */
+      return;
    }
 
-   child  = parent->children;
+   child = parent->children;
    while (child)
    {
       if (!strcmp(child->key, "warmup"))
@@ -98,11 +99,6 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 
       child = child->next;
    }
-
-   ErrorMsgPrint();
-   ErrorMsgClear();
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
@@ -221,7 +217,7 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
  * Expands an input file with include directives to a single text pointer.
  *-----------------------------------------------------------------------------*/
 
-int
+void
 InputArgsExpand(const char* basefilename, int *text_size, char **text_ptr)
 {
    FILE      *fp;
@@ -236,8 +232,9 @@ InputArgsExpand(const char* basefilename, int *text_size, char **text_ptr)
    fp = fopen(basefilename, "r");
    if (!fp)
    {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       ErrorMsgAddInvalidFilename(basefilename);
-      return EXIT_FAILURE;
+      return;
    }
 
    /* Determine the base file size */
@@ -292,8 +289,9 @@ InputArgsExpand(const char* basefilename, int *text_size, char **text_ptr)
          fp = fopen(include_filenames[i], "r");
          if (!fp)
          {
+            ErrorCodeSet(ERROR_FILE_NOT_FOUND);
             ErrorMsgAddInvalidFilename(include_filenames[i]);
-            return EXIT_FAILURE;
+            return;
          }
 
          fseek(fp, 0, SEEK_END);
@@ -309,7 +307,7 @@ InputArgsExpand(const char* basefilename, int *text_size, char **text_ptr)
 
    /* Read the expanded text */
    fp = fopen(basefilename, "r");
-   if (fread(text, 1, file_sizes[0], fp) != file_sizes[0]) return EXIT_FAILURE;
+   if (fread(text, 1, file_sizes[0], fp) != file_sizes[0]) return;
    fclose(fp);
    for (i = 0; i < 2; i++)
    {
@@ -318,7 +316,7 @@ InputArgsExpand(const char* basefilename, int *text_size, char **text_ptr)
          fp = fopen(include_filenames[i], "r");
          if (fread(text + file_sizes_sum[i], 1, file_sizes[i + 1], fp) != file_sizes[i + 1])
          {
-            return EXIT_FAILURE;
+            return;
          }
          fclose(fp);
       }
@@ -334,15 +332,13 @@ InputArgsExpand(const char* basefilename, int *text_size, char **text_ptr)
    /* Set output pointer */
    *text_ptr  = text;
    *text_size = file_sizes_sum[2] + 1;
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * InputArgsParse
  *-----------------------------------------------------------------------------*/
 
-int
+void
 InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
 {
    input_args   *iargs;
@@ -356,19 +352,13 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    MPI_Comm_rank(comm, &myid);
 
    /* Rank 0: Expand text from base file */
-   if (!myid)
-   {
-      InputArgsExpand(argv[1], &text_size, &text);
-   }
+   if (!myid) InputArgsExpand(argv[1], &text_size, &text);
 
    /* Broadcast the text size */
    MPI_Bcast(&text_size, 1, MPI_INT, 0, comm);
 
    /* Broadcast the text */
-   if (myid)
-   {
-      text = (char*) malloc(text_size * sizeof(char));
-   }
+   if (myid) text = (char*) malloc(text_size * sizeof(char));
    MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
 
    /* Build YAML tree */
@@ -416,6 +406,4 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    *args_ptr = iargs;
    YAMLtreeDestroy(&tree);
    free(text);
-
-   return EXIT_SUCCESS;
 }

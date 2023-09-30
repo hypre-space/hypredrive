@@ -105,7 +105,7 @@ PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 void
 PreconCreate(precon_t         precon_method,
              precon_args     *args,
-             HYPRE_IntArray  *dofmap,
+             IntArray        *dofmap,
              HYPRE_Solver    *precon_ptr)
 {
    switch (precon_method)
@@ -115,7 +115,8 @@ PreconCreate(precon_t         precon_method,
          break;
 
       case PRECON_MGR:
-         MGRCreate(&args->mgr, dofmap, precon_ptr);
+         MGRSetDofmap(&args->mgr, dofmap);
+         MGRCreate(&args->mgr, precon_ptr);
          break;
 
       case PRECON_ILU:

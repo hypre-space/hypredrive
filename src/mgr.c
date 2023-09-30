@@ -410,24 +410,48 @@ MGRConvertArgInt(MGR_args *args, const char* name)
 }
 
 /*-----------------------------------------------------------------------------
+ * MGRSetDofmap
+ *-----------------------------------------------------------------------------*/
+
+void
+MGRSetDofmap(MGR_args *args, IntArray *dofmap)
+{
+   args->dofmap = dofmap;
+}
+
+/*-----------------------------------------------------------------------------
  * MGRCreate
  *-----------------------------------------------------------------------------*/
 
 void
-MGRCreate(MGR_args *args, HYPRE_IntArray *dofmap, HYPRE_Solver *precon_ptr)
+MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver   precon;
    HYPRE_Solver   csolver;
    HYPRE_Solver   frelax;
-   HYPRE_Int      num_dofs = dofmap->num_unique_entries;
-   HYPRE_Int      num_dofs_last = num_dofs;
-   HYPRE_Int      num_levels = args->num_levels;
+   IntArray      *dofmap;
+   HYPRE_Int      num_dofs;
+   HYPRE_Int      num_dofs_last;
+   HYPRE_Int      num_levels;
    HYPRE_Int      num_c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int     *c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int     *inactive_dofs;
    HYPRE_Int      lvl, i, j;
 
+   /* Sanity checks */
+   if (!args->dofmap)
+   {
+      ErrorCodeSet(ERROR_MISSING_DOFMAP);
+      return;
+   }
+
+   /* Initialize variables */
+   dofmap     = args->dofmap;
+   num_dofs   = dofmap->num_unique_entries;
+   num_levels = args->num_levels;
+
    /* Compute num_c_dofs and c_dofs */
+   num_dofs_last = num_dofs;
    inactive_dofs = (HYPRE_Int*) calloc(num_dofs, sizeof(HYPRE_Int));
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
@@ -436,7 +460,7 @@ MGRCreate(MGR_args *args, HYPRE_IntArray *dofmap, HYPRE_Solver *precon_ptr)
 
       for (i = 0; i < args->level[lvl].f_dofs->size; i++)
       {
-         inactive_dofs[args->level[lvl].f_dofs->array[i]] = 1;
+         inactive_dofs[args->level[lvl].f_dofs->data[i]] = 1;
          --num_dofs_last;
       }
 

@@ -69,6 +69,8 @@ typedef struct MGRlvl_args_struct {
  *--------------------------------------------------------------------------*/
 
 typedef struct MGR_args_struct {
+   IntArray     *dofmap;
+
    HYPRE_Int     non_c_to_f;
    HYPRE_Int     pmax;
    HYPRE_Int     max_iter;
@@ -87,7 +89,8 @@ typedef struct MGR_args_struct {
  *--------------------------------------------------------------------------*/
 
 void MGRSetArgs(void*, YAMLnode*);
-void MGRCreate(MGR_args*, HYPRE_IntArray*, HYPRE_Solver*);
+void MGRSetDofmap(MGR_args*, IntArray*);
+void MGRCreate(MGR_args*, HYPRE_Solver*);
 void MGRDestroyArgs(MGR_args**);
 
 #endif

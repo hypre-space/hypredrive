@@ -13,6 +13,12 @@
 #include <stdbool.h>
 #include <string.h>
 #include <limits.h>
+#include "utils.h"
+#include "HYPRE.h"
+#include "HYPRE_config.h"
+#include "HYPRE_utilities.h"
+
+#define MAX_FILENAME_LENGTH 2048
 
 /*--------------------------------------------------------------------------
  * IntArray struct
@@ -20,12 +26,14 @@
 
 typedef struct IntArray_struct
 {
-   int      *array;
+   int      *data;
    size_t    size;
+   size_t    num_unique_entries;
 } IntArray;
 
 IntArray* IntArrayCreate(size_t);
 void IntArrayDestroy(IntArray**);
+int IntArrayParRead(MPI_Comm, const char*, IntArray**);
 
 /*--------------------------------------------------------------------------
  * StrArray struct
@@ -33,12 +41,12 @@ void IntArrayDestroy(IntArray**);
 
 typedef struct StrArray_struct
 {
-   const char  **array;
+   const char  **data;
    size_t        size;
 } StrArray;
 
 #define STR_ARRAY_CREATE(_str) \
-   (StrArray){.array = _str, .size = sizeof(_str) / sizeof(_str[0])}
+   (StrArray){.data = _str, .size = sizeof(_str) / sizeof(_str[0])}
 
 bool StrArrayEntryExists(const StrArray, const char*);
 void StrToIntArray(const char*, IntArray**);
@@ -55,15 +63,15 @@ typedef struct StrIntMap_struct
 
 typedef struct StrIntMapArray_struct
 {
-   const StrIntMap  *array;
+   const StrIntMap  *data;
    size_t            size;
 } StrIntMapArray;
 
 #define STR_INT_MAP_ARRAY_CREATE(map) \
-   (StrIntMapArray){.array = map, .size = sizeof(map) / sizeof(map[0])}
+   (StrIntMapArray){.data = map, .size = sizeof(map) / sizeof(map[0])}
 #define STR_INT_MAP_ARRAY_CREATE_ON_OFF() OnOffMapArray
 #define STR_INT_MAP_ARRAY_VOID() \
-   (StrIntMapArray){.array = NULL, .size = 0}
+   (StrIntMapArray){.data = NULL, .size = 0}
 
 extern const StrIntMapArray OnOffMapArray;
 int  StrIntMapArrayGetImage(const StrIntMapArray, const char*);

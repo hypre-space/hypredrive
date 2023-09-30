@@ -10,5 +10,10 @@
 #include "HYPRE.h"
 #include "HYPRE_config.h"
 
-void PrintInfo(void);
-void PrintExitInfo(char*);
+/*--------------------------------------------------------------------------
+ * Prototypes
+ *--------------------------------------------------------------------------*/
+
+void PrintUsage(const char*);
+void PrintLibInfo(void);
+void PrintExitInfo(const char*);

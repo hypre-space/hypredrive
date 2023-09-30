@@ -29,9 +29,10 @@ typedef enum ErrorCode_enum
    ERROR_EXTRA_KEY              = 0x00000100, // 9th  bit
    ERROR_MISSING_SOLVER         = 0x00000200, // 10th bit
    ERROR_MISSING_PRECON         = 0x00000400, // 11th bit
-   ERROR_INVALID_SOLVER         = 0x00000800, // 12th bit
-   ERROR_INVALID_PRECON         = 0x00001000, // 13th bit
-   ERROR_FILE_NOT_FOUND         = 0x00002000, // 14th bit
+   ERROR_MISSING_DOFMAP         = 0x00000800, // 12th bit
+   ERROR_INVALID_SOLVER         = 0x00001000, // 13th bit
+   ERROR_INVALID_PRECON         = 0x00002000, // 14th bit
+   ERROR_FILE_NOT_FOUND         = 0x00004000, // 15th bit
    ERROR_UNKNOWN                = 0x40000000  // 30th bit
 } ErrorCode;
 
@@ -56,7 +57,7 @@ void ErrorMsgAddUnexpectedVal(const char*);
 void ErrorMsgAddInvalidSolverOption(int); // TODO: Remove me
 void ErrorMsgAddInvalidPreconOption(int); // TODO: Remove me
 void ErrorMsgAddInvalidString(const char*);
-void ErrorMsgAddInvalidFilename(const char*); // TODO: Remove me
+void ErrorMsgAddInvalidFilename(const char*);
 void ErrorMsgPrint();
 void ErrorMsgClear();
 void ErrorMsgPrintAndAbort(MPI_Comm);

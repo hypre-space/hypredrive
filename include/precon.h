@@ -47,7 +47,7 @@ StrIntMapArray PreconGetValidValues(const char*);
 StrIntMapArray PreconGetValidTypeIntMap(void);
 
 void PreconSetArgsFromYAML(precon_args*, YAMLnode*); /* TODO: change name to PreconSetArgs */
-void PreconCreate(precon_t, precon_args*, HYPRE_IntArray*, HYPRE_Solver*);
+void PreconCreate(precon_t, precon_args*, IntArray*, HYPRE_Solver*);
 void PreconDestroy(precon_t, HYPRE_Solver*);
 
 #endif

@@ -126,7 +126,7 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
  * LinearSystemReadMatrix
  *-----------------------------------------------------------------------------*/
 
-int
+void
 LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 {
    /* Read matrix */
@@ -140,20 +140,26 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       {
          HYPRE_IJMatrixRead(args->matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
       }
+
+      /* Check if hypre had problems reading the input file */
+      if (HYPRE_GetError())
+      {
+         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         ErrorMsgAddInvalidFilename(args->matrix_filename);
+      }
    }
    else
    {
-      return EXIT_FAILURE;
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAddInvalidFilename(args->matrix_filename);
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * LinearSystemSetRHS
  *-----------------------------------------------------------------------------*/
 
-int
+void
 LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVector *rhs_ptr)
 {
    HYPRE_BigInt    ilower, iupper;
@@ -185,16 +191,21 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
       {
          HYPRE_IJVectorRead(args->rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
       }
-   }
 
-   return EXIT_SUCCESS;
+      /* Check if hypre had problems reading the input file */
+      if (HYPRE_GetError())
+      {
+         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         ErrorMsgAddInvalidFilename(args->rhs_filename);
+      }
+   }
 }
 
 /*-----------------------------------------------------------------------------
  * LinearSystemSetInitialGuess
  *-----------------------------------------------------------------------------*/
 
-int
+void
 LinearSystemSetInitialGuess(MPI_Comm comm,
                             LS_args *args,
                             HYPRE_IJMatrix mat,
@@ -233,15 +244,13 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
          HYPRE_IJVectorRead(args->x0_filename, comm, HYPRE_PARCSR, x0_ptr);
       }
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * LinearSystemSetPrecMatrix
  *-----------------------------------------------------------------------------*/
 
-int
+void
 LinearSystemSetPrecMatrix(MPI_Comm comm,
                           LS_args *args,
                           HYPRE_IJMatrix mat,
@@ -255,29 +264,23 @@ LinearSystemSetPrecMatrix(MPI_Comm comm,
    {
       HYPRE_IJMatrixRead(args->precmat_filename, comm, HYPRE_PARCSR, precmat_ptr);
    }
-
-   return EXIT_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
  * LinearSystemReadDofmap
  *-----------------------------------------------------------------------------*/
 
-int
-LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, HYPRE_IntArray *dofmap_ptr)
+void
+LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 {
    if (args->dofmap_filename[0] == '\0')
    {
-      dofmap_ptr->num_entries = 0;
-      dofmap_ptr->num_unique_entries = 0;
-      dofmap_ptr->data = NULL;
+      *dofmap_ptr = IntArrayCreate(0);
    }
    else
    {
-      return IntArrayRead(comm, args->dofmap_filename, dofmap_ptr);
+      IntArrayParRead(comm, args->dofmap_filename, dofmap_ptr);
    }
 
    /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks */
-
-   return EXIT_SUCCESS;
 }

@@ -40,10 +40,10 @@ StrIntMapArray LinearSystemGetValidValues(const char*);
 
 void LinearSystemSetDefaultArgs(LS_args*);
 void LinearSystemSetArgsFromYAML(LS_args*, YAMLnode*);
-int LinearSystemReadMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix*);
-int LinearSystemSetRHS(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector*);
-int LinearSystemSetInitialGuess(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector*);
-int LinearSystemSetPrecMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJMatrix*);
-int LinearSystemReadDofmap(MPI_Comm, LS_args*, HYPRE_IntArray*);
+void LinearSystemReadMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix*);
+void LinearSystemSetRHS(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector*);
+void LinearSystemSetInitialGuess(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector*);
+void LinearSystemSetPrecMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJMatrix*);
+void LinearSystemReadDofmap(MPI_Comm, LS_args*, IntArray**);
 
 #endif

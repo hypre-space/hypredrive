@@ -21,12 +21,12 @@ int main(int argc, char **argv)
 {
    MPI_Comm         comm = MPI_COMM_WORLD;
    int              myid;
+   IntArray        *dofmap;
    input_args      *iargs;
    HYPRE_IJMatrix   mat_A;
    HYPRE_IJMatrix   mat_M;
    HYPRE_IJVector   rhs;
    HYPRE_IJVector   sol;
-   HYPRE_IntArray   dofmap;
    HYPRE_Solver     precon;
    HYPRE_Solver     solver;
 
@@ -34,8 +34,7 @@ int main(int argc, char **argv)
 
    if (argc < 1)
    {
-      fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
-      fprintf(stderr, "  filename: config file in YAML format\n");
+      if (!myid) PrintUsage(argv[0]);
       return EXIT_FAILURE;
    }
 
@@ -48,13 +47,10 @@ int main(int argc, char **argv)
    HYPRE_Initialize();
 
    /*-----------------------------------------------------------
-    * Print driver info
+    * Print libraries/driver info
     *-----------------------------------------------------------*/
 
-   if (myid == 0)
-   {
-      PrintInfo();
-   }
+   if (!myid) PrintLibInfo();
 
    /*-----------------------------------------------------------
     * Parse input parameters
@@ -85,7 +81,7 @@ int main(int argc, char **argv)
    {
       /* Setup phase */
       ANNOTATE_ITER_BEGIN(i);
-      PreconCreate(iargs->precon_method, &iargs->precon, &dofmap, &precon);
+      PreconCreate(iargs->precon_method, &iargs->precon, dofmap, &precon);
       SolverCreate(comm, iargs->solver_method, &iargs->solver, &solver);
       SolverSetup(iargs->precon_method, iargs->solver_method, precon, solver, mat_M, rhs, sol);
       ANNOTATE_ITER_END(i);
@@ -116,10 +112,7 @@ int main(int argc, char **argv)
    HYPRE_Finalize();
    MPI_Finalize();
 
-   if (!myid)
-   {
-      PrintExitInfo(argv[0]);
-   }
+   if (!myid) PrintExitInfo(argv[0]);
 
    return EXIT_SUCCESS;
 }
