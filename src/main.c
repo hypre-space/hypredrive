@@ -12,11 +12,6 @@
 #include "linsys.h"
 #include "info.h"
 
-#define ANNOTATE_REGION_BEGIN()
-#define ANNOTATE_REGION_END()
-#define ANNOTATE_ITER_BEGIN(i)
-#define ANNOTATE_ITER_END(i)
-
 int main(int argc, char **argv)
 {
    MPI_Comm         comm = MPI_COMM_WORLD;
@@ -27,6 +22,7 @@ int main(int argc, char **argv)
    HYPRE_IJMatrix   mat_M;
    HYPRE_IJVector   rhs;
    HYPRE_IJVector   sol;
+   HYPRE_IJVector   sol0;
    HYPRE_Solver     precon;
    HYPRE_Solver     solver;
 
@@ -68,28 +64,25 @@ int main(int argc, char **argv)
    }
 
    /* Build linear system */
-   ANNOTATE_REGION_BEGIN();
    LinearSystemReadMatrix(comm, &iargs->ls, &mat_A);
    LinearSystemSetRHS(comm, &iargs->ls, mat_A, &rhs);
-   LinearSystemSetInitialGuess(comm, &iargs->ls, mat_A, rhs, &sol);
+   LinearSystemSetInitialGuess(comm, &iargs->ls, mat_A, rhs, &sol0, &sol);
    LinearSystemSetPrecMatrix(comm, &iargs->ls, mat_A, &mat_M);
    LinearSystemReadDofmap(comm, &iargs->ls, &dofmap);
-   ANNOTATE_REGION_END();
 
    /* Solve linear system */
    for (i = 0; i < iargs->num_repetitions; i++)
    {
+      /* Reset initial guess */
+      LinearSystemResetInitialGuess(sol0, sol);
+
       /* Setup phase */
-      ANNOTATE_ITER_BEGIN(i);
       PreconCreate(iargs->precon_method, &iargs->precon, dofmap, &precon);
       SolverCreate(comm, iargs->solver_method, &iargs->solver, &solver);
       SolverSetup(iargs->precon_method, iargs->solver_method, precon, solver, mat_M, rhs, sol);
-      ANNOTATE_ITER_END(i);
 
       /* Solve phase */
-      ANNOTATE_ITER_BEGIN(i);
       SolverApply(iargs->solver_method, solver, mat_A, rhs, sol);
-      ANNOTATE_ITER_END(i);
 
       /* Destroy phase */
       PreconDestroy(iargs->precon_method, &precon);
@@ -100,7 +93,6 @@ int main(int argc, char **argv)
     * Finalize driver
     *-----------------------------------------------------------*/
 
-   InputArgsDestroy(&iargs);
    if (mat_A != mat_M)
    {
       HYPRE_IJMatrixDestroy(mat_M);
@@ -112,7 +104,9 @@ int main(int argc, char **argv)
    HYPRE_Finalize();
    MPI_Finalize();
 
+   if (!myid) StatsPrint(iargs->statistics);
    if (!myid) PrintExitInfo(argv[0]);
+   InputArgsDestroy(&iargs);
 
    return EXIT_SUCCESS;
 }

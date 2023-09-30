@@ -33,6 +33,7 @@ typedef enum ErrorCode_enum
    ERROR_INVALID_SOLVER         = 0x00001000, // 13th bit
    ERROR_INVALID_PRECON         = 0x00002000, // 14th bit
    ERROR_FILE_NOT_FOUND         = 0x00004000, // 15th bit
+   ERROR_UNKNOWN_TIMING         = 0x20000000, // 29th bit
    ERROR_UNKNOWN                = 0x40000000  // 30th bit
 } ErrorCode;
 

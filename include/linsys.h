@@ -42,7 +42,9 @@ void LinearSystemSetDefaultArgs(LS_args*);
 void LinearSystemSetArgsFromYAML(LS_args*, YAMLnode*);
 void LinearSystemReadMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix*);
 void LinearSystemSetRHS(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector*);
-void LinearSystemSetInitialGuess(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector*);
+void LinearSystemSetInitialGuess(MPI_Comm, LS_args*, HYPRE_IJMatrix,
+                                 HYPRE_IJVector, HYPRE_IJVector*, HYPRE_IJVector*);
+void LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector);
 void LinearSystemSetPrecMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJMatrix*);
 void LinearSystemReadDofmap(MPI_Comm, LS_args*, IntArray**);
 
