@@ -1,5 +1,9 @@
 # hypre_app
-Driver application for solving linear systems read from file with hypre.
+High-level interface for solving linear systems with hypre, providing a user-friendly way to leverage its functionalities. Key features are:
+1. **YAML Input**: Accepts configuration parameters written in the structured and human-readable YAML format.
+2. **Intuitive Interface**: Offers a clear and concise API, encapsulating the functionalities of *hypre* to ensure user-friendly interactions.
+3. **Prototyping**: Establishes a quick prototyping framework, facilitating the exploration of various solver/preconditioner setups.
+4. **Testing**: Enables the construction of an integrated testing framework, accommodating problems applications built on hypre.
 
 Currently, the driver only supports linear systems written in hypre's IJ conceptual interface format.
 
@@ -7,7 +11,8 @@ Currently, the driver only supports linear systems written in hypre's IJ concept
 
 ```
  $ ./autogen.sh
- $ ./configure --with-hypre-include=${HYPRE_INSTALL_DIR}/include --with-hypre-lib=${HYPRE_INSTALL_DIR}/lib
+ $ ./configure --with-hypre-include=${HYPRE_INSTALL_DIR}/include \
+               --with-hypre-lib=${HYPRE_INSTALL_DIR}/lib
  $ make all
  $ make install
 ```
