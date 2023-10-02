@@ -29,6 +29,7 @@ typedef struct LS_args_struct {
    HYPRE_Int     init_guess_mode;
    HYPRE_Int     rhs_mode;
    HYPRE_Int     type;
+   HYPRE_Int     exec_policy;
 } LS_args;
 
 /*-----------------------------------------------------------------------------

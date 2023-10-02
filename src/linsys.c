@@ -7,6 +7,7 @@
 
 #include "linsys.h"
 #include "HYPRE_parcsr_mv.h" /* TODO: remove after implementing IJVectorClone/Copy */
+#include "_hypre_parcsr_mv.h" /* TODO: remove after implementing IJVectorMigrate/IJMatrix */
 
 static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FieldTypeStringSet),
@@ -17,7 +18,8 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet)
+   FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, exec_policy, FieldTypeIntSet)
 };
 
 #define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
@@ -80,6 +82,12 @@ LinearSystemGetValidValues(const char* key)
                                 {"random", 3}};
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
+   else if (!strcmp(key, "exec_policy"))
+   {
+      static StrIntMap map[] = {{"host",   0},
+                                {"device", 1}};
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
    else
    {
       return STR_INT_MAP_ARRAY_VOID();
@@ -102,6 +110,7 @@ LinearSystemSetDefaultArgs(LS_args *args)
    args->init_guess_mode = 0;
    args->rhs_mode = 0;
    args->type = 0;
+   args->exec_policy = 0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -157,6 +166,18 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       ErrorMsgAddInvalidFilename(args->matrix_filename);
    }
 
+   /* Migrate the matrix? TODO: use IJMatrixMigrate */
+   if (args->exec_policy)
+   {
+      HYPRE_ParCSRMatrix   par_A;
+      void                *obj;
+
+      HYPRE_IJMatrixGetObject(*matrix_ptr, &obj);
+      par_A  = (HYPRE_ParCSRMatrix) obj;
+
+      hypre_ParCSRMatrixMigrate(par_A, HYPRE_MEMORY_DEVICE);
+   }
+
    StatsTimerFinish("matrix");
 }
 
@@ -175,10 +196,13 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
    /* Read right-hand-side vector */
    if (args->rhs_filename[0] == '\0')
    {
+      HYPRE_MemoryLocation memloc = (args->exec_policy) ?
+                                    HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+
       HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
       HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
       HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize(*rhs_ptr);
+      HYPRE_IJVectorInitialize_v2(*rhs_ptr, memloc);
 
       switch (args->rhs_mode)
       {
@@ -205,6 +229,18 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
          ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          ErrorMsgAddInvalidFilename(args->rhs_filename);
       }
+
+      /* Migrate the vector? TODO: use IJVectorMigrate */
+      if (args->exec_policy)
+      {
+         HYPRE_ParVector   par_rhs;
+         void             *obj;
+
+         HYPRE_IJVectorGetObject(*rhs_ptr, &obj);
+         par_rhs = (HYPRE_ParVector) obj;
+
+         hypre_ParVectorMigrate(par_rhs, HYPRE_MEMORY_DEVICE);
+      }
    }
 
    StatsTimerFinish("rhs");
@@ -222,14 +258,16 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
                             HYPRE_IJVector *x0_ptr,
                             HYPRE_IJVector *x_ptr)
 {
-   HYPRE_BigInt    jlower, jupper;
+   HYPRE_BigInt         jlower, jupper;
+   HYPRE_MemoryLocation memloc = (args->exec_policy) ?
+                                 HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
    if (args->precmat_filename[0] == '\0')
    {
       HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
       HYPRE_IJVectorCreate(comm, jlower, jupper, x0_ptr);
       HYPRE_IJVectorSetObjectType(*x0_ptr, HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize(*x0_ptr);
+      HYPRE_IJVectorInitialize_v2(*x0_ptr, memloc);
 
       switch (args->init_guess_mode)
       {
@@ -253,13 +291,25 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
       {
          HYPRE_IJVectorRead(args->x0_filename, comm, HYPRE_PARCSR, x0_ptr);
       }
+
+      /* Migrate the vector? TODO: use IJVectorMigrate */
+      if (args->exec_policy)
+      {
+         HYPRE_ParVector   par_x0;
+         void             *obj;
+
+         HYPRE_IJVectorGetObject(*x0_ptr, &obj);
+         par_x0 = (HYPRE_ParVector) obj;
+
+         hypre_ParVectorMigrate(par_x0, HYPRE_MEMORY_DEVICE);
+      }
    }
 
    /* TODO: implement HYPRE_IJVectorClone in hypre */
    HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
    HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
    HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize(*x_ptr);
+   HYPRE_IJVectorInitialize_v2(*x_ptr, memloc);
 }
 
 /*-----------------------------------------------------------------------------
