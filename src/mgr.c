@@ -497,7 +497,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    if (args->level[0].f_relaxation.type == 2)
    {
       AMGCreate(&args->level[0].f_relaxation.amg, &frelax);
-      HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, frelax);
+      HYPRE_MGRSetFSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, frelax);
    }
 
    /* Config coarsest level solver */
