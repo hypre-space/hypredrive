@@ -480,6 +480,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_MGRSetNonCpointsToFpoints(precon, args->non_c_to_f);
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
    HYPRE_MGRSetTol(precon, args->tolerance);
+   HYPRE_MGRSetPrintLevel(precon, args->print_level);
    HYPRE_MGRSetTruncateCoarseGridThreshold(precon, args->coarse_th);
    HYPRE_MGRSetRelaxType(precon, args->relax_type); /* TODO: we shouldn't need this */
 
