@@ -1,4 +1,4 @@
-# hypre_app
+# hypre<sub>app</sub>
 High-level interface for solving linear systems with hypre, providing a user-friendly way to leverage its functionalities. Key features are:
 1. **YAML Input**: Accepts configuration parameters written in the structured and human-readable YAML format.
 2. **Intuitive Interface**: Offers a clear and concise API, encapsulating the functionalities of *hypre* to ensure user-friendly interactions.
