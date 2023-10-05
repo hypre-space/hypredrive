@@ -9,9 +9,10 @@ linear_system:
   dofmap_filename: dofmap
 
 solver:
-  fgmres:
-    max_iter: 500
-    relative_tol: 1.0e-3
+  gmres:
+    max_iter: 100
+    krylov_dim: 30
+    relative_tol: 1.0e-9
     print_level: 2
 
 preconditioner:
@@ -22,19 +23,15 @@ preconditioner:
         f_dofs: [0]
         f_relaxation: single
           sweeps: 1
-        g_relaxation: none
+        g_relaxation: ilu
         restriction_type: injection
         prolongation_type: jacobi
         coarse_level_type: rap
 
       1:
         f_dofs: [1]
-        f_relaxation: none
-        g_relaxation:
-          ilu:
-            num_sweeps: 1
-            type: bj-iluk
-            fill: 0
+        f_relaxation: single
+        g_relaxation: h-ssor
         restriction_type: injection
         prolongation_type: jacobi
         coarse_level_type: rap
