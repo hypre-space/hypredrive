@@ -33,7 +33,7 @@ typedef struct IntArray_struct
 
 IntArray* IntArrayCreate(size_t);
 void IntArrayDestroy(IntArray**);
-int IntArrayParRead(MPI_Comm, const char*, IntArray**);
+void IntArrayParRead(MPI_Comm, const char*, IntArray**);
 
 /*--------------------------------------------------------------------------
  * StrArray struct

@@ -182,7 +182,7 @@ IntArraySort(IntArray *int_array)
  * IntArrayParRead
  *-----------------------------------------------------------------------------*/
 
-int
+void
 IntArrayParRead(MPI_Comm comm, const char* prefix, IntArray **int_array_ptr)
 {
    int        myid;
