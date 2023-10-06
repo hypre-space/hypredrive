@@ -204,12 +204,23 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
       HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
       HYPRE_IJVectorInitialize_v2(*rhs_ptr, memloc);
 
+      /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
+      void            *obj;
+      HYPRE_ParVector  par_b;
+      HYPRE_IJVectorGetObject(*rhs_ptr, &obj);
+      par_b = (HYPRE_ParVector) obj;
+
       switch (args->rhs_mode)
       {
          case 1:
          default:
-            /* TODO: Vector of ones */
+            /* Vector of ones */
+            HYPRE_ParVectorSetConstantValues(par_b, 1);
             break;
+
+         case 3:
+            /* Vector of random values */
+            HYPRE_ParVectorSetRandomValues(par_b, 2023);
       }
    }
    else
