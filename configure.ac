@@ -1,4 +1,4 @@
-AC_PREREQ([2.71])
+AC_PREREQ([2.69])
 AC_INIT([hypre-app], [0.1], [paludettomag1@llnl.gov])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 
