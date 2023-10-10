@@ -24,10 +24,15 @@ AC_CHECK_LIB([m], [sin],
              [AC_MSG_ERROR([libm (math library) not found or not usable])])
 AC_CHECK_LIB([HYPRE], [HYPRE_Initialize], [], [AC_MSG_ERROR([HYPRE library not found or not usable])])
 
-AC_CHECK_FUNCS([strchr strcspn strdup])
+AC_CONFIG_HEADERS([config.h])
+AC_CHECK_HEADERS([stdint.h])
+AC_CHECK_FUNCS([strchr strcspn strdup memset strstr strtol])
+AC_CHECK_HEADER_STDBOOL
+AC_TYPE_UINT32_T
 AC_TYPE_SIZE_T
 AC_FUNC_MALLOC
-AC_CONFIG_HEADERS([config.h])
+AC_FUNC_REALLOC
+AC_C_INLINE
 
 AC_CONFIG_FILES([
     Makefile
