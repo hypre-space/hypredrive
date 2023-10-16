@@ -201,8 +201,57 @@ AMGSetDefaultArgs(AMG_args *args)
    AMGsmtSetDefaultArgs(&args->smoother);
 }
 
+/*-----------------------------------------------------------------------------
+ * AMGintGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+AMGintGetValidValues(const char* key)
+{
+   if (!strcmp(key, "prolongation_type"))
+   {
+      static StrIntMap map[] = {{"mod_classical",         0},
+                                {"least_squares",         1},
+                                {"mod_classical_he",      2},
+                                {"direct_sep_weights",    3},
+                                {"multipass",             4},
+                                {"multipass_sep_weights", 5},
+                                {"extended+i",            6},
+                                {"extended+i_C",          7},
+                                {"standard",              8},
+                                {"standard_sep_weights",  9},
+                                {"blk_classical",        10},
+                                {"blk_classical_diag",   11},
+                                {"F_F",                  12},
+                                {"F_F1",                 13},
+                                {"extended",             14},
+                                {"direct_sep_weights",   15},
+                                {"MM_extended",          16},
+                                {"MM_extended+i",        17},
+                                {"MM_extended+e",        18},
+                                {"blk_direct",           24},
+                                {"one_point",           100}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "restriction_type"))
+   {
+      static StrIntMap map[] = {{"AIR_1",          1},
+                                {"AIR_2",          2},
+                                {"Neumann_AIR_0",  3},
+                                {"Neumann_AIR_1",  4},
+                                {"Neumann_AIR_2",  5},
+                                {"AIR_1.5",       15}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
 /* TODO */
-StrIntMapArray AMGintGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
 StrIntMapArray AMGcsnGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
 StrIntMapArray AMGaggGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
 StrIntMapArray AMGrlxGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
