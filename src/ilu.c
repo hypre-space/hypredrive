@@ -56,11 +56,14 @@ ILUGetValidValues(const char* key)
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
+#if 0
+   /* TODO: Fix these options */
    else if (!strcmp(key, "reordering") ||
             !strcmp(key, "tri_solve"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }
+#endif
    else
    {
       return STR_INT_MAP_ARRAY_VOID();
