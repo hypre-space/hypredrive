@@ -1,0 +1,41 @@
+general:
+  warmup: no
+  num_repetitions: 1
+
+linear_system:
+  type: ij
+  rhs_filename: IJ.out.b
+  matrix_filename: IJ.out.A
+
+solver:
+  pcg:
+    relative_tol: 1.0e-9
+    max_iter: 500
+    print_level: 3
+
+preconditioner:
+  amg:
+    print_level: 1
+    coarsening:
+      type: HMIS
+      strong_th: 0.25
+    interpolation:
+      prolongation_type: 6
+    relaxation:
+      down_type: 13
+      up_type: 14
+      down_sweeps: 1
+      up_sweeps: 1
+    smoother:
+      num_levels: 1         # Number of levels (starting from finest) to use complex smoothers
+      num_sweeps: 1         # Number of relaxation (smoothing) sweeps
+      type: 5               # ILU
+      ilu:
+        type: 0             # Block-Jacobi ILU
+        fill_level: 0       # ILU with no fill-in (ILU0)
+        droptol: 1e-3       # Active when using ILUT
+        max_row_nnz: 50     # Active when using ILUT
+        reordering: 1       # 0: no reordering | 1: RCM
+        tri_solve: 1        # 0: iterative solve | 1: direct solve
+        lower_jac_iters: 5  # Number of lower Jacobi iterations (for iterative solve)
+        upper_jac_iters: 5  # Number of upper Jacobi iterations (for iterative solve)

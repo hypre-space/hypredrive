@@ -245,6 +245,10 @@ AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetSmoothNumLevels(precon, args->smoother.num_levels);
    HYPRE_BoomerAMGSetMaxRowSum(precon, args->interpolation.max_row_sum);
    HYPRE_BoomerAMGSetILUType(precon, args->smoother.ilu.type);
+   HYPRE_BoomerAMGSetILULocalReordering(precon, args->smoother.ilu.reordering);
+   HYPRE_BoomerAMGSetILUTriSolve(precon, args->smoother.ilu.tri_solve);
+   HYPRE_BoomerAMGSetILULowerJacobiIters(precon, args->smoother.ilu.lower_jac_iters);
+   HYPRE_BoomerAMGSetILUUpperJacobiIters(precon, args->smoother.ilu.upper_jac_iters);
    HYPRE_BoomerAMGSetILULevel(precon, args->smoother.ilu.fill_level);
    HYPRE_BoomerAMGSetILUDroptol(precon, args->smoother.ilu.droptol);
    HYPRE_BoomerAMGSetILUMaxRowNnz(precon, args->smoother.ilu.max_row_nnz);
