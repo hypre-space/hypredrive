@@ -31,10 +31,11 @@ preconditioner:
       num_sweeps: 1         # Number of relaxation (smoothing) sweeps
       type: 5               # ILU
       ilu:
+        type: 0             # Block-Jacobi ILU
         fill_level: 0       # ILU with no fill-in (ILU0)
         droptol: 1e-3       # Active when using ILUT
         max_row_nnz: 50     # Active when using ILUT
-        reordering: 0       # 0: no reordering | 1: RCM
+        reordering: 1       # 0: no reordering | 1: RCM
         tri_solve: 1        # 0: iterative solve | 1: direct solve
         lower_jac_iters: 5  # Number of lower Jacobi iterations (for iterative solve)
         upper_jac_iters: 5  # Number of upper Jacobi iterations (for iterative solve)
