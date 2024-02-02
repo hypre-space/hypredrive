@@ -3,7 +3,7 @@
 .deps
 .dirstamp
 
-hypre_app
+hypredrive
 
 aclocal.m4
 autoscan.log
