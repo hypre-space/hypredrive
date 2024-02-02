@@ -41,9 +41,9 @@ FSAIGetValidValues(const char* key)
 {
    if (!strcmp(key, "algo_type"))
    {
-      static StrIntMap map[] = {{"bj-afsai",     0},
-                                {"bj-afsai-omp", 1},
-                                {"bj-sfsai",     2}};
+      static StrIntMap map[] = {{"bj-afsai",     1},
+                                {"bj-afsai-omp", 2},
+                                {"bj-sfsai",     3}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
