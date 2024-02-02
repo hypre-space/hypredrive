@@ -35,6 +35,7 @@ int main(int argc, char **argv)
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
    HYPRE_Initialize();
+   HYPRE_DeviceInitialize();
 
    if (argc < 1)
    {
@@ -53,6 +54,22 @@ int main(int argc, char **argv)
     *-----------------------------------------------------------*/
 
    InputArgsParse(comm, argc, argv, &iargs);
+
+   /*-----------------------------------------------------------
+    * Set hypre's global options
+    *-----------------------------------------------------------*/
+
+   if (iargs->ls.exec_policy)
+   {
+      HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
+      HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
+      HYPRE_SetSpGemmUseVendor(0);
+   }
+   else
+   {
+      HYPRE_SetMemoryLocation(HYPRE_MEMORY_HOST);
+      HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST);
+   }
 
    /*-----------------------------------------------------------
     * Build and solve linear system(s)
@@ -100,6 +117,7 @@ int main(int argc, char **argv)
    HYPRE_IJMatrixDestroy(mat_A);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJVectorDestroy(sol);
+   HYPRE_IJVectorDestroy(sol0);
 
    HYPRE_Finalize();
    MPI_Finalize();
