@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: (Apache-2.0 OR MIT)
  ******************************************************************************/
 
-#include "HYPREDRV.h"
+#include "hypredrive.h"
 #include "args.h"
 #include "linsys.h"
 #include "info.h"
@@ -69,6 +69,10 @@ HYPREDRV_Destroy(HYPREDRV_t *obj_ptr)
       free(*obj_ptr);
       *obj_ptr = NULL;
    }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -104,7 +108,14 @@ HYPREDRV_PrintExitInfo(const char *argv0)
 uint32_t
 HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t obj)
 {
-   InputArgsParse(obj->comm, argc, argv, &obj->iargs);
+   if (obj)
+   {
+      InputArgsParse(obj->comm, argc, argv, &obj->iargs);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -116,7 +127,7 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t obj)
 int
 HYPREDRV_InputArgsGetExecPolicy(HYPREDRV_t obj)
 {
-   return obj->iargs->ls.exec_policy;
+   return (obj) ? obj->iargs->ls.exec_policy : -1;
 }
 
 /*-----------------------------------------------------------------------------
@@ -126,7 +137,7 @@ HYPREDRV_InputArgsGetExecPolicy(HYPREDRV_t obj)
 int
 HYPREDRV_InputArgsGetWarmup(HYPREDRV_t obj)
 {
-   return obj->iargs->warmup;
+   return (obj) ? obj->iargs->warmup : -1;
 }
 
 /*-----------------------------------------------------------------------------
@@ -136,7 +147,7 @@ HYPREDRV_InputArgsGetWarmup(HYPREDRV_t obj)
 int
 HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj)
 {
-   return obj->iargs->num_repetitions;
+   return (obj) ? obj->iargs->num_repetitions : -1;
 }
 
 /*-----------------------------------------------------------------------------
@@ -146,7 +157,14 @@ HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t obj)
 {
-   LinearSystemReadMatrix(obj->comm, &obj->iargs->ls, &obj->mat_A);
+   if (obj)
+   {
+      LinearSystemReadMatrix(obj->comm, &obj->iargs->ls, &obj->mat_A);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -158,7 +176,14 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj)
 {
-   LinearSystemSetRHS(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->vec_b);
+   if (obj)
+   {
+      LinearSystemSetRHS(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->vec_b);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -170,8 +195,15 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t obj)
 {
-   LinearSystemSetInitialGuess(obj->comm, &obj->iargs->ls, obj->mat_A, obj->vec_b,
-                               &obj->vec_x0, &obj->vec_x);
+   if (obj)
+   {
+      LinearSystemSetInitialGuess(obj->comm, &obj->iargs->ls, obj->mat_A, obj->vec_b,
+                                  &obj->vec_x0, &obj->vec_x);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -183,7 +215,14 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t obj)
 {
-   LinearSystemResetInitialGuess(obj->vec_x0, obj->vec_x);
+   if (obj)
+   {
+      LinearSystemResetInitialGuess(obj->vec_x0, obj->vec_x);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -195,7 +234,14 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t obj)
 {
-   LinearSystemSetPrecMatrix(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->mat_M);
+   if (obj)
+   {
+      LinearSystemSetPrecMatrix(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->mat_M);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -207,7 +253,14 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t obj)
 {
-   LinearSystemReadDofmap(obj->comm, &obj->iargs->ls, &obj->dofmap);
+   if (obj)
+   {
+      LinearSystemReadDofmap(obj->comm, &obj->iargs->ls, &obj->dofmap);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -219,7 +272,14 @@ HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_PreconCreate(HYPREDRV_t obj)
 {
-   PreconCreate(obj->iargs->precon_method, &obj->iargs->precon, obj->dofmap, &obj->precon);
+   if (obj)
+   {
+      PreconCreate(obj->iargs->precon_method, &obj->iargs->precon, obj->dofmap, &obj->precon);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -231,7 +291,14 @@ HYPREDRV_PreconCreate(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_LinearSolverCreate(HYPREDRV_t obj)
 {
-   SolverCreate(obj->comm, obj->iargs->solver_method, &obj->iargs->solver, &obj->solver);
+   if (obj)
+   {
+      SolverCreate(obj->comm, obj->iargs->solver_method, &obj->iargs->solver, &obj->solver);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -243,8 +310,15 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_LinearSolverSetup(HYPREDRV_t obj)
 {
-   SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method,
-               obj->precon, obj->solver, obj->mat_M, obj->vec_b, obj->vec_x);
+   if (obj)
+   {
+      SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method,
+                  obj->precon, obj->solver, obj->mat_M, obj->vec_b, obj->vec_x);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -256,8 +330,15 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_LinearSolverApply(HYPREDRV_t obj)
 {
-   SolverApply(obj->iargs->solver_method, obj->solver, obj->mat_A,
-               obj->vec_b, obj->vec_x);
+   if (obj)
+   {
+      SolverApply(obj->iargs->solver_method, obj->solver, obj->mat_A,
+                  obj->vec_b, obj->vec_x);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -269,7 +350,14 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_PreconDestroy(HYPREDRV_t obj)
 {
-   PreconDestroy(obj->iargs->precon_method, &obj->precon);
+   if (obj)
+   {
+      PreconDestroy(obj->iargs->precon_method, &obj->precon);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -281,7 +369,14 @@ HYPREDRV_PreconDestroy(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_LinearSolverDestroy(HYPREDRV_t obj)
 {
-   SolverDestroy(obj->iargs->solver_method, &obj->solver);
+   if (obj)
+   {
+      SolverDestroy(obj->iargs->solver_method, &obj->solver);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
@@ -293,7 +388,14 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_StatsPrint(HYPREDRV_t obj)
 {
-   StatsPrint(obj->iargs->statistics);
+   if (obj)
+   {
+      StatsPrint(obj->iargs->statistics);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
 
    return ErrorCodeGet();
 }
