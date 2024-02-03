@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([hypre-app], [0.1], [paludettomag1@llnl.gov])
+AC_INIT([hypredrive], [0.1], [paludettomag1@llnl.gov])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 
 dnl use pretty build output with automake >= 1.11

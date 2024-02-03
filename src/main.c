@@ -6,27 +6,20 @@
  ******************************************************************************/
 
 #include <stdio.h>
-#include "HYPRE.h"
-#include "HYPRE_parcsr_ls.h"
-#include "args.h"
-#include "linsys.h"
-#include "info.h"
+#include "HYPREDRV.h"
+
+void
+PrintUsage(const char *argv0)
+{
+   fprintf(stderr, "Usage: %s <filename>\n", argv0);
+   fprintf(stderr, "  filename: config file in YAML format\n");
+}
 
 int main(int argc, char **argv)
 {
-   MPI_Comm         comm = MPI_COMM_WORLD;
-   int              myid;
-   IntArray        *dofmap;
-   input_args      *iargs;
-   HYPRE_IJMatrix   mat_A;
-   HYPRE_IJMatrix   mat_M;
-   HYPRE_IJVector   rhs;
-   HYPRE_IJVector   sol;
-   HYPRE_IJVector   sol0;
-   HYPRE_Solver     precon;
-   HYPRE_Solver     solver;
-
-   HYPRE_Int        i;
+   MPI_Comm      comm = MPI_COMM_WORLD;
+   int           myid, i;
+   HYPREDRV_t    obj;
 
    /*-----------------------------------------------------------
     * Initialize driver
@@ -36,6 +29,7 @@ int main(int argc, char **argv)
    MPI_Comm_rank(comm, &myid);
    HYPRE_Initialize();
    HYPRE_DeviceInitialize();
+   HYPREDRV_Create(comm, &obj);
 
    if (argc < 1)
    {
@@ -47,19 +41,19 @@ int main(int argc, char **argv)
     * Print libraries/driver info
     *-----------------------------------------------------------*/
 
-   if (!myid) PrintLibInfo();
+   if (!myid) HYPREDRV_PrintLibInfo();
 
    /*-----------------------------------------------------------
     * Parse input parameters
     *-----------------------------------------------------------*/
 
-   InputArgsParse(comm, argc, argv, &iargs);
+   HYPREDRV_InputArgsParse(argc, argv, obj);
 
    /*-----------------------------------------------------------
     * Set hypre's global options
     *-----------------------------------------------------------*/
 
-   if (iargs->ls.exec_policy)
+   if (HYPREDRV_InputArgsGetExecPolicy(obj))
    {
       HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
       HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
@@ -75,56 +69,47 @@ int main(int argc, char **argv)
     * Build and solve linear system(s)
     *-----------------------------------------------------------*/
 
-   if (iargs->warmup)
+   if (HYPREDRV_InputArgsGetWarmup(obj))
    {
       printf("TODO: Perform warmup");
    }
 
    /* Build linear system */
-   LinearSystemReadMatrix(comm, &iargs->ls, &mat_A);
-   LinearSystemSetRHS(comm, &iargs->ls, mat_A, &rhs);
-   LinearSystemSetInitialGuess(comm, &iargs->ls, mat_A, rhs, &sol0, &sol);
-   LinearSystemSetPrecMatrix(comm, &iargs->ls, mat_A, &mat_M);
-   LinearSystemReadDofmap(comm, &iargs->ls, &dofmap);
+   HYPREDRV_LinearSystemReadMatrix(obj);
+   HYPREDRV_LinearSystemSetRHS(obj);
+   HYPREDRV_LinearSystemSetInitialGuess(obj);
+   HYPREDRV_LinearSystemSetPrecMatrix(obj);
+   HYPREDRV_LinearSystemReadDofmap(obj);
 
    /* Solve linear system */
-   for (i = 0; i < iargs->num_repetitions; i++)
+   for (i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
    {
       /* Reset initial guess */
-      LinearSystemResetInitialGuess(sol0, sol);
+      HYPREDRV_LinearSystemResetInitialGuess(obj);
 
       /* Setup phase */
-      PreconCreate(iargs->precon_method, &iargs->precon, dofmap, &precon);
-      SolverCreate(comm, iargs->solver_method, &iargs->solver, &solver);
-      SolverSetup(iargs->precon_method, iargs->solver_method, precon, solver, mat_M, rhs, sol);
+      HYPREDRV_PreconCreate(obj);
+      HYPREDRV_LinearSolverCreate(obj);
+      HYPREDRV_LinearSolverSetup(obj);
 
       /* Solve phase */
-      SolverApply(iargs->solver_method, solver, mat_A, rhs, sol);
+      HYPREDRV_LinearSolverApply(obj);
 
       /* Destroy phase */
-      PreconDestroy(iargs->precon_method, &precon);
-      SolverDestroy(iargs->solver_method, &solver);
+      HYPREDRV_PreconDestroy(obj);
+      HYPREDRV_LinearSolverDestroy(obj);
    }
 
    /*-----------------------------------------------------------
     * Finalize driver
     *-----------------------------------------------------------*/
 
-   if (mat_A != mat_M)
-   {
-      HYPRE_IJMatrixDestroy(mat_M);
-   }
-   HYPRE_IJMatrixDestroy(mat_A);
-   HYPRE_IJVectorDestroy(rhs);
-   HYPRE_IJVectorDestroy(sol);
-   HYPRE_IJVectorDestroy(sol0);
+   if (!myid) HYPREDRV_StatsPrint(obj);
+   if (!myid) HYPREDRV_PrintExitInfo(argv[0]);
 
+   HYPREDRV_Destroy(&obj);
    HYPRE_Finalize();
    MPI_Finalize();
-
-   if (!myid) StatsPrint(iargs->statistics);
-   if (!myid) PrintExitInfo(argv[0]);
-   InputArgsDestroy(&iargs);
 
    return EXIT_SUCCESS;
 }
