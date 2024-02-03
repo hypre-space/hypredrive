@@ -7,6 +7,11 @@ High-level interface for solving linear systems with hypre, providing a user-fri
 
 Currently, the driver only supports linear systems written in hypre's IJ conceptual interface format.
 
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for
+details.
+
 # Build instructions
 
 ```
