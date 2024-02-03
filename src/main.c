@@ -6,7 +6,7 @@
  ******************************************************************************/
 
 #include <stdio.h>
-#include "HYPREDRV.h"
+#include "hypredrive.h"
 
 void
 PrintUsage(const char *argv0)
