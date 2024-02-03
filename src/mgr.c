@@ -253,7 +253,8 @@ MGRlvlGetValidValues(const char* key)
                                 {"jacobi",      2},
                                 {"approx-inv",  3},
                                 {"blk-jacobi", 12},
-                                {"cpr-like",   13}};
+                                {"cpr-like",   13},
+                                {"colsum",     14}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -263,7 +264,8 @@ MGRlvlGetValidValues(const char* key)
                                 {"non-galerkin",   1},
                                 {"cpr-like-diag",  2},
                                 {"cpr-like-bdiag", 3},
-                                {"approx-inv",     4}};
+                                {"approx-inv",     4},
+                                {"wap",            5}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
