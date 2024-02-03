@@ -139,6 +139,11 @@ ErrorCodeDescribe(void)
    {
       ErrorMsgAdd("Missing dofmap info needed by MGR!");
    }
+
+   if (global_error_code & ERROR_UNKNOWN_HYPREDRV_OBJ)
+   {
+      ErrorMsgAdd("HYPREDRV object is not set properly!!");
+   }
 }
 
 /*-----------------------------------------------------------------------------
