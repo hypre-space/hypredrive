@@ -27,3 +27,5 @@ Makefile
 Makefile.in
 missing
 stamp-*
+Doxyfile
+TAGS
