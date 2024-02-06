@@ -43,7 +43,7 @@ stamp-*
 Doxyfile
 TAGS
 docs/usrman-src/_*
-docs/usrman-build/
+docs/usrman-build
 docs/html
 docs/latex
 docs/man
