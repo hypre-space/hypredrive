@@ -8,7 +8,7 @@
 Input File Structure
 ====================
 
-hypredrive uses a configuration file in YAML format to specify the parameters and settings
+`hypredrive` uses a configuration file in YAML format to specify the parameters and settings
 for the program's execution. Below is a detailed explanation of each section in the configuration
 file. In general, the various keywords are optional and, if not explicitly defined by the
 user, default values are used for them. On the other hand, some keywords such as
@@ -26,13 +26,13 @@ General Settings
 ----------------
 
 The ``general`` section contains global settings that apply to the entire execution of
-hypredrive. This section is optional.
+`hypredrive`. This section is optional.
 
-- ``warmup`` - If set to `yes`, hypredrive will perform a warmup execution to
+- ``warmup`` - If set to `yes`, `hypredrive` will perform a warmup execution to
   ensure more accurate timing measurements. If `no`, no warmup is performed. The default
   value for this parameter is `yes`.
 
-- ``statistics`` - If set to `yes`, hypredrive will display a statistics summary
+- ``statistics`` - If set to `yes`, `hypredrive` will display a statistics summary
   at the end of the run reporting execution times. If `no`, no statistics reporting is
   performed. The default value for this parameter is `yes`.
 
@@ -52,7 +52,7 @@ An example code block for the ``general`` section is given below:
 Linear System
 -------------
 
-The ``linear_system`` section describes the linear system that hypredrive will solve. This
+The ``linear_system`` section describes the linear system that `hypredrive` will solve. This
 section is required.
 
 - ``exec_policy`` - Determines whether the linear system is to be solved on the ``host``
@@ -325,7 +325,7 @@ following optional keywords:
     non-negative integer. Default value is `0`.
 
   - ``max_coarse_size`` - maximum size of the coarsest grid. Available values are any
-    non-negative integer. Default value is `9`.
+    non-negative integer. Default value is `64`.
 
   - ``min_coarse_size`` - minimum size of the coarsest grid. Available values are any
     non-negative integer. Default value is `0`.
@@ -454,7 +454,7 @@ code block below:
           type: 10
           strong_th: 0.25
           seq_amg_th: 0
-          max_coarse_size: 9
+          max_coarse_size: 64
           min_coarse_size: 0
           max_levels: 25
           num_functions: 1

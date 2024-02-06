@@ -8,12 +8,12 @@
 Installation
 ============
 
-Installing hypredrive is straightforward. Follow these steps to get it up and running on your system.
+Installing `hypredrive` is straightforward. Follow these steps to get it up and running on your system.
 
 Prerequisites
 -------------
 
-Before installing hypredrive, ensure you have the following prerequisites installed:
+Before installing `hypredrive`, ensure you have the following prerequisites installed:
 
 - `m4 <https://www.gnu.org/software/m4/>`_: GNU package for expanding and processing macros.
 - `Autoconf <https://www.gnu.org/software/autoconf/>`_: GNU package for generating
@@ -29,10 +29,10 @@ Before installing hypredrive, ensure you have the following prerequisites instal
    managers (``apt``, ``yum``, ``pacman``, ``homebrew``).
 
 
-Installing hypredrive
----------------------
+Installing `hypredrive`
+-----------------------
 
-Users can install hypredrive by compiling from source, according to the steps bellow:
+Users can install `hypredrive` by compiling from source, according to the steps bellow:
 
 1. Download `hypredrive's` source code. This can be accomplished via ``git``:
 
@@ -65,7 +65,7 @@ Users can install hypredrive by compiling from source, according to the steps be
                     --with-hypre-include=${HYPRE_INSTALL_DIR}/include \
                     --with-hypre-lib=${HYPRE_INSTALL_DIR}/lib
 
-   Replace ``${HYPREDRIVE_INSTALL_DIR}`` with your desired installation path for hypredrive,
+   Replace ``${HYPREDRIVE_INSTALL_DIR}`` with your desired installation path for `hypredrive`,
    and ``${HYPRE_INSTALL_DIR}`` with the path to your installation of `hypre`.
 
 4. Run ``make``:
@@ -78,7 +78,7 @@ Users can install hypredrive by compiling from source, according to the steps be
 Verifying the Installation
 --------------------------
 
-After installation, you can verify that hypredrive is installed correctly by running:
+After installation, you can verify that `hypredrive` is installed correctly by running:
 
 .. code-block:: bash
 
@@ -94,6 +94,6 @@ You should see the output below:
 Troubleshooting
 ---------------
 
-If you encounter any issues during the installation of hypredrive, please open a
+If you encounter any issues during the installation of `hypredrive`, please open a
 `GitHub issue <https://github.com/victorapm/hypredrive/issues>`_ and include a copy of the
 ``config.log`` file, which is generated after running the ``configure`` script.
