@@ -32,10 +32,8 @@ Note:
 ## Documentation
 
 Check the user's manual
-[here](https://github.com/victorapm/hypredrive/blob/master/docs/usrman-hypredrive.pdf)
-
-Check the developer's manual
-[here](https://github.com/victorapm/hypredrive/blob/master/docs/devman-hypredrive.pdf)
+[here](https://github.com/victorapm/hypredrive/blob/master/docs/usrman-hypredrive.pdf). Check the developer's manual
+[here](https://github.com/victorapm/hypredrive/blob/master/docs/devman-hypredrive.pdf).
 
 ## Examples
 
