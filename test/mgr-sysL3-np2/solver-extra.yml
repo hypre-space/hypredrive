@@ -1,4 +1,0 @@
-solver: fgmres
-  tolerance: 1.0e-3
-  max_iterations: 500
-  print_level: 2
