@@ -8,6 +8,7 @@
 #ifndef HYPREDRV_HEADER
 #define HYPREDRV_HEADER
 
+#include <stdint.h>
 #include "HYPRE.h"
 #include "HYPRE_config.h"
 #include "HYPRE_utilities.h"

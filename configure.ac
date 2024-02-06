@@ -28,6 +28,7 @@ AS_IF([test "x$enable_doxygen" = "xyes"], [
 ])
 
 AC_PROG_CC([mpicc])
+AM_PROG_CC_C_O()
 
 AC_ARG_WITH([hypre-include],
             [AS_HELP_STRING([--with-hypre-include=DIR], [Required: Path to HYPRE include dir.])],
@@ -51,6 +52,8 @@ AC_CHECK_HEADER([HYPRE_config.h], [],
 
 AC_CONFIG_HEADERS([config.h])
 AC_CHECK_HEADERS([stdint.h])
+AC_CHECK_HEADERS([limits.h])
+AC_CHECK_HEADERS([stddef.h])
 AC_CHECK_FUNCS([strchr strcspn strdup memset strstr strtol sqrt])
 AC_CHECK_HEADER_STDBOOL
 AC_TYPE_UINT32_T
