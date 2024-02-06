@@ -9,9 +9,10 @@ MOSTLYCLEANFILES =
 #MOSTLYCLEANFILES += $(DX_CLEANFILES)
 
 docs: doxygen-doc
-	@echo "Building developer's manual documentation (Doxygen)"
-	@echo "Building user's manual documentation (Sphinx)"
-	@cd docs/usrman-src && make latexpdf
+	@echo "Built developer's manual documentation (Doxygen)"
+	@mv docs/hypredrive.pdf docs/devman-hypredrive.pdf
+	@cd docs && make latexpdf
+	@echo "Built user's manual documentation (Sphinx)"
 
 check:
 	@mpirun -np 1 ./hypredrive examples/ex1.yml > /dev/null 2>&1

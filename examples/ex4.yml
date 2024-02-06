@@ -19,7 +19,7 @@ preconditioner:
   mgr:
     tolerance: 0.0
     max_iter: 1
-    print_level: 1
+    print_level: 0
     coarse_th: 0.0
     level:
       0:

@@ -6,6 +6,7 @@
 .deps
 .dirstamp
 *.~HEAD~*
+old-*
 
 ############
 # Executable

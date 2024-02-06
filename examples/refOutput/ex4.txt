@@ -22,7 +22,7 @@ preconditioner:
   mgr: 
     tolerance: 0.0
     max_iter: 1
-    print_level: 1
+    print_level: 0
     coarse_th: 0.0
     level: 
       0: 
@@ -85,78 +85,6 @@ preconditioner:
           num_levels: 0
           num_sweeps: 1
 ------------------------------------------------------------------------------------
-
-
- Num MPI tasks = 4
- Num OpenMP threads = 1
- Execution policy = Host
-
-
-MGR SETUP PARAMETERS:
-
-        MGR num levels = 2
- coarse AMG num levels = 4
-      Total num levels = 6
-
-            Global           Fine           Coarse
-lev     relaxation     relaxation      grid method     Prolongation      Restriction
-====================================================================================
-  0             --         Jacobi          Glk-RAP         Diag Inv        Injection
-  1        BJ-ILU0         Jacobi          Glk-RAI        Injection    Blk-ColLumped
-
-
-
-Full Operator Matrix Hierarchy Information:
-
-                     nonzero   actual         |       entries/row       |              rowsums 
-lev    rows    fine  entries  entries  sparse |  min  max    avg  stdev |      min      max      avg    stdev 
-==============================================+=========================+=====================================
-  0    5625    1875    77475    51023  99.755 |    3   21   13.8  14.19 | -7.1e+00  6.3e+03  1.1e+03  1.6e+03	( MGR )
-  1    3750    1875    47900    38184  99.659 |    8   14   12.8  11.09 | -8.2e+02  3.1e+03  4.2e+02  9.2e+02
-----------------------------------------------+-------------------------+------------------------------------- MGR's coarsest level
-  2    1875    1168    11975    11975  99.659 |    4    7    6.4   5.54 | -6.1e-04  2.0e-03  3.4e-04  3.5e-04
-  3     707     536    14669    14669  97.065 |    5   44   20.7  19.56 |  6.0e-05  4.1e-03  8.9e-04  9.7e-04	( AMG )
-  4     171     126     4913     4913  83.198 |    7   65   28.7  27.70 |  1.2e-04  2.0e-02  3.6e-03  4.7e-03
-  5      45      45      999      999  50.667 |   11   38   22.2  19.72 |  1.7e-04  9.2e-02  1.3e-02  2.1e-02
-
-
-
-Full Prolongation Matrix Hierarchy Information:
-
-                       nonzero   actual         |      entries/row      |              rowsums 
-lev    rows x cols     entries  entries  sparse |  min  max   avg stdev |      min      max      avg    stdev 
-================================================+=======================+=====================================
-  0    5625 x 3750        7500     7500  99.976 |    1    2   1.3  1.24 | -1.3e+00  1.0e+00  2.5e-01  1.1e+00
-  1    3750 x 1875        1875     1875  99.987 |    0    1   0.5  0.66 |  0.0e+00  1.0e+00  5.0e-01  6.6e-01	( MGR )
-------------------------------------------------+-----------------------+------------------------------------- MGR's coarsest level
-  2    1875 x 707         4463     4463  99.873 |    1    4   2.4  2.42 |  2.8e-01  1.0e+00  9.8e-01  8.4e-01
-  3     707 x 171         1614     1614  99.677 |    1    4   2.3  2.27 |  2.0e-01  1.0e+00  9.4e-01  8.1e-01	( AMG )
-  4     171 x 45           329      329  98.875 |    1    4   1.9  1.93 |  9.8e-02  1.0e+00  9.1e-01  8.0e-01
-
-
-At coarsest MGR level --> Solver parameters:
-
-   Solver Type = BoomerAMG
-   Strength Threshold = 0.300000
-   Interpolation Truncation Factor = 0.000000
-   Maximum Row Sum Threshold for Dependency Weakening = 0.900000
-   Number of functions = 1
-   Coarsening type = PMIS
-   Prolongation type = MM-extended+e
-   Cycle type = V(1,1)
-
-MGR complexities:
-
- lev       grid   operator     memory 
-=====================================
-   0      1.000      1.000      1.000 
-   1      1.000      1.000      1.000 
-   2      1.492      2.719      3.705 
-------------------------------------- 
- All      2.164      2.038      2.191 
-------------------------------------- 
-
-
 L2 norm of b: 1.000000e+00
 Initial L2 norm of residual: 1.000000e+00
 =============================================
@@ -188,7 +116,7 @@ STATISTICS SUMMARY:
 |            |    LS build |       setup |       solve |    relative |             |
 |      Entry |       times |       times |       times |   res. norm |       iters |
 +------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |    3.93e-03 |    1.39e-02 |    1.15e-02 |    1.89e-07 |          10 |
+|          0 |    2.87e-03 |    9.68e-03 |    1.00e-02 |    1.89e-07 |          10 |
 +------------+-------------+-------------+-------------+-------------+-------------+
 
 Date and time: YYYY-MM-DD HH:MM:SS

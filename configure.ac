@@ -20,7 +20,7 @@ DX_XML_FEATURE(ON)
 DX_DOT_FEATURE(ON)
 DX_INIT_DOXYGEN(hypredrive, [Doxyfile], [docs])
 
-AC_PROG_CC([mpicc cc])
+AC_PROG_CC([mpicc])
 
 AC_ARG_WITH([hypre-include],
             [AS_HELP_STRING([--with-hypre-include=DIR], [Path to HYPRE include directory])],
@@ -39,7 +39,7 @@ AC_CHECK_LIB([HYPRE], [HYPRE_Initialize], [], [AC_MSG_ERROR([HYPRE library not f
 
 AC_CONFIG_HEADERS([config.h])
 AC_CHECK_HEADERS([stdint.h])
-AC_CHECK_FUNCS([strchr strcspn strdup memset strstr strtol])
+AC_CHECK_FUNCS([strchr strcspn strdup memset strstr strtol sqrt])
 AC_CHECK_HEADER_STDBOOL
 AC_TYPE_UINT32_T
 AC_TYPE_SIZE_T
