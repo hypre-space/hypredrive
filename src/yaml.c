@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "yaml.h"
@@ -191,7 +191,6 @@ void
 YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
 {
    YAMLnode *child;
-   int       i, divisor = 80;
 
    if (!tree)
    {
@@ -200,14 +199,14 @@ YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
       return;
    }
 
-   for (i = 0; i < divisor; i++) { printf("-"); } printf("\n");
+   PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH)
    child = tree->root->children;
    while (child != NULL)
    {
       YAMLnodePrint(child, print_mode);
       child = child->next;
    }
-   for (i = 0; i < divisor; i++) { printf("-"); } printf("\n");
+   PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH)
 }
 
 /******************************************************************************

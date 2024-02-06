@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "amg.h"
@@ -17,7 +17,6 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_sum, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, FieldTypeDoubleSet)
 
 /* AMG's coarsening fields */
@@ -31,6 +30,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, min_coarse_size, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_coarse_size, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_levels, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_sum, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, strong_th, FieldTypeDoubleSet)
 
 /* AMG's aggressive coarsening fields */
@@ -39,6 +39,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_paths, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, P12_max_elements, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, P12_trunc_factor, FieldTypeDoubleSet)
 
@@ -106,7 +107,6 @@ AMGintSetDefaultArgs(AMGint_args *args)
    args->prolongation_type = 6;
    args->restriction_type  = 0;
    args->max_nnz_row       = 4;
-   args->max_row_sum       = 0.9;
    args->trunc_factor      = 0.0;
 }
 
@@ -128,9 +128,10 @@ AMGcsnSetDefaultArgs(AMGcsn_args *args)
 #endif
    args->num_functions   = 1;
    args->seq_amg_th      = 0;
-   args->min_coarse_size = 9;
-   args->max_coarse_size = 1;
+   args->min_coarse_size = 0;
+   args->max_coarse_size = 64;
    args->max_levels      = 25;
+   args->max_row_sum     = 0.9;
    args->strong_th       = 0.25;
 }
 
@@ -162,7 +163,7 @@ AMGrlxSetDefaultArgs(AMGrlx_args *args)
    args->coarse_type   = 9;
    args->down_sweeps   = -1;
    args->up_sweeps     = -1;
-   args->coarse_sweeps = -1;
+   args->coarse_sweeps = 1;
    args->num_sweeps    = 1;
    args->order         = 0;
    args->weight        = 1.0;
@@ -243,7 +244,7 @@ AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetSmoothType(precon, args->smoother.type);
    HYPRE_BoomerAMGSetSmoothNumSweeps(precon, args->smoother.num_sweeps);
    HYPRE_BoomerAMGSetSmoothNumLevels(precon, args->smoother.num_levels);
-   HYPRE_BoomerAMGSetMaxRowSum(precon, args->interpolation.max_row_sum);
+   HYPRE_BoomerAMGSetMaxRowSum(precon, args->coarsening.max_row_sum);
    HYPRE_BoomerAMGSetILUType(precon, args->smoother.ilu.type);
    HYPRE_BoomerAMGSetILULocalReordering(precon, args->smoother.ilu.reordering);
    HYPRE_BoomerAMGSetILUTriSolve(precon, args->smoother.ilu.tri_solve);
@@ -288,9 +289,13 @@ AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
    }
    if (args->relaxation.coarse_sweeps > -1)
    {
-      HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.coarse_type, 3);
       HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.coarse_sweeps, 3);
    }
+   else
+   {
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 3);
+   }
+   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.coarse_type, 3);
 
    *precon_ptr = precon;
 }

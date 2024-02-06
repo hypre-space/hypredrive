@@ -1,0 +1,85 @@
+linear_system:
+  rhs_filename: data/compflow6k/np4/IJ.out.b
+  matrix_filename: data/compflow6k/np4/IJ.out.A
+  dofmap_filename: data/compflow6k/np4/dofmap.out
+
+solver:
+  gmres:
+    min_iter: 0
+    max_iter: 100
+    skip_real_res_check: no
+    krylov_dim: 30
+    rel_change: no
+    print_level: 2
+    relative_tol: 1.0e-6
+    absolute_tol: 0.0
+    conv_fac_tol: 0.0
+
+preconditioner:
+  mgr:
+    tolerance: 0.0
+    max_iter: 1
+    print_level: 0
+    coarse_th: 0.0
+    level:
+      0:
+        f_dofs: [2]
+        f_relaxation: single
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: rap
+
+      1:
+        f_dofs: [1]
+        f_relaxation: single
+        g_relaxation: ilu
+        restriction_type: columped
+        prolongation_type: injection
+        coarse_level_type: rai
+
+    coarsest_level:
+      amg:
+        tolerance: 0.0
+        max_iter: 1
+        print_level: 0 # Turn off printout from AMG since it's done from MGR
+        interpolation:
+          prolongation_type: 18 # Use MM-ext+e interpolation
+          restriction_type: 0
+          trunc_factor: 0.0
+          max_nnz_row: 4
+        coarsening:
+          type: 8 # Use PMIS coarsening
+          strong_th: 0.3
+          seq_amg_th: 0
+          max_coarse_size: 64
+          min_coarse_size: 0
+          max_levels: 25
+          num_functions: 1
+          rap2: 0
+          mod_rap2: 0
+          keep_transpose: 0
+          max_row_sum: 0.9
+        aggressive:
+          num_levels: 0
+          num_paths: 1
+          prolongation_type: 4
+          trunc_factor: 0
+          max_nnz_row: 0
+          P12_trunc_factor: 0.0
+          P12_max_elements: 0
+        relaxation:
+          down_type: 13
+          up_type: 14
+          coarse_type: 9
+          down_sweeps: -1
+          up_sweeps: -1
+          coarse_sweeps: -1
+          num_sweeps: 1
+          order: 0
+          weight: 1.0
+          outer_weight: 1.0
+        smoother:
+          type: 5
+          num_levels: 0
+          num_sweeps: 1

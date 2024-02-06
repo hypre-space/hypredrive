@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "gmres.h"
@@ -30,7 +30,24 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object */
 GENERATE_PREFIXED_COMPONENTS(GMRES)
-DEFINE_VOID_GET_VALID_VALUES_FUNC(GMRES)
+
+/*-----------------------------------------------------------------------------
+ * GMRESGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+GMRESGetValidValues(const char* key)
+{
+   if (!strcmp(key, "skip_real_res_check") ||
+       !strcmp(key, "rel_change"))
+   {
+      return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
 
 /*-----------------------------------------------------------------------------
  * GMRESSetDefaultArgs

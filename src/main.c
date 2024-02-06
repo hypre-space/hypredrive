@@ -1,12 +1,12 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC and other
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
  * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include <stdio.h>
-#include "HYPREDRV.h"
+#include "hypredrive.h"
 
 void
 PrintUsage(const char *argv0)
@@ -53,17 +53,7 @@ int main(int argc, char **argv)
     * Set hypre's global options
     *-----------------------------------------------------------*/
 
-   if (HYPREDRV_InputArgsGetExecPolicy(obj))
-   {
-      HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
-      HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
-      HYPRE_SetSpGemmUseVendor(0);
-   }
-   else
-   {
-      HYPRE_SetMemoryLocation(HYPRE_MEMORY_HOST);
-      HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST);
-   }
+   HYPREDRV_SetGlobalOptions(obj);
 
    /*-----------------------------------------------------------
     * Build and solve linear system(s)
@@ -74,12 +64,8 @@ int main(int argc, char **argv)
       printf("TODO: Perform warmup");
    }
 
-   /* Build linear system */
-   HYPREDRV_LinearSystemReadMatrix(obj);
-   HYPREDRV_LinearSystemSetRHS(obj);
-   HYPREDRV_LinearSystemSetInitialGuess(obj);
-   HYPREDRV_LinearSystemSetPrecMatrix(obj);
-   HYPREDRV_LinearSystemReadDofmap(obj);
+   /* Build linear system (matrix, RHS, LHS, and auxiliary data) */
+   HYPREDRV_LinearSystemBuild(obj);
 
    /* Solve linear system */
    for (i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
@@ -87,9 +73,11 @@ int main(int argc, char **argv)
       /* Reset initial guess */
       HYPREDRV_LinearSystemResetInitialGuess(obj);
 
-      /* Setup phase */
+      /* Create phase */
       HYPREDRV_PreconCreate(obj);
       HYPREDRV_LinearSolverCreate(obj);
+
+      /* Setup phase */
       HYPREDRV_LinearSolverSetup(obj);
 
       /* Solve phase */

@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "mgr.h"
@@ -90,7 +90,7 @@ MGRclsSetDefaultArgs(MGRcls_args *args)
 void
 MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
 {
-   args->type = 0;
+   args->type = 7;
    args->num_sweeps = 1;
 
    AMGSetDefaultArgs(&args->amg); args->amg.max_iter = 0;
@@ -179,7 +179,8 @@ MGRfrlxGetValidValues(const char* key)
    {
       static StrIntMap map[] = {{"",        -1},
                                 {"none",    -1},
-                                {"single",   0},
+                                {"single",   7},
+                                {"jacobi",   7},
                                 {"v(1,0)",   1},
                                 {"amg",      2},
                                 {"ilu",     16},
@@ -254,7 +255,7 @@ MGRlvlGetValidValues(const char* key)
                                 {"approx-inv",  3},
                                 {"blk-jacobi", 12},
                                 {"cpr-like",   13},
-                                {"colsum",     14}};
+                                {"columped",   14}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -265,7 +266,7 @@ MGRlvlGetValidValues(const char* key)
                                 {"cpr-like-diag",  2},
                                 {"cpr-like-bdiag", 3},
                                 {"approx-inv",     4},
-                                {"wap",            5}};
+                                {"rai",            5}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }

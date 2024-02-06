@@ -1,11 +1,12 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "solver.h"
+#include "gen_macros.h"
 
 static const FieldOffsetMap solver_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(solver_args, pcg, PCGSetArgs),
@@ -54,17 +55,6 @@ SolverGetValidKeys(void)
 }
 
 /*-----------------------------------------------------------------------------
- * SolverGetValidValues
- *-----------------------------------------------------------------------------*/
-
-StrIntMapArray
-SolverGetValidValues(const char* key)
-{
-   /* The "solver" entry does not hold values, so we create a void map */
-   return STR_INT_MAP_ARRAY_VOID();
-}
-
-/*-----------------------------------------------------------------------------
  * SolverGetValidTypeIntMap
  *-----------------------------------------------------------------------------*/
 
@@ -80,23 +70,27 @@ SolverGetValidTypeIntMap(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * SolverGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+SolverGetValidValues(const char* key)
+{
+   if (!strcmp(key, "type"))
+   {
+      return SolverGetValidTypeIntMap();
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
+/*-----------------------------------------------------------------------------
  * SolverSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-void
-SolverSetArgsFromYAML(solver_args *args, YAMLnode *parent)
-{
-   YAML_NODE_ITERATE(parent, child)
-   {
-      YAML_NODE_VALIDATE(child,
-                         SolverGetValidKeys,
-                         SolverGetValidValues);
-
-      YAML_NODE_SET_FIELD(child,
-                          args,
-                          SolverSetFieldByName);
-   }
-}
+DEFINE_SET_ARGS_FROM_YAML_FUNC(Solver)
 
 /*-----------------------------------------------------------------------------
  * SolverCreate
@@ -211,6 +205,7 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver,
    HYPRE_ParCSRMatrix  par_A;
    HYPRE_ParVector     par_b, par_x;
    HYPRE_Int           iters = 0;
+   HYPRE_Complex       b_norm, r_norm;
 
    HYPRE_IJMatrixGetObject(A, &vA); par_A = (HYPRE_ParCSRMatrix) vA;
    HYPRE_IJVectorGetObject(b, &vb); par_b = (HYPRE_ParVector) vb;
@@ -246,6 +241,13 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver,
 
    StatsIterSet((int) iters);
    StatsTimerFinish("solve");
+
+   /* Compute the real relative residual norm. Note this is not timed */
+   LinearSystemComputeRHSNorm(b, &b_norm);
+   LinearSystemComputeResidualNorm(A, b, x, &r_norm);
+   b_norm = (b_norm > 0.0) ? b_norm : 1.0;
+
+   StatsRelativeResNormSet(r_norm / b_norm);
 }
 
 /*-----------------------------------------------------------------------------

@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #ifndef GEN_MACROS_HEADER
@@ -122,11 +122,11 @@
          { \
             YAML_NODE_VALIDATE(child, \
                                _prefix##GetValidKeys, \
-                               _prefix##GetValidValues); \
+                               _prefix##GetValidValues) \
             \
             YAML_NODE_SET_FIELD(child, \
                                 args, \
-                                _prefix##SetFieldByName); \
+                                _prefix##SetFieldByName) \
          } \
       } \
       else \
@@ -138,11 +138,10 @@
          \
          YAML_NODE_VALIDATE(parent, \
                             _prefix##GetValidKeys, \
-                            _prefix##GetValidValues); \
-         \
+                            _prefix##GetValidValues) \
          YAML_NODE_SET_FIELD(parent, \
                              args, \
-                             _prefix##SetFieldByName); \
+                             _prefix##SetFieldByName) \
          \
          free(parent->key); \
          parent->key = strdup(temp_key); \

@@ -1,10 +1,25 @@
+###############
+# Miscellaneous
+###############
 *.o
 *.btr
 .deps
 .dirstamp
+*.~HEAD~*
+old-*
+bkp/
+build.sh
+*.tar.gz
+.gdbinit
 
+############
+# Executable
+############
 hypredrive
 
+###########
+# Autotools
+###########
 aclocal.m4
 autoscan.log
 autom4te.cache/
@@ -27,3 +42,18 @@ Makefile
 Makefile.in
 missing
 stamp-*
+
+###############
+# Documentation
+###############
+Doxyfile
+TAGS
+docs/usrman-src/_*
+docs/usrman-build
+docs/html
+docs/latex
+docs/man
+docs/rtf
+docs/xml
+docs/hypredrive.ps
+docs/hypredrive.tag

@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #ifndef ERROR_H
@@ -33,6 +33,7 @@ typedef enum ErrorCode_enum
    ERROR_INVALID_SOLVER         = 0x00001000, // 13th bit
    ERROR_INVALID_PRECON         = 0x00002000, // 14th bit
    ERROR_FILE_NOT_FOUND         = 0x00004000, // 15th bit
+   ERROR_UNKNOWN_HYPREDRV_OBJ   = 0x00008000, // 16th bit
    ERROR_UNKNOWN_TIMING         = 0x20000000, // 29th bit
    ERROR_UNKNOWN                = 0x40000000  // 30th bit
 } ErrorCode;

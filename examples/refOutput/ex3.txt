@@ -1,0 +1,33 @@
+Date and time: YYYY-MM-DD HH:MM:SS
+
+Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
+
+------------------------------------------------------------------------------------
+linear_system: 
+  rhs_filename: data/compflow6k/np1/IJ.out.b
+  matrix_filename: data/compflow6k/np1/IJ.out.A
+  dofmap_filename: data/compflow6k/np1/dofmap.out
+solver: gmres
+preconditioner: 
+  mgr: 
+    level: 
+      0: 
+        f_dofs: [2]
+      1: 
+        f_dofs: [1]
+    coarsest_level: amg
+------------------------------------------------------------------------------------
+====================================================================================
+
+
+STATISTICS SUMMARY:
+
++------------+-------------+-------------+-------------+-------------+-------------+
+|            |    LS build |       setup |       solve |    relative |             |
+|      Entry |       times |       times |       times |   res. norm |       iters |
++------------+-------------+-------------+-------------+-------------+-------------+
+|          0 |    5.48e-03 |    8.93e-03 |    3.83e-02 |    8.86e-07 |          20 |
++------------+-------------+-------------+-------------+-------------+-------------+
+
+Date and time: YYYY-MM-DD HH:MM:SS
+${HYPREDRIVE_PATH}/hypredrive done!
