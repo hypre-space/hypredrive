@@ -7,6 +7,10 @@
 .dirstamp
 *.~HEAD~*
 old-*
+bkp/
+build.sh
+*.tar.gz
+.gdbinit
 
 ############
 # Executable
@@ -51,3 +55,5 @@ docs/latex
 docs/man
 docs/rtf
 docs/xml
+docs/hypredrive.ps
+docs/hypredrive.tag
