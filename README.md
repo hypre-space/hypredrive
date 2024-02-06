@@ -12,13 +12,14 @@ Currently, the driver only supports linear systems written in hypre's IJ concept
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for
 details.
 
-# Build instructions
+## Quick-start build instructions
 
 ```
  $ ./autogen.sh
  $ ./configure --with-hypre-include=${HYPRE_INSTALL_DIR}/include \
                --with-hypre-lib=${HYPRE_INSTALL_DIR}/lib
  $ make all
+ $ make check
  $ make install
 ```
 
@@ -28,9 +29,19 @@ Note:
 3. An installation prefix can be passed to `./configure` such as `--prefix=${INSTALL_PATH}`.
    For more configure options, type `./configure -help`.
 
-# Example
+## Documentation
+
+Check the user's manual
+[here](https://github.com/victorapm/hypredrive/blob/master/docs/usrman-hypredrive.pdf)
+
+Check the developer's manual
+[here](https://github.com/victorapm/hypredrive/blob/master/docs/devman-hypredrive.pdf)
+
+## Examples
+
+The user's manual has a detailed section about running examples. For a quick-start, try
+running the first example from the top-level folder:
 
 ```
- $ cd test/mgr-sysL3
- $ mpirun -np 1 ../../hypredrive mgr-sysL3.yml
+ $ mpirun -np 1 hypredrive example/ex1.yml
 ```
