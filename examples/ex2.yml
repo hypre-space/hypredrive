@@ -1,0 +1,60 @@
+linear_system:
+  rhs_filename: data/ps3d10pt7/np4/IJ.out.b
+  matrix_filename: data/ps3d10pt7/np4/IJ.out.A
+
+solver:
+  pcg:
+    max_iter: 100
+    two_norm: yes
+    rel_change: no
+    print_level: 2
+    relative_tol: 1.0e-6
+    absolute_tol: 0.0
+    residual_tol: 0.0
+    conv_fac_tol: 0.0
+
+preconditioner:
+  amg:
+    tolerance: 0.0
+    max_iter: 1
+    print_level: 1
+    interpolation:
+      prolongation_type: 6
+      restriction_type: 0
+      trunc_factor: 0.0
+      max_nnz_row: 4
+    coarsening:
+      type: 10
+      strong_th: 0.25
+      seq_amg_th: 0
+      max_coarse_size: 64
+      min_coarse_size: 0
+      max_levels: 25
+      num_functions: 1
+      rap2: 0
+      mod_rap2: 0
+      keep_transpose: 0
+      max_row_sum: 0.9
+    aggressive:
+      num_levels: 0
+      num_paths: 1
+      prolongation_type: 4
+      trunc_factor: 0
+      max_nnz_row: 0
+      P12_trunc_factor: 0.0
+      P12_max_elements: 0
+    relaxation:
+      down_type: 13
+      up_type: 14
+      coarse_type: 9
+      down_sweeps: -1
+      up_sweeps: -1
+      coarse_sweeps: -1
+      num_sweeps: 1
+      order: 0
+      weight: 1.0
+      outer_weight: 1.0
+    smoother:
+      type: 5
+      num_levels: 0
+      num_sweeps: 1
