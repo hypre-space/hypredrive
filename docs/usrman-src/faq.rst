@@ -18,7 +18,7 @@ What is `hypredrive`?
 How do I install `hypredrive`?
 ------------------------------
 
-You can install `hypredrive` by downloading and compiling its source file. Please refer to
+You can install `hypredrive` by downloading and compiling its source files. Please refer to
 :ref:`Installation` for detailed installation instructions.
 
 Which linear system types can `hypredrive` solve?
