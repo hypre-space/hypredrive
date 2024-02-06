@@ -5,6 +5,7 @@
 *.btr
 .deps
 .dirstamp
+*.~HEAD~*
 
 ############
 # Executable
