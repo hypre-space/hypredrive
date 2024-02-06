@@ -29,7 +29,25 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object */
 GENERATE_PREFIXED_COMPONENTS(PCG)
-DEFINE_VOID_GET_VALID_VALUES_FUNC(PCG)
+
+/*-----------------------------------------------------------------------------
+ * PCGGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+PCGGetValidValues(const char* key)
+{
+   if (!strcmp(key, "two_norm") ||
+       !strcmp(key, "stop_crit") ||
+       !strcmp(key, "rel_change"))
+   {
+      return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
 
 /*-----------------------------------------------------------------------------
  * PCGSetDefaultArgs

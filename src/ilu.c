@@ -85,7 +85,7 @@ ILUSetDefaultArgs(ILU_args *args)
    args->tri_solve       = 1;
    args->lower_jac_iters = 5;
    args->upper_jac_iters = 5;
-   args->max_row_nnz     = 1000;
+   args->max_row_nnz     = 200;
    args->schur_max_iter  = 3;
    args->droptol         = 1.0e-02;
    args->nsh_droptol     = 1.0e-02;

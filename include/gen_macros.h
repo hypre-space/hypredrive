@@ -122,11 +122,11 @@
          { \
             YAML_NODE_VALIDATE(child, \
                                _prefix##GetValidKeys, \
-                               _prefix##GetValidValues); \
+                               _prefix##GetValidValues) \
             \
             YAML_NODE_SET_FIELD(child, \
                                 args, \
-                                _prefix##SetFieldByName); \
+                                _prefix##SetFieldByName) \
          } \
       } \
       else \
@@ -138,11 +138,10 @@
          \
          YAML_NODE_VALIDATE(parent, \
                             _prefix##GetValidKeys, \
-                            _prefix##GetValidValues); \
-         \
+                            _prefix##GetValidValues) \
          YAML_NODE_SET_FIELD(parent, \
                              args, \
-                             _prefix##SetFieldByName); \
+                             _prefix##SetFieldByName) \
          \
          free(parent->key); \
          parent->key = strdup(temp_key); \

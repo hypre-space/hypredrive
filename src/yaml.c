@@ -191,7 +191,6 @@ void
 YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
 {
    YAMLnode *child;
-   int       i, divisor = 80;
 
    if (!tree)
    {
@@ -200,14 +199,14 @@ YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
       return;
    }
 
-   for (i = 0; i < divisor; i++) { printf("-"); } printf("\n");
+   PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH)
    child = tree->root->children;
    while (child != NULL)
    {
       YAMLnodePrint(child, print_mode);
       child = child->next;
    }
-   for (i = 0; i < divisor; i++) { printf("-"); } printf("\n");
+   PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH)
 }
 
 /******************************************************************************

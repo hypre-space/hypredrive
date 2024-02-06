@@ -9,6 +9,7 @@
 #include "args.h"
 #include "linsys.h"
 #include "info.h"
+#include "stats.h"
 
 /*-----------------------------------------------------------------------------
  * hypredrv_t data type
@@ -121,13 +122,32 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t obj)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_InputArgsGetExecPolicy
+ * HYPREDRV_SetGlobalOptions
  *-----------------------------------------------------------------------------*/
 
-int
-HYPREDRV_InputArgsGetExecPolicy(HYPREDRV_t obj)
+uint32_t
+HYPREDRV_SetGlobalOptions(HYPREDRV_t obj)
 {
-   return (obj) ? obj->iargs->ls.exec_policy : -1;
+   if (obj)
+   {
+      if (obj->iargs->ls.exec_policy)
+      {
+         HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
+         HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
+         HYPRE_SetSpGemmUseVendor(0);
+      }
+      else
+      {
+         HYPRE_SetMemoryLocation(HYPRE_MEMORY_HOST);
+         HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST);
+      }
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
@@ -148,6 +168,30 @@ int
 HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj)
 {
    return (obj) ? obj->iargs->num_repetitions : -1;
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemBuild
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemBuild(HYPREDRV_t obj)
+{
+   if (obj)
+   {
+      LinearSystemReadMatrix(obj->comm, &obj->iargs->ls, &obj->mat_A);
+      LinearSystemSetRHS(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->vec_b);
+      LinearSystemSetInitialGuess(obj->comm, &obj->iargs->ls, obj->mat_A, obj->vec_b,
+                                  &obj->vec_x0, &obj->vec_x);
+      LinearSystemSetPrecMatrix(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->mat_M);
+      LinearSystemReadDofmap(obj->comm, &obj->iargs->ls, &obj->dofmap);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------

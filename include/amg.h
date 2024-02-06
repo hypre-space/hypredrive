@@ -73,6 +73,7 @@ typedef struct AMGcsn_args_struct {
    HYPRE_Int    min_coarse_size;
    HYPRE_Int    max_coarse_size;
    HYPRE_Int    max_levels;
+   HYPRE_Real   max_row_sum;
    HYPRE_Real   strong_th;
 } AMGcsn_args;
 
@@ -84,7 +85,6 @@ typedef struct AMGint_args_struct {
    HYPRE_Int    prolongation_type;
    HYPRE_Int    restriction_type;
    HYPRE_Int    max_nnz_row;
-   HYPRE_Real   max_row_sum;
    HYPRE_Real   trunc_factor;
 } AMGint_args;
 

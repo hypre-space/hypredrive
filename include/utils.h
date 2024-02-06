@@ -12,7 +12,6 @@
 #include <stdlib.h>
 #include "error.h"
 #include "containers.h"
-#include "stats.h"
 
 /*-----------------------------------------------------------------------------
  * Public prototypes
@@ -25,9 +24,13 @@ int CheckBinaryDataExists(const char* prefix);
 /*******************************************************************************
  *******************************************************************************/
 
-#define HAVE_COLORS 1
+#define MAX_DIVISOR_LENGTH 84
+#define PRINT_DASHED_LINE(_l) for (size_t i = 0; i < (_l); i++) { printf("-"); } printf("\n");
+#define PRINT_EQUAL_LINE(_l)  for (size_t i = 0; i < (_l); i++) { printf("="); } printf("\n");
 
-#if defined(HAVE_COLORS)
+#define HAVE_COLORS 0 // TODO: add a runtime option for this parameter
+
+#if HAVE_COLORS
 #define TEXT_RESET      "\033[0m"
 #define TEXT_RED        "\033[31m"
 #define TEXT_GREEN      "\033[32m"

@@ -23,13 +23,6 @@ static Stats *global_stats = NULL;
          (_t)->_e = (ptr) ? ptr : (_t)->_e; \
       } \
    } while (0);
-#define STATS_ITERS_REALLOC(_t) \
-   REALLOC(int, _t, iters, 5)
-#define STATS_ITERS_SET(_i) \
-   STATS_ITERS_REALLOC(global_stats) \
-   global_stats->iters[global_stats->size[5]++] = (_i);
-#define STATS_TIMES_REALLOC(_t, _e, _n) \
-   REALLOC(double, _t, _e, _n)
 #define STATS_TIMES_START_ENTRY(_e) \
    if (!strcmp(name, #_e)) { global_stats->_e -= MPI_Wtime(); return; }
 #define STATS_TIMES_FINISH_ENTRY(_e) \
@@ -37,7 +30,7 @@ static Stats *global_stats = NULL;
 #define STATS_TIMES_START_VEC_ENTRY(_e, _n) \
    if (!strcmp(name, #_e)) \
    { \
-      STATS_TIMES_REALLOC(global_stats, _e, _n) \
+      REALLOC(double, global_stats, _e, _n) \
       global_stats->_e[global_stats->size[(_n)]++] -= MPI_Wtime(); \
       return; \
    }
@@ -49,27 +42,29 @@ static Stats *global_stats = NULL;
    }
 #define STATS_TIMES_PRINT_DIVISOR() \
    printf("+------------"); \
-   for (size_t i = 0; i < 5; i++) printf("+-------------"); \
+   for (size_t i = 0; i < 4; i++) printf("+-------------"); \
    printf("+-------------+\n");
 #define STATS_TIMES_PRINT_HEADER(_t, _b) \
    printf("|%11s ", _t[0]); \
-   for (size_t i = 1; i < 7; i++) printf("|%12s ", _t[i]); \
+   for (size_t i = 1; i < 6; i++) printf("|%12s ", _t[i]); \
    printf("|\n"); \
    printf("|%11s ", _b[0]); \
-   for (size_t i = 1; i < 7; i++) printf("|%12s ", _b[i]); \
+   for (size_t i = 1; i < 6; i++) printf("|%12s ", _b[i]); \
    printf("|\n");
 #define STATS_TIMES_PRINT_ENTRY(_t, _n) \
    if (!(_n % ((_t)->size[4] / (_t)->ls_counter))) \
    { \
-      printf("| %10ld | %11.2e | %11.2e | %11.2e | %11.2e | %11.2e |  %10d |\n", \
-             (_n), (_t)->dofmap[(_n)], (_t)->matrix[(_n)], (_t)->rhs[(_n)], \
-             (_t)->prec[(_n)], (_t)->solve[(_n)], (_t)->iters[(_n)]); \
+      printf("| %10ld | %11.2e | %11.2e | %11.2e | %11.2e |  %10d |\n", \
+             (_n), (_t)->dofmap[(_n)] + (_t)->matrix[(_n)] + (_t)->rhs[(_n)], \
+             (_t)->prec[(_n)], (_t)->solve[(_n)], (_t)->rrnorms[(_n)], \
+             (_t)->iters[(_n)]); \
    } \
    else \
    { \
-      printf("| %10ld |             |             |             |", (_n)); \
-      printf(" %11.2e | %11.2e |  %10d |\n", \
-             (_t)->prec[(_n)], (_t)->solve[(_n)], (_t)->iters[(_n)]); \
+      printf("| %10ld |             |", (_n)); \
+      printf(" %11.2e | %11.2e | %11.2e |  %10d |\n", \
+             (_t)->prec[(_n)], (_t)->solve[(_n)], \
+             (_t)->rrnorms[(_n)], (_t)->iters[(_n)]); \
    }
 
 /*--------------------------------------------------------------------------
@@ -81,7 +76,7 @@ StatsCreate(int capacity)
 {
    Stats *stats = (Stats*) malloc(sizeof(Stats));
 
-   for (size_t i = 0; i < STATS_TIMES_NUM_ENTRIES; i++)
+   for (size_t i = 0; i < STATS_NUM_ENTRIES; i++)
    {
       stats->capacity[i] = capacity;
       stats->size[i]     = 0;
@@ -93,14 +88,15 @@ StatsCreate(int capacity)
    stats->finalize   = 0.0;
 
    /* Linear system loading (1st stage) */
-   stats->dofmap = (double*) malloc(stats->capacity[0] * sizeof(double));
-   stats->matrix = (double*) malloc(stats->capacity[1] * sizeof(double));
-   stats->rhs    = (double*) malloc(stats->capacity[2] * sizeof(double));
+   stats->dofmap  = (double*) calloc(stats->capacity[0], sizeof(double));
+   stats->matrix  = (double*) calloc(stats->capacity[1], sizeof(double));
+   stats->rhs     = (double*) calloc(stats->capacity[2], sizeof(double));
 
    /* Linear system solution (2nd stage) */
-   stats->iters  = (int*)    malloc(stats->capacity[3] * sizeof(int));
-   stats->prec   = (double*) malloc(stats->capacity[4] * sizeof(double));
-   stats->solve  = (double*) malloc(stats->capacity[5] * sizeof(double));
+   stats->iters   = (int*)    calloc(stats->capacity[3], sizeof(int));
+   stats->prec    = (double*) calloc(stats->capacity[4], sizeof(double));
+   stats->solve   = (double*) calloc(stats->capacity[5], sizeof(double));
+   stats->rrnorms = (double*) calloc(stats->capacity[6], sizeof(double));
 
    return stats;
 }
@@ -118,8 +114,10 @@ StatsDestroy(Stats **stats_ptr)
       free((*stats_ptr)->matrix);
       free((*stats_ptr)->rhs);
 
+      free((*stats_ptr)->iters);
       free((*stats_ptr)->prec);
       free((*stats_ptr)->solve);
+      free((*stats_ptr)->rrnorms);
 
       free(*stats_ptr);
       *stats_ptr = NULL;
@@ -186,7 +184,21 @@ StatsIterSet(int num_iters)
 {
    if (!global_stats) return;
 
-   STATS_ITERS_SET(num_iters)
+   REALLOC(int, global_stats, iters, 5);
+   global_stats->iters[global_stats->size[5]++] = num_iters;
+}
+
+/*--------------------------------------------------------------------------
+ * StatsRelativeResNormSet
+ *--------------------------------------------------------------------------*/
+
+void
+StatsRelativeResNormSet(double rrnorm)
+{
+   if (!global_stats) return;
+
+   REALLOC(double, global_stats, rrnorms, 6);
+   global_stats->rrnorms[global_stats->size[6]++] = rrnorm;
 }
 
 /*--------------------------------------------------------------------------
@@ -196,8 +208,8 @@ StatsIterSet(int num_iters)
 void
 StatsPrint(int print_level)
 {
-   const char *top[] = {"", "dofmap", "matrix", "rhs", "setup", "solve", ""};
-   const char *bottom[] = {"Entry", "times", "times", "times", "times", "times", "iters"};
+   const char *top[] = {"", "LS build", "setup", "solve", "relative", ""};
+   const char *bottom[] = {"Entry", "times", "times", "times", "res. norm", "iters"};
 
    if (!global_stats || print_level < 1)
    {
@@ -205,7 +217,7 @@ StatsPrint(int print_level)
       return;
    }
 
-   for (size_t i = 0; i < 98; i++) printf("=");
+   PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
    printf("\n\nSTATISTICS SUMMARY:\n\n");
 
    STATS_TIMES_PRINT_DIVISOR()
@@ -213,7 +225,7 @@ StatsPrint(int print_level)
    STATS_TIMES_PRINT_DIVISOR()
 
    /* Print the timings for each entry in the array */
-   for (size_t i = 0; i < global_stats->size[5]; i++)
+   for (size_t i = 0; i < global_stats->size[6]; i++)
    {
       STATS_TIMES_PRINT_ENTRY(global_stats, i);
    }

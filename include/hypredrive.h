@@ -195,30 +195,28 @@ uint32_t
 HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t obj);
 
 /**
- * @brief Retrieve the execution policy from a HYPREDRV object.
+ * @brief Set HYPRE's global options according to the YAML input.
  *
- * This function accesses the HYPREDRV object's input arguments structure to retrieve
- * the execution policy setting. The execution policy is typically specified by the user
- * and indicates whether the linear systems are to be solved on the host or device (GPUs)
+ * @param obj The HYPREDRV_t object from which the global options are to be retrieved.
  *
- * @param obj The HYPREDRV_t object from which the execution policy is to be retrieved.
- *
- * @return Returns the execution policy setting as an integer. 0 stands for host and 1
- * stands for device (GPU). If the input object is NULL or not properly initialized,
- * the function returns -1 to indicate an error or invalid state.
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t obj;
- *    // ... (obj is created, and its input arguments are set) ...
- *    int execPolicy = HYPREDRV_InputArgsGetExecPolicy(obj);
- *    printf("Execution Policy: %d\n", execPolicy);
- *    // Use execPolicy as needed ...
+ *    HYPREDRV_t *obj;
+ *    // ... (obj is created, and its components are initialized) ...
+ *    uint32_t errorCode = HYPREDRV_SetGlobalOptions(obj);
+ *    if (errorCode != 0) {
+ *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
+ *        printf("%s\n", errorDescription);
+ *        // Handle error
+ *    }
  * @endcode
  */
 
-int
-HYPREDRV_InputArgsGetExecPolicy(HYPREDRV_t obj);
+uint32_t
+HYPREDRV_SetGlobalOptions(HYPREDRV_t obj);
 
 /**
  * @brief Retrieve the warmup setting from a HYPREDRV object.
@@ -241,8 +239,6 @@ HYPREDRV_InputArgsGetExecPolicy(HYPREDRV_t obj);
  *    if (warmupSetting != -1) {
  *        printf("Warmup Setting: %d\n", warmupSetting);
  *        // Use warmupSetting as needed ...
- *    } else {
- *        // Handle error or invalid state
  *    }
  * @endcode
  */
@@ -270,14 +266,43 @@ HYPREDRV_InputArgsGetWarmup(HYPREDRV_t obj);
  *    if (numRepetitions != -1) {
  *        printf("Number of Repetitions: %d\n", numRepetitions);
  *        // Use numRepetitions as needed ...
- *    } else {
- *        // Handle error or invalid state
  *    }
  * @endcode
  */
 
 int
 HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj);
+
+/**
+ * @brief Build the linear system (matrix, RHS, and LHS) according to the YAML input passed to
+ * the HYPREDRV object.
+ *
+ * The matrix is read from file. Vectors might be read from file or built according to
+ * predetermined options passed via YAML.
+ *
+ * @param obj The HYPREDRV_t object for which the linear system matrix is to be built.
+ *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_t *obj;
+ *    // ... (obj is created, and its components are initialized) ...
+ *    uint32_t errorCode = HYPREDRV_LinearSystemBuild(obj);
+ *    if (errorCode != 0) {
+ *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
+ *        printf("%s\n", errorDescription);
+ *        // Handle error
+ *    }
+ * @endcode
+ */
+
+uint32_t
+HYPREDRV_LinearSystemBuild(HYPREDRV_t obj);
 
 /**
  * @brief Read the linear system matrix from file for a HYPREDRV object.
@@ -304,8 +329,6 @@ HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed with the matrix
  *    }
  * @endcode
  */
@@ -333,8 +356,6 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed with the RHS vector
  *    }
  * @endcode
  */
@@ -366,8 +387,6 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed with the initial guess for the solution vector
  *    }
  * @endcode
  */
@@ -397,8 +416,6 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed after resetting the initial guess
  *    }
  * @endcode
  */
@@ -430,8 +447,6 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed with the preconditioner matrix
  *    }
  * @endcode
  */
@@ -459,8 +474,6 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed with the DOF map
  *    }
  * @endcode
  */
@@ -490,8 +503,6 @@ HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed with the created preconditioner
  *    }
  * @endcode
  */
@@ -521,8 +532,6 @@ HYPREDRV_PreconCreate(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed with the created linear solver
  *    }
  * @endcode
  */
@@ -553,8 +562,6 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed with the set up linear solver
  *    }
  * @endcode
  */
@@ -584,8 +591,6 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed with the solution vector
  *    }
  * @endcode
  */
@@ -615,8 +620,6 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed after destroying the preconditioner
  *    }
  * @endcode
  */
@@ -646,8 +649,6 @@ HYPREDRV_PreconDestroy(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed after destroying the linear solver
  *    }
  * @endcode
  */
@@ -678,8 +679,6 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t obj);
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
  *        // Handle error
- *    } else {
- *        // Proceed after printing the statistics
  *    }
  * @endcode
  */

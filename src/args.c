@@ -175,24 +175,44 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
       YAML_NODE_SET_VALID(parent);
    }
 
-   /* Check if a solver type was set */
-   if (!parent->children)
+   /* Check if the solver type was set with a single (key, val) pair */
+   if (!strcmp(parent->val, ""))
    {
-      ErrorCodeSet(ERROR_MISSING_SOLVER);
-      return;
-   }
+      /* Check if a solver type was set */
+      if (!parent->children)
+      {
+         ErrorCodeSet(ERROR_MISSING_SOLVER);
+         return;
+      }
 
-   /* Check if more than one solver type was set (this is not supported!) */
-   if (parent->children->next)
+      /* Check if more than one solver type was set (this is not supported!) */
+      if (parent->children->next)
+      {
+         ErrorCodeSet(ERROR_EXTRA_KEY);
+         ErrorMsgAddExtraKey(parent->children->next->key);
+         return;
+      }
+
+      iargs->solver_method = StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
+                                                    parent->children->key);
+
+      SolverSetArgsFromYAML(&iargs->solver, parent);
+   }
+   else
    {
-      ErrorCodeSet(ERROR_EXTRA_KEY);
-      ErrorMsgAddExtraKey(parent->children->next->key);
-      return;
-   }
+      iargs->solver_method = StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
+                                                    parent->val);
 
-   iargs->solver_method = StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
-                                                 parent->children->key);
-   SolverSetArgsFromYAML(&iargs->solver, parent);
+      /* Hack for setting default parameters */
+      YAMLnode *dummy = YAMLnodeCreate("solver", "", 0);
+      dummy->children = YAMLnodeCreate(parent->val, "", 1);
+      dummy->children->children = YAMLnodeCreate("print_level", "0", 2);
+
+      SolverSetArgsFromYAML(&iargs->solver, dummy);
+
+      /* Free memory */
+      YAMLnodeDestroy(dummy);
+   }
 }
 
 /*-----------------------------------------------------------------------------
@@ -216,24 +236,44 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
       YAML_NODE_SET_VALID(parent);
    }
 
-   /* Check if a preconditioner type was set */
-   if (!parent->children)
+   /* Check if the solver type was set with a single (key, val) pair */
+   if (!strcmp(parent->val, ""))
    {
-      ErrorCodeSet(ERROR_MISSING_PRECON);
-      return;
-   }
+      /* Check if a preconditioner type was set */
+      if (!parent->children)
+      {
+         ErrorCodeSet(ERROR_MISSING_PRECON);
+         return;
+      }
 
-   /* Check if more than one preconditioner type was set (this is not supported!) */
-   if (parent->children->next)
+      /* Check if more than one preconditioner type was set (this is not supported!) */
+      if (parent->children->next)
+      {
+         ErrorCodeSet(ERROR_EXTRA_KEY);
+         ErrorMsgAddExtraKey(parent->children->next->key);
+         return;
+      }
+
+      iargs->precon_method = StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
+                                                    parent->children->key);
+
+      PreconSetArgsFromYAML(&iargs->precon, parent);
+   }
+   else
    {
-      ErrorCodeSet(ERROR_EXTRA_KEY);
-      ErrorMsgAddExtraKey(parent->children->next->key);
-      return;
-   }
+      iargs->precon_method = StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
+                                                    parent->val);
 
-   iargs->precon_method = StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
-                                                 parent->children->key);
-   PreconSetArgsFromYAML(&iargs->precon, parent);
+      /* Hack for setting default parameters */
+      YAMLnode *dummy = YAMLnodeCreate("preconditioner", "", 0);
+      dummy->children = YAMLnodeCreate(parent->val, "", 1);
+      dummy->children->children = YAMLnodeCreate("print_level", "0", 2);
+
+      PreconSetArgsFromYAML(&iargs->precon, dummy);
+
+      /* Free memory */
+      YAMLnodeDestroy(dummy);
+   }
 }
 
 /*-----------------------------------------------------------------------------

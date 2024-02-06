@@ -13,16 +13,17 @@
 #include <stdlib.h>
 #include "mpi.h"
 #include "error.h"
+#include "utils.h"
 
-#define STATS_TIMES_NUM_ENTRIES 6
+#define STATS_NUM_ENTRIES 7
 
 /*--------------------------------------------------------------------------
  * Stats struct
  *--------------------------------------------------------------------------*/
 
 typedef struct Stats_struct {
-   int       capacity[STATS_TIMES_NUM_ENTRIES];
-   int       size[STATS_TIMES_NUM_ENTRIES];
+   int       capacity[STATS_NUM_ENTRIES];
+   int       size[STATS_NUM_ENTRIES];
    int       ls_counter;
 
    double   *matrix;
@@ -32,6 +33,7 @@ typedef struct Stats_struct {
    int      *iters;
    double   *prec;
    double   *solve;
+   double   *rrnorms;
 
    double    initialize;
    double    finalize;
@@ -44,6 +46,7 @@ typedef struct Stats_struct {
 void StatsTimerStart(const char*);
 void StatsTimerFinish(const char*);
 void StatsIterSet(int);
+void StatsRelativeResNormSet(double);
 void StatsPrint(int);
 
 #endif /* STATS_HEADER */

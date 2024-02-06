@@ -7,3 +7,24 @@ MOSTLYCLEANFILES =
 
 @DX_RULES@
 #MOSTLYCLEANFILES += $(DX_CLEANFILES)
+
+docs: doxygen-doc
+	@echo "Building developer's manual documentation (Doxygen)"
+	@echo "Building user's manual documentation (Sphinx)"
+	@cd docs/usrman-src && make latexpdf
+
+check:
+	@mpirun -np 1 ./hypredrive examples/ex1.yml > /dev/null 2>&1
+	@if test $$? -eq 0 ; then \
+		echo "Running with 1 MPI process... passed!"; \
+	else \
+		echo "Running with 1 MPI process... failed!"; \
+		exit 1; \
+	fi
+	@mpirun -np 4 ./hypredrive examples/ex2.yml > /dev/null 2>&1
+	@if test $$? -eq 0 ; then \
+		echo "Running with 4 MPI process... passed!"; \
+	else \
+		echo "Running with 4 MPI process... failed!"; \
+		exit 1; \
+	fi

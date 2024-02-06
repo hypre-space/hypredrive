@@ -8,6 +8,7 @@
 #include "linsys.h"
 #include "HYPRE_parcsr_mv.h" /* TODO: remove after implementing IJVectorClone/Copy */
 #include "_hypre_parcsr_mv.h" /* TODO: remove after implementing IJVectorMigrate/IJMatrix */
+#include "_hypre_IJ_mv.h" /* TODO: remove after implementing IJVectorClone */
 
 static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FieldTypeStringSet),
@@ -353,7 +354,8 @@ LinearSystemSetPrecMatrix(MPI_Comm comm,
                           HYPRE_IJMatrix mat,
                           HYPRE_IJMatrix *precmat_ptr)
 {
-   if (args->precmat_filename[0] == '\0')
+   if (args->precmat_filename[0] == '\0' ||
+       !strcmp(args->precmat_filename, args->matrix_filename))
    {
       *precmat_ptr = mat;
    }
@@ -370,16 +372,78 @@ LinearSystemSetPrecMatrix(MPI_Comm comm,
 void
 LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 {
-   StatsTimerStart("dofmap");
    if (args->dofmap_filename[0] == '\0')
    {
       *dofmap_ptr = IntArrayCreate(0);
    }
    else
    {
+      StatsTimerStart("dofmap");
       IntArrayParRead(comm, args->dofmap_filename, dofmap_ptr);
+      StatsTimerFinish("dofmap");
    }
 
    /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks */
-   StatsTimerFinish("dofmap");
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemComputeResidualNorm
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemComputeRHSNorm(HYPRE_IJVector  vec_b,
+                           HYPRE_Complex  *b_norm)
+{
+   HYPRE_IJVectorInnerProd(vec_b, vec_b, b_norm);
+   *b_norm = sqrt(*b_norm);
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemComputeResidualNorm
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemComputeResidualNorm(HYPRE_IJMatrix  mat_A,
+                                HYPRE_IJVector  vec_b,
+                                HYPRE_IJVector  vec_x,
+                                HYPRE_Complex  *res_norm)
+{
+   HYPRE_ParCSRMatrix   par_A;
+   HYPRE_ParVector      par_b;
+   HYPRE_ParVector      par_x;
+   HYPRE_ParVector      par_r;
+   HYPRE_IJVector       vec_r;
+   void                *obj_A, *obj_b, *obj_x, *obj_r;
+
+   HYPRE_BigInt         jlower, jupper;
+
+   HYPRE_Complex        one = 1.0;
+   HYPRE_Complex        neg_one = -1.0;
+
+   HYPRE_IJMatrixGetObject(mat_A, &obj_A);
+   HYPRE_IJVectorGetObject(vec_b, &obj_b);
+   HYPRE_IJVectorGetObject(vec_x, &obj_x);
+
+   par_A = (HYPRE_ParCSRMatrix) obj_A;
+   par_b = (HYPRE_ParVector) obj_b;
+   par_x = (HYPRE_ParVector) obj_x;
+
+   /* TODO: implement IJVectorClone */
+   HYPRE_IJVectorGetLocalRange(vec_b, &jlower, &jupper);
+   HYPRE_IJVectorCreate(hypre_IJVectorComm(vec_b), jlower, jupper, &vec_r);
+   HYPRE_IJVectorSetObjectType(vec_r, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize_v2(vec_r, hypre_IJVectorMemoryLocation(vec_b));
+   HYPRE_IJVectorGetObject(vec_r, &obj_r);
+   par_r = (HYPRE_ParVector) obj_r;
+   HYPRE_ParVectorCopy(par_b, par_r);
+
+   /* Compute residual */
+   HYPRE_ParCSRMatrixMatvec(neg_one, par_A, par_x, one, par_r);
+
+   /* Compute residual norm */
+   HYPRE_ParVectorInnerProd(par_r, par_r, res_norm);
+   *res_norm = sqrt(*res_norm);
+
+   /* Free memory */
+   HYPRE_IJVectorDestroy(vec_r);
 }

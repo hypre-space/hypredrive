@@ -13,8 +13,7 @@
 #include "gmres.h"
 #include "fgmres.h"
 #include "bicgstab.h"
-#include "yaml.h"
-#include "field.h"
+#include "linsys.h"
 #include "HYPRE_parcsr_ls.h"
 #include "HYPRE_krylov.h"
 
@@ -39,6 +38,8 @@ typedef union solver_args_union {
    FGMRES_args     fgmres;
    BiCGSTAB_args   bicgstab;
 } solver_args;
+
+typedef solver_args Solver_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
