@@ -503,6 +503,16 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_MGRSetFSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, frelax);
    }
 
+   /* Config f-relaxation at level > 0 (valid only for AMG for now) */
+   for (i = 1; i < num_levels; i++)
+   {
+      if (args->level[i].f_relaxation.type == 2)
+      {
+         AMGCreate(&args->level[i].f_relaxation.amg, &frelax);
+         HYPRE_MGRSetFSolverAtLevel(i, precon, frelax);
+      }
+   }
+
    /* Config coarsest level solver */
    if (args->coarsest_level.type == 0)
    {
