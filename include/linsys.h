@@ -1,15 +1,15 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #ifndef LINSYS_HEADER
 #define LINSYS_HEADER
 
 #include "yaml.h"
-#include "utils.h"
+#include "stats.h"
 #include "field.h"
 #include "HYPRE_utilities.h"
 #include "HYPRE_IJ_mv.h"
@@ -48,5 +48,8 @@ void LinearSystemSetInitialGuess(MPI_Comm, LS_args*, HYPRE_IJMatrix,
 void LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector);
 void LinearSystemSetPrecMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJMatrix*);
 void LinearSystemReadDofmap(MPI_Comm, LS_args*, IntArray**);
+void LinearSystemComputeRHSNorm(HYPRE_IJVector, HYPRE_Complex*);
+void LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector, HYPRE_Complex*);
+
 
 #endif /* LINSYS_HEADER */

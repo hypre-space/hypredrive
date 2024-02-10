@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #ifndef AMG_HEADER
@@ -73,6 +73,7 @@ typedef struct AMGcsn_args_struct {
    HYPRE_Int    min_coarse_size;
    HYPRE_Int    max_coarse_size;
    HYPRE_Int    max_levels;
+   HYPRE_Real   max_row_sum;
    HYPRE_Real   strong_th;
 } AMGcsn_args;
 
@@ -84,7 +85,6 @@ typedef struct AMGint_args_struct {
    HYPRE_Int    prolongation_type;
    HYPRE_Int    restriction_type;
    HYPRE_Int    max_nnz_row;
-   HYPRE_Real   max_row_sum;
    HYPRE_Real   trunc_factor;
 } AMGint_args;
 
