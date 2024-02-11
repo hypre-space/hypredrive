@@ -17,6 +17,9 @@
 
 typedef struct hypredrv_struct {
    MPI_Comm         comm;
+   int              mypid;
+   int              nprocs;
+
    input_args      *iargs;
 
    IntArray        *dofmap;
@@ -39,8 +42,18 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr)
 {
    HYPREDRV_t obj = (HYPREDRV_t) malloc(sizeof(hypredrv_t));
 
-   obj->comm = comm;
-   *obj_ptr  = obj;
+   MPI_Comm_rank(comm, &obj->mypid);
+   MPI_Comm_size(comm, &obj->nprocs);
+
+   obj->comm   = comm;
+   obj->mat_A  = NULL;
+   obj->mat_M  = NULL;
+   obj->vec_b  = NULL;
+   obj->vec_x  = NULL;
+   obj->vec_x0 = NULL;
+   obj->dofmap = NULL;
+
+   *obj_ptr    = obj;
 
    return ErrorCodeGet();
 }
@@ -168,6 +181,24 @@ int
 HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj)
 {
    return (obj) ? obj->iargs->num_repetitions : -1;
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_InputArgsGetNumLinearSystems
+ *-----------------------------------------------------------------------------*/
+
+int
+HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t obj)
+{
+   if (obj)
+   {
+      return obj->iargs->ls.matrix_last_suffix -
+             obj->iargs->ls.matrix_init_suffix + 1;
+   }
+   else
+   {
+      return -1;
+   }
 }
 
 /*-----------------------------------------------------------------------------

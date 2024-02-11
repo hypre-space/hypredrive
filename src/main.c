@@ -18,7 +18,7 @@ PrintUsage(const char *argv0)
 int main(int argc, char **argv)
 {
    MPI_Comm      comm = MPI_COMM_WORLD;
-   int           myid, i;
+   int           myid, i, k;
    HYPREDRV_t    obj;
 
    /*-----------------------------------------------------------
@@ -64,28 +64,31 @@ int main(int argc, char **argv)
       printf("TODO: Perform warmup");
    }
 
-   /* Build linear system (matrix, RHS, LHS, and auxiliary data) */
-   HYPREDRV_LinearSystemBuild(obj);
-
-   /* Solve linear system */
-   for (i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
+   /* Solve linear system(s) */
+   for (k = 0; k < HYPREDRV_InputArgsGetNumLinearSystems(obj); k++)
    {
-      /* Reset initial guess */
-      HYPREDRV_LinearSystemResetInitialGuess(obj);
+      /* Build linear system (matrix, RHS, LHS, and auxiliary data) */
+      HYPREDRV_LinearSystemBuild(obj);
 
-      /* Create phase */
-      HYPREDRV_PreconCreate(obj);
-      HYPREDRV_LinearSolverCreate(obj);
+      for (i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
+      {
+         /* Reset initial guess */
+         HYPREDRV_LinearSystemResetInitialGuess(obj);
 
-      /* Setup phase */
-      HYPREDRV_LinearSolverSetup(obj);
+         /* Create phase */
+         HYPREDRV_PreconCreate(obj);
+         HYPREDRV_LinearSolverCreate(obj);
 
-      /* Solve phase */
-      HYPREDRV_LinearSolverApply(obj);
+         /* Setup phase */
+         HYPREDRV_LinearSolverSetup(obj);
 
-      /* Destroy phase */
-      HYPREDRV_PreconDestroy(obj);
-      HYPREDRV_LinearSolverDestroy(obj);
+         /* Solve phase */
+         HYPREDRV_LinearSolverApply(obj);
+
+         /* Destroy phase */
+         HYPREDRV_PreconDestroy(obj);
+         HYPREDRV_LinearSolverDestroy(obj);
+      }
    }
 
    /*-----------------------------------------------------------

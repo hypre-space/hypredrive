@@ -237,3 +237,14 @@ StatsPrint(int print_level)
    /* Destroy global stats variable */
    StatsDestroy(&global_stats);
 }
+
+/*--------------------------------------------------------------------------
+ * StatsGetLinearSystemID
+ *--------------------------------------------------------------------------*/
+
+int
+StatsGetLinearSystemID(void)
+{
+   if (!global_stats) return 0;
+   return global_stats->ls_counter - 1;
+}

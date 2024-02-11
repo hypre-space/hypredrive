@@ -21,11 +21,17 @@
 
 typedef struct LS_args_struct {
    char          matrix_filename[MAX_FILENAME_LENGTH];
+   char          matrix_basename[MAX_FILENAME_LENGTH];
    char          precmat_filename[MAX_FILENAME_LENGTH];
    char          rhs_filename[MAX_FILENAME_LENGTH];
+   char          rhs_basename[MAX_FILENAME_LENGTH];
    char          x0_filename[MAX_FILENAME_LENGTH];
    char          sol_filename[MAX_FILENAME_LENGTH];
    char          dofmap_filename[MAX_FILENAME_LENGTH];
+   char          dofmap_basename[MAX_FILENAME_LENGTH];
+   HYPRE_Int     digits_suffix;
+   HYPRE_Int     matrix_init_suffix;
+   HYPRE_Int     matrix_last_suffix;
    HYPRE_Int     init_guess_mode;
    HYPRE_Int     rhs_mode;
    HYPRE_Int     type;

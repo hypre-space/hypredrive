@@ -48,5 +48,6 @@ void StatsTimerFinish(const char*);
 void StatsIterSet(int);
 void StatsRelativeResNormSet(double);
 void StatsPrint(int);
+int  StatsGetLinearSystemID(void);
 
 #endif /* STATS_HEADER */
