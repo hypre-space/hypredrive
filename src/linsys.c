@@ -21,8 +21,8 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_basename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, digits_suffix, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_init_suffix, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_last_suffix, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, init_suffix, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, last_suffix, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet),
@@ -118,8 +118,8 @@ LinearSystemSetDefaultArgs(LS_args *args)
    strcpy(args->dofmap_filename, "");
    strcpy(args->dofmap_basename, "");
    args->digits_suffix = 5;
-   args->matrix_init_suffix = -1;
-   args->matrix_last_suffix = -1;
+   args->init_suffix = -1;
+   args->last_suffix = -1;
    args->init_guess_mode = 0;
    args->rhs_mode = 0;
    args->type = 0;
@@ -156,7 +156,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
    int  ls_id  = StatsGetLinearSystemID();
-   int  num_ls = args->matrix_last_suffix - args->matrix_init_suffix + 1;
+   int  num_ls = args->last_suffix - args->init_suffix + 1;
    int  mypid;
 
    MPI_Comm_rank(comm, &mypid);
@@ -179,7 +179,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       sprintf(matrix_filename, "%*s_%0*d",
               (int) strlen(args->matrix_basename),
               args->matrix_basename, args->digits_suffix,
-              args->matrix_init_suffix + ls_id);
+              args->init_suffix + ls_id);
    }
    else
    {
@@ -233,6 +233,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
 {
    HYPRE_BigInt    ilower, iupper;
    HYPRE_BigInt    jlower, jupper;
+   char            rhs_filename[MAX_FILENAME_LENGTH] = {0};
+   int             ls_id  = StatsGetLinearSystemID();
 
    StatsTimerStart("rhs");
 
@@ -240,7 +242,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
    if(*rhs_ptr) HYPRE_IJVectorDestroy(*rhs_ptr);
 
    /* Read right-hand-side vector */
-   if (args->rhs_filename[0] == '\0')
+   if (args->rhs_filename[0] == '\0' && args->rhs_basename[0] == '\0')
    {
       HYPRE_MemoryLocation memloc = (args->exec_policy) ?
                                     HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
@@ -271,20 +273,34 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
    }
    else
    {
-      if (CheckBinaryDataExists(args->rhs_filename))
+      /* Set RHS filename */
+      if (args->rhs_filename[0] != '\0')
       {
-         HYPRE_IJVectorReadBinary(args->rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
+         strcpy(rhs_filename, args->rhs_filename);
+      }
+      else if (args->rhs_basename[0] != '\0')
+      {
+         sprintf(rhs_filename, "%*s_%0*d",
+                 (int) strlen(args->rhs_basename),
+                 args->rhs_basename, args->digits_suffix,
+                 args->init_suffix + ls_id);
+      }
+
+      /* Read vector from file (Binary or ASCII) */
+      if (CheckBinaryDataExists(rhs_filename))
+      {
+         HYPRE_IJVectorReadBinary(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
       }
       else
       {
-         HYPRE_IJVectorRead(args->rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
+         HYPRE_IJVectorRead(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
       }
 
       /* Check if hypre had problems reading the input file */
       if (HYPRE_GetError())
       {
          ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         ErrorMsgAddInvalidFilename(args->rhs_filename);
+         ErrorMsgAddInvalidFilename(rhs_filename);
       }
 
       /* Migrate the vector? TODO: use IJVectorMigrate */
@@ -423,18 +439,33 @@ LinearSystemSetPrecMatrix(MPI_Comm comm,
 void
 LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 {
-   if (args->dofmap_filename[0] == '\0' ||
-       args->dofmap_basename[0] == '\0')
+   char   dofmap_filename[MAX_FILENAME_LENGTH] = {0};
+   int    ls_id = StatsGetLinearSystemID();
+
+   if (args->dofmap_filename[0] == '\0' && args->dofmap_basename[0] == '\0')
    {
       *dofmap_ptr = IntArrayCreate(0);
    }
    else
    {
+      /* Set dofmap filename */
+      if (args->dofmap_filename[0] != '\0')
+      {
+         strcpy(dofmap_filename, args->dofmap_filename);
+      }
+      else
+      {
+         sprintf(dofmap_filename, "%*s_%0*d",
+                 (int) strlen(args->dofmap_basename),
+                 args->dofmap_basename, args->digits_suffix,
+                 args->init_suffix + ls_id);
+      }
+
       /* Destroy previous dofmap array */
       IntArrayDestroy(dofmap_ptr);
 
       StatsTimerStart("dofmap");
-      IntArrayParRead(comm, args->dofmap_filename, dofmap_ptr);
+      IntArrayParRead(comm, dofmap_filename, dofmap_ptr);
       StatsTimerFinish("dofmap");
    }
 

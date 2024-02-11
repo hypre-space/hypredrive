@@ -192,8 +192,7 @@ HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t obj)
 {
    if (obj)
    {
-      return obj->iargs->ls.matrix_last_suffix -
-             obj->iargs->ls.matrix_init_suffix + 1;
+      return obj->iargs->ls.last_suffix - obj->iargs->ls.init_suffix + 1;
    }
    else
    {

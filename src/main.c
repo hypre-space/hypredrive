@@ -50,21 +50,19 @@ int main(int argc, char **argv)
    HYPREDRV_InputArgsParse(argc, argv, obj);
 
    /*-----------------------------------------------------------
-    * Set hypre's global options
+    * Set hypre's global options and warmup
     *-----------------------------------------------------------*/
 
    HYPREDRV_SetGlobalOptions(obj);
-
-   /*-----------------------------------------------------------
-    * Build and solve linear system(s)
-    *-----------------------------------------------------------*/
-
    if (HYPREDRV_InputArgsGetWarmup(obj))
    {
       printf("TODO: Perform warmup");
    }
 
-   /* Solve linear system(s) */
+   /*-----------------------------------------------------------
+    * Build and solve linear system(s)
+    *-----------------------------------------------------------*/
+
    for (k = 0; k < HYPREDRV_InputArgsGetNumLinearSystems(obj); k++)
    {
       /* Build linear system (matrix, RHS, LHS, and auxiliary data) */

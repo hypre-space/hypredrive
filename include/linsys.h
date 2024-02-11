@@ -30,8 +30,8 @@ typedef struct LS_args_struct {
    char          dofmap_filename[MAX_FILENAME_LENGTH];
    char          dofmap_basename[MAX_FILENAME_LENGTH];
    HYPRE_Int     digits_suffix;
-   HYPRE_Int     matrix_init_suffix;
-   HYPRE_Int     matrix_last_suffix;
+   HYPRE_Int     init_suffix;
+   HYPRE_Int     last_suffix;
    HYPRE_Int     init_guess_mode;
    HYPRE_Int     rhs_mode;
    HYPRE_Int     type;
