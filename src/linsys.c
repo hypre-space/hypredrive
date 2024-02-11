@@ -80,13 +80,21 @@ LinearSystemGetValidValues(const char* key)
                                 {"parcsr", 2}};
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-   else if (!strcmp(key, "rhs_mode") ||
-            !strcmp(key, "init_guess_mode") )
+   else if (!strcmp(key, "rhs_mode"))
    {
       static StrIntMap map[] = {{"zeros",  0},
                                 {"ones",   1},
                                 {"file",   2},
                                 {"random", 3}};
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "init_guess_mode"))
+   {
+      static StrIntMap map[] = {{"zeros",    0},
+                                {"ones",     1},
+                                {"file",     2},
+                                {"random",   3},
+                                {"previous", 4}};
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    else if (!strcmp(key, "exec_policy"))
@@ -335,15 +343,34 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
    HYPRE_MemoryLocation memloc = (args->exec_policy) ?
                                  HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
-   /* Destroy vector */
-   if(*x0_ptr) HYPRE_IJVectorDestroy(*x0_ptr);
-
-   if (args->precmat_filename[0] == '\0')
+   /* Create solution vector
+      TODO: implement HYPRE_IJVectorClone in hypre */
+   if (!*x_ptr)
    {
+      HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
+      HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
+      HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
+      HYPRE_IJVectorInitialize_v2(*x_ptr, memloc);
+   }
+
+   /* Destroy initial solution vector */
+   if (*x0_ptr) HYPRE_IJVectorDestroy(*x0_ptr);
+
+   if (args->x0_filename[0] == '\0')
+   {
+      HYPRE_MemoryLocation memloc = (args->exec_policy) ?
+                                    HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+
       HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
       HYPRE_IJVectorCreate(comm, jlower, jupper, x0_ptr);
       HYPRE_IJVectorSetObjectType(*x0_ptr, HYPRE_PARCSR);
       HYPRE_IJVectorInitialize_v2(*x0_ptr, memloc);
+
+      /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
+      void            *obj;
+      HYPRE_ParVector  par_x0;
+      HYPRE_IJVectorGetObject(*x0_ptr, &obj);
+      par_x0 = (HYPRE_ParVector) obj;
 
       switch (args->init_guess_mode)
       {
@@ -353,7 +380,24 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
             break;
 
          case 1:
-            /* TODO: Vector of ones */
+            /* Vector of ones */
+            HYPRE_ParVectorSetConstantValues(par_x0, 1);
+            break;
+
+         case 3:
+            /* Vector of random values */
+            HYPRE_ParVectorSetRandomValues(par_x0, 2023);
+            break;
+
+         case 4:
+            /* Use solution from previous linear solve */
+            void            *obj_x;
+            HYPRE_ParVector  par_x;
+
+            HYPRE_IJVectorGetObject(*x_ptr, &obj);
+            par_x = (HYPRE_ParVector) obj;
+
+            HYPRE_ParVectorCopy(par_x, par_x0);
             break;
       }
    }
@@ -380,12 +424,6 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
          hypre_ParVectorMigrate(par_x0, HYPRE_MEMORY_DEVICE);
       }
    }
-
-   /* TODO: implement HYPRE_IJVectorClone in hypre */
-   HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
-   HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
-   HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(*x_ptr, memloc);
 }
 
 /*-----------------------------------------------------------------------------

@@ -54,7 +54,7 @@ static Stats *global_stats = NULL;
 #define STATS_TIMES_PRINT_ENTRY(_t, _n) \
    if (!(_n % ((_t)->size[4] / (_t)->ls_counter))) \
    { \
-      printf("| %10ld | %11.2e | %11.2e | %11.2e | %11.2e |  %10d |\n", \
+      printf("| %10ld | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", \
              (_n), (_t)->dofmap[(_n)] + (_t)->matrix[(_n)] + (_t)->rhs[(_n)], \
              (_t)->prec[(_n)], (_t)->solve[(_n)], (_t)->rrnorms[(_n)], \
              (_t)->iters[(_n)]); \
@@ -62,7 +62,7 @@ static Stats *global_stats = NULL;
    else \
    { \
       printf("| %10ld |             |", (_n)); \
-      printf(" %11.2e | %11.2e | %11.2e |  %10d |\n", \
+      printf(" %11.3f | %11.3fe | %11.2e |  %10d |\n", \
              (_t)->prec[(_n)], (_t)->solve[(_n)], \
              (_t)->rrnorms[(_n)], (_t)->iters[(_n)]); \
    }
