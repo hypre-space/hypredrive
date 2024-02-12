@@ -152,6 +152,7 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
    }
 
    LinearSystemSetArgsFromYAML(&iargs->ls, parent);
+   LinearSystemSetNumSystems(&iargs->ls);
 }
 
 /*-----------------------------------------------------------------------------
@@ -455,6 +456,10 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    InputArgsParseLinearSystem(iargs, tree);
    InputArgsParseSolver(iargs, tree);
    InputArgsParsePrecon(iargs, tree);
+
+   /* Set auxiliary data in the Stats structure */
+   StatsSetNumReps(iargs->num_repetitions);
+   StatsSetNumLinearSystems(iargs->ls.num_systems);
 
    /* Rank 0: Print tree to stdout */
    if (!myid)

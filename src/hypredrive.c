@@ -53,6 +53,9 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr)
    obj->vec_x0 = NULL;
    obj->dofmap = NULL;
 
+   /* TODO: move to HYPREDRV_Initialize */
+   StatsCreate();
+
    *obj_ptr    = obj;
 
    return ErrorCodeGet();
@@ -77,6 +80,7 @@ HYPREDRV_Destroy(HYPREDRV_t *obj_ptr)
       HYPRE_IJVectorDestroy(obj->vec_b);
       HYPRE_IJVectorDestroy(obj->vec_x);
       HYPRE_IJVectorDestroy(obj->vec_x0);
+      IntArrayDestroy(&obj->dofmap);
 
       InputArgsDestroy(&obj->iargs);
 
@@ -190,14 +194,7 @@ HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj)
 int
 HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t obj)
 {
-   if (obj)
-   {
-      return obj->iargs->ls.last_suffix - obj->iargs->ls.init_suffix + 1;
-   }
-   else
-   {
-      return -1;
-   }
+   return (obj) ? obj->iargs->ls.num_systems : -1;
 }
 
 /*-----------------------------------------------------------------------------
@@ -209,12 +206,20 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t obj)
 {
    if (obj)
    {
-      LinearSystemReadMatrix(obj->comm, &obj->iargs->ls, &obj->mat_A);
-      LinearSystemSetRHS(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->vec_b);
-      LinearSystemSetInitialGuess(obj->comm, &obj->iargs->ls, obj->mat_A, obj->vec_b,
-                                  &obj->vec_x0, &obj->vec_x);
-      LinearSystemSetPrecMatrix(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->mat_M);
-      LinearSystemReadDofmap(obj->comm, &obj->iargs->ls, &obj->dofmap);
+      if (HYPREDRV_InputArgsGetNumLinearSystems(obj) > 0)
+      {
+         PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
+         if (!obj->mypid)
+         {
+            printf("Solving linear system #%d...\n", StatsGetLinearSystemID() + 1);
+         }
+      }
+
+      HYPREDRV_LinearSystemReadMatrix(obj);
+      HYPREDRV_LinearSystemSetRHS(obj);
+      HYPREDRV_LinearSystemSetInitialGuess(obj);
+      HYPREDRV_LinearSystemSetPrecMatrix(obj);
+      HYPREDRV_LinearSystemReadDofmap(obj);
    }
    else
    {
@@ -348,7 +353,17 @@ HYPREDRV_PreconCreate(HYPREDRV_t obj)
 {
    if (obj)
    {
-      PreconCreate(obj->iargs->precon_method, &obj->iargs->precon, obj->dofmap, &obj->precon);
+      if (!(StatsGetLinearSystemID() % (obj->iargs->ls.precon_reuse + 1)))
+      {
+         PreconCreate(obj->iargs->precon_method, &obj->iargs->precon, obj->dofmap, &obj->precon);
+      }
+      else
+      {
+         if (!obj->mypid)
+         {
+            printf("Reusing preconditioner...\n");
+         }
+      }
    }
    else
    {
@@ -367,7 +382,10 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t obj)
 {
    if (obj)
    {
-      SolverCreate(obj->comm, obj->iargs->solver_method, &obj->iargs->solver, &obj->solver);
+      if (!(StatsGetLinearSystemID() % (obj->iargs->ls.precon_reuse + 1)))
+      {
+         SolverCreate(obj->comm, obj->iargs->solver_method, &obj->iargs->solver, &obj->solver);
+      }
    }
    else
    {
@@ -384,10 +402,22 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_LinearSolverSetup(HYPREDRV_t obj)
 {
+   int ls_id  = StatsGetLinearSystemID();
+   int reuse  = obj->iargs->ls.precon_reuse;
+   int num_ls = HYPREDRV_InputArgsGetNumLinearSystems(obj);
+
    if (obj)
    {
-      SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method,
-                  obj->precon, obj->solver, obj->mat_M, obj->vec_b, obj->vec_x);
+      if (!(ls_id % (reuse + 1)))
+      {
+         SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method,
+                     obj->precon, obj->solver, obj->mat_M, obj->vec_b, obj->vec_x);
+
+         if (ls_id == (num_ls - reuse))
+         {
+            StatsSetLastSolve();
+         }
+      }
    }
    else
    {
@@ -408,6 +438,7 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t obj)
    {
       SolverApply(obj->iargs->solver_method, obj->solver, obj->mat_A,
                   obj->vec_b, obj->vec_x);
+      HYPRE_ClearAllErrors();
    }
    else
    {
@@ -426,7 +457,10 @@ HYPREDRV_PreconDestroy(HYPREDRV_t obj)
 {
    if (obj)
    {
-      PreconDestroy(obj->iargs->precon_method, &obj->precon);
+      if (!((StatsGetLinearSystemID() + 1) % (obj->iargs->ls.precon_reuse + 1)))
+      {
+         PreconDestroy(obj->iargs->precon_method, &obj->precon);
+      }
    }
    else
    {
@@ -445,7 +479,10 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t obj)
 {
    if (obj)
    {
-      SolverDestroy(obj->iargs->solver_method, &obj->solver);
+      if (!((StatsGetLinearSystemID() + 1) % (obj->iargs->ls.precon_reuse + 1)))
+      {
+         SolverDestroy(obj->iargs->solver_method, &obj->solver);
+      }
    }
    else
    {

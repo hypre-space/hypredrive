@@ -31,11 +31,15 @@ typedef enum precon_type_enum {
  * Generic preconditioner arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef union precon_args_union {
-   AMG_args      amg;
-   MGR_args      mgr;
-   ILU_args      ilu;
-   FSAI_args     fsai;
+typedef struct precon_args_struct {
+   union
+   {
+      AMG_args      amg;
+      MGR_args      mgr;
+      ILU_args      ilu;
+      FSAI_args     fsai;
+   };
+   int              reuse;
 } precon_args;
 
 /*--------------------------------------------------------------------------
@@ -45,6 +49,7 @@ typedef union precon_args_union {
 StrArray PreconGetValidKeys(void);
 StrIntMapArray PreconGetValidValues(const char*);
 StrIntMapArray PreconGetValidTypeIntMap(void);
+void PreconSetDefaultArgs(precon_args*);
 
 void PreconSetArgsFromYAML(precon_args*, YAMLnode*); /* TODO: change name to PreconSetArgs */
 void PreconCreate(precon_t, precon_args*, IntArray*, HYPRE_Solver*);

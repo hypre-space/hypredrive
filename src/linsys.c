@@ -26,6 +26,7 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, precon_reuse, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, exec_policy, FieldTypeIntSet)
 };
 
@@ -131,7 +132,19 @@ LinearSystemSetDefaultArgs(LS_args *args)
    args->init_guess_mode = 0;
    args->rhs_mode = 0;
    args->type = 0;
+   args->precon_reuse = 0;
    args->exec_policy = 0;
+   args->num_systems = 1;
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemSetNumSystems
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemSetNumSystems(LS_args *args)
+{
+   args->num_systems = args->last_suffix - args->init_suffix + 1;
 }
 
 /*-----------------------------------------------------------------------------
@@ -164,18 +177,6 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
    int  ls_id  = StatsGetLinearSystemID();
-   int  num_ls = args->last_suffix - args->init_suffix + 1;
-   int  mypid;
-
-   MPI_Comm_rank(comm, &mypid);
-   if (num_ls > 1)
-   {
-      PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
-      if (!mypid)
-      {
-         printf("Solving linear system #%d...\n", ls_id);
-      }
-   }
 
    /* Set matrix filename */
    if (args->matrix_filename[0] != '\0')
@@ -193,6 +194,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    {
       ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       ErrorMsgAddInvalidFilename("");
+      StatsTimerFinish("matrix");
       return;
    }
 
@@ -214,6 +216,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    {
       ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       ErrorMsgAddInvalidFilename(args->matrix_filename);
+      StatsTimerFinish("matrix");
       return;
    }
 
@@ -437,6 +440,8 @@ LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr,
    HYPRE_ParVector   par_x0, par_x;
    void             *obj_x0, *obj_x;
 
+   StatsTimerStart("reset_x0");
+
    /* TODO: implement HYPRE_IJVectorCopy in hypre */
    HYPRE_IJVectorGetObject(x0_ptr, &obj_x0);
    HYPRE_IJVectorGetObject(x_ptr, &obj_x);
@@ -444,6 +449,8 @@ LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr,
    par_x  = (HYPRE_ParVector) obj_x;
 
    HYPRE_ParVectorCopy(par_x0, par_x);
+
+   StatsTimerFinish("reset_x0");
 }
 
 /*-----------------------------------------------------------------------------
@@ -464,7 +471,7 @@ LinearSystemSetPrecMatrix(MPI_Comm comm,
    else
    {
       /* Destroy matrix */
-     if(*precmat_ptr) HYPRE_IJMatrixDestroy(*precmat_ptr);
+      if (*precmat_ptr) HYPRE_IJMatrixDestroy(*precmat_ptr);
 
       HYPRE_IJMatrixRead(args->precmat_filename, comm, HYPRE_PARCSR, precmat_ptr);
    }
@@ -479,6 +486,9 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 {
    char   dofmap_filename[MAX_FILENAME_LENGTH] = {0};
    int    ls_id = StatsGetLinearSystemID();
+
+   /* Destroy pre-existing dofmap */
+   if (*dofmap_ptr) IntArrayDestroy(dofmap_ptr);
 
    if (args->dofmap_filename[0] == '\0' && args->dofmap_basename[0] == '\0')
    {

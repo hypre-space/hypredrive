@@ -35,7 +35,9 @@ typedef struct LS_args_struct {
    HYPRE_Int     init_guess_mode;
    HYPRE_Int     rhs_mode;
    HYPRE_Int     type;
+   HYPRE_Int     precon_reuse;
    HYPRE_Int     exec_policy;
+   HYPRE_Int     num_systems;
 } LS_args;
 
 /*-----------------------------------------------------------------------------
@@ -46,6 +48,7 @@ StrArray LinearSystemGetValidKeys(void);
 StrIntMapArray LinearSystemGetValidValues(const char*);
 
 void LinearSystemSetDefaultArgs(LS_args*);
+void LinearSystemSetNumSystems(LS_args*);
 void LinearSystemSetArgsFromYAML(LS_args*, YAMLnode*);
 void LinearSystemReadMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix*);
 void LinearSystemSetRHS(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector*);

@@ -16,8 +16,8 @@ IntArrayCreate(size_t size)
 {
    IntArray* int_array;
 
-   int_array = (IntArray*) malloc(sizeof(IntArray));
-   int_array->data = (int*) malloc(size * sizeof(int));
+   int_array = malloc(sizeof(IntArray));
+   int_array->data = malloc(size * sizeof(int));
    int_array->size = size;
    int_array->num_unique_entries = 0;
 

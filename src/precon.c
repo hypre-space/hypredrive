@@ -12,6 +12,7 @@ static const FieldOffsetMap precon_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(precon_args, mgr, MGRSetArgs),
    FIELD_OFFSET_MAP_ENTRY(precon_args, ilu, ILUSetArgs),
    FIELD_OFFSET_MAP_ENTRY(precon_args, fsai, FSAISetArgs),
+   FIELD_OFFSET_MAP_ENTRY(precon_args, reuse, FieldTypeIntSet)
 };
 
 #define PRECON_NUM_FIELDS (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
@@ -77,6 +78,16 @@ PreconGetValidTypeIntMap(void)
                              {"fsai", (int) PRECON_FSAI}};
 
    return STR_INT_MAP_ARRAY_CREATE(map);
+}
+
+/*-----------------------------------------------------------------------------
+ * PreconSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+PreconSetDefaultArgs(precon_args *args)
+{
+   args->reuse = 0;
 }
 
 /*-----------------------------------------------------------------------------
