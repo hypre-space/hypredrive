@@ -206,20 +206,19 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t obj)
 {
    if (obj)
    {
-      if (HYPREDRV_InputArgsGetNumLinearSystems(obj) > 0)
-      {
-         PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
-         if (!obj->mypid)
-         {
-            printf("Solving linear system #%d...\n", StatsGetLinearSystemID() + 1);
-         }
-      }
-
       HYPREDRV_LinearSystemReadMatrix(obj);
       HYPREDRV_LinearSystemSetRHS(obj);
       HYPREDRV_LinearSystemSetInitialGuess(obj);
       HYPREDRV_LinearSystemSetPrecMatrix(obj);
       HYPREDRV_LinearSystemReadDofmap(obj);
+
+      PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
+      if (!obj->mypid)
+      {
+         printf("Solving linear system #%d ", StatsGetLinearSystemID());
+         printf("with %lld rows ", LinearSystemMatrixGetNumRows(obj->mat_A));
+         printf("and %lld nonzeros...\n", LinearSystemMatrixGetNumNonzeros(obj->mat_A));
+      }
    }
    else
    {

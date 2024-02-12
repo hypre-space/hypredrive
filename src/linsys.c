@@ -175,8 +175,10 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 {
    StatsTimerStart("matrix");
 
-   char matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int  ls_id  = StatsGetLinearSystemID();
+   char                 matrix_filename[MAX_FILENAME_LENGTH] = {0};
+   int                  ls_id  = StatsGetLinearSystemID();
+   HYPRE_ParCSRMatrix   par_A;
+   void                *obj;
 
    /* Set matrix filename */
    if (args->matrix_filename[0] != '\0')
@@ -223,9 +225,6 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    /* Migrate the matrix? TODO: use IJMatrixMigrate */
    if (args->exec_policy)
    {
-      HYPRE_ParCSRMatrix   par_A;
-      void                *obj;
-
       HYPRE_IJMatrixGetObject(*matrix_ptr, &obj);
       par_A  = (HYPRE_ParCSRMatrix) obj;
 
@@ -233,6 +232,44 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    }
 
    StatsTimerFinish("matrix");
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemMatrixGetNumRows
+ *-----------------------------------------------------------------------------*/
+
+long long int
+LinearSystemMatrixGetNumRows(HYPRE_IJMatrix matrix)
+{
+   HYPRE_ParCSRMatrix   par_A;
+   void                *obj;
+   HYPRE_Int            nrows, ncols;
+
+   HYPRE_IJMatrixGetObject(matrix, &obj);
+   par_A  = (HYPRE_ParCSRMatrix) obj;
+
+   HYPRE_ParCSRMatrixGetDims(par_A, &nrows, &ncols);
+
+   return (long long int) nrows;
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemMatrixGetNumNonzeros
+ *-----------------------------------------------------------------------------*/
+
+long long int
+LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
+{
+   HYPRE_ParCSRMatrix   par_A;
+   void                *obj;
+   HYPRE_Int            nrows, ncols;
+
+   HYPRE_IJMatrixGetObject(matrix, &obj);
+   par_A  = (HYPRE_ParCSRMatrix) obj;
+
+   hypre_ParCSRMatrixSetDNumNonzeros(par_A);
+
+   return (long long int) par_A->d_num_nonzeros;
 }
 
 /*-----------------------------------------------------------------------------

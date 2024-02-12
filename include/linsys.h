@@ -60,5 +60,7 @@ void LinearSystemReadDofmap(MPI_Comm, LS_args*, IntArray**);
 void LinearSystemComputeRHSNorm(HYPRE_IJVector, HYPRE_Complex*);
 void LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector, HYPRE_Complex*);
 
+long long int LinearSystemMatrixGetNumRows(HYPRE_IJMatrix);
+long long int LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix);
 
 #endif /* LINSYS_HEADER */
