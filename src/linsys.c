@@ -11,6 +11,7 @@
 #include "_hypre_IJ_mv.h" /* TODO: remove after implementing IJVectorClone */
 
 static const FieldOffsetMap ls_field_offset_map[] = {
+   FIELD_OFFSET_MAP_ENTRY(LS_args, dirname, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_basename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_filename, FieldTypeStringSet),
@@ -117,6 +118,7 @@ LinearSystemGetValidValues(const char* key)
 void
 LinearSystemSetDefaultArgs(LS_args *args)
 {
+   strcpy(args->dirname, "");
    strcpy(args->matrix_filename, "");
    strcpy(args->matrix_basename, "");
    strcpy(args->precmat_filename, "");
@@ -181,7 +183,16 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    void                *obj;
 
    /* Set matrix filename */
-   if (args->matrix_filename[0] != '\0')
+   if (args->dirname[0] != '\0')
+   {
+      sprintf(matrix_filename, "%*s_%0*d/%*s",
+              (int) strlen(args->dirname),
+              args->dirname, args->digits_suffix,
+              args->init_suffix + ls_id,
+              (int) strlen(args->matrix_filename),
+              args->matrix_filename);
+   }
+   else if (args->matrix_filename[0] != '\0')
    {
       strcpy(matrix_filename, args->matrix_filename);
    }
@@ -322,7 +333,16 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
    else
    {
       /* Set RHS filename */
-      if (args->rhs_filename[0] != '\0')
+      if (args->dirname[0] != '\0')
+      {
+         sprintf(rhs_filename, "%*s_%0*d/%*s",
+                 (int) strlen(args->dirname),
+                 args->dirname, args->digits_suffix,
+                 args->init_suffix + ls_id,
+                 (int) strlen(args->rhs_filename),
+                 args->rhs_filename);
+      }
+      else if (args->rhs_filename[0] != '\0')
       {
          strcpy(rhs_filename, args->rhs_filename);
       }
@@ -408,7 +428,8 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
 
       /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
       void            *obj;
-      HYPRE_ParVector  par_x0;
+      HYPRE_ParVector  par_x0, par_x;
+
       HYPRE_IJVectorGetObject(*x0_ptr, &obj);
       par_x0 = (HYPRE_ParVector) obj;
 
@@ -431,9 +452,6 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
 
          case 4:
             /* Use solution from previous linear solve */
-            void            *obj_x;
-            HYPRE_ParVector  par_x;
-
             HYPRE_IJVectorGetObject(*x_ptr, &obj);
             par_x = (HYPRE_ParVector) obj;
 
@@ -534,7 +552,16 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
    else
    {
       /* Set dofmap filename */
-      if (args->dofmap_filename[0] != '\0')
+      if (args->dirname[0] != '\0')
+      {
+         sprintf(dofmap_filename, "%*s_%0*d/%*s",
+                 (int) strlen(args->dirname),
+                 args->dirname, args->digits_suffix,
+                 args->init_suffix + ls_id,
+                 (int) strlen(args->dofmap_filename),
+                 args->dofmap_filename);
+      }
+      else if (args->dofmap_filename[0] != '\0')
       {
          strcpy(dofmap_filename, args->dofmap_filename);
       }

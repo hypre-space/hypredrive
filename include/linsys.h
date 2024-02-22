@@ -20,6 +20,7 @@
  *--------------------------------------------------------------------------*/
 
 typedef struct LS_args_struct {
+   char          dirname[MAX_FILENAME_LENGTH];
    char          matrix_filename[MAX_FILENAME_LENGTH];
    char          matrix_basename[MAX_FILENAME_LENGTH];
    char          precmat_filename[MAX_FILENAME_LENGTH];
