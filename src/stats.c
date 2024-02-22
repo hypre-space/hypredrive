@@ -289,5 +289,5 @@ StatsSetLastSolve(void)
 bool
 StatsGetLastSolve(void)
 {
-   global_stats->last_solve;
+   return global_stats->last_solve;
 }
