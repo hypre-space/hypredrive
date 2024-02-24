@@ -56,7 +56,5 @@ void StatsPrint(int);
 int  StatsGetLinearSystemID(void);
 void StatsSetNumReps(int);
 void StatsSetNumLinearSystems(int);
-void StatsSetLastSolve(void);
-bool StatsGetLastSolve(void);
 
 #endif /* STATS_HEADER */
