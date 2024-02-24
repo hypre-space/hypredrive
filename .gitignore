@@ -7,7 +7,7 @@
 .dirstamp
 *.~HEAD~*
 old-*
-bkp/
+*bkp*
 build.sh
 *.tar.gz
 .gdbinit
