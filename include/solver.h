@@ -51,7 +51,7 @@ StrIntMapArray SolverGetValidTypeIntMap(void);
 
 void SolverSetArgsFromYAML(solver_args*, YAMLnode*);
 void SolverCreate(MPI_Comm, solver_t, solver_args*, HYPRE_Solver*);
-void SolverSetup(precon_t, solver_t, HYPRE_Solver, HYPRE_Solver,
+void SolverSetup(precon_t, solver_t, HYPRE_Precon, HYPRE_Solver,
                  HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector);
 void SolverApply(solver_t, HYPRE_Solver, HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector);
 void SolverDestroy(solver_t, HYPRE_Solver*);

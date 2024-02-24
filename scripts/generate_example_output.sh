@@ -1,6 +1,13 @@
 #!/bin/bash
+#/******************************************************************************
+#* Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+#* HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#*
+#* SPDX-License-Identifier: MIT
+#******************************************************************************/
 #
-# This script generates the reference output for the configurations listed in the examples folder
+# This script generates the reference output for the configurations
+# listed in the examples folder
 #
 
 generate_output() {

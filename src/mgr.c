@@ -410,7 +410,7 @@ MGRSetDofmap(MGR_args *args, IntArray *dofmap)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
+MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
 {
    HYPRE_Solver   precon;
    HYPRE_Solver   csolver;
@@ -503,8 +503,9 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, csolver);
    }
 
-   /* Set output pointer */
-   *precon_ptr = precon;
+   /* Set output pointers */
+   *precon_ptr  = precon;
+   *csolver_ptr = csolver;
 
    /* Free memory */
    free(inactive_dofs);

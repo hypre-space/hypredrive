@@ -46,10 +46,12 @@ typedef struct precon_args_struct {
  * Generic preconditioner struct
  *--------------------------------------------------------------------------*/
 
-typedef struct HYPRE_Precon_struct {
-   HYPRE_Solver     precon;
+typedef struct hypre_Precon_struct {
+   HYPRE_Solver     main;
    HYPRE_Solver     aux;
-} HYPRE_Precon;
+} hypre_Precon;
+
+typedef hypre_Precon *HYPRE_Precon;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
@@ -61,7 +63,7 @@ StrIntMapArray PreconGetValidTypeIntMap(void);
 void PreconSetDefaultArgs(precon_args*);
 
 void PreconSetArgsFromYAML(precon_args*, YAMLnode*); /* TODO: change name to PreconSetArgs */
-void PreconCreate(precon_t, precon_args*, IntArray*, HYPRE_Solver*);
-void PreconDestroy(precon_t, HYPRE_Solver*);
+void PreconCreate(precon_t, precon_args*, IntArray*, HYPRE_Precon*);
+void PreconDestroy(precon_t, precon_args*, HYPRE_Precon*);
 
 #endif /* PRECON_HEADER */

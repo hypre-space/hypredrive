@@ -128,7 +128,7 @@ SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args, HYPRE_Sol
 
 void
 SolverSetup(precon_t precon_method, solver_t solver_method,
-            HYPRE_Solver precon, HYPRE_Solver solver,
+            HYPRE_Precon precon, HYPRE_Solver solver,
             HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x)
 {
    StatsTimerStart("prec");
@@ -155,7 +155,7 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
          HYPRE_ParCSRPCGSetPrecond(solver,
                                    solve_ptrs[precon_method],
                                    setup_ptrs[precon_method],
-                                   precon);
+                                   precon->main);
          HYPRE_ParCSRPCGSetup(solver, par_M, par_b, par_x);
          break;
 
@@ -163,7 +163,7 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
          HYPRE_ParCSRGMRESSetPrecond(solver,
                                      solve_ptrs[precon_method],
                                      setup_ptrs[precon_method],
-                                     precon);
+                                     precon->main);
          HYPRE_ParCSRGMRESSetup(solver, par_M, par_b, par_x);
          break;
 
@@ -171,7 +171,7 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
          HYPRE_ParCSRFlexGMRESSetPrecond(solver,
                                          solve_ptrs[precon_method],
                                          setup_ptrs[precon_method],
-                                         precon);
+                                         precon->main);
          HYPRE_ParCSRFlexGMRESSetup(solver, par_M, par_b, par_x);
          break;
 
@@ -179,7 +179,7 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
          HYPRE_ParCSRBiCGSTABSetPrecond(solver,
                                         solve_ptrs[precon_method],
                                         setup_ptrs[precon_method],
-                                        precon);
+                                        precon->main);
          HYPRE_ParCSRBiCGSTABSetup(solver, par_M, par_b, par_x);
          break;
 
