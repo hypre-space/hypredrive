@@ -12,14 +12,14 @@ static Stats *global_stats = NULL;
 
 /* Local macros */
 #define REALLOC_EXPAND_FACTOR 16
-#define REALLOC(_d, _t, _e, _n) \
+#define REALLOC(_d, _t, _e) \
    do { \
-      if (((_t)->size[(_n)] + 1) >= (_t)->capacity[(_n)]) \
+      if (((_t)->counter + 1) >= (_t)->capacity) \
       { \
-         (_t)->capacity[(_n)] += REALLOC_EXPAND_FACTOR; \
-         _d *ptr = (_d*) realloc((void*) (_t)->_e, (_t)->capacity[(_n)] * sizeof(_d)); \
-         memset(ptr + (_t)->capacity[(_n)] - REALLOC_EXPAND_FACTOR, 0, \
-         REALLOC_EXPAND_FACTOR * sizeof(_d)); \
+         (_t)->capacity += REALLOC_EXPAND_FACTOR; \
+         _d *ptr = (_d*) realloc((void*) (_t)->_e, (_t)->capacity * sizeof(_d)); \
+         memset(ptr + (_t)->capacity - REALLOC_EXPAND_FACTOR, 0, \
+                REALLOC_EXPAND_FACTOR * sizeof(_d)); \
          (_t)->_e = (ptr) ? ptr : (_t)->_e; \
       } \
    } while (0);
@@ -27,34 +27,34 @@ static Stats *global_stats = NULL;
    if (!strcmp(name, #_e)) { global_stats->_e -= MPI_Wtime(); return; }
 #define STATS_TIMES_FINISH_ENTRY(_e) \
    if (!strcmp(name, #_e)) { global_stats->_e += MPI_Wtime(); return; }
-#define STATS_TIMES_START_VEC_ENTRY(_e, _n) \
+#define STATS_TIMES_START_VEC_ENTRY(_e) \
    if (!strcmp(name, #_e)) \
    { \
-      REALLOC(double, global_stats, _e, _n) \
-      global_stats->_e[global_stats->size[(_n)]++] -= MPI_Wtime(); \
+      REALLOC(double, global_stats, _e) \
+      global_stats->_e[global_stats->counter] -= MPI_Wtime(); \
       return; \
    }
-#define STATS_TIMES_FINISH_VEC_ENTRY(_e, _n) \
+#define STATS_TIMES_FINISH_VEC_ENTRY(_e) \
    if (!strcmp(name, #_e)) \
    { \
-      global_stats->_e[global_stats->size[(_n)] - 1] += MPI_Wtime(); \
+      global_stats->_e[global_stats->counter] += MPI_Wtime(); \
       return; \
    }
-#define STATS_TIMES_PRINT_DIVISOR() \
+#define STATS_PRINT_DIVISOR() \
    printf("+------------"); \
    for (size_t i = 0; i < 4; i++) printf("+-------------"); \
    printf("+-------------+\n");
-#define STATS_TIMES_PRINT_HEADER(_t, _b) \
+#define STATS_PRINT_HEADER(_t, _b) \
    printf("|%11s ", _t[0]); \
    for (size_t i = 1; i < 6; i++) printf("|%12s ", _t[i]); \
    printf("|\n"); \
    printf("|%11s ", _b[0]); \
    for (size_t i = 1; i < 6; i++) printf("|%12s ", _b[i]); \
    printf("|\n");
-#define STATS_TIMES_PRINT_ENTRY(_t, _n) \
-   if (!(_n % ((_t)->size[4] / (_t)->ls_counter))) \
+#define STATS_PRINT_ENTRY(_t, _n) \
+   if (!(_n % (((_t)->counter + 1) / (_t)->num_systems))) \
    { \
-      printf("| %10ld | %11.2e | %11.2e | %11.2e | %11.2e |  %10d |\n", \
+      printf("| %10ld | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", \
              (_n), (_t)->dofmap[(_n)] + (_t)->matrix[(_n)] + (_t)->rhs[(_n)], \
              (_t)->prec[(_n)], (_t)->solve[(_n)], (_t)->rrnorms[(_n)], \
              (_t)->iters[(_n)]); \
@@ -62,7 +62,7 @@ static Stats *global_stats = NULL;
    else \
    { \
       printf("| %10ld |             |", (_n)); \
-      printf(" %11.2e | %11.2e | %11.2e |  %10d |\n", \
+      printf(" %11.3f | %11.3f | %11.2e |  %10d |\n", \
              (_t)->prec[(_n)], (_t)->solve[(_n)], \
              (_t)->rrnorms[(_n)], (_t)->iters[(_n)]); \
    }
@@ -71,34 +71,38 @@ static Stats *global_stats = NULL;
  * StatsCreate
  *--------------------------------------------------------------------------*/
 
-Stats*
-StatsCreate(int capacity)
+void
+StatsCreate(void)
 {
-   Stats *stats = (Stats*) malloc(sizeof(Stats));
+   int capacity = REALLOC_EXPAND_FACTOR;
 
-   for (size_t i = 0; i < STATS_NUM_ENTRIES; i++)
-   {
-      stats->capacity[i] = capacity;
-      stats->size[i]     = 0;
-   }
-   stats->ls_counter = 0;
+   if (global_stats) return;
 
-   /* Library initialization/finalization */
-   stats->initialize = 0.0;
-   stats->finalize   = 0.0;
+   global_stats = (Stats*) malloc(sizeof(Stats));
+
+   global_stats->capacity    = capacity;
+   global_stats->counter     = 0;
+   global_stats->reps        = 0;
+   global_stats->num_reps    = 1;
+   global_stats->num_systems = 1;
+   global_stats->ls_counter  = 0;
+
+   /* Overall timers */
+   global_stats->initialize  = 0.0;
+   global_stats->finalize    = 0.0;
+   global_stats->reset_x0    = 0.0;
+   global_stats->last_solve  = false;
 
    /* Linear system loading (1st stage) */
-   stats->dofmap  = (double*) calloc(stats->capacity[0], sizeof(double));
-   stats->matrix  = (double*) calloc(stats->capacity[1], sizeof(double));
-   stats->rhs     = (double*) calloc(stats->capacity[2], sizeof(double));
+   global_stats->dofmap      = (double*) calloc(capacity, sizeof(double));
+   global_stats->matrix      = (double*) calloc(capacity, sizeof(double));
+   global_stats->rhs         = (double*) calloc(capacity, sizeof(double));
 
    /* Linear system solution (2nd stage) */
-   stats->iters   = (int*)    calloc(stats->capacity[3], sizeof(int));
-   stats->prec    = (double*) calloc(stats->capacity[4], sizeof(double));
-   stats->solve   = (double*) calloc(stats->capacity[5], sizeof(double));
-   stats->rrnorms = (double*) calloc(stats->capacity[6], sizeof(double));
-
-   return stats;
+   global_stats->iters       = (int*)    calloc(capacity, sizeof(int));
+   global_stats->prec        = (double*) calloc(capacity, sizeof(double));
+   global_stats->solve       = (double*) calloc(capacity, sizeof(double));
+   global_stats->rrnorms     = (double*) calloc(capacity, sizeof(double));
 }
 
 /*--------------------------------------------------------------------------
@@ -131,22 +135,27 @@ StatsDestroy(Stats **stats_ptr)
 void
 StatsTimerStart(const char *name)
 {
-   if (!global_stats)
+   /* Increase internal counters */
+   if (!strcmp(name, "reset_x0"))
    {
-      global_stats = StatsCreate(16);
+      global_stats->reps++;
+      global_stats->counter = (global_stats->ls_counter - 1) * global_stats->num_reps +
+                              (global_stats->reps - 1);
    }
-
-   /* Linear system loading counter (1st stage) */
-   if (!strcmp(name, "matrix"))
+   else if (!strcmp(name, "matrix"))
    {
+      global_stats->reps = 0;
       global_stats->ls_counter++;
+      global_stats->counter = (global_stats->ls_counter - 1) * global_stats->num_reps;
    }
 
-   STATS_TIMES_START_VEC_ENTRY(matrix, 0)
-   STATS_TIMES_START_VEC_ENTRY(rhs,    1)
-   STATS_TIMES_START_VEC_ENTRY(dofmap, 2)
-   STATS_TIMES_START_VEC_ENTRY(prec,   3)
-   STATS_TIMES_START_VEC_ENTRY(solve,  4)
+   /* Compute entry counter */
+   STATS_TIMES_START_VEC_ENTRY(matrix)
+   STATS_TIMES_START_VEC_ENTRY(rhs)
+   STATS_TIMES_START_VEC_ENTRY(dofmap)
+   STATS_TIMES_START_VEC_ENTRY(prec)
+   STATS_TIMES_START_VEC_ENTRY(solve)
+   STATS_TIMES_START_ENTRY(reset_x0)
    STATS_TIMES_START_ENTRY(initialize)
    STATS_TIMES_START_ENTRY(finalize)
 
@@ -161,13 +170,12 @@ StatsTimerStart(const char *name)
 void
 StatsTimerFinish(const char *name)
 {
-   if (!global_stats) return;
-
-   STATS_TIMES_FINISH_VEC_ENTRY(matrix, 0)
-   STATS_TIMES_FINISH_VEC_ENTRY(rhs,    1)
-   STATS_TIMES_FINISH_VEC_ENTRY(dofmap, 2)
-   STATS_TIMES_FINISH_VEC_ENTRY(prec,   3)
-   STATS_TIMES_FINISH_VEC_ENTRY(solve,  4)
+   STATS_TIMES_FINISH_VEC_ENTRY(matrix)
+   STATS_TIMES_FINISH_VEC_ENTRY(rhs)
+   STATS_TIMES_FINISH_VEC_ENTRY(dofmap)
+   STATS_TIMES_FINISH_VEC_ENTRY(prec)
+   STATS_TIMES_FINISH_VEC_ENTRY(solve)
+   STATS_TIMES_FINISH_ENTRY(reset_x0)
    STATS_TIMES_FINISH_ENTRY(initialize)
    STATS_TIMES_FINISH_ENTRY(finalize)
 
@@ -182,10 +190,8 @@ StatsTimerFinish(const char *name)
 void
 StatsIterSet(int num_iters)
 {
-   if (!global_stats) return;
-
-   REALLOC(int, global_stats, iters, 5);
-   global_stats->iters[global_stats->size[5]++] = num_iters;
+   REALLOC(int, global_stats, iters);
+   global_stats->iters[global_stats->counter] = num_iters;
 }
 
 /*--------------------------------------------------------------------------
@@ -195,10 +201,8 @@ StatsIterSet(int num_iters)
 void
 StatsRelativeResNormSet(double rrnorm)
 {
-   if (!global_stats) return;
-
-   REALLOC(double, global_stats, rrnorms, 6);
-   global_stats->rrnorms[global_stats->size[6]++] = rrnorm;
+   REALLOC(double, global_stats, rrnorms);
+   global_stats->rrnorms[global_stats->counter] = rrnorm;
 }
 
 /*--------------------------------------------------------------------------
@@ -220,20 +224,70 @@ StatsPrint(int print_level)
    PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
    printf("\n\nSTATISTICS SUMMARY:\n\n");
 
-   STATS_TIMES_PRINT_DIVISOR()
-   STATS_TIMES_PRINT_HEADER(top, bottom)
-   STATS_TIMES_PRINT_DIVISOR()
+   STATS_PRINT_DIVISOR()
+   STATS_PRINT_HEADER(top, bottom)
+   STATS_PRINT_DIVISOR()
 
-   /* Print the timings for each entry in the array */
-   for (size_t i = 0; i < global_stats->size[6]; i++)
+   /* Print statistics for each entry in the array */
+   for (size_t i = 0; i < global_stats->counter + 1; i++)
    {
-      STATS_TIMES_PRINT_ENTRY(global_stats, i);
+      //printf("%f %f %f\n", global_stats->dofmap[i], global_stats->matrix[i], global_stats->rhs[i]);
+      STATS_PRINT_ENTRY(global_stats, i);
    }
 
-   /* Printing a divisor line */
-   STATS_TIMES_PRINT_DIVISOR()
+   STATS_PRINT_DIVISOR()
    printf("\n");
 
    /* Destroy global stats variable */
    StatsDestroy(&global_stats);
+}
+
+/*--------------------------------------------------------------------------
+ * StatsGetLinearSystemID
+ *--------------------------------------------------------------------------*/
+
+int
+StatsGetLinearSystemID(void)
+{
+   return global_stats->ls_counter - 1;
+}
+
+/*--------------------------------------------------------------------------
+ * StatsSetNumReps
+ *--------------------------------------------------------------------------*/
+
+void
+StatsSetNumReps(int num_reps)
+{
+   global_stats->num_reps = num_reps;
+}
+
+/*--------------------------------------------------------------------------
+ * StatsSetNumSystems
+ *--------------------------------------------------------------------------*/
+
+void
+StatsSetNumLinearSystems(int num_systems)
+{
+   global_stats->num_systems = num_systems;
+}
+
+/*--------------------------------------------------------------------------
+ * StatsSetLastSolve
+ *--------------------------------------------------------------------------*/
+
+void
+StatsSetLastSolve(void)
+{
+   global_stats->last_solve = true;
+}
+
+/*--------------------------------------------------------------------------
+ * StatsGetLastSolve
+ *--------------------------------------------------------------------------*/
+
+bool
+StatsGetLastSolve(void)
+{
+   return global_stats->last_solve;
 }

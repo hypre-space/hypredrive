@@ -18,7 +18,7 @@ PrintUsage(const char *argv0)
 int main(int argc, char **argv)
 {
    MPI_Comm      comm = MPI_COMM_WORLD;
-   int           myid, i;
+   int           myid, nprocs, i, k;
    HYPREDRV_t    obj;
 
    /*-----------------------------------------------------------
@@ -27,6 +27,7 @@ int main(int argc, char **argv)
 
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
+   MPI_Comm_size(comm, &nprocs);
    HYPRE_Initialize();
    HYPRE_DeviceInitialize();
    HYPREDRV_Create(comm, &obj);
@@ -42,6 +43,7 @@ int main(int argc, char **argv)
     *-----------------------------------------------------------*/
 
    if (!myid) HYPREDRV_PrintLibInfo();
+   if (!myid) printf("Running on %d MPI rank%s\n", nprocs, nprocs > 1 ? "s" : "");
 
    /*-----------------------------------------------------------
     * Parse input parameters
@@ -50,42 +52,43 @@ int main(int argc, char **argv)
    HYPREDRV_InputArgsParse(argc, argv, obj);
 
    /*-----------------------------------------------------------
-    * Set hypre's global options
+    * Set hypre's global options and warmup
     *-----------------------------------------------------------*/
 
    HYPREDRV_SetGlobalOptions(obj);
-
-   /*-----------------------------------------------------------
-    * Build and solve linear system(s)
-    *-----------------------------------------------------------*/
-
    if (HYPREDRV_InputArgsGetWarmup(obj))
    {
       printf("TODO: Perform warmup");
    }
 
-   /* Build linear system (matrix, RHS, LHS, and auxiliary data) */
-   HYPREDRV_LinearSystemBuild(obj);
+   /*-----------------------------------------------------------
+    * Build and solve linear system(s)
+    *-----------------------------------------------------------*/
 
-   /* Solve linear system */
-   for (i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
+   for (k = 0; k < HYPREDRV_InputArgsGetNumLinearSystems(obj); k++)
    {
-      /* Reset initial guess */
-      HYPREDRV_LinearSystemResetInitialGuess(obj);
+      /* Build linear system (matrix, RHS, LHS, and auxiliary data) */
+      HYPREDRV_LinearSystemBuild(obj);
 
-      /* Create phase */
-      HYPREDRV_PreconCreate(obj);
-      HYPREDRV_LinearSolverCreate(obj);
+      for (i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
+      {
+         /* Reset initial guess */
+         HYPREDRV_LinearSystemResetInitialGuess(obj);
 
-      /* Setup phase */
-      HYPREDRV_LinearSolverSetup(obj);
+         /* Create phase */
+         HYPREDRV_PreconCreate(obj);
+         HYPREDRV_LinearSolverCreate(obj);
 
-      /* Solve phase */
-      HYPREDRV_LinearSolverApply(obj);
+         /* Setup phase */
+         HYPREDRV_LinearSolverSetup(obj);
 
-      /* Destroy phase */
-      HYPREDRV_PreconDestroy(obj);
-      HYPREDRV_LinearSolverDestroy(obj);
+         /* Solve phase */
+         HYPREDRV_LinearSolverApply(obj);
+
+         /* Destroy phase */
+         HYPREDRV_PreconDestroy(obj);
+         HYPREDRV_LinearSolverDestroy(obj);
+      }
    }
 
    /*-----------------------------------------------------------

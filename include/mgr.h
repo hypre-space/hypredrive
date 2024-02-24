@@ -91,6 +91,5 @@ typedef struct MGR_args_struct {
 void MGRSetArgs(void*, YAMLnode*);
 void MGRSetDofmap(MGR_args*, IntArray*);
 void MGRCreate(MGR_args*, HYPRE_Solver*);
-void MGRDestroyArgs(MGR_args**);
 
 #endif /* MGR_HEADER */

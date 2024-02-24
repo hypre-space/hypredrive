@@ -230,9 +230,9 @@ YAMLnodeCreate(char *key, char* val, int level)
    node->children   = NULL;
    node->next       = NULL;
 
-   /* If the key contains "filename", "node->val" will be the same as "val".
+   /* If the key contains ('filename', 'basename'), "node->val" will be the same as "val".
       Otherwise, "node->val" will be set as "val" with all lowercase letters */
-   if (strstr(key, "filename") != NULL)
+   if (strstr(key, "filename") || strstr(key, "basename"))
    {
       node->val     = StrTrim(strdup(val));
    }

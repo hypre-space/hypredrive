@@ -713,4 +713,5 @@ code block below:
    MGR cannot be fully defined by the ``mgr`` keyword only. Instead, it is also necessary
    to specify which types of degrees of freedom are treated as F points in each MGR level,
    i.e., the last level where a degree of freedom of a given type is present. This is done
-   via the ``f_dofs`` keyword.
+   via the ``f_dofs`` keyword. For a minimal MGR configuration input example, see
+   :ref:`Example3`.

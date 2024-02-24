@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "mgr.h"
+#include "stats.h"
 #include "gen_macros.h"
 
 #define MGRcls_FIELDS(_prefix) \
@@ -368,24 +369,6 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
 }
 
 /*-----------------------------------------------------------------------------
- * MGRDestroyArgs
- *-----------------------------------------------------------------------------*/
-
-void
-MGRDestroyArgs(MGR_args **args_ptr)
-{
-   MGR_args *args;
-
-   args = *args_ptr;
-   for (int i = 0; i < args->num_levels - 1; i++)
-   {
-      IntArrayDestroy(&args->level[i].f_dofs);
-   }
-
-   *args_ptr = NULL;
-}
-
-/*-----------------------------------------------------------------------------
  * MGRConvertArgInt
  *-----------------------------------------------------------------------------*/
 
@@ -528,5 +511,9 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
       free(c_dofs[lvl]);
+      if (StatsGetLastSolve())
+      {
+         IntArrayDestroy(&args->level[i].f_dofs);
+      }
    }
 }

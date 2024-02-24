@@ -22,9 +22,13 @@
  *--------------------------------------------------------------------------*/
 
 typedef struct Stats_struct {
-   int       capacity[STATS_NUM_ENTRIES];
-   int       size[STATS_NUM_ENTRIES];
+   int       capacity;
+   int       counter;
+   int       reps;
    int       ls_counter;
+   int       num_reps;
+   int       num_systems;
+   bool      last_solve;
 
    double   *matrix;
    double   *rhs;
@@ -37,16 +41,23 @@ typedef struct Stats_struct {
 
    double    initialize;
    double    finalize;
+   double    reset_x0;
 } Stats;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
+void StatsCreate(void);
 void StatsTimerStart(const char*);
 void StatsTimerFinish(const char*);
 void StatsIterSet(int);
 void StatsRelativeResNormSet(double);
 void StatsPrint(int);
+int  StatsGetLinearSystemID(void);
+void StatsSetNumReps(int);
+void StatsSetNumLinearSystems(int);
+void StatsSetLastSolve(void);
+bool StatsGetLastSolve(void);
 
 #endif /* STATS_HEADER */

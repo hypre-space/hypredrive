@@ -275,6 +275,32 @@ int
 HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj);
 
 /**
+ * @brief Retrieve the number of linear systems from a HYPREDRV object.
+ *
+ * This function accesses the HYPREDRV object's input arguments structure to retrieve
+ * the number of linear systems being solved.
+ *
+ * @param obj The HYPREDRV_t object from which the number of repetitions is to be retrieved.
+ *
+ * @return Returns the number of linear systems as an integer. If the input object is NULL
+ * or not properly initialized, the function returns -1 to indicate an error or invalid state.
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_t obj;
+ *    // ... (obj is created, and its input arguments are set) ...
+ *    int numLinearSystems = HYPREDRV_InputArgsGetNumLinearSystems(obj);
+ *    if (numLinearSystems != -1) {
+ *        printf("Number of linear systems: %d\n", numLinearSystems);
+ *        // Use numRepetitions as needed ...
+ *    }
+ * @endcode
+ */
+
+int
+HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t obj);
+
+/**
  * @brief Build the linear system (matrix, RHS, and LHS) according to the YAML input passed to
  * the HYPREDRV object.
  *

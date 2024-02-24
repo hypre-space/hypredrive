@@ -54,9 +54,27 @@ CheckBinaryDataExists(const char* prefix)
    FILE  *fp;
 
    /* Check if binary data exist */
-   sprintf(filename, "%s.00000.bin", prefix);
+   sprintf(filename, "%*s.00000.bin", (int) strlen(prefix), prefix);
    is_binary = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp) fclose(fp);
 
    return is_binary;
+}
+
+/*-----------------------------------------------------------------------------
+ * ComputeNumberOfDigits
+ *-----------------------------------------------------------------------------*/
+
+int
+ComputeNumberOfDigits(int number)
+{
+   int ndigits = 0;
+
+   while (number)
+   {
+      number /= 10;
+      ndigits++;
+   }
+
+   return ndigits;
 }
