@@ -79,7 +79,8 @@ LinearSystemGetValidValues(const char* key)
    if (!strcmp(key, "type"))
    {
       static StrIntMap map[] = {{"ij",     1},
-                                {"parcsr", 2}};
+                                {"parcsr", 2},
+                                {"mtx",    3}};
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    else if (!strcmp(key, "rhs_mode"))
@@ -133,7 +134,7 @@ LinearSystemSetDefaultArgs(LS_args *args)
    args->last_suffix = -1;
    args->init_guess_mode = 0;
    args->rhs_mode = 0;
-   args->type = 0;
+   args->type = 1;
    args->precon_reuse = 0;
    args->exec_policy = 0;
    args->num_systems = 1;
@@ -182,6 +183,9 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    HYPRE_ParCSRMatrix   par_A;
    void                *obj;
 
+   /* Destroy matrix if it already exists */
+   if (*matrix_ptr) HYPRE_IJMatrixDestroy(*matrix_ptr);
+
    /* Set matrix filename */
    if (args->dirname[0] != '\0')
    {
@@ -211,17 +215,21 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       return;
    }
 
-   /* Destroy matrix */
-   if (*matrix_ptr) HYPRE_IJMatrixDestroy(*matrix_ptr);
-
    /* Read matrix */
-   if (CheckBinaryDataExists(matrix_filename))
+   if (args->type == 1)
    {
-      HYPRE_IJMatrixReadBinary(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+      if (CheckBinaryDataExists(matrix_filename))
+      {
+         HYPRE_IJMatrixReadBinary(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+      }
+      else
+      {
+         HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+      }
    }
-   else
+   else if (args->type == 3)
    {
-      HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+      HYPRE_IJMatrixReadMM(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
    }
 
    /* Check if hypre had problems reading the input file */
