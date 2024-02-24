@@ -24,7 +24,7 @@ extern "C" {
 /**
  * @defgroup HYPREDRV
  *
- * Public APIs to solve linear systems with hypre through hypredrive
+ * @brief Public APIs to solve linear systems with hypre through hypredrive
  *
  * @{
  **/
@@ -40,6 +40,53 @@ extern "C" {
 
 struct hypredrv_struct;
 typedef struct hypredrv_struct* HYPREDRV_t;
+
+/**
+ * @brief Initializes the HYPREDRV library.
+ *
+ * Initializes the HYPREDRV library for use in the application. This function sets up the necessary
+ * environment for the HYPREDRV library by initializing the HYPRE library and its device-specific
+ * components. It ensures that initialization occurs only once even if called multiple times.
+ *
+ * @note This function must be called after MPI_Init and before any other HYPREDRV functions are used.
+ * It is safe to call this function multiple times; only the first call will perform the initialization.
+ *
+ * @code
+ * int main(int argc, char **argv) {
+ *     MPI_Init(&argc, &argv);
+ *     HYPREDRV_Initialize();
+ *     // Application code here
+ *     HYPREDRV_Finalize();
+ *     MPI_Finalize();
+ *     return 0;
+ * }
+ * @endcode
+ */
+void HYPREDRV_Initialize(void);
+
+/**
+ * @brief Finalizes the HYPREDRV library.
+ *
+ * Cleans up and releases any resources allocated by the HYPREDRV library. This function finalizes
+ * the HYPRE library and its device-specific components. It should be the last HYPREDRV-related
+ * function called before the application exits.
+ *
+ * @note This function should be called before MPI_Finalize. It is safe to call this function
+ * even if HYPREDRV_Initialize was not successfully called or was not called at all; in such cases,
+ * the function will have no effect.
+ *
+ * @code
+ * int main(int argc, char **argv) {
+ *     MPI_Init(&argc, &argv);
+ *     HYPREDRV_Initialize();
+ *     // Application code here
+ *     HYPREDRV_Finalize();
+ *     MPI_Finalize();
+ *     return 0;
+ * }
+ * @endcode
+ */
+void HYPREDRV_Finalize(void);
 
 /**
  * @brief Create a HYPREDRV object.

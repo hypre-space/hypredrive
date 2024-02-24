@@ -109,21 +109,21 @@ StatsCreate(void)
  *--------------------------------------------------------------------------*/
 
 void
-StatsDestroy(Stats **stats_ptr)
+StatsDestroy(void)
 {
-   if (*stats_ptr)
+   if (global_stats)
    {
-      free((*stats_ptr)->dofmap);
-      free((*stats_ptr)->matrix);
-      free((*stats_ptr)->rhs);
+      free((global_stats)->dofmap);
+      free((global_stats)->matrix);
+      free((global_stats)->rhs);
 
-      free((*stats_ptr)->iters);
-      free((*stats_ptr)->prec);
-      free((*stats_ptr)->solve);
-      free((*stats_ptr)->rrnorms);
+      free((global_stats)->iters);
+      free((global_stats)->prec);
+      free((global_stats)->solve);
+      free((global_stats)->rrnorms);
 
-      free(*stats_ptr);
-      *stats_ptr = NULL;
+      free(global_stats);
+      global_stats = NULL;
    }
 }
 
@@ -216,7 +216,6 @@ StatsPrint(int print_level)
 
    if (!global_stats || print_level < 1)
    {
-      StatsDestroy(&global_stats);
       return;
    }
 
@@ -230,15 +229,11 @@ StatsPrint(int print_level)
    /* Print statistics for each entry in the array */
    for (size_t i = 0; i < global_stats->counter + 1; i++)
    {
-      //printf("%f %f %f\n", global_stats->dofmap[i], global_stats->matrix[i], global_stats->rhs[i]);
       STATS_PRINT_ENTRY(global_stats, i);
    }
 
    STATS_PRINT_DIVISOR()
    printf("\n");
-
-   /* Destroy global stats variable */
-   StatsDestroy(&global_stats);
 }
 
 /*--------------------------------------------------------------------------

@@ -11,6 +11,8 @@
 #include "info.h"
 #include "stats.h"
 
+static bool is_initialized = 0;
+
 /*-----------------------------------------------------------------------------
  * hypredrv_t data type
  *-----------------------------------------------------------------------------*/
@@ -34,6 +36,37 @@ typedef struct hypredrv_struct {
 } hypredrv_t;
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_Initialize
+ *-----------------------------------------------------------------------------*/
+
+void
+HYPREDRV_Initialize()
+{
+   if (!is_initialized)
+   {
+      /* Initialize hypre */
+      HYPRE_Initialize();
+      HYPRE_DeviceInitialize();
+
+      is_initialized = true;
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_Finalize
+ *-----------------------------------------------------------------------------*/
+
+void
+HYPREDRV_Finalize()
+{
+   if (is_initialized)
+   {
+      HYPRE_Finalize();
+      is_initialized = false;
+   }
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_Create
  *-----------------------------------------------------------------------------*/
 
@@ -53,10 +86,10 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr)
    obj->vec_x0 = NULL;
    obj->dofmap = NULL;
 
-   /* TODO: move to HYPREDRV_Initialize */
-   StatsCreate();
-
    *obj_ptr    = obj;
+
+   /* Create global statistics object */
+   StatsCreate();
 
    return ErrorCodeGet();
 }
@@ -83,6 +116,9 @@ HYPREDRV_Destroy(HYPREDRV_t *obj_ptr)
       IntArrayDestroy(&obj->dofmap);
 
       InputArgsDestroy(&obj->iargs);
+
+      /* Destroy global stats variable */
+      StatsDestroy();
 
       free(*obj_ptr);
       *obj_ptr = NULL;

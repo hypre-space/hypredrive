@@ -28,8 +28,7 @@ int main(int argc, char **argv)
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
-   HYPRE_Initialize();
-   HYPRE_DeviceInitialize();
+   HYPREDRV_Initialize();
    HYPREDRV_Create(comm, &obj);
 
    if (argc < 1)
@@ -99,7 +98,7 @@ int main(int argc, char **argv)
    if (!myid) HYPREDRV_PrintExitInfo(argv[0]);
 
    HYPREDRV_Destroy(&obj);
-   HYPRE_Finalize();
+   HYPREDRV_Finalize();
    MPI_Finalize();
 
    return EXIT_SUCCESS;
