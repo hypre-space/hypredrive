@@ -29,7 +29,7 @@ typedef struct hypredrv_struct {
    HYPRE_IJVector   vec_x;
    HYPRE_IJVector   vec_x0;
 
-   HYPRE_Solver     precon;
+   HYPRE_Precon     precon;
    HYPRE_Solver     solver;
 } hypredrv_t;
 

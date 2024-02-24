@@ -43,6 +43,15 @@ typedef struct precon_args_struct {
 } precon_args;
 
 /*--------------------------------------------------------------------------
+ * Generic preconditioner struct
+ *--------------------------------------------------------------------------*/
+
+typedef struct HYPRE_Precon_struct {
+   HYPRE_Solver     precon;
+   HYPRE_Solver     aux;
+} HYPRE_Precon;
+
+/*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
