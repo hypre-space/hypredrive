@@ -29,7 +29,7 @@ typedef struct hypredrv_struct {
    HYPRE_IJVector   vec_x;
    HYPRE_IJVector   vec_x0;
 
-   HYPRE_Solver     precon;
+   HYPRE_Precon     precon;
    HYPRE_Solver     solver;
 } hypredrv_t;
 
@@ -415,11 +415,6 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj)
       {
          SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method,
                      obj->precon, obj->solver, obj->mat_M, obj->vec_b, obj->vec_x);
-
-         if (ls_id == (num_ls - reuse))
-         {
-            StatsSetLastSolve();
-         }
       }
    }
    else
@@ -462,7 +457,7 @@ HYPREDRV_PreconDestroy(HYPREDRV_t obj)
    {
       if (!((StatsGetLinearSystemID() + 1) % (obj->iargs->ls.precon_reuse + 1)))
       {
-         PreconDestroy(obj->iargs->precon_method, &obj->precon);
+         PreconDestroy(obj->iargs->precon_method, &obj->iargs->precon, &obj->precon);
       }
    }
    else

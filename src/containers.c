@@ -97,6 +97,47 @@ StrToIntArray(const char* string, IntArray **int_array_ptr)
 }
 
 /*-----------------------------------------------------------------------------
+ * StrToStackIntArray
+ *-----------------------------------------------------------------------------*/
+
+void
+StrToStackIntArray(const char* string, StackIntArray *int_array)
+{
+   char      *buffer;
+   char      *token;
+   int        count;
+
+   /* Find number of elements in array */
+   buffer = strdup(string);
+   token  = strtok(buffer, "[], ");
+   count  = 0;
+   while (token)
+   {
+      count++;
+      token = strtok(NULL, "[], ");
+   }
+   free(buffer);
+
+   /* Set StackIntArray size */
+   int_array->size = (count < MAX_STACK_ARRAY_LENGTH) ? count : MAX_STACK_ARRAY_LENGTH - 1;
+
+   /* Build array */
+   buffer = strdup(string);
+   token  = strtok(buffer, "[], ");
+   count  = 0;
+   while (token)
+   {
+      if (count < MAX_STACK_ARRAY_LENGTH)
+      {
+         int_array->data[count] = atoi(token);
+      }
+      count++;
+      token = strtok(NULL, "[], ");
+   }
+   free(buffer);
+}
+
+/*-----------------------------------------------------------------------------
  * IntArrayReadASCII
  *-----------------------------------------------------------------------------*/
 

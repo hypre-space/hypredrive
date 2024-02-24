@@ -266,6 +266,7 @@ def main():
     # Show DataFrame?
     if args.verbose:
         print(df)
+        print(f"Sum total time: {sum(df['total']) = }")
 
     # Produce plots
     if check_mode_exact_match(args.mode, 'iters'):

@@ -28,7 +28,6 @@ typedef struct Stats_struct {
    int       ls_counter;
    int       num_reps;
    int       num_systems;
-   bool      last_solve;
 
    double   *matrix;
    double   *rhs;
@@ -57,7 +56,5 @@ void StatsPrint(int);
 int  StatsGetLinearSystemID(void);
 void StatsSetNumReps(int);
 void StatsSetNumLinearSystems(int);
-void StatsSetLastSolve(void);
-bool StatsGetLastSolve(void);
 
 #endif /* STATS_HEADER */

@@ -54,7 +54,7 @@ typedef struct MGRgrlx_args_struct {
  *--------------------------------------------------------------------------*/
 
 typedef struct MGRlvl_args_struct {
-   IntArray      *f_dofs;
+   StackIntArray  f_dofs;
 
    HYPRE_Int      prolongation_type;
    HYPRE_Int      restriction_type;
@@ -90,6 +90,6 @@ typedef struct MGR_args_struct {
 
 void MGRSetArgs(void*, YAMLnode*);
 void MGRSetDofmap(MGR_args*, IntArray*);
-void MGRCreate(MGR_args*, HYPRE_Solver*);
+void MGRCreate(MGR_args*, HYPRE_Solver*, HYPRE_Solver*);
 
 #endif /* MGR_HEADER */

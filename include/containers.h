@@ -19,6 +19,20 @@
 #include "HYPRE_utilities.h"
 
 #define MAX_FILENAME_LENGTH 2048
+#define MAX_STACK_ARRAY_LENGTH 128
+
+/*--------------------------------------------------------------------------
+ * StackIntArray struct
+ *--------------------------------------------------------------------------*/
+
+typedef struct StackIntArray_struct
+{
+   int       data[MAX_STACK_ARRAY_LENGTH];
+   size_t    size;
+} StackIntArray;
+
+void StackIntArrayRead(StackIntArray*);
+#define STACK_INTARRAY_CREATE() ((StackIntArray){.data = {0}, .size = 0})
 
 /*--------------------------------------------------------------------------
  * IntArray struct
@@ -50,6 +64,7 @@ typedef struct StrArray_struct
 
 bool StrArrayEntryExists(const StrArray, const char*);
 void StrToIntArray(const char*, IntArray**);
+void StrToStackIntArray(const char*, StackIntArray*);
 
 /*--------------------------------------------------------------------------
  * StrIntMap struct (str <-> num)

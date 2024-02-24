@@ -91,7 +91,6 @@ StatsCreate(void)
    global_stats->initialize  = 0.0;
    global_stats->finalize    = 0.0;
    global_stats->reset_x0    = 0.0;
-   global_stats->last_solve  = false;
 
    /* Linear system loading (1st stage) */
    global_stats->dofmap      = (double*) calloc(capacity, sizeof(double));
@@ -270,24 +269,4 @@ void
 StatsSetNumLinearSystems(int num_systems)
 {
    global_stats->num_systems = num_systems;
-}
-
-/*--------------------------------------------------------------------------
- * StatsSetLastSolve
- *--------------------------------------------------------------------------*/
-
-void
-StatsSetLastSolve(void)
-{
-   global_stats->last_solve = true;
-}
-
-/*--------------------------------------------------------------------------
- * StatsGetLastSolve
- *--------------------------------------------------------------------------*/
-
-bool
-StatsGetLastSolve(void)
-{
-   return global_stats->last_solve;
 }
