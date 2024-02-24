@@ -415,11 +415,6 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj)
       {
          SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method,
                      obj->precon, obj->solver, obj->mat_M, obj->vec_b, obj->vec_x);
-
-         if (ls_id == (num_ls - reuse))
-         {
-            StatsSetLastSolve();
-         }
       }
    }
    else

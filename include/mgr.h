@@ -54,7 +54,7 @@ typedef struct MGRgrlx_args_struct {
  *--------------------------------------------------------------------------*/
 
 typedef struct MGRlvl_args_struct {
-   IntArray      *f_dofs;
+   StackIntArray  f_dofs;
 
    HYPRE_Int      prolongation_type;
    HYPRE_Int      restriction_type;

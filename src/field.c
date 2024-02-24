@@ -32,6 +32,18 @@ FieldTypeIntArraySet(void *field, YAMLnode *node)
 }
 
 /*-----------------------------------------------------------------------------
+ * FieldTypeStackIntArraySet
+ *-----------------------------------------------------------------------------*/
+
+void
+FieldTypeStackIntArraySet(void *field, YAMLnode *node)
+{
+   StackIntArray *int_array = ((StackIntArray*) field);
+
+   StrToStackIntArray(node->mapped_val, int_array);
+}
+
+/*-----------------------------------------------------------------------------
  * FieldTypeDoubleSet
  *-----------------------------------------------------------------------------*/
 

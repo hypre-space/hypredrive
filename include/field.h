@@ -34,6 +34,7 @@ typedef struct FieldOffsetMap_struct
 
 void FieldTypeIntSet(void*, YAMLnode*);
 void FieldTypeIntArraySet(void*, YAMLnode*);
+void FieldTypeStackIntArraySet(void*, YAMLnode*);
 void FieldTypeDoubleSet(void*, YAMLnode*);
 void FieldTypeCharSet(void*, YAMLnode*);
 void FieldTypeStringSet(void*, YAMLnode*);

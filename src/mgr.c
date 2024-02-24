@@ -24,7 +24,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
 
 #define MGRlvl_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, FieldTypeIntArraySet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, FieldTypeStackIntArraySet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_level_type, FieldTypeIntSet) \
@@ -118,7 +118,7 @@ MGRgrlxSetDefaultArgs(MGRgrlx_args *args)
 void
 MGRlvlSetDefaultArgs(MGRlvl_args *args)
 {
-   args->f_dofs             = NULL;
+   args->f_dofs             = STACK_INTARRAY_CREATE();
    args->prolongation_type  = 0;
    args->restriction_type   = 0;
    args->coarse_level_type  = 0;
@@ -442,11 +442,11 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
       c_dofs[lvl] = (HYPRE_Int*) malloc(num_dofs * sizeof(HYPRE_Int));
-      num_c_dofs[lvl] = num_dofs_last - args->level[lvl].f_dofs->size;
+      num_c_dofs[lvl] = num_dofs_last - args->level[lvl].f_dofs.size;
 
-      for (i = 0; i < args->level[lvl].f_dofs->size; i++)
+      for (i = 0; i < args->level[lvl].f_dofs.size; i++)
       {
-         inactive_dofs[args->level[lvl].f_dofs->data[i]] = 1;
+         inactive_dofs[args->level[lvl].f_dofs.data[i]] = 1;
          --num_dofs_last;
       }
 
@@ -512,9 +512,5 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
       free(c_dofs[lvl]);
-      if (StatsGetLastSolve())
-      {
-         IntArrayDestroy(&args->level[i].f_dofs);
-      }
    }
 }
