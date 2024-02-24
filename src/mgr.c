@@ -512,5 +512,9 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
       free(c_dofs[lvl]);
+      if (StatsGetLastSolve())
+      {
+         IntArrayDestroy(&args->level[i].f_dofs);
+      }
    }
 }
