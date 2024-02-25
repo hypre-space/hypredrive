@@ -10,9 +10,6 @@
 
 #include <stdint.h>
 #include <mpi.h>
-#include "HYPRE.h"
-#include "HYPRE_config.h"
-#include "HYPREDRV_config.h"
 
 #ifdef __cplusplus
 extern "C" {

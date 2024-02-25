@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include "HYPREDRV.h"
+#include "HYPREDRV_config.h"
 
 void
 PrintUsage(const char *argv0)
