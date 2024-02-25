@@ -18,6 +18,9 @@
 extern "C" {
 #endif
 
+// Visibility control macros
+#define HYPREDRV_EXPORT_SYMBOL __attribute__((visibility("default")))
+
 /*--------------------------------------------------------------------------
  *--------------------------------------------------------------------------*/
 
@@ -62,7 +65,8 @@ typedef struct hypredrv_struct* HYPREDRV_t;
  * }
  * @endcode
  */
-void HYPREDRV_Initialize(void);
+HYPREDRV_EXPORT_SYMBOL void
+HYPREDRV_Initialize(void);
 
 /**
  * @brief Finalizes the HYPREDRV library.
@@ -86,7 +90,8 @@ void HYPREDRV_Initialize(void);
  * }
  * @endcode
  */
-void HYPREDRV_Finalize(void);
+HYPREDRV_EXPORT_SYMBOL void
+HYPREDRV_Finalize(void);
 
 /**
  * @brief Create a HYPREDRV object.
@@ -122,7 +127,7 @@ void HYPREDRV_Finalize(void);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr);
 
 /**
@@ -158,7 +163,7 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_Destroy(HYPREDRV_t *obj_ptr);
 
 /**
@@ -184,7 +189,7 @@ HYPREDRV_Destroy(HYPREDRV_t *obj_ptr);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_PrintLibInfo(void);
 
 /**
@@ -208,7 +213,7 @@ HYPREDRV_PrintLibInfo(void);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_PrintExitInfo(const char *argv0);
 
 /**
@@ -239,7 +244,7 @@ HYPREDRV_PrintExitInfo(const char *argv0);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t obj);
 
 /**
@@ -263,7 +268,7 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_SetGlobalOptions(HYPREDRV_t obj);
 
 /**
@@ -291,7 +296,7 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t obj);
  * @endcode
  */
 
-int
+HYPREDRV_EXPORT_SYMBOL int
 HYPREDRV_InputArgsGetWarmup(HYPREDRV_t obj);
 
 /**
@@ -318,7 +323,7 @@ HYPREDRV_InputArgsGetWarmup(HYPREDRV_t obj);
  * @endcode
  */
 
-int
+HYPREDRV_EXPORT_SYMBOL int
 HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj);
 
 /**
@@ -344,7 +349,7 @@ HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj);
  * @endcode
  */
 
-int
+HYPREDRV_EXPORT_SYMBOL int
 HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t obj);
 
 /**
@@ -375,7 +380,7 @@ HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemBuild(HYPREDRV_t obj);
 
 /**
@@ -407,7 +412,7 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t obj);
 
 /**
@@ -434,7 +439,7 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj);
 
 /**
@@ -465,7 +470,7 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t obj);
 
 /**
@@ -494,7 +499,7 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t obj);
 
 /**
@@ -525,7 +530,7 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t obj);
 
 /**
@@ -552,7 +557,7 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t obj);
 
 /**
@@ -581,7 +586,7 @@ HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_PreconCreate(HYPREDRV_t obj);
 
 /**
@@ -610,7 +615,7 @@ HYPREDRV_PreconCreate(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSolverCreate(HYPREDRV_t obj);
 
 /**
@@ -640,7 +645,7 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSolverSetup(HYPREDRV_t obj);
 
 /**
@@ -669,7 +674,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSolverApply(HYPREDRV_t obj);
 
 /**
@@ -698,7 +703,7 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_PreconDestroy(HYPREDRV_t obj);
 
 /**
@@ -727,7 +732,7 @@ HYPREDRV_PreconDestroy(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSolverDestroy(HYPREDRV_t obj);
 
 /**
@@ -757,7 +762,7 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t obj);
  * @endcode
  */
 
-uint32_t
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_StatsPrint(HYPREDRV_t obj);
 
 /*--------------------------------------------------------------------------
