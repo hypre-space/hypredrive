@@ -1,6 +1,15 @@
 bin_PROGRAMS = hypredrive
-hypredrive_SOURCES = src/error.c src/info.c src/stats.c src/utils.c src/containers.c src/yaml.c src/field.c src/linsys.c src/cheby.c src/amg.c src/fsai.c src/ilu.c src/mgr.c src/precon.c src/pcg.c src/gmres.c src/fgmres.c src/bicgstab.c src/solver.c src/args.c src/hypredrive.c src/main.c
-include_HEADERS = include/amg.h include/args.h include/bicgstab.h include/cheby.h include/containers.h include/error.h include/fgmres.h include/field.h include/fsai.h include/gen_macros.h include/gmres.h include/hypredrive.h include/ilu.h include/info.h include/linsys.h include/mgr.h include/pcg.h include/precon.h include/solver.h include/stats.h include/utils.h include/yaml.h
+hypredrive_SOURCES = src/main.c
+
+lib_LTLIBRARIES = libhypredrive.la
+libhypredrive_la_SOURCES = src/error.c src/info.c src/stats.c src/utils.c src/containers.c src/yaml.c src/field.c\
+                           src/linsys.c src/cheby.c src/amg.c src/fsai.c src/ilu.c src/mgr.c src/precon.c src/pcg.c\
+                           src/gmres.c src/fgmres.c src/bicgstab.c src/solver.c src/args.c src/hypredrive.c
+libhypredrive_la_LDFLAGS = -version-info 0:1:0
+hypredrive_LDADD = libhypredrive.la
+
+include_HEADERS = include/hypredrive.h
+ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS = -I$(top_srcdir)/include
 
 EXTRA_DIST = autogen.sh docs/Makefile docs/README.md docs/usrman-src docs/usrman-hypredrive.pdf docs/devman-hypredrive.pdf data examples

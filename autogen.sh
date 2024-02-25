@@ -1,6 +1,7 @@
 #!/bin/sh
 
 set -e
+libtoolize --force --copy
 autoscan
 aclocal
 autoheader
