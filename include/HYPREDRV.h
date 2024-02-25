@@ -9,10 +9,10 @@
 #define HYPREDRV_HEADER
 
 #include <stdint.h>
+#include <mpi.h>
 #include "HYPRE.h"
 #include "HYPRE_config.h"
-#include "HYPRE_utilities.h"
-#include "HYPRE_parcsr_ls.h"
+#include "HYPREDRV_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -128,7 +128,7 @@ HYPREDRV_Finalize(void);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr);
+HYPREDRV_Create(MPI_Comm, HYPREDRV_t*);
 
 /**
  * @brief Destroy a HYPREDRV object.
@@ -164,7 +164,7 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_Destroy(HYPREDRV_t *obj_ptr);
+HYPREDRV_Destroy(HYPREDRV_t*);
 
 /**
  * @brief Print library information at entrance.
@@ -204,7 +204,7 @@ HYPREDRV_PrintLibInfo(void);
  *
  * Example Usage:
  * @code
- *    uint32_t errorCode = HYPREDRV_PrintExitInfo();
+ *    uint32_t errorCode = HYPREDRV_PrintExitInfo(argv[0]);
  *    if (errorCode != 0) {
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
@@ -214,7 +214,7 @@ HYPREDRV_PrintLibInfo(void);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_PrintExitInfo(const char *argv0);
+HYPREDRV_PrintExitInfo(const char*);
 
 /**
  * @brief Parse input arguments for a HYPREDRV object.
@@ -245,7 +245,7 @@ HYPREDRV_PrintExitInfo(const char *argv0);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t obj);
+HYPREDRV_InputArgsParse(int, char**, HYPREDRV_t);
 
 /**
  * @brief Set HYPRE's global options according to the YAML input.
@@ -269,7 +269,7 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_SetGlobalOptions(HYPREDRV_t obj);
+HYPREDRV_SetGlobalOptions(HYPREDRV_t);
 
 /**
  * @brief Retrieve the warmup setting from a HYPREDRV object.
@@ -297,7 +297,7 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL int
-HYPREDRV_InputArgsGetWarmup(HYPREDRV_t obj);
+HYPREDRV_InputArgsGetWarmup(HYPREDRV_t);
 
 /**
  * @brief Retrieve the number of repetitions from a HYPREDRV object.
@@ -324,7 +324,7 @@ HYPREDRV_InputArgsGetWarmup(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL int
-HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj);
+HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t);
 
 /**
  * @brief Retrieve the number of linear systems from a HYPREDRV object.
@@ -350,7 +350,7 @@ HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL int
-HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t obj);
+HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t);
 
 /**
  * @brief Build the linear system (matrix, RHS, and LHS) according to the YAML input passed to
@@ -381,7 +381,7 @@ HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSystemBuild(HYPREDRV_t obj);
+HYPREDRV_LinearSystemBuild(HYPREDRV_t);
 
 /**
  * @brief Read the linear system matrix from file for a HYPREDRV object.
@@ -413,7 +413,7 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t obj);
+HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t);
 
 /**
  * @brief Set the linear system right-hand side (RHS) vector from file for a HYPREDRV object.
@@ -440,7 +440,7 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj);
+HYPREDRV_LinearSystemSetRHS(HYPREDRV_t);
 
 /**
  * @brief Set the initial guess for the solution vector of the linear system for a HYPREDRV object.
@@ -471,7 +471,7 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t obj);
+HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t);
 
 /**
  * @brief Reset the initial guess of the solution vector for a HYPREDRV object to its original
@@ -500,7 +500,7 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t obj);
+HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t);
 
 /**
  * @brief Set the matrix that is used to compute the preconditioner of a HYPREDRV object.
@@ -531,7 +531,7 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t obj);
+HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t);
 
 /**
  * @brief Read the degree of freedom (DOF) map for the linear system of a HYPREDRV object.
@@ -558,7 +558,7 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t obj);
+HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t);
 
 /**
  * @brief Create a preconditioner for the HYPREDRV object based on the specified method.
@@ -587,7 +587,7 @@ HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_PreconCreate(HYPREDRV_t obj);
+HYPREDRV_PreconCreate(HYPREDRV_t);
 
 /**
  * @brief Create a linear solver for the HYPREDRV object based on the specified method.
@@ -616,7 +616,7 @@ HYPREDRV_PreconCreate(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSolverCreate(HYPREDRV_t obj);
+HYPREDRV_LinearSolverCreate(HYPREDRV_t);
 
 /**
  * @brief Set up the linear solver for the HYPREDRV object based on the specified solver
@@ -646,7 +646,7 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSolverSetup(HYPREDRV_t obj);
+HYPREDRV_LinearSolverSetup(HYPREDRV_t);
 
 /**
  * @brief Apply the linear solver to solve the linear system for the HYPREDRV object.
@@ -675,7 +675,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSolverApply(HYPREDRV_t obj);
+HYPREDRV_LinearSolverApply(HYPREDRV_t);
 
 /**
  * @brief Destroy the preconditioner associated with the HYPREDRV object.
@@ -704,7 +704,7 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_PreconDestroy(HYPREDRV_t obj);
+HYPREDRV_PreconDestroy(HYPREDRV_t);
 
 /**
  * @brief Destroy the linear solver associated with the HYPREDRV object.
@@ -733,7 +733,7 @@ HYPREDRV_PreconDestroy(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSolverDestroy(HYPREDRV_t obj);
+HYPREDRV_LinearSolverDestroy(HYPREDRV_t);
 
 /**
  * @brief Print the statistics associated with the HYPREDRV object.
@@ -763,7 +763,7 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t obj);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_StatsPrint(HYPREDRV_t obj);
+HYPREDRV_StatsPrint(HYPREDRV_t);
 
 /*--------------------------------------------------------------------------
  *--------------------------------------------------------------------------*/

@@ -6,7 +6,7 @@
  ******************************************************************************/
 
 #include <stdio.h>
-#include "hypredrive.h"
+#include "HYPREDRV.h"
 
 void
 PrintUsage(const char *argv0)
@@ -34,7 +34,7 @@ int main(int argc, char **argv)
    if (argc < 1)
    {
       if (!myid) PrintUsage(argv[0]);
-      return EXIT_FAILURE;
+      return 1;
    }
 
    /*-----------------------------------------------------------
@@ -101,5 +101,5 @@ int main(int argc, char **argv)
    HYPREDRV_Finalize();
    MPI_Finalize();
 
-   return EXIT_SUCCESS;
+   return 0;
 }

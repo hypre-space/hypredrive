@@ -49,7 +49,7 @@ HYPREDRV_config.h.in~
 # Libtools
 ###########
 ar-lib
-libhypredrive.la
+libHYPREDRV.la
 libtool
 ltmain.sh
 m4/libtool.m4

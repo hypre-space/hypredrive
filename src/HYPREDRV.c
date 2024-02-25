@@ -5,11 +5,13 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "hypredrive.h"
+#include "HYPREDRV.h"
 #include "args.h"
 #include "linsys.h"
 #include "info.h"
 #include "stats.h"
+#include "HYPRE_utilities.h"
+#include "HYPRE_parcsr_ls.h"
 
 static bool is_initialized = 0;
 
