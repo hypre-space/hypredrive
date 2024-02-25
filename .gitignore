@@ -28,9 +28,6 @@ autom4te.cache/
 configure~
 configure.scan
 config.guess
-config.h
-config.h.in
-config.h.in~
 config.log
 config.status
 config.sub
@@ -44,6 +41,9 @@ Makefile
 Makefile.in
 missing
 stamp-*
+HYPREDRV_config.h
+HYPREDRV_config.h.in
+HYPREDRV_config.h.in~
 
 ###########
 # Libtools
