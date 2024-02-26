@@ -401,24 +401,20 @@ InputArgsExpand(const char* basefilename, int *text_size, char **text_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * InputArgsParse
+ * InputArgsRead
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
+InputArgsRead(MPI_Comm comm, char *filename, char **text_ptr)
 {
-   input_args   *iargs;
-   YAMLtree     *tree;
-
    int           text_size;
    char         *text = NULL;
-
    int           myid;
 
    MPI_Comm_rank(comm, &myid);
 
    /* Rank 0: Expand text from base file */
-   if (!myid) InputArgsExpand(argv[1], &text_size, &text);
+   if (!myid) InputArgsExpand(filename, &text_size, &text);
 
    /* Broadcast the text size */
    MPI_Bcast(&text_size, 1, MPI_INT, 0, comm);
@@ -426,6 +422,27 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    /* Broadcast the text */
    if (myid) text = (char*) malloc(text_size * sizeof(char));
    MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
+
+   /* Set output pointer */
+   *text_ptr = text;
+}
+
+/*-----------------------------------------------------------------------------
+ * InputArgsParse
+ *-----------------------------------------------------------------------------*/
+
+void
+InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
+{
+   input_args   *iargs;
+   char         *text;
+   YAMLtree     *tree;
+   int           myid;
+
+   MPI_Comm_rank(comm, &myid);
+
+   /* Read input arguments from file */
+   InputArgsRead(comm, argv[0], &text);
 
    /* Build YAML tree */
    YAMLtreeBuild(text, &tree);
@@ -438,13 +455,16 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    }
    MPI_Barrier(comm);
 
+   /* Free memory */
+   free(text);
+
    /* TODO: check if any config option has been passed in via CLI.
             If so, overwrite the data stored in the YAMLtree object
             with it. */
-   if (argc > 2)
+   if (argc > 1)
    {
       /* Update YAML tree with command line arguments info */
-      YAMLtreeUpdate(argc, argv, tree);
+      YAMLtreeUpdate(argc - 1, argv + 1, tree);
    }
 
    /*--------------------------------------------
@@ -475,5 +495,4 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
 
    *args_ptr = iargs;
    YAMLtreeDestroy(&tree);
-   free(text);
 }

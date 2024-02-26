@@ -35,7 +35,7 @@ int main(int argc, char **argv)
    if (argc < 1)
    {
       if (!myid) PrintUsage(argv[0]);
-      return 1;
+      MPI_Abort(comm, 1);
    }
 
    /*-----------------------------------------------------------
@@ -49,7 +49,12 @@ int main(int argc, char **argv)
     * Parse input parameters
     *-----------------------------------------------------------*/
 
-   HYPREDRV_InputArgsParse(argc, argv, obj);
+   if (argc < 1)
+   {
+      if (!myid) fprintf(stderr, "Need at least one input argument!\n");
+      MPI_Abort(comm, 1);
+   }
+   HYPREDRV_InputArgsParse(argc - 1, argv + 1, obj);
 
    /*-----------------------------------------------------------
     * Set hypre's global options and warmup

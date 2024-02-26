@@ -78,7 +78,8 @@ LinearSystemGetValidValues(const char* key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"ij",     1},
+      static StrIntMap map[] = {{"online", 0},
+                                {"ij",     1},
                                 {"parcsr", 2},
                                 {"mtx",    3}};
       return STR_INT_MAP_ARRAY_CREATE(map);

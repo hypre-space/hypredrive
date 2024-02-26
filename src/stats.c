@@ -52,7 +52,7 @@ static Stats *global_stats = NULL;
    for (size_t i = 1; i < 6; i++) printf("|%12s ", _b[i]); \
    printf("|\n");
 #define STATS_PRINT_ENTRY(_t, _n) \
-   if (!(_n % (((_t)->counter + 1) / (_t)->num_systems))) \
+   if ((_t)->num_systems < 0 || !(_n % (((_t)->counter + 1) / (_t)->num_systems))) \
    { \
       printf("| %10ld | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", \
              (_n), (_t)->dofmap[(_n)] + (_t)->matrix[(_n)] + (_t)->rhs[(_n)], \
@@ -84,7 +84,7 @@ StatsCreate(void)
    global_stats->counter     = 0;
    global_stats->reps        = 0;
    global_stats->num_reps    = 1;
-   global_stats->num_systems = 1;
+   global_stats->num_systems = -1;
    global_stats->ls_counter  = 0;
 
    /* Overall timers */
