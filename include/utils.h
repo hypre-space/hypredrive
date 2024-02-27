@@ -21,6 +21,8 @@ char* StrToLowerCase(char*);
 char* StrTrim(char*);
 int CheckBinaryDataExists(const char* prefix);
 int ComputeNumberOfDigits(int);
+void SplitFilename(const char*, char**, char**);
+void CombineFilename(const char*, const char*, char**);
 
 /*******************************************************************************
  *******************************************************************************/

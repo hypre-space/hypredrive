@@ -1,7 +1,7 @@
 #!/bin/sh
 
 set -e
-#libtoolize --force --copy
+libtoolize --force --copy
 #autoscan
 #autoheader
 autoreconf -i

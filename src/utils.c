@@ -78,3 +78,72 @@ ComputeNumberOfDigits(int number)
 
    return ndigits;
 }
+
+/*-----------------------------------------------------------------------------
+ * SplitFilename
+ *-----------------------------------------------------------------------------*/
+
+void
+SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
+{
+   const char *last_slash = strrchr(filename, '/');
+   char       *dirname;
+   char       *basename;
+
+   if (last_slash != NULL)
+   {
+      /* Allocate memory and copy dirname */
+      int dirname_length = last_slash - filename;
+
+      dirname = (char*) malloc(dirname_length + 1);
+      strncpy(dirname, filename, dirname_length);
+      dirname[dirname_length] = '\0';
+
+      /* Allocate memory and copy basename */
+      basename = strdup(last_slash + 1);
+   }
+   else
+   {
+      /* No slash found, assume current directory and filename is the basename */
+      dirname  = strdup(".");
+      basename = strdup(filename);
+   }
+
+   /* Set output pointers */
+   *dirname_ptr  = dirname;
+   *basename_ptr = basename;
+}
+
+/*-----------------------------------------------------------------------------
+ * CombineFilename
+ *-----------------------------------------------------------------------------*/
+
+void
+CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
+{
+   size_t   length;
+   char    *filename;
+
+   /* Compute filename length. +2 for the slash and null terminator */
+   length = strlen(dirname) + strlen(basename) + 2;
+
+   /* Allocate space for the filename */
+   filename = (char *) malloc(length);
+
+   /* Combine dirname and basename */
+   if (filename != NULL)
+   {
+      strcpy(filename, dirname);
+
+      /* Add a slash only if dirname is not empty and does not already end in a slash */
+      if (dirname[0] != '\0' && dirname[strlen(dirname) - 1] != '/')
+      {
+         strcat(filename, "/");
+      }
+
+      strcat(filename, basename);
+   }
+
+   /* Set output pointer */
+   *filename_ptr = filename;
+}

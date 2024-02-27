@@ -40,6 +40,108 @@ YAMLtreeDestroy(YAMLtree** tree_ptr)
 }
 
 /*-----------------------------------------------------------------------------
+ * YAMLtextRead
+ *-----------------------------------------------------------------------------*/
+
+void
+YAMLtextRead(const char *dirname, const char *basename, int level, size_t *length_ptr, char **text_ptr)
+{
+   FILE   *fp;
+   char   *key, *val, *sep;
+   char    line[MAX_LINE_LENGTH];
+   char    backup[MAX_LINE_LENGTH];
+   char   *filename;
+   char   *new_text;
+   int     inner_level, pos;
+   size_t  num_whitespaces = 2 * level;
+   size_t  new_length;
+
+   /* Construct the whole filename */
+   CombineFilename(dirname, basename, &filename);
+
+   /* Open file */
+   fp = fopen(filename, "r");
+   if (!fp)
+   {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAddInvalidFilename(filename);
+      return;
+   }
+   free(filename);
+
+   while (fgets(line, sizeof(line), fp))
+   {
+      /* Save the original line */
+      strcpy(backup, line);
+
+      /* Remove trailing newline character */
+      line[strcspn(line, "\n")] = '\0';
+
+      /* Ignore empty lines and comments */
+      if (line[0] == '\0' || line[0] == '#')
+      {
+         continue;
+      }
+
+      /* Check for divisor character */
+      if ((sep = strchr(line, ':')) == NULL)
+      {
+         continue;
+      }
+
+      *sep = '\0';
+      key = line;
+      val = sep + 1;
+
+      /* Trim leading spaces */
+      while (*key == ' ') key++;
+      while (*val == ' ') val++;
+
+      if (!strcmp(key, "include"))
+      {
+         /* Compute indendation */
+         pos = 0;
+         while (line[pos] == ' ')
+         {
+            pos++;
+         }
+
+         /* Calculate node level */
+         inner_level = pos / 2;
+
+         /* Recursively read the content of the included file */
+         YAMLtextRead(dirname, val, inner_level, length_ptr, text_ptr);
+      }
+      else
+      {
+         /* Regular line, append it to the text */
+         new_length = *length_ptr + strlen(backup) + num_whitespaces;
+         new_text   = (char *) realloc(*text_ptr, new_length + 1);
+         if (!new_text)
+         {
+            fclose(fp);
+            return;
+         }
+         *text_ptr = new_text;
+
+         /* Fill with base whitespaces */
+         memset((*text_ptr) + (*length_ptr), ' ', num_whitespaces);
+
+         /* Copy backup line */
+         memcpy((*text_ptr) + (*length_ptr) + num_whitespaces, backup, strlen(backup));
+
+         /* Set new null terminator */
+         (*text_ptr)[new_length] = '\0';
+
+         /* Update length pointer */
+         *length_ptr = new_length;
+      }
+   }
+
+   fclose(fp);
+}
+
+/*-----------------------------------------------------------------------------
  * YAMLtreeBuild
  *-----------------------------------------------------------------------------*/
 
