@@ -99,6 +99,20 @@ ErrorCodeActive(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * DistributedErrorCodeActive
+ *-----------------------------------------------------------------------------*/
+
+bool
+DistributedErrorCodeActive(MPI_Comm comm)
+{
+   uint32_t flag;
+
+   MPI_Allreduce(&global_error_code, &flag, 1, MPI_UINT32_T, MPI_BOR, comm);
+
+   return (flag == ERROR_NONE) ? false : true;
+}
+
+/*-----------------------------------------------------------------------------
  * ErrorCodeDescribe
  *-----------------------------------------------------------------------------*/
 

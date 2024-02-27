@@ -2,6 +2,7 @@ Date and time: YYYY-MM-DD HH:MM:SS
 
 Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
 
+Running on 1 MPI rank
 ------------------------------------------------------------------------------------
 linear_system: 
   rhs_filename: data/ps3d10pt7/np1/IJ.out.b
@@ -9,6 +10,8 @@ linear_system:
 solver: pcg
 preconditioner: amg
 ------------------------------------------------------------------------------------
+====================================================================================
+Solving linear system #0 with 1000 rows and 6400 nonzeros...
 ====================================================================================
 
 
@@ -18,7 +21,7 @@ STATISTICS SUMMARY:
 |            |    LS build |       setup |       solve |    relative |             |
 |      Entry |       times |       times |       times |   res. norm |       iters |
 +------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |    2.70e-03 |    2.86e-03 |    1.36e-03 |    4.98e-08 |           6 |
+|          0 |       0.013 |       0.003 |       0.001 |    4.98e-08 |           6 |
 +------------+-------------+-------------+-------------+-------------+-------------+
 
 Date and time: YYYY-MM-DD HH:MM:SS

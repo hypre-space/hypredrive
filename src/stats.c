@@ -52,7 +52,7 @@ static Stats *global_stats = NULL;
    for (size_t i = 1; i < 6; i++) printf("|%12s ", _b[i]); \
    printf("|\n");
 #define STATS_PRINT_ENTRY(_t, _n) \
-   if (!(_n % (((_t)->counter + 1) / (_t)->num_systems))) \
+   if ((_t)->num_systems < 0 || !(_n % (((_t)->counter + 1) / (_t)->num_systems))) \
    { \
       printf("| %10ld | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", \
              (_n), (_t)->dofmap[(_n)] + (_t)->matrix[(_n)] + (_t)->rhs[(_n)], \
@@ -84,7 +84,7 @@ StatsCreate(void)
    global_stats->counter     = 0;
    global_stats->reps        = 0;
    global_stats->num_reps    = 1;
-   global_stats->num_systems = 1;
+   global_stats->num_systems = -1;
    global_stats->ls_counter  = 0;
 
    /* Overall timers */
@@ -109,21 +109,21 @@ StatsCreate(void)
  *--------------------------------------------------------------------------*/
 
 void
-StatsDestroy(Stats **stats_ptr)
+StatsDestroy(void)
 {
-   if (*stats_ptr)
+   if (global_stats)
    {
-      free((*stats_ptr)->dofmap);
-      free((*stats_ptr)->matrix);
-      free((*stats_ptr)->rhs);
+      free((global_stats)->dofmap);
+      free((global_stats)->matrix);
+      free((global_stats)->rhs);
 
-      free((*stats_ptr)->iters);
-      free((*stats_ptr)->prec);
-      free((*stats_ptr)->solve);
-      free((*stats_ptr)->rrnorms);
+      free((global_stats)->iters);
+      free((global_stats)->prec);
+      free((global_stats)->solve);
+      free((global_stats)->rrnorms);
 
-      free(*stats_ptr);
-      *stats_ptr = NULL;
+      free(global_stats);
+      global_stats = NULL;
    }
 }
 
@@ -216,7 +216,6 @@ StatsPrint(int print_level)
 
    if (!global_stats || print_level < 1)
    {
-      StatsDestroy(&global_stats);
       return;
    }
 
@@ -230,15 +229,11 @@ StatsPrint(int print_level)
    /* Print statistics for each entry in the array */
    for (size_t i = 0; i < global_stats->counter + 1; i++)
    {
-      //printf("%f %f %f\n", global_stats->dofmap[i], global_stats->matrix[i], global_stats->rhs[i]);
       STATS_PRINT_ENTRY(global_stats, i);
    }
 
    STATS_PRINT_DIVISOR()
    printf("\n");
-
-   /* Destroy global stats variable */
-   StatsDestroy(&global_stats);
 }
 
 /*--------------------------------------------------------------------------

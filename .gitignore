@@ -2,6 +2,7 @@
 # Miscellaneous
 ###############
 *.o
+*.lo
 *.btr
 .deps
 .dirstamp
@@ -11,11 +12,13 @@ old-*
 build.sh
 *.tar.gz
 .gdbinit
+.libs/
+install*/
 
 ############
 # Executable
 ############
-hypredrive
+hypredrive*
 
 ###########
 # Autotools
@@ -26,9 +29,6 @@ autom4te.cache/
 configure~
 configure.scan
 config.guess
-config.h
-config.h.in
-config.h.in~
 config.log
 config.status
 config.sub
@@ -42,6 +42,22 @@ Makefile
 Makefile.in
 missing
 stamp-*
+HYPREDRV_config.h
+HYPREDRV_config.h.in
+HYPREDRV_config.h.in~
+
+###########
+# Libtools
+###########
+ar-lib
+libHYPREDRV.la
+libtool
+ltmain.sh
+m4/libtool.m4
+m4/ltoptions.m4
+m4/ltsugar.m4
+m4/ltversion.m4
+m4/lt~obsolete.m4
 
 ###############
 # Documentation

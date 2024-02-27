@@ -1,0 +1,10 @@
+linear_system:
+  rhs_filename: data/compflow6k/np1/IJ.out.b
+  matrix_filename: data/compflow6k/np1/IJ.out.A
+  dofmap_filename: data/compflow6k/np1/dofmap.out
+
+solver:
+  include: ex5-gmres.yml
+
+preconditioner:
+  include: ex5-mgr.yml

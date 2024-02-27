@@ -48,6 +48,7 @@ typedef struct Stats_struct {
  *--------------------------------------------------------------------------*/
 
 void StatsCreate(void);
+void StatsDestroy(void);
 void StatsTimerStart(const char*);
 void StatsTimerFinish(const char*);
 void StatsIterSet(int);

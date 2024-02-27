@@ -2,6 +2,7 @@ Date and time: YYYY-MM-DD HH:MM:SS
 
 Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
 
+Running on 4 MPI ranks
 ------------------------------------------------------------------------------------
 linear_system: 
   rhs_filename: data/ps3d10pt7/np4/IJ.out.b
@@ -62,6 +63,8 @@ preconditioner:
       num_levels: 0
       num_sweeps: 1
 ------------------------------------------------------------------------------------
+====================================================================================
+Solving linear system #0 with 1000 rows and 6400 nonzeros...
 
 
  Num MPI tasks = 4
@@ -150,7 +153,7 @@ STATISTICS SUMMARY:
 |            |    LS build |       setup |       solve |    relative |             |
 |      Entry |       times |       times |       times |   res. norm |       iters |
 +------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |    3.07e-04 |    4.42e-03 |    1.07e-03 |    3.99e-07 |           6 |
+|          0 |       0.009 |       0.003 |       0.001 |    3.99e-07 |           6 |
 +------------+-------------+-------------+-------------+-------------+-------------+
 
 Date and time: YYYY-MM-DD HH:MM:SS

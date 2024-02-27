@@ -29,6 +29,8 @@ AS_IF([test "x$enable_doxygen" = "xyes"], [
 
 AC_PROG_CC([mpicc])
 AM_PROG_CC_C_O()
+AM_PROG_AR
+LT_INIT()
 
 AC_ARG_WITH([hypre-include],
             [AS_HELP_STRING([--with-hypre-include=DIR], [Required: Path to HYPRE include dir.])],
@@ -50,7 +52,8 @@ AC_CHECK_LIB([HYPRE], [HYPRE_IJMatrixCreate], [],
 AC_CHECK_HEADER([HYPRE_config.h], [],
                 [AC_MSG_ERROR([HYPRE headers not found or not usable. Please ensure the correct path is specified with --with-hypre-include and the headers are installed.])])
 
-AC_CONFIG_HEADERS([config.h])
+AC_CONFIG_MACRO_DIRS([m4])
+AC_CONFIG_HEADERS([HYPREDRV_config.h])
 AC_CHECK_HEADERS([stdint.h])
 AC_CHECK_HEADERS([limits.h])
 AC_CHECK_HEADERS([stddef.h])

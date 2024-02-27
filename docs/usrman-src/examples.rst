@@ -37,7 +37,7 @@ single MPI rank. Therefore, this example must be executed on a single process.
 
 .. code-block:: bash
 
-    mpirun -np 1 ./hypredrive ex1.yml
+    $ mpirun -np 1 ./hypredrive examples/ex1.yml
 
 4. Your output should look like:
 
@@ -69,7 +69,7 @@ configuration file.
 
 .. code-block:: bash
 
-    mpirun -np 4 ./hypredrive ex2.yml
+    $ mpirun -np 4 ./hypredrive examples/ex2.yml
 
 4. Your output should look like:
 
@@ -98,7 +98,7 @@ the multigrid reduction preconditioner for this particular kind of linear system
 
 .. code-block:: bash
 
-    mpirun -np 1 ./hypredrive ex3.yml
+    $ mpirun -np 1 ./hypredrive examples/ex3.yml
 
 4. Your output should look like:
 
@@ -122,9 +122,44 @@ processes. Here, we showcase a more advanced setup of `MGR` involving multiple o
 
 .. code-block:: bash
 
-    mpirun -np 4 ./hypredrive ex4.yml
+    $ mpirun -np 4 ./hypredrive examples/ex4.yml
 
 4. Your output should look like:
 
 .. literalinclude:: ../../examples/refOutput/ex4.txt
+   :language: text
+
+Example 5: Spreading input parameters in multiple files
+-------------------------------------------------------
+
+In this example, we solve the same problem as in example 3, but using the same solver and
+preconditioner parameters as in example 4. In addition, we define these parameters in
+separate files, which are included in the main input file via the ``include`` keyword .
+
+1. Prepare your linear system files.
+
+2. Define the input file containing the solver parameters ``ex5-gmres.yml``:
+
+.. literalinclude:: ../../examples/ex5-gmres.yml
+   :language: yaml
+
+3. Define the input file containing the preconditioner parameters ``ex5-mgr.yml``:
+
+.. literalinclude:: ../../examples/ex5-mgr.yml
+   :language: yaml
+
+4. Define the main input file ``ex5.yml``:
+
+.. literalinclude:: ../../examples/ex5.yml
+   :language: yaml
+
+5. Run `hypredrive` with the configuration file:
+
+.. code-block:: bash
+
+    $ mpirun -np 1 ./hypredrive examples/ex5.yml
+
+6. Your output should look like:
+
+.. literalinclude:: ../../examples/refOutput/ex5.txt
    :language: text

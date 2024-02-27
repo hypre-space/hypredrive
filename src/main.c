@@ -6,7 +6,8 @@
  ******************************************************************************/
 
 #include <stdio.h>
-#include "hypredrive.h"
+#include "HYPREDRV.h"
+#include "HYPREDRV_config.h"
 
 void
 PrintUsage(const char *argv0)
@@ -28,14 +29,13 @@ int main(int argc, char **argv)
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
-   HYPRE_Initialize();
-   HYPRE_DeviceInitialize();
+   HYPREDRV_Initialize();
    HYPREDRV_Create(comm, &obj);
 
    if (argc < 1)
    {
       if (!myid) PrintUsage(argv[0]);
-      return EXIT_FAILURE;
+      MPI_Abort(comm, 1);
    }
 
    /*-----------------------------------------------------------
@@ -49,7 +49,12 @@ int main(int argc, char **argv)
     * Parse input parameters
     *-----------------------------------------------------------*/
 
-   HYPREDRV_InputArgsParse(argc, argv, obj);
+   if (argc < 1)
+   {
+      if (!myid) fprintf(stderr, "Need at least one input argument!\n");
+      MPI_Abort(comm, 1);
+   }
+   HYPREDRV_InputArgsParse(argc - 1, argv + 1, obj);
 
    /*-----------------------------------------------------------
     * Set hypre's global options and warmup
@@ -99,8 +104,8 @@ int main(int argc, char **argv)
    if (!myid) HYPREDRV_PrintExitInfo(argv[0]);
 
    HYPREDRV_Destroy(&obj);
-   HYPRE_Finalize();
+   HYPREDRV_Finalize();
    MPI_Finalize();
 
-   return EXIT_SUCCESS;
+   return 0;
 }

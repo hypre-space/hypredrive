@@ -71,6 +71,7 @@ typedef struct YAMLtree_struct {
 
 YAMLtree* YAMLtreeCreate(void);
 void YAMLtreeDestroy(YAMLtree**);
+void YAMLtextRead(const char*, const char*, int, size_t*, char**);
 void YAMLtreeBuild(char*, YAMLtree**);
 void YAMLtreeUpdate(int, char**, YAMLtree*);
 void YAMLtreePrint(YAMLtree*, YAMLprintMode);
