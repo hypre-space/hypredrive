@@ -44,12 +44,12 @@ preconditioner:
         max_iter: 1
         print_level: 0 # Turn off printout from AMG since it's done from MGR
         interpolation:
-          prolongation_type: 18 # Use MM-ext+e interpolation
+          prolongation_type: 6 # std+i
           restriction_type: 0
           trunc_factor: 0.0
           max_nnz_row: 4
         coarsening:
-          type: 8 # Use PMIS coarsening
+          type: 10 # HMIS
           strong_th: 0.3
           seq_amg_th: 0
           max_coarse_size: 64

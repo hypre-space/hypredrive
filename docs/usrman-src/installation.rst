@@ -20,13 +20,16 @@ Before installing `hypredrive`, ensure you have the following prerequisites inst
   portable configure scripts.
 - `Automake <https://www.gnu.org/software/automake/>`_: GNU package for generating
   portable Makefiles.
+- `libtool <https://www.gnu.org/software/libtool/>`_: GNU package for creating portable
+  compiled libraries.
 - `hypre <https://github.com/hypre-space/hypre>`_: high-performance preconditioners
   library.
 
 .. note::
-   The GNU packages (``m4``, ``autoconf``, and ``automake``) are generally pre-installed in Unix
-   distributions. If they are not present, they can be easily installed via package
-   managers (``apt``, ``yum``, ``pacman``, ``homebrew``).
+   The GNU packages (``m4``, ``autoconf``, ``automake``, and ``libtool``) are generally
+   pre-installed in Unix distributions. If they are not present, they can be easily
+   installed via package managers such as ``apt``, ``yum``, ``pacman``, ``homebrew`` or
+   ``spack``.
 
 
 Installing `hypredrive`

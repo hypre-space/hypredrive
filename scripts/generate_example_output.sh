@@ -71,7 +71,7 @@ fi
 
 if [[ "$1" == "all" || "$1" == "a" ]]; then
     # Loop through all example IDs and generate output
-    EXAMPLE_IDS=$(seq 1 5)
+    EXAMPLE_IDS=(1 2 3 4 5)
 
     for ID in "${EXAMPLE_IDS[@]}"; do
         generate_output "$ID"
