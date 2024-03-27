@@ -219,18 +219,18 @@ AMGintGetValidValues(const char* key)
                                 {"multipass",             4},
                                 {"multipass_sep_weights", 5},
                                 {"extended+i",            6},
-                                {"extended+i_C",          7},
+                                {"extended+i_c",          7},
                                 {"standard",              8},
                                 {"standard_sep_weights",  9},
                                 {"blk_classical",        10},
                                 {"blk_classical_diag",   11},
-                                {"F_F",                  12},
-                                {"F_F1",                 13},
+                                {"f_f",                  12},
+                                {"f_f1",                 13},
                                 {"extended",             14},
                                 {"direct_sep_weights",   15},
-                                {"MM_extended",          16},
-                                {"MM_extended+i",        17},
-                                {"MM_extended+e",        18},
+                                {"mm_extended",          16},
+                                {"mm_extended+i",        17},
+                                {"mm_extended+e",        18},
                                 {"blk_direct",           24},
                                 {"one_point",           100}};
 
@@ -238,13 +238,13 @@ AMGintGetValidValues(const char* key)
    }
    else if (!strcmp(key, "restriction_type"))
    {
-      static StrIntMap map[] = {{"P^T",            0},
-                                {"AIR_1",          1},
-                                {"AIR_2",          2},
-                                {"Neumann_AIR_0",  3},
-                                {"Neumann_AIR_1",  4},
-                                {"Neumann_AIR_2",  5},
-                                {"AIR_1.5",       15}};
+      static StrIntMap map[] = {{"p_transpose",    0},
+                                {"air_1",          1},
+                                {"air_2",          2},
+                                {"neumann_air_0",  3},
+                                {"neumann_air_1",  4},
+                                {"neumann_air_2",  5},
+                                {"air_1.5",       15}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -263,12 +263,12 @@ AMGcsnGetValidValues(const char* key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"CLJP",     0},
-                                {"RS",       1},
-                                {"RS3",      3},
-                                {"Falgout",  6},
-                                {"PMIS",     8},
-                                {"HMIS",    10}};
+      static StrIntMap map[] = {{"cljp",     0},
+                                {"rs",       1},
+                                {"rs3",      3},
+                                {"falgout",  6},
+                                {"pmis",     8},
+                                {"hmis",    10}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -297,9 +297,9 @@ AMGaggGetValidValues(const char* key)
                                 {"2_stage_standard",    2},
                                 {"2_stage_extended",    3},
                                 {"multipass",           4},
-                                {"MM_extended",         5},
-                                {"MM_extended+i",       6},
-                                {"MM_extended+e",       7}};
+                                {"mm_extended",         5},
+                                {"mm_extended+i",       6},
+                                {"mm_extended+e",       7}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -319,54 +319,54 @@ AMGrlxGetValidValues(const char* key)
    if (!strcmp(key, "down_type"))
    {
       static StrIntMap map[] = {{"jacobi_non_mv",   0},
-                                {"forward-hGS",     3},
-                                {"chaotic-hGS",     5},
-                                {"hSGS",            6},
+                                {"forward-hgs",     3},
+                                {"chaotic-hgs",     5},
+                                {"hsgs",            6},
                                 {"jacobi",          7},
-                                {"l1-hSGS",         8},
-                                {"2stgGS-it1",     11},
-                                {"2stgGS-it2",     12},
-                                {"forward-hL1GS",  13},
-                                {"CG",             15},
+                                {"l1-hsgs",         8},
+                                {"2gs-it1",        11},
+                                {"2gs-it2",        12},
+                                {"forward-hl1gs",  13},
+                                {"cg",             15},
                                 {"chebyshev",      16},
                                 {"l1-jacobi",      18},
-                                {"l1sym-hGS",      89}};
+                                {"l1sym-hgs",      89}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    else if (!strcmp(key, "up_type"))
    {
       static StrIntMap map[] = {{"jacobi_non_mv",   0},
-                                {"backward-hGS",    4},
-                                {"chaotic-hGS",     5},
-                                {"hSGS",            6},
+                                {"backward-hgs",    4},
+                                {"chaotic-hgs",     5},
+                                {"hsgs",            6},
                                 {"jacobi",          7},
-                                {"l1-hSGS",         8},
-                                {"2stgGS-it1",     11},
-                                {"2stgGS-it2",     12},
-                                {"backward-hL1GS", 14},
-                                {"CG",             15},
+                                {"l1-hsgs",         8},
+                                {"2gs-it1",        11},
+                                {"2gs-it2",        12},
+                                {"backward-hl1gs", 14},
+                                {"cg",             15},
                                 {"chebyshev",      16},
                                 {"l1-jacobi",      18},
-                                {"l1sym-hGS",      89}};
+                                {"l1sym-hgs",      89}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-   else if (!strcmp(key, "down_type"))
+   else if (!strcmp(key, "coarse_type"))
    {
       static StrIntMap map[] = {{"jacobi_non_mv",   0},
-                                {"hSGS",            6},
+                                {"hsgs",            6},
                                 {"jacobi",          7},
-                                {"l1-hSGS",         8},
-                                {"GE",              9},
-                                {"2stgGS-it1",     11},
-                                {"2stgGS-it2",     12},
-                                {"CG",             15},
+                                {"l1-hsgs",         8},
+                                {"ge",              9},
+                                {"2gs-it1",        11},
+                                {"2gs-it2",        12},
+                                {"cg",             15},
                                 {"chebyshev",      16},
                                 {"l1-jacobi",      18},
-                                {"l1sym-hGS",      89},
-                                {"LU_piv",         99},
-                                {"LU_inv",        199}};
+                                {"l1sym-hgs",      89},
+                                {"lu_piv",         99},
+                                {"lu_inv",        199}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -385,10 +385,10 @@ AMGsmtGetValidValues(const char* key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"FSAI",      4},
-                                {"ILU",       5},
+      static StrIntMap map[] = {{"fsai",      4},
+                                {"ilu",       5},
                                 {"schwarz",   6},
-                                {"PILUT",     7},
+                                {"pilut",     7},
                                 {"euclid",    9}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
