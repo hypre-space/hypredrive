@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #ifndef MGR_HEADER
@@ -54,7 +54,7 @@ typedef struct MGRgrlx_args_struct {
  *--------------------------------------------------------------------------*/
 
 typedef struct MGRlvl_args_struct {
-   IntArray      *f_dofs;
+   StackIntArray  f_dofs;
 
    HYPRE_Int      prolongation_type;
    HYPRE_Int      restriction_type;
@@ -90,7 +90,6 @@ typedef struct MGR_args_struct {
 
 void MGRSetArgs(void*, YAMLnode*);
 void MGRSetDofmap(MGR_args*, IntArray*);
-void MGRCreate(MGR_args*, HYPRE_Solver*);
-void MGRDestroyArgs(MGR_args**);
+void MGRCreate(MGR_args*, HYPRE_Solver*, HYPRE_Solver*);
 
 #endif /* MGR_HEADER */

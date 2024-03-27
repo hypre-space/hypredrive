@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "fsai.h"
@@ -41,9 +41,9 @@ FSAIGetValidValues(const char* key)
 {
    if (!strcmp(key, "algo_type"))
    {
-      static StrIntMap map[] = {{"bj-afsai",     0},
-                                {"bj-afsai-omp", 1},
-                                {"bj-sfsai",     2}};
+      static StrIntMap map[] = {{"bj-afsai",     1},
+                                {"bj-afsai-omp", 2},
+                                {"bj-sfsai",     3}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }

@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "error.h"
@@ -99,6 +99,20 @@ ErrorCodeActive(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * DistributedErrorCodeActive
+ *-----------------------------------------------------------------------------*/
+
+bool
+DistributedErrorCodeActive(MPI_Comm comm)
+{
+   uint32_t flag;
+
+   MPI_Allreduce(&global_error_code, &flag, 1, MPI_UINT32_T, MPI_BOR, comm);
+
+   return (flag == ERROR_NONE) ? false : true;
+}
+
+/*-----------------------------------------------------------------------------
  * ErrorCodeDescribe
  *-----------------------------------------------------------------------------*/
 
@@ -138,6 +152,11 @@ ErrorCodeDescribe(void)
    if (global_error_code & ERROR_MISSING_DOFMAP)
    {
       ErrorMsgAdd("Missing dofmap info needed by MGR!");
+   }
+
+   if (global_error_code & ERROR_UNKNOWN_HYPREDRV_OBJ)
+   {
+      ErrorMsgAdd("HYPREDRV object is not set properly!!");
    }
 }
 

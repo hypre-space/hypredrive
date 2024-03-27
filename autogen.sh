@@ -1,10 +1,10 @@
 #!/bin/sh
 
 set -e
-autoscan
-aclocal
-autoheader
-autoconf
+libtoolize --force --copy
+#autoscan
+#autoheader
+autoreconf -i
 automake --add-missing --copy
 
 echo "Bootstrap done! Now, run './configure'"

@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #ifndef ARGS_HEADER
@@ -39,6 +39,7 @@ typedef struct input_args_struct {
 
 void InputArgsCreate(input_args**);
 void InputArgsDestroy(input_args**);
+void InputArgsRead(MPI_Comm, char*, char**);
 void InputArgsParse(MPI_Comm, int, char**, input_args**);
 
 #endif /* ARGS_HEADER */

@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "containers.h"
@@ -16,8 +16,8 @@ IntArrayCreate(size_t size)
 {
    IntArray* int_array;
 
-   int_array = (IntArray*) malloc(sizeof(IntArray));
-   int_array->data = (int*) malloc(size * sizeof(int));
+   int_array = malloc(sizeof(IntArray));
+   int_array->data = malloc(size * sizeof(int));
    int_array->size = size;
    int_array->num_unique_entries = 0;
 
@@ -94,6 +94,47 @@ StrToIntArray(const char* string, IntArray **int_array_ptr)
 
    /* Set output pointer */
    *int_array_ptr = int_array;
+}
+
+/*-----------------------------------------------------------------------------
+ * StrToStackIntArray
+ *-----------------------------------------------------------------------------*/
+
+void
+StrToStackIntArray(const char* string, StackIntArray *int_array)
+{
+   char      *buffer;
+   char      *token;
+   int        count;
+
+   /* Find number of elements in array */
+   buffer = strdup(string);
+   token  = strtok(buffer, "[], ");
+   count  = 0;
+   while (token)
+   {
+      count++;
+      token = strtok(NULL, "[], ");
+   }
+   free(buffer);
+
+   /* Set StackIntArray size */
+   int_array->size = (count < MAX_STACK_ARRAY_LENGTH) ? count : MAX_STACK_ARRAY_LENGTH - 1;
+
+   /* Build array */
+   buffer = strdup(string);
+   token  = strtok(buffer, "[], ");
+   count  = 0;
+   while (token)
+   {
+      if (count < MAX_STACK_ARRAY_LENGTH)
+      {
+         int_array->data[count] = atoi(token);
+      }
+      count++;
+      token = strtok(NULL, "[], ");
+   }
+   free(buffer);
 }
 
 /*-----------------------------------------------------------------------------

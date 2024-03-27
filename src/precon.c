@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "precon.h"
@@ -12,6 +12,7 @@ static const FieldOffsetMap precon_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(precon_args, mgr, MGRSetArgs),
    FIELD_OFFSET_MAP_ENTRY(precon_args, ilu, ILUSetArgs),
    FIELD_OFFSET_MAP_ENTRY(precon_args, fsai, FSAISetArgs),
+   FIELD_OFFSET_MAP_ENTRY(precon_args, reuse, FieldTypeIntSet)
 };
 
 #define PRECON_NUM_FIELDS (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
@@ -80,6 +81,16 @@ PreconGetValidTypeIntMap(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * PreconSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+PreconSetDefaultArgs(precon_args *args)
+{
+   args->reuse = 0;
+}
+
+/*-----------------------------------------------------------------------------
  * PreconSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
@@ -106,30 +117,35 @@ void
 PreconCreate(precon_t         precon_method,
              precon_args     *args,
              IntArray        *dofmap,
-             HYPRE_Solver    *precon_ptr)
+             HYPRE_Precon    *precon_ptr)
 {
+   HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
+
    switch (precon_method)
    {
       case PRECON_BOOMERAMG:
-         AMGCreate(&args->amg, precon_ptr);
+         AMGCreate(&args->amg, &precon->main);
          break;
 
       case PRECON_MGR:
          MGRSetDofmap(&args->mgr, dofmap);
-         MGRCreate(&args->mgr, precon_ptr);
+         MGRCreate(&args->mgr, &precon->main, &precon->aux);
          break;
 
       case PRECON_ILU:
-         ILUCreate(&args->ilu, precon_ptr);
+         ILUCreate(&args->ilu, &precon->main);
          break;
 
       case PRECON_FSAI:
-         FSAICreate(&args->fsai, precon_ptr);
+         FSAICreate(&args->fsai, &precon->main);
          break;
 
       default:
-         *precon_ptr = NULL;
+         precon->main = NULL;
+         precon->aux  = NULL;
    }
+
+   *precon_ptr = precon;
 }
 
 /*-----------------------------------------------------------------------------
@@ -137,33 +153,49 @@ PreconCreate(precon_t         precon_method,
  *-----------------------------------------------------------------------------*/
 
 void
-PreconDestroy(precon_t      precon_method,
-              HYPRE_Solver *precon_ptr)
+PreconDestroy(precon_t       precon_method,
+              precon_args   *args,
+              HYPRE_Precon  *precon_ptr)
 {
-   if (*precon_ptr)
+   HYPRE_Precon precon = *precon_ptr;
+
+   if (!precon)
+   {
+      return;
+   }
+
+   if (precon->main)
    {
       switch (precon_method)
       {
          case PRECON_BOOMERAMG:
-            HYPRE_BoomerAMGDestroy(*precon_ptr);
+            HYPRE_BoomerAMGDestroy(precon->main);
             break;
 
          case PRECON_MGR:
-            HYPRE_MGRDestroy(*precon_ptr);
+            HYPRE_MGRDestroy(precon->main);
+            if (args->mgr.coarsest_level.type == 0)
+            {
+               HYPRE_BoomerAMGDestroy(precon->aux);
+               precon->aux = NULL;
+            }
             break;
 
          case PRECON_ILU:
-            HYPRE_ILUDestroy(*precon_ptr);
+            HYPRE_ILUDestroy(precon->main);
             break;
 
          case PRECON_FSAI:
-            HYPRE_FSAIDestroy(*precon_ptr);
+            HYPRE_FSAIDestroy(precon->main);
             break;
 
          default:
             return;
       }
 
-      *precon_ptr = NULL;
+      precon->main = NULL;
    }
+
+   free(*precon_ptr);
+   *precon_ptr = NULL;
 }

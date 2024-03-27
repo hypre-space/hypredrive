@@ -1,11 +1,12 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "mgr.h"
+#include "stats.h"
 #include "gen_macros.h"
 
 #define MGRcls_FIELDS(_prefix) \
@@ -23,7 +24,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
 
 #define MGRlvl_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, FieldTypeIntArraySet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, FieldTypeStackIntArraySet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_level_type, FieldTypeIntSet) \
@@ -90,7 +91,7 @@ MGRclsSetDefaultArgs(MGRcls_args *args)
 void
 MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
 {
-   args->type = 0;
+   args->type = 7;
    args->num_sweeps = 1;
 
    AMGSetDefaultArgs(&args->amg); args->amg.max_iter = 0;
@@ -117,7 +118,7 @@ MGRgrlxSetDefaultArgs(MGRgrlx_args *args)
 void
 MGRlvlSetDefaultArgs(MGRlvl_args *args)
 {
-   args->f_dofs             = NULL;
+   args->f_dofs             = STACK_INTARRAY_CREATE();
    args->prolongation_type  = 0;
    args->restriction_type   = 0;
    args->coarse_level_type  = 0;
@@ -179,7 +180,8 @@ MGRfrlxGetValidValues(const char* key)
    {
       static StrIntMap map[] = {{"",        -1},
                                 {"none",    -1},
-                                {"single",   0},
+                                {"single",   7},
+                                {"jacobi",   7},
                                 {"v(1,0)",   1},
                                 {"amg",      2},
                                 {"ilu",     16},
@@ -253,7 +255,8 @@ MGRlvlGetValidValues(const char* key)
                                 {"jacobi",      2},
                                 {"approx-inv",  3},
                                 {"blk-jacobi", 12},
-                                {"cpr-like",   13}};
+                                {"cpr-like",   13},
+                                {"columped",   14}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -263,7 +266,8 @@ MGRlvlGetValidValues(const char* key)
                                 {"non-galerkin",   1},
                                 {"cpr-like-diag",  2},
                                 {"cpr-like-bdiag", 3},
-                                {"approx-inv",     4}};
+                                {"approx-inv",     4},
+                                {"rai",            5}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -365,24 +369,6 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
 }
 
 /*-----------------------------------------------------------------------------
- * MGRDestroyArgs
- *-----------------------------------------------------------------------------*/
-
-void
-MGRDestroyArgs(MGR_args **args_ptr)
-{
-   MGR_args *args;
-
-   args = *args_ptr;
-   for (int i = 0; i < args->num_levels - 1; i++)
-   {
-      IntArrayDestroy(&args->level[i].f_dofs);
-   }
-
-   *args_ptr = NULL;
-}
-
-/*-----------------------------------------------------------------------------
  * MGRConvertArgInt
  *-----------------------------------------------------------------------------*/
 
@@ -424,7 +410,7 @@ MGRSetDofmap(MGR_args *args, IntArray *dofmap)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
+MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
 {
    HYPRE_Solver   precon;
    HYPRE_Solver   csolver;
@@ -456,11 +442,11 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
       c_dofs[lvl] = (HYPRE_Int*) malloc(num_dofs * sizeof(HYPRE_Int));
-      num_c_dofs[lvl] = num_dofs_last - args->level[lvl].f_dofs->size;
+      num_c_dofs[lvl] = num_dofs_last - args->level[lvl].f_dofs.size;
 
-      for (i = 0; i < args->level[lvl].f_dofs->size; i++)
+      for (i = 0; i < args->level[lvl].f_dofs.size; i++)
       {
-         inactive_dofs[args->level[lvl].f_dofs->data[i]] = 1;
+         inactive_dofs[args->level[lvl].f_dofs.data[i]] = 1;
          --num_dofs_last;
       }
 
@@ -500,6 +486,16 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_MGRSetFSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, frelax);
    }
 
+   /* Config f-relaxation at level > 0 (valid only for AMG for now) */
+   for (i = 1; i < num_levels; i++)
+   {
+      if (args->level[i].f_relaxation.type == 2)
+      {
+         AMGCreate(&args->level[i].f_relaxation.amg, &frelax);
+         HYPRE_MGRSetFSolverAtLevel(i, precon, frelax);
+      }
+   }
+
    /* Config coarsest level solver */
    if (args->coarsest_level.type == 0)
    {
@@ -507,8 +503,9 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, csolver);
    }
 
-   /* Set output pointer */
-   *precon_ptr = precon;
+   /* Set output pointers */
+   *precon_ptr  = precon;
+   *csolver_ptr = csolver;
 
    /* Free memory */
    free(inactive_dofs);

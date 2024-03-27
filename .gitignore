@@ -1,19 +1,34 @@
+###############
+# Miscellaneous
+###############
 *.o
+*.lo
 *.btr
 .deps
 .dirstamp
+*.~HEAD~*
+old-*
+*bkp*
+build.sh
+*.tar.gz
+.gdbinit
+.libs/
+install*/
 
-hypre_app
+############
+# Executable
+############
+hypredrive*
 
+###########
+# Autotools
+###########
 aclocal.m4
 autoscan.log
 autom4te.cache/
 configure~
 configure.scan
 config.guess
-config.h
-config.h.in
-config.h.in~
 config.log
 config.status
 config.sub
@@ -27,3 +42,34 @@ Makefile
 Makefile.in
 missing
 stamp-*
+HYPREDRV_config.h
+HYPREDRV_config.h.in
+HYPREDRV_config.h.in~
+
+###########
+# Libtools
+###########
+ar-lib
+libHYPREDRV.la
+libtool
+ltmain.sh
+m4/libtool.m4
+m4/ltoptions.m4
+m4/ltsugar.m4
+m4/ltversion.m4
+m4/lt~obsolete.m4
+
+###############
+# Documentation
+###############
+Doxyfile
+TAGS
+docs/usrman-src/_*
+docs/usrman-build
+docs/html
+docs/latex
+docs/man
+docs/rtf
+docs/xml
+docs/hypredrive.ps
+docs/hypredrive.tag

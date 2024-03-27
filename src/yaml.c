@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "yaml.h"
@@ -37,6 +37,108 @@ YAMLtreeDestroy(YAMLtree** tree_ptr)
       free(tree);
       *tree_ptr = NULL;
    }
+}
+
+/*-----------------------------------------------------------------------------
+ * YAMLtextRead
+ *-----------------------------------------------------------------------------*/
+
+void
+YAMLtextRead(const char *dirname, const char *basename, int level, size_t *length_ptr, char **text_ptr)
+{
+   FILE   *fp;
+   char   *key, *val, *sep;
+   char    line[MAX_LINE_LENGTH];
+   char    backup[MAX_LINE_LENGTH];
+   char   *filename;
+   char   *new_text;
+   int     inner_level, pos;
+   size_t  num_whitespaces = 2 * level;
+   size_t  new_length;
+
+   /* Construct the whole filename */
+   CombineFilename(dirname, basename, &filename);
+
+   /* Open file */
+   fp = fopen(filename, "r");
+   if (!fp)
+   {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAddInvalidFilename(filename);
+      return;
+   }
+   free(filename);
+
+   while (fgets(line, sizeof(line), fp))
+   {
+      /* Save the original line */
+      strcpy(backup, line);
+
+      /* Remove trailing newline character */
+      line[strcspn(line, "\n")] = '\0';
+
+      /* Ignore empty lines and comments */
+      if (line[0] == '\0' || line[0] == '#')
+      {
+         continue;
+      }
+
+      /* Check for divisor character */
+      if ((sep = strchr(line, ':')) == NULL)
+      {
+         continue;
+      }
+
+      *sep = '\0';
+      key = line;
+      val = sep + 1;
+
+      /* Trim leading spaces */
+      while (*key == ' ') key++;
+      while (*val == ' ') val++;
+
+      if (!strcmp(key, "include"))
+      {
+         /* Compute indendation */
+         pos = 0;
+         while (line[pos] == ' ')
+         {
+            pos++;
+         }
+
+         /* Calculate node level */
+         inner_level = pos / 2;
+
+         /* Recursively read the content of the included file */
+         YAMLtextRead(dirname, val, inner_level, length_ptr, text_ptr);
+      }
+      else
+      {
+         /* Regular line, append it to the text */
+         new_length = *length_ptr + strlen(backup) + num_whitespaces;
+         new_text   = (char *) realloc(*text_ptr, new_length + 1);
+         if (!new_text)
+         {
+            fclose(fp);
+            return;
+         }
+         *text_ptr = new_text;
+
+         /* Fill with base whitespaces */
+         memset((*text_ptr) + (*length_ptr), ' ', num_whitespaces);
+
+         /* Copy backup line */
+         memcpy((*text_ptr) + (*length_ptr) + num_whitespaces, backup, strlen(backup));
+
+         /* Set new null terminator */
+         (*text_ptr)[new_length] = '\0';
+
+         /* Update length pointer */
+         *length_ptr = new_length;
+      }
+   }
+
+   fclose(fp);
 }
 
 /*-----------------------------------------------------------------------------
@@ -191,7 +293,6 @@ void
 YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
 {
    YAMLnode *child;
-   int       i, divisor = 80;
 
    if (!tree)
    {
@@ -200,14 +301,14 @@ YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
       return;
    }
 
-   for (i = 0; i < divisor; i++) { printf("-"); } printf("\n");
+   PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH)
    child = tree->root->children;
    while (child != NULL)
    {
       YAMLnodePrint(child, print_mode);
       child = child->next;
    }
-   for (i = 0; i < divisor; i++) { printf("-"); } printf("\n");
+   PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH)
 }
 
 /******************************************************************************
@@ -224,22 +325,22 @@ YAMLnodeCreate(char *key, char* val, int level)
 
    node             = (YAMLnode*) malloc(sizeof(YAMLnode));
    node->level      = level;
-   node->key        = strdup(key);
+   node->key        = StrTrim(strdup(key));
    node->mapped_val = NULL;
    node->valid      = YAML_NODE_VALID; // We assume nodes are valid by default
    node->parent     = NULL;
    node->children   = NULL;
    node->next       = NULL;
 
-   /* If the key contains "filename", "node->val" will be the same as "val".
+   /* If the key contains ('filename', 'basename'), "node->val" will be the same as "val".
       Otherwise, "node->val" will be set as "val" with all lowercase letters */
-   if (strstr(key, "filename") != NULL)
+   if (strstr(key, "filename") || strstr(key, "basename"))
    {
-      node->val     = strdup(val);
+      node->val     = StrTrim(strdup(val));
    }
    else
    {
-      node->val     = StrToLowerCase(strdup(val));
+      node->val     = StrToLowerCase(StrTrim(strdup(val)));
    }
 
    return node;

@@ -1,22 +1,12 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "info.h"
-
-/*--------------------------------------------------------------------------
- * PrintUsage
- *--------------------------------------------------------------------------*/
-
-void
-PrintUsage(const char *argv0)
-{
-   fprintf(stderr, "Usage: %s <filename>\n", argv0);
-   fprintf(stderr, "  filename: config file in YAML format\n");
-}
+#include "HYPRE_config.h"
 
 /*--------------------------------------------------------------------------
  * PrintLibInfo

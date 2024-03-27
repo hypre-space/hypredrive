@@ -1,8 +1,8 @@
 /******************************************************************************
- * Copyright (c) 1998 Lawrence Livermore National Security, LLC, HYPRE and GEOS
- * Project Developers. See the top-level COPYRIGHT file for details.
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
  *
- * SPDX-License-Identifier: (Apache-2.0 OR MIT)
+ * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
 #include "args.h"
@@ -152,6 +152,7 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
    }
 
    LinearSystemSetArgsFromYAML(&iargs->ls, parent);
+   LinearSystemSetNumSystems(&iargs->ls);
 }
 
 /*-----------------------------------------------------------------------------
@@ -175,24 +176,44 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
       YAML_NODE_SET_VALID(parent);
    }
 
-   /* Check if a solver type was set */
-   if (!parent->children)
+   /* Check if the solver type was set with a single (key, val) pair */
+   if (!strcmp(parent->val, ""))
    {
-      ErrorCodeSet(ERROR_MISSING_SOLVER);
-      return;
-   }
+      /* Check if a solver type was set */
+      if (!parent->children)
+      {
+         ErrorCodeSet(ERROR_MISSING_SOLVER);
+         return;
+      }
 
-   /* Check if more than one solver type was set (this is not supported!) */
-   if (parent->children->next)
+      /* Check if more than one solver type was set (this is not supported!) */
+      if (parent->children->next)
+      {
+         ErrorCodeSet(ERROR_EXTRA_KEY);
+         ErrorMsgAddExtraKey(parent->children->next->key);
+         return;
+      }
+
+      iargs->solver_method = StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
+                                                    parent->children->key);
+
+      SolverSetArgsFromYAML(&iargs->solver, parent);
+   }
+   else
    {
-      ErrorCodeSet(ERROR_EXTRA_KEY);
-      ErrorMsgAddExtraKey(parent->children->next->key);
-      return;
-   }
+      iargs->solver_method = StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
+                                                    parent->val);
 
-   iargs->solver_method = StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
-                                                 parent->children->key);
-   SolverSetArgsFromYAML(&iargs->solver, parent);
+      /* Hack for setting default parameters */
+      YAMLnode *dummy = YAMLnodeCreate("solver", "", 0);
+      dummy->children = YAMLnodeCreate(parent->val, "", 1);
+      dummy->children->children = YAMLnodeCreate("print_level", "0", 2);
+
+      SolverSetArgsFromYAML(&iargs->solver, dummy);
+
+      /* Free memory */
+      YAMLnodeDestroy(dummy);
+   }
 }
 
 /*-----------------------------------------------------------------------------
@@ -216,147 +237,85 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
       YAML_NODE_SET_VALID(parent);
    }
 
-   /* Check if a preconditioner type was set */
-   if (!parent->children)
+   /* Check if the solver type was set with a single (key, val) pair */
+   if (!strcmp(parent->val, ""))
    {
-      ErrorCodeSet(ERROR_MISSING_PRECON);
-      return;
-   }
+      /* Check if a preconditioner type was set */
+      if (!parent->children)
+      {
+         ErrorCodeSet(ERROR_MISSING_PRECON);
+         return;
+      }
 
-   /* Check if more than one preconditioner type was set (this is not supported!) */
-   if (parent->children->next)
+      /* Check if more than one preconditioner type was set (this is not supported!) */
+      if (parent->children->next)
+      {
+         ErrorCodeSet(ERROR_EXTRA_KEY);
+         ErrorMsgAddExtraKey(parent->children->next->key);
+         return;
+      }
+
+      iargs->precon_method = StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
+                                                    parent->children->key);
+
+      PreconSetArgsFromYAML(&iargs->precon, parent);
+   }
+   else
    {
-      ErrorCodeSet(ERROR_EXTRA_KEY);
-      ErrorMsgAddExtraKey(parent->children->next->key);
-      return;
-   }
+      iargs->precon_method = StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
+                                                    parent->val);
 
-   iargs->precon_method = StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
-                                                 parent->children->key);
-   PreconSetArgsFromYAML(&iargs->precon, parent);
+      /* Hack for setting default parameters */
+      YAMLnode *dummy = YAMLnodeCreate("preconditioner", "", 0);
+      dummy->children = YAMLnodeCreate(parent->val, "", 1);
+      dummy->children->children = YAMLnodeCreate("print_level", "0", 2);
+
+      PreconSetArgsFromYAML(&iargs->precon, dummy);
+
+      /* Free memory */
+      YAMLnodeDestroy(dummy);
+   }
 }
 
 /*-----------------------------------------------------------------------------
- * InputArgsExpand
- *
- * Expands an input file with include directives to a single text pointer.
+ * InputArgsRead
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsExpand(const char* basefilename, int *text_size, char **text_ptr)
+InputArgsRead(MPI_Comm comm, char *filename, char **text_ptr)
 {
-   FILE      *fp;
-   size_t     file_sizes[3], file_sizes_sum[3];
-   char       include_keys[2][24]  = {"solver_include", "preconditioner_include"};
-   char      *include_filenames[2] = {NULL, NULL};
-   char       line[MAX_LINE_LENGTH];
-   char      *key, *val, *sep;
-   char      *text;
-   int        i;
+   size_t        text_size = 0;
+   int           level = 0;
+   char         *text = NULL;
+   char         *dirname = NULL;
+   char         *basename = NULL;
+   int           myid;
 
-   fp = fopen(basefilename, "r");
-   if (!fp)
+   MPI_Comm_rank(comm, &myid);
+
+   /* Split filename into dirname and basename */
+   SplitFilename(filename, &dirname, &basename);
+
+   /* Rank 0: Expand text from base file */
+   if (!myid) YAMLtextRead(dirname, basename, level, &text_size, &text);
+   if (DistributedErrorCodeActive(comm))
    {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAddInvalidFilename(basefilename);
       return;
    }
 
-   /* Determine the base file size */
-   fseek(fp, 0, SEEK_END);
-   file_sizes[0] = ftell(fp);
-   file_sizes_sum[0] = file_sizes[0];
-   file_sizes_sum[1] = file_sizes[0];
-   file_sizes_sum[2] = file_sizes[0];
-   fseek(fp, 0, SEEK_SET);
-
-   /* Do we have an include file for the preconditioner and solver? */
-   while (fgets(line, sizeof(line), fp))
-   {
-      /* Remove trailing newline character */
-      line[strcspn(line, "\n")] = '\0';
-
-      /* Ignore empty lines and comments */
-      if (line[0] == '\0' || line[0] == '#')
-      {
-         continue;
-      }
-
-      /* Check for divisor character */
-      if ((sep = strchr(line, ':')) == NULL)
-      {
-         continue;
-      }
-
-      *sep = '\0';
-      key = line;
-      val = sep + 1;
-
-      /* Trim leading spaces */
-      while (*key == ' ') key++;
-      while (*val == ' ') val++;
-
-      for (i = 0; i < 2; i++)
-      {
-         if (!strcmp(key, include_keys[i]))
-         {
-            include_filenames[i] = strdup(val);
-         }
-      }
-   }
-   fclose(fp);
-
-   /* Find sizes of included files */
-   for (i = 0; i < 2; i++)
-   {
-      if (include_filenames[i])
-      {
-         fp = fopen(include_filenames[i], "r");
-         if (!fp)
-         {
-            ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-            ErrorMsgAddInvalidFilename(include_filenames[i]);
-            return;
-         }
-
-         fseek(fp, 0, SEEK_END);
-         file_sizes[i + 1] = ftell(fp);
-         file_sizes_sum[i + 1] = file_sizes_sum[i] + file_sizes[i + 1];
-         fseek(fp, 0, SEEK_SET);
-         fclose(fp);
-      }
-   }
-
-   /* Allocate memory for the expanded text */
-   text = (char *) malloc(file_sizes_sum[2] + 1);
-
-   /* Read the expanded text */
-   fp = fopen(basefilename, "r");
-   if (fread(text, 1, file_sizes[0], fp) != file_sizes[0]) return;
-   fclose(fp);
-   for (i = 0; i < 2; i++)
-   {
-      if (include_filenames[i])
-      {
-         fp = fopen(include_filenames[i], "r");
-         if (fread(text + file_sizes_sum[i], 1, file_sizes[i + 1], fp) != file_sizes[i + 1])
-         {
-            return;
-         }
-         fclose(fp);
-      }
-   }
-
-   /* Null-terminate the string */
-   text[file_sizes_sum[2]] = '\0';
-
    /* Free memory */
-   if (include_filenames[0]) free(include_filenames[0]);
-   if (include_filenames[1]) free(include_filenames[1]);
+   free(dirname);
+   free(basename);
+
+   /* Broadcast the text size */
+   MPI_Bcast(&text_size, 1, MPI_UNSIGNED_LONG, 0, comm);
+
+   /* Broadcast the text */
+   if (myid) text = (char*) malloc(text_size);
+   MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
 
    /* Set output pointer */
-   *text_ptr  = text;
-   *text_size = file_sizes_sum[2] + 1;
+   *text_ptr = text;
 }
 
 /*-----------------------------------------------------------------------------
@@ -367,24 +326,14 @@ void
 InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
 {
    input_args   *iargs;
+   char         *text;
    YAMLtree     *tree;
-
-   int           text_size;
-   char         *text = NULL;
-
    int           myid;
 
    MPI_Comm_rank(comm, &myid);
 
-   /* Rank 0: Expand text from base file */
-   if (!myid) InputArgsExpand(argv[1], &text_size, &text);
-
-   /* Broadcast the text size */
-   MPI_Bcast(&text_size, 1, MPI_INT, 0, comm);
-
-   /* Broadcast the text */
-   if (myid) text = (char*) malloc(text_size * sizeof(char));
-   MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
+   /* Read input arguments from file */
+   InputArgsRead(comm, argv[0], &text);
 
    /* Build YAML tree */
    YAMLtreeBuild(text, &tree);
@@ -397,13 +346,16 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    }
    MPI_Barrier(comm);
 
+   /* Free memory */
+   free(text);
+
    /* TODO: check if any config option has been passed in via CLI.
             If so, overwrite the data stored in the YAMLtree object
             with it. */
-   if (argc > 2)
+   if (argc > 1)
    {
       /* Update YAML tree with command line arguments info */
-      YAMLtreeUpdate(argc, argv, tree);
+      YAMLtreeUpdate(argc - 1, argv + 1, tree);
    }
 
    /*--------------------------------------------
@@ -415,6 +367,10 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    InputArgsParseLinearSystem(iargs, tree);
    InputArgsParseSolver(iargs, tree);
    InputArgsParsePrecon(iargs, tree);
+
+   /* Set auxiliary data in the Stats structure */
+   StatsSetNumReps(iargs->num_repetitions);
+   StatsSetNumLinearSystems(iargs->ls.num_systems);
 
    /* Rank 0: Print tree to stdout */
    if (!myid)
@@ -430,5 +386,4 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
 
    *args_ptr = iargs;
    YAMLtreeDestroy(&tree);
-   free(text);
 }
