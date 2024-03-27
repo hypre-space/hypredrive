@@ -252,9 +252,101 @@ AMGintGetValidValues(const char* key)
    }
 }
 
+/*-----------------------------------------------------------------------------
+ * AMGcsnGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+AMGcsnGetValidValues(const char* key)
+{
+   if (!strcmp(key, "type"))
+   {
+      static StrIntMap map[] = {{"CLJP",     0},
+                                {"RS",       1},
+                                {"RS3",      3},
+                                {"Falgout",  6},
+                                {"PMIS",     8},
+                                {"HMIS",    10}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "rap2") ||
+            !strcmp(key, "mod_rap2") ||
+            !strcmp(key, "keep_transpose"))
+   {
+      return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * AMGcsnGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+AMGaggGetValidValues(const char* key)
+{
+   if (!strcmp(key, "prolongation_type"))
+   {
+      static StrIntMap map[] = {{"2_stage_extended+i",  1},
+                                {"2_stage_standard",    2},
+                                {"2_stage_extended",    3},
+                                {"multipass",           4},
+                                {"MM_extended",         5},
+                                {"MM_extended+i",       6},
+                                {"MM_extended+e",       7}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
+#if 0
+/*-----------------------------------------------------------------------------
+ * AMGcsnGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+AMGrlxGetValidValues(const char* key)
+{
+   if (!strcmp(key, "down_type"))
+   {
+      static StrIntMap map[] = {{"jacobi-non-mv",   0},
+                                {"hybrid-GS",    3},
+                                {"multipass",           4},
+                                {"MM_extended",         5},
+                                {"MM_extended+i",       6},
+                                {"MM_extended+e",       7}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "up_type"))
+   {
+      static StrIntMap map[] = {{"jacobi-non-mv",   0},
+                                {"gauss-seidel",    2},
+                                {"hybrid",    3},
+                                {"multipass",           4},
+                                {"MM_extended",         5},
+                                {"MM_extended+i",       6},
+                                {"MM_extended+e",       7}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+#endif
+
 /* TODO */
-StrIntMapArray AMGcsnGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
-StrIntMapArray AMGaggGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
 StrIntMapArray AMGrlxGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
 StrIntMapArray AMGsmtGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
 StrIntMapArray AMGGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
