@@ -51,7 +51,7 @@ preconditioner:
           trunc_factor: 0.0
           max_nnz_row: 4
         coarsening: 
-          type: hmis
+          type: pmis
           strong_th: 0.3
           seq_amg_th: 0
           max_coarse_size: 64
@@ -59,7 +59,7 @@ preconditioner:
           max_levels: 25
           num_functions: 1
           rap2: off
-          mod_rap2: off
+          mod_rap2: on
           keep_transpose: off
           max_row_sum: 0.9
         aggressive: 
@@ -94,16 +94,16 @@ Initial L2 norm of residual: 1.000000e+00
 
 Iters     resid.norm     conv.rate  rel.res.norm
 -----    ------------    ---------- ------------
-    1    2.956094e-01    0.295609   2.956094e-01
-    2    4.573210e-02    0.154704   4.573210e-02
-    3    4.994858e-03    0.109220   4.994858e-03
-    4    5.017624e-04    0.100456   5.017624e-04
-    5    4.972578e-05    0.099102   4.972578e-05
-    6    4.278788e-06    0.086048   4.278788e-06
-    7    3.294042e-07    0.076985   3.294042e-07
+    1    2.968475e-01    0.296847   2.968475e-01
+    2    4.747230e-02    0.159922   4.747230e-02
+    3    5.826923e-03    0.122744   5.826923e-03
+    4    8.014255e-04    0.137538   8.014255e-04
+    5    1.058942e-04    0.132132   1.058942e-04
+    6    9.817816e-06    0.092713   9.817816e-06
+    7    7.880464e-07    0.080267   7.880464e-07
 
 
-Final L2 norm of residual: 3.294042e-07
+Final L2 norm of residual: 7.880464e-07
 
 
 
@@ -116,7 +116,7 @@ STATISTICS SUMMARY:
 |            |    LS build |       setup |       solve |    relative |             |
 |      Entry |       times |       times |       times |   res. norm |       iters |
 +------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.003 |       0.004 |       0.002 |    3.29e-07 |           7 |
+|          0 |       0.004 |       0.007 |       0.003 |    7.88e-07 |           7 |
 +------------+-------------+-------------+-------------+-------------+-------------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
