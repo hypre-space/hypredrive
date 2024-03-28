@@ -50,6 +50,11 @@ Yes, `hypredrive` supports GPU acceleration. Note that `hypre` also needs to be 
 with GPU support and the keyword ``exec_policy`` under ``general`` must be set to
 ``device``.
 
+Can I compile `hypredrive` on Windows machines?
+-----------------------------------------------
+
+No. At the moment, there are no plans to add Windows support.
+
 What should I do if I encounter an issue with `hypredrive`?
 -----------------------------------------------------------
 
