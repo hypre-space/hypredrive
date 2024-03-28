@@ -71,6 +71,9 @@ Users can install `hypredrive` by compiling from source, according to the steps 
    Replace ``${HYPREDRIVE_INSTALL_DIR}`` with your desired installation path for `hypredrive`,
    and ``${HYPRE_INSTALL_DIR}`` with the path to your installation of `hypre`.
 
+   For GPU support, add `--with-cuda` in the case of NVIDIA GPUs or `--with-hip` in the
+   case of AMD GPUs to the `./configure` line.
+
 4. Run ``make``:
 
     .. code-block:: bash

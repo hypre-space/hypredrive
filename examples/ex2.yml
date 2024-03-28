@@ -24,7 +24,7 @@ preconditioner:
       trunc_factor: 0.0
       max_nnz_row: 4
     coarsening:
-      type: hmis
+      type: pmis
       strong_th: 0.25
       seq_amg_th: 0
       max_coarse_size: 64
@@ -32,7 +32,7 @@ preconditioner:
       max_levels: 25
       num_functions: 1
       rap2: off
-      mod_rap2: off
+      mod_rap2: on
       keep_transpose: off
       max_row_sum: 0.9
     aggressive:

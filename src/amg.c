@@ -123,10 +123,12 @@ AMGcsnSetDefaultArgs(AMGcsn_args *args)
    args->type            = 8;
    args->mod_rap2        = 1;
    args->keep_transpose  = 1;
+   args->type            = 8;
 #else
    args->type            = 10;
    args->mod_rap2        = 0;
    args->keep_transpose  = 0;
+   args->type            = 10;
 #endif
    args->num_functions   = 1;
    args->seq_amg_th      = 0;
@@ -160,8 +162,13 @@ AMGaggSetDefaultArgs(AMGagg_args *args)
 void
 AMGrlxSetDefaultArgs(AMGrlx_args *args)
 {
+#if defined (HYPRE_USING_GPU)
+   args->down_type     = 18;
+   args->up_type       = 18;
+#else
    args->down_type     = 13;
    args->up_type       = 14;
+#endif
    args->coarse_type   = 9;
    args->down_sweeps   = -1;
    args->up_sweeps     = -1;
