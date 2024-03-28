@@ -37,7 +37,7 @@ Installing `hypredrive`
 
 Users can install `hypredrive` by compiling from source, according to the steps bellow:
 
-1. Download `hypredrive's` source code. This can be accomplished via ``git``:
+1. Download `hypredrive`'s source code. This can be accomplished via ``git``:
 
     .. code-block:: bash
 
@@ -99,5 +99,5 @@ Troubleshooting
 ---------------
 
 If you encounter any issues during the installation of `hypredrive`, please open a
-`GitHub issue <https://github.com/victorapm/hypredrive/issues>`_ and include a copy of the
+`GitHub issue <https://github.com/hypre-space/hypredrive/issues>`_ and include a copy of the
 ``config.log`` file, which is generated after running the ``configure`` script.

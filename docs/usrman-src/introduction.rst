@@ -8,13 +8,13 @@
 Introduction
 ============
 
-What is hypredrive?
+What is `hypredrive`?
 -------------------
 
-hypredrive is a high-level interface driver for hypre, a package for solving sparse linear
+`hypredrive` is a high-level interface driver for hypre, a package for solving sparse linear
 systems of equations. It's designed to make the process of building and solving linear
 systems easier by all steps can be configured via an input file in YAML format. Whether
-you are a researcher or an application library developer, hypredrive offers an easy way
+you are a researcher or an application library developer, `hypredrive` offers an easy way
 with low overhead to test or access the linear solvers provided by hypre
 
 Key Features
@@ -35,16 +35,16 @@ Key Features
 Getting Started
 ---------------
 
-To get started with hypredrive, you should first ensure that the software is properly
+To get started with `hypredrive`, you should first ensure that the software is properly
 installed on your system. For detailed installation instructions, please refer to the
 :ref:`Installation` section.
 
 Once the installation is complete, familiarize yourself with the the input file structure
-for hypredrive by reading through the :ref:`InputFileStructure` section. This will
-provide you with a good understanding of how to configure and run hypredrive for your
+for `hypredrive` by reading through the :ref:`InputFileStructure` section. This will
+provide you with a good understanding of how to configure and run `hypredrive` for your
 specific needs.
 
-Here's an example command to run hypredrive on a single process with a basic configuration file:
+Here's an example command to run `hypredrive` on a single process with a basic configuration file:
 
 .. code-block:: bash
 
@@ -58,16 +58,16 @@ file. You can find input file examples and detailed explanations in the :ref:`Ex
 Contributing
 ------------
 
-We welcome contributions from the community and are pleased that you're interested in helping improve hypredrive! This document provides guidelines and information on how you can contribute.
+We welcome contributions from the community and are pleased that you're interested in helping improve `hypredrive`! This document provides guidelines and information on how you can contribute.
 
 Ways to Contribute
 ^^^^^^^^^^^^^^^^^^
 
-There are many ways to contribute to hypredrive:
+There are many ways to contribute to `hypredrive`:
 
 - **Reporting Bugs:** If you encounter issues or bugs, please report them by opening an
   issue on our `GitHub issues page
-  <https://github.com/victorapm/hypredrive/issues>`_. Please provide as much detail as
+  <https://github.com/hypre-space/hypredrive/issues>`_. Please provide as much detail as
   possible to help us understand and address the issue.
 
 - **Feature Requests:** Are you a developer with ideas for new features or improvements?
