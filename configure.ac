@@ -30,17 +30,66 @@ AS_IF([test "x$enable_doxygen" = "xyes"], [
 AC_PROG_CC([mpicc])
 AM_PROG_CC_C_O()
 AM_PROG_AR
-LT_INIT([disable-shared enable-static])
+LT_INIT([disable-shared])
 
+dnl Specify hypre include directory
 AC_ARG_WITH([hypre-include],
             [AS_HELP_STRING([--with-hypre-include=DIR], [Required: Path to HYPRE include dir.])],
             [CFLAGS+=" -I$withval"],
             [AC_MSG_ERROR([--with-hypre-include=DIR is required. Please specify the path to the HYPRE include directory.])])
 
+dnl Specify hypre lib directory
 AC_ARG_WITH([hypre-lib],
             [AS_HELP_STRING([--with-hypre-lib=DIR], [Required: Path to HYPRE library dir.])],
             [LDFLAGS+=" -L$withval -Wl,-rpath,${withval}"],
             [AC_MSG_ERROR([--with-hypre-lib=DIR is required. Please specify the path to the HYPRE library directory.])])
+
+dnl Check for CUDA support
+AC_ARG_WITH([cuda],
+            [AS_HELP_STRING([--with-cuda], [Enable CUDA support])],
+            [with_cuda=yes],
+            [with_cuda=no])
+
+dnl Allow specifying CUDA home directory
+AC_ARG_WITH([cuda-home],
+            [AS_HELP_STRING([--with-cuda-home=DIR], [Specify CUDA home directory (default is taken from CUDA_HOME environment variable)])],
+            [cuda_home="$withval"],
+            [cuda_home="$CUDA_HOME"])
+
+dnl Verify CUDA_HOME is defined if CUDA support is enabled
+AS_IF([test "x$with_cuda" = "xyes"], [
+    AS_IF([test -z "$cuda_home"], [
+        AC_MSG_ERROR([CUDA home directory is not defined. Please define the CUDA_HOME environment variable or use --with-cuda-home=DIR.])
+    ])
+    LDFLAGS+=" -L$cuda_home/lib64 -Wl,-rpath,$cuda_home/lib64"
+    LIBS+=" -lcudart -lcusparse -lcublas -lcurand -lcusolver -lstdc++"
+])
+
+dnl Check for HIP support
+AC_ARG_WITH([hip],
+            [AS_HELP_STRING([--with-hip], [Enable HIP support])],
+            [with_hip=yes],
+            [with_hip=no])
+
+dnl Allow specifying ROCM home directory
+AC_ARG_WITH([rocm-path],
+            [AS_HELP_STRING([--with-rocm-path=DIR], [Specify ROCm installation directory])],
+            [rocm_path="$withval"],
+            [rocm_path="$ROCM_PATH"])
+
+dnl Verify ROCM_PATH is defined if HIP support is enabled
+AS_IF([test "x$with_hip" = "xyes"], [
+    AS_IF([test -z "$rocm_path"], [
+        AC_MSG_ERROR([ROCM home directory is not defined. Please define the ROCM_PATH environment variable or use --with-rocm-path=DIR.])
+    ])
+    LDFLAGS+=" -L$rocm_path/lib -Wl,-rpath,$rocm_path/lib"
+    LIBS+=" -lamdhip64 -lrocsparse -lrocblas -lrocrand -lrocsolver -lstdc++"
+])
+
+dnl Avoid using CUDA and HIP
+AS_IF([test "x$with_cuda" = "xyes" -a "x$with_hip" = "xyes"], [
+    AC_MSG_ERROR([--with-cuda and --with-hip options are mutually exclusive. Please choose one.])
+])
 
 AC_CHECK_LIB([m], [sin],
              [],
