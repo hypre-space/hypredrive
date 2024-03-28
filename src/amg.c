@@ -118,12 +118,13 @@ AMGintSetDefaultArgs(AMGint_args *args)
 void
 AMGcsnSetDefaultArgs(AMGcsn_args *args)
 {
-   args->type            = 10;
    args->rap2            = 0;
 #if defined (HYPRE_USING_GPU)
+   args->type            = 8;
    args->mod_rap2        = 1;
    args->keep_transpose  = 1;
 #else
+   args->type            = 10;
    args->mod_rap2        = 0;
    args->keep_transpose  = 0;
 #endif
@@ -389,6 +390,7 @@ AMGsmtGetValidValues(const char* key)
                                 {"ilu",       5},
                                 {"schwarz",   6},
                                 {"pilut",     7},
+                                {"parasails", 8},
                                 {"euclid",    9}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
