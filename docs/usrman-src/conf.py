@@ -52,6 +52,12 @@ exclude_patterns = []
 #
 html_theme = 'alabaster'
 
+# Add _static directory
+html_static_path = ['_static']
+
+# Ensure Sphinx includes custom JavaScript files
+html_js_files = ['remove-dollar-on-copy.js']
+
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
