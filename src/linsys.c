@@ -137,8 +137,12 @@ LinearSystemSetDefaultArgs(LS_args *args)
    args->rhs_mode = 0;
    args->type = 1;
    args->precon_reuse = 0;
-   args->exec_policy = 0;
    args->num_systems = 1;
+#if defined (HYPRE_USING_GPU)
+   args->exec_policy = 1;
+#else
+   args->exec_policy = 0;
+#endif
 }
 
 /*-----------------------------------------------------------------------------
