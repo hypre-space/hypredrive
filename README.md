@@ -40,9 +40,7 @@ running the first example from the top-level folder:
 
 ## Documentation
 
-Check the user's manual
-[here](https://github.com/hypre-space/hypredrive/blob/master/docs/usrman-hypredrive.pdf). Check the developer's manual
-[here](https://github.com/hypre-space/hypredrive/blob/master/docs/devman-hypredrive.pdf).
+Check *hypredrive*'s manual [here](https://hypredrive.readthedocs.io/en/latest/).
 
 ## Contributing
 
