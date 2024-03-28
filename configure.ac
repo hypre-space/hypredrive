@@ -30,7 +30,7 @@ AS_IF([test "x$enable_doxygen" = "xyes"], [
 AC_PROG_CC([mpicc])
 AM_PROG_CC_C_O()
 AM_PROG_AR
-LT_INIT()
+LT_INIT([disable-shared enable-static])
 
 AC_ARG_WITH([hypre-include],
             [AS_HELP_STRING([--with-hypre-include=DIR], [Required: Path to HYPRE include dir.])],
