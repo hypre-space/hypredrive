@@ -21,9 +21,12 @@ The instructions for building `hypredrive` are given below:
 ```
 
 Note:
-1. This assumes that [hypre](https://github.com/hypre-space/hypre) has been installed at `${HYPRE_INSTALL_DIR}`
-2. The first step `./autogen.sh` must be executed only once after cloning this repository.
-3. An installation prefix can be passed to `./configure` such as `--prefix=${INSTALL_PATH}`.
+1. The first step `./autogen.sh` must be executed only once after cloning this repository.
+2. [hypre](https://github.com/hypre-space/hypre) needs to be installed at
+   `${HYPRE_INSTALL_DIR}`.
+3. For GPU support, add `--with-cuda` for NVIDIA GPUs or `--with-hip` for AMD GPUs in the
+   `./configure` line.
+4. An installation prefix can be passed to `./configure` such as `--prefix=${INSTALL_PATH}`.
    For more configure options, type `./configure -help`.
 
 ## Examples
