@@ -1,4 +1,4 @@
-# hypredrive
+# *hypredrive*
 
 High-level interface for solving linear systems with hypre, providing a user-friendly way to leverage its functionalities. Key features are:
 
@@ -9,7 +9,7 @@ High-level interface for solving linear systems with hypre, providing a user-fri
 
 ## Getting Started
 
-The instructions for building `hypredrive` are given below:
+The instructions for building *hypredrive* are given below:
 
 ```
  $ ./autogen.sh
@@ -46,7 +46,7 @@ Check the user's manual
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING) for details on contributing to `hypredrive`,
+Please read [CONTRIBUTING.md](CONTRIBUTING) for details on contributing to *hypredrive*,
 including the process for submitting pull requests to us.
 
 ## License
