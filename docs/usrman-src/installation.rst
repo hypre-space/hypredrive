@@ -37,36 +37,36 @@ Installing `hypredrive`
 
 Users can install `hypredrive` by compiling from source, according to the steps bellow:
 
-1. Download `hypredrive's` source code. This can be accomplished via ``git``:
+1. Download `hypredrive`'s source code. This can be accomplished via ``git``:
 
     .. code-block:: bash
 
-        git clone https://github.com/victorapm/hypredrive.git
+        $ git clone https://github.com/hypre-space/hypredrive.git
 
    Another option, which does not download the full repository history, is to use ``wget``:
 
     .. code-block:: bash
 
-        wget https://github.com/victorapm/hypredrive/archive/refs/heads/master.zip
-        unzip master.zip
-        rm master.zip
-        mv hypredrive-master hypredrive
+        $ wget https://github.com/hypre-space/hypredrive/archive/refs/heads/master.zip
+        $ unzip master.zip
+        $ rm master.zip
+        $ mv hypredrive-master hypredrive
 
 2. Navigate to the cloned directory and run the ``autogen`` script:
 
     .. code-block:: bash
 
-        cd hypredrive
-        ./autogen.sh
+        $ cd hypredrive
+        $ ./autogen.sh
 
 3. Run the configure script while informing where the `hypre` library and include files can
    be found:
 
     .. code-block:: bash
 
-        ./configure --prefix=${HYPREDRIVE_INSTALL_DIR} \
-                    --with-hypre-include=${HYPRE_INSTALL_DIR}/include \
-                    --with-hypre-lib=${HYPRE_INSTALL_DIR}/lib
+        $ ./configure --prefix=${HYPREDRIVE_INSTALL_DIR} \
+                      --with-hypre-include=${HYPRE_INSTALL_DIR}/include \
+                      --with-hypre-lib=${HYPRE_INSTALL_DIR}/lib
 
    Replace ``${HYPREDRIVE_INSTALL_DIR}`` with your desired installation path for `hypredrive`,
    and ``${HYPRE_INSTALL_DIR}`` with the path to your installation of `hypre`.
@@ -78,8 +78,8 @@ Users can install `hypredrive` by compiling from source, according to the steps 
 
     .. code-block:: bash
 
-        make -j
-        make install
+        $ make -j
+        $ make install
 
 Verifying the Installation
 --------------------------
@@ -88,18 +88,19 @@ After installation, you can verify that `hypredrive` is installed correctly by r
 
 .. code-block:: bash
 
-    make check
+    $ make check
 
 You should see the output below:
 
 .. code-block:: bash
 
     "Running with 1 MPI process... passed!"
+    "Running with 4 MPI process... passed!"
 
 
 Troubleshooting
 ---------------
 
 If you encounter any issues during the installation of `hypredrive`, please open a
-`GitHub issue <https://github.com/victorapm/hypredrive/issues>`_ and include a copy of the
+`GitHub issue <https://github.com/hypre-space/hypredrive/issues>`_ and include a copy of the
 ``config.log`` file, which is generated after running the ``configure`` script.

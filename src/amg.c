@@ -96,6 +96,7 @@
 /* Iterates over each prefix in the list and
    generates the various function declarations/definitions and field_offset_map object */
 GENERATE_PREFIXED_LIST_AMG
+DEFINE_VOID_GET_VALID_VALUES_FUNC(AMG)
 
 /*-----------------------------------------------------------------------------
  * AMGintSetDefaultArgs
@@ -119,10 +120,12 @@ AMGcsnSetDefaultArgs(AMGcsn_args *args)
 {
    args->rap2            = 0;
 #if defined (HYPRE_USING_GPU)
+   args->type            = 8;
    args->mod_rap2        = 1;
    args->keep_transpose  = 1;
    args->type            = 8;
 #else
+   args->type            = 10;
    args->mod_rap2        = 0;
    args->keep_transpose  = 0;
    args->type            = 10;
@@ -208,13 +211,202 @@ AMGSetDefaultArgs(AMG_args *args)
    AMGsmtSetDefaultArgs(&args->smoother);
 }
 
-/* TODO */
-StrIntMapArray AMGintGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
-StrIntMapArray AMGcsnGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
-StrIntMapArray AMGaggGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
-StrIntMapArray AMGrlxGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
-StrIntMapArray AMGsmtGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
-StrIntMapArray AMGGetValidValues(const char* key) { return STR_INT_MAP_ARRAY_VOID(); }
+/*-----------------------------------------------------------------------------
+ * AMGintGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+AMGintGetValidValues(const char* key)
+{
+   if (!strcmp(key, "prolongation_type"))
+   {
+      static StrIntMap map[] = {{"mod_classical",         0},
+                                {"least_squares",         1},
+                                {"mod_classical_he",      2},
+                                {"direct_sep_weights",    3},
+                                {"multipass",             4},
+                                {"multipass_sep_weights", 5},
+                                {"extended+i",            6},
+                                {"extended+i_c",          7},
+                                {"standard",              8},
+                                {"standard_sep_weights",  9},
+                                {"blk_classical",        10},
+                                {"blk_classical_diag",   11},
+                                {"f_f",                  12},
+                                {"f_f1",                 13},
+                                {"extended",             14},
+                                {"direct_sep_weights",   15},
+                                {"mm_extended",          16},
+                                {"mm_extended+i",        17},
+                                {"mm_extended+e",        18},
+                                {"blk_direct",           24},
+                                {"one_point",           100}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "restriction_type"))
+   {
+      static StrIntMap map[] = {{"p_transpose",    0},
+                                {"air_1",          1},
+                                {"air_2",          2},
+                                {"neumann_air_0",  3},
+                                {"neumann_air_1",  4},
+                                {"neumann_air_2",  5},
+                                {"air_1.5",       15}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * AMGcsnGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+AMGcsnGetValidValues(const char* key)
+{
+   if (!strcmp(key, "type"))
+   {
+      static StrIntMap map[] = {{"cljp",     0},
+                                {"rs",       1},
+                                {"rs3",      3},
+                                {"falgout",  6},
+                                {"pmis",     8},
+                                {"hmis",    10}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "rap2") ||
+            !strcmp(key, "mod_rap2") ||
+            !strcmp(key, "keep_transpose"))
+   {
+      return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * AMGaggGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+AMGaggGetValidValues(const char* key)
+{
+   if (!strcmp(key, "prolongation_type"))
+   {
+      static StrIntMap map[] = {{"2_stage_extended+i",  1},
+                                {"2_stage_standard",    2},
+                                {"2_stage_extended",    3},
+                                {"multipass",           4},
+                                {"mm_extended",         5},
+                                {"mm_extended+i",       6},
+                                {"mm_extended+e",       7}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * AMGrlxGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+AMGrlxGetValidValues(const char* key)
+{
+   if (!strcmp(key, "down_type"))
+   {
+      static StrIntMap map[] = {{"jacobi_non_mv",   0},
+                                {"forward-hgs",     3},
+                                {"chaotic-hgs",     5},
+                                {"hsgs",            6},
+                                {"jacobi",          7},
+                                {"l1-hsgs",         8},
+                                {"2gs-it1",        11},
+                                {"2gs-it2",        12},
+                                {"forward-hl1gs",  13},
+                                {"cg",             15},
+                                {"chebyshev",      16},
+                                {"l1-jacobi",      18},
+                                {"l1sym-hgs",      89}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "up_type"))
+   {
+      static StrIntMap map[] = {{"jacobi_non_mv",   0},
+                                {"backward-hgs",    4},
+                                {"chaotic-hgs",     5},
+                                {"hsgs",            6},
+                                {"jacobi",          7},
+                                {"l1-hsgs",         8},
+                                {"2gs-it1",        11},
+                                {"2gs-it2",        12},
+                                {"backward-hl1gs", 14},
+                                {"cg",             15},
+                                {"chebyshev",      16},
+                                {"l1-jacobi",      18},
+                                {"l1sym-hgs",      89}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "coarse_type"))
+   {
+      static StrIntMap map[] = {{"jacobi_non_mv",   0},
+                                {"hsgs",            6},
+                                {"jacobi",          7},
+                                {"l1-hsgs",         8},
+                                {"ge",              9},
+                                {"2gs-it1",        11},
+                                {"2gs-it2",        12},
+                                {"cg",             15},
+                                {"chebyshev",      16},
+                                {"l1-jacobi",      18},
+                                {"l1sym-hgs",      89},
+                                {"lu_piv",         99},
+                                {"lu_inv",        199}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * AMGsmtGetValidValues
+ *-----------------------------------------------------------------------------*/
+
+StrIntMapArray
+AMGsmtGetValidValues(const char* key)
+{
+   if (!strcmp(key, "type"))
+   {
+      static StrIntMap map[] = {{"fsai",      4},
+                                {"ilu",       5},
+                                {"schwarz",   6},
+                                {"pilut",     7},
+                                {"parasails", 8},
+                                {"euclid",    9}};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+}
 
 /*-----------------------------------------------------------------------------
  * AMGCreate
@@ -237,7 +429,6 @@ AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetTruncFactor(precon, args->interpolation.trunc_factor);
    HYPRE_BoomerAMGSetPMaxElmts(precon, args->interpolation.max_nnz_row);
    HYPRE_BoomerAMGSetPrintLevel(precon, args->print_level);
-   HYPRE_BoomerAMGSetNumSweeps(precon, args->relaxation.num_sweeps);
    HYPRE_BoomerAMGSetChebyOrder(precon, args->relaxation.chebyshev.order);
    HYPRE_BoomerAMGSetChebyFraction(precon, args->relaxation.chebyshev.fraction);
    HYPRE_BoomerAMGSetChebyEigEst(precon, args->relaxation.chebyshev.eig_est);
@@ -282,17 +473,30 @@ AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetModuleRAP2(precon, args->coarsening.mod_rap2);
    HYPRE_BoomerAMGSetKeepTranspose(precon, args->coarsening.keep_transpose);
 
-   /* Specific relaxation info (down, up, coarsest) */
+   /* Pre-smoothing */
+   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.down_type, 1);
    if (args->relaxation.down_sweeps > -1)
    {
-      HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.down_type, 1);
       HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.down_sweeps, 1);
    }
+   else
+   {
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 1);
+   }
+
+   /* Post-smoothing */
+   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.up_type, 2);
    if (args->relaxation.up_sweeps > -1)
    {
-      HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.up_type, 2);
       HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.up_sweeps, 2);
    }
+   else
+   {
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 2);
+   }
+
+   /* Coarsest level smoothing */
+   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.coarse_type, 3);
    if (args->relaxation.coarse_sweeps > -1)
    {
       HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.coarse_sweeps, 3);
@@ -301,7 +505,6 @@ AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
    {
       HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 3);
    }
-   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.coarse_type, 3);
 
    *precon_ptr = precon;
 }

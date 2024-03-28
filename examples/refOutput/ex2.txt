@@ -23,43 +23,43 @@ preconditioner:
     max_iter: 1
     print_level: 1
     interpolation: 
-      prolongation_type: 6
-      restriction_type: 0
+      prolongation_type: extended+i
+      restriction_type: p_transpose
       trunc_factor: 0.0
       max_nnz_row: 4
     coarsening: 
-      type: 10
+      type: pmis
       strong_th: 0.25
       seq_amg_th: 0
       max_coarse_size: 64
       min_coarse_size: 0
       max_levels: 25
       num_functions: 1
-      rap2: 0
-      mod_rap2: 0
-      keep_transpose: 0
+      rap2: off
+      mod_rap2: on
+      keep_transpose: off
       max_row_sum: 0.9
     aggressive: 
       num_levels: 0
       num_paths: 1
-      prolongation_type: 4
-      trunc_factor: 0
+      prolongation_type: multipass
+      trunc_factor: 0.0
       max_nnz_row: 0
       P12_trunc_factor: 0.0
       P12_max_elements: 0
     relaxation: 
-      down_type: 13
-      up_type: 14
-      coarse_type: 9
+      down_type: forward-hl1gs
+      up_type: backward-hl1gs
+      coarse_type: ge
       down_sweeps: -1
       up_sweeps: -1
-      coarse_sweeps: -1
+      coarse_sweeps: 1
       num_sweeps: 1
       order: 0
       weight: 1.0
       outer_weight: 1.0
     smoother: 
-      type: 5
+      type: fsai
       num_levels: 0
       num_sweeps: 1
 ------------------------------------------------------------------------------------
@@ -75,13 +75,13 @@ Solving linear system #0 with 1000 rows and 6400 nonzeros...
 BoomerAMG SETUP PARAMETERS:
 
  Max levels = 25
- Num levels = 4
+ Num levels = 3
 
  Strength Threshold = 0.250000
  Interpolation Truncation Factor = 0.000000
  Maximum Row Sum Threshold for Dependency Weakening = 0.900000
 
- Coarsening Type = HMIS 
+ Coarsening Type = PMIS 
  measures are determined locally
 
 
@@ -95,23 +95,21 @@ Operator Matrix Information:
 lev    rows  entries sparse   min  max     avg      min         max
 ======================================================================
   0    1000     6400  0.006     4    7     6.4   0.000e+00   3.000e+00
-  1     413     7595  0.045     7   43    18.4  -1.665e-15   4.000e+00
-  2      75     2523  0.449    20   60    33.6   1.198e+00   5.057e+00
-  3      12      142  0.986    11   12    11.8   5.284e+00   1.196e+01
+  1     351     7485  0.061     7   38    21.3  -2.054e-15   4.393e+00
+  2      62     1986  0.517    17   52    32.0   1.110e+00   5.392e+00
 
 
 Interpolation Matrix Information:
                     entries/row        min        max            row sums
 lev  rows x cols  min  max  avgW     weight      weight       min         max
 ================================================================================
-  0  1000 x 413     1    4   4.0   6.452e-02   4.255e-01   5.000e-01   1.000e+00
-  1   413 x 75      1    4   4.0   5.920e-03   4.787e-01   2.185e-01   1.000e+00
-  2    75 x 12      0    4   3.7   6.512e-03   2.832e-01   0.000e+00   1.000e+00
+  0  1000 x 351     1    4   4.0   5.263e-02   4.255e-01   4.194e-01   1.000e+00
+  1   351 x 62      1    4   4.0   5.234e-03   4.977e-01   1.628e-01   1.000e+00
 
 
-     Complexity:   grid = 1.500000
-               operator = 2.603125
-                 memory = 3.295469
+     Complexity:   grid = 1.413000
+               operator = 2.479844
+                 memory = 3.129062
 
 
 
@@ -136,12 +134,12 @@ BoomerAMG SOLVER PARAMETERS:
 
 Iters       ||r||_2     conv.rate  ||r||_2/||b||_2
 -----    ------------   ---------  ------------ 
-    1    9.722072e+00    0.307439    3.074389e-01
-    2    6.390004e-01    0.065727    2.020697e-02
-    3    4.085393e-02    0.063934    1.291915e-03
-    4    2.841366e-03    0.069549    8.985188e-05
-    5    1.973415e-04    0.069453    6.240487e-06
-    6    1.260822e-05    0.063890    3.987071e-07
+    1    1.031617e+01    0.326226    3.262259e-01
+    2    7.264313e-01    0.070417    2.297177e-02
+    3    5.272798e-02    0.072585    1.667405e-03
+    4    3.367303e-03    0.063862    1.064835e-04
+    5    2.302010e-04    0.068364    7.279595e-06
+    6    1.657756e-05    0.072013    5.242284e-07
 
 
 ====================================================================================
@@ -153,7 +151,7 @@ STATISTICS SUMMARY:
 |            |    LS build |       setup |       solve |    relative |             |
 |      Entry |       times |       times |       times |   res. norm |       iters |
 +------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.009 |       0.003 |       0.001 |    3.99e-07 |           6 |
+|          0 |       0.000 |       0.003 |       0.001 |    5.24e-07 |           6 |
 +------------+-------------+-------------+-------------+-------------+-------------+
 
 Date and time: YYYY-MM-DD HH:MM:SS

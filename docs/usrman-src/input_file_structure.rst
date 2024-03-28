@@ -56,7 +56,8 @@ The ``linear_system`` section describes the linear system that `hypredrive` will
 section is required.
 
 - ``exec_policy`` - Determines whether the linear system is to be solved on the ``host``
-  (CPU) or ``device`` (GPU). The default value for this parameter is ``host``.
+  (CPU) or ``device`` (GPU). When hypre is built without GPU support, the default value
+  for this parameter is ``host``; otherwise, the default value is ``device``.
 
 - ``type`` - The format of the linear system matrix. Available options are ``ij`` and
   ``mtx``. The default value for this parameter is ``ij``.
@@ -90,6 +91,35 @@ section is required.
 
 - ``rhs_mode`` - Choice of initial guess vector. Available options are the same as for
   ``init_guess_mode``.
+
+- ``dirname`` - (Possibly required) Name of the top-level directory storing the linear
+  system data. This option helps remove possible redundancies when informing filenames
+  for the linear system data. This parameter does not have a default value.
+
+- ``matrix_basename`` - (Possibly required) Common prefix used for the filenames of linear
+  system matrices. It can be used to solve multiple matrices stored in a shared
+  directory. This parameter does not have a default value.
+
+- ``rhs_basename`` - (Possibly required) Common prefix used for the filenames of linear
+  system right hand sides. It can be used to solve multiple RHS stored in a shared
+  directory. This parameter does not have a default value.
+
+- ``dofmap_basename`` - (Possibly required) Common prefix used for the filenames of
+  `dofmap` arrays. This parameter does not have a default value.
+
+- ``init_suffix`` - (Possibly required) Suffix number of the first linear system of a
+  sequence of systems to be solved.
+
+- ``last_suffix`` - (Possibly required) Suffix number of the last linear system of a
+  sequence of systems to be solved.
+
+- ``digits_suffix`` - (Optional) Number of digits used to build complete filenames when
+  using the ``basename`` or ``dirname`` options. This parameter has a default value of 5.
+
+- ``precon_reuse`` - (Optional) Frequency for reusing the preconditioner when solving multiple
+  linear systems. This parameter has a default value of 0 meaning that the preconditioner
+  is rebuilt for every linear system in a sequence.
+
 
 An example code block for the ``linear_system`` section is given below:
 
@@ -293,15 +323,44 @@ following optional keywords:
 
 - ``interpolation`` - subsection detailing interpolation options:
 
-  - ``prolongation_type`` - choose the prolongation operator. For available options, see
-    `HYPRE_BoomerAMGSetInterpType
-    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv428HYPRE_BoomerAMGSetInterpType12HYPRE_Solver9HYPRE_Int>`_. Default
-    value is `6`.
+  - ``prolongation_type`` - choose the prolongation operator. For detailed information,
+    see `HYPRE_BoomerAMGSetInterpType
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv428HYPRE_BoomerAMGSetInterpType12HYPRE_Solver9HYPRE_Int>`_. Available
+    options are:
 
-  - ``restriction_type`` - choose the restriction operator. For available options, see
+    - ``mod_classical``
+    - ``least_squares``
+    - ``direct_sep_weights``
+    - ``multipass``
+    - ``multipass_sep_weights``
+    - ``extended+i`` (default)
+    - ``extended+i_c``
+    - ``standard``
+    - ``standard_sep_weights``
+    - ``blk_classical``
+    - ``blk_classical_diag``
+    - ``f_f``
+    - ``f_f1``
+    - ``extended``
+    - ``direct_sep_weights``
+    - ``mm_extended``
+    - ``mm_extended+i``
+    - ``mm_extended+e``
+    - ``blk_direct``
+    - ``one_point``
+
+  - ``restriction_type`` - choose the restriction operator. For detailed information, see
     `HYPRE_BoomerAMGSetRestriction
-    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv429HYPRE_BoomerAMGSetRestriction12HYPRE_Solver9HYPRE_Int>`_. Default
-    value is `0`.
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv429HYPRE_BoomerAMGSetRestriction12HYPRE_Solver9HYPRE_Int>`_. Available
+    options are:
+
+    - ``p_transpose`` (default)
+    - ``air_1``
+    - ``air_2``
+    - ``neumann_air_0``
+    - ``neumann_air_1``
+    - ``neumann_air_2``
+    - ``air_1.5``
 
   - ``trunc_factor`` - truncation factor for computing interpolation. Available values are
     any non-negative floating point number. Default value is `0.0`.
@@ -311,10 +370,17 @@ following optional keywords:
 
 - ``coarsening`` - subsection detailing coarsening options:
 
-  - ``type`` - choose the coarsening method. For available options, see
+  - ``type`` - choose the coarsening method. For detailed information, see
     `HYPRE_BoomerAMGSetCoarsenType
-    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv429HYPRE_BoomerAMGSetCoarsenType12HYPRE_Solver9HYPRE_Int>`_. Default
-    value is `10` (HMIS).
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv429HYPRE_BoomerAMGSetCoarsenType12HYPRE_Solver9HYPRE_Int>`_. Available
+    options are:
+
+    - ``cljp``
+    - ``rs``
+    - ``rs3``
+    - ``falgout``
+    - ``pmis``
+    - ``hmis`` (default)
 
   - ``strong_th`` - strength threshold used for computing the strength of connection
     matrix. Available values are any non-negative floating point number. Default value is
@@ -354,10 +420,18 @@ following optional keywords:
 - ``aggressive`` - subsection detailing aggressive coarsening options:
 
   - ``prolongation_type`` - choose the prolongation type used in levels with aggressive
-    coarsening turned on. For available options, see
+    coarsening turned on. For detailed information, see
     `HYPRE_ParCSRHybridSetAggInterpType
-    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv434HYPRE_ParCSRHybridSetAggInterpType12HYPRE_Solver9HYPRE_Int>`_. Default
-    value is `4` (multipass).
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv434HYPRE_ParCSRHybridSetAggInterpType12HYPRE_Solver9HYPRE_Int>`_. Available
+    options are:
+
+    - ``2_stage_extended+i``
+    - ``2_stage_standard``
+    - ``2_stage_extended``
+    - ``multipass`` (default)
+    - ``mm_extended``
+    - ``mm_extended+i``
+    - ``mm_extended+e``
 
   - ``num_levels`` - number of levels with aggressive coarsening turned on. Available
     values are any positive integer. Default value is `0`.
@@ -383,17 +457,62 @@ following optional keywords:
 
 - ``relaxation`` - subsection detailing relaxation options:
 
-  - ``down_type`` - relaxation method used in the pre-smoothing stage. For available
-    options, see `HYPRE_BoomerAMGSetRelaxType
-    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_BoomerAMGSetRelaxType12HYPRE_Solver9HYPRE_Int>`_. Default value is `13`.
+  - ``down_type`` - relaxation method used in the pre-smoothing stage. For detailed
+    information, see `HYPRE_BoomerAMGSetRelaxType
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_BoomerAMGSetRelaxType12HYPRE_Solver9HYPRE_Int>`_. Available
+    options are:
 
-  - ``up_type`` - relaxation method used in the post-smoothing stage. For available
-    options, see `HYPRE_BoomerAMGSetRelaxType
-    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_BoomerAMGSetRelaxType12HYPRE_Solver9HYPRE_Int>`_. Default value is `14`.
+    - ``jacobi_non_mv``: legacy Jacobi implementation.
+    - ``forward-hgs``: forward hybrid Gauss-Seidel.
+    - ``chaotic-hgs``: chaotic hybrid Gauss-Seidel.
+    - ``hsgs``: hybrid symmetric Gauss-Seidel.
+    - ``jacobi``: Jacobi (based on SpMVs).
+    - ``l1-hsgs``: L1-scaled hybrid symmetric Gauss-Seidel.
+    - ``2gs-it1``: single iteration two stage Gauss-Seidel.
+    - ``2gs-it2``: double iteration two stage Gauss-Seidel.
+    - ``forward-hl1gs``: forward hybrid L1-scaled Gauss-Seidel (default).
+    - ``cg``: conjugate gradient.
+    - ``chebyshev``: chebyshev polinomial.
+    - ``l1-jacobi``: L1-scaled Jacobi.
+    - ``l1sym-hgs``: L1-scaled symmetric hybrid Gauss-Seidel (with convergent L1 factor).
 
-  - ``coarse_type`` - relaxation method used in the coarsest levels. For available
-    options, see `HYPRE_BoomerAMGSetRelaxType
-    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_BoomerAMGSetRelaxType12HYPRE_Solver9HYPRE_Int>`_. Default value is `9`.
+  - ``up_type`` - relaxation method used in the post-smoothing stage. For detailed
+    information, see `HYPRE_BoomerAMGSetRelaxType
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_BoomerAMGSetRelaxType12HYPRE_Solver9HYPRE_Int>`_. Available
+    options are:
+
+    - ``jacobi_non_mv``: legacy Jacobi implementation.
+    - ``backward-hgs``: backward hybrid Gauss-Seidel.
+    - ``chaotic-hgs``: chaotic hybrid Gauss-Seidel.
+    - ``hsgs``: hybrid symmetric Gauss-Seidel.
+    - ``jacobi``: Jacobi (based on SpMVs).
+    - ``l1-hsgs``: L1-scaled hybrid symmetric Gauss-Seidel.
+    - ``2gs-it1``: single iteration two stage Gauss-Seidel.
+    - ``2gs-it2``: double iteration two stage Gauss-Seidel.
+    - ``backward-hl1gs``: backward hybrid L1-scaled Gauss-Seidel (default).
+    - ``cg``: conjugate gradient.
+    - ``chebyshev``: chebyshev polinomial.
+    - ``l1-jacobi``: L1-scaled Jacobi.
+    - ``l1sym-hgs``: L1-scaled symmetric hybrid Gauss-Seidel (with convergent L1 factor).
+
+  - ``coarse_type`` - relaxation method used in the coarsest levels. For detailed
+    information, see `HYPRE_BoomerAMGSetRelaxType
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_BoomerAMGSetRelaxType12HYPRE_Solver9HYPRE_Int>`_. Available
+    options are:
+
+    - ``jacobi_non_mv``: legacy Jacobi implementation.
+    - ``hsgs``: hybrid symmetric Gauss-Seidel.
+    - ``jacobi``: Jacobi (based on SpMVs).
+    - ``l1-hsgs``: L1-scaled hybrid symmetric Gauss-Seidel.
+    - ``ge``: hypre's gaussian elimination.
+    - ``2gs-it1``: single iteration two stage Gauss-Seidel.
+    - ``2gs-it2``: double iteration two stage Gauss-Seidel.
+    - ``cg``: conjugate gradient.
+    - ``chebyshev``: chebyshev polinomial.
+    - ``l1-jacobi``: L1-scaled Jacobi.
+    - ``l1sym-hgs``: L1-scaled symmetric hybrid Gauss-Seidel (with convergent L1 factor).
+    - ``lu_piv``: LU factorization with pivoting.
+    - ``lu_inv``: explicit LU inverse.
 
   - ``down_sweeps`` - number of pre-smoothing sweeps. Available values are any integer
     greater or equal than `-1`, which turns off the selection of sweeps at the specific
@@ -424,10 +543,16 @@ following optional keywords:
 
 - ``relaxation`` - subsection detailing complex smoother options:
 
-  - ``type`` - complex smoother type. For available
-    options, see `HYPRE_BoomerAMGSetSmoothType
-    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv428HYPRE_BoomerAMGSetSmoothType12HYPRE_Solver9HYPRE_Int>`_. Default
-    value is `5` (ILU).
+  - ``type`` - complex smoother type. For detailed information, see `HYPRE_BoomerAMGSetSmoothType
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv428HYPRE_BoomerAMGSetSmoothType12HYPRE_Solver9HYPRE_Int>`_. Available
+    options are:
+
+    - ``fsai``: factorized sparse approximate inverse.
+    - ``ilu``: incomplete LU factorization.
+    - ``schwarz``: Additive/Multiplicative overlapping Schwarz.
+    - ``pilut``: incomplete LU factorization via PILUT.
+    - ``parasails``: sparse approximate inverse via Parasails.
+    - ``euclid``: incomplete LU factorization via Euclid.
 
   - ``num_levels`` - number of levels starting from the finest one where complex smoothers
     are used. Available values are any non-negative integer. Default value is `0`.
@@ -446,34 +571,34 @@ code block below:
         max_iter: 1
         print_level: 0
         interpolation:
-          prolongation_type: 6
-          restriction_type: 0
+          prolongation_type: extended+i
+          restriction_type: p_transpose
           trunc_factor: 0.0
           max_nnz_row: 4
         coarsening:
-          type: 10
+          type: hmis # pmis for GPU runs
           strong_th: 0.25
           seq_amg_th: 0
           max_coarse_size: 64
           min_coarse_size: 0
           max_levels: 25
           num_functions: 1
-          rap2: 0
-          mod_rap2: 0 # 1 for GPU runs
-          keep_transpose: 0 # 1 for GPU runs
+          rap2: off
+          mod_rap2: off # on for GPU runs
+          keep_transpose: off # on for GPU runs
           max_row_sum: 0.9
         aggressive:
           num_levels: 0
           num_paths: 1
-          prolongation_type: 4
+          prolongation_type: multipass
           trunc_factor: 0
           max_nnz_row: 0
           P12_trunc_factor: 0.0
           P12_max_elements: 0
         relaxation:
-          down_type: 13
-          up_type: 14
-          coarse_type: 9
+          down_type: forward-hl1gs
+          up_type: backward-hl1gs
+          coarse_type: ge
           down_sweeps: -1
           up_sweeps: -1
           coarse_sweeps: -1
@@ -482,7 +607,7 @@ code block below:
           weight: 1.0
           outer_weight: 1.0
         smoother:
-          type: 5
+          type: ilu
           num_levels: 0
           num_sweeps: 1
 
