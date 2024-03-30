@@ -8,7 +8,6 @@ tags:
 authors:
   - name: Victor A. P. Magri
     orcid: 0000-0002-3389-523X
-    equal-contrib: true
     affiliation: 1
 affiliations:
  - name: Lawrence Livermore National Laboratory, CA, USA
@@ -40,28 +39,24 @@ capabilities with minimal computational overhead.
 
 *hypredrive* is a software package written in C that comprehends a library, `libHYPREDRV`,
 and an executable. The first offers APIs designed to simplify the interaction with
-*hypre*; while the executable, also named `hypredrive`, allows for testing the solution of
-linear systems defined via YAML input files. Key features of the software are:
+*hypre*; while the executable, also named `hypredrive`, performs the solution of linear
+systems defined via YAML input files. Key features of the software are:
 
 * **Encapsulation**: `libHYPREDRV` wraps the function calls for building solvers and
   preconditioners in *hypre* through an intuitive YAML interface driven by configuration
-  files. This design ensures a straightforward way of setting up solvers in *hypre* and
-  sharing options without recompiling the user's application code.
+  files.
 
 
 * **Prototyping**: `hypredrive` allows users to prototype rapidly, comparing the
   performance of various solver options and tweaking parameters directly through the YAML
-  configuration file. This flexibility encourages experimentation, helping users identify
-  the most effective solver strategies for their specific problems.
+  configuration file.
 
 
 * **Testing**: `hypredrive` enables the creation of an integrated testing framework to
-  evaluate solvers against a set of predefined linear systems. This feature lets users
-  understand whether updates to *hypre* lead to different solver convergence or
-  performance for their problems of interest.
+  evaluate solvers against a set of predefined linear systems.
 
 For instructions on package installation, input file structure, and examples, we refer the
-reader to [*hypredrive*'s documentation](https://hypredrive.readthedocs.io/en/latest/)
+reader to [*hypredrive*'s documentation](https://hypredrive.readthedocs.io/en/latest/).
 
 # Acknowledgements
 
