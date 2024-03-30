@@ -28,11 +28,11 @@ with numerical simulation codes.
 
 # Statement of need
 
-*hypre* is a widely used and efficient linear solver package. However, the complexity
-associated with its direct use may difficult experimentation with the several solvers it
-provides. *hypredrive* is developed to bridge this gap by providing a high-level and
-lightweight interface to *hypre*, encapsulating its complexity while retaining its
-capabilities with minimal computational overhead.
+*hypre* is a widely used and efficient linear solver package; however, the complexity
+associated with its direct use may difficult experimentation with different solvers
+options. *hypredrive* bridges this gap by providing a high-level and lightweight interface
+to *hypre*, encapsulating its complexity while retaining its capabilities with minimal
+computational overhead.
 
 # Software capabilities
 
