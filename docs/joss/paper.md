@@ -53,7 +53,7 @@ linear systems defined via YAML input files. Key features of the software are:
   evaluate solvers against a set of predefined linear systems.
 
 For instructions on installation, input file structure, and examples, see [*hypredrive*'s
-documentation](https://hypredrive.readthedocs.io/en/latest/).
+manual](https://hypredrive.readthedocs.io/en/latest/).
 
 # Acknowledgements
 
