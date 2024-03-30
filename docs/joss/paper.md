@@ -37,10 +37,9 @@ capabilities with minimal computational overhead.
 
 # Software capabilities
 
-*hypredrive* is a software package written in C that comprehends a library, `libHYPREDRV`,
-and an executable. The first offers APIs designed to simplify the interaction with
-*hypre*; while the executable, also named `hypredrive`, performs the solution of linear
-systems defined via YAML input files. Key features of the software are:
+*hypredrive* is a software package written in C that includes a library offering APIs
+designed to simplify the interaction with *hypre* and an executable for performing the
+solution of linear systems defined via YAML input files. Key features of the software are:
 
 * **Encapsulation**: `libHYPREDRV` wraps the function calls for building solvers and
   preconditioners in *hypre* through an intuitive YAML interface driven by configuration
