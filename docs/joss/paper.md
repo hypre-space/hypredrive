@@ -22,9 +22,9 @@ Solving sparse linear systems of equations is an essential problem for many appl
 codes in computational science and engineering (CSE). *Hypredrive* aims to facilitate this
 problem by providing a simple and user-friendly interface to *hypre* [@hypre], a
 well-established package featuring multigrid methods. Inspired by the solver composability
-work done in PETSc [@BrKnMaMcSm12] and the flexible configuration framework used in
+work done in PETSc [@BrKnMaMcSm12] and the flexible configuration framework used in spack
 [@spack], *hypredrive* allows users to easily configure and switch solver options in
-*hypre* through [@YAML] input files, making experimentation with different solver
+*hypre* through @YAML input files, making experimentation with different solver
 techniques more accessible to researchers and software developers who work with numerical
 simulation codes.
 
@@ -118,11 +118,11 @@ Date and time: YYYY-MM-DD HH:MM:SS
 ${HYPREDRIVE_PATH}/hypredrive done!
 ```
 
-This example shows the minimal set of options in `hypredrive`'s input file for running
-it. Specific parameter/value pairs for controlling the setup of preconditioners and
-solvers can be added to the input file, leading to different convergence behaviors. For a
-complete list of available parameters and more detailed input file examples, see
-[*hypredrive*'s manual](https://hypredrive.readthedocs.io/en/latest/).
+This example shows the minimal set of options in `hypredrive`'s input file needed for
+running the executable. Specific parameter/value pairs for controlling the setup of
+preconditioners and solvers can be added to the input file, leading to different
+convergence behaviors. For a complete list of available parameters and more detailed input
+file examples, see [*hypredrive*'s manual](https://hypredrive.readthedocs.io/en/latest/).
 
 # Acknowledgements
 
