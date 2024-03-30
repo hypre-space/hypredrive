@@ -52,8 +52,8 @@ linear systems defined via YAML input files. Key features of the software are:
 * **Testing**: `hypredrive` enables the creation of an integrated testing framework to
   evaluate solvers against a set of predefined linear systems.
 
-For instructions on package installation, input file structure, and examples, we refer the
-reader to [*hypredrive*'s documentation](https://hypredrive.readthedocs.io/en/latest/).
+For instructions on installation, input file structure, and examples, see [*hypredrive*'s
+documentation](https://hypredrive.readthedocs.io/en/latest/).
 
 # Acknowledgements
 
