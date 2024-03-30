@@ -28,18 +28,17 @@ with numerical simulation codes.
 
 # Statement of need
 
-Among widely used linear solver packages, *hypre* is known for its robust and scalable
-methods targeting high performance computing platforms. However, the complexity associated
-with its direct use may difficult experimentation with the several solvers it
+*hypre* is a widely used and efficient linear solver package. However, the complexity
+associated with its direct use may difficult experimentation with the several solvers it
 provides. *hypredrive* is developed to bridge this gap by providing a high-level and
 lightweight interface to *hypre*, encapsulating its complexity while retaining its
 capabilities with minimal computational overhead.
 
 # Software capabilities
 
-*hypredrive* is a software package written in C that includes a library offering APIs
-designed to simplify the interaction with *hypre* and an executable for performing the
-solution of linear systems defined via YAML input files. Key features of the software are:
+*hypredrive* is a software written in C that includes a library with APIs designed to
+simplify the interaction with *hypre* and an executable for performing the solution of
+linear systems defined via YAML input files. Key features of the software are:
 
 * **Encapsulation**: `libHYPREDRV` wraps the function calls for building solvers and
   preconditioners in *hypre* through an intuitive YAML interface driven by configuration
