@@ -20,17 +20,18 @@ bibliography: paper.bib
 
 Solving sparse linear systems of equations is an essential problem for many application
 codes in computational science and engineering (CSE). *Hypredrive* aims to facilitate this
-problem via a simple and user-friendly interface to *hypre* [@hypre], a well-established
-package featuring multigrid methods. Inspired by the solver composability work done in
-PETSc [@BrKnMaMcSm12] and flexible configuration framework used in [@spack], *hypredrive*
-allows users to easily configure and switch solver options in *hypre* through [@YAML]
-input files, making experimentation with different solver techniques more accessible to
-researchers and software developers who work with numerical simulation codes.
+problem by providing a simple and user-friendly interface to *hypre* [@hypre], a
+well-established package featuring multigrid methods. Inspired by the solver composability
+work done in PETSc [@BrKnMaMcSm12] and the flexible configuration framework used in
+[@spack], *hypredrive* allows users to easily configure and switch solver options in
+*hypre* through [@YAML] input files, making experimentation with different solver
+techniques more accessible to researchers and software developers who work with numerical
+simulation codes.
 
 # Statement of need
 
 *Hypre* is a widely used and efficient linear solver package; however, the complexity
-associated with its direct use might limit the exploration with different solver
+associated with its direct use might limit exploration with different solver
 options. *Hypredrive* bridges this gap by providing a high-level and lightweight interface
 to *hypre*, encapsulating its complexity while retaining its capabilities with minimal
 computational overhead.
@@ -39,7 +40,8 @@ computational overhead.
 
 *Hypredrive* is a software package written in C that includes a library with APIs designed
 to simplify the interaction with *hypre* and an executable for performing the solution of
-linear systems defined via YAML input files. Key features of the software are:
+linear systems defined via YAML input files. The types of linear systems solvable with
+*hypredrive* is determined by *hypre*. Key features of the software are:
 
 * **Encapsulation**: `libHYPREDRV` wraps the function calls for building solvers and
   preconditioners in *hypre* through an intuitive YAML interface driven by configuration
@@ -91,26 +93,26 @@ Date and time: YYYY-MM-DD HH:MM:SS
 Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
 
 Running on 1 MPI rank
-------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------
 linear_system:
   rhs_filename: data/ps3d10pt7/np1/IJ.out.b
   matrix_filename: data/ps3d10pt7/np1/IJ.out.A
 solver: pcg
 preconditioner: amg
-------------------------------------------------------------------------------------
-====================================================================================
+-----------------------------------------------------------------------------------
+===================================================================================
 Solving linear system #0 with 1000 rows and 6400 nonzeros...
-====================================================================================
+===================================================================================
 
 
 STATISTICS SUMMARY:
 
-+------------+-------------+-------------+-------------+-------------+-------------+
-|            |    LS build |       setup |       solve |    relative |             |
-|      Entry |       times |       times |       times |   res. norm |       iters |
-+------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.004 |       0.002 |       0.001 |    4.98e-08 |           6 |
-+------------+-------------+-------------+-------------+-------------+-------------+
++------------+-------------+-------------+-------------+-------------+------------+
+|            |    LS build |       setup |       solve |    relative |            |
+|      Entry |       times |       times |       times |   res. norm |      iters |
++------------+-------------+-------------+-------------+-------------+------------+
+|          0 |       0.004 |       0.002 |       0.001 |    4.98e-08 |          6 |
++------------+-------------+-------------+-------------+-------------+------------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
 ${HYPREDRIVE_PATH}/hypredrive done!
