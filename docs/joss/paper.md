@@ -73,9 +73,7 @@ as a preconditioner to the conjugate gradient iterative solver, the YAML input f
 linear_system:
   rhs_filename: data/ps3d10pt7/np1/IJ.out.b
   matrix_filename: data/ps3d10pt7/np1/IJ.out.A
-
 solver: pcg
-
 preconditioner: amg
 ```
 
@@ -85,7 +83,7 @@ while `hypredrive` can be executed via
 $ mpirun -np 1 ./hypredrive input.yml
 ```
 
-yielding the following output:
+yielding an output that looks like:
 
 ```
 Date and time: YYYY-MM-DD HH:MM:SS
