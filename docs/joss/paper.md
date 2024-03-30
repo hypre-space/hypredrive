@@ -118,11 +118,11 @@ Date and time: YYYY-MM-DD HH:MM:SS
 ${HYPREDRIVE_PATH}/hypredrive done!
 ```
 
-This example shows the minimal set of options in the input file needed for running
-`hypredrive`. Specific parameter/option pairs for controlling the setup of preconditioners
-and solvers can be added to the input file, leading to different convergence behaviors. For
-a list of available parameters and more detailed examples, see [*hypredrive*'s
-manual](https://hypredrive.readthedocs.io/en/latest/).
+This example shows the minimal set of options in `hypredrive`'s input file for running
+it. Specific parameter/value pairs for controlling the setup of preconditioners and
+solvers can be added to the input file, leading to different convergence behaviors. For a
+complete list of available parameters and more detailed input file examples, see
+[*hypredrive*'s manual](https://hypredrive.readthedocs.io/en/latest/).
 
 # Acknowledgements
 
