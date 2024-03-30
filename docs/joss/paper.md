@@ -1,5 +1,5 @@
 ---
-title: 'hypredrive: High-level interface for solving linear systems with hypre'
+title: 'Hypredrive: High-level interface for solving linear systems with hypre'
 tags:
   - linear solvers
   - preconditioning
@@ -19,24 +19,24 @@ bibliography: paper.bib
 # Summary
 
 Solving sparse linear systems of equations is an essential problem to many application
-codes in computational science and engineering (CSE). *hypredrive* aims to facilitate this
+codes in computational science and engineering (CSE). *Hypredrive* aims to facilitate this
 problem via a simple and user-friendly interface to *hypre* [@hypre], a well-established
-package featuring multigrid methods. *hypredrive* allows users to easily configure and
+package featuring multigrid methods. *Hypredrive* allows users to easily configure and
 switch solver options in *hypre* through YAML input files, making experimentation with
 different solver techniques more accessible to researchers and software developers working
 with numerical simulation codes.
 
 # Statement of need
 
-*hypre* is a widely used and efficient linear solver package; however, the complexity
-associated with its direct use may difficult experimentation with different solvers
-options. *hypredrive* bridges this gap by providing a high-level and lightweight interface
+*Hypre* is a widely used and efficient linear solver package; however, the complexity
+associated with its direct use may make it difficult to experimentat with different solver
+options. *Hypredrive* bridges this gap by providing a high-level and lightweight interface
 to *hypre*, encapsulating its complexity while retaining its capabilities with minimal
 computational overhead.
 
 # Software capabilities
 
-*hypredrive* is a software written in C that includes a library with APIs designed to
+*Hypredrive* is a software written in C that includes a library with APIs designed to
 simplify the interaction with *hypre* and an executable for performing the solution of
 linear systems defined via YAML input files. Key features of the software are:
 
