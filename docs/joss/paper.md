@@ -29,10 +29,10 @@ with numerical simulation codes.
 # Statement of need
 
 Among widely used linear solver packages, *hypre* is known for its robust and scalable
-strategies targeting high performance computing platforms. However, the complexity
-associated with its direct use may difficult experimentation with the several solvers it
+methods targeting high performance computing platforms. However, the complexity associated
+with its direct use may difficult experimentation with the several solvers it
 provides. *hypredrive* is developed to bridge this gap by providing a high-level and
-lightweight interface to *hypre*, encapsulating its complexity while retaining its solver
+lightweight interface to *hypre*, encapsulating its complexity while retaining its
 capabilities with minimal computational overhead.
 
 # Software capabilities
@@ -48,8 +48,7 @@ systems defined via YAML input files. Key features of the software are:
 
 
 * **Prototyping**: `hypredrive` allows users to prototype rapidly, comparing the
-  performance of various solver options and tweaking parameters directly through the YAML
-  configuration file.
+  performance of various solver options updated directly through the YAML configuration file.
 
 
 * **Testing**: `hypredrive` enables the creation of an integrated testing framework to
