@@ -1,5 +1,5 @@
 ---
-title: 'Hypredrive: High-level interface for solving linear systems with hypre'
+title: '*Hypredrive*: High-level interface for solving linear systems with *hypre*'
 tags:
   - linear solvers
   - preconditioning
