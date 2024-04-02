@@ -12,7 +12,7 @@ High-level interface for solving linear systems with hypre, providing a user-fri
 The instructions for building *hypredrive* are given below:
 
 ```
- $ ./autogen.sh
+ $ autoreconf -i
  $ ./configure --with-hypre-include=${HYPRE_INSTALL_DIR}/include \
                --with-hypre-lib=${HYPRE_INSTALL_DIR}/lib
  $ make all
@@ -21,11 +21,11 @@ The instructions for building *hypredrive* are given below:
 ```
 
 Note:
-1. The first step `./autogen.sh` must be executed only once after cloning this repository.
+1. The first step must be executed only once after cloning this repository.
 2. [hypre](https://github.com/hypre-space/hypre) needs to be installed at
    `${HYPRE_INSTALL_DIR}`.
-3. For GPU support, add `--with-cuda` for NVIDIA GPUs or `--with-hip` for AMD GPUs in the
-   `./configure` line.
+3. For GPU support, add `--with-cuda` (NVIDIA GPUs) or `--with-hip` (AMD GPUs) to
+   `./configure`.
 4. An installation prefix can be passed to `./configure` such as `--prefix=${INSTALL_PATH}`.
    For more configure options, type `./configure -help`.
 

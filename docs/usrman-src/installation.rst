@@ -52,21 +52,19 @@ Users can install `hypredrive` by compiling from source, according to the steps 
         $ rm master.zip
         $ mv hypredrive-master hypredrive
 
-2. Navigate to the cloned directory and run the ``autogen`` script:
+2. Navigate to the cloned directory and run ``autoreconf -i``:
 
     .. code-block:: bash
 
         $ cd hypredrive
-        $ ./autogen.sh
+        $ autoreconf -i
 
 3. Run the configure script while informing where the `hypre` library and include files can
    be found:
 
     .. code-block:: bash
 
-        $ ./configure --prefix=${HYPREDRIVE_INSTALL_DIR} \
-                      --with-hypre-include=${HYPRE_INSTALL_DIR}/include \
-                      --with-hypre-lib=${HYPRE_INSTALL_DIR}/lib
+        $ ./configure --prefix=${HYPREDRIVE_INSTALL_DIR} --with-hypre-dir=${HYPRE_INSTALL_DIR}
 
    Replace ``${HYPREDRIVE_INSTALL_DIR}`` with your desired installation path for `hypredrive`,
    and ``${HYPRE_INSTALL_DIR}`` with the path to your installation of `hypre`.
