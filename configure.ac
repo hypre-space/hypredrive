@@ -32,17 +32,29 @@ AM_PROG_CC_C_O()
 AM_PROG_AR
 LT_INIT([disable-shared])
 
-dnl Specify hypre include directory
-AC_ARG_WITH([hypre-include],
-            [AS_HELP_STRING([--with-hypre-include=DIR], [Required: Path to HYPRE include dir.])],
-            [CFLAGS+=" -I$withval"],
-            [AC_MSG_ERROR([--with-hypre-include=DIR is required. Please specify the path to the HYPRE include directory.])])
+dnl Check for --with-hypre-dir first
+AC_ARG_WITH([hypre-dir],
+            [AS_HELP_STRING([--with-hypre-dir=DIR], [Optional: Path to HYPRE directory. Specifies both include and library dirs.])],
+            [
+             CFLAGS+=" -I$withval/include"
+             LDFLAGS+=" -L$withval/lib -Wl,-rpath,$withval/lib"
+            ])
 
-dnl Specify hypre lib directory
-AC_ARG_WITH([hypre-lib],
-            [AS_HELP_STRING([--with-hypre-lib=DIR], [Required: Path to HYPRE library dir.])],
-            [LDFLAGS+=" -L$withval -Wl,-rpath,${withval}"],
-            [AC_MSG_ERROR([--with-hypre-lib=DIR is required. Please specify the path to the HYPRE library directory.])])
+dnl Specify hypre include directory only if hypre-dir is not specified
+AS_IF([test -z "$with_hypre_dir"], [
+  AC_ARG_WITH([hypre-include],
+              [AS_HELP_STRING([--with-hypre-include=DIR], [Required if --with-hypre-dir is not specified: Path to HYPRE include dir.])],
+              [CFLAGS+=" -I$withval"],
+              [AC_MSG_ERROR([--with-hypre-include=DIR or --with-hypre-dir=DIR is required. Please specify the path to the HYPRE include directory.])])
+])
+
+dnl Specify hypre lib directory only if hypre-dir is not specified
+AS_IF([test -z "$with_hypre_dir"], [
+  AC_ARG_WITH([hypre-lib],
+              [AS_HELP_STRING([--with-hypre-lib=DIR], [Required if --with-hypre-dir is not specified: Path to HYPRE library dir.])],
+              [LDFLAGS+=" -L$withval -Wl,-rpath,$withval"],
+              [AC_MSG_ERROR([--with-hypre-lib=DIR or --with-hypre-dir=DIR is required. Please specify the path to the HYPRE library directory.])])
+])
 
 dnl Check for CUDA support
 AC_ARG_WITH([cuda],
