@@ -15,21 +15,28 @@ Prerequisites
 
 Before installing `hypredrive`, ensure you have the following prerequisites installed:
 
-- `m4 <https://www.gnu.org/software/m4/>`_: GNU package for expanding and processing macros.
+- `m4 <https://www.gnu.org/software/m4/>`_: GNU package for expanding and processing
+  macros. Minimum version: `1.4.6`.
 - `Autoconf <https://www.gnu.org/software/autoconf/>`_: GNU package for generating
-  portable configure scripts.
+  portable configure scripts. Minimum version: `2.69`.
 - `Automake <https://www.gnu.org/software/automake/>`_: GNU package for generating
-  portable Makefiles.
+  portable Makefiles. Minimum version: `1.11.3`.
 - `libtool <https://www.gnu.org/software/libtool/>`_: GNU package for creating portable
-  compiled libraries.
+  compiled libraries. Minimum version: `2.4.2`.
 - `hypre <https://github.com/hypre-space/hypre>`_: high-performance preconditioners
-  library.
+  library. Minimum version: `2.31.0`.
 
 .. note::
    The GNU packages (``m4``, ``autoconf``, ``automake``, and ``libtool``) are generally
    pre-installed in Unix distributions. If they are not present, they can be easily
    installed via package managers such as ``apt``, ``yum``, ``pacman``, ``homebrew`` or
-   ``spack``.
+   ``port`` or ``spack``.
+
+.. note::
+   On MacOS, ``libtool`` is a native binary tool used for creating static libraries and
+   isn't related to GNU Libtool. To avoid conflict with MacOS's native libtool, the GNU
+   Libtool is typically installed as ``glibtool`` when using package managers like
+   ``homebrew`` or ``port``.
 
 
 Installing `hypredrive`
@@ -52,21 +59,19 @@ Users can install `hypredrive` by compiling from source, according to the steps 
         $ rm master.zip
         $ mv hypredrive-master hypredrive
 
-2. Navigate to the cloned directory and run the ``autogen`` script:
+2. Navigate to the cloned directory and run ``autoreconf -i``:
 
     .. code-block:: bash
 
         $ cd hypredrive
-        $ ./autogen.sh
+        $ autoreconf -i
 
 3. Run the configure script while informing where the `hypre` library and include files can
    be found:
 
     .. code-block:: bash
 
-        $ ./configure --prefix=${HYPREDRIVE_INSTALL_DIR} \
-                      --with-hypre-include=${HYPRE_INSTALL_DIR}/include \
-                      --with-hypre-lib=${HYPRE_INSTALL_DIR}/lib
+        $ ./configure --prefix=${HYPREDRIVE_INSTALL_DIR} --with-hypre-dir=${HYPRE_INSTALL_DIR}
 
    Replace ``${HYPREDRIVE_INSTALL_DIR}`` with your desired installation path for `hypredrive`,
    and ``${HYPRE_INSTALL_DIR}`` with the path to your installation of `hypre`.
