@@ -13,8 +13,7 @@ The instructions for building *hypredrive* are given below:
 
 ```
  $ autoreconf -i
- $ ./configure --with-hypre-include=${HYPRE_INSTALL_DIR}/include \
-               --with-hypre-lib=${HYPRE_INSTALL_DIR}/lib
+ $ ./configure --with-hypre-dir=${HYPRE_INSTALL_DIR}
  $ make all
  $ make check
  $ make install

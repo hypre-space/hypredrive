@@ -15,21 +15,28 @@ Prerequisites
 
 Before installing `hypredrive`, ensure you have the following prerequisites installed:
 
-- `m4 <https://www.gnu.org/software/m4/>`_: GNU package for expanding and processing macros.
+- `m4 <https://www.gnu.org/software/m4/>`_: GNU package for expanding and processing
+  macros. Minimum version: `1.4.6`.
 - `Autoconf <https://www.gnu.org/software/autoconf/>`_: GNU package for generating
-  portable configure scripts.
+  portable configure scripts. Minimum version: `2.69`.
 - `Automake <https://www.gnu.org/software/automake/>`_: GNU package for generating
-  portable Makefiles.
+  portable Makefiles. Minimum version: `1.11.3`.
 - `libtool <https://www.gnu.org/software/libtool/>`_: GNU package for creating portable
-  compiled libraries.
+  compiled libraries. Minimum version: `2.4.2`.
 - `hypre <https://github.com/hypre-space/hypre>`_: high-performance preconditioners
-  library.
+  library. Minimum version: `2.31.0`.
 
 .. note::
    The GNU packages (``m4``, ``autoconf``, ``automake``, and ``libtool``) are generally
    pre-installed in Unix distributions. If they are not present, they can be easily
    installed via package managers such as ``apt``, ``yum``, ``pacman``, ``homebrew`` or
-   ``spack``.
+   ``port`` or ``spack``.
+
+.. note::
+   On MacOS, ``libtool`` is a native binary tool used for creating static libraries and
+   isn't related to GNU Libtool. To avoid conflict with MacOS's native libtool, the GNU
+   Libtool is typically installed as ``glibtool`` when using package managers like
+   ``homebrew`` or ``port``.
 
 
 Installing `hypredrive`
