@@ -182,6 +182,17 @@ dnl Check for libHYPRE
 AC_CHECK_LIB([HYPRE], [HYPRE_IJMatrixCreate], [],
              [AC_MSG_ERROR([HYPRE library not found or not usable])])
 
+dnl Check for minimum HYPRE version
+AC_LANG_PUSH([C])
+AC_MSG_CHECKING([for HYPRE version])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <HYPRE_config.h>],
+                                   [#if HYPRE_RELEASE_NUMBER < 23100
+                                    #error "HYPRE version too old"
+                                    #endif])],
+                  [AC_MSG_RESULT([sufficient])],
+                  [AC_MSG_ERROR([HYPRE library version is too old. Use hypre >= 2.31.0])])
+AC_LANG_POP([C])
+
 dnl Check for HYPRE headers
 AC_CHECK_HEADER([HYPRE_config.h], [],
                 [AC_MSG_ERROR([HYPRE headers not found or not usable. Please ensure the correct path is specified with --with-hypre-include and the headers are installed.])])
