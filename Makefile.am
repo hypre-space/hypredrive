@@ -26,17 +26,14 @@ docs: doxygen-doc
 	@echo "Built user's manual documentation (Sphinx)"
 
 check:
-	@{ command -v mpirun >/dev/null 2>&1 && MPIRUN=mpirun && NPFLAG=-np; } || \
-	{ command -v srun >/dev/null 2>&1 && MPIRUN=srun && NPFLAG=-n; } || \
-	{ echo >&2 "Neither mpirun nor srun found!"; exit 1; }
-	@$(MPIRUN) $(NPFLAG) 1 ./hypredrive examples/ex1.yml > /dev/null 2>&1
+	@mpirun -np 1 ./hypredrive examples/ex1.yml > /dev/null 2>&1
 	@if test $$? -eq 0 ; then \
 		echo "Running ex1 with 1 MPI process... passed!"; \
 	else \
 		echo "Running ex1 with 1 MPI process... failed!"; \
 		exit 1; \
 	fi
-	@$(MPIRUN) $(NPFLAG) 4 ./hypredrive examples/ex2.yml > /dev/null 2>&1
+	@mpirun -np 4 ./hypredrive examples/ex2.yml > /dev/null 2>&1
 	@if test $$? -eq 0 ; then \
 		echo "Running ex2 with 4 MPI processes... passed!"; \
 	else \

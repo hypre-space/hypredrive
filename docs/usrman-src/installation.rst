@@ -100,7 +100,7 @@ You should see the output below:
 .. code-block:: bash
 
     "Running with 1 MPI process... passed!"
-    "Running with 4 MPI process... passed!"
+    "Running with 4 MPI processes... passed!"
 
 
 Troubleshooting
