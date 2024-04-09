@@ -267,7 +267,7 @@ LinearSystemMatrixGetNumRows(HYPRE_IJMatrix matrix)
 {
    HYPRE_ParCSRMatrix   par_A;
    void                *obj;
-   HYPRE_Int            nrows, ncols;
+   HYPRE_BigInt         nrows, ncols;
 
    HYPRE_IJMatrixGetObject(matrix, &obj);
    par_A  = (HYPRE_ParCSRMatrix) obj;

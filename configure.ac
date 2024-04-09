@@ -97,7 +97,7 @@ AS_IF([test "x$with_cuda" = "xyes"], [
 
     dnl Check for libcublas
     AC_CHECK_LIB([cublas],
-                 [cublasCreate],
+                 [cublasInit],
                  [AC_MSG_NOTICE([libcublas found.])],
                  [AC_MSG_ERROR([libcublas not found. Please ensure CUDA is installed correctly.])])
 
