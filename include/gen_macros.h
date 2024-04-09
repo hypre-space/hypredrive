@@ -319,7 +319,7 @@
             { \
                _buffer[i] = args->level[i]._type; \
             } \
-            if (!strcmp(#_type, "f_relaxation.type")) \
+            if (!strcmp(#_type, "f_relaxation.type")) /* Adjust iteration counts */\
             { \
                for (size_t i = 0; i < args->num_levels - 1; i++) \
                { \
@@ -345,6 +345,14 @@
                            args->level[i].f_relaxation.num_sweeps < 1) \
                   { \
                      args->level[i].f_relaxation.num_sweeps = 1; \
+                     if (args->level[i].f_relaxation.type == 2) \
+                     { \
+                        args->level[i].f_relaxation.amg.max_iter = 1; \
+                     } \
+                     else if (args->level[i].f_relaxation.type == 16) \
+                     { \
+                        args->level[i].f_relaxation.ilu.max_iter = 1; \
+                     } \
                   } \
                } \
             } \
@@ -365,6 +373,10 @@
                            args->level[i].g_relaxation.num_sweeps < 1) \
                   { \
                      args->level[i].g_relaxation.num_sweeps = 1; \
+                     if (args->level[i].g_relaxation.type == 16) \
+                     { \
+                        args->level[i].g_relaxation.ilu.max_iter = 1; \
+                     } \
                   } \
                } \
             } \
