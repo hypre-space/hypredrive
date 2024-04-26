@@ -92,4 +92,129 @@ void MGRSetArgs(void*, YAMLnode*);
 void MGRSetDofmap(MGR_args*, IntArray*);
 void MGRCreate(MGR_args*, HYPRE_Solver*, HYPRE_Solver*);
 
+/*--------------------------------------------------------------------------
+ * Macros
+ *--------------------------------------------------------------------------*/
+
+/**
+ * @brief A macro to handle level attributes based on their names and types.
+ *
+ * This macro simplifies the process of comparing attribute names and accessing the corresponding
+ * attributes from a structure. It takes a buffer and a type, generates the attribute string by
+ * replacing '.' with ':', and compares it with a string variable name, assumed to be defined in
+ * the caller function. If they match, the buffer is populated with the values from the structure's
+ * attributes and it is returned. This macro is used for setting up the input parameters of MGR.
+ *
+ * @details Here is an example of how to use this macro (assuming that ibuf and rbuf are statically
+ *          allocated variables defined in the caller function):
+ *
+ * @code
+ *    HANDLE_MGR_LEVEL_ATTRIBUTE(ibuf, f_relaxation.type)
+ *    HANDLE_MGR_LEVEL_ATTRIBUTE(ibuf, f_relaxation.num_sweeps)
+ *    HANDLE_MGR_LEVEL_ATTRIBUTE(rbuf, f_relaxation.weights)
+ * @endcode
+ *
+ * In the above example, if name is "f_relaxation:type", "f_relaxation:num_sweeps", or
+ * "f_relaxation:weights", the corresponding attribute values will be stored in the buffers
+ * (ibuf or rbuf).
+ *
+ * @param _buffer The buffer to store the attribute values. It should be of the correct type to
+ *                hold the attribute values.
+ * @param _type   The type and name of the attribute in the structure, using '.' notation to
+ *                access nested attributes, e.g., struct_name.attribute_name.
+ * @return        A buffer containing the attribute values if the names match, NULL otherwise.
+ */
+#define HANDLE_MGR_LEVEL_ATTRIBUTE(_buffer, _type) \
+   { \
+      char str[] = #_type; \
+      for (size_t i = 0; i < sizeof(str); i++) if (str[i] == '.') str[i] = ':'; \
+      if (!strcmp(str, name)) \
+      { \
+         if (!strcmp(#_type, "f_relaxation.num_sweeps")) \
+         { \
+            for (size_t i = 0; i < args->num_levels - 1; i++) \
+            { \
+               _buffer[i] = (args->level[i].f_relaxation.type >= 0) ? args->level[i]._type : 0; \
+            } \
+         } \
+         else if (!strcmp(#_type, "g_relaxation.num_sweeps")) \
+         { \
+            for (size_t i = 0; i < args->num_levels - 1; i++) \
+            { \
+               _buffer[i] = (args->level[i].g_relaxation.type >= 0) ? args->level[i]._type : 0; \
+            } \
+         } \
+         else \
+         { \
+            for (size_t i = 0; i < args->num_levels - 1; i++) \
+            { \
+               _buffer[i] = args->level[i]._type; \
+            } \
+            if (!strcmp(#_type, "f_relaxation.type")) /* Adjust iteration counts */\
+            { \
+               for (size_t i = 0; i < args->num_levels - 1; i++) \
+               { \
+                  if (args->level[i].f_relaxation.amg.max_iter > 0) \
+                  { \
+                     args->level[i].f_relaxation.type = _buffer[i] = 2; \
+                     if (args->level[i].f_relaxation.num_sweeps < 1) \
+                     { \
+                        args->level[i].f_relaxation.num_sweeps = \
+                           args->level[i].f_relaxation.amg.max_iter; \
+                     } \
+                  } \
+                  else if (args->level[i].f_relaxation.ilu.max_iter > 0) \
+                  { \
+                     args->level[i].f_relaxation.type = _buffer[i] = 16; \
+                     if (args->level[i].f_relaxation.num_sweeps < 1) \
+                     { \
+                        args->level[i].f_relaxation.num_sweeps = \
+                           args->level[i].f_relaxation.ilu.max_iter; \
+                     } \
+                  } \
+                  else if (args->level[i].f_relaxation.type > -1 && \
+                           args->level[i].f_relaxation.num_sweeps < 1) \
+                  { \
+                     args->level[i].f_relaxation.num_sweeps = 1; \
+                     if (args->level[i].f_relaxation.type == 2) \
+                     { \
+                        args->level[i].f_relaxation.amg.max_iter = 1; \
+                     } \
+                     else if (args->level[i].f_relaxation.type == 16) \
+                     { \
+                        args->level[i].f_relaxation.ilu.max_iter = 1; \
+                     } \
+                  } \
+               } \
+            } \
+            else if (!strcmp(#_type, "g_relaxation.type")) \
+            { \
+               for (size_t i = 0; i < args->num_levels - 1; i++) \
+               { \
+                  if (args->level[i].g_relaxation.ilu.max_iter > 0) \
+                  { \
+                     args->level[i].g_relaxation.type = _buffer[i] = 16; \
+                     if (args->level[i].g_relaxation.num_sweeps < 1) \
+                     { \
+                        args->level[i].g_relaxation.num_sweeps = \
+                           args->level[i].g_relaxation.ilu.max_iter; \
+                     } \
+                  } \
+                  else if (args->level[i].g_relaxation.type > -1 && \
+                           args->level[i].g_relaxation.num_sweeps < 1) \
+                  { \
+                     args->level[i].g_relaxation.num_sweeps = 1; \
+                     if (args->level[i].g_relaxation.type == 16) \
+                     { \
+                        args->level[i].g_relaxation.ilu.max_iter = 1; \
+                     } \
+                  } \
+               } \
+            } \
+         } \
+         return _buffer; \
+      } \
+   }
+
+
 #endif /* MGR_HEADER */
