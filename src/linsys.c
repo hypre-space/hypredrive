@@ -86,10 +86,11 @@ LinearSystemGetValidValues(const char* key)
    }
    else if (!strcmp(key, "rhs_mode"))
    {
-      static StrIntMap map[] = {{"zeros",  0},
-                                {"ones",   1},
-                                {"file",   2},
-                                {"random", 3}};
+      static StrIntMap map[] = {{"zeros",   0},
+                                {"ones",    1},
+                                {"file",    2},
+                                {"random",  3},
+                                {"randsol", 4}};
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    else if (!strcmp(key, "init_guess_mode"))
@@ -305,6 +306,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
 {
    HYPRE_BigInt    ilower, iupper;
    HYPRE_BigInt    jlower, jupper;
+   HYPRE_IJVector  sol;
    char            rhs_filename[MAX_FILENAME_LENGTH] = {0};
    int             ls_id  = StatsGetLinearSystemID();
 
@@ -341,6 +343,31 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
          case 3:
             /* Vector of random values */
             HYPRE_ParVectorSetRandomValues(par_b, 2023);
+            break;
+
+         case 4:
+            /* Solution has random values */
+            HYPRE_IJVectorCreate(comm, ilower, iupper, &sol);
+            HYPRE_IJVectorSetObjectType(sol, HYPRE_PARCSR);
+            HYPRE_IJVectorInitialize_v2(sol, memloc);
+
+            /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
+            void            *obj;
+            HYPRE_ParVector  par_x;
+            HYPRE_IJVectorGetObject(sol, &obj);
+            par_x = (HYPRE_ParVector) obj;
+            HYPRE_ParVectorSetRandomValues(par_x, 2023);
+
+            /* TODO (hypre): add IJMatrixMatvec interface */
+            void               *obj_A;
+            HYPRE_ParCSRMatrix  par_A;
+            HYPRE_IJMatrixGetObject(mat, &obj_A);
+            par_A = (HYPRE_ParCSRMatrix) obj_A;
+            HYPRE_ParCSRMatrixMatvec(1.0, par_A, par_x, 0.0, par_b);
+
+            /* Free memory */
+            HYPRE_IJVectorDestroy(sol);
+            break;
       }
    }
    else
