@@ -20,14 +20,14 @@ bibliography: paper.bib
 
 Solving sparse linear systems of equations is an essential problem for many application
 codes in computational science and engineering (CSE). Commonly used mathematical libraries
-for tackling these problems are Trilinos @trilinos, PETSc @petsc and *hypre*
-@hypre. The first two provide means of quickly testing different solution strategies via
-input files, while such a capability is missing in *hypre*. *Hypredrive* aims to fill this
-gap by providing a simple and user-friendly interface to *hypre* @hypre. Particularly,
-inspired by the solver composability support in PETSc via `.petscrc` files [@petscrc] and
-the flexible configuration framework used in spack [@spack], *hypredrive* allows users to
-easily configure and switch solver options in *hypre* through input files in @YAML format,
-making experimentation with different solver techniques more accessible to researchers and
+for tackling these problems are Trilinos @trilinos, PETSc @petsc and *hypre* @hypre. The
+first two provide means of quickly testing different solution strategies via input files,
+while such a capability is missing in *hypre*. *Hypredrive* aims to fill this gap by
+providing a simple and user-friendly interface to *hypre*. Particularly, inspired by the
+solver composability support in PETSc via `.petscrc` files [@petscrc] and the flexible
+configuration framework used in spack [@spack], *hypredrive* allows users to easily
+configure and switch solver options in *hypre* through input files in @YAML format, making
+experimentation with different solver techniques more accessible to researchers and
 software developers who work with numerical simulation codes.
 
 # Statement of need
