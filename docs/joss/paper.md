@@ -19,29 +19,32 @@ bibliography: paper.bib
 # Summary
 
 Solving sparse linear systems of equations is an essential problem for many application
-codes in computational science and engineering (CSE). *Hypredrive* aims to facilitate this
-problem by providing a simple and user-friendly interface to *hypre* [@hypre], a
-well-established package featuring multigrid methods. Inspired by the solver composability
-work done in PETSc [@BrKnMaMcSm12] and the flexible configuration framework used in spack
+codes in computational science and engineering (CSE). Commonly used mathematical libraries
+for addressing these problems include @trilinos, PETSc [@petsc] and @hypre. The first two
+allow for quick testing of different solution strategies through input files, a feature
+that *hypre* currently lacks. *Hypredrive* aims to fill this gap by providing a simple and
+user-friendly interface to *hypre*. Inspired by the solver composability support in PETSc
+via `.petscrc` files [@petscrc] and the flexible configuration framework used in spack
 [@spack], *hypredrive* allows users to easily configure and switch solver options in
-*hypre* through @YAML input files, making experimentation with different solver
+*hypre* through input files in @YAML format, making experimentation with different solver
 techniques more accessible to researchers and software developers who work with numerical
 simulation codes.
 
 # Statement of need
 
 *Hypre* is a widely used and efficient linear solver package; however, the complexity
-associated with its direct use might limit exploration with different solver
-options. *Hypredrive* bridges this gap by providing a high-level and lightweight interface
-to *hypre*, encapsulating its complexity while retaining its capabilities with minimal
-computational overhead.
+associated with its direct use might limit *hypre* users and application developers to
+explore with different solver options. *Hypredrive* bridges this gap by providing a
+high-level and lightweight interface to *hypre*, encapsulating its complexity while
+retaining its capabilities with minimal computational overhead.
+
 
 # Software capabilities
 
 *Hypredrive* is a software package written in C that includes a library with APIs designed
-to simplify the interaction with *hypre* and an executable for performing the solution of
-linear systems defined via YAML input files. The types of linear systems solvable with
-*hypredrive* is determined by *hypre*. Key features of the software are:
+to simplify the interaction with *hypre* and an executable driver for performing the
+solution of linear systems defined via YAML input files. The types of linear systems
+solvable with *hypredrive* are determined by *hypre*. Key features of the software are:
 
 * **Encapsulation**: `libHYPREDRV` wraps the function calls for building solvers and
   preconditioners in *hypre* through an intuitive YAML interface driven by configuration
