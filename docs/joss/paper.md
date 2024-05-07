@@ -18,7 +18,7 @@ bibliography: paper.bib
 
 # Summary
 
-Solving sparse linear systems of equations is an essential problem for many application
+Solving sparse linear systems of equations is an essential task for many application
 codes in computational science and engineering (CSE). Commonly used mathematical libraries
 for addressing these problems include @trilinos, PETSc [@petsc] and @hypre. The first two
 allow for quick testing of different solution strategies through input files, a feature
