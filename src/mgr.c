@@ -493,19 +493,25 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
       if (args->level[i].f_relaxation.type == 2)
       {
          AMGCreate(&args->level[i].f_relaxation.amg, &frelax);
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
+         HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
+#else
          HYPRE_MGRSetFSolverAtLevel(i, precon, frelax);
+#endif
       }
    }
 
    /* Config global relaxation at level >= 0 */
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
    for (i = 0; i < num_levels; i++)
    {
       if (args->level[i].g_relaxation.type == 16)
       {
          ILUCreate(&args->level[i].g_relaxation.ilu, &grelax);
-         HYPRE_MGRSetGlobalSmootherAtLevel(i, precon, grelax);
+         HYPRE_MGRSetGlobalSmootherAtLevel(precon, grelax, i);
       }
    }
+#endif
 
    /* Config coarsest level solver */
    if (args->coarsest_level.type == 0)

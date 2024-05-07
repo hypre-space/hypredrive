@@ -27,6 +27,12 @@ void CombineFilename(const char*, const char*, char**);
 /*******************************************************************************
  *******************************************************************************/
 
+/* Check for minimum HYPRE version in order to allow certain features */
+#define HYPRE_CHECK_MIN_VERSION(release, develop) \
+    (HYPRE_RELEASE_NUMBER > (release) || \
+    (HYPRE_RELEASE_NUMBER == (release) && \
+     (defined(HYPRE_DEVELOP_NUMBER) && HYPRE_DEVELOP_NUMBER > (develop))))
+
 #define MAX_DIVISOR_LENGTH 84
 #define PRINT_DASHED_LINE(_l) for (size_t i = 0; i < (_l); i++) { printf("-"); } printf("\n");
 #define PRINT_EQUAL_LINE(_l)  for (size_t i = 0; i < (_l); i++) { printf("="); } printf("\n");
