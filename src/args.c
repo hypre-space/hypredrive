@@ -70,10 +70,12 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
    while (child)
    {
       if (!strcmp(child->key, "warmup") ||
-          !strcmp(child->key, "statistics"))
+          !strcmp(child->key, "statistics") ||
+          !strcmp(child->key, "use_millisec"))
       {
          if (!strcmp(child->val, "off") ||
              !strcmp(child->val, "no") ||
+             !strcmp(child->val, "false") ||
              !strcmp(child->val, "0")  ||
              !strcmp(child->val, "n"))
          {
@@ -81,13 +83,18 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
             {
                iargs->warmup = 0;
             }
-            else
+            else if (!strcmp(child->key, "statistics"))
             {
                iargs->statistics = 0;
+            }
+            else if (!strcmp(child->key, "use_millisec"))
+            {
+               StatsTimerSetSeconds();
             }
          }
          else if (!strcmp(child->val, "on") ||
                   !strcmp(child->val, "yes") ||
+                  !strcmp(child->val, "true") ||
                   !strcmp(child->val, "1")  ||
                   !strcmp(child->val, "y"))
          {
@@ -95,9 +102,13 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
             {
                iargs->warmup = 1;
             }
-            else
+            else if (!strcmp(child->key, "statistics"))
             {
                iargs->statistics = 1;
+            }
+            else if (!strcmp(child->key, "use_millisec"))
+            {
+               StatsTimerSetMilliseconds();
             }
          }
          else
@@ -106,7 +117,7 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
             {
                iargs->warmup = 0;
             }
-            else
+            else if (!strcmp(child->key, "statistics"))
             {
                iargs->statistics = 0;
             }

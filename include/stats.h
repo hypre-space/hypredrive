@@ -41,6 +41,9 @@ typedef struct Stats_struct {
    double    initialize;
    double    finalize;
    double    reset_x0;
+
+   double    time_factor;
+   bool      use_millisec;
 } Stats;
 
 /*--------------------------------------------------------------------------
@@ -52,6 +55,8 @@ void StatsDestroy(void);
 void StatsTimerStart(const char*);
 void StatsTimerFinish(const char*);
 void StatsIterSet(int);
+void StatsTimerSetMilliseconds(void);
+void StatsTimerSetSeconds(void);
 void StatsRelativeResNormSet(double);
 void StatsPrint(int);
 int  StatsGetLinearSystemID(void);
