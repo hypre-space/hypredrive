@@ -43,7 +43,7 @@ Check *hypredrive*'s manual [here](https://hypredrive.readthedocs.io/en/latest/)
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING) for details on contributing to *hypredrive*,
+Please read [CONTRIBUTING](CONTRIBUTING.md) for details on contributing to *hypredrive*,
 including the process for submitting pull requests to us.
 
 ## License
