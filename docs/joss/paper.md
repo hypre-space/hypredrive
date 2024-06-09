@@ -18,17 +18,20 @@ bibliography: paper.bib
 
 # Summary
 
-Solving sparse linear systems of equations is an essential task for many application
-codes in computational science and engineering (CSE). Commonly used mathematical libraries
-for addressing these problems include @trilinos, PETSc [@petsc] and @hypre. The first two
-allow for quick testing of different solution strategies through input files, a feature
-that *hypre* currently lacks. *Hypredrive* aims to fill this gap by providing a simple and
+Solving sparse linear systems of equations is an essential task for many application codes
+in computational science and engineering. Commonly used mathematical libraries for
+addressing these problems include [trilinos](https://trilinos.github.io/index.html)
+[@trilinos], [PETSc](https://petsc.org/) [@petsc] and
+[*hypre*](https://github.com/hypre-space/hypre) [@hypre]. The first two allow for quick
+testing of different solution strategies through input files, a feature that *hypre*
+currently lacks. *Hypredrive* aims to fill this gap by providing a simple and
 user-friendly interface to *hypre*. Inspired by the solver composability support in PETSc
-via `.petscrc` files [@petscrc] and the flexible configuration framework used in spack
-[@spack], *hypredrive* allows users to easily configure and switch solver options in
-*hypre* through input files in @YAML format, making experimentation with different solver
-techniques more accessible to researchers and software developers who work with numerical
-simulation codes.
+via [`.petscrc` files](https://petsc.org/main/manual/other/#the-options-database) and the
+flexible configuration framework used in spack [@spack], *hypredrive* allows users to
+easily configure and switch solver options in *hypre* through input files in
+[YAML](https://yaml.org/spec/1.2/spec.html) format, making experimentation with different
+solver techniques more accessible to researchers and software developers who work with
+numerical simulation codes.
 
 # Statement of need
 
@@ -127,7 +130,7 @@ file examples, see [*hypredrive*'s manual](https://hypredrive.readthedocs.io/en/
 
 # Acknowledgements
 
-This work performed under the auspices of the U.S. Department of Energy by Lawrence
-Livermore National Laboratory under Contract DE-AC52-07NA27344.
+This work was performed under the auspices of the U.S. Department of Energy by Lawrence
+Livermore National Laboratory under Contract DE-AC52-07NA27344 (LLNL-JRNL-865058).
 
 # References
