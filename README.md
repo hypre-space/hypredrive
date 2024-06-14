@@ -13,7 +13,7 @@ The instructions for building *hypredrive* are given below:
 
 ```
  $ autoreconf -i
- $ ./configure --with-hypre-dir=${HYPRE_INSTALL_DIR}
+ $ ./configure --prefix=${PWD}/install --with-hypre-dir=${HYPRE_INSTALL_DIR}
  $ make all
  $ make check
  $ make install
@@ -25,8 +25,6 @@ Note:
    `${HYPRE_INSTALL_DIR}`.
 3. For GPU support, add `--with-cuda` (NVIDIA GPUs) or `--with-hip` (AMD GPUs) to
    `./configure`.
-4. An installation prefix can be passed to `./configure` such as `--prefix=${INSTALL_PATH}`.
-   For more configure options, type `./configure -help`.
 
 ## Examples
 
@@ -43,7 +41,7 @@ Check *hypredrive*'s manual [here](https://hypredrive.readthedocs.io/en/latest/)
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING) for details on contributing to *hypredrive*,
+Please read [CONTRIBUTING](CONTRIBUTING.md) for details on contributing to *hypredrive*,
 including the process for submitting pull requests to us.
 
 ## License
