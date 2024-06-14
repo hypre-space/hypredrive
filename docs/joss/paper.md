@@ -20,7 +20,7 @@ bibliography: paper.bib
 
 Solving sparse linear systems of equations is an essential task for many application codes
 in computational science and engineering. Commonly used mathematical libraries for
-addressing these problems include [trilinos](https://trilinos.github.io/index.html)
+addressing these problems include, among others, [trilinos](https://trilinos.github.io/index.html)
 [@trilinos], [PETSc](https://petsc.org/) [@petsc] and
 [*hypre*](https://github.com/hypre-space/hypre) [@hypre]. The first two allow for quick
 testing of different solution strategies through input files, a feature that *hypre*
