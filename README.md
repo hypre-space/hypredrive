@@ -1,3 +1,5 @@
+[![DOI](https://joss.theoj.org/papers/10.21105/joss.06654/status.svg)](https://doi.org/10.21105/joss.06654)
+
 # *hypredrive*
 
 High-level interface for solving linear systems with hypre, providing a user-friendly way to leverage its functionalities. Key features are:
@@ -43,6 +45,18 @@ Check *hypredrive*'s manual [here](https://hypredrive.readthedocs.io/en/latest/)
 
 Please read [CONTRIBUTING](CONTRIBUTING.md) for details on contributing to *hypredrive*,
 including the process for submitting pull requests to us.
+
+## Citing
+
+If you are referencing *hypredrive* in a publication, please cite the following paper:
+
+    Magri, V. A. P. (2024). Hypredrive: High-level interface for solving linear systems
+    with hypre. Journal of Open Source Software,
+    9(98), 6654. https://doi.org/10.21105/joss.06654
+
+You can easily obtain the citation in APA or BibTeX format directly from GitHub. Navigate
+to the "Cite this repository" option located in the "About" section. Alternatively, you can
+find the raw BibTeX format in the comments section of the [CITATION](CITATION.cff) file.
 
 ## License
 
