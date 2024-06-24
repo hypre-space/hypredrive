@@ -55,7 +55,7 @@ If you are referencing *hypredrive* in a publication, please cite the following 
     9(98), 6654. https://doi.org/10.21105/joss.06654
 
 You can easily obtain the citation in APA or BibTeX format directly from GitHub. Navigate
-to the "Cite this repository" option located in the "About" section. Additionally, you can
+to the "Cite this repository" option located in the "About" section. Alternatively, you can
 find the raw BibTeX format in the comments section of the [CITATION](CITATION.cff) file.
 
 ## License
