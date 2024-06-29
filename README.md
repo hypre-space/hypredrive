@@ -1,3 +1,5 @@
+[![DOI](https://joss.theoj.org/papers/10.21105/joss.06654/status.svg)](https://doi.org/10.21105/joss.06654)
+
 # *hypredrive*
 
 High-level interface for solving linear systems with hypre, providing a user-friendly way to leverage its functionalities. Key features are:
@@ -13,7 +15,7 @@ The instructions for building *hypredrive* are given below:
 
 ```
  $ autoreconf -i
- $ ./configure --with-hypre-dir=${HYPRE_INSTALL_DIR}
+ $ ./configure --prefix=${PWD}/install --with-hypre-dir=${HYPRE_INSTALL_DIR}
  $ make all
  $ make check
  $ make install
@@ -25,8 +27,6 @@ Note:
    `${HYPRE_INSTALL_DIR}`.
 3. For GPU support, add `--with-cuda` (NVIDIA GPUs) or `--with-hip` (AMD GPUs) to
    `./configure`.
-4. An installation prefix can be passed to `./configure` such as `--prefix=${INSTALL_PATH}`.
-   For more configure options, type `./configure -help`.
 
 ## Examples
 
@@ -43,8 +43,20 @@ Check *hypredrive*'s manual [here](https://hypredrive.readthedocs.io/en/latest/)
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING) for details on contributing to *hypredrive*,
+Please read [CONTRIBUTING](CONTRIBUTING.md) for details on contributing to *hypredrive*,
 including the process for submitting pull requests to us.
+
+## Citing
+
+If you are referencing *hypredrive* in a publication, please cite the following paper:
+
+    Magri, V. A. P. (2024). Hypredrive: High-level interface for solving linear systems
+    with hypre. Journal of Open Source Software,
+    9(98), 6654. https://doi.org/10.21105/joss.06654
+
+You can easily obtain the citation in APA or BibTeX format directly from GitHub. Navigate
+to the "Cite this repository" option located in the "About" section. Alternatively, you can
+find the raw BibTeX format in the comments section of the [CITATION](CITATION.cff) file.
 
 ## License
 
