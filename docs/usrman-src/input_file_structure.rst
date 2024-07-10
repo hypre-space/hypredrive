@@ -36,6 +36,9 @@ The ``general`` section contains global settings that apply to the entire execut
   at the end of the run reporting execution times. If `no`, no statistics reporting is
   performed. The default value for this parameter is `yes`.
 
+- ``use_milisec`` - Show timings on the statistics summary table in milliseconds. The
+  default value is `no`, which uses seconds instead.
+
 - ``num_repetitions`` - Specifies the number of times the operation should be
   repeated. Useful for benchmarking and profiling. The default value for this parameter is
   `1`.
@@ -47,6 +50,7 @@ An example code block for the ``general`` section is given below:
     general:
       warmup: yes
       statistics: yes
+      use_millisec: no
       num_repetitions: 1
 
 Linear System

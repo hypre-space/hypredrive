@@ -44,27 +44,36 @@ static Stats *global_stats = NULL;
    printf("+------------"); \
    for (size_t i = 0; i < 4; i++) printf("+-------------"); \
    printf("+-------------+\n");
-#define STATS_PRINT_HEADER(_t, _b) \
+#define STATS_PRINT_HEADER(_s, _t, _b) \
    printf("|%11s ", _t[0]); \
    for (size_t i = 1; i < 6; i++) printf("|%12s ", _t[i]); \
    printf("|\n"); \
    printf("|%11s ", _b[0]); \
-   for (size_t i = 1; i < 6; i++) printf("|%12s ", _b[i]); \
+   printf("|%*s %*s ", 11 - (int) strlen(_s), _b[1], (int) strlen(_s), _s); \
+   printf("|%*s %*s ", 11 - (int) strlen(_s), _b[2], (int) strlen(_s), _s); \
+   printf("|%*s %*s ", 11 - (int) strlen(_s), _b[3], (int) strlen(_s), _s); \
+   printf("|%12s ", _b[4]); \
+   printf("|%12s ", _b[5]); \
    printf("|\n");
 #define STATS_PRINT_ENTRY(_t, _n) \
    if ((_t)->num_systems < 0 || !(_n % (((_t)->counter + 1) / (_t)->num_systems))) \
    { \
       printf("| %10ld | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", \
-             (_n), (_t)->dofmap[(_n)] + (_t)->matrix[(_n)] + (_t)->rhs[(_n)], \
-             (_t)->prec[(_n)], (_t)->solve[(_n)], (_t)->rrnorms[(_n)], \
+             (_n), \
+             (_t)->time_factor * ((_t)->dofmap[(_n)] + (_t)->matrix[(_n)] + (_t)->rhs[(_n)]), \
+             (_t)->time_factor * ((_t)->prec[(_n)]), \
+             (_t)->time_factor * ((_t)->solve[(_n)]), \
+             (_t)->rrnorms[(_n)], \
              (_t)->iters[(_n)]); \
    } \
    else \
    { \
       printf("| %10ld |             |", (_n)); \
       printf(" %11.3f | %11.3f | %11.2e |  %10d |\n", \
-             (_t)->prec[(_n)], (_t)->solve[(_n)], \
-             (_t)->rrnorms[(_n)], (_t)->iters[(_n)]); \
+             (_t)->time_factor * ((_t)->prec[(_n)]), \
+             (_t)->time_factor * ((_t)->solve[(_n)]), \
+             (_t)->rrnorms[(_n)], \
+             (_t)->iters[(_n)]);  \
    }
 
 /*--------------------------------------------------------------------------
@@ -80,28 +89,30 @@ StatsCreate(void)
 
    global_stats = (Stats*) malloc(sizeof(Stats));
 
-   global_stats->capacity    = capacity;
-   global_stats->counter     = 0;
-   global_stats->reps        = 0;
-   global_stats->num_reps    = 1;
-   global_stats->num_systems = -1;
-   global_stats->ls_counter  = 0;
+   global_stats->capacity     = capacity;
+   global_stats->counter      = 0;
+   global_stats->reps         = 0;
+   global_stats->num_reps     = 1;
+   global_stats->num_systems  = -1;
+   global_stats->ls_counter   = 0;
+   global_stats->use_millisec = false;
+   global_stats->time_factor  = 1.0;
 
    /* Overall timers */
-   global_stats->initialize  = 0.0;
-   global_stats->finalize    = 0.0;
-   global_stats->reset_x0    = 0.0;
+   global_stats->initialize   = 0.0;
+   global_stats->finalize     = 0.0;
+   global_stats->reset_x0     = 0.0;
 
    /* Linear system loading (1st stage) */
-   global_stats->dofmap      = (double*) calloc(capacity, sizeof(double));
-   global_stats->matrix      = (double*) calloc(capacity, sizeof(double));
-   global_stats->rhs         = (double*) calloc(capacity, sizeof(double));
+   global_stats->dofmap       = (double*) calloc(capacity, sizeof(double));
+   global_stats->matrix       = (double*) calloc(capacity, sizeof(double));
+   global_stats->rhs          = (double*) calloc(capacity, sizeof(double));
 
    /* Linear system solution (2nd stage) */
-   global_stats->iters       = (int*)    calloc(capacity, sizeof(int));
-   global_stats->prec        = (double*) calloc(capacity, sizeof(double));
-   global_stats->solve       = (double*) calloc(capacity, sizeof(double));
-   global_stats->rrnorms     = (double*) calloc(capacity, sizeof(double));
+   global_stats->iters        = (int*)    calloc(capacity, sizeof(int));
+   global_stats->prec         = (double*) calloc(capacity, sizeof(double));
+   global_stats->solve        = (double*) calloc(capacity, sizeof(double));
+   global_stats->rrnorms      = (double*) calloc(capacity, sizeof(double));
 }
 
 /*--------------------------------------------------------------------------
@@ -183,6 +194,28 @@ StatsTimerFinish(const char *name)
 }
 
 /*--------------------------------------------------------------------------
+ * StatsTimerSetMilliseconds
+ *--------------------------------------------------------------------------*/
+
+void
+StatsTimerSetMilliseconds(void)
+{
+   global_stats->use_millisec = true;
+   global_stats->time_factor  = 1000.0;
+}
+
+/*--------------------------------------------------------------------------
+ * StatsTimerSetSeconds
+ *--------------------------------------------------------------------------*/
+
+void
+StatsTimerSetSeconds(void)
+{
+   global_stats->use_millisec = false;
+   global_stats->time_factor  = 1.0;
+}
+
+/*--------------------------------------------------------------------------
  * StatsIterSet
  *--------------------------------------------------------------------------*/
 
@@ -213,6 +246,7 @@ StatsPrint(int print_level)
 {
    const char *top[] = {"", "LS build", "setup", "solve", "relative", ""};
    const char *bottom[] = {"Entry", "times", "times", "times", "res. norm", "iters"};
+   const char *scale = global_stats->use_millisec ? "[ms]" : "[s]";
 
    if (!global_stats || print_level < 1)
    {
@@ -223,7 +257,7 @@ StatsPrint(int print_level)
    printf("\n\nSTATISTICS SUMMARY:\n\n");
 
    STATS_PRINT_DIVISOR()
-   STATS_PRINT_HEADER(top, bottom)
+   STATS_PRINT_HEADER(scale, top, bottom)
    STATS_PRINT_DIVISOR()
 
    /* Print statistics for each entry in the array */
