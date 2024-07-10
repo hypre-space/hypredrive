@@ -188,6 +188,9 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
          return;
    }
 
+   /* Clear pending error codes from hypre */
+   HYPRE_ClearAllErrors();
+
    StatsTimerFinish("prec");
 }
 
@@ -238,6 +241,9 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver,
          StatsTimerFinish("solve");
          return;
    }
+
+   /* Clear pending error codes from hypre */
+   HYPRE_ClearAllErrors();
 
    StatsIterSet((int) iters);
    StatsTimerFinish("solve");
