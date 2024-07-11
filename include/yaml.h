@@ -99,7 +99,7 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
          { \
             _node->mapped_val = (char*) malloc(_length * sizeof(char)); \
          } \
-         else if (_length > strlen(_node->mapped_val)) \
+         else if (_length > (int) strlen(_node->mapped_val)) \
          { \
             _node->mapped_val = (char*) realloc(_node->mapped_val, _length * sizeof(char)); \
          } \

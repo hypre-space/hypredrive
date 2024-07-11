@@ -58,7 +58,7 @@ static Stats *global_stats = NULL;
 #define STATS_PRINT_ENTRY(_t, _n) \
    if ((_t)->num_systems < 0 || !(_n % (((_t)->counter + 1) / (_t)->num_systems))) \
    { \
-      printf("| %10ld | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", \
+      printf("| %10d | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", \
              (_n), \
              (_t)->time_factor * ((_t)->dofmap[(_n)] + (_t)->matrix[(_n)] + (_t)->rhs[(_n)]), \
              (_t)->time_factor * ((_t)->prec[(_n)]), \
@@ -68,7 +68,7 @@ static Stats *global_stats = NULL;
    } \
    else \
    { \
-      printf("| %10ld |             |", (_n)); \
+      printf("| %10d |             |", (_n)); \
       printf(" %11.3f | %11.3f | %11.2e |  %10d |\n", \
              (_t)->time_factor * ((_t)->prec[(_n)]), \
              (_t)->time_factor * ((_t)->solve[(_n)]), \
@@ -261,7 +261,7 @@ StatsPrint(int print_level)
    STATS_PRINT_DIVISOR()
 
    /* Print statistics for each entry in the array */
-   for (size_t i = 0; i < global_stats->counter + 1; i++)
+   for (int i = 0; i < global_stats->counter + 1; i++)
    {
       STATS_PRINT_ENTRY(global_stats, i);
    }

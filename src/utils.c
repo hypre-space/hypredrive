@@ -62,6 +62,36 @@ CheckBinaryDataExists(const char* prefix)
 }
 
 /*-----------------------------------------------------------------------------
+ * CountNumberOfPartitions
+ *-----------------------------------------------------------------------------*/
+
+int
+CountNumberOfPartitions(const char* prefix)
+{
+   char   filename[MAX_FILENAME_LENGTH];
+   int    file_exists = 1;
+   int    num_files = 0;
+   FILE  *fp;
+
+   while (file_exists)
+   {
+      sprintf(filename, "%*s.%05d.bin", (int) strlen(prefix), prefix, num_files);
+      file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
+      if (fp) fclose(fp);
+      if (!file_exists)
+      {
+         sprintf(filename, "%*s.%05d", (int) strlen(prefix), prefix, num_files);
+         file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
+         if (fp) fclose(fp);
+      }
+
+      num_files++;
+   }
+
+   return --num_files;
+}
+
+/*-----------------------------------------------------------------------------
  * ComputeNumberOfDigits
  *-----------------------------------------------------------------------------*/
 

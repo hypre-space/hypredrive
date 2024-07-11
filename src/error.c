@@ -196,12 +196,24 @@ ErrorCodeResetAll(void)
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAdd(const char *message)
+ErrorMsgAdd(const char *format, ...)
 {
    ErrorMsgNode *new = (ErrorMsgNode *) malloc(sizeof(ErrorMsgNode));
+   va_list       args;
+   int           length;
 
-   new->message = (char *) malloc(strlen(message) + 1);
-   strcpy(new->message, message);
+   /* Determine the length of the formatted message */
+   va_start(args, format);
+   length = vsnprintf(NULL, 0, format, args);
+   va_end(args);
+
+   /* Format the message */
+   new->message = (char *) malloc(length + 1);
+   va_start(args, format);
+   vsnprintf(new->message, length + 1, format, args);
+   va_end(args);
+
+   /* Insert the new node at the head of the list */
    new->next = global_error_msg_head;
    global_error_msg_head = new;
 }

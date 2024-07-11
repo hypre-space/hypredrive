@@ -20,9 +20,13 @@ InputArgsCreate(input_args **iargs_ptr)
    input_args *iargs = (input_args*) malloc(sizeof(input_args));
 
    /* Set general default options */
-   iargs->warmup = 0;
-   iargs->num_repetitions = 1;
-   iargs->statistics = 1;
+   iargs->warmup           = 0;
+   iargs->num_repetitions  = 1;
+   iargs->statistics       = 1;
+   iargs->dev_pool_size    = 8.0 * GB_TO_BYTES;
+   iargs->uvm_pool_size    = 8.0 * GB_TO_BYTES;
+   iargs->host_pool_size   = 8.0 * GB_TO_BYTES;
+   iargs->pinned_pool_size = 0.5 * GB_TO_BYTES;
 
    /* Set default Linear System options */
    LinearSystemSetDefaultArgs(&iargs->ls);
@@ -126,7 +130,23 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
       }
       else if (!strcmp(child->key, "num_repetitions"))
       {
-         iargs->num_repetitions = (HYPRE_Int) atoi(child->val);
+         iargs->num_repetitions = atoi(child->val);
+      }
+      else if (!strcmp(child->key, "dev_pool_size"))
+      {
+         iargs->dev_pool_size = GB_TO_BYTES * atof(child->val);
+      }
+      else if (!strcmp(child->key, "uvm_pool_size"))
+      {
+         iargs->uvm_pool_size = GB_TO_BYTES * atof(child->val);
+      }
+      else if (!strcmp(child->key, "host_pool_size"))
+      {
+         iargs->host_pool_size = GB_TO_BYTES * atof(child->val);
+      }
+      else if (!strcmp(child->key, "pinned_pool_size"))
+      {
+         iargs->pinned_pool_size = GB_TO_BYTES * atof(child->val);
       }
       else
       {

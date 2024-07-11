@@ -43,6 +43,23 @@ The ``general`` section contains global settings that apply to the entire execut
   repeated. Useful for benchmarking and profiling. The default value for this parameter is
   `1`.
 
+- ``dev_pool_size`` - Initial size of the umpire's device memory pool. This parameter is
+  neglected when hypre is *not* configured with umpire support. The default value for this
+  parameter is `8 GB`.
+
+- ``uvm_pool_size`` - Initial size of the umpire's unified virtual memory pool. This
+  parameter is neglected when hypre is *not* configured with umpire support. The default
+  value for this parameter is `8 GB`.
+
+- ``host_pool_size`` - Initial size of the umpire's host memory pool. This parameter is
+  neglected when hypre is *not* configured with umpire support. The default value for this
+  parameter is `8 GB`.
+
+- ``pinned_pool_size`` - Initial size of the umpire's host memory pool. This parameter is
+  neglected when hypre is *not* configured with umpire support. The default value for this
+  parameter is `512 MB`.
+
+
 An example code block for the ``general`` section is given below:
 
 .. code-block:: yaml
@@ -52,6 +69,10 @@ An example code block for the ``general`` section is given below:
       statistics: yes
       use_millisec: no
       num_repetitions: 1
+      dev_pool_size: 8.0
+      uvm_pool_size: 8.0
+      host_pool_size: 8.0
+      pinned_pool_size: 0.5
 
 Linear System
 -------------

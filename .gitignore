@@ -4,6 +4,7 @@
 *.o
 *.lo
 *.btr
+*.csv
 .deps
 .dirstamp
 *.~HEAD~*

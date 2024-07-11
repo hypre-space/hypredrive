@@ -434,7 +434,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
 
    /* Initialize variables */
    dofmap     = args->dofmap;
-   num_dofs   = dofmap->num_unique_entries;
+   num_dofs   = dofmap->g_unique_size;
    num_levels = args->num_levels;
 
    /* Compute num_c_dofs and c_dofs */
@@ -445,7 +445,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
       c_dofs[lvl] = (HYPRE_Int*) malloc(num_dofs * sizeof(HYPRE_Int));
       num_c_dofs[lvl] = num_dofs_last - args->level[lvl].f_dofs.size;
 
-      for (i = 0; i < args->level[lvl].f_dofs.size; i++)
+      for (i = 0; i < (int) args->level[lvl].f_dofs.size; i++)
       {
          inactive_dofs[args->level[lvl].f_dofs.data[i]] = 1;
          --num_dofs_last;

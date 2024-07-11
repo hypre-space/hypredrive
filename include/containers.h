@@ -42,7 +42,12 @@ typedef struct IntArray_struct
 {
    int      *data;
    size_t    size;
-   size_t    num_unique_entries;
+
+   int      *unique_data;
+   size_t    unique_size;
+
+   int      *g_unique_data;
+   size_t    g_unique_size;
 } IntArray;
 
 IntArray* IntArrayCreate(size_t);

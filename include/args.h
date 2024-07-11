@@ -23,6 +23,10 @@ typedef struct input_args_struct {
    int           warmup;
    int           statistics;
    int           num_repetitions;
+   double        dev_pool_size;
+   double        uvm_pool_size;
+   double        host_pool_size;
+   double        pinned_pool_size;
 
    LS_args       ls;
 
