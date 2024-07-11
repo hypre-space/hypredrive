@@ -186,6 +186,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 
    char                 matrix_filename[MAX_FILENAME_LENGTH] = {0};
    int                  ls_id  = StatsGetLinearSystemID();
+   int                  nprocs, nparts;
    HYPRE_ParCSRMatrix   par_A;
    void                *obj;
 
@@ -195,12 +196,15 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    /* Set matrix filename */
    if (args->dirname[0] != '\0')
    {
-      sprintf(matrix_filename, "%*s_%0*d/%*s",
-              (int) strlen(args->dirname),
-              args->dirname, args->digits_suffix,
-              args->init_suffix + ls_id,
-              (int) strlen(args->matrix_filename),
-              args->matrix_filename);
+      snprintf(matrix_filename,
+               sizeof(matrix_filename),
+               "%.*s_%0*d/%.*s",
+               (int) strlen(args->dirname),
+               args->dirname,
+               args->digits_suffix,
+               args->init_suffix + ls_id,
+               (int) strlen(args->matrix_filename),
+               args->matrix_filename);
    }
    else if (args->matrix_filename[0] != '\0')
    {
@@ -208,10 +212,13 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    }
    else if (args->matrix_basename[0] != '\0')
    {
-      sprintf(matrix_filename, "%*s_%0*d",
-              (int) strlen(args->matrix_basename),
-              args->matrix_basename, args->digits_suffix,
-              args->init_suffix + ls_id);
+      snprintf(matrix_filename,
+               sizeof(matrix_filename),
+               "%.*s_%0*d",
+               (int) strlen(args->matrix_basename),
+               args->matrix_basename,
+               args->digits_suffix,
+               args->init_suffix + ls_id);
    }
    else
    {
@@ -226,7 +233,16 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    {
       if (CheckBinaryDataExists(matrix_filename))
       {
-         HYPRE_IJMatrixReadBinary(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+         MPI_Comm_size(comm, &nprocs);
+         nparts = CountNumberOfPartitions(matrix_filename);
+         if (nparts > nprocs)
+         {
+            IJMatrixReadMultipartBinary(matrix_filename, comm, (uint64_t) nparts, matrix_ptr);
+         }
+         else
+         {
+            HYPRE_IJMatrixReadBinary(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+         }
       }
       else
       {
@@ -287,7 +303,7 @@ LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
 {
    HYPRE_ParCSRMatrix   par_A;
    void                *obj;
-   HYPRE_Int            nrows, ncols;
+   HYPRE_BigInt         nrows, ncols;
 
    HYPRE_IJMatrixGetObject(matrix, &obj);
    par_A  = (HYPRE_ParCSRMatrix) obj;
@@ -308,6 +324,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
    HYPRE_BigInt    jlower, jupper;
    HYPRE_IJVector  sol;
    char            rhs_filename[MAX_FILENAME_LENGTH] = {0};
+   int             nparts, nprocs;
    int             ls_id  = StatsGetLinearSystemID();
 
    StatsTimerStart("rhs");
@@ -375,12 +392,15 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
       /* Set RHS filename */
       if (args->dirname[0] != '\0')
       {
-         sprintf(rhs_filename, "%*s_%0*d/%*s",
-                 (int) strlen(args->dirname),
-                 args->dirname, args->digits_suffix,
-                 args->init_suffix + ls_id,
-                 (int) strlen(args->rhs_filename),
-                 args->rhs_filename);
+         snprintf(rhs_filename,
+                  sizeof(rhs_filename),
+                  "%.*s_%0*d/%.*s",
+                  (int) strlen(args->dirname),
+                  args->dirname,
+                  args->digits_suffix,
+                  args->init_suffix + ls_id,
+                  (int) strlen(args->rhs_filename),
+                  args->rhs_filename);
       }
       else if (args->rhs_filename[0] != '\0')
       {
@@ -388,16 +408,28 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
       }
       else if (args->rhs_basename[0] != '\0')
       {
-         sprintf(rhs_filename, "%*s_%0*d",
-                 (int) strlen(args->rhs_basename),
-                 args->rhs_basename, args->digits_suffix,
-                 args->init_suffix + ls_id);
+         snprintf(rhs_filename,
+                  sizeof(rhs_filename),
+                  "%.*s_%0*d",
+                  (int) strlen(args->rhs_basename),
+                  args->rhs_basename,
+                  args->digits_suffix,
+                  args->init_suffix + ls_id);
       }
 
       /* Read vector from file (Binary or ASCII) */
       if (CheckBinaryDataExists(rhs_filename))
       {
-         HYPRE_IJVectorReadBinary(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
+         MPI_Comm_size(comm, &nprocs);
+         nparts = CountNumberOfPartitions(rhs_filename);
+         if (nparts > nprocs)
+         {
+            IJVectorReadMultipartBinary(rhs_filename, comm, nparts, rhs_ptr);
+         }
+         else
+         {
+            HYPRE_IJVectorReadBinary(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
+         }
       }
       else
       {
@@ -594,12 +626,15 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
       /* Set dofmap filename */
       if (args->dirname[0] != '\0')
       {
-         sprintf(dofmap_filename, "%*s_%0*d/%*s",
-                 (int) strlen(args->dirname),
-                 args->dirname, args->digits_suffix,
-                 args->init_suffix + ls_id,
-                 (int) strlen(args->dofmap_filename),
-                 args->dofmap_filename);
+         snprintf(dofmap_filename,
+                  sizeof(dofmap_filename),
+                  "%.*s_%0*d/%.*s",
+                  (int) strlen(args->dirname),
+                  args->dirname,
+                  args->digits_suffix,
+                  args->init_suffix + ls_id,
+                  (int) strlen(args->dofmap_filename),
+                  args->dofmap_filename);
       }
       else if (args->dofmap_filename[0] != '\0')
       {
@@ -607,10 +642,13 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
       }
       else
       {
-         sprintf(dofmap_filename, "%*s_%0*d",
-                 (int) strlen(args->dofmap_basename),
-                 args->dofmap_basename, args->digits_suffix,
-                 args->init_suffix + ls_id);
+         snprintf(dofmap_filename,
+                  sizeof(dofmap_filename),
+                  "%.*s_%0*d",
+                  (int) strlen(args->dofmap_basename),
+                  args->dofmap_basename,
+                  args->digits_suffix,
+                  args->init_suffix + ls_id);
       }
 
       /* Destroy previous dofmap array */

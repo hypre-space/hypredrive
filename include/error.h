@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -33,7 +34,8 @@ typedef enum ErrorCode_enum
    ERROR_INVALID_SOLVER         = 0x00001000, // 13th bit
    ERROR_INVALID_PRECON         = 0x00002000, // 14th bit
    ERROR_FILE_NOT_FOUND         = 0x00004000, // 15th bit
-   ERROR_UNKNOWN_HYPREDRV_OBJ   = 0x00008000, // 16th bit
+   ERROR_FILE_UNEXPECTED_ENTRY  = 0x00008000, // 16th bit
+   ERROR_UNKNOWN_HYPREDRV_OBJ   = 0x00010000, // 17th bit
    ERROR_UNKNOWN_TIMING         = 0x20000000, // 29th bit
    ERROR_UNKNOWN                = 0x40000000  // 30th bit
 } ErrorCode;
@@ -49,7 +51,7 @@ bool DistributedErrorCodeActive(MPI_Comm);
 /*******************************************************************************
  *******************************************************************************/
 
-void ErrorMsgAdd(const char*);
+void ErrorMsgAdd(const char*, ...);
 void ErrorMsgAddCodeWithCount(ErrorCode, const char*);
 void ErrorMsgAddMissingKey(const char*);
 void ErrorMsgAddExtraKey(const char*);
