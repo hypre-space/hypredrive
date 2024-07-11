@@ -195,7 +195,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
    int          myid, nprocs;
 
    MPI_Comm_rank(comm, &myid);
-   MPI_Comm_rank(comm, &nprocs);
+   MPI_Comm_size(comm, &nprocs);
 
    /* Sort input array */
    tmp_array = IntArrayClone(int_array);
