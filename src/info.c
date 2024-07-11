@@ -59,5 +59,5 @@ PrintExitInfo(const char *argv0)
 
    /* Format and print the date and time */
    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
-   printf("Date and time: %s\n\%s done!\n", buffer, argv0);
+   printf("Date and time: %s\n%s done!\n", buffer, argv0);
 }

@@ -225,15 +225,15 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
          return;
       }
 
-      iargs->solver_method = StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
-                                                    parent->children->key);
+      iargs->solver_method = (solver_t) StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
+                                                               parent->children->key);
 
       SolverSetArgsFromYAML(&iargs->solver, parent);
    }
    else
    {
-      iargs->solver_method = StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
-                                                    parent->val);
+      iargs->solver_method = (solver_t) StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
+                                                               parent->val);
 
       /* Hack for setting default parameters */
       YAMLnode *dummy = YAMLnodeCreate("solver", "", 0);
@@ -286,15 +286,15 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
          return;
       }
 
-      iargs->precon_method = StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
-                                                    parent->children->key);
+      iargs->precon_method = (precon_t) StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
+                                                               parent->children->key);
 
       PreconSetArgsFromYAML(&iargs->precon, parent);
    }
    else
    {
-      iargs->precon_method = StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
-                                                    parent->val);
+      iargs->precon_method = (precon_t) StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
+                                                               parent->val);
 
       /* Hack for setting default parameters */
       YAMLnode *dummy = YAMLnodeCreate("preconditioner", "", 0);
