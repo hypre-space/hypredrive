@@ -4,6 +4,8 @@ Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
 
 Running on 1 MPI rank
 ------------------------------------------------------------------------------------
+general: 
+  use_millisec: on
 linear_system: 
   rhs_filename: data/compflow6k/np1/IJ.out.b
   matrix_filename: data/compflow6k/np1/IJ.out.A
@@ -27,9 +29,9 @@ STATISTICS SUMMARY:
 
 +------------+-------------+-------------+-------------+-------------+-------------+
 |            |    LS build |       setup |       solve |    relative |             |
-|      Entry |       times |       times |       times |   res. norm |       iters |
+|      Entry |  times [ms] |  times [ms] |  times [ms] |   res. norm |       iters |
 +------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.003 |       0.012 |       0.008 |    8.86e-07 |          20 |
+|          0 |       4.642 |       8.746 |      37.479 |    8.86e-07 |          20 |
 +------------+-------------+-------------+-------------+-------------+-------------+
 
 Date and time: YYYY-MM-DD HH:MM:SS

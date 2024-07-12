@@ -4,6 +4,8 @@ Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
 
 Running on 4 MPI ranks
 ------------------------------------------------------------------------------------
+general: 
+  use_millisec: on
 linear_system: 
   rhs_filename: data/ps3d10pt7/np4/IJ.out.b
   matrix_filename: data/ps3d10pt7/np4/IJ.out.A
@@ -149,9 +151,9 @@ STATISTICS SUMMARY:
 
 +------------+-------------+-------------+-------------+-------------+-------------+
 |            |    LS build |       setup |       solve |    relative |             |
-|      Entry |       times |       times |       times |   res. norm |       iters |
+|      Entry |  times [ms] |  times [ms] |  times [ms] |   res. norm |       iters |
 +------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.000 |       0.003 |       0.001 |    5.24e-07 |           6 |
+|          0 |       0.337 |       4.157 |       3.786 |    5.24e-07 |           6 |
 +------------+-------------+-------------+-------------+-------------+-------------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
