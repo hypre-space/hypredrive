@@ -49,15 +49,18 @@ PrintLibInfo(void)
 void
 PrintExitInfo(const char *argv0)
 {
-   time_t t;
-   struct tm *tm_info;
-   char buffer[100];
+   time_t      t;
+   struct tm  *tm_info;
+   char        buffer[100];
+   char       *path;
 
    /* Get current time */
    time(&t);
    tm_info = localtime(&t);
 
    /* Format and print the date and time */
+   path = realpath(argv0, NULL);
    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
-   printf("Date and time: %s\n%s done!\n", buffer, argv0);
+   printf("Date and time: %s\n%s done!\n", buffer, path);
+   free(path);
 }
