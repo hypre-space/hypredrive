@@ -189,7 +189,7 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t obj)
       {
          HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
          HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
-         HYPRE_SetSpGemmUseVendor(0); // TODO: Control this via input option
+         HYPRE_SetSpGemmUseVendor(1); // TODO: Control this via input option
          HYPRE_SetSpMVUseVendor(0);   // TODO: Control this via input option
 
 #if defined(HYPRE_USING_UMPIRE)
