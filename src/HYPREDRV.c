@@ -189,22 +189,20 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t obj)
       {
          HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
          HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
-         HYPRE_SetSpGemmUseVendor(1); // TODO: Control this via input option
+         HYPRE_SetSpGemmUseVendor(0); // TODO: Control this via input option
          HYPRE_SetSpMVUseVendor(0);   // TODO: Control this via input option
 
 #if defined(HYPRE_USING_UMPIRE)
-        /* Setup Umpire pools */
-        HYPRE_SetUmpireDevicePoolName("DEVICE_POOL");
-        HYPRE_SetUmpireDevicePoolSize(obj->iargs->dev_pool_size);
+         /* Setup Umpire pools */
+         HYPRE_SetUmpireDevicePoolName("HYPRE_DEVICE");
+         HYPRE_SetUmpireUMPoolName("HYPRE_UM");
+         HYPRE_SetUmpireHostPoolName("HYPRE_HOST");
+         HYPRE_SetUmpirePinnedPoolName("HYPRE_PINNED");
 
-        HYPRE_SetUmpireUMPoolName("UM_POOL");
-        HYPRE_SetUmpireUMPoolSize(obj->iargs->uvm_pool_size);
-
-        HYPRE_SetUmpireHostPoolName("HOST_POOL");
-        HYPRE_SetUmpireHostPoolSize(obj->iargs->host_pool_size);
-
-        HYPRE_SetUmpirePinnedPoolName("PINNED_POOL");
-        HYPRE_SetUmpirePinnedPoolSize(obj->iargs->pinned_pool_size);
+         HYPRE_SetUmpireDevicePoolSize(obj->iargs->dev_pool_size);
+         HYPRE_SetUmpireUMPoolSize(obj->iargs->uvm_pool_size);
+         HYPRE_SetUmpireHostPoolSize(obj->iargs->host_pool_size);
+         HYPRE_SetUmpirePinnedPoolSize(obj->iargs->pinned_pool_size);
 #endif
       }
       else
