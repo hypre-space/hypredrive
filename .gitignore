@@ -20,6 +20,8 @@ install*/
 # Executable
 ############
 hypredrive*
+lossless_comp
+mat2ijbin
 
 ###########
 # Autotools
@@ -39,7 +41,6 @@ configure.scan
 compile
 depcomp
 install-sh
-Makefile
 Makefile.in
 missing
 stamp-*

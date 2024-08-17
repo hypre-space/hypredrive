@@ -36,6 +36,8 @@ typedef enum ErrorCode_enum
    ERROR_FILE_NOT_FOUND         = 0x00004000, // 15th bit
    ERROR_FILE_UNEXPECTED_ENTRY  = 0x00008000, // 16th bit
    ERROR_UNKNOWN_HYPREDRV_OBJ   = 0x00010000, // 17th bit
+   ERROR_MISSING_LIB            = 0x00020000, // 18th bit
+   ERROR_HEAP_ALLOCATION        = 0x00040000, // 19th bit
    ERROR_UNKNOWN_TIMING         = 0x20000000, // 29th bit
    ERROR_UNKNOWN                = 0x40000000  // 30th bit
 } ErrorCode;
@@ -60,5 +62,19 @@ void ErrorMsgAddInvalidFilename(const char*);
 void ErrorMsgPrint();
 void ErrorMsgClear();
 void ErrorMsgPrintAndAbort(MPI_Comm);
+
+/*******************************************************************************
+ *******************************************************************************/
+
+#define HYPREDRV_MALLOC_AND_CHECK(ptr, size)            \
+    do {                                                \
+        (ptr) = malloc(size);                           \
+        if ((ptr) == NULL)                              \
+        {                                               \
+            ErrorCodeSet(ERROR_HEAP_ALLOCATION);        \
+            ErrorMsgAdd("Memory allocation failed!");   \
+            return;                                     \
+        }                                               \
+    } while (0)
 
 #endif /* ERROR_H */
