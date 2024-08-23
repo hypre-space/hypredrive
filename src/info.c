@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/utsname.h>
-#ifdef __APPLE__
+#if defined(__APPLE__)
 #include <sys/sysctl.h>
 #include <mach/mach.h>
 #include <mach-o/dyld.h>
@@ -20,6 +20,9 @@
 #endif
 #include "info.h"
 #include "HYPRE_config.h"
+#if defined(HYPRE_USING_OPENMP)
+#include <omp.h>
+#endif
 
 #ifndef __APPLE__
 
@@ -96,7 +99,7 @@ PrintSystemInfo(MPI_Comm comm)
          }
       }
 
-#ifdef __APPLE__
+#if defined(__APPLE__)
       size_t size = sizeof(numCPU);
       sysctlbyname("hw.ncpu", &numCPU, &size, NULL, 0);
 
@@ -226,7 +229,7 @@ PrintSystemInfo(MPI_Comm comm)
       // 2. Memory available and used
       printf("Memory Information\n");
       printf("-------------------\n");
-#ifdef __APPLE__
+#if defined(__APPLE__)
       int64_t memSize;
       size_t memSizeLen = sizeof(memSize);
       sysctlbyname("hw.memsize", &memSize, &memSizeLen, NULL, 0);
@@ -270,17 +273,17 @@ PrintSystemInfo(MPI_Comm comm)
       printf("------------------------\n");
       printf("Date                  : %s at %s\n", __DATE__, __TIME__);
 
-#ifdef __OPTIMIZE__
+#if defined(__OPTIMIZE__)
       printf("Optimization          : Enabled\n");
 #else
       printf("Optimization          : Disabled\n");
 #endif
-#ifdef DEBUG
+#if defined(DEBUG)
       printf("Debugging             : Enabled\n");
 #else
       printf("Debugging             : Disabled\n");
 #endif
-#ifdef __clang__
+#if defined(__clang__)
       printf("Compiler              : Clang %d.%d.%d\n", __clang_major__, __clang_minor__, __clang_patchlevel__);
 #elif defined(__INTEL_COMPILER)
       printf("Compiler              : Intel %d.%d\n", __INTEL_COMPILER / 100, (__INTEL_COMPILER % 100) / 10);
@@ -289,8 +292,26 @@ PrintSystemInfo(MPI_Comm comm)
 #else
       printf("Compiler              : Unknown\n");
 #endif
-#if defined(_OPENMP)
+#if defined(HYPRE_USING_OPENMP) && defined(_OPENMP)
       printf("OpenMP                : Supported (Version: %d)\n", _OPENMP);
+#else
+      printf("OpenMP                : Not used\n");
+#endif
+      printf("MPI Implementation    : ");
+#if defined(CRAY_MPICH_VERSION)
+      printf("Cray MPI (Version: %s)\n", CRAY_MPICH_VERSION);
+#elif defined(INTEL_MPI_VERSION)
+      printf("Intel MPI (Version: %s)\n", INTEL_MPI_VERSION);
+#elif defined(MPICH_NAME)
+      printf("MPICH (Version: %s)\n", MPICH_VERSION);
+#elif defined(OMPI_MAJOR_VERSION)
+      printf("OpenMPI (Version: %d.%d.%d)\n", OMPI_MAJOR_VERSION, OMPI_MINOR_VERSION, OMPI_RELEASE_VERSION);
+#elif defined(MVAPICH2_VERSION)
+      printf("MVAPICH2 (Version: %s)\n", MVAPICH2_VERSION);
+#elif defined(SGI_MPI)
+      printf("SGI MPI\n");
+#else
+      printf("N/A\n");
 #endif
 #if defined(__x86_64__)
       printf("Target architecture   : x86_64\n");
@@ -324,7 +345,7 @@ PrintSystemInfo(MPI_Comm comm)
       // 6. Dynamic libraries used
       printf("Dynamic Libraries Loaded\n");
       printf("------------------------\n");
-#ifdef __APPLE__
+#if defined(__APPLE__)
       uint32_t dcount = _dyld_image_count();
       for (uint32_t i = 0; i < dcount; i++)
       {
@@ -340,9 +361,16 @@ PrintSystemInfo(MPI_Comm comm)
 #endif
 
       printf("\n================================ System Information ================================\n\n");
-   }
+      printf("Running on %d MPI rank%s\n", nprocs, nprocs > 1 ? "s" : "");
 
-   if (!myid) printf("Running on %d MPI rank%s\n", nprocs, nprocs > 1 ? "s" : "");
+     /* Number of OpenMP threads per rank used in hypre */
+#if defined(HYPRE_USING_OPENMP) && defined(_OPENMP)
+      int num_threads = omp_get_max_threads();
+      printf("Running on %d OpenMP thread%s per MPI rank\n", num_threads, num_threads > 1 ? "s" : "");
+#else
+      printf("HYPRE not using OpenMP\n");
+#endif
+   }
 }
 
 /*--------------------------------------------------------------------------
