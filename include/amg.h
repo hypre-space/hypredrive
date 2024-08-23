@@ -69,6 +69,7 @@ typedef struct AMGcsn_args_struct {
    HYPRE_Int    mod_rap2;
    HYPRE_Int    keep_transpose;
    HYPRE_Int    num_functions;
+   HYPRE_Int    filter_functions;
    HYPRE_Int    seq_amg_th;
    HYPRE_Int    min_coarse_size;
    HYPRE_Int    max_coarse_size;

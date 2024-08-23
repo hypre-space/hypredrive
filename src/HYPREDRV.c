@@ -50,6 +50,15 @@ HYPREDRV_Initialize()
       HYPRE_Initialize();
       HYPRE_DeviceInitialize();
 
+#if HYPRE_CHECK_MIN_VERSION(23100, 16)
+      /* Check for environment variables */
+      const char* env_log_level = getenv("HYPRE_LOG_LEVEL");
+      HYPRE_Int   log_level     = (env_log_level) ? (HYPRE_Int) atoi(env_log_level) : 0;
+
+      HYPRE_SetLogLevel(log_level);
+#endif
+
+      /* Set library state to initialized */
       is_initialized = true;
    }
 }
