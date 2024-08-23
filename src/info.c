@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/utsname.h>
@@ -47,191 +48,264 @@ dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
  *--------------------------------------------------------------------------*/
 
 void
-PrintSystemInfo(void)
+PrintSystemInfo(MPI_Comm comm)
 {
-   double      bytes_to_GB = (double) (1 << 30);
+   int    myid, nprocs;
+   char   hostname[256];
+   double bytes_to_GB = (double) (1 << 30);
 
-   printf("================================ System Information ================================\n\n");
+   MPI_Comm_rank(comm, &myid);
+   MPI_Comm_size(comm, &nprocs);
 
-   // 1. CPU cores and model
-   int   numCPU;
-   char  cpuModel[256];
-   char  gpuInfo[256] = "Unknown";
+   /* Array to gather all hostnames */
+   char allHostnames[nprocs * 256];
 
-#ifdef __APPLE__
-   size_t size = sizeof(numCPU);
-   sysctlbyname("hw.ncpu", &numCPU, &size, NULL, 0);
+   /* Get the hostname for this process */
+   gethostname(hostname, sizeof(hostname));
 
-   size = sizeof(cpuModel);
-   sysctlbyname("machdep.cpu.brand_string", &cpuModel, &size, NULL, 0);
-#else
-   numCPU = sysconf(_SC_NPROCESSORS_ONLN);
+   /* Gather all hostnames to all processes */
+   MPI_Allgather(hostname, 256, MPI_CHAR, allHostnames, 256, MPI_CHAR, MPI_COMM_WORLD);
 
-   char  buffer[256];
-   FILE* fp = fopen("/proc/cpuinfo", "r");
-   if (fp != NULL)
+   if (!myid)
    {
-      while (fgets(buffer, sizeof(buffer), fp))
+      printf("================================ System Information ================================\n\n");
+
+      // 1. CPU cores and model
+      int   numPhysicalCPUs = 0;
+      int   numCPU;
+      int   physicalCPUSeen;
+      char  cpuModels[8][256];
+      char  gpuInfo[256] = "Unknown";
+
+      /* Count unique hostnames */
+      int numNodes = 0;
+      for (int i = 0; i < nprocs; i++)
       {
-         if (strncmp(buffer, "model name", 10) == 0)
+         int isUnique = 1;
+         for (int j = 0; j < i; j++)
          {
-            char* model = strchr(buffer, ':') + 2;
-            strncpy(cpuModel, model, sizeof(cpuModel) - 1);
-            cpuModel[strlen(cpuModel) - 1] = '\0';  // Ensure null-termination
+            if (strncmp(&allHostnames[i * 256], &allHostnames[j * 256], 256) == 0)
+            {
+               isUnique = 0;
+               break;
+            }
+         }
+         if (isUnique)
+         {
+            numNodes++;
          }
       }
-      fclose(fp);
-   }
-#endif
-   if (strlen(gpuInfo) == 0)
-   {
-      strncpy(gpuInfo, "Unknown", sizeof(buffer));
-   }
 
-   printf("Number of CPU Cores  : %d\n", numCPU);
-   printf("CPU Model            : %s\n", cpuModel);
+#ifdef __APPLE__
+      size_t size = sizeof(numCPU);
+      sysctlbyname("hw.ncpu", &numCPU, &size, NULL, 0);
+
+      size_t size = sizeof(numPhysicalCPUs);
+      sysctlbyname("hw.packages", &numPhysicalCPUs, &size, NULL, 0);
+
+      for (int i = 0; i < numPhysicalCPUs; i++)
+      {
+         size = sizeof(cpuModels[i]);
+         sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &size, NULL, 0);
+      }
+#else
+      char buffer[256];
+      FILE* fp = fopen("/proc/cpuinfo", "r");
+      if (fp != NULL)
+      {
+         while (fgets(buffer, sizeof(buffer), fp))
+         {
+            if (strncmp(buffer, "physical id", 11) == 0)
+            {
+               int physicalID = atoi(strchr(buffer, ':') + 2);
+               if (physicalID >= 0 && physicalID < 8)
+               {
+                  unsigned long long mask = 1ULL << physicalID;
+                  if (!(physicalCPUSeen & mask))
+                  {
+                     physicalCPUSeen |= mask;
+                     numPhysicalCPUs++;
+                  }
+               }
+            }
+
+            if (strncmp(buffer, "model name", 10) == 0)
+            {
+               int physicalID = numPhysicalCPUs - 1;
+               if (physicalID >= 0 && physicalID < 8)
+               {
+                  char* model = strchr(buffer, ':') + 2;
+                  strncpy(cpuModels[physicalID], model,
+                          sizeof(cpuModels[physicalID]) - 1);
+                  cpuModels[physicalID][strlen(cpuModels[physicalID]) - 1] = '\0';
+               }
+            }
+         }
+         fclose(fp);
+      }
+
+      numCPU = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+      if (strlen(gpuInfo) == 0)
+      {
+         strncpy(gpuInfo, "Unknown", sizeof(buffer));
+      }
+
+      printf("Processing Units\n");
+      printf("-----------------\n");
+      printf("Number of Nodes       : %d\n", numNodes);
+      printf("Number of Processors  : %d\n", numPhysicalCPUs);
+      printf("Number of CPU Cores   : %d\n", numCPU);
+      for (int i = 0; i < numPhysicalCPUs; i++)
+      {
+         printf("CPU Model #%d          : %s\n", i, cpuModels[i]);
+      }
 
 #ifndef __APPLE__
-   fp = popen("lspci | grep -i 'vga'", "r");
-   if (fp != NULL)
-   {
-      while (fgets(buffer, sizeof(buffer), fp) != NULL)
+      int gcount = 0;
+      fp = popen("lspci | grep -i 'vga'", "r");
+      if (fp != NULL)
       {
-         char *start = strstr(buffer, "VGA compatible controller");
-         if (!start) start = strstr(buffer, "3D controller");
-         if (!start) start = strstr(buffer, "2D controller");
+         while (fgets(buffer, sizeof(buffer), fp) != NULL)
+         {
+            char *start = strstr(buffer, "VGA compatible controller");
+            if (!start) start = strstr(buffer, "3D controller");
+            if (!start) start = strstr(buffer, "2D controller");
 
-         if (start)
-         {
-            strncpy(gpuInfo, start + strlen("VGA compatible controller: "), sizeof(buffer) - strlen("VGA compatible controller: ") - 1);
-            gpuInfo[strlen(gpuInfo) - 1] = '\0';  // Remove newline
-            printf("GPU Model            : %s\n", gpuInfo);
+            if (start)
+            {
+               strncpy(gpuInfo, start + strlen("VGA compatible controller: "), sizeof(buffer) - strlen("VGA compatible controller: ") - 1);
+               gpuInfo[strlen(gpuInfo) - 1] = '\0';  // Remove newline
+               printf("GPU Model #%d          : %s\n", gcount++, gpuInfo);
+            }
+            else
+            {
+               strncpy(gpuInfo, buffer, sizeof(buffer) - 1);
+            }
          }
-         else
-         {
-            strncpy(gpuInfo, buffer, sizeof(buffer) - 1);
-         }
+         pclose(fp);
       }
-      pclose(fp);
-   }
 #endif
-   printf("\n");
+      printf("\n");
 
-   // 2. Memory available and used
-   printf("Memory Information\n");
-   printf("-------------------\n");
+      // 2. Memory available and used
+      printf("Memory Information\n");
+      printf("-------------------\n");
 #ifdef __APPLE__
-   int64_t memSize;
-   size_t memSizeLen = sizeof(memSize);
-   sysctlbyname("hw.memsize", &memSize, &memSizeLen, NULL, 0);
+      int64_t memSize;
+      size_t memSizeLen = sizeof(memSize);
+      sysctlbyname("hw.memsize", &memSize, &memSizeLen, NULL, 0);
 
-   mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
-   vm_statistics_data_t vmstat;
-   if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) == KERN_SUCCESS)
-   {
-      int64_t freeMemory = (int64_t)vmstat.free_count * sysconf(_SC_PAGESIZE);
-      int64_t usedMemory = memSize - freeMemory;
+      mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
+      vm_statistics_data_t vmstat;
+      if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) == KERN_SUCCESS)
+      {
+         int64_t freeMemory = (int64_t)vmstat.free_count * sysconf(_SC_PAGESIZE);
+         int64_t usedMemory = memSize - freeMemory;
 
-      printf("Total Memory         : %.3f GB\n", (double) memSize / bytes_to_GB);
-      printf("Used Memory          : %.3f GB\n", (double) usedMemory / bytes_to_GB);
-      printf("Free Memory          : %.3f GB\n\n", (double) freeMemory / bytes_to_GB);
-   }
+         printf("Total Memory         : %.3f GB\n", (double) memSize / bytes_to_GB);
+         printf("Used Memory          : %.3f GB\n", (double) usedMemory / bytes_to_GB);
+         printf("Free Memory          : %.3f GB\n\n", (double) freeMemory / bytes_to_GB);
+      }
 #else
-   struct sysinfo info;
-   if (sysinfo(&info) == 0)
-   {
-      printf("Total Memory         : %.3f GB\n", info.totalram * info.mem_unit / bytes_to_GB);
-      printf("Used Memory          : %.3f GB\n", (info.totalram - info.freeram) * info.mem_unit / bytes_to_GB);
-      printf("Free Memory          : %.3f GB\n\n", info.freeram * info.mem_unit / bytes_to_GB);
-   }
+      struct sysinfo info;
+      if (sysinfo(&info) == 0)
+      {
+         printf("Total Memory         : %.3f GB\n", info.totalram * info.mem_unit / bytes_to_GB);
+         printf("Used Memory          : %.3f GB\n", (info.totalram - info.freeram) * info.mem_unit / bytes_to_GB);
+         printf("Free Memory          : %.3f GB\n\n", info.freeram * info.mem_unit / bytes_to_GB);
+      }
 #endif
 
-   // 3. OS system info, release, version, machine
-   printf("Operating System\n");
-   printf("-----------------\n");
-   struct utsname sysinfo;
-   if (uname(&sysinfo) == 0)
-   {
-      printf("System Name          : %s\n", sysinfo.sysname);
-      printf("Node Name            : %s\n", sysinfo.nodename);
-      printf("Release              : %s\n", sysinfo.release);
-      printf("Version              : %s\n", sysinfo.version);
-      printf("Machine Architecture : %s\n\n", sysinfo.machine);
-   }
+      // 3. OS system info, release, version, machine
+      printf("Operating System\n");
+      printf("-----------------\n");
+      struct utsname sysinfo;
+      if (uname(&sysinfo) == 0)
+      {
+         printf("System Name          : %s\n", sysinfo.sysname);
+         printf("Node Name            : %s\n", sysinfo.nodename);
+         printf("Release              : %s\n", sysinfo.release);
+         printf("Version              : %s\n", sysinfo.version);
+         printf("Machine Architecture : %s\n\n", sysinfo.machine);
+      }
 
-   // 4. Compilation Flags Information
-   printf("Compilation Information\n");
-   printf("------------------------\n");
-   printf("Date                 : %s at %s\n", __DATE__, __TIME__);
+      // 4. Compilation Flags Information
+      printf("Compilation Information\n");
+      printf("------------------------\n");
+      printf("Date                 : %s at %s\n", __DATE__, __TIME__);
 
 #ifdef __OPTIMIZE__
-   printf("Optimization         : Enabled\n");
+      printf("Optimization         : Enabled\n");
 #else
-   printf("Optimization         : Disabled\n");
+      printf("Optimization         : Disabled\n");
 #endif
 #ifdef DEBUG
-   printf("Debugging            : Enabled\n");
+      printf("Debugging            : Enabled\n");
 #else
-   printf("Debugging            : Disabled\n");
+      printf("Debugging            : Disabled\n");
 #endif
 #ifdef __clang__
-   printf("Compiler             : Clang %d.%d.%d\n", __clang_major__, __clang_minor__, __clang_patchlevel__);
+      printf("Compiler             : Clang %d.%d.%d\n", __clang_major__, __clang_minor__, __clang_patchlevel__);
 #elif defined(__GNUC__)
-   printf("Compiler             : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+      printf("Compiler             : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
 #else
-   printf("Compiler             : Unknown\n");
+      printf("Compiler             : Unknown\n");
 #endif
 #if defined(_OPENMP)
-   printf("OpenMP               : Supported (Version: %d)\n", _OPENMP);
+      printf("OpenMP               : Supported (Version: %d)\n", _OPENMP);
 #endif
 #if defined(__x86_64__)
-   printf("Target architecture  : x86_64\n");
+      printf("Target architecture  : x86_64\n");
 #elif defined(__i386__)
-   printf("Target architecture  : x86 (32-bit)\n");
+      printf("Target architecture  : x86 (32-bit)\n");
 #elif defined(__aarch64__)
-   printf("Target architecture  : ARM64\n");
+      printf("Target architecture  : ARM64\n");
 #elif defined(__arm__)
-   printf("Target architecture  : ARM\n");
+      printf("Target architecture  : ARM\n");
 #else
-   printf("Target architecture  : Unknown\n");
+      printf("Target architecture  : Unknown\n");
 #endif
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-   printf("Endianness           : Little-endian\n");
+      printf("Endianness           : Little-endian\n");
 #elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-   printf("Endianness           : Big-endian\n");
+      printf("Endianness           : Big-endian\n");
 #else
-   printf("Endianness           : Unknown\n");
+      printf("Endianness           : Unknown\n");
 #endif
-   printf("\n");
+      printf("\n");
 
-   // 5. Current working directory
-   printf("Current Working Directory\n");
-   printf("--------------------------\n");
-   char cwd[1024];
-   if (getcwd(cwd, sizeof(cwd)) != NULL)
-   {
-      printf("%s\n\n", cwd);
-   }
+      // 5. Current working directory
+      printf("Current Working Directory\n");
+      printf("--------------------------\n");
+      char cwd[4096];
+      if (getcwd(cwd, sizeof(cwd)) != NULL)
+      {
+         printf("%s\n\n", cwd);
+      }
 
-   // 6. Dynamic libraries used
-   printf("Dynamic Libraries Loaded\n");
-   printf("------------------------\n");
+      // 6. Dynamic libraries used
+      printf("Dynamic Libraries Loaded\n");
+      printf("------------------------\n");
 #ifdef __APPLE__
-   uint32_t dcount = _dyld_image_count();
-   for (uint32_t i = 0; i < dcount; i++)
-   {
-      const char* name = _dyld_get_image_name(i);
-      const struct mach_header* header = _dyld_get_image_header(i);
-      const char* filename = strrchr(name, '/');
+      uint32_t dcount = _dyld_image_count();
+      for (uint32_t i = 0; i < dcount; i++)
+      {
+         const char* name = _dyld_get_image_name(i);
+         const struct mach_header* header = _dyld_get_image_header(i);
+         const char* filename = strrchr(name, '/');
 
-      filename = filename ? filename + 1 : name;
-      printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
-   }
+         filename = filename ? filename + 1 : name;
+         printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
+      }
 #else
-   dl_iterate_phdr(dlpi_callback, NULL);
+      dl_iterate_phdr(dlpi_callback, NULL);
 #endif
 
-   printf("================================ System Information ================================\n\n");
+      printf("\n================================ System Information ================================\n\n");
+   }
+
+   if (!myid) printf("Running on %d MPI rank%s\n", nprocs, nprocs > 1 ? "s" : "");
 }
 
 /*--------------------------------------------------------------------------
@@ -239,33 +313,39 @@ PrintSystemInfo(void)
  *--------------------------------------------------------------------------*/
 
 void
-PrintLibInfo(void)
+PrintLibInfo(MPI_Comm comm)
 {
+   int         myid;
    time_t      t;
    struct tm  *tm_info;
    char        buffer[100];
 
-   /* Get current time */
-   time(&t);
-   tm_info = localtime(&t);
+   MPI_Comm_rank(comm, &myid);
 
-   /* Format and print the date and time */
-   strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
-   printf("Date and time: %s\n", buffer);
+   if (!myid)
+   {
+      /* Get current time */
+      time(&t);
+      tm_info = localtime(&t);
 
-   /* Print hypre info */
+      /* Format and print the date and time */
+      strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
+      printf("Date and time: %s\n", buffer);
+
+      /* Print hypre info */
 #if defined(HYPRE_DEVELOP_STRING) && defined(HYPRE_BRANCH_NAME)
-   printf("\nUsing HYPRE_DEVELOP_STRING: %s (%s)\n\n",
-           HYPRE_DEVELOP_STRING, HYPRE_BRANCH_NAME);
+      printf("\nUsing HYPRE_DEVELOP_STRING: %s (%s)\n\n",
+              HYPRE_DEVELOP_STRING, HYPRE_BRANCH_NAME);
 
 #elif defined(HYPRE_DEVELOP_STRING) && !defined(HYPRE_BRANCH_NAME)
-   printf("\nUsing HYPRE_DEVELOP_STRING: %s\n\n",
-           HYPRE_DEVELOP_STRING);
+      printf("\nUsing HYPRE_DEVELOP_STRING: %s\n\n",
+              HYPRE_DEVELOP_STRING);
 
 #elif defined(HYPRE_RELEASE_VERSION)
-   printf("\nUsing HYPRE_RELEASE_VERSION: %s\n\n",
-           HYPRE_RELEASE_VERSION);
+      printf("\nUsing HYPRE_RELEASE_VERSION: %s\n\n",
+              HYPRE_RELEASE_VERSION);
 #endif
+   }
 }
 
 /*--------------------------------------------------------------------------
@@ -273,17 +353,23 @@ PrintLibInfo(void)
  *--------------------------------------------------------------------------*/
 
 void
-PrintExitInfo(const char *argv0)
+PrintExitInfo(MPI_Comm comm, const char *argv0)
 {
+   int    myid;
    time_t t;
    struct tm *tm_info;
    char buffer[100];
 
-   /* Get current time */
-   time(&t);
-   tm_info = localtime(&t);
+   MPI_Comm_rank(comm, &myid);
 
-   /* Format and print the date and time */
-   strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
-   printf("Date and time: %s\n\%s done!\n", buffer, argv0);
+   if (!myid)
+   {
+      /* Get current time */
+      time(&t);
+      tm_info = localtime(&t);
+
+      /* Format and print the date and time */
+      strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
+      printf("Date and time: %s\n\%s done!\n", buffer, argv0);
+   }
 }

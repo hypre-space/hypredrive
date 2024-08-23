@@ -147,9 +147,9 @@ HYPREDRV_Destroy(HYPREDRV_t *obj_ptr)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_PrintLibInfo(void)
+HYPREDRV_PrintLibInfo(MPI_Comm comm)
 {
-   PrintLibInfo();
+   PrintLibInfo(comm);
 
    return ErrorCodeGet();
 }
@@ -159,9 +159,9 @@ HYPREDRV_PrintLibInfo(void)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_PrintSystemInfo(void)
+HYPREDRV_PrintSystemInfo(MPI_Comm comm)
 {
-   PrintSystemInfo();
+   PrintSystemInfo(comm);
 
    return ErrorCodeGet();
 }
@@ -171,9 +171,9 @@ HYPREDRV_PrintSystemInfo(void)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_PrintExitInfo(const char *argv0)
+HYPREDRV_PrintExitInfo(MPI_Comm comm, const char *argv0)
 {
-   PrintExitInfo(argv0);
+   PrintExitInfo(comm, argv0);
 
    return ErrorCodeGet();
 }
