@@ -76,7 +76,7 @@ PrintSystemInfo(MPI_Comm comm)
       // 1. CPU cores and model
       int   numPhysicalCPUs = 0;
       int   physicalCPUSeen = 0;
-      int   numCPU;
+      int   numCPUs;
       char  cpuModels[8][256];
       char  gpuInfo[256] = "Unknown";
 
@@ -100,8 +100,8 @@ PrintSystemInfo(MPI_Comm comm)
       }
 
 #if defined(__APPLE__)
-      size_t size = sizeof(numCPU);
-      sysctlbyname("hw.ncpu", &numCPU, &size, NULL, 0);
+      size_t size = sizeof(numCPUs);
+      sysctlbyname("hw.ncpu", &numCPUs, &size, NULL, 0);
 
       size_t size = sizeof(numPhysicalCPUs);
       sysctlbyname("hw.packages", &numPhysicalCPUs, &size, NULL, 0);
@@ -147,7 +147,7 @@ PrintSystemInfo(MPI_Comm comm)
          fclose(fp);
       }
 
-      numCPU = sysconf(_SC_NPROCESSORS_ONLN);
+      numCPUs = sysconf(_SC_NPROCESSORS_ONLN);
 #endif
       if (strlen(gpuInfo) == 0)
       {
@@ -158,7 +158,9 @@ PrintSystemInfo(MPI_Comm comm)
       printf("-----------------\n");
       printf("Number of Nodes       : %d\n", numNodes);
       printf("Number of Processors  : %d\n", numPhysicalCPUs);
-      printf("Number of CPU Cores   : %d\n", numCPU);
+      printf("Number of CPU Cores   : %d\n", numCPUs);
+      printf("Total # of Processors : %lld\n", (long long) numNodes * (long long) numPhysicalCPUs);
+      printf("Total # of CPU cores  : %lld\n", (long long) numNodes * (long long) numCPUs);
       for (int i = 0; i < numPhysicalCPUs; i++)
       {
          printf("CPU Model #%d          : %s\n", i, cpuModels[i]);
@@ -302,12 +304,12 @@ PrintSystemInfo(MPI_Comm comm)
       printf("Cray MPI (Version: %s)\n", CRAY_MPICH_VERSION);
 #elif defined(INTEL_MPI_VERSION)
       printf("Intel MPI (Version: %s)\n", INTEL_MPI_VERSION);
+#elif defined(MVAPICH2_VERSION)
+      printf("MVAPICH2 (Version: %s)\n", MVAPICH2_VERSION);
 #elif defined(MPICH_NAME)
       printf("MPICH (Version: %s)\n", MPICH_VERSION);
 #elif defined(OMPI_MAJOR_VERSION)
       printf("OpenMPI (Version: %d.%d.%d)\n", OMPI_MAJOR_VERSION, OMPI_MINOR_VERSION, OMPI_RELEASE_VERSION);
-#elif defined(MVAPICH2_VERSION)
-      printf("MVAPICH2 (Version: %s)\n", MVAPICH2_VERSION);
 #elif defined(SGI_MPI)
       printf("SGI MPI\n");
 #else
