@@ -26,6 +26,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, mod_rap2, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, keep_transpose, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_functions, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, filter_functions, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, seq_amg_th, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, min_coarse_size, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_coarse_size, FieldTypeIntSet) \
@@ -118,25 +119,26 @@ AMGintSetDefaultArgs(AMGint_args *args)
 void
 AMGcsnSetDefaultArgs(AMGcsn_args *args)
 {
-   args->rap2            = 0;
+   args->rap2             = 0;
 #if defined (HYPRE_USING_GPU)
-   args->type            = 8;
-   args->mod_rap2        = 1;
-   args->keep_transpose  = 1;
-   args->type            = 8;
+   args->type             = 8;
+   args->mod_rap2         = 1;
+   args->keep_transpose   = 1;
+   args->type             = 8;
 #else
-   args->type            = 10;
-   args->mod_rap2        = 0;
-   args->keep_transpose  = 0;
-   args->type            = 10;
+   args->type             = 10;
+   args->mod_rap2         = 0;
+   args->keep_transpose   = 0;
+   args->type             = 10;
 #endif
-   args->num_functions   = 1;
-   args->seq_amg_th      = 0;
-   args->min_coarse_size = 0;
-   args->max_coarse_size = 64;
-   args->max_levels      = 25;
-   args->max_row_sum     = 0.9;
-   args->strong_th       = 0.25;
+   args->num_functions    = 1;
+   args->filter_functions = 0;
+   args->seq_amg_th       = 0;
+   args->min_coarse_size  = 0;
+   args->max_coarse_size  = 64;
+   args->max_levels       = 25;
+   args->max_row_sum      = 0.9;
+   args->strong_th        = 0.25;
 }
 
 /*-----------------------------------------------------------------------------
@@ -280,7 +282,8 @@ AMGcsnGetValidValues(const char* key)
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-   else if (!strcmp(key, "rap2") ||
+   else if (!strcmp(key, "filter_functions") ||
+            !strcmp(key, "rap2") ||
             !strcmp(key, "mod_rap2") ||
             !strcmp(key, "keep_transpose"))
    {
@@ -505,6 +508,10 @@ AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
    {
       HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 3);
    }
+
+#if HYPRE_CHECK_MIN_VERSION(23100, 16)
+   HYPRE_BoomerAMGSetFilterFunctions(precon, args->coarsening.filter_functions);
+#endif
 
    *precon_ptr = precon;
 }

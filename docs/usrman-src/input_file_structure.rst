@@ -425,7 +425,13 @@ following optional keywords:
     are any non-negative integer. Default value is `25`.
 
   - ``num_functions`` - size of the system of PDEs, when using the systems
-    version. Available values are any positive integer. Default value is `1`.
+    version. Available values are any positive integer. Default value is `off`.
+
+  - ``filter_functions`` - turn on/off filtering based on inter-variable couplings for
+    systems of equations. For more information, see
+    `HYPRE_BoomerAMGSetFilterFunctions
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv433HYPRE_BoomerAMGSetFilterFunctions12HYPRE_Solver9HYPRE_Int>`_.
+    Default value is `off`.
 
   - ``rap2`` - whether or not to use two matrix products to compute coarse
     level matrices. Available values are any non-negative integer. Default value is `0`.
