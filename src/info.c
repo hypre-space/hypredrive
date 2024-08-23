@@ -72,8 +72,8 @@ PrintSystemInfo(MPI_Comm comm)
 
       // 1. CPU cores and model
       int   numPhysicalCPUs = 0;
+      int   physicalCPUSeen = 0;
       int   numCPU;
-      int   physicalCPUSeen;
       char  cpuModels[8][256];
       char  gpuInfo[256] = "Unknown";
 
@@ -163,27 +163,52 @@ PrintSystemInfo(MPI_Comm comm)
 
 #ifndef __APPLE__
       int gcount = 0;
-      fp = popen("lspci | grep -i 'vga'", "r");
+      fp = popen("lspci | grep -Ei 'vga|3d|2d|display'", "r");
       if (fp != NULL)
       {
          while (fgets(buffer, sizeof(buffer), fp) != NULL)
          {
-            // Skip entries containing "Matrox"
+            /* Skip entries containing "Matrox" */
             if (strstr(buffer, "Matrox") != NULL) { continue; }
 
             char *start = strstr(buffer, "VGA compatible controller");
             if (!start) start = strstr(buffer, "3D controller");
             if (!start) start = strstr(buffer, "2D controller");
+            if (!start) start = strstr(buffer, "Display controller");
 
             if (start)
             {
-               strncpy(gpuInfo, start + strlen("VGA compatible controller: "), sizeof(buffer) - strlen("VGA compatible controller: ") - 1);
-               gpuInfo[strlen(gpuInfo) - 1] = '\0';  // Remove newline
+               /* Adjust the strncpy depending on which controller type was found */
+               const char *controller_type = "VGA compatible controller: ";
+               if (strstr(buffer, "3D controller") != NULL)
+               {
+                  controller_type = "3D controller: ";
+               }
+               else if (strstr(buffer, "2D controller") != NULL)
+               {
+                  controller_type = "2D controller: ";
+               }
+               else if (strstr(buffer, "Display controller") != NULL)
+               {
+                  controller_type = "Display controller: ";
+               }
+
+               strncpy(gpuInfo, start + strlen(controller_type), sizeof(gpuInfo) - 1);
+               gpuInfo[sizeof(gpuInfo) - 1] = '\0';
+
+               /* Remove newline if present */
+               size_t len = strlen(gpuInfo);
+               if (len > 0 && gpuInfo[len - 1] == '\n')
+               {
+                  gpuInfo[len - 1] = '\0';
+               }
+
                printf("GPU Model #%d          : %s\n", gcount++, gpuInfo);
             }
             else
             {
-               strncpy(gpuInfo, buffer, sizeof(buffer) - 1);
+               strncpy(gpuInfo, buffer, sizeof(gpuInfo) - 1);
+               gpuInfo[sizeof(gpuInfo) - 1] = '\0';
             }
          }
          pclose(fp);
