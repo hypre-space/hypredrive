@@ -5,8 +5,234 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include <unistd.h>
+#include <string.h>
+#include <sys/utsname.h>
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#include <mach/mach.h>
+#include <mach-o/dyld.h>
+#else
+#define __USE_GNU
+#include <sys/sysinfo.h>
+#include <link.h>
+#endif
 #include "info.h"
 #include "HYPRE_config.h"
+
+#ifndef __APPLE__
+
+/*--------------------------------------------------------------------------
+ * dlpi_callback
+ *
+ * Linux: Use dl_iterate_phdr to list dynamic libraries
+ *--------------------------------------------------------------------------*/
+
+int
+dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
+{
+   if (info->dlpi_name && info->dlpi_name[0])
+   {
+      const char* filename = strrchr(info->dlpi_name, '/');
+      filename = filename ? filename + 1 : info->dlpi_name;
+      printf("   %s => %s (0x%lx)\n", filename, info->dlpi_name, info->dlpi_addr);
+   }
+   return 0;
+}
+
+#endif
+
+/*--------------------------------------------------------------------------
+ * PrintSystemInfo
+ *--------------------------------------------------------------------------*/
+
+void
+PrintSystemInfo(void)
+{
+   double      bytes_to_GB = (double) (1 << 30);
+
+   printf("================================ System Information ================================\n\n");
+
+   // 1. CPU cores and model
+   int   numCPU;
+   char  cpuModel[256];
+   char  gpuInfo[256] = "Unknown";
+
+#ifdef __APPLE__
+   size_t size = sizeof(numCPU);
+   sysctlbyname("hw.ncpu", &numCPU, &size, NULL, 0);
+
+   size = sizeof(cpuModel);
+   sysctlbyname("machdep.cpu.brand_string", &cpuModel, &size, NULL, 0);
+#else
+   numCPU = sysconf(_SC_NPROCESSORS_ONLN);
+
+   char  buffer[256];
+   FILE* fp = fopen("/proc/cpuinfo", "r");
+   if (fp != NULL)
+   {
+      while (fgets(buffer, sizeof(buffer), fp))
+      {
+         if (strncmp(buffer, "model name", 10) == 0)
+         {
+            char* model = strchr(buffer, ':') + 2;
+            strncpy(cpuModel, model, sizeof(cpuModel) - 1);
+            cpuModel[strlen(cpuModel) - 1] = '\0';  // Ensure null-termination
+         }
+      }
+      fclose(fp);
+   }
+#endif
+   if (strlen(gpuInfo) == 0)
+   {
+      strncpy(gpuInfo, "Unknown", sizeof(buffer));
+   }
+
+   printf("Number of CPU Cores  : %d\n", numCPU);
+   printf("CPU Model            : %s\n", cpuModel);
+
+#ifndef __APPLE__
+   fp = popen("lspci | grep -i 'vga'", "r");
+   if (fp != NULL)
+   {
+      while (fgets(buffer, sizeof(buffer), fp) != NULL)
+      {
+         char *start = strstr(buffer, "VGA compatible controller");
+         if (!start) start = strstr(buffer, "3D controller");
+         if (!start) start = strstr(buffer, "2D controller");
+
+         if (start)
+         {
+            strncpy(gpuInfo, start + strlen("VGA compatible controller: "), sizeof(buffer) - strlen("VGA compatible controller: ") - 1);
+            gpuInfo[strlen(gpuInfo) - 1] = '\0';  // Remove newline
+            printf("GPU Model            : %s\n", gpuInfo);
+         }
+         else
+         {
+            strncpy(gpuInfo, buffer, sizeof(buffer) - 1);
+         }
+      }
+      pclose(fp);
+   }
+#endif
+   printf("\n");
+
+   // 2. Memory available and used
+   printf("Memory Information\n");
+   printf("-------------------\n");
+#ifdef __APPLE__
+   int64_t memSize;
+   size_t memSizeLen = sizeof(memSize);
+   sysctlbyname("hw.memsize", &memSize, &memSizeLen, NULL, 0);
+
+   mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
+   vm_statistics_data_t vmstat;
+   if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) == KERN_SUCCESS)
+   {
+      int64_t freeMemory = (int64_t)vmstat.free_count * sysconf(_SC_PAGESIZE);
+      int64_t usedMemory = memSize - freeMemory;
+
+      printf("Total Memory         : %.3f GB\n", (double) memSize / bytes_to_GB);
+      printf("Used Memory          : %.3f GB\n", (double) usedMemory / bytes_to_GB);
+      printf("Free Memory          : %.3f GB\n\n", (double) freeMemory / bytes_to_GB);
+   }
+#else
+   struct sysinfo info;
+   if (sysinfo(&info) == 0)
+   {
+      printf("Total Memory         : %.3f GB\n", info.totalram * info.mem_unit / bytes_to_GB);
+      printf("Used Memory          : %.3f GB\n", (info.totalram - info.freeram) * info.mem_unit / bytes_to_GB);
+      printf("Free Memory          : %.3f GB\n\n", info.freeram * info.mem_unit / bytes_to_GB);
+   }
+#endif
+
+   // 3. OS system info, release, version, machine
+   printf("Operating System\n");
+   printf("-----------------\n");
+   struct utsname sysinfo;
+   if (uname(&sysinfo) == 0)
+   {
+      printf("System Name          : %s\n", sysinfo.sysname);
+      printf("Node Name            : %s\n", sysinfo.nodename);
+      printf("Release              : %s\n", sysinfo.release);
+      printf("Version              : %s\n", sysinfo.version);
+      printf("Machine Architecture : %s\n\n", sysinfo.machine);
+   }
+
+   // 4. Compilation Flags Information
+   printf("Compilation Information\n");
+   printf("------------------------\n");
+   printf("Date                 : %s at %s\n", __DATE__, __TIME__);
+
+#ifdef __OPTIMIZE__
+   printf("Optimization         : Enabled\n");
+#else
+   printf("Optimization         : Disabled\n");
+#endif
+#ifdef DEBUG
+   printf("Debugging            : Enabled\n");
+#else
+   printf("Debugging            : Disabled\n");
+#endif
+#ifdef __clang__
+   printf("Compiler             : Clang %d.%d.%d\n", __clang_major__, __clang_minor__, __clang_patchlevel__);
+#elif defined(__GNUC__)
+   printf("Compiler             : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+#else
+   printf("Compiler             : Unknown\n");
+#endif
+#if defined(_OPENMP)
+   printf("OpenMP               : Supported (Version: %d)\n", _OPENMP);
+#endif
+#if defined(__x86_64__)
+   printf("Target architecture  : x86_64\n");
+#elif defined(__i386__)
+   printf("Target architecture  : x86 (32-bit)\n");
+#elif defined(__aarch64__)
+   printf("Target architecture  : ARM64\n");
+#elif defined(__arm__)
+   printf("Target architecture  : ARM\n");
+#else
+   printf("Target architecture  : Unknown\n");
+#endif
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+   printf("Endianness           : Little-endian\n");
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+   printf("Endianness           : Big-endian\n");
+#else
+   printf("Endianness           : Unknown\n");
+#endif
+   printf("\n");
+
+   // 5. Current working directory
+   printf("Current Working Directory\n");
+   printf("--------------------------\n");
+   char cwd[1024];
+   if (getcwd(cwd, sizeof(cwd)) != NULL)
+   {
+      printf("%s\n\n", cwd);
+   }
+
+   // 6. Dynamic libraries used
+   printf("Dynamic Libraries Loaded\n");
+   printf("------------------------\n");
+#ifdef __APPLE__
+   uint32_t dcount = _dyld_image_count();
+   for (uint32_t i = 0; i < dcount; i++)
+   {
+      const char* name = _dyld_get_image_name(i);
+      const struct mach_header* header = _dyld_get_image_header(i);
+      const char* filename = strrchr(name, '/');
+
+      filename = filename ? filename + 1 : name;
+      printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
+   }
+#else
+   dl_iterate_phdr(dlpi_callback, NULL);
+#endif
+
+   printf("================================ System Information ================================\n\n");
+}
 
 /*--------------------------------------------------------------------------
  * PrintLibInfo

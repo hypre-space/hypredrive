@@ -43,6 +43,7 @@ int main(int argc, char **argv)
     *-----------------------------------------------------------*/
 
    if (!myid) HYPREDRV_PrintLibInfo();
+   if (!myid) HYPREDRV_PrintSystemInfo();
    if (!myid) printf("Running on %d MPI rank%s\n", nprocs, nprocs > 1 ? "s" : "");
 
    /*-----------------------------------------------------------

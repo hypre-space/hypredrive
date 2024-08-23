@@ -19,6 +19,7 @@
 
 void PrintUsage(const char*);
 void PrintLibInfo(void);
+void PrintSystemInfo(void);
 void PrintExitInfo(const char*);
 
 #endif /* INFO_HEADER */

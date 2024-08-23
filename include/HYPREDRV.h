@@ -190,6 +190,23 @@ HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_PrintLibInfo(void);
 
 /**
+ * @brief Print system information.
+ *
+ * Example Usage:
+ * @code
+ *    uint32_t errorCode = HYPREDRV_PrintSystemInfo();
+ *    if (errorCode != 0) {
+ *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
+ *        printf("%s\n", errorDescription);
+ *        // Handle error
+ *    }
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_PrintSystemInfo(void);
+
+/**
  * @brief Print library information at exit.
  *
  * This function prints the driver name followed by the current date and time.

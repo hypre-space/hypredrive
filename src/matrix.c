@@ -100,7 +100,13 @@ IJMatrixReadMultipartBinary(const char     *prefixname,
    {
       sprintf(filename, "%s.%05d.bin", prefixname, partids[part]);
       fp = fopen(filename, "rb");
-      fread(header, sizeof(uint64_t), 11, fp) == 11;
+      if (fread(header, sizeof(uint64_t), 11, fp) != 11)
+      {
+         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         ErrorMsgAdd("Could not read header from %s", filename);
+         fclose(fp);
+         return;
+      }
 
       /* Read row and column indices */
       if (header[1] == sizeof(HYPRE_BigInt))
