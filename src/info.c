@@ -163,18 +163,21 @@ PrintSystemInfo(MPI_Comm comm)
 
 #ifndef __APPLE__
       int gcount = 0;
-      fp = popen("lspci | grep -Ei 'vga|3d|2d|display'", "r");
+      fp = popen("lspci | grep -Ei 'vga|3d|2d|display|accel'", "r");
       if (fp != NULL)
       {
          while (fgets(buffer, sizeof(buffer), fp) != NULL)
          {
-            /* Skip entries containing "Matrox" */
-            if (strstr(buffer, "Matrox") != NULL) { continue; }
+            /* Skip onboard server graphics */
+            if (strstr(buffer, "Matrox")  != NULL) { continue; }
+            if (strstr(buffer, "ASPEED")  != NULL) { continue; }
+            if (strstr(buffer, "Nuvoton") != NULL) { continue; }
 
             char *start = strstr(buffer, "VGA compatible controller");
             if (!start) start = strstr(buffer, "3D controller");
             if (!start) start = strstr(buffer, "2D controller");
             if (!start) start = strstr(buffer, "Display controller");
+            if (!start) start = strstr(buffer, "Processing accelerators");
 
             if (start)
             {
@@ -191,6 +194,10 @@ PrintSystemInfo(MPI_Comm comm)
                else if (strstr(buffer, "Display controller") != NULL)
                {
                   controller_type = "Display controller: ";
+               }
+               else if (strstr(buffer, "Processing accelerators") != NULL)
+               {
+                  controller_type = "Processing accelerators: ";
                }
 
                strncpy(gpuInfo, start + strlen(controller_type), sizeof(gpuInfo) - 1);
