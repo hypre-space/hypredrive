@@ -168,6 +168,9 @@ PrintSystemInfo(MPI_Comm comm)
       {
          while (fgets(buffer, sizeof(buffer), fp) != NULL)
          {
+            // Skip entries containing "Matrox"
+            if (strstr(buffer, "Matrox") != NULL) { continue; }
+
             char *start = strstr(buffer, "VGA compatible controller");
             if (!start) start = strstr(buffer, "3D controller");
             if (!start) start = strstr(buffer, "2D controller");
@@ -203,17 +206,17 @@ PrintSystemInfo(MPI_Comm comm)
          int64_t freeMemory = (int64_t)vmstat.free_count * sysconf(_SC_PAGESIZE);
          int64_t usedMemory = memSize - freeMemory;
 
-         printf("Total Memory         : %.3f GB\n", (double) memSize / bytes_to_GB);
-         printf("Used Memory          : %.3f GB\n", (double) usedMemory / bytes_to_GB);
-         printf("Free Memory          : %.3f GB\n\n", (double) freeMemory / bytes_to_GB);
+         printf("Total Memory          : %.3f GB\n", (double) memSize / bytes_to_GB);
+         printf("Used Memory           : %.3f GB\n", (double) usedMemory / bytes_to_GB);
+         printf("Free Memory           : %.3f GB\n\n", (double) freeMemory / bytes_to_GB);
       }
 #else
       struct sysinfo info;
       if (sysinfo(&info) == 0)
       {
-         printf("Total Memory         : %.3f GB\n", info.totalram * info.mem_unit / bytes_to_GB);
-         printf("Used Memory          : %.3f GB\n", (info.totalram - info.freeram) * info.mem_unit / bytes_to_GB);
-         printf("Free Memory          : %.3f GB\n\n", info.freeram * info.mem_unit / bytes_to_GB);
+         printf("Total Memory          : %.3f GB\n", info.totalram * info.mem_unit / bytes_to_GB);
+         printf("Used Memory           : %.3f GB\n", (info.totalram - info.freeram) * info.mem_unit / bytes_to_GB);
+         printf("Free Memory           : %.3f GB\n\n", info.freeram * info.mem_unit / bytes_to_GB);
       }
 #endif
 
@@ -223,55 +226,57 @@ PrintSystemInfo(MPI_Comm comm)
       struct utsname sysinfo;
       if (uname(&sysinfo) == 0)
       {
-         printf("System Name          : %s\n", sysinfo.sysname);
-         printf("Node Name            : %s\n", sysinfo.nodename);
-         printf("Release              : %s\n", sysinfo.release);
-         printf("Version              : %s\n", sysinfo.version);
-         printf("Machine Architecture : %s\n\n", sysinfo.machine);
+         printf("System Name           : %s\n", sysinfo.sysname);
+         printf("Node Name             : %s\n", sysinfo.nodename);
+         printf("Release               : %s\n", sysinfo.release);
+         printf("Version               : %s\n", sysinfo.version);
+         printf("Machine Architecture  : %s\n\n", sysinfo.machine);
       }
 
       // 4. Compilation Flags Information
       printf("Compilation Information\n");
       printf("------------------------\n");
-      printf("Date                 : %s at %s\n", __DATE__, __TIME__);
+      printf("Date                  : %s at %s\n", __DATE__, __TIME__);
 
 #ifdef __OPTIMIZE__
-      printf("Optimization         : Enabled\n");
+      printf("Optimization          : Enabled\n");
 #else
-      printf("Optimization         : Disabled\n");
+      printf("Optimization          : Disabled\n");
 #endif
 #ifdef DEBUG
-      printf("Debugging            : Enabled\n");
+      printf("Debugging             : Enabled\n");
 #else
-      printf("Debugging            : Disabled\n");
+      printf("Debugging             : Disabled\n");
 #endif
 #ifdef __clang__
-      printf("Compiler             : Clang %d.%d.%d\n", __clang_major__, __clang_minor__, __clang_patchlevel__);
+      printf("Compiler              : Clang %d.%d.%d\n", __clang_major__, __clang_minor__, __clang_patchlevel__);
+#elif defined(__INTEL_COMPILER)
+      printf("Compiler              : Intel %d.%d\n", __INTEL_COMPILER / 100, (__INTEL_COMPILER % 100) / 10);
 #elif defined(__GNUC__)
-      printf("Compiler             : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+      printf("Compiler              : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
 #else
-      printf("Compiler             : Unknown\n");
+      printf("Compiler              : Unknown\n");
 #endif
 #if defined(_OPENMP)
-      printf("OpenMP               : Supported (Version: %d)\n", _OPENMP);
+      printf("OpenMP                : Supported (Version: %d)\n", _OPENMP);
 #endif
 #if defined(__x86_64__)
-      printf("Target architecture  : x86_64\n");
+      printf("Target architecture   : x86_64\n");
 #elif defined(__i386__)
-      printf("Target architecture  : x86 (32-bit)\n");
+      printf("Target architecture   : x86 (32-bit)\n");
 #elif defined(__aarch64__)
-      printf("Target architecture  : ARM64\n");
+      printf("Target architecture   : ARM64\n");
 #elif defined(__arm__)
-      printf("Target architecture  : ARM\n");
+      printf("Target architecture   : ARM\n");
 #else
-      printf("Target architecture  : Unknown\n");
+      printf("Target architecture   : Unknown\n");
 #endif
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-      printf("Endianness           : Little-endian\n");
+      printf("Endianness            : Little-endian\n");
 #elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-      printf("Endianness           : Big-endian\n");
+      printf("Endianness            : Big-endian\n");
 #else
-      printf("Endianness           : Unknown\n");
+      printf("Endianness            : Unknown\n");
 #endif
       printf("\n");
 
