@@ -35,25 +35,25 @@ void CombineFilename(const char*, const char*, char**);
   #define HYPRE_DEVELOP_NUMBER_EXISTS 0
 #endif
 
-/* Check if HYPRE_DEVELOP_NUMBER is greater than a given value */
-#define HYPRE_DEVELOP_NUMBER_GT(develop) \
-    (HYPRE_DEVELOP_NUMBER > (develop))
+/* Check if HYPRE_DEVELOP_NUMBER is greater or equal than a given value */
+#define HYPRE_DEVELOP_NUMBER_GE(develop) \
+    (HYPRE_DEVELOP_NUMBER >= (develop))
 
 /* Check if HYPRE_RELEASE_NUMBER is greater than a given value */
 #define HYPRE_RELEASE_NUMBER_GT(release) \
     (HYPRE_RELEASE_NUMBER > (release))
 
 /* Check for a specific hypre release number and whether
-   HYPRE_DEVELOP_NUMBER is defined and greater than a given value */
-#define HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GT(release, develop) \
+   HYPRE_DEVELOP_NUMBER is defined and greater or equal than a given value */
+#define HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(release, develop) \
     (HYPRE_RELEASE_NUMBER == (release) &&\
      HYPRE_DEVELOP_NUMBER_EXISTS &&\
-     HYPRE_DEVELOP_NUMBER_GT(develop))
+     HYPRE_DEVELOP_NUMBER_GE(develop))
 
 /* Check for minimum HYPRE version in order to allow certain features */
 #define HYPRE_CHECK_MIN_VERSION(release, develop) \
     (HYPRE_RELEASE_NUMBER_GT(release) ||\
-     HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GT(release, develop))
+     HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(release, develop))
 
 #define GB_TO_BYTES (1 << 30)
 #define MAX_DIVISOR_LENGTH 84
