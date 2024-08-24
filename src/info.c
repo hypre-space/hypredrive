@@ -9,19 +9,20 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/utsname.h>
+#include "info.h"
+#include "HYPRE_config.h"
+#if defined(HYPRE_USING_OPENMP)
+#include <omp.h>
+#endif
+
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
 #include <mach/mach.h>
 #include <mach-o/dyld.h>
 #else
-#define __USE_GNU
 #include <sys/sysinfo.h>
+#define __USE_GNU
 #include <link.h>
-#endif
-#include "info.h"
-#include "HYPRE_config.h"
-#if defined(HYPRE_USING_OPENMP)
-#include <omp.h>
 #endif
 
 #ifndef __APPLE__
@@ -147,6 +148,34 @@ PrintSystemInfo(MPI_Comm comm)
             }
          }
          fclose(fp);
+
+         if (numPhysicalCPUs == 0)
+         {
+            fp = popen("lscpu | grep 'Socket(s)' | awk '{print $2}'", "r");
+            if (fp != NULL)
+            {
+               if (fgets(buffer, sizeof(buffer), fp) != NULL)
+               {
+                  numPhysicalCPUs = atoi(buffer);
+               }
+               pclose(fp);
+            }
+
+            fp = popen("lscpu | grep 'Model name:' | sed 's/Model name:\\s*//'", "r");
+            if (fp != NULL)
+            {
+               if (fgets(buffer, sizeof(buffer), fp) != NULL)
+               {
+                  buffer[strcspn(buffer, "\n")] = '\0';
+                  for (int i = 0; i < numPhysicalCPUs; i++)
+                  {
+                     strncpy(cpuModels[i], buffer, sizeof(cpuModels[i]) - 1);
+                     cpuModels[i][sizeof(cpuModels[i]) - 1] = '\0';
+                  }
+               }
+               pclose(fp);
+            }
+         }
       }
 
       numCPUs = sysconf(_SC_NPROCESSORS_ONLN);
@@ -245,7 +274,7 @@ PrintSystemInfo(MPI_Comm comm)
          free = (int64_t) vmstat.free_count * sysconf(_SC_PAGESIZE);
          used = total - free;
 
-         printf("CPU RAM               : %5.2f / %5.2f  (%5.2f %%) GB\n",
+         printf("CPU RAM               : %6.2f / %6.2f  (%5.2f %%) GB\n",
                 (double) used / bytes_to_GB,
                 (double) total / bytes_to_GB,
                 100.0 * (total - used) / (double) total);
@@ -254,7 +283,7 @@ PrintSystemInfo(MPI_Comm comm)
       struct sysinfo info;
       if (sysinfo(&info) == 0)
       {
-         printf("CPU RAM               : %5.2f / %5.2f  (%5.2f %%) GB\n",
+         printf("CPU RAM               : %6.2f / %6.2f  (%5.2f %%) GB\n",
                 (double) (info.totalram - info.freeram) * info.mem_unit / bytes_to_GB,
                 (double) info.totalram * info.mem_unit / bytes_to_GB,
                 100.0 * (info.totalram - info.freeram) / (double) info.totalram);
@@ -272,7 +301,7 @@ PrintSystemInfo(MPI_Comm comm)
          while (fgets(buffer, sizeof(buffer), fp) != NULL)
          {
             sscanf(buffer, "%ld, %ld", &total, &used);
-            printf("GPU RAM #%d            : %5.2f / %5.2f  (%5.2f %%) GB\n",
+            printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GB\n",
                    gcount++,
                    used / MB_to_GB,
                    total / MB_to_GB,
@@ -306,7 +335,7 @@ PrintSystemInfo(MPI_Comm comm)
             ptr += strlen(vram_used_str);
             used = strtoll(ptr, NULL, 10);
 
-            printf("GPU RAM #%d            : %5.2f / %5.2f  (%5.2f %%) GB\n",
+            printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GB\n",
                    gcount++,
                    used / bytes_to_GB,
                    total / bytes_to_GB,
@@ -431,8 +460,6 @@ PrintSystemInfo(MPI_Comm comm)
 #if defined(HYPRE_USING_OPENMP) && defined(_OPENMP)
       int num_threads = omp_get_max_threads();
       printf("Running on %d OpenMP thread%s per MPI rank\n", num_threads, num_threads > 1 ? "s" : "");
-#else
-      printf("HYPRE not using OpenMP\n");
 #endif
    }
 }
