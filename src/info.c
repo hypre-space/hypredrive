@@ -261,12 +261,16 @@ PrintSystemInfo(MPI_Comm comm)
       }
 #endif
 
-     /* NVIDIA GPU Memory Information */
-     fp = popen("nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits", "r");
-     if (fp != NULL)
-     {
-        while (fgets(buffer, sizeof(buffer), fp) != NULL)
-        {
+      /* NVIDIA GPU Memory Information */
+      fp = NULL;
+      if (system("command -v nvidia-smi > /dev/null 2>&1") == 0)
+      {
+         fp = popen("nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits", "r");
+      }
+      if (fp != NULL)
+      {
+         while (fgets(buffer, sizeof(buffer), fp) != NULL)
+         {
             sscanf(buffer, "%ld, %ld", &total, &used);
             printf("GPU RAM #%d            : %5.2f / %5.2f  (%5.2f %%) GB\n",
                    gcount++,
@@ -278,7 +282,11 @@ PrintSystemInfo(MPI_Comm comm)
       }
 
       /* AMD GPU Memory Information */
-      fp = popen("rocm-smi --showmeminfo vram --json", "r");
+      fp = NULL;
+      if (system("command -v rocm-smi > /dev/null 2>&1") == 0)
+      {
+         fp = popen("rocm-smi --showmeminfo vram --json", "r");
+      }
       if (fp != NULL)
       {
          fread(buffer, sizeof(char), sizeof(buffer) - 1, fp);
@@ -353,6 +361,11 @@ PrintSystemInfo(MPI_Comm comm)
       printf("Cray MPI (Version: %s)\n", CRAY_MPICH_VERSION);
 #elif defined(INTEL_MPI_VERSION)
       printf("Intel MPI (Version: %s)\n", INTEL_MPI_VERSION);
+#elif defined(__IBM_MPI__)
+      printf("IBM Spectrum MPI (Version: %d.%d.%d)\n",
+             __IBM_MPI_MAJOR_VERSION,
+             __IBM_MPI_MINOR_VERSION,
+             __IBM_MPI_RELEASE_VERSION);
 #elif defined(MVAPICH2_VERSION)
       printf("MVAPICH2 (Version: %s)\n", MVAPICH2_VERSION);
 #elif defined(MPICH_NAME)
