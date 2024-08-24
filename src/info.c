@@ -53,9 +53,11 @@ dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
 void
 PrintSystemInfo(MPI_Comm comm)
 {
-   int    myid, nprocs;
-   char   hostname[256];
-   double bytes_to_GB = (double) (1 << 30);
+   int      myid, nprocs;
+   char     hostname[256];
+   double   bytes_to_GB = (double) (1 << 30);
+   double   MB_to_GB    = (double) (1 << 10);
+   int64_t  total, used, free;
 
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
@@ -112,7 +114,7 @@ PrintSystemInfo(MPI_Comm comm)
          sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &size, NULL, 0);
       }
 #else
-      char buffer[256];
+      char buffer[32768];
       FILE* fp = fopen("/proc/cpuinfo", "r");
       if (fp != NULL)
       {
@@ -151,7 +153,7 @@ PrintSystemInfo(MPI_Comm comm)
 #endif
       if (strlen(gpuInfo) == 0)
       {
-         strncpy(gpuInfo, "Unknown", sizeof(buffer));
+         strncpy(gpuInfo, "Unknown", 8 * sizeof(char));
       }
 
       printf("Processing Units\n");
@@ -225,40 +227,87 @@ PrintSystemInfo(MPI_Comm comm)
          }
          pclose(fp);
       }
+      gcount = 0;
 #endif
       printf("\n");
 
       // 2. Memory available and used
-      printf("Memory Information\n");
-      printf("-------------------\n");
+      printf("Memory Information (Used/Total)\n");
+      printf("--------------------------------\n");
 #if defined(__APPLE__)
-      int64_t memSize;
-      size_t memSizeLen = sizeof(memSize);
-      sysctlbyname("hw.memsize", &memSize, &memSizeLen, NULL, 0);
+      size_t memSizeLen = sizeof(total);
+      sysctlbyname("hw.memsize", &total, &memSizeLen, NULL, 0);
 
       mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
-      vm_statistics_data_t vmstat;
+      vm_statistics_data_t   vmstat;
       if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) == KERN_SUCCESS)
       {
-         int64_t freeMemory = (int64_t)vmstat.free_count * sysconf(_SC_PAGESIZE);
-         int64_t usedMemory = memSize - freeMemory;
+         free = (int64_t) vmstat.free_count * sysconf(_SC_PAGESIZE);
+         used = total - free;
 
-         printf("Total Memory          : %.3f GB\n", (double) memSize / bytes_to_GB);
-         printf("Used Memory           : %.3f GB\n", (double) usedMemory / bytes_to_GB);
-         printf("Free Memory           : %.3f GB\n\n", (double) freeMemory / bytes_to_GB);
+         printf("CPU RAM               : %5.2f / %5.2f  (%5.2f %%) GB\n",
+                (double) used / bytes_to_GB,
+                (double) total / bytes_to_GB,
+                100.0 * (total - used) / (double) total);
       }
 #else
       struct sysinfo info;
       if (sysinfo(&info) == 0)
       {
-         printf("Total Memory          : %.3f GB\n", info.totalram * info.mem_unit / bytes_to_GB);
-         printf("Used Memory           : %.3f GB\n", (info.totalram - info.freeram) * info.mem_unit / bytes_to_GB);
-         printf("Free Memory           : %.3f GB\n\n", info.freeram * info.mem_unit / bytes_to_GB);
+         printf("CPU RAM               : %5.2f / %5.2f  (%5.2f %%) GB\n",
+                (double) (info.totalram - info.freeram) * info.mem_unit / bytes_to_GB,
+                (double) info.totalram * info.mem_unit / bytes_to_GB,
+                100.0 * (info.totalram - info.freeram) / (double) info.totalram);
       }
 #endif
 
+     /* NVIDIA GPU Memory Information */
+     fp = popen("nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits", "r");
+     if (fp != NULL)
+     {
+        while (fgets(buffer, sizeof(buffer), fp) != NULL)
+        {
+            sscanf(buffer, "%ld, %ld", &total, &used);
+            printf("GPU RAM #%d            : %5.2f / %5.2f  (%5.2f %%) GB\n",
+                   gcount++,
+                   used / MB_to_GB,
+                   total / MB_to_GB,
+                   100.0 * used / (double) total);
+         }
+         pclose(fp);
+      }
+
+      /* AMD GPU Memory Information */
+      fp = popen("rocm-smi --showmeminfo vram --json", "r");
+      if (fp != NULL)
+      {
+         fread(buffer, sizeof(char), sizeof(buffer) - 1, fp);
+         buffer[sizeof(buffer) - 1] = '\0';
+         pclose(fp);
+
+         const char *vram_total_str = "\"VRAM Total Memory (B)\": \"";
+         const char *vram_used_str = "\"VRAM Total Used Memory (B)\": \"";
+         const char *ptr = buffer;
+
+         while ((ptr = strstr(ptr, vram_total_str)) != NULL)
+         {
+            ptr += strlen(vram_total_str);
+            total = strtoll(ptr, NULL, 10);
+
+            ptr = strstr(ptr, vram_used_str);
+            ptr += strlen(vram_used_str);
+            used = strtoll(ptr, NULL, 10);
+
+            printf("GPU RAM #%d            : %5.2f / %5.2f  (%5.2f %%) GB\n",
+                   gcount++,
+                   used / bytes_to_GB,
+                   total / bytes_to_GB,
+                   100.0 * used / (double) total);
+         }
+      }
+
       // 3. OS system info, release, version, machine
-      printf("Operating System\n");
+      printf("\nOperating System\n");
       printf("-----------------\n");
       struct utsname sysinfo;
       if (uname(&sysinfo) == 0)
@@ -299,7 +348,7 @@ PrintSystemInfo(MPI_Comm comm)
 #else
       printf("OpenMP                : Not used\n");
 #endif
-      printf("MPI Implementation    : ");
+      printf("MPI library           : ");
 #if defined(CRAY_MPICH_VERSION)
       printf("Cray MPI (Version: %s)\n", CRAY_MPICH_VERSION);
 #elif defined(INTEL_MPI_VERSION)
