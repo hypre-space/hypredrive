@@ -25,6 +25,13 @@
 #include <link.h>
 #endif
 
+#ifndef STRINGIFY
+#define STRINGIFY(x) #x
+#endif
+#ifndef TOSTRING
+#define TOSTRING(x) STRINGIFY(x)
+#endif
+
 #ifndef __APPLE__
 
 /*--------------------------------------------------------------------------
@@ -199,7 +206,11 @@ PrintSystemInfo(MPI_Comm comm)
 
 #ifndef __APPLE__
       int gcount = 0;
-      fp = popen("lspci | grep -Ei 'vga|3d|2d|display|accel'", "r");
+      fp = NULL;
+      if (system("command -v lscpi > /dev/null 2>&1") == 0)
+      {
+         fp = popen("lspci | grep -Ei 'vga|3d|2d|display|accel'", "r");
+      }
       if (fp != NULL)
       {
          while (fgets(buffer, sizeof(buffer), fp) != NULL)
@@ -255,6 +266,18 @@ PrintSystemInfo(MPI_Comm comm)
             }
          }
          pclose(fp);
+      }
+      else if (system("command -v nvidia-smi > /dev/null 2>&1") == 0)
+      {
+         fp = popen("nvidia-smi --query-gpu=name --format=csv,noheader", "r");
+         if (fp != NULL)
+         {
+            while (fgets(buffer, sizeof(buffer), fp) != NULL)
+            {
+               printf("GPU Model #%d          : %s", gcount++, buffer);
+            }
+            pclose(fp);
+         }
       }
       gcount = 0;
 #endif
@@ -387,7 +410,7 @@ PrintSystemInfo(MPI_Comm comm)
 #endif
       printf("MPI library           : ");
 #if defined(CRAY_MPICH_VERSION)
-      printf("Cray MPI (Version: %s)\n", CRAY_MPICH_VERSION);
+      printf("Cray MPI (Version: %s)\n", TOSTRING(CRAY_MPICH_VERSION));
 #elif defined(INTEL_MPI_VERSION)
       printf("Intel MPI (Version: %s)\n", INTEL_MPI_VERSION);
 #elif defined(__IBM_MPI__)
