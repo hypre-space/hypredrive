@@ -7,12 +7,14 @@
 
 #include "utils.h"
 #include "HYPRE_IJ_mv.h"
+#include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
 
 void
-IJVectorReadMultipartBinary(const char     *prefixname,
-                            MPI_Comm        comm,
-                            uint64_t        g_nparts,
-                            HYPRE_IJVector *vec_ptr)
+IJVectorReadMultipartBinary(const char           *prefixname,
+                            MPI_Comm              comm,
+                            uint64_t              g_nparts,
+                            HYPRE_MemoryLocation  memory_location,
+                            HYPRE_IJVector       *vec_ptr)
 {
    int               nprocs, myid;
    uint32_t          nparts;
@@ -29,7 +31,7 @@ IJVectorReadMultipartBinary(const char     *prefixname,
 
    HYPRE_IJVector    vec;
    HYPRE_BigInt      ilower, iupper;
-   HYPRE_Complex    *vals;
+   HYPRE_Complex    *h_vals, *d_vals, *vals;
 
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);
@@ -88,10 +90,20 @@ IJVectorReadMultipartBinary(const char     *prefixname,
 
    HYPRE_IJVectorCreate(comm, ilower, iupper, &vec);
    HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(vec, HYPRE_MEMORY_HOST);
+   HYPRE_IJVectorInitialize_v2(vec, memory_location);
+
+   /* Allocate variables */
+   h_vals = (HYPRE_Complex*) malloc(nrows_max * sizeof(HYPRE_Complex));
+   if (memory_location == HYPRE_MEMORY_DEVICE)
+   {
+      vals = d_vals = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
+   }
+   else
+   {
+      vals = h_vals;
+   }
 
    /* 4) Fill entries */
-   vals = (HYPRE_Complex*) malloc(nrows_max * sizeof(HYPRE_Complex));
    for (part = 0; part < nparts; part++)
    {
       sprintf(filename, "%s.%05d.bin", prefixname, partids[part]);
@@ -107,7 +119,7 @@ IJVectorReadMultipartBinary(const char     *prefixname,
       /* Read vector coefficients */
       if (header[1] == sizeof(HYPRE_Complex))
       {
-         if (fread(vals, sizeof(HYPRE_Complex), header[5], fp) != header[5])
+         if (fread(h_vals, sizeof(HYPRE_Complex), header[5], fp) != header[5])
          {
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read coeficients from %s", filename);
@@ -127,7 +139,7 @@ IJVectorReadMultipartBinary(const char     *prefixname,
             return;
          }
 
-         for (size_t i = 0; i < header[5]; i++) vals[i] = (HYPRE_Complex) buffer[i];
+         for (size_t i = 0; i < header[5]; i++) h_vals[i] = (HYPRE_Complex) buffer[i];
 
          free(buffer);
       }
@@ -143,7 +155,7 @@ IJVectorReadMultipartBinary(const char     *prefixname,
             return;
          }
 
-         for (size_t i = 0; i < header[5]; i++) vals[i] = (HYPRE_Complex) buffer[i];
+         for (size_t i = 0; i < header[5]; i++) h_vals[i] = (HYPRE_Complex) buffer[i];
 
          free(buffer);
       }
@@ -155,6 +167,12 @@ IJVectorReadMultipartBinary(const char     *prefixname,
          return;
       }
 
+      if (vals != h_vals)
+      {
+         hypre_TMemcpy(d_vals, h_vals, HYPRE_Complex, header[5],
+                       HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+      }
+
       HYPRE_IJVectorSetValues(vec, (HYPRE_BigInt) header[5], NULL, vals);
    }
 
@@ -163,5 +181,9 @@ IJVectorReadMultipartBinary(const char     *prefixname,
 
    /* Free memory */
    free(partids);
-   free(vals);
+   free(h_vals);
+   if (memory_location == HYPRE_MEMORY_DEVICE)
+   {
+      hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
+   }
 }
