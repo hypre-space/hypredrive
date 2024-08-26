@@ -203,8 +203,8 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
                "%.*s_%0*d/%.*s",
                (int) strlen(args->dirname),
                args->dirname,
-               args->digits_suffix,
-               args->init_suffix + ls_id,
+               (int) args->digits_suffix,
+               (int) args->init_suffix + ls_id,
                (int) strlen(args->matrix_filename),
                args->matrix_filename);
    }
@@ -219,8 +219,8 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
                "%.*s_%0*d",
                (int) strlen(args->matrix_basename),
                args->matrix_basename,
-               args->digits_suffix,
-               args->init_suffix + ls_id);
+               (int) args->digits_suffix,
+               (int) args->init_suffix + ls_id);
    }
    else
    {
@@ -402,8 +402,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
                   "%.*s_%0*d/%.*s",
                   (int) strlen(args->dirname),
                   args->dirname,
-                  args->digits_suffix,
-                  args->init_suffix + ls_id,
+                  (int) args->digits_suffix,
+                  (int) args->init_suffix + ls_id,
                   (int) strlen(args->rhs_filename),
                   args->rhs_filename);
       }
@@ -418,8 +418,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
                   "%.*s_%0*d",
                   (int) strlen(args->rhs_basename),
                   args->rhs_basename,
-                  args->digits_suffix,
-                  args->init_suffix + ls_id);
+                  (int) args->digits_suffix,
+                  (int) args->init_suffix + ls_id);
       }
 
       /* Read vector from file (Binary or ASCII) */
@@ -637,8 +637,8 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
                   "%.*s_%0*d/%.*s",
                   (int) strlen(args->dirname),
                   args->dirname,
-                  args->digits_suffix,
-                  args->init_suffix + ls_id,
+                  (int) args->digits_suffix,
+                  (int) args->init_suffix + ls_id,
                   (int) strlen(args->dofmap_filename),
                   args->dofmap_filename);
       }
@@ -653,8 +653,8 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
                   "%.*s_%0*d",
                   (int) strlen(args->dofmap_basename),
                   args->dofmap_basename,
-                  args->digits_suffix,
-                  args->init_suffix + ls_id);
+                  (int) args->digits_suffix,
+                  (int) args->init_suffix + ls_id);
       }
 
       /* Destroy previous dofmap array */

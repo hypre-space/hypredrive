@@ -177,7 +177,7 @@ HYPREDRV_Destroy(HYPREDRV_t*);
  *
  * Example Usage:
  * @code
- *    uint32_t errorCode = HYPREDRV_PrintLibInfo();
+ *    uint32_t errorCode = HYPREDRV_PrintLibInfo(comm);
  *    if (errorCode != 0) {
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
@@ -187,7 +187,24 @@ HYPREDRV_Destroy(HYPREDRV_t*);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_PrintLibInfo(void);
+HYPREDRV_PrintLibInfo(MPI_Comm comm);
+
+/**
+ * @brief Print system information.
+ *
+ * Example Usage:
+ * @code
+ *    uint32_t errorCode = HYPREDRV_PrintSystemInfo(comm);
+ *    if (errorCode != 0) {
+ *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
+ *        printf("%s\n", errorDescription);
+ *        // Handle error
+ *    }
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_PrintSystemInfo(MPI_Comm comm);
 
 /**
  * @brief Print library information at exit.
@@ -201,7 +218,7 @@ HYPREDRV_PrintLibInfo(void);
  *
  * Example Usage:
  * @code
- *    uint32_t errorCode = HYPREDRV_PrintExitInfo(argv[0]);
+ *    uint32_t errorCode = HYPREDRV_PrintExitInfo(comm, argv[0]);
  *    if (errorCode != 0) {
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
@@ -211,7 +228,7 @@ HYPREDRV_PrintLibInfo(void);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_PrintExitInfo(const char*);
+HYPREDRV_PrintExitInfo(MPI_Comm comm, const char*);
 
 /**
  * @brief Parse input arguments for a HYPREDRV object.

@@ -416,6 +416,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_Solver   csolver;
    HYPRE_Solver   frelax;
    HYPRE_Solver   grelax;
+   HYPRE_Int     *dofmap_data;
    IntArray      *dofmap;
    HYPRE_Int      num_dofs;
    HYPRE_Int      num_dofs_last;
@@ -460,10 +461,24 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       }
    }
 
+   /* Set dofmap_data */
+   if (sizeof(HYPRE_Int) == sizeof(int))
+   {
+      dofmap_data = (HYPRE_Int*) dofmap->data;
+   }
+   else
+   {
+      dofmap_data = (HYPRE_Int*) malloc(dofmap->size * sizeof(HYPRE_Int));
+      for (i = 0; i < dofmap->size; i++)
+      {
+         dofmap_data[i] = (HYPRE_Int) dofmap->data[i];
+      }
+   }
+
    /* Config preconditioner */
    HYPRE_MGRCreate(&precon);
    HYPRE_MGRSetCpointsByPointMarkerArray(precon, num_dofs, num_levels - 1,
-                                         num_c_dofs, c_dofs, dofmap->data);
+                                         num_c_dofs, c_dofs, dofmap_data);
    HYPRE_MGRSetNonCpointsToFpoints(precon, args->non_c_to_f);
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
    HYPRE_MGRSetTol(precon, args->tolerance);
@@ -486,7 +501,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       if (args->level[i].f_relaxation.type == 2)
       {
          AMGCreate(&args->level[i].f_relaxation.amg, &frelax);
-#if HYPRE_CHECK_MIN_VERSION(23100, 8)
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
          HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
 #else
          HYPRE_MGRSetFSolverAtLevel(i, precon, frelax);
@@ -524,5 +539,9 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
       free(c_dofs[lvl]);
+   }
+   if ((void *) dofmap_data != (void *) dofmap->data)
+   {
+      free(dofmap_data);
    }
 }

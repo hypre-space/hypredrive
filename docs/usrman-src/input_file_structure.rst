@@ -427,6 +427,12 @@ following optional keywords:
   - ``num_functions`` - size of the system of PDEs, when using the systems
     version. Available values are any positive integer. Default value is `1`.
 
+  - ``filter_functions`` - turn on/off filtering based on inter-variable couplings for
+    systems of equations. For more information, see
+    `HYPRE_BoomerAMGSetFilterFunctions
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv433HYPRE_BoomerAMGSetFilterFunctions12HYPRE_Solver9HYPRE_Int>`_.
+    Default value is `off`.
+
   - ``rap2`` - whether or not to use two matrix products to compute coarse
     level matrices. Available values are any non-negative integer. Default value is `0`.
 
@@ -608,6 +614,7 @@ code block below:
           min_coarse_size: 0
           max_levels: 25
           num_functions: 1
+          filter_functions: off
           rap2: off
           mod_rap2: off # on for GPU runs
           keep_transpose: off # on for GPU runs

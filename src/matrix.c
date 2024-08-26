@@ -92,8 +92,8 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
    //MPI_Barrier(MPI_COMM_WORLD);
 
    /* 3) Build IJMatrix */
-   MPI_Allreduce(&nrows_sum, &nrows, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, comm);
-   MPI_Scan(&nrows_sum, &nrows_offset, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, comm);
+   MPI_Allreduce(&nrows_sum, &nrows, 1, MPI_UINT64_T, MPI_SUM, comm);
+   MPI_Scan(&nrows_sum, &nrows_offset, 1, MPI_UINT64_T, MPI_SUM, comm);
    ilower = (HYPRE_BigInt) (nrows_offset - nrows_sum);
    iupper = (HYPRE_BigInt) (ilower + nrows_sum - 1);
 

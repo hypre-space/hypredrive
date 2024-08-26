@@ -262,7 +262,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
          }
       }
    }
-   MPI_Bcast(&int_array->g_unique_size, 1, MPI_INT, 0, comm);
+   MPI_Bcast(&int_array->g_unique_size, 1, MPI_UNSIGNED_LONG, 0, comm);
    int_array->g_unique_data = (int*) calloc(int_array->g_unique_size, sizeof(int));
 
    /* Compute global unique data */

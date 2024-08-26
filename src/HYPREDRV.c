@@ -50,6 +50,15 @@ HYPREDRV_Initialize()
       HYPRE_Initialize();
       HYPRE_DeviceInitialize();
 
+#if HYPRE_CHECK_MIN_VERSION(23100, 16)
+      /* Check for environment variables */
+      const char* env_log_level = getenv("HYPRE_LOG_LEVEL");
+      HYPRE_Int   log_level     = (env_log_level) ? (HYPRE_Int) atoi(env_log_level) : 0;
+
+      HYPRE_SetLogLevel(log_level);
+#endif
+
+      /* Set library state to initialized */
       is_initialized = true;
    }
 }
@@ -138,9 +147,21 @@ HYPREDRV_Destroy(HYPREDRV_t *obj_ptr)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_PrintLibInfo(void)
+HYPREDRV_PrintLibInfo(MPI_Comm comm)
 {
-   PrintLibInfo();
+   PrintLibInfo(comm);
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_PrintSystemInfo
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_PrintSystemInfo(MPI_Comm comm)
+{
+   PrintSystemInfo(comm);
 
    return ErrorCodeGet();
 }
@@ -150,9 +171,9 @@ HYPREDRV_PrintLibInfo(void)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_PrintExitInfo(const char *argv0)
+HYPREDRV_PrintExitInfo(MPI_Comm comm, const char *argv0)
 {
-   PrintExitInfo(argv0);
+   PrintExitInfo(comm, argv0);
 
    return ErrorCodeGet();
 }
