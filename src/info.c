@@ -65,7 +65,7 @@ PrintSystemInfo(MPI_Comm comm)
    char     hostname[256];
    double   bytes_to_GB = (double) (1 << 30);
    double   MB_to_GB    = (double) (1 << 10);
-   int64_t  total, used, free;
+   size_t   total, used, free;
    int      gcount;
    FILE    *fp = NULL;
    char     buffer[32768];
@@ -296,7 +296,7 @@ PrintSystemInfo(MPI_Comm comm)
       vm_statistics_data_t   vmstat;
       if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) == KERN_SUCCESS)
       {
-         free = (int64_t) vmstat.free_count * sysconf(_SC_PAGESIZE);
+         free = (size_t) vmstat.free_count * sysconf(_SC_PAGESIZE);
          used = total - free;
 
          printf("CPU RAM               : %6.2f / %6.2f  (%5.2f %%) GB\n",
@@ -325,7 +325,7 @@ PrintSystemInfo(MPI_Comm comm)
       {
          while (fgets(buffer, sizeof(buffer), fp) != NULL)
          {
-            sscanf(buffer, "%lld, %lld", &total, &used);
+            sscanf(buffer, "%ld, %ld", &total, &used);
             printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GB\n",
                    gcount++,
                    used / MB_to_GB,
