@@ -180,19 +180,15 @@ PreconDestroy(precon_t       precon_method,
                HYPRE_BoomerAMGDestroy(args->mgr.csolver);
                args->mgr.csolver = NULL;
             }
-
-            for (int i = 0; i < args->mgr.num_levels; i++)
+            if (args->mgr.level[0].f_relaxation.type == 2)
             {
-               if (args->mgr.level[i].f_relaxation.type == 2)
-               {
-                  HYPRE_BoomerAMGDestroy(args->mgr.frelax[i]);
-                  args->mgr.frelax[i] = NULL;
-               }
-               if (args->mgr.level[i].g_relaxation.type == 16)
-               {
-                  HYPRE_ILUDestroy(args->mgr.grelax[i]);
-                  args->mgr.grelax[i] = NULL;
-               }
+               HYPRE_BoomerAMGDestroy(args->mgr.frelax[0]);
+               args->mgr.frelax[0] = NULL;
+            }
+            if (args->mgr.level[0].g_relaxation.type == 16)
+            {
+               HYPRE_ILUDestroy(args->mgr.grelax[0]);
+               args->mgr.grelax[0] = NULL;
             }
             break;
 
