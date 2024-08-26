@@ -66,6 +66,9 @@ PrintSystemInfo(MPI_Comm comm)
    double   bytes_to_GB = (double) (1 << 30);
    double   MB_to_GB    = (double) (1 << 10);
    int64_t  total, used, free;
+   int      gcount;
+   FILE    *fp = NULL;
+   char     buffer[32768];
 
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
@@ -110,20 +113,19 @@ PrintSystemInfo(MPI_Comm comm)
       }
 
 #if defined(__APPLE__)
-      size_t size = sizeof(numCPUs);
-      sysctlbyname("hw.ncpu", &numCPUs, &size, NULL, 0);
+      size_t msize = sizeof(numCPUs);
+      sysctlbyname("hw.ncpu", &numCPUs, &msize, NULL, 0);
 
-      size_t size = sizeof(numPhysicalCPUs);
-      sysctlbyname("hw.packages", &numPhysicalCPUs, &size, NULL, 0);
+      msize = sizeof(numPhysicalCPUs);
+      sysctlbyname("hw.packages", &numPhysicalCPUs, &msize, NULL, 0);
 
       for (int i = 0; i < numPhysicalCPUs; i++)
       {
-         size = sizeof(cpuModels[i]);
-         sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &size, NULL, 0);
+         msize = sizeof(cpuModels[i]);
+         sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &msize, NULL, 0);
       }
 #else
-      char buffer[32768];
-      FILE* fp = fopen("/proc/cpuinfo", "r");
+      fp = fopen("/proc/cpuinfo", "r");
       if (fp != NULL)
       {
          while (fgets(buffer, sizeof(buffer), fp))
@@ -205,7 +207,7 @@ PrintSystemInfo(MPI_Comm comm)
       }
 
 #ifndef __APPLE__
-      int gcount = 0;
+      gcount = 0;
       fp = NULL;
       if (system("command -v lspci > /dev/null 2>&1") == 0)
       {
@@ -323,7 +325,7 @@ PrintSystemInfo(MPI_Comm comm)
       {
          while (fgets(buffer, sizeof(buffer), fp) != NULL)
          {
-            sscanf(buffer, "%ld, %ld", &total, &used);
+            sscanf(buffer, "%lld, %lld", &total, &used);
             printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GB\n",
                    gcount++,
                    used / MB_to_GB,
