@@ -166,6 +166,7 @@ IJVectorReadMultipartBinary(const char           *prefixname,
          fclose(fp);
          return;
       }
+      fclose(fp);
 
       if (vals != h_vals)
       {

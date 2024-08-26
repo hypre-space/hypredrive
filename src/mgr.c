@@ -410,7 +410,7 @@ MGRSetDofmap(MGR_args *args, IntArray *dofmap)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
+MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver   precon;
    HYPRE_Solver   csolver;
@@ -480,15 +480,8 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
    HYPRE_MGRSetLevelRestrictType(precon, MGRConvertArgInt(args, "restriction_type"));
    HYPRE_MGRSetCoarseGridMethod(precon, MGRConvertArgInt(args, "coarse_level_type"));
 
-   /* Config finest level f-relaxation */
-   if (args->level[0].f_relaxation.type == 2)
-   {
-      AMGCreate(&args->level[0].f_relaxation.amg, &frelax);
-      HYPRE_MGRSetFSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, frelax);
-   }
-
-   /* Config f-relaxation at level > 0 */
-   for (i = 1; i < num_levels; i++)
+   /* Config f-relaxation at each MGR level */
+   for (i = 0; i < num_levels; i++)
    {
       if (args->level[i].f_relaxation.type == 2)
       {
@@ -498,10 +491,11 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
 #else
          HYPRE_MGRSetFSolverAtLevel(i, precon, frelax);
 #endif
+         args->frelax[i] = frelax;
       }
    }
 
-   /* Config global relaxation at level >= 0 */
+   /* Config global relaxation at each MGR level */
 #if HYPRE_CHECK_MIN_VERSION(23100, 8)
    for (i = 0; i < num_levels; i++)
    {
@@ -509,6 +503,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
       {
          ILUCreate(&args->level[i].g_relaxation.ilu, &grelax);
          HYPRE_MGRSetGlobalSmootherAtLevel(precon, grelax, i);
+         args->grelax[i] = grelax;
       }
    }
 #endif
@@ -518,11 +513,11 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
    {
       AMGCreate(&args->coarsest_level.amg, &csolver);
       HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, csolver);
+      args->csolver = csolver;
    }
 
-   /* Set output pointers */
-   *precon_ptr  = precon;
-   *csolver_ptr = csolver;
+   /* Set output pointer */
+   *precon_ptr = precon;
 
    /* Free memory */
    free(inactive_dofs);
