@@ -196,9 +196,9 @@ PrintSystemInfo(MPI_Comm comm)
       printf("-----------------\n");
       printf("Number of Nodes       : %d\n", numNodes);
       printf("Number of Processors  : %d\n", numPhysicalCPUs);
-      printf("Number of CPU Cores   : %d\n", numCPUs);
-      printf("Total # of Processors : %lld\n", (long long) numNodes * (long long) numPhysicalCPUs);
-      printf("Total # of CPU cores  : %lld\n", (long long) numNodes * (long long) numCPUs);
+      printf("Number of CPU threads : %d\n", numCPUs);
+      printf("Tot. # of Processors  : %lld\n", (long long) numNodes * (long long) numPhysicalCPUs);
+      printf("Tot. # of CPU threads : %lld\n", (long long) numNodes * (long long) numCPUs);
       for (int i = 0; i < numPhysicalCPUs; i++)
       {
          printf("CPU Model #%d          : %s\n", i, cpuModels[i]);
@@ -207,7 +207,7 @@ PrintSystemInfo(MPI_Comm comm)
 #ifndef __APPLE__
       int gcount = 0;
       fp = NULL;
-      if (system("command -v lscpi > /dev/null 2>&1") == 0)
+      if (system("command -v lspci > /dev/null 2>&1") == 0)
       {
          fp = popen("lspci | grep -Ei 'vga|3d|2d|display|accel'", "r");
       }
