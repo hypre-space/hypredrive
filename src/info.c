@@ -325,12 +325,14 @@ PrintSystemInfo(MPI_Comm comm)
       {
          while (fgets(buffer, sizeof(buffer), fp) != NULL)
          {
-            sscanf(buffer, "%ld, %ld", &total, &used);
-            printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GB\n",
-                   gcount++,
-                   used / MB_to_GB,
-                   total / MB_to_GB,
-                   100.0 * used / (double) total);
+            if (sscanf(buffer, "%ld, %ld", &total, &used) == 2)
+            {
+               printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GB\n",
+                      gcount++,
+                      used / MB_to_GB,
+                      total / MB_to_GB,
+                      100.0 * used / (double) total);
+            }
          }
          pclose(fp);
       }
