@@ -84,7 +84,7 @@ IJMatrixReadMultipartBinary(const char     *prefixname,
    }
 
    /* 3) Build IJMatrix */
-   MPI_Scan(&nrows_sum, &nrows_offset, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, comm);
+   MPI_Scan(&nrows_sum, &nrows_offset, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
    ilower = (HYPRE_BigInt) (nrows_offset - nrows_sum);
    iupper = (HYPRE_BigInt) (ilower + nrows_sum - 1);
 
@@ -100,7 +100,13 @@ IJMatrixReadMultipartBinary(const char     *prefixname,
    {
       sprintf(filename, "%s.%05d.bin", prefixname, partids[part]);
       fp = fopen(filename, "rb");
-      fread(header, sizeof(uint64_t), 11, fp) == 11;
+      if (fread(header, sizeof(uint64_t), 11, fp) != 11)
+      {
+         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         ErrorMsgAdd("Could not read header from %s", filename);
+         fclose(fp);
+         return;
+      }
 
       /* Read row and column indices */
       if (header[1] == sizeof(HYPRE_BigInt))

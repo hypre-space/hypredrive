@@ -19,7 +19,7 @@ PrintUsage(const char *argv0)
 int main(int argc, char **argv)
 {
    MPI_Comm      comm = MPI_COMM_WORLD;
-   int           myid, nprocs, i, k;
+   int           myid, i, k;
    HYPREDRV_t    obj;
 
    /*-----------------------------------------------------------
@@ -28,7 +28,6 @@ int main(int argc, char **argv)
 
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
-   MPI_Comm_size(comm, &nprocs);
    HYPREDRV_Initialize();
    HYPREDRV_Create(comm, &obj);
 
@@ -42,8 +41,8 @@ int main(int argc, char **argv)
     * Print libraries/driver info
     *-----------------------------------------------------------*/
 
-   if (!myid) HYPREDRV_PrintLibInfo();
-   if (!myid) printf("Running on %d MPI rank%s\n", nprocs, nprocs > 1 ? "s" : "");
+   HYPREDRV_PrintLibInfo(comm);
+   HYPREDRV_PrintSystemInfo(comm);
 
    /*-----------------------------------------------------------
     * Parse input parameters
@@ -101,7 +100,7 @@ int main(int argc, char **argv)
     *-----------------------------------------------------------*/
 
    if (!myid) HYPREDRV_StatsPrint(obj);
-   if (!myid) HYPREDRV_PrintExitInfo(argv[0]);
+   HYPREDRV_PrintExitInfo(comm, argv[0]);
 
    HYPREDRV_Destroy(&obj);
    HYPREDRV_Finalize();
