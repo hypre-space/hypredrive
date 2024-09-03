@@ -70,7 +70,6 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
       {
          ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          ErrorMsgAddInvalidFilename(filename);
-         fclose(fp);
          return;
       }
 

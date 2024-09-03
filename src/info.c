@@ -345,7 +345,11 @@ PrintSystemInfo(MPI_Comm comm)
       }
       if (fp != NULL)
       {
-         fread(buffer, sizeof(char), sizeof(buffer) - 1, fp);
+         if (fread(buffer, sizeof(char), sizeof(buffer) - 1, fp) > (sizeof(buffer) - 1))
+         {
+            fclose(fp);
+            return;
+         }
          buffer[sizeof(buffer) - 1] = '\0';
          pclose(fp);
 
