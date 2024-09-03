@@ -77,6 +77,7 @@ typedef struct MGR_args_struct {
    HYPRE_Int     num_levels;
    HYPRE_Int     relax_type;   /* TODO: we shouldn't need this */
    HYPRE_Int     print_level;
+   HYPRE_Int     nonglk_max_elmts;
    HYPRE_Real    tolerance;
    HYPRE_Real    coarse_th;
 

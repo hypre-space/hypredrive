@@ -38,6 +38,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, relax_type, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, nonglk_max_elmts, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_th, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarsest_level, MGRclsSetArgs)
@@ -139,6 +140,7 @@ MGRSetDefaultArgs(MGR_args *args)
    args->print_level = 0;
    args->non_c_to_f = 1;
    args->pmax = 0;
+   args->nonglk_max_elmts = 0;
    args->tolerance = 0.0;
    args->coarse_th = 0.0;
    args->relax_type = 7;
@@ -530,6 +532,10 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, csolver);
       args->csolver = csolver;
    }
+
+#if HYPRE_CHECK_MIN_VERSION(23100, 11)
+   HYPRE_MGRSetNonGalerkinMaxElmts(precon,args->nonglk_max_elmts);
+#endif
 
    /* Set output pointer */
    *precon_ptr = precon;
