@@ -15,6 +15,7 @@ build.sh
 .gdbinit
 .libs/
 install*/
+.vscode/
 
 ############
 # Executable
