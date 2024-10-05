@@ -1,0 +1,122 @@
+# CMake minimum version requirement
+cmake_minimum_required(VERSION 3.23)
+
+# Project name and version
+project(hypredrive VERSION 0.1 LANGUAGES C)
+set(PROJECT_URL "https://github.com/hypre-space/hypredrive")
+set(PROJECT_BUGREPORT "https://github.com/hypre-space/hypredrive/issues")
+
+# Include GNUInstallDirs
+include(GNUInstallDirs)
+
+# Specify the C and C++ standards
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED True)
+
+# Option to build shared libraries
+option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
+
+# Optionally set the build type to Release by default
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+endif()
+
+# Include directories
+include_directories(${PROJECT_SOURCE_DIR}/include)
+
+# Find HYPRE package
+find_package(HYPRE REQUIRED CONFIG)
+if(NOT HYPRE_FOUND)
+  message(FATAL_ERROR "HYPRE library not found. Please specify -DHYPRE_ROOT=<path> to the root of the HYPRE installation.")
+endif()
+#get_target_property(HYPRE_VERSION HYPRE::HYPRE PACKAGE_VERSION)
+get_target_property(HYPRE_INCLUDE_DIRS HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+get_target_property(HYPRE_LIBRARY_DIRS HYPRE::HYPRE IMPORTED_LOCATION_RELEASE)
+message(STATUS "Found HYPRE:")
+#message(STATUS "  version: ${HYPRE_VERSION}")
+message(STATUS "  include directories: ${HYPRE_INCLUDE_DIRS}")
+message(STATUS "  libraries: ${HYPRE_LIBRARY_DIRS}")
+
+# Check for headers, functions and libraries
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Checks.cmake)
+
+# Generate the config header
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_config.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRV_config.h"
+)
+
+# Include the generated config header
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
+# Collect all source files
+file(GLOB_RECURSE SOURCE_FILES src/*.c)
+
+# Define the library
+add_library(HYPREDRV ${SOURCE_FILES})
+add_library(HYPREDRV::HYPREDRV ALIAS HYPREDRV)
+
+# Set library properties
+set_target_properties(HYPREDRV PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+    PUBLIC_HEADER "${PROJECT_SOURCE_DIR}/include/HYPREDRV.h;${CMAKE_CURRENT_BINARY_DIR}/HYPREDRV_config.h"
+)
+
+# Include directories for HYPREDRV
+target_include_directories(HYPREDRV
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+        $<INSTALL_INTERFACE:include>
+)
+
+# Link HYPRE library to HYPREDRV
+target_link_libraries(HYPREDRV PUBLIC HYPRE::HYPRE PRIVATE m)
+
+# Define the executable
+add_executable(hypredrive src/main.c)
+target_link_libraries(hypredrive PRIVATE HYPREDRV::HYPREDRV)
+
+# Installation rules
+install(TARGETS hypredrive HYPREDRV
+        EXPORT HYPREDRVTargets
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# Create and install Config files
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRVConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVConfig.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/HYPREDRV
+)
+
+# Export the targets
+install(EXPORT HYPREDRVTargets
+        FILE HYPREDRVTargets.cmake
+        NAMESPACE HYPREDRV::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/HYPREDRV)
+
+# Install the Config files
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVConfigVersion.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/HYPREDRV
+)
+
+# Export the targets for use in the build tree
+export(EXPORT HYPREDRVTargets
+       FILE "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVTargets.cmake"
+       NAMESPACE HYPREDRV::)
+
+# Register package in user's package registry
+export(PACKAGE HYPREDRV)
