@@ -129,7 +129,7 @@ PreconCreate(precon_t         precon_method,
 
       case PRECON_MGR:
          MGRSetDofmap(&args->mgr, dofmap);
-         MGRCreate(&args->mgr, &precon->main, &precon->aux);
+         MGRCreate(&args->mgr, &precon->main);
          break;
 
       case PRECON_ILU:
@@ -142,7 +142,6 @@ PreconCreate(precon_t         precon_method,
 
       default:
          precon->main = NULL;
-         precon->aux  = NULL;
    }
 
    *precon_ptr = precon;
@@ -174,10 +173,22 @@ PreconDestroy(precon_t       precon_method,
 
          case PRECON_MGR:
             HYPRE_MGRDestroy(precon->main);
+
+            /* TODO: should MGR free these internally? */
             if (args->mgr.coarsest_level.type == 0)
             {
-               HYPRE_BoomerAMGDestroy(precon->aux);
-               precon->aux = NULL;
+               HYPRE_BoomerAMGDestroy(args->mgr.csolver);
+               args->mgr.csolver = NULL;
+            }
+            if (args->mgr.level[0].f_relaxation.type == 2)
+            {
+               HYPRE_BoomerAMGDestroy(args->mgr.frelax[0]);
+               args->mgr.frelax[0] = NULL;
+            }
+            if (args->mgr.level[0].g_relaxation.type == 16)
+            {
+               HYPRE_ILUDestroy(args->mgr.grelax[0]);
+               args->mgr.grelax[0] = NULL;
             }
             break;
 

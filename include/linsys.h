@@ -24,6 +24,7 @@ typedef struct LS_args_struct {
    char          matrix_filename[MAX_FILENAME_LENGTH];
    char          matrix_basename[MAX_FILENAME_LENGTH];
    char          precmat_filename[MAX_FILENAME_LENGTH];
+   char          precmat_basename[MAX_FILENAME_LENGTH];
    char          rhs_filename[MAX_FILENAME_LENGTH];
    char          rhs_basename[MAX_FILENAME_LENGTH];
    char          x0_filename[MAX_FILENAME_LENGTH];
@@ -64,7 +65,9 @@ void LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVec
 long long int LinearSystemMatrixGetNumRows(HYPRE_IJMatrix);
 long long int LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix);
 
-void IJVectorReadMultipartBinary(const char*, MPI_Comm, uint64_t, HYPRE_IJVector*);
-void IJMatrixReadMultipartBinary(const char*, MPI_Comm, uint64_t, HYPRE_IJMatrix*);
+void IJVectorReadMultipartBinary(const char*, MPI_Comm, uint64_t,
+                                 HYPRE_MemoryLocation, HYPRE_IJVector*);
+void IJMatrixReadMultipartBinary(const char*, MPI_Comm, uint64_t,
+                                 HYPRE_MemoryLocation, HYPRE_IJMatrix*);
 
 #endif /* LINSYS_HEADER */

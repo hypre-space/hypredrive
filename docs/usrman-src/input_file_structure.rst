@@ -125,6 +125,11 @@ section is required.
   system matrices. It can be used to solve multiple matrices stored in a shared
   directory. This parameter does not have a default value.
 
+- ``precmat_basename`` - (Possibly required) Common prefix used for the filenames of
+  linear system matrices employed in the compuration of preconditioner. If not specified,
+  the matrices used for preconditioning purposes are set to the original linear system
+  matrices formed with `matrix_basename`.
+
 - ``rhs_basename`` - (Possibly required) Common prefix used for the filenames of linear
   system right hand sides. It can be used to solve multiple RHS stored in a shared
   directory. This parameter does not have a default value.
@@ -425,7 +430,7 @@ following optional keywords:
     are any non-negative integer. Default value is `25`.
 
   - ``num_functions`` - size of the system of PDEs, when using the systems
-    version. Available values are any positive integer. Default value is `off`.
+    version. Available values are any positive integer. Default value is `1`.
 
   - ``filter_functions`` - turn on/off filtering based on inter-variable couplings for
     systems of equations. For more information, see
@@ -614,6 +619,7 @@ code block below:
           min_coarse_size: 0
           max_levels: 25
           num_functions: 1
+          filter_functions: off
           rap2: off
           mod_rap2: off # on for GPU runs
           keep_transpose: off # on for GPU runs

@@ -38,6 +38,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, relax_type, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, nonglk_max_elmts, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_th, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarsest_level, MGRclsSetArgs)
@@ -139,6 +140,7 @@ MGRSetDefaultArgs(MGR_args *args)
    args->print_level = 0;
    args->non_c_to_f = 1;
    args->pmax = 0;
+   args->nonglk_max_elmts = 1;
    args->tolerance = 0.0;
    args->coarse_th = 0.0;
    args->relax_type = 7;
@@ -375,7 +377,7 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
 HYPRE_Int*
 MGRConvertArgInt(MGR_args *args, const char* name)
 {
-   static HYPRE_Int buf[MAX_MGR_LEVELS - 1];
+   static HYPRE_Int buf[MAX_MGR_LEVELS - 1] = {-1};
 
    /* Sanity check */
    if (args->num_levels >= (MAX_MGR_LEVELS - 1))
@@ -410,7 +412,7 @@ MGRSetDofmap(MGR_args *args, IntArray *dofmap)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
+MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver   precon;
    HYPRE_Solver   csolver;
@@ -495,15 +497,8 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
    HYPRE_MGRSetLevelRestrictType(precon, MGRConvertArgInt(args, "restriction_type"));
    HYPRE_MGRSetCoarseGridMethod(precon, MGRConvertArgInt(args, "coarse_level_type"));
 
-   /* Config finest level f-relaxation */
-   if (args->level[0].f_relaxation.type == 2)
-   {
-      AMGCreate(&args->level[0].f_relaxation.amg, &frelax);
-      HYPRE_MGRSetFSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, frelax);
-   }
-
-   /* Config f-relaxation at level > 0 */
-   for (i = 1; i < num_levels; i++)
+   /* Config f-relaxation at each MGR level */
+   for (i = 0; i < num_levels; i++)
    {
       if (args->level[i].f_relaxation.type == 2)
       {
@@ -513,17 +508,19 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
 #else
          HYPRE_MGRSetFSolverAtLevel(i, precon, frelax);
 #endif
+         args->frelax[i] = frelax;
       }
    }
 
-   /* Config global relaxation at level >= 0 */
-#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+   /* Config global relaxation at each MGR level */
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
    for (i = 0; i < num_levels; i++)
    {
       if (args->level[i].g_relaxation.type == 16)
       {
          ILUCreate(&args->level[i].g_relaxation.ilu, &grelax);
          HYPRE_MGRSetGlobalSmootherAtLevel(precon, grelax, i);
+         args->grelax[i] = grelax;
       }
    }
 #endif
@@ -533,11 +530,15 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, HYPRE_Solver *csolver_ptr)
    {
       AMGCreate(&args->coarsest_level.amg, &csolver);
       HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, csolver);
+      args->csolver = csolver;
    }
 
-   /* Set output pointers */
-   *precon_ptr  = precon;
-   *csolver_ptr = csolver;
+#if HYPRE_CHECK_MIN_VERSION(23100, 11)
+   HYPRE_MGRSetNonGalerkinMaxElmts(precon,args->nonglk_max_elmts);
+#endif
+
+   /* Set output pointer */
+   *precon_ptr = precon;
 
    /* Free memory */
    free(inactive_dofs);

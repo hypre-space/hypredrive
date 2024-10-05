@@ -325,12 +325,14 @@ PrintSystemInfo(MPI_Comm comm)
       {
          while (fgets(buffer, sizeof(buffer), fp) != NULL)
          {
-            sscanf(buffer, "%ld, %ld", &total, &used);
-            printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GB\n",
-                   gcount++,
-                   used / MB_to_GB,
-                   total / MB_to_GB,
-                   100.0 * used / (double) total);
+            if (sscanf(buffer, "%ld, %ld", &total, &used) == 2)
+            {
+               printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GB\n",
+                      gcount++,
+                      used / MB_to_GB,
+                      total / MB_to_GB,
+                      100.0 * used / (double) total);
+            }
          }
          pclose(fp);
       }
@@ -343,7 +345,11 @@ PrintSystemInfo(MPI_Comm comm)
       }
       if (fp != NULL)
       {
-         fread(buffer, sizeof(char), sizeof(buffer) - 1, fp);
+         if (fread(buffer, sizeof(char), sizeof(buffer) - 1, fp) > (sizeof(buffer) - 1))
+         {
+            fclose(fp);
+            return;
+         }
          buffer[sizeof(buffer) - 1] = '\0';
          pclose(fp);
 
@@ -536,10 +542,10 @@ PrintLibInfo(MPI_Comm comm)
 void
 PrintExitInfo(MPI_Comm comm, const char *argv0)
 {
-   int    myid;
-   time_t t;
+   int        myid;
+   time_t     t;
    struct tm *tm_info;
-   char buffer[100];
+   char       buffer[100];
 
    MPI_Comm_rank(comm, &myid);
 

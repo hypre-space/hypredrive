@@ -77,11 +77,16 @@ typedef struct MGR_args_struct {
    HYPRE_Int     num_levels;
    HYPRE_Int     relax_type;   /* TODO: we shouldn't need this */
    HYPRE_Int     print_level;
+   HYPRE_Int     nonglk_max_elmts;
    HYPRE_Real    tolerance;
    HYPRE_Real    coarse_th;
 
    MGRlvl_args   level[MAX_MGR_LEVELS - 1];
    MGRcls_args   coarsest_level;
+
+   HYPRE_Solver  csolver;
+   HYPRE_Solver  frelax[MAX_MGR_LEVELS - 1];
+   HYPRE_Solver  grelax[MAX_MGR_LEVELS - 1];
 } MGR_args;
 
 /*--------------------------------------------------------------------------
@@ -90,7 +95,7 @@ typedef struct MGR_args_struct {
 
 void MGRSetArgs(void*, YAMLnode*);
 void MGRSetDofmap(MGR_args*, IntArray*);
-void MGRCreate(MGR_args*, HYPRE_Solver*, HYPRE_Solver*);
+void MGRCreate(MGR_args*, HYPRE_Solver*);
 
 /*--------------------------------------------------------------------------
  * Macros

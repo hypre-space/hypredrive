@@ -34,7 +34,38 @@ The user's manual has a detailed section about running examples. For a quick-sta
 running the first example from the top-level folder:
 
 ```
- $ mpirun -np 1 ./hypredrive examples/ex1.yml
+$ mpirun -np 1 ./hypredrive examples/ex1.yml
+
+Date and time: YYYY-MM-DD HH:MM:SS
+
+Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
+
+Running on 1 MPI rank
+------------------------------------------------------------------------------------
+general:
+  use_millisec: on
+linear_system:
+  rhs_filename: data/ps3d10pt7/np1/IJ.out.b
+  matrix_filename: data/ps3d10pt7/np1/IJ.out.A
+solver: pcg
+preconditioner: amg
+------------------------------------------------------------------------------------
+====================================================================================
+Solving linear system #0 with 1000 rows and 6400 nonzeros...
+====================================================================================
+
+
+STATISTICS SUMMARY:
+
++------------+-------------+-------------+-------------+-------------+-------------+
+|            |    LS build |       setup |       solve |    relative |             |
+|      Entry |  times [ms] |  times [ms] |  times [ms] |   res. norm |       iters |
++------------+-------------+-------------+-------------+-------------+-------------+
+|          0 |       2.706 |       2.846 |       1.361 |    4.98e-08 |           6 |
++------------+-------------+-------------+-------------+-------------+-------------+
+
+Date and time: YYYY-MM-DD HH:MM:SS
+${HYPREDRIVE_PATH}/hypredrive done!
 ```
 
 ## Documentation

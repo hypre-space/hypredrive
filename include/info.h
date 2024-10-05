@@ -10,6 +10,7 @@
 
 #include <mpi.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include "HYPRE.h"
 #include "HYPRE_config.h"

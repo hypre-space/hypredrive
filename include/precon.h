@@ -48,7 +48,6 @@ typedef struct precon_args_struct {
 
 typedef struct hypre_Precon_struct {
    HYPRE_Solver     main;
-   HYPRE_Solver     aux;
 } hypre_Precon;
 
 typedef hypre_Precon *HYPRE_Precon;

@@ -14,6 +14,7 @@ PrintUsage(const char *argv0)
 {
    fprintf(stderr, "Usage: %s <filename>\n", argv0);
    fprintf(stderr, "  filename: config file in YAML format\n");
+   fflush(stderr);
 }
 
 int main(int argc, char **argv)

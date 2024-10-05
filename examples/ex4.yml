@@ -1,3 +1,6 @@
+general:
+  use_millisec: on # Turn this off for reporting times in [s]
+
 linear_system:
   rhs_filename: data/compflow6k/np4/IJ.out.b
   matrix_filename: data/compflow6k/np4/IJ.out.A
