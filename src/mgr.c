@@ -140,7 +140,7 @@ MGRSetDefaultArgs(MGR_args *args)
    args->print_level = 0;
    args->non_c_to_f = 1;
    args->pmax = 0;
-   args->nonglk_max_elmts = 0;
+   args->nonglk_max_elmts = 1;
    args->tolerance = 0.0;
    args->coarse_th = 0.0;
    args->relax_type = 7;
@@ -377,7 +377,7 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
 HYPRE_Int*
 MGRConvertArgInt(MGR_args *args, const char* name)
 {
-   static HYPRE_Int buf[MAX_MGR_LEVELS - 1];
+   static HYPRE_Int buf[MAX_MGR_LEVELS - 1] = {-1};
 
    /* Sanity check */
    if (args->num_levels >= (MAX_MGR_LEVELS - 1))
