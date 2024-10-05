@@ -125,6 +125,11 @@ section is required.
   system matrices. It can be used to solve multiple matrices stored in a shared
   directory. This parameter does not have a default value.
 
+- ``precmat_basename`` - (Possibly required) Common prefix used for the filenames of
+  linear system matrices employed in the compuration of preconditioner. If not specified,
+  the matrices used for preconditioning purposes are set to the original linear system
+  matrices formed with `matrix_basename`.
+
 - ``rhs_basename`` - (Possibly required) Common prefix used for the filenames of linear
   system right hand sides. It can be used to solve multiple RHS stored in a shared
   directory. This parameter does not have a default value.
