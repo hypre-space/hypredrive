@@ -13,6 +13,11 @@ include(GNUInstallDirs)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED True)
 
+# Disallow in-source builds
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+   message(FATAL_ERROR "In-source builds are not allowed. Please create a separate build directory and run CMake from there.")
+endif()
+
 # Option to build shared libraries
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
