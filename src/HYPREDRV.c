@@ -326,6 +326,27 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t obj)
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemSetMatrix
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t obj, HYPRE_IJMatrix mat_A)
+{
+   if (obj)
+   {
+      StatsTimerStart("matrix");
+      obj->mat_A = mat_A;
+      StatsTimerFinish("matrix");
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_LinearSystemSetRHS
  *-----------------------------------------------------------------------------*/
 

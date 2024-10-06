@@ -11,6 +11,10 @@
 #include <stdint.h>
 #include <mpi.h>
 
+#include <HYPRE.h>
+#include <HYPRE_utilities.h>
+#include <HYPRE_IJ_mv.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -428,6 +432,38 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t);
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t);
+
+/**
+ * @brief Set the linear system matrix for a HYPREDRV object.
+ *
+ * This function is responsible for setting the matrix data of a linear system associated
+ * with a HYPREDRV object.
+ *
+ * @param obj The HYPREDRV_t object for which the linear system matrix is to be associated.
+ *
+ * @param mat_A The HYPRE_IJMatrix object for the linear system matrix.
+ *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_t *obj;
+ *    // ... (obj is created, and its components are initialized) ...
+ *    uint32_t errorCode = HYPREDRV_LinearSystemSetMatrix(obj);
+ *    if (errorCode != 0) {
+ *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
+ *        printf("%s\n", errorDescription);
+ *        // Handle error
+ *    }
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t, HYPRE_IJMatrix);
 
 /**
  * @brief Set the linear system right-hand side (RHS) vector from file for a HYPREDRV object.
