@@ -1,0 +1,13 @@
+general:
+  use_millisec: on # Turn this off for reporting times in [s]
+
+linear_system:
+  rhs_mode: ones
+
+solver:
+  pcg:
+    print_level: 2
+
+preconditioner:
+  amg:
+    print_level: 1
