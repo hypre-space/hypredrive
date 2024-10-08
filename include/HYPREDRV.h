@@ -470,6 +470,8 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t, HYPRE_IJMatrix);
  *
  * @param obj The HYPREDRV_t object for which the RHS vector of the linear system is to be set.
  *
+ * @param vec input RHS vector of the linear system (NULL if set from input file).
+ *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
@@ -480,7 +482,7 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t, HYPRE_IJMatrix);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSystemSetRHS(obj);
+ *    uint32_t errorCode = HYPREDRV_LinearSystemSetRHS(obj, NULL);
  *    if (errorCode != 0) {
  *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
  *        printf("%s\n", errorDescription);
@@ -490,7 +492,7 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t, HYPRE_IJMatrix);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSystemSetRHS(HYPREDRV_t);
+HYPREDRV_LinearSystemSetRHS(HYPREDRV_t, HYPRE_IJVector);
 
 /**
  * @brief Set the initial guess for the solution vector of the linear system for a HYPREDRV object.

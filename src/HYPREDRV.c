@@ -283,7 +283,7 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t obj)
    if (obj)
    {
       HYPREDRV_LinearSystemReadMatrix(obj);
-      HYPREDRV_LinearSystemSetRHS(obj);
+      HYPREDRV_LinearSystemSetRHS(obj, NULL);
       HYPREDRV_LinearSystemSetInitialGuess(obj);
       HYPREDRV_LinearSystemSetPrecMatrix(obj);
       HYPREDRV_LinearSystemReadDofmap(obj);
@@ -351,11 +351,15 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t obj, HYPRE_IJMatrix mat_A)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj)
+HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj, HYPRE_IJVector vec_b)
 {
-   if (obj)
+   if (obj && !vec_b)
    {
       LinearSystemSetRHS(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->vec_b);
+   }
+   else if (obj && vec_b)
+   {
+      obj->vec_b = vec_b;
    }
    else
    {

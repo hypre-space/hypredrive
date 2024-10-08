@@ -23,8 +23,8 @@ int main(int argc, char** argv)
    MPI_Comm_size(comm, &num_procs);
    HYPREDRV_Initialize();
    HYPREDRV_Create(comm, &obj);
-   HYPREDRV_SetGlobalOptions(obj);
    HYPREDRV_InputArgsParse(argc - 1, argv + 1, obj);
+   HYPREDRV_SetGlobalOptions(obj);
 
    // Problem size
    Nx = 10, Ny = 10, Nz = 10;
@@ -124,7 +124,7 @@ int main(int argc, char** argv)
 
    // Associate the matrix with the HYPREDRV object
    HYPREDRV_LinearSystemSetMatrix(obj, A);
-   HYPREDRV_LinearSystemSetRHS(obj);
+   HYPREDRV_LinearSystemSetRHS(obj, NULL); // Replace NULL with vector if available
    HYPREDRV_LinearSystemSetInitialGuess(obj);
    HYPREDRV_LinearSystemSetPrecMatrix(obj);
    HYPREDRV_LinearSystemReadDofmap(obj);
