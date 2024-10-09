@@ -13,7 +13,6 @@
 
 #include <HYPRE.h>
 #include <HYPRE_utilities.h>
-#include <HYPRE_IJ_mv.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,21 +51,24 @@ typedef struct hypredrv_struct* HYPREDRV_t;
  * environment for the HYPREDRV library by initializing the HYPRE library and its device-specific
  * components. It ensures that initialization occurs only once even if called multiple times.
  *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
  * @note This function must be called after MPI_Init and before any other HYPREDRV functions are used.
  * It is safe to call this function multiple times; only the first call will perform the initialization.
  *
+ * Example Usage:
  * @code
- * int main(int argc, char **argv) {
- *     MPI_Init(&argc, &argv);
- *     HYPREDRV_Initialize();
- *     // Application code here
- *     HYPREDRV_Finalize();
- *     MPI_Finalize();
- *     return 0;
- * }
+ *    uint32_t errorCode = HYPREDRV_Initialize();
+ *    if (errorCode != 0) {
+ *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
+ *        printf("%s\n", errorDescription);
+ *        // Handle error
+ *    }
  * @endcode
  */
-HYPREDRV_EXPORT_SYMBOL void
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_Initialize(void);
 
 /**
@@ -91,7 +93,7 @@ HYPREDRV_Initialize(void);
  * }
  * @endcode
  */
-HYPREDRV_EXPORT_SYMBOL void
+HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_Finalize(void);
 
 /**
@@ -470,7 +472,7 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t, HYPRE_Matrix);
  *
  * @param obj The HYPREDRV_t object for which the RHS vector of the linear system is to be set.
  *
- * @param vec The HYPRE_IJVector vector object representing the RHS of the linear system (NULL if set from input file).
+ * @param vec The HYPRE_Vector vector object representing the RHS of the linear system (NULL if set from input file).
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).

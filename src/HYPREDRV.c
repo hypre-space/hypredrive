@@ -42,7 +42,7 @@ typedef struct hypredrv_struct {
  * HYPREDRV_Initialize
  *-----------------------------------------------------------------------------*/
 
-void
+uint32_t
 HYPREDRV_Initialize()
 {
    if (!is_initialized)
@@ -62,13 +62,15 @@ HYPREDRV_Initialize()
       /* Set library state to initialized */
       is_initialized = true;
    }
+
+   return ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
  * HYPREDRV_Finalize
  *-----------------------------------------------------------------------------*/
 
-void
+uint32_t
 HYPREDRV_Finalize()
 {
    if (is_initialized)
@@ -76,6 +78,8 @@ HYPREDRV_Finalize()
       HYPRE_Finalize();
       is_initialized = false;
    }
+
+   return ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
