@@ -18,6 +18,18 @@
 extern "C" {
 #endif
 
+// Macro for safely calling HYPREDRV functions
+#ifndef HYPREDRV_SAFE_CALL
+#define HYPREDRV_SAFE_CALL(call)                             \
+   do {                                                      \
+      uint32_t ierr = (call);                                \
+      if (ierr != 0) {                                       \
+         const char *msg = HYPREDRV_ErrorCodeDescribe(ierr); \
+         fprintf(stderr, "HYPREDRV Error: %s\n", msg);       \
+      }                                                      \
+   } while(0)
+#endif
+
 // Visibility control macros
 #define HYPREDRV_EXPORT_SYMBOL __attribute__((visibility("default")))
 
@@ -59,12 +71,7 @@ typedef struct hypredrv_struct* HYPREDRV_t;
  *
  * Example Usage:
  * @code
- *    uint32_t errorCode = HYPREDRV_Initialize();
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
  * @endcode
  */
 
@@ -78,21 +85,19 @@ HYPREDRV_Initialize(void);
  * the HYPRE library and its device-specific components. It should be the last HYPREDRV-related
  * function called before the application exits.
  *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
  * @note This function should be called before MPI_Finalize. It is safe to call this function
  * even if HYPREDRV_Initialize was not successfully called or was not called at all; in such cases,
  * the function will have no effect.
  *
+ * Example Usage:
  * @code
- * int main(int argc, char **argv) {
- *     MPI_Init(&argc, &argv);
- *     HYPREDRV_Initialize();
- *     // Application code here
- *     HYPREDRV_Finalize();
- *     MPI_Finalize();
- *     return 0;
- * }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
  * @endcode
  */
+
 HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_Finalize(void);
 
@@ -121,12 +126,7 @@ HYPREDRV_Finalize(void);
  * @code
  *    HYPREDRV_t *obj;
  *    MPI_Comm comm = MPI_COMM_WORLD; // or any other valid MPI_Comm
- *    uint32_t errorCode = HYPREDRV_Create(comm, &obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &obj));
  * @endcode
  */
 
@@ -156,12 +156,7 @@ HYPREDRV_Create(MPI_Comm, HYPREDRV_t*);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created and used) ...
- *    uint32_t errorCode = HYPREDRV_Destroy(&obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&obj));
  *    // obj is now NULL.
  * @endcode
  */
@@ -175,20 +170,18 @@ HYPREDRV_Destroy(HYPREDRV_t*);
  * This function prints the current date and time, followed by version information about the
  * HYPRE library.
  *
- * @note This function uses conditional compilation to determine what information about the
- * HYPRE library to print.
+ * @param comm The MPI communicator associated with the HYPREDRV object.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
+ * @note This function uses conditional compilation to determine what information about the
+ * HYPRE library to print.
+ *
  * Example Usage:
  * @code
- *    uint32_t errorCode = HYPREDRV_PrintLibInfo(comm);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    MPI_Comm comm = MPI_COMM_WORLD; // or any other valid MPI_Comm
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
  * @endcode
  */
 
@@ -198,14 +191,18 @@ HYPREDRV_PrintLibInfo(MPI_Comm comm);
 /**
  * @brief Print system information.
  *
+ * @param comm The MPI communicator associated with the HYPREDRV object.
+ *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * @note This function uses conditional compilation to determine what information about the
+ * system (machine) to print.
+ *
  * Example Usage:
  * @code
- *    uint32_t errorCode = HYPREDRV_PrintSystemInfo(comm);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    MPI_Comm comm = MPI_COMM_WORLD; // or any other valid MPI_Comm
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
  * @endcode
  */
 
@@ -217,19 +214,17 @@ HYPREDRV_PrintSystemInfo(MPI_Comm comm);
  *
  * This function prints the driver name followed by the current date and time.
  *
- * @note This function is intended to be used just before finishing the driver application
+ * @param argv[0] The application driver name.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+
+ * @note This function is intended to be used just before finishing the driver application
  *
  * Example Usage:
  * @code
- *    uint32_t errorCode = HYPREDRV_PrintExitInfo(comm, argv[0]);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    MPI_Comm comm = MPI_COMM_WORLD; // or any other valid MPI_Comm
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_PrintExitInfo(comm, argv[0]));
  * @endcode
  */
 
@@ -252,15 +247,11 @@ HYPREDRV_PrintExitInfo(MPI_Comm comm, const char*);
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t obj;
+ *    HYPREDRV_t *obj;
  *    int argc = ...; // Number of arguments
  *    char **argv = ...; // Argument strings
- *    uint32_t errorCode = HYPREDRV_InputArgsParse(argc, argv, obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    // ... (obj is created) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, &obj));
  * @endcode
  */
 
@@ -279,12 +270,7 @@ HYPREDRV_InputArgsParse(int, char**, HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_SetGlobalOptions(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(obj));
  * @endcode
  */
 
@@ -307,12 +293,8 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t);
  * Example Usage:
  * @code
  *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its input arguments are set) ...
- *    int warmupSetting = HYPREDRV_InputArgsGetWarmup(obj);
- *    if (warmupSetting != -1) {
- *        printf("Warmup Setting: %d\n", warmupSetting);
- *        // Use warmupSetting as needed ...
- *    }
+ *    // ... (obj is created, and its components are set) ...
+ *    int warmup = HYPREDRV_InputArgsGetWarmup(obj);
  * @endcode
  */
 
@@ -333,13 +315,9 @@ HYPREDRV_InputArgsGetWarmup(HYPREDRV_t);
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t obj;
- *    // ... (obj is created, and its input arguments are set) ...
- *    int numRepetitions = HYPREDRV_InputArgsGetNumRepetitions(obj);
- *    if (numRepetitions != -1) {
- *        printf("Number of Repetitions: %d\n", numRepetitions);
- *        // Use numRepetitions as needed ...
- *    }
+ *    HYPREDRV_t *obj;
+ *    // ... (obj is created, and its components are set) ...
+ *    int num_reps = HYPREDRV_InputArgsGetNumRepetitions(obj);
  * @endcode
  */
 
@@ -359,13 +337,9 @@ HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t);
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t obj;
- *    // ... (obj is created, and its input arguments are set) ...
- *    int numLinearSystems = HYPREDRV_InputArgsGetNumLinearSystems(obj);
- *    if (numLinearSystems != -1) {
- *        printf("Number of linear systems: %d\n", numLinearSystems);
- *        // Use numRepetitions as needed ...
- *    }
+ *    HYPREDRV_t *obj;
+ *    // ... (obj is created, and its components are set) ...
+ *    int num_ls = HYPREDRV_InputArgsGetNumLinearSystems(obj);
  * @endcode
  */
 
@@ -391,12 +365,7 @@ HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSystemBuild(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemBuild(obj));
  * @endcode
  */
 
@@ -423,12 +392,7 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSystemReadMatrix(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadMatrix(obj));
  * @endcode
  */
 
@@ -455,12 +419,7 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSystemSetMatrix(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(obj));
  * @endcode
  */
 
@@ -484,12 +443,7 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t, HYPRE_Matrix);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSystemSetRHS(obj, NULL);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(obj));
  * @endcode
  */
 
@@ -515,12 +469,7 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t, HYPRE_Vector);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSystemSetInitialGuess(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(obj));
  * @endcode
  */
 
@@ -544,12 +493,7 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSystemResetInitialGuess(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(obj));
  * @endcode
  */
 
@@ -575,12 +519,7 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSystemSetPrecMatrix(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(obj));
  * @endcode
  */
 
@@ -605,13 +544,10 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t);
  * Example Usage:
  * @code
  *    HYPREDRV_t *obj;
+ *    int size = ... // Size of dofmap is set
+ *    int *dofmap = ... // dofmap array is set
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSystemSetDofmap(obj, size, dofmap);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetDofmap(obj, size, dofmap));
  * @endcode
  */
 
@@ -633,12 +569,7 @@ HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t, int, int*);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSystemReadDofmap(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadDofmap(obj));
  * @endcode
  */
 
@@ -662,12 +593,7 @@ HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_PreconCreate(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconCreate(obj));
  * @endcode
  */
 
@@ -691,12 +617,7 @@ HYPREDRV_PreconCreate(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSolverCreate(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverCreate(obj));
  * @endcode
  */
 
@@ -720,12 +641,7 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_PreconSetup(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconSetup(obj));
  * @endcode
  */
 
@@ -750,12 +666,7 @@ HYPREDRV_PreconSetup(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSolverSetup(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(obj));
  * @endcode
  */
 
@@ -779,12 +690,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSolverApply(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(obj));
  * @endcode
  */
 
@@ -812,12 +718,7 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_PreconApply(obj, vec_b, vec_x);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconApply(obj));
  * @endcode
  */
 
@@ -841,12 +742,7 @@ HYPREDRV_PreconApply(HYPREDRV_t, HYPRE_Vector, HYPRE_Vector);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_PreconDestroy(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(obj));
  * @endcode
  */
 
@@ -870,12 +766,7 @@ HYPREDRV_PreconDestroy(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_LinearSolverDestroy(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(obj));
  * @endcode
  */
 
@@ -900,12 +791,7 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t);
  * @code
  *    HYPREDRV_t *obj;
  *    // ... (obj is created, and its components are initialized) ...
- *    uint32_t errorCode = HYPREDRV_StatsPrint(obj);
- *    if (errorCode != 0) {
- *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
- *        printf("%s\n", errorDescription);
- *        // Handle error
- *    }
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(obj));
  * @endcode
  */
 
