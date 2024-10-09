@@ -169,8 +169,9 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
 
    if (!parent)
    {
-      ErrorCodeSet(ERROR_MISSING_KEY);
-      ErrorMsgAddMissingKey(key);
+      // TODO: Add "library" mode to skip the following checks
+      //ErrorCodeSet(ERROR_MISSING_KEY);
+      //ErrorMsgAddMissingKey(key);
       return;
    }
    else
@@ -198,8 +199,9 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
    parent = YAMLnodeFindByKey(tree->root, "solver");
    if (!parent)
    {
-      ErrorCodeSet(ERROR_MISSING_KEY);
-      ErrorMsgAddMissingKey("solver");
+      // TODO: Add "library" mode to skip the following checks
+      //ErrorCodeSet(ERROR_MISSING_KEY);
+      //ErrorMsgAddMissingKey("solver");
       return;
    }
    else
@@ -372,7 +374,8 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    /* Return earlier if YAML tree was not built properly */
    if (!myid && ErrorCodeActive())
    {
-      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+      /* TODO: add option to print config parameters tree */
+      //YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
       ErrorMsgPrintAndAbort(comm);
    }
    MPI_Barrier(comm);
