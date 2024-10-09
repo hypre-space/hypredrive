@@ -211,19 +211,19 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
             /* Check if (row, col) pair makes sense */
             if (row < 0)
             {
-               printf("[%d]: Warning! Detected negative row: %lu\n", myid, row); fflush(stdout);
+               printf("[%d]: Warning! Detected negative row: %llu\n", myid, row); fflush(stdout);
             }
             else if (col < 0)
             {
-               printf("[%d]: Warning! Detected negative column: %lu\n", myid, col); fflush(stdout);
+               printf("[%d]: Warning! Detected negative column: %llu\n", myid, col); fflush(stdout);
             }
             else if (row >= nrows)
             {
-               printf("[%d]: Warning! Detected out-of-bounds row: %lu\n", myid, row); fflush(stdout);
+               printf("[%d]: Warning! Detected out-of-bounds row: %llu\n", myid, row); fflush(stdout);
             }
             else if (col >= nrows)
             {
-               printf("[%d]: Warning! Detected out-of-bounds column: %lu\n", myid, col); fflush(stdout);
+               printf("[%d]: Warning! Detected out-of-bounds column: %llu\n", myid, col); fflush(stdout);
             }
             else if (row < ilower || row > iupper)
             {

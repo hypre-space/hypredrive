@@ -416,6 +416,23 @@ IntArrayParRead(MPI_Comm comm, const char* prefix, IntArray **int_array_ptr)
    *int_array_ptr = int_array;
 }
 
+
+/*-----------------------------------------------------------------------------
+ * IntArrayBuild
+ *-----------------------------------------------------------------------------*/
+
+void
+IntArrayBuild(MPI_Comm comm, int size, int *dofmap, IntArray **int_array_ptr)
+{
+   IntArray  *int_array;
+
+   int_array = IntArrayCreate(size);
+   memcpy(int_array->data, dofmap, size * sizeof(int));
+   IntArrayUnique(comm, int_array);
+
+   *int_array_ptr = int_array;
+}
+
 /*--------------------------------------------------------------------------
  * OnOffMapArray
  *--------------------------------------------------------------------------*/

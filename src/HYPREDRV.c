@@ -27,6 +27,7 @@ typedef struct hypredrv_struct {
    input_args      *iargs;
 
    IntArray        *dofmap;
+
    HYPRE_IJMatrix   mat_A;
    HYPRE_IJMatrix   mat_M;
    HYPRE_IJVector   vec_b;
@@ -428,6 +429,25 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t obj)
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemSetDofmap
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t obj, int size, int *dofmap)
+{
+   if (obj)
+   {
+      IntArrayBuild(obj->comm, size, dofmap, &obj->dofmap);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_LinearSystemReadDofmap
  *-----------------------------------------------------------------------------*/
 
@@ -534,9 +554,28 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t obj)
 {
    if (obj)
    {
-      SolverApply(obj->iargs->solver_method, obj->solver, obj->mat_A,
-                  obj->vec_b, obj->vec_x);
-      HYPRE_ClearAllErrors();
+      SolverApply(obj->iargs->solver_method, obj->solver, obj->mat_A, obj->vec_b, obj->vec_x);
+      HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_PreconApply
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_PreconApply(HYPREDRV_t obj, HYPRE_Vector vec_b, HYPRE_Vector vec_x)
+{
+   if (obj)
+   {
+      PreconApply(obj->iargs->precon_method, obj->precon, obj->mat_A, (HYPRE_IJVector) vec_b, (HYPRE_IJVector) vec_x);
+      HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
    }
    else
    {

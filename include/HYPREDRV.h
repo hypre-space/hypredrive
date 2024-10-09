@@ -586,6 +586,37 @@ HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t);
 
 /**
+ * @brief Set the degree of freedom (DOF) map for the linear system of a HYPREDRV object.
+ *
+ * @param obj The HYPREDRV_t object for which the DOF map of the linear system is to be set.
+ *
+ * @param size The local size (current rank) of the dofmap array.
+ *
+ * @param dofmap The array containing the mapping codes for the degrees of freedom
+ *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_t *obj;
+ *    // ... (obj is created, and its components are initialized) ...
+ *    uint32_t errorCode = HYPREDRV_LinearSystemSetDofmap(obj, size, dofmap);
+ *    if (errorCode != 0) {
+ *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
+ *        printf("%s\n", errorDescription);
+ *        // Handle error
+ *    }
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t, int, int*);
+
+/**
  * @brief Read the degree of freedom (DOF) map for the linear system of a HYPREDRV object.
  *
  * @param obj The HYPREDRV_t object for which the DOF map of the linear system is to be read.
@@ -728,6 +759,39 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t);
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSolverApply(HYPREDRV_t);
+
+/**
+ * @brief Apply the preconditioner associated with a HYPREDRV_t object to an input vector.
+ *
+ * @param obj The HYPREDRV_t object defining the preconditioner to be applied.
+ *
+ * @param vec_b The HYPRE_Vector object defining the input vector.
+ *
+ * @param vec_x The HYPRE_Vector object defining the output vector.
+ *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
+ * The function assumes that the preconditioner method, solver, matrix, RHS vector, and solution vector
+ * are properly set in the input arguments.
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_t *obj;
+ *    // ... (obj is created, and its components are initialized) ...
+ *    uint32_t errorCode = HYPREDRV_PreconApply(obj, vec_b, vec_x);
+ *    if (errorCode != 0) {
+ *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
+ *        printf("%s\n", errorDescription);
+ *        // Handle error
+ *    }
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_PreconApply(HYPREDRV_t, HYPRE_Vector, HYPRE_Vector);
 
 /**
  * @brief Destroy the preconditioner associated with the HYPREDRV object.
