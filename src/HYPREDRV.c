@@ -331,12 +331,12 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t obj)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t obj, HYPRE_IJMatrix mat_A)
+HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t obj, HYPRE_Matrix mat_A)
 {
    if (obj)
    {
       StatsTimerStart("matrix");
-      obj->mat_A = mat_A;
+      obj->mat_A = (HYPRE_IJMatrix) mat_A;
       StatsTimerFinish("matrix");
    }
    else
@@ -352,7 +352,7 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t obj, HYPRE_IJMatrix mat_A)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj, HYPRE_IJVector vec_b)
+HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj, HYPRE_Vector vec_b)
 {
    if (obj && !vec_b)
    {
@@ -360,7 +360,7 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj, HYPRE_IJVector vec_b)
    }
    else if (obj && vec_b)
    {
-      obj->vec_b = vec_b;
+      obj->vec_b = (HYPRE_IJVector) vec_b;
    }
    else
    {
@@ -508,6 +508,26 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t obj)
       {
          SolverCreate(obj->comm, obj->iargs->solver_method, &obj->iargs->solver, &obj->solver);
       }
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_PreconSetup
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_PreconSetup(HYPREDRV_t obj)
+{
+   if (obj)
+   {
+      PreconSetup(obj->iargs->precon_method, obj->precon, obj->mat_A);
+      HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
    }
    else
    {

@@ -441,7 +441,7 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t);
  *
  * @param obj The HYPREDRV_t object for which the linear system matrix is to be associated.
  *
- * @param mat_A The HYPRE_IJMatrix object for the linear system matrix.
+ * @param mat_A The HYPRE_Matrix object for the linear system matrix.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
@@ -463,14 +463,14 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t, HYPRE_IJMatrix);
+HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t, HYPRE_Matrix);
 
 /**
  * @brief Set the linear system right-hand side (RHS) vector from file for a HYPREDRV object.
  *
  * @param obj The HYPREDRV_t object for which the RHS vector of the linear system is to be set.
  *
- * @param vec input RHS vector of the linear system (NULL if set from input file).
+ * @param vec The HYPRE_IJVector vector object representing the RHS of the linear system (NULL if set from input file).
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
@@ -492,7 +492,7 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t, HYPRE_IJMatrix);
  */
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
-HYPREDRV_LinearSystemSetRHS(HYPREDRV_t, HYPRE_IJVector);
+HYPREDRV_LinearSystemSetRHS(HYPREDRV_t, HYPRE_Vector);
 
 /**
  * @brief Set the initial guess for the solution vector of the linear system for a HYPREDRV object.
@@ -700,6 +700,35 @@ HYPREDRV_PreconCreate(HYPREDRV_t);
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSolverCreate(HYPREDRV_t);
+
+/**
+ * @brief Set up the preconditioner for the HYPREDRV object based on the specified preconditioner methods.
+ *
+ * @param obj The HYPREDRV_t object for which the preconditioner is to be set up.
+ *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
+ * The function assumes that the preconditioner method and the matrix are properly set in the
+ * input arguments.
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_t *obj;
+ *    // ... (obj is created, and its components are initialized) ...
+ *    uint32_t errorCode = HYPREDRV_PreconSetup(obj);
+ *    if (errorCode != 0) {
+ *        const char* errorDescription = HYPREDRV_ErrorCodeDescribe(errorCode);
+ *        printf("%s\n", errorDescription);
+ *        // Handle error
+ *    }
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_PreconSetup(HYPREDRV_t);
 
 /**
  * @brief Set up the linear solver for the HYPREDRV object based on the specified solver

@@ -148,6 +148,48 @@ PreconCreate(precon_t         precon_method,
 }
 
 /*-----------------------------------------------------------------------------
+ * PreconSetup
+ *-----------------------------------------------------------------------------*/
+
+void
+PreconSetup(precon_t       precon_method,
+            HYPRE_Precon   precon,
+            HYPRE_IJMatrix A)
+{
+   void               *vA, *vb, *vx;
+   HYPRE_ParCSRMatrix  par_A;
+   HYPRE_ParVector     par_b = NULL, par_x = NULL;
+   HYPRE_Solver        prec = precon->main;
+
+   HYPRE_IJMatrixGetObject(A, &vA); par_A = (HYPRE_ParCSRMatrix) vA;
+
+   switch (precon_method)
+   {
+      case PRECON_BOOMERAMG:
+         HYPRE_BoomerAMGSetup(prec, par_A, par_b, par_x);
+         break;
+
+      case PRECON_MGR:
+         HYPRE_MGRSetup(prec, par_A, par_b, par_x);
+         break;
+
+      case PRECON_ILU:
+         HYPRE_ILUSetup(prec, par_A, par_b, par_x);
+         break;
+
+      case PRECON_FSAI:
+         HYPRE_FSAISetup(prec, par_A, par_b, par_x);
+         break;
+
+      default:
+         return;
+   }
+
+   // TODO: fix timing. Adjust LinearSolverSetup.
+   //StatsTimerFinish("prec");
+}
+
+/*-----------------------------------------------------------------------------
  * PreconApply
  *-----------------------------------------------------------------------------*/
 
