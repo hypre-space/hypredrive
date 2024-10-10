@@ -25,6 +25,7 @@ int main(int argc, char** argv)
    HYPREDRV_Create(comm, &obj);
    HYPREDRV_InputArgsParse(argc - 1, argv + 1, obj);
    HYPREDRV_SetGlobalOptions(obj);
+   HYPREDRV_SetLibraryMode(obj);
 
    // Problem size
    Nx = 10, Ny = 10, Nz = 10;
