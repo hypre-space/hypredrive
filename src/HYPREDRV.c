@@ -478,6 +478,44 @@ HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t obj, int size, int *dofmap)
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemSetInterleavedDofmap
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t obj, int num_local_blocks, int num_dof_types)
+{
+   if (obj)
+   {
+      IntArrayBuildInterleaved(obj->comm, num_local_blocks, num_dof_types, &obj->dofmap);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemSetContiguousDofmap
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetContiguousDofmap(HYPREDRV_t obj, int num_local_blocks, int num_dof_types)
+{
+   if (obj)
+   {
+      IntArrayBuildContiguous(obj->comm, num_local_blocks, num_dof_types, &obj->dofmap);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_LinearSystemReadDofmap
  *-----------------------------------------------------------------------------*/
 

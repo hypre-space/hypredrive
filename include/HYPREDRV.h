@@ -575,6 +575,35 @@ HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t, int, int*);
 
 /**
+ * @brief Set an interleaved degree of freedom (DOF) map for the linear system of a HYPREDRV object.
+ *
+ * @param obj The HYPREDRV_t object for which the DOF map of the linear system is to be set.
+ *
+ * @param num_local_blocks The local (owned by the current rank) number of blocks (cells/nodes)
+ * containing a set of num_dof_types degrees of freedom.
+ *
+ * @param num_dof_types The number of degree of freedom types.
+ *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_t *obj;
+ *    int num_dof_types = ... // Number of degree of freedom types
+ *    int num_local_nodes = ... // Number of local (current MPI rank) nodes
+ *    // ... (obj is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInterleavedDofmap(obj, num_local_dofs, num_dof_types));
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t, int, int);
+
+/**
  * @brief Read the degree of freedom (DOF) map for the linear system of a HYPREDRV object.
  *
  * @param obj The HYPREDRV_t object for which the DOF map of the linear system is to be read.
