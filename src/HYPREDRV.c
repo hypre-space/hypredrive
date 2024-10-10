@@ -23,6 +23,7 @@ typedef struct hypredrv_struct {
    MPI_Comm         comm;
    int              mypid;
    int              nprocs;
+   bool             lib_mode;
 
    input_args      *iargs;
 
@@ -104,6 +105,9 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr)
 
    *obj_ptr    = obj;
 
+   /* Disable library mode by default */
+   obj->lib_mode = false;
+
    /* Create global statistics object */
    StatsCreate();
 
@@ -125,12 +129,15 @@ HYPREDRV_Destroy(HYPREDRV_t *obj_ptr)
       {
          HYPRE_IJMatrixDestroy(obj->mat_M);
       }
-      HYPRE_IJMatrixDestroy(obj->mat_A);
-      HYPRE_IJVectorDestroy(obj->vec_b);
-      HYPRE_IJVectorDestroy(obj->vec_x);
-      HYPRE_IJVectorDestroy(obj->vec_x0);
-      IntArrayDestroy(&obj->dofmap);
+      if (!obj->lib_mode)
+      {
+         HYPRE_IJMatrixDestroy(obj->mat_A);
+         HYPRE_IJVectorDestroy(obj->vec_b);
+         HYPRE_IJVectorDestroy(obj->vec_x);
+         HYPRE_IJVectorDestroy(obj->vec_x0);
+      }
 
+      IntArrayDestroy(&obj->dofmap);
       InputArgsDestroy(&obj->iargs);
 
       /* Destroy global stats variable */
@@ -193,6 +200,25 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t obj)
    if (obj)
    {
       InputArgsParse(obj->comm, argc, argv, &obj->iargs);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_SetLibraryMode
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_SetLibraryMode(HYPREDRV_t obj)
+{
+   if (obj)
+   {
+      obj->lib_mode = true;
    }
    else
    {

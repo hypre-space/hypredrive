@@ -259,6 +259,26 @@ HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_InputArgsParse(int, char**, HYPREDRV_t);
 
 /**
+ * @brief Set library mode to HYPREDRV, in which matrices and vectors are not assumed
+ * to be owned by the HYPREDRV_t object.
+ *
+ * @param obj The HYPREDRV_t object.
+ *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_t *obj;
+ *    // ... (obj is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(obj));
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_SetLibraryMode(HYPREDRV_t);
+
+/**
  * @brief Set HYPRE's global options according to the YAML input.
  *
  * @param obj The HYPREDRV_t object from which the global options are to be retrieved.
