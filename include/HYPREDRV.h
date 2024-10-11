@@ -105,14 +105,14 @@ HYPREDRV_Finalize(void);
  * @brief Create a HYPREDRV object.
  *
  * This function allocates memory for a HYPREDRV object and initializes it with the
- * provided MPI communicator. The newly created object is returned through the obj_ptr
+ * provided MPI communicator. The newly created object is returned through the hypredrv_ptr
  * parameter.
  *
  * @param comm The MPI communicator to be associated with the HYPREDRV object.
  * This communicator is used for parallel communications in the underlying HYPRE library calls.
  *
- * @param obj_ptr A pointer to the HYPREDRV_t pointer where the address of the newly
- * allocated HYPREDRV object will be stored. After the function call, *obj_ptr will
+ * @param hypredrv_ptr A pointer to the HYPREDRV_t pointer where the address of the newly
+ * allocated HYPREDRV object will be stored. After the function call, *hypredrv_ptr will
  * point to the allocated object.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
@@ -124,9 +124,9 @@ HYPREDRV_Finalize(void);
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
+ *    HYPREDRV_t *hypredrv;
  *    MPI_Comm comm = MPI_COMM_WORLD; // or any other valid MPI_Comm
- *    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &obj));
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
  * @endcode
  */
 
@@ -142,22 +142,22 @@ HYPREDRV_Create(MPI_Comm, HYPREDRV_t*);
  * After this function is called, the pointer to the HYPREDRV object is set to NULL to prevent
  * any dangling references.
  *
- * @param obj_ptr A pointer to the HYPREDRV_t object that is to be destroyed. This pointer
+ * @param hypredrv_ptr A pointer to the HYPREDRV_t object that is to be destroyed. This pointer
  * should have been initialized by HYPREDRV_Create function.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It is the caller's responsibility to ensure that obj_ptr is a valid pointer to a
+ * @note It is the caller's responsibility to ensure that hypredrv_ptr is a valid pointer to a
  * HYPREDRV_t object. Passing an invalid pointer or a pointer to an already destroyed object
  * can lead to undefined behavior.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created and used) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&obj));
- *    // obj is now NULL.
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created and used) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
+ *    // hypredrv is now NULL.
  * @endcode
  */
 
@@ -238,7 +238,7 @@ HYPREDRV_PrintExitInfo(MPI_Comm comm, const char*);
  *
  * @param argc The count of command-line arguments.
  * @param argv The array of command-line argument strings.
- * @param obj The HYPREDRV_t object whose input arguments are to be parsed and set.
+ * @param hypredrv The HYPREDRV_t object whose input arguments are to be parsed and set.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
@@ -247,11 +247,11 @@ HYPREDRV_PrintExitInfo(MPI_Comm comm, const char*);
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
+ *    HYPREDRV_t *hypredrv;
  *    int argc = ...; // Number of arguments
  *    char **argv = ...; // Argument strings
- *    // ... (obj is created) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, &obj));
+ *    // ... (hypredrv is created) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, &hypredrv));
  * @endcode
  */
 
@@ -262,16 +262,16 @@ HYPREDRV_InputArgsParse(int, char**, HYPREDRV_t);
  * @brief Set library mode to HYPREDRV, in which matrices and vectors are not assumed
  * to be owned by the HYPREDRV_t object.
  *
- * @param obj The HYPREDRV_t object.
+ * @param hypredrv The HYPREDRV_t object.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
  * @endcode
  */
 
@@ -281,16 +281,16 @@ HYPREDRV_SetLibraryMode(HYPREDRV_t);
 /**
  * @brief Set HYPRE's global options according to the YAML input.
  *
- * @param obj The HYPREDRV_t object from which the global options are to be retrieved.
+ * @param hypredrv The HYPREDRV_t object from which the global options are to be retrieved.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
  * @endcode
  */
 
@@ -305,16 +305,16 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t);
  * before the main operations, often used to ensure accurate timing measurements by
  * eliminating any initialization overhead.
  *
- * @param obj The HYPREDRV_t object from which the warmup setting is to be retrieved.
+ * @param hypredrv The HYPREDRV_t object from which the warmup setting is to be retrieved.
  *
  * @return Returns the warmup setting as an integer. If the input object is NULL
  * or not properly initialized, the function returns -1 to indicate an error or invalid state.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are set) ...
- *    int warmup = HYPREDRV_InputArgsGetWarmup(obj);
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are set) ...
+ *    int warmup = HYPREDRV_InputArgsGetWarmup(hypredrv);
  * @endcode
  */
 
@@ -328,16 +328,16 @@ HYPREDRV_InputArgsGetWarmup(HYPREDRV_t);
  * the number of repetitions setting. This setting specifies how many times the linear systems
  * should be solved, potentially for benchmarking or testing purposes.
  *
- * @param obj The HYPREDRV_t object from which the number of repetitions is to be retrieved.
+ * @param hypredrv The HYPREDRV_t object from which the number of repetitions is to be retrieved.
  *
  * @return Returns the number of repetitions as an integer. If the input object is NULL
  * or not properly initialized, the function returns -1 to indicate an error or invalid state.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are set) ...
- *    int num_reps = HYPREDRV_InputArgsGetNumRepetitions(obj);
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are set) ...
+ *    int num_reps = HYPREDRV_InputArgsGetNumRepetitions(hypredrv);
  * @endcode
  */
 
@@ -350,16 +350,16 @@ HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t);
  * This function accesses the HYPREDRV object's input arguments structure to retrieve
  * the number of linear systems being solved.
  *
- * @param obj The HYPREDRV_t object from which the number of repetitions is to be retrieved.
+ * @param hypredrv The HYPREDRV_t object from which the number of repetitions is to be retrieved.
  *
  * @return Returns the number of linear systems as an integer. If the input object is NULL
  * or not properly initialized, the function returns -1 to indicate an error or invalid state.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are set) ...
- *    int num_ls = HYPREDRV_InputArgsGetNumLinearSystems(obj);
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are set) ...
+ *    int num_ls = HYPREDRV_InputArgsGetNumLinearSystems(hypredrv);
  * @endcode
  */
 
@@ -373,19 +373,19 @@ HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t);
  * The matrix is read from file. Vectors might be read from file or built according to
  * predetermined options passed via YAML.
  *
- * @param obj The HYPREDRV_t object for which the linear system matrix is to be built.
+ * @param hypredrv The HYPREDRV_t object for which the linear system matrix is to be built.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemBuild(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemBuild(hypredrv));
  * @endcode
  */
 
@@ -400,19 +400,19 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t);
  * the linear system, and uses a pointer to store the read matrix. After reading the matrix,
  * it retrieves and returns the error code generated during the process.
  *
- * @param obj The HYPREDRV_t object for which the linear system matrix is to be read.
+ * @param hypredrv The HYPREDRV_t object for which the linear system matrix is to be read.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadMatrix(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadMatrix(hypredrv));
  * @endcode
  */
 
@@ -425,21 +425,21 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t);
  * This function is responsible for setting the matrix data of a linear system associated
  * with a HYPREDRV object.
  *
- * @param obj The HYPREDRV_t object for which the linear system matrix is to be associated.
+ * @param hypredrv The HYPREDRV_t object for which the linear system matrix is to be associated.
  *
  * @param mat_A The HYPRE_Matrix object for the linear system matrix.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(hypredrv));
  * @endcode
  */
 
@@ -449,21 +449,21 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t, HYPRE_Matrix);
 /**
  * @brief Set the linear system right-hand side (RHS) vector from file for a HYPREDRV object.
  *
- * @param obj The HYPREDRV_t object for which the RHS vector of the linear system is to be set.
+ * @param hypredrv The HYPREDRV_t object for which the RHS vector of the linear system is to be set.
  *
  * @param vec The HYPRE_Vector vector object representing the RHS of the linear system (NULL if set from input file).
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv));
  * @endcode
  */
 
@@ -476,20 +476,20 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t, HYPRE_Vector);
  * This function is responsible for setting the initial guess for the solution vector of a
  * linear system associated with a HYPREDRV object.
  *
- * @param obj The HYPREDRV_t object for which the initial guess of the solution vector of the
+ * @param hypredrv The HYPREDRV_t object for which the initial guess of the solution vector of the
  * linear system is to be set.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv));
  * @endcode
  */
 
@@ -500,20 +500,20 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t);
  * @brief Reset the initial guess of the solution vector for a HYPREDRV object to its original
  * state as computed with \e HYPREDRV_LinearSystemSetInitialGuess
  *
- * @param obj The HYPREDRV_t object for which the initial guess of the solution vector is to be
+ * @param hypredrv The HYPREDRV_t object for which the initial guess of the solution vector is to be
  * reset.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(hypredrv));
  * @endcode
  */
 
@@ -527,19 +527,19 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t);
  * also possible to use an arbitrary matrix set by the user, e.g., a filtered version of the linear
  * system matrix.
  *
- * @param obj The HYPREDRV_t object for which the preconditioner matrix is to be set.
+ * @param hypredrv The HYPREDRV_t object for which the preconditioner matrix is to be set.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv));
  * @endcode
  */
 
@@ -549,7 +549,7 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t);
 /**
  * @brief Set the degree of freedom (DOF) map for the linear system of a HYPREDRV object.
  *
- * @param obj The HYPREDRV_t object for which the DOF map of the linear system is to be set.
+ * @param hypredrv The HYPREDRV_t object for which the DOF map of the linear system is to be set.
  *
  * @param size The local size (current rank) of the dofmap array.
  *
@@ -558,16 +558,16 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t);
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
+ *    HYPREDRV_t *hypredrv;
  *    int size = ... // Size of dofmap is set
  *    int *dofmap = ... // dofmap array is set
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetDofmap(obj, size, dofmap));
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetDofmap(hypredrv, size, dofmap));
  * @endcode
  */
 
@@ -577,7 +577,7 @@ HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t, int, int*);
 /**
  * @brief Set an interleaved degree of freedom (DOF) map for the linear system of a HYPREDRV object.
  *
- * @param obj The HYPREDRV_t object for which the DOF map of the linear system is to be set.
+ * @param hypredrv The HYPREDRV_t object for which the DOF map of the linear system is to be set.
  *
  * @param num_local_blocks The local (owned by the current rank) number of blocks (cells/nodes)
  * containing a set of num_dof_types degrees of freedom.
@@ -587,16 +587,16 @@ HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t, int, int*);
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
+ *    HYPREDRV_t *hypredrv;
  *    int num_dof_types = ... // Number of degree of freedom types
  *    int num_local_nodes = ... // Number of local (current MPI rank) nodes
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInterleavedDofmap(obj, num_local_dofs, num_dof_types));
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInterleavedDofmap(hypredrv, num_local_dofs, num_dof_types));
  * @endcode
  */
 
@@ -606,19 +606,19 @@ HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t, int, int);
 /**
  * @brief Read the degree of freedom (DOF) map for the linear system of a HYPREDRV object.
  *
- * @param obj The HYPREDRV_t object for which the DOF map of the linear system is to be read.
+ * @param hypredrv The HYPREDRV_t object for which the DOF map of the linear system is to be read.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadDofmap(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadDofmap(hypredrv));
  * @endcode
  */
 
@@ -628,21 +628,21 @@ HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t);
 /**
  * @brief Create a preconditioner for the HYPREDRV object based on the specified method.
  *
- * @param obj The HYPREDRV_t object for which the preconditioner is to be created.
+ * @param hypredrv The HYPREDRV_t object for which the preconditioner is to be created.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  * The function assumes that the preconditioning method and other related settings are properly
  * set in the input arguments.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconCreate(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconCreate(hypredrv));
  * @endcode
  */
 
@@ -652,21 +652,21 @@ HYPREDRV_PreconCreate(HYPREDRV_t);
 /**
  * @brief Create a linear solver for the HYPREDRV object based on the specified method.
  *
- * @param obj The HYPREDRV_t object for which the linear solver is to be created.
+ * @param hypredrv The HYPREDRV_t object for which the linear solver is to be created.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  * The function assumes that the solver method and other related settings are properly set in
  * the input arguments.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverCreate(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverCreate(hypredrv));
  * @endcode
  */
 
@@ -676,21 +676,21 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t);
 /**
  * @brief Set up the preconditioner for the HYPREDRV object based on the specified preconditioner methods.
  *
- * @param obj The HYPREDRV_t object for which the preconditioner is to be set up.
+ * @param hypredrv The HYPREDRV_t object for which the preconditioner is to be set up.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  * The function assumes that the preconditioner method and the matrix are properly set in the
  * input arguments.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconSetup(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconSetup(hypredrv));
  * @endcode
  */
 
@@ -701,21 +701,21 @@ HYPREDRV_PreconSetup(HYPREDRV_t);
  * @brief Set up the linear solver for the HYPREDRV object based on the specified solver
  * and preconditioner methods.
  *
- * @param obj The HYPREDRV_t object for which the linear solver is to be set up.
+ * @param hypredrv The HYPREDRV_t object for which the linear solver is to be set up.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  * The function assumes that the solver and preconditioner methods, as well as the matrix,
  * RHS vector, and solution vector, are properly set in the input arguments.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(hypredrv));
  * @endcode
  */
 
@@ -725,21 +725,21 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t);
 /**
  * @brief Apply the linear solver to solve the linear system for the HYPREDRV object.
  *
- * @param obj The HYPREDRV_t object for which the linear solver is to be applied.
+ * @param hypredrv The HYPREDRV_t object for which the linear solver is to be applied.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  * The function assumes that the solver method, solver, matrix, RHS vector, and solution vector
  * are properly set in the input arguments.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
  * @endcode
  */
 
@@ -749,7 +749,7 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t);
 /**
  * @brief Apply the preconditioner associated with a HYPREDRV_t object to an input vector.
  *
- * @param obj The HYPREDRV_t object defining the preconditioner to be applied.
+ * @param hypredrv The HYPREDRV_t object defining the preconditioner to be applied.
  *
  * @param vec_b The HYPRE_Vector object defining the input vector.
  *
@@ -758,16 +758,16 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t);
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  * The function assumes that the preconditioner method, solver, matrix, RHS vector, and solution vector
  * are properly set in the input arguments.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconApply(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconApply(hypredrv, vec_b, vec_x));
  * @endcode
  */
 
@@ -777,21 +777,21 @@ HYPREDRV_PreconApply(HYPREDRV_t, HYPRE_Vector, HYPRE_Vector);
 /**
  * @brief Destroy the preconditioner associated with the HYPREDRV object.
  *
- * @param obj The HYPREDRV_t object whose preconditioner is to be destroyed.
+ * @param hypredrv The HYPREDRV_t object whose preconditioner is to be destroyed.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  * The function assumes that the preconditioner method and the preconditioner itself are properly
  * set in the HYPREDRV_t object.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(hypredrv));
  * @endcode
  */
 
@@ -801,21 +801,21 @@ HYPREDRV_PreconDestroy(HYPREDRV_t);
 /**
  * @brief Destroy the linear solver associated with the HYPREDRV object.
  *
- * @param obj The HYPREDRV_t object whose linear solver is to be destroyed.
+ * @param hypredrv The HYPREDRV_t object whose linear solver is to be destroyed.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  * The function assumes that the linear solver method and the linear solver object itself are
  * properly set in the HYPREDRV_t object.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hypredrv));
  * @endcode
  */
 
@@ -828,19 +828,19 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t);
  * This function is responsible for printing the statistics collected during the operations
  * performed by the HYPREDRV object.
  *
- * @param obj The HYPREDRV_t object whose statistics are to be printed.
+ * @param hypredrv The HYPREDRV_t object whose statistics are to be printed.
  *
  * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
  * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
  *
- * @note It's the caller's responsibility to ensure that the obj parameter is a valid pointer to an
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
  * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
  *
  * Example Usage:
  * @code
- *    HYPREDRV_t *obj;
- *    // ... (obj is created, and its components are initialized) ...
- *    HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(obj));
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(hypredrv));
  * @endcode
  */
 

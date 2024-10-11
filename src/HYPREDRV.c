@@ -37,6 +37,8 @@ typedef struct hypredrv_struct {
 
    HYPRE_Precon     precon;
    HYPRE_Solver     solver;
+
+   // TODO: associate stats variable with hypredrv object
 } hypredrv_t;
 
 /*-----------------------------------------------------------------------------
@@ -367,6 +369,7 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t obj, HYPRE_Matrix mat_A)
    {
       StatsTimerStart("matrix");
       obj->mat_A = (HYPRE_IJMatrix) mat_A;
+      obj->mat_M = (HYPRE_IJMatrix) mat_A;
       StatsTimerFinish("matrix");
    }
    else

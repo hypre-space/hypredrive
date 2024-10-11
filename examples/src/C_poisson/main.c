@@ -15,17 +15,17 @@ int main(int argc, char** argv)
    HYPRE_BigInt  Nx, Ny, Nz, N;
    HYPRE_Int     Px, Py, Pz;
    HYPRE_Int     myid, num_procs;
-   HYPREDRV_t    obj;
+   HYPREDRV_t    hypredrv;
 
    // Initialize
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &num_procs);
    HYPREDRV_Initialize();
-   HYPREDRV_Create(comm, &obj);
-   HYPREDRV_InputArgsParse(argc - 1, argv + 1, obj);
-   HYPREDRV_SetGlobalOptions(obj);
-   HYPREDRV_SetLibraryMode(obj);
+   HYPREDRV_Create(comm, &hypredrv);
+   HYPREDRV_InputArgsParse(argc - 1, argv + 1, hypredrv);
+   HYPREDRV_SetGlobalOptions(hypredrv);
+   HYPREDRV_SetLibraryMode(hypredrv);
 
    // Problem size
    Nx = 10, Ny = 10, Nz = 10;
@@ -124,32 +124,30 @@ int main(int argc, char** argv)
    //HYPRE_IJMatrixPrint(A, "test");
 
    // Associate the matrix with the HYPREDRV object
-   HYPREDRV_LinearSystemSetMatrix(obj, A);
-   HYPREDRV_LinearSystemSetRHS(obj, NULL); // Replace NULL with vector if available
-   HYPREDRV_LinearSystemSetInitialGuess(obj);
-   HYPREDRV_LinearSystemSetPrecMatrix(obj);
-   HYPREDRV_LinearSystemReadDofmap(obj);
-   HYPREDRV_LinearSystemResetInitialGuess(obj);
+   HYPREDRV_LinearSystemSetMatrix(hypredrv, A);
+   HYPREDRV_LinearSystemSetRHS(hypredrv, NULL); // Replace NULL with vector if available
+   HYPREDRV_LinearSystemSetInitialGuess(hypredrv);
+   HYPREDRV_LinearSystemSetPrecMatrix(hypredrv);
 
    // Solver create phase
-   HYPREDRV_PreconCreate(obj);
-   HYPREDRV_LinearSolverCreate(obj);
+   HYPREDRV_PreconCreate(hypredrv);
+   HYPREDRV_LinearSolverCreate(hypredrv);
 
    // Solver setup phase
-   HYPREDRV_LinearSolverSetup(obj);
+   HYPREDRV_LinearSolverSetup(hypredrv);
 
    // Solver application phase
-   HYPREDRV_LinearSolverApply(obj);
+   HYPREDRV_LinearSolverApply(hypredrv);
 
    // Destroy phase
-   HYPREDRV_PreconDestroy(obj);
-   HYPREDRV_LinearSolverDestroy(obj);
+   HYPREDRV_PreconDestroy(hypredrv);
+   HYPREDRV_LinearSolverDestroy(hypredrv);
 
    // Print statistics
    if (!myid) HYPREDRV_StatsPrint(obj);
 
    // Finalize program
-   HYPREDRV_Destroy(&obj);
+   HYPREDRV_Destroy(&hypredrv);
    HYPREDRV_Finalize();
    MPI_Finalize();
 
