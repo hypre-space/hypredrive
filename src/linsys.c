@@ -702,6 +702,44 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 }
 
 /*-----------------------------------------------------------------------------
+ * LinearSystemGetSolution
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemGetSolutionValues(HYPRE_IJVector   sol,
+                              HYPRE_Complex  **data_ptr)
+{
+   HYPRE_ParVector   par_sol;
+   hypre_Vector     *seq_sol;
+   void             *obj;
+
+   HYPRE_IJVectorGetObject(sol, &obj);
+   par_sol = (HYPRE_ParVector) obj;
+   seq_sol = hypre_ParVectorLocalVector(par_sol);
+
+   *data_ptr = hypre_VectorData(seq_sol);
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemGetRHS
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemGetRHSValues(HYPRE_IJVector   rhs,
+                         HYPRE_Complex  **data_ptr)
+{
+   HYPRE_ParVector   par_rhs;
+   hypre_Vector     *seq_rhs;
+   void             *obj;
+
+   HYPRE_IJVectorGetObject(rhs, &obj);
+   par_rhs = (HYPRE_ParVector) obj;
+   seq_rhs = hypre_ParVectorLocalVector(par_rhs);
+
+   *data_ptr = hypre_VectorData(seq_rhs);
+}
+
+/*-----------------------------------------------------------------------------
  * LinearSystemComputeResidualNorm
  *-----------------------------------------------------------------------------*/
 

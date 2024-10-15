@@ -626,6 +626,62 @@ HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t);
 
 /**
+ * @brief Retrieves the solution values from the linear system of a HYPREDRV object.
+ *
+ * This function provides access to the internal pointer where the solution vector of the linear system
+ * associated with the given HYPREDRV_t object is stored. It does not copy the solution values; instead,
+ * it assigns the internal pointer to the user-provided pointer @p sol_data.
+ *
+ * @param obj A valid HYPREDRV_t object from which the internal solution pointer is to be retrieved.
+ * @param sol_data A pointer to a HYPRE_Complex pointer, which will be set to point to the internal
+ *                 solution data array. The user must not free or modify the internal array.
+ *
+ * @return Returns an error code, with 0 indicating success. If the @p obj parameter is invalid
+ *         (e.g., NULL or uninitialized), an error code is returned, and the error can be further
+ *         described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_t *hypredrv;
+ *    HYPRE_Complex *sol_data = NULL;
+ *    // Ensure hypredrv is initialized and the system is solved
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &sol_data));
+ *    // Use sol_data but do not free or modify it.
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t, HYPRE_Complex**);
+
+/**
+ * @brief Retrieves the right-hand side values from the linear system of a HYPREDRV object.
+ *
+ * This function provides access to the internal pointer where the right-hand side vector of the linear system
+ * associated with the given HYPREDRV_t object is stored. It does not copy the solution values; instead,
+ * it assigns the internal pointer to the user-provided pointer @p rhs_data.
+ *
+ * @param obj A valid HYPREDRV_t object from which the internal solution pointer is to be retrieved.
+ * @param rhs_data A pointer to a HYPRE_Complex pointer, which will be set to point to the internal
+ *                 right-hand side data array. The user must not free or modify the internal array.
+ *
+ * @return Returns an error code, with 0 indicating success. If the @p obj parameter is invalid
+ *         (e.g., NULL or uninitialized), an error code is returned, and the error can be further
+ *         described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_t *hypredrv;
+ *    HYPRE_Complex *rhs_data = NULL;
+ *    // Ensure hypredrv is initialized and the system is solved
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetRHSValues(hypredrv, &rhs_data));
+ *    // Use rhs_data but do not free or modify it.
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t, HYPRE_Complex**);
+
+/**
  * @brief Create a preconditioner for the HYPREDRV object based on the specified method.
  *
  * @param hypredrv The HYPREDRV_t object for which the preconditioner is to be created.

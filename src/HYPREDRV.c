@@ -444,6 +444,44 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t obj)
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemGetSolutionValues
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t obj, HYPRE_Complex **sol_data)
+{
+   if (obj)
+   {
+      LinearSystemGetSolutionValues(obj->vec_x, sol_data);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemGetRHSValues
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t obj, HYPRE_Complex **rhs_data)
+{
+   if (obj)
+   {
+      LinearSystemGetRHSValues(obj->vec_x, rhs_data);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_LinearSystemSetPrecMatrix
  *-----------------------------------------------------------------------------*/
 
