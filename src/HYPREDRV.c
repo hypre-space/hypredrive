@@ -201,7 +201,7 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t obj)
 {
    if (obj)
    {
-      InputArgsParse(obj->comm, argc, argv, &obj->iargs);
+      InputArgsParse(obj->comm, obj->lib_mode, argc, argv, &obj->iargs);
    }
    else
    {
@@ -237,6 +237,7 @@ HYPREDRV_SetLibraryMode(HYPREDRV_t obj)
 uint32_t
 HYPREDRV_SetGlobalOptions(HYPREDRV_t obj)
 {
+   // TODO: remove this API and move functionality to InputArgsParse?
    if (obj)
    {
       if (obj->iargs->ls.exec_policy)

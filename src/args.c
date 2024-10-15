@@ -15,18 +15,19 @@
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsCreate(input_args **iargs_ptr)
+InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
 {
    input_args *iargs = (input_args*) malloc(sizeof(input_args));
 
    /* Set general default options */
-   iargs->warmup           = 0;
-   iargs->num_repetitions  = 1;
-   iargs->statistics       = 1;
-   iargs->dev_pool_size    = 8.0 * GB_TO_BYTES;
-   iargs->uvm_pool_size    = 8.0 * GB_TO_BYTES;
-   iargs->host_pool_size   = 8.0 * GB_TO_BYTES;
-   iargs->pinned_pool_size = 0.5 * GB_TO_BYTES;
+   iargs->warmup              = 0;
+   iargs->num_repetitions     = 1;
+   iargs->statistics          = 1;
+   iargs->print_config_params = !lib_mode;
+   iargs->dev_pool_size       = 8.0 * GB_TO_BYTES;
+   iargs->uvm_pool_size       = 8.0 * GB_TO_BYTES;
+   iargs->host_pool_size      = 8.0 * GB_TO_BYTES;
+   iargs->pinned_pool_size    = 0.5 * GB_TO_BYTES;
 
    /* Set default Linear System options */
    LinearSystemSetDefaultArgs(&iargs->ls);
@@ -75,7 +76,8 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
    {
       if (!strcmp(child->key, "warmup") ||
           !strcmp(child->key, "statistics") ||
-          !strcmp(child->key, "use_millisec"))
+          !strcmp(child->key, "use_millisec") ||
+          !strcmp(child->key, "print_config_params"))
       {
          if (!strcmp(child->val, "off") ||
              !strcmp(child->val, "no") ||
@@ -90,6 +92,10 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
             else if (!strcmp(child->key, "statistics"))
             {
                iargs->statistics = 0;
+            }
+            else if (!strcmp(child->key, "print_config_params"))
+            {
+               iargs->print_config_params = 0;
             }
             else if (!strcmp(child->key, "use_millisec"))
             {
@@ -110,6 +116,10 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
             {
                iargs->statistics = 1;
             }
+            else if (!strcmp(child->key, "print_config_params"))
+            {
+               iargs->print_config_params = 1;
+            }
             else if (!strcmp(child->key, "use_millisec"))
             {
                StatsTimerSetMilliseconds();
@@ -124,6 +134,10 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
             else if (!strcmp(child->key, "statistics"))
             {
                iargs->statistics = 0;
+            }
+            else if (!strcmp(child->key, "print_config_params"))
+            {
+               iargs->print_config_params = 0;
             }
             ErrorCodeSet(ERROR_INVALID_VAL);
          }
@@ -356,7 +370,7 @@ InputArgsRead(MPI_Comm comm, char *filename, char **text_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
+InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args **args_ptr)
 {
    input_args   *iargs;
    char         *text;
@@ -374,8 +388,7 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    /* Return earlier if YAML tree was not built properly */
    if (!myid && ErrorCodeActive())
    {
-      /* TODO: add option to print config parameters tree */
-      //YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
       ErrorMsgPrintAndAbort(comm);
    }
    MPI_Barrier(comm);
@@ -396,7 +409,7 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
     * Parse file sections
     *-------------------------------------------*/
 
-   InputArgsCreate(&iargs);
+   InputArgsCreate(lib_mode, &iargs);
    InputArgsParseGeneral(iargs, tree);
    InputArgsParseLinearSystem(iargs, tree);
    InputArgsParseSolver(iargs, tree);
@@ -407,7 +420,7 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    StatsSetNumLinearSystems(iargs->ls.num_systems);
 
    /* Rank 0: Print tree to stdout */
-   if (!myid)
+   if (!myid && iargs->print_config_params)
    {
       YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
 
@@ -418,6 +431,9 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    }
    MPI_Barrier(comm);
 
-   *args_ptr = iargs;
+   /* Free memory */
    YAMLtreeDestroy(&tree);
+
+   /* Set output pointer */
+   *args_ptr = iargs;
 }
