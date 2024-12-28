@@ -12,16 +12,12 @@ static Stats *global_stats = NULL;
 
 /* Local macros */
 #define REALLOC_EXPAND_FACTOR 16
-#define REALLOC(_d, _t, _e) \
+#define REALLOC(_d, _e) \
    do { \
-      if (((_t)->counter + 1) >= (_t)->capacity) \
-      { \
-         (_t)->capacity += REALLOC_EXPAND_FACTOR; \
-         _d *ptr = (_d*) realloc((void*) (_t)->_e, (_t)->capacity * sizeof(_d)); \
-         memset(ptr + (_t)->capacity - REALLOC_EXPAND_FACTOR, 0, \
-                REALLOC_EXPAND_FACTOR * sizeof(_d)); \
-         (_t)->_e = (ptr) ? ptr : (_t)->_e; \
-      } \
+      _d *ptr = (_d*) realloc((void*) global_stats->_e, global_stats->capacity * sizeof(_d)); \
+      memset(ptr + global_stats->capacity - REALLOC_EXPAND_FACTOR, 0, \
+             REALLOC_EXPAND_FACTOR * sizeof(_d)); \
+      global_stats->_e = (ptr) ? ptr : global_stats->_e; \
    } while (0);
 #define STATS_TIMES_START_ENTRY(_e) \
    if (!strcmp(name, #_e)) { global_stats->_e -= MPI_Wtime(); return; }
@@ -30,7 +26,6 @@ static Stats *global_stats = NULL;
 #define STATS_TIMES_START_VEC_ENTRY(_e) \
    if (!strcmp(name, #_e)) \
    { \
-      REALLOC(double, global_stats, _e) \
       global_stats->_e[global_stats->counter] -= MPI_Wtime(); \
       return; \
    }
@@ -159,6 +154,19 @@ StatsTimerStart(const char *name)
       global_stats->counter = (global_stats->ls_counter - 1) * global_stats->num_reps;
    }
 
+   /* Reallocate arrays if needed */
+   if (global_stats->counter >= global_stats->capacity)
+   {
+      global_stats->capacity += REALLOC_EXPAND_FACTOR;
+      REALLOC(double, matrix);
+      REALLOC(double, rhs);
+      REALLOC(double, dofmap);
+      REALLOC(double, prec);
+      REALLOC(double, solve);
+      REALLOC(double, rrnorms);
+      REALLOC(int, iters);
+   }
+
    /* Compute entry counter */
    STATS_TIMES_START_VEC_ENTRY(matrix)
    STATS_TIMES_START_VEC_ENTRY(rhs)
@@ -222,7 +230,6 @@ StatsTimerSetSeconds(void)
 void
 StatsIterSet(int num_iters)
 {
-   REALLOC(int, global_stats, iters);
    global_stats->iters[global_stats->counter] = num_iters;
 }
 
@@ -233,7 +240,6 @@ StatsIterSet(int num_iters)
 void
 StatsRelativeResNormSet(double rrnorm)
 {
-   REALLOC(double, global_stats, rrnorms);
    global_stats->rrnorms[global_stats->counter] = rrnorm;
 }
 
