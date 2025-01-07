@@ -14,6 +14,14 @@
 #include <HYPRE.h>
 #include <HYPRE_utilities.h>
 
+// Undefine autotools package macros from hypre
+#undef PACKAGE_NAME
+#undef PACKAGE_BUGREPORT
+#undef PACKAGE_STRING
+#undef PACKAGE_TARNAME
+#undef PACKAGE_URL
+#undef PACKAGE_VERSION
+
 #ifdef __cplusplus
 extern "C" {
 #endif
