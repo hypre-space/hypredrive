@@ -9,7 +9,7 @@ set(PROJECT_BUGREPORT "https://github.com/hypre-space/hypredrive/issues")
 # Include GNUInstallDirs
 include(GNUInstallDirs)
 
-# Specify the C and C++ standards
+# Specify the C standard
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED True)
 
@@ -34,15 +34,13 @@ find_package(HYPRE REQUIRED CONFIG)
 if(NOT HYPRE_FOUND)
   message(FATAL_ERROR "HYPRE library not found. Please specify -DHYPRE_ROOT=<path> to the root of the HYPRE installation.")
 endif()
-#get_target_property(HYPRE_VERSION HYPRE::HYPRE PACKAGE_VERSION)
 get_target_property(HYPRE_INCLUDE_DIRS HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
-get_target_property(HYPRE_LIBRARY_DIRS HYPRE::HYPRE IMPORTED_LOCATION_RELEASE)
+get_target_property(HYPRE_LIBRARY_FILE HYPRE::HYPRE IMPORTED_LOCATION_RELEASE)
 message(STATUS "Found HYPRE:")
-#message(STATUS "  version: ${HYPRE_VERSION}")
 message(STATUS "  include directories: ${HYPRE_INCLUDE_DIRS}")
-message(STATUS "  libraries: ${HYPRE_LIBRARY_DIRS}")
+message(STATUS "  libraries: ${HYPRE_LIBRARY_FILE}")
 
-# Check for headers, functions and libraries
+# Check for headers, functions, and libraries
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Checks.cmake)
 
 # Generate the config header
@@ -81,7 +79,20 @@ target_link_libraries(HYPREDRV PUBLIC HYPRE::HYPRE PRIVATE m)
 
 # Define the executable
 add_executable(hypredrive src/main.c)
-target_link_libraries(hypredrive PRIVATE HYPREDRV::HYPREDRV)
+target_link_libraries(hypredrive PRIVATE HYPREDRV::HYPREDRV HYPRE::HYPRE)
+
+# macOS RPATH settings
+if(APPLE)
+    # Check if HYPRE library is shared
+    get_property(HYPRE_LIB_TYPE TARGET HYPRE::HYPRE PROPERTY TYPE)
+    if(HYPRE_LIB_TYPE STREQUAL "SHARED_LIBRARY")
+        get_filename_component(HYPRE_LIBRARY_DIR "${HYPRE_LIBRARY_FILE}/.." ABSOLUTE)
+        set(CMAKE_INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
+        set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+        set_target_properties(hypredrive PROPERTIES INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
+        set_target_properties(HYPREDRV PROPERTIES INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
+    endif()
+endif()
 
 # Installation rules
 install(TARGETS hypredrive HYPREDRV
