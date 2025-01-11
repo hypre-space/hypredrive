@@ -30,15 +30,9 @@ static uint32_t global_error_count[ERROR_CODE_NUM_ENTRIES] = {0};
 void
 ErrorCodeCountIncrement(ErrorCode code)
 {
-   int index = 1;
-
-   while (code > 1)
-   {
-      code >>= 1;
-      index++;
-   }
-
-   if (index > 0 && index < 32)
+   int index = 0;
+   while (code >>= 1) { index++; }
+   if (index > 0 && index < ERROR_CODE_NUM_ENTRIES)
    {
       global_error_count[index]++;
    }
@@ -51,20 +45,9 @@ ErrorCodeCountIncrement(ErrorCode code)
 uint32_t
 ErrorCodeCountGet(ErrorCode code)
 {
-   int index = 1;
-
-   while (code > 1)
-   {
-      code >>= 1;
-      index++;
-   }
-
-   if (index > 0 && index < 32)
-   {
-      return global_error_count[index];
-   }
-
-   return -1;
+   int index = 0;
+   while (code >>= 1) { index++; }
+   return (index > 0 && index < ERROR_CODE_NUM_ENTRIES) ? global_error_count[index] : -1;
 }
 
 /*-----------------------------------------------------------------------------
@@ -117,46 +100,51 @@ DistributedErrorCodeActive(MPI_Comm comm)
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorCodeDescribe(void)
+ErrorCodeDescribe(uint32_t code)
 {
-   if (global_error_code & ERROR_YAML_INVALID_INDENT)
+   if (code & ERROR_YAML_INVALID_INDENT)
    {
       ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_INDENT, "invalid indendation");
    }
 
-   if (global_error_code & ERROR_YAML_INVALID_DIVISOR)
+   if (code & ERROR_YAML_INVALID_DIVISOR)
    {
       ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_DIVISOR, "invalid divisor");
    }
 
-   if (global_error_code & ERROR_INVALID_KEY)
+   if (code & ERROR_INVALID_KEY)
    {
       ErrorMsgAddCodeWithCount(ERROR_INVALID_KEY, "invalid key");
    }
 
-   if (global_error_code & ERROR_INVALID_VAL)
+   if (code & ERROR_INVALID_VAL)
    {
       ErrorMsgAddCodeWithCount(ERROR_INVALID_VAL, "invalid value");
    }
 
-   if (global_error_code & ERROR_UNEXPECTED_VAL)
+   if (code & ERROR_UNEXPECTED_VAL)
    {
       ErrorMsgAddCodeWithCount(ERROR_UNEXPECTED_VAL, "unexpected value");
    }
 
-   if (global_error_code & ERROR_MAYBE_INVALID_VAL)
+   if (code & ERROR_MAYBE_INVALID_VAL)
    {
-      ErrorMsgAddCodeWithCount(ERROR_MAYBE_INVALID_VAL, "possible invalid value");
+      ErrorMsgAddCodeWithCount(ERROR_MAYBE_INVALID_VAL, "possibly invalid value");
    }
 
-   if (global_error_code & ERROR_MISSING_DOFMAP)
+   if (code & ERROR_MISSING_DOFMAP)
    {
       ErrorMsgAdd("Missing dofmap info needed by MGR!");
    }
 
-   if (global_error_code & ERROR_UNKNOWN_HYPREDRV_OBJ)
+   if (code & ERROR_UNKNOWN_HYPREDRV_OBJ)
    {
       ErrorMsgAdd("HYPREDRV object is not set properly!!");
+   }
+
+   if (code & ERROR_HYPREDRV_NOT_INITIALIZED)
+   {
+      ErrorMsgAdd("HYPREDRV is not initialized!!");
    }
 }
 
@@ -305,13 +293,16 @@ ErrorMsgPrint()
 {
    ErrorMsgNode *current = global_error_msg_head;
 
-   printf("\n");
+   fprintf(stderr, "====================================================================================\n");
+   fprintf(stderr, "                                HYPREDRIVE Failure!!!\n");
+   fprintf(stderr, "====================================================================================\n");
+   fprintf(stderr, "\nError details:\n");
    while (current)
    {
-      printf("--> %s\n", current->message);
+      fprintf(stderr, "  --> %s\n", current->message);
       current = current->next;
    }
-   printf("\n");
+   fprintf(stderr, "\n");
 }
 
 /*-----------------------------------------------------------------------------
@@ -335,13 +326,15 @@ ErrorMsgClear()
 
 /*-----------------------------------------------------------------------------
  * ErrorMsgPrintAndAbort
+ *
+ * TODO: remove MPI_Abort from internal HYPREDRV functions
  *-----------------------------------------------------------------------------*/
 
 void
 ErrorMsgPrintAndAbort(MPI_Comm comm)
 {
    /* TODO: check error codes in other processes? */
-   ErrorCodeDescribe();
+   ErrorCodeDescribe(ErrorCodeGet());
    ErrorMsgPrint();
    ErrorMsgClear();
    MPI_Abort(comm, ErrorCodeGet());

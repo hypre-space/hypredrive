@@ -29,8 +29,8 @@ int main(int argc, char **argv)
 
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
-   HYPREDRV_Initialize();
-   HYPREDRV_Create(comm, &obj);
+   HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+   HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &obj));
 
    if (argc < 1)
    {
@@ -42,8 +42,8 @@ int main(int argc, char **argv)
     * Print libraries/driver info
     *-----------------------------------------------------------*/
 
-   HYPREDRV_PrintLibInfo(comm);
-   HYPREDRV_PrintSystemInfo(comm);
+   HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
+   HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
 
    /*-----------------------------------------------------------
     * Parse input parameters
@@ -54,13 +54,13 @@ int main(int argc, char **argv)
       if (!myid) fprintf(stderr, "Need at least one input argument!\n");
       MPI_Abort(comm, 1);
    }
-   HYPREDRV_InputArgsParse(argc - 1, argv + 1, obj);
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc - 1, argv + 1, obj));
 
    /*-----------------------------------------------------------
     * Set hypre's global options and warmup
     *-----------------------------------------------------------*/
 
-   HYPREDRV_SetGlobalOptions(obj);
+   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(obj));
    if (HYPREDRV_InputArgsGetWarmup(obj))
    {
       printf("TODO: Perform warmup");
@@ -73,26 +73,26 @@ int main(int argc, char **argv)
    for (k = 0; k < HYPREDRV_InputArgsGetNumLinearSystems(obj); k++)
    {
       /* Build linear system (matrix, RHS, LHS, and auxiliary data) */
-      HYPREDRV_LinearSystemBuild(obj);
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemBuild(obj));
 
       for (i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
       {
          /* Reset initial guess */
-         HYPREDRV_LinearSystemResetInitialGuess(obj);
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(obj));
 
          /* Create phase */
-         HYPREDRV_PreconCreate(obj);
-         HYPREDRV_LinearSolverCreate(obj);
+         HYPREDRV_SAFE_CALL(HYPREDRV_PreconCreate(obj));
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverCreate(obj));
 
          /* Setup phase */
-         HYPREDRV_LinearSolverSetup(obj);
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(obj));
 
          /* Solve phase */
-         HYPREDRV_LinearSolverApply(obj);
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(obj));
 
          /* Destroy phase */
-         HYPREDRV_PreconDestroy(obj);
-         HYPREDRV_LinearSolverDestroy(obj);
+         HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(obj));
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(obj));
       }
    }
 
@@ -100,11 +100,11 @@ int main(int argc, char **argv)
     * Finalize driver
     *-----------------------------------------------------------*/
 
-   if (!myid) HYPREDRV_StatsPrint(obj);
-   HYPREDRV_PrintExitInfo(comm, argv[0]);
+   if (!myid) HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(obj));
+   HYPREDRV_SAFE_CALL(HYPREDRV_PrintExitInfo(comm, argv[0]));
 
-   HYPREDRV_Destroy(&obj);
-   HYPREDRV_Finalize();
+   HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&obj));
+   HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
    MPI_Finalize();
 
    return 0;

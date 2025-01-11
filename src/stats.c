@@ -140,6 +140,8 @@ StatsDestroy(void)
 void
 StatsTimerStart(const char *name)
 {
+   if (!global_stats) return;
+
    /* Increase internal counters */
    if (!strcmp(name, "reset_x0"))
    {
@@ -188,6 +190,8 @@ StatsTimerStart(const char *name)
 void
 StatsTimerFinish(const char *name)
 {
+   if (!global_stats) return;
+
    STATS_TIMES_FINISH_VEC_ENTRY(matrix)
    STATS_TIMES_FINISH_VEC_ENTRY(rhs)
    STATS_TIMES_FINISH_VEC_ENTRY(dofmap)
@@ -208,6 +212,8 @@ StatsTimerFinish(const char *name)
 void
 StatsTimerSetMilliseconds(void)
 {
+   if (!global_stats) return;
+
    global_stats->use_millisec = true;
    global_stats->time_factor  = 1000.0;
 }
@@ -219,6 +225,8 @@ StatsTimerSetMilliseconds(void)
 void
 StatsTimerSetSeconds(void)
 {
+   if (!global_stats) return;
+
    global_stats->use_millisec = false;
    global_stats->time_factor  = 1.0;
 }
@@ -230,6 +238,8 @@ StatsTimerSetSeconds(void)
 void
 StatsIterSet(int num_iters)
 {
+   if (!global_stats) return;
+
    global_stats->iters[global_stats->counter] = num_iters;
 }
 
@@ -240,6 +250,8 @@ StatsIterSet(int num_iters)
 void
 StatsRelativeResNormSet(double rrnorm)
 {
+   if (!global_stats) return;
+
    global_stats->rrnorms[global_stats->counter] = rrnorm;
 }
 
@@ -283,6 +295,7 @@ StatsPrint(int print_level)
 int
 StatsGetLinearSystemID(void)
 {
+   if (!global_stats) return -1;
    return global_stats->ls_counter - 1;
 }
 
@@ -293,6 +306,7 @@ StatsGetLinearSystemID(void)
 void
 StatsSetNumReps(int num_reps)
 {
+   if (!global_stats) return;
    global_stats->num_reps = num_reps;
 }
 
@@ -303,5 +317,6 @@ StatsSetNumReps(int num_reps)
 void
 StatsSetNumLinearSystems(int num_systems)
 {
+   if (!global_stats) return;
    global_stats->num_systems = num_systems;
 }

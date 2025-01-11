@@ -12,12 +12,14 @@
  *-----------------------------------------------------------------------------*/
 
 YAMLtree*
-YAMLtreeCreate(void)
+YAMLtreeCreate(int base_indent)
 {
    YAMLtree *tree;
 
    tree = malloc(sizeof(YAMLtree));
    tree->root = YAMLnodeCreate("", "", -1);
+   tree->base_indent  = base_indent;
+   tree->is_validated = false;  // Initialize validation flag
 
    return tree;
 }
@@ -44,7 +46,7 @@ YAMLtreeDestroy(YAMLtree** tree_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLtextRead(const char *dirname, const char *basename, int level, size_t *length_ptr, char **text_ptr)
+YAMLtextRead(const char *dirname, const char *basename, int level, int *base_indent_ptr, size_t *length_ptr, char **text_ptr)
 {
    FILE   *fp;
    char   *key, *val, *sep;
@@ -55,6 +57,9 @@ YAMLtextRead(const char *dirname, const char *basename, int level, size_t *lengt
    int     inner_level, pos;
    size_t  num_whitespaces = 2 * level;
    size_t  new_length;
+   int     base_indent = *base_indent_ptr;  // Track base indentation level
+   int     prev_indent = -1;  // Track previous indentation level
+   bool    first_indented_line = true;
 
    /* Construct the whole filename */
    CombineFilename(dirname, basename, &filename);
@@ -97,23 +102,79 @@ YAMLtextRead(const char *dirname, const char *basename, int level, size_t *lengt
       while (*key == ' ') key++;
       while (*val == ' ') val++;
 
-      if (!strcmp(key, "include"))
+      /* Calculate indentation */
+      pos = 0;
+      while (line[pos] == ' ' || line[pos] == '\t')
       {
-         /* Compute indendation */
-         pos = 0;
-         while (line[pos] == ' ')
+         if (line[pos] == '\t')
          {
-            pos++;
+            ErrorCodeSet(ERROR_YAML_MIXED_INDENT);
+            ErrorMsgAdd("Tab characters are not allowed in YAML input!");
+            fclose(fp);
+            return;
+         }
+         pos++;
+      }
+
+      /* Skip lines with only whitespace */
+      if (line[pos] == '\0')
+      {
+         continue;
+      }
+
+      /* Establish base indentation on first indented line */
+      if (base_indent == -1 && pos > 0)
+      {
+         *base_indent_ptr = base_indent = pos;
+         if (base_indent < 2)
+         {
+            ErrorCodeSet(ERROR_YAML_INVALID_BASE_INDENT);
+            ErrorMsgAdd("Base indentation in YAML input must be at least 2 spaces");
+            fclose(fp);
+            return;
+         }
+      }
+
+      /* Check indentation consistency */
+      if (pos > 0)
+      {
+         if (base_indent > 0 && pos % base_indent != 0)
+         {
+            ErrorCodeSet(ERROR_YAML_INCONSISTENT_INDENT);
+            ErrorMsgAdd("Inconsistent indentation detected in YAML input!");
+            fclose(fp);
+            return;
          }
 
-         /* Calculate node level */
-         inner_level = pos / 2;
+         /* Check for indentation jumps */
+         if (!first_indented_line && pos > prev_indent && (pos - prev_indent) > base_indent)
+         {
+            ErrorCodeSet(ERROR_YAML_INVALID_INDENT_JUMP);
+            ErrorMsgAdd("Invalid indentation jump detected in YAML input!");
+            fclose(fp);
+            return;
+         }
+
+         if (pos > 0)
+         {
+            first_indented_line = false;
+            prev_indent = pos;
+         }
+      }
+
+      if (!strcmp(key, "include"))
+      {
+         /* Calculate node level based on actual indentation */
+         inner_level = pos / (base_indent > 0 ? base_indent : 1);
 
          /* Recursively read the content of the included file */
-         YAMLtextRead(dirname, val, inner_level, length_ptr, text_ptr);
+         YAMLtextRead(dirname, val, inner_level, base_indent_ptr, length_ptr, text_ptr);
       }
       else
       {
+         /* Use actual indentation spacing */
+         num_whitespaces = (base_indent > 0 ? base_indent : 1) * level;
+
          /* Regular line, append it to the text */
          new_length = *length_ptr + strlen(backup) + num_whitespaces;
          new_text   = (char *) realloc(*text_ptr, new_length + 1);
@@ -146,7 +207,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, size_t *lengt
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLtreeBuild(char *text, YAMLtree **tree_ptr)
+YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
 {
    YAMLnode   *node;
    YAMLnode   *parent;
@@ -163,7 +224,7 @@ YAMLtreeBuild(char *text, YAMLtree **tree_ptr)
    int         next;
    bool        divisor_is_ok;
 
-   tree = YAMLtreeCreate();
+   tree = YAMLtreeCreate(base_indent);
    remaining = text;
    nlines = 0; parent = tree->root;
    while ((line = strtok_r(remaining, "\n", &remaining)))
@@ -241,13 +302,6 @@ YAMLtreeBuild(char *text, YAMLtree **tree_ptr)
       while (*key == ' ') key++;
       while (*val == ' ') val++;
 
-      /* Skip if found include keys */
-      if (!strcmp(key, "preconditioner_include") ||
-          !strcmp(key, "solver_include"))
-      {
-         continue;
-      }
-
       /* Create node entry */
       node = YAMLnodeCreate(key, val, level);
 
@@ -311,6 +365,32 @@ YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
    PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH)
 }
 
+/*-----------------------------------------------------------------------------
+ * YAMLtreeValidate
+ *
+ * Validates all nodes in a tree and sets appropriate error codes
+ *-----------------------------------------------------------------------------*/
+
+void
+YAMLtreeValidate(YAMLtree *tree)
+{
+   if (!tree)
+   {
+      ErrorCodeSet(ERROR_YAML_TREE_NULL);
+      ErrorMsgAdd("Cannot validate a void YAML tree!");
+      return;
+   }
+
+   YAMLnode *child = tree->root->children;
+   while (child != NULL)
+   {
+      YAMLnodeValidate(child);
+      child = child->next;
+   }
+
+   tree->is_validated = true;  // Mark tree as validated
+}
+
 /******************************************************************************
  *******************************************************************************/
 
@@ -327,7 +407,7 @@ YAMLnodeCreate(char *key, char* val, int level)
    node->level      = level;
    node->key        = StrTrim(strdup(key));
    node->mapped_val = NULL;
-   node->valid      = YAML_NODE_VALID; // We assume nodes are valid by default
+   node->valid      = YAML_NODE_UNKNOWN;
    node->parent     = NULL;
    node->children   = NULL;
    node->next       = NULL;
@@ -456,75 +536,107 @@ YAMLnodePrintHelper(YAMLnode *node, const char *cKey, const char *cVal, const ch
 }
 
 /*-----------------------------------------------------------------------------
+ * YAMLnodeValidate
+ *-----------------------------------------------------------------------------*/
+
+void
+YAMLnodeValidate(YAMLnode *node)
+{
+   if (!node) return;
+
+   switch (node->valid)
+   {
+      case YAML_NODE_INVALID_INDENT:
+         ErrorCodeSet(ERROR_YAML_INVALID_INDENT);
+         break;
+
+      case YAML_NODE_INVALID_DIVISOR:
+         ErrorCodeSet(ERROR_YAML_INVALID_DIVISOR);
+         break;
+
+      case YAML_NODE_INVALID_KEY:
+         ErrorCodeSet(ERROR_INVALID_KEY);
+         ErrorCodeSet(ERROR_MAYBE_INVALID_VAL);
+         break;
+
+      case YAML_NODE_INVALID_VAL:
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         break;
+
+      case YAML_NODE_UNEXPECTED_VAL:
+         ErrorCodeSet(ERROR_UNEXPECTED_VAL);
+         break;
+
+      default:
+         break;
+   }
+
+   // Recursively validate children
+   YAMLnode *child = node->children;
+   while (child != NULL)
+   {
+      YAMLnodeValidate(child);
+      child = child->next;
+   }
+}
+
+/*-----------------------------------------------------------------------------
  * YAMLnodePrint
  *-----------------------------------------------------------------------------*/
 
 void
 YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
 {
-   YAMLnode *child;
+   if (!node) return;
 
-   if (node)
+   // Handle printing based on mode and validity
+   switch (print_mode)
    {
-      switch (print_mode)
-      {
-         case YAML_PRINT_MODE_ANY:
-            if (node->valid == YAML_NODE_VALID)
-            {
+      case YAML_PRINT_MODE_ANY:
+         switch (node->valid)
+         {
+            case YAML_NODE_VALID:
                YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_GREEN, "");
-            }
-            else if (node->valid == YAML_NODE_INVALID_INDENT)
-            {
+               break;
+            case YAML_NODE_INVALID_INDENT:
                YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
                                    TEXT_BOLD " <-- * FIX INDENTATION *");
-               ErrorCodeSet(ERROR_YAML_INVALID_INDENT);
-            }
-            else if (node->valid == YAML_NODE_INVALID_DIVISOR)
-            {
+               break;
+            case YAML_NODE_INVALID_DIVISOR:
                YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
                                    TEXT_BOLD " <-- * FIX DIVISOR *");
-               ErrorCodeSet(ERROR_YAML_INVALID_DIVISOR);
-            }
-            else if (node->valid == YAML_NODE_INVALID_KEY)
-            {
+               break;
+            case YAML_NODE_INVALID_KEY:
                YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD,
                                    TEXT_BOLD " <-- * FIX KEY *");
-               ErrorCodeSet(ERROR_INVALID_KEY);
-               ErrorCodeSet(ERROR_MAYBE_INVALID_VAL);
-            }
-            else if (node->valid == YAML_NODE_INVALID_VAL)
-            {
+               break;
+            case YAML_NODE_INVALID_VAL:
+            case YAML_NODE_UNEXPECTED_VAL:
                YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
                                    TEXT_BOLD " <-- * FIX VALUE *");
-               ErrorCodeSet(ERROR_INVALID_VAL);
-            }
-            else if (node->valid == YAML_NODE_UNEXPECTED_VAL)
-            {
-               YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
-                                   TEXT_BOLD " <-- * FIX VALUE *");
-               ErrorCodeSet(ERROR_UNEXPECTED_VAL);
-            }
-            break;
+               break;
+         }
+         break;
 
-         case YAML_PRINT_MODE_ONLY_VALID:
-            if (node->valid == YAML_NODE_VALID)
-            {
-               YAMLnodePrintHelper(node, "", "", "");
-            }
-            break;
-
-         case YAML_PRINT_MODE_NO_CHECKING:
-         default:
+      case YAML_PRINT_MODE_ONLY_VALID:
+         if (node->valid == YAML_NODE_VALID)
+         {
             YAMLnodePrintHelper(node, "", "", "");
-            break;
-      }
-      child = node->children;
+         }
+         break;
 
-      while (child != NULL)
-      {
-         YAMLnodePrint(child, print_mode);
-         child = child->next;
-      }
+      case YAML_PRINT_MODE_NO_CHECKING:
+      default:
+         YAMLnodePrintHelper(node, "", "", "");
+         break;
+   }
+
+   // Print children
+   YAMLnode *child = node->children;
+   while (child != NULL)
+   {
+      YAMLnodePrint(child, print_mode);
+      child = child->next;
    }
 }
 

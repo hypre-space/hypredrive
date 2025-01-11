@@ -120,6 +120,7 @@
       { \
          YAML_NODE_ITERATE(parent, child) \
          { \
+            /* printf("child->key: %s\n", child->key); */\
             YAML_NODE_VALIDATE(child, \
                                _prefix##GetValidKeys, \
                                _prefix##GetValidValues) \

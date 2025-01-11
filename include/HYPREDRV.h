@@ -26,15 +26,15 @@
 extern "C" {
 #endif
 
-// Macro for safely calling HYPREDRV functions
+// Macro for safely calling HYPREDRV functions. Note it assumes MPI comm is set externally
 #ifndef HYPREDRV_SAFE_CALL
-#define HYPREDRV_SAFE_CALL(call)                             \
-   do {                                                      \
-      uint32_t ierr = (call);                                \
-      if (ierr != 0) {                                       \
-         const char *msg = HYPREDRV_ErrorCodeDescribe(ierr); \
-         fprintf(stderr, "HYPREDRV Error: %s\n", msg);       \
-      }                                                      \
+#define HYPREDRV_SAFE_CALL(call)                  \
+   do {                                           \
+      uint32_t error_code = (call);               \
+      if (error_code != 0) {                      \
+         HYPREDRV_ErrorCodeDescribe(error_code);  \
+         MPI_Abort(comm, error_code);             \
+      }                                           \
    } while(0)
 #endif
 
@@ -108,6 +108,39 @@ HYPREDRV_Initialize(void);
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_Finalize(void);
+
+/**
+ * @brief Describes and handles an error code from HYPREDRV operations.
+ *
+ * This function processes an error code from HYPREDRV operations. If the error code is non-zero,
+ * it will:
+ * 1. Describe the error using the internal error code description system
+ * 2. Print the error message to stderr
+ * 3. Clear the error message buffer
+ *
+ * If the error code is zero (indicating no error), the function returns immediately without
+ * taking any action.
+ *
+ * @param error_code The error code to be processed (uint32_t)
+ *
+ * @note This function will not return if error_code is non-zero, as it calls MPI_Abort
+ * @note For convenience, consider using the HYPREDRV_SAFE_CALL macro which automatically
+ *       handles error checking and description for HYPREDRV function calls. In case a nonzero
+ *       error occurs, the macro will also call the MPI program with the given error code
+ *
+ * Example Usage:
+ * @code
+ *    // Direct usage:
+ *    uint32_t error = some_HYPREDRV_operation();
+ *    HYPREDRV_ErrorCodeDescribe(error);
+ *
+ *    // Preferred usage with macro:
+ *    HYPREDRV_SAFE_CALL(some_HYPREDRV_operation());
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL void
+HYPREDRV_ErrorCodeDescribe(uint32_t error_code);
 
 /**
  * @brief Create a HYPREDRV object.

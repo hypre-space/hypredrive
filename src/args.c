@@ -329,10 +329,11 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsRead(MPI_Comm comm, char *filename, char **text_ptr)
+InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_ptr)
 {
    size_t        text_size = 0;
    int           level = 0;
+   int           base_indent = -1;
    char         *text = NULL;
    char         *dirname = NULL;
    char         *basename = NULL;
@@ -340,11 +341,32 @@ InputArgsRead(MPI_Comm comm, char *filename, char **text_ptr)
 
    MPI_Comm_rank(comm, &myid);
 
+   /* Rank 0: Check if file exists */
+   if (!myid)
+   {
+      FILE *fp = fopen(filename, "r");
+      if (!fp)
+      {
+         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         ErrorMsgAdd("Configuration file not found: '%s'", filename);
+      }
+      else
+      {
+         fclose(fp);
+      }
+   }
+
+   /* All ranks return if there was an error on rank 0 */
+   if (DistributedErrorCodeActive(comm))
+   {
+      return;
+   }
+
    /* Split filename into dirname and basename */
    SplitFilename(filename, &dirname, &basename);
 
    /* Rank 0: Expand text from base file */
-   if (!myid) YAMLtextRead(dirname, basename, level, &text_size, &text);
+   if (!myid) YAMLtextRead(dirname, basename, level, &base_indent, &text_size, &text);
    if (DistributedErrorCodeActive(comm))
    {
       return;
@@ -354,14 +376,21 @@ InputArgsRead(MPI_Comm comm, char *filename, char **text_ptr)
    free(dirname);
    free(basename);
 
-   /* Broadcast the text size */
+   /* Broadcast the text size and base indentation */
+   MPI_Bcast(&base_indent, 1, MPI_UNSIGNED_LONG, 0, comm);
    MPI_Bcast(&text_size, 1, MPI_UNSIGNED_LONG, 0, comm);
 
    /* Broadcast the text */
    if (myid) text = (char*) malloc(text_size);
    MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
 
-   /* Set output pointer */
+   /* Make sure null terminator is in the right place */
+   text[text_size] = '\0';
+
+   //printf("text_size: %ld | strlen(text): %ld\n", text_size, strlen(text));
+
+   /* Set output pointers */
+   *base_indent_ptr = base_indent;
    *text_ptr = text;
 }
 
@@ -375,26 +404,26 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    input_args   *iargs;
    char         *text;
    YAMLtree     *tree;
+   int           base_indent;
    int           myid;
 
    MPI_Comm_rank(comm, &myid);
 
    /* Read input arguments from file */
-   InputArgsRead(comm, argv[0], &text);
+   InputArgsRead(comm, argv[0], &base_indent, &text);
+
+   /* Return if there was an error reading the file */
+   if (ErrorCodeActive())
+   {
+      *args_ptr = NULL;
+      return;
+   }
+
+   /* Quick way to view/debug the tree */
+   //printf("%*s", (int) strlen(text), text);
 
    /* Build YAML tree */
-   YAMLtreeBuild(text, &tree);
-
-   /* Return earlier if YAML tree was not built properly */
-   if (!myid && ErrorCodeActive())
-   {
-      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
-      ErrorMsgPrintAndAbort(comm);
-   }
-   MPI_Barrier(comm);
-
-   /* Free memory */
-   free(text);
+   YAMLtreeBuild(base_indent, text, &tree);
 
    /* TODO: check if any config option has been passed in via CLI.
             If so, overwrite the data stored in the YAMLtree object
@@ -404,6 +433,18 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
       /* Update YAML tree with command line arguments info */
       YAMLtreeUpdate(argc - 1, argv + 1, tree);
    }
+
+   /* Return earlier if YAML tree was not built properly */
+   if (!myid && ErrorCodeActive())
+   {
+      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+      ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      return;
+   }
+   MPI_Barrier(comm);
+
+   /* Free memory */
+   free(text);
 
    /*--------------------------------------------
     * Parse file sections
@@ -419,15 +460,21 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    StatsSetNumReps(iargs->num_repetitions);
    StatsSetNumLinearSystems(iargs->ls.num_systems);
 
+   /* Validate the YAML tree (Has to occur after input args parsing) */
+   YAMLtreeValidate(tree);
+
+   /* Return earlier if YAML tree is invalid */
+   if (!myid && ErrorCodeActive())
+   {
+      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+      ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      return;
+   }
+
    /* Rank 0: Print tree to stdout */
    if (!myid && iargs->print_config_params)
    {
       YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
-
-      if (ErrorCodeActive())
-      {
-         ErrorMsgPrintAndAbort(comm);
-      }
    }
    MPI_Barrier(comm);
 

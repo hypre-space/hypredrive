@@ -44,7 +44,7 @@ typedef struct input_args_struct {
 
 void InputArgsCreate(bool, input_args**);
 void InputArgsDestroy(input_args**);
-void InputArgsRead(MPI_Comm, char*, char**);
+void InputArgsRead(MPI_Comm, char*, int*, char**);
 void InputArgsParse(MPI_Comm, bool, int, char**, input_args**);
 
 #endif /* ARGS_HEADER */
