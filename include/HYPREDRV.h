@@ -12,6 +12,9 @@
 #include <mpi.h>
 
 #include <HYPRE.h>
+#include <HYPRE_IJ_mv.h>
+#include <HYPRE_parcsr_ls.h>
+#include <HYPRE_parcsr_mv.h>
 #include <HYPRE_utilities.h>
 
 // Undefine autotools package macros from hypre
@@ -58,7 +61,20 @@ extern "C" {
 /**
  * HYPREDRV_t
  *
- * Insert documentation
+ * The main object type for the HYPREDRV library that encapsulates all data and functionality needed
+ * to solve linear systems using HYPRE. This includes:
+ *
+ * - Input parameters and configuration
+ * - Linear system components (matrix, RHS vector, solution vector)
+ * - Solver and preconditioner objects
+ * - Performance statistics and timing data
+ * - MPI communication context
+ *
+ * The object is created with HYPREDRV_Create() and must be destroyed with HYPREDRV_Destroy()
+ * when no longer needed to prevent memory leaks.
+ *
+ * This is an opaque pointer type - the internal structure is not exposed to users of the library.
+ * All interactions with HYPREDRV_t objects should be done through the public API functions.
  **/
 
 struct hypredrv_struct;
