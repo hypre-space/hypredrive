@@ -21,7 +21,9 @@
 typedef struct MGRcls_args_struct {
    HYPRE_Int     type;
 
+   /* TODO: Use union */
    AMG_args      amg;
+   ILU_args      ilu;
 } MGRcls_args;
 
 /*--------------------------------------------------------------------------
@@ -170,7 +172,7 @@ void MGRCreate(MGR_args*, HYPRE_Solver*);
                   } \
                   else if (args->level[i].f_relaxation.ilu.max_iter > 0) \
                   { \
-                     args->level[i].f_relaxation.type = _buffer[i] = 16; \
+                     args->level[i].f_relaxation.type = _buffer[i] = 32; \
                      if (args->level[i].f_relaxation.num_sweeps < 1) \
                      { \
                         args->level[i].f_relaxation.num_sweeps = \
@@ -185,7 +187,7 @@ void MGRCreate(MGR_args*, HYPRE_Solver*);
                      { \
                         args->level[i].f_relaxation.amg.max_iter = 1; \
                      } \
-                     else if (args->level[i].f_relaxation.type == 16) \
+                     else if (args->level[i].f_relaxation.type == 32) \
                      { \
                         args->level[i].f_relaxation.ilu.max_iter = 1; \
                      } \

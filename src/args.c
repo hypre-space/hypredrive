@@ -372,15 +372,12 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
       return;
    }
 
-   /* Free memory */
-   free(dirname);
-   free(basename);
-
    /* Broadcast the text size and base indentation */
    MPI_Bcast(&base_indent, 1, MPI_UNSIGNED_LONG, 0, comm);
    MPI_Bcast(&text_size, 1, MPI_UNSIGNED_LONG, 0, comm);
 
    /* Broadcast the text */
+   MPI_Comm_rank(comm, &myid);
    if (myid) text = (char*) malloc(text_size);
    MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
 
@@ -392,6 +389,10 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    /* Set output pointers */
    *base_indent_ptr = base_indent;
    *text_ptr = text;
+
+   /* Free memory */
+   free(dirname);
+   free(basename);
 }
 
 /*-----------------------------------------------------------------------------

@@ -267,15 +267,21 @@ PreconDestroy(precon_t       precon_method,
                HYPRE_BoomerAMGDestroy(args->mgr.csolver);
                args->mgr.csolver = NULL;
             }
+            else if (args->mgr.coarsest_level.type == 32)
+            {
+               HYPRE_ILUDestroy(args->mgr.csolver);
+               args->mgr.csolver = NULL;
+            }
+
             if (args->mgr.level[0].f_relaxation.type == 2)
             {
                HYPRE_BoomerAMGDestroy(args->mgr.frelax[0]);
                args->mgr.frelax[0] = NULL;
             }
-            if (args->mgr.level[0].g_relaxation.type == 16)
+            else if (args->mgr.level[0].f_relaxation.type == 32)
             {
-               HYPRE_ILUDestroy(args->mgr.grelax[0]);
-               args->mgr.grelax[0] = NULL;
+               HYPRE_ILUDestroy(args->mgr.frelax[0]);
+               args->mgr.frelax[0] = NULL;
             }
             break;
 

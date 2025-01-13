@@ -10,7 +10,8 @@
 #include "gen_macros.h"
 
 #define MGRcls_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
 
 #define MGRfrlx_FIELDS(_prefix) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
@@ -82,7 +83,8 @@ MGRclsSetDefaultArgs(MGRcls_args *args)
 {
    args->type = 0;
 
-   AMGSetDefaultArgs(&args->amg);
+   AMGSetDefaultArgs(&args->amg); args->amg.max_iter = 0;
+   ILUSetDefaultArgs(&args->ilu); args->ilu.max_iter = 0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -161,7 +163,8 @@ MGRclsGetValidValues(const char* key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"amg", 0}};
+      static StrIntMap map[] = {{"amg",        0},
+                                {"ilu",       32}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -180,16 +183,17 @@ MGRfrlxGetValidValues(const char* key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"",        -1},
-                                {"none",    -1},
-                                {"single",   7},
-                                {"jacobi",   7},
-                                {"v(1,0)",   1},
-                                {"amg",      2},
-                                {"ilu",     16},
-                                {"ge",       9},
-                                {"ge-piv",  99},
-                                {"ge-inv", 199}};
+      static StrIntMap map[] = {{"",          -1},
+                                {"none",      -1},
+                                {"single",     7},
+                                {"jacobi",     7},
+                                {"v(1,0)",     1},
+                                {"amg",        2},
+                                {"chebyshev", 16},
+                                {"ilu",       32},
+                                {"ge",         9},
+                                {"ge-piv",    99},
+                                {"ge-inv",   199}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -269,7 +273,7 @@ MGRlvlGetValidValues(const char* key)
                                 {"cpr-like-diag",  2},
                                 {"cpr-like-bdiag", 3},
                                 {"approx-inv",     4},
-                                {"rai",            5}};
+                                {"acc",            5}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -415,7 +419,6 @@ void
 MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver   precon;
-   HYPRE_Solver   csolver;
    HYPRE_Solver   frelax;
    HYPRE_Solver   grelax;
    HYPRE_Int     *dofmap_data;
@@ -510,6 +513,15 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 #endif
          args->frelax[i] = frelax;
       }
+#if HYPRE_CHECK_MIN_VERSION(23200, 14)
+      else if (args->level[i].f_relaxation.type == 32)
+      {
+         ILUCreate(&args->level[i].f_relaxation.ilu, &frelax);
+
+         HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
+         args->frelax[i] = frelax;
+      }
+#endif
    }
 
    /* Config global relaxation at each MGR level */
@@ -525,12 +537,16 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    }
 #endif
 
-   /* Config coarsest level solver */
+   /* Config coarsest level solver - TODO: shouldn't need to pass setup/solve pointers */
    if (args->coarsest_level.type == 0)
    {
-      AMGCreate(&args->coarsest_level.amg, &csolver);
-      HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, csolver);
-      args->csolver = csolver;
+      AMGCreate(&args->coarsest_level.amg, &args->csolver);
+      HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, args->csolver);
+   }
+   else if (args->coarsest_level.type == 32)
+   {
+      ILUCreate(&args->coarsest_level.ilu, &args->csolver);
+      HYPRE_MGRSetCoarseSolver(precon, HYPRE_ILUSolve, HYPRE_ILUSetup, args->csolver);
    }
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 11)
