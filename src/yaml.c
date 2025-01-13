@@ -54,6 +54,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
    char    backup[MAX_LINE_LENGTH];
    char   *filename;
    char   *new_text;
+   char   *comment_ptr;
    int     inner_level, pos;
    size_t  num_whitespaces = 2 * level;
    size_t  new_length;
@@ -81,6 +82,19 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
 
       /* Remove trailing newline character */
       line[strcspn(line, "\n")] = '\0';
+
+      /* Remove comments at the end of valid line */
+      if ((comment_ptr = strchr(line, '#')) != NULL)
+      {
+         *comment_ptr = '\0';
+         /* Also remove from backup to prevent comment from being included in output */
+         comment_ptr = strchr(backup, '#');
+         if (comment_ptr)
+         {
+            *comment_ptr = '\n';  /* Preserve newline in backup */
+            *(comment_ptr + 1) = '\0';
+         }
+      }
 
       /* Ignore empty lines and comments */
       if (line[0] == '\0' || line[0] == '#')
