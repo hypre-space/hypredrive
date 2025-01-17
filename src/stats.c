@@ -12,16 +12,12 @@ static Stats *global_stats = NULL;
 
 /* Local macros */
 #define REALLOC_EXPAND_FACTOR 16
-#define REALLOC(_d, _t, _e) \
+#define REALLOC(_d, _e) \
    do { \
-      if (((_t)->counter + 1) >= (_t)->capacity) \
-      { \
-         (_t)->capacity += REALLOC_EXPAND_FACTOR; \
-         _d *ptr = (_d*) realloc((void*) (_t)->_e, (_t)->capacity * sizeof(_d)); \
-         memset(ptr + (_t)->capacity - REALLOC_EXPAND_FACTOR, 0, \
-                REALLOC_EXPAND_FACTOR * sizeof(_d)); \
-         (_t)->_e = (ptr) ? ptr : (_t)->_e; \
-      } \
+      _d *ptr = (_d*) realloc((void*) global_stats->_e, global_stats->capacity * sizeof(_d)); \
+      memset(ptr + global_stats->capacity - REALLOC_EXPAND_FACTOR, 0, \
+             REALLOC_EXPAND_FACTOR * sizeof(_d)); \
+      global_stats->_e = (ptr) ? ptr : global_stats->_e; \
    } while (0);
 #define STATS_TIMES_START_ENTRY(_e) \
    if (!strcmp(name, #_e)) { global_stats->_e -= MPI_Wtime(); return; }
@@ -30,7 +26,6 @@ static Stats *global_stats = NULL;
 #define STATS_TIMES_START_VEC_ENTRY(_e) \
    if (!strcmp(name, #_e)) \
    { \
-      REALLOC(double, global_stats, _e) \
       global_stats->_e[global_stats->counter] -= MPI_Wtime(); \
       return; \
    }
@@ -145,6 +140,8 @@ StatsDestroy(void)
 void
 StatsTimerStart(const char *name)
 {
+   if (!global_stats) return;
+
    /* Increase internal counters */
    if (!strcmp(name, "reset_x0"))
    {
@@ -157,6 +154,19 @@ StatsTimerStart(const char *name)
       global_stats->reps = 0;
       global_stats->ls_counter++;
       global_stats->counter = (global_stats->ls_counter - 1) * global_stats->num_reps;
+   }
+
+   /* Reallocate arrays if needed */
+   if (global_stats->counter >= global_stats->capacity)
+   {
+      global_stats->capacity += REALLOC_EXPAND_FACTOR;
+      REALLOC(double, matrix);
+      REALLOC(double, rhs);
+      REALLOC(double, dofmap);
+      REALLOC(double, prec);
+      REALLOC(double, solve);
+      REALLOC(double, rrnorms);
+      REALLOC(int, iters);
    }
 
    /* Compute entry counter */
@@ -180,6 +190,8 @@ StatsTimerStart(const char *name)
 void
 StatsTimerFinish(const char *name)
 {
+   if (!global_stats) return;
+
    STATS_TIMES_FINISH_VEC_ENTRY(matrix)
    STATS_TIMES_FINISH_VEC_ENTRY(rhs)
    STATS_TIMES_FINISH_VEC_ENTRY(dofmap)
@@ -200,6 +212,8 @@ StatsTimerFinish(const char *name)
 void
 StatsTimerSetMilliseconds(void)
 {
+   if (!global_stats) return;
+
    global_stats->use_millisec = true;
    global_stats->time_factor  = 1000.0;
 }
@@ -211,6 +225,8 @@ StatsTimerSetMilliseconds(void)
 void
 StatsTimerSetSeconds(void)
 {
+   if (!global_stats) return;
+
    global_stats->use_millisec = false;
    global_stats->time_factor  = 1.0;
 }
@@ -222,7 +238,8 @@ StatsTimerSetSeconds(void)
 void
 StatsIterSet(int num_iters)
 {
-   REALLOC(int, global_stats, iters);
+   if (!global_stats) return;
+
    global_stats->iters[global_stats->counter] = num_iters;
 }
 
@@ -233,7 +250,8 @@ StatsIterSet(int num_iters)
 void
 StatsRelativeResNormSet(double rrnorm)
 {
-   REALLOC(double, global_stats, rrnorms);
+   if (!global_stats) return;
+
    global_stats->rrnorms[global_stats->counter] = rrnorm;
 }
 
@@ -277,6 +295,7 @@ StatsPrint(int print_level)
 int
 StatsGetLinearSystemID(void)
 {
+   if (!global_stats) return -1;
    return global_stats->ls_counter - 1;
 }
 
@@ -287,6 +306,7 @@ StatsGetLinearSystemID(void)
 void
 StatsSetNumReps(int num_reps)
 {
+   if (!global_stats) return;
    global_stats->num_reps = num_reps;
 }
 
@@ -297,5 +317,6 @@ StatsSetNumReps(int num_reps)
 void
 StatsSetNumLinearSystems(int num_systems)
 {
+   if (!global_stats) return;
    global_stats->num_systems = num_systems;
 }

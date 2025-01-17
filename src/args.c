@@ -15,18 +15,19 @@
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsCreate(input_args **iargs_ptr)
+InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
 {
    input_args *iargs = (input_args*) malloc(sizeof(input_args));
 
    /* Set general default options */
-   iargs->warmup           = 0;
-   iargs->num_repetitions  = 1;
-   iargs->statistics       = 1;
-   iargs->dev_pool_size    = 8.0 * GB_TO_BYTES;
-   iargs->uvm_pool_size    = 8.0 * GB_TO_BYTES;
-   iargs->host_pool_size   = 8.0 * GB_TO_BYTES;
-   iargs->pinned_pool_size = 0.5 * GB_TO_BYTES;
+   iargs->warmup              = 0;
+   iargs->num_repetitions     = 1;
+   iargs->statistics          = 1;
+   iargs->print_config_params = !lib_mode;
+   iargs->dev_pool_size       = 8.0 * GB_TO_BYTES;
+   iargs->uvm_pool_size       = 8.0 * GB_TO_BYTES;
+   iargs->host_pool_size      = 8.0 * GB_TO_BYTES;
+   iargs->pinned_pool_size    = 0.5 * GB_TO_BYTES;
 
    /* Set default Linear System options */
    LinearSystemSetDefaultArgs(&iargs->ls);
@@ -75,7 +76,8 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
    {
       if (!strcmp(child->key, "warmup") ||
           !strcmp(child->key, "statistics") ||
-          !strcmp(child->key, "use_millisec"))
+          !strcmp(child->key, "use_millisec") ||
+          !strcmp(child->key, "print_config_params"))
       {
          if (!strcmp(child->val, "off") ||
              !strcmp(child->val, "no") ||
@@ -90,6 +92,10 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
             else if (!strcmp(child->key, "statistics"))
             {
                iargs->statistics = 0;
+            }
+            else if (!strcmp(child->key, "print_config_params"))
+            {
+               iargs->print_config_params = 0;
             }
             else if (!strcmp(child->key, "use_millisec"))
             {
@@ -110,6 +116,10 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
             {
                iargs->statistics = 1;
             }
+            else if (!strcmp(child->key, "print_config_params"))
+            {
+               iargs->print_config_params = 1;
+            }
             else if (!strcmp(child->key, "use_millisec"))
             {
                StatsTimerSetMilliseconds();
@@ -124,6 +134,10 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
             else if (!strcmp(child->key, "statistics"))
             {
                iargs->statistics = 0;
+            }
+            else if (!strcmp(child->key, "print_config_params"))
+            {
+               iargs->print_config_params = 0;
             }
             ErrorCodeSet(ERROR_INVALID_VAL);
          }
@@ -169,8 +183,9 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
 
    if (!parent)
    {
-      ErrorCodeSet(ERROR_MISSING_KEY);
-      ErrorMsgAddMissingKey(key);
+      // TODO: Add "library" mode to skip the following checks
+      //ErrorCodeSet(ERROR_MISSING_KEY);
+      //ErrorMsgAddMissingKey(key);
       return;
    }
    else
@@ -198,8 +213,9 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
    parent = YAMLnodeFindByKey(tree->root, "solver");
    if (!parent)
    {
-      ErrorCodeSet(ERROR_MISSING_KEY);
-      ErrorMsgAddMissingKey("solver");
+      // TODO: Add "library" mode to skip the following checks
+      //ErrorCodeSet(ERROR_MISSING_KEY);
+      //ErrorMsgAddMissingKey("solver");
       return;
    }
    else
@@ -313,10 +329,11 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsRead(MPI_Comm comm, char *filename, char **text_ptr)
+InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_ptr)
 {
    size_t        text_size = 0;
    int           level = 0;
+   int           base_indent = -1;
    char         *text = NULL;
    char         *dirname = NULL;
    char         *basename = NULL;
@@ -324,29 +341,58 @@ InputArgsRead(MPI_Comm comm, char *filename, char **text_ptr)
 
    MPI_Comm_rank(comm, &myid);
 
-   /* Split filename into dirname and basename */
-   SplitFilename(filename, &dirname, &basename);
+   /* Rank 0: Check if file exists */
+   if (!myid)
+   {
+      FILE *fp = fopen(filename, "r");
+      if (!fp)
+      {
+         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         ErrorMsgAdd("Configuration file not found: '%s'", filename);
+      }
+      else
+      {
+         fclose(fp);
+      }
+   }
 
-   /* Rank 0: Expand text from base file */
-   if (!myid) YAMLtextRead(dirname, basename, level, &text_size, &text);
+   /* All ranks return if there was an error on rank 0 */
    if (DistributedErrorCodeActive(comm))
    {
       return;
    }
 
-   /* Free memory */
-   free(dirname);
-   free(basename);
+   /* Split filename into dirname and basename */
+   SplitFilename(filename, &dirname, &basename);
 
-   /* Broadcast the text size */
+   /* Rank 0: Expand text from base file */
+   if (!myid) YAMLtextRead(dirname, basename, level, &base_indent, &text_size, &text);
+   if (DistributedErrorCodeActive(comm))
+   {
+      return;
+   }
+
+   /* Broadcast the text size and base indentation */
+   MPI_Bcast(&base_indent, 1, MPI_UNSIGNED_LONG, 0, comm);
    MPI_Bcast(&text_size, 1, MPI_UNSIGNED_LONG, 0, comm);
 
    /* Broadcast the text */
+   MPI_Comm_rank(comm, &myid);
    if (myid) text = (char*) malloc(text_size);
    MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
 
-   /* Set output pointer */
+   /* Make sure null terminator is in the right place */
+   text[text_size] = '\0';
+
+   //printf("text_size: %ld | strlen(text): %ld\n", text_size, strlen(text));
+
+   /* Set output pointers */
+   *base_indent_ptr = base_indent;
    *text_ptr = text;
+
+   /* Free memory */
+   free(dirname);
+   free(basename);
 }
 
 /*-----------------------------------------------------------------------------
@@ -354,31 +400,31 @@ InputArgsRead(MPI_Comm comm, char *filename, char **text_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
+InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args **args_ptr)
 {
    input_args   *iargs;
    char         *text;
    YAMLtree     *tree;
+   int           base_indent;
    int           myid;
 
    MPI_Comm_rank(comm, &myid);
 
    /* Read input arguments from file */
-   InputArgsRead(comm, argv[0], &text);
+   InputArgsRead(comm, argv[0], &base_indent, &text);
+
+   /* Return if there was an error reading the file */
+   if (ErrorCodeActive())
+   {
+      *args_ptr = NULL;
+      return;
+   }
+
+   /* Quick way to view/debug the tree */
+   //printf("%*s", (int) strlen(text), text);
 
    /* Build YAML tree */
-   YAMLtreeBuild(text, &tree);
-
-   /* Return earlier if YAML tree was not built properly */
-   if (!myid && ErrorCodeActive())
-   {
-      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
-      ErrorMsgPrintAndAbort(comm);
-   }
-   MPI_Barrier(comm);
-
-   /* Free memory */
-   free(text);
+   YAMLtreeBuild(base_indent, text, &tree);
 
    /* TODO: check if any config option has been passed in via CLI.
             If so, overwrite the data stored in the YAMLtree object
@@ -389,11 +435,23 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
       YAMLtreeUpdate(argc - 1, argv + 1, tree);
    }
 
+   /* Return earlier if YAML tree was not built properly */
+   if (!myid && ErrorCodeActive())
+   {
+      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+      ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      return;
+   }
+   MPI_Barrier(comm);
+
+   /* Free memory */
+   free(text);
+
    /*--------------------------------------------
     * Parse file sections
     *-------------------------------------------*/
 
-   InputArgsCreate(&iargs);
+   InputArgsCreate(lib_mode, &iargs);
    InputArgsParseGeneral(iargs, tree);
    InputArgsParseLinearSystem(iargs, tree);
    InputArgsParseSolver(iargs, tree);
@@ -403,18 +461,27 @@ InputArgsParse(MPI_Comm comm, int argc, char **argv, input_args **args_ptr)
    StatsSetNumReps(iargs->num_repetitions);
    StatsSetNumLinearSystems(iargs->ls.num_systems);
 
-   /* Rank 0: Print tree to stdout */
-   if (!myid)
+   /* Validate the YAML tree (Has to occur after input args parsing) */
+   YAMLtreeValidate(tree);
+
+   /* Return earlier if YAML tree is invalid */
+   if (!myid && ErrorCodeActive())
    {
       YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+      ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      return;
+   }
 
-      if (ErrorCodeActive())
-      {
-         ErrorMsgPrintAndAbort(comm);
-      }
+   /* Rank 0: Print tree to stdout */
+   if (!myid && iargs->print_config_params)
+   {
+      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
    }
    MPI_Barrier(comm);
 
-   *args_ptr = iargs;
+   /* Free memory */
    YAMLtreeDestroy(&tree);
+
+   /* Set output pointer */
+   *args_ptr = iargs;
 }

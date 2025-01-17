@@ -59,6 +59,8 @@ void LinearSystemSetInitialGuess(MPI_Comm, LS_args*, HYPRE_IJMatrix,
 void LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector);
 void LinearSystemSetPrecMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJMatrix*);
 void LinearSystemReadDofmap(MPI_Comm, LS_args*, IntArray**);
+void LinearSystemGetSolutionValues(HYPRE_IJVector, HYPRE_Complex**);
+void LinearSystemGetRHSValues(HYPRE_IJVector, HYPRE_Complex**);
 void LinearSystemComputeRHSNorm(HYPRE_IJVector, HYPRE_Complex*);
 void LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector, HYPRE_Complex*);
 

@@ -416,6 +416,68 @@ IntArrayParRead(MPI_Comm comm, const char* prefix, IntArray **int_array_ptr)
    *int_array_ptr = int_array;
 }
 
+/*-----------------------------------------------------------------------------
+ * IntArrayBuild
+ *-----------------------------------------------------------------------------*/
+
+void
+IntArrayBuild(MPI_Comm comm, int size, int *dofmap, IntArray **int_array_ptr)
+{
+   IntArray  *int_array;
+
+   int_array = IntArrayCreate(size);
+   memcpy(int_array->data, dofmap, size * sizeof(int));
+   IntArrayUnique(comm, int_array);
+
+   *int_array_ptr = int_array;
+}
+
+/*-----------------------------------------------------------------------------
+ * IntArrayBuildInterleaved
+ *-----------------------------------------------------------------------------*/
+
+void
+IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types, IntArray **int_array_ptr)
+{
+   IntArray  *int_array;
+   int        size = num_dof_types * num_local_blocks; // TODO: check overflow
+
+   int_array = IntArrayCreate(size);
+   for (int i = 0; i < num_local_blocks; i++)
+   {
+      for (int j = 0; j < num_dof_types; j++)
+      {
+         int_array->data[i * num_dof_types + j] = j;
+      }
+   }
+   IntArrayUnique(comm, int_array);
+
+   *int_array_ptr = int_array;
+}
+
+/*-----------------------------------------------------------------------------
+ * IntArrayBuildContiguous
+ *-----------------------------------------------------------------------------*/
+
+void
+IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types, IntArray **int_array_ptr)
+{
+   IntArray  *int_array;
+   int        size = num_dof_types * num_local_blocks; // TODO: check overflow
+
+   int_array = IntArrayCreate(size);
+   for (int i = 0; i < num_dof_types; i++)
+   {
+      for (int j = 0; j < num_local_blocks; j++)
+      {
+         int_array->data[i * num_local_blocks + j] = j;
+      }
+   }
+   IntArrayUnique(comm, int_array);
+
+   *int_array_ptr = int_array;
+}
+
 /*--------------------------------------------------------------------------
  * OnOffMapArray
  *--------------------------------------------------------------------------*/

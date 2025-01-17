@@ -97,7 +97,10 @@ DEFINE_SET_ARGS_FROM_YAML_FUNC(Solver)
  *-----------------------------------------------------------------------------*/
 
 void
-SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args, HYPRE_Solver *solver_ptr)
+SolverCreate(MPI_Comm      comm,
+             solver_t      solver_method,
+             solver_args  *args,
+             HYPRE_Solver *solver_ptr)
 {
    switch (solver_method)
    {
@@ -124,12 +127,18 @@ SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args, HYPRE_Sol
 
 /*-----------------------------------------------------------------------------
  * SolverSetup
+ *
+ * TODO: split this function into PreconSetup and SolverSetup
  *-----------------------------------------------------------------------------*/
 
 void
-SolverSetup(precon_t precon_method, solver_t solver_method,
-            HYPRE_Precon precon, HYPRE_Solver solver,
-            HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x)
+SolverSetup(precon_t       precon_method,
+            solver_t       solver_method,
+            HYPRE_Precon   precon,
+            HYPRE_Solver   solver,
+            HYPRE_IJMatrix M,
+            HYPRE_IJVector b,
+            HYPRE_IJVector x)
 {
    StatsTimerStart("prec");
 
@@ -199,8 +208,11 @@ SolverSetup(precon_t precon_method, solver_t solver_method,
  *-----------------------------------------------------------------------------*/
 
 void
-SolverApply(solver_t solver_method, HYPRE_Solver solver,
-            HYPRE_IJMatrix A, HYPRE_IJVector b, HYPRE_IJVector x)
+SolverApply(solver_t       solver_method,
+            HYPRE_Solver   solver,
+            HYPRE_IJMatrix A,
+            HYPRE_IJVector b,
+            HYPRE_IJVector x)
 {
    StatsTimerStart("solve");
 

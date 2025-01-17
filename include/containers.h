@@ -52,6 +52,9 @@ typedef struct IntArray_struct
 
 IntArray* IntArrayCreate(size_t);
 void IntArrayDestroy(IntArray**);
+void IntArrayBuild(MPI_Comm, int, int*, IntArray**);
+void IntArrayBuildInterleaved(MPI_Comm, int, int, IntArray**);
+void IntArrayBuildContiguous(MPI_Comm, int, int, IntArray**);
 void IntArrayParRead(MPI_Comm, const char*, IntArray**);
 
 /*--------------------------------------------------------------------------

@@ -61,25 +61,31 @@ typedef struct YAMLnode_struct {
  * YAML tree struct
  *-----------------------------------------------------------------------------*/
 
-typedef struct YAMLtree_struct {
-   YAMLnode  *root;
+typedef struct _YAMLtree
+{
+   YAMLnode *root;
+   int       base_indent;
+   bool      is_validated;
 } YAMLtree;
 
 /*-----------------------------------------------------------------------------
  * Public prototypes
  *-----------------------------------------------------------------------------*/
 
-YAMLtree* YAMLtreeCreate(void);
+void YAMLtextRead(const char*, const char*, int, int*, size_t*, char**);
+
+YAMLtree* YAMLtreeCreate(int);
 void YAMLtreeDestroy(YAMLtree**);
-void YAMLtextRead(const char*, const char*, int, size_t*, char**);
-void YAMLtreeBuild(char*, YAMLtree**);
+void YAMLtreeBuild(int, char*, YAMLtree**);
 void YAMLtreeUpdate(int, char**, YAMLtree*);
 void YAMLtreePrint(YAMLtree*, YAMLprintMode);
+void YAMLtreeValidate(YAMLtree*);
 
 YAMLnode* YAMLnodeCreate(char*, char*, int);
 void YAMLnodeDestroy(YAMLnode*);
 void YAMLnodeAddChild(YAMLnode*, YAMLnode*);
 void YAMLnodeAppend(YAMLnode*, YAMLnode**);
+void YAMLnodeValidate(YAMLnode*);
 void YAMLnodePrint(YAMLnode*, YAMLprintMode);
 YAMLnode* YAMLnodeFindByKey(YAMLnode*, const char*);
 YAMLnode* YAMLnodeFindChildByKey(YAMLnode*, const char*);
@@ -118,8 +124,10 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
    { \
       StrArray _keys = _callA(); \
       StrIntMapArray _map_array_type; \
+      /* printf(" 0_node->key: %s\n", _node->key); */ \
       if (StrArrayEntryExists(_keys, _node->key)) \
       { \
+         /* printf(" 1_node->key: %s - level: %d\n", _node->key, _node->level); */ \
          StrIntMapArray _map_array_key = _callB(_node->key); \
          if (_map_array_key.size > 0) \
          { \
@@ -131,12 +139,14 @@ char* YAMLnodeFindChildValueByKey(YAMLnode*, const char*);
             _node->valid = YAML_NODE_VALID; \
          } \
       } \
-      else if ((_map_array_type = _callB("type")), _map_array_type.size > 0) \
+      else if ((_map_array_type = _callB("type")), !strcmp(_node->key, "type") && _map_array_type.size > 0) \
       { \
+         /* printf(" 2_node->key: %s - level: %d\n", _node->key, _node->level); */ \
          YAML_NODE_VALIDATE_HELPER(_node, _map_array_type) \
       } \
       else \
       { \
+         /* printf(" 3_node->key: %s\n", _node->key); */ \
          _node->valid = YAML_NODE_INVALID_KEY; \
       } \
    }

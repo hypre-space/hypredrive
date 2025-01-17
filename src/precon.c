@@ -148,6 +148,93 @@ PreconCreate(precon_t         precon_method,
 }
 
 /*-----------------------------------------------------------------------------
+ * PreconSetup
+ *-----------------------------------------------------------------------------*/
+
+void
+PreconSetup(precon_t       precon_method,
+            HYPRE_Precon   precon,
+            HYPRE_IJMatrix A)
+{
+   void               *vA, *vb, *vx;
+   HYPRE_ParCSRMatrix  par_A;
+   HYPRE_ParVector     par_b = NULL, par_x = NULL;
+   HYPRE_Solver        prec = precon->main;
+
+   HYPRE_IJMatrixGetObject(A, &vA); par_A = (HYPRE_ParCSRMatrix) vA;
+
+   switch (precon_method)
+   {
+      case PRECON_BOOMERAMG:
+         HYPRE_BoomerAMGSetup(prec, par_A, par_b, par_x);
+         break;
+
+      case PRECON_MGR:
+         HYPRE_MGRSetup(prec, par_A, par_b, par_x);
+         break;
+
+      case PRECON_ILU:
+         HYPRE_ILUSetup(prec, par_A, par_b, par_x);
+         break;
+
+      case PRECON_FSAI:
+         HYPRE_FSAISetup(prec, par_A, par_b, par_x);
+         break;
+
+      default:
+         return;
+   }
+
+   // TODO: fix timing. Adjust LinearSolverSetup.
+   //StatsTimerFinish("prec");
+}
+
+/*-----------------------------------------------------------------------------
+ * PreconApply
+ *-----------------------------------------------------------------------------*/
+
+void
+PreconApply(precon_t       precon_method,
+            HYPRE_Precon   precon,
+            HYPRE_IJMatrix A,
+            HYPRE_IJVector b,
+            HYPRE_IJVector x)
+{
+   void               *vA, *vb, *vx;
+   HYPRE_ParCSRMatrix  par_A;
+   HYPRE_ParVector     par_b, par_x;
+   HYPRE_Solver        prec = precon->main;
+
+   HYPRE_IJMatrixGetObject(A, &vA); par_A = (HYPRE_ParCSRMatrix) vA;
+   HYPRE_IJVectorGetObject(b, &vb); par_b = (HYPRE_ParVector) vb;
+   HYPRE_IJVectorGetObject(x, &vx); par_x = (HYPRE_ParVector) vx;
+
+   switch (precon_method)
+   {
+      case PRECON_BOOMERAMG:
+         HYPRE_BoomerAMGSolve(prec, par_A, par_b, par_x);
+         break;
+
+      case PRECON_MGR:
+         HYPRE_MGRSolve(prec, par_A, par_b, par_x);
+         break;
+
+      case PRECON_ILU:
+         HYPRE_ILUSolve(prec, par_A, par_b, par_x);
+         break;
+
+      case PRECON_FSAI:
+         HYPRE_FSAISolve(prec, par_A, par_b, par_x);
+         break;
+
+      default:
+         return;
+   }
+
+   //StatsTimerFinish("prec_apply");
+}
+
+/*-----------------------------------------------------------------------------
  * PreconDestroy
  *-----------------------------------------------------------------------------*/
 
@@ -180,15 +267,21 @@ PreconDestroy(precon_t       precon_method,
                HYPRE_BoomerAMGDestroy(args->mgr.csolver);
                args->mgr.csolver = NULL;
             }
+            else if (args->mgr.coarsest_level.type == 32)
+            {
+               HYPRE_ILUDestroy(args->mgr.csolver);
+               args->mgr.csolver = NULL;
+            }
+
             if (args->mgr.level[0].f_relaxation.type == 2)
             {
                HYPRE_BoomerAMGDestroy(args->mgr.frelax[0]);
                args->mgr.frelax[0] = NULL;
             }
-            if (args->mgr.level[0].g_relaxation.type == 16)
+            else if (args->mgr.level[0].f_relaxation.type == 32)
             {
-               HYPRE_ILUDestroy(args->mgr.grelax[0]);
-               args->mgr.grelax[0] = NULL;
+               HYPRE_ILUDestroy(args->mgr.frelax[0]);
+               args->mgr.frelax[0] = NULL;
             }
             break;
 

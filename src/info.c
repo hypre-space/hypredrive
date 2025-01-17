@@ -63,8 +63,8 @@ PrintSystemInfo(MPI_Comm comm)
 {
    int      myid, nprocs;
    char     hostname[256];
-   double   bytes_to_GB = (double) (1 << 30);
-   double   MB_to_GB    = (double) (1 << 10);
+   double   bytes_to_gib = (double) (1 << 30);
+   double   mib_to_gib   = (double) (1 << 10);
    size_t   total, used, free;
    int      gcount;
    FILE    *fp = NULL;
@@ -299,18 +299,18 @@ PrintSystemInfo(MPI_Comm comm)
          free = (size_t) vmstat.free_count * sysconf(_SC_PAGESIZE);
          used = total - free;
 
-         printf("CPU RAM               : %6.2f / %6.2f  (%5.2f %%) GB\n",
-                (double) used / bytes_to_GB,
-                (double) total / bytes_to_GB,
+         printf("CPU RAM               : %6.2f / %6.2f  (%5.2f %%) GiB\n",
+                (double) used / bytes_to_gib,
+                (double) total / bytes_to_gib,
                 100.0 * (total - used) / (double) total);
       }
 #else
       struct sysinfo info;
       if (sysinfo(&info) == 0)
       {
-         printf("CPU RAM               : %6.2f / %6.2f  (%5.2f %%) GB\n",
-                (double) (info.totalram - info.freeram) * info.mem_unit / bytes_to_GB,
-                (double) info.totalram * info.mem_unit / bytes_to_GB,
+         printf("CPU RAM               : %6.2f / %6.2f  (%5.2f %%) GiB\n",
+                (double) (info.totalram - info.freeram) * info.mem_unit / bytes_to_gib,
+                (double) info.totalram * info.mem_unit / bytes_to_gib,
                 100.0 * (info.totalram - info.freeram) / (double) info.totalram);
       }
 #endif
@@ -327,10 +327,10 @@ PrintSystemInfo(MPI_Comm comm)
          {
             if (sscanf(buffer, "%ld, %ld", &total, &used) == 2)
             {
-               printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GB\n",
+               printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
                       gcount++,
-                      used / MB_to_GB,
-                      total / MB_to_GB,
+                      used / mib_to_gib,
+                      total / mib_to_gib,
                       100.0 * used / (double) total);
             }
          }
@@ -366,10 +366,10 @@ PrintSystemInfo(MPI_Comm comm)
             ptr += strlen(vram_used_str);
             used = strtoll(ptr, NULL, 10);
 
-            printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GB\n",
+            printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
                    gcount++,
-                   used / bytes_to_GB,
-                   total / bytes_to_GB,
+                   used / bytes_to_gib,
+                   total / bytes_to_gib,
                    100.0 * used / (double) total);
          }
       }
@@ -402,7 +402,9 @@ PrintSystemInfo(MPI_Comm comm)
 #else
       printf("Debugging             : Disabled\n");
 #endif
-#if defined(__clang__)
+#if defined(__clang_version__)
+      printf("Compiler              : Clang %s\n", __clang_version__);
+#elif defined(__clang__)
       printf("Compiler              : Clang %d.%d.%d\n", __clang_major__, __clang_minor__, __clang_patchlevel__);
 #elif defined(__INTEL_COMPILER)
       printf("Compiler              : Intel %d.%d\n", __INTEL_COMPILER / 100, (__INTEL_COMPILER % 100) / 10);
