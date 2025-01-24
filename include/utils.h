@@ -24,6 +24,7 @@ int CountNumberOfPartitions(const char*);
 int ComputeNumberOfDigits(int);
 void SplitFilename(const char*, char**, char**);
 void CombineFilename(const char*, const char*, char**);
+bool HasFileExtension(const char*);
 
 /*******************************************************************************
  *******************************************************************************/

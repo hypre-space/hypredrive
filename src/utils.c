@@ -177,3 +177,20 @@ CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
    /* Set output pointer */
    *filename_ptr = filename;
 }
+
+/*-----------------------------------------------------------------------------
+ * HasFileExtension
+ *
+ * Returns true if string has a 3 or 4 letter extension
+ *-----------------------------------------------------------------------------*/
+
+bool HasFileExtension(const char *str)
+{
+   const char *dot = strrchr(str, '.');
+   if (!dot || dot == str) {
+      return false;
+   }
+
+   size_t ext_len = strlen(dot + 1); // +1 to skip the dot
+   return ext_len >= 3 && ext_len <= 4;
+}

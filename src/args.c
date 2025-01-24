@@ -410,14 +410,23 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
 
    MPI_Comm_rank(comm, &myid);
 
-   /* Read input arguments from file */
-   InputArgsRead(comm, argv[0], &base_indent, &text);
-
-   /* Return if there was an error reading the file */
-   if (ErrorCodeActive())
+   /* Read input arguments from file or string */
+   if (HasFileExtension(argv[0]))
    {
-      *args_ptr = NULL;
-      return;
+      /* Treat as file input - will error if file doesn't exist */
+      InputArgsRead(comm, argv[0], &base_indent, &text);
+
+      /* Return if there was an error reading the file */
+      if (ErrorCodeActive())
+      {
+         *args_ptr = NULL;
+         return;
+      }
+   }
+   else
+   {
+      /* Direct YAML string input */
+      text = strdup(argv[0]); // Make a copy since we'll free it later
    }
 
    /* Quick way to view/debug the tree */

@@ -296,13 +296,18 @@ ErrorMsgPrint()
    fprintf(stderr, "====================================================================================\n");
    fprintf(stderr, "                                HYPREDRIVE Failure!!!\n");
    fprintf(stderr, "====================================================================================\n");
-   fprintf(stderr, "\nError details:\n");
-   while (current)
+
+   if (current)
    {
-      fprintf(stderr, "  --> %s\n", current->message);
-      current = current->next;
+      fprintf(stderr, "\nError details:\n");
+      while (current)
+      {
+         fprintf(stderr, "  --> %s\n", current->message);
+         current = current->next;
+      }
+      fprintf(stderr, "\n");
+      fprintf(stderr, "====================================================================================\n\n");
    }
-   fprintf(stderr, "\n");
 }
 
 /*-----------------------------------------------------------------------------
@@ -337,5 +342,6 @@ ErrorMsgPrintAndAbort(MPI_Comm comm)
    ErrorCodeDescribe(ErrorCodeGet());
    ErrorMsgPrint();
    ErrorMsgClear();
+   MPI_Barrier(comm);
    MPI_Abort(comm, ErrorCodeGet());
 }

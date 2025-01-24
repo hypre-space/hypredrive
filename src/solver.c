@@ -193,14 +193,14 @@ SolverSetup(precon_t       precon_method,
          break;
 
       default:
-         StatsTimerFinish("prec");
+         StatsTimerStop("prec");
          return;
    }
 
    /* Clear pending error codes from hypre */
    HYPRE_ClearAllErrors();
 
-   StatsTimerFinish("prec");
+   StatsTimerStop("prec");
 }
 
 /*-----------------------------------------------------------------------------
@@ -250,7 +250,7 @@ SolverApply(solver_t       solver_method,
 
       default:
          StatsIterSet((int) iters);
-         StatsTimerFinish("solve");
+         StatsTimerStop("solve");
          return;
    }
 
@@ -258,7 +258,7 @@ SolverApply(solver_t       solver_method,
    HYPRE_ClearAllErrors();
 
    StatsIterSet((int) iters);
-   StatsTimerFinish("solve");
+   StatsTimerStop("solve");
 
    /* Compute the real relative residual norm. Note this is not timed */
    LinearSystemComputeRHSNorm(b, &b_norm);

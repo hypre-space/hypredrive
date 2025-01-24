@@ -186,7 +186,7 @@ PreconSetup(precon_t       precon_method,
    }
 
    // TODO: fix timing. Adjust LinearSolverSetup.
-   //StatsTimerFinish("prec");
+   //StatsTimerStop("prec");
 }
 
 /*-----------------------------------------------------------------------------
@@ -231,7 +231,7 @@ PreconApply(precon_t       precon_method,
          return;
    }
 
-   //StatsTimerFinish("prec_apply");
+   //StatsTimerStop("prec_apply");
 }
 
 /*-----------------------------------------------------------------------------

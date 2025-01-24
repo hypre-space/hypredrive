@@ -8,7 +8,9 @@
 #ifndef HYPREDRV_HEADER
 #define HYPREDRV_HEADER
 
-#include <stdint.h>
+#include <stdint.h> // For: uint
+#include <string.h> // For: strcmp
+#include <signal.h> // For: raise
 #include <mpi.h>
 
 #include <HYPRE.h>
@@ -31,14 +33,21 @@ extern "C" {
 
 // Macro for safely calling HYPREDRV functions. Note it assumes MPI comm is set externally
 #ifndef HYPREDRV_SAFE_CALL
-#define HYPREDRV_SAFE_CALL(call)                  \
-   do {                                           \
-      uint32_t error_code = (call);               \
-      if (error_code != 0) {                      \
-         HYPREDRV_ErrorCodeDescribe(error_code);  \
-         MPI_Abort(comm, error_code);             \
-      }                                           \
-   } while(0)
+#define HYPREDRV_SAFE_CALL(call)                          \
+   do {                                                   \
+      uint32_t error_code = (call);                       \
+      if (error_code != 0) {                              \
+         fprintf(stderr, "At %s:%d in %s():\n",           \
+                 __FILE__, __LINE__, __func__);           \
+         HYPREDRV_ErrorCodeDescribe(error_code);          \
+         char *debug_env = getenv("HYPREDRV_DEBUG");      \
+         if (debug_env && strcmp(debug_env, "1") == 0) {  \
+            raise(SIGTRAP);  /* Breakpoint for gdb */     \
+         } else {                                         \
+            MPI_Abort(comm, error_code);                  \
+         }                                                \
+      }                                                   \
+   } while (0)
 #endif
 
 // Visibility control macros
@@ -959,6 +968,48 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t);
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_StatsPrint(HYPREDRV_t);
+
+/**
+ * @brief Start a named timer.
+ *
+ * This function starts a timer with the specified name. The timer will track elapsed time
+ * until HYPREDRV_TimerStop is called with the same name.
+ *
+ * @param name The name of the timer to start. Available names are: "system".
+ *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStart("system"));
+ *    // ... code to time ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStop("system"));
+ * @endcode
+ */
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_TimerStart(const char *name);
+
+/**
+ * @brief Stop a named timer.
+ *
+ * This function stops a timer with the specified name and accumulates its elapsed time
+ * into the statistics.
+ *
+ * @param name The name of the timer to stop. Available names are: "system".
+ *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStart("system"));
+ *    // ... code to time ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStop("system"));
+ * @endcode
+ */
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_TimerStop(const char *name);
 
 /*--------------------------------------------------------------------------
  *--------------------------------------------------------------------------*/
