@@ -228,7 +228,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    {
       ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       ErrorMsgAddInvalidFilename("");
-      StatsTimerFinish("matrix");
+      StatsTimerStop("matrix");
       return;
    }
 
@@ -248,7 +248,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
          {
             ErrorCodeSet(ERROR_FILE_NOT_FOUND);
             ErrorMsgAddInvalidFilename(args->matrix_filename);
-            StatsTimerFinish("matrix");
+            StatsTimerStop("matrix");
             return;
          }
       }
@@ -267,7 +267,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    {
       ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       ErrorMsgAddInvalidFilename(args->matrix_filename);
-      StatsTimerFinish("matrix");
+      StatsTimerStop("matrix");
       return;
    }
 
@@ -280,7 +280,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       hypre_ParCSRMatrixMigrate(par_A, HYPRE_MEMORY_DEVICE);
    }
 
-   StatsTimerFinish("matrix");
+   StatsTimerStop("matrix");
 }
 
 /*-----------------------------------------------------------------------------
@@ -464,7 +464,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
       }
    }
 
-   StatsTimerFinish("rhs");
+   StatsTimerStop("rhs");
 }
 
 /*-----------------------------------------------------------------------------
@@ -585,7 +585,7 @@ LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr,
 
    HYPRE_ParVectorCopy(par_x0, par_x);
 
-   StatsTimerFinish("reset_x0");
+   StatsTimerStop("reset_x0");
 }
 
 /*-----------------------------------------------------------------------------
@@ -695,7 +695,7 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 
       StatsTimerStart("dofmap");
       IntArrayParRead(comm, dofmap_filename, dofmap_ptr);
-      StatsTimerFinish("dofmap");
+      StatsTimerStop("dofmap");
    }
 
    /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks */

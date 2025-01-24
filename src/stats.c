@@ -21,7 +21,7 @@ static Stats *global_stats = NULL;
    } while (0);
 #define STATS_TIMES_START_ENTRY(_e) \
    if (!strcmp(name, #_e)) { global_stats->_e -= MPI_Wtime(); return; }
-#define STATS_TIMES_FINISH_ENTRY(_e) \
+#define STATS_TIMES_STOP_ENTRY(_e) \
    if (!strcmp(name, #_e)) { global_stats->_e += MPI_Wtime(); return; }
 #define STATS_TIMES_START_VEC_ENTRY(_e) \
    if (!strcmp(name, #_e)) \
@@ -29,8 +29,20 @@ static Stats *global_stats = NULL;
       global_stats->_e[global_stats->counter] -= MPI_Wtime(); \
       return; \
    }
-#define STATS_TIMES_FINISH_VEC_ENTRY(_e) \
+#define STATS_TIMES_START_VEC_ENTRY_ALIAS(_e, _a) \
+   if (!strcmp(name, #_a)) \
+   { \
+      global_stats->_e[global_stats->counter] -= MPI_Wtime(); \
+      return; \
+   }
+#define STATS_TIMES_STOP_VEC_ENTRY(_e) \
    if (!strcmp(name, #_e)) \
+   { \
+      global_stats->_e[global_stats->counter] += MPI_Wtime(); \
+      return; \
+   }
+#define STATS_TIMES_STOP_VEC_ENTRY_ALIAS(_e, _a) \
+   if (!strcmp(name, #_a)) \
    { \
       global_stats->_e[global_stats->counter] += MPI_Wtime(); \
       return; \
@@ -169,7 +181,7 @@ StatsTimerStart(const char *name)
       REALLOC(int, iters);
    }
 
-   /* Compute entry counter */
+   STATS_TIMES_START_VEC_ENTRY_ALIAS(matrix, system)
    STATS_TIMES_START_VEC_ENTRY(matrix)
    STATS_TIMES_START_VEC_ENTRY(rhs)
    STATS_TIMES_START_VEC_ENTRY(dofmap)
@@ -181,28 +193,31 @@ StatsTimerStart(const char *name)
 
    /* Set an error code if we haven't returned yet */
    ErrorCodeSet(ERROR_UNKNOWN_TIMING);
+   ErrorMsgAdd("Unknown timer key: '%s'", name);
 }
 
 /*--------------------------------------------------------------------------
- * StatsTimerFinish
+ * StatsTimerStop
  *--------------------------------------------------------------------------*/
 
 void
-StatsTimerFinish(const char *name)
+StatsTimerStop(const char *name)
 {
    if (!global_stats) return;
 
-   STATS_TIMES_FINISH_VEC_ENTRY(matrix)
-   STATS_TIMES_FINISH_VEC_ENTRY(rhs)
-   STATS_TIMES_FINISH_VEC_ENTRY(dofmap)
-   STATS_TIMES_FINISH_VEC_ENTRY(prec)
-   STATS_TIMES_FINISH_VEC_ENTRY(solve)
-   STATS_TIMES_FINISH_ENTRY(reset_x0)
-   STATS_TIMES_FINISH_ENTRY(initialize)
-   STATS_TIMES_FINISH_ENTRY(finalize)
+   STATS_TIMES_STOP_VEC_ENTRY_ALIAS(matrix, system)
+   STATS_TIMES_STOP_VEC_ENTRY(matrix)
+   STATS_TIMES_STOP_VEC_ENTRY(rhs)
+   STATS_TIMES_STOP_VEC_ENTRY(dofmap)
+   STATS_TIMES_STOP_VEC_ENTRY(prec)
+   STATS_TIMES_STOP_VEC_ENTRY(solve)
+   STATS_TIMES_STOP_ENTRY(reset_x0)
+   STATS_TIMES_STOP_ENTRY(initialize)
+   STATS_TIMES_STOP_ENTRY(finalize)
 
    /* Set an error code if we haven't returned yet */
    ErrorCodeSet(ERROR_UNKNOWN_TIMING);
+   ErrorMsgAdd("Unknown timer key: '%s'", name);
 }
 
 /*--------------------------------------------------------------------------

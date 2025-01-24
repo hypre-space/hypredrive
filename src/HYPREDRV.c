@@ -417,7 +417,7 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t obj, HYPRE_Matrix mat_A)
       StatsTimerStart("matrix");
       obj->mat_A = (HYPRE_IJMatrix) mat_A;
       obj->mat_M = (HYPRE_IJMatrix) mat_A;
-      StatsTimerFinish("matrix");
+      StatsTimerStop("matrix");
    }
    else
    {
@@ -453,7 +453,9 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj, HYPRE_Vector vec_b)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetRHS
+ * HYPREDRV_LinearSystemSetInitialGuess
+ *
+ * TODO: add vector as input parameter
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -730,7 +732,6 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj)
 
    int ls_id  = StatsGetLinearSystemID();
    int reuse  = obj->iargs->ls.precon_reuse;
-   int num_ls = HYPREDRV_InputArgsGetNumLinearSystems(obj);
 
    if (obj)
    {
@@ -858,6 +859,34 @@ HYPREDRV_StatsPrint(HYPREDRV_t obj)
    {
       ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
    }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_TimerStart
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_TimerStart(const char *name)
+{
+   HYPREDRV_CHECK_INIT();
+
+   StatsTimerStart(name);
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_TimerStop
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_TimerStop(const char *name)
+{
+   HYPREDRV_CHECK_INIT();
+
+   StatsTimerStop(name);
 
    return ErrorCodeGet();
 }
