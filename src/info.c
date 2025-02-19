@@ -65,7 +65,7 @@ PrintSystemInfo(MPI_Comm comm)
    char     hostname[256];
    double   bytes_to_gib = (double) (1 << 30);
    double   mib_to_gib   = (double) (1 << 10);
-   size_t   total, used, free;
+   size_t   total, used;
    int      gcount;
    FILE    *fp = NULL;
    char     buffer[32768];
@@ -296,8 +296,7 @@ PrintSystemInfo(MPI_Comm comm)
       vm_statistics_data_t   vmstat;
       if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) == KERN_SUCCESS)
       {
-         free = (size_t) vmstat.free_count * sysconf(_SC_PAGESIZE);
-         used = total - free;
+         used = total - (size_t) vmstat.free_count * sysconf(_SC_PAGESIZE);
 
          printf("CPU RAM               : %6.2f / %6.2f  (%5.2f %%) GiB\n",
                 (double) used / bytes_to_gib,

@@ -47,7 +47,7 @@ ErrorCodeCountGet(ErrorCode code)
 {
    int index = 0;
    while (code >>= 1) { index++; }
-   return (index > 0 && index < ERROR_CODE_NUM_ENTRIES) ? global_error_count[index] : -1;
+   return (index > 0 && index < ERROR_CODE_NUM_ENTRIES) ? global_error_count[index] : 0;
 }
 
 /*-----------------------------------------------------------------------------

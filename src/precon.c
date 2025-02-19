@@ -156,7 +156,7 @@ PreconSetup(precon_t       precon_method,
             HYPRE_Precon   precon,
             HYPRE_IJMatrix A)
 {
-   void               *vA, *vb, *vx;
+   void               *vA;
    HYPRE_ParCSRMatrix  par_A;
    HYPRE_ParVector     par_b = NULL, par_x = NULL;
    HYPRE_Solver        prec = precon->main;

@@ -186,7 +186,6 @@ void
 IntArrayUnique(MPI_Comm comm, IntArray *int_array)
 {
    IntArray    *tmp_array;
-   size_t       num_unique_entries;
    int          num_entries_int;
    int          total_num_entries;
    int         *all_num_entries = NULL;

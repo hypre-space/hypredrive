@@ -311,7 +311,6 @@ LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
 {
    HYPRE_ParCSRMatrix   par_A;
    void                *obj;
-   HYPRE_BigInt         nrows, ncols;
 
    HYPRE_IJMatrixGetObject(matrix, &obj);
    par_A  = (HYPRE_ParCSRMatrix) obj;
