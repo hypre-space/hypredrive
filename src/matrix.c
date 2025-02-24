@@ -205,8 +205,8 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
          /* TODO: add threading */
          for (size_t i = 0; i < header[6]; i++)
          {
-            uint64_t row = h_rows[i];
-            uint64_t col = h_cols[i];
+            int64_t row = h_rows[i];
+            int64_t col = h_cols[i];
 
             /* Check if (row, col) pair makes sense */
             if (row < 0)
