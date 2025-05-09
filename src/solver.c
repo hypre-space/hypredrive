@@ -261,7 +261,7 @@ SolverApply(solver_t       solver_method,
    StatsTimerStop("solve");
 
    /* Compute the real relative residual norm. Note this is not timed */
-   LinearSystemComputeRHSNorm(b, &b_norm);
+   LinearSystemComputeVectorNorm(b, &b_norm);
    LinearSystemComputeResidualNorm(A, b, x, &r_norm);
    b_norm = (b_norm > 0.0) ? b_norm : 1.0;
 

@@ -325,11 +325,12 @@ LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVector *rhs_ptr)
+LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
+                   HYPRE_IJVector *refsol_ptr, HYPRE_IJVector *rhs_ptr)
 {
    HYPRE_BigInt          ilower, iupper;
    HYPRE_BigInt          jlower, jupper;
-   HYPRE_IJVector        sol;
+   HYPRE_IJVector        refsol = NULL;
    char                  rhs_filename[MAX_FILENAME_LENGTH] = {0};
    int                   nparts, nprocs;
    int                   ls_id  = StatsGetLinearSystemID();
@@ -338,8 +339,9 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
 
    StatsTimerStart("rhs");
 
-   /* Destroy vector */
-   if(*rhs_ptr) HYPRE_IJVectorDestroy(*rhs_ptr);
+   /* Destroy vectors */
+   if (*refsol_ptr) HYPRE_IJVectorDestroy(*refsol_ptr);
+   if (*rhs_ptr) HYPRE_IJVectorDestroy(*rhs_ptr);
 
    /* Read right-hand-side vector */
    if (args->rhs_filename[0] == '\0' && args->rhs_basename[0] == '\0')
@@ -370,14 +372,14 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
 
          case 4:
             /* Solution has random values */
-            HYPRE_IJVectorCreate(comm, ilower, iupper, &sol);
-            HYPRE_IJVectorSetObjectType(sol, HYPRE_PARCSR);
-            HYPRE_IJVectorInitialize_v2(sol, memory_location);
+            HYPRE_IJVectorCreate(comm, ilower, iupper, &refsol);
+            HYPRE_IJVectorSetObjectType(refsol, HYPRE_PARCSR);
+            HYPRE_IJVectorInitialize_v2(refsol, memory_location);
 
             /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
             void            *obj;
             HYPRE_ParVector  par_x;
-            HYPRE_IJVectorGetObject(sol, &obj);
+            HYPRE_IJVectorGetObject(refsol, &obj);
             par_x = (HYPRE_ParVector) obj;
             HYPRE_ParVectorSetRandomValues(par_x, 2023);
 
@@ -388,8 +390,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
             par_A = (HYPRE_ParCSRMatrix) obj_A;
             HYPRE_ParCSRMatrixMatvec(1.0, par_A, par_x, 0.0, par_b);
 
-            /* Free memory */
-            HYPRE_IJVectorDestroy(sol);
+            //hypre_ParVectorPrintIJ(par_b, 0, "test");
             break;
       }
    }
@@ -462,6 +463,9 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat, HYPRE_IJVec
          hypre_ParVectorMigrate(par_rhs, HYPRE_MEMORY_DEVICE);
       }
    }
+
+   /* Set reference solution vector */
+   *refsol_ptr = refsol;
 
    StatsTimerStop("rhs");
 }
@@ -739,15 +743,59 @@ LinearSystemGetRHSValues(HYPRE_IJVector   rhs,
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemComputeResidualNorm
+ * LinearSystemComputeVectorNorm
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemComputeRHSNorm(HYPRE_IJVector  vec_b,
-                           HYPRE_Complex  *b_norm)
+LinearSystemComputeVectorNorm(HYPRE_IJVector  vec,
+                              HYPRE_Complex  *norm)
 {
-   HYPRE_IJVectorInnerProd(vec_b, vec_b, b_norm);
-   *b_norm = sqrt(*b_norm);
+   HYPRE_IJVectorInnerProd(vec, vec, norm);
+   *norm = sqrt(*norm);
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemComputeErrorNorm
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemComputeErrorNorm(HYPRE_IJVector  vec_xref,
+                             HYPRE_IJVector  vec_x,
+                             HYPRE_Complex  *e_norm)
+{
+   HYPRE_ParVector      par_xref;
+   HYPRE_ParVector      par_x;
+   HYPRE_ParVector      par_e;
+   HYPRE_IJVector       vec_e;
+   void                *obj_xref, *obj_x, *obj_e;
+
+   HYPRE_BigInt         jlower, jupper;
+
+   HYPRE_Complex        one = 1.0;
+   HYPRE_Complex        neg_one = -1.0;
+
+   HYPRE_IJVectorGetObject(vec_xref, &obj_xref);
+   HYPRE_IJVectorGetObject(vec_x, &obj_x);
+
+   par_xref = (HYPRE_ParVector) obj_xref;
+   par_x = (HYPRE_ParVector) obj_x;
+
+   HYPRE_IJVectorGetLocalRange(vec_x, &jlower, &jupper);
+   HYPRE_IJVectorCreate(hypre_IJVectorComm(vec_x), jlower, jupper, &vec_e);
+   HYPRE_IJVectorSetObjectType(vec_e, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize_v2(vec_e, hypre_IJVectorMemoryLocation(vec_x));
+   HYPRE_IJVectorGetObject(vec_e, &obj_e);
+   par_e = (HYPRE_ParVector) obj_e;
+
+   /* Compute error */
+   hypre_ParVectorAxpyz(one, par_x, neg_one, par_xref, par_e);
+
+   /* Compute error norm */
+   HYPRE_ParVectorInnerProd(par_e, par_e, e_norm);
+   *e_norm = sqrt(*e_norm);
+
+   /* Free memory */
+   HYPRE_IJVectorDestroy(vec_e);
 }
 
 /*-----------------------------------------------------------------------------

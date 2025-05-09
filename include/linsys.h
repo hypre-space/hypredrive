@@ -53,7 +53,7 @@ void LinearSystemSetDefaultArgs(LS_args*);
 void LinearSystemSetNumSystems(LS_args*);
 void LinearSystemSetArgsFromYAML(LS_args*, YAMLnode*);
 void LinearSystemReadMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix*);
-void LinearSystemSetRHS(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector*);
+void LinearSystemSetRHS(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector*, HYPRE_IJVector*);
 void LinearSystemSetInitialGuess(MPI_Comm, LS_args*, HYPRE_IJMatrix,
                                  HYPRE_IJVector, HYPRE_IJVector*, HYPRE_IJVector*);
 void LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector);
@@ -61,7 +61,8 @@ void LinearSystemSetPrecMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJMatri
 void LinearSystemReadDofmap(MPI_Comm, LS_args*, IntArray**);
 void LinearSystemGetSolutionValues(HYPRE_IJVector, HYPRE_Complex**);
 void LinearSystemGetRHSValues(HYPRE_IJVector, HYPRE_Complex**);
-void LinearSystemComputeRHSNorm(HYPRE_IJVector, HYPRE_Complex*);
+void LinearSystemComputeVectorNorm(HYPRE_IJVector, HYPRE_Complex*);
+void LinearSystemComputeErrorNorm(HYPRE_IJVector, HYPRE_IJVector, HYPRE_Complex*);
 void LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector, HYPRE_Complex*);
 
 long long int LinearSystemMatrixGetNumRows(HYPRE_IJMatrix);

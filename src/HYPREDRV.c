@@ -43,6 +43,7 @@ typedef struct hypredrv_struct {
    HYPRE_IJVector   vec_b;
    HYPRE_IJVector   vec_x;
    HYPRE_IJVector   vec_x0;
+   HYPRE_IJVector   vec_xref;
 
    HYPRE_Precon     precon;
    HYPRE_Solver     solver;
@@ -128,6 +129,7 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr)
    obj->vec_b    = NULL;
    obj->vec_x    = NULL;
    obj->vec_x0   = NULL;
+   obj->vec_xref = NULL;
    obj->dofmap   = NULL;
 
    obj->precon   = NULL;
@@ -438,7 +440,7 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj, HYPRE_Vector vec_b)
 
    if (obj && !vec_b)
    {
-      LinearSystemSetRHS(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->vec_b);
+      LinearSystemSetRHS(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->vec_xref, &obj->vec_b);
    }
    else if (obj && vec_b)
    {
@@ -759,10 +761,25 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t obj)
 {
    HYPREDRV_CHECK_INIT();
 
+   HYPRE_Complex e_norm, x_norm, xref_norm;
+
    if (obj)
    {
       SolverApply(obj->iargs->solver_method, obj->solver, obj->mat_A, obj->vec_b, obj->vec_x);
       HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
+
+      if (obj->vec_xref)
+      {
+         LinearSystemComputeVectorNorm(obj->vec_xref, &xref_norm);
+         LinearSystemComputeVectorNorm(obj->vec_x, &x_norm);
+         LinearSystemComputeErrorNorm(obj->vec_xref, obj->vec_x, &e_norm);
+         if (!obj->mypid)
+         {
+            printf("L2 norm of error: %e\n", e_norm);
+            printf("L2 norm of solution: %e\n", x_norm);
+            printf("L2 norm of ref. solution: %e\n", xref_norm);
+         }
+      }
    }
    else
    {
