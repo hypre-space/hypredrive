@@ -378,7 +378,7 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
 
    /* Broadcast the text */
    MPI_Comm_rank(comm, &myid);
-   if (myid) text = (char*) malloc(text_size);
+   if (myid) text = (char*) malloc(text_size + 1); /* +1: Extra space for null terminator */
    MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
 
    /* Make sure null terminator is in the right place */
