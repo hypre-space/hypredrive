@@ -137,6 +137,12 @@ export(EXPORT HYPREDRVTargets
 # Register package in user's package registry
 export(PACKAGE HYPREDRV)
 
+# Add examples
+option(HYPREDRV_BUILD_EXAMPLES "Build the HYPREDRV examples" ON)
+if(HYPREDRV_BUILD_EXAMPLES)
+    add_subdirectory(examples/src/C_laplacian)
+endif()
+
 # Find clang-format
 find_program(CLANG_FORMAT "clang-format")
 if(NOT CLANG_FORMAT)
