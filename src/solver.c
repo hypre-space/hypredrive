@@ -138,13 +138,14 @@ SolverSetup(precon_t       precon_method,
             HYPRE_Solver   solver,
             HYPRE_IJMatrix M,
             HYPRE_IJVector b,
+            HYPRE_IJVector y,
             HYPRE_IJVector x)
 {
    StatsTimerStart("prec");
 
-   void                    *vM, *vb, *vx;
+   void                    *vM, *vb, *vx, *vy;
    HYPRE_ParCSRMatrix       par_M;
-   HYPRE_ParVector          par_b, par_x;
+   HYPRE_ParVector          par_b, par_x, par_y;
    HYPRE_PtrToParSolverFcn  setup_ptrs[] = {HYPRE_BoomerAMGSetup,
                                             HYPRE_MGRSetup,
                                             HYPRE_ILUSetup,
@@ -157,6 +158,7 @@ SolverSetup(precon_t       precon_method,
    HYPRE_IJMatrixGetObject(M, &vM); par_M = (HYPRE_ParCSRMatrix) vM;
    HYPRE_IJVectorGetObject(b, &vb); par_b = (HYPRE_ParVector) vb;
    HYPRE_IJVectorGetObject(x, &vx); par_x = (HYPRE_ParVector) vx;
+   HYPRE_IJVectorGetObject(y, &vy); par_y = (HYPRE_ParVector) vy;
 
    switch (solver_method)
    {
@@ -173,6 +175,7 @@ SolverSetup(precon_t       precon_method,
                                      solve_ptrs[precon_method],
                                      setup_ptrs[precon_method],
                                      precon->main);
+         HYPRE_ParCSRGMRESSetRefSolution(solver, par_y);
          HYPRE_ParCSRGMRESSetup(solver, par_M, par_b, par_x);
          break;
 

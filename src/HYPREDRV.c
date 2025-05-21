@@ -363,8 +363,10 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t obj)
       HYPREDRV_LinearSystemReadMatrix(obj);
       HYPREDRV_LinearSystemSetRHS(obj, NULL);
       HYPREDRV_LinearSystemSetInitialGuess(obj);
+      HYPREDRV_LinearSystemSetReferenceSolution(obj);
       HYPREDRV_LinearSystemSetPrecMatrix(obj);
       HYPREDRV_LinearSystemReadDofmap(obj);
+      HYPREDRV_LinearSystemSetVectorTags(obj);
 
       long long int num_rows     = LinearSystemMatrixGetNumRows(obj->mat_A);
       long long int num_nonzeros = LinearSystemMatrixGetNumNonzeros(obj->mat_A);
@@ -479,6 +481,29 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t obj)
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemSetReferenceSolution
+ *
+ * TODO: add vector as input parameter
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t obj)
+{
+   HYPREDRV_CHECK_INIT();
+
+   if (obj)
+   {
+      LinearSystemSetReferenceSolution(obj->comm, &obj->iargs->ls, &obj->vec_xref);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_LinearSystemResetInitialGuess
  *-----------------------------------------------------------------------------*/
 
@@ -490,6 +515,29 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t obj)
    if (obj)
    {
       LinearSystemResetInitialGuess(obj->vec_x0, obj->vec_x);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemSetVectorTags
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t obj)
+{
+   HYPREDRV_CHECK_INIT();
+
+   if (obj)
+   {
+      LinearSystemSetVectorTags(obj->vec_b, obj->dofmap);
+      LinearSystemSetVectorTags(obj->vec_x, obj->dofmap);
+      LinearSystemSetVectorTags(obj->vec_x0, obj->dofmap);
    }
    else
    {
@@ -740,7 +788,8 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj)
       if (!(ls_id % (reuse + 1)))
       {
          SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method,
-                     obj->precon, obj->solver, obj->mat_M, obj->vec_b, obj->vec_x);
+                     obj->precon, obj->solver, obj->mat_M, obj->vec_b,
+                     obj->vec_xref, obj->vec_x);
       }
       HYPRE_ClearAllErrors();
    }

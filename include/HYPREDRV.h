@@ -463,8 +463,9 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t);
  *
  * This function is responsible for reading the matrix data of a linear system associated
  * with a HYPREDRV object. It performs the reading process given input arguments related to
- * the linear system, and uses a pointer to store the read matrix. After reading the matrix,
- * it retrieves and returns the error code generated during the process.
+ * the linear system, and uses a pointer to store the read matrix. A reference solution is
+ * also read from file if provided. After reading the matrix, it retrieves and returns the
+ * error code generated during the process.
  *
  * @param hypredrv The HYPREDRV_t object for which the linear system matrix is to be read.
  *
@@ -563,6 +564,32 @@ HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t);
 
 /**
+ * @brief Set the reference solution for the solution vector of the linear system for a HYPREDRV object.
+ *
+ * This function is responsible for setting the reference solution for the solution vector of a
+ * linear system associated with a HYPREDRV object.
+ *
+ * @param hypredrv The HYPREDRV_t object for which the reference solution of the solution vector of the
+ * linear system is to be set.
+ *
+ * @return Returns an error code with 0 indicating success. Any non-zero value indicates a failure,
+ * and the error code can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+ *
+ * @note It's the caller's responsibility to ensure that the hypredrv parameter is a valid pointer to an
+ * initialized HYPREDRV_t object. Passing a NULL or uninitialized object will result in an error.
+ *
+ * Example Usage:
+ * @code
+ *    HYPREDRV_t *hypredrv;
+ *    // ... (hypredrv is created, and its components are initialized) ...
+ *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetReferenceSolution(hypredrv));
+ * @endcode
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t);
+
+/**
  * @brief Reset the initial guess of the solution vector for a HYPREDRV object to its original
  * state as computed with \e HYPREDRV_LinearSystemSetInitialGuess
  *
@@ -585,6 +612,13 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t);
 
 HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t);
+
+/**
+ * TODO
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t);
 
 /**
  * @brief Set the matrix that is used to compute the preconditioner of a HYPREDRV object.
