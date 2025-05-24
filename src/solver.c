@@ -145,7 +145,7 @@ SolverSetup(precon_t       precon_method,
 
    void                    *vM, *vb, *vx, *vy;
    HYPRE_ParCSRMatrix       par_M;
-   HYPRE_ParVector          par_b, par_x, par_y;
+   HYPRE_ParVector          par_b, par_x, par_y = NULL;
    HYPRE_PtrToParSolverFcn  setup_ptrs[] = {HYPRE_BoomerAMGSetup,
                                             HYPRE_MGRSetup,
                                             HYPRE_ILUSetup,
@@ -158,7 +158,10 @@ SolverSetup(precon_t       precon_method,
    HYPRE_IJMatrixGetObject(M, &vM); par_M = (HYPRE_ParCSRMatrix) vM;
    HYPRE_IJVectorGetObject(b, &vb); par_b = (HYPRE_ParVector) vb;
    HYPRE_IJVectorGetObject(x, &vx); par_x = (HYPRE_ParVector) vx;
-   HYPRE_IJVectorGetObject(y, &vy); par_y = (HYPRE_ParVector) vy;
+   if (y)
+   {
+      HYPRE_IJVectorGetObject(y, &vy); par_y = (HYPRE_ParVector) vy;
+   }
 
    switch (solver_method)
    {

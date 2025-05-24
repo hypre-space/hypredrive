@@ -132,6 +132,8 @@ LinearSystemSetDefaultArgs(LS_args *args)
    strcpy(args->rhs_filename, "");
    strcpy(args->rhs_basename, "");
    strcpy(args->x0_filename, "");
+   strcpy(args->xref_filename, "");
+   strcpy(args->xref_basename, "");
    strcpy(args->sol_filename, "");
    strcpy(args->dofmap_filename, "");
    strcpy(args->dofmap_basename, "");
