@@ -490,18 +490,18 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
    HYPRE_MemoryLocation memloc = (args->exec_policy) ?
                                  HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
-   /* Create solution vector
-      TODO: implement HYPRE_IJVectorClone in hypre */
-   if (!*x_ptr)
-   {
-      HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
-      HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
-      HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize_v2(*x_ptr, memloc);
-   }
-
    /* Destroy initial solution vector */
    if (*x0_ptr) HYPRE_IJVectorDestroy(*x0_ptr);
+
+   /* Destroy initial solution vector */
+   if (*x_ptr) HYPRE_IJVectorDestroy(*x_ptr);
+
+   /* Create solution vector
+      TODO: implement HYPRE_IJVectorClone in hypre */
+   HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
+   HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
+   HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize_v2(*x_ptr, memloc);
 
    if (args->x0_filename[0] == '\0')
    {
