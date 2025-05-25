@@ -31,7 +31,7 @@
 extern "C" {
 #endif
 
-// Macro for safely calling HYPREDRV functions. Note it assumes MPI comm is set externally
+// Macro for safely calling HYPREDRV functions.
 #ifndef HYPREDRV_SAFE_CALL
 #define HYPREDRV_SAFE_CALL(call)                          \
    do {                                                   \
@@ -44,7 +44,7 @@ extern "C" {
          if (debug_env && strcmp(debug_env, "1") == 0) {  \
             raise(SIGTRAP);  /* Breakpoint for gdb */     \
          } else {                                         \
-            MPI_Abort(comm, error_code);                  \
+            MPI_Abort(MPI_COMM_WORLD, error_code);        \
          }                                                \
       }                                                   \
    } while (0)

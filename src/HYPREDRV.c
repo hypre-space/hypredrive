@@ -360,13 +360,13 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t obj)
 
    if (obj)
    {
-      HYPREDRV_LinearSystemReadMatrix(obj);
-      HYPREDRV_LinearSystemSetRHS(obj, NULL);
-      HYPREDRV_LinearSystemSetInitialGuess(obj);
-      HYPREDRV_LinearSystemSetReferenceSolution(obj);
-      HYPREDRV_LinearSystemSetPrecMatrix(obj);
-      HYPREDRV_LinearSystemReadDofmap(obj);
-      HYPREDRV_LinearSystemSetVectorTags(obj);
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadMatrix(obj));
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(obj, NULL));
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(obj));
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetReferenceSolution(obj));
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(obj));
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadDofmap(obj));
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetVectorTags(obj));
 
       long long int num_rows     = LinearSystemMatrixGetNumRows(obj->mat_A);
       long long int num_nonzeros = LinearSystemMatrixGetNumNonzeros(obj->mat_A);
