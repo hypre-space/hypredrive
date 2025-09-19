@@ -1,6 +1,10 @@
-bin_PROGRAMS = hypredrive
+bin_PROGRAMS = hypredrive laplacian
 hypredrive_SOURCES = src/main.c
 hypredrive_LDADD = libHYPREDRV.la
+
+# Install the laplacian example binary
+laplacian_SOURCES = examples/src/C_laplacian/laplacian.c
+laplacian_LDADD = libHYPREDRV.la
 
 lib_LTLIBRARIES = libHYPREDRV.la
 libHYPREDRV_la_SOURCES = src/error.c src/info.c src/stats.c src/utils.c src/containers.c src/yaml.c\

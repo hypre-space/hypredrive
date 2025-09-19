@@ -629,6 +629,9 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
                YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
                                    TEXT_BOLD " <-- * FIX VALUE *");
                break;
+            default:
+               YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
+                                   TEXT_REDBOLD " <-- * INVALID ENTRY *");
          }
          break;
 
