@@ -20,3 +20,7 @@ endif()
 # Common build configuration
 add_executable(laplacian laplacian.c)
 target_link_libraries(laplacian PRIVATE HYPREDRV::HYPREDRV)
+
+# Install the laplacian example binary when examples are built
+install(TARGETS laplacian
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -141,7 +141,7 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid)
    /* Set defaults */
    params->visualize = 0;
    params->print = 0;
-   params->verbose = 1;
+   params->verbose = 7;
    params->nsolve = 2;
    for (int i = 0; i < 3; i++)
    {
