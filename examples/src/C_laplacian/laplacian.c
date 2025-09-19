@@ -119,7 +119,7 @@ PrintUsage(void)
    printf("  -c <cx> <cy> <cz> : Diffusion coefficients (default: 1.0 1.0 1.0)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (default: 1 1 1)\n");
    printf("  -s <val>          : Stencil type: 7 19 27 125 (default: 7)\n");
-   printf("  -ns|--nsolve <n>  : Number of times to solve the system (default: w)\n");
+   printf("  -ns|--nsolve <n>  : Number of times to solve the system (default: 5)\n");
    printf("  -vis|--visualize  : Output solution in VTK format (default: false)\n");
    printf("  -p|--print        : Print matrices/vectors to file (default: false)\n");
    printf("  -v|--verbose <n>  : Verbosity level (bitset):\n");
@@ -142,7 +142,7 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid)
    params->visualize = 0;
    params->print = 0;
    params->verbose = 7;
-   params->nsolve = 2;
+   params->nsolve = 5;
    for (int i = 0; i < 3; i++)
    {
       params->N[i] = 10;
@@ -347,6 +347,12 @@ int main(int argc, char *argv[])
       BuildLaplacianSystem_125pt(mesh, &params, &A, &b);
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStop("system"));
+
+   /* Transfer data to GPU memory */
+#if defined(HYPRE_USING_GPU)
+   HYPRE_IJMatrixMigrate(A, HYPRE_MEMORY_DEVICE);
+   HYPRE_IJVectorMigrate(b, HYPRE_MEMORY_DEVICE);
+#endif
 
    /* Associate the matrix and vectors with hypredrive */
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(hypredrv, (HYPRE_Matrix) A));
