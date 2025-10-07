@@ -330,6 +330,7 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
    {
       if (!strcmp(child->key, "level"))
       {
+         YAML_NODE_SET_VALID(child);
          YAML_NODE_ITERATE(child, grandchild)
          {
             int lvl = atoi(grandchild->key);

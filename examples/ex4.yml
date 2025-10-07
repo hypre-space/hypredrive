@@ -39,7 +39,7 @@ preconditioner:
         g_relaxation: ilu
         restriction_type: columped
         prolongation_type: injection
-        coarse_level_type: rai
+        coarse_level_type: rap
 
     coarsest_level:
       amg:
