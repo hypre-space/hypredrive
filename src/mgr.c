@@ -83,7 +83,8 @@ MGRclsSetDefaultArgs(MGRcls_args *args)
 {
    args->type = 0;
 
-   AMGSetDefaultArgs(&args->amg); args->amg.max_iter = 0;
+   /* TODO: revisit default amg iters */
+   AMGSetDefaultArgs(&args->amg); args->amg.max_iter = 1;
    ILUSetDefaultArgs(&args->ilu); args->ilu.max_iter = 0;
 }
 
@@ -330,6 +331,7 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
    {
       if (!strcmp(child->key, "level"))
       {
+         YAML_NODE_SET_VALID(child);
          YAML_NODE_ITERATE(child, grandchild)
          {
             int lvl = atoi(grandchild->key);

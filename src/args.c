@@ -70,10 +70,17 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
          so we don't set an error code if it's not found. */
       return;
    }
+   else
+   {
+      YAML_NODE_SET_VALID(parent);
+   }
 
    child = parent->children;
    while (child)
    {
+      /* TODO: implement validation of "general" keywords */
+      YAML_NODE_SET_VALID(child);
+
       if (!strcmp(child->key, "warmup") ||
           !strcmp(child->key, "statistics") ||
           !strcmp(child->key, "use_millisec") ||
