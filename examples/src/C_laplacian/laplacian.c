@@ -97,7 +97,7 @@ typedef struct {
 int PrintUsage(void);
 int CreateDistMesh(MPI_Comm, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int, DistMesh**);
 int DestroyDistMesh(DistMesh**);
-int ParseArguments(int, char**, ProblemParams*, int);
+int ParseArguments(int, char**, ProblemParams*, int, int);
 int BuildLaplacianSystem_7pt(DistMesh*, ProblemParams*, HYPRE_IJMatrix*, HYPRE_IJVector*);
 int BuildLaplacianSystem_19pt(DistMesh*, ProblemParams*, HYPRE_IJMatrix*, HYPRE_IJVector*);
 int BuildLaplacianSystem_27pt(DistMesh*, ProblemParams*, HYPRE_IJMatrix*, HYPRE_IJVector*);
@@ -115,7 +115,7 @@ PrintUsage(void)
    printf("\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file for solver settings\n");
-   printf("  -n <nx> <ny> <nz> : Grid dimensions (default: 10 10 10)\n");
+   printf("  -n <nx> <ny> <nz> : Global grid dimensions (default: 10 10 10)\n");
    printf("  -c <cx> <cy> <cz> : Diffusion coefficients (default: 1.0 1.0 1.0)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (default: 1 1 1)\n");
    printf("  -s <val>          : Stencil type: 7 19 27 125 (default: 7)\n");
@@ -136,7 +136,7 @@ PrintUsage(void)
  * Parse command line arguments
  *--------------------------------------------------------------------------*/
 int
-ParseArguments(int argc, char *argv[], ProblemParams *params, int myid)
+ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_procs)
 {
    /* Set defaults */
    params->visualize = 0;
@@ -235,6 +235,33 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid)
       }
    }
 
+   /* Verify processor grid matches total number of processes */
+   if (params->P[0] * params->P[1] * params->P[2] != num_procs)
+   {
+      if (!myid)
+      {
+         printf("Error: Number of processes (%d) must match processor grid dimensions (%d x %d x %d = %d)\n",
+                num_procs, params->P[0], params->P[1], params->P[2],
+                params->P[0] * params->P[1] * params->P[2]);
+      }
+      return 1;
+   }
+
+   /* Verify the global grid can be partitioned */
+   for (int d = 0; d < 3; d++)
+   {
+      char *name[] = {"First", "Second", "Third"};
+      if (params->P[d] > params->N[d])
+      {
+         if (!myid)
+         {
+            printf("Error: %s grid dimension (N = %d) must be larger than the number of ranks (P = %d)\n",
+                   name[d], params->N[d], params->P[d]);
+         }
+         return 1;
+      }
+   }
+
    return 0;
 }
 
@@ -258,21 +285,8 @@ int main(int argc, char *argv[])
    MPI_Comm_size(comm, &num_procs);
 
    /* Parse command line arguments */
-   if (ParseArguments(argc, argv, &params, myid))
+   if (ParseArguments(argc, argv, &params, myid, num_procs))
    {
-      MPI_Finalize();
-      return 1;
-   }
-
-   /* Verify processor grid matches total number of processes */
-   if (params.P[0] * params.P[1] * params.P[2] != num_procs)
-   {
-      if (!myid)
-      {
-         printf("Error: Number of processes (%d) must match processor grid dimensions (%d x %d x %d = %d)\n",
-                num_procs, params.P[0], params.P[1], params.P[2],
-                params.P[0] * params.P[1] * params.P[2]);
-      }
       MPI_Finalize();
       return 1;
    }
