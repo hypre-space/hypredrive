@@ -614,20 +614,23 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
                break;
             case YAML_NODE_INVALID_INDENT:
                YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
-                                   TEXT_BOLD " <-- * FIX INDENTATION *");
+                                   TEXT_BOLD " <-- * INVALID INDENTATION *");
                break;
             case YAML_NODE_INVALID_DIVISOR:
                YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
-                                   TEXT_BOLD " <-- * FIX DIVISOR *");
+                                   TEXT_BOLD " <-- * INVALID DIVISOR *");
                break;
             case YAML_NODE_INVALID_KEY:
                YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD,
-                                   TEXT_BOLD " <-- * FIX KEY *");
+                                   TEXT_BOLD " <-- * INVALID KEY *");
                break;
             case YAML_NODE_INVALID_VAL:
+               YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
+                                   TEXT_BOLD " <-- * INVALID VALUE *");
+               break;
             case YAML_NODE_UNEXPECTED_VAL:
                YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
-                                   TEXT_BOLD " <-- * FIX VALUE *");
+                                   TEXT_BOLD " <-- * UNEXPECTED VALUE *");
                break;
             default:
                YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,

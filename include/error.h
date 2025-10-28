@@ -44,6 +44,8 @@ typedef enum ErrorCode_enum
    ERROR_UNKNOWN_HYPREDRV_OBJ     = 0x00200000, // 22nd bit
    ERROR_HYPREDRV_NOT_INITIALIZED = 0x00400000, // 23rd bit
    ERROR_UNKNOWN_TIMING           = 0x00800000, // 24th bit
+   ERROR_ALLOCATION               = 0x20000000, // 28st bit
+   ERROR_OUT_OF_BOUNDS            = 0x40000000, // 29st bit
    ERROR_UNKNOWN                  = 0x80000000  // 30th bit
 } ErrorCode;
 

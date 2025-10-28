@@ -1014,6 +1014,21 @@ HYPREDRV_TimerStop(const char *name);
 /*--------------------------------------------------------------------------
  *--------------------------------------------------------------------------*/
 
+/**
+ * @brief Compute the full eigenspectrum of the current linear system matrix
+ * or the preconditioned linear system.
+ *
+ * Compiled and available only when hypredrive is built with
+ * -DHYPREDRV_ENABLE_EIGSPEC=ON. This function operates on a single MPI rank
+ * and writes eigenvalues (and optionally eigenvectors) to files as
+ * configured via the YAML input under linear_system.eigspec.
+ */
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t);
+
+/*--------------------------------------------------------------------------
+ *--------------------------------------------------------------------------*/
+
 /**@}*/
 
 #ifdef __cplusplus

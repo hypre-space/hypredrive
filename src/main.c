@@ -75,6 +75,11 @@ int main(int argc, char **argv)
       /* Build linear system (matrix, RHS, LHS, and auxiliary data) */
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemBuild(obj));
 
+      /* Optionally compute full eigenspectrum */
+#if defined(HYPREDRV_ENABLE_EIGSPEC)
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemComputeEigenspectrum(obj));
+#endif
+
       for (i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
       {
          /* Reset initial guess */
