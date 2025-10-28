@@ -907,3 +907,71 @@ HYPREDRV_TimerStop(const char *name)
 
    return ErrorCodeGet();
 }
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+#if defined(HYPREDRV_ENABLE_EIGSPEC)
+static void
+hypredrv_PreconApplyWrapper(void *ctx, void *b, void *x)
+{
+   HYPREDRV_PreconApply((HYPREDRV_t) ctx, (HYPRE_Vector) b, (HYPRE_Vector) x);
+}
+#endif
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemComputeEigenspectrum
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t obj)
+{
+   HYPREDRV_CHECK_INIT();
+
+#if defined(HYPREDRV_ENABLE_EIGSPEC)
+   if (obj)
+   {
+      /* Exit early if not computing eigenspectrum */
+      if (!obj->iargs->ls.eigspec.enable)
+      {
+         return ErrorCodeGet();
+      }
+
+      if (!obj->mypid)
+      {
+         printf("[EigenSpectrum] | mode=%s | vectors=%s | prefix='%s'\n",
+                obj->iargs->ls.eigspec.hermitian ? "Hermitian" : "General",
+                obj->iargs->ls.eigspec.vectors ? "on" : "off",
+                obj->iargs->ls.eigspec.output_prefix[0] ?
+                obj->iargs->ls.eigspec.output_prefix : "eig");
+         fflush(stdout);
+      }
+
+      /* pass preconditioner apply callback directly */
+      if (obj->iargs->ls.eigspec.preconditioned)
+      {
+         HYPREDRV_PreconCreate(obj);
+         HYPREDRV_PreconSetup(obj);
+
+         return hypredrv_EigSpecCompute(&obj->iargs->ls.eigspec,
+                                        (void*) obj->mat_A,
+                                        (void*) obj,
+                                        hypredrv_PreconApplyWrapper);
+      }
+      else
+      {
+         return hypredrv_EigSpecCompute(&obj->iargs->ls.eigspec, (void*) obj->mat_A, NULL, NULL);
+      }
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+#else
+   (void) obj;
+   ErrorCodeSet(ERROR_UNKNOWN);
+   ErrorMsgAdd("Eigenspectrum feature disabled at build time. Reconfigure with -DHYPREDRV_ENABLE_EIGSPEC=ON");
+#endif
+
+   return ErrorCodeGet();
+}

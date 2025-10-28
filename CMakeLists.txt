@@ -52,8 +52,9 @@ configure_file(
 # Include the generated config header
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
-# Collect all source files
+# Collect all source files except conditionally added ones
 file(GLOB_RECURSE SOURCE_FILES src/*.c)
+list(FILTER SOURCE_FILES EXCLUDE REGEX ".*/eigspec\\.c$")
 
 # Define the library
 add_library(HYPREDRV ${SOURCE_FILES})
@@ -76,6 +77,15 @@ target_include_directories(HYPREDRV
 
 # Link HYPRE library to HYPREDRV
 target_link_libraries(HYPREDRV PUBLIC HYPRE::HYPRE PRIVATE m)
+
+# Optional eigenspectrum feature
+option(HYPREDRV_ENABLE_EIGSPEC "Enable full eigenspectrum computation" OFF)
+if(HYPREDRV_ENABLE_EIGSPEC)
+    find_package(LAPACK REQUIRED)
+    target_compile_definitions(HYPREDRV PUBLIC HYPREDRV_ENABLE_EIGSPEC=1)
+    target_sources(HYPREDRV PRIVATE ${CMAKE_SOURCE_DIR}/src/eigspec.c)
+    target_link_libraries(HYPREDRV PRIVATE LAPACK::LAPACK)
+endif()
 
 # Define the executable
 add_executable(hypredrive src/main.c)
