@@ -50,15 +50,34 @@ int
 CheckBinaryDataExists(const char* prefix)
 {
    char   filename[MAX_FILENAME_LENGTH];
-   int    is_binary;
+   int    file_exists;
    FILE  *fp;
 
    /* Check if binary data exist */
    sprintf(filename, "%*s.00000.bin", (int) strlen(prefix), prefix);
-   is_binary = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
+   file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp) fclose(fp);
 
-   return is_binary;
+   return file_exists;
+}
+
+/*-----------------------------------------------------------------------------
+ * CheckASCIIDataExists
+ *-----------------------------------------------------------------------------*/
+
+int
+CheckASCIIDataExists(const char* prefix)
+{
+   char   filename[MAX_FILENAME_LENGTH];
+   int    file_exists;
+   FILE  *fp;
+
+   /* Check if ASCII data exist */
+   sprintf(filename, "%*s.00000", (int) strlen(prefix), prefix);
+   file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
+   if (fp) fclose(fp);
+
+   return file_exists;
 }
 
 /*-----------------------------------------------------------------------------

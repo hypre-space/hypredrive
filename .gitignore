@@ -26,7 +26,8 @@ laplacian
 #############
 # Examples
 #############
-data/compflow6k/np1/eig.values.txt
+data/*
+!data/README.md
 
 ###########
 # Autotools

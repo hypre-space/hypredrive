@@ -1,0 +1,22 @@
+# macOS RPATH settings
+if(APPLE)
+    # Check if HYPRE library is shared
+    get_property(HYPRE_LIB_TYPE TARGET HYPRE::HYPRE PROPERTY TYPE)
+    if(HYPRE_LIB_TYPE STREQUAL "SHARED_LIBRARY")
+        # Use generator expression to get the actual library file at build time
+        get_target_property(HYPRE_LIBRARY_FILE_NEW HYPRE::HYPRE IMPORTED_LOCATION)
+        if(NOT HYPRE_LIBRARY_FILE_NEW)
+            get_target_property(HYPRE_LIBRARY_FILE_NEW HYPRE::HYPRE IMPORTED_LOCATION_RELEASE)
+        endif()
+        if(NOT HYPRE_LIBRARY_FILE_NEW)
+            get_target_property(HYPRE_LIBRARY_FILE_NEW HYPRE::HYPRE IMPORTED_LOCATION_DEBUG)
+        endif()
+        if(HYPRE_LIBRARY_FILE_NEW)
+            get_filename_component(HYPRE_LIBRARY_DIR "${HYPRE_LIBRARY_FILE_NEW}" DIRECTORY)
+            set(CMAKE_INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
+            set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+            set_target_properties(hypredrive PROPERTIES INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
+            set_target_properties(HYPREDRV PROPERTIES INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
+        endif()
+    endif()
+endif()

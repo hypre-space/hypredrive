@@ -20,6 +20,7 @@
 char* StrToLowerCase(char*);
 char* StrTrim(char*);
 int CheckBinaryDataExists(const char*);
+int CheckASCIIDataExists(const char*);
 int CountNumberOfPartitions(const char*);
 int ComputeNumberOfDigits(int);
 void SplitFilename(const char*, char**, char**);
