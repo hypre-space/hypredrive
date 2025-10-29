@@ -14,14 +14,13 @@ High-level interface for solving linear systems with hypre, providing a user-fri
 The instructions for building *hypredrive* using CMake are given below:
 
 ```bash
-$ mkdir build
-$ cmake -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=${PWD}/../install \
-        -DHYPRE_ROOT=${HYPRE_INSTALL_DIR} \
-        -B build -S .
-$ cmake --build build --parallel
-$ cmake --build build --target check
-$ cmake --install build
+cmake -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=${PWD}/install \
+      -DHYPRE_ROOT=${HYPRE_INSTALL_DIR} \
+      -B build -S .
+cmake --build build --parallel
+cmake --build build --target check
+cmake --install build
 ```
 
 Notes:

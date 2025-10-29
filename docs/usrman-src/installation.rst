@@ -81,7 +81,6 @@ Using CMake (Recommended)
     .. code-block:: bash
 
         $ cd hypredrive
-        $ mkdir build
         $ cmake -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_INSTALL_PREFIX=${HYPREDRIVE_INSTALL_DIR} \
                 -DHYPRE_ROOT=${HYPRE_INSTALL_DIR} \
@@ -91,18 +90,18 @@ Using CMake (Recommended)
    and ``${HYPRE_INSTALL_DIR}`` with the path to your installation of `hypre`.
 
    **Required Options:**
-   
+
    - ``-DHYPRE_ROOT=<path>``: Path to the HYPRE installation directory (required).
 
    **Common Options:**
-   
+
    - ``-DCMAKE_BUILD_TYPE=<type>``: Set the build type. Options: ``Release`` (default),
      ``Debug``, ``RelWithDebInfo``, ``MinSizeRel``.
    - ``-DCMAKE_INSTALL_PREFIX=<path>``: Installation directory prefix (default: system
      directories).
 
    **Optional Features:**
-   
+
    - ``-DHYPREDRV_ENABLE_EIGSPEC=ON``: Enable full eigenspectrum computation support
      (requires LAPACK). Default: ``OFF``.
    - ``-DHYPREDRV_BUILD_EXAMPLES=OFF``: Disable building example programs. Default: ``ON``.
@@ -189,7 +188,7 @@ You should see the output below:
     1/2 Test #1: test_ex1_1proc ....................   Passed
         Start 2: test_ex2_4proc
     2/2 Test #2: test_ex2_4proc ....................   Passed
-    
+
     100% tests passed, 2 tests passed out of 2
 
 
@@ -199,7 +198,7 @@ Troubleshooting
 If you encounter any issues during the installation of `hypredrive`, please open a
 `GitHub issue <https://github.com/hypre-space/hypredrive/issues>`_.
 
-For **CMake builds**, include the output from ``cmake`` and ``cmake --build``. 
+For **CMake builds**, include the output from ``cmake`` and ``cmake --build``.
 
 For **Autotools builds**, include a copy of the ``config.log`` file, which is generated after
 running the ``configure`` script.
