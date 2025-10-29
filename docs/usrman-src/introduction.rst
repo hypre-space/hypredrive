@@ -9,7 +9,7 @@ Introduction
 ============
 
 What is `hypredrive`?
--------------------
+---------------------
 
 `hypredrive` is a high-level interface driver for `hypre`, a package for solving sparse
 linear systems of equations. It's designed to make the process of setting up linear

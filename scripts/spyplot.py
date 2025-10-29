@@ -143,10 +143,16 @@ def main():
         logging.debug(f"  using {len(parts)} file(s): {parts}")
         r, c, v, shape = read_hypre_binary_matrix(parts, threshold=args.threshold)
         logging.info(f"Loaded matrix from files: shape={shape} nnz={r.size}")
-        cv = np.log10(np.maximum(1e-300, np.abs(v))) if (args.log and v.size) else (v)
+        if args.log and v.size:
+            av = np.abs(v)
+            pos = av[av > 0]
+            vmin = float(pos.min()) if pos.size else 1.0
+            cv = np.log10(np.maximum(vmin, av))
+        else:
+            cv = v
         mats = [(r, c, cv, shape, v)]
         ls_ids = [0]
-        labels = [os.path.basename(parts[0])]
+        labels = [os.path.basename(parts[0])]        
         cmins = [float(cv.min())] if cv.size else []
         cmaxs = [float(cv.max())] if cv.size else []
         cmin = min(cmins) if cmins else 0.0
@@ -205,14 +211,17 @@ def main():
             logging.debug(f"  found {len(parts)} part files")
             r, c, v, shape = read_hypre_binary_matrix(parts, threshold=args.threshold)
             logging.info(f"  shape={shape} nnz={r.size}")
-            if args.log:
-                cv = np.log10(np.maximum(1e-300, np.abs(v))) if v.size else v
+            if args.log and v.size:
+                av = np.abs(v)
+                pos = av[av > 0]
+                vmin = float(pos.min()) if pos.size else 1.0
+                cv = np.log10(np.maximum(vmin, av))
             else:
                 cv = v
             mats.append((r, c, cv, shape, v))
             if cv.size:
                 cmins.append(float(cv.min()))
-                cmaxs.append(float(cv.max()))
+                cmaxs.append(float(cv.max()))            
         cmin = min(cmins) if cmins else 0.0
         cmax = max(cmaxs) if cmaxs else 1.0
         logging.info(f"Global color scale: cmin={cmin:.3g} cmax={cmax:.3g}")

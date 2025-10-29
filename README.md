@@ -5,28 +5,31 @@
 High-level interface for solving linear systems with hypre, providing a user-friendly way to leverage its functionalities. Key features are:
 
 1. **YAML Input**: Accepts configuration parameters written in the structured and human-readable YAML format.
-2. **Intuitive Interface**: Offers a clear and concise API, encapsulating the functionalities of *hypre* to ensure user-friendly interactions.
-3. **Prototyping**: Establishes a quick prototyping framework, facilitating the exploration of various solver/preconditioner setups.
+2. **Intuitive Interface**: Offers a clear and concise API that encapsulates the functionalities of *hypre*.
+3. **Prototyping**: Establishes a quick prototyping framework various solver/preconditioner combinations.
 4. **Testing**: Enables the construction of an integrated testing framework, accommodating problems from applications built on hypre.
 
 ## Getting Started
 
-The instructions for building *hypredrive* are given below:
+The instructions for building *hypredrive* using CMake are given below:
 
-```
- $ autoreconf -i
- $ ./configure --prefix=${PWD}/install --with-hypre-dir=${HYPRE_INSTALL_DIR}
- $ make all
- $ make check
- $ make install
+```bash
+$ mkdir build
+$ cmake -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=${PWD}/../install \
+        -DHYPRE_ROOT=${HYPRE_INSTALL_DIR} \
+        -B build -S .
+$ cmake --build build --parallel
+$ cmake --build build --target check
+$ cmake --install build
 ```
 
-Note:
-1. The first step must be executed only once after cloning this repository.
-2. [hypre](https://github.com/hypre-space/hypre) needs to be installed at
-   `${HYPRE_INSTALL_DIR}`.
-3. For GPU support, add `--with-cuda` (NVIDIA GPUs) or `--with-hip` (AMD GPUs) to
-   `./configure`.
+Notes:
+1. [hypre](https://github.com/hypre-space/hypre) needs to be installed and located at
+   `${HYPRE_INSTALL_DIR}`. You must specify the path using `-DHYPRE_ROOT`.
+2. To download example datasets from Zenodo, use `cmake --build build --target data` after
+   configuration.
+3. For full documentation and installation options, see the [user's manual](https://hypredrive.readthedocs.io/en/latest/installation.html).
 
 ## Examples
 

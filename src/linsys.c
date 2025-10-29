@@ -194,6 +194,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    char                 matrix_filename[MAX_FILENAME_LENGTH] = {0};
    int                  ls_id  = StatsGetLinearSystemID();
    int                  nprocs, nparts;
+   int                  file_not_found = 0;
    void                *obj;
    HYPRE_ParCSRMatrix   par_A;
    HYPRE_MemoryLocation memory_location = (args->exec_policy) ?
@@ -252,14 +253,18 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
          else
          {
             ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-            ErrorMsgAddInvalidFilename(args->matrix_filename);
+            ErrorMsgAddInvalidFilename(matrix_filename);
             StatsTimerStop("matrix");
             return;
          }
       }
-      else
+      else if (CheckASCIIDataExists(matrix_filename))
       {
          HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+      }
+      else
+      {
+         file_not_found = 1;
       }
    }
    else if (args->type == 3)
@@ -268,10 +273,10 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    }
 
    /* Check if hypre had problems reading the input file */
-   if (HYPRE_GetError())
+   if (HYPRE_GetError() || file_not_found)
    {
       ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAddInvalidFilename(args->matrix_filename);
+      ErrorMsgAddInvalidFilename(matrix_filename);
       StatsTimerStop("matrix");
       return;
    }
