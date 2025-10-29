@@ -23,6 +23,7 @@ set(_stamp_dir "${CMAKE_BINARY_DIR}/stamps")
 file(MAKE_DIRECTORY "${_dl_dir}" "${_stamp_dir}")
 
 set(_dl_extract_script "${CMAKE_SOURCE_DIR}/scripts/download_and_extract.sh")
+set(_data_dir "${CMAKE_SOURCE_DIR}/data")
 
 set(_dataset_stamps)
 foreach(dataset IN LISTS HYPREDRV_DATASETS)
@@ -31,14 +32,36 @@ foreach(dataset IN LISTS HYPREDRV_DATASETS)
   set(url     "${HYPREDRV_DATA_BASE_URL}/${archive}/content")
   set(tarball "${_dl_dir}/${archive}")
   set(stamp   "${_stamp_dir}/data_${dataset}.stamp")
+  set(dataset_dir "${_data_dir}/${dataset}")
 
-  add_custom_command(OUTPUT "${stamp}"
-    COMMAND ${CMAKE_COMMAND} -E echo "Fetching ${dataset} from ${url}"
-    COMMAND bash "${_dl_extract_script}" "${url}" "${tarball}" "${CMAKE_SOURCE_DIR}/data" "${md5}"
-    COMMAND ${CMAKE_COMMAND} -E touch "${stamp}"
-    COMMENT "Download and extract dataset: ${dataset}"
-    VERBATIM
-  )
+  # Check if dataset directory already exists and is non-empty
+  set(_dataset_exists FALSE)
+  if(EXISTS "${dataset_dir}" AND IS_DIRECTORY "${dataset_dir}")
+    file(GLOB _existing_files "${dataset_dir}/*")
+    list(LENGTH _existing_files _file_count)
+    if(_file_count GREATER 0)
+      set(_dataset_exists TRUE)
+      message(STATUS "Dataset ${dataset} already exists at ${dataset_dir}, skipping download")
+      # Create stamp file to indicate dataset is available
+      add_custom_command(OUTPUT "${stamp}"
+        COMMAND ${CMAKE_COMMAND} -E touch "${stamp}"
+        COMMENT "Dataset ${dataset} already present"
+        VERBATIM
+      )
+    endif()
+  endif()
+
+  # Dataset doesn't exist or is empty, add download command
+  if(NOT _dataset_exists)
+    add_custom_command(OUTPUT "${stamp}"
+      COMMAND ${CMAKE_COMMAND} -E echo "Fetching ${dataset} from ${url}"
+      COMMAND bash "${_dl_extract_script}" "${url}" "${tarball}" "${_data_dir}" "${md5}"
+      COMMAND ${CMAKE_COMMAND} -E touch "${stamp}"
+      COMMENT "Download and extract dataset: ${dataset}"
+      VERBATIM
+    )
+  endif()
+
   list(APPEND _dataset_stamps "${stamp}")
 endforeach()
 
