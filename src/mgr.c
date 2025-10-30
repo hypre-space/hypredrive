@@ -193,6 +193,7 @@ MGRfrlxGetValidValues(const char* key)
                                 {"chebyshev", 16},
                                 {"ilu",       32},
                                 {"ge",         9},
+                                {"spdirect",  29},
                                 {"ge-piv",    99},
                                 {"ge-inv",   199}};
 
