@@ -61,7 +61,6 @@ jobs:
         if: startsWith(runner.os, 'macOS')
         run: |
           brew update
-          brew uninstall openmpi
           brew install cmake ninja mpich clang-format
 
       - name: Cache HYPRE install
@@ -69,6 +68,14 @@ jobs:
         with:
           path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
           key: hypre-${{ env.HYPRE_VERSION }}-${{ matrix.os }}-${{ matrix.compiler }}
+
+      - name: Cache datasets
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: datasets-v1
+          restore-keys: |
+            datasets-v1
 
       - name: Build & install HYPRE
         run: |
@@ -107,7 +114,14 @@ jobs:
         run: cmake --build $BUILD_DIR --parallel
 
       - name: Fetch datasets (optional)
-        run: cmake --build $BUILD_DIR --target data --parallel
+        run: |
+          set -euxo pipefail
+          # Only download if datasets are not already cached
+          if [ ! -d "data/ps3d10pt7" ] || [ -z "$(ls -A data/ps3d10pt7 2>/dev/null)" ]; then
+            cmake --build $BUILD_DIR --target data --parallel
+          else
+            echo "Datasets already cached, skipping download"
+          fi
 
       - name: Run tests
         run: ctest --test-dir $BUILD_DIR --output-on-failure --parallel 2
