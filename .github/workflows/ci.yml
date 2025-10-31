@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'COPYRIGHT'
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'COPYRIGHT'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} | ${{ matrix.compiler }} | ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        build_type: [Debug, Release]
+        compiler: [gcc, clang]
+        exclude:
+          - os: macos-latest
+            compiler: gcc
+    env:
+      HYPRE_VERSION: v2.28.0
+      BUILD_DIR: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: startsWith(runner.os, 'Linux')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build mpich libmpich-dev ccache clang-format
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then sudo apt-get install -y gcc g++; fi
+          if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt-get install -y clang; fi
+
+      - name: Setup ccache (Ubuntu)
+        if: startsWith(runner.os, 'Linux')
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.compiler }}-
+            ${{ runner.os }}-
+
+      - name: Install dependencies (macOS)
+        if: startsWith(runner.os, 'macOS')
+        run: |
+          brew update
+          brew install cmake ninja mpich hypre clang-format
+
+      - name: Cache HYPRE install (Ubuntu)
+        if: startsWith(runner.os, 'Linux')
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
+          key: hypre-${{ env.HYPRE_VERSION }}-${{ matrix.os }}-${{ matrix.compiler }}
+
+      - name: Build & install HYPRE (Ubuntu)
+        if: startsWith(runner.os, 'Linux')
+        run: |
+          set -euxo pipefail
+          PREFIX="${{ runner.tool_cache }}/hypre/${HYPRE_VERSION}"
+          if [ ! -f "$PREFIX/lib/cmake/hypre/HYPREConfig.cmake" ]; then
+            git clone --depth 1 --branch ${HYPRE_VERSION} https://github.com/hypre-space/hypre.git
+            cmake -S hypre/src -B hypre/build -G Ninja \
+              -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+              -DHYPRE_WITH_MPI=ON -DHYPRE_ENABLE_SHARED=ON \
+              -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
+              -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+              -DCMAKE_C_COMPILER=mpicc
+            cmake --build hypre/build --parallel
+            cmake --install hypre/build
+          fi
+          echo "HYPRE_PREFIX=$PREFIX" >> $GITHUB_ENV
+
+      - name: Configure hypredrive
+        run: |
+          set -euxo pipefail
+          CMAKE_PREFIX_PATH_ARG=""
+          CCACHE_ARGS=""
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            CMAKE_PREFIX_PATH_ARG="-DCMAKE_PREFIX_PATH=${HYPRE_PREFIX}"
+            CCACHE_ARGS="-DCMAKE_C_COMPILER_LAUNCHER=ccache"
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            CMAKE_PREFIX_PATH_ARG="-DCMAKE_PREFIX_PATH=$(brew --prefix hypre)"
+          fi
+          cmake -S . -B $BUILD_DIR -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_BUILD_EXAMPLES=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_C_COMPILER=mpicc \
+            $CCACHE_ARGS \
+            $CMAKE_PREFIX_PATH_ARG
+
+      - name: Build
+        run: cmake --build $BUILD_DIR --parallel
+
+      - name: Fetch datasets (optional)
+        run: cmake --build $BUILD_DIR --target data --parallel
+
+      - name: Run tests
+        run: ctest --test-dir $BUILD_DIR --output-on-failure --parallel 2
+
+      - name: Verify example outputs (optional)
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          if [ -f "scripts/compare_output.sh" ] && [ -f "examples/refOutput/ex1.txt" ]; then
+            # Capture output for example 1
+            ${{ env.BUILD_DIR }}/hypredrive examples/ex1.yml > ${{ env.BUILD_DIR }}/test_ex1_output.txt 2>&1 || true
+            if [ -f "${{ env.BUILD_DIR }}/test_ex1_output.txt" ]; then
+              bash scripts/compare_output.sh ${{ env.BUILD_DIR }}/test_ex1_output.txt examples/refOutput/ex1.txt || true
+            fi
+          fi
+
+      - name: Cache ccache (Ubuntu)
+        if: startsWith(runner.os, 'Linux')
+        uses: hendrikmuhs/ccache-action@v1
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          path: |
+            ${{ env.BUILD_DIR }}/Testing
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
+
+      - name: Upload example outputs (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: example-outputs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          path: |
+            ${{ env.BUILD_DIR }}/test_ex1_output.txt
+          retention-days: 1
+

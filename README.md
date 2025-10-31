@@ -1,4 +1,7 @@
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.06654/status.svg)](https://doi.org/10.21105/joss.06654)
+[![CI](https://github.com/hypre-space/hypredrive/workflows/CI/badge.svg)](https://github.com/hypre-space/hypredrive/actions/workflows/ci.yml)
+[![Format](https://github.com/hypre-space/hypredrive/workflows/Format/badge.svg)](https://github.com/hypre-space/hypredrive/actions/workflows/format.yml)
+[![Docs](https://github.com/hypre-space/hypredrive/workflows/Docs/badge.svg)](https://github.com/hypre-space/hypredrive/actions/workflows/docs.yml)
 
 # *hypredrive*
 

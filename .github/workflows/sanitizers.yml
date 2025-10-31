@@ -1,0 +1,84 @@
+name: Sanitizers
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run nightly at midnight UTC
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  sanitizers:
+    name: AddressSanitizer and UndefinedBehaviorSanitizer
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    env:
+      HYPRE_VERSION: v2.28.0
+      BUILD_DIR: build-sanitizers
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build mpich libmpich-dev
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then sudo apt-get install -y gcc g++; fi
+          if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt-get install -y clang; fi
+
+      - name: Cache HYPRE install
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
+          key: hypre-${{ env.HYPRE_VERSION }}-ubuntu-latest-${{ matrix.compiler }}
+
+      - name: Build & install HYPRE
+        run: |
+          set -euxo pipefail
+          PREFIX="${{ runner.tool_cache }}/hypre/${HYPRE_VERSION}"
+          if [ ! -f "$PREFIX/lib/cmake/hypre/HYPREConfig.cmake" ]; then
+            git clone --depth 1 --branch ${HYPRE_VERSION} https://github.com/hypre-space/hypre.git
+            cmake -S hypre/src -B hypre/build -G Ninja \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DHYPRE_WITH_MPI=ON -DHYPRE_ENABLE_SHARED=ON \
+              -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
+              -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+              -DCMAKE_C_COMPILER=mpicc
+            cmake --build hypre/build --parallel
+            cmake --install hypre/build
+          fi
+          echo "HYPRE_PREFIX=$PREFIX" >> $GITHUB_ENV
+
+      - name: Configure hypredrive with sanitizers
+        run: |
+          set -euxo pipefail
+          cmake -S . -B $BUILD_DIR -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_BUILD_EXAMPLES=ON \
+            -DCMAKE_PREFIX_PATH=${HYPRE_PREFIX} \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_C_FLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build
+        run: cmake --build $BUILD_DIR --parallel
+
+      - name: Fetch datasets (optional)
+        run: cmake --build $BUILD_DIR --target data --parallel
+
+      - name: Run tests with sanitizers
+        env:
+          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1"
+          UBSAN_OPTIONS: "print_stacktrace=1:abort_on_error=1"
+        run: ctest --test-dir $BUILD_DIR --output-on-failure --parallel 2
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitizer-logs-${{ matrix.compiler }}
+          path: |
+            ${{ env.BUILD_DIR }}/Testing
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
+
