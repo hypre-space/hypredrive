@@ -2,8 +2,8 @@ name: Sanitizers
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Run nightly at midnight UTC
-  workflow_dispatch:  # Allow manual triggering
+    - cron: '0 0 * * 0' # Runs at 00:00 UTC every Sunday
+  workflow_dispatch:    # Allow manual triggering
 
 jobs:
   sanitizers:
@@ -14,10 +14,10 @@ jobs:
       matrix:
         compiler: [gcc, clang]
     env:
-      HYPRE_VERSION: v2.28.0
+      HYPRE_VERSION: master
       BUILD_DIR: build-sanitizers
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -27,7 +27,7 @@ jobs:
           if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt-get install -y clang; fi
 
       - name: Cache HYPRE install
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
           key: hypre-${{ env.HYPRE_VERSION }}-ubuntu-latest-${{ matrix.compiler }}
@@ -74,11 +74,10 @@ jobs:
 
       - name: Upload logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: sanitizer-logs-${{ matrix.compiler }}
           path: |
             ${{ env.BUILD_DIR }}/Testing
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
-

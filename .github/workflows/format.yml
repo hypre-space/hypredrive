@@ -19,16 +19,15 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v5
+
       - name: Install clang-format
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-format
-      
+
       - name: clang-format check
         run: |
           set -euxo pipefail
           find include src examples/src -type f \( -name "*.c" -o -name "*.h" \) | \
             xargs clang-format -n --Werror
-

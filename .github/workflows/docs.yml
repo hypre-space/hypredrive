@@ -17,27 +17,26 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v5
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Install Python dependencies
         run: |
           pip install -r docs/usrman-src/requirements.txt
-      
+
       - name: Build Sphinx documentation
         run: |
           sphinx-build -b html docs/usrman-src docs/_build/html
-      
+
       - name: Install Doxygen
         run: |
           sudo apt-get update
           sudo apt-get install -y doxygen graphviz
-      
+
       - name: Check Doxygen configuration
         run: |
           doxygen Doxyfile.in || echo "Note: Doxygen may require configuration adjustments"
-

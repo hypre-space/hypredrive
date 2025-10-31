@@ -64,7 +64,6 @@ IncludeCategories:
 IncludeIsMainRegex: '([-_](test|unittest))?$'
 IndentCaseLabels: true
 IndentPPDirectives: None
-IndentWidth: 3
 IndentWrappedFunctionNames: false
 JavaScriptQuotes: Leave
 JavaScriptWrapImports: true
@@ -107,4 +106,3 @@ SpacesInSquareBrackets: false
 Standard: C11
 TabWidth: 3
 UseTab: Never
-
