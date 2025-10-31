@@ -10,11 +10,11 @@ AlignConsecutiveAssignments: true
 AlignConsecutiveDeclarations: true
 AlignOperands: true
 AlignTrailingComments: true
-AllowShortBlocksOnASingleLine: false
+AllowShortBlocksOnASingleLine: true
 AllowShortCaseLabelsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: None
-AllowShortIfStatementsOnASingleLine: false
-AllowShortLoopsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: All
+AllowShortLoopsOnASingleLine: true
 AlwaysBreakAfterDefinitionReturnType: All
 AlwaysBreakAfterReturnType: All
 AlwaysBreakBeforeMultilineStrings: false
