@@ -6,8 +6,8 @@ TabWidth: 3
 UseTab: Never
 ColumnLimit: 120
 AlignAfterOpenBracket: Align
-AlignConsecutiveAssignments: false
-AlignConsecutiveDeclarations: false
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
 AlignOperands: true
 AlignTrailingComments: true
 AllowShortBlocksOnASingleLine: false
