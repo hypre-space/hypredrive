@@ -48,6 +48,23 @@ jobs:
           if [ "${{ matrix.compiler }}" = "gcc" ]; then sudo apt-get install -y gcc g++; fi
           if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt-get install -y clang; fi
 
+      - name: Setup compiler environment (Ubuntu)
+        if: startsWith(runner.os, 'Linux')
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            # Configure mpicc to use clang
+            export MPICH_CC=clang
+            export MPICH_CXX=clang++
+            echo "MPICH_CC=clang" >> $GITHUB_ENV
+            echo "MPICH_CXX=clang++" >> $GITHUB_ENV
+          else
+            # Configure mpicc to use gcc (default)
+            export MPICH_CC=gcc
+            export MPICH_CXX=g++
+            echo "MPICH_CC=gcc" >> $GITHUB_ENV
+            echo "MPICH_CXX=g++" >> $GITHUB_ENV
+          fi
+
       - name: Setup ccache (Ubuntu)
         if: startsWith(runner.os, 'Linux')
         uses: hendrikmuhs/ccache-action@v1
@@ -62,6 +79,15 @@ jobs:
         run: |
           brew update
           brew install cmake ninja mpich clang-format
+          
+      - name: Setup compiler environment (macOS)
+        if: startsWith(runner.os, 'macOS')
+        run: |
+          # macOS mpicc uses clang by default (Apple Clang)
+          export MPICH_CC=clang
+          export MPICH_CXX=clang++
+          echo "MPICH_CC=clang" >> $GITHUB_ENV
+          echo "MPICH_CXX=clang++" >> $GITHUB_ENV
 
       - name: Cache HYPRE install
         uses: actions/cache@v4
@@ -87,8 +113,7 @@ jobs:
               -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
               -DHYPRE_WITH_MPI=ON -DBUILD_SHARED_LIBS=ON \
               -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
-              -DCMAKE_INSTALL_PREFIX="$PREFIX" \
-              -DCMAKE_C_COMPILER=mpicc
+              -DCMAKE_INSTALL_PREFIX="$PREFIX"
             cmake --build hypre/build --parallel
             cmake --install hypre/build
           fi
@@ -106,7 +131,6 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_BUILD_EXAMPLES=ON \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_C_COMPILER=mpicc \
             $CCACHE_ARGS \
             $CMAKE_PREFIX_PATH_ARG
 
