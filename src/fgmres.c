@@ -12,19 +12,21 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define FGMRES_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+#define FGMRES_FIELDS(_prefix)                                       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet)
 
 /* Define num_fields macro */
-#define FGMRES_NUM_FIELDS (sizeof(FGMRES_field_offset_map) / sizeof(FGMRES_field_offset_map[0]))
+#define FGMRES_NUM_FIELDS \
+   (sizeof(FGMRES_field_offset_map) / sizeof(FGMRES_field_offset_map[0]))
 
-/* Generate the various function declarations/definitions and the field_offset_map object */
+/* Generate the various function declarations/definitions and the field_offset_map object
+ */
 GENERATE_PREFIXED_COMPONENTS(FGMRES)
 DEFINE_VOID_GET_VALID_VALUES_FUNC(FGMRES)
 

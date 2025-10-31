@@ -12,12 +12,12 @@
  * StrToLowerCase
  *-----------------------------------------------------------------------------*/
 
-char*
-StrToLowerCase(char* str)
+char *
+StrToLowerCase(char *str)
 {
    for (int i = 0; str[i]; i++)
    {
-      str[i] = tolower((unsigned char) str[i]);
+      str[i] = tolower((unsigned char)str[i]);
    }
    return str;
 }
@@ -26,8 +26,8 @@ StrToLowerCase(char* str)
  * StrTrim
  *-----------------------------------------------------------------------------*/
 
-char*
-StrTrim(char* str)
+char *
+StrTrim(char *str)
 {
    if (!str)
    {
@@ -47,14 +47,14 @@ StrTrim(char* str)
  *-----------------------------------------------------------------------------*/
 
 int
-CheckBinaryDataExists(const char* prefix)
+CheckBinaryDataExists(const char *prefix)
 {
-   char   filename[MAX_FILENAME_LENGTH];
-   int    file_exists;
-   FILE  *fp;
+   char  filename[MAX_FILENAME_LENGTH];
+   int   file_exists;
+   FILE *fp;
 
    /* Check if binary data exist */
-   sprintf(filename, "%*s.00000.bin", (int) strlen(prefix), prefix);
+   sprintf(filename, "%*s.00000.bin", (int)strlen(prefix), prefix);
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp) fclose(fp);
 
@@ -66,14 +66,14 @@ CheckBinaryDataExists(const char* prefix)
  *-----------------------------------------------------------------------------*/
 
 int
-CheckASCIIDataExists(const char* prefix)
+CheckASCIIDataExists(const char *prefix)
 {
-   char   filename[MAX_FILENAME_LENGTH];
-   int    file_exists;
-   FILE  *fp;
+   char  filename[MAX_FILENAME_LENGTH];
+   int   file_exists;
+   FILE *fp;
 
    /* Check if ASCII data exist */
-   sprintf(filename, "%*s.00000", (int) strlen(prefix), prefix);
+   sprintf(filename, "%*s.00000", (int)strlen(prefix), prefix);
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp) fclose(fp);
 
@@ -85,21 +85,21 @@ CheckASCIIDataExists(const char* prefix)
  *-----------------------------------------------------------------------------*/
 
 int
-CountNumberOfPartitions(const char* prefix)
+CountNumberOfPartitions(const char *prefix)
 {
-   char   filename[MAX_FILENAME_LENGTH];
-   int    file_exists = 1;
-   int    num_files = 0;
-   FILE  *fp;
+   char  filename[MAX_FILENAME_LENGTH];
+   int   file_exists = 1;
+   int   num_files   = 0;
+   FILE *fp;
 
    while (file_exists)
    {
-      sprintf(filename, "%*s.%05d.bin", (int) strlen(prefix), prefix, num_files);
+      sprintf(filename, "%*s.%05d.bin", (int)strlen(prefix), prefix, num_files);
       file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
       if (fp) fclose(fp);
       if (!file_exists)
       {
-         sprintf(filename, "%*s.%05d", (int) strlen(prefix), prefix, num_files);
+         sprintf(filename, "%*s.%05d", (int)strlen(prefix), prefix, num_files);
          file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
          if (fp) fclose(fp);
       }
@@ -144,7 +144,7 @@ SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
       /* Allocate memory and copy dirname */
       int dirname_length = last_slash - filename;
 
-      dirname = (char*) malloc(dirname_length + 1);
+      dirname = (char *)malloc(dirname_length + 1);
       strncpy(dirname, filename, dirname_length);
       dirname[dirname_length] = '\0';
 
@@ -170,14 +170,14 @@ SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
 void
 CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
 {
-   size_t   length;
-   char    *filename;
+   size_t length;
+   char  *filename;
 
    /* Compute filename length. +2 for the slash and null terminator */
    length = strlen(dirname) + strlen(basename) + 2;
 
    /* Allocate space for the filename */
-   filename = (char *) malloc(length);
+   filename = (char *)malloc(length);
 
    /* Combine dirname and basename */
    if (filename != NULL)
@@ -203,10 +203,12 @@ CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
  * Returns true if string has a 3 or 4 letter extension
  *-----------------------------------------------------------------------------*/
 
-bool HasFileExtension(const char *str)
+bool
+HasFileExtension(const char *str)
 {
    const char *dot = strrchr(str, '.');
-   if (!dot || dot == str) {
+   if (!dot || dot == str)
+   {
       return false;
    }
 

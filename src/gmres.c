@@ -12,23 +12,25 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define GMRES_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, FieldTypeIntSet) \
+#define GMRES_FIELDS(_prefix)                                            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, FieldTypeIntSet)            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, FieldTypeIntSet)           \
    ADD_FIELD_OFFSET_ENTRY(_prefix, skip_real_res_check, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, FieldTypeDoubleSet)
 
 /* Define num_fields macro */
-#define GMRES_NUM_FIELDS (sizeof(GMRES_field_offset_map) / sizeof(GMRES_field_offset_map[0]))
+#define GMRES_NUM_FIELDS \
+   (sizeof(GMRES_field_offset_map) / sizeof(GMRES_field_offset_map[0]))
 
-/* Generate the various function declarations/definitions and the field_offset_map object */
+/* Generate the various function declarations/definitions and the field_offset_map object
+ */
 GENERATE_PREFIXED_COMPONENTS(GMRES)
 
 /*-----------------------------------------------------------------------------
@@ -36,10 +38,9 @@ GENERATE_PREFIXED_COMPONENTS(GMRES)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-GMRESGetValidValues(const char* key)
+GMRESGetValidValues(const char *key)
 {
-   if (!strcmp(key, "skip_real_res_check") ||
-       !strcmp(key, "rel_change"))
+   if (!strcmp(key, "skip_real_res_check") || !strcmp(key, "rel_change"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }

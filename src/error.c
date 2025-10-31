@@ -31,7 +31,10 @@ void
 ErrorCodeCountIncrement(ErrorCode code)
 {
    int index = 0;
-   while (code >>= 1) { index++; }
+   while (code >>= 1)
+   {
+      index++;
+   }
    if (index > 0 && index < ERROR_CODE_NUM_ENTRIES)
    {
       global_error_count[index]++;
@@ -46,7 +49,10 @@ uint32_t
 ErrorCodeCountGet(ErrorCode code)
 {
    int index = 0;
-   while (code >>= 1) { index++; }
+   while (code >>= 1)
+   {
+      index++;
+   }
    return (index > 0 && index < ERROR_CODE_NUM_ENTRIES) ? global_error_count[index] : 0;
 }
 
@@ -57,7 +63,7 @@ ErrorCodeCountGet(ErrorCode code)
 void
 ErrorCodeSet(ErrorCode code)
 {
-   global_error_code |= (uint32_t) code;
+   global_error_code |= (uint32_t)code;
    ErrorCodeCountIncrement(code);
 }
 
@@ -186,9 +192,9 @@ ErrorCodeResetAll(void)
 void
 ErrorMsgAdd(const char *format, ...)
 {
-   ErrorMsgNode *new = (ErrorMsgNode *) malloc(sizeof(ErrorMsgNode));
-   va_list       args;
-   int           length;
+   ErrorMsgNode *new = (ErrorMsgNode *)malloc(sizeof(ErrorMsgNode));
+   va_list args;
+   int     length;
 
    /* Determine the length of the formatted message */
    va_start(args, format);
@@ -196,13 +202,13 @@ ErrorMsgAdd(const char *format, ...)
    va_end(args);
 
    /* Format the message */
-   new->message = (char *) malloc(length + 1);
+   new->message = (char *)malloc(length + 1);
    va_start(args, format);
    vsnprintf(new->message, length + 1, format, args);
    va_end(args);
 
    /* Insert the new node at the head of the list */
-   new->next = global_error_msg_head;
+   new->next             = global_error_msg_head;
    global_error_msg_head = new;
 }
 
@@ -211,13 +217,13 @@ ErrorMsgAdd(const char *format, ...)
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAddCodeWithCount(ErrorCode code, const char* suffix)
+ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
 {
-   char        *msg;
-   const char  *plural = (ErrorCodeCountGet(code) > 1) ? "s" : "";
-   int          length = strlen(suffix) + 24;
+   char       *msg;
+   const char *plural = (ErrorCodeCountGet(code) > 1) ? "s" : "";
+   int         length = strlen(suffix) + 24;
 
-   msg = (char*) malloc(length);
+   msg = (char *)malloc(length);
    sprintf(msg, "Found %d %s%s!", ErrorCodeCountGet(code), suffix, plural);
    ErrorMsgAdd(msg);
    free(msg);
@@ -233,7 +239,7 @@ ErrorMsgAddMissingKey(const char *key)
    char *msg;
    int   length = strlen(key) + 16;
 
-   msg = (char*) malloc(length);
+   msg = (char *)malloc(length);
    sprintf(msg, "Missing key: %s", key);
    ErrorMsgAdd(msg);
    free(msg);
@@ -249,7 +255,7 @@ ErrorMsgAddExtraKey(const char *key)
    char *msg;
    int   length = strlen(key) + 24;
 
-   msg = (char*) malloc(length);
+   msg = (char *)malloc(length);
    sprintf(msg, "Extra (unused) key: %s", key);
    ErrorMsgAdd(msg);
    free(msg);
@@ -265,7 +271,7 @@ ErrorMsgAddUnexpectedVal(const char *key)
    char *msg;
    int   length = strlen(key) + 40;
 
-   msg = (char*) malloc(length);
+   msg = (char *)malloc(length);
    sprintf(msg, "Unexpected value associated with %s key", key);
    ErrorMsgAdd(msg);
    free(msg);
@@ -276,9 +282,9 @@ ErrorMsgAddUnexpectedVal(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAddInvalidFilename(const char* string)
+ErrorMsgAddInvalidFilename(const char *string)
 {
-   char  msg[1024];
+   char msg[1024];
 
    sprintf(msg, "Invalid filename: %s", string);
    ErrorMsgAdd(msg);
@@ -293,9 +299,11 @@ ErrorMsgPrint()
 {
    ErrorMsgNode *current = global_error_msg_head;
 
-   fprintf(stderr, "====================================================================================\n");
+   fprintf(stderr, "====================================================================="
+                   "===============\n");
    fprintf(stderr, "                                HYPREDRIVE Failure!!!\n");
-   fprintf(stderr, "====================================================================================\n");
+   fprintf(stderr, "====================================================================="
+                   "===============\n");
 
    if (current)
    {
@@ -306,7 +314,8 @@ ErrorMsgPrint()
          current = current->next;
       }
       fprintf(stderr, "\n");
-      fprintf(stderr, "====================================================================================\n\n");
+      fprintf(stderr, "=================================================================="
+                      "==================\n\n");
    }
 }
 
@@ -322,7 +331,7 @@ ErrorMsgClear()
    while (current)
    {
       ErrorMsgNode *temp = current;
-      current = current->next;
+      current            = current->next;
       free(temp->message);
       free(temp);
    }

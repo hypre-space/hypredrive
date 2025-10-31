@@ -8,15 +8,15 @@
 #ifndef CONTAINERS_HEADER
 #define CONTAINERS_HEADER
 
+#include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
-#include <limits.h>
-#include "utils.h"
 #include "HYPRE.h"
 #include "HYPRE_config.h"
 #include "HYPRE_utilities.h"
+#include "utils.h"
 
 #define MAX_FILENAME_LENGTH 2048
 #define MAX_STACK_ARRAY_LENGTH 128
@@ -27,11 +27,11 @@
 
 typedef struct StackIntArray_struct
 {
-   int       data[MAX_STACK_ARRAY_LENGTH];
-   size_t    size;
+   int    data[MAX_STACK_ARRAY_LENGTH];
+   size_t size;
 } StackIntArray;
 
-void StackIntArrayRead(StackIntArray*);
+void StackIntArrayRead(StackIntArray *);
 #define STACK_INTARRAY_CREATE() ((StackIntArray){.data = {0}, .size = 0})
 
 /*--------------------------------------------------------------------------
@@ -40,22 +40,22 @@ void StackIntArrayRead(StackIntArray*);
 
 typedef struct IntArray_struct
 {
-   int      *data;
-   size_t    size;
+   int   *data;
+   size_t size;
 
-   int      *unique_data;
-   size_t    unique_size;
+   int   *unique_data;
+   size_t unique_size;
 
-   int      *g_unique_data;
-   size_t    g_unique_size;
+   int   *g_unique_data;
+   size_t g_unique_size;
 } IntArray;
 
-IntArray* IntArrayCreate(size_t);
-void IntArrayDestroy(IntArray**);
-void IntArrayBuild(MPI_Comm, int, int*, IntArray**);
-void IntArrayBuildInterleaved(MPI_Comm, int, int, IntArray**);
-void IntArrayBuildContiguous(MPI_Comm, int, int, IntArray**);
-void IntArrayParRead(MPI_Comm, const char*, IntArray**);
+IntArray *IntArrayCreate(size_t);
+void      IntArrayDestroy(IntArray **);
+void      IntArrayBuild(MPI_Comm, int, int *, IntArray **);
+void      IntArrayBuildInterleaved(MPI_Comm, int, int, IntArray **);
+void      IntArrayBuildContiguous(MPI_Comm, int, int, IntArray **);
+void      IntArrayParRead(MPI_Comm, const char *, IntArray **);
 
 /*--------------------------------------------------------------------------
  * StrArray struct
@@ -63,16 +63,19 @@ void IntArrayParRead(MPI_Comm, const char*, IntArray**);
 
 typedef struct StrArray_struct
 {
-   const char  **data;
-   size_t        size;
+   const char **data;
+   size_t       size;
 } StrArray;
 
-#define STR_ARRAY_CREATE(_str) \
-   (StrArray){.data = _str, .size = sizeof(_str) / sizeof(_str[0])}
+#define STR_ARRAY_CREATE(_str)                             \
+   (StrArray)                                              \
+   {                                                       \
+      .data = _str, .size = sizeof(_str) / sizeof(_str[0]) \
+   }
 
-bool StrArrayEntryExists(const StrArray, const char*);
-void StrToIntArray(const char*, IntArray**);
-void StrToStackIntArray(const char*, StackIntArray*);
+bool StrArrayEntryExists(const StrArray, const char *);
+void StrToIntArray(const char *, IntArray **);
+void StrToStackIntArray(const char *, StackIntArray *);
 
 /*--------------------------------------------------------------------------
  * StrIntMap struct (str <-> num)
@@ -86,19 +89,25 @@ typedef struct StrIntMap_struct
 
 typedef struct StrIntMapArray_struct
 {
-   const StrIntMap  *data;
-   size_t            size;
+   const StrIntMap *data;
+   size_t           size;
 } StrIntMapArray;
 
-#define STR_INT_MAP_ARRAY_CREATE(map) \
-   (StrIntMapArray){.data = map, .size = sizeof(map) / sizeof(map[0])}
+#define STR_INT_MAP_ARRAY_CREATE(map)                   \
+   (StrIntMapArray)                                     \
+   {                                                    \
+      .data = map, .size = sizeof(map) / sizeof(map[0]) \
+   }
 #define STR_INT_MAP_ARRAY_CREATE_ON_OFF() OnOffMapArray
 #define STR_INT_MAP_ARRAY_VOID() \
-   (StrIntMapArray){.data = NULL, .size = 0}
+   (StrIntMapArray)              \
+   {                             \
+      .data = NULL, .size = 0    \
+   }
 
 extern const StrIntMapArray OnOffMapArray;
-int  StrIntMapArrayGetImage(const StrIntMapArray, const char*);
-bool StrIntMapArrayDomainEntryExists(const StrIntMapArray, const char*);
+int                         StrIntMapArrayGetImage(const StrIntMapArray, const char *);
+bool StrIntMapArrayDomainEntryExists(const StrIntMapArray, const char *);
 
 /*--------------------------------------------------------------------------
  * StrStrIntMap struct (strA,strB <-> num)

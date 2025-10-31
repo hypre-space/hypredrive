@@ -11,12 +11,12 @@
  * IntArrayCreate
  *--------------------------------------------------------------------------*/
 
-IntArray*
+IntArray *
 IntArrayCreate(size_t size)
 {
-   IntArray* int_array;
+   IntArray *int_array;
 
-   int_array = malloc(sizeof(IntArray));
+   int_array       = malloc(sizeof(IntArray));
    int_array->data = malloc(size * sizeof(int));
    int_array->size = size;
 
@@ -33,8 +33,8 @@ IntArrayCreate(size_t size)
  * IntArrayClone
  *--------------------------------------------------------------------------*/
 
-IntArray*
-IntArrayClone(IntArray* other)
+IntArray *
+IntArrayClone(IntArray *other)
 {
    IntArray *this;
 
@@ -49,7 +49,8 @@ IntArrayClone(IntArray* other)
 
    if (this->g_unique_data)
    {
-      memcpy(this->g_unique_data, other->g_unique_data, other->g_unique_size * sizeof(int));
+      memcpy(this->g_unique_data, other->g_unique_data,
+             other->g_unique_size * sizeof(int));
       this->g_unique_size = other->g_unique_size;
    }
 
@@ -80,12 +81,12 @@ IntArrayDestroy(IntArray **int_array_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-StrToIntArray(const char* string, IntArray **int_array_ptr)
+StrToIntArray(const char *string, IntArray **int_array_ptr)
 {
-   char      *buffer;
-   char      *token;
-   int        count;
-   IntArray  *int_array;
+   char     *buffer;
+   char     *token;
+   int       count;
+   IntArray *int_array;
 
    /* Find number of elements in array */
    buffer = strdup(string);
@@ -122,11 +123,11 @@ StrToIntArray(const char* string, IntArray **int_array_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-StrToStackIntArray(const char* string, StackIntArray *int_array)
+StrToStackIntArray(const char *string, StackIntArray *int_array)
 {
-   char      *buffer;
-   char      *token;
-   int        count;
+   char *buffer;
+   char *token;
+   int   count;
 
    /* Find number of elements in array */
    buffer = strdup(string);
@@ -140,7 +141,8 @@ StrToStackIntArray(const char* string, StackIntArray *int_array)
    free(buffer);
 
    /* Set StackIntArray size */
-   int_array->size = (count < MAX_STACK_ARRAY_LENGTH) ? count : MAX_STACK_ARRAY_LENGTH - 1;
+   int_array->size =
+      (count < MAX_STACK_ARRAY_LENGTH) ? count : MAX_STACK_ARRAY_LENGTH - 1;
 
    /* Build array */
    buffer = strdup(string);
@@ -185,13 +187,13 @@ IntArraySort(IntArray *int_array)
 void
 IntArrayUnique(MPI_Comm comm, IntArray *int_array)
 {
-   IntArray    *tmp_array;
-   int          num_entries_int;
-   int          total_num_entries;
-   int         *all_num_entries = NULL;
-   int         *displs = NULL;
-   int         *all_data = NULL;
-   int          myid, nprocs;
+   IntArray *tmp_array;
+   int       num_entries_int;
+   int       total_num_entries;
+   int      *all_num_entries = NULL;
+   int      *displs          = NULL;
+   int      *all_data        = NULL;
+   int       myid, nprocs;
 
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
@@ -211,7 +213,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
    }
 
    /* Compute local unique array */
-   int_array->unique_data = (int*) calloc(int_array->unique_size, sizeof(int));
+   int_array->unique_data    = (int *)calloc(int_array->unique_size, sizeof(int));
    int_array->unique_data[0] = tmp_array->data[0];
    for (size_t i = 1, k = 0; i < int_array->size; i++)
    {
@@ -225,25 +227,25 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
    /* Gather sizes of local unique arrays */
    if (!myid)
    {
-      all_num_entries = (int *) malloc(nprocs * sizeof(int));
+      all_num_entries = (int *)malloc(nprocs * sizeof(int));
    }
-   num_entries_int = (int) int_array->unique_size;
+   num_entries_int = (int)int_array->unique_size;
    MPI_Gather(&num_entries_int, 1, MPI_INT, all_num_entries, 1, MPI_INT, 0, comm);
 
    /* Gather local unique arrays */
    if (!myid)
    {
-      displs = (int *) calloc(nprocs, sizeof(int));
+      displs            = (int *)calloc(nprocs, sizeof(int));
       total_num_entries = all_num_entries[0];
       for (int i = 1; i < nprocs; i++)
       {
          displs[i] = displs[i - 1] + all_num_entries[i - 1];
          total_num_entries += all_num_entries[i];
       }
-      all_data = (int *) malloc(total_num_entries * sizeof(int));
+      all_data = (int *)malloc(total_num_entries * sizeof(int));
    }
-   MPI_Gatherv(int_array->unique_data, (int) int_array->unique_size, MPI_INT,
-               all_data, all_num_entries, displs, MPI_INT, 0, comm);
+   MPI_Gatherv(int_array->unique_data, (int)int_array->unique_size, MPI_INT, all_data,
+               all_num_entries, displs, MPI_INT, 0, comm);
 
    /* Compute global number of unique entries */
    if (!myid)
@@ -262,7 +264,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
       }
    }
    MPI_Bcast(&int_array->g_unique_size, 1, MPI_UNSIGNED_LONG, 0, comm);
-   int_array->g_unique_data = (int*) calloc(int_array->g_unique_size, sizeof(int));
+   int_array->g_unique_data = (int *)calloc(int_array->g_unique_size, sizeof(int));
 
    /* Compute global unique data */
    if (!myid)
@@ -287,16 +289,16 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
  *-----------------------------------------------------------------------------*/
 
 void
-IntArrayParRead(MPI_Comm comm, const char* prefix, IntArray **int_array_ptr)
+IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
 {
-   char        filename[MAX_FILENAME_LENGTH];
-   char        suffix[5], code[3];
-   size_t      num_entries, num_entries_all, count;
-   IntArray   *int_array;
-   FILE       *fp;
-   int         myid, nprocs, nparts, g_nparts, offset;
-   int        *partids;
-   bool        is_binary;
+   char      filename[MAX_FILENAME_LENGTH];
+   char      suffix[5], code[3];
+   size_t    num_entries, num_entries_all, count;
+   IntArray *int_array;
+   FILE     *fp;
+   int       myid, nprocs, nparts, g_nparts, offset;
+   int      *partids;
+   bool      is_binary;
 
    *int_array_ptr = NULL;
 
@@ -304,7 +306,7 @@ IntArrayParRead(MPI_Comm comm, const char* prefix, IntArray **int_array_ptr)
    MPI_Comm_size(comm, &nprocs);
    MPI_Comm_rank(comm, &myid);
    g_nparts = CountNumberOfPartitions(prefix);
-   nparts = g_nparts / nprocs;
+   nparts   = g_nparts / nprocs;
    nparts += (myid < (g_nparts % nprocs)) ? 1 : 0;
    if (g_nparts < nprocs)
    {
@@ -316,7 +318,7 @@ IntArrayParRead(MPI_Comm comm, const char* prefix, IntArray **int_array_ptr)
    /* 1b) Compute partids array */
    partids = malloc(nparts * sizeof(int));
    offset  = myid * nparts;
-   offset  += (myid < (g_nparts % nprocs)) ? myid : (g_nparts % nprocs);
+   offset += (myid < (g_nparts % nprocs)) ? myid : (g_nparts % nprocs);
    for (int part = 0; part < nparts; part++)
    {
       partids[part] = offset + part;
@@ -348,8 +350,8 @@ IntArrayParRead(MPI_Comm comm, const char* prefix, IntArray **int_array_ptr)
          return;
       }
 
-      count = (is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp) :
-                   (size_t) fscanf(fp, "%ld", &num_entries);
+      count = (is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
+                          : (size_t)fscanf(fp, "%ld", &num_entries);
       if (count != 1)
       {
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -362,7 +364,7 @@ IntArrayParRead(MPI_Comm comm, const char* prefix, IntArray **int_array_ptr)
    int_array = IntArrayCreate(num_entries_all);
 
    /* Fill entries */
-   for (size_t part = 0, idx = 0; part < (size_t) nparts; part++)
+   for (size_t part = 0, idx = 0; part < (size_t)nparts; part++)
    {
       snprintf(filename, sizeof(filename), "%s.%05d%s", prefix, partids[part], suffix);
       if ((fp = fopen(filename, code)) == NULL)
@@ -372,8 +374,8 @@ IntArrayParRead(MPI_Comm comm, const char* prefix, IntArray **int_array_ptr)
          return;
       }
 
-      count = (is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp) :
-                   (size_t) fscanf(fp, "%ld", &num_entries);
+      count = (is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
+                          : (size_t)fscanf(fp, "%ld", &num_entries);
       if (count != 1)
       {
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -422,7 +424,7 @@ IntArrayParRead(MPI_Comm comm, const char* prefix, IntArray **int_array_ptr)
 void
 IntArrayBuild(MPI_Comm comm, int size, int *dofmap, IntArray **int_array_ptr)
 {
-   IntArray  *int_array;
+   IntArray *int_array;
 
    int_array = IntArrayCreate(size);
    memcpy(int_array->data, dofmap, size * sizeof(int));
@@ -436,10 +438,11 @@ IntArrayBuild(MPI_Comm comm, int size, int *dofmap, IntArray **int_array_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types, IntArray **int_array_ptr)
+IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types,
+                         IntArray **int_array_ptr)
 {
-   IntArray  *int_array;
-   int        size = num_dof_types * num_local_blocks; // TODO: check overflow
+   IntArray *int_array;
+   int       size = num_dof_types * num_local_blocks; // TODO: check overflow
 
    int_array = IntArrayCreate(size);
    for (int i = 0; i < num_local_blocks; i++)
@@ -459,10 +462,11 @@ IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types,
  *-----------------------------------------------------------------------------*/
 
 void
-IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types, IntArray **int_array_ptr)
+IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types,
+                        IntArray **int_array_ptr)
 {
-   IntArray  *int_array;
-   int        size = num_dof_types * num_local_blocks; // TODO: check overflow
+   IntArray *int_array;
+   int       size = num_dof_types * num_local_blocks; // TODO: check overflow
 
    int_array = IntArrayCreate(size);
    for (int i = 0; i < num_dof_types; i++)
@@ -481,12 +485,11 @@ IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types, 
  * OnOffMapArray
  *--------------------------------------------------------------------------*/
 
-const StrIntMapArray OnOffMapArray =
-{
-   .data = (const StrIntMap[]){{"on",  1}, {"yes", 1}, {"true",  1},
-                               {"off", 0}, {"no",  0}, {"false", 0}},
-   .size = 6
-};
+const StrIntMapArray OnOffMapArray = {
+   .data =
+      (const StrIntMap[]){
+         {"on", 1}, {"yes", 1}, {"true", 1}, {"off", 0}, {"no", 0}, {"false", 0}},
+   .size = 6};
 
 /*--------------------------------------------------------------------------
  * StrArrayEntryExists
@@ -495,7 +498,7 @@ const StrIntMapArray OnOffMapArray =
 bool
 StrArrayEntryExists(const StrArray valid, const char *string)
 {
-   size_t  i;
+   size_t i;
 
    for (i = 0; i < valid.size; i++)
    {
@@ -515,9 +518,9 @@ StrArrayEntryExists(const StrArray valid, const char *string)
 int
 StrIntMapArrayGetImage(const StrIntMapArray valid, const char *string)
 {
-   char     *end_ptr;
-   long int  string_num = strtol(string, &end_ptr, 10);
-   size_t    i;
+   char    *end_ptr;
+   long int string_num = strtol(string, &end_ptr, 10);
+   size_t   i;
 
    if (*end_ptr == '\0')
    {

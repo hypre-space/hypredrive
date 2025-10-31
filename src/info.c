@@ -5,20 +5,20 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include "info.h"
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 #include <sys/utsname.h>
-#include "info.h"
+#include <unistd.h>
 #include "HYPRE_config.h"
 #if defined(HYPRE_USING_OPENMP)
 #include <omp.h>
 #endif
 
 #if defined(__APPLE__)
-#include <sys/sysctl.h>
-#include <mach/mach.h>
 #include <mach-o/dyld.h>
+#include <mach/mach.h>
+#include <sys/sysctl.h>
 #else
 #include <sys/sysinfo.h>
 #define __USE_GNU
@@ -45,8 +45,8 @@ dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
 {
    if (info->dlpi_name && info->dlpi_name[0])
    {
-      const char* filename = strrchr(info->dlpi_name, '/');
-      filename = filename ? filename + 1 : info->dlpi_name;
+      const char *filename = strrchr(info->dlpi_name, '/');
+      filename             = filename ? filename + 1 : info->dlpi_name;
       printf("   %s => %s (0x%lx)\n", filename, info->dlpi_name, info->dlpi_addr);
    }
    return 0;
@@ -61,14 +61,14 @@ dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
 void
 PrintSystemInfo(MPI_Comm comm)
 {
-   int      myid, nprocs;
-   char     hostname[256];
-   double   bytes_to_gib = (double) (1 << 30);
-   double   mib_to_gib   = (double) (1 << 10);
-   size_t   total, used;
-   int      gcount;
-   FILE    *fp = NULL;
-   char     buffer[32768];
+   int    myid, nprocs;
+   char   hostname[256];
+   double bytes_to_gib = (double)(1 << 30);
+   double mib_to_gib   = (double)(1 << 10);
+   size_t total, used;
+   int    gcount;
+   FILE  *fp = NULL;
+   char   buffer[32768];
 
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
@@ -84,14 +84,15 @@ PrintSystemInfo(MPI_Comm comm)
 
    if (!myid)
    {
-      printf("================================ System Information ================================\n\n");
+      printf("================================ System Information "
+             "================================\n\n");
 
       // 1. CPU cores and model
-      int   numPhysicalCPUs = 0;
-      int   physicalCPUSeen = 0;
-      int   numCPUs;
-      char  cpuModels[8][256];
-      char  gpuInfo[256] = "Unknown";
+      int  numPhysicalCPUs = 0;
+      int  physicalCPUSeen = 0;
+      int  numCPUs;
+      char cpuModels[8][256];
+      char gpuInfo[256] = "Unknown";
 
       /* Count unique hostnames */
       int numNodes = 0;
@@ -149,7 +150,7 @@ PrintSystemInfo(MPI_Comm comm)
                int physicalID = numPhysicalCPUs - 1;
                if (physicalID >= 0 && physicalID < 8)
                {
-                  char* model = strchr(buffer, ':') + 2;
+                  char *model = strchr(buffer, ':') + 2;
                   strncpy(cpuModels[physicalID], model,
                           sizeof(cpuModels[physicalID]) - 1);
                   cpuModels[physicalID][strlen(cpuModels[physicalID]) - 1] = '\0';
@@ -199,8 +200,9 @@ PrintSystemInfo(MPI_Comm comm)
       printf("Number of Nodes       : %d\n", numNodes);
       printf("Number of Processors  : %d\n", numPhysicalCPUs);
       printf("Number of CPU threads : %d\n", numCPUs);
-      printf("Tot. # of Processors  : %lld\n", (long long) numNodes * (long long) numPhysicalCPUs);
-      printf("Tot. # of CPU threads : %lld\n", (long long) numNodes * (long long) numCPUs);
+      printf("Tot. # of Processors  : %lld\n",
+             (long long)numNodes * (long long)numPhysicalCPUs);
+      printf("Tot. # of CPU threads : %lld\n", (long long)numNodes * (long long)numCPUs);
       for (int i = 0; i < numPhysicalCPUs; i++)
       {
          printf("CPU Model #%d          : %s\n", i, cpuModels[i]);
@@ -208,7 +210,7 @@ PrintSystemInfo(MPI_Comm comm)
 
 #ifndef __APPLE__
       gcount = 0;
-      fp = NULL;
+      fp     = NULL;
       if (system("command -v lspci > /dev/null 2>&1") == 0)
       {
          fp = popen("lspci | grep -Ei 'vga|3d|2d|display|accel'", "r");
@@ -218,9 +220,18 @@ PrintSystemInfo(MPI_Comm comm)
          while (fgets(buffer, sizeof(buffer), fp) != NULL)
          {
             /* Skip onboard server graphics */
-            if (strstr(buffer, "Matrox")  != NULL) { continue; }
-            if (strstr(buffer, "ASPEED")  != NULL) { continue; }
-            if (strstr(buffer, "Nuvoton") != NULL) { continue; }
+            if (strstr(buffer, "Matrox") != NULL)
+            {
+               continue;
+            }
+            if (strstr(buffer, "ASPEED") != NULL)
+            {
+               continue;
+            }
+            if (strstr(buffer, "Nuvoton") != NULL)
+            {
+               continue;
+            }
 
             char *start = strstr(buffer, "VGA compatible controller");
             if (!start) start = strstr(buffer, "3D controller");
@@ -294,23 +305,23 @@ PrintSystemInfo(MPI_Comm comm)
 
       mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
       vm_statistics_data_t   vmstat;
-      if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) == KERN_SUCCESS)
+      if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) ==
+          KERN_SUCCESS)
       {
-         used = total - (size_t) vmstat.free_count * sysconf(_SC_PAGESIZE);
+         used = total - (size_t)vmstat.free_count * sysconf(_SC_PAGESIZE);
 
          printf("CPU RAM               : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                (double) used / bytes_to_gib,
-                (double) total / bytes_to_gib,
-                100.0 * (total - used) / (double) total);
+                (double)used / bytes_to_gib, (double)total / bytes_to_gib,
+                100.0 * (total - used) / (double)total);
       }
 #else
       struct sysinfo info;
       if (sysinfo(&info) == 0)
       {
          printf("CPU RAM               : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                (double) (info.totalram - info.freeram) * info.mem_unit / bytes_to_gib,
-                (double) info.totalram * info.mem_unit / bytes_to_gib,
-                100.0 * (info.totalram - info.freeram) / (double) info.totalram);
+                (double)(info.totalram - info.freeram) * info.mem_unit / bytes_to_gib,
+                (double)info.totalram * info.mem_unit / bytes_to_gib,
+                100.0 * (info.totalram - info.freeram) / (double)info.totalram);
       }
 #endif
 
@@ -318,7 +329,9 @@ PrintSystemInfo(MPI_Comm comm)
       fp = NULL;
       if (system("command -v nvidia-smi > /dev/null 2>&1") == 0)
       {
-         fp = popen("nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits", "r");
+         fp = popen("nvidia-smi --query-gpu=memory.total,memory.used "
+                    "--format=csv,noheader,nounits",
+                    "r");
       }
       if (fp != NULL)
       {
@@ -327,10 +340,8 @@ PrintSystemInfo(MPI_Comm comm)
             if (sscanf(buffer, "%ld, %ld", &total, &used) == 2)
             {
                printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                      gcount++,
-                      used / mib_to_gib,
-                      total / mib_to_gib,
-                      100.0 * used / (double) total);
+                      gcount++, used / mib_to_gib, total / mib_to_gib,
+                      100.0 * used / (double)total);
             }
          }
          pclose(fp);
@@ -353,8 +364,8 @@ PrintSystemInfo(MPI_Comm comm)
          pclose(fp);
 
          const char *vram_total_str = "\"VRAM Total Memory (B)\": \"";
-         const char *vram_used_str = "\"VRAM Total Used Memory (B)\": \"";
-         const char *ptr = buffer;
+         const char *vram_used_str  = "\"VRAM Total Used Memory (B)\": \"";
+         const char *ptr            = buffer;
 
          while ((ptr = strstr(ptr, vram_total_str)) != NULL)
          {
@@ -365,11 +376,9 @@ PrintSystemInfo(MPI_Comm comm)
             ptr += strlen(vram_used_str);
             used = strtoll(ptr, NULL, 10);
 
-            printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                   gcount++,
-                   used / bytes_to_gib,
-                   total / bytes_to_gib,
-                   100.0 * used / (double) total);
+            printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n", gcount++,
+                   used / bytes_to_gib, total / bytes_to_gib,
+                   100.0 * used / (double)total);
          }
       }
 
@@ -404,11 +413,14 @@ PrintSystemInfo(MPI_Comm comm)
 #if defined(__clang_version__)
       printf("Compiler              : Clang %s\n", __clang_version__);
 #elif defined(__clang__)
-      printf("Compiler              : Clang %d.%d.%d\n", __clang_major__, __clang_minor__, __clang_patchlevel__);
+      printf("Compiler              : Clang %d.%d.%d\n", __clang_major__, __clang_minor__,
+             __clang_patchlevel__);
 #elif defined(__INTEL_COMPILER)
-      printf("Compiler              : Intel %d.%d\n", __INTEL_COMPILER / 100, (__INTEL_COMPILER % 100) / 10);
+      printf("Compiler              : Intel %d.%d\n", __INTEL_COMPILER / 100,
+             (__INTEL_COMPILER % 100) / 10);
 #elif defined(__GNUC__)
-      printf("Compiler              : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+      printf("Compiler              : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__,
+             __GNUC_PATCHLEVEL__);
 #else
       printf("Compiler              : Unknown\n");
 #endif
@@ -423,16 +435,15 @@ PrintSystemInfo(MPI_Comm comm)
 #elif defined(INTEL_MPI_VERSION)
       printf("Intel MPI (Version: %s)\n", INTEL_MPI_VERSION);
 #elif defined(__IBM_MPI__)
-      printf("IBM Spectrum MPI (Version: %d.%d.%d)\n",
-             __IBM_MPI_MAJOR_VERSION,
-             __IBM_MPI_MINOR_VERSION,
-             __IBM_MPI_RELEASE_VERSION);
+      printf("IBM Spectrum MPI (Version: %d.%d.%d)\n", __IBM_MPI_MAJOR_VERSION,
+             __IBM_MPI_MINOR_VERSION, __IBM_MPI_RELEASE_VERSION);
 #elif defined(MVAPICH2_VERSION)
       printf("MVAPICH2 (Version: %s)\n", MVAPICH2_VERSION);
 #elif defined(MPICH_NAME)
       printf("MPICH (Version: %s)\n", MPICH_VERSION);
 #elif defined(OMPI_MAJOR_VERSION)
-      printf("OpenMPI (Version: %d.%d.%d)\n", OMPI_MAJOR_VERSION, OMPI_MINOR_VERSION, OMPI_RELEASE_VERSION);
+      printf("OpenMPI (Version: %d.%d.%d)\n", OMPI_MAJOR_VERSION, OMPI_MINOR_VERSION,
+             OMPI_RELEASE_VERSION);
 #elif defined(SGI_MPI)
       printf("SGI MPI\n");
 #else
@@ -474,9 +485,9 @@ PrintSystemInfo(MPI_Comm comm)
       uint32_t dcount = _dyld_image_count();
       for (uint32_t i = 0; i < dcount; i++)
       {
-         const char* name = _dyld_get_image_name(i);
-         const struct mach_header* header = _dyld_get_image_header(i);
-         const char* filename = strrchr(name, '/');
+         const char               *name     = _dyld_get_image_name(i);
+         const struct mach_header *header   = _dyld_get_image_header(i);
+         const char               *filename = strrchr(name, '/');
 
          filename = filename ? filename + 1 : name;
          printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
@@ -485,13 +496,15 @@ PrintSystemInfo(MPI_Comm comm)
       dl_iterate_phdr(dlpi_callback, NULL);
 #endif
 
-      printf("\n================================ System Information ================================\n\n");
+      printf("\n================================ System Information "
+             "================================\n\n");
       printf("Running on %d MPI rank%s\n", nprocs, nprocs > 1 ? "s" : "");
 
-     /* Number of OpenMP threads per rank used in hypre */
+      /* Number of OpenMP threads per rank used in hypre */
 #if defined(HYPRE_USING_OPENMP) && defined(_OPENMP)
       int num_threads = omp_get_max_threads();
-      printf("Running on %d OpenMP thread%s per MPI rank\n", num_threads, num_threads > 1 ? "s" : "");
+      printf("Running on %d OpenMP thread%s per MPI rank\n", num_threads,
+             num_threads > 1 ? "s" : "");
 #endif
    }
 }
@@ -503,10 +516,10 @@ PrintSystemInfo(MPI_Comm comm)
 void
 PrintLibInfo(MPI_Comm comm)
 {
-   int         myid;
-   time_t      t;
-   struct tm  *tm_info;
-   char        buffer[100];
+   int        myid;
+   time_t     t;
+   struct tm *tm_info;
+   char       buffer[100];
 
    MPI_Comm_rank(comm, &myid);
 
@@ -522,16 +535,14 @@ PrintLibInfo(MPI_Comm comm)
 
       /* Print hypre info */
 #if defined(HYPRE_DEVELOP_STRING) && defined(HYPRE_BRANCH_NAME)
-      printf("\nUsing HYPRE_DEVELOP_STRING: %s (%s)\n\n",
-              HYPRE_DEVELOP_STRING, HYPRE_BRANCH_NAME);
+      printf("\nUsing HYPRE_DEVELOP_STRING: %s (%s)\n\n", HYPRE_DEVELOP_STRING,
+             HYPRE_BRANCH_NAME);
 
 #elif defined(HYPRE_DEVELOP_STRING) && !defined(HYPRE_BRANCH_NAME)
-      printf("\nUsing HYPRE_DEVELOP_STRING: %s\n\n",
-              HYPRE_DEVELOP_STRING);
+      printf("\nUsing HYPRE_DEVELOP_STRING: %s\n\n", HYPRE_DEVELOP_STRING);
 
 #elif defined(HYPRE_RELEASE_VERSION)
-      printf("\nUsing HYPRE_RELEASE_VERSION: %s\n\n",
-              HYPRE_RELEASE_VERSION);
+      printf("\nUsing HYPRE_RELEASE_VERSION: %s\n\n", HYPRE_RELEASE_VERSION);
 #endif
    }
 }
@@ -558,6 +569,6 @@ PrintExitInfo(MPI_Comm comm, const char *argv0)
 
       /* Format and print the date and time */
       strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
-      printf("Date and time: %s\n%s done!\n", buffer, argv0 ? argv0: "Driver");
+      printf("Date and time: %s\n%s done!\n", buffer, argv0 ? argv0 : "Driver");
    }
 }

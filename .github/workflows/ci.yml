@@ -61,7 +61,7 @@ jobs:
         if: startsWith(runner.os, 'macOS')
         run: |
           brew update
-          brew uninstall open-mpi
+          brew uninstall openmpi
           brew install cmake ninja mpich clang-format
 
       - name: Cache HYPRE install

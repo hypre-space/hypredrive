@@ -13,72 +13,72 @@
  *-----------------------------------------------------------------------------*/
 
 /* AMG's interpolation fields */
-#define AMGint_FIELDS(_prefix) \
+#define AMGint_FIELDS(_prefix)                                         \
    ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, FieldTypeIntSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, FieldTypeDoubleSet)
 
 /* AMG's coarsening fields */
-#define AMGcsn_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, rap2, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, mod_rap2, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, keep_transpose, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_functions, FieldTypeIntSet) \
+#define AMGcsn_FIELDS(_prefix)                                        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rap2, FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, mod_rap2, FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, keep_transpose, FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_functions, FieldTypeIntSet)    \
    ADD_FIELD_OFFSET_ENTRY(_prefix, filter_functions, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, seq_amg_th, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, min_coarse_size, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_coarse_size, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_levels, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_sum, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, seq_amg_th, FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, min_coarse_size, FieldTypeIntSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_coarse_size, FieldTypeIntSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_levels, FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_sum, FieldTypeDoubleSet)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, strong_th, FieldTypeDoubleSet)
 
 /* AMG's aggressive coarsening fields */
-#define AMGagg_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_paths, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, FieldTypeDoubleSet) \
+#define AMGagg_FIELDS(_prefix)                                           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_paths, FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, FieldTypeDoubleSet)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, P12_max_elements, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, P12_trunc_factor, FieldTypeDoubleSet)
 
 /* AMG's relaxation fields */
-#define AMGrlx_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, down_type, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, up_type, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_type, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, down_sweeps, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, up_sweeps, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_sweeps, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, order, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, weight, FieldTypeDoubleSet) \
+#define AMGrlx_FIELDS(_prefix)                                       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, down_type, FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, up_type, FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_type, FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, down_sweeps, FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, up_sweeps, FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_sweeps, FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, order, FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, weight, FieldTypeDoubleSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, outer_weight, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, chebyshev, ChebySetArgs)
 
 /* AMG's complex smoother fields */
-#define AMGsmt_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
+#define AMGsmt_FIELDS(_prefix)                                  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, FSAISetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, FSAISetArgs)           \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
 
 /* AMG */
-#define AMG_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
+#define AMG_FIELDS(_prefix)                                       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, interpolation, AMGintSetArgs) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, aggressive, AMGaggSetArgs) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsening, AMGcsnSetArgs) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relaxation, AMGrlxSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, interpolation, AMGintSetArgs)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, aggressive, AMGaggSetArgs)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsening, AMGcsnSetArgs)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relaxation, AMGrlxSetArgs)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, smoother, AMGsmtSetArgs)
 
 /* Define the prefix list */
-#define GENERATE_PREFIXED_LIST_AMG \
+#define GENERATE_PREFIXED_LIST_AMG      \
    GENERATE_PREFIXED_COMPONENTS(AMGint) \
    GENERATE_PREFIXED_COMPONENTS(AMGcsn) \
    GENERATE_PREFIXED_COMPONENTS(AMGagg) \
@@ -87,12 +87,14 @@
    GENERATE_PREFIXED_COMPONENTS(AMG)
 
 /* Define num_fields macros for each struct prefix */
+// clang-format off
 #define AMGint_NUM_FIELDS (sizeof(AMGint_field_offset_map) / sizeof(AMGint_field_offset_map[0]))
 #define AMGcsn_NUM_FIELDS (sizeof(AMGcsn_field_offset_map) / sizeof(AMGcsn_field_offset_map[0]))
 #define AMGagg_NUM_FIELDS (sizeof(AMGagg_field_offset_map) / sizeof(AMGagg_field_offset_map[0]))
 #define AMGrlx_NUM_FIELDS (sizeof(AMGrlx_field_offset_map) / sizeof(AMGrlx_field_offset_map[0]))
 #define AMGsmt_NUM_FIELDS (sizeof(AMGsmt_field_offset_map) / sizeof(AMGsmt_field_offset_map[0]))
 #define AMG_NUM_FIELDS    (sizeof(AMG_field_offset_map)    / sizeof(AMG_field_offset_map[0]))
+// clang-format on
 
 /* Iterates over each prefix in the list and
    generates the various function declarations/definitions and field_offset_map object */
@@ -119,17 +121,17 @@ AMGintSetDefaultArgs(AMGint_args *args)
 void
 AMGcsnSetDefaultArgs(AMGcsn_args *args)
 {
-   args->rap2             = 0;
-#if defined (HYPRE_USING_GPU)
-   args->type             = 8;
-   args->mod_rap2         = 1;
-   args->keep_transpose   = 1;
-   args->type             = 8;
+   args->rap2 = 0;
+#if defined(HYPRE_USING_GPU)
+   args->type           = 8;
+   args->mod_rap2       = 1;
+   args->keep_transpose = 1;
+   args->type           = 8;
 #else
-   args->type             = 10;
-   args->mod_rap2         = 0;
-   args->keep_transpose   = 0;
-   args->type             = 10;
+   args->type           = 10;
+   args->mod_rap2       = 0;
+   args->keep_transpose = 0;
+   args->type           = 10;
 #endif
    args->num_functions    = 1;
    args->filter_functions = 0;
@@ -164,12 +166,12 @@ AMGaggSetDefaultArgs(AMGagg_args *args)
 void
 AMGrlxSetDefaultArgs(AMGrlx_args *args)
 {
-#if defined (HYPRE_USING_GPU)
-   args->down_type     = 18;
-   args->up_type       = 18;
+#if defined(HYPRE_USING_GPU)
+   args->down_type = 18;
+   args->up_type   = 18;
 #else
-   args->down_type     = 13;
-   args->up_type       = 14;
+   args->down_type = 13;
+   args->up_type   = 14;
 #endif
    args->coarse_type   = 9;
    args->down_sweeps   = -1;
@@ -217,8 +219,9 @@ AMGSetDefaultArgs(AMG_args *args)
  * AMGintGetValidValues
  *-----------------------------------------------------------------------------*/
 
+// clang-format off
 StrIntMapArray
-AMGintGetValidValues(const char* key)
+AMGintGetValidValues(const char *key)
 {
    if (!strcmp(key, "prolongation_type"))
    {
@@ -269,16 +272,16 @@ AMGintGetValidValues(const char* key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-AMGcsnGetValidValues(const char* key)
+AMGcsnGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"cljp",     0},
-                                {"rs",       1},
-                                {"rs3",      3},
-                                {"falgout",  6},
-                                {"pmis",     8},
-                                {"hmis",    10}};
+      static StrIntMap map[] = {{"cljp",    0},
+                                {"rs",      1},
+                                {"rs3",     3},
+                                {"falgout", 6},
+                                {"pmis",    8},
+                                {"hmis",   10}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -300,17 +303,17 @@ AMGcsnGetValidValues(const char* key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-AMGaggGetValidValues(const char* key)
+AMGaggGetValidValues(const char *key)
 {
    if (!strcmp(key, "prolongation_type"))
    {
-      static StrIntMap map[] = {{"2_stage_extended+i",  1},
-                                {"2_stage_standard",    2},
-                                {"2_stage_extended",    3},
-                                {"multipass",           4},
-                                {"mm_extended",         5},
-                                {"mm_extended+i",       6},
-                                {"mm_extended+e",       7}};
+      static StrIntMap map[] = {{"2_stage_extended+i", 1},
+                                {"2_stage_standard",   2},
+                                {"2_stage_extended",   3},
+                                {"multipass",          4},
+                                {"mm_extended",        5},
+                                {"mm_extended+i",      6},
+                                {"mm_extended+e",      7}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -325,23 +328,23 @@ AMGaggGetValidValues(const char* key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-AMGrlxGetValidValues(const char* key)
+AMGrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "down_type"))
    {
-      static StrIntMap map[] = {{"jacobi_non_mv",   0},
-                                {"forward-hgs",     3},
-                                {"chaotic-hgs",     5},
-                                {"hsgs",            6},
-                                {"jacobi",          7},
-                                {"l1-hsgs",         8},
-                                {"2gs-it1",        11},
-                                {"2gs-it2",        12},
-                                {"forward-hl1gs",  13},
-                                {"cg",             15},
-                                {"chebyshev",      16},
-                                {"l1-jacobi",      18},
-                                {"l1sym-hgs",      89}};
+      static StrIntMap map[] = {{"jacobi_non_mv",  0},
+                                {"forward-hgs",    3},
+                                {"chaotic-hgs",    5},
+                                {"hsgs",           6},
+                                {"jacobi",         7},
+                                {"l1-hsgs",        8},
+                                {"2gs-it1",       11},
+                                {"2gs-it2",       12},
+                                {"forward-hl1gs", 13},
+                                {"cg",            15},
+                                {"chebyshev",     16},
+                                {"l1-jacobi",     18},
+                                {"l1sym-hgs",     89}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -372,6 +375,8 @@ AMGrlxGetValidValues(const char* key)
                                 {"ge",              9},
                                 {"2gs-it1",        11},
                                 {"2gs-it2",        12},
+                                {"forward-hl1gs",  13},
+                                {"backward-hl1gs", 14},
                                 {"cg",             15},
                                 {"chebyshev",      16},
                                 {"l1-jacobi",      18},
@@ -392,7 +397,7 @@ AMGrlxGetValidValues(const char* key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-AMGsmtGetValidValues(const char* key)
+AMGsmtGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
@@ -410,6 +415,7 @@ AMGsmtGetValidValues(const char* key)
       return STR_INT_MAP_ARRAY_VOID();
    }
 }
+// clang-format on
 
 /*-----------------------------------------------------------------------------
  * AMGCreate
