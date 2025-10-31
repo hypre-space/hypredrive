@@ -61,17 +61,15 @@ jobs:
         if: startsWith(runner.os, 'macOS')
         run: |
           brew update
-          brew install cmake ninja mpich hypre clang-format
+          brew install cmake ninja mpich clang-format
 
-      - name: Cache HYPRE install (Ubuntu)
-        if: startsWith(runner.os, 'Linux')
+      - name: Cache HYPRE install
         uses: actions/cache@v4
         with:
           path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
           key: hypre-${{ env.HYPRE_VERSION }}-${{ matrix.os }}-${{ matrix.compiler }}
 
-      - name: Build & install HYPRE (Ubuntu)
-        if: startsWith(runner.os, 'Linux')
+      - name: Build & install HYPRE
         run: |
           set -euxo pipefail
           PREFIX="${{ runner.tool_cache }}/hypre/${HYPRE_VERSION}"
@@ -91,13 +89,10 @@ jobs:
       - name: Configure hypredrive
         run: |
           set -euxo pipefail
-          CMAKE_PREFIX_PATH_ARG=""
+          CMAKE_PREFIX_PATH_ARG="-DCMAKE_PREFIX_PATH=${HYPRE_PREFIX}"
           CCACHE_ARGS=""
           if [ "${{ runner.os }}" = "Linux" ]; then
-            CMAKE_PREFIX_PATH_ARG="-DCMAKE_PREFIX_PATH=${HYPRE_PREFIX}"
             CCACHE_ARGS="-DCMAKE_C_COMPILER_LAUNCHER=ccache"
-          elif [ "${{ runner.os }}" = "macOS" ]; then
-            CMAKE_PREFIX_PATH_ARG="-DCMAKE_PREFIX_PATH=$(brew --prefix hypre)"
           fi
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
