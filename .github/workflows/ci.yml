@@ -9,7 +9,7 @@ on:
       - 'NOTICE'
       - 'COPYRIGHT'
   push:
-    branches: [ main ]
+    branches: [ master ]
     paths-ignore:
       - '**.md'
       - '.gitignore'
@@ -40,6 +40,18 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Get compiler version
+        id: compiler_version
+        run: |
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            VERSION=$(gcc --version 2>/dev/null | head -n1 | awk '{print $NF}' || echo "unknown")
+          else
+            VERSION=$(clang --version 2>/dev/null | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}' || echo "unknown")
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Compiler version: $VERSION"
+          echo "::notice::Building with ${{ matrix.compiler }} version $VERSION"
+
       - name: Install dependencies (Ubuntu)
         if: startsWith(runner.os, 'Linux')
         run: |
@@ -47,6 +59,13 @@ jobs:
           sudo apt-get install -y cmake ninja-build mpich libmpich-dev ccache clang-format
           if [ "${{ matrix.compiler }}" = "gcc" ]; then sudo apt-get install -y gcc g++; fi
           if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt-get install -y clang; fi
+          # Get and display compiler version
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            VERSION=$(gcc --version | head -n1 | awk '{print $NF}')
+          else
+            VERSION=$(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')
+          fi
+          echo "::notice::Using ${{ matrix.compiler }} version $VERSION"
 
       - name: Setup compiler environment (Ubuntu)
         if: startsWith(runner.os, 'Linux')
@@ -79,6 +98,9 @@ jobs:
         run: |
           brew update
           brew install cmake ninja mpich clang-format
+          # Get and display compiler version
+          VERSION=$(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')
+          echo "::notice::Using clang version $VERSION"
           
       - name: Setup compiler environment (macOS)
         if: startsWith(runner.os, 'macOS')
@@ -126,6 +148,12 @@ jobs:
           CCACHE_ARGS=""
           if [ "${{ runner.os }}" = "Linux" ]; then
             CCACHE_ARGS="-DCMAKE_C_COMPILER_LAUNCHER=ccache"
+          fi
+          # Display compiler info in build logs
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            echo "::notice::Configuring with gcc $(gcc --version | head -n1 | awk '{print $NF}')"
+          else
+            echo "::notice::Configuring with clang $(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')"
           fi
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
