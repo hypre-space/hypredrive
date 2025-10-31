@@ -61,6 +61,7 @@ jobs:
         if: startsWith(runner.os, 'macOS')
         run: |
           brew update
+          brew uninstall open-mpi
           brew install cmake ninja mpich clang-format
 
       - name: Cache HYPRE install
@@ -77,7 +78,7 @@ jobs:
             git clone --depth 1 --branch ${HYPRE_VERSION} https://github.com/hypre-space/hypre.git
             cmake -S hypre/src -B hypre/build -G Ninja \
               -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-              -DHYPRE_WITH_MPI=ON -DHYPRE_ENABLE_SHARED=ON \
+              -DHYPRE_WITH_MPI=ON -DBUILD_SHARED_LIBS=ON \
               -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
               -DCMAKE_INSTALL_PREFIX="$PREFIX" \
               -DCMAKE_C_COMPILER=mpicc
