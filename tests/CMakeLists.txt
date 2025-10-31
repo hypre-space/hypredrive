@@ -1,9 +1,11 @@
 # Unit tests for hypredrive
 # Helper function to set up test executable with proper RPATH
+# Similar to hypredrive executable - link directly to both HYPREDRV and HYPRE
 function(setup_test_executable target_name source_file)
     add_executable(${target_name} ${source_file})
-    target_link_libraries(${target_name} PRIVATE HYPREDRV)
-    # Set RPATH for macOS to find the library at build time
+    # Link to both HYPREDRV and HYPRE, same as hypredrive executable does
+    target_link_libraries(${target_name} PRIVATE HYPREDRV::HYPREDRV HYPRE::HYPRE)
+    # Set RPATH for macOS to find HYPREDRV library at build time
     # Use @loader_path/.. since tests are in build/tests/ and library is in build/
     if(APPLE)
         set_target_properties(${target_name} PROPERTIES
