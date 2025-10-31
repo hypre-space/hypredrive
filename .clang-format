@@ -1,5 +1,5 @@
 ---
-Language: C
+Language: Cpp
 BasedOnStyle: LLVM
 IndentWidth: 3
 TabWidth: 3
@@ -22,19 +22,19 @@ AlwaysBreakTemplateDeclarations: false
 BinPackArguments: true
 BinPackParameters: true
 BraceWrapping:
-  AfterClass: false
-  AfterControlStatement: false
-  AfterEnum: false
-  AfterFunction: false
+  AfterClass: true
+  AfterControlStatement: true
+  AfterEnum: true
+  AfterFunction: true
   AfterNamespace: false
   AfterObjCDeclaration: false
-  AfterStruct: false
-  AfterUnion: false
-  BeforeCatch: false
-  BeforeElse: false
+  AfterStruct: true
+  AfterUnion: true
+  BeforeCatch: true
+  BeforeElse: true
   IndentBraces: false
 BreakBeforeBinaryOperators: None
-BreakBeforeBraces: Attach
+BreakBeforeBraces: Allman
 BreakBeforeTernaryOperators: true
 BreakConstructorInitializers: BeforeColon
 BreakAfterJavaFieldAnnotations: false
@@ -76,15 +76,6 @@ ObjCBinPackProtocolList: Auto
 ObjCBlockIndentWidth: 3
 ObjCSpaceAfterProperty: false
 ObjCSpaceBeforeProtocolList: true
-PenaltyForAssignment: 2
-PenaltyForBreakingBeforeFirstCallParameter: 1
-PenaltyForBreakingOpenParenthesis: 0
-PenaltyForExcessCharacter: 1000000
-PenaltyForFirstCharacterLineBreak: 0
-PenaltyForBreakingString: 1000
-PenaltyForCharacterCount: 0
-PenaltyForBreakingReturnType: 60
-PenaltyForBreakingAssignment: 10
 ReflowComments: true
 SortIncludes: true
 SortUsingDeclarations: true
@@ -103,6 +94,3 @@ SpacesInContainerLiterals: true
 SpacesInCStyleCastParentheses: false
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
-Standard: C11
-TabWidth: 3
-UseTab: Never
