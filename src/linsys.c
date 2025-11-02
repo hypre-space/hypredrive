@@ -7,8 +7,8 @@
 
 #include "linsys.h"
 #include "HYPRE_parcsr_mv.h" /* TODO: remove after implementing IJVectorClone/Copy */
+#include "_hypre_IJ_mv.h"    /* TODO: remove after implementing IJVectorClone */
 #include "_hypre_parcsr_mv.h" /* TODO: remove after implementing IJVectorMigrate/IJMatrix */
-#include "_hypre_IJ_mv.h" /* TODO: remove after implementing IJVectorClone */
 
 static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, dirname, FieldTypeStringSet),
@@ -30,8 +30,7 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, precon_reuse, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, exec_policy, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, EigSpecSetArgs)
-};
+   FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, EigSpecSetArgs)};
 
 #define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
 
@@ -47,8 +46,7 @@ LinearSystemSetFieldByName(LS_args *args, YAMLnode *node)
       if (!strcmp(ls_field_offset_map[i].name, node->key))
       {
          ls_field_offset_map[i].setter(
-            (void*)((char*) args + ls_field_offset_map[i].offset),
-            node);
+            (void *)((char *)args + ls_field_offset_map[i].offset), node);
          return;
       }
    }
@@ -61,7 +59,7 @@ LinearSystemSetFieldByName(LS_args *args, YAMLnode *node)
 StrArray
 LinearSystemGetValidKeys(void)
 {
-   static const char* keys[LS_NUM_FIELDS];
+   static const char *keys[LS_NUM_FIELDS];
 
    for (size_t i = 0; i < LS_NUM_FIELDS; i++)
    {
@@ -76,39 +74,29 @@ LinearSystemGetValidKeys(void)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-LinearSystemGetValidValues(const char* key)
+LinearSystemGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"online", 0},
-                                {"ij",     1},
-                                {"parcsr", 2},
-                                {"mtx",    3}};
+      static StrIntMap map[] = {{"online", 0}, {"ij", 1}, {"parcsr", 2}, {"mtx", 3}};
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    else if (!strcmp(key, "rhs_mode"))
    {
-      static StrIntMap map[] = {{"zeros",   0},
-                                {"ones",    1},
-                                {"file",    2},
-                                {"random",  3},
-                                {"randsol", 4}};
+      static StrIntMap map[] = {
+         {"zeros", 0}, {"ones", 1}, {"file", 2}, {"random", 3}, {"randsol", 4}};
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    else if (!strcmp(key, "init_guess_mode"))
    {
-      static StrIntMap map[] = {{"zeros",    0},
-                                {"ones",     1},
-                                {"file",     2},
-                                {"random",   3},
-                                {"previous", 4}};
+      static StrIntMap map[] = {
+         {"zeros", 0}, {"ones", 1}, {"file", 2}, {"random", 3}, {"previous", 4}};
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    else if (!strcmp(key, "exec_policy"))
    {
       /* TODO: move to general? */
-      static StrIntMap map[] = {{"host",   0},
-                                {"device", 1}};
+      static StrIntMap map[] = {{"host", 0}, {"device", 1}};
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    else
@@ -135,15 +123,15 @@ LinearSystemSetDefaultArgs(LS_args *args)
    strcpy(args->sol_filename, "");
    strcpy(args->dofmap_filename, "");
    strcpy(args->dofmap_basename, "");
-   args->digits_suffix = 5;
-   args->init_suffix = -1;
-   args->last_suffix = -1;
+   args->digits_suffix   = 5;
+   args->init_suffix     = -1;
+   args->last_suffix     = -1;
    args->init_guess_mode = 0;
-   args->rhs_mode = 0;
-   args->type = 1;
-   args->precon_reuse = 0;
-   args->num_systems = 1;
-#if defined (HYPRE_USING_GPU)
+   args->rhs_mode        = 0;
+   args->type            = 1;
+   args->precon_reuse    = 0;
+   args->num_systems     = 1;
+#if defined(HYPRE_USING_GPU)
    args->exec_policy = 1;
 #else
    args->exec_policy = 0;
@@ -168,17 +156,13 @@ LinearSystemSetNumSystems(LS_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode* parent)
+LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
 {
    YAML_NODE_ITERATE(parent, child)
    {
-      YAML_NODE_VALIDATE(child,
-                         LinearSystemGetValidKeys,
-                         LinearSystemGetValidValues);
+      YAML_NODE_VALIDATE(child, LinearSystemGetValidKeys, LinearSystemGetValidValues);
 
-      YAML_NODE_SET_FIELD(child,
-                          args,
-                          LinearSystemSetFieldByName);
+      YAML_NODE_SET_FIELD(child, args, LinearSystemSetFieldByName);
    }
 }
 
@@ -192,13 +176,13 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    StatsTimerStart("matrix");
 
    char                 matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int                  ls_id  = StatsGetLinearSystemID();
+   int                  ls_id                                = StatsGetLinearSystemID();
    int                  nprocs, nparts;
    int                  file_not_found = 0;
    void                *obj;
    HYPRE_ParCSRMatrix   par_A;
-   HYPRE_MemoryLocation memory_location = (args->exec_policy) ?
-                                          HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+   HYPRE_MemoryLocation memory_location =
+      (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
    /* Destroy matrix if it already exists */
    if (*matrix_ptr) HYPRE_IJMatrixDestroy(*matrix_ptr);
@@ -206,14 +190,9 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    /* Set matrix filename */
    if (args->dirname[0] != '\0')
    {
-      snprintf(matrix_filename,
-               sizeof(matrix_filename),
-               "%.*s_%0*d/%.*s",
-               (int) strlen(args->dirname),
-               args->dirname,
-               (int) args->digits_suffix,
-               (int) args->init_suffix + ls_id,
-               (int) strlen(args->matrix_filename),
+      snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d/%.*s",
+               (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
+               (int)args->init_suffix + ls_id, (int)strlen(args->matrix_filename),
                args->matrix_filename);
    }
    else if (args->matrix_filename[0] != '\0')
@@ -222,13 +201,9 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    }
    else if (args->matrix_basename[0] != '\0')
    {
-      snprintf(matrix_filename,
-               sizeof(matrix_filename),
-               "%.*s_%0*d",
-               (int) strlen(args->matrix_basename),
-               args->matrix_basename,
-               (int) args->digits_suffix,
-               (int) args->init_suffix + ls_id);
+      snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d",
+               (int)strlen(args->matrix_basename), args->matrix_basename,
+               (int)args->digits_suffix, (int)args->init_suffix + ls_id);
    }
    else
    {
@@ -247,7 +222,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
          nparts = CountNumberOfPartitions(matrix_filename);
          if (nparts >= nprocs)
          {
-            IJMatrixReadMultipartBinary(matrix_filename, comm, (uint64_t) nparts,
+            IJMatrixReadMultipartBinary(matrix_filename, comm, (uint64_t)nparts,
                                         memory_location, matrix_ptr);
          }
          else
@@ -285,7 +260,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    if (args->exec_policy)
    {
       HYPRE_IJMatrixGetObject(*matrix_ptr, &obj);
-      par_A  = (HYPRE_ParCSRMatrix) obj;
+      par_A = (HYPRE_ParCSRMatrix)obj;
 
       hypre_ParCSRMatrixMigrate(par_A, HYPRE_MEMORY_DEVICE);
    }
@@ -300,16 +275,16 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 long long int
 LinearSystemMatrixGetNumRows(HYPRE_IJMatrix matrix)
 {
-   HYPRE_ParCSRMatrix   par_A;
-   void                *obj;
-   HYPRE_BigInt         nrows, ncols;
+   HYPRE_ParCSRMatrix par_A;
+   void              *obj;
+   HYPRE_BigInt       nrows, ncols;
 
    HYPRE_IJMatrixGetObject(matrix, &obj);
-   par_A  = (HYPRE_ParCSRMatrix) obj;
+   par_A = (HYPRE_ParCSRMatrix)obj;
 
    HYPRE_ParCSRMatrixGetDims(par_A, &nrows, &ncols);
 
-   return (long long int) nrows;
+   return (long long int)nrows;
 }
 
 /*-----------------------------------------------------------------------------
@@ -319,15 +294,15 @@ LinearSystemMatrixGetNumRows(HYPRE_IJMatrix matrix)
 long long int
 LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
 {
-   HYPRE_ParCSRMatrix   par_A;
-   void                *obj;
+   HYPRE_ParCSRMatrix par_A;
+   void              *obj;
 
    HYPRE_IJMatrixGetObject(matrix, &obj);
-   par_A  = (HYPRE_ParCSRMatrix) obj;
+   par_A = (HYPRE_ParCSRMatrix)obj;
 
    hypre_ParCSRMatrixSetDNumNonzeros(par_A);
 
-   return (long long int) par_A->d_num_nonzeros;
+   return (long long int)par_A->d_num_nonzeros;
 }
 
 /*-----------------------------------------------------------------------------
@@ -338,14 +313,14 @@ void
 LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                    HYPRE_IJVector *refsol_ptr, HYPRE_IJVector *rhs_ptr)
 {
-   HYPRE_BigInt          ilower, iupper;
-   HYPRE_BigInt          jlower, jupper;
-   HYPRE_IJVector        refsol = NULL;
-   char                  rhs_filename[MAX_FILENAME_LENGTH] = {0};
-   int                   nparts, nprocs;
-   int                   ls_id  = StatsGetLinearSystemID();
-   HYPRE_MemoryLocation  memory_location = (args->exec_policy) ?
-                                           HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+   HYPRE_BigInt         ilower, iupper;
+   HYPRE_BigInt         jlower, jupper;
+   HYPRE_IJVector       refsol                            = NULL;
+   char                 rhs_filename[MAX_FILENAME_LENGTH] = {0};
+   int                  nparts, nprocs;
+   int                  ls_id = StatsGetLinearSystemID();
+   HYPRE_MemoryLocation memory_location =
+      (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
    StatsTimerStart("rhs");
 
@@ -362,10 +337,10 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location);
 
       /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
-      void            *obj;
-      HYPRE_ParVector  par_b;
+      void           *obj;
+      HYPRE_ParVector par_b;
       HYPRE_IJVectorGetObject(*rhs_ptr, &obj);
-      par_b = (HYPRE_ParVector) obj;
+      par_b = (HYPRE_ParVector)obj;
 
       switch (args->rhs_mode)
       {
@@ -387,20 +362,20 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
             HYPRE_IJVectorInitialize_v2(refsol, memory_location);
 
             /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
-            void            *obj;
-            HYPRE_ParVector  par_x;
+            void           *obj;
+            HYPRE_ParVector par_x;
             HYPRE_IJVectorGetObject(refsol, &obj);
-            par_x = (HYPRE_ParVector) obj;
+            par_x = (HYPRE_ParVector)obj;
             HYPRE_ParVectorSetRandomValues(par_x, 2023);
 
             /* TODO (hypre): add IJMatrixMatvec interface */
-            void               *obj_A;
-            HYPRE_ParCSRMatrix  par_A;
+            void              *obj_A;
+            HYPRE_ParCSRMatrix par_A;
             HYPRE_IJMatrixGetObject(mat, &obj_A);
-            par_A = (HYPRE_ParCSRMatrix) obj_A;
+            par_A = (HYPRE_ParCSRMatrix)obj_A;
             HYPRE_ParCSRMatrixMatvec(1.0, par_A, par_x, 0.0, par_b);
 
-            //hypre_ParVectorPrintIJ(par_b, 0, "test");
+            // hypre_ParVectorPrintIJ(par_b, 0, "test");
             break;
       }
    }
@@ -409,14 +384,9 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       /* Set RHS filename */
       if (args->dirname[0] != '\0')
       {
-         snprintf(rhs_filename,
-                  sizeof(rhs_filename),
-                  "%.*s_%0*d/%.*s",
-                  (int) strlen(args->dirname),
-                  args->dirname,
-                  (int) args->digits_suffix,
-                  (int) args->init_suffix + ls_id,
-                  (int) strlen(args->rhs_filename),
+         snprintf(rhs_filename, sizeof(rhs_filename), "%.*s_%0*d/%.*s",
+                  (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
+                  (int)args->init_suffix + ls_id, (int)strlen(args->rhs_filename),
                   args->rhs_filename);
       }
       else if (args->rhs_filename[0] != '\0')
@@ -425,13 +395,9 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       }
       else if (args->rhs_basename[0] != '\0')
       {
-         snprintf(rhs_filename,
-                  sizeof(rhs_filename),
-                  "%.*s_%0*d",
-                  (int) strlen(args->rhs_basename),
-                  args->rhs_basename,
-                  (int) args->digits_suffix,
-                  (int) args->init_suffix + ls_id);
+         snprintf(rhs_filename, sizeof(rhs_filename), "%.*s_%0*d",
+                  (int)strlen(args->rhs_basename), args->rhs_basename,
+                  (int)args->digits_suffix, (int)args->init_suffix + ls_id);
       }
 
       /* Read vector from file (Binary or ASCII) */
@@ -441,8 +407,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
          nparts = CountNumberOfPartitions(rhs_filename);
          if (nparts >= nprocs)
          {
-            IJVectorReadMultipartBinary(rhs_filename, comm, nparts,
-                                        memory_location, rhs_ptr);
+            IJVectorReadMultipartBinary(rhs_filename, comm, nparts, memory_location,
+                                        rhs_ptr);
          }
          else
          {
@@ -464,11 +430,11 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       /* Migrate the vector? TODO: use IJVectorMigrate */
       if (args->exec_policy)
       {
-         HYPRE_ParVector   par_rhs;
-         void             *obj;
+         HYPRE_ParVector par_rhs;
+         void           *obj;
 
          HYPRE_IJVectorGetObject(*rhs_ptr, &obj);
-         par_rhs = (HYPRE_ParVector) obj;
+         par_rhs = (HYPRE_ParVector)obj;
 
          hypre_ParVectorMigrate(par_rhs, HYPRE_MEMORY_DEVICE);
       }
@@ -485,16 +451,13 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetInitialGuess(MPI_Comm comm,
-                            LS_args *args,
-                            HYPRE_IJMatrix mat,
-                            HYPRE_IJVector rhs,
-                            HYPRE_IJVector *x0_ptr,
+LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
+                            HYPRE_IJVector rhs, HYPRE_IJVector *x0_ptr,
                             HYPRE_IJVector *x_ptr)
 {
    HYPRE_BigInt         jlower, jupper;
-   HYPRE_MemoryLocation memloc = (args->exec_policy) ?
-                                 HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+   HYPRE_MemoryLocation memloc =
+      (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
    /* Create solution vector
       TODO: implement HYPRE_IJVectorClone in hypre */
@@ -511,8 +474,8 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
 
    if (args->x0_filename[0] == '\0')
    {
-      HYPRE_MemoryLocation memloc = (args->exec_policy) ?
-                                    HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+      HYPRE_MemoryLocation memloc =
+         (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
       HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
       HYPRE_IJVectorCreate(comm, jlower, jupper, x0_ptr);
@@ -520,11 +483,11 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
       HYPRE_IJVectorInitialize_v2(*x0_ptr, memloc);
 
       /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
-      void            *obj;
-      HYPRE_ParVector  par_x0, par_x;
+      void           *obj;
+      HYPRE_ParVector par_x0, par_x;
 
       HYPRE_IJVectorGetObject(*x0_ptr, &obj);
-      par_x0 = (HYPRE_ParVector) obj;
+      par_x0 = (HYPRE_ParVector)obj;
 
       switch (args->init_guess_mode)
       {
@@ -546,7 +509,7 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
          case 4:
             /* Use solution from previous linear solve */
             HYPRE_IJVectorGetObject(*x_ptr, &obj);
-            par_x = (HYPRE_ParVector) obj;
+            par_x = (HYPRE_ParVector)obj;
 
             HYPRE_ParVectorCopy(par_x, par_x0);
             break;
@@ -566,11 +529,11 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
       /* Migrate the vector? TODO: use IJVectorMigrate */
       if (args->exec_policy)
       {
-         HYPRE_ParVector   par_x0;
-         void             *obj;
+         HYPRE_ParVector par_x0;
+         void           *obj;
 
          HYPRE_IJVectorGetObject(*x0_ptr, &obj);
-         par_x0 = (HYPRE_ParVector) obj;
+         par_x0 = (HYPRE_ParVector)obj;
 
          hypre_ParVectorMigrate(par_x0, HYPRE_MEMORY_DEVICE);
       }
@@ -582,19 +545,18 @@ LinearSystemSetInitialGuess(MPI_Comm comm,
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr,
-                              HYPRE_IJVector x_ptr)
+LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr)
 {
-   HYPRE_ParVector   par_x0, par_x;
-   void             *obj_x0, *obj_x;
+   HYPRE_ParVector par_x0, par_x;
+   void           *obj_x0, *obj_x;
 
    StatsTimerStart("reset_x0");
 
    /* TODO: implement HYPRE_IJVectorCopy in hypre */
    HYPRE_IJVectorGetObject(x0_ptr, &obj_x0);
    HYPRE_IJVectorGetObject(x_ptr, &obj_x);
-   par_x0 = (HYPRE_ParVector) obj_x0;
-   par_x  = (HYPRE_ParVector) obj_x;
+   par_x0 = (HYPRE_ParVector)obj_x0;
+   par_x  = (HYPRE_ParVector)obj_x;
 
    HYPRE_ParVectorCopy(par_x0, par_x);
 
@@ -606,25 +568,18 @@ LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr,
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetPrecMatrix(MPI_Comm comm,
-                          LS_args *args,
-                          HYPRE_IJMatrix mat,
+LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                           HYPRE_IJMatrix *precmat_ptr)
 {
-   char   matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int    ls_id  = StatsGetLinearSystemID();
+   char matrix_filename[MAX_FILENAME_LENGTH] = {0};
+   int  ls_id                                = StatsGetLinearSystemID();
 
    /* Set matrix filename */
    if (args->dirname[0] != '\0' && args->precmat_filename[0] != '\0')
    {
-      snprintf(matrix_filename,
-               sizeof(matrix_filename),
-               "%.*s_%0*d/%.*s",
-               (int) strlen(args->dirname),
-               args->dirname,
-               (int) args->digits_suffix,
-               (int) args->init_suffix + ls_id,
-               (int) strlen(args->precmat_filename),
+      snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d/%.*s",
+               (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
+               (int)args->init_suffix + ls_id, (int)strlen(args->precmat_filename),
                args->precmat_filename);
    }
    else if (args->precmat_filename[0] != '\0')
@@ -633,17 +588,12 @@ LinearSystemSetPrecMatrix(MPI_Comm comm,
    }
    else if (args->precmat_basename[0] != '\0')
    {
-      snprintf(matrix_filename,
-               sizeof(matrix_filename),
-               "%.*s_%0*d",
-               (int) strlen(args->precmat_basename),
-               args->precmat_basename,
-               (int) args->digits_suffix,
-               (int) args->init_suffix + ls_id);
+      snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d",
+               (int)strlen(args->precmat_basename), args->precmat_basename,
+               (int)args->digits_suffix, (int)args->init_suffix + ls_id);
    }
 
-   if (matrix_filename[0] == '\0' ||
-       !strcmp(matrix_filename, args->matrix_filename))
+   if (matrix_filename[0] == '\0' || !strcmp(matrix_filename, args->matrix_filename))
    {
       *precmat_ptr = mat;
    }
@@ -663,8 +613,8 @@ LinearSystemSetPrecMatrix(MPI_Comm comm,
 void
 LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 {
-   char   dofmap_filename[MAX_FILENAME_LENGTH] = {0};
-   int    ls_id = StatsGetLinearSystemID();
+   char dofmap_filename[MAX_FILENAME_LENGTH] = {0};
+   int  ls_id                                = StatsGetLinearSystemID();
 
    /* Destroy pre-existing dofmap */
    if (*dofmap_ptr) IntArrayDestroy(dofmap_ptr);
@@ -678,14 +628,9 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
       /* Set dofmap filename */
       if (args->dirname[0] != '\0')
       {
-         snprintf(dofmap_filename,
-                  sizeof(dofmap_filename),
-                  "%.*s_%0*d/%.*s",
-                  (int) strlen(args->dirname),
-                  args->dirname,
-                  (int) args->digits_suffix,
-                  (int) args->init_suffix + ls_id,
-                  (int) strlen(args->dofmap_filename),
+         snprintf(dofmap_filename, sizeof(dofmap_filename), "%.*s_%0*d/%.*s",
+                  (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
+                  (int)args->init_suffix + ls_id, (int)strlen(args->dofmap_filename),
                   args->dofmap_filename);
       }
       else if (args->dofmap_filename[0] != '\0')
@@ -694,13 +639,9 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
       }
       else
       {
-         snprintf(dofmap_filename,
-                  sizeof(dofmap_filename),
-                  "%.*s_%0*d",
-                  (int) strlen(args->dofmap_basename),
-                  args->dofmap_basename,
-                  (int) args->digits_suffix,
-                  (int) args->init_suffix + ls_id);
+         snprintf(dofmap_filename, sizeof(dofmap_filename), "%.*s_%0*d",
+                  (int)strlen(args->dofmap_basename), args->dofmap_basename,
+                  (int)args->digits_suffix, (int)args->init_suffix + ls_id);
       }
 
       /* Destroy previous dofmap array */
@@ -719,15 +660,14 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemGetSolutionValues(HYPRE_IJVector   sol,
-                              HYPRE_Complex  **data_ptr)
+LinearSystemGetSolutionValues(HYPRE_IJVector sol, HYPRE_Complex **data_ptr)
 {
-   HYPRE_ParVector   par_sol;
-   hypre_Vector     *seq_sol;
-   void             *obj;
+   HYPRE_ParVector par_sol;
+   hypre_Vector   *seq_sol;
+   void           *obj;
 
    HYPRE_IJVectorGetObject(sol, &obj);
-   par_sol = (HYPRE_ParVector) obj;
+   par_sol = (HYPRE_ParVector)obj;
    seq_sol = hypre_ParVectorLocalVector(par_sol);
 
    *data_ptr = hypre_VectorData(seq_sol);
@@ -738,15 +678,14 @@ LinearSystemGetSolutionValues(HYPRE_IJVector   sol,
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemGetRHSValues(HYPRE_IJVector   rhs,
-                         HYPRE_Complex  **data_ptr)
+LinearSystemGetRHSValues(HYPRE_IJVector rhs, HYPRE_Complex **data_ptr)
 {
-   HYPRE_ParVector   par_rhs;
-   hypre_Vector     *seq_rhs;
-   void             *obj;
+   HYPRE_ParVector par_rhs;
+   hypre_Vector   *seq_rhs;
+   void           *obj;
 
    HYPRE_IJVectorGetObject(rhs, &obj);
-   par_rhs = (HYPRE_ParVector) obj;
+   par_rhs = (HYPRE_ParVector)obj;
    seq_rhs = hypre_ParVectorLocalVector(par_rhs);
 
    *data_ptr = hypre_VectorData(seq_rhs);
@@ -757,8 +696,7 @@ LinearSystemGetRHSValues(HYPRE_IJVector   rhs,
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemComputeVectorNorm(HYPRE_IJVector  vec,
-                              HYPRE_Complex  *norm)
+LinearSystemComputeVectorNorm(HYPRE_IJVector vec, HYPRE_Complex *norm)
 {
    HYPRE_IJVectorInnerProd(vec, vec, norm);
    *norm = sqrt(*norm);
@@ -769,33 +707,32 @@ LinearSystemComputeVectorNorm(HYPRE_IJVector  vec,
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemComputeErrorNorm(HYPRE_IJVector  vec_xref,
-                             HYPRE_IJVector  vec_x,
-                             HYPRE_Complex  *e_norm)
+LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector vec_x,
+                             HYPRE_Complex *e_norm)
 {
-   HYPRE_ParVector      par_xref;
-   HYPRE_ParVector      par_x;
-   HYPRE_ParVector      par_e;
-   HYPRE_IJVector       vec_e;
-   void                *obj_xref, *obj_x, *obj_e;
+   HYPRE_ParVector par_xref;
+   HYPRE_ParVector par_x;
+   HYPRE_ParVector par_e;
+   HYPRE_IJVector  vec_e;
+   void           *obj_xref, *obj_x, *obj_e;
 
-   HYPRE_BigInt         jlower, jupper;
+   HYPRE_BigInt jlower, jupper;
 
-   HYPRE_Complex        one = 1.0;
-   HYPRE_Complex        neg_one = -1.0;
+   HYPRE_Complex one     = 1.0;
+   HYPRE_Complex neg_one = -1.0;
 
    HYPRE_IJVectorGetObject(vec_xref, &obj_xref);
    HYPRE_IJVectorGetObject(vec_x, &obj_x);
 
-   par_xref = (HYPRE_ParVector) obj_xref;
-   par_x = (HYPRE_ParVector) obj_x;
+   par_xref = (HYPRE_ParVector)obj_xref;
+   par_x    = (HYPRE_ParVector)obj_x;
 
    HYPRE_IJVectorGetLocalRange(vec_x, &jlower, &jupper);
    HYPRE_IJVectorCreate(hypre_IJVectorComm(vec_x), jlower, jupper, &vec_e);
    HYPRE_IJVectorSetObjectType(vec_e, HYPRE_PARCSR);
    HYPRE_IJVectorInitialize_v2(vec_e, hypre_IJVectorMemoryLocation(vec_x));
    HYPRE_IJVectorGetObject(vec_e, &obj_e);
-   par_e = (HYPRE_ParVector) obj_e;
+   par_e = (HYPRE_ParVector)obj_e;
 
    /* Compute error */
    hypre_ParVectorAxpyz(one, par_x, neg_one, par_xref, par_e);
@@ -813,30 +750,28 @@ LinearSystemComputeErrorNorm(HYPRE_IJVector  vec_xref,
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemComputeResidualNorm(HYPRE_IJMatrix  mat_A,
-                                HYPRE_IJVector  vec_b,
-                                HYPRE_IJVector  vec_x,
-                                HYPRE_Complex  *res_norm)
+LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
+                                HYPRE_IJVector vec_x, HYPRE_Complex *res_norm)
 {
-   HYPRE_ParCSRMatrix   par_A;
-   HYPRE_ParVector      par_b;
-   HYPRE_ParVector      par_x;
-   HYPRE_ParVector      par_r;
-   HYPRE_IJVector       vec_r;
-   void                *obj_A, *obj_b, *obj_x, *obj_r;
+   HYPRE_ParCSRMatrix par_A;
+   HYPRE_ParVector    par_b;
+   HYPRE_ParVector    par_x;
+   HYPRE_ParVector    par_r;
+   HYPRE_IJVector     vec_r;
+   void              *obj_A, *obj_b, *obj_x, *obj_r;
 
-   HYPRE_BigInt         jlower, jupper;
+   HYPRE_BigInt jlower, jupper;
 
-   HYPRE_Complex        one = 1.0;
-   HYPRE_Complex        neg_one = -1.0;
+   HYPRE_Complex one     = 1.0;
+   HYPRE_Complex neg_one = -1.0;
 
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
    HYPRE_IJVectorGetObject(vec_b, &obj_b);
    HYPRE_IJVectorGetObject(vec_x, &obj_x);
 
-   par_A = (HYPRE_ParCSRMatrix) obj_A;
-   par_b = (HYPRE_ParVector) obj_b;
-   par_x = (HYPRE_ParVector) obj_x;
+   par_A = (HYPRE_ParCSRMatrix)obj_A;
+   par_b = (HYPRE_ParVector)obj_b;
+   par_x = (HYPRE_ParVector)obj_x;
 
    /* TODO: implement IJVectorClone */
    HYPRE_IJVectorGetLocalRange(vec_b, &jlower, &jupper);
@@ -844,7 +779,7 @@ LinearSystemComputeResidualNorm(HYPRE_IJMatrix  mat_A,
    HYPRE_IJVectorSetObjectType(vec_r, HYPRE_PARCSR);
    HYPRE_IJVectorInitialize_v2(vec_r, hypre_IJVectorMemoryLocation(vec_b));
    HYPRE_IJVectorGetObject(vec_r, &obj_r);
-   par_r = (HYPRE_ParVector) obj_r;
+   par_r = (HYPRE_ParVector)obj_r;
    HYPRE_ParVectorCopy(par_b, par_r);
 
    /* Compute residual */

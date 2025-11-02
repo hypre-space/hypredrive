@@ -17,11 +17,12 @@ PrintUsage(const char *argv0)
    fflush(stderr);
 }
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
-   MPI_Comm      comm = MPI_COMM_WORLD;
-   int           myid, i, k;
-   HYPREDRV_t    obj;
+   MPI_Comm   comm = MPI_COMM_WORLD;
+   int        myid, i, k;
+   HYPREDRV_t obj;
 
    /*-----------------------------------------------------------
     * Initialize driver

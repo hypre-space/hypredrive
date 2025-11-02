@@ -14,7 +14,7 @@
 void
 FieldTypeIntSet(void *field, YAMLnode *node)
 {
-   sscanf(node->mapped_val, "%d", (int*) field);
+   sscanf(node->mapped_val, "%d", (int *)field);
 }
 
 /*-----------------------------------------------------------------------------
@@ -28,7 +28,7 @@ FieldTypeIntArraySet(void *field, YAMLnode *node)
 
    StrToIntArray(node->mapped_val, &int_array);
 
-   *((void**)field) = int_array;
+   *((void **)field) = int_array;
 }
 
 /*-----------------------------------------------------------------------------
@@ -38,7 +38,7 @@ FieldTypeIntArraySet(void *field, YAMLnode *node)
 void
 FieldTypeStackIntArraySet(void *field, YAMLnode *node)
 {
-   StackIntArray *int_array = ((StackIntArray*) field);
+   StackIntArray *int_array = ((StackIntArray *)field);
 
    StrToStackIntArray(node->mapped_val, int_array);
 }
@@ -50,7 +50,7 @@ FieldTypeStackIntArraySet(void *field, YAMLnode *node)
 void
 FieldTypeDoubleSet(void *field, YAMLnode *node)
 {
-   sscanf(node->mapped_val, "%lf", (double*) field);
+   sscanf(node->mapped_val, "%lf", (double *)field);
 }
 
 /*-----------------------------------------------------------------------------
@@ -60,7 +60,7 @@ FieldTypeDoubleSet(void *field, YAMLnode *node)
 void
 FieldTypeCharSet(void *field, YAMLnode *node)
 {
-   sscanf(node->mapped_val, "%c", (char*) field);
+   sscanf(node->mapped_val, "%c", (char *)field);
 }
 
 /*-----------------------------------------------------------------------------
@@ -70,5 +70,5 @@ FieldTypeCharSet(void *field, YAMLnode *node)
 void
 FieldTypeStringSet(void *field, YAMLnode *node)
 {
-   snprintf((char*) field, MAX_FILENAME_LENGTH, "%s", node->mapped_val);
+   snprintf((char *)field, MAX_FILENAME_LENGTH, "%s", node->mapped_val);
 }

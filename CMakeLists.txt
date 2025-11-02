@@ -32,6 +32,11 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
+# Testing implies data
+if(HYPREDRV_ENABLE_TESTING)
+    set(HYPREDRV_ENABLE_DATA ON)
+endif()
+
 # Include directories
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
@@ -89,6 +94,9 @@ endif()
 add_executable(hypredrive src/main.c)
 target_link_libraries(hypredrive PRIVATE HYPREDRV::HYPREDRV HYPRE::HYPRE)
 
+# Formatting target
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Format.cmake)
+
 # Platform-specific settings
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Platform.cmake)
 
@@ -96,12 +104,20 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Platform.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Install.cmake)
 
 # Testing setup
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
+if(HYPREDRV_ENABLE_TESTING)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
+    add_subdirectory(tests)
+endif()
 
 # Add examples
 if(HYPREDRV_BUILD_EXAMPLES)
     add_subdirectory(examples/src/C_laplacian)
 endif()
 
-# Formatting target
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Format.cmake)
+# Custom check target
+add_custom_target(check
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    DEPENDS hypredrive data
+    COMMENT "Running tests"
+    VERBATIM
+)

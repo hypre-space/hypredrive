@@ -86,3 +86,6 @@ docs/hypredrive.ps
 docs/hypredrive.tag
 docs/usrman-hypredrive.pdf
 docs/devman-hypredrive.pdf
+plan.md
+checklist.md
+CI.md
