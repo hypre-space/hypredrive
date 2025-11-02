@@ -22,6 +22,13 @@ if(HYPREDRV_ENABLE_TESTING)
     # Add tests
     add_hypredrive_test(test_ex1_1proc 1 ex1.yml)
     add_hypredrive_test(test_ex2_4proc 4 ex2.yml)
+    add_hypredrive_test(test_ex3_1proc 1 ex3.yml)
+    add_hypredrive_test(test_ex4_4proc 4 ex4.yml)
+    add_hypredrive_test(test_ex5_1proc 1 ex5.yml)
+    if (HYPREDRV_ENABLE_EIGSPEC)
+        add_hypredrive_test(test_ex6_1proc 1 ex6.yml)
+    endif()
+    add_hypredrive_test(test_ex7_1proc 1 ex7.yml)
 
     # Custom check target
     add_custom_target(check

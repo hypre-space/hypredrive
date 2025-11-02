@@ -22,10 +22,11 @@ endif()
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
 # HYPREDRV build options
-option(HYPREDRV_ENABLE_EIGSPEC "Enable full eigenspectrum computation" OFF)
-option(HYPREDRV_ENABLE_TESTING "Enable testing support and check target" ON)
-option(HYPREDRV_BUILD_EXAMPLES "Build the HYPREDRV examples" ON)
-option(HYPREDRV_ENABLE_DATA "Enable 'data' target to fetch example datasets" ON)
+option(HYPREDRV_ENABLE_EIGSPEC  "Enable full eigenspectrum computation" OFF)
+option(HYPREDRV_ENABLE_TESTING  "Enable testing support and check target" ON)
+option(HYPREDRV_ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
+option(HYPREDRV_ENABLE_DATA     "Enable 'data' target to fetch example datasets" ON)
+option(HYPREDRV_BUILD_EXAMPLES  "Build the HYPREDRV examples" ON)
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -97,6 +98,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Install.cmake)
 
 # Testing setup
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
+
+# Coverage support (optional)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Coverage.cmake)
 
 # Add examples
 if(HYPREDRV_BUILD_EXAMPLES)
