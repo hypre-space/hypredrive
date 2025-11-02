@@ -234,7 +234,7 @@ small matrices and single-rank runs.
 
 .. code-block:: bash
 
-   $ scripts/eigenspec.py -f data/compflow6k/np1/eig.values.txt
+   $ scripts/eigplot.py -f data/compflow6k/np1/eig.values.txt
 
 .. _Example7:
 
