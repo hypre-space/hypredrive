@@ -10,6 +10,7 @@ import re
 import os
 import pandas as pd
 import argparse
+import logging
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from itertools import combinations
@@ -20,7 +21,10 @@ tfs  = 18            # Title font size
 alfs = 14            # Axis label font size
 lgfs = 14            # Legends font size
 
+logger = logging.getLogger(__name__)
+
 def parse_statistics_summary(filename, exclude):
+    logger.info(f"Parsing statistics from {filename = }")
     # Initialize an empty string to hold the current section being processed
     target_section = ""
     data = []
@@ -52,6 +56,7 @@ def parse_statistics_summary(filename, exclude):
 
             if mpi_rank_match := mpi_rank_pattern.match(line):
                 nranks = int(mpi_rank_match.group(1))
+                logger.debug(f"Detected MPI ranks: {nranks = }")
                 continue
 
             if rows_nonzeros_match := rows_and_nonzeros_pattern.match(line):
@@ -99,6 +104,7 @@ def parse_statistics_summary(filename, exclude):
         series = pd.Series(entry_data, name=f'log_{filename}_entry_{row[0]}')
         series_list.append(series)
 
+    logger.debug(f"Parsed {len(series_list) = } entries from {filename = } (time_unit={time_unit}, nranks={nranks})")
     return series_list, time_unit
 
 def save_and_show_plot(savefig=None):
@@ -116,7 +122,7 @@ def save_and_show_plot(savefig=None):
         else:
             dpi = None  # Use default for non-bitmap formats or vector graphics
 
-        print(f"- Saving figure: {savefig}...")
+        logger.info(f"Saving figure: {savefig = } ...")
         plt.savefig(savefig, dpi=dpi)  # Save the figure with the appropriate DPI
 
     # Always display the plot regardless of saving
@@ -150,6 +156,7 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
 
     agg_str = "agg_" if cumulative else ''
 
+    logger.debug(f"Plotting iterations (cumulative={cumulative}, xtype={xtype})")
     # Plot figure
     plt.figure(figsize=fgs)
 
@@ -223,6 +230,7 @@ def plot_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefi
 
     agg_str = "agg_" if cumulative else ''
 
+    logger.debug(f"Plotting times (cumulative={cumulative}, xtype={xtype})")
     # Plot figure
     plt.figure(figsize=fgs)
 
@@ -294,6 +302,7 @@ def plot_time_metric(df, cumulative, xtype, xlabel, time_unit, metric, use_title
             return 'None'
         return user_ls
 
+    logger.debug(f"Plotting metric '{metric}' (cumulative={cumulative}, xtype={xtype})")
     plt.figure(figsize=fgs)
 
     if multiple_sources:
@@ -347,6 +356,7 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
     The plot includes lines representing the 'setup' and 'solve' times on the primary Y-axis, and 'iters' on the secondary Y-axis.
     The function does not return anything but displays the plot.
     """
+    logger.debug(f"Plotting iters-and-times (cumulative={cumulative}, xtype={xtype})")
     fig, ax1 = plt.figure(figsize=fgs), plt.gca()
 
     # Determine grouping by source (if present)
@@ -463,10 +473,28 @@ def main():
     parser.add_argument("-u", "--use_title", action='store_true', help='Show title in plots')
     parser.add_argument("--linestyle", type=str, default='auto', choices=['auto', '-', '--', '-.', ':', 'none'], help="Line style for plots; 'none' draws markers only; 'auto' preserves defaults")
     parser.add_argument("--markersize", type=float, default=None, help="Marker size (points); defaults to Matplotlib rcParams")
-    parser.add_argument("-v", "--verbose", action='store_true', help='Print dataframe contents')
+    parser.add_argument("-v", "--verbose", action='count', default=0, help='Increase verbosity (-v=INFO, -vv=DEBUG)')
 
     # Parse arguments
     args = parser.parse_args()
+
+    # Configure logging level based on verbosity
+    log_level = logging.WARNING
+    if args.verbose == 1:
+        log_level = logging.INFO
+    elif args.verbose >= 2:
+        log_level = logging.DEBUG
+    logging.basicConfig(level=log_level, format='%(levelname)s: %(message)s')
+    # Suppress noisy third-party DEBUG logs (e.g., Matplotlib font manager, PIL PNG plugin)
+    for noisy_logger in (
+        'matplotlib',
+        'matplotlib.font_manager',
+        'PIL',
+        'PIL.PngImagePlugin',
+        'fontTools'
+    ):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+    logger.debug(f"Arguments parsed: {vars(args) = }")
 
     # Parse the statistics summary
     data = []
@@ -475,8 +503,8 @@ def main():
         data.extend(series_list)
     num_input_files  = len(args.filename)
     num_data_entries = len(data)
-    print(f"- Parsed {num_input_files = }")
-    print(f"- Found {num_data_entries = }")
+    logger.info(f"Parsed {num_input_files = }")
+    logger.info(f"Found {num_data_entries = }")
 
     # Assemble all series into a single DataFrame
     df = pd.concat(data, axis=1).T.reset_index(drop=True)
@@ -501,10 +529,11 @@ def main():
     # Update label
     xlabel = args.xlabel if args.xlabel else labels[args.xtype]
 
-    # Show DataFrame?
-    if args.verbose:
-        print(df)
-        print(f"Sum total time: {sum(df['total']) = }")
+    # Optional DataFrame logging
+    if args.verbose >= 2:
+        logger.debug(f"DataFrame contents:\n{df.to_string(index=False)}")
+    if args.verbose >= 1:
+        logger.info(f"Sum total time: {df['total'].sum() = }")
 
     # Update savefig string
     savefig = args.savefig if args.savefig != "." else f"{(args.filename)[0].split('.')[0]}.png"
