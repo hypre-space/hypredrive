@@ -265,12 +265,64 @@ def plot_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefi
     plt.xlabel(xlabel, fontsize=alfs)
     plt.tick_params(axis='x', labelsize=alfs)
     plt.tick_params(axis='y', labelsize=alfs)
+    ax = plt.gca()
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
     plt.ylim(bottom=0.0)
     plt.grid(True)
-    unique_x = sorted(df[xtype].unique())
-    plt.xticks(unique_x, fontsize=alfs)
     plt.tight_layout()
     save_and_show_plot(f"times_{agg_str}{savefig}")
+
+def plot_time_metric(df, cumulative, xtype, xlabel, time_unit, metric, use_title=False, savefig=None, linestyle='auto', markersize=None):
+    """
+    Plots a single time metric (one of 'setup', 'solve', 'total') across entries and files.
+    Groups by 'source' when multiple input files are provided.
+    """
+    if metric not in ('setup', 'solve', 'total'):
+        raise ValueError(f"Unsupported metric: {metric}")
+
+    has_source = 'source' in df.columns
+    sources = df['source'].unique().tolist() if has_source else []
+    multiple_sources = has_source and len(sources) > 1
+
+    agg_str = "agg_" if cumulative else ''
+    ms = markersize if markersize is not None else plt.rcParams['lines.markersize']
+
+    def resolve_ls(user_ls, default_ls='-'):
+        if user_ls == 'auto':
+            return default_ls
+        if user_ls == 'none':
+            return 'None'
+        return user_ls
+
+    plt.figure(figsize=fgs)
+
+    if multiple_sources:
+        for src in sources:
+            grp = df[df['source'] == src].sort_values(by=xtype)
+            y = grp[metric].cumsum() if cumulative else grp[metric]
+            ls = resolve_ls(linestyle, '-')
+            plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=f"{metric.capitalize()} ({src})")
+        plt.legend(loc="best", fontsize=lgfs)
+    else:
+        grp = df.sort_values(by=xtype)
+        y = grp[metric].cumsum() if cumulative else grp[metric]
+        ls = resolve_ls(linestyle, '-')
+        plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=f"{metric.capitalize()}")
+        plt.legend(loc="best", fontsize=lgfs)
+
+    if use_title:
+        prefix = 'Cumulative ' if cumulative else ''
+        plt.title(f"{prefix}{metric.capitalize()} time vs {xlabel}", fontsize=tfs, fontweight='bold')
+    plt.ylabel(f"Times {time_unit}", fontsize=alfs)
+    plt.xlabel(xlabel, fontsize=alfs)
+    ax = plt.gca()
+    ax.tick_params(axis='x', labelsize=alfs)
+    ax.tick_params(axis='y', labelsize=alfs)
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+    plt.ylim(bottom=0.0)
+    plt.grid(True)
+    plt.tight_layout()
+    save_and_show_plot(f"{metric}_{agg_str}{savefig}")
 
 def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None):
     """
@@ -309,6 +361,7 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
     ax1.set_ylabel(f'Times {time_unit}', fontsize=alfs)
     ax1.tick_params(axis='y', labelsize=alfs)
     ax1.tick_params(axis='x', labelsize=alfs)
+    ax1.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
 
     # Secondary Y-axis for iteration counts
     ax2 = ax1.twinx()
@@ -371,8 +424,6 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
 
     fig.tight_layout()
     plt.grid(True, which='both', axis='both', linestyle='--', linewidth=0.5, zorder=0)
-    unique_x = sorted(df[xtype].unique())
-    plt.xticks(unique_x, fontsize=alfs)
     save_and_show_plot(f"iters_times_{agg_str}{savefig}")
 
 def check_mode_exact_match(mode, word):
@@ -390,13 +441,21 @@ def main():
               'nranks': "Number of MPI ranks"}
 
     # List of pre-defined modes:
-    mode_choices = ('iters', 'times', 'iters-and-times')
+    mode_choices = ('iters', 'times', 'iters-and-times', 'setup', 'solve', 'total')
+
+    # Parser for plus-separated multiple modes, e.g., "setup+solve"
+    def parse_modes(value):
+        parts = value.split('+')
+        invalid = [p for p in parts if p not in mode_choices]
+        if invalid:
+            raise argparse.ArgumentTypeError(f"Invalid mode(s): {', '.join(invalid)}. Valid: {', '.join(mode_choices)}")
+        return value
     
     # Set up argument parser
     parser = argparse.ArgumentParser(description="Parse the Statistics Summary produced by hypredrive")
     parser.add_argument("-f", "--filename", type=str, nargs="+", required=True, help="Path to the log file")
     parser.add_argument("-e", "--exclude", type=int, nargs="+", default=[], help="Exclude certain entries from the statistics")
-    parser.add_argument("-m", "--mode", type=str, default='iters-and-times', choices=mode_choices, help="What information to plot")
+    parser.add_argument("-m", "--mode", type=parse_modes, default='iters-and-times', help="What information to plot; combine multiple with '+' (e.g., 'setup+solve')")
     parser.add_argument("-t", "--xtype", type=str, default='entry', choices=labels.keys(), help="Variable type for the abscissa")
     parser.add_argument("-l", "--xlabel", type=str, default=None, help="Label for the abscissa")
     parser.add_argument("-s", "--savefig", default=None, help="Save figure(s) given this name suffix")
@@ -459,6 +518,15 @@ def main():
 
     if check_mode_exact_match(args.mode, 'iters-and-times'):
         plot_iters_times(df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, savefig, args.linestyle, args.markersize)
+
+    if check_mode_exact_match(args.mode, 'setup'):
+        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'setup', args.use_title, savefig, args.linestyle, args.markersize)
+
+    if check_mode_exact_match(args.mode, 'solve'):
+        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'solve', args.use_title, savefig, args.linestyle, args.markersize)
+
+    if check_mode_exact_match(args.mode, 'total'):
+        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'total', args.use_title, savefig, args.linestyle, args.markersize)
 
 if __name__ == "__main__":
     main()
