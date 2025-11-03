@@ -5,6 +5,7 @@
 *.lo
 *.btr
 *.csv
+.clang-tidy
 .deps
 .dirstamp
 *.~HEAD~*

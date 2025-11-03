@@ -25,6 +25,7 @@ option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(HYPREDRV_ENABLE_EIGSPEC  "Enable full eigenspectrum computation" OFF)
 option(HYPREDRV_ENABLE_TESTING  "Enable testing support and check target" ON)
 option(HYPREDRV_ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
+option(HYPREDRV_ENABLE_ANALYSIS "Enable static analysis (clang-tidy) and sanitizers (ASan/UBSan)" OFF)
 option(HYPREDRV_ENABLE_DATA     "Enable 'data' target to fetch example datasets" ON)
 option(HYPREDRV_BUILD_EXAMPLES  "Build the HYPREDRV examples" ON)
 
@@ -82,7 +83,11 @@ target_include_directories(HYPREDRV
 )
 
 # Link HYPRE library to HYPREDRV
-target_link_libraries(HYPREDRV PUBLIC HYPRE::HYPRE PRIVATE m)
+target_link_libraries(HYPREDRV PUBLIC HYPRE::HYPRE)
+
+# Link math library as PRIVATE (only needed for implementation, not public API)
+# CMake will automatically deduplicate if HYPRE already links m
+target_link_libraries(HYPREDRV PRIVATE m)
 
 # Optional eigenspectrum feature
 if(HYPREDRV_ENABLE_EIGSPEC)
@@ -91,9 +96,9 @@ if(HYPREDRV_ENABLE_EIGSPEC)
     target_link_libraries(HYPREDRV PRIVATE LAPACK::LAPACK)
 endif()
 
-# Define the executable
+# Define the main executable (hypredrive)
 add_executable(hypredrive src/main.c)
-target_link_libraries(hypredrive PRIVATE HYPREDRV::HYPREDRV HYPRE::HYPRE)
+target_link_libraries(hypredrive PRIVATE HYPREDRV::HYPREDRV)
 
 # Formatting target
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Format.cmake)
@@ -109,6 +114,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
 
 # Coverage support (optional)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Coverage.cmake)
+
+# Static analysis and sanitizers support (optional)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Analysis.cmake)
 
 # Add examples
 if(HYPREDRV_BUILD_EXAMPLES)

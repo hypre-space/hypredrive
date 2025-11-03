@@ -3,8 +3,8 @@
 # Similar to hypredrive executable - link directly to both HYPREDRV and HYPRE
 function(setup_test_executable target_name source_file)
     add_executable(${target_name} ${source_file})
-    # Link to both HYPREDRV and HYPRE, same as hypredrive executable does
-    target_link_libraries(${target_name} PRIVATE HYPREDRV::HYPREDRV HYPRE::HYPRE)
+    # HYPREDRV::HYPREDRV already exposes HYPRE::HYPRE via PUBLIC dependency, so no need to link HYPRE::HYPRE again
+    target_link_libraries(${target_name} PRIVATE HYPREDRV::HYPREDRV)
     # Set RPATH for macOS to find HYPREDRV library at build time
     # Use @loader_path/.. since tests are in build/tests/ and library is in build/
     if(APPLE)
