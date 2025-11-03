@@ -47,6 +47,7 @@ generate_output() {
         s/(Date and time: ).*/\1YYYY-MM-DD HH:MM:SS/g
         s/(Using HYPRE_DEVELOP_STRING: ).*/\1HYPRE_VERSION_GOES_HERE/g
         s|(.*/hypredrive)( done!)|\${HYPREDRIVE_PATH}/hypredrive\2|g
+        /^=+ System Information =+$/,/^=+ System Information =+$/d
     ' "hypredrive.temp.out" > "${REFERENCE_OUTPUT_FILE}"
 
     rm -rf hypredrive.temp.out

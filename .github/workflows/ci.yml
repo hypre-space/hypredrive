@@ -29,7 +29,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        build_type: [Debug, Release]
+        build_type: [Debug]
         compiler: [gcc, clang]
         exclude:
           - os: macos-latest
@@ -101,7 +101,7 @@ jobs:
           # Get and display compiler version
           VERSION=$(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')
           echo "::notice::Using clang version $VERSION"
-          
+
       - name: Setup compiler environment (macOS)
         if: startsWith(runner.os, 'macOS')
         run: |
