@@ -176,7 +176,7 @@ jobs:
           fi
 
       - name: Run tests
-        run: ctest --test-dir $BUILD_DIR --output-on-failure --parallel 2
+        run: ctest --test-dir $BUILD_DIR --output-on-failure
 
       - name: Verify example outputs (optional)
         continue-on-error: true

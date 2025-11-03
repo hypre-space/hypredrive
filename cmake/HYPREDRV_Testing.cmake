@@ -40,11 +40,11 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
 endfunction()
 
 if(HYPREDRV_ENABLE_TESTING)
-    # Add tests subfolder
-    add_subdirectory(tests)
-
-    # Testing setup (equivalent to autotools make check)
+    # Must be called before add_subdirectory(tests) so that add_test() calls work
     enable_testing()
+
+    # Add tests subfolder (contains unit tests that use add_test())
+    add_subdirectory(tests)
 
     # Add tests
     add_hypredrive_test(test_ex1_1proc 1 ex1.yml)
