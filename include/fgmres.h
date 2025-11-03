@@ -32,7 +32,7 @@ typedef struct FGMRES_args_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void FGMRESSetArgs(void *, YAMLnode *);
-void FGMRESCreate(MPI_Comm, FGMRES_args *, HYPRE_Solver *);
+void FGMRESSetArgs(void *, const YAMLnode *);
+void FGMRESCreate(MPI_Comm, const FGMRES_args *, HYPRE_Solver *);
 
 #endif /* FGMRES_HEADER */

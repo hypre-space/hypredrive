@@ -12,7 +12,7 @@
 #include "containers.h"
 #include "yaml.h"
 
-typedef void (*SetterFnc)(void *, YAMLnode *);
+typedef void (*SetterFnc)(void *, const YAMLnode *);
 
 typedef struct FieldOffsetMap_struct
 {
@@ -34,11 +34,11 @@ typedef struct FieldOffsetMap_struct
  * Prototypes
  *-----------------------------------------------------------------------------*/
 
-void FieldTypeIntSet(void *, YAMLnode *);
-void FieldTypeIntArraySet(void *, YAMLnode *);
-void FieldTypeStackIntArraySet(void *, YAMLnode *);
-void FieldTypeDoubleSet(void *, YAMLnode *);
-void FieldTypeCharSet(void *, YAMLnode *);
-void FieldTypeStringSet(void *, YAMLnode *);
+void FieldTypeIntSet(void *, const YAMLnode *);
+void FieldTypeIntArraySet(void *, const YAMLnode *);
+void FieldTypeStackIntArraySet(void *, const YAMLnode *);
+void FieldTypeDoubleSet(void *, const YAMLnode *);
+void FieldTypeCharSet(void *, const YAMLnode *);
+void FieldTypeStringSet(void *, const YAMLnode *);
 
 #endif /* FIELD_HEADER */

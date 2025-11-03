@@ -116,7 +116,7 @@ typedef struct AMG_args_struct
  *--------------------------------------------------------------------------*/
 
 void AMGSetDefaultArgs(AMG_args *);
-void AMGSetArgs(void *, YAMLnode *);
-void AMGCreate(AMG_args *, HYPRE_Solver *);
+void AMGSetArgs(void *, const YAMLnode *);
+void AMGCreate(const AMG_args *, HYPRE_Solver *);
 
 #endif /* AMG_HEADER */

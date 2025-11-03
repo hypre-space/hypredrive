@@ -89,7 +89,6 @@ PrintSystemInfo(MPI_Comm comm)
 
       // 1. CPU cores and model
       int  numPhysicalCPUs = 0;
-      int  physicalCPUSeen = 0;
       int  numCPUs;
       char cpuModels[8][256];
       char gpuInfo[256] = "Unknown";
@@ -126,6 +125,7 @@ PrintSystemInfo(MPI_Comm comm)
          sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &msize, NULL, 0);
       }
 #else
+      int  physicalCPUSeen = 0;
       fp = fopen("/proc/cpuinfo", "r");
       if (fp != NULL)
       {
@@ -150,7 +150,7 @@ PrintSystemInfo(MPI_Comm comm)
                int physicalID = numPhysicalCPUs - 1;
                if (physicalID >= 0 && physicalID < 8)
                {
-                  char *model = strchr(buffer, ':') + 2;
+                  const char *model = strchr(buffer, ':') + 2;
                   strncpy(cpuModels[physicalID], model,
                           sizeof(cpuModels[physicalID]) - 1);
                   cpuModels[physicalID][strlen(cpuModels[physicalID]) - 1] = '\0';
@@ -233,7 +233,7 @@ PrintSystemInfo(MPI_Comm comm)
                continue;
             }
 
-            char *start = strstr(buffer, "VGA compatible controller");
+            const char *start = strstr(buffer, "VGA compatible controller");
             if (!start) start = strstr(buffer, "3D controller");
             if (!start) start = strstr(buffer, "2D controller");
             if (!start) start = strstr(buffer, "Display controller");
@@ -303,8 +303,8 @@ PrintSystemInfo(MPI_Comm comm)
       size_t memSizeLen = sizeof(total);
       sysctlbyname("hw.memsize", &total, &memSizeLen, NULL, 0);
 
-      mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
-      vm_statistics_data_t   vmstat;
+      mach_msg_type_number_t count  = HOST_VM_INFO_COUNT;
+      vm_statistics_data_t   vmstat = {0};
       if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) ==
           KERN_SUCCESS)
       {
@@ -335,9 +335,10 @@ PrintSystemInfo(MPI_Comm comm)
       }
       if (fp != NULL)
       {
+         gcount = 0;
          while (fgets(buffer, sizeof(buffer), fp) != NULL)
          {
-            if (sscanf(buffer, "%ld, %ld", &total, &used) == 2)
+            if (sscanf(buffer, "%zu, %zu", &total, &used) == 2)
             {
                printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
                       gcount++, used / mib_to_gib, total / mib_to_gib,
@@ -411,7 +412,7 @@ PrintSystemInfo(MPI_Comm comm)
       printf("Debugging             : Disabled\n");
 #endif
 #if defined(__clang_version__)
-      printf("Compiler              : Clang %s\n", __clang_version__);
+      printf("Compiler              : Clang %s\n", (const char *) __clang_version__);
 #elif defined(__clang__)
       printf("Compiler              : Clang %d.%d.%d\n", __clang_major__, __clang_minor__,
              __clang_patchlevel__);
@@ -433,12 +434,12 @@ PrintSystemInfo(MPI_Comm comm)
 #if defined(CRAY_MPICH_VERSION)
       printf("Cray MPI (Version: %s)\n", TOSTRING(CRAY_MPICH_VERSION));
 #elif defined(INTEL_MPI_VERSION)
-      printf("Intel MPI (Version: %s)\n", INTEL_MPI_VERSION);
+      printf("Intel MPI (Version: %s)\n", (const char *) INTEL_MPI_VERSION);
 #elif defined(__IBM_MPI__)
       printf("IBM Spectrum MPI (Version: %d.%d.%d)\n", __IBM_MPI_MAJOR_VERSION,
              __IBM_MPI_MINOR_VERSION, __IBM_MPI_RELEASE_VERSION);
 #elif defined(MVAPICH2_VERSION)
-      printf("MVAPICH2 (Version: %s)\n", MVAPICH2_VERSION);
+      printf("MVAPICH2 (Version: %s)\n", (const char *) MVAPICH2_VERSION);
 #elif defined(MPICH_NAME)
       printf("MPICH (Version: %s)\n", MPICH_VERSION);
 #elif defined(OMPI_MAJOR_VERSION)
@@ -516,15 +517,16 @@ PrintSystemInfo(MPI_Comm comm)
 void
 PrintLibInfo(MPI_Comm comm)
 {
-   int        myid;
-   time_t     t;
-   struct tm *tm_info;
-   char       buffer[100];
+   int myid;
+   time_t t;
+   const struct tm *tm_info;
 
    MPI_Comm_rank(comm, &myid);
 
    if (!myid)
    {
+      char buffer[100];
+
       /* Get current time */
       time(&t);
       tm_info = localtime(&t);
@@ -554,15 +556,16 @@ PrintLibInfo(MPI_Comm comm)
 void
 PrintExitInfo(MPI_Comm comm, const char *argv0)
 {
-   int        myid;
-   time_t     t;
-   struct tm *tm_info;
-   char       buffer[100];
+   int myid;
 
    MPI_Comm_rank(comm, &myid);
 
    if (!myid)
    {
+      char buffer[100];
+      const struct tm *tm_info;
+      time_t t;
+
       /* Get current time */
       time(&t);
       tm_info = localtime(&t);

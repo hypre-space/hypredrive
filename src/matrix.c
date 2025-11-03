@@ -28,12 +28,14 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    uint32_t *partids;
    FILE     *fp;
 
-   HYPRE_IJMatrix mat;
-   HYPRE_BigInt   ilower, iupper;
-   HYPRE_Int     *dsizes, *osizes;
-   HYPRE_BigInt  *h_rows, *d_rows, *rows;
-   HYPRE_BigInt  *h_cols, *d_cols, *cols;
-   HYPRE_Complex *h_vals, *d_vals, *vals;
+   HYPRE_IJMatrix       mat;
+   HYPRE_BigInt         ilower, iupper;
+   HYPRE_BigInt        *h_rows, *d_rows;
+   HYPRE_BigInt        *h_cols, *d_cols;
+   HYPRE_Complex       *h_vals, *d_vals;
+   const HYPRE_Int     *rows;
+   const HYPRE_Int     *cols;
+   const HYPRE_Complex *vals;
 
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);
@@ -62,7 +64,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    nrows_sum = nnzs_max = 0;
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, partids[part]);
+      sprintf(filename, "%s.%05d.bin", prefixname, (int) partids[part]);
       fp = fopen(filename, "rb");
       if (!fp)
       {
@@ -105,12 +107,12 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    /* 4a) Pre-compute the sparsity pattern when storing on host memory */
    if (memory_location == HYPRE_MEMORY_HOST)
    {
-      dsizes = (HYPRE_Int *)calloc(nrows_sum, sizeof(HYPRE_Int));
-      osizes = (HYPRE_Int *)calloc(nrows_sum, sizeof(HYPRE_Int));
+      HYPRE_Int *dsizes = (HYPRE_Int *)calloc(nrows_sum, sizeof(HYPRE_Int));
+      HYPRE_Int *osizes = (HYPRE_Int *)calloc(nrows_sum, sizeof(HYPRE_Int));
 
       for (part = 0; part < nparts; part++)
       {
-         sprintf(filename, "%s.%05d.bin", prefixname, partids[part]);
+         sprintf(filename, "%s.%05d.bin", prefixname, (int) partids[part]);
          fp = fopen(filename, "rb");
          if (fread(header, sizeof(uint64_t), 11, fp) != 11)
          {
@@ -274,7 +276,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    /* Set matrix values */
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, partids[part]);
+      sprintf(filename, "%s.%05d.bin", prefixname, (int) partids[part]);
       fp = fopen(filename, "rb");
       if (fread(header, sizeof(uint64_t), 11, fp) != 11)
       {
@@ -375,17 +377,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       }
 
       /* Read matrix coefficients */
-      if (header[2] == sizeof(HYPRE_Complex))
-      {
-         if (fread(h_vals, sizeof(HYPRE_Complex), header[6], fp) != header[6])
-         {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read coeficients from %s", filename);
-            fclose(fp);
-            return;
-         }
-      }
-      else if (header[2] == sizeof(float))
+      if (header[2] == sizeof(float))
       {
          float *buffer = (float *)malloc(header[6] * sizeof(float));
 

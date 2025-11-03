@@ -334,7 +334,6 @@ void
 InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_ptr)
 {
    size_t text_size   = 0;
-   int    level       = 0;
    int    base_indent = -1;
    char  *text        = NULL;
    char  *dirname     = NULL;
@@ -368,7 +367,7 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    SplitFilename(filename, &dirname, &basename);
 
    /* Rank 0: Expand text from base file */
-   if (!myid) YAMLtextRead(dirname, basename, level, &base_indent, &text_size, &text);
+   if (!myid) YAMLtextRead(dirname, basename, 0, &base_indent, &text_size, &text);
    if (DistributedErrorCodeActive(comm))
    {
       return;
@@ -408,7 +407,7 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    input_args *iargs;
    char       *text;
    YAMLtree   *tree;
-   int         base_indent;
+   int         base_indent = 2;
    int         myid;
 
    MPI_Comm_rank(comm, &myid);

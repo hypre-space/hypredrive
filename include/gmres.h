@@ -36,7 +36,7 @@ typedef struct GMRES_args_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void GMRESSetArgs(void *, YAMLnode *);
-void GMRESCreate(MPI_Comm, GMRES_args *, HYPRE_Solver *);
+void GMRESSetArgs(void *, const YAMLnode *);
+void GMRESCreate(MPI_Comm, const GMRES_args *, HYPRE_Solver *);
 
 #endif /* GMRES_HEADER */

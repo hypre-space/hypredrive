@@ -433,7 +433,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    }
 
    /* Set dofmap_data */
-   if (sizeof(HYPRE_Int) == sizeof(int))
+   if (TYPES_MATCH(HYPRE_Int, int))
    {
       dofmap_data = (HYPRE_Int *)dofmap->data;
    }

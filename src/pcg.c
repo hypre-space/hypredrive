@@ -73,7 +73,7 @@ PCGSetDefaultArgs(PCG_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-PCGCreate(MPI_Comm comm, PCG_args *args, HYPRE_Solver *solver_ptr)
+PCGCreate(MPI_Comm comm, const PCG_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
 

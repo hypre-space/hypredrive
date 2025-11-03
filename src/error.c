@@ -161,11 +161,9 @@ ErrorCodeDescribe(uint32_t code)
 void
 ErrorCodeReset(uint32_t code)
 {
-   uint32_t i, bit;
-
-   for (i = 1; i < ERROR_CODE_NUM_ENTRIES; i++)
+   for (uint32_t i = 1; i < ERROR_CODE_NUM_ENTRIES; i++)
    {
-      bit = 1u << i;
+      uint32_t bit = 1u << i;
 
       if ((bit & code) != 0)
       {
@@ -224,7 +222,7 @@ ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
    int         length = strlen(suffix) + 24;
 
    msg = (char *)malloc(length);
-   sprintf(msg, "Found %d %s%s!", ErrorCodeCountGet(code), suffix, plural);
+   sprintf(msg, "Found %d %s%s!", (int) ErrorCodeCountGet(code), suffix, plural);
    ErrorMsgAdd(msg);
    free(msg);
 }

@@ -51,7 +51,7 @@ FGMRESSetDefaultArgs(FGMRES_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-FGMRESCreate(MPI_Comm comm, FGMRES_args *args, HYPRE_Solver *solver_ptr)
+FGMRESCreate(MPI_Comm comm, const FGMRES_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
 

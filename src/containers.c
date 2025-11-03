@@ -34,7 +34,7 @@ IntArrayCreate(size_t size)
  *--------------------------------------------------------------------------*/
 
 IntArray *
-IntArrayClone(IntArray *other)
+IntArrayClone(const IntArray *other)
 {
    IntArray *this;
 
@@ -83,10 +83,10 @@ IntArrayDestroy(IntArray **int_array_ptr)
 void
 StrToIntArray(const char *string, IntArray **int_array_ptr)
 {
-   char     *buffer;
-   char     *token;
-   int       count;
-   IntArray *int_array;
+   char       *buffer;
+   const char *token = NULL;
+   int         count;
+   IntArray   *int_array;
 
    /* Find number of elements in array */
    buffer = strdup(string);
@@ -125,9 +125,9 @@ StrToIntArray(const char *string, IntArray **int_array_ptr)
 void
 StrToStackIntArray(const char *string, StackIntArray *int_array)
 {
-   char *buffer;
-   char *token;
-   int   count;
+   char       *buffer;
+   const char *token = NULL;
+   int         count;
 
    /* Find number of elements in array */
    buffer = strdup(string);
@@ -199,7 +199,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
    MPI_Comm_size(comm, &nprocs);
 
    /* Sort input array */
-   tmp_array = IntArrayClone(int_array);
+   tmp_array = IntArrayClone((const IntArray *)int_array);
    IntArraySort(tmp_array);
 
    /* Find number of unique entries locally */
@@ -351,7 +351,7 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
       }
 
       count = (is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
-                          : (size_t)fscanf(fp, "%ld", &num_entries);
+                          : (size_t)fscanf(fp, "%zu", &num_entries);
       if (count != 1)
       {
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -375,7 +375,7 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
       }
 
       count = (is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
-                          : (size_t)fscanf(fp, "%ld", &num_entries);
+                          : (size_t)fscanf(fp, "%zu", &num_entries);
       if (count != 1)
       {
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -422,7 +422,7 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-IntArrayBuild(MPI_Comm comm, int size, int *dofmap, IntArray **int_array_ptr)
+IntArrayBuild(MPI_Comm comm, int size, const int *dofmap, IntArray **int_array_ptr)
 {
    IntArray *int_array;
 

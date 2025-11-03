@@ -55,7 +55,6 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
    char   backup[MAX_LINE_LENGTH];
    char  *filename;
    char  *new_text;
-   char  *comment_ptr;
    int    inner_level, pos;
    size_t num_whitespaces = 2 * level;
    size_t new_length;
@@ -85,6 +84,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
       line[strcspn(line, "\n")] = '\0';
 
       /* Remove comments at the end of valid line */
+      char *comment_ptr;
       if ((comment_ptr = strchr(line, '#')) != NULL)
       {
          *comment_ptr = '\0';
@@ -171,11 +171,8 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
             return;
          }
 
-         if (pos > 0)
-         {
-            first_indented_line = false;
-            prev_indent         = pos;
-         }
+         first_indented_line = false;
+         prev_indent         = pos;
       }
 
       if (!strcmp(key, "include"))
@@ -415,13 +412,13 @@ YAMLtreeValidate(YAMLtree *tree)
  *-----------------------------------------------------------------------------*/
 
 YAMLnode *
-YAMLnodeCreate(char *key, char *val, int level)
+YAMLnodeCreate(const char *key, const char *val, int level)
 {
    YAMLnode *node;
 
    node             = (YAMLnode *)malloc(sizeof(YAMLnode));
    node->level      = level;
-   node->key        = StrTrim(strdup(key));
+   node->key        = StrTrim(strdup((char *)key));
    node->mapped_val = NULL;
    node->valid      = YAML_NODE_UNKNOWN;
    node->parent     = NULL;
@@ -432,11 +429,11 @@ YAMLnodeCreate(char *key, char *val, int level)
       Otherwise, "node->val" will be set as "val" with all lowercase letters */
    if (strstr(key, "name"))
    {
-      node->val = StrTrim(strdup(val));
+      node->val = StrTrim(strdup((char *)val));
    }
    else
    {
-      node->val = StrToLowerCase(StrTrim(strdup(val)));
+      node->val = StrToLowerCase(StrTrim(strdup((char *)val)));
    }
 
    return node;
@@ -542,7 +539,7 @@ YAMLnodeAppend(YAMLnode *node, YAMLnode **previous_ptr)
  *-----------------------------------------------------------------------------*/
 
 static inline void
-YAMLnodePrintHelper(YAMLnode *node, const char *cKey, const char *cVal,
+YAMLnodePrintHelper(const YAMLnode *node, const char *cKey, const char *cVal,
                     const char *suffix)
 {
    int offset = 2 * node->level + (int)strlen(node->key);
@@ -672,7 +669,6 @@ YAMLnode *
 YAMLnodeFindByKey(YAMLnode *node, const char *key)
 {
    YAMLnode *child;
-   YAMLnode *found;
 
    if (node)
    {
@@ -684,7 +680,7 @@ YAMLnodeFindByKey(YAMLnode *node, const char *key)
       child = node->children;
       while (child)
       {
-         found = YAMLnodeFindByKey(child, key);
+         YAMLnode *found = YAMLnodeFindByKey(child, key);
          if (found)
          {
             return found;

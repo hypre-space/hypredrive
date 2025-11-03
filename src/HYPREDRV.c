@@ -359,8 +359,6 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t obj)
 {
    HYPREDRV_CHECK_INIT();
 
-   MPI_Comm comm = obj->comm;
-
    if (obj)
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadMatrix(obj));
@@ -571,7 +569,7 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t obj)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t obj, int size, int *dofmap)
+HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t obj, int size, const int *dofmap)
 {
    HYPREDRV_CHECK_INIT();
 
@@ -740,11 +738,11 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj)
 {
    HYPREDRV_CHECK_INIT();
 
-   int ls_id = StatsGetLinearSystemID();
-   int reuse = obj->iargs->ls.precon_reuse;
-
    if (obj)
    {
+      int ls_id = StatsGetLinearSystemID();
+      int reuse = obj->iargs->ls.precon_reuse;
+   
       if (!(ls_id % (reuse + 1)))
       {
          SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method, obj->precon,
@@ -784,9 +782,9 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t obj)
          LinearSystemComputeErrorNorm(obj->vec_xref, obj->vec_x, &e_norm);
          if (!obj->mypid)
          {
-            printf("L2 norm of error: %e\n", e_norm);
-            printf("L2 norm of solution: %e\n", x_norm);
-            printf("L2 norm of ref. solution: %e\n", xref_norm);
+            printf("L2 norm of error: %e\n", (double) e_norm);
+            printf("L2 norm of solution: %e\n", (double) x_norm);
+            printf("L2 norm of ref. solution: %e\n", (double) xref_norm);
          }
       }
    }

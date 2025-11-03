@@ -30,6 +30,6 @@ typedef struct Cheby_args_struct
  *--------------------------------------------------------------------------*/
 
 void ChebySetDefaultArgs(Cheby_args *);
-void ChebySetArgs(void *, YAMLnode *);
+void ChebySetArgs(void *, const YAMLnode *);
 
 #endif /* CHEBY_HEADER */

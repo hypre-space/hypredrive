@@ -23,7 +23,7 @@ static const FieldOffsetMap solver_field_offset_map[] = {
  *-----------------------------------------------------------------------------*/
 
 void
-SolverSetFieldByName(solver_args *args, YAMLnode *node)
+SolverSetFieldByName(solver_args *args, const YAMLnode *node)
 {
    for (size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
    {

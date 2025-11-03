@@ -38,7 +38,7 @@ typedef struct ILU_args_struct
  *--------------------------------------------------------------------------*/
 
 void ILUSetDefaultArgs(ILU_args *);
-void ILUSetArgs(void *, YAMLnode *);
-void ILUCreate(ILU_args *, HYPRE_Solver *);
+void ILUSetArgs(void *, const YAMLnode *);
+void ILUCreate(const ILU_args *, HYPRE_Solver *);
 
 #endif /* ILU_HEADER */

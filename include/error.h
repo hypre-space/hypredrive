@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "mpi.h"
+#include <HYPRE_utilities.h>
 
 // TODO: consider using hypredrv_error_t instead of ErrorCode
 typedef enum ErrorCode_enum

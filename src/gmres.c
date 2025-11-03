@@ -75,7 +75,7 @@ GMRESSetDefaultArgs(GMRES_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-GMRESCreate(MPI_Comm comm, GMRES_args *args, HYPRE_Solver *solver_ptr)
+GMRESCreate(MPI_Comm comm, const GMRES_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
 

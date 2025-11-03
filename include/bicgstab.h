@@ -33,7 +33,7 @@ typedef struct BiCGSTAB_args_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void BiCGSTABSetArgs(void *, YAMLnode *);
-void BiCGSTABCreate(MPI_Comm, BiCGSTAB_args *, HYPRE_Solver *);
+void BiCGSTABSetArgs(void *, const YAMLnode *);
+void BiCGSTABCreate(MPI_Comm, const BiCGSTAB_args *, HYPRE_Solver *);
 
 #endif /* BICGSTAB_HEADER */

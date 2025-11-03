@@ -28,7 +28,8 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
    HYPRE_IJVector vec;
    HYPRE_BigInt   ilower, iupper;
-   HYPRE_Complex *h_vals, *d_vals, *vals;
+   HYPRE_Complex *h_vals, *d_vals;
+   const HYPRE_Complex *vals = NULL;
 
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);
@@ -57,7 +58,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    nrows_max = nrows_sum = 0;
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, partids[part]);
+      sprintf(filename, "%s.%05d.bin", prefixname, (int) partids[part]);
       fp = fopen(filename, "rb");
       if (!fp)
       {
@@ -103,7 +104,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    /* 4) Fill entries */
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, partids[part]);
+      sprintf(filename, "%s.%05d.bin", prefixname, (int) partids[part]);
       fp = fopen(filename, "rb");
       if (fread(header, sizeof(uint64_t), 8, fp) != 8)
       {
@@ -114,17 +115,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       }
 
       /* Read vector coefficients */
-      if (header[1] == sizeof(HYPRE_Complex))
-      {
-         if (fread(h_vals, sizeof(HYPRE_Complex), header[5], fp) != header[5])
-         {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read coeficients from %s", filename);
-            fclose(fp);
-            return;
-         }
-      }
-      else if (header[1] == sizeof(float))
+      if (header[1] == sizeof(float))
       {
          float *buffer = (float *)malloc(header[5] * sizeof(float));
 

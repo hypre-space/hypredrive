@@ -32,7 +32,8 @@ extern "C"
 {
 #endif
 
-// Macro for safely calling HYPREDRV functions. Note it assumes MPI comm is set externally
+// Macro for safely calling HYPREDRV functions.
+// Always uses MPI_COMM_WORLD for MPI_Abort as a safe fallback.
 #ifndef HYPREDRV_SAFE_CALL
 #define HYPREDRV_SAFE_CALL(call)                                               \
    do                                                                          \
@@ -42,14 +43,14 @@ extern "C"
       {                                                                        \
          fprintf(stderr, "At %s:%d in %s():\n", __FILE__, __LINE__, __func__); \
          HYPREDRV_ErrorCodeDescribe(error_code);                               \
-         char *debug_env = getenv("HYPREDRV_DEBUG");                           \
+         const char *debug_env = getenv("HYPREDRV_DEBUG");                     \
          if (debug_env && strcmp(debug_env, "1") == 0)                         \
          {                                                                     \
             raise(SIGTRAP); /* Breakpoint for gdb */                           \
          }                                                                     \
          else                                                                  \
          {                                                                     \
-            MPI_Abort(comm, error_code);                                       \
+            MPI_Abort(MPI_COMM_WORLD, error_code);                             \
          }                                                                     \
       }                                                                        \
    } while (0)
@@ -676,7 +677,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t, int, int *);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t, int, const int *);
 
    /**
     * @brief Set an interleaved degree of freedom (DOF) map for the linear system of a

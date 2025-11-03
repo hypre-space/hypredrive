@@ -284,14 +284,14 @@ StatsRelativeResNormSet(double rrnorm)
 void
 StatsPrint(int print_level)
 {
-   const char *top[]    = {"", "LS build", "setup", "solve", "relative", ""};
-   const char *bottom[] = {"Entry", "times", "times", "times", "res. norm", "iters"};
-   const char *scale    = global_stats->use_millisec ? "[ms]" : "[s]";
-
    if (!global_stats || print_level < 1)
    {
       return;
    }
+
+   const char *top[]    = {"", "LS build", "setup", "solve", "relative", ""};
+   const char *bottom[] = {"Entry", "times", "times", "times", "res. norm", "iters"};
+   const char *scale    = global_stats->use_millisec ? "[ms]" : "[s]";
 
    PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
    printf("\n\nSTATISTICS SUMMARY:\n\n");

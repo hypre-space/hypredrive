@@ -53,7 +53,7 @@ BiCGSTABSetDefaultArgs(BiCGSTAB_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-BiCGSTABCreate(MPI_Comm comm, BiCGSTAB_args *args, HYPRE_Solver *solver_ptr)
+BiCGSTABCreate(MPI_Comm comm, const BiCGSTAB_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver;
 

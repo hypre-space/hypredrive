@@ -39,7 +39,7 @@ static const FieldOffsetMap ls_field_offset_map[] = {
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetFieldByName(LS_args *args, YAMLnode *node)
+LinearSystemSetFieldByName(LS_args *args, const YAMLnode *node)
 {
    for (size_t i = 0; i < LS_NUM_FIELDS; i++)
    {
@@ -177,10 +177,8 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 
    char                 matrix_filename[MAX_FILENAME_LENGTH] = {0};
    int                  ls_id                                = StatsGetLinearSystemID();
-   int                  nprocs, nparts;
    int                  file_not_found = 0;
    void                *obj;
-   HYPRE_ParCSRMatrix   par_A;
    HYPRE_MemoryLocation memory_location =
       (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
@@ -218,6 +216,8 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    {
       if (CheckBinaryDataExists(matrix_filename))
       {
+         int nprocs, nparts;
+
          MPI_Comm_size(comm, &nprocs);
          nparts = CountNumberOfPartitions(matrix_filename);
          if (nparts >= nprocs)
@@ -260,7 +260,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    if (args->exec_policy)
    {
       HYPRE_IJMatrixGetObject(*matrix_ptr, &obj);
-      par_A = (HYPRE_ParCSRMatrix)obj;
+      HYPRE_ParCSRMatrix  par_A = (HYPRE_ParCSRMatrix)obj;
 
       hypre_ParCSRMatrixMigrate(par_A, HYPRE_MEMORY_DEVICE);
    }
@@ -315,10 +315,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 {
    HYPRE_BigInt         ilower, iupper;
    HYPRE_BigInt         jlower, jupper;
-   HYPRE_IJVector       refsol                            = NULL;
-   char                 rhs_filename[MAX_FILENAME_LENGTH] = {0};
-   int                  nparts, nprocs;
-   int                  ls_id = StatsGetLinearSystemID();
+   HYPRE_IJVector       refsol = NULL;
+   int                  ls_id  = StatsGetLinearSystemID();
    HYPRE_MemoryLocation memory_location =
       (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
@@ -362,7 +360,6 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
             HYPRE_IJVectorInitialize_v2(refsol, memory_location);
 
             /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
-            void           *obj;
             HYPRE_ParVector par_x;
             HYPRE_IJVectorGetObject(refsol, &obj);
             par_x = (HYPRE_ParVector)obj;
@@ -381,6 +378,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    }
    else
    {
+      char rhs_filename[MAX_FILENAME_LENGTH] = {0};
+
       /* Set RHS filename */
       if (args->dirname[0] != '\0')
       {
@@ -403,6 +402,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       /* Read vector from file (Binary or ASCII) */
       if (CheckBinaryDataExists(rhs_filename))
       {
+         int  nparts, nprocs;
+
          MPI_Comm_size(comm, &nprocs);
          nparts = CountNumberOfPartitions(rhs_filename);
          if (nparts >= nprocs)
@@ -474,9 +475,6 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 
    if (args->x0_filename[0] == '\0')
    {
-      HYPRE_MemoryLocation memloc =
-         (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
-
       HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
       HYPRE_IJVectorCreate(comm, jlower, jupper, x0_ptr);
       HYPRE_IJVectorSetObjectType(*x0_ptr, HYPRE_PARCSR);
@@ -613,8 +611,7 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 void
 LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 {
-   char dofmap_filename[MAX_FILENAME_LENGTH] = {0};
-   int  ls_id                                = StatsGetLinearSystemID();
+   int  ls_id = StatsGetLinearSystemID();
 
    /* Destroy pre-existing dofmap */
    if (*dofmap_ptr) IntArrayDestroy(dofmap_ptr);
@@ -625,6 +622,8 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
    }
    else
    {
+      char dofmap_filename[MAX_FILENAME_LENGTH] = {0};
+
       /* Set dofmap filename */
       if (args->dirname[0] != '\0')
       {

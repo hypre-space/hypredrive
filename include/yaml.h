@@ -84,7 +84,7 @@ void      YAMLtreeUpdate(int, char **, YAMLtree *);
 void      YAMLtreePrint(YAMLtree *, YAMLprintMode);
 void      YAMLtreeValidate(YAMLtree *);
 
-YAMLnode *YAMLnodeCreate(char *, char *, int);
+YAMLnode *YAMLnodeCreate(const char *, const char *, int);
 void      YAMLnodeDestroy(YAMLnode *);
 void      YAMLnodeAddChild(YAMLnode *, YAMLnode *);
 void      YAMLnodeAppend(YAMLnode *, YAMLnode **);

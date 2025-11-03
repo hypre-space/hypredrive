@@ -123,12 +123,10 @@ AMGcsnSetDefaultArgs(AMGcsn_args *args)
 {
    args->rap2 = 0;
 #if defined(HYPRE_USING_GPU)
-   args->type           = 8;
    args->mod_rap2       = 1;
    args->keep_transpose = 1;
    args->type           = 8;
 #else
-   args->type           = 10;
    args->mod_rap2       = 0;
    args->keep_transpose = 0;
    args->type           = 10;
@@ -422,7 +420,7 @@ AMGsmtGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
+AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver precon;
 

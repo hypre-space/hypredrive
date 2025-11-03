@@ -28,13 +28,12 @@ typedef struct EigSpec_args_struct
  *--------------------------------------------------------------------------*/
 
 void EigSpecSetDefaultArgs(EigSpec_args *);
-void EigSpecSetArgs(void *, YAMLnode *);
+void EigSpecSetArgs(void *, const YAMLnode *);
 
 /* Internal helpers */
 #if defined(HYPREDRV_ENABLE_EIGSPEC)
 typedef void (*hypredrv_PreconApplyFn)(void *ctx, void *b, void *x);
-uint32_t hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *mat_A, void *precon_ctx,
-                                 hypredrv_PreconApplyFn precon_apply);
+uint32_t hypredrv_EigSpecCompute(const EigSpec_args *, void *, void *, hypredrv_PreconApplyFn);
 #endif
 
 #endif /* EIGSPEC_HEADER */

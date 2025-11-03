@@ -24,7 +24,7 @@
  * @param _numFields Number of fields in the map.
  */
 #define DEFINE_SET_FIELD_BY_NAME_FUNC(_funcName, _argsType, _map, _numFields)        \
-   void _funcName(_argsType *_args, YAMLnode *_node)                                 \
+   void _funcName(_argsType *_args, const YAMLnode *_node)                           \
    {                                                                                 \
       for (size_t i = 0; i < (_numFields); i++)                                      \
       {                                                                              \
@@ -151,11 +151,11 @@
  * @param _prefix Prefix used in the naming of the generated function.
  */
 #define DEFINE_SET_ARGS_FUNC(_prefix)                      \
-   void _prefix##SetArgs(void *vargs, YAMLnode *parent)    \
+   void _prefix##SetArgs(void *vargs, const YAMLnode *parent) \
    {                                                       \
       _prefix##_args *args = (_prefix##_args *)vargs;      \
       CALL_SET_DEFAULT_ARGS_FUNC(_prefix, args);           \
-      CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, args, parent); \
+      CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, args, (YAMLnode *)parent); \
    }
 
 /**

@@ -12,7 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "error.h"
-#include "mpi.h"
 #include "utils.h"
 
 #define STATS_NUM_ENTRIES 7
