@@ -8,13 +8,13 @@
 #ifndef ERROR_H
 #define ERROR_H
 
+#include <HYPRE_utilities.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <HYPRE_utilities.h>
 
 // TODO: consider using hypredrv_error_t instead of ErrorCode
 typedef enum ErrorCode_enum

@@ -14,7 +14,8 @@
 #include "error.h"
 #include "utils.h"
 
-enum {
+enum
+{
    STATS_NUM_ENTRIES = 7
 };
 

@@ -132,6 +132,15 @@ PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
       case PRECON_FSAI:
          FSAICreate(&args->fsai, &precon->main);
          break;
+
+      case PRECON_NONE:
+         break;
+
+      default:
+         ErrorCodeSet(ERROR_INVALID_PRECON);
+         free(precon);
+         *precon_ptr = NULL;
+         return;
    }
 
    *precon_ptr = precon;
@@ -170,8 +179,12 @@ PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A)
          HYPRE_FSAISetup(prec, par_A, par_b, par_x);
          break;
 
+      case PRECON_NONE:
+         break;
+
       default:
-         return;
+         ErrorCodeSet(ERROR_INVALID_PRECON);
+         break;
    }
 
    // TODO: fix timing. Adjust LinearSolverSetup.
@@ -216,8 +229,12 @@ PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
          HYPRE_FSAISolve(prec, par_A, par_b, par_x);
          break;
 
+      case PRECON_NONE:
+         break;
+
       default:
-         return;
+         ErrorCodeSet(ERROR_INVALID_PRECON);
+         break;
    }
 
    // StatsTimerStop("prec_apply");

@@ -26,9 +26,7 @@ typedef struct FieldOffsetMap_struct
  *-----------------------------------------------------------------------------*/
 
 #define FIELD_OFFSET_MAP_ENTRY(_st, _field_name, _setter) \
-   {                                                      \
-      #_field_name, offsetof(_st, _field_name), _setter   \
-   }
+   {#_field_name, offsetof(_st, _field_name), _setter}
 
 /*-----------------------------------------------------------------------------
  * Prototypes

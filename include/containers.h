@@ -18,8 +18,9 @@
 #include "HYPRE_utilities.h"
 #include "utils.h"
 
-enum {
-   MAX_FILENAME_LENGTH = 2048,
+enum
+{
+   MAX_FILENAME_LENGTH    = 2048,
    MAX_STACK_ARRAY_LENGTH = 128
 };
 
@@ -101,11 +102,7 @@ typedef struct StrIntMapArray_struct
       .data = map, .size = sizeof(map) / sizeof(map[0]) \
    }
 #define STR_INT_MAP_ARRAY_CREATE_ON_OFF() OnOffMapArray
-#define STR_INT_MAP_ARRAY_VOID() \
-   (StrIntMapArray)              \
-   {                             \
-      .data = NULL, .size = 0    \
-   }
+#define STR_INT_MAP_ARRAY_VOID() (StrIntMapArray){.data = NULL, .size = 0}
 
 extern const StrIntMapArray OnOffMapArray;
 

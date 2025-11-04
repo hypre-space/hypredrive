@@ -54,8 +54,9 @@ bool  HasFileExtension(const char *);
    (HYPRE_RELEASE_NUMBER_GT(release) ||           \
     HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(release, develop))
 
-enum {
-   GB_TO_BYTES = (1 << 30),
+enum
+{
+   GB_TO_BYTES        = (1 << 30),
    MAX_DIVISOR_LENGTH = 84
 };
 
@@ -96,9 +97,9 @@ enum {
 
 /* Check if two types match */
 #ifdef __GNUC__
-#  define TYPES_MATCH(T1, T2) __builtin_types_compatible_p(T1, T2)
+#define TYPES_MATCH(T1, T2) __builtin_types_compatible_p(T1, T2)
 #else
-#  define TYPES_MATCH(T1, T2) (sizeof(T1) == sizeof(T2)) /* fallback */
+#define TYPES_MATCH(T1, T2) (sizeof(T1) == sizeof(T2)) /* fallback */
 #endif
 
 #endif /* UTILS_HEADER */

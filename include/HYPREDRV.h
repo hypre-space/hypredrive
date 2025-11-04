@@ -677,7 +677,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t, int, const int *);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t, int,
+                                                                  const int *);
 
    /**
     * @brief Set an interleaved degree of freedom (DOF) map for the linear system of a

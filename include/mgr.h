@@ -12,7 +12,8 @@
 #include "ilu.h"
 #include "utils.h"
 
-enum {
+enum
+{
    MAX_MGR_LEVELS = 32
 };
 

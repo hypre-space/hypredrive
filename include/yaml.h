@@ -16,7 +16,8 @@
 #include "error.h"
 #include "utils.h"
 
-enum {
+enum
+{
    MAX_LINE_LENGTH = 1024
 };
 

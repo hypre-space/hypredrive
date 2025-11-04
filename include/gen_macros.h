@@ -150,11 +150,11 @@
  *
  * @param _prefix Prefix used in the naming of the generated function.
  */
-#define DEFINE_SET_ARGS_FUNC(_prefix)                      \
-   void _prefix##SetArgs(void *vargs, const YAMLnode *parent) \
-   {                                                       \
-      _prefix##_args *args = (_prefix##_args *)vargs;      \
-      CALL_SET_DEFAULT_ARGS_FUNC(_prefix, args);           \
+#define DEFINE_SET_ARGS_FUNC(_prefix)                                  \
+   void _prefix##SetArgs(void *vargs, const YAMLnode *parent)          \
+   {                                                                   \
+      _prefix##_args *args = (_prefix##_args *)vargs;                  \
+      CALL_SET_DEFAULT_ARGS_FUNC(_prefix, args);                       \
       CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, args, (YAMLnode *)parent); \
    }
 
