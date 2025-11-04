@@ -1,0 +1,53 @@
+name: 'Build HYPRE'
+description: 'Build and install HYPRE library with caching'
+inputs:
+  hypre_version:
+    description: 'HYPRE version/branch to build'
+    required: false
+    default: 'master'
+  compiler:
+    description: 'Compiler to use (gcc or clang)'
+    required: false
+    default: 'gcc'
+  build_type:
+    description: 'CMake build type'
+    required: false
+    default: 'Release'
+  hypre_shared_libs:
+    description: 'Build shared libraries (ON or OFF)'
+    required: false
+    default: 'ON'
+outputs:
+  hypre_prefix:
+    description: 'Path to HYPRE installation'
+    value: ${{ steps.build.outputs.hypre_prefix }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Cache HYPRE install
+      uses: actions/cache@v4
+      id: hypre-cache
+      with:
+        path: ${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}
+        key: hypre-${{ inputs.hypre_version }}-ubuntu-latest-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ inputs.hypre_shared_libs }}
+
+    - name: Build & install HYPRE
+      id: build
+      shell: bash
+      run: |
+        set -euxo pipefail
+        PREFIX="${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}"
+        if [ ! -f "$PREFIX/lib/cmake/hypre/HYPREConfig.cmake" ]; then
+          git clone --depth 1 --branch ${{ inputs.hypre_version }} https://github.com/hypre-space/hypre.git
+          cmake -S hypre/src -B hypre/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DBUILD_SHARED_LIBS=${{ inputs.hypre_shared_libs }} \
+            -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
+            -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+            -DMPI_INCLUDE_DIR=/usr/include/x86_64-linux-gnu/mpich \
+            -DCMAKE_C_COMPILER=mpicc
+          cmake --build hypre/build --parallel
+          cmake --install hypre/build
+        fi
+        echo "hypre_prefix=$PREFIX" >> $GITHUB_OUTPUT
+        echo "HYPRE_PREFIX=$PREFIX" >> $GITHUB_ENV
