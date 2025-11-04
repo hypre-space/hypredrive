@@ -187,7 +187,7 @@ extern "C"
     * This communicator is used for parallel communications in the underlying HYPRE
     * library calls.
     *
-    * @param hypredrv_ptr A pointer to the HYPREDRV_t pointer where the address of the
+    * @param hypredrv_ptr A pointer to the HYPREDRV_t object where the address of the
     * newly allocated HYPREDRV object will be stored. After the function call,
     * *hypredrv_ptr will point to the allocated object.
     *
@@ -207,7 +207,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_Create(MPI_Comm, HYPREDRV_t *);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_Create(MPI_Comm, HYPREDRV_t *hypredrv_ptr);
 
    /**
     * @brief Destroy a HYPREDRV object.
@@ -238,7 +238,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_Destroy(HYPREDRV_t *);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr);
 
    /**
     * @brief Print library information at entrance.
@@ -290,7 +290,8 @@ extern "C"
     *
     * This function prints the driver name followed by the current date and time.
     *
-    * @param argv[0] The application driver name.
+    * @param comm The MPI communicator associated with the HYPREDRV object.
+    * @param argv0 The application driver name.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     indicates a failure,
@@ -307,7 +308,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PrintExitInfo(MPI_Comm comm, const char *);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PrintExitInfo(MPI_Comm comm, const char *argv0);
 
    /**
     * @brief Parse input arguments for a HYPREDRV object.
@@ -336,7 +337,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsParse(int, char **, HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsParse(int, char **, HYPREDRV_t hypredrv);
 
    /**
     * @brief Set library mode to HYPREDRV, in which matrices and vectors are not assumed
@@ -356,7 +357,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_SetLibraryMode(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_SetLibraryMode(HYPREDRV_t hypredrv);
 
    /**
     * @brief Set HYPRE's global options according to the YAML input.
@@ -376,7 +377,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_SetGlobalOptions(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv);
 
    /**
     * @brief Retrieve the warmup setting from a HYPREDRV object.
@@ -401,7 +402,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetWarmup(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetWarmup(HYPREDRV_t hypredrv);
 
    /**
     * @brief Retrieve the number of repetitions from a HYPREDRV object.
@@ -425,7 +426,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t hypredrv);
 
    /**
     * @brief Retrieve the number of linear systems from a HYPREDRV object.
@@ -448,7 +449,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t hypredrv);
 
    /**
     * @brief Build the linear system (matrix, RHS, and LHS) according to the YAML input
@@ -476,7 +477,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemBuild(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv);
 
    /**
     * @brief Read the linear system matrix from file for a HYPREDRV object.
@@ -506,7 +507,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t hypredrv);
 
    /**
     * @brief Set the linear system matrix for a HYPREDRV object.
@@ -531,12 +532,12 @@ extern "C"
     * @code
     *    HYPREDRV_t *hypredrv;
     *    // ... (hypredrv is created, and its components are initialized) ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(hypredrv));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(hypredrv, mat_A));
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t,
-                                                                  HYPRE_Matrix);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t   hypredrv,
+                                                                  HYPRE_Matrix mat_A);
 
    /**
     * @brief Set the linear system right-hand side (RHS) vector from file for a HYPREDRV
@@ -560,11 +561,11 @@ extern "C"
     * @code
     *    HYPREDRV_t *hypredrv;
     *    // ... (hypredrv is created, and its components are initialized) ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv, vec));
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetRHS(HYPREDRV_t, HYPRE_Vector);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec);
 
    /**
     * @brief Set the initial guess for the solution vector of the linear system for a
@@ -592,7 +593,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv);
 
    /**
     * @brief Reset the initial guess of the solution vector for a HYPREDRV object to its
@@ -617,7 +618,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv);
 
    /**
     * @brief Set the matrix that is used to compute the preconditioner of a HYPREDRV
@@ -646,7 +647,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv);
 
    /**
     * @brief Set the degree of freedom (DOF) map for the linear system of a HYPREDRV
@@ -677,8 +678,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t, int,
-                                                                  const int *);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t hypredrv, int size,
+                                                                  const int *dofmap);
 
    /**
     * @brief Set an interleaved degree of freedom (DOF) map for the linear system of a
@@ -711,8 +712,44 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t,
-                                                                             int, int);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t hypredrv,
+                                                                             int num_local_blocks,
+                                                                             int num_dof_types);
+
+   /**
+    * @brief Set a contiguous degree of freedom (DOF) map for the linear system of a
+    * HYPREDRV object.
+    *
+    * @param hypredrv The HYPREDRV_t object for which the DOF map of the linear system is
+    * to be set.
+    *
+    * @param num_local_blocks The local (owned by the current rank) number of blocks
+    * (cells/nodes) containing a set of num_dof_types degrees of freedom.
+    *
+    * @param num_dof_types The number of degree of freedom types.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note It's the caller's responsibility to ensure that the hypredrv parameter is a
+    * valid pointer to an initialized HYPREDRV_t object. Passing a NULL or uninitialized
+    * object will result in an error.
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t *hypredrv;
+    *    int num_dof_types = ... // Number of degree of freedom types
+    *    int num_local_nodes = ... // Number of local (current MPI rank) nodes
+    *    // ... (hypredrv is created, and its components are initialized) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetContiguousDofmap(hypredrv,
+    * num_local_blocks, num_dof_types));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetContiguousDofmap(HYPREDRV_t hypredrv,
+                                                                            int num_local_blocks,
+                                                                            int num_dof_types);
 
    /**
     * @brief Read the degree of freedom (DOF) map for the linear system of a HYPREDRV
@@ -737,7 +774,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t hypredrv);
 
    /**
     * @brief Retrieves the solution values from the linear system of a HYPREDRV object.
@@ -747,13 +784,13 @@ extern "C"
     * copy the solution values; instead, it assigns the internal pointer to the
     * user-provided pointer @p sol_data.
     *
-    * @param obj A valid HYPREDRV_t object from which the internal solution pointer is to
-    * be retrieved.
+    * @param hypredrv A valid HYPREDRV_t object from which the internal solution pointer
+    * is to be retrieved.
     * @param sol_data A pointer to a HYPRE_Complex pointer, which will be set to point to
     * the internal solution data array. The user must not free or modify the internal
     * array.
     *
-    * @return Returns an error code, with 0 indicating success. If the @p obj parameter is
+    * @return Returns an error code, with 0 indicating success. If the @p hypredrv parameter is
     * invalid (e.g., NULL or uninitialized), an error code is returned, and the error can
     * be further described using HYPREDRV_ErrorCodeDescribe(error_code).
     *
@@ -768,7 +805,7 @@ extern "C"
     */
 
    HYPREDRV_EXPORT_SYMBOL uint32_t
-   HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t, HYPRE_Complex **);
+   HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_data);
 
    /**
     * @brief Retrieves the right-hand side values from the linear system of a HYPREDRV
@@ -779,7 +816,7 @@ extern "C"
     * It does not copy the solution values; instead, it assigns the internal pointer to
     * the user-provided pointer @p rhs_data.
     *
-    * @param obj A valid HYPREDRV_t object from which the internal solution pointer is to
+    * @param hypredrv A valid HYPREDRV_t object from which the internal solution pointer is to
     * be retrieved.
     * @param rhs_data A pointer to a HYPRE_Complex pointer, which will be set to point to
     * the internal right-hand side data array. The user must not free or modify the
@@ -799,8 +836,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t,
-                                                                     HYPRE_Complex **);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv,
+                                                                     HYPRE_Complex **rhs_data);
 
    /**
     * @brief Create a preconditioner for the HYPREDRV object based on the specified
@@ -825,7 +862,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconCreate(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconCreate(HYPREDRV_t hypredrv);
 
    /**
     * @brief Create a linear solver for the HYPREDRV object based on the specified method.
@@ -849,7 +886,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverCreate(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv);
 
    /**
     * @brief Set up the preconditioner for the HYPREDRV object based on the specified
@@ -874,7 +911,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconSetup(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconSetup(HYPREDRV_t hypredrv);
 
    /**
     * @brief Set up the linear solver for the HYPREDRV object based on the specified
@@ -900,7 +937,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverSetup(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv);
 
    /**
     * @brief Apply the linear solver to solve the linear system for the HYPREDRV object.
@@ -924,7 +961,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverApply(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv);
 
    /**
     * @brief Apply the preconditioner associated with a HYPREDRV_t object to an input
@@ -954,8 +991,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconApply(HYPREDRV_t, HYPRE_Vector,
-                                                        HYPRE_Vector);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconApply(HYPREDRV_t hypredrv, HYPRE_Vector vec_b,
+                                                        HYPRE_Vector vec_x);
 
    /**
     * @brief Destroy the preconditioner associated with the HYPREDRV object.
@@ -979,7 +1016,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconDestroy(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv);
 
    /**
     * @brief Destroy the linear solver associated with the HYPREDRV object.
@@ -1003,7 +1040,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverDestroy(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv);
 
    /**
     * @brief Print the statistics associated with the HYPREDRV object.
@@ -1029,7 +1066,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsPrint(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsPrint(HYPREDRV_t hypredrv);
 
    /**
     * @brief Start a named timer.
@@ -1080,12 +1117,23 @@ extern "C"
     * @brief Compute the full eigenspectrum of the current linear system matrix
     * or the preconditioned linear system.
     *
-    * Compiled and available only when hypredrive is built with
-    * -DHYPREDRV_ENABLE_EIGSPEC=ON. This function operates on a single MPI rank
-    * and writes eigenvalues (and optionally eigenvectors) to files as
-    * configured via the YAML input under linear_system.eigspec.
+    * @param hypredrv The HYPREDRV_t object for which the eigenspectrum is to be computed.
+    * 
+    * @return Returns an error code with 0 indicating success
+    * 
+    * @note Compiled and available only when hypredrive is built with
+    * `-DHYPREDRV_ENABLE_EIGSPEC=ON`. This function operates on a single MPI rank
+    * and writes eigenvalues (and optionally eigenvectors) to files in the current
+    * directory as configured via the YAML input under `linear_system.eigspec`.
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t *hypredrv;
+    *    // ... (hypredrv is created, and its components are initialized) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemComputeEigenspectrum(hypredrv));
+    * @endcode
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv);
 
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/

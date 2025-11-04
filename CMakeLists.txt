@@ -27,6 +27,7 @@ option(HYPREDRV_ENABLE_TESTING  "Enable testing support and check target" ON)
 option(HYPREDRV_ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 option(HYPREDRV_ENABLE_ANALYSIS "Enable static analysis (clang-tidy) and sanitizers (ASan/UBSan)" OFF)
 option(HYPREDRV_ENABLE_DATA     "Enable 'data' target to fetch example datasets" ON)
+option(HYPREDRV_ENABLE_DOCS     "Enable documentation generation" OFF)
 option(HYPREDRV_BUILD_EXAMPLES  "Build the HYPREDRV examples" ON)
 
 # Optionally set the build type to Release by default
@@ -124,6 +125,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Coverage.cmake)
 
 # Static analysis and sanitizers support (optional)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Analysis.cmake)
+
+# Documentation support (optional)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Docs.cmake)
 
 # Add examples
 if(HYPREDRV_BUILD_EXAMPLES)
