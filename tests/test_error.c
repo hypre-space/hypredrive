@@ -5,13 +5,13 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <mpi.h>
-#include "test_helpers.h"
 #include "error.h"
+#include "test_helpers.h"
 
 /*-----------------------------------------------------------------------------
  * Test ErrorCode operations
@@ -52,7 +52,7 @@ test_ErrorCodeMultiple(void)
 {
    ErrorCodeSet(ERROR_INVALID_KEY);
    ErrorCodeSet(ERROR_INVALID_VAL);
-   
+
    uint32_t codes = ErrorCodeGet();
    ASSERT_TRUE(codes & ERROR_INVALID_KEY);
    ASSERT_TRUE(codes & ERROR_INVALID_VAL);
@@ -72,7 +72,7 @@ test_ErrorMsgAdd(void)
    ErrorMsgClear();
    ErrorMsgAdd("Test message %d", 42);
    ErrorMsgAdd("Another message");
-   
+
    /* Messages should be stored - we can't easily verify without printing */
    /* But we can verify no crash */
 }
@@ -82,7 +82,7 @@ test_ErrorMsgClear(void)
 {
    ErrorMsgAdd("Test message");
    ErrorMsgClear();
-   
+
    /* Clear should not crash */
 }
 
@@ -92,14 +92,14 @@ test_ErrorMsgAddMissingKey(void)
    ErrorCodeResetAll();
    ErrorMsgClear();
    ErrorMsgAddMissingKey("missing_key");
-   
+
    /* ErrorMsgAddMissingKey only adds a message, doesn't set error code */
    /* The error code must be set separately via ErrorCodeSet */
    /* This test just verifies the function doesn't crash */
    ErrorCodeSet(ERROR_MISSING_KEY);
    uint32_t code = ErrorCodeGet();
    ASSERT_TRUE(code & ERROR_MISSING_KEY);
-   
+
    ErrorCodeResetAll();
 }
 
@@ -109,13 +109,13 @@ test_ErrorMsgAddExtraKey(void)
    ErrorCodeResetAll();
    ErrorMsgClear();
    ErrorMsgAddExtraKey("extra_key");
-   
+
    /* ErrorMsgAddExtraKey only adds a message, doesn't set error code */
    /* The error code must be set separately via ErrorCodeSet */
    ErrorCodeSet(ERROR_EXTRA_KEY);
    uint32_t code = ErrorCodeGet();
    ASSERT_TRUE(code & ERROR_EXTRA_KEY);
-   
+
    ErrorCodeResetAll();
 }
 
@@ -125,13 +125,13 @@ test_ErrorMsgAddUnexpectedVal(void)
    ErrorCodeResetAll();
    ErrorMsgClear();
    ErrorMsgAddUnexpectedVal("unexpected_value");
-   
+
    /* ErrorMsgAddUnexpectedVal only adds a message, doesn't set error code */
    /* The error code must be set separately via ErrorCodeSet */
    ErrorCodeSet(ERROR_UNEXPECTED_VAL);
    uint32_t code = ErrorCodeGet();
    ASSERT_TRUE(code & ERROR_UNEXPECTED_VAL);
-   
+
    ErrorCodeResetAll();
 }
 
@@ -141,13 +141,13 @@ test_ErrorMsgAddInvalidFilename(void)
    ErrorCodeResetAll();
    ErrorMsgClear();
    ErrorMsgAddInvalidFilename("invalid_file.txt");
-   
+
    /* ErrorMsgAddInvalidFilename only adds a message, doesn't set error code */
    /* The error code must be set separately via ErrorCodeSet */
    ErrorCodeSet(ERROR_FILE_NOT_FOUND);
    uint32_t code = ErrorCodeGet();
    ASSERT_TRUE(code & ERROR_FILE_NOT_FOUND);
-   
+
    ErrorCodeResetAll();
 }
 
@@ -172,7 +172,7 @@ capture_error_output(void (*print_fn)(void), char *buffer, size_t buf_len)
    fflush(stderr);
 
    fseek(tmp, 0, SEEK_SET);
-   size_t read_bytes = fread(buffer, 1, buf_len - 1, tmp);
+   size_t read_bytes  = fread(buffer, 1, buf_len - 1, tmp);
    buffer[read_bytes] = '\0';
 
    fflush(tmp);
@@ -230,7 +230,8 @@ test_ErrorMsgPrint_with_no_messages(void)
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
 
@@ -253,6 +254,5 @@ int main(int argc, char **argv)
 
    MPI_Finalize();
 
-   return 0;  /* Success - CTest handles reporting */
+   return 0; /* Success - CTest handles reporting */
 }
-

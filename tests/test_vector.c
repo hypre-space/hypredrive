@@ -51,8 +51,8 @@ create_temp_binary_float(const char *prefix, uint32_t part_id, uint64_t nrows,
 static void
 test_IJVectorReadMultipartBinary_success(void)
 {
-   const char *prefix = "test_vec_success";
-   double       values[3] = {1.0, 2.0, 3.0};
+   const char *prefix    = "test_vec_success";
+   double      values[3] = {1.0, 2.0, 3.0};
 
    create_temp_binary(prefix, 0, 3, values);
 
@@ -105,7 +105,7 @@ test_IJVectorReadMultipartBinary_bad_header(void)
 static void
 test_IJVectorReadMultipartBinary_float_coefficients(void)
 {
-   const char *prefix = "test_vec_float";
+   const char *prefix    = "test_vec_float";
    float       values[4] = {1.5f, 2.5f, 3.5f, 4.5f};
 
    create_temp_binary_float(prefix, 0, 4, values);
@@ -163,4 +163,3 @@ main(int argc, char **argv)
    MPI_Finalize();
    return 0;
 }
-

@@ -1,15 +1,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "field.h"
-#include "yaml.h"
 #include "containers.h"
+#include "field.h"
 #include "test_helpers.h"
+#include "yaml.h"
 
 static YAMLnode *
 make_node(const char *value)
 {
-   YAMLnode *node = YAMLnodeCreate("dummy", "", 0);
+   YAMLnode *node   = YAMLnodeCreate("dummy", "", 0);
    node->mapped_val = strdup(value);
    return node;
 }
@@ -71,7 +71,7 @@ test_FieldTypeIntArraySet(void)
 static void
 test_FieldTypeStackIntArraySet(void)
 {
-   StackIntArray arr = STACK_INTARRAY_CREATE();
+   StackIntArray arr  = STACK_INTARRAY_CREATE();
    YAMLnode     *node = make_node("10, 20, 30");
    FieldTypeStackIntArraySet(&arr, node);
    ASSERT_EQ(arr.size, 3);
@@ -91,4 +91,3 @@ main(void)
    RUN_TEST(test_FieldTypeStackIntArraySet);
    return 0;
 }
-

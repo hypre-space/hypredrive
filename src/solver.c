@@ -202,7 +202,7 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
    void              *vA = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
-   HYPRE_Int          iters = 0;
+   HYPRE_Int          iters  = 0;
    HYPRE_Complex      b_norm = NAN, r_norm = NAN;
 
    HYPRE_IJMatrixGetObject(A, &vA);

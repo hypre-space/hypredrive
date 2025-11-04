@@ -52,12 +52,12 @@ create_matrix_part(const char *prefix, uint32_t part_id, HYPRE_BigInt row_lower,
 static void
 test_IJMatrixReadMultipartBinary_success(void)
 {
-   const char     *prefix = "test_matrix_success";
-   HYPRE_BigInt     rows[1] = {0};
-   HYPRE_BigInt     cols[1] = {0};
-   const double     vals[1] = {5.0};
-   HYPRE_IJMatrix   mat = NULL;
-   void            *obj = NULL;
+   const char    *prefix  = "test_matrix_success";
+   HYPRE_BigInt   rows[1] = {0};
+   HYPRE_BigInt   cols[1] = {0};
+   const double   vals[1] = {5.0};
+   HYPRE_IJMatrix mat     = NULL;
+   void          *obj     = NULL;
 
    create_matrix_part(prefix, 0, 0, 0, 1, rows, cols, vals);
 
@@ -101,7 +101,7 @@ test_IJMatrixReadMultipartBinary_short_header(void)
    add_temp_file(filename);
 
    HYPRE_IJMatrix mat = NULL;
-  
+
    ErrorCodeResetAll();
    IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
    ASSERT_NULL(mat);
@@ -142,12 +142,12 @@ test_IJMatrixReadMultipartBinary_invalid_dtype(void)
 static void
 test_IJMatrixReadMultipartBinary_uint32_indices(void)
 {
-   const char *prefix = "test_matrix_uint32";
-   uint32_t     rows32[1] = {0};
-   uint32_t     cols32[1] = {0};
-   double       vals[1] = {3.0};
-   HYPRE_IJMatrix mat = NULL;
-   void           *obj = NULL;
+   const char    *prefix    = "test_matrix_uint32";
+   uint32_t       rows32[1] = {0};
+   uint32_t       cols32[1] = {0};
+   double         vals[1]   = {3.0};
+   HYPRE_IJMatrix mat       = NULL;
+   void          *obj       = NULL;
 
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows32, sizeof(uint32_t), cols32,
                             sizeof(uint32_t), vals, sizeof(double));
@@ -168,11 +168,11 @@ test_IJMatrixReadMultipartBinary_uint32_indices(void)
 static void
 test_IJMatrixReadMultipartBinary_float_coefficients(void)
 {
-   const char *prefix = "test_matrix_float";
-   HYPRE_BigInt rows[1] = {0};
-   HYPRE_BigInt cols[1] = {0};
-   float        vals[1] = {1.5f};
-   HYPRE_IJMatrix mat = NULL;
+   const char    *prefix  = "test_matrix_float";
+   HYPRE_BigInt   rows[1] = {0};
+   HYPRE_BigInt   cols[1] = {0};
+   float          vals[1] = {1.5f};
+   HYPRE_IJMatrix mat     = NULL;
 
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows, sizeof(HYPRE_BigInt), cols,
                             sizeof(HYPRE_BigInt), vals, sizeof(float));
@@ -190,12 +190,12 @@ test_IJMatrixReadMultipartBinary_float_coefficients(void)
 static void
 test_IJMatrixReadMultipartBinary_uint32_indices_float_coeffs(void)
 {
-   const char *prefix = "test_matrix_uint32_float";
-   uint32_t    rows32[1] = {0};
-   uint32_t    cols32[1] = {0};
-   float       vals[1] = {2.5f};
-   HYPRE_IJMatrix mat = NULL;
-   void         *obj = NULL;
+   const char    *prefix    = "test_matrix_uint32_float";
+   uint32_t       rows32[1] = {0};
+   uint32_t       cols32[1] = {0};
+   float          vals[1]   = {2.5f};
+   HYPRE_IJMatrix mat       = NULL;
+   void          *obj       = NULL;
 
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows32, sizeof(uint32_t), cols32,
                             sizeof(uint32_t), vals, sizeof(float));
@@ -216,12 +216,12 @@ test_IJMatrixReadMultipartBinary_uint32_indices_float_coeffs(void)
 static void
 test_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs(void)
 {
-   const char *prefix = "test_matrix_uint64_double";
-   uint64_t    rows64[1] = {0};
-   uint64_t    cols64[1] = {0};
-   double      vals[1] = {4.0};
-   HYPRE_IJMatrix mat = NULL;
-   void         *obj = NULL;
+   const char    *prefix    = "test_matrix_uint64_double";
+   uint64_t       rows64[1] = {0};
+   uint64_t       cols64[1] = {0};
+   double         vals[1]   = {4.0};
+   HYPRE_IJMatrix mat       = NULL;
+   void          *obj       = NULL;
 
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows64, sizeof(uint64_t), cols64,
                             sizeof(uint64_t), vals, sizeof(double));
@@ -242,12 +242,12 @@ test_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs(void)
 static void
 test_IJMatrixReadMultipartBinary_uint64_indices_float_coeffs(void)
 {
-   const char *prefix = "test_matrix_uint64_float";
-   uint64_t    rows64[1] = {0};
-   uint64_t    cols64[1] = {0};
-   float       vals[1] = {3.5f};
-   HYPRE_IJMatrix mat = NULL;
-   void         *obj = NULL;
+   const char    *prefix    = "test_matrix_uint64_float";
+   uint64_t       rows64[1] = {0};
+   uint64_t       cols64[1] = {0};
+   float          vals[1]   = {3.5f};
+   HYPRE_IJMatrix mat       = NULL;
+   void          *obj       = NULL;
 
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows64, sizeof(uint64_t), cols64,
                             sizeof(uint64_t), vals, sizeof(float));
@@ -268,11 +268,11 @@ test_IJMatrixReadMultipartBinary_uint64_indices_float_coeffs(void)
 static void
 test_IJMatrixReadMultipartBinary_invalid_value_type(void)
 {
-   const char *prefix = "test_matrix_invalid_val";
-   HYPRE_BigInt rows[1] = {0};
-   HYPRE_BigInt cols[1] = {0};
-   double       vals[1] = {2.0};
-   HYPRE_IJMatrix mat = NULL;
+   const char    *prefix  = "test_matrix_invalid_val";
+   HYPRE_BigInt   rows[1] = {0};
+   HYPRE_BigInt   cols[1] = {0};
+   double         vals[1] = {2.0};
+   HYPRE_IJMatrix mat     = NULL;
 
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows, sizeof(HYPRE_BigInt), cols,
                             sizeof(HYPRE_BigInt), vals, 3 /* invalid */);
@@ -306,4 +306,3 @@ main(int argc, char **argv)
    MPI_Finalize();
    return 0;
 }
-

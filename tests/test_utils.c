@@ -67,7 +67,7 @@ test_StrTrim_leading(void)
 {
    char *str = strdup("  test");
    StrTrim(str);
-   ASSERT_STREQ(str, "  test");  /* Only trims trailing */
+   ASSERT_STREQ(str, "  test"); /* Only trims trailing */
    free(str);
 }
 
@@ -111,7 +111,7 @@ test_StrTrim_null(void)
 static void
 test_ComputeNumberOfDigits_basic(void)
 {
-   ASSERT_EQ(ComputeNumberOfDigits(0), 0);  /* Implementation returns 0 for 0 */
+   ASSERT_EQ(ComputeNumberOfDigits(0), 0); /* Implementation returns 0 for 0 */
    ASSERT_EQ(ComputeNumberOfDigits(1), 1);
    ASSERT_EQ(ComputeNumberOfDigits(9), 1);
    ASSERT_EQ(ComputeNumberOfDigits(10), 2);
@@ -204,9 +204,9 @@ test_CombineFilename_empty_dir(void)
 static void
 test_HasFileExtension_valid(void)
 {
-   ASSERT_TRUE(HasFileExtension("file.txt"));   /* 3 letter extension */
-   ASSERT_TRUE(HasFileExtension("file.yml"));  /* 3 letter extension */
-   ASSERT_TRUE(HasFileExtension("file.yaml")); /* 4 letter extension */
+   ASSERT_TRUE(HasFileExtension("file.txt"));        /* 3 letter extension */
+   ASSERT_TRUE(HasFileExtension("file.yml"));        /* 3 letter extension */
+   ASSERT_TRUE(HasFileExtension("file.yaml"));       /* 4 letter extension */
    ASSERT_FALSE(HasFileExtension("path/to/file.c")); /* 1 letter extension - not 3-4 */
 }
 
@@ -236,7 +236,7 @@ test_CheckDataExists_binary(void)
    char prefix[] = "test_data";
    char expected_file[256];
    snprintf(expected_file, sizeof(expected_file), "%s.00000.bin", prefix);
-   
+
    FILE *fp = fopen(expected_file, "wb");
    if (fp)
    {
@@ -257,7 +257,7 @@ test_CheckDataExists_ascii(void)
    char prefix[] = "test_data";
    char expected_file[256];
    snprintf(expected_file, sizeof(expected_file), "%s.00000", prefix);
-   
+
    FILE *fp = fopen(expected_file, "w");
    if (fp)
    {
@@ -280,20 +280,20 @@ test_CountNumberOfPartitions_binary(void)
 {
    char prefix[] = "test_part";
    char filename[256];
-   
+
    /* Create mock partition files */
    snprintf(filename, sizeof(filename), "%s.00000.bin", prefix);
    FILE *fp = fopen(filename, "w");
    if (fp) fclose(fp);
    add_temp_file(filename);
-   
+
    snprintf(filename, sizeof(filename), "%s.00001.bin", prefix);
    fp = fopen(filename, "w");
    if (fp) fclose(fp);
    add_temp_file(filename);
-   
+
    ASSERT_EQ(CountNumberOfPartitions(prefix), 2);
-   
+
    cleanup_temp_files();
 }
 
@@ -302,25 +302,25 @@ test_CountNumberOfPartitions_ascii(void)
 {
    char prefix[] = "test_part";
    char filename[256];
-   
+
    /* Create mock partition files (ASCII) */
    snprintf(filename, sizeof(filename), "%s.00000", prefix);
    FILE *fp = fopen(filename, "w");
    if (fp) fclose(fp);
    add_temp_file(filename);
-   
+
    snprintf(filename, sizeof(filename), "%s.00001", prefix);
    fp = fopen(filename, "w");
    if (fp) fclose(fp);
    add_temp_file(filename);
-   
+
    snprintf(filename, sizeof(filename), "%s.00002", prefix);
    fp = fopen(filename, "w");
    if (fp) fclose(fp);
    add_temp_file(filename);
-   
+
    ASSERT_EQ(CountNumberOfPartitions(prefix), 3);
-   
+
    cleanup_temp_files();
 }
 
@@ -335,7 +335,8 @@ test_CountNumberOfPartitions_empty(void)
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
-int main(void)
+int
+main(void)
 {
    RUN_TEST(test_StrToLowerCase_basic);
    RUN_TEST(test_StrToLowerCase_empty);
@@ -372,5 +373,5 @@ int main(void)
 
    cleanup_temp_files();
 
-   return 0;  /* Success - CTest handles reporting */
+   return 0; /* Success - CTest handles reporting */
 }

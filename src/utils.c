@@ -51,12 +51,15 @@ CheckBinaryDataExists(const char *prefix)
 {
    char  filename[MAX_FILENAME_LENGTH];
    int   file_exists = 0;
-   FILE *fp = NULL;
+   FILE *fp          = NULL;
 
    /* Check if binary data exist */
    sprintf(filename, "%*s.00000.bin", (int)strlen(prefix), prefix);
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-   if (fp) { fclose(fp); }
+   if (fp)
+   {
+      fclose(fp);
+   }
 
    return file_exists;
 }
@@ -70,12 +73,15 @@ CheckASCIIDataExists(const char *prefix)
 {
    char  filename[MAX_FILENAME_LENGTH];
    int   file_exists = 0;
-   FILE *fp = NULL;
+   FILE *fp          = NULL;
 
    /* Check if ASCII data exist */
    sprintf(filename, "%*s.00000", (int)strlen(prefix), prefix);
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-   if (fp) { fclose(fp); }
+   if (fp)
+   {
+      fclose(fp);
+   }
 
    return file_exists;
 }
@@ -87,9 +93,9 @@ CheckASCIIDataExists(const char *prefix)
 int
 CountNumberOfPartitions(const char *prefix)
 {
-   char  filename[MAX_FILENAME_LENGTH];
-   int   file_exists = 1;
-   int   num_files   = 0;
+   char filename[MAX_FILENAME_LENGTH];
+   int  file_exists = 1;
+   int  num_files   = 0;
 
    while (file_exists)
    {
@@ -97,12 +103,18 @@ CountNumberOfPartitions(const char *prefix)
 
       sprintf(filename, "%*s.%05d.bin", (int)strlen(prefix), prefix, num_files);
       file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-      if (fp) { fclose(fp); }
+      if (fp)
+      {
+         fclose(fp);
+      }
       if (!file_exists)
       {
          sprintf(filename, "%*s.%05d", (int)strlen(prefix), prefix, num_files);
          file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-         if (fp) { fclose(fp); }
+         if (fp)
+         {
+            fclose(fp);
+         }
       }
 
       num_files++;
@@ -137,8 +149,8 @@ void
 SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
 {
    const char *last_slash = strrchr(filename, '/');
-   char       *dirname = NULL;
-   char       *basename = NULL;
+   char       *dirname    = NULL;
+   char       *basename   = NULL;
 
    if (last_slash != NULL)
    {
@@ -171,7 +183,7 @@ SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
 void
 CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
 {
-   size_t length = 0;
+   size_t length   = 0;
    char  *filename = NULL;
 
    /* Compute filename length. +2 for the slash and null terminator */

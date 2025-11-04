@@ -15,7 +15,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 {
    int      nprocs = 0, myid = 0;
    uint32_t nparts = 0;
-   uint64_t part = 0;
+   uint64_t part   = 0;
    uint32_t offset = 0;
 
    char     filename[1024];
@@ -24,11 +24,11 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    uint64_t nrows_sum = 0, nrows_max = 0, nrows_offset = 0;
 
    uint32_t *partids = NULL;
-   FILE     *fp = NULL;
+   FILE     *fp      = NULL;
 
-   HYPRE_IJVector vec = NULL;
-   HYPRE_BigInt   ilower = 0, iupper = 0;
-   HYPRE_Complex *h_vals = NULL, *d_vals = NULL;
+   HYPRE_IJVector       vec    = NULL;
+   HYPRE_BigInt         ilower = 0, iupper = 0;
+   HYPRE_Complex       *h_vals = NULL, *d_vals = NULL;
    const HYPRE_Complex *vals = NULL;
 
    /* 1a) Find number of parts per processor */
@@ -58,7 +58,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    nrows_max = nrows_sum = 0;
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, (int) partids[part]);
+      sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
       if (!fp)
       {
@@ -106,7 +106,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    /* 4) Fill entries */
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, (int) partids[part]);
+      sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
       if (fread(header, sizeof(uint64_t), 8, fp) != 8)
       {
@@ -129,7 +129,10 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[5]; i++) { h_vals[i] = (HYPRE_Complex)buffer[i]; }
+         for (size_t i = 0; i < header[5]; i++)
+         {
+            h_vals[i] = (HYPRE_Complex)buffer[i];
+         }
 
          free(buffer);
       }
@@ -145,7 +148,10 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[5]; i++) { h_vals[i] = (HYPRE_Complex)buffer[i]; }
+         for (size_t i = 0; i < header[5]; i++)
+         {
+            h_vals[i] = (HYPRE_Complex)buffer[i];
+         }
 
          free(buffer);
       }

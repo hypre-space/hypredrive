@@ -105,7 +105,10 @@ HYPREDRV_Finalize()
 void
 HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
 {
-   if (!error_code) { return; }
+   if (!error_code)
+   {
+      return;
+   }
 
    ErrorCodeDescribe(error_code);
    ErrorMsgPrint();
@@ -784,9 +787,9 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t obj)
          LinearSystemComputeErrorNorm(obj->vec_xref, obj->vec_x, &e_norm);
          if (!obj->mypid)
          {
-            printf("L2 norm of error: %e\n", (double) e_norm);
-            printf("L2 norm of solution: %e\n", (double) x_norm);
-            printf("L2 norm of ref. solution: %e\n", (double) xref_norm);
+            printf("L2 norm of error: %e\n", (double)e_norm);
+            printf("L2 norm of solution: %e\n", (double)x_norm);
+            printf("L2 norm of ref. solution: %e\n", (double)xref_norm);
          }
       }
    }

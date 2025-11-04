@@ -1,5 +1,5 @@
-#include <mpi.h>
 #include <limits.h>
+#include <mpi.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,8 +16,8 @@
 #endif
 
 extern uint32_t HYPREDRV_LinearSystemSetContiguousDofmap(HYPREDRV_t obj,
-                                                         int            num_local_blocks,
-                                                         int            num_dof_types);
+                                                         int        num_local_blocks,
+                                                         int        num_dof_types);
 
 struct hypredrv_struct
 {
@@ -55,7 +55,7 @@ test_requires_initialization_guard(void)
    reset_state();
 
    HYPREDRV_t obj = NULL;
-   uint32_t    code;
+   uint32_t   code;
 
    code = HYPREDRV_Create(MPI_COMM_SELF, &obj);
    ASSERT_TRUE(code & ERROR_HYPREDRV_NOT_INITIALIZED);
@@ -91,8 +91,8 @@ test_create_parse_and_destroy(void)
 
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
-   snprintf(matrix_path, sizeof(matrix_path),
-            "%s/data/ps3d10pt7/np1/IJ.out.A", HYPREDRIVE_SOURCE_DIR);
+   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
+            HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
 
@@ -186,8 +186,9 @@ test_create_parse_and_destroy(void)
    ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
    ASSERT_NOT_NULL(state->precon);
    ASSERT_EQ(HYPREDRV_PreconSetup(obj), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_PreconApply(obj, (HYPRE_Vector)state->vec_b,
-                                  (HYPRE_Vector)state->vec_x), ERROR_NONE);
+   ASSERT_EQ(
+      HYPREDRV_PreconApply(obj, (HYPRE_Vector)state->vec_b, (HYPRE_Vector)state->vec_x),
+      ERROR_NONE);
 
    ErrorCodeSet(ERROR_INVALID_KEY);
    HYPREDRV_ErrorCodeDescribe(ErrorCodeGet());
@@ -217,5 +218,3 @@ main(int argc, char **argv)
    MPI_Finalize();
    return 0;
 }
-
-

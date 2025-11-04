@@ -43,9 +43,8 @@ PCGGetValidValues(const char *key)
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }
-   
-         return STR_INT_MAP_ARRAY_VOID();
-  
+
+   return STR_INT_MAP_ARRAY_VOID();
 }
 
 /*-----------------------------------------------------------------------------

@@ -23,8 +23,8 @@
 #include <mach/mach.h>
 #include <sys/sysctl.h>
 #else
-#include <sys/sysinfo.h>
 #include <link.h>
+#include <sys/sysinfo.h>
 #endif
 
 #ifndef STRINGIFY
@@ -69,7 +69,7 @@ PrintSystemInfo(MPI_Comm comm)
    double mib_to_gib   = (double)(1 << 10);
    size_t total = 0, used = 0;
    int    gcount = 0;
-   FILE  *fp = NULL;
+   FILE  *fp     = NULL;
    char   buffer[32768];
 
    MPI_Comm_rank(comm, &myid);
@@ -91,7 +91,7 @@ PrintSystemInfo(MPI_Comm comm)
 
       // 1. CPU cores and model
       int  numPhysicalCPUs = 0;
-      int  numCPUs = 0;
+      int  numCPUs         = 0;
       char cpuModels[8][256];
       char gpuInfo[256] = "Unknown";
 
@@ -127,8 +127,8 @@ PrintSystemInfo(MPI_Comm comm)
          sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &msize, NULL, 0);
       }
 #else
-      int  physicalCPUSeen = 0;
-      fp = fopen("/proc/cpuinfo", "r");
+      int physicalCPUSeen = 0;
+      fp                  = fopen("/proc/cpuinfo", "r");
       if (fp != NULL)
       {
          while (fgets(buffer, sizeof(buffer), fp))
@@ -236,14 +236,22 @@ PrintSystemInfo(MPI_Comm comm)
             }
 
             const char *start = strstr(buffer, "VGA compatible controller");
-            if (!start) { start = strstr(buffer, "3D controller");
-}
-            if (!start) { start = strstr(buffer, "2D controller");
-}
-            if (!start) { start = strstr(buffer, "Display controller");
-}
-            if (!start) { start = strstr(buffer, "Processing accelerators");
-}
+            if (!start)
+            {
+               start = strstr(buffer, "3D controller");
+            }
+            if (!start)
+            {
+               start = strstr(buffer, "2D controller");
+            }
+            if (!start)
+            {
+               start = strstr(buffer, "Display controller");
+            }
+            if (!start)
+            {
+               start = strstr(buffer, "Processing accelerators");
+            }
 
             if (start)
             {
@@ -418,7 +426,7 @@ PrintSystemInfo(MPI_Comm comm)
       printf("Debugging             : Disabled\n");
 #endif
 #ifdef __clang_version__
-      printf("Compiler              : Clang %s\n", (const char *) __clang_version__);
+      printf("Compiler              : Clang %s\n", (const char *)__clang_version__);
 #elif defined(__clang__)
       printf("Compiler              : Clang %d.%d.%d\n", __clang_major__, __clang_minor__,
              __clang_patchlevel__);
@@ -440,12 +448,12 @@ PrintSystemInfo(MPI_Comm comm)
 #ifdef CRAY_MPICH_VERSION
       printf("Cray MPI (Version: %s)\n", TOSTRING(CRAY_MPICH_VERSION));
 #elif defined(INTEL_MPI_VERSION)
-      printf("Intel MPI (Version: %s)\n", (const char *) INTEL_MPI_VERSION);
+      printf("Intel MPI (Version: %s)\n", (const char *)INTEL_MPI_VERSION);
 #elif defined(__IBM_MPI__)
       printf("IBM Spectrum MPI (Version: %d.%d.%d)\n", __IBM_MPI_MAJOR_VERSION,
              __IBM_MPI_MINOR_VERSION, __IBM_MPI_RELEASE_VERSION);
 #elif defined(MVAPICH2_VERSION)
-      printf("MVAPICH2 (Version: %s)\n", (const char *) MVAPICH2_VERSION);
+      printf("MVAPICH2 (Version: %s)\n", (const char *)MVAPICH2_VERSION);
 #elif defined(MPICH_NAME)
       printf("MPICH (Version: %s)\n", MPICH_VERSION);
 #elif defined(OMPI_MAJOR_VERSION)
@@ -523,8 +531,8 @@ PrintSystemInfo(MPI_Comm comm)
 void
 PrintLibInfo(MPI_Comm comm)
 {
-   int myid = 0;
-   time_t t = 0;
+   int              myid    = 0;
+   time_t           t       = 0;
    const struct tm *tm_info = NULL;
 
    MPI_Comm_rank(comm, &myid);
@@ -568,9 +576,9 @@ PrintExitInfo(MPI_Comm comm, const char *argv0)
 
    if (!myid)
    {
-      char buffer[100];
+      char             buffer[100];
       const struct tm *tm_info = NULL;
-      time_t t = 0;
+      time_t           t       = 0;
 
       /* Get current time */
       time(&t);

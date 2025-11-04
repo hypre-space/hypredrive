@@ -3,7 +3,8 @@
 #include "eigspec.h"
 #include "test_helpers.h"
 
-static void test_EigSpecSetDefaultArgs(void)
+static void
+test_EigSpecSetDefaultArgs(void)
 {
    EigSpec_args args;
    memset(&args, 0, sizeof(args));
@@ -15,9 +16,9 @@ static void test_EigSpecSetDefaultArgs(void)
    ASSERT_STREQ(args.output_prefix, "eig");
 }
 
-int main(void)
+int
+main(void)
 {
    RUN_TEST(test_EigSpecSetDefaultArgs);
    return 0;
 }
-

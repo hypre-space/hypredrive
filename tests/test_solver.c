@@ -3,33 +3,32 @@
 #include <string.h>
 
 #include "bicgstab.h"
+#include "containers.h"
 #include "gmres.h"
 #include "pcg.h"
-#include "containers.h"
 #include "test_helpers.h"
 #include "yaml.h"
 
-void GMRESSetFieldByName(GMRES_args *, const YAMLnode *);
-void GMRESSetDefaultArgs(GMRES_args *);
-StrArray GMRESGetValidKeys(void);
+void           GMRESSetFieldByName(GMRES_args *, const YAMLnode *);
+void           GMRESSetDefaultArgs(GMRES_args *);
+StrArray       GMRESGetValidKeys(void);
 StrIntMapArray GMRESGetValidValues(const char *);
-void PCGSetFieldByName(PCG_args *, const YAMLnode *);
-void PCGSetDefaultArgs(PCG_args *);
+void           PCGSetFieldByName(PCG_args *, const YAMLnode *);
+void           PCGSetDefaultArgs(PCG_args *);
 StrIntMapArray PCGGetValidValues(const char *);
-void BiCGSTABSetFieldByName(BiCGSTAB_args *, const YAMLnode *);
-void BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
+void           BiCGSTABSetFieldByName(BiCGSTAB_args *, const YAMLnode *);
+void           BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
 
 typedef struct
 {
    const char *key;
    const char *value;
-}
-keyval_pair;
+} keyval_pair;
 
 static YAMLnode *
 make_scalar_node(const char *key, const char *value)
 {
-   YAMLnode *node = YAMLnodeCreate(key, "", 0);
+   YAMLnode *node   = YAMLnodeCreate(key, "", 0);
    node->mapped_val = strdup(value);
    return node;
 }
@@ -187,5 +186,3 @@ main(int argc, char **argv)
    MPI_Finalize();
    return 0;
 }
-
-

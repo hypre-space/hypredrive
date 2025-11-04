@@ -3,12 +3,13 @@
 #include <string.h>
 
 #include "args.h"
-#include "yaml.h"
 #include "error.h"
-#include "utils.h"
 #include "test_helpers.h"
+#include "utils.h"
+#include "yaml.h"
 
-static YAMLtree *build_tree(const char *text)
+static YAMLtree *
+build_tree(const char *text)
 {
    char     *buffer = strdup(text);
    YAMLtree *tree   = NULL;
@@ -17,10 +18,11 @@ static YAMLtree *build_tree(const char *text)
    return tree;
 }
 
-static input_args *parse_config(const char *yaml_text)
+static input_args *
+parse_config(const char *yaml_text)
 {
-   input_args *args = NULL;
-   char       *argv0 = strdup(yaml_text);
+   input_args *args    = NULL;
+   char       *argv0   = strdup(yaml_text);
    char       *argv[1] = {argv0};
 
    ErrorCodeResetAll();
@@ -29,25 +31,25 @@ static input_args *parse_config(const char *yaml_text)
    return args;
 }
 
-static void test_InputArgsParseGeneral_flags(void)
+static void
+test_InputArgsParseGeneral_flags(void)
 {
-   const char yaml_text[] =
-      "general:\n"
-      "  warmup: yes\n"
-      "  statistics: off\n"
-      "  use_millisec: yes\n"
-      "  print_config_params: no\n"
-      "  num_repetitions: 3\n"
-      "  dev_pool_size: 2\n"
-      "  uvm_pool_size: 3\n"
-      "  host_pool_size: 4\n"
-      "  pinned_pool_size: 0.25\n"
-      "solver:\n"
-      "  pcg:\n"
-      "    max_iter: 50\n"
-      "preconditioner:\n"
-      "  amg:\n"
-      "    print_level: 0\n";
+   const char yaml_text[] = "general:\n"
+                            "  warmup: yes\n"
+                            "  statistics: off\n"
+                            "  use_millisec: yes\n"
+                            "  print_config_params: no\n"
+                            "  num_repetitions: 3\n"
+                            "  dev_pool_size: 2\n"
+                            "  uvm_pool_size: 3\n"
+                            "  host_pool_size: 4\n"
+                            "  pinned_pool_size: 0.25\n"
+                            "solver:\n"
+                            "  pcg:\n"
+                            "    max_iter: 50\n"
+                            "preconditioner:\n"
+                            "  amg:\n"
+                            "    print_level: 0\n";
 
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
@@ -64,13 +66,13 @@ static void test_InputArgsParseGeneral_flags(void)
    InputArgsDestroy(&args);
 }
 
-static void test_InputArgsParseSolver_value_only(void)
+static void
+test_InputArgsParseSolver_value_only(void)
 {
-   const char yaml_text[] =
-      "solver: bicgstab\n"
-      "preconditioner:\n"
-      "  amg:\n"
-      "    print_level: 0\n";
+   const char yaml_text[] = "solver: bicgstab\n"
+                            "preconditioner:\n"
+                            "  amg:\n"
+                            "    print_level: 0\n";
 
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
@@ -79,13 +81,13 @@ static void test_InputArgsParseSolver_value_only(void)
    InputArgsDestroy(&args);
 }
 
-static void test_InputArgsParsePrecon_value_only(void)
+static void
+test_InputArgsParsePrecon_value_only(void)
 {
-   const char yaml_text[] =
-      "solver:\n"
-      "  gmres:\n"
-      "    max_iter: 30\n"
-      "preconditioner: fsai\n";
+   const char yaml_text[] = "solver:\n"
+                            "  gmres:\n"
+                            "    max_iter: 30\n"
+                            "preconditioner: fsai\n";
 
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
@@ -94,23 +96,23 @@ static void test_InputArgsParsePrecon_value_only(void)
    InputArgsDestroy(&args);
 }
 
-static void test_InputArgsParsePrecon_missing(void)
+static void
+test_InputArgsParsePrecon_missing(void)
 {
-   const char yaml_text[] =
-      "solver:\n"
-      "  gmres:\n"
-      "    max_iter: 40\n";
+   const char yaml_text[] = "solver:\n"
+                            "  gmres:\n"
+                            "    max_iter: 40\n";
 
    input_args *args = parse_config(yaml_text);
    ASSERT_TRUE(ErrorCodeGet() & ERROR_MISSING_KEY);
    ASSERT_NULL(args);
 }
 
-static void test_YAMLtreeBuild_inconsistent_indent(void)
+static void
+test_YAMLtreeBuild_inconsistent_indent(void)
 {
-   const char yaml_text[] =
-      "root:\n"
-      "   child: value\n";
+   const char yaml_text[] = "root:\n"
+                            "   child: value\n";
 
    YAMLtree *tree = build_tree(yaml_text);
 
@@ -121,7 +123,8 @@ static void test_YAMLtreeBuild_inconsistent_indent(void)
    YAMLtreeDestroy(&tree);
 }
 
-static void test_YAMLtextRead_missing_file(void)
+static void
+test_YAMLtextRead_missing_file(void)
 {
    int    base_indent = -1;
    size_t length      = 0;
@@ -132,7 +135,8 @@ static void test_YAMLtextRead_missing_file(void)
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
 }
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
 
@@ -146,4 +150,3 @@ int main(int argc, char **argv)
    MPI_Finalize();
    return 0;
 }
-

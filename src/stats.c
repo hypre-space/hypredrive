@@ -72,22 +72,23 @@ static Stats *global_stats = NULL;
    printf("|%12s ", _b[4]);                                               \
    printf("|%12s ", _b[5]);                                               \
    printf("|\n");
-#define STATS_PRINT_ENTRY(_t, _n)                                                        \
-   if ((_t)->num_systems < 0 || !(_n % (((_t)->counter + 1) / (_t)->num_systems)))       \
-   {                                                                                     \
-      printf(                                                                            \
-         "| %10d | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", (_n),                 \
-         (_t)->time_factor *((_t)->dofmap[(_n)] + (_t)->matrix[(_n)] + (_t)->rhs[(_n)]), \
-         (_t)->time_factor *((_t)->prec[(_n)]), (_t)->time_factor *((_t)->solve[(_n)]),  \
-         (_t)->rrnorms[(_n)], (_t)->iters[(_n)]);                                        \
-   }                                                                                     \
-   else                                                                                  \
-   {                                                                                     \
-      printf("| %10d |             |", (_n));                                            \
-      printf(" %11.3f | %11.3f | %11.2e |  %10d |\n",                                    \
-             (_t)->time_factor *((_t)->prec[(_n)]),                                      \
-             (_t)->time_factor *((_t)->solve[(_n)]), (_t)->rrnorms[(_n)],                \
-             (_t)->iters[(_n)]);                                                         \
+#define STATS_PRINT_ENTRY(_t, _n)                                                  \
+   if ((_t)->num_systems < 0 || !(_n % (((_t)->counter + 1) / (_t)->num_systems))) \
+   {                                                                               \
+      printf("| %10d | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", (_n),       \
+             (_t)->time_factor *                                                   \
+                ((_t)->dofmap[(_n)] + (_t)->matrix[(_n)] + (_t)->rhs[(_n)]),       \
+             (_t)->time_factor * ((_t)->prec[(_n)]),                               \
+             (_t)->time_factor * ((_t)->solve[(_n)]), (_t)->rrnorms[(_n)],         \
+             (_t)->iters[(_n)]);                                                   \
+   }                                                                               \
+   else                                                                            \
+   {                                                                               \
+      printf("| %10d |             |", (_n));                                      \
+      printf(" %11.3f | %11.3f | %11.2e |  %10d |\n",                              \
+             (_t)->time_factor * ((_t)->prec[(_n)]),                               \
+             (_t)->time_factor * ((_t)->solve[(_n)]), (_t)->rrnorms[(_n)],         \
+             (_t)->iters[(_n)]);                                                   \
    }
 
 /*--------------------------------------------------------------------------
@@ -99,7 +100,10 @@ StatsCreate(void)
 {
    int capacity = REALLOC_EXPAND_FACTOR;
 
-   if (global_stats) { return; }
+   if (global_stats)
+   {
+      return;
+   }
 
    global_stats = (Stats *)malloc(sizeof(Stats));
 
@@ -159,8 +163,10 @@ StatsDestroy(void)
 void
 StatsTimerStart(const char *name)
 {
-   if (!global_stats) { return;
-}
+   if (!global_stats)
+   {
+      return;
+   }
 
    /* Increase internal counters */
    if (!strcmp(name, "reset_x0"))
@@ -211,7 +217,10 @@ StatsTimerStart(const char *name)
 void
 StatsTimerStop(const char *name)
 {
-   if (!global_stats) { return; }
+   if (!global_stats)
+   {
+      return;
+   }
 
    STATS_TIMES_STOP_VEC_ENTRY_ALIAS(matrix, system)
    STATS_TIMES_STOP_VEC_ENTRY(matrix)
@@ -235,7 +244,10 @@ StatsTimerStop(const char *name)
 void
 StatsTimerSetMilliseconds(void)
 {
-   if (!global_stats) { return; }
+   if (!global_stats)
+   {
+      return;
+   }
 
    global_stats->use_millisec = true;
    global_stats->time_factor  = 1000.0;
@@ -248,7 +260,10 @@ StatsTimerSetMilliseconds(void)
 void
 StatsTimerSetSeconds(void)
 {
-   if (!global_stats) { return; }
+   if (!global_stats)
+   {
+      return;
+   }
 
    global_stats->use_millisec = false;
    global_stats->time_factor  = 1.0;
@@ -261,7 +276,10 @@ StatsTimerSetSeconds(void)
 void
 StatsIterSet(int num_iters)
 {
-   if (!global_stats) { return; }
+   if (!global_stats)
+   {
+      return;
+   }
 
    global_stats->iters[global_stats->counter] = num_iters;
 }
@@ -273,7 +291,10 @@ StatsIterSet(int num_iters)
 void
 StatsRelativeResNormSet(double rrnorm)
 {
-   if (!global_stats) { return; }
+   if (!global_stats)
+   {
+      return;
+   }
 
    global_stats->rrnorms[global_stats->counter] = rrnorm;
 }
@@ -318,7 +339,10 @@ StatsPrint(int print_level)
 int
 StatsGetLinearSystemID(void)
 {
-   if (!global_stats) { return -1; }
+   if (!global_stats)
+   {
+      return -1;
+   }
    return global_stats->ls_counter - 1;
 }
 
@@ -329,7 +353,10 @@ StatsGetLinearSystemID(void)
 void
 StatsSetNumReps(int num_reps)
 {
-   if (!global_stats) { return; }
+   if (!global_stats)
+   {
+      return;
+   }
    global_stats->num_reps = num_reps;
 }
 
@@ -340,6 +367,9 @@ StatsSetNumReps(int num_reps)
 void
 StatsSetNumLinearSystems(int num_systems)
 {
-   if (!global_stats) { return; }
+   if (!global_stats)
+   {
+      return;
+   }
    global_stats->num_systems = num_systems;
 }

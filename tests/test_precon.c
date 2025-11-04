@@ -1,9 +1,9 @@
 #include <mpi.h>
 #include <stdlib.h>
 
+#include "HYPRE.h"
 #include "containers.h"
 #include "error.h"
-#include "HYPRE.h"
 #include "precon.h"
 #include "test_helpers.h"
 #include "yaml.h"
@@ -62,7 +62,7 @@ test_PreconSetArgsFromYAML_sets_fields(void)
    YAMLnode *parent     = YAMLnodeCreate("preconditioner", "", 0);
    YAMLnode *reuse_node = add_child(parent, "reuse", "1", 1);
 
-   YAMLnode *amg_node   = add_child(parent, "amg", "", 1);
+   YAMLnode *amg_node = add_child(parent, "amg", "", 1);
    add_child(amg_node, "max_iter", "5", 2);
 
    ErrorCodeResetAll();
@@ -81,7 +81,7 @@ test_PreconSetArgsFromYAML_ignores_unknown_key(void)
    precon_args args;
    PreconSetDefaultArgs(&args);
 
-   YAMLnode *parent      = YAMLnodeCreate("preconditioner", "", 0);
+   YAMLnode *parent       = YAMLnodeCreate("preconditioner", "", 0);
    YAMLnode *unknown_node = add_child(parent, "unknown", "value", 1);
 
    ErrorCodeResetAll();
@@ -97,7 +97,7 @@ static void
 test_PreconDestroy_null_precon(void)
 {
    HYPRE_Precon precon = NULL;
-   precon_args   args;
+   precon_args  args;
    PreconSetDefaultArgs(&args);
 
    /* PreconDestroy with NULL should not crash */
@@ -193,4 +193,3 @@ main(int argc, char **argv)
    MPI_Finalize();
    return 0;
 }
-

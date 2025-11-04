@@ -35,7 +35,10 @@ main(int argc, char **argv)
 
    if (argc < 1)
    {
-      if (!myid) { PrintUsage(argv[0]); }
+      if (!myid)
+      {
+         PrintUsage(argv[0]);
+      }
       MPI_Abort(comm, 1);
    }
 
@@ -52,8 +55,10 @@ main(int argc, char **argv)
 
    if (argc < 1)
    {
-      if (!myid) { fprintf(stderr, "Need at least one input argument!\n");
-}
+      if (!myid)
+      {
+         fprintf(stderr, "Need at least one input argument!\n");
+      }
       MPI_Abort(comm, 1);
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc - 1, argv + 1, obj));
@@ -107,7 +112,10 @@ main(int argc, char **argv)
     * Finalize driver
     *-----------------------------------------------------------*/
 
-   if (!myid) { HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(obj)); }
+   if (!myid)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(obj));
+   }
    HYPREDRV_SAFE_CALL(HYPREDRV_PrintExitInfo(comm, argv[0]));
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&obj));

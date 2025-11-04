@@ -69,8 +69,14 @@ IntArrayDestroy(IntArray **int_array_ptr)
    if (this)
    {
       free(this->data);
-      if (this->unique_data) { free(this->unique_data); }
-      if (this->g_unique_data) { free(this->g_unique_data); }
+      if (this->unique_data)
+      {
+         free(this->unique_data);
+      }
+      if (this->g_unique_data)
+      {
+         free(this->g_unique_data);
+      }
       free(this);
       *int_array_ptr = NULL;
    }
@@ -83,9 +89,9 @@ IntArrayDestroy(IntArray **int_array_ptr)
 void
 StrToIntArray(const char *string, IntArray **int_array_ptr)
 {
-   char       *buffer = NULL;
-   const char *token = NULL;
-   int         count = 0;
+   char       *buffer    = NULL;
+   const char *token     = NULL;
+   int         count     = 0;
    IntArray   *int_array = NULL;
 
    /* Find number of elements in array */
@@ -126,8 +132,8 @@ void
 StrToStackIntArray(const char *string, StackIntArray *int_array)
 {
    char       *buffer = NULL;
-   const char *token = NULL;
-   int         count = 0;
+   const char *token  = NULL;
+   int         count  = 0;
 
    /* Find number of elements in array */
    buffer = strdup(string);
@@ -187,12 +193,12 @@ IntArraySort(IntArray *int_array)
 void
 IntArrayUnique(MPI_Comm comm, IntArray *int_array)
 {
-   IntArray *tmp_array = NULL;
-   int       num_entries_int = 0;
+   IntArray *tmp_array         = NULL;
+   int       num_entries_int   = 0;
    int       total_num_entries = 0;
-   int      *all_num_entries = NULL;
-   int      *displs          = NULL;
-   int      *all_data        = NULL;
+   int      *all_num_entries   = NULL;
+   int      *displs            = NULL;
+   int      *all_data          = NULL;
    int       myid = 0, nprocs = 0;
 
    MPI_Comm_rank(comm, &myid);
@@ -295,9 +301,9 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
    char      suffix[5], code[3];
    size_t    num_entries = 0, num_entries_all = 0, count = 0;
    IntArray *int_array = NULL;
-   FILE     *fp = NULL;
+   FILE     *fp        = NULL;
    int       myid = 0, nprocs = 0, nparts = 0, g_nparts = 0, offset = 0;
-   int      *partids = NULL;
+   int      *partids   = NULL;
    bool      is_binary = false;
 
    *int_array_ptr = NULL;
@@ -442,7 +448,7 @@ IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types,
                          IntArray **int_array_ptr)
 {
    IntArray *int_array = NULL;
-   int       size = num_dof_types * num_local_blocks; // TODO: check overflow
+   int       size      = num_dof_types * num_local_blocks; // TODO: check overflow
 
    int_array = IntArrayCreate(size);
    for (int i = 0; i < num_local_blocks; i++)
@@ -466,7 +472,7 @@ IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types,
                         IntArray **int_array_ptr)
 {
    IntArray *int_array = NULL;
-   int       size = num_dof_types * num_local_blocks; // TODO: check overflow
+   int       size      = num_dof_types * num_local_blocks; // TODO: check overflow
 
    int_array = IntArrayCreate(size);
    for (int i = 0; i < num_dof_types; i++)
@@ -518,9 +524,9 @@ StrArrayEntryExists(const StrArray valid, const char *string)
 int
 StrIntMapArrayGetImage(const StrIntMapArray valid, const char *string)
 {
-   char    *end_ptr = NULL;
+   char    *end_ptr    = NULL;
    long int string_num = strtol(string, &end_ptr, 10);
-   size_t   i = 0;
+   size_t   i          = 0;
 
    if (*end_ptr == '\0')
    {

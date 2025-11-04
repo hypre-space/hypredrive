@@ -384,14 +384,14 @@ MGRSetDofmap(MGR_args *args, IntArray *dofmap)
 void
 MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 {
-   HYPRE_Solver precon = NULL;
-   HYPRE_Solver frelax = NULL;
-   HYPRE_Solver grelax = NULL;
-   HYPRE_Int   *dofmap_data = NULL;
-   IntArray    *dofmap = NULL;
-   HYPRE_Int    num_dofs = 0;
+   HYPRE_Solver precon        = NULL;
+   HYPRE_Solver frelax        = NULL;
+   HYPRE_Solver grelax        = NULL;
+   HYPRE_Int   *dofmap_data   = NULL;
+   IntArray    *dofmap        = NULL;
+   HYPRE_Int    num_dofs      = 0;
    HYPRE_Int    num_dofs_last = 0;
-   HYPRE_Int    num_levels = 0;
+   HYPRE_Int    num_levels    = 0;
    HYPRE_Int    num_c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *inactive_dofs = NULL;

@@ -50,7 +50,7 @@ test_YAMLnodeFindByKey_basic(void)
    YAMLtree *tree = YAMLtreeCreate(10);
    ASSERT_NOT_NULL(tree);
 
-   YAMLnode *root = tree->root;
+   YAMLnode *root  = tree->root;
    YAMLnode *child = YAMLnodeCreate("child", "value", 1);
    YAMLnodeAddChild(root, child);
 
@@ -124,8 +124,8 @@ static void
 test_YAMLtreeBuild_simple(void)
 {
    const char *yaml_text = "key: value\n";
-   size_t len = strlen(yaml_text);
-   char *text = malloc(len + 1);
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
@@ -136,7 +136,8 @@ test_YAMLtreeBuild_simple(void)
    ASSERT_NOT_NULL(tree->root);
 
    char *value = YAMLnodeFindChildValueByKey(tree->root, "key");
-   /* value may be NULL if parsing doesn't work as expected - check for basic tree structure */
+   /* value may be NULL if parsing doesn't work as expected - check for basic tree
+    * structure */
    if (value)
    {
       ASSERT_STREQ(value, "value");
@@ -154,8 +155,8 @@ static void
 test_YAMLtreeBuild_nested(void)
 {
    const char *yaml_text = "parent:\n  child: value\n";
-   size_t len = strlen(yaml_text);
-   char *text = malloc(len + 1);
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
@@ -189,8 +190,8 @@ test_YAMLtreeBuild_invalid_indent(void)
 {
    /* Test with invalid indentation */
    const char *yaml_text = "key:\ninvalid_indent: value\n";
-   size_t len = strlen(yaml_text);
-   char *text = malloc(len + 1);
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
@@ -253,7 +254,8 @@ test_YAMLnodeFindChildValueByKey_nonexistent(void)
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
-int main(void)
+int
+main(void)
 {
    RUN_TEST(test_YAMLnodeCreate_basic);
 
@@ -270,5 +272,5 @@ int main(void)
    RUN_TEST(test_YAMLnodeFindByKey_nonexistent);
    RUN_TEST(test_YAMLnodeFindChildValueByKey_nonexistent);
 
-   return 0;  /* Success - CTest handles reporting */
+   return 0; /* Success - CTest handles reporting */
 }

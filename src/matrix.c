@@ -15,20 +15,20 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 {
    int      nprocs = 0, myid = 0;
    uint32_t nparts = 0;
-   uint64_t part = 0;
+   uint64_t part   = 0;
    uint32_t offset = 0;
 
    char     filename[1024];
    uint64_t header[11];
 
-   uint64_t nrows = 0;
+   uint64_t nrows     = 0;
    uint64_t nrows_sum = 0, nrows_offset = 0;
    uint64_t nnzs_max = 0;
 
    uint32_t *partids = NULL;
-   FILE     *fp = NULL;
+   FILE     *fp      = NULL;
 
-   HYPRE_IJMatrix       mat = NULL;
+   HYPRE_IJMatrix       mat    = NULL;
    HYPRE_BigInt         ilower = 0, iupper = 0;
    HYPRE_BigInt        *h_rows = NULL, *d_rows = NULL;
    HYPRE_BigInt        *h_cols = NULL, *d_cols = NULL;
@@ -64,7 +64,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    nrows_sum = nnzs_max = 0;
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, (int) partids[part]);
+      sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
       if (!fp)
       {
@@ -112,7 +112,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
       for (part = 0; part < nparts; part++)
       {
-         sprintf(filename, "%s.%05d.bin", prefixname, (int) partids[part]);
+         sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
          fp = fopen(filename, "rb");
          if (fread(header, sizeof(uint64_t), 11, fp) != 11)
          {
@@ -153,7 +153,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) { h_rows[i] = (HYPRE_BigInt)buffer[i]; }
+            for (size_t i = 0; i < header[6]; i++)
+            {
+               h_rows[i] = (HYPRE_BigInt)buffer[i];
+            }
 
             if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
             {
@@ -163,7 +166,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) { h_cols[i] = (HYPRE_BigInt)buffer[i]; }
+            for (size_t i = 0; i < header[6]; i++)
+            {
+               h_cols[i] = (HYPRE_BigInt)buffer[i];
+            }
 
             free(buffer);
          }
@@ -179,7 +185,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) { h_rows[i] = (HYPRE_BigInt)buffer[i]; }
+            for (size_t i = 0; i < header[6]; i++)
+            {
+               h_rows[i] = (HYPRE_BigInt)buffer[i];
+            }
 
             if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
             {
@@ -189,7 +198,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) { h_cols[i] = (HYPRE_BigInt)buffer[i]; }
+            for (size_t i = 0; i < header[6]; i++)
+            {
+               h_cols[i] = (HYPRE_BigInt)buffer[i];
+            }
 
             free(buffer);
          }
@@ -278,7 +290,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    /* Set matrix values */
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, (int) partids[part]);
+      sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
       if (fread(header, sizeof(uint64_t), 11, fp) != 11)
       {
@@ -319,7 +331,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) { h_rows[i] = (HYPRE_BigInt)buffer[i]; }
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_rows[i] = (HYPRE_BigInt)buffer[i];
+         }
 
          if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
          {
@@ -329,7 +344,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) { h_cols[i] = (HYPRE_BigInt)buffer[i]; }
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_cols[i] = (HYPRE_BigInt)buffer[i];
+         }
 
          free(buffer);
       }
@@ -345,7 +363,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) { h_rows[i] = (HYPRE_BigInt)buffer[i]; }
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_rows[i] = (HYPRE_BigInt)buffer[i];
+         }
 
          if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
          {
@@ -355,7 +376,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) { h_cols[i] = (HYPRE_BigInt)buffer[i]; }
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_cols[i] = (HYPRE_BigInt)buffer[i];
+         }
 
          free(buffer);
       }
@@ -391,7 +415,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) { h_vals[i] = (HYPRE_Complex)buffer[i]; }
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_vals[i] = (HYPRE_Complex)buffer[i];
+         }
 
          free(buffer);
       }
@@ -407,7 +434,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) { h_vals[i] = (HYPRE_Complex)buffer[i]; }
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_vals[i] = (HYPRE_Complex)buffer[i];
+         }
 
          free(buffer);
       }

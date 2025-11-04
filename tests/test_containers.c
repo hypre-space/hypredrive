@@ -5,12 +5,12 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
-#include "test_helpers.h"
 #include "containers.h"
+#include "test_helpers.h"
 
 /*-----------------------------------------------------------------------------
  * Test StackIntArray
@@ -27,14 +27,14 @@ static void
 test_StackIntArray_basic_ops(void)
 {
    StackIntArray arr = STACK_INTARRAY_CREATE();
-   
+
    /* Test initial state */
    ASSERT_EQ(arr.size, 0);
 
    /* Manually add some data for testing */
    arr.data[0] = 42;
    arr.data[1] = 100;
-   arr.size = 2;
+   arr.size    = 2;
 
    ASSERT_EQ(arr.data[0], 42);
    ASSERT_EQ(arr.data[1], 100);
@@ -49,7 +49,7 @@ static void
 test_StrArray_basic(void)
 {
    const char *strs[] = {"one", "two", "three"};
-   StrArray arr = STR_ARRAY_CREATE(strs);
+   StrArray    arr    = STR_ARRAY_CREATE(strs);
    ASSERT_EQ(arr.size, 3);
    ASSERT_STREQ(arr.data[0], "one");
    ASSERT_STREQ(arr.data[1], "two");
@@ -60,8 +60,8 @@ static void
 test_StrArrayEntryExists(void)
 {
    const char *strs[] = {"one", "two", "three"};
-   StrArray arr = STR_ARRAY_CREATE(strs);
-   
+   StrArray    arr    = STR_ARRAY_CREATE(strs);
+
    ASSERT_TRUE(StrArrayEntryExists(arr, "one"));
    ASSERT_TRUE(StrArrayEntryExists(arr, "two"));
    ASSERT_TRUE(StrArrayEntryExists(arr, "three"));
@@ -79,22 +79,23 @@ test_StrIntMapArray_basic(void)
    /* Test OnOffMapArray */
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "on"));
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "off"));
-   ASSERT_FALSE(StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "invalid"));
+   ASSERT_FALSE(
+      StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "invalid"));
 }
 
 static void
 test_StrIntMapArrayGetImage(void)
 {
    int img;
-   
+
    img = StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "on");
    ASSERT_TRUE(img >= 0);
-   
+
    img = StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "off");
    ASSERT_TRUE(img >= 0);
-   
+
    img = StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "invalid");
-   ASSERT_EQ(img, INT_MIN);  /* Implementation returns INT_MIN for invalid keys */
+   ASSERT_EQ(img, INT_MIN); /* Implementation returns INT_MIN for invalid keys */
 }
 
 /*-----------------------------------------------------------------------------
@@ -139,7 +140,7 @@ test_IntArray_create_destroy(void)
    IntArray *arr = IntArrayCreate(10);
    ASSERT_NOT_NULL(arr);
    ASSERT_EQ(arr->size, 10);
-   
+
    IntArrayDestroy(&arr);
    ASSERT_NULL(arr);
 }
@@ -157,7 +158,8 @@ test_IntArray_zero_size(void)
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
-int main(void)
+int
+main(void)
 {
    RUN_TEST(test_StackIntArray_create);
    RUN_TEST(test_StackIntArray_basic_ops);
@@ -175,6 +177,5 @@ int main(void)
    RUN_TEST(test_IntArray_create_destroy);
    RUN_TEST(test_IntArray_zero_size);
 
-   return 0;  /* Success - CTest handles reporting */
+   return 0; /* Success - CTest handles reporting */
 }
-

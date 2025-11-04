@@ -7,7 +7,8 @@
 
 #include "error.h"
 
-enum {
+enum
+{
    ERROR_CODE_NUM_ENTRIES = 32
 };
 
@@ -219,12 +220,12 @@ ErrorMsgAdd(const char *format, ...)
 void
 ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
 {
-   char       *msg = NULL;
+   char       *msg    = NULL;
    const char *plural = (ErrorCodeCountGet(code) > 1) ? "s" : "";
    int         length = strlen(suffix) + 24;
 
    msg = (char *)malloc(length);
-   sprintf(msg, "Found %d %s%s!", (int) ErrorCodeCountGet(code), suffix, plural);
+   sprintf(msg, "Found %d %s%s!", (int)ErrorCodeCountGet(code), suffix, plural);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -236,7 +237,7 @@ ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
 void
 ErrorMsgAddMissingKey(const char *key)
 {
-   char *msg = NULL;
+   char *msg    = NULL;
    int   length = strlen(key) + 16;
 
    msg = (char *)malloc(length);
@@ -252,7 +253,7 @@ ErrorMsgAddMissingKey(const char *key)
 void
 ErrorMsgAddExtraKey(const char *key)
 {
-   char *msg = NULL;
+   char *msg    = NULL;
    int   length = strlen(key) + 24;
 
    msg = (char *)malloc(length);
@@ -268,7 +269,7 @@ ErrorMsgAddExtraKey(const char *key)
 void
 ErrorMsgAddUnexpectedVal(const char *key)
 {
-   char *msg = NULL;
+   char *msg    = NULL;
    int   length = strlen(key) + 40;
 
    msg = (char *)malloc(length);
