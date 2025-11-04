@@ -77,7 +77,7 @@ main(int argc, char **argv)
     * Build and solve linear system(s)
     *-----------------------------------------------------------*/
 
-   for (k = 0; k < HYPREDRV_InputArgsGetNumLinearSystems(obj); k++)
+   for (int k = 0; k < HYPREDRV_InputArgsGetNumLinearSystems(obj); k++)
    {
       /* Build linear system (matrix, RHS, LHS, and auxiliary data) */
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemBuild(obj));
@@ -87,7 +87,7 @@ main(int argc, char **argv)
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemComputeEigenspectrum(obj));
 #endif
 
-      for (i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
+      for (int i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
       {
          /* Reset initial guess */
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(obj));
