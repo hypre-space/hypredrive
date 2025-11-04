@@ -97,6 +97,11 @@ CountNumberOfPartitions(const char *prefix)
    int  file_exists = 1;
    int  num_files   = 0;
 
+   if (prefix == NULL)
+   {
+      return 0;
+   }
+
    while (file_exists)
    {
       FILE *fp = NULL;
