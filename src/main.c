@@ -21,8 +21,8 @@ int
 main(int argc, char **argv)
 {
    MPI_Comm   comm = MPI_COMM_WORLD;
-   int        myid = 0, i = 0, k = 0;
-   HYPREDRV_t obj = NULL;
+   int        myid = 0;
+   HYPREDRV_t obj  = NULL;
 
    /*-----------------------------------------------------------
     * Initialize driver

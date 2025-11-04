@@ -395,7 +395,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_Int    num_c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *inactive_dofs = NULL;
-   HYPRE_Int    lvl = 0, i = 0, j = 0;
+   HYPRE_Int    lvl = 0, i = 0, j;
 
    /* Sanity checks */
    if (!args->dofmap)

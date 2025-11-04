@@ -26,10 +26,13 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    uint32_t *partids = NULL;
    FILE     *fp      = NULL;
 
-   HYPRE_IJVector       vec    = NULL;
    HYPRE_BigInt         ilower = 0, iupper = 0;
-   HYPRE_Complex       *h_vals = NULL, *d_vals = NULL;
-   const HYPRE_Complex *vals = NULL;
+   HYPRE_IJVector       vec    = NULL;
+   HYPRE_Complex       *h_vals = NULL;
+   const HYPRE_Complex *vals   = NULL;
+#ifdef HYPRE_USING_GPU
+   HYPRE_Complex       *d_vals = NULL;
+#endif
 
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);

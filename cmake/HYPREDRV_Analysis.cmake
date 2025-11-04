@@ -248,7 +248,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
                 ${CPPCHECK_JOBS_FLAG}
                 ${CPPCHECK_HYPRE_INCLUDES}
                 ${CMAKE_SOURCE_DIR}/src
-                2> ${CPPCHECK_XML_OUTPUT} || true
+                2> ${CPPCHECK_XML_OUTPUT}
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             COMMENT "Running cppcheck static analysis on src/ directory"
             VERBATIM

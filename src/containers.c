@@ -299,7 +299,7 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
 {
    char      filename[MAX_FILENAME_LENGTH];
    char      suffix[5], code[3];
-   size_t    num_entries = 0, num_entries_all = 0, count = 0;
+   size_t    num_entries = 0, num_entries_all = 0, count;
    IntArray *int_array = NULL;
    FILE     *fp        = NULL;
    int       myid = 0, nprocs = 0, nparts = 0, g_nparts = 0, offset = 0;

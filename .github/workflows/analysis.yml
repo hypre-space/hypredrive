@@ -82,14 +82,13 @@ jobs:
 
       - name: Run cppcheck
         run: cmake --build $BUILD_DIR --target cppcheck
-        continue-on-error: true
 
       - name: Upload cppcheck report
         if: always()
         uses: actions/upload-artifact@v5
         with:
           name: cppcheck-report
-          path: ${{ env.BUILD_DIR }}/cppcheck-report.html
+          path: ${{ env.BUILD_DIR }}/cppcheck-report.xml
           retention-days: 7
 
   clang-tidy:
