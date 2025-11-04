@@ -308,7 +308,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PrintExitInfo(MPI_Comm comm, const char *argv0);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PrintExitInfo(MPI_Comm    comm,
+                                                          const char *argv0);
 
    /**
     * @brief Parse input arguments for a HYPREDRV object.
@@ -337,7 +338,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsParse(int, char **, HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsParse(int, char **,
+                                                           HYPREDRV_t hypredrv);
 
    /**
     * @brief Set library mode to HYPREDRV, in which matrices and vectors are not assumed
@@ -565,7 +567,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetRHS(HYPREDRV_t   hypredrv,
+                                                               HYPRE_Vector vec);
 
    /**
     * @brief Set the initial guess for the solution vector of the linear system for a
@@ -593,7 +596,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv);
 
    /**
     * @brief Reset the initial guess of the solution vector for a HYPREDRV object to its
@@ -618,7 +622,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv);
 
    /**
     * @brief Set the matrix that is used to compute the preconditioner of a HYPREDRV
@@ -647,7 +652,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv);
 
    /**
     * @brief Set the degree of freedom (DOF) map for the linear system of a HYPREDRV
@@ -678,7 +684,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t hypredrv, int size,
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t hypredrv,
+                                                                  int        size,
                                                                   const int *dofmap);
 
    /**
@@ -712,9 +719,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t hypredrv,
-                                                                             int num_local_blocks,
-                                                                             int num_dof_types);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetInterleavedDofmap(
+      HYPREDRV_t hypredrv, int num_local_blocks, int num_dof_types);
 
    /**
     * @brief Set a contiguous degree of freedom (DOF) map for the linear system of a
@@ -747,9 +753,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetContiguousDofmap(HYPREDRV_t hypredrv,
-                                                                            int num_local_blocks,
-                                                                            int num_dof_types);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetContiguousDofmap(
+      HYPREDRV_t hypredrv, int num_local_blocks, int num_dof_types);
 
    /**
     * @brief Read the degree of freedom (DOF) map for the linear system of a HYPREDRV
@@ -790,9 +795,9 @@ extern "C"
     * the internal solution data array. The user must not free or modify the internal
     * array.
     *
-    * @return Returns an error code, with 0 indicating success. If the @p hypredrv parameter is
-    * invalid (e.g., NULL or uninitialized), an error code is returned, and the error can
-    * be further described using HYPREDRV_ErrorCodeDescribe(error_code).
+    * @return Returns an error code, with 0 indicating success. If the @p hypredrv
+    * parameter is invalid (e.g., NULL or uninitialized), an error code is returned, and
+    * the error can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
     *
     * Example Usage:
     * @code
@@ -816,8 +821,8 @@ extern "C"
     * It does not copy the solution values; instead, it assigns the internal pointer to
     * the user-provided pointer @p rhs_data.
     *
-    * @param hypredrv A valid HYPREDRV_t object from which the internal solution pointer is to
-    * be retrieved.
+    * @param hypredrv A valid HYPREDRV_t object from which the internal solution pointer
+    * is to be retrieved.
     * @param rhs_data A pointer to a HYPRE_Complex pointer, which will be set to point to
     * the internal right-hand side data array. The user must not free or modify the
     * internal array.
@@ -836,8 +841,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv,
-                                                                     HYPRE_Complex **rhs_data);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv, HYPRE_Complex **rhs_data);
 
    /**
     * @brief Create a preconditioner for the HYPREDRV object based on the specified
@@ -991,7 +996,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconApply(HYPREDRV_t hypredrv, HYPRE_Vector vec_b,
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconApply(HYPREDRV_t   hypredrv,
+                                                        HYPRE_Vector vec_b,
                                                         HYPRE_Vector vec_x);
 
    /**
@@ -1118,9 +1124,9 @@ extern "C"
     * or the preconditioned linear system.
     *
     * @param hypredrv The HYPREDRV_t object for which the eigenspectrum is to be computed.
-    * 
+    *
     * @return Returns an error code with 0 indicating success
-    * 
+    *
     * @note Compiled and available only when hypredrive is built with
     * `-DHYPREDRV_ENABLE_EIGSPEC=ON`. This function operates on a single MPI rank
     * and writes eigenvalues (and optionally eigenvectors) to files in the current
@@ -1133,7 +1139,8 @@ extern "C"
     *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemComputeEigenspectrum(hypredrv));
     * @endcode
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv);
 
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/
