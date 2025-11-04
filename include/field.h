@@ -25,8 +25,10 @@ typedef struct FieldOffsetMap_struct
  * Macros
  *-----------------------------------------------------------------------------*/
 
+// clang-format off
 #define FIELD_OFFSET_MAP_ENTRY(_st, _field_name, _setter) \
    {#_field_name, offsetof(_st, _field_name), _setter}
+// clang-format on
 
 /*-----------------------------------------------------------------------------
  * Prototypes

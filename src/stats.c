@@ -72,6 +72,7 @@ static Stats *global_stats = NULL;
    printf("|%12s ", _b[4]);                                               \
    printf("|%12s ", _b[5]);                                               \
    printf("|\n");
+// clang-format off
 #define STATS_PRINT_ENTRY(_t, _n)                                                  \
    if ((_t)->num_systems < 0 || !(_n % (((_t)->counter + 1) / (_t)->num_systems))) \
    {                                                                               \
@@ -90,6 +91,7 @@ static Stats *global_stats = NULL;
              (_t)->time_factor * ((_t)->solve[(_n)]), (_t)->rrnorms[(_n)],         \
              (_t)->iters[(_n)]);                                                   \
    }
+// clang-format on
 
 /*--------------------------------------------------------------------------
  * StatsCreate

@@ -53,14 +53,30 @@ jobs:
           restore-keys: |
             datasets-v1
 
+      - name: Cache HYPRE install
+        uses: actions/cache@v4
+        id: hypre-cache
+        with:
+          path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
+          key: hypre-${{ env.HYPRE_VERSION }}-ubuntu-latest-gcc-Debug-ON
+
       - name: Build HYPRE
         id: build-hypre
-        uses: ./.github/actions/build-hypre
-        with:
-          hypre_version: ${{ env.HYPRE_VERSION }}
-          compiler: 'gcc'
-          build_type: 'Debug'
-          hypre_shared_libs: 'ON'
+        run: |
+          set -euxo pipefail
+          PREFIX="${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}"
+          if [ ! -f "$PREFIX/lib/cmake/hypre/HYPREConfig.cmake" ]; then
+            git clone --depth 1 --branch ${{ env.HYPRE_VERSION }} https://github.com/hypre-space/hypre.git
+            cmake -S hypre/src -B hypre/build -G Ninja \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DBUILD_SHARED_LIBS=ON \
+              -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
+              -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+              -DCMAKE_C_COMPILER=mpicc
+            cmake --build hypre/build --parallel
+            cmake --install hypre/build
+          fi
+          echo "hypre_prefix=$PREFIX" >> $GITHUB_ENV
 
       - name: Configure hypredrive with coverage
         run: |
@@ -72,7 +88,7 @@ jobs:
             -DHYPREDRV_ENABLE_COVERAGE=ON \
             -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_C_COMPILER=mpicc \
-            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+            -DCMAKE_PREFIX_PATH=${{ env.hypre_prefix }}
 
       - name: Build
         run: cmake --build $BUILD_DIR --parallel
@@ -92,18 +108,33 @@ jobs:
       - name: Generate coverage report
         run: |
           cmake --build $BUILD_DIR --target coverage
-          cat $BUILD_DIR/coverage.xml | head -50
 
-      - name: Upload coverage to Codecov
+      - name: Extract coverage percentage
         if: always()
-        uses: codecov/codecov-action@v5
-        with:
-          file: ./${{ env.BUILD_DIR }}/coverage.xml
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-          dry_run: ${{ !secrets.CODECOV_TOKEN }}
+        id: coverage
+        run: |
+          if [ -f "$BUILD_DIR/coverage.xml" ]; then
+            COVERAGE=$(python3 -c "import xml.etree.ElementTree as ET; root = ET.parse('$BUILD_DIR/coverage.xml').getroot(); print(f\"{float(root.get('line-rate', 0)) * 100:.1f}\")")
+            echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+            echo "Code Coverage: ${COVERAGE}%"
+          else
+            echo "percentage=0.0" >> $GITHUB_OUTPUT
+            echo "Coverage file not found"
+          fi
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "### Coverage Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f "$BUILD_DIR/coverage.xml" ]; then
+            COVERAGE=$(python3 -c "import xml.etree.ElementTree as ET; root = ET.parse('$BUILD_DIR/coverage.xml').getroot(); print(f\"{float(root.get('line-rate', 0)) * 100:.1f}\")")
+            BRANCH_COV=$(python3 -c "import xml.etree.ElementTree as ET; root = ET.parse('$BUILD_DIR/coverage.xml').getroot(); print(f\"{float(root.get('branch-rate', 0)) * 100:.1f}\")")
+            echo "- **Line Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+            echo "- **Branch Coverage:** ${BRANCH_COV}%" >> $GITHUB_STEP_SUMMARY
+            echo "- Coverage reports available as artifacts" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Coverage file not found" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Upload coverage HTML report
         if: always()

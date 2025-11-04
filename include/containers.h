@@ -102,7 +102,9 @@ typedef struct StrIntMapArray_struct
       .data = map, .size = sizeof(map) / sizeof(map[0]) \
    }
 #define STR_INT_MAP_ARRAY_CREATE_ON_OFF() OnOffMapArray
+// clang-format off
 #define STR_INT_MAP_ARRAY_VOID() (StrIntMapArray){.data = NULL, .size = 0}
+// clang-format on
 
 extern const StrIntMapArray OnOffMapArray;
 
