@@ -55,8 +55,8 @@ stamp-*
 HYPREDRV_config.h
 /HYPREDRV_config.h.in
 /HYPREDRV_config.h.in~
-build*/
-install*/
+/build*/
+/install*/
 
 ###########
 # Libtools

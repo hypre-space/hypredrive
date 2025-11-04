@@ -18,6 +18,8 @@ jobs:
       BUILD_DIR: build-sanitizers
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Setup Ubuntu environment
         uses: ./.github/actions/setup-ubuntu
