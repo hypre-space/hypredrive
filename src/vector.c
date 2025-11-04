@@ -31,7 +31,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    HYPRE_Complex       *h_vals = NULL;
    const HYPRE_Complex *vals   = NULL;
 #ifdef HYPRE_USING_GPU
-   HYPRE_Complex       *d_vals = NULL;
+   HYPRE_Complex *d_vals = NULL;
 #endif
 
    /* 1a) Find number of parts per processor */

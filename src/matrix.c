@@ -33,13 +33,13 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    HYPRE_BigInt        *h_rows = NULL;
    HYPRE_BigInt        *h_cols = NULL;
    HYPRE_Complex       *h_vals = NULL;
-   const HYPRE_Int     *rows = NULL;
-   const HYPRE_Int     *cols = NULL;
-   const HYPRE_Complex *vals = NULL;
+   const HYPRE_Int     *rows   = NULL;
+   const HYPRE_Int     *cols   = NULL;
+   const HYPRE_Complex *vals   = NULL;
 #if defined(HYPRE_USING_GPU)
-   HYPRE_BigInt        *d_rows = NULL;
-   HYPRE_BigInt        *d_cols = NULL;
-   HYPRE_Complex       *d_vals = NULL;
+   HYPRE_BigInt  *d_rows = NULL;
+   HYPRE_BigInt  *d_cols = NULL;
+   HYPRE_Complex *d_vals = NULL;
 #endif
 
    /* 1a) Find number of parts per processor */

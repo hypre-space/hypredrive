@@ -194,9 +194,9 @@ void
 ErrorMsgAdd(const char *format, ...)
 {
    ErrorMsgNode *new = (ErrorMsgNode *)malloc(sizeof(ErrorMsgNode));
-   va_list args;
-   int     length = 0;
-   const char *fmt = format;
+   va_list     args;
+   int         length = 0;
+   const char *fmt    = format;
 
    /* Ensure format is not NULL */
    if (fmt == NULL)

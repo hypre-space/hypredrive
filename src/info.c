@@ -69,7 +69,7 @@ PrintSystemInfo(MPI_Comm comm)
    double mib_to_gib   = (double)(1 << 10);
    int    gcount;
    size_t total = 0, used = 0;
-   FILE  *fp     = NULL;
+   FILE  *fp = NULL;
    char   buffer[32768];
 
    MPI_Comm_rank(comm, &myid);
