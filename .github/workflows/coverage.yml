@@ -26,6 +26,7 @@ concurrency:
 
 jobs:
   coverage:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
     name: Code Coverage
     runs-on: ubuntu-latest
     env:

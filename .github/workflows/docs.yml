@@ -17,6 +17,7 @@ on:
 
 jobs:
   sphinx:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
     name: Sphinx Documentation
     runs-on: ubuntu-latest
     steps:
@@ -36,6 +37,7 @@ jobs:
           sphinx-build -b html docs/usrman-src docs/_build/html
 
   doxygen:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
     name: Doxygen Documentation
     runs-on: ubuntu-latest
     env:

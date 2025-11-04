@@ -26,6 +26,7 @@ concurrency:
 
 jobs:
   cppcheck:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
     name: cppcheck
     runs-on: ubuntu-latest
     env:
@@ -77,6 +78,7 @@ jobs:
           retention-days: 7
 
   clang-tidy:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
     name: clang-tidy
     runs-on: ubuntu-latest
     env:

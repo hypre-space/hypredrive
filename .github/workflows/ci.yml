@@ -23,6 +23,7 @@ concurrency:
 
 jobs:
   build-and-test:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
     name: ${{ matrix.os }} | ${{ matrix.compiler }} | ${{ matrix.build_type }}
     runs-on: ${{ matrix.os }}
     strategy:
