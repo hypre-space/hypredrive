@@ -3,19 +3,11 @@
 # Similar to hypredrive executable - link directly to both HYPREDRV and HYPRE
 function(setup_test_executable target_name source_file)
     add_executable(${target_name} ${source_file})
-<<<<<<< Updated upstream
-    target_compile_definitions(${target_name} PRIVATE HYPREDRIVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-    # HYPREDRV::HYPREDRV already exposes HYPRE::HYPRE via PUBLIC dependency, so no need to link HYPRE::HYPRE again
-    target_link_libraries(${target_name} PRIVATE HYPREDRV::HYPREDRV)
-    # Set RPATH for macOS to find HYPREDRV library at build time
-    # Use @loader_path/.. since tests are in build/tests/ and library is in build/
-=======
 
     # Link to both HYPREDRV and HYPRE, same as hypredrive executable does
     target_link_libraries(${target_name} PRIVATE HYPREDRV::HYPREDRV)
 
     # Add an RPATH to the main build directory for MacOS
->>>>>>> Stashed changes
     if(APPLE)
         target_link_options(${target_name} PRIVATE  "-Wl,-rpath,${CMAKE_BINARY_DIR}")
     endif()
@@ -36,7 +28,6 @@ add_test(NAME unit_test_yaml COMMAND test_yaml)
 # Test error handling functions
 setup_test_executable(test_error test_error.c)
 add_test(NAME unit_test_error COMMAND test_error)
-<<<<<<< Updated upstream
 
 # Field parsing helpers
 setup_test_executable(test_field test_field.c)
@@ -74,6 +65,3 @@ set_tests_properties(unit_test_vector PROPERTIES RUN_SERIAL TRUE)
 # EigSpec configuration helpers
 setup_test_executable(test_eigspec test_eigspec.c)
 add_test(NAME unit_test_eigspec COMMAND test_eigspec)
-
-=======
->>>>>>> Stashed changes
