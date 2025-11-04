@@ -48,14 +48,15 @@ jobs:
         with:
           hypre_version: ${{ env.HYPRE_VERSION }}
           compiler: 'gcc'
-          build_type: 'Release'
+          build_type: 'Debug'
           hypre_shared_libs: 'ON'
+          os: 'ubuntu-latest'
 
       - name: Configure hypredrive
         run: |
           set -euxo pipefail
           cmake -S . -B $BUILD_DIR -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=Debug \
             -DHYPREDRV_ENABLE_ANALYSIS=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_C_COMPILER=mpicc \
@@ -98,14 +99,15 @@ jobs:
         with:
           hypre_version: ${{ env.HYPRE_VERSION }}
           compiler: 'clang'
-          build_type: 'Release'
+          build_type: 'Debug'
           hypre_shared_libs: 'ON'
+          os: 'ubuntu-latest'
 
       - name: Configure hypredrive
         run: |
           set -euxo pipefail
           cmake -S . -B $BUILD_DIR -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=Debug \
             -DHYPREDRV_ENABLE_ANALYSIS=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_C_COMPILER=mpicc \

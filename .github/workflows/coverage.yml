@@ -61,6 +61,7 @@ jobs:
           compiler: 'gcc'
           build_type: 'Debug'
           hypre_shared_libs: 'ON'
+          os: 'ubuntu-latest'
 
       - name: Configure hypredrive with coverage
         run: |

@@ -3,20 +3,24 @@ description: 'Build and install HYPRE library with caching'
 inputs:
   hypre_version:
     description: 'HYPRE version/branch to build'
-    required: false
+    required: true
     default: 'master'
   compiler:
     description: 'Compiler to use (gcc or clang)'
-    required: false
+    required: true
     default: 'gcc'
   build_type:
     description: 'CMake build type'
-    required: false
-    default: 'Release'
+    required: true
+    default: 'Debug'
   hypre_shared_libs:
     description: 'Build shared libraries (ON or OFF)'
     required: false
     default: 'ON'
+  os:
+    description: 'Operating system (ubuntu-latest or macos-latest)'
+    required: false
+    default: 'ubuntu-latest'
 outputs:
   hypre_prefix:
     description: 'Path to HYPRE installation'
@@ -24,12 +28,22 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Set cache key suffix
+      id: cache-key
+      shell: bash
+      run: |
+        if [ "${{ inputs.hypre_shared_libs }}" = "ON" ]; then
+          echo "libtype=shared" >> $GITHUB_OUTPUT
+        else
+          echo "libtype=static" >> $GITHUB_OUTPUT
+        fi
+
     - name: Cache HYPRE install
       uses: actions/cache@v4
       id: hypre-cache
       with:
         path: ${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}
-        key: hypre-${{ inputs.hypre_version }}-ubuntu-latest-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ inputs.hypre_shared_libs }}
+        key: hypre-${{ inputs.hypre_version }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}
 
     - name: Build & install HYPRE
       id: build
@@ -39,13 +53,21 @@ runs:
         PREFIX="${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}"
         if [ ! -f "$PREFIX/lib/cmake/hypre/HYPREConfig.cmake" ]; then
           git clone --depth 1 --branch ${{ inputs.hypre_version }} https://github.com/hypre-space/hypre.git
-          cmake -S hypre/src -B hypre/build -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-            -DBUILD_SHARED_LIBS=${{ inputs.hypre_shared_libs }} \
-            -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
-            -DCMAKE_INSTALL_PREFIX="$PREFIX" \
-            -DMPI_INCLUDE_DIR=/usr/include/x86_64-linux-gnu/mpich \
+          CMAKE_ARGS=(
+            -S hypre/src
+            -B hypre/build
+            -G Ninja
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }}
+            -DBUILD_SHARED_LIBS=${{ inputs.hypre_shared_libs }}
+            -DHYPRE_BUILD_TESTS=OFF
+            -DHYPRE_BUILD_EXAMPLES=OFF
+            -DCMAKE_INSTALL_PREFIX="$PREFIX"
             -DCMAKE_C_COMPILER=mpicc
+          )
+          if [ "${{ inputs.os }}" = "ubuntu-latest" ]; then
+            CMAKE_ARGS+=(-DMPI_INCLUDE_DIR=/usr/include/x86_64-linux-gnu/mpich)
+          fi
+          cmake "${CMAKE_ARGS[@]}"
           cmake --build hypre/build --parallel
           cmake --install hypre/build
         fi

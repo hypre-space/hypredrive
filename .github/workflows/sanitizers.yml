@@ -34,6 +34,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           build_type: 'Debug'
           hypre_shared_libs: 'ON'
+          os: 'ubuntu-latest'
 
       - name: Configure hypredrive with sanitizers
         run: |

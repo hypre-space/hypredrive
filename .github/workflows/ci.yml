@@ -111,12 +111,6 @@ jobs:
           echo "MPICH_CC=clang" >> $GITHUB_ENV
           echo "MPICH_CXX=clang++" >> $GITHUB_ENV
 
-      - name: Cache HYPRE install
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
-          key: hypre-${{ env.HYPRE_VERSION }}-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}-ON
-
       - name: Cache datasets
         uses: actions/cache@v4
         with:
@@ -125,26 +119,19 @@ jobs:
           restore-keys: |
             datasets-v1
 
-      - name: Build & install HYPRE
-        run: |
-          set -euxo pipefail
-          PREFIX="${{ runner.tool_cache }}/hypre/${HYPRE_VERSION}"
-          if [ ! -f "$PREFIX/lib/cmake/hypre/HYPREConfig.cmake" ]; then
-            git clone --depth 1 --branch ${HYPRE_VERSION} https://github.com/hypre-space/hypre.git
-            cmake -S hypre/src -B hypre/build -G Ninja \
-              -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-              -DBUILD_SHARED_LIBS=ON \
-              -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
-              -DCMAKE_INSTALL_PREFIX="$PREFIX"
-            cmake --build hypre/build --parallel
-            cmake --install hypre/build
-          fi
-          echo "HYPRE_PREFIX=$PREFIX" >> $GITHUB_ENV
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: ${{ matrix.compiler }}
+          build_type: 'Debug'
+          hypre_shared_libs: 'ON'
+          os: ${{ matrix.os }}
 
       - name: Configure hypredrive
         run: |
           set -euxo pipefail
-          CMAKE_PREFIX_PATH_ARG="-DCMAKE_PREFIX_PATH=${HYPRE_PREFIX}"
           CCACHE_ARGS=""
           if [ "${{ runner.os }}" = "Linux" ]; then
             CCACHE_ARGS="-DCMAKE_C_COMPILER_LAUNCHER=ccache"
@@ -159,8 +146,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_BUILD_EXAMPLES=ON \
             -DBUILD_SHARED_LIBS=ON \
-            $CCACHE_ARGS \
-            $CMAKE_PREFIX_PATH_ARG
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }} \
+            $CCACHE_ARGS
 
       - name: Build
         run: cmake --build $BUILD_DIR --parallel

@@ -55,8 +55,9 @@ jobs:
         with:
           hypre_version: master
           compiler: 'gcc'
-          build_type: 'Release'
+          build_type: 'Debug'
           hypre_shared_libs: 'ON'
+          os: 'ubuntu-latest'
 
       - name: Configure hypredrive with Doxygen
         run: |
