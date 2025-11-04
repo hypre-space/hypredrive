@@ -2,6 +2,7 @@ name: Static Analysis
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths-ignore:
       - '**.md'
       - '.gitignore'
