@@ -1,0 +1,130 @@
+name: Coverage
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'COPYRIGHT'
+  push:
+    branches: [ master ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'COPYRIGHT'
+  schedule:
+    - cron: '0 2 * * 0' # Runs at 02:00 UTC every Sunday
+  workflow_dispatch:    # Allow manual triggering
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    env:
+      HYPRE_VERSION: master
+      BUILD_DIR: build-coverage
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Ubuntu environment
+        uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: 'gcc'
+          extra_packages: 'python3-pip'
+
+      - name: Install gcovr
+        run: pip3 install gcovr
+
+      - name: Cache datasets
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: datasets-v1
+          restore-keys: |
+            datasets-v1
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: 'gcc'
+          build_type: 'Debug'
+          hypre_shared_libs: 'ON'
+
+      - name: Configure hypredrive with coverage
+        run: |
+          set -euxo pipefail
+          cmake -S . -B $BUILD_DIR -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHYPREDRV_ENABLE_TESTING=ON \
+            -DHYPREDRV_BUILD_EXAMPLES=ON \
+            -DHYPREDRV_ENABLE_COVERAGE=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+
+      - name: Build
+        run: cmake --build $BUILD_DIR --parallel
+
+      - name: Fetch datasets (optional)
+        run: |
+          set -euxo pipefail
+          if [ ! -d "data/ps3d10pt7" ] || [ -z "$(ls -A data/ps3d10pt7 2>/dev/null)" ]; then
+            cmake --build $BUILD_DIR --target data --parallel
+          else
+            echo "Datasets already cached, skipping download"
+          fi
+
+      - name: Run tests
+        run: ctest --test-dir $BUILD_DIR --output-on-failure
+
+      - name: Generate coverage report
+        run: |
+          cmake --build $BUILD_DIR --target coverage
+          cat $BUILD_DIR/coverage.xml | head -50
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          file: ./${{ env.BUILD_DIR }}/coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+          dry_run: ${{ !secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage HTML report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-report
+          path: ${{ env.BUILD_DIR }}/coverage.html
+          retention-days: 7
+
+      - name: Upload coverage XML report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-xml
+          path: ${{ env.BUILD_DIR }}/coverage.xml
+          retention-days: 7
+
+      - name: Comment coverage summary on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: py-covaction/cov-action@v1
+        with:
+          file: ./${{ env.BUILD_DIR }}/coverage.xml
+          fail-ci: false
+          base: master
+          create-new-comment: true
+

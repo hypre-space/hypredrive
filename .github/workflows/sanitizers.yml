@@ -19,35 +19,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build mpich libmpich-dev
-          if [ "${{ matrix.compiler }}" = "gcc" ]; then sudo apt-get install -y gcc g++; fi
-          if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt-get install -y clang; fi
-
-      - name: Cache HYPRE install
-        uses: actions/cache@v4
+      - name: Setup Ubuntu environment
+        uses: ./.github/actions/setup-ubuntu
         with:
-          path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
-          key: hypre-${{ env.HYPRE_VERSION }}-ubuntu-latest-${{ matrix.compiler }}
+          compiler: ${{ matrix.compiler }}
 
-      - name: Build & install HYPRE
-        run: |
-          set -euxo pipefail
-          PREFIX="${{ runner.tool_cache }}/hypre/${HYPRE_VERSION}"
-          if [ ! -f "$PREFIX/lib/cmake/hypre/HYPREConfig.cmake" ]; then
-            git clone --depth 1 --branch ${HYPRE_VERSION} https://github.com/hypre-space/hypre.git
-            cmake -S hypre/src -B hypre/build -G Ninja \
-              -DCMAKE_BUILD_TYPE=Debug \
-              -DHYPRE_WITH_MPI=ON -DHYPRE_ENABLE_SHARED=ON \
-              -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
-              -DCMAKE_INSTALL_PREFIX="$PREFIX" \
-              -DCMAKE_C_COMPILER=mpicc
-            cmake --build hypre/build --parallel
-            cmake --install hypre/build
-          fi
-          echo "HYPRE_PREFIX=$PREFIX" >> $GITHUB_ENV
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: ${{ matrix.compiler }}
+          build_type: 'Debug'
+          hypre_shared_libs: 'ON'
 
       - name: Configure hypredrive with sanitizers
         run: |
@@ -55,7 +39,7 @@ jobs:
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_BUILD_EXAMPLES=ON \
-            -DCMAKE_PREFIX_PATH=${HYPRE_PREFIX} \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }} \
             -DCMAKE_C_COMPILER=mpicc \
             -DCMAKE_C_FLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
