@@ -72,7 +72,7 @@ jobs:
           set -euxo pipefail
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DHYPREDRV_ENABLE_CODE_ANALYSIS=ON \
+            -DHYPREDRV_ENABLE_ANALYSIS=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_C_COMPILER=mpicc \
             -DCMAKE_PREFIX_PATH=${{ env.hypre_prefix }}
@@ -158,4 +158,3 @@ jobs:
           name: clang-tidy-report
           path: ${{ env.BUILD_DIR }}/clang-tidy-output.txt
           retention-days: 7
-
