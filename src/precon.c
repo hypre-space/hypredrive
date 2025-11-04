@@ -296,6 +296,9 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
          case PRECON_FSAI:
             HYPRE_FSAIDestroy(precon->main);
             break;
+
+         case PRECON_NONE:
+            break;
       }
 
       precon->main = NULL;

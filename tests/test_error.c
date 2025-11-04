@@ -159,6 +159,19 @@ static void
 capture_error_output(void (*print_fn)(void), char *buffer, size_t buf_len)
 {
    FILE *tmp = tmpfile();
+
+   // macOS fallback
+#ifdef __APPLE__
+   if (!tmp)
+   {
+      char path[] = "/tmp/hypredrv_test_error.txt";
+      int fd = mkstemp(path);
+      ASSERT_TRUE(fd != -1);
+      tmp = fdopen(fd, "w+");
+      unlink(path);
+   }
+#endif
+
    ASSERT_NOT_NULL(tmp);
 
    int tmp_fd    = fileno(tmp);

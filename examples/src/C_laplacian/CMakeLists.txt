@@ -21,6 +21,11 @@ endif()
 add_executable(laplacian laplacian.c)
 target_link_libraries(laplacian PRIVATE HYPREDRV::HYPREDRV)
 
+# Add an RPATH to the main build directory for MacOS
+if(APPLE)
+    target_link_options(laplacian PRIVATE  "-Wl,-rpath,${CMAKE_BINARY_DIR}")
+endif()
+
 # Add the laplacian driver to the test suite when testing is enabled
 if(HYPREDRV_ENABLE_TESTING)
     add_test(NAME laplacian_driver_1proc
