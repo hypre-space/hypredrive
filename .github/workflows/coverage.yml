@@ -121,12 +121,3 @@ jobs:
           path: ${{ env.BUILD_DIR }}/coverage.xml
           retention-days: 7
 
-      - name: Comment coverage summary on PR
-        if: github.event_name == 'pull_request' && always()
-        uses: py-covaction/cov-action@v1
-        with:
-          file: ./${{ env.BUILD_DIR }}/coverage.xml
-          fail-ci: false
-          base: master
-          create-new-comment: true
-

@@ -42,14 +42,30 @@ jobs:
           compiler: 'gcc'
           extra_packages: 'cppcheck'
 
+      - name: Cache HYPRE install
+        uses: actions/cache@v4
+        id: hypre-cache
+        with:
+          path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
+          key: hypre-${{ env.HYPRE_VERSION }}-ubuntu-latest-gcc-Release-ON
+
       - name: Build HYPRE
         id: build-hypre
-        uses: ./.github/actions/build-hypre
-        with:
-          hypre_version: ${{ env.HYPRE_VERSION }}
-          compiler: 'gcc'
-          build_type: 'Release'
-          hypre_shared_libs: 'ON'
+        run: |
+          set -euxo pipefail
+          PREFIX="${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}"
+          if [ ! -f "$PREFIX/lib/cmake/hypre/HYPREConfig.cmake" ]; then
+            git clone --depth 1 --branch ${{ env.HYPRE_VERSION }} https://github.com/hypre-space/hypre.git
+            cmake -S hypre/src -B hypre/build -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_SHARED_LIBS=ON \
+              -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
+              -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+              -DCMAKE_C_COMPILER=mpicc
+            cmake --build hypre/build --parallel
+            cmake --install hypre/build
+          fi
+          echo "hypre_prefix=$PREFIX" >> $GITHUB_ENV
 
       - name: Configure hypredrive
         run: |
@@ -59,7 +75,7 @@ jobs:
             -DHYPREDRV_ENABLE_CODE_ANALYSIS=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_C_COMPILER=mpicc \
-            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+            -DCMAKE_PREFIX_PATH=${{ env.hypre_prefix }}
 
       - name: Build
         run: cmake --build $BUILD_DIR --parallel
@@ -93,14 +109,30 @@ jobs:
           compiler: 'clang'
           extra_packages: 'clang-tidy'
 
+      - name: Cache HYPRE install
+        uses: actions/cache@v4
+        id: hypre-cache
+        with:
+          path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
+          key: hypre-${{ env.HYPRE_VERSION }}-ubuntu-latest-clang-Release-ON
+
       - name: Build HYPRE
         id: build-hypre
-        uses: ./.github/actions/build-hypre
-        with:
-          hypre_version: ${{ env.HYPRE_VERSION }}
-          compiler: 'clang'
-          build_type: 'Release'
-          hypre_shared_libs: 'ON'
+        run: |
+          set -euxo pipefail
+          PREFIX="${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}"
+          if [ ! -f "$PREFIX/lib/cmake/hypre/HYPREConfig.cmake" ]; then
+            git clone --depth 1 --branch ${{ env.HYPRE_VERSION }} https://github.com/hypre-space/hypre.git
+            cmake -S hypre/src -B hypre/build -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_SHARED_LIBS=ON \
+              -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
+              -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+              -DCMAKE_C_COMPILER=mpicc
+            cmake --build hypre/build --parallel
+            cmake --install hypre/build
+          fi
+          echo "hypre_prefix=$PREFIX" >> $GITHUB_ENV
 
       - name: Configure hypredrive
         run: |
@@ -110,7 +142,7 @@ jobs:
             -DHYPREDRV_ENABLE_CODE_ANALYSIS=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_C_COMPILER=mpicc \
-            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+            -DCMAKE_PREFIX_PATH=${{ env.hypre_prefix }}
 
       - name: Build
         run: cmake --build $BUILD_DIR --parallel
