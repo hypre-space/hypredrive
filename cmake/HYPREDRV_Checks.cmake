@@ -7,11 +7,11 @@ include(CheckSymbolExists)
 
 # Check for libraries
 if(TARGET HYPRE::HYPRE)
-  set(HAVE_LIBHYPRE 1)
+    set(HAVE_LIBHYPRE 1)
 endif()
 check_library_exists(m sqrt "" HAVE_LIBM)
 if(HAVE_LIBM)
-  set(CMAKE_REQUIRED_LIBRARIES m)
+    set(CMAKE_REQUIRED_LIBRARIES m)
 endif()
 
 # Check for headers

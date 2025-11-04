@@ -15,7 +15,7 @@ set(CMAKE_C_STANDARD_REQUIRED True)
 
 # Disallow in-source builds
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
-   message(FATAL_ERROR "In-source builds are not allowed. Please create a separate build directory and run CMake from there.")
+    message(FATAL_ERROR "In-source builds are not allowed. Please create a separate build directory and run CMake from there.")
 endif()
 
 # Option to build shared libraries
@@ -31,12 +31,19 @@ option(HYPREDRV_BUILD_EXAMPLES  "Build the HYPREDRV examples" ON)
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
 # Testing implies data
 if(HYPREDRV_ENABLE_TESTING)
     set(HYPREDRV_ENABLE_DATA ON)
+endif()
+
+# Coverage implies testing, examples, and data
+if(HYPREDRV_ENABLE_COVERAGE)
+    set(HYPREDRV_ENABLE_DATA ON)
+    set(HYPREDRV_ENABLE_TESTING ON)
+    set(HYPREDRV_ENABLE_EXAMPLES ON)
 endif()
 
 # Include directories
@@ -53,8 +60,8 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Data.cmake)
 
 # Generate the config header
 configure_file(
-  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_config.h.in"
-  "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRV_config.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_config.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRV_config.h"
 )
 
 # Include the generated config header

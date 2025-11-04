@@ -92,11 +92,13 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
    /* Allocate variables */
    h_vals = (HYPRE_Complex *)malloc(nrows_max * sizeof(HYPRE_Complex));
+#ifdef HYPRE_USING_GPU
    if (memory_location == HYPRE_MEMORY_DEVICE)
    {
       vals = d_vals = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
    }
    else
+#endif
    {
       vals = h_vals;
    }
@@ -157,11 +159,13 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       }
       fclose(fp);
 
+#ifdef HYPRE_USING_GPU
       if (vals != h_vals)
       {
          hypre_TMemcpy(d_vals, h_vals, HYPRE_Complex, header[5], HYPRE_MEMORY_DEVICE,
                        HYPRE_MEMORY_HOST);
       }
+#endif
 
       HYPRE_IJVectorSetValues(vec, (HYPRE_BigInt)header[5], NULL, vals);
    }
@@ -172,8 +176,10 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    /* Free memory */
    free(partids);
    free(h_vals);
+#ifdef HYPRE_USING_GPU
    if (memory_location == HYPRE_MEMORY_DEVICE)
    {
       hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
    }
+#endif
 }

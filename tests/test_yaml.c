@@ -26,17 +26,6 @@ test_YAMLnodeCreate_basic(void)
    YAMLnodeDestroy(node);
 }
 
-static void
-test_YAMLnodeCreate_null_key(void)
-{
-   YAMLnode *node = YAMLnodeCreate(NULL, "value", 0);
-   /* Node creation behavior with NULL key depends on implementation */
-   if (node)
-   {
-      YAMLnodeDestroy(node);
-   }
-}
-
 /*-----------------------------------------------------------------------------
  * Test YAMLtree creation and destruction
  *-----------------------------------------------------------------------------*/
@@ -60,18 +49,18 @@ test_YAMLnodeFindByKey_basic(void)
 {
    YAMLtree *tree = YAMLtreeCreate(10);
    ASSERT_NOT_NULL(tree);
-   
+
    YAMLnode *root = tree->root;
    YAMLnode *child = YAMLnodeCreate("child", "value", 1);
    YAMLnodeAddChild(root, child);
-   
+
    YAMLnode *found = YAMLnodeFindByKey(root, "child");
    ASSERT_NOT_NULL(found);
    ASSERT_STREQ(found->key, "child");
-   
+
    YAMLnode *not_found = YAMLnodeFindByKey(root, "nonexistent");
    ASSERT_NULL(not_found);
-   
+
    YAMLtreeDestroy(&tree);
 }
 
@@ -84,23 +73,23 @@ test_YAMLnodeFindChildByKey_basic(void)
 {
    YAMLtree *tree = YAMLtreeCreate(10);
    YAMLnode *root = tree->root;
-   
+
    YAMLnode *child1 = YAMLnodeCreate("child1", "value1", 1);
    YAMLnode *child2 = YAMLnodeCreate("child2", "value2", 1);
    YAMLnodeAddChild(root, child1);
    YAMLnodeAddChild(root, child2);
-   
+
    YAMLnode *found = YAMLnodeFindChildByKey(root, "child1");
    ASSERT_NOT_NULL(found);
    ASSERT_STREQ(found->key, "child1");
-   
+
    found = YAMLnodeFindChildByKey(root, "child2");
    ASSERT_NOT_NULL(found);
    ASSERT_STREQ(found->key, "child2");
-   
+
    found = YAMLnodeFindChildByKey(root, "nonexistent");
    ASSERT_NULL(found);
-   
+
    YAMLtreeDestroy(&tree);
 }
 
@@ -113,17 +102,17 @@ test_YAMLnodeFindChildValueByKey_basic(void)
 {
    YAMLtree *tree = YAMLtreeCreate(10);
    YAMLnode *root = tree->root;
-   
+
    YAMLnode *child = YAMLnodeCreate("key", "value", 1);
    YAMLnodeAddChild(root, child);
-   
+
    char *value = YAMLnodeFindChildValueByKey(root, "key");
    ASSERT_NOT_NULL(value);
    ASSERT_STREQ(value, "value");
-   
+
    value = YAMLnodeFindChildValueByKey(root, "nonexistent");
    ASSERT_NULL(value);
-   
+
    YAMLtreeDestroy(&tree);
 }
 
@@ -138,21 +127,21 @@ test_YAMLtreeBuild_simple(void)
    size_t len = strlen(yaml_text);
    char *text = malloc(len + 1);
    strcpy(text, yaml_text);
-   
+
    YAMLtree *tree = NULL;
    /* YAMLtreeBuild creates its own tree and modifies text in place */
    YAMLtreeBuild(0, text, &tree);
-   
+
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
-   
+
    char *value = YAMLnodeFindChildValueByKey(tree->root, "key");
    /* value may be NULL if parsing doesn't work as expected - check for basic tree structure */
    if (value)
    {
       ASSERT_STREQ(value, "value");
    }
-   
+
    free(text);
    YAMLtreeDestroy(&tree);
 }
@@ -168,14 +157,14 @@ test_YAMLtreeBuild_nested(void)
    size_t len = strlen(yaml_text);
    char *text = malloc(len + 1);
    strcpy(text, yaml_text);
-   
+
    YAMLtree *tree = NULL;
    /* YAMLtreeBuild creates its own tree and modifies text in place */
    YAMLtreeBuild(0, text, &tree);
-   
+
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
-   
+
    YAMLnode *parent = YAMLnodeFindChildByKey(tree->root, "parent");
    /* Basic test - parent may or may not exist depending on parsing */
    if (parent)
@@ -186,7 +175,7 @@ test_YAMLtreeBuild_nested(void)
          ASSERT_STREQ(value, "value");
       }
    }
-   
+
    free(text);
    YAMLtreeDestroy(&tree);
 }
@@ -203,18 +192,18 @@ test_YAMLtreeBuild_invalid_indent(void)
    size_t len = strlen(yaml_text);
    char *text = malloc(len + 1);
    strcpy(text, yaml_text);
-   
+
    YAMLtree *tree = NULL;
    /* YAMLtreeBuild creates its own tree and modifies text in place */
    YAMLtreeBuild(0, text, &tree);
-   
+
    /* Tree should be created, but validation should catch errors */
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
-   
+
    /* Validate the tree - should detect invalid indentation */
    YAMLtreeValidate(tree);
-   
+
    free(text);
    YAMLtreeDestroy(&tree);
 }
@@ -224,18 +213,18 @@ test_YAMLnodeFindByKey_nonexistent(void)
 {
    YAMLtree *tree = YAMLtreeCreate(10);
    YAMLnode *root = tree->root;
-   
+
    YAMLnode *child = YAMLnodeCreate("child", "value", 1);
    YAMLnodeAddChild(root, child);
-   
+
    /* Find existing key */
    YAMLnode *found = YAMLnodeFindByKey(root, "child");
    ASSERT_NOT_NULL(found);
-   
+
    /* Find nonexistent key */
    YAMLnode *not_found = YAMLnodeFindByKey(root, "nonexistent");
    ASSERT_NULL(not_found);
-   
+
    YAMLtreeDestroy(&tree);
 }
 
@@ -244,19 +233,19 @@ test_YAMLnodeFindChildValueByKey_nonexistent(void)
 {
    YAMLtree *tree = YAMLtreeCreate(10);
    YAMLnode *root = tree->root;
-   
+
    YAMLnode *child = YAMLnodeCreate("key", "value", 1);
    YAMLnodeAddChild(root, child);
-   
+
    /* Find existing value */
    char *value = YAMLnodeFindChildValueByKey(root, "key");
    ASSERT_NOT_NULL(value);
    ASSERT_STREQ(value, "value");
-   
+
    /* Find nonexistent value */
    value = YAMLnodeFindChildValueByKey(root, "nonexistent");
    ASSERT_NULL(value);
-   
+
    YAMLtreeDestroy(&tree);
 }
 
@@ -267,7 +256,6 @@ test_YAMLnodeFindChildValueByKey_nonexistent(void)
 int main(void)
 {
    RUN_TEST(test_YAMLnodeCreate_basic);
-   /* test_YAMLnodeCreate_null_key disabled - implementation doesn't handle NULL keys */
 
    RUN_TEST(test_YAMLtreeCreate_basic);
 
@@ -284,4 +272,3 @@ int main(void)
 
    return 0;  /* Success - CTest handles reporting */
 }
-

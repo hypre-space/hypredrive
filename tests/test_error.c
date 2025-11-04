@@ -7,6 +7,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <mpi.h>
 #include "test_helpers.h"
 #include "error.h"
 
@@ -149,11 +152,88 @@ test_ErrorMsgAddInvalidFilename(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * Helpers to capture stderr from ErrorMsgPrint
+ *-----------------------------------------------------------------------------*/
+
+static void
+capture_error_output(void (*print_fn)(void), char *buffer, size_t buf_len)
+{
+   FILE *tmp = tmpfile();
+   ASSERT_NOT_NULL(tmp);
+
+   int tmp_fd    = fileno(tmp);
+   int saved_err = dup(fileno(stderr));
+   ASSERT_TRUE(saved_err != -1);
+
+   fflush(stderr);
+   ASSERT_TRUE(dup2(tmp_fd, fileno(stderr)) != -1);
+
+   print_fn();
+   fflush(stderr);
+
+   fseek(tmp, 0, SEEK_SET);
+   size_t read_bytes = fread(buffer, 1, buf_len - 1, tmp);
+   buffer[read_bytes] = '\0';
+
+   fflush(tmp);
+   ASSERT_TRUE(dup2(saved_err, fileno(stderr)) != -1);
+   close(saved_err);
+   fclose(tmp);
+}
+
+static void
+test_ErrorCodeDescribe_prints_counts(void)
+{
+   ErrorCodeResetAll();
+   ErrorMsgClear();
+
+   ErrorCodeSet(ERROR_INVALID_KEY);
+   ErrorCodeSet(ERROR_INVALID_KEY);
+
+   ErrorCodeDescribe(ErrorCodeGet());
+
+   char buffer[512];
+   capture_error_output(ErrorMsgPrint, buffer, sizeof(buffer));
+   ASSERT_NOT_NULL(strstr(buffer, "Found 2 invalid keys"));
+
+   ErrorMsgClear();
+   ErrorCodeResetAll();
+}
+
+static void
+test_DistributedErrorCodeActive(void)
+{
+   ErrorCodeResetAll();
+   ASSERT_FALSE(DistributedErrorCodeActive(MPI_COMM_SELF));
+
+   ErrorCodeSet(ERROR_INVALID_VAL);
+   ASSERT_TRUE(DistributedErrorCodeActive(MPI_COMM_SELF));
+
+   ErrorCodeResetAll();
+}
+
+static void
+test_ErrorMsgPrint_with_no_messages(void)
+{
+   ErrorCodeResetAll();
+   ErrorMsgClear();
+
+   /* ErrorMsgPrint with no messages should not crash */
+   char buffer[512];
+   capture_error_output(ErrorMsgPrint, buffer, sizeof(buffer));
+   /* Should print header but no error details */
+
+   ErrorCodeResetAll();
+}
+
+/*-----------------------------------------------------------------------------
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
-int main(void)
+int main(int argc, char **argv)
 {
+   MPI_Init(&argc, &argv);
+
    RUN_TEST(test_ErrorCodeSet_get);
    RUN_TEST(test_ErrorCodeReset);
    RUN_TEST(test_ErrorCodeMultiple);
@@ -164,9 +244,14 @@ int main(void)
    RUN_TEST(test_ErrorMsgAddExtraKey);
    RUN_TEST(test_ErrorMsgAddUnexpectedVal);
    RUN_TEST(test_ErrorMsgAddInvalidFilename);
+   RUN_TEST(test_ErrorCodeDescribe_prints_counts);
+   RUN_TEST(test_DistributedErrorCodeActive);
+   RUN_TEST(test_ErrorMsgPrint_with_no_messages);
 
    ErrorCodeResetAll();
    ErrorMsgClear();
+
+   MPI_Finalize();
 
    return 0;  /* Success - CTest handles reporting */
 }

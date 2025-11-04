@@ -132,9 +132,6 @@ PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
       case PRECON_FSAI:
          FSAICreate(&args->fsai, &precon->main);
          break;
-
-      default:
-         precon->main = NULL;
    }
 
    *precon_ptr = precon;
@@ -282,9 +279,6 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
          case PRECON_FSAI:
             HYPRE_FSAIDestroy(precon->main);
             break;
-
-         default:
-            return;
       }
 
       precon->main = NULL;
