@@ -53,7 +53,7 @@ FGMRESSetDefaultArgs(FGMRES_args *args)
 void
 FGMRESCreate(MPI_Comm comm, const FGMRES_args *args, HYPRE_Solver *solver_ptr)
 {
-   HYPRE_Solver solver;
+   HYPRE_Solver solver = NULL;
 
    HYPRE_ParCSRFlexGMRESCreate(comm, &solver);
    HYPRE_FlexGMRESSetMinIter(solver, args->min_iter);

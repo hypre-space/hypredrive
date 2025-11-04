@@ -80,7 +80,7 @@ FSAISetDefaultArgs(FSAI_args *args)
 void
 FSAICreate(const FSAI_args *args, HYPRE_Solver *precon_ptr)
 {
-   HYPRE_Solver precon;
+   HYPRE_Solver precon = NULL;
 
    HYPRE_FSAICreate(&precon);
 

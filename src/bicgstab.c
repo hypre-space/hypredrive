@@ -55,7 +55,7 @@ BiCGSTABSetDefaultArgs(BiCGSTAB_args *args)
 void
 BiCGSTABCreate(MPI_Comm comm, const BiCGSTAB_args *args, HYPRE_Solver *solver_ptr)
 {
-   HYPRE_Solver solver;
+   HYPRE_Solver solver = NULL;
 
    HYPRE_ParCSRBiCGSTABCreate(comm, &solver);
    HYPRE_BiCGSTABSetMinIter(solver, args->min_iter);

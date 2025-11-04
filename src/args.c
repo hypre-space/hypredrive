@@ -60,8 +60,8 @@ InputArgsDestroy(input_args **iargs_ptr)
 void
 InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode *parent;
-   YAMLnode *child;
+   YAMLnode *parent = NULL;
+   YAMLnode *child = NULL;
 
    parent = YAMLnodeFindByKey(tree->root, "general");
    if (!parent)
@@ -70,10 +70,7 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
          so we don't set an error code if it's not found. */
       return;
    }
-   else
-   {
-      YAML_NODE_SET_VALID(parent);
-   }
+   YAML_NODE_SET_VALID(parent);
 
    child = parent->children;
    while (child)
@@ -190,13 +187,11 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
       // ErrorMsgAddMissingKey(key);
       return;
    }
-   else
+   YAML_NODE_SET_VALID_IF_NO_VAL(parent);
+
+   if (YAML_NODE_GET_VALIDITY(parent) == YAML_NODE_UNEXPECTED_VAL)
    {
-      YAML_NODE_SET_VALID_IF_NO_VAL(parent);
-      if (YAML_NODE_GET_VALIDITY(parent) == YAML_NODE_UNEXPECTED_VAL)
-      {
-         ErrorMsgAddUnexpectedVal(key);
-      }
+      ErrorMsgAddUnexpectedVal(key);
    }
 
    LinearSystemSetArgsFromYAML(&iargs->ls, parent);
@@ -210,7 +205,7 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
 void
 InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode *parent;
+   YAMLnode *parent = NULL;
 
    parent = YAMLnodeFindByKey(tree->root, "solver");
    if (!parent)
@@ -220,10 +215,7 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
       // ErrorMsgAddMissingKey("solver");
       return;
    }
-   else
-   {
-      YAML_NODE_SET_VALID(parent);
-   }
+   YAML_NODE_SET_VALID(parent);
 
    /* Check if the solver type was set with a single (key, val) pair */
    if (!strcmp(parent->val, ""))
@@ -272,7 +264,7 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
 void
 InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode *parent;
+   YAMLnode *parent = NULL;
 
    parent = YAMLnodeFindByKey(tree->root, "preconditioner");
    if (!parent)
@@ -281,10 +273,7 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
       ErrorMsgAddMissingKey("preconditioner");
       return;
    }
-   else
-   {
-      YAML_NODE_SET_VALID(parent);
-   }
+   YAML_NODE_SET_VALID(parent);
 
    /* Check if the solver type was set with a single (key, val) pair */
    if (!strcmp(parent->val, ""))
@@ -338,7 +327,7 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    char  *text        = NULL;
    char  *dirname     = NULL;
    char  *basename    = NULL;
-   int    myid;
+   int    myid = 0;
 
    MPI_Comm_rank(comm, &myid);
 
@@ -367,7 +356,7 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    SplitFilename(filename, &dirname, &basename);
 
    /* Rank 0: Expand text from base file */
-   if (!myid) YAMLtextRead(dirname, basename, 0, &base_indent, &text_size, &text);
+   if (!myid) { YAMLtextRead(dirname, basename, 0, &base_indent, &text_size, &text); }
    if (DistributedErrorCodeActive(comm))
    {
       return;
@@ -379,8 +368,7 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
 
    /* Broadcast the text */
    MPI_Comm_rank(comm, &myid);
-   if (myid)
-      text = (char *)malloc(text_size + 1); /* +1: Extra space for null terminator */
+   if (myid) { text = (char *)malloc(text_size + 1); } /* +1: for null terminator */
    MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
 
    /* Make sure null terminator is in the right place */
@@ -404,11 +392,11 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
 void
 InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args **args_ptr)
 {
-   input_args *iargs;
-   char       *text;
-   YAMLtree   *tree;
+   input_args *iargs = NULL;
+   char       *text = NULL;
+   YAMLtree   *tree = NULL;
    int         base_indent = 2;
-   int         myid;
+   int         myid = 0;
 
    MPI_Comm_rank(comm, &myid);
 

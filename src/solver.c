@@ -6,6 +6,8 @@
  ******************************************************************************/
 
 #include "solver.h"
+
+#include <math.h>
 #include "gen_macros.h"
 
 static const FieldOffsetMap solver_field_offset_map[] = {
@@ -135,9 +137,9 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
 {
    StatsTimerStart("prec");
 
-   void                   *vM, *vb, *vx;
-   HYPRE_ParCSRMatrix      par_M;
-   HYPRE_ParVector         par_b, par_x;
+   void                   *vM = NULL, *vb = NULL, *vx = NULL;
+   HYPRE_ParCSRMatrix      par_M = NULL;
+   HYPRE_ParVector         par_b = NULL, par_x = NULL;
    HYPRE_PtrToParSolverFcn setup_ptrs[] = {HYPRE_BoomerAMGSetup, HYPRE_MGRSetup,
                                            HYPRE_ILUSetup, HYPRE_FSAISetup};
    HYPRE_PtrToParSolverFcn solve_ptrs[] = {HYPRE_BoomerAMGSolve, HYPRE_MGRSolve,
@@ -197,11 +199,11 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
 {
    StatsTimerStart("solve");
 
-   void              *vA, *vb, *vx;
-   HYPRE_ParCSRMatrix par_A;
-   HYPRE_ParVector    par_b, par_x;
+   void              *vA = NULL, *vb = NULL, *vx = NULL;
+   HYPRE_ParCSRMatrix par_A = NULL;
+   HYPRE_ParVector    par_b = NULL, par_x = NULL;
    HYPRE_Int          iters = 0;
-   HYPRE_Complex      b_norm, r_norm;
+   HYPRE_Complex      b_norm = NAN, r_norm = NAN;
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;

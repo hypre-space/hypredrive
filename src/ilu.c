@@ -94,7 +94,7 @@ ILUSetDefaultArgs(ILU_args *args)
 void
 ILUCreate(const ILU_args *args, HYPRE_Solver *precon_ptr)
 {
-   HYPRE_Solver precon;
+   HYPRE_Solver precon = NULL;
 
    HYPRE_ILUCreate(&precon);
 

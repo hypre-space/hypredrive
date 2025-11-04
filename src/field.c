@@ -24,7 +24,7 @@ FieldTypeIntSet(void *field, const YAMLnode *node)
 void
 FieldTypeIntArraySet(void *field, const YAMLnode *node)
 {
-   IntArray *int_array;
+   IntArray *int_array = NULL;
 
    StrToIntArray(node->mapped_val, &int_array);
 

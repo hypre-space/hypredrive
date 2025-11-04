@@ -13,29 +13,29 @@ void
 IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_nparts,
                             HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *mat_ptr)
 {
-   int      nprocs, myid;
-   uint32_t nparts;
-   uint64_t part;
-   uint32_t offset;
+   int      nprocs = 0, myid = 0;
+   uint32_t nparts = 0;
+   uint64_t part = 0;
+   uint32_t offset = 0;
 
    char     filename[1024];
    uint64_t header[11];
 
-   uint64_t nrows;
-   uint64_t nrows_sum, nrows_offset;
-   uint64_t nnzs_max;
+   uint64_t nrows = 0;
+   uint64_t nrows_sum = 0, nrows_offset = 0;
+   uint64_t nnzs_max = 0;
 
-   uint32_t *partids;
-   FILE     *fp;
+   uint32_t *partids = NULL;
+   FILE     *fp = NULL;
 
-   HYPRE_IJMatrix       mat;
-   HYPRE_BigInt         ilower, iupper;
-   HYPRE_BigInt        *h_rows, *d_rows;
-   HYPRE_BigInt        *h_cols, *d_cols;
-   HYPRE_Complex       *h_vals, *d_vals;
-   const HYPRE_Int     *rows;
-   const HYPRE_Int     *cols;
-   const HYPRE_Complex *vals;
+   HYPRE_IJMatrix       mat = NULL;
+   HYPRE_BigInt         ilower = 0, iupper = 0;
+   HYPRE_BigInt        *h_rows = NULL, *d_rows = NULL;
+   HYPRE_BigInt        *h_cols = NULL, *d_cols = NULL;
+   HYPRE_Complex       *h_vals = NULL, *d_vals = NULL;
+   const HYPRE_Int     *rows = NULL;
+   const HYPRE_Int     *cols = NULL;
+   const HYPRE_Complex *vals = NULL;
 
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);
@@ -153,7 +153,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) h_rows[i] = (HYPRE_BigInt)buffer[i];
+            for (size_t i = 0; i < header[6]; i++) { h_rows[i] = (HYPRE_BigInt)buffer[i];
+}
 
             if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
             {
@@ -163,7 +164,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) h_cols[i] = (HYPRE_BigInt)buffer[i];
+            for (size_t i = 0; i < header[6]; i++) { h_cols[i] = (HYPRE_BigInt)buffer[i];
+}
 
             free(buffer);
          }
@@ -179,7 +181,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) h_rows[i] = (HYPRE_BigInt)buffer[i];
+            for (size_t i = 0; i < header[6]; i++) { h_rows[i] = (HYPRE_BigInt)buffer[i];
+}
 
             if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
             {
@@ -189,7 +192,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) h_cols[i] = (HYPRE_BigInt)buffer[i];
+            for (size_t i = 0; i < header[6]; i++) { h_cols[i] = (HYPRE_BigInt)buffer[i];
+}
 
             free(buffer);
          }
@@ -317,7 +321,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_rows[i] = (HYPRE_BigInt)buffer[i];
+         for (size_t i = 0; i < header[6]; i++) { h_rows[i] = (HYPRE_BigInt)buffer[i];
+}
 
          if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
          {
@@ -327,7 +332,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_cols[i] = (HYPRE_BigInt)buffer[i];
+         for (size_t i = 0; i < header[6]; i++) { h_cols[i] = (HYPRE_BigInt)buffer[i];
+}
 
          free(buffer);
       }
@@ -343,7 +349,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_rows[i] = (HYPRE_BigInt)buffer[i];
+         for (size_t i = 0; i < header[6]; i++) { h_rows[i] = (HYPRE_BigInt)buffer[i];
+}
 
          if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
          {
@@ -353,7 +360,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_cols[i] = (HYPRE_BigInt)buffer[i];
+         for (size_t i = 0; i < header[6]; i++) { h_cols[i] = (HYPRE_BigInt)buffer[i];
+}
 
          free(buffer);
       }
@@ -389,7 +397,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_vals[i] = (HYPRE_Complex)buffer[i];
+         for (size_t i = 0; i < header[6]; i++) { h_vals[i] = (HYPRE_Complex)buffer[i];
+}
 
          free(buffer);
       }
@@ -405,7 +414,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_vals[i] = (HYPRE_Complex)buffer[i];
+         for (size_t i = 0; i < header[6]; i++) { h_vals[i] = (HYPRE_Complex)buffer[i];
+}
 
          free(buffer);
       }

@@ -16,7 +16,9 @@
 #include "error.h"
 #include "utils.h"
 
-#define MAX_LINE_LENGTH 1024
+enum {
+   MAX_LINE_LENGTH = 1024
+};
 
 /*-----------------------------------------------------------------------------
  * YAML validity enum
@@ -64,7 +66,7 @@ typedef struct YAMLnode_struct
  * YAML tree struct
  *-----------------------------------------------------------------------------*/
 
-typedef struct _YAMLtree
+typedef struct YAMLtree
 {
    YAMLnode *root;
    int       base_indent;

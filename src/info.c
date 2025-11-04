@@ -5,23 +5,25 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#ifndef __APPLE__
+#define _GNU_SOURCE 1
+#endif
 #include "info.h"
 #include <stdlib.h>
 #include <string.h>
 #include <sys/utsname.h>
 #include <unistd.h>
 #include "HYPRE_config.h"
-#if defined(HYPRE_USING_OPENMP)
+#ifdef HYPRE_USING_OPENMP
 #include <omp.h>
 #endif
 
-#if defined(__APPLE__)
+#ifdef __APPLE__
 #include <mach-o/dyld.h>
 #include <mach/mach.h>
 #include <sys/sysctl.h>
 #else
 #include <sys/sysinfo.h>
-#define __USE_GNU
 #include <link.h>
 #endif
 
@@ -61,12 +63,12 @@ dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
 void
 PrintSystemInfo(MPI_Comm comm)
 {
-   int    myid, nprocs;
+   int    myid = 0, nprocs = 0;
    char   hostname[256];
    double bytes_to_gib = (double)(1 << 30);
    double mib_to_gib   = (double)(1 << 10);
-   size_t total, used;
-   int    gcount;
+   size_t total = 0, used = 0;
+   int    gcount = 0;
    FILE  *fp = NULL;
    char   buffer[32768];
 
@@ -89,7 +91,7 @@ PrintSystemInfo(MPI_Comm comm)
 
       // 1. CPU cores and model
       int  numPhysicalCPUs = 0;
-      int  numCPUs;
+      int  numCPUs = 0;
       char cpuModels[8][256];
       char gpuInfo[256] = "Unknown";
 
@@ -112,7 +114,7 @@ PrintSystemInfo(MPI_Comm comm)
          }
       }
 
-#if defined(__APPLE__)
+#ifdef __APPLE__
       size_t msize = sizeof(numCPUs);
       sysctlbyname("hw.ncpu", &numCPUs, &msize, NULL, 0);
 
@@ -234,10 +236,14 @@ PrintSystemInfo(MPI_Comm comm)
             }
 
             const char *start = strstr(buffer, "VGA compatible controller");
-            if (!start) start = strstr(buffer, "3D controller");
-            if (!start) start = strstr(buffer, "2D controller");
-            if (!start) start = strstr(buffer, "Display controller");
-            if (!start) start = strstr(buffer, "Processing accelerators");
+            if (!start) { start = strstr(buffer, "3D controller");
+}
+            if (!start) { start = strstr(buffer, "2D controller");
+}
+            if (!start) { start = strstr(buffer, "Display controller");
+}
+            if (!start) { start = strstr(buffer, "Processing accelerators");
+}
 
             if (start)
             {
@@ -299,7 +305,7 @@ PrintSystemInfo(MPI_Comm comm)
       // 2. Memory available and used
       printf("Memory Information (Used/Total)\n");
       printf("--------------------------------\n");
-#if defined(__APPLE__)
+#ifdef __APPLE__
       size_t memSizeLen = sizeof(total);
       sysctlbyname("hw.memsize", &total, &memSizeLen, NULL, 0);
 
@@ -401,17 +407,17 @@ PrintSystemInfo(MPI_Comm comm)
       printf("------------------------\n");
       printf("Date                  : %s at %s\n", __DATE__, __TIME__);
 
-#if defined(__OPTIMIZE__)
+#ifdef __OPTIMIZE__
       printf("Optimization          : Enabled\n");
 #else
       printf("Optimization          : Disabled\n");
 #endif
-#if defined(DEBUG)
+#ifdef DEBUG
       printf("Debugging             : Enabled\n");
 #else
       printf("Debugging             : Disabled\n");
 #endif
-#if defined(__clang_version__)
+#ifdef __clang_version__
       printf("Compiler              : Clang %s\n", (const char *) __clang_version__);
 #elif defined(__clang__)
       printf("Compiler              : Clang %d.%d.%d\n", __clang_major__, __clang_minor__,
@@ -431,7 +437,7 @@ PrintSystemInfo(MPI_Comm comm)
       printf("OpenMP                : Not used\n");
 #endif
       printf("MPI library           : ");
-#if defined(CRAY_MPICH_VERSION)
+#ifdef CRAY_MPICH_VERSION
       printf("Cray MPI (Version: %s)\n", TOSTRING(CRAY_MPICH_VERSION));
 #elif defined(INTEL_MPI_VERSION)
       printf("Intel MPI (Version: %s)\n", (const char *) INTEL_MPI_VERSION);
@@ -450,7 +456,7 @@ PrintSystemInfo(MPI_Comm comm)
 #else
       printf("N/A\n");
 #endif
-#if defined(__x86_64__)
+#ifdef __x86_64__
       printf("Target architecture   : x86_64\n");
 #elif defined(__i386__)
       printf("Target architecture   : x86 (32-bit)\n");
@@ -482,7 +488,7 @@ PrintSystemInfo(MPI_Comm comm)
       // 6. Dynamic libraries used
       printf("Dynamic Libraries Loaded\n");
       printf("------------------------\n");
-#if defined(__APPLE__)
+#ifdef __APPLE__
       uint32_t dcount = _dyld_image_count();
       for (uint32_t i = 0; i < dcount; i++)
       {
@@ -517,9 +523,9 @@ PrintSystemInfo(MPI_Comm comm)
 void
 PrintLibInfo(MPI_Comm comm)
 {
-   int myid;
-   time_t t;
-   const struct tm *tm_info;
+   int myid = 0;
+   time_t t = 0;
+   const struct tm *tm_info = NULL;
 
    MPI_Comm_rank(comm, &myid);
 
@@ -556,15 +562,15 @@ PrintLibInfo(MPI_Comm comm)
 void
 PrintExitInfo(MPI_Comm comm, const char *argv0)
 {
-   int myid;
+   int myid = 0;
 
    MPI_Comm_rank(comm, &myid);
 
    if (!myid)
    {
       char buffer[100];
-      const struct tm *tm_info;
-      time_t t;
+      const struct tm *tm_info = NULL;
+      time_t t = 0;
 
       /* Get current time */
       time(&t);

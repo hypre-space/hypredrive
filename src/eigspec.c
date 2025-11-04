@@ -105,7 +105,7 @@ EigSpecSetDefaultArgs(EigSpec_args *args)
    snprintf(args->output_prefix, MAX_FILENAME_LENGTH, "%s", "eig");
 }
 
-#if defined(HYPREDRV_ENABLE_EIGSPEC)
+#ifdef HYPREDRV_ENABLE_EIGSPEC
 
 /*-----------------------------------------------------------------------------
  * LAPACK Fortran symbols

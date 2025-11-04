@@ -31,7 +31,7 @@ bool  HasFileExtension(const char *);
  *******************************************************************************/
 
 /* Helper macros to check if HYPRE_DEVELOP_NUMBER is defined */
-#if defined(HYPRE_DEVELOP_NUMBER)
+#ifdef HYPRE_DEVELOP_NUMBER
 #define HYPRE_DEVELOP_NUMBER_EXISTS 1
 #else
 #define HYPRE_DEVELOP_NUMBER_EXISTS 0
@@ -54,8 +54,11 @@ bool  HasFileExtension(const char *);
    (HYPRE_RELEASE_NUMBER_GT(release) ||           \
     HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(release, develop))
 
-#define GB_TO_BYTES (1 << 30)
-#define MAX_DIVISOR_LENGTH 84
+enum {
+   GB_TO_BYTES = (1 << 30),
+   MAX_DIVISOR_LENGTH = 84
+};
+
 #define PRINT_DASHED_LINE(_l)        \
    for (size_t i = 0; i < (_l); i++) \
    {                                 \
@@ -92,7 +95,7 @@ bool  HasFileExtension(const char *);
 #endif
 
 /* Check if two types match */
-#if defined(__GNUC__)
+#ifdef __GNUC__
 #  define TYPES_MATCH(T1, T2) __builtin_types_compatible_p(T1, T2)
 #else
 #  define TYPES_MATCH(T1, T2) (sizeof(T1) == sizeof(T2)) /* fallback */

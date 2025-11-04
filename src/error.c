@@ -7,7 +7,9 @@
 
 #include "error.h"
 
-#define ERROR_CODE_NUM_ENTRIES 32
+enum {
+   ERROR_CODE_NUM_ENTRIES = 32
+};
 
 /* Struct for storing an error message in a linked list */
 typedef struct ErrorMsgNode
@@ -94,7 +96,7 @@ ErrorCodeActive(void)
 bool
 DistributedErrorCodeActive(MPI_Comm comm)
 {
-   uint32_t flag;
+   uint32_t flag = 0;
 
    MPI_Allreduce(&global_error_code, &flag, 1, MPI_UINT32_T, MPI_BOR, comm);
 
@@ -192,7 +194,7 @@ ErrorMsgAdd(const char *format, ...)
 {
    ErrorMsgNode *new = (ErrorMsgNode *)malloc(sizeof(ErrorMsgNode));
    va_list args;
-   int     length;
+   int     length = 0;
 
    /* Determine the length of the formatted message */
    va_start(args, format);
@@ -217,7 +219,7 @@ ErrorMsgAdd(const char *format, ...)
 void
 ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
 {
-   char       *msg;
+   char       *msg = NULL;
    const char *plural = (ErrorCodeCountGet(code) > 1) ? "s" : "";
    int         length = strlen(suffix) + 24;
 
@@ -234,7 +236,7 @@ ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
 void
 ErrorMsgAddMissingKey(const char *key)
 {
-   char *msg;
+   char *msg = NULL;
    int   length = strlen(key) + 16;
 
    msg = (char *)malloc(length);
@@ -250,7 +252,7 @@ ErrorMsgAddMissingKey(const char *key)
 void
 ErrorMsgAddExtraKey(const char *key)
 {
-   char *msg;
+   char *msg = NULL;
    int   length = strlen(key) + 24;
 
    msg = (char *)malloc(length);
@@ -266,7 +268,7 @@ ErrorMsgAddExtraKey(const char *key)
 void
 ErrorMsgAddUnexpectedVal(const char *key)
 {
-   char *msg;
+   char *msg = NULL;
    int   length = strlen(key) + 40;
 
    msg = (char *)malloc(length);

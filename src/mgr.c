@@ -239,14 +239,14 @@ MGRlvlGetValidValues(const char *key)
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-   else if (!strcmp(key, "restriction_type"))
+   if (!strcmp(key, "restriction_type"))
    {
       static StrIntMap map[] = {{"injection", 0},   {"jacobi", 2},    {"approx-inv", 3},
                                 {"blk-jacobi", 12}, {"cpr-like", 13}, {"columped", 14}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-   else if (!strcmp(key, "coarse_level_type"))
+   if (!strcmp(key, "coarse_level_type"))
    {
       static StrIntMap map[] = {{"rap", 0},           {"non-galerkin", 1},
                                 {"cpr-like-diag", 2}, {"cpr-like-bdiag", 3},
@@ -254,11 +254,11 @@ MGRlvlGetValidValues(const char *key)
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-   else if (!strcmp(key, "f_relaxation"))
+   if (!strcmp(key, "f_relaxation"))
    {
       return MGRfrlxGetValidValues("type");
    }
-   else if (!strcmp(key, "g_relaxation"))
+   if (!strcmp(key, "g_relaxation"))
    {
       return MGRgrlxGetValidValues("type");
    }
@@ -384,18 +384,18 @@ MGRSetDofmap(MGR_args *args, IntArray *dofmap)
 void
 MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 {
-   HYPRE_Solver precon;
-   HYPRE_Solver frelax;
-   HYPRE_Solver grelax;
-   HYPRE_Int   *dofmap_data;
-   IntArray    *dofmap;
-   HYPRE_Int    num_dofs;
-   HYPRE_Int    num_dofs_last;
-   HYPRE_Int    num_levels;
+   HYPRE_Solver precon = NULL;
+   HYPRE_Solver frelax = NULL;
+   HYPRE_Solver grelax = NULL;
+   HYPRE_Int   *dofmap_data = NULL;
+   IntArray    *dofmap = NULL;
+   HYPRE_Int    num_dofs = 0;
+   HYPRE_Int    num_dofs_last = 0;
+   HYPRE_Int    num_levels = 0;
    HYPRE_Int    num_c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *c_dofs[MAX_MGR_LEVELS - 1];
-   HYPRE_Int   *inactive_dofs;
-   HYPRE_Int    lvl, i, j;
+   HYPRE_Int   *inactive_dofs = NULL;
+   HYPRE_Int    lvl = 0, i = 0, j = 0;
 
    /* Sanity checks */
    if (!args->dofmap)

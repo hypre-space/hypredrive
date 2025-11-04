@@ -147,8 +147,8 @@ PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
 void
 PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A)
 {
-   void              *vA;
-   HYPRE_ParCSRMatrix par_A;
+   void              *vA = NULL;
+   HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
    HYPRE_Solver       prec = precon->main;
 
@@ -189,9 +189,9 @@ void
 PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
             HYPRE_IJVector b, HYPRE_IJVector x)
 {
-   void              *vA, *vb, *vx;
-   HYPRE_ParCSRMatrix par_A;
-   HYPRE_ParVector    par_b, par_x;
+   void              *vA = NULL, *vb = NULL, *vx = NULL;
+   HYPRE_ParCSRMatrix par_A = NULL;
+   HYPRE_ParVector    par_b = NULL, par_x = NULL;
    HYPRE_Solver       prec = precon->main;
 
    HYPRE_IJMatrixGetObject(A, &vA);

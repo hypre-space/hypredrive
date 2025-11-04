@@ -43,10 +43,9 @@ PCGGetValidValues(const char *key)
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }
-   else
-   {
-      return STR_INT_MAP_ARRAY_VOID();
-   }
+   
+         return STR_INT_MAP_ARRAY_VOID();
+  
 }
 
 /*-----------------------------------------------------------------------------
@@ -75,7 +74,7 @@ PCGSetDefaultArgs(PCG_args *args)
 void
 PCGCreate(MPI_Comm comm, const PCG_args *args, HYPRE_Solver *solver_ptr)
 {
-   HYPRE_Solver solver;
+   HYPRE_Solver solver = NULL;
 
    HYPRE_ParCSRPCGCreate(comm, &solver);
    HYPRE_PCGSetMaxIter(solver, args->max_iter);

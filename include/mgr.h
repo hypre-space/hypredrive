@@ -12,7 +12,9 @@
 #include "ilu.h"
 #include "utils.h"
 
-#define MAX_MGR_LEVELS 32
+enum {
+   MAX_MGR_LEVELS = 32
+};
 
 /*--------------------------------------------------------------------------
  * Coarsest level solver arguments struct

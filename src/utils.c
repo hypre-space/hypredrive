@@ -50,13 +50,13 @@ int
 CheckBinaryDataExists(const char *prefix)
 {
    char  filename[MAX_FILENAME_LENGTH];
-   int   file_exists;
-   FILE *fp;
+   int   file_exists = 0;
+   FILE *fp = NULL;
 
    /* Check if binary data exist */
    sprintf(filename, "%*s.00000.bin", (int)strlen(prefix), prefix);
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-   if (fp) fclose(fp);
+   if (fp) { fclose(fp); }
 
    return file_exists;
 }
@@ -69,13 +69,13 @@ int
 CheckASCIIDataExists(const char *prefix)
 {
    char  filename[MAX_FILENAME_LENGTH];
-   int   file_exists;
-   FILE *fp;
+   int   file_exists = 0;
+   FILE *fp = NULL;
 
    /* Check if ASCII data exist */
    sprintf(filename, "%*s.00000", (int)strlen(prefix), prefix);
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-   if (fp) fclose(fp);
+   if (fp) { fclose(fp); }
 
    return file_exists;
 }
@@ -93,16 +93,16 @@ CountNumberOfPartitions(const char *prefix)
 
    while (file_exists)
    {
-      FILE *fp;
-      
+      FILE *fp = NULL;
+
       sprintf(filename, "%*s.%05d.bin", (int)strlen(prefix), prefix, num_files);
       file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-      if (fp) fclose(fp);
+      if (fp) { fclose(fp); }
       if (!file_exists)
       {
          sprintf(filename, "%*s.%05d", (int)strlen(prefix), prefix, num_files);
          file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-         if (fp) fclose(fp);
+         if (fp) { fclose(fp); }
       }
 
       num_files++;
@@ -137,8 +137,8 @@ void
 SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
 {
    const char *last_slash = strrchr(filename, '/');
-   char       *dirname;
-   char       *basename;
+   char       *dirname = NULL;
+   char       *basename = NULL;
 
    if (last_slash != NULL)
    {
@@ -171,8 +171,8 @@ SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
 void
 CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
 {
-   size_t length;
-   char  *filename;
+   size_t length = 0;
+   char  *filename = NULL;
 
    /* Compute filename length. +2 for the slash and null terminator */
    length = strlen(dirname) + strlen(basename) + 2;

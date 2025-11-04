@@ -6,6 +6,8 @@
  ******************************************************************************/
 
 #include "HYPREDRV.h"
+
+#include <math.h>
 #include "HYPRE_parcsr_ls.h"
 #include "HYPRE_utilities.h"
 #include "args.h"
@@ -103,7 +105,7 @@ HYPREDRV_Finalize()
 void
 HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
 {
-   if (!error_code) return;
+   if (!error_code) { return; }
 
    ErrorCodeDescribe(error_code);
    ErrorMsgPrint();
@@ -293,7 +295,7 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t obj)
          HYPRE_SetSpGemmUseVendor(0); // TODO: Control this via input option
          HYPRE_SetSpMVUseVendor(0);   // TODO: Control this via input option
 
-#if defined(HYPRE_USING_UMPIRE)
+#ifdef HYPRE_USING_UMPIRE
          /* Setup Umpire pools */
          HYPRE_SetUmpireDevicePoolName("HYPRE_DEVICE");
          HYPRE_SetUmpireUMPoolName("HYPRE_UM");
@@ -742,7 +744,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj)
    {
       int ls_id = StatsGetLinearSystemID();
       int reuse = obj->iargs->ls.precon_reuse;
-   
+
       if (!(ls_id % (reuse + 1)))
       {
          SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method, obj->precon,
@@ -767,7 +769,7 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t obj)
 {
    HYPREDRV_CHECK_INIT();
 
-   HYPRE_Complex e_norm, x_norm, xref_norm;
+   HYPRE_Complex e_norm = NAN, x_norm = NAN, xref_norm = NAN;
 
    if (obj)
    {
@@ -919,7 +921,7 @@ HYPREDRV_TimerStop(const char *name)
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
-#if defined(HYPREDRV_ENABLE_EIGSPEC)
+#ifdef HYPREDRV_ENABLE_EIGSPEC
 static void
 hypredrv_PreconApplyWrapper(void *ctx, void *b, void *x)
 {
@@ -936,7 +938,7 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t obj)
 {
    HYPREDRV_CHECK_INIT();
 
-#if defined(HYPREDRV_ENABLE_EIGSPEC)
+#ifdef HYPREDRV_ENABLE_EIGSPEC
    if (obj)
    {
       /* Exit early if not computing eigenspectrum */

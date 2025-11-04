@@ -122,7 +122,7 @@ void
 AMGcsnSetDefaultArgs(AMGcsn_args *args)
 {
    args->rap2 = 0;
-#if defined(HYPRE_USING_GPU)
+#ifdef HYPRE_USING_GPU
    args->mod_rap2       = 1;
    args->keep_transpose = 1;
    args->type           = 8;
@@ -164,7 +164,7 @@ AMGaggSetDefaultArgs(AMGagg_args *args)
 void
 AMGrlxSetDefaultArgs(AMGrlx_args *args)
 {
-#if defined(HYPRE_USING_GPU)
+#ifdef HYPRE_USING_GPU
    args->down_type = 18;
    args->up_type   = 18;
 #else
@@ -247,7 +247,7 @@ AMGintGetValidValues(const char *key)
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-   else if (!strcmp(key, "restriction_type"))
+   if (!strcmp(key, "restriction_type"))
    {
       static StrIntMap map[] = {{"p_transpose",    0},
                                 {"air_1",          1},
@@ -283,7 +283,7 @@ AMGcsnGetValidValues(const char *key)
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-   else if (!strcmp(key, "filter_functions") ||
+   if (!strcmp(key, "filter_functions") ||
             !strcmp(key, "rap2") ||
             !strcmp(key, "mod_rap2") ||
             !strcmp(key, "keep_transpose"))
@@ -346,7 +346,7 @@ AMGrlxGetValidValues(const char *key)
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-   else if (!strcmp(key, "up_type"))
+   if (!strcmp(key, "up_type"))
    {
       static StrIntMap map[] = {{"jacobi_non_mv",   0},
                                 {"backward-hgs",    4},
@@ -364,7 +364,7 @@ AMGrlxGetValidValues(const char *key)
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-   else if (!strcmp(key, "coarse_type"))
+   if (!strcmp(key, "coarse_type"))
    {
       static StrIntMap map[] = {{"jacobi_non_mv",   0},
                                 {"hsgs",            6},
@@ -422,7 +422,7 @@ AMGsmtGetValidValues(const char *key)
 void
 AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
 {
-   HYPRE_Solver precon;
+   HYPRE_Solver precon = NULL;
 
    HYPRE_BoomerAMGCreate(&precon);
    HYPRE_BoomerAMGSetInterpType(precon, args->interpolation.prolongation_type);

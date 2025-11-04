@@ -14,7 +14,9 @@
 #include "error.h"
 #include "utils.h"
 
-#define STATS_NUM_ENTRIES 7
+enum {
+   STATS_NUM_ENTRIES = 7
+};
 
 /*--------------------------------------------------------------------------
  * Stats struct
