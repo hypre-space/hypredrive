@@ -51,7 +51,7 @@ Here's an example command to run `hypredrive` on a single process with a basic c
     $ mpirun -np 1 ./hypredrive input.yml
 
 In this command, ``input.yml`` should be replaced with the path to your actual configuration
-file. You can find input file examples and detailed explanations in the :ref:`Examples` section.
+file. You can find input file examples and detailed explanations in the :ref:`DriverExamples` section.
 
 .. _Contributing:
 

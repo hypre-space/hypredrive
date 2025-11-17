@@ -1,0 +1,51 @@
+Date and time: YYYY-MM-DD HH:MM:SS
+
+Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
+
+Running on 1 MPI rank
+------------------------------------------------------------------------------------
+solver: pcg
+preconditioner: 
+  amg: 
+    coarsening: 
+      strong_th: 0.6
+      num_functions: 3
+------------------------------------------------------------------------------------
+
+=====================================================
+          Linear Elasticity Problem Setup
+=====================================================
+Physical dimensions:     3 x 1 x 1
+Grid dimensions (nodes): 30 x 10 x 10
+Processor topology:      1 x 1 x 1
+Material:                E=1.0e+05, nu=0.300
+Body force:              rho=1.0e+00, g=(0.0e+00, -9.8e+00, 0.0e+00)
+Top traction:            t=(0.0e+00, -1.0e+02, 0.0e+00)
+Visualization:           true
+Verbosity level:         0x7
+Number of solves:        1
+=====================================================
+
+Solve 1/5...
+Solve 2/5...
+Solve 3/5...
+Solve 4/5...
+Solve 5/5...
+====================================================================================
+
+
+STATISTICS SUMMARY:
+
++------------+-------------+-------------+-------------+-------------+-------------+
+|            |    LS build |       setup |       solve |    relative |             |
+|      Entry |   times [s] |   times [s] |   times [s] |   res. norm |       iters |
++------------+-------------+-------------+-------------+-------------+-------------+
+|          0 |       0.045 |       0.037 |       0.207 |    6.58e-07 |          21 |
+|          1 |             |       0.037 |       0.206 |    6.58e-07 |          21 |
+|          2 |             |       0.037 |       0.208 |    6.58e-07 |          21 |
+|          3 |             |       0.037 |       0.207 |    6.58e-07 |          21 |
+|          4 |             |       0.037 |       0.208 |    6.58e-07 |          21 |
++------------+-------------+-------------+-------------+-------------+-------------+
+
+Date and time: YYYY-MM-DD HH:MM:SS
+${HYPREDRIVE_PATH}/hypredrive done!

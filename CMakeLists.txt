@@ -105,6 +105,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Coverage.cmake)
 # Add examples
 if(HYPREDRV_BUILD_EXAMPLES)
     add_subdirectory(examples/src/C_laplacian)
+    add_subdirectory(examples/src/C_elasticity)
 endif()
 
 # Formatting target

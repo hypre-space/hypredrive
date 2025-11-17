@@ -31,7 +31,7 @@
  *
  *   PDE Problem:
  *   ------------
- *   -∇·(c∇u) = f    in Ω = [0,1]³
+ *   -∇·(c∇u) = 0    in Ω = [0,1]³
  *        u = 0      on ∂Ω, except
  *        u = 1      on y = 0
  *
@@ -114,18 +114,20 @@ PrintUsage(void)
    printf("Usage: ${MPIEXEC_COMMAND} ${MPIEXEC_NUMPROC_FLAG} <np> ./laplacian [options]\n");
    printf("\n");
    printf("Options:\n");
-   printf("  -i <file>         : YAML configuration file for solver settings\n");
+   printf("  -i <file>         : YAML configuration file for solver settings (Optional)\n");
    printf("  -n <nx> <ny> <nz> : Global grid dimensions (default: 10 10 10)\n");
    printf("  -c <cx> <cy> <cz> : Diffusion coefficients (default: 1.0 1.0 1.0)\n");
-   printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (default: 1 1 1)\n");
-   printf("  -s <val>          : Stencil type: 7 19 27 125 (default: 7)\n");
-   printf("  -ns|--nsolve <n>  : Number of times to solve the system (default: 5)\n");
-   printf("  -vis|--visualize  : Output solution in VTK format (default: false)\n");
-   printf("  -p|--print        : Print matrices/vectors to file (default: false)\n");
-   printf("  -v|--verbose <n>  : Verbosity level (bitset):\n");
-   printf("                      0x1: Print solver statistics\n");
-   printf("                      0x2: Print library info\n");
-   printf("                      0x4: Print system info\n");
+   printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (1 1 1)\n");
+   printf("  -s <val>          : Stencil type: 7 19 27 125 (7)\n");
+   printf("  -ns|--nsolve <n>  : Number of times to solve the system (5)\n");
+   printf("  -vis <m>          : Visualization mode (0)\n");
+   printf("                         0: none\n");
+   printf("                         1: ASCII VTK\n");
+   printf("                         2: binary VTK\n");
+   printf("  -v|--verbose <n>  : Verbosity bitset (0)\n");
+   printf("                         0x1: Linear solver statistics\n");
+   printf("                         0x2: Library information\n");
+   printf("                         0x4: Linear system printing\n");
    printf("  -h|--help         : Print this message\n");
    printf("\n");
 
@@ -220,10 +222,6 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       {
          params->visualize = 1;
       }
-      else if (!strcmp(argv[i], "-p") || !strcmp(argv[i], "--print"))
-      {
-         params->print = 1;
-      }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
          if (++i < argc) params->verbose = atoi(argv[i]);
@@ -298,11 +296,6 @@ int main(int argc, char *argv[])
    if (params.verbose & 0x2)
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
-   }
-
-   /* Print system info if requested */
-   if (params.verbose & 0x4)
-   {
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
    }
 
@@ -330,7 +323,6 @@ int main(int argc, char *argv[])
       printf("Diffusion coeffs:     (%.2e, %.2e, %.2e)\n", params.c[0], params.c[1], params.c[2]);
       printf("Discretization:       %d-point stencil\n", (int)params.stencil);
       printf("Visualization:        %s\n", params.visualize ? "true" : "false");
-      printf("Print system:         %s\n", params.print ? "true" : "false");
       printf("Verbosity level:      0x%x\n", params.verbose);
       printf("Number of solves:     %d\n", params.nsolve);
       printf("=====================================================\n\n");
@@ -373,6 +365,12 @@ int main(int argc, char *argv[])
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector) b));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv));
+
+   /* Print linear system if requested */
+   if (params.verbose & 0x4)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemPrint(hypredrv));
+   }
 
    /* Solve multiple times if requested */
    for (int isolve = 0; isolve < params.nsolve; isolve++)
@@ -792,15 +790,6 @@ BuildLaplacianSystem_7pt(DistMesh        *mesh,
    /* Assemble the matrix and vector */
    HYPRE_IJMatrixAssemble(A);
    HYPRE_IJVectorAssemble(b);
-   if (params->print)
-   {
-      if (!mesh->mypid)
-      {
-         printf("Printing A_7pt.out and b_7pt.out...\n");
-      }
-      HYPRE_IJMatrixPrint(A, "A_7pt.out");
-      HYPRE_IJVectorPrint(b, "b_7pt.out");
-   }
 
    /* Return matrix and vector through pointers */
    *A_ptr = A;
@@ -979,15 +968,6 @@ BuildLaplacianSystem_19pt(DistMesh        *mesh,
    /* Assemble matrix and vector */
    HYPRE_IJMatrixAssemble(A);
    HYPRE_IJVectorAssemble(b);
-   if (params->print)
-   {
-      if (!mesh->mypid)
-      {
-         printf("Printing A_19pt.out and b_19pt.out...\n");
-      }
-      HYPRE_IJMatrixPrint(A, "A_19pt.out");
-      HYPRE_IJVectorPrint(b, "b_19pt.out");
-   }
 
    *A_ptr = A;
    *b_ptr = b;
@@ -1000,7 +980,7 @@ BuildLaplacianSystem_19pt(DistMesh        *mesh,
  * in a more "classic" second-order style. This variant assigns smaller weights
  * to edge and corner neighbors. We assume uniform spacing = 1 in x, y, z, and
  * the PDE is:
- *   cx * d²u/dx² + cy * d²u/dy² + cz * d²u/dz² = f
+ *   cx * d²u/dx² + cy * d²u/dy² + cz * d²u/dz² = 0
  * All boundaries = 0, except for the "back boundary" at y=0, where the boundary is 1.
  *--------------------------------------------------------------------------*/
 int
@@ -1186,15 +1166,6 @@ BuildLaplacianSystem_27pt(DistMesh        *mesh,
    /* Assemble and output debug info if desired */
    HYPRE_IJMatrixAssemble(A);
    HYPRE_IJVectorAssemble(b);
-   if (params->print)
-   {
-      if (!mesh->mypid)
-      {
-         printf("Printing A_27pt.out and b_27pt.out...\n");
-      }
-      HYPRE_IJMatrixPrint(A, "A_27pt.out");
-      HYPRE_IJVectorPrint(b, "b_27pt.out");
-   }
 
    *A_ptr = A;
    *b_ptr = b;
@@ -1206,7 +1177,7 @@ BuildLaplacianSystem_27pt(DistMesh        *mesh,
  * BuildLaplacianSystem_125pt:
  *
  * Creates a large-stencil (up to 125-pt) negative-offdiagonal Laplacian-like
- * operator in 3D, yielding an M-matrix for −∇²u = f. We enforce Dirichlet=0
+ * operator in 3D, yielding an M-matrix for −∇²u = 0. We enforce Dirichlet=0
  * except y=0 => 1. This is a low-order approach but uses a wide neighborhood.
  *
  * All interior off-diagonal entries are ≤ 0; row sum is 0 so that diagonal > 0,
@@ -1396,19 +1367,6 @@ BuildLaplacianSystem_125pt(DistMesh        *mesh,
    /* Assemble matrix and vector */
    HYPRE_IJMatrixAssemble(A);
    HYPRE_IJVectorAssemble(b);
-
-   /* Optional output */
-   if (params->print)
-   {
-      int mypid = 0;
-      MPI_Comm_rank(comm, &mypid);
-      if (!mypid)
-      {
-         printf("Printing matrix and vector: A_125pt.out and b_125pt.out...\n");
-      }
-      HYPRE_IJMatrixPrint(A, "A_125pt.out");
-      HYPRE_IJVectorPrint(b, "b_125pt.out");
-   }
 
    /* Return pointers to the matrix and vector */
    *A_ptr = A;
