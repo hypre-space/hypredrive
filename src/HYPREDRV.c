@@ -6,47 +6,49 @@
  ******************************************************************************/
 
 #include "HYPREDRV.h"
-#include "args.h"
-#include "linsys.h"
-#include "info.h"
-#include "stats.h"
-#include "HYPRE_utilities.h"
 #include "HYPRE_parcsr_ls.h"
+#include "HYPRE_utilities.h"
+#include "args.h"
+#include "containers.h"
+#include "info.h"
+#include "linsys.h"
+#include "stats.h"
 
 // Flag to check if HYPREDRV is initialized
 static bool hypredrv_is_initialized = 0;
 
 // Macro to check if HYPREDRV is initialized
-#define HYPREDRV_CHECK_INIT() \
-   if (!hypredrv_is_initialized) \
-   { \
+#define HYPREDRV_CHECK_INIT()                       \
+   if (!hypredrv_is_initialized)                    \
+   {                                                \
       ErrorCodeSet(ERROR_HYPREDRV_NOT_INITIALIZED); \
-      return ErrorCodeGet(); \
+      return ErrorCodeGet();                        \
    }
 
 /*-----------------------------------------------------------------------------
  * hypredrv_t data type
  *-----------------------------------------------------------------------------*/
 
-typedef struct hypredrv_struct {
-   MPI_Comm         comm;
-   int              mypid;
-   int              nprocs;
-   bool             lib_mode;
+typedef struct hypredrv_struct
+{
+   MPI_Comm comm;
+   int      mypid;
+   int      nprocs;
+   bool     lib_mode;
 
-   input_args      *iargs;
+   input_args *iargs;
 
-   IntArray        *dofmap;
+   IntArray *dofmap;
 
-   HYPRE_IJMatrix   mat_A;
-   HYPRE_IJMatrix   mat_M;
-   HYPRE_IJVector   vec_b;
-   HYPRE_IJVector   vec_x;
-   HYPRE_IJVector   vec_x0;
-   HYPRE_IJVector   vec_xref;
+   HYPRE_IJMatrix mat_A;
+   HYPRE_IJMatrix mat_M;
+   HYPRE_IJVector vec_b;
+   HYPRE_IJVector vec_x;
+   HYPRE_IJVector vec_x0;
+   HYPRE_IJVector vec_xref;
 
-   HYPRE_Precon     precon;
-   HYPRE_Solver     solver;
+   HYPRE_Precon precon;
+   HYPRE_Solver solver;
 
    // TODO: associate stats variable with hypredrv object
 } hypredrv_t;
@@ -66,8 +68,8 @@ HYPREDRV_Initialize()
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 16)
       /* Check for environment variables */
-      const char* env_log_level = getenv("HYPRE_LOG_LEVEL");
-      HYPRE_Int   log_level     = (env_log_level) ? (HYPRE_Int) atoi(env_log_level) : 0;
+      const char *env_log_level = getenv("HYPRE_LOG_LEVEL");
+      HYPRE_Int   log_level     = (env_log_level) ? (HYPRE_Int)atoi(env_log_level) : 0;
 
       HYPRE_SetLogLevel(log_level);
 #endif
@@ -118,7 +120,7 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr)
 {
    HYPREDRV_CHECK_INIT();
 
-   HYPREDRV_t obj = (HYPREDRV_t) malloc(sizeof(hypredrv_t));
+   HYPREDRV_t obj = (HYPREDRV_t)malloc(sizeof(hypredrv_t));
 
    MPI_Comm_rank(comm, &obj->mypid);
    MPI_Comm_size(comm, &obj->nprocs);
@@ -132,8 +134,8 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr)
    obj->vec_xref = NULL;
    obj->dofmap   = NULL;
 
-   obj->precon   = NULL;
-   obj->solver   = NULL;
+   obj->precon = NULL;
+   obj->solver = NULL;
 
    /* Disable library mode by default */
    obj->lib_mode = false;
@@ -419,8 +421,8 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t obj, HYPRE_Matrix mat_A)
    if (obj)
    {
       StatsTimerStart("matrix");
-      obj->mat_A = (HYPRE_IJMatrix) mat_A;
-      obj->mat_M = (HYPRE_IJMatrix) mat_A;
+      obj->mat_A = (HYPRE_IJMatrix)mat_A;
+      obj->mat_M = (HYPRE_IJMatrix)mat_A;
       StatsTimerStop("matrix");
    }
    else
@@ -442,11 +444,12 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj, HYPRE_Vector vec_b)
 
    if (obj && !vec_b)
    {
-      LinearSystemSetRHS(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->vec_xref, &obj->vec_b);
+      LinearSystemSetRHS(obj->comm, &obj->iargs->ls, obj->mat_A, &obj->vec_xref,
+                         &obj->vec_b);
    }
    else if (obj && vec_b)
    {
-      obj->vec_b = (HYPRE_IJVector) vec_b;
+      obj->vec_b = (HYPRE_IJVector)vec_b;
    }
    else
    {
@@ -590,7 +593,8 @@ HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t obj, int size, int *dofmap)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t obj, int num_local_blocks, int num_dof_types)
+HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t obj, int num_local_blocks,
+                                          int num_dof_types)
 {
    HYPREDRV_CHECK_INIT();
 
@@ -611,7 +615,8 @@ HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t obj, int num_local_blocks, 
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_LinearSystemSetContiguousDofmap(HYPREDRV_t obj, int num_local_blocks, int num_dof_types)
+HYPREDRV_LinearSystemSetContiguousDofmap(HYPREDRV_t obj, int num_local_blocks,
+                                         int num_dof_types)
 {
    HYPREDRV_CHECK_INIT();
 
@@ -649,6 +654,56 @@ HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t obj)
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemPrintDofmap
+ *----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemPrintDofmap(HYPREDRV_t obj, const char *filename)
+{
+   HYPREDRV_CHECK_INIT();
+
+   if (obj && filename)
+   {
+      if (!obj->dofmap || !obj->dofmap->data)
+      {
+         ErrorCodeSet(ERROR_MISSING_DOFMAP);
+         ErrorMsgAdd("DOF map not set.");
+      }
+      else
+      {
+         IntArrayWriteAsciiByRank(obj->comm, obj->dofmap, filename);
+      }
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemPrint
+ *----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemPrint(HYPREDRV_t obj)
+{
+   HYPREDRV_CHECK_INIT();
+
+   if (!obj)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+      return ErrorCodeGet();
+   }
+
+   /* Delegate printing to linsys */
+   LinearSystemPrintData(obj->comm, &obj->iargs->ls, obj->mat_A, obj->vec_b, obj->dofmap);
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_PreconCreate
  *-----------------------------------------------------------------------------*/
 
@@ -661,7 +716,8 @@ HYPREDRV_PreconCreate(HYPREDRV_t obj)
    {
       if (!(StatsGetLinearSystemID() % (obj->iargs->ls.precon_reuse + 1)))
       {
-         PreconCreate(obj->iargs->precon_method, &obj->iargs->precon, obj->dofmap, &obj->precon);
+         PreconCreate(obj->iargs->precon_method, &obj->iargs->precon, obj->dofmap,
+                      &obj->precon);
       }
       else
       {
@@ -692,7 +748,8 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t obj)
    {
       if (!(StatsGetLinearSystemID() % (obj->iargs->ls.precon_reuse + 1)))
       {
-         SolverCreate(obj->comm, obj->iargs->solver_method, &obj->iargs->solver, &obj->solver);
+         SolverCreate(obj->comm, obj->iargs->solver_method, &obj->iargs->solver,
+                      &obj->solver);
       }
    }
    else
@@ -734,15 +791,15 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj)
 {
    HYPREDRV_CHECK_INIT();
 
-   int ls_id  = StatsGetLinearSystemID();
-   int reuse  = obj->iargs->ls.precon_reuse;
+   int ls_id = StatsGetLinearSystemID();
+   int reuse = obj->iargs->ls.precon_reuse;
 
    if (obj)
    {
       if (!(ls_id % (reuse + 1)))
       {
-         SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method,
-                     obj->precon, obj->solver, obj->mat_M, obj->vec_b, obj->vec_x);
+         SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method, obj->precon,
+                     obj->solver, obj->mat_M, obj->vec_b, obj->vec_x);
       }
       HYPRE_ClearAllErrors();
    }
@@ -767,7 +824,8 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t obj)
 
    if (obj)
    {
-      SolverApply(obj->iargs->solver_method, obj->solver, obj->mat_A, obj->vec_b, obj->vec_x);
+      SolverApply(obj->iargs->solver_method, obj->solver, obj->mat_A, obj->vec_b,
+                  obj->vec_x);
       HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
 
       if (obj->vec_xref)
@@ -802,7 +860,8 @@ HYPREDRV_PreconApply(HYPREDRV_t obj, HYPRE_Vector vec_b, HYPRE_Vector vec_x)
 
    if (obj)
    {
-      PreconApply(obj->iargs->precon_method, obj->precon, obj->mat_A, (HYPRE_IJVector) vec_b, (HYPRE_IJVector) vec_x);
+      PreconApply(obj->iargs->precon_method, obj->precon, obj->mat_A,
+                  (HYPRE_IJVector)vec_b, (HYPRE_IJVector)vec_x);
       HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
    }
    else
@@ -917,7 +976,7 @@ HYPREDRV_TimerStop(const char *name)
 static void
 hypredrv_PreconApplyWrapper(void *ctx, void *b, void *x)
 {
-   HYPREDRV_PreconApply((HYPREDRV_t) ctx, (HYPRE_Vector) b, (HYPRE_Vector) x);
+   HYPREDRV_PreconApply((HYPREDRV_t)ctx, (HYPRE_Vector)b, (HYPRE_Vector)x);
 }
 #endif
 
@@ -944,8 +1003,9 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t obj)
          printf("[EigenSpectrum] | mode=%s | vectors=%s | prefix='%s'\n",
                 obj->iargs->ls.eigspec.hermitian ? "Hermitian" : "General",
                 obj->iargs->ls.eigspec.vectors ? "on" : "off",
-                obj->iargs->ls.eigspec.output_prefix[0] ?
-                obj->iargs->ls.eigspec.output_prefix : "eig");
+                obj->iargs->ls.eigspec.output_prefix[0]
+                   ? obj->iargs->ls.eigspec.output_prefix
+                   : "eig");
          fflush(stdout);
       }
 
@@ -955,14 +1015,13 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t obj)
          HYPREDRV_PreconCreate(obj);
          HYPREDRV_PreconSetup(obj);
 
-         return hypredrv_EigSpecCompute(&obj->iargs->ls.eigspec,
-                                        (void*) obj->mat_A,
-                                        (void*) obj,
-                                        hypredrv_PreconApplyWrapper);
+         return hypredrv_EigSpecCompute(&obj->iargs->ls.eigspec, (void *)obj->mat_A,
+                                        (void *)obj, hypredrv_PreconApplyWrapper);
       }
       else
       {
-         return hypredrv_EigSpecCompute(&obj->iargs->ls.eigspec, (void*) obj->mat_A, NULL, NULL);
+         return hypredrv_EigSpecCompute(&obj->iargs->ls.eigspec, (void *)obj->mat_A, NULL,
+                                        NULL);
       }
    }
    else
@@ -970,9 +1029,10 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t obj)
       ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
    }
 #else
-   (void) obj;
+   (void)obj;
    ErrorCodeSet(ERROR_UNKNOWN);
-   ErrorMsgAdd("Eigenspectrum feature disabled at build time. Reconfigure with -DHYPREDRV_ENABLE_EIGSPEC=ON");
+   ErrorMsgAdd("Eigenspectrum feature disabled at build time. Reconfigure with "
+               "-DHYPREDRV_ENABLE_EIGSPEC=ON");
 #endif
 
    return ErrorCodeGet();
