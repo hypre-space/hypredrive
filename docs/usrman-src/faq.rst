@@ -34,7 +34,7 @@ How do I configure `hypredrive` for my specific problem?
 You can configure `hypredrive` by creating a YAML configuration file. This file specifies
 all necessary settings, including the linear system, solver, and preconditioner
 configurations. For more information, see the :ref:`InputFileStructure`. For examples of
-input files, see :ref:`Examples`.
+input files, see :ref:`DriverExamples`.
 
 How can I contribute to `hypredrive`?
 -------------------------------------

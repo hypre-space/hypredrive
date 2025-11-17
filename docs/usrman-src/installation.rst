@@ -125,7 +125,7 @@ Using CMake (Recommended)
 
         $ cmake --build build --target data
 
-   This downloads datasets from Zenodo needed for examples. See :ref:`Examples` for details.
+   This downloads datasets from Zenodo needed for examples. See :ref:`DriverExamples` for details.
 
 Using Autotools (Alternative)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
