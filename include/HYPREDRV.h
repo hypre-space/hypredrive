@@ -692,6 +692,47 @@ HYPREDRV_EXPORT_SYMBOL uint32_t
 HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t);
 
 /**
+ * @brief Print the current degree of freedom (DOF) map of the linear system to file.
+ *
+ * Writes the locally owned DOF map entries to a text file. In MPI runs with more than
+ * one process, the rank id is appended to the provided filename as a numeric suffix:
+ * "<filename>.<rank>", zero-padded to 5 digits. In single-process runs, the file is
+ * written exactly to <filename>.
+ *
+ * File format (ASCII):
+ *   line 1: <num_entries>
+ *   lines : dofmap entries (space-separated), arbitrary line breaks
+ *
+ * @param hypredrv A valid HYPREDRV_t object containing the DOF map.
+ * @param filename The output filename (prefix). If running with multiple MPI ranks,
+ *                 the function appends ".%05d" with the rank id.
+ * @return 0 on success; nonzero error code otherwise.
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_LinearSystemPrintDofmap(HYPREDRV_t, const char* filename);
+
+/**
+ * @brief Print the current linear system (matrix and RHS) and, if present, the DOF map.
+ *
+ * This convenience routine dumps:
+ *  - Matrix A via HYPRE_IJMatrixPrint to an ASCII file (basename + ".out").
+ *  - RHS b via HYPRE_IJVectorPrint to an ASCII file (basename + ".out").
+ *  - DOF map via HYPREDRV_LinearSystemPrintDofmap if it exists (basename + ".out").
+ *
+ * Basenames are taken from the input arguments if set; otherwise, defaults are used:
+ *  - Matrix: ls.matrix_basename or "IJ.out.A"
+ *  - RHS:    ls.rhs_basename    or "IJ.out.b"
+ *  - DOFMap: ls.dofmap_basename or "dofmap"
+ *
+ * @param hypredrv A valid HYPREDRV_t object with matrix/vector set.
+ * @return 0 on success; nonzero error code otherwise.
+ */
+
+HYPREDRV_EXPORT_SYMBOL uint32_t
+HYPREDRV_LinearSystemPrint(HYPREDRV_t);
+
+/**
  * @brief Retrieves the solution values from the linear system of a HYPREDRV object.
  *
  * This function provides access to the internal pointer where the solution vector of the linear system
