@@ -69,8 +69,10 @@ void LinearSystemGetSolutionValues(HYPRE_IJVector, HYPRE_Complex **);
 void LinearSystemGetRHSValues(HYPRE_IJVector, HYPRE_Complex **);
 void LinearSystemComputeVectorNorm(HYPRE_IJVector, HYPRE_Complex *);
 void LinearSystemComputeErrorNorm(HYPRE_IJVector, HYPRE_IJVector, HYPRE_Complex *);
-void LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector,
-                                     HYPRE_Complex *);
+void LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector,
+                                     HYPRE_IJVector, HYPRE_Complex *);
+void LinearSystemPrintData(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector,
+                           const IntArray*);
 
 long long int LinearSystemMatrixGetNumRows(HYPRE_IJMatrix);
 long long int LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix);

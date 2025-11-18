@@ -6,6 +6,38 @@
  ******************************************************************************/
 
 #include "containers.h"
+/*-----------------------------------------------------------------------------
+ * IntArrayWriteAsciiByRank
+ *-----------------------------------------------------------------------------*/
+
+void
+IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char *filename)
+{
+   int   myid, nprocs;
+   FILE *fp;
+   char  fname[MAX_FILENAME_LENGTH];
+
+   if (!ia || !ia->data) return;
+
+   MPI_Comm_rank(comm, &myid);
+   MPI_Comm_size(comm, &nprocs);
+
+   snprintf(fname, sizeof(fname), "%s.%05d", filename, myid);
+   fp = fopen(fname, "w");
+   if (!fp)
+   {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAddInvalidFilename(fname);
+      return;
+   }
+
+   fprintf(fp, "%zu\n", ia->size);
+   for (size_t i = 0; i < ia->size; i++)
+   {
+      fprintf(fp, "%d\n", ia->data[i]);
+   }
+   fclose(fp);
+}
 
 /*--------------------------------------------------------------------------
  * IntArrayCreate

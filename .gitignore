@@ -11,18 +11,23 @@
 *.~HEAD~*
 old-*
 *bkp*
-build.sh
 *.tar.gz
+*.pvd
+*.vtr
 .gdbinit
 .libs/
 install*/
 .vscode/
+.deps
+.dirstamp
+build.sh
 
 #############
 # Executables
 #############
 hypredrive*
 laplacian
+elasticity
 
 #############
 # Examples

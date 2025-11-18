@@ -3,15 +3,20 @@
 
    SPDX-License-Identifier: (MIT)
 
-.. _Examples:
+.. _DriverExamples:
 
-Input File Examples
-===================
+Driver Examples (hypredrive CLI)
+================================
 
 This section provides several examples demonstrating how to set up input files and use
-`hypredrive` for the solution of different types of linear system problems. All example
-inputs can be found at the ``examples`` folder and a reference output for each example can
-be found at ``examples/refOutput``.
+the ``hypredrive`` executable (driver) to solve different types of linear-system problems.
+All example inputs can be found in the ``examples`` folder and reference outputs at
+``examples/refOutput``.
+
+.. note::
+   These examples exercise hypredrive as a standalone driver using YAML input files.
+   If you are looking for application-side usage of the library API (``libHYPREDRV``),
+   see :ref:`LibraryExamples`.
 
 .. note::
    Many examples require datasets that are not included in the repository. These datasets

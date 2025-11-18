@@ -6,6 +6,11 @@
  ******************************************************************************/
 
 #include "linsys.h"
+#include <dirent.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
 #include "HYPRE_parcsr_mv.h" /* TODO: remove after implementing IJVectorClone/Copy */
 #include "_hypre_IJ_mv.h"    /* TODO: remove after implementing IJVectorClone */
 #include "_hypre_parcsr_mv.h" /* TODO: remove after implementing IJVectorMigrate/IJMatrix */
@@ -669,7 +674,8 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
       StatsTimerStop("dofmap");
    }
 
-   /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks */
+   /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks
+    */
 }
 
 /*-----------------------------------------------------------------------------
@@ -808,4 +814,124 @@ LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
 
    /* Free memory */
    HYPRE_IJVectorDestroy(vec_r);
+}
+
+/*-----------------------------------------------------------------------------
+ * Print matrix/vector/dofmap with series directory logic
+ *---------------------------------------------------------------------------*/
+
+void
+LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_A,
+                      HYPRE_IJVector vec_b, const IntArray *dofmap)
+{
+   const char *A_base =
+      (args && args->matrix_basename[0] != '\0') ? args->matrix_basename : "IJ.out.A";
+   const char *b_base =
+      (args && args->rhs_basename[0] != '\0') ? args->rhs_basename : "IJ.out.b";
+   const char *d_base =
+      (args && args->dofmap_basename[0] != '\0') ? args->dofmap_basename : "dofmap";
+
+   char A_name[MAX_FILENAME_LENGTH];
+   char b_name[MAX_FILENAME_LENGTH];
+   char d_name[MAX_FILENAME_LENGTH];
+
+   {
+      int max_base = (int)sizeof(A_name) - 1 - 4;
+      if (max_base < 0) max_base = 0;
+      snprintf(A_name, sizeof(A_name), "%.*s.out", max_base, A_base);
+   }
+   {
+      int max_base = (int)sizeof(b_name) - 1 - 4;
+      if (max_base < 0) max_base = 0;
+      snprintf(b_name, sizeof(b_name), "%.*s.out", max_base, b_base);
+   }
+   {
+      int max_base = (int)sizeof(d_name) - 1 - 4;
+      if (max_base < 0) max_base = 0;
+      snprintf(d_name, sizeof(d_name), "%.*s.out", max_base, d_base);
+   }
+
+   int use_series_dir = 1;
+   if (args)
+   {
+      const int has_mat = args->matrix_basename[0] != '\0';
+      const int has_rhs = args->rhs_basename[0] != '\0';
+      const int has_dmf = args->dofmap_basename[0] != '\0';
+      use_series_dir    = !(has_mat || has_rhs || has_dmf);
+   }
+
+   char A_path[2 * MAX_FILENAME_LENGTH];
+   char b_path[2 * MAX_FILENAME_LENGTH];
+   char d_path[2 * MAX_FILENAME_LENGTH];
+
+   if (use_series_dir)
+   {
+      const char *root = "hypre-data";
+      struct stat st;
+      if (stat(root, &st) != 0)
+      {
+         (void)mkdir(root, 0775);
+      }
+
+      int  max_idx = -1;
+      DIR *dir     = opendir(root);
+      if (dir)
+      {
+         struct dirent *ent;
+         while ((ent = readdir(dir)) != NULL)
+         {
+            if (ent->d_name[0] == 'l' && ent->d_name[1] == 's' && ent->d_name[2] == '_')
+            {
+               int idx = -1;
+               if (sscanf(ent->d_name + 3, "%d", &idx) == 1)
+               {
+                  if (idx > max_idx) max_idx = idx;
+               }
+            }
+         }
+         closedir(dir);
+      }
+      int  next_idx = max_idx + 1;
+      char run_dir[256];
+      snprintf(run_dir, sizeof(run_dir), "%s/ls_%05d", root, next_idx);
+      if (stat(run_dir, &st) != 0)
+      {
+         (void)mkdir(run_dir, 0775);
+      }
+
+      snprintf(A_path, sizeof(A_path), "%s/%s", run_dir, A_name);
+      snprintf(b_path, sizeof(b_path), "%s/%s", run_dir, b_name);
+      snprintf(d_path, sizeof(d_path), "%s/%s", run_dir, d_name);
+   }
+   else
+   {
+      snprintf(A_path, sizeof(A_path), "%s", A_name);
+      snprintf(b_path, sizeof(b_path), "%s", b_name);
+      snprintf(d_path, sizeof(d_path), "%s", d_name);
+   }
+
+   if (mat_A)
+   {
+      HYPRE_IJMatrixPrint(mat_A, A_path);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAdd("Matrix not set; skipping matrix print.");
+   }
+
+   if (vec_b)
+   {
+      HYPRE_IJVectorPrint(vec_b, b_path);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAdd("RHS not set; skipping vector print.");
+   }
+
+   if (dofmap && dofmap->data)
+   {
+      IntArrayWriteAsciiByRank(comm, dofmap, d_path);
+   }
 }

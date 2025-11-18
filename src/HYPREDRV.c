@@ -11,6 +11,7 @@
 #include "HYPRE_parcsr_ls.h"
 #include "HYPRE_utilities.h"
 #include "args.h"
+#include "containers.h"
 #include "info.h"
 #include "linsys.h"
 #include "stats.h"
@@ -651,6 +652,56 @@ HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t obj)
    {
       ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
    }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemPrintDofmap
+ *----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemPrintDofmap(HYPREDRV_t obj, const char *filename)
+{
+   HYPREDRV_CHECK_INIT();
+
+   if (obj && filename)
+   {
+      if (!obj->dofmap || !obj->dofmap->data)
+      {
+         ErrorCodeSet(ERROR_MISSING_DOFMAP);
+         ErrorMsgAdd("DOF map not set.");
+      }
+      else
+      {
+         IntArrayWriteAsciiByRank(obj->comm, obj->dofmap, filename);
+      }
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemPrint
+ *----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemPrint(HYPREDRV_t obj)
+{
+   HYPREDRV_CHECK_INIT();
+
+   if (!obj)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+      return ErrorCodeGet();
+   }
+
+   /* Delegate printing to linsys */
+   LinearSystemPrintData(obj->comm, &obj->iargs->ls, obj->mat_A, obj->vec_b, obj->dofmap);
 
    return ErrorCodeGet();
 }
