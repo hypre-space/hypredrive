@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "precon.h"
+#include "HYPRE_parcsr_mv.h"
 
 static const FieldOffsetMap precon_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(precon_args, amg, AMGSetArgs),
@@ -109,14 +110,18 @@ PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
  *-----------------------------------------------------------------------------*/
 
 void
-PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
-             HYPRE_Precon *precon_ptr)
+PreconCreate(precon_t         precon_method,
+             precon_args     *args,
+             IntArray        *dofmap,
+             HYPRE_IJVector   vec_nn,
+             HYPRE_Precon    *precon_ptr)
 {
    HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
 
    switch (precon_method)
    {
       case PRECON_BOOMERAMG:
+         AMGSetRBMs(&args->amg, vec_nn);
          AMGCreate(&args->amg, &precon->main);
          break;
 
@@ -259,6 +264,11 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
       switch (precon_method)
       {
          case PRECON_BOOMERAMG:
+            for (HYPRE_Int i = 0; i < args->amg.num_rbms; i++)
+            {
+               HYPRE_ParVectorDestroy(args->amg.rbms[i]);
+               args->amg.rbms[i] = NULL;
+            }
             HYPRE_BoomerAMGDestroy(precon->main);
             break;
 

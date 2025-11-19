@@ -54,14 +54,16 @@ typedef struct LS_args_struct
 StrArray       LinearSystemGetValidKeys(void);
 StrIntMapArray LinearSystemGetValidValues(const char *);
 
-void LinearSystemSetDefaultArgs(LS_args *);
-void LinearSystemSetNumSystems(LS_args *);
-void LinearSystemSetArgsFromYAML(LS_args *, YAMLnode *);
-void LinearSystemReadMatrix(MPI_Comm, LS_args *, HYPRE_IJMatrix *);
-void LinearSystemSetRHS(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJVector *,
-                        HYPRE_IJVector *);
-void LinearSystemSetInitialGuess(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJVector,
-                                 HYPRE_IJVector *, HYPRE_IJVector *);
+void LinearSystemSetDefaultArgs(LS_args*);
+
+void LinearSystemSetNearNullSpace(MPI_Comm, LS_args*, HYPRE_IJMatrix,
+                                  int, int, const HYPRE_Complex*, HYPRE_IJVector*);
+void LinearSystemSetNumSystems(LS_args*);
+void LinearSystemSetArgsFromYAML(LS_args*, YAMLnode*);
+void LinearSystemReadMatrix(MPI_Comm, LS_args*, HYPRE_IJMatrix*);
+void LinearSystemSetRHS(MPI_Comm, LS_args*, HYPRE_IJMatrix, HYPRE_IJVector*, HYPRE_IJVector*);
+void LinearSystemSetInitialGuess(MPI_Comm, LS_args*, HYPRE_IJMatrix,
+                                 HYPRE_IJVector, HYPRE_IJVector*, HYPRE_IJVector*);
 void LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector);
 void LinearSystemSetPrecMatrix(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJMatrix *);
 void LinearSystemReadDofmap(MPI_Comm, LS_args *, IntArray **);
@@ -69,10 +71,10 @@ void LinearSystemGetSolutionValues(HYPRE_IJVector, HYPRE_Complex **);
 void LinearSystemGetRHSValues(HYPRE_IJVector, HYPRE_Complex **);
 void LinearSystemComputeVectorNorm(HYPRE_IJVector, HYPRE_Complex *);
 void LinearSystemComputeErrorNorm(HYPRE_IJVector, HYPRE_IJVector, HYPRE_Complex *);
-void LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector,
-                                     HYPRE_Complex *);
-void LinearSystemPrintData(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJVector,
-                           const IntArray *);
+void LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector,
+                                     HYPRE_IJVector, HYPRE_Complex *);
+void LinearSystemPrintData(MPI_Comm, LS_args *, HYPRE_IJMatrix,
+                           HYPRE_IJVector, const IntArray *);
 
 long long int LinearSystemMatrixGetNumRows(HYPRE_IJMatrix);
 long long int LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix);

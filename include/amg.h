@@ -74,6 +74,7 @@ typedef struct AMGcsn_args_struct
    HYPRE_Int  keep_transpose;
    HYPRE_Int  num_functions;
    HYPRE_Int  filter_functions;
+   HYPRE_Int  nodal;
    HYPRE_Int  seq_amg_th;
    HYPRE_Int  min_coarse_size;
    HYPRE_Int  max_coarse_size;
@@ -109,6 +110,9 @@ typedef struct AMG_args_struct
    HYPRE_Int  max_iter;
    HYPRE_Int  print_level;
    HYPRE_Real tolerance;
+
+   HYPRE_Int       num_rbms;
+   HYPRE_ParVector rbms[3];
 } AMG_args;
 
 /*--------------------------------------------------------------------------
@@ -118,5 +122,6 @@ typedef struct AMG_args_struct
 void AMGSetDefaultArgs(AMG_args *);
 void AMGSetArgs(void *, const YAMLnode *);
 void AMGCreate(const AMG_args *, HYPRE_Solver *);
+void AMGSetRBMs(AMG_args *, HYPRE_IJVector);
 
 #endif /* AMG_HEADER */

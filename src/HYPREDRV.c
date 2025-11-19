@@ -48,6 +48,7 @@ typedef struct hypredrv_struct
    HYPRE_IJVector vec_x;
    HYPRE_IJVector vec_x0;
    HYPRE_IJVector vec_xref;
+   HYPRE_IJVector vec_nn;
 
    HYPRE_Precon precon;
    HYPRE_Solver solver;
@@ -137,6 +138,7 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr)
    obj->vec_x    = NULL;
    obj->vec_x0   = NULL;
    obj->vec_xref = NULL;
+   obj->vec_nn   = NULL;
    obj->dofmap   = NULL;
 
    obj->precon = NULL;
@@ -178,6 +180,8 @@ HYPREDRV_Destroy(HYPREDRV_t *obj_ptr)
          HYPRE_IJVectorDestroy(obj->vec_x);
          HYPRE_IJVectorDestroy(obj->vec_x0);
       }
+
+      HYPRE_IJVectorDestroy(obj->vec_nn);
 
       IntArrayDestroy(&obj->dofmap);
       InputArgsDestroy(&obj->iargs);
@@ -463,6 +467,36 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj, HYPRE_Vector vec_b)
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemSetNearNullSpace
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t obj,
+                                      int        num_entries,
+                                      int        num_components,
+                                      const HYPRE_Complex *values)
+{
+   HYPREDRV_CHECK_INIT();
+
+   if (obj)
+   {
+      LinearSystemSetNearNullSpace(obj->comm,
+                                   &obj->iargs->ls,
+                                   obj->mat_A,
+                                   num_entries,
+                                   num_components,
+                                   values,
+                                   &obj->vec_nn);
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+   }
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_LinearSystemSetInitialGuess
  *
  * TODO: add vector as input parameter
@@ -719,8 +753,8 @@ HYPREDRV_PreconCreate(HYPREDRV_t obj)
    {
       if (!(StatsGetLinearSystemID() % (obj->iargs->ls.precon_reuse + 1)))
       {
-         PreconCreate(obj->iargs->precon_method, &obj->iargs->precon, obj->dofmap,
-                      &obj->precon);
+         PreconCreate(obj->iargs->precon_method, &obj->iargs->precon,
+                      obj->dofmap, obj->vec_nn, &obj->precon);
       }
       else
       {
