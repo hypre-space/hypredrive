@@ -436,11 +436,16 @@ AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    HYPRE_Int       num_entries;
    HYPRE_Complex  *values  = NULL;
 
-   /* Sanity: check if the near null space vector is set */
-   if (!vec_nn)
+   /* Sanity: check if the near null space vector is set
+      We do not error out when NOT using nodal coarsening. */
+   if (!vec_nn || !args->coarsening.nodal)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("Near null space vector is not set");
+      if (args->coarsening.nodal)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("Near null space vectors (RBMs) required"
+                     " for nodal coarsening, but not set");
+      }
       return;
    }
    HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
@@ -587,7 +592,8 @@ AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_BoomerAMGSetInterpVecVariant(precon, 2); // GM-2
       HYPRE_BoomerAMGSetInterpVecQMax(precon, 4);
       HYPRE_BoomerAMGSetSmoothInterpVectors(precon, 1);
-      HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms, args->rbms);
+      HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms,
+                                      (HYPRE_ParVector *) args->rbms);
    }
 
    *precon_ptr = precon;
