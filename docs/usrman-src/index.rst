@@ -17,4 +17,5 @@ Welcome to hypredrive's documentation!
    input_file_structure
    driver_examples
    library_examples
+   developer_notes
    faq
