@@ -1,3 +1,8 @@
+# Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+# HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: MIT
+
 # Static code analysis and sanitizer support for hypredrive
 if(HYPREDRV_ENABLE_ANALYSIS)
     message(STATUS "Static code analysis and sanitizers are enabled")
@@ -37,7 +42,7 @@ if(HYPREDRV_ENABLE_ANALYSIS)
             if(TARGET ${tgt})
                 target_compile_options(${tgt} PRIVATE ${_sanitizer_flags})
                 target_link_options(${tgt} PRIVATE ${_sanitizer_link_flags})
-                message(STATUS "Applied sanitizers to target ${tgt}")
+                #message(STATUS "Applied sanitizers to target ${tgt}")
             endif()
         endforeach()
 
@@ -50,7 +55,7 @@ if(HYPREDRV_ENABLE_ANALYSIS)
                     if(_tgt_type STREQUAL "EXECUTABLE")
                         target_compile_options(${test_tgt} PRIVATE ${_sanitizer_flags})
                         target_link_options(${test_tgt} PRIVATE ${_sanitizer_link_flags})
-                        message(STATUS "Applied sanitizers to test target ${test_tgt}")
+                        #message(STATUS "Applied sanitizers to test target ${test_tgt}")
                     endif()
                 endif()
             endforeach()
@@ -129,7 +134,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
         list(FILTER _src_files EXCLUDE REGEX ".*/build/.*")
         list(FILTER _src_files EXCLUDE REGEX ".*/install/.*")
         list(FILTER _src_files EXCLUDE REGEX ".*/docs/.*")
-        
+
         # Exclude gen_macros.h as it contains complex macros that clang-tidy modifies incorrectly
         list(FILTER _src_files EXCLUDE REGEX ".*/gen_macros\\.h$")
         list(FILTER _src_files EXCLUDE REGEX ".*/info\\.c$")
@@ -160,7 +165,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
             COMMENT "Running clang-tidy static analysis"
             VERBATIM
         )
-        
+
         message(STATUS "Output saved to ${CLANG_TIDY_OUTPUT}")
 
         # Create a target to run clang-tidy with fixes
@@ -173,7 +178,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
         )
 
         message(STATUS "Clang-tidy targets 'clang-tidy' and 'clang-tidy-fix' are available")
-        message(STATUS "Run 'cmake --build . --target clang-tidy' to run static analysis")
+        message(STATUS "Use 'cmake --build . --target clang-tidy' to run static analysis")
     else()
         message(WARNING "clang-tidy not found. Install it to enable static analysis. (e.g., apt-get install clang-tidy)")
         message(WARNING "The 'clang-tidy' and 'clang-tidy-fix' targets will not be available")

@@ -1,3 +1,8 @@
+# Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+# HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: MIT
+
 # Coverage support for hypredrive
 if(HYPREDRV_ENABLE_COVERAGE)
     message(STATUS "HYPREDRV: code coverage instrumentation is ENABLED")
@@ -24,7 +29,7 @@ if(HYPREDRV_ENABLE_COVERAGE)
                     if(_tgt_type STREQUAL "EXECUTABLE")
                         target_compile_options(${test_tgt} PRIVATE -O0 -g --coverage)
                         target_link_options(${test_tgt} PRIVATE --coverage)
-                        message(STATUS "Applied coverage flags to test target ${test_tgt}")
+                        #message(STATUS "Applied coverage flags to test target ${test_tgt}")
                     endif()
                 endif()
             endforeach()
@@ -81,5 +86,3 @@ if(HYPREDRV_ENABLE_COVERAGE)
         message(STATUS "gcovr not found; 'coverage' target will not be available. Install with: pip install gcovr")
     endif()
 endif()
-
-

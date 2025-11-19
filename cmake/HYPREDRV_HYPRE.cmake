@@ -1,3 +1,8 @@
+# Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+# HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: MIT
+
 # Find and configure HYPRE
 find_package(HYPRE REQUIRED CONFIG)
 if(NOT HYPRE_FOUND)

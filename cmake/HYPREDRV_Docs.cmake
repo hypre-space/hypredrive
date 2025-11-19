@@ -1,3 +1,8 @@
+# Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+# HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: MIT
+
 # Documentation support
 # This module provides Doxygen and Sphinx documentation generation
 
@@ -37,7 +42,7 @@ if(HYPREDRV_ENABLE_DOCS)
         set(DOXYFILE_OUT ${CMAKE_BINARY_DIR}/Doxyfile)
 
         configure_file(${DOXYFILE_IN} ${DOXYFILE_OUT} @ONLY)
-        
+
         # Post-process Doxyfile to fix OUTPUT_DIRECTORY (in case @top_srcdir@/docs wasn't replaced)
         # Doxygen runs from CMAKE_BINARY_DIR, so OUTPUT_DIRECTORY should be relative
         # file(READ ${DOXYFILE_OUT} DOXYFILE_CONTENT)
