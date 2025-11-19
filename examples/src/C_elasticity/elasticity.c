@@ -981,21 +981,21 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    if (mesh->nbrs[5] != MPI_PROC_NULL)
       ghost[5] = (double *)calloc(nx * ny * 3, sizeof(double)); /* front face send */
    if (mesh->nbrs[6] != MPI_PROC_NULL)
-      ghost[6] = (double *)calloc(nz * 3, sizeof(double));      /* left-down edge */
+      ghost[6] = (double *)calloc(nz * 3, sizeof(double)); /* left-down edge */
    if (mesh->nbrs[7] != MPI_PROC_NULL)
-      ghost[7] = (double *)calloc(nz * 3, sizeof(double));      /* right-up  edge send */
+      ghost[7] = (double *)calloc(nz * 3, sizeof(double)); /* right-up  edge send */
    if (mesh->nbrs[8] != MPI_PROC_NULL)
-      ghost[8] = (double *)calloc(ny * 3, sizeof(double));      /* left-back edge */
+      ghost[8] = (double *)calloc(ny * 3, sizeof(double)); /* left-back edge */
    if (mesh->nbrs[9] != MPI_PROC_NULL)
-      ghost[9] = (double *)calloc(ny * 3, sizeof(double));      /* right-front edge send */
+      ghost[9] = (double *)calloc(ny * 3, sizeof(double)); /* right-front edge send */
    if (mesh->nbrs[10] != MPI_PROC_NULL)
-      ghost[10] = (double *)calloc(nx * 3, sizeof(double));     /* down-back edge */
+      ghost[10] = (double *)calloc(nx * 3, sizeof(double)); /* down-back edge */
    if (mesh->nbrs[11] != MPI_PROC_NULL)
-      ghost[11] = (double *)calloc(nx * 3, sizeof(double));     /* up-front  edge send */
+      ghost[11] = (double *)calloc(nx * 3, sizeof(double)); /* up-front  edge send */
    if (mesh->nbrs[12] != MPI_PROC_NULL)
-      ghost[12] = (double *)calloc(3, sizeof(double));          /* left-down-back corner */
+      ghost[12] = (double *)calloc(3, sizeof(double)); /* left-down-back corner */
    if (mesh->nbrs[13] != MPI_PROC_NULL)
-      ghost[13] = (double *)calloc(3, sizeof(double));          /* right-up-front corner send */
+      ghost[13] = (double *)calloc(3, sizeof(double)); /* right-up-front corner send */
 
    /* Fill send buffers and post Irecvs */
    MPI_Request reqs[28];
