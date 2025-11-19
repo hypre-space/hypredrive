@@ -117,11 +117,11 @@ int
 PrintUsage(void)
 {
    printf("\n");
-   printf(
-      "Usage: ${MPIEXEC_COMMAND} ${MPIEXEC_NUMPROC_FLAG} <np> ./laplacian [options]\n");
+   printf("Usage: ${MPIEXEC_COMMAND} <np> ./laplacian [options]\n");
    printf("\n");
    printf("Options:\n");
-   printf("  -i <file>         : YAML configuration file for solver settings (Optional)\n");
+   printf(
+      "  -i <file>         : YAML configuration file for solver settings (Optional)\n");
    printf("  -n <nx> <ny> <nz> : Global grid dimensions (default: 10 10 10)\n");
    printf("  -c <cx> <cy> <cz> : Diffusion coefficients (default: 1.0 1.0 1.0)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (1 1 1)\n");

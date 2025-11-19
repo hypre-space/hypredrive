@@ -799,11 +799,11 @@ extern "C"
     * @return 0 on success; nonzero error code otherwise.
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t
-   HYPREDRV_LinearSystemPrintDofmap(HYPREDRV_t hypredrv, const char* filename);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemPrintDofmap(HYPREDRV_t  hypredrv,
+                                                                    const char *filename);
 
    /**
-    * @brief Print the current linear system (matrix and RHS) and, if present, the DOF map.
+    * @brief Print the linear system (matrix and RHS) and the DOF map (if present).
     *
     * This convenience routine dumps:
     *  - Matrix A via HYPRE_IJMatrixPrint to an ASCII file (basename + ".out").
@@ -819,8 +819,7 @@ extern "C"
     * @return 0 on success; nonzero error code otherwise.
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t
-   HYPREDRV_LinearSystemPrint(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemPrint(HYPREDRV_t hypredrv);
 
    /**
     * @brief Retrieves the solution values from the linear system of a HYPREDRV object.

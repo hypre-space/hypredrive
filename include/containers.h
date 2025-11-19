@@ -59,7 +59,7 @@ void      IntArrayBuild(MPI_Comm, int, const int *, IntArray **);
 void      IntArrayBuildInterleaved(MPI_Comm, int, int, IntArray **);
 void      IntArrayBuildContiguous(MPI_Comm, int, int, IntArray **);
 void      IntArrayParRead(MPI_Comm, const char *, IntArray **);
-void      IntArrayWriteAsciiByRank(MPI_Comm, const IntArray*, const char*);
+void      IntArrayWriteAsciiByRank(MPI_Comm, const IntArray *, const char *);
 
 /*--------------------------------------------------------------------------
  * StrArray struct
