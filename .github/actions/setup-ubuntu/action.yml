@@ -1,0 +1,52 @@
+name: 'Setup Ubuntu Environment'
+description: 'Install dependencies and setup compiler environment for Ubuntu'
+inputs:
+  compiler:
+    description: 'Compiler to use (gcc or clang)'
+    required: false
+    default: 'gcc'
+  extra_packages:
+    description: 'Additional packages to install (space-separated)'
+    required: false
+    default: ''
+outputs:
+  mpich_cc:
+    description: 'MPICH_CC environment variable value'
+    value: ${{ steps.setup.outputs.mpich_cc }}
+  mpich_cxx:
+    description: 'MPICH_CXX environment variable value'
+    value: ${{ steps.setup.outputs.mpich_cxx }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        PACKAGES="cmake ninja-build mpich libmpich-dev"
+        if [ "${{ inputs.compiler }}" = "gcc" ]; then
+          PACKAGES="$PACKAGES gcc g++"
+        else
+          PACKAGES="$PACKAGES clang"
+        fi
+        if [ -n "${{ inputs.extra_packages }}" ]; then
+          PACKAGES="$PACKAGES ${{ inputs.extra_packages }}"
+        fi
+        sudo apt-get install -y $PACKAGES
+
+    - name: Setup compiler environment
+      id: setup
+      shell: bash
+      run: |
+        if [ "${{ inputs.compiler }}" = "clang" ]; then
+          echo "mpich_cc=clang" >> $GITHUB_OUTPUT
+          echo "mpich_cxx=clang++" >> $GITHUB_OUTPUT
+          echo "MPICH_CC=clang" >> $GITHUB_ENV
+          echo "MPICH_CXX=clang++" >> $GITHUB_ENV
+        else
+          echo "mpich_cc=gcc" >> $GITHUB_OUTPUT
+          echo "mpich_cxx=g++" >> $GITHUB_OUTPUT
+          echo "MPICH_CC=gcc" >> $GITHUB_ENV
+          echo "MPICH_CXX=g++" >> $GITHUB_ENV
+        fi
+

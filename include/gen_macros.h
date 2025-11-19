@@ -23,17 +23,17 @@
  * @param _map Name of the map containing field information.
  * @param _numFields Number of fields in the map.
  */
-#define DEFINE_SET_FIELD_BY_NAME_FUNC(_funcName, _argsType, _map, _numFields) \
-   void _funcName(_argsType *_args, YAMLnode *_node) \
-   { \
-      for (size_t i = 0; i < (_numFields); i++) \
-      { \
-         if (!strcmp((_map)[i].name, (_node)->key)) \
-         { \
-            (_map)[i].setter((void*)((char*)(_args) + (_map)[i].offset), (_node)); \
-            return; \
-         } \
-      } \
+#define DEFINE_SET_FIELD_BY_NAME_FUNC(_funcName, _argsType, _map, _numFields)        \
+   void _funcName(_argsType *_args, const YAMLnode *_node)                           \
+   {                                                                                 \
+      for (size_t i = 0; i < (_numFields); i++)                                      \
+      {                                                                              \
+         if (!strcmp((_map)[i].name, (_node)->key))                                  \
+         {                                                                           \
+            (_map)[i].setter((void *)((char *)(_args) + (_map)[i].offset), (_node)); \
+            return;                                                                  \
+         }                                                                           \
+      }                                                                              \
    }
 
 /**
@@ -47,14 +47,14 @@
  * @param _map Name of the map containing field information.
  */
 #define DEFINE_GET_VALID_KEYS_FUNC(_funcName, _numFields, _map) \
-   StrArray _funcName(void) \
-   { \
-      static const char* _keys[_numFields]; \
-      for (size_t i = 0; i < _numFields; i++) \
-      { \
-         _keys[i] = _map[i].name; \
-      } \
-      return STR_ARRAY_CREATE(_keys); \
+   StrArray _funcName(void)                                     \
+   {                                                            \
+      static const char *_keys[_numFields];                     \
+      for (size_t i = 0; i < _numFields; i++)                   \
+      {                                                         \
+         _keys[i] = _map[i].name;                               \
+      }                                                         \
+      return STR_ARRAY_CREATE(_keys);                           \
    }
 
 /**
@@ -66,7 +66,7 @@
  * @param _prefix Prefix used in the naming of the declared function.
  */
 #define DECLARE_GET_VALID_VALUES_FUNC(_prefix) \
-   StrIntMapArray _prefix##GetValidValues(const char*);
+   StrIntMapArray _prefix##GetValidValues(const char *);
 
 /**
  * @brief Declares a function to get valid values.
@@ -77,10 +77,10 @@
  *
  * @param _prefix Prefix used in the naming of the declared function.
  */
-#define DEFINE_VOID_GET_VALID_VALUES_FUNC(_prefix) \
-   StrIntMapArray _prefix##GetValidValues(const char* key) \
-   { \
-      return STR_INT_MAP_ARRAY_VOID(); \
+#define DEFINE_VOID_GET_VALID_VALUES_FUNC(_prefix)         \
+   StrIntMapArray _prefix##GetValidValues(const char *key) \
+   {                                                       \
+      return STR_INT_MAP_ARRAY_VOID();                     \
    }
 
 /**
@@ -92,7 +92,7 @@
  * @param _prefix Prefix used in the naming of the declared function.
  */
 #define DECLARE_SET_DEFAULT_ARGS_FUNC(_prefix) \
-   void _prefix##SetDefaultArgs(_prefix##_args*);
+   void _prefix##SetDefaultArgs(_prefix##_args *);
 
 /**
  * @brief Declares a function to set arguments from a YAML input.
@@ -103,7 +103,7 @@
  * @param _prefix Prefix used in the naming of the declared function.
  */
 #define DECLARE_SET_ARGS_FROM_YAML_FUNC(_prefix) \
-   void _prefix##SetArgsFromYAML(_prefix##_args*, YAMLnode*);
+   void _prefix##SetArgsFromYAML(_prefix##_args *, YAMLnode *);
 
 /**
  * @brief Defines a function to set arguments from a YAML node.
@@ -113,41 +113,33 @@
  *
  * @param _prefix Prefix used in the naming of the generated function.
  */
-#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix) \
-   void _prefix##SetArgsFromYAML(_prefix##_args *args, YAMLnode *parent) \
-   { \
-      if (parent->children) \
-      { \
-         YAML_NODE_ITERATE(parent, child) \
-         { \
-            /* printf("child->key: %s\n", child->key); */\
-            YAML_NODE_VALIDATE(child, \
-                               _prefix##GetValidKeys, \
-                               _prefix##GetValidValues) \
-            \
-            YAML_NODE_SET_FIELD(child, \
-                                args, \
-                                _prefix##SetFieldByName) \
-         } \
-      } \
-      else \
-      { \
-         char *temp_key = strdup(parent->key); \
-         free(parent->key); \
-         parent->key = (char*) malloc(5*sizeof(char)); \
-         sprintf(parent->key, "type"); \
-         \
-         YAML_NODE_VALIDATE(parent, \
-                            _prefix##GetValidKeys, \
-                            _prefix##GetValidValues) \
-         YAML_NODE_SET_FIELD(parent, \
-                             args, \
-                             _prefix##SetFieldByName) \
-         \
-         free(parent->key); \
-         parent->key = strdup(temp_key); \
-         free(temp_key); \
-      } \
+#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix)                                       \
+   void _prefix##SetArgsFromYAML(_prefix##_args *args, YAMLnode *parent)              \
+   {                                                                                  \
+      if (parent->children)                                                           \
+      {                                                                               \
+         YAML_NODE_ITERATE(parent, child)                                             \
+         {                                                                            \
+            /* printf("child->key: %s\n", child->key); */                             \
+            YAML_NODE_VALIDATE(child, _prefix##GetValidKeys, _prefix##GetValidValues) \
+                                                                                      \
+            YAML_NODE_SET_FIELD(child, args, _prefix##SetFieldByName)                 \
+         }                                                                            \
+      }                                                                               \
+      else                                                                            \
+      {                                                                               \
+         char *temp_key = strdup(parent->key);                                        \
+         free(parent->key);                                                           \
+         parent->key = (char *)malloc(5 * sizeof(char));                              \
+         sprintf(parent->key, "type");                                                \
+                                                                                      \
+         YAML_NODE_VALIDATE(parent, _prefix##GetValidKeys, _prefix##GetValidValues)   \
+         YAML_NODE_SET_FIELD(parent, args, _prefix##SetFieldByName)                   \
+                                                                                      \
+         free(parent->key);                                                           \
+         parent->key = strdup(temp_key);                                              \
+         free(temp_key);                                                              \
+      }                                                                               \
    }
 
 /**
@@ -158,12 +150,12 @@
  *
  * @param _prefix Prefix used in the naming of the generated function.
  */
-#define DEFINE_SET_ARGS_FUNC(_prefix) \
-   void _prefix##SetArgs(void *vargs, YAMLnode *parent) \
-   { \
-      _prefix##_args *args = (_prefix##_args*) vargs; \
-      CALL_SET_DEFAULT_ARGS_FUNC(_prefix, args); \
-      CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, args, parent); \
+#define DEFINE_SET_ARGS_FUNC(_prefix)                                  \
+   void _prefix##SetArgs(void *vargs, const YAMLnode *parent)          \
+   {                                                                   \
+      _prefix##_args *args = (_prefix##_args *)vargs;                  \
+      CALL_SET_DEFAULT_ARGS_FUNC(_prefix, args);                       \
+      CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, args, (YAMLnode *)parent); \
    }
 
 /**
@@ -190,10 +182,7 @@
  * @param _prefix The prefix used to identify the structure and its fields/members.
  */
 #define DEFINE_FIELD_OFFSET_MAP(_prefix) \
-   static const FieldOffsetMap _prefix##_field_offset_map[] = \
-   { \
-      _prefix##_FIELDS(_prefix) \
-   };
+   static const FieldOffsetMap _prefix##_field_offset_map[] = {_prefix##_FIELDS(_prefix)};
 
 /**
  * @brief Calls a function to set default arguments.
@@ -216,7 +205,8 @@
  * @param _args Pointer to the arguments structure.
  * @param _yaml Pointer to the YAML node structure.
  */
-#define CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, _args, _yaml) _prefix##SetArgsFromYAML(_args, _yaml)
+#define CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, _args, _yaml) \
+   _prefix##SetArgsFromYAML(_args, _yaml)
 
 /**
  * @def GENERATE_PREFIXED_COMPONENTS(prefix)
@@ -224,10 +214,10 @@
  * @brief An X-macro for generating a series of component definitions, declarations,
  * and initializations based on the provided prefix.
  *
- * @details This is an aggregate macro that generates several utility functions, declarations
- * and a field offset map, all prefixed by the passed parameter. It is designed to reduce the
- * amount of redundant code needed when creating multiple sets of similar components.
- * The generated components include:
+ * @details This is an aggregate macro that generates several utility functions,
+ * declarations and a field offset map, all prefixed by the passed parameter. It is
+ * designed to reduce the amount of redundant code needed when creating multiple sets of
+ * similar components. The generated components include:
  *
  * - A FieldOffsetMap object named after the given prefix.
  * - A function definition to set fields by name.
@@ -247,23 +237,20 @@
  * GENERATE_PREFIXED_COMPONENTS(AMG)
  * @endcode
  *
- * In this example, the macro will generate a FieldOffsetMap object named `AMG_field_offset_map`;
- * function definitions like `AMGSetFieldByName`, `AMGGetValidKeys`, etc.; and function
- * declarations like `AMGGetValidValues(const char*)`, `AMGSetDefaultArgs(void)`, and
- * `AMGSetDefaultArgs(void, YAMLnode*)`.
+ * In this example, the macro will generate a FieldOffsetMap object named
+ * `AMG_field_offset_map`; function definitions like `AMGSetFieldByName`,
+ * `AMGGetValidKeys`, etc.; and function declarations like `AMGGetValidValues(const
+ * char*)`, `AMGSetDefaultArgs(void)`, and `AMGSetDefaultArgs(void, YAMLnode*)`.
  */
-#define GENERATE_PREFIXED_COMPONENTS(prefix) \
-   DEFINE_FIELD_OFFSET_MAP(prefix); \
-   DEFINE_SET_FIELD_BY_NAME_FUNC(prefix##SetFieldByName, \
-                                 prefix##_args, \
-                                 prefix##_field_offset_map, \
-                                 prefix##_NUM_FIELDS); \
-   DEFINE_GET_VALID_KEYS_FUNC(prefix##GetValidKeys, \
-                              prefix##_NUM_FIELDS, \
-                              prefix##_field_offset_map); \
-   DECLARE_GET_VALID_VALUES_FUNC(prefix); \
-   DECLARE_SET_DEFAULT_ARGS_FUNC(prefix); \
-   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix); \
-   DEFINE_SET_ARGS_FUNC(prefix); \
+#define GENERATE_PREFIXED_COMPONENTS(prefix)                                      \
+   DEFINE_FIELD_OFFSET_MAP(prefix);                                               \
+   DEFINE_SET_FIELD_BY_NAME_FUNC(prefix##SetFieldByName, prefix##_args,           \
+                                 prefix##_field_offset_map, prefix##_NUM_FIELDS); \
+   DEFINE_GET_VALID_KEYS_FUNC(prefix##GetValidKeys, prefix##_NUM_FIELDS,          \
+                              prefix##_field_offset_map);                         \
+   DECLARE_GET_VALID_VALUES_FUNC(prefix);                                         \
+   DECLARE_SET_DEFAULT_ARGS_FUNC(prefix);                                         \
+   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix);                                        \
+   DEFINE_SET_ARGS_FUNC(prefix);
 
 #endif /* GEN_MACROS_HEADER */

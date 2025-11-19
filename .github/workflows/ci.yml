@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'COPYRIGHT'
+  push:
+    branches: [ master ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'COPYRIGHT'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: ${{ matrix.os }} | ${{ matrix.compiler }} | ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        build_type: [Debug]
+        compiler: [gcc, clang]
+        exclude:
+          - os: macos-latest
+            compiler: gcc
+    env:
+      HYPRE_VERSION: master
+      BUILD_DIR: build
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Get compiler version
+        id: compiler_version
+        run: |
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            VERSION=$(gcc --version 2>/dev/null | head -n1 | awk '{print $NF}' || echo "unknown")
+          else
+            VERSION=$(clang --version 2>/dev/null | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}' || echo "unknown")
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Compiler version: $VERSION"
+          echo "::notice::Building with ${{ matrix.compiler }} version $VERSION"
+
+      - name: Install dependencies (Ubuntu)
+        if: startsWith(runner.os, 'Linux')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build mpich libmpich-dev ccache clang-format
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then sudo apt-get install -y gcc g++; fi
+          if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt-get install -y clang; fi
+          # Get and display compiler version
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            VERSION=$(gcc --version | head -n1 | awk '{print $NF}')
+          else
+            VERSION=$(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')
+          fi
+          echo "::notice::Using ${{ matrix.compiler }} version $VERSION"
+
+      - name: Setup compiler environment (Ubuntu)
+        if: startsWith(runner.os, 'Linux')
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            # Configure mpicc to use clang
+            export MPICH_CC=clang
+            export MPICH_CXX=clang++
+            echo "MPICH_CC=clang" >> $GITHUB_ENV
+            echo "MPICH_CXX=clang++" >> $GITHUB_ENV
+          else
+            # Configure mpicc to use gcc (default)
+            export MPICH_CC=gcc
+            export MPICH_CXX=g++
+            echo "MPICH_CC=gcc" >> $GITHUB_ENV
+            echo "MPICH_CXX=g++" >> $GITHUB_ENV
+          fi
+
+      - name: Setup ccache (Ubuntu)
+        if: startsWith(runner.os, 'Linux')
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.compiler }}-
+            ${{ runner.os }}-
+
+      - name: Install dependencies (macOS)
+        if: startsWith(runner.os, 'macOS')
+        run: |
+          brew update
+          brew install cmake ninja mpich clang-format
+          # Get and display compiler version
+          VERSION=$(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')
+          echo "::notice::Using clang version $VERSION"
+
+      - name: Setup compiler environment (macOS)
+        if: startsWith(runner.os, 'macOS')
+        run: |
+          # macOS mpicc uses clang by default (Apple Clang)
+          export MPICH_CC=clang
+          export MPICH_CXX=clang++
+          echo "MPICH_CC=clang" >> $GITHUB_ENV
+          echo "MPICH_CXX=clang++" >> $GITHUB_ENV
+
+      - name: Cache datasets
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: datasets-v1
+          restore-keys: |
+            datasets-v1
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: ${{ matrix.compiler }}
+          build_type: 'Debug'
+          hypre_shared_libs: 'ON'
+          os: ${{ matrix.os }}
+
+      - name: Configure hypredrive
+        run: |
+          set -euxo pipefail
+          CCACHE_ARGS=""
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            CCACHE_ARGS="-DCMAKE_C_COMPILER_LAUNCHER=ccache"
+          fi
+          # Display compiler info in build logs
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            echo "::notice::Configuring with gcc $(gcc --version | head -n1 | awk '{print $NF}')"
+          else
+            echo "::notice::Configuring with clang $(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')"
+          fi
+          cmake -S . -B $BUILD_DIR -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_BUILD_EXAMPLES=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }} \
+            $CCACHE_ARGS
+
+      - name: Build
+        run: cmake --build $BUILD_DIR --parallel
+
+      - name: Fetch datasets (optional)
+        run: |
+          set -euxo pipefail
+          # Only download if datasets are not already cached
+          if [ ! -d "data/ps3d10pt7" ] || [ -z "$(ls -A data/ps3d10pt7 2>/dev/null)" ]; then
+            cmake --build $BUILD_DIR --target data --parallel
+          else
+            echo "Datasets already cached, skipping download"
+          fi
+
+      - name: Run tests
+        run: ctest --test-dir $BUILD_DIR --output-on-failure
+
+      - name: Verify example outputs (optional)
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          if [ -f "scripts/compare_output.sh" ] && [ -f "examples/refOutput/ex1.txt" ]; then
+            # Capture output for example 1
+            ${{ env.BUILD_DIR }}/hypredrive examples/ex1.yml > ${{ env.BUILD_DIR }}/test_ex1_output.txt 2>&1 || true
+            if [ -f "${{ env.BUILD_DIR }}/test_ex1_output.txt" ]; then
+              bash scripts/compare_output.sh ${{ env.BUILD_DIR }}/test_ex1_output.txt examples/refOutput/ex1.txt || true
+            fi
+          fi
+
+      - name: Cache ccache (Ubuntu)
+        if: startsWith(runner.os, 'Linux')
+        uses: hendrikmuhs/ccache-action@v1
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: logs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          path: |
+            ${{ env.BUILD_DIR }}/Testing
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
+
+      - name: Upload example outputs (optional)
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: example-outputs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          path: |
+            ${{ env.BUILD_DIR }}/test_ex1_output.txt
+          retention-days: 1

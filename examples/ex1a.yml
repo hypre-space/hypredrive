@@ -1,0 +1,10 @@
+general:
+  use_millisec: on # Turn this off for reporting times in [s]
+
+linear_system:
+  rhs_filename: data/ps3d10pt7/np1/IJ.out.b
+  matrix_filename: data/ps3d10pt7/np1/IJ.out.A
+
+solver: bicgstab
+
+preconditioner: amg

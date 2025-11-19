@@ -9,41 +9,44 @@
 #define STATS_HEADER
 
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
-#include "mpi.h"
+#include <string.h>
 #include "error.h"
 #include "utils.h"
 
-#define STATS_NUM_ENTRIES 7
+enum
+{
+   STATS_NUM_ENTRIES = 7
+};
 
 /*--------------------------------------------------------------------------
  * Stats struct
  *--------------------------------------------------------------------------*/
 
-typedef struct Stats_struct {
-   int       capacity;
-   int       counter;
-   int       reps;
-   int       ls_counter;
-   int       num_reps;
-   int       num_systems;
+typedef struct Stats_struct
+{
+   int capacity;
+   int counter;
+   int reps;
+   int ls_counter;
+   int num_reps;
+   int num_systems;
 
-   double   *matrix;
-   double   *rhs;
-   double   *dofmap;
+   double *matrix;
+   double *rhs;
+   double *dofmap;
 
-   int      *iters;
-   double   *prec;
-   double   *solve;
-   double   *rrnorms;
+   int    *iters;
+   double *prec;
+   double *solve;
+   double *rrnorms;
 
-   double    initialize;
-   double    finalize;
-   double    reset_x0;
+   double initialize;
+   double finalize;
+   double reset_x0;
 
-   double    time_factor;
-   bool      use_millisec;
+   double time_factor;
+   bool   use_millisec;
 } Stats;
 
 /*--------------------------------------------------------------------------
@@ -52,8 +55,8 @@ typedef struct Stats_struct {
 
 void StatsCreate(void);
 void StatsDestroy(void);
-void StatsTimerStart(const char*);
-void StatsTimerStop(const char*);
+void StatsTimerStart(const char *);
+void StatsTimerStop(const char *);
 void StatsIterSet(int);
 void StatsTimerSetMilliseconds(void);
 void StatsTimerSetSeconds(void);

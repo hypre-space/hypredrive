@@ -6,6 +6,8 @@
  ******************************************************************************/
 
 #include "solver.h"
+
+#include <math.h>
 #include "gen_macros.h"
 
 static const FieldOffsetMap solver_field_offset_map[] = {
@@ -15,14 +17,15 @@ static const FieldOffsetMap solver_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(solver_args, bicgstab, BiCGSTABSetArgs),
 };
 
-#define SOLVER_NUM_FIELDS (sizeof(solver_field_offset_map) / sizeof(solver_field_offset_map[0]))
+#define SOLVER_NUM_FIELDS \
+   (sizeof(solver_field_offset_map) / sizeof(solver_field_offset_map[0]))
 
 /*-----------------------------------------------------------------------------
  * SolverSetFieldByName
  *-----------------------------------------------------------------------------*/
 
 void
-SolverSetFieldByName(solver_args *args, YAMLnode *node)
+SolverSetFieldByName(solver_args *args, const YAMLnode *node)
 {
    for (size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
    {
@@ -30,8 +33,7 @@ SolverSetFieldByName(solver_args *args, YAMLnode *node)
       if (!strcmp(solver_field_offset_map[i].name, node->key))
       {
          solver_field_offset_map[i].setter(
-            (void*)((char*) args + solver_field_offset_map[i].offset),
-            node);
+            (void *)((char *)args + solver_field_offset_map[i].offset), node);
          return;
       }
    }
@@ -44,7 +46,7 @@ SolverSetFieldByName(solver_args *args, YAMLnode *node)
 StrArray
 SolverGetValidKeys(void)
 {
-   static const char* keys[SOLVER_NUM_FIELDS];
+   static const char *keys[SOLVER_NUM_FIELDS];
 
    for (size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
    {
@@ -61,10 +63,10 @@ SolverGetValidKeys(void)
 StrIntMapArray
 SolverGetValidTypeIntMap(void)
 {
-   static StrIntMap map[] = {{"pcg",      (int) SOLVER_PCG},
-                             {"gmres",    (int) SOLVER_GMRES},
-                             {"fgmres",   (int) SOLVER_FGMRES},
-                             {"bicgstab", (int) SOLVER_BICGSTAB}};
+   static StrIntMap map[] = {{"pcg", (int)SOLVER_PCG},
+                             {"gmres", (int)SOLVER_GMRES},
+                             {"fgmres", (int)SOLVER_FGMRES},
+                             {"bicgstab", (int)SOLVER_BICGSTAB}};
 
    return STR_INT_MAP_ARRAY_CREATE(map);
 }
@@ -74,7 +76,7 @@ SolverGetValidTypeIntMap(void)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-SolverGetValidValues(const char* key)
+SolverGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
@@ -97,9 +99,7 @@ DEFINE_SET_ARGS_FROM_YAML_FUNC(Solver)
  *-----------------------------------------------------------------------------*/
 
 void
-SolverCreate(MPI_Comm      comm,
-             solver_t      solver_method,
-             solver_args  *args,
+SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args,
              HYPRE_Solver *solver_ptr)
 {
    switch (solver_method)
@@ -132,63 +132,49 @@ SolverCreate(MPI_Comm      comm,
  *-----------------------------------------------------------------------------*/
 
 void
-SolverSetup(precon_t       precon_method,
-            solver_t       solver_method,
-            HYPRE_Precon   precon,
-            HYPRE_Solver   solver,
-            HYPRE_IJMatrix M,
-            HYPRE_IJVector b,
-            HYPRE_IJVector x)
+SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
+            HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x)
 {
    StatsTimerStart("prec");
 
-   void                    *vM, *vb, *vx;
-   HYPRE_ParCSRMatrix       par_M;
-   HYPRE_ParVector          par_b, par_x;
-   HYPRE_PtrToParSolverFcn  setup_ptrs[] = {HYPRE_BoomerAMGSetup,
-                                            HYPRE_MGRSetup,
-                                            HYPRE_ILUSetup,
-                                            HYPRE_FSAISetup};
-   HYPRE_PtrToParSolverFcn  solve_ptrs[] = {HYPRE_BoomerAMGSolve,
-                                            HYPRE_MGRSolve,
-                                            HYPRE_ILUSolve,
-                                            HYPRE_FSAISolve};
+   void                   *vM = NULL, *vb = NULL, *vx = NULL;
+   HYPRE_ParCSRMatrix      par_M = NULL;
+   HYPRE_ParVector         par_b = NULL, par_x = NULL;
+   HYPRE_PtrToParSolverFcn setup_ptrs[] = {HYPRE_BoomerAMGSetup, HYPRE_MGRSetup,
+                                           HYPRE_ILUSetup, HYPRE_FSAISetup};
+   HYPRE_PtrToParSolverFcn solve_ptrs[] = {HYPRE_BoomerAMGSolve, HYPRE_MGRSolve,
+                                           HYPRE_ILUSolve, HYPRE_FSAISolve};
 
-   HYPRE_IJMatrixGetObject(M, &vM); par_M = (HYPRE_ParCSRMatrix) vM;
-   HYPRE_IJVectorGetObject(b, &vb); par_b = (HYPRE_ParVector) vb;
-   HYPRE_IJVectorGetObject(x, &vx); par_x = (HYPRE_ParVector) vx;
+   HYPRE_IJMatrixGetObject(M, &vM);
+   par_M = (HYPRE_ParCSRMatrix)vM;
+   HYPRE_IJVectorGetObject(b, &vb);
+   par_b = (HYPRE_ParVector)vb;
+   HYPRE_IJVectorGetObject(x, &vx);
+   par_x = (HYPRE_ParVector)vx;
 
    switch (solver_method)
    {
       case SOLVER_PCG:
-         HYPRE_ParCSRPCGSetPrecond(solver,
-                                   solve_ptrs[precon_method],
-                                   setup_ptrs[precon_method],
-                                   precon->main);
+         HYPRE_ParCSRPCGSetPrecond(solver, solve_ptrs[precon_method],
+                                   setup_ptrs[precon_method], precon->main);
          HYPRE_ParCSRPCGSetup(solver, par_M, par_b, par_x);
          break;
 
       case SOLVER_GMRES:
-         HYPRE_ParCSRGMRESSetPrecond(solver,
-                                     solve_ptrs[precon_method],
-                                     setup_ptrs[precon_method],
-                                     precon->main);
+         HYPRE_ParCSRGMRESSetPrecond(solver, solve_ptrs[precon_method],
+                                     setup_ptrs[precon_method], precon->main);
          HYPRE_ParCSRGMRESSetup(solver, par_M, par_b, par_x);
          break;
 
       case SOLVER_FGMRES:
-         HYPRE_ParCSRFlexGMRESSetPrecond(solver,
-                                         solve_ptrs[precon_method],
-                                         setup_ptrs[precon_method],
-                                         precon->main);
+         HYPRE_ParCSRFlexGMRESSetPrecond(solver, solve_ptrs[precon_method],
+                                         setup_ptrs[precon_method], precon->main);
          HYPRE_ParCSRFlexGMRESSetup(solver, par_M, par_b, par_x);
          break;
 
       case SOLVER_BICGSTAB:
-         HYPRE_ParCSRBiCGSTABSetPrecond(solver,
-                                        solve_ptrs[precon_method],
-                                        setup_ptrs[precon_method],
-                                        precon->main);
+         HYPRE_ParCSRBiCGSTABSetPrecond(solver, solve_ptrs[precon_method],
+                                        setup_ptrs[precon_method], precon->main);
          HYPRE_ParCSRBiCGSTABSetup(solver, par_M, par_b, par_x);
          break;
 
@@ -208,23 +194,23 @@ SolverSetup(precon_t       precon_method,
  *-----------------------------------------------------------------------------*/
 
 void
-SolverApply(solver_t       solver_method,
-            HYPRE_Solver   solver,
-            HYPRE_IJMatrix A,
-            HYPRE_IJVector b,
-            HYPRE_IJVector x)
+SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
+            HYPRE_IJVector b, HYPRE_IJVector x)
 {
    StatsTimerStart("solve");
 
-   void               *vA, *vb, *vx;
-   HYPRE_ParCSRMatrix  par_A;
-   HYPRE_ParVector     par_b, par_x;
-   HYPRE_Int           iters = 0;
-   HYPRE_Complex       b_norm, r_norm;
+   void              *vA = NULL, *vb = NULL, *vx = NULL;
+   HYPRE_ParCSRMatrix par_A = NULL;
+   HYPRE_ParVector    par_b = NULL, par_x = NULL;
+   HYPRE_Int          iters  = 0;
+   HYPRE_Complex      b_norm = NAN, r_norm = NAN;
 
-   HYPRE_IJMatrixGetObject(A, &vA); par_A = (HYPRE_ParCSRMatrix) vA;
-   HYPRE_IJVectorGetObject(b, &vb); par_b = (HYPRE_ParVector) vb;
-   HYPRE_IJVectorGetObject(x, &vx); par_x = (HYPRE_ParVector) vx;
+   HYPRE_IJMatrixGetObject(A, &vA);
+   par_A = (HYPRE_ParCSRMatrix)vA;
+   HYPRE_IJVectorGetObject(b, &vb);
+   par_b = (HYPRE_ParVector)vb;
+   HYPRE_IJVectorGetObject(x, &vx);
+   par_x = (HYPRE_ParVector)vx;
 
    switch (solver_method)
    {
@@ -249,7 +235,7 @@ SolverApply(solver_t       solver_method,
          break;
 
       default:
-         StatsIterSet((int) iters);
+         StatsIterSet((int)iters);
          StatsTimerStop("solve");
          return;
    }
@@ -257,7 +243,7 @@ SolverApply(solver_t       solver_method,
    /* Clear pending error codes from hypre */
    HYPRE_ClearAllErrors();
 
-   StatsIterSet((int) iters);
+   StatsIterSet((int)iters);
    StatsTimerStop("solve");
 
    /* Compute the real relative residual norm. Note this is not timed */

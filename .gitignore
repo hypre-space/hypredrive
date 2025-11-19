@@ -5,6 +5,9 @@
 *.lo
 *.btr
 *.csv
+.clang-tidy
+.deps
+.dirstamp
 *.~HEAD~*
 old-*
 *bkp*
@@ -57,8 +60,8 @@ stamp-*
 HYPREDRV_config.h
 /HYPREDRV_config.h.in
 /HYPREDRV_config.h.in~
-build*/
-install*/
+/build*/
+/install*/
 
 ###########
 # Libtools
@@ -89,3 +92,6 @@ docs/hypredrive.ps
 docs/hypredrive.tag
 docs/usrman-hypredrive.pdf
 docs/devman-hypredrive.pdf
+plan.md
+checklist.md
+CI.md

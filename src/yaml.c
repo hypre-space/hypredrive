@@ -11,15 +11,15 @@
  * YAMLtreeCreate
  *-----------------------------------------------------------------------------*/
 
-YAMLtree*
+YAMLtree *
 YAMLtreeCreate(int base_indent)
 {
-   YAMLtree *tree;
+   YAMLtree *tree = NULL;
 
-   tree = malloc(sizeof(YAMLtree));
-   tree->root = YAMLnodeCreate("", "", -1);
+   tree               = malloc(sizeof(YAMLtree));
+   tree->root         = YAMLnodeCreate("", "", -1);
    tree->base_indent  = base_indent;
-   tree->is_validated = false;  // Initialize validation flag
+   tree->is_validated = false; // Initialize validation flag
 
    return tree;
 }
@@ -29,7 +29,7 @@ YAMLtreeCreate(int base_indent)
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLtreeDestroy(YAMLtree** tree_ptr)
+YAMLtreeDestroy(YAMLtree **tree_ptr)
 {
    YAMLtree *tree = *tree_ptr;
 
@@ -46,21 +46,21 @@ YAMLtreeDestroy(YAMLtree** tree_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLtextRead(const char *dirname, const char *basename, int level, int *base_indent_ptr, size_t *length_ptr, char **text_ptr)
+YAMLtextRead(const char *dirname, const char *basename, int level, int *base_indent_ptr,
+             size_t *length_ptr, char **text_ptr)
 {
-   FILE   *fp;
-   char   *key, *val, *sep;
-   char    line[MAX_LINE_LENGTH];
-   char    backup[MAX_LINE_LENGTH];
-   char   *filename;
-   char   *new_text;
-   char   *comment_ptr;
-   int     inner_level, pos;
-   size_t  num_whitespaces = 2 * level;
-   size_t  new_length;
-   int     base_indent = *base_indent_ptr;  // Track base indentation level
-   int     prev_indent = -1;  // Track previous indentation level
-   bool    first_indented_line = true;
+   FILE  *fp  = NULL;
+   char  *key = NULL, *val = NULL, *sep = NULL;
+   char   line[MAX_LINE_LENGTH];
+   char   backup[MAX_LINE_LENGTH];
+   char  *filename    = NULL;
+   char  *new_text    = NULL;
+   int    inner_level = 0, pos = 0;
+   size_t num_whitespaces     = 2 * level;
+   size_t new_length          = 0;
+   int    base_indent         = *base_indent_ptr; // Track base indentation level
+   int    prev_indent         = -1;               // Track previous indentation level
+   bool   first_indented_line = true;
 
    /* Construct the whole filename */
    CombineFilename(dirname, basename, &filename);
@@ -84,6 +84,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
       line[strcspn(line, "\n")] = '\0';
 
       /* Remove comments at the end of valid line */
+      char *comment_ptr = NULL;
       if ((comment_ptr = strchr(line, '#')) != NULL)
       {
          *comment_ptr = '\0';
@@ -91,7 +92,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
          comment_ptr = strchr(backup, '#');
          if (comment_ptr)
          {
-            *comment_ptr = '\n';  /* Preserve newline in backup */
+            *comment_ptr       = '\n'; /* Preserve newline in backup */
             *(comment_ptr + 1) = '\0';
          }
       }
@@ -109,12 +110,18 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
       }
 
       *sep = '\0';
-      key = line;
-      val = sep + 1;
+      key  = line;
+      val  = sep + 1;
 
       /* Trim leading spaces */
-      while (*key == ' ') key++;
-      while (*val == ' ') val++;
+      while (*key == ' ')
+      {
+         key++;
+      }
+      while (*val == ' ')
+      {
+         val++;
+      }
 
       /* Calculate indentation */
       pos = 0;
@@ -161,7 +168,8 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
          }
 
          /* Check for indentation jumps */
-         if (!first_indented_line && pos > prev_indent && (pos - prev_indent) > base_indent)
+         if (!first_indented_line && pos > prev_indent &&
+             (pos - prev_indent) > base_indent)
          {
             ErrorCodeSet(ERROR_YAML_INVALID_INDENT_JUMP);
             ErrorMsgAdd("Invalid indentation jump detected in YAML input!");
@@ -169,11 +177,8 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
             return;
          }
 
-         if (pos > 0)
-         {
-            first_indented_line = false;
-            prev_indent = pos;
-         }
+         first_indented_line = false;
+         prev_indent         = pos;
       }
 
       if (!strcmp(key, "include"))
@@ -191,7 +196,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
 
          /* Regular line, append it to the text */
          new_length = *length_ptr + strlen(backup) + num_whitespaces;
-         new_text   = (char *) realloc(*text_ptr, new_length + 1);
+         new_text   = (char *)realloc(*text_ptr, new_length + 1);
          if (!new_text)
          {
             fclose(fp);
@@ -223,24 +228,25 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
 void
 YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
 {
-   YAMLnode   *node;
-   YAMLnode   *parent;
-   YAMLtree   *tree;
+   YAMLnode *node   = NULL;
+   YAMLnode *parent = NULL;
+   YAMLtree *tree   = NULL;
 
-   char       *remaining;
-   char       *line_ptr;
-   char       *sep;
-   char       *key, *val;
-   char       *line;
-   int         level;
-   int         count, pos, indent;
-   int         nlines;
-   int         next;
-   bool        divisor_is_ok;
+   char *remaining = NULL;
+   char *line_ptr  = NULL;
+   char *sep       = NULL;
+   char *key = NULL, *val = NULL;
+   char *line  = NULL;
+   int   level = 0;
+   int   count = 0, pos = 0, indent = 0;
+   int   nlines        = 0;
+   int   next          = 0;
+   bool  divisor_is_ok = false;
 
-   tree = YAMLtreeCreate(base_indent);
+   tree      = YAMLtreeCreate(base_indent);
    remaining = text;
-   nlines = 0; parent = tree->root;
+   nlines    = 0;
+   parent    = tree->root;
    while ((line = strtok_r(remaining, "\n", &remaining)))
    {
       /* Increase line counter */
@@ -258,23 +264,25 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
       /* Search for comment at the end of the line and remove it */
       if ((line_ptr = strchr(line, '#')) != NULL)
       {
-        *line_ptr = '\0';
+         *line_ptr = '\0';
       }
 
       /* Skip line if it contains blank spaces only */
-      line_ptr = line; next = 1;
+      line_ptr = line;
+      next     = 1;
       while (*line_ptr)
       {
-         if (*line_ptr != ' '  &&
-             *line_ptr != '\n' &&
-             *line_ptr != '\r')
+         if (*line_ptr != ' ' && *line_ptr != '\n' && *line_ptr != '\r')
          {
             next = 0;
             break;
          }
          line_ptr++;
       }
-      if (next) continue;
+      if (next)
+      {
+         continue;
+      }
 
       /* Compute indendation */
       pos = count = indent = 0;
@@ -287,8 +295,8 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
          }
          else
          {
-            indent += (8 - pos % 8);
-            pos += (8 - pos % 8);
+            indent += (8 - (pos % 8));
+            pos += (8 - (pos % 8));
          }
          count++;
       }
@@ -313,8 +321,14 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
       }
 
       /* Trim leading spaces */
-      while (*key == ' ') key++;
-      while (*val == ' ') val++;
+      while (*key == ' ')
+      {
+         key++;
+      }
+      while (*val == ' ')
+      {
+         val++;
+      }
 
       /* Create node entry */
       node = YAMLnodeCreate(key, val, level);
@@ -345,7 +359,7 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLtreeUpdate(int argc, char** argv, YAMLtree *tree)
+YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 {
    /* TODO */
    return;
@@ -360,7 +374,7 @@ YAMLtreeUpdate(int argc, char** argv, YAMLtree *tree)
 void
 YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
 {
-   YAMLnode *child;
+   YAMLnode *child = NULL;
 
    if (!tree)
    {
@@ -402,7 +416,7 @@ YAMLtreeValidate(YAMLtree *tree)
       child = child->next;
    }
 
-   tree->is_validated = true;  // Mark tree as validated
+   tree->is_validated = true; // Mark tree as validated
 }
 
 /******************************************************************************
@@ -412,14 +426,14 @@ YAMLtreeValidate(YAMLtree *tree)
  * YAMLnodeCreate
  *-----------------------------------------------------------------------------*/
 
-YAMLnode*
-YAMLnodeCreate(char *key, char* val, int level)
+YAMLnode *
+YAMLnodeCreate(const char *key, const char *val, int level)
 {
-   YAMLnode *node;
+   YAMLnode *node = NULL;
 
-   node             = (YAMLnode*) malloc(sizeof(YAMLnode));
+   node             = (YAMLnode *)malloc(sizeof(YAMLnode));
    node->level      = level;
-   node->key        = StrTrim(strdup(key));
+   node->key        = StrTrim(strdup((char *)key));
    node->mapped_val = NULL;
    node->valid      = YAML_NODE_UNKNOWN;
    node->parent     = NULL;
@@ -430,11 +444,11 @@ YAMLnodeCreate(char *key, char* val, int level)
       Otherwise, "node->val" will be set as "val" with all lowercase letters */
    if (strstr(key, "name"))
    {
-      node->val     = StrTrim(strdup(val));
+      node->val = StrTrim(strdup((char *)val));
    }
    else
    {
-      node->val     = StrToLowerCase(StrTrim(strdup(val)));
+      node->val = StrToLowerCase(StrTrim(strdup((char *)val)));
    }
 
    return node;
@@ -447,10 +461,10 @@ YAMLnodeCreate(char *key, char* val, int level)
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLnodeDestroy(YAMLnode* node)
+YAMLnodeDestroy(YAMLnode *node)
 {
-   YAMLnode  *child;
-   YAMLnode  *next;
+   YAMLnode *child = NULL;
+   YAMLnode *next  = NULL;
 
    if (node == NULL)
    {
@@ -479,7 +493,7 @@ YAMLnodeDestroy(YAMLnode* node)
 void
 YAMLnodeAddChild(YAMLnode *parent, YAMLnode *child)
 {
-   YAMLnode *node;
+   YAMLnode *node = NULL;
 
    child->parent = parent;
    if (parent->children == NULL)
@@ -506,8 +520,8 @@ YAMLnodeAddChild(YAMLnode *parent, YAMLnode *child)
 void
 YAMLnodeAppend(YAMLnode *node, YAMLnode **previous_ptr)
 {
-   YAMLnode  *previous = *previous_ptr;
-   int        previous_level = previous->level;
+   YAMLnode *previous       = *previous_ptr;
+   int       previous_level = previous->level;
 
    if (node->level > previous_level)
    {
@@ -540,13 +554,13 @@ YAMLnodeAppend(YAMLnode *node, YAMLnode **previous_ptr)
  *-----------------------------------------------------------------------------*/
 
 static inline void
-YAMLnodePrintHelper(YAMLnode *node, const char *cKey, const char *cVal, const char *suffix)
+YAMLnodePrintHelper(const YAMLnode *node, const char *cKey, const char *cVal,
+                    const char *suffix)
 {
-   int offset = 2 * node->level + (int) strlen(node->key);
+   int offset = (2 * node->level) + (int)strlen(node->key);
 
-   printf("%s%*s%s: %s%s%s%s%s\n",
-          cKey, offset, node->key, TEXT_RESET,
-          cVal, node->val, TEXT_RESET, suffix, TEXT_RESET);
+   printf("%s%*s%s: %s%s%s%s%s\n", cKey, offset, node->key, TEXT_RESET, cVal, node->val,
+          TEXT_RESET, suffix, TEXT_RESET);
 }
 
 /*-----------------------------------------------------------------------------
@@ -556,7 +570,10 @@ YAMLnodePrintHelper(YAMLnode *node, const char *cKey, const char *cVal, const ch
 void
 YAMLnodeValidate(YAMLnode *node)
 {
-   if (!node) return;
+   if (!node)
+   {
+      return;
+   }
 
    switch (node->valid)
    {
@@ -601,7 +618,10 @@ YAMLnodeValidate(YAMLnode *node)
 void
 YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
 {
-   if (!node) return;
+   if (!node)
+   {
+      return;
+   }
 
    // Handle printing based on mode and validity
    switch (print_mode)
@@ -666,11 +686,10 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
  * Finds a node by key starting from the input "node" via DFS.
  *-----------------------------------------------------------------------------*/
 
-YAMLnode*
-YAMLnodeFindByKey(YAMLnode* node, const char* key)
+YAMLnode *
+YAMLnodeFindByKey(YAMLnode *node, const char *key)
 {
-   YAMLnode *child;
-   YAMLnode *found;
+   YAMLnode *child = NULL;
 
    if (node)
    {
@@ -682,7 +701,7 @@ YAMLnodeFindByKey(YAMLnode* node, const char* key)
       child = node->children;
       while (child)
       {
-         found = YAMLnodeFindByKey(child, key);
+         YAMLnode *found = YAMLnodeFindByKey(child, key);
          if (found)
          {
             return found;
@@ -700,10 +719,10 @@ YAMLnodeFindByKey(YAMLnode* node, const char* key)
  * Finds a node by key in the parent's children list.
  *-----------------------------------------------------------------------------*/
 
-YAMLnode*
-YAMLnodeFindChildByKey(YAMLnode* parent, const char* key)
+YAMLnode *
+YAMLnodeFindChildByKey(YAMLnode *parent, const char *key)
 {
-   YAMLnode *child;
+   YAMLnode *child = NULL;
 
    if (parent)
    {
@@ -727,10 +746,10 @@ YAMLnodeFindChildByKey(YAMLnode* parent, const char* key)
  * Finds a value by key in the parent's children list.
  *-----------------------------------------------------------------------------*/
 
-char*
-YAMLnodeFindChildValueByKey(YAMLnode* parent, const char* key)
+char *
+YAMLnodeFindChildValueByKey(YAMLnode *parent, const char *key)
 {
-   YAMLnode *child;
+   YAMLnode *child = NULL;
 
    if (parent)
    {

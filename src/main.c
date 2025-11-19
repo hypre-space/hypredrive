@@ -17,11 +17,12 @@ PrintUsage(const char *argv0)
    fflush(stderr);
 }
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
-   MPI_Comm      comm = MPI_COMM_WORLD;
-   int           myid, i, k;
-   HYPREDRV_t    obj;
+   MPI_Comm   comm = MPI_COMM_WORLD;
+   int        myid = 0;
+   HYPREDRV_t obj  = NULL;
 
    /*-----------------------------------------------------------
     * Initialize driver
@@ -34,7 +35,10 @@ int main(int argc, char **argv)
 
    if (argc < 1)
    {
-      if (!myid) PrintUsage(argv[0]);
+      if (!myid)
+      {
+         PrintUsage(argv[0]);
+      }
       MPI_Abort(comm, 1);
    }
 
@@ -51,7 +55,10 @@ int main(int argc, char **argv)
 
    if (argc < 1)
    {
-      if (!myid) fprintf(stderr, "Need at least one input argument!\n");
+      if (!myid)
+      {
+         fprintf(stderr, "Need at least one input argument!\n");
+      }
       MPI_Abort(comm, 1);
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc - 1, argv + 1, obj));
@@ -70,17 +77,17 @@ int main(int argc, char **argv)
     * Build and solve linear system(s)
     *-----------------------------------------------------------*/
 
-   for (k = 0; k < HYPREDRV_InputArgsGetNumLinearSystems(obj); k++)
+   for (int k = 0; k < HYPREDRV_InputArgsGetNumLinearSystems(obj); k++)
    {
       /* Build linear system (matrix, RHS, LHS, and auxiliary data) */
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemBuild(obj));
 
       /* Optionally compute full eigenspectrum */
-#if defined(HYPREDRV_ENABLE_EIGSPEC)
+#ifdef HYPREDRV_ENABLE_EIGSPEC
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemComputeEigenspectrum(obj));
 #endif
 
-      for (i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
+      for (int i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
       {
          /* Reset initial guess */
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(obj));
@@ -105,7 +112,10 @@ int main(int argc, char **argv)
     * Finalize driver
     *-----------------------------------------------------------*/
 
-   if (!myid) HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(obj));
+   if (!myid)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(obj));
+   }
    HYPREDRV_SAFE_CALL(HYPREDRV_PrintExitInfo(comm, argv[0]));
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&obj));

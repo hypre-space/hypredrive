@@ -115,8 +115,8 @@ typedef struct
  * Prototypes
  *--------------------------------------------------------------------------*/
 static inline HYPRE_BigInt grid2idx(const HYPRE_BigInt gcoords[3],
-                                    const HYPRE_Int    bcoords[3],
-                                    const HYPRE_Int    gdims[3], HYPRE_BigInt **pstarts);
+                                    const HYPRE_Int bcoords[3], const HYPRE_Int gdims[3],
+                                    HYPRE_BigInt **pstarts);
 
 int PrintUsage(void);
 int CreateDistMesh(MPI_Comm, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int,
@@ -134,10 +134,10 @@ int
 PrintUsage(void)
 {
    printf("\n");
-   printf("Usage: ${MPIEXEC_COMMAND} ${MPIEXEC_NUMPROC_FLAG} <np> ./elasticity [options]\n");
+   printf("Usage: ${MPIEXEC_COMMAND} <np> ./elasticity [options]\n");
    printf("\n");
    printf("Options:\n");
-   printf("  -i <file>         : YAML configuration file for solver settings (Optional)\n");
+   printf("  -i <file>         : YAML configuration file for solver settings (Opt.)\n");
    printf("  -n <nx> <ny> <nz> : Global grid dimensions in nodes (30 10 10)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (1 1 1)\n");
    printf("  -L <Lx> <Ly> <Lz> : Physical dimensions (3 1 1)\n");
@@ -344,8 +344,7 @@ grid2idx(const HYPRE_BigInt gcoords[3], const HYPRE_Int bcoords[3],
    return pstarts[2][bcoords[2]] * (HYPRE_BigInt)gdims[0] * (HYPRE_BigInt)gdims[1] +
           pstarts[1][bcoords[1]] * (HYPRE_BigInt)gdims[0] *
              (pstarts[2][bcoords[2] + 1] - pstarts[2][bcoords[2]]) +
-          pstarts[0][bcoords[0]] *
-             (pstarts[1][bcoords[1] + 1] - pstarts[1][bcoords[1]]) *
+          pstarts[0][bcoords[0]] * (pstarts[1][bcoords[1] + 1] - pstarts[1][bcoords[1]]) *
              (pstarts[2][bcoords[2] + 1] - pstarts[2][bcoords[2]]) +
           ((gcoords[2] - pstarts[2][bcoords[2]]) *
               (pstarts[1][bcoords[1] + 1] - pstarts[1][bcoords[1]]) +
@@ -661,10 +660,7 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
    HYPRE_BigInt dof_iupper  = node_iupper * 3 + 2;
 
    /* Create IJ objects */
-   HYPRE_IJMatrixCreate(solver_comm,
-                        dof_ilower, dof_iupper,
-                        dof_ilower, dof_iupper,
-                        &A);
+   HYPRE_IJMatrixCreate(solver_comm, dof_ilower, dof_iupper, dof_ilower, dof_iupper, &A);
    HYPRE_IJVectorCreate(solver_comm, dof_ilower, dof_iupper, &b);
    HYPRE_IJMatrixSetObjectType(A, HYPRE_PARCSR);
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
@@ -687,8 +683,7 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
    /* Constitutive matrix and body force */
    HYPRE_Real D[6][6];
    constitutive_matrix_3d(params->E, params->nu, D);
-   HYPRE_Real bforce[3] = {params->rho * params->g[0],
-                           params->rho * params->g[1],
+   HYPRE_Real bforce[3] = {params->rho * params->g[0], params->rho * params->g[1],
                            params->rho * params->g[2]};
 
    /* Precompute element templates */
@@ -700,11 +695,14 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
    /* Loop over elements intersecting this rank's node set:
     * gx in [max(start-1,0), min(end, Nx-1)) and similarly for gy,gz. */
    HYPRE_BigInt gz_lo = (pstarts[2][p[2]] > 0) ? (pstarts[2][p[2]] - 1) : 0;
-   HYPRE_BigInt gz_hi = (pstarts[2][p[2] + 1] < gdims[2]) ? pstarts[2][p[2] + 1] : (gdims[2] - 1);
+   HYPRE_BigInt gz_hi =
+      (pstarts[2][p[2] + 1] < gdims[2]) ? pstarts[2][p[2] + 1] : (gdims[2] - 1);
    HYPRE_BigInt gy_lo = (pstarts[1][p[1]] > 0) ? (pstarts[1][p[1]] - 1) : 0;
-   HYPRE_BigInt gy_hi = (pstarts[1][p[1] + 1] < gdims[1]) ? pstarts[1][p[1] + 1] : (gdims[1] - 1);
+   HYPRE_BigInt gy_hi =
+      (pstarts[1][p[1] + 1] < gdims[1]) ? pstarts[1][p[1] + 1] : (gdims[1] - 1);
    HYPRE_BigInt gx_lo = (pstarts[0][p[0]] > 0) ? (pstarts[0][p[0]] - 1) : 0;
-   HYPRE_BigInt gx_hi = (pstarts[0][p[0] + 1] < gdims[0]) ? pstarts[0][p[0] + 1] : (gdims[0] - 1);
+   HYPRE_BigInt gx_hi =
+      (pstarts[0][p[0] + 1] < gdims[0]) ? pstarts[0][p[0] + 1] : (gdims[0] - 1);
 
    for (HYPRE_BigInt gz = gz_lo; gz < gz_hi; gz++)
    {
@@ -730,10 +728,10 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
                HYPRE_Int owner_bc[3];
                for (int d = 0; d < 3; d++)
                {
-                  HYPRE_Int pd = mesh->pdims[d];
+                  HYPRE_Int     pd = mesh->pdims[d];
                   HYPRE_BigInt *ps = mesh->pstarts[d];
-                  HYPRE_BigInt cg = ng[a][d];
-                  HYPRE_Int bd = 0;
+                  HYPRE_BigInt  cg = ng[a][d];
+                  HYPRE_Int     bd = 0;
                   while ((bd + 1) < pd && cg >= ps[bd + 1]) bd++;
                   owner_bc[d] = bd;
                }
@@ -787,7 +785,8 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
             for (int i = 0; i < 24; i++)
             {
                if (is_dirichlet[i]) continue; /* row suppressed */
-               if (dof_gid[i] < dof_ilower || dof_gid[i] > dof_iupper) continue; /* only own rows */
+               if (dof_gid[i] < dof_ilower || dof_gid[i] > dof_iupper)
+                  continue; /* only own rows */
                rows_elem[nrows_elem] = dof_gid[i];
                HYPRE_Int ncols       = 0;
                for (int j = 0; j < 24; j++)
@@ -826,7 +825,8 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
             for (int i = 0; i < 24; i++)
             {
                if (is_dirichlet[i]) continue;
-               if (dof_gid[i] < dof_ilower || dof_gid[i] > dof_iupper) continue; /* only own rows */
+               if (dof_gid[i] < dof_ilower || dof_gid[i] > dof_iupper)
+                  continue; /* only own rows */
                vec_rows[nvals_elem] = dof_gid[i];
                vec_vals[nvals_elem] = fe[i];
                nvals_elem++;
@@ -868,17 +868,17 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
          for (HYPRE_BigInt gz = pstarts[2][p[2]]; gz < pstarts[2][p[2] + 1]; gz++)
          {
             HYPRE_BigInt ncoords[3] = {0, gy, gz};
-            HYPRE_Int owner_bc[3];
+            HYPRE_Int    owner_bc[3];
             for (int d = 0; d < 3; d++)
             {
-               HYPRE_Int pd = mesh->pdims[d];
+               HYPRE_Int     pd = mesh->pdims[d];
                HYPRE_BigInt *ps = mesh->pstarts[d];
-               HYPRE_BigInt cg = ncoords[d];
-               HYPRE_Int bd = 0;
+               HYPRE_BigInt  cg = ncoords[d];
+               HYPRE_Int     bd = 0;
                while ((bd + 1) < pd && cg >= ps[bd + 1]) bd++;
                owner_bc[d] = bd;
             }
-            HYPRE_BigInt n_gid      = grid2idx(ncoords, owner_bc, gdims, pstarts);
+            HYPRE_BigInt n_gid = grid2idx(ncoords, owner_bc, gdims, pstarts);
             for (int c = 0; c < 3; c++)
             {
                HYPRE_BigInt r = 3 * n_gid + c;
@@ -968,42 +968,60 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    /* Allocate ghost buffers (vectors: 3 doubles per point) */
    double *ghost[14];
    for (int i = 0; i < 14; i++) ghost[i] = NULL;
-   if (mesh->nbrs[0] != MPI_PROC_NULL) ghost[0]  = (double *)calloc(ny * nz * 3, sizeof(double)); /* left  face */
-   if (mesh->nbrs[1] != MPI_PROC_NULL) ghost[1]  = (double *)calloc(ny * nz * 3, sizeof(double)); /* right face send */
-   if (mesh->nbrs[2] != MPI_PROC_NULL) ghost[2]  = (double *)calloc(nx * nz * 3, sizeof(double)); /* down  face */
-   if (mesh->nbrs[3] != MPI_PROC_NULL) ghost[3]  = (double *)calloc(nx * nz * 3, sizeof(double)); /* up    face send */
-   if (mesh->nbrs[4] != MPI_PROC_NULL) ghost[4]  = (double *)calloc(nx * ny * 3, sizeof(double)); /* back  face */
-   if (mesh->nbrs[5] != MPI_PROC_NULL) ghost[5]  = (double *)calloc(nx * ny * 3, sizeof(double)); /* front face send */
-   if (mesh->nbrs[6] != MPI_PROC_NULL) ghost[6]  = (double *)calloc(nz * 3, sizeof(double));      /* left-down edge */
-   if (mesh->nbrs[7] != MPI_PROC_NULL) ghost[7]  = (double *)calloc(nz * 3, sizeof(double));      /* right-up  edge send */
-   if (mesh->nbrs[8] != MPI_PROC_NULL) ghost[8]  = (double *)calloc(ny * 3, sizeof(double));      /* left-back edge */
-   if (mesh->nbrs[9] != MPI_PROC_NULL) ghost[9]  = (double *)calloc(ny * 3, sizeof(double));      /* right-front edge send */
-   if (mesh->nbrs[10] != MPI_PROC_NULL) ghost[10] = (double *)calloc(nx * 3, sizeof(double));     /* down-back edge */
-   if (mesh->nbrs[11] != MPI_PROC_NULL) ghost[11] = (double *)calloc(nx * 3, sizeof(double));     /* up-front   edge send */
-   if (mesh->nbrs[12] != MPI_PROC_NULL) ghost[12] = (double *)calloc(3, sizeof(double));          /* left-down-back corner */
-   if (mesh->nbrs[13] != MPI_PROC_NULL) ghost[13] = (double *)calloc(3, sizeof(double));          /* right-up-front corner send */
+   if (mesh->nbrs[0] != MPI_PROC_NULL)
+      ghost[0] = (double *)calloc(ny * nz * 3, sizeof(double)); /* left  face */
+   if (mesh->nbrs[1] != MPI_PROC_NULL)
+      ghost[1] = (double *)calloc(ny * nz * 3, sizeof(double)); /* right face send */
+   if (mesh->nbrs[2] != MPI_PROC_NULL)
+      ghost[2] = (double *)calloc(nx * nz * 3, sizeof(double)); /* down  face */
+   if (mesh->nbrs[3] != MPI_PROC_NULL)
+      ghost[3] = (double *)calloc(nx * nz * 3, sizeof(double)); /* up    face send */
+   if (mesh->nbrs[4] != MPI_PROC_NULL)
+      ghost[4] = (double *)calloc(nx * ny * 3, sizeof(double)); /* back  face */
+   if (mesh->nbrs[5] != MPI_PROC_NULL)
+      ghost[5] = (double *)calloc(nx * ny * 3, sizeof(double)); /* front face send */
+   if (mesh->nbrs[6] != MPI_PROC_NULL)
+      ghost[6] = (double *)calloc(nz * 3, sizeof(double)); /* left-down edge */
+   if (mesh->nbrs[7] != MPI_PROC_NULL)
+      ghost[7] = (double *)calloc(nz * 3, sizeof(double)); /* right-up  edge send */
+   if (mesh->nbrs[8] != MPI_PROC_NULL)
+      ghost[8] = (double *)calloc(ny * 3, sizeof(double)); /* left-back edge */
+   if (mesh->nbrs[9] != MPI_PROC_NULL)
+      ghost[9] = (double *)calloc(ny * 3, sizeof(double)); /* right-front edge send */
+   if (mesh->nbrs[10] != MPI_PROC_NULL)
+      ghost[10] = (double *)calloc(nx * 3, sizeof(double)); /* down-back edge */
+   if (mesh->nbrs[11] != MPI_PROC_NULL)
+      ghost[11] = (double *)calloc(nx * 3, sizeof(double)); /* up-front  edge send */
+   if (mesh->nbrs[12] != MPI_PROC_NULL)
+      ghost[12] = (double *)calloc(3, sizeof(double)); /* left-down-back corner */
+   if (mesh->nbrs[13] != MPI_PROC_NULL)
+      ghost[13] = (double *)calloc(3, sizeof(double)); /* right-up-front corner send */
 
    /* Fill send buffers and post Irecvs */
    MPI_Request reqs[28];
-   int reqc = 0;
+   int         reqc = 0;
 
    /* X-direction faces */
    if (mesh->nbrs[1] != MPI_PROC_NULL)
    {
       for (int k = 0; k < nz; k++)
+      {
          for (int j = 0; j < ny; j++)
          {
-            int nidx = (k * ny + j) * nx + (nx - 1);
-            int off  = (k * ny + j) * 3;
+            int nidx          = (k * ny + j) * nx + (nx - 1);
+            int off           = (k * ny + j) * 3;
             ghost[1][off + 0] = sol_data[3 * nidx + 0];
             ghost[1][off + 1] = sol_data[3 * nidx + 1];
             ghost[1][off + 2] = sol_data[3 * nidx + 2];
          }
-      MPI_Isend(ghost[1], ny * nz * 3, MPI_DOUBLE, mesh->nbrs[1], 0, mesh->cart_comm, &reqs[reqc++]);
+      }
+      MPI_Isend(ghost[1], ny * nz * 3, MPI_DOUBLE, mesh->nbrs[1], 0, mesh->cart_comm,
+                &reqs[reqc++]);
    }
    if (mesh->nbrs[0] != MPI_PROC_NULL)
    {
-      MPI_Irecv(ghost[0], ny * nz * 3, MPI_DOUBLE, mesh->nbrs[0], 0, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Irecv(ghost[0], ny * nz * 3, MPI_DOUBLE, mesh->nbrs[0], 0, mesh->cart_comm,
+                &reqs[reqc++]);
    }
 
    /* Y-direction faces */
@@ -1013,18 +1031,20 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
       {
          for (int i = 0; i < nx; i++)
          {
-            int nidx = (k * ny + (ny - 1)) * nx + i;
-            int off  = (k * nx + i) * 3;
+            int nidx          = (k * ny + (ny - 1)) * nx + i;
+            int off           = (k * nx + i) * 3;
             ghost[3][off + 0] = sol_data[3 * nidx + 0];
             ghost[3][off + 1] = sol_data[3 * nidx + 1];
             ghost[3][off + 2] = sol_data[3 * nidx + 2];
          }
       }
-      MPI_Isend(ghost[3], nx * nz * 3, MPI_DOUBLE, mesh->nbrs[3], 1, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Isend(ghost[3], nx * nz * 3, MPI_DOUBLE, mesh->nbrs[3], 1, mesh->cart_comm,
+                &reqs[reqc++]);
    }
    if (mesh->nbrs[2] != MPI_PROC_NULL)
    {
-      MPI_Irecv(ghost[2], nx * nz * 3, MPI_DOUBLE, mesh->nbrs[2], 1, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Irecv(ghost[2], nx * nz * 3, MPI_DOUBLE, mesh->nbrs[2], 1, mesh->cart_comm,
+                &reqs[reqc++]);
    }
 
    /* Z-direction faces */
@@ -1034,18 +1054,20 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
       {
          for (int i = 0; i < nx; i++)
          {
-            int nidx = ((nz - 1) * ny + j) * nx + i;
-            int off  = (j * nx + i) * 3;
+            int nidx          = ((nz - 1) * ny + j) * nx + i;
+            int off           = (j * nx + i) * 3;
             ghost[5][off + 0] = sol_data[3 * nidx + 0];
             ghost[5][off + 1] = sol_data[3 * nidx + 1];
             ghost[5][off + 2] = sol_data[3 * nidx + 2];
          }
       }
-      MPI_Isend(ghost[5], nx * ny * 3, MPI_DOUBLE, mesh->nbrs[5], 2, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Isend(ghost[5], nx * ny * 3, MPI_DOUBLE, mesh->nbrs[5], 2, mesh->cart_comm,
+                &reqs[reqc++]);
    }
    if (mesh->nbrs[4] != MPI_PROC_NULL)
    {
-      MPI_Irecv(ghost[4], nx * ny * 3, MPI_DOUBLE, mesh->nbrs[4], 2, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Irecv(ghost[4], nx * ny * 3, MPI_DOUBLE, mesh->nbrs[4], 2, mesh->cart_comm,
+                &reqs[reqc++]);
    }
 
    /* XY edge */
@@ -1053,16 +1075,18 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    {
       for (int k = 0; k < nz; k++)
       {
-         int nidx = (k * ny + (ny - 1)) * nx + (nx - 1);
+         int nidx            = (k * ny + (ny - 1)) * nx + (nx - 1);
          ghost[7][3 * k + 0] = sol_data[3 * nidx + 0];
          ghost[7][3 * k + 1] = sol_data[3 * nidx + 1];
          ghost[7][3 * k + 2] = sol_data[3 * nidx + 2];
       }
-      MPI_Isend(ghost[7], nz * 3, MPI_DOUBLE, mesh->nbrs[7], 3, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Isend(ghost[7], nz * 3, MPI_DOUBLE, mesh->nbrs[7], 3, mesh->cart_comm,
+                &reqs[reqc++]);
    }
    if (mesh->nbrs[6] != MPI_PROC_NULL)
    {
-      MPI_Irecv(ghost[6], nz * 3, MPI_DOUBLE, mesh->nbrs[6], 3, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Irecv(ghost[6], nz * 3, MPI_DOUBLE, mesh->nbrs[6], 3, mesh->cart_comm,
+                &reqs[reqc++]);
    }
 
    /* XZ edge */
@@ -1070,16 +1094,18 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    {
       for (int j = 0; j < ny; j++)
       {
-         int nidx = ((nz - 1) * ny + j) * nx + (nx - 1);
+         int nidx            = ((nz - 1) * ny + j) * nx + (nx - 1);
          ghost[9][3 * j + 0] = sol_data[3 * nidx + 0];
          ghost[9][3 * j + 1] = sol_data[3 * nidx + 1];
          ghost[9][3 * j + 2] = sol_data[3 * nidx + 2];
       }
-      MPI_Isend(ghost[9], ny * 3, MPI_DOUBLE, mesh->nbrs[9], 4, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Isend(ghost[9], ny * 3, MPI_DOUBLE, mesh->nbrs[9], 4, mesh->cart_comm,
+                &reqs[reqc++]);
    }
    if (mesh->nbrs[8] != MPI_PROC_NULL)
    {
-      MPI_Irecv(ghost[8], ny * 3, MPI_DOUBLE, mesh->nbrs[8], 4, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Irecv(ghost[8], ny * 3, MPI_DOUBLE, mesh->nbrs[8], 4, mesh->cart_comm,
+                &reqs[reqc++]);
    }
 
    /* YZ edge */
@@ -1087,30 +1113,34 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    {
       for (int i = 0; i < nx; i++)
       {
-         int nidx = ((nz - 1) * ny + (ny - 1)) * nx + i;
+         int nidx             = ((nz - 1) * ny + (ny - 1)) * nx + i;
          ghost[11][3 * i + 0] = sol_data[3 * nidx + 0];
          ghost[11][3 * i + 1] = sol_data[3 * nidx + 1];
          ghost[11][3 * i + 2] = sol_data[3 * nidx + 2];
       }
-      MPI_Isend(ghost[11], nx * 3, MPI_DOUBLE, mesh->nbrs[11], 5, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Isend(ghost[11], nx * 3, MPI_DOUBLE, mesh->nbrs[11], 5, mesh->cart_comm,
+                &reqs[reqc++]);
    }
    if (mesh->nbrs[10] != MPI_PROC_NULL)
    {
-      MPI_Irecv(ghost[10], nx * 3, MPI_DOUBLE, mesh->nbrs[10], 5, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Irecv(ghost[10], nx * 3, MPI_DOUBLE, mesh->nbrs[10], 5, mesh->cart_comm,
+                &reqs[reqc++]);
    }
 
    /* XYZ corner */
    if (mesh->nbrs[13] != MPI_PROC_NULL)
    {
-      int nidx = ((nz - 1) * ny + (ny - 1)) * nx + (nx - 1);
+      int nidx     = ((nz - 1) * ny + (ny - 1)) * nx + (nx - 1);
       ghost[13][0] = sol_data[3 * nidx + 0];
       ghost[13][1] = sol_data[3 * nidx + 1];
       ghost[13][2] = sol_data[3 * nidx + 2];
-      MPI_Isend(ghost[13], 3, MPI_DOUBLE, mesh->nbrs[13], 6, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Isend(ghost[13], 3, MPI_DOUBLE, mesh->nbrs[13], 6, mesh->cart_comm,
+                &reqs[reqc++]);
    }
    if (mesh->nbrs[12] != MPI_PROC_NULL)
    {
-      MPI_Irecv(ghost[12], 3, MPI_DOUBLE, mesh->nbrs[12], 6, mesh->cart_comm, &reqs[reqc++]);
+      MPI_Irecv(ghost[12], 3, MPI_DOUBLE, mesh->nbrs[12], 6, mesh->cart_comm,
+                &reqs[reqc++]);
    }
 
    /* Build extended data including negative-face ghosts */
@@ -1122,8 +1152,8 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
          for (int i = 0; i < nx; i++)
          {
             int ig = i + ofi, jg = j + ofj, kg = k + ofk;
-            int idx_e = ((kg * nyg + jg) * nxg + ig) * 3;
-            int nidx  = (k * ny + j) * nx + i;
+            int idx_e      = ((kg * nyg + jg) * nxg + ig) * 3;
+            int nidx       = (k * ny + j) * nx + i;
             ext[idx_e + 0] = sol_data[3 * nidx + 0];
             ext[idx_e + 1] = sol_data[3 * nidx + 1];
             ext[idx_e + 2] = sol_data[3 * nidx + 2];
@@ -1142,8 +1172,8 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
          for (int j = 0; j < ny; j++)
          {
             int kg = k + ofk, jg = j + ofj;
-            int src = (k * ny + j) * 3;
-            int dst = ((kg * nyg + jg) * nxg + 0) * 3;
+            int src      = (k * ny + j) * 3;
+            int dst      = ((kg * nyg + jg) * nxg + 0) * 3;
             ext[dst + 0] = ghost[0][src + 0];
             ext[dst + 1] = ghost[0][src + 1];
             ext[dst + 2] = ghost[0][src + 2];
@@ -1157,8 +1187,8 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
          for (int i = 0; i < nx; i++)
          {
             int kg = k + ofk, ig = i + ofi;
-            int src = (k * nx + i) * 3;
-            int dst = ((kg * nyg + 0) * nxg + ig) * 3;
+            int src      = (k * nx + i) * 3;
+            int dst      = ((kg * nyg + 0) * nxg + ig) * 3;
             ext[dst + 0] = ghost[2][src + 0];
             ext[dst + 1] = ghost[2][src + 1];
             ext[dst + 2] = ghost[2][src + 2];
@@ -1172,8 +1202,8 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
          for (int i = 0; i < nx; i++)
          {
             int jg = j + ofj, ig = i + ofi;
-            int src = (j * nx + i) * 3;
-            int dst = ((0 * nyg + jg) * nxg + ig) * 3;
+            int src      = (j * nx + i) * 3;
+            int dst      = ((0 * nyg + jg) * nxg + ig) * 3;
             ext[dst + 0] = ghost[4][src + 0];
             ext[dst + 1] = ghost[4][src + 1];
             ext[dst + 2] = ghost[4][src + 2];
@@ -1186,8 +1216,8 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    {
       for (int k = 0; k < nz; k++)
       {
-         int kg = k + ofk;
-         int dst = ((kg * nyg + 0) * nxg + 0) * 3;
+         int kg       = k + ofk;
+         int dst      = ((kg * nyg + 0) * nxg + 0) * 3;
          ext[dst + 0] = ghost[6][3 * k + 0];
          ext[dst + 1] = ghost[6][3 * k + 1];
          ext[dst + 2] = ghost[6][3 * k + 2];
@@ -1197,8 +1227,8 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    {
       for (int j = 0; j < ny; j++)
       {
-         int jg = j + ofj;
-         int dst = ((0 * nyg + jg) * nxg + 0) * 3;
+         int jg       = j + ofj;
+         int dst      = ((0 * nyg + jg) * nxg + 0) * 3;
          ext[dst + 0] = ghost[8][3 * j + 0];
          ext[dst + 1] = ghost[8][3 * j + 1];
          ext[dst + 2] = ghost[8][3 * j + 2];
@@ -1208,8 +1238,8 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    {
       for (int i = 0; i < nx; i++)
       {
-         int ig = i + ofi;
-         int dst = ((0 * nyg + 0) * nxg + ig) * 3;
+         int ig       = i + ofi;
+         int dst      = ((0 * nyg + 0) * nxg + ig) * 3;
          ext[dst + 0] = ghost[10][3 * i + 0];
          ext[dst + 1] = ghost[10][3 * i + 1];
          ext[dst + 2] = ghost[10][3 * i + 2];
@@ -1219,7 +1249,7 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    /* Insert corner */
    if (mesh->nbrs[12] != MPI_PROC_NULL)
    {
-      int dst = ((0 * nyg + 0) * nxg + 0) * 3;
+      int dst      = ((0 * nyg + 0) * nxg + 0) * 3;
       ext[dst + 0] = ghost[12][0];
       ext[dst + 1] = ghost[12][1];
       ext[dst + 2] = ghost[12][2];
@@ -1238,23 +1268,21 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    }
 
    /* Coordinates (scale by physical dimensions) and extents with overlap */
-   double x_step = params->L[0] * gsizes[0];
-   double y_step = params->L[1] * gsizes[1];
-   double z_step = params->L[2] * gsizes[2];
+   double x_step  = params->L[0] * gsizes[0];
+   double y_step  = params->L[1] * gsizes[1];
+   double z_step  = params->L[2] * gsizes[2];
    double x_start = (ix_start - ofi) * x_step;
    double y_start = (iy_start - ofj) * y_step;
    double z_start = (iz_start - ofk) * z_step;
 
    fprintf(fp, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
    fprintf(fp, "<VTKFile type=\"RectilinearGrid\" version=\"0.1\">\n");
-   fprintf(fp, "  <RectilinearGrid WholeExtent=\"%d %d %d %d %d %d\">\n",
-           ix_start - ofi, ix_start + nx - 1,
-           iy_start - ofj, iy_start + ny - 1,
-           iz_start - ofk, iz_start + nz - 1);
-   fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n",
-           ix_start - ofi, ix_start + nx - 1,
-           iy_start - ofj, iy_start + ny - 1,
-           iz_start - ofk, iz_start + nz - 1);
+   fprintf(fp, "  <RectilinearGrid WholeExtent=\"%d %d %d %d %d %d\">\n", ix_start - ofi,
+           ix_start + nx - 1, iy_start - ofj, iy_start + ny - 1, iz_start - ofk,
+           iz_start + nz - 1);
+   fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", ix_start - ofi,
+           ix_start + nx - 1, iy_start - ofj, iy_start + ny - 1, iz_start - ofk,
+           iz_start + nz - 1);
 
    fprintf(fp, "      <Coordinates>\n");
    WriteCoordArray(fp, "x", x_start, x_step, nxg);
@@ -1277,7 +1305,8 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
             for (int i = 0; i < nxg; i++)
             {
                int idx = ((k * nyg + j) * nxg + i) * 3;
-               fprintf(fp, "%.15g %.15g %.15g ", ext[idx + 0], ext[idx + 1], ext[idx + 2]);
+               fprintf(fp, "%.15g %.15g %.15g ", ext[idx + 0], ext[idx + 1],
+                       ext[idx + 2]);
                if (((k * nyg + j) * nxg + i + 1) % 2 == 0) fprintf(fp, "\n          ");
             }
          }
@@ -1333,7 +1362,8 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    }
 
    /* Cleanup */
-   for (int i = 0; i < 14; i++) if (ghost[i]) free(ghost[i]);
+   for (int i = 0; i < 14; i++)
+      if (ghost[i]) free(ghost[i]);
    free(ext);
 
    return 0;

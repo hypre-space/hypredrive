@@ -21,6 +21,25 @@ endif()
 add_executable(laplacian laplacian.c)
 target_link_libraries(laplacian PRIVATE HYPREDRV::HYPREDRV)
 
+# Add an RPATH to the main build directory for MacOS
+if(APPLE)
+    target_link_options(laplacian PRIVATE  "-Wl,-rpath,${CMAKE_BINARY_DIR}")
+endif()
+
+# Add the laplacian driver to the test suite when testing is enabled
+if(HYPREDRV_ENABLE_TESTING)
+    add_test(NAME laplacian_driver_1proc
+        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS}
+                $<TARGET_FILE:laplacian> -n 6 6 6 -ns 1 ${MPIEXEC_POSTFLAGS}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+    set_tests_properties(laplacian_driver_1proc
+        PROPERTIES
+            RUN_SERIAL TRUE
+            FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
+    )
+endif()
+
 # Install the laplacian example binary when examples are built
 install(TARGETS laplacian
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

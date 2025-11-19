@@ -8,13 +8,13 @@
 #ifndef ERROR_H
 #define ERROR_H
 
-#include "mpi.h"
+#include <HYPRE_utilities.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
-#include <stdint.h>
-#include <stdbool.h>
 
 // TODO: consider using hypredrv_error_t instead of ErrorCode
 typedef enum ErrorCode_enum
@@ -50,23 +50,23 @@ typedef enum ErrorCode_enum
 } ErrorCode;
 
 // TODO: consider using hypredrv_ for function names
-void ErrorCodeSet(ErrorCode);
+void     ErrorCodeSet(ErrorCode);
 uint32_t ErrorCodeGet(void);
-bool ErrorCodeActive(void);
-void ErrorCodeDescribe(uint32_t);
-void ErrorCodeReset(uint32_t);
-void ErrorCodeResetAll(void);
-bool DistributedErrorCodeActive(MPI_Comm);
+bool     ErrorCodeActive(void);
+void     ErrorCodeDescribe(uint32_t);
+void     ErrorCodeReset(uint32_t);
+void     ErrorCodeResetAll(void);
+bool     DistributedErrorCodeActive(MPI_Comm);
 
 /*******************************************************************************
  *******************************************************************************/
 
-void ErrorMsgAdd(const char*, ...);
-void ErrorMsgAddCodeWithCount(ErrorCode, const char*);
-void ErrorMsgAddMissingKey(const char*);
-void ErrorMsgAddExtraKey(const char*);
-void ErrorMsgAddUnexpectedVal(const char*);
-void ErrorMsgAddInvalidFilename(const char*);
+void ErrorMsgAdd(const char *, ...);
+void ErrorMsgAddCodeWithCount(ErrorCode, const char *);
+void ErrorMsgAddMissingKey(const char *);
+void ErrorMsgAddExtraKey(const char *);
+void ErrorMsgAddUnexpectedVal(const char *);
+void ErrorMsgAddInvalidFilename(const char *);
 void ErrorMsgPrint();
 void ErrorMsgClear();
 void ErrorMsgPrintAndAbort(MPI_Comm);

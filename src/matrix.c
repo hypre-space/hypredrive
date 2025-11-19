@@ -5,45 +5,49 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "utils.h"
 #include "HYPRE_IJ_mv.h"
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
+#include "utils.h"
 
 void
-IJMatrixReadMultipartBinary(const char           *prefixname,
-                            MPI_Comm              comm,
-                            uint64_t              g_nparts,
-                            HYPRE_MemoryLocation  memory_location,
-                            HYPRE_IJMatrix       *mat_ptr)
+IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_nparts,
+                            HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *mat_ptr)
 {
-   int               nprocs, myid;
-   uint32_t          nparts;
-   uint64_t          part;
-   uint32_t          offset;
+   int      nprocs = 0, myid = 0;
+   uint32_t nparts = 0;
+   uint64_t part   = 0;
+   uint32_t offset = 0;
 
-   char              filename[1024];
-   uint64_t          header[11];
+   char     filename[1024];
+   uint64_t header[11];
 
-   uint64_t          nrows;
-   uint64_t          nrows_sum, nrows_offset;
-   uint64_t          nnzs_max;
+   uint64_t nrows     = 0;
+   uint64_t nrows_sum = 0, nrows_offset = 0;
+   uint64_t nnzs_max = 0;
 
-   uint32_t         *partids;
-   FILE             *fp;
+   uint32_t *partids = NULL;
+   FILE     *fp      = NULL;
 
-   HYPRE_IJMatrix    mat;
-   HYPRE_BigInt      ilower, iupper;
-   HYPRE_Int        *dsizes, *osizes;
-   HYPRE_BigInt     *h_rows, *d_rows, *rows;
-   HYPRE_BigInt     *h_cols, *d_cols, *cols;
-   HYPRE_Complex    *h_vals, *d_vals, *vals;
+   HYPRE_IJMatrix       mat    = NULL;
+   HYPRE_BigInt         ilower = 0, iupper = 0;
+   HYPRE_BigInt        *h_rows = NULL;
+   HYPRE_BigInt        *h_cols = NULL;
+   HYPRE_Complex       *h_vals = NULL;
+   const HYPRE_Int     *rows   = NULL;
+   const HYPRE_Int     *cols   = NULL;
+   const HYPRE_Complex *vals   = NULL;
+#if defined(HYPRE_USING_GPU)
+   HYPRE_BigInt  *d_rows = NULL;
+   HYPRE_BigInt  *d_cols = NULL;
+   HYPRE_Complex *d_vals = NULL;
+#endif
 
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);
    MPI_Comm_rank(comm, &myid);
-   nparts = g_nparts / (uint64_t) nprocs;
-   nparts += (myid < ((int) g_nparts % nprocs)) ? 1 : 0;
-   if (g_nparts < (size_t) nprocs)
+   nparts = g_nparts / (uint64_t)nprocs;
+   nparts += (myid < ((int)g_nparts % nprocs)) ? 1 : 0;
+   if (g_nparts < (size_t)nprocs)
    {
       *mat_ptr = NULL;
       ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -52,9 +56,10 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
    }
 
    /* 1b) Compute partids array */
-   partids = (uint32_t*) malloc(nparts * sizeof(uint32_t));
-   offset  = ((uint32_t) myid) * nparts;
-   offset  += (myid < ((int) g_nparts % nprocs)) ? (uint32_t) myid : (uint32_t) ((int) g_nparts % nprocs);
+   partids = (uint32_t *)malloc(nparts * sizeof(uint32_t));
+   offset  = ((uint32_t)myid) * nparts;
+   offset += (myid < ((int)g_nparts % nprocs)) ? (uint32_t)myid
+                                               : (uint32_t)((int)g_nparts % nprocs);
    for (part = 0; part < nparts; part++)
    {
       partids[part] = offset + part;
@@ -64,7 +69,7 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
    nrows_sum = nnzs_max = 0;
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, partids[part]);
+      sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
       if (!fp)
       {
@@ -83,36 +88,36 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
       }
       fclose(fp);
 
-      nrows_sum += (uint64_t) (header[8] - header[7] + 1);
-      nnzs_max  = ((uint64_t) header[6] > nnzs_max) ? (uint64_t) header[6] : nnzs_max;
+      nrows_sum += (uint64_t)(header[8] - header[7] + 1);
+      nnzs_max = ((uint64_t)header[6] > nnzs_max) ? (uint64_t)header[6] : nnzs_max;
    }
 
-   //printf("[%d]: nrows_sum: %lld, nnz_max: %lld!\n", myid, nrows_sum, nnzs_max); fflush(stdout);
-   //MPI_Barrier(MPI_COMM_WORLD);
+   // printf("[%d]: nrows_sum: %lld, nnz_max: %lld!\n", myid, nrows_sum, nnzs_max);
+   // fflush(stdout); MPI_Barrier(MPI_COMM_WORLD);
 
    /* 3) Build IJMatrix */
    MPI_Allreduce(&nrows_sum, &nrows, 1, MPI_UINT64_T, MPI_SUM, comm);
    MPI_Scan(&nrows_sum, &nrows_offset, 1, MPI_UINT64_T, MPI_SUM, comm);
-   ilower = (HYPRE_BigInt) (nrows_offset - nrows_sum);
-   iupper = (HYPRE_BigInt) (ilower + nrows_sum - 1);
+   ilower = (HYPRE_BigInt)(nrows_offset - nrows_sum);
+   iupper = (HYPRE_BigInt)(ilower + nrows_sum - 1);
 
    HYPRE_IJMatrixCreate(comm, ilower, iupper, ilower, iupper, &mat);
    HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
 
    /* 4) Fill entries */
-   h_rows   = (HYPRE_BigInt*)  malloc(nnzs_max * sizeof(HYPRE_BigInt));
-   h_cols   = (HYPRE_BigInt*)  malloc(nnzs_max * sizeof(HYPRE_BigInt));
-   h_vals   = (HYPRE_Complex*) malloc(nnzs_max * sizeof(HYPRE_Complex));
+   h_rows = (HYPRE_BigInt *)malloc(nnzs_max * sizeof(HYPRE_BigInt));
+   h_cols = (HYPRE_BigInt *)malloc(nnzs_max * sizeof(HYPRE_BigInt));
+   h_vals = (HYPRE_Complex *)malloc(nnzs_max * sizeof(HYPRE_Complex));
 
    /* 4a) Pre-compute the sparsity pattern when storing on host memory */
    if (memory_location == HYPRE_MEMORY_HOST)
    {
-      dsizes = (HYPRE_Int*) calloc(nrows_sum, sizeof(HYPRE_Int));
-      osizes = (HYPRE_Int*) calloc(nrows_sum, sizeof(HYPRE_Int));
+      HYPRE_Int *dsizes = (HYPRE_Int *)calloc(nrows_sum, sizeof(HYPRE_Int));
+      HYPRE_Int *osizes = (HYPRE_Int *)calloc(nrows_sum, sizeof(HYPRE_Int));
 
       for (part = 0; part < nparts; part++)
       {
-         sprintf(filename, "%s.%05d.bin", prefixname, partids[part]);
+         sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
          fp = fopen(filename, "rb");
          if (fread(header, sizeof(uint64_t), 11, fp) != 11)
          {
@@ -143,7 +148,7 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
          }
          else if (header[1] == sizeof(uint32_t))
          {
-            uint32_t* buffer = (uint32_t*) malloc(header[6] * sizeof(uint32_t));
+            uint32_t *buffer = (uint32_t *)malloc(header[6] * sizeof(uint32_t));
 
             if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
             {
@@ -153,7 +158,10 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) h_rows[i] = (HYPRE_BigInt) buffer[i];
+            for (size_t i = 0; i < header[6]; i++)
+            {
+               h_rows[i] = (HYPRE_BigInt)buffer[i];
+            }
 
             if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
             {
@@ -163,13 +171,16 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) h_cols[i] = (HYPRE_BigInt) buffer[i];
+            for (size_t i = 0; i < header[6]; i++)
+            {
+               h_cols[i] = (HYPRE_BigInt)buffer[i];
+            }
 
             free(buffer);
          }
          else if (header[1] == sizeof(uint64_t))
          {
-            uint64_t* buffer = (uint64_t*) malloc(header[6] * sizeof(uint64_t));
+            uint64_t *buffer = (uint64_t *)malloc(header[6] * sizeof(uint64_t));
 
             if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
             {
@@ -179,7 +190,10 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) h_rows[i] = (HYPRE_BigInt) buffer[i];
+            for (size_t i = 0; i < header[6]; i++)
+            {
+               h_rows[i] = (HYPRE_BigInt)buffer[i];
+            }
 
             if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
             {
@@ -189,7 +203,10 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
                return;
             }
 
-            for (size_t i = 0; i < header[6]; i++) h_cols[i] = (HYPRE_BigInt) buffer[i];
+            for (size_t i = 0; i < header[6]; i++)
+            {
+               h_cols[i] = (HYPRE_BigInt)buffer[i];
+            }
 
             free(buffer);
          }
@@ -211,19 +228,27 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
             /* Check if (row, col) pair makes sense */
             if (row < 0)
             {
-              printf("[%d]: Warning! Detected negative row: %llu\n", myid, (unsigned long long) row); fflush(stdout);
+               printf("[%d]: Warning! Detected negative row: %llu\n", myid,
+                      (unsigned long long)row);
+               fflush(stdout);
             }
             else if (col < 0)
             {
-               printf("[%d]: Warning! Detected negative column: %llu\n", myid, (unsigned long long) col); fflush(stdout);
+               printf("[%d]: Warning! Detected negative column: %llu\n", myid,
+                      (unsigned long long)col);
+               fflush(stdout);
             }
             else if (row >= nrows)
             {
-               printf("[%d]: Warning! Detected out-of-bounds row: %llu\n", myid, (unsigned long long) row); fflush(stdout);
+               printf("[%d]: Warning! Detected out-of-bounds row: %llu\n", myid,
+                      (unsigned long long)row);
+               fflush(stdout);
             }
             else if (col >= nrows)
             {
-               printf("[%d]: Warning! Detected out-of-bounds column: %llu\n", myid, (unsigned long long) col); fflush(stdout);
+               printf("[%d]: Warning! Detected out-of-bounds column: %llu\n", myid,
+                      (unsigned long long)col);
+               fflush(stdout);
             }
             else if (row < ilower || row > iupper)
             {
@@ -252,6 +277,7 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
    HYPRE_IJMatrixInitialize_v2(mat, memory_location);
 
    /* Allocate device variables */
+#ifdef HYPRE_USING_GPU
    if (memory_location == HYPRE_MEMORY_DEVICE)
    {
       rows = d_rows = hypre_TAlloc(HYPRE_BigInt, nnzs_max, memory_location);
@@ -259,6 +285,7 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
       vals = d_vals = hypre_TAlloc(HYPRE_Complex, nnzs_max, memory_location);
    }
    else
+#endif
    {
       rows = h_rows;
       cols = h_cols;
@@ -268,7 +295,7 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
    /* Set matrix values */
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, partids[part]);
+      sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
       if (fread(header, sizeof(uint64_t), 11, fp) != 11)
       {
@@ -299,7 +326,7 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
       }
       else if (header[1] == sizeof(uint32_t))
       {
-         uint32_t* buffer = (uint32_t*) malloc(header[6] * sizeof(uint32_t));
+         uint32_t *buffer = (uint32_t *)malloc(header[6] * sizeof(uint32_t));
 
          if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
          {
@@ -309,7 +336,10 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_rows[i] = (HYPRE_BigInt) buffer[i];
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_rows[i] = (HYPRE_BigInt)buffer[i];
+         }
 
          if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
          {
@@ -319,13 +349,16 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_cols[i] = (HYPRE_BigInt) buffer[i];
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_cols[i] = (HYPRE_BigInt)buffer[i];
+         }
 
          free(buffer);
       }
       else if (header[1] == sizeof(uint64_t))
       {
-         uint64_t* buffer = (uint64_t*) malloc(header[6] * sizeof(uint64_t));
+         uint64_t *buffer = (uint64_t *)malloc(header[6] * sizeof(uint64_t));
 
          if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
          {
@@ -335,7 +368,10 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_rows[i] = (HYPRE_BigInt) buffer[i];
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_rows[i] = (HYPRE_BigInt)buffer[i];
+         }
 
          if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
          {
@@ -345,7 +381,10 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_cols[i] = (HYPRE_BigInt) buffer[i];
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_cols[i] = (HYPRE_BigInt)buffer[i];
+         }
 
          free(buffer);
       }
@@ -357,31 +396,23 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
          return;
       }
 
+#ifdef HYPRE_USING_GPU
       if (rows != h_rows)
       {
-         hypre_TMemcpy(d_rows, h_rows, HYPRE_BigInt, header[6],
-                       HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+         hypre_TMemcpy(d_rows, h_rows, HYPRE_BigInt, header[6], HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
       }
       if (cols != h_cols)
       {
-         hypre_TMemcpy(d_cols, h_cols, HYPRE_BigInt, header[6],
-                       HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+         hypre_TMemcpy(d_cols, h_cols, HYPRE_BigInt, header[6], HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
       }
+#endif
 
       /* Read matrix coefficients */
-      if (header[2] == sizeof(HYPRE_Complex))
+      if (header[2] == sizeof(float))
       {
-         if (fread(h_vals, sizeof(HYPRE_Complex), header[6], fp) != header[6])
-         {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read coeficients from %s", filename);
-            fclose(fp);
-            return;
-         }
-      }
-      else if (header[2] == sizeof(float))
-      {
-         float* buffer = (float*) malloc(header[6] * sizeof(float));
+         float *buffer = (float *)malloc(header[6] * sizeof(float));
 
          if (fread(buffer, sizeof(float), header[6], fp) != header[6])
          {
@@ -391,13 +422,16 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_vals[i] = (HYPRE_Complex) buffer[i];
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_vals[i] = (HYPRE_Complex)buffer[i];
+         }
 
          free(buffer);
       }
       else if (header[2] == sizeof(double))
       {
-         double* buffer = (double*) malloc(header[6] * sizeof(double));
+         double *buffer = (double *)malloc(header[6] * sizeof(double));
 
          if (fread(buffer, sizeof(double), header[6], fp) != header[6])
          {
@@ -407,26 +441,32 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
             return;
          }
 
-         for (size_t i = 0; i < header[6]; i++) h_vals[i] = (HYPRE_Complex) buffer[i];
+         for (size_t i = 0; i < header[6]; i++)
+         {
+            h_vals[i] = (HYPRE_Complex)buffer[i];
+         }
 
          free(buffer);
       }
       else
       {
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[2], filename);
+         ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[2],
+                     filename);
          fclose(fp);
          return;
       }
       fclose(fp);
 
+#ifdef HYPRE_USING_GPU
       if (vals != h_vals)
       {
-         hypre_TMemcpy(d_vals, h_vals, HYPRE_Complex, header[6],
-                       HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+         hypre_TMemcpy(d_vals, h_vals, HYPRE_Complex, header[6], HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
       }
+#endif
 
-      HYPRE_IJMatrixSetValues(mat, (HYPRE_BigInt) header[6], NULL, rows, cols, vals);
+      HYPRE_IJMatrixSetValues(mat, (HYPRE_BigInt)header[6], NULL, rows, cols, vals);
    }
 
    HYPRE_IJMatrixAssemble(mat);
@@ -437,10 +477,12 @@ IJMatrixReadMultipartBinary(const char           *prefixname,
    free(h_rows);
    free(h_cols);
    free(h_vals);
+#ifdef HYPRE_USING_GPU
    if (memory_location == HYPRE_MEMORY_DEVICE)
    {
       hypre_TFree(d_rows, HYPRE_MEMORY_DEVICE);
       hypre_TFree(d_cols, HYPRE_MEMORY_DEVICE);
       hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
    }
+#endif
 }
