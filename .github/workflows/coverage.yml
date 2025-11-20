@@ -71,7 +71,7 @@ jobs:
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DHYPREDRV_ENABLE_TESTING=ON \
-            -DHYPREDRV_BUILD_EXAMPLES=ON \
+            -DHYPREDRV_ENABLE_EXAMPLES=ON \
             -DHYPREDRV_ENABLE_COVERAGE=ON \
             -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_C_COMPILER=mpicc \
@@ -138,4 +138,3 @@ jobs:
           name: coverage-xml
           path: ${{ env.BUILD_DIR }}/coverage.xml
           retention-days: 7
-
