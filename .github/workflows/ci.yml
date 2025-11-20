@@ -193,12 +193,20 @@ jobs:
 
       - name: Run tests
         env:
-          # MPICH on Ubuntu 24.04 uses ch4:ucx, so we need to configure UCX for the runner environment
+          # MPICH configuration for CI environment
+          # Force TCP usage for UCX (MPICH ch4:ucx device)
           UCX_TLS: tcp,self
           UCX_NET_DEVICES: eth0
-          # Ensure Hydra uses fork to launch processes locally
+          # Hydra process manager settings
           HYDRA_LAUNCHER: fork
-        run: ctest --test-dir $BUILD_DIR --output-on-failure -VV # Debugging on CI runners
+          HYDRA_PROXY_RETRY_COUNT: 10
+          # Debugging
+          PMI_DEBUG: 1
+        run: |
+          # Check if localhost resolves (sometimes missing in minimal containers)
+          cat /etc/hosts || true
+          ip addr || true
+          ctest --test-dir $BUILD_DIR --output-on-failure -VV
         #run: ctest --test-dir $BUILD_DIR --output-on-failure
 
       - name: Verify example outputs (optional)
