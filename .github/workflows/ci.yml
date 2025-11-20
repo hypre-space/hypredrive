@@ -192,6 +192,12 @@ jobs:
           ldd ${{ env.BUILD_DIR }}/examples/src/C_elasticity/elasticity | grep mpi
 
       - name: Run tests
+        env:
+          # MPICH on Ubuntu 24.04 uses ch4:ucx, so we need to configure UCX for the runner environment
+          UCX_TLS: tcp,self
+          UCX_NET_DEVICES: eth0
+          # Ensure Hydra uses fork to launch processes locally
+          HYDRA_LAUNCHER: fork
         run: ctest --test-dir $BUILD_DIR --output-on-failure -VV # Debugging on CI runners
         #run: ctest --test-dir $BUILD_DIR --output-on-failure
 
