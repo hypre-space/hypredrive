@@ -58,6 +58,8 @@ jobs:
         if: startsWith(runner.os, 'Linux')
         run: |
           sudo apt-get update
+          # Remove pre-installed OpenMPI to avoid conflicts with MPICH
+          sudo apt-get purge -y openmpi-bin libopenmpi-dev || true
           sudo apt-get install -y cmake ninja-build mpich libmpich-dev ccache clang-format
           if [ "${{ matrix.compiler }}" = "gcc" ]; then sudo apt-get install -y gcc g++; fi
           if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt-get install -y clang; fi
@@ -190,11 +192,6 @@ jobs:
           ldd ${{ env.BUILD_DIR }}/examples/src/C_elasticity/elasticity | grep mpi
 
       - name: Run tests
-        env:
-          # Force UCX to use TCP and Shared Memory (self) only
-          UCX_TLS: tcp,self
-          # Optional: Force it to use the standard ethernet interface
-          UCX_NET_DEVICES: eth0
         run: ctest --test-dir $BUILD_DIR --output-on-failure -VV # Debugging on CI runners
         #run: ctest --test-dir $BUILD_DIR --output-on-failure
 
