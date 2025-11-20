@@ -165,7 +165,8 @@ jobs:
           fi
 
       - name: Run tests
-        run: ctest --test-dir $BUILD_DIR --output-on-failure
+        run: ctest --test-dir $BUILD_DIR --output-on-failure -VV # Debugging on CI runners
+        #run: ctest --test-dir $BUILD_DIR --output-on-failure
 
       - name: Verify example outputs (optional)
         continue-on-error: true
