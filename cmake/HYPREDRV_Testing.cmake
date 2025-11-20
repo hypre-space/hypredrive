@@ -3,6 +3,9 @@
 #
 # SPDX-License-Identifier: MIT
 
+# Remember the directory that contains this helper so functions can reference scripts
+set(HYPREDRV_TESTING_DIR "${CMAKE_CURRENT_LIST_DIR}")
+
 # Function for adding tests
 function(add_hypredrive_test test_name num_procs config_file)
     # Automatically prepend "hypredrive_test_" to the test name
@@ -45,13 +48,23 @@ function(add_executable_test test_name target num_procs)
         set(EXEC_TEST_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     endif()
 
+    set(_driver_command
+        ${CMAKE_COMMAND}
+            -DLAUNCH_DIR=${EXEC_TEST_WORKING_DIRECTORY}
+            -DTARGET_BIN=$<TARGET_FILE:${target}>
+            -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+            -DMPI_NUMPROCS=${num_procs}
+            -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+            -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+            -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+    )
+    if(EXEC_TEST_ARGS)
+        string(JOIN "|" _driver_args ${EXEC_TEST_ARGS})
+        list(APPEND _driver_command "-DTARGET_ARGS:STRING=${_driver_args}")
+    endif()
+
     add_test(NAME ${test_name}
-        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${num_procs}
-                ${MPIEXEC_PREFLAGS}
-                $<TARGET_FILE:${target}>
-                ${EXEC_TEST_ARGS}
-                ${MPIEXEC_POSTFLAGS}
-        WORKING_DIRECTORY ${EXEC_TEST_WORKING_DIRECTORY}
+        COMMAND ${_driver_command} -P ${HYPREDRV_TESTING_DIR}/HYPREDRV_RunScript.cmake
     )
 
     set_tests_properties(${test_name}
