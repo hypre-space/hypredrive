@@ -9,12 +9,32 @@
 #include "HYPREDRV.h"
 #include "HYPREDRV_config.h"
 
-void
+static void
 PrintUsage(const char *argv0)
 {
-   fprintf(stderr, "Usage: %s <filename>\n", argv0);
-   fprintf(stderr, "  filename: config file in YAML format\n");
-   fflush(stderr);
+   fprintf(stdout, "Usage: %s <filename>\n", argv0);
+   fprintf(stdout, "  filename: config file in YAML format\n");
+   fflush(stdout);
+}
+
+static int
+HelpRequested(int argc, char **argv)
+{
+   for (int i = 1; i < argc; i++)
+   {
+      if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) { return 1; }
+   }
+   return 0;
+}
+
+static void
+RequireConfigArgumentOrAbort(int argc, char **argv, MPI_Comm comm, int myid)
+{
+   if (argc < 2)
+   {
+      if (!myid) { PrintUsage(argv[0]); }
+      MPI_Abort(comm, 1);
+   }
 }
 
 int
@@ -31,21 +51,19 @@ main(int argc, char **argv)
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
-   HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &obj));
-
-   if (argc < 1)
+   if (HelpRequested(argc, argv))
    {
-      if (!myid)
-      {
-         PrintUsage(argv[0]);
-      }
-      MPI_Abort(comm, 1);
+      if (!myid) { PrintUsage(argv[0]); }
+      HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+      MPI_Abort(comm, 0);
    }
+   RequireConfigArgumentOrAbort(argc, argv, comm, myid);
 
    /*-----------------------------------------------------------
-    * Print libraries/driver info
+    * Create driver object and print libraries/driver info
     *-----------------------------------------------------------*/
 
+   HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &obj));
    HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
    HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
 
@@ -53,14 +71,7 @@ main(int argc, char **argv)
     * Parse input parameters
     *-----------------------------------------------------------*/
 
-   if (argc < 1)
-   {
-      if (!myid)
-      {
-         fprintf(stderr, "Need at least one input argument!\n");
-      }
-      MPI_Abort(comm, 1);
-   }
+   RequireConfigArgumentOrAbort(argc, argv, comm, myid);
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc - 1, argv + 1, obj));
 
    /*-----------------------------------------------------------
