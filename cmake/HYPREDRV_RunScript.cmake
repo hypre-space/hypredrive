@@ -25,7 +25,7 @@ if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
   file(READ "${CONFIG_FILE}" _cfg_text)
   set(_matches "")
   # Match strings like data/ps3d10pt7 or data/compflow6k (first two path components)
-  string(REGEX MATCHALL "data/[A-Za-z0-9_\-\.]+" _raw_matches "${_cfg_text}")
+  string(REGEX MATCHALL "data/[A-Za-z0-9_.-]+" _raw_matches "${_cfg_text}")
   if(_raw_matches)
     list(REMOVE_DUPLICATES _raw_matches)
     # Resolve to full paths and check existence/non-empty

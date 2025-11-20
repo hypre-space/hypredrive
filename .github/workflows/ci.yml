@@ -179,6 +179,16 @@ jobs:
             echo "Datasets already cached, skipping download"
           fi
 
+      - name: Debug MPI Environment
+        run: |
+          set -euxo pipefail
+          echo "--- Checking mpiexec help ---"
+          mpiexec --help
+          echo "--- Checking mpiexec version ---"
+          mpiexec --version
+          echo "--- Checking binary linkage ---"
+          ldd ${{ env.BUILD_DIR }}/examples/src/C_elasticity/elasticity | grep mpi
+
       - name: Run tests
         run: ctest --test-dir $BUILD_DIR --output-on-failure -VV # Debugging on CI runners
         #run: ctest --test-dir $BUILD_DIR --output-on-failure
