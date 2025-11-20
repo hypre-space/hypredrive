@@ -22,7 +22,10 @@ HelpRequested(int argc, char **argv)
 {
    for (int i = 1; i < argc; i++)
    {
-      if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) { return 1; }
+      if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
+      {
+         return 1;
+      }
    }
    return 0;
 }
@@ -32,7 +35,10 @@ RequireConfigArgumentOrAbort(int argc, char **argv, MPI_Comm comm, int myid)
 {
    if (argc < 2)
    {
-      if (!myid) { PrintUsage(argv[0]); }
+      if (!myid)
+      {
+         PrintUsage(argv[0]);
+      }
       MPI_Abort(comm, 1);
    }
 }
@@ -53,7 +59,10 @@ main(int argc, char **argv)
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
    if (HelpRequested(argc, argv))
    {
-      if (!myid) { PrintUsage(argv[0]); }
+      if (!myid)
+      {
+         PrintUsage(argv[0]);
+      }
       HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
       MPI_Abort(comm, 0);
    }

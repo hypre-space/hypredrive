@@ -64,6 +64,14 @@ if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
   list(APPEND _target_args "${CONFIG_FILE}")
 endif()
 
+message(STATUS "[test] TARGET_BIN=${TARGET_BIN}")
+if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
+  message(STATUS "[test] MPIEXEC=${MPIEXEC} MPI_NUMPROC_FLAG=${MPI_NUMPROC_FLAG} MPI_NUMPROCS=${MPI_NUMPROCS}")
+else()
+  message(STATUS "[test] MPIEXEC not defined; running serially")
+endif()
+message(STATUS "[test] TARGET_ARGS=${_target_args}")
+
 # Run executable (optionally via MPI)
 if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
   execute_process(
