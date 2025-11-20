@@ -177,10 +177,11 @@ HYPREDRV_Destroy(HYPREDRV_t *obj_ptr)
       {
          HYPRE_IJMatrixDestroy(obj->mat_A);
          HYPRE_IJVectorDestroy(obj->vec_b);
-         HYPRE_IJVectorDestroy(obj->vec_x);
-         HYPRE_IJVectorDestroy(obj->vec_x0);
       }
 
+      /* Always destroy these vectors since they are created by HYPREDRV */
+      HYPRE_IJVectorDestroy(obj->vec_x);
+      HYPRE_IJVectorDestroy(obj->vec_x0);
       HYPRE_IJVectorDestroy(obj->vec_nn);
 
       IntArrayDestroy(&obj->dofmap);

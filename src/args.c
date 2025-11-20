@@ -366,7 +366,7 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    }
 
    /* Broadcast the text size and base indentation */
-   MPI_Bcast(&base_indent, 1, MPI_UNSIGNED_LONG, 0, comm);
+   MPI_Bcast(&base_indent, 1, MPI_INT, 0, comm);
    MPI_Bcast(&text_size, 1, MPI_UNSIGNED_LONG, 0, comm);
 
    /* Broadcast the text */
