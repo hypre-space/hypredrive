@@ -33,7 +33,7 @@ option(HYPREDRV_ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 option(HYPREDRV_ENABLE_ANALYSIS "Enable static code analysis (clang-tidy) and sanitizers (ASan/UBSan)" OFF)
 option(HYPREDRV_ENABLE_DATA     "Enable 'data' target to fetch example datasets" OFF)
 option(HYPREDRV_ENABLE_DOCS     "Enable documentation generation" OFF)
-option(HYPREDRV_BUILD_EXAMPLES  "Build the HYPREDRV examples" OFF)
+option(HYPREDRV_ENABLE_EXAMPLES "Enable the HYPREDRV examples" OFF)
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -135,7 +135,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Analysis.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Docs.cmake)
 
 # Add examples
-if(HYPREDRV_BUILD_EXAMPLES)
+if(HYPREDRV_ENABLE_EXAMPLES)
     add_subdirectory(examples/src/C_laplacian)
     add_subdirectory(examples/src/C_elasticity)
 endif()
