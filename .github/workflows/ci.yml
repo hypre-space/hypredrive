@@ -190,6 +190,9 @@ jobs:
           mpiexec --version
           echo "--- Checking binary linkage ---"
           ldd ${{ env.BUILD_DIR }}/examples/src/C_elasticity/elasticity | grep mpi
+          echo "--- Manual run check ---"
+          # Manual run to verify if ctest/cmake wrapper is the issue
+          mpiexec -n 2 ${{ env.BUILD_DIR }}/examples/src/C_elasticity/elasticity -n 12 4 4 -P 2 1 1 -ns 1 || true
 
       - name: Run tests
         env:

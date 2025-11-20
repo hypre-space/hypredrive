@@ -1498,6 +1498,12 @@ main(int argc, char *argv[])
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &num_procs);
 
+   if (myid == 0) {
+       printf("DEBUG: MPI_Comm_size = %d\n", num_procs);
+       printf("DEBUG: PMI_RANK = %s\n", getenv("PMI_RANK") ? getenv("PMI_RANK") : "(null)");
+       printf("DEBUG: HYDRA_PROXY_PORT = %s\n", getenv("HYDRA_PROXY_PORT") ? getenv("HYDRA_PROXY_PORT") : "(null)");
+   }
+
    if (ParseArguments(argc, argv, &params, myid, num_procs))
    {
       MPI_Finalize();
