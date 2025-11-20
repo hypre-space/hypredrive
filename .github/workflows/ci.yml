@@ -58,9 +58,8 @@ jobs:
         if: startsWith(runner.os, 'Linux')
         run: |
           sudo apt-get update
-          # Remove pre-installed OpenMPI to avoid conflicts with MPICH
-          sudo apt-get purge -y openmpi-bin libopenmpi-dev || true
-          sudo apt-get install -y cmake ninja-build mpich libmpich-dev ccache clang-format
+          # Install OpenMPI instead of MPICH for better CI compatibility
+          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin ccache clang-format
           if [ "${{ matrix.compiler }}" = "gcc" ]; then sudo apt-get install -y gcc g++; fi
           if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt-get install -y clang; fi
           # Get and display compiler version
@@ -76,16 +75,16 @@ jobs:
         run: |
           if [ "${{ matrix.compiler }}" = "clang" ]; then
             # Configure mpicc to use clang
-            export MPICH_CC=clang
-            export MPICH_CXX=clang++
-            echo "MPICH_CC=clang" >> $GITHUB_ENV
-            echo "MPICH_CXX=clang++" >> $GITHUB_ENV
+            export OMPI_CC=clang
+            export OMPI_CXX=clang++
+            echo "OMPI_CC=clang" >> $GITHUB_ENV
+            echo "OMPI_CXX=clang++" >> $GITHUB_ENV
           else
             # Configure mpicc to use gcc (default)
-            export MPICH_CC=gcc
-            export MPICH_CXX=g++
-            echo "MPICH_CC=gcc" >> $GITHUB_ENV
-            echo "MPICH_CXX=g++" >> $GITHUB_ENV
+            export OMPI_CC=gcc
+            export OMPI_CXX=g++
+            echo "OMPI_CC=gcc" >> $GITHUB_ENV
+            echo "OMPI_CXX=g++" >> $GITHUB_ENV
           fi
 
       - name: Setup ccache (Ubuntu)
@@ -189,27 +188,22 @@ jobs:
           echo "--- Checking mpiexec version ---"
           mpiexec --version
           echo "--- Checking binary linkage ---"
-          ldd ${{ env.BUILD_DIR }}/examples/src/C_elasticity/elasticity | grep mpi
+          if [ ${{ runner.os }} = "Linux" ]; then
+            ldd ${{ env.BUILD_DIR }}/examples/src/C_elasticity/elasticity | grep mpi
+          else
+            otool -L ${{ env.BUILD_DIR }}/examples/src/C_elasticity/elasticity | grep mpi
+          fi
           echo "--- Manual run check ---"
           # Manual run to verify if ctest/cmake wrapper is the issue
           mpiexec -n 2 ${{ env.BUILD_DIR }}/examples/src/C_elasticity/elasticity -n 12 4 4 -P 2 1 1 -ns 1 || true
 
       - name: Run tests
         env:
-          # MPICH configuration for CI environment
-          # Force TCP usage for UCX (MPICH ch4:ucx device)
-          UCX_TLS: tcp,self
-          UCX_NET_DEVICES: eth0
-          # Hydra process manager settings
-          HYDRA_LAUNCHER: fork
-          HYDRA_PROXY_RETRY_COUNT: 10
-          # Debugging
-          PMI_DEBUG: 1
-        run: |
-          # Check if localhost resolves (sometimes missing in minimal containers)
-          cat /etc/hosts || true
-          ip addr || true
-          ctest --test-dir $BUILD_DIR --output-on-failure -VV
+          # OpenMPI configuration for CI
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+          OMPI_MCA_btl_vader_single_copy_mechanism: none
+        run: ctest --test-dir $BUILD_DIR --output-on-failure -VV
         #run: ctest --test-dir $BUILD_DIR --output-on-failure
 
       - name: Verify example outputs (optional)
