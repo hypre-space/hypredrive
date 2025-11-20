@@ -18,6 +18,11 @@ endif()
 add_executable(elasticity elasticity.c)
 target_link_libraries(elasticity PRIVATE HYPREDRV::HYPREDRV)
 
+# Add an RPATH to the main build directory for MacOS
+if(APPLE)
+    target_link_options(laplacian PRIVATE  "-Wl,-rpath,${CMAKE_BINARY_DIR}")
+endif()
+
 # Add the elasticity driver to the test suite when testing is enabled
 if(HYPREDRV_ENABLE_TESTING)
     include(${CMAKE_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
@@ -33,5 +38,3 @@ endif()
 # Install the elasticity example binary when examples are built
 install(TARGETS elasticity
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-
-
