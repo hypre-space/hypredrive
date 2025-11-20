@@ -472,22 +472,15 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t obj, HYPRE_Vector vec_b)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t obj,
-                                      int        num_entries,
-                                      int        num_components,
+HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t obj, int num_entries, int num_components,
                                       const HYPRE_Complex *values)
 {
    HYPREDRV_CHECK_INIT();
 
    if (obj)
    {
-      LinearSystemSetNearNullSpace(obj->comm,
-                                   &obj->iargs->ls,
-                                   obj->mat_A,
-                                   num_entries,
-                                   num_components,
-                                   values,
-                                   &obj->vec_nn);
+      LinearSystemSetNearNullSpace(obj->comm, &obj->iargs->ls, obj->mat_A, num_entries,
+                                   num_components, values, &obj->vec_nn);
    }
    else
    {
@@ -754,8 +747,8 @@ HYPREDRV_PreconCreate(HYPREDRV_t obj)
    {
       if (!(StatsGetLinearSystemID() % (obj->iargs->ls.precon_reuse + 1)))
       {
-         PreconCreate(obj->iargs->precon_method, &obj->iargs->precon,
-                      obj->dofmap, obj->vec_nn, &obj->precon);
+         PreconCreate(obj->iargs->precon_method, &obj->iargs->precon, obj->dofmap,
+                      obj->vec_nn, &obj->precon);
       }
       else
       {

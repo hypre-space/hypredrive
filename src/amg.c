@@ -6,10 +6,10 @@
  ******************************************************************************/
 
 #include "amg.h"
-#include "gen_macros.h"
 #include "HYPRE_parcsr_mv.h"
-#include "_hypre_parcsr_mv.h" // For hypre_ParVectorComm, hypre_ParVectorInitialize_v2
 #include "_hypre_IJ_mv.h"     // For hypre_IJVectorGlobalNumRows
+#include "_hypre_parcsr_mv.h" // For hypre_ParVectorComm, hypre_ParVectorInitialize_v2
+#include "gen_macros.h"
 
 /*-----------------------------------------------------------------------------
  * Define Field/Offset/Setter mappings
@@ -432,9 +432,9 @@ AMGsmtGetValidValues(const char *key)
 void
 AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 {
-   HYPRE_BigInt    jlower, jupper;
-   HYPRE_Int       num_entries;
-   HYPRE_Complex  *values  = NULL;
+   HYPRE_BigInt   jlower, jupper;
+   HYPRE_Int      num_entries;
+   HYPRE_Complex *values = NULL;
 
    /* Sanity: check if the near null space vector is set
       We do not error out when NOT using nodal coarsening. */
@@ -450,7 +450,7 @@ AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    }
    HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
    num_entries = (HYPRE_Int)(jupper - jlower + 1);
-   values = (HYPRE_Complex*) malloc((size_t)num_entries * sizeof(HYPRE_Complex));
+   values      = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
 
    /* Reset any previous RBMs */
    for (HYPRE_Int i = 0; i < args->num_rbms; i++)
@@ -467,8 +467,8 @@ AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
       HYPRE_BigInt partitioning[2] = {jlower, jupper + 1};
 
       HYPRE_ParVectorCreate(hypre_ParVectorComm(vec_nn),
-                            hypre_IJVectorGlobalNumRows(vec_nn),
-                            partitioning, &args->rbms[i]);
+                            hypre_IJVectorGlobalNumRows(vec_nn), partitioning,
+                            &args->rbms[i]);
       hypre_ParVectorInitialize_v2(args->rbms[i], HYPRE_MEMORY_HOST);
 
       /* Copy component data into host buffer */
@@ -593,7 +593,7 @@ AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_BoomerAMGSetInterpVecQMax(precon, 4);
       HYPRE_BoomerAMGSetSmoothInterpVectors(precon, 1);
       HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms,
-                                      (HYPRE_ParVector *) args->rbms);
+                                      (HYPRE_ParVector *)args->rbms);
    }
 
    *precon_ptr = precon;

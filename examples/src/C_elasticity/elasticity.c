@@ -1383,9 +1383,9 @@ ComputeRigidBodyModes(DistMesh *mesh, ElasticParams *params, HYPRE_Real **rbm_pt
    HYPRE_Int     *gdims   = &mesh->gdims[0];
    HYPRE_Real    *gsizes  = &mesh->gsizes[0];
 
-   const HYPRE_Int nx = nlocal[0];
-   const HYPRE_Int ny = nlocal[1];
-   const HYPRE_Int nz = nlocal[2];
+   const HYPRE_Int    nx  = nlocal[0];
+   const HYPRE_Int    ny  = nlocal[1];
+   const HYPRE_Int    nz  = nlocal[2];
    const HYPRE_BigInt ix0 = pstarts[0][p[0]];
    const HYPRE_BigInt iy0 = pstarts[1][p[1]];
    const HYPRE_BigInt iz0 = pstarts[2][p[2]];
@@ -1403,22 +1403,23 @@ ComputeRigidBodyModes(DistMesh *mesh, ElasticParams *params, HYPRE_Real **rbm_pt
    const HYPRE_Int num_modes       = 6; /* 3 translations + 3 rotations */
    const HYPRE_Int stride_mode     = dofs_per_node * num_nodes_local;
 
-   HYPRE_Real *rbm = (HYPRE_Real *)calloc((size_t)num_modes * stride_mode, sizeof(HYPRE_Real));
+   HYPRE_Real *rbm =
+      (HYPRE_Real *)calloc((size_t)num_modes * stride_mode, sizeof(HYPRE_Real));
    for (HYPRE_Int k = 0; k < nz; k++)
    {
       const HYPRE_BigInt gz = iz0 + k;
-      const HYPRE_Real z = (HYPRE_Real)gz * dz;
+      const HYPRE_Real   z  = (HYPRE_Real)gz * dz;
       for (HYPRE_Int j = 0; j < ny; j++)
       {
          const HYPRE_BigInt gy = iy0 + j;
-         const HYPRE_Real y = (HYPRE_Real)gy * dy;
+         const HYPRE_Real   y  = (HYPRE_Real)gy * dy;
          for (HYPRE_Int i = 0; i < nx; i++)
          {
             const HYPRE_BigInt gx = ix0 + i;
-            const HYPRE_Real x = (HYPRE_Real)gx * dx;
+            const HYPRE_Real   x  = (HYPRE_Real)gx * dx;
 
-            const HYPRE_Int nidx  = (k * ny + j) * nx + i;     /* local node index */
-            const HYPRE_Int base  = dofs_per_node * nidx;      /* dof base within a mode */
+            const HYPRE_Int nidx   = (k * ny + j) * nx + i; /* local node index */
+            const HYPRE_Int base   = dofs_per_node * nidx;  /* dof base within a mode */
             const HYPRE_Int off_Tx = 0 * stride_mode;
             const HYPRE_Int off_Ty = 1 * stride_mode;
             const HYPRE_Int off_Tz = 2 * stride_mode;
@@ -1432,25 +1433,31 @@ ComputeRigidBodyModes(DistMesh *mesh, ElasticParams *params, HYPRE_Real **rbm_pt
             const HYPRE_Real rz = z - cz;
 
             /* Translations */
-            rbm[off_Tx + base + 0] = 1.0; rbm[off_Tx + base + 1] = 0.0; rbm[off_Tx + base + 2] = 0.0;
-            rbm[off_Ty + base + 0] = 0.0; rbm[off_Ty + base + 1] = 1.0; rbm[off_Ty + base + 2] = 0.0;
-            rbm[off_Tz + base + 0] = 0.0; rbm[off_Tz + base + 1] = 0.0; rbm[off_Tz + base + 2] = 1.0;
+            rbm[off_Tx + base + 0] = 1.0;
+            rbm[off_Tx + base + 1] = 0.0;
+            rbm[off_Tx + base + 2] = 0.0;
+            rbm[off_Ty + base + 0] = 0.0;
+            rbm[off_Ty + base + 1] = 1.0;
+            rbm[off_Ty + base + 2] = 0.0;
+            rbm[off_Tz + base + 0] = 0.0;
+            rbm[off_Tz + base + 1] = 0.0;
+            rbm[off_Tz + base + 2] = 1.0;
 
             /* Rotations: u = w x r, with r = (rx, ry, rz) about the domain center */
             /* Rx: w=(1,0,0) -> (0, -rz,  ry) */
             rbm[off_Rx + base + 0] = 0.0;
             rbm[off_Rx + base + 1] = -rz;
-            rbm[off_Rx + base + 2] =  ry;
+            rbm[off_Rx + base + 2] = ry;
 
             /* Ry: w=(0,1,0) -> ( rz, 0, -rx) */
-            rbm[off_Ry + base + 0] =  rz;
-            rbm[off_Ry + base + 1] =  0.0;
+            rbm[off_Ry + base + 0] = rz;
+            rbm[off_Ry + base + 1] = 0.0;
             rbm[off_Ry + base + 2] = -rx;
 
             /* Rz: w=(0,0,1) -> (-ry, rx, 0) */
             rbm[off_Rz + base + 0] = -ry;
-            rbm[off_Rz + base + 1] =  rx;
-            rbm[off_Rz + base + 2] =  0.0;
+            rbm[off_Rz + base + 1] = rx;
+            rbm[off_Rz + base + 2] = 0.0;
 
             /* Enforce clamp at x=0 by zeroing modes on clamped plane */
             if (gx == 0)
@@ -1458,9 +1465,9 @@ ComputeRigidBodyModes(DistMesh *mesh, ElasticParams *params, HYPRE_Real **rbm_pt
                for (HYPRE_Int m = 0; m < num_modes; m++)
                {
                   HYPRE_Int moff = m * stride_mode + base;
-                  rbm[moff + 0] = 0.0;
-                  rbm[moff + 1] = 0.0;
-                  rbm[moff + 2] = 0.0;
+                  rbm[moff + 0]  = 0.0;
+                  rbm[moff + 1]  = 0.0;
+                  rbm[moff + 2]  = 0.0;
                }
             }
          }
@@ -1559,7 +1566,8 @@ main(int argc, char *argv[])
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector)b));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv));
-   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetNearNullSpace(hypredrv, 3 * mesh->local_size, 6, rbms));
+   HYPREDRV_SAFE_CALL(
+      HYPREDRV_LinearSystemSetNearNullSpace(hypredrv, 3 * mesh->local_size, 6, rbms));
 
    if (params.verbose & 0x4)
    {

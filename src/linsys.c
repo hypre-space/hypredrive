@@ -151,13 +151,9 @@ LinearSystemSetDefaultArgs(LS_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetNearNullSpace(MPI_Comm             comm,
-                             LS_args             *args,
-                             HYPRE_IJMatrix       mat,
-                             int                  num_entries,
-                             int                  num_components,
-                             const HYPRE_Complex *values,
-                             HYPRE_IJVector      *vec_nn_ptr)
+LinearSystemSetNearNullSpace(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
+                             int num_entries, int num_components,
+                             const HYPRE_Complex *values, HYPRE_IJVector *vec_nn_ptr)
 {
    HYPRE_BigInt ilower, iupper, jlower, jupper;
 
@@ -190,7 +186,8 @@ LinearSystemSetNearNullSpace(MPI_Comm             comm,
    /* Set values for each component block contiguously */
    for (HYPRE_Int c = 0; c < num_components; c++)
    {
-      const HYPRE_Complex *vals_c = values ? (values + (size_t)c * (size_t)num_entries) : NULL;
+      const HYPRE_Complex *vals_c =
+         values ? (values + (size_t)c * (size_t)num_entries) : NULL;
       HYPRE_IJVectorSetComponent(*vec_nn_ptr, c);
       HYPRE_IJVectorSetValues(*vec_nn_ptr, num_entries, NULL, vals_c);
    }

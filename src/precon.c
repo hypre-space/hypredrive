@@ -110,11 +110,8 @@ PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
  *-----------------------------------------------------------------------------*/
 
 void
-PreconCreate(precon_t         precon_method,
-             precon_args     *args,
-             IntArray        *dofmap,
-             HYPRE_IJVector   vec_nn,
-             HYPRE_Precon    *precon_ptr)
+PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
+             HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr)
 {
    HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
 
