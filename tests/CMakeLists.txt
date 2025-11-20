@@ -7,6 +7,16 @@ function(setup_test_executable target_name source_file)
     # Link to both HYPREDRV and HYPRE, same as hypredrive executable does
     target_link_libraries(${target_name} PRIVATE HYPREDRV::HYPREDRV)
 
+    # Apply sanitizer link flags if sanitizers are enabled
+    # This ensures the sanitizer runtime libraries are linked
+    get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
+    get_property(_sanitizer_flags GLOBAL PROPERTY HYPREDRV_SANITIZER_LINK_FLAGS)
+    if(_sanitizer_enabled AND _sanitizer_flags)
+        foreach(flag IN LISTS _sanitizer_flags)
+            target_link_options(${target_name} PRIVATE ${flag})
+        endforeach()
+    endif()
+
     # Add an RPATH to the main build directory for MacOS
     if(APPLE)
         target_link_options(${target_name} PRIVATE  "-Wl,-rpath,${CMAKE_BINARY_DIR}")

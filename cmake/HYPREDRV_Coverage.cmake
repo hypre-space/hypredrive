@@ -20,22 +20,7 @@ if(HYPREDRV_ENABLE_COVERAGE)
             endif()
         endforeach()
 
-        # Also apply coverage flags to test executables (they're created before this module is included)
-        get_property(_test_targets DIRECTORY tests PROPERTY BUILDSYSTEM_TARGETS)
-        if(_test_targets)
-            foreach(test_tgt ${_test_targets})
-                if(TARGET ${test_tgt})
-                    get_target_property(_tgt_type ${test_tgt} TYPE)
-                    if(_tgt_type STREQUAL "EXECUTABLE")
-                        target_compile_options(${test_tgt} PRIVATE -O0 -g --coverage)
-                        target_link_options(${test_tgt} PRIVATE --coverage)
-                        #message(STATUS "Applied coverage flags to test target ${test_tgt}")
-                    endif()
-                endif()
-            endforeach()
-        endif()
-
-        # Also apply directory-wide defaults so future targets (e.g., examples) get flags
+        # Apply directory-wide defaults so future targets (e.g., examples, tests) get flags
         add_compile_options(-O0 -g --coverage)
         add_link_options(--coverage)
     else()
@@ -134,12 +119,28 @@ if(HYPREDRV_ENABLE_COVERAGE)
         # Create a target to run tests for coverage data generation
         # This runs ctest to execute all tests and generate .gcda files
         if(HYPREDRV_ENABLE_TESTING)
+            # Collect dependencies: example executables if examples are enabled
+            set(_coverage_test_deps)
+            if(HYPREDRV_ENABLE_EXAMPLES)
+                if(TARGET laplacian)
+                    list(APPEND _coverage_test_deps laplacian)
+                endif()
+                if(TARGET elasticity)
+                    list(APPEND _coverage_test_deps elasticity)
+                endif()
+            endif()
+            
             add_custom_target(run_tests_for_coverage
                 COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
                 WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                 COMMENT "Running tests to generate coverage data"
                 VERBATIM
             )
+            
+            # Ensure example executables are built before running tests
+            if(_coverage_test_deps)
+                add_dependencies(run_tests_for_coverage ${_coverage_test_deps})
+            endif()
         endif()
 
         add_custom_target(coverage
