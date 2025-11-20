@@ -71,6 +71,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
    {
       ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       ErrorMsgAddInvalidFilename(filename);
+      free(filename);
       return;
    }
    free(filename);

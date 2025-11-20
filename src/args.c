@@ -445,6 +445,8 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    {
       YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
       ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      free(text);
+      YAMLtreeDestroy(&tree);
       return;
    }
    MPI_Barrier(comm);
@@ -474,6 +476,8 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    {
       YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
       ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      InputArgsDestroy(&iargs);
+      YAMLtreeDestroy(&tree);
       return;
    }
 

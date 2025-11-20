@@ -34,11 +34,17 @@ void
 ErrorCodeCountIncrement(ErrorCode code)
 {
    int index = 0;
+
+   if (code == ERROR_NONE)
+   {
+      return;
+   }
+
    while (code >>= 1)
    {
       index++;
    }
-   if (index > 0 && index < ERROR_CODE_NUM_ENTRIES)
+   if (index < ERROR_CODE_NUM_ENTRIES)
    {
       global_error_count[index]++;
    }
@@ -52,11 +58,17 @@ uint32_t
 ErrorCodeCountGet(ErrorCode code)
 {
    int index = 0;
+
+   if (code == ERROR_NONE)
+   {
+      return 0;
+   }
+
    while (code >>= 1)
    {
       index++;
    }
-   return (index > 0 && index < ERROR_CODE_NUM_ENTRIES) ? global_error_count[index] : 0;
+   return (index < ERROR_CODE_NUM_ENTRIES) ? global_error_count[index] : 0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -164,7 +176,7 @@ ErrorCodeDescribe(uint32_t code)
 void
 ErrorCodeReset(uint32_t code)
 {
-   for (uint32_t i = 1; i < ERROR_CODE_NUM_ENTRIES; i++)
+   for (uint32_t i = 0; i < ERROR_CODE_NUM_ENTRIES; i++)
    {
       uint32_t bit = 1u << i;
 
@@ -228,11 +240,12 @@ void
 ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
 {
    char       *msg    = NULL;
-   const char *plural = (ErrorCodeCountGet(code) > 1) ? "s" : "";
+   uint32_t    count  = ErrorCodeCountGet(code);
+   const char *plural = (count > 1) ? "s" : "";
    int         length = strlen(suffix) + 24;
 
    msg = (char *)malloc(length);
-   sprintf(msg, "Found %d %s%s!", (int)ErrorCodeCountGet(code), suffix, plural);
+   sprintf(msg, "Found %d %s%s!", (int)count, suffix, plural);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -303,7 +316,7 @@ ErrorMsgAddInvalidFilename(const char *string)
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgPrint()
+ErrorMsgPrint(void)
 {
    ErrorMsgNode *current = global_error_msg_head;
 
@@ -332,7 +345,7 @@ ErrorMsgPrint()
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgClear()
+ErrorMsgClear(void)
 {
    ErrorMsgNode *current = global_error_msg_head;
 
