@@ -15,6 +15,7 @@ on:
       - 'Doxyfile.in'
       - 'include/**'
       - 'cmake/HYPREDRV_Docs.cmake'
+  workflow_dispatch:    # Allow manual triggering
 
 jobs:
   sphinx:

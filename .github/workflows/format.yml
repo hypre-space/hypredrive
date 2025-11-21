@@ -9,12 +9,13 @@ on:
       - 'examples/src/**'
       - '.clang-format'
   push:
-    branches: [ main ]
+    branches: [ master ]
     paths:
       - 'include/**'
       - 'src/**'
       - 'examples/src/**'
       - '.clang-format'
+  workflow_dispatch:    # Allow manual triggering
 
 jobs:
   format:

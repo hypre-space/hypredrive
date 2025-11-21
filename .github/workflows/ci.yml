@@ -17,6 +17,7 @@ on:
       - 'LICENSE'
       - 'NOTICE'
       - 'COPYRIGHT'
+  workflow_dispatch:    # Allow manual triggering
 
 concurrency:
   group: ci-${{ github.ref }}
