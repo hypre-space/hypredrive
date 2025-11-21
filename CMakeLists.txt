@@ -53,6 +53,12 @@ if(HYPREDRV_ENABLE_COVERAGE)
     set(HYPREDRV_ENABLE_EXAMPLES ON)
 endif()
 
+# Configure unified output directories for all libraries and executables
+# This ensures all libraries (including dependencies) are in the same folder
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
 # Include directories
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
