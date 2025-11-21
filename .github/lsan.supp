@@ -19,5 +19,20 @@ leak:event_assign
 leak:libpmix
 leak:pmix_
 
+# UCX (Unified Communication X) - Common on Azure Runners
+leak:libucp
+leak:libuct
+leak:libucs
+leak:libucm
+
+# Hardware Locality
+leak:libhwloc
+leak:hwloc_
+
+# Loader/dlopen artifacts
+leak:libdl
+leak:_dl_open
+leak:_dl_catch_error
+
 # Cleanup phase leaks (often benign infrastructure noise)
 leak:__cxa_finalize
