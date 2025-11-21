@@ -198,31 +198,41 @@ test_CombineFilename_empty_dir(void)
 }
 
 /*-----------------------------------------------------------------------------
- * Test HasFileExtension
+ * Test IsYAMLFilename
  *-----------------------------------------------------------------------------*/
 
 static void
-test_HasFileExtension_valid(void)
+test_IsYAMLFilename_valid(void)
 {
-   ASSERT_TRUE(HasFileExtension("file.txt"));        /* 3 letter extension */
-   ASSERT_TRUE(HasFileExtension("file.yml"));        /* 3 letter extension */
-   ASSERT_TRUE(HasFileExtension("file.yaml"));       /* 4 letter extension */
-   ASSERT_FALSE(HasFileExtension("path/to/file.c")); /* 1 letter extension - not 3-4 */
+   ASSERT_TRUE(IsYAMLFilename("file.yml"));         /* .yml extension */
+   ASSERT_TRUE(IsYAMLFilename("file.yaml"));        /* .yaml extension */
+   ASSERT_TRUE(IsYAMLFilename("path/to/file.yml"));  /* .yml with path */
+   ASSERT_TRUE(IsYAMLFilename("path/to/file.yaml")); /* .yaml with path */
+   ASSERT_FALSE(IsYAMLFilename("file.txt"));         /* wrong extension */
+   ASSERT_FALSE(IsYAMLFilename("file.c"));          /* wrong extension */
 }
 
 static void
-test_HasFileExtension_no_extension(void)
+test_IsYAMLFilename_no_extension(void)
 {
-   ASSERT_FALSE(HasFileExtension("file"));
-   ASSERT_FALSE(HasFileExtension("path/to/file"));
-   ASSERT_FALSE(HasFileExtension(""));
+   ASSERT_FALSE(IsYAMLFilename("file"));
+   ASSERT_FALSE(IsYAMLFilename("path/to/file"));
+   ASSERT_FALSE(IsYAMLFilename(""));
 }
 
 static void
-test_HasFileExtension_leading_dot(void)
+test_IsYAMLFilename_leading_dot(void)
 {
-   ASSERT_FALSE(HasFileExtension(".hidden"));
-   ASSERT_FALSE(HasFileExtension(".gitignore"));
+   ASSERT_FALSE(IsYAMLFilename(".hidden"));
+   ASSERT_FALSE(IsYAMLFilename(".gitignore"));
+}
+
+static void
+test_IsYAMLFilename_with_spaces(void)
+{
+   ASSERT_FALSE(IsYAMLFilename("file name.yml"));    /* space in filename */
+   ASSERT_FALSE(IsYAMLFilename("file name.yaml"));   /* space in filename */
+   ASSERT_FALSE(IsYAMLFilename("path/to/file name.yml")); /* space in filename */
 }
 
 /*-----------------------------------------------------------------------------
@@ -360,9 +370,10 @@ main(void)
    RUN_TEST(test_CombineFilename_no_slash_needed);
    RUN_TEST(test_CombineFilename_empty_dir);
 
-   RUN_TEST(test_HasFileExtension_valid);
-   RUN_TEST(test_HasFileExtension_no_extension);
-   RUN_TEST(test_HasFileExtension_leading_dot);
+   RUN_TEST(test_IsYAMLFilename_valid);
+   RUN_TEST(test_IsYAMLFilename_no_extension);
+   RUN_TEST(test_IsYAMLFilename_leading_dot);
+   RUN_TEST(test_IsYAMLFilename_with_spaces);
 
    RUN_TEST(test_CheckDataExists_binary);
    RUN_TEST(test_CheckDataExists_ascii);

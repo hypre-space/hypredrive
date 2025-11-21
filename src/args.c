@@ -407,7 +407,7 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    MPI_Comm_rank(comm, &myid);
 
    /* Read input arguments from file or string */
-   if (HasFileExtension(argv[0]))
+   if (IsYAMLFilename(argv[0]))
    {
       /* Treat as file input - will error if file doesn't exist */
       InputArgsRead(comm, argv[0], &base_indent, &text);
