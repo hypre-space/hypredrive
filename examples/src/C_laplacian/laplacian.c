@@ -346,6 +346,7 @@ main(int argc, char *argv[])
                   params.P[2], &mesh);
 
    /* Create the linear system */
+   if (!myid && (params.verbose > 0)) printf("Assembling linear system...");
    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStart("system"));
    if (params.stencil == 7)
    {
@@ -364,11 +365,14 @@ main(int argc, char *argv[])
       BuildLaplacianSystem_125pt(mesh, &params, &A, &b);
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStop("system"));
+   if (!myid && (params.verbose > 0)) printf("Done!\n");
 
    /* Transfer data to GPU memory */
 #if defined(HYPRE_USING_GPU)
+   if (!myid && (params.verbose > 0)) printf("Migrating linear system to GPU...");
    HYPRE_IJMatrixMigrate(A, HYPRE_MEMORY_DEVICE);
    HYPRE_IJVectorMigrate(b, HYPRE_MEMORY_DEVICE);
+   if (!myid && (params.verbose > 0)) printf(" Done!\n");
 #endif
 
    /* Associate the matrix and vectors with hypredrive */
