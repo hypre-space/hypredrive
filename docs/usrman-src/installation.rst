@@ -104,6 +104,10 @@ Using CMake (Recommended)
 
    - ``-DHYPREDRV_ENABLE_EIGSPEC=ON``: Enable full eigenspectrum computation support
      (requires LAPACK). Default: ``OFF``.
+   - ``-DHYPREDRV_ENABLE_HWLOC=ON``: Enable hwloc support for detailed system topology
+     information (CPU, GPU, NUMA, cache hierarchy, etc.). Requires the hwloc library to be
+     installed. If hwloc is not available, hypredrive will fall back to basic system
+     information. Default: ``OFF``.
    - ``-DHYPREDRV_BUILD_EXAMPLES=OFF``: Disable building example programs. Default: ``ON``.
    - ``-DHYPREDRV_ENABLE_TESTING=OFF``: Disable testing support and ``check`` target.
      Default: ``ON``.
