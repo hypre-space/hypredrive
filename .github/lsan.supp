@@ -6,6 +6,8 @@ leak:MPI_Init
 leak:mca_base_
 leak:opal_
 leak:orte_
+leak:libopen-pal
+leak:libopen-rte
 
 # Libevent leaks (used by OpenMPI)
 leak:libevent
