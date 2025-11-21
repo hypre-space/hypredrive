@@ -21,7 +21,6 @@ The instructions for building *hypredrive* using CMake are given below:
 ```bash
 cmake -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX=${PWD}/install \
-      -DHYPRE_ROOT=${HYPRE_INSTALL_DIR} \
       -B build -S .
 cmake --build build --parallel
 cmake --build build --target check
@@ -29,10 +28,9 @@ cmake --install build
 ```
 
 Notes:
-1. [hypre](https://github.com/hypre-space/hypre) needs to be installed and located at
-   `${HYPRE_INSTALL_DIR}`. You must specify the path using `-DHYPRE_ROOT`.
-2. To download example datasets from Zenodo, use `cmake --build build --target data` after
-   configuration.
+1. [hypre](https://github.com/hypre-space/hypre) is automatically fetched and built from source if not found.
+   To use a pre-built HYPRE, specify `-DHYPRE_ROOT=<path>`.
+2. To download example datasets, use `cmake --build build --target data`.
 3. For full documentation and installation options, see the [user's manual](https://hypredrive.readthedocs.io/en/latest/installation.html).
 
 ## Examples
