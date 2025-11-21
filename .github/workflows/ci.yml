@@ -27,6 +27,7 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
     name: ${{ matrix.os }} | ${{ matrix.compiler }} | ${{ matrix.build_type }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -181,13 +182,14 @@ jobs:
           fi
 
       - name: Run tests
+        timeout-minutes: 5
         env:
           # OpenMPI configuration for CI
           OMPI_ALLOW_RUN_AS_ROOT: 1
           OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
           OMPI_MCA_btl_vader_single_copy_mechanism: none
           OMPI_MCA_rmaps_base_oversubscribe: 1
-        run: ctest --test-dir $BUILD_DIR --output-on-failure # -VV for debugging
+        run: ctest --test-dir $BUILD_DIR --output-on-failure --timeout 30 # 30 seconds per test
 
       - name: Verify example outputs (optional)
         continue-on-error: true

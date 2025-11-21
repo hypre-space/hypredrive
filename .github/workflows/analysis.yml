@@ -135,6 +135,7 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
     name: ASan and UBSan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -179,6 +180,7 @@ jobs:
         run: cmake --build $BUILD_DIR --target data --parallel
 
       - name: Run tests with sanitizers
+        timeout-minutes: 8
         env:
           ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1:print_stacktrace=1:fast_unwind_on_malloc=0"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/.github/lsan.supp"
@@ -187,7 +189,7 @@ jobs:
           OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
           OMPI_MCA_btl_vader_single_copy_mechanism: none
           OMPI_MCA_rmaps_base_oversubscribe: 1
-        run: ctest --test-dir $BUILD_DIR --output-on-failure
+        run: ctest --test-dir $BUILD_DIR --output-on-failure --timeout 40 # 40 seconds per test
 
       - name: Upload logs on failure
         if: failure()
