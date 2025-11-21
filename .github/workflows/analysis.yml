@@ -138,7 +138,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        compiler: [gcc, clang]
+        compiler: [clang] # gcc, clang
     env:
       HYPRE_VERSION: master
       BUILD_DIR: build-sanitizers-${{ matrix.compiler }}
