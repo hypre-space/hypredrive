@@ -1,0 +1,6 @@
+# OpenMPI leaks
+leak:libmpi.so
+leak:ompi_
+leak:PMPI_
+leak:MPI_Init
+
