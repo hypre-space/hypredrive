@@ -55,8 +55,8 @@ endif()
 # Include directories
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-# Find and configure HYPRE
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_HYPRE.cmake)
+# Find and configure dependencies
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Deps.cmake)
 
 # Check for headers, functions, and libraries
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Checks.cmake)
@@ -101,6 +101,12 @@ target_link_libraries(HYPREDRV PUBLIC HYPRE::HYPRE)
 # Link math library as PRIVATE (only needed for implementation, not public API)
 # CMake will automatically deduplicate if HYPRE already links m
 target_link_libraries(HYPREDRV PRIVATE m)
+
+if(HWLOC_FOUND)
+    target_include_directories(HYPREDRV PRIVATE ${HWLOC_INCLUDE_DIR})
+    target_link_libraries(HYPREDRV PRIVATE ${HWLOC_LIBRARY})
+endif()
+
 
 # Optional eigenspectrum feature
 if(HYPREDRV_ENABLE_EIGSPEC)
