@@ -570,10 +570,9 @@ PrintSystemInfoLegacy(MPI_Comm comm)
          printf("-------------------------------\n");
          for (int r = 0; r < nprocs; r++)
          {
-            printf("Rank %-3d               : %s\n", r,
+            printf("Rank %-3d              : %s\n", r,
                    gpuBindingAll + (size_t)r * HYPRE_MAX_GPU_BINDING);
          }
-         printf("\n");
       }
 
       // 3. OS system info, release, version, machine
@@ -1529,15 +1528,15 @@ PrintNetworkInfoHwloc(void)
          printf("InfiniBand %-9s : %s\n", obj->name, obj->name);
          if (pci_busid[0])
          {
-            printf("  PCI Bus ID          : %s\n", pci_busid);
+            printf("  PCI Bus ID           : %s\n", pci_busid);
          }
          if (nodeguid)
          {
-            printf("  NodeGUID            : %s\n", nodeguid);
+            printf("  NodeGUID             : %s\n", nodeguid);
          }
          if (address)
          {
-            printf("  Address             : %s\n", address);
+            printf("  Address              : %s\n", address);
          }
       }
       else if (obj->attr->osdev.type == HWLOC_OBJ_OSDEV_NETWORK)
@@ -2094,7 +2093,7 @@ PrintSystemInfoHwloc(MPI_Comm comm)
          printf("-------------------------------\n");
          for (int r = 0; r < nprocs; r++)
          {
-            printf("Rank %-3d               : %s\n", r,
+            printf("Rank %-3d              : %s\n", r,
                    gpuBindingAll + (size_t)r * HYPRE_MAX_GPU_BINDING);
          }
          printf("\n");
@@ -2257,12 +2256,12 @@ PrintLinuxNumaInformation(double bytes_to_gib)
       int node_index = atoi(entry->d_name + 4);
       if (mem_total_kb > 0)
       {
-         printf("NUMA node %-3d        : %6.2f / %6.2f  (%5.2f %%) GiB used\n",
+         printf("NUMA node %-3d         : %6.2f / %6.2f  (%5.2f %%) GiB used\n",
                 node_index, used_gib, total_gib, used_pct);
       }
       else
       {
-         printf("NUMA node %-3d        : memory data unavailable\n", node_index);
+         printf("NUMA node %-3d         : memory data unavailable\n", node_index);
       }
       nodes++;
    }
@@ -2347,12 +2346,12 @@ PrintNetworkInformation(void)
 
          if (speed_mbps > 0)
          {
-            printf("Interface %-10s : %4d Mbps (%s)\n", entry->d_name, speed_mbps,
+            printf("Interface %-11s : %4d Mbps (%s)\n", entry->d_name, speed_mbps,
                    state[0] ? state : "unknown");
          }
          else
          {
-            printf("Interface %-10s : unknown speed (%s)\n", entry->d_name,
+            printf("Interface %-11s : unknown speed (%s)\n", entry->d_name,
                    state[0] ? state : "unknown");
          }
       }
@@ -2399,7 +2398,7 @@ PrintAcceleratorRuntimeInformation(void)
             line[strcspn(line, "\n")] = '\0';
             if (cap_idx == 0)
             {
-               printf("CUDA compute capability: %s\n", line[0] ? line : "unknown");
+               printf("CUDA comp. capability : %s\n", line[0] ? line : "unknown");
             }
             else
             {

@@ -48,6 +48,19 @@ All jobs that need HYPRE call the ``build-hypre`` action and pass:
 The action caches HYPRE under ``${{ runner.tool_cache }}/hypre/<version>`` with a descriptive key
 that includes OS, compiler, build type, and whether libraries are shared (``shared``/``static``).
 
+Automatic HYPRE build
+~~~~~~~~~~~~~~~~~~~~~
+
+When building locally, *hypredrive* can automatically fetch and build HYPRE from source using
+CMake's `FetchContent` if ``HYPRE_ROOT`` is not specified. This feature:
+
+- Automatically downloads HYPRE from GitHub (default: ``master`` branch)
+- Inherits all CMake arguments from the parent project (build type, compilers, TPLs, etc.)
+- Builds HYPRE in the same build tree with unified library and include directories
+- Supports specifying HYPRE version via ``-DHYPRE_VERSION=<version>``
+
+To use a pre-built HYPRE instead, specify ``-DHYPRE_ROOT=<path>``.
+
 MPI configuration
 ~~~~~~~~~~~~~~~~~
 
@@ -77,7 +90,8 @@ On Ubuntu (gcc example):
    export HYPRE_PREFIX=$HOME/.local/hypre/master
    cmake -S . -B build -G Ninja \
      -DCMAKE_BUILD_TYPE=Debug \
-     -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_BUILD_EXAMPLES=ON \
+     -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
+     -DHYPRE_ROOT=$HYPRE_PREFIX \
      -DBUILD_SHARED_LIBS=ON -DCMAKE_C_COMPILER=mpicc \
      -DCMAKE_C_COMPILER_LAUNCHER=ccache \
      -DCMAKE_PREFIX_PATH=${HYPRE_PREFIX}

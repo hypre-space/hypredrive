@@ -17,9 +17,9 @@ function(setup_test_executable target_name source_file)
         endforeach()
     endif()
 
-    # Add an RPATH to the main build directory for MacOS
+    # Add an RPATH to the lib directory for MacOS (libraries are in lib/)
     if(APPLE)
-        target_link_options(${target_name} PRIVATE  "-Wl,-rpath,${CMAKE_BINARY_DIR}")
+        target_link_options(${target_name} PRIVATE  "-Wl,-rpath,${CMAKE_BINARY_DIR}/lib")
     endif()
 endfunction()
 

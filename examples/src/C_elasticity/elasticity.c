@@ -1549,14 +1549,18 @@ main(int argc, char *argv[])
    CreateDistMesh(comm, params.N[0], params.N[1], params.N[2], params.P[0], params.P[1],
                   params.P[2], &mesh);
 
+   if (!myid && (params.verbose > 0)) printf("Assembling linear system...");
    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStart("system"));
    BuildElasticitySystem_Q1Hex(mesh, &params, &A, &b, comm);
    ComputeRigidBodyModes(mesh, &params, &rbms);
    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStop("system"));
+   if (!myid && (params.verbose > 0)) printf(" Done!\n");
 
 #if defined(HYPRE_USING_GPU)
+   if (!myid && (params.verbose > 0)) printf("Migrating linear system to GPU...");
    HYPRE_IJMatrixMigrate(A, HYPRE_MEMORY_DEVICE);
    HYPRE_IJVectorMigrate(b, HYPRE_MEMORY_DEVICE);
+   if (!myid && (params.verbose > 0)) printf(" Done!\n");
 #endif
 
    /* Tell hypredrv we have 3 interleaved dofs per node */
