@@ -30,9 +30,9 @@ if(_sanitizer_enabled AND _sanitizer_flags)
     endforeach()
 endif()
 
-# Add an RPATH to the main build directory for MacOS
+# Add an RPATH to the lib directory for MacOS (libraries are in lib/)
 if(APPLE)
-    target_link_options(laplacian PRIVATE  "-Wl,-rpath,${CMAKE_BINARY_DIR}")
+    target_link_options(laplacian PRIVATE  "-Wl,-rpath,${CMAKE_BINARY_DIR}/lib")
 endif()
 
 # Add the laplacian driver to the test suite when testing is enabled

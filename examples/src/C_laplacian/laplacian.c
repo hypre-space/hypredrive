@@ -365,7 +365,10 @@ main(int argc, char *argv[])
       BuildLaplacianSystem_125pt(mesh, &params, &A, &b);
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStop("system"));
-   if (!myid && (params.verbose > 0)) printf("Done!\n");
+   if (!myid && (params.verbose > 0))
+   {
+      printf(" Done!\n");
+   }
 
    /* Transfer data to GPU memory */
 #if defined(HYPRE_USING_GPU)
