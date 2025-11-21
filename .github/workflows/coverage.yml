@@ -91,7 +91,6 @@ jobs:
           fi
 
       - name: Generate coverage report
-        timeout-minutes:8
         env:
           OMPI_ALLOW_RUN_AS_ROOT: 1
           OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1

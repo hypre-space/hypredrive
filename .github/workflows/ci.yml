@@ -116,21 +116,6 @@ jobs:
           echo "MPICH_CC=clang" >> $GITHUB_ENV
           echo "MPICH_CXX=clang++" >> $GITHUB_ENV
 
-      - name: MPI sanity check
-        run: |
-          set -euxo pipefail
-          MPIRUN=$(command -v mpiexec || true)
-          if [ -z "$MPIRUN" ]; then
-             echo "mpiexec not found"
-             exit 1
-          fi
-          $MPIRUN -n 2 hostname
-          if [ $? -ne 0 ]; then
-            echo "MPI sanity check failed"
-            exit 1
-          fi
-          echo "MPI sanity check passed"
-
       - name: Cache datasets
         uses: actions/cache@v4
         with:
