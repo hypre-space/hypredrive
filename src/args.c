@@ -366,7 +366,7 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    }
 
    /* Broadcast the text size and base indentation */
-   MPI_Bcast(&base_indent, 1, MPI_UNSIGNED_LONG, 0, comm);
+   MPI_Bcast(&base_indent, 1, MPI_INT, 0, comm);
    MPI_Bcast(&text_size, 1, MPI_UNSIGNED_LONG, 0, comm);
 
    /* Broadcast the text */
@@ -407,7 +407,7 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    MPI_Comm_rank(comm, &myid);
 
    /* Read input arguments from file or string */
-   if (HasFileExtension(argv[0]))
+   if (IsYAMLFilename(argv[0]))
    {
       /* Treat as file input - will error if file doesn't exist */
       InputArgsRead(comm, argv[0], &base_indent, &text);
@@ -445,6 +445,8 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    {
       YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
       ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      free(text);
+      YAMLtreeDestroy(&tree);
       return;
    }
    MPI_Barrier(comm);
@@ -474,6 +476,8 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    {
       YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
       ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      InputArgsDestroy(&iargs);
+      YAMLtreeDestroy(&tree);
       return;
    }
 

@@ -58,7 +58,8 @@ jobs:
         if: startsWith(runner.os, 'Linux')
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build mpich libmpich-dev ccache clang-format
+          # Install OpenMPI instead of MPICH for better CI compatibility
+          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin ccache clang-format
           if [ "${{ matrix.compiler }}" = "gcc" ]; then sudo apt-get install -y gcc g++; fi
           if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt-get install -y clang; fi
           # Get and display compiler version
@@ -74,16 +75,16 @@ jobs:
         run: |
           if [ "${{ matrix.compiler }}" = "clang" ]; then
             # Configure mpicc to use clang
-            export MPICH_CC=clang
-            export MPICH_CXX=clang++
-            echo "MPICH_CC=clang" >> $GITHUB_ENV
-            echo "MPICH_CXX=clang++" >> $GITHUB_ENV
+            export OMPI_CC=clang
+            export OMPI_CXX=clang++
+            echo "OMPI_CC=clang" >> $GITHUB_ENV
+            echo "OMPI_CXX=clang++" >> $GITHUB_ENV
           else
             # Configure mpicc to use gcc (default)
-            export MPICH_CC=gcc
-            export MPICH_CXX=g++
-            echo "MPICH_CC=gcc" >> $GITHUB_ENV
-            echo "MPICH_CXX=g++" >> $GITHUB_ENV
+            export OMPI_CC=gcc
+            export OMPI_CXX=g++
+            echo "OMPI_CC=gcc" >> $GITHUB_ENV
+            echo "OMPI_CXX=g++" >> $GITHUB_ENV
           fi
 
       - name: Setup ccache (Ubuntu)
@@ -112,6 +113,21 @@ jobs:
           export MPICH_CXX=clang++
           echo "MPICH_CC=clang" >> $GITHUB_ENV
           echo "MPICH_CXX=clang++" >> $GITHUB_ENV
+
+      - name: MPI sanity check
+        run: |
+          set -euxo pipefail
+          MPIRUN=$(command -v mpiexec || true)
+          if [ -z "$MPIRUN" ]; then
+             echo "mpiexec not found"
+             exit 1
+          fi
+          $MPIRUN -n 2 hostname
+          if [ $? -ne 0 ]; then
+            echo "MPI sanity check failed"
+            exit 1
+          fi
+          echo "MPI sanity check passed"
 
       - name: Cache datasets
         uses: actions/cache@v4
@@ -146,7 +162,7 @@ jobs:
           fi
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-            -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_BUILD_EXAMPLES=ON \
+            -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
             -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }} \
             $CCACHE_ARGS
@@ -165,7 +181,13 @@ jobs:
           fi
 
       - name: Run tests
-        run: ctest --test-dir $BUILD_DIR --output-on-failure
+        env:
+          # OpenMPI configuration for CI
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+          OMPI_MCA_btl_vader_single_copy_mechanism: none
+          OMPI_MCA_rmaps_base_oversubscribe: 1
+        run: ctest --test-dir $BUILD_DIR --output-on-failure # -VV for debugging
 
       - name: Verify example outputs (optional)
         continue-on-error: true

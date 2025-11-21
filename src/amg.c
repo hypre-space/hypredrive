@@ -6,6 +6,9 @@
  ******************************************************************************/
 
 #include "amg.h"
+#include "HYPRE_parcsr_mv.h"
+#include "_hypre_IJ_mv.h"     // For hypre_IJVectorGlobalNumRows
+#include "_hypre_parcsr_mv.h" // For hypre_ParVectorComm, hypre_ParVectorInitialize_v2
 #include "gen_macros.h"
 
 /*-----------------------------------------------------------------------------
@@ -27,6 +30,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, keep_transpose, FieldTypeIntSet)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_functions, FieldTypeIntSet)    \
    ADD_FIELD_OFFSET_ENTRY(_prefix, filter_functions, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, nodal, FieldTypeIntSet)            \
    ADD_FIELD_OFFSET_ENTRY(_prefix, seq_amg_th, FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, min_coarse_size, FieldTypeIntSet)  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_coarse_size, FieldTypeIntSet)  \
@@ -133,6 +137,7 @@ AMGcsnSetDefaultArgs(AMGcsn_args *args)
 #endif
    args->num_functions    = 1;
    args->filter_functions = 0;
+   args->nodal            = 0;
    args->seq_amg_th       = 0;
    args->min_coarse_size  = 0;
    args->max_coarse_size  = 64;
@@ -205,6 +210,10 @@ AMGSetDefaultArgs(AMG_args *args)
    args->max_iter    = 1;
    args->print_level = 0;
    args->tolerance   = 0.0;
+   args->num_rbms    = 0;
+   args->rbms[0]     = NULL;
+   args->rbms[1]     = NULL;
+   args->rbms[2]     = NULL;
 
    AMGintSetDefaultArgs(&args->interpolation);
    AMGaggSetDefaultArgs(&args->aggressive);
@@ -284,9 +293,10 @@ AMGcsnGetValidValues(const char *key)
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "filter_functions") ||
-            !strcmp(key, "rap2") ||
-            !strcmp(key, "mod_rap2") ||
-            !strcmp(key, "keep_transpose"))
+       !strcmp(key, "nodal") ||
+       !strcmp(key, "rap2") ||
+       !strcmp(key, "mod_rap2") ||
+       !strcmp(key, "keep_transpose"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }
@@ -416,6 +426,67 @@ AMGsmtGetValidValues(const char *key)
 // clang-format on
 
 /*-----------------------------------------------------------------------------
+ * AMGSetRBMs
+ *-----------------------------------------------------------------------------*/
+
+void
+AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
+{
+   HYPRE_BigInt   jlower, jupper;
+   HYPRE_Int      num_entries;
+   HYPRE_Complex *values = NULL;
+
+   /* Sanity: check if the near null space vector is set
+      We do not error out when NOT using nodal coarsening. */
+   if (!vec_nn || !args->coarsening.nodal)
+   {
+      if (args->coarsening.nodal)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("Near null space vectors (RBMs) required"
+                     " for nodal coarsening, but not set");
+      }
+      return;
+   }
+   HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
+   num_entries = (HYPRE_Int)(jupper - jlower + 1);
+   values      = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
+
+   /* Reset any previous RBMs */
+   for (HYPRE_Int i = 0; i < args->num_rbms; i++)
+   {
+      HYPRE_ParVectorDestroy(args->rbms[i]);
+      args->rbms[i] = NULL;
+   }
+
+   /* Create three RBMs */
+   args->num_rbms = 3;
+   for (HYPRE_Int i = 0; i < args->num_rbms; i++)
+   {
+      /* Allocate single-component parallel vector for this RBM */
+      HYPRE_BigInt partitioning[2] = {jlower, jupper + 1};
+
+      HYPRE_ParVectorCreate(hypre_ParVectorComm(vec_nn),
+                            hypre_IJVectorGlobalNumRows(vec_nn), partitioning,
+                            &args->rbms[i]);
+      hypre_ParVectorInitialize_v2(args->rbms[i], HYPRE_MEMORY_HOST);
+
+      /* Copy component data into host buffer */
+      HYPRE_IJVectorSetComponent(vec_nn, 3 + i);
+      HYPRE_IJVectorGetValues(vec_nn, num_entries, NULL, values);
+
+      /* Fill entries */
+      for (HYPRE_Int j = 0; j < num_entries; j++)
+      {
+         hypre_ParVectorEntryI(args->rbms[i], j) = values[j];
+      }
+   }
+
+   /* Free memory */
+   free(values);
+}
+
+/*-----------------------------------------------------------------------------
  * AMGCreate
  *-----------------------------------------------------------------------------*/
 
@@ -513,9 +584,17 @@ AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 3);
    }
 
-#if HYPRE_CHECK_MIN_VERSION(23100, 16)
-   HYPRE_BoomerAMGSetFilterFunctions(precon, args->coarsening.filter_functions);
-#endif
+   if (args->coarsening.nodal)
+   {
+      HYPRE_BoomerAMGSetNumFunctions(precon, 3);
+      HYPRE_BoomerAMGSetNodal(precon, 4); // Nodal coarsening based on row-sum norm
+      HYPRE_BoomerAMGSetNodalDiag(precon, 1);
+      HYPRE_BoomerAMGSetInterpVecVariant(precon, 2); // GM-2
+      HYPRE_BoomerAMGSetInterpVecQMax(precon, 4);
+      HYPRE_BoomerAMGSetSmoothInterpVectors(precon, 1);
+      HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms,
+                                      (HYPRE_ParVector *)args->rbms);
+   }
 
    *precon_ptr = precon;
 }

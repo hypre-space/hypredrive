@@ -1,3 +1,8 @@
+# Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+# HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: MIT
+
 # CMake minimum version requirement
 cmake_minimum_required(VERSION 3.23)
 
@@ -23,12 +28,12 @@ option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
 # HYPREDRV build options
 option(HYPREDRV_ENABLE_EIGSPEC  "Enable full eigenspectrum computation" OFF)
-option(HYPREDRV_ENABLE_TESTING  "Enable testing support and check target" ON)
+option(HYPREDRV_ENABLE_TESTING  "Enable testing support and check target" OFF)
 option(HYPREDRV_ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
-option(HYPREDRV_ENABLE_ANALYSIS "Enable static analysis (clang-tidy) and sanitizers (ASan/UBSan)" OFF)
-option(HYPREDRV_ENABLE_DATA     "Enable 'data' target to fetch example datasets" ON)
+option(HYPREDRV_ENABLE_ANALYSIS "Enable static code analysis (clang-tidy) and sanitizers (ASan/UBSan)" OFF)
+option(HYPREDRV_ENABLE_DATA     "Enable 'data' target to fetch example datasets" OFF)
 option(HYPREDRV_ENABLE_DOCS     "Enable documentation generation" OFF)
-option(HYPREDRV_BUILD_EXAMPLES  "Build the HYPREDRV examples" ON)
+option(HYPREDRV_ENABLE_EXAMPLES "Enable the HYPREDRV examples" OFF)
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -117,28 +122,32 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Platform.cmake)
 # Installation and package configuration
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Install.cmake)
 
-# Testing setup (optional)
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
-
 # Coverage support (optional)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Coverage.cmake)
 
 # Static analysis and sanitizers support (optional)
+# Must be included before testing so sanitizer flags are available when test executables are created
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Analysis.cmake)
+
+# Testing setup (optional)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
 
 # Documentation support (optional)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Docs.cmake)
 
 # Add examples
-if(HYPREDRV_BUILD_EXAMPLES)
+if(HYPREDRV_ENABLE_EXAMPLES)
     add_subdirectory(examples/src/C_laplacian)
     add_subdirectory(examples/src/C_elasticity)
 endif()
 
-# Custom check target
+# Add a check target
 add_custom_target(check
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS hypredrive data
-    COMMENT "Running tests"
-    VERBATIM
+  COMMAND ${CMAKE_COMMAND}
+          -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+          -DTARGET_BIN=$<TARGET_FILE:hypredrive>
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_SmokeCheck.cmake
+  DEPENDS hypredrive
+  COMMENT "Running smoke test (ex1.yml)"
+  VERBATIM
 )

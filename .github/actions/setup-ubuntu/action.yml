@@ -10,12 +10,12 @@ inputs:
     required: false
     default: ''
 outputs:
-  mpich_cc:
-    description: 'MPICH_CC environment variable value'
-    value: ${{ steps.setup.outputs.mpich_cc }}
-  mpich_cxx:
-    description: 'MPICH_CXX environment variable value'
-    value: ${{ steps.setup.outputs.mpich_cxx }}
+  ompi_cc:
+    description: 'OMPI_CC environment variable value'
+    value: ${{ steps.setup.outputs.ompi_cc }}
+  ompi_cxx:
+    description: 'OMPI_CXX environment variable value'
+    value: ${{ steps.setup.outputs.ompi_cxx }}
 runs:
   using: 'composite'
   steps:
@@ -23,7 +23,8 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        PACKAGES="cmake ninja-build mpich libmpich-dev"
+        # Defaulting to OpenMPI for CI stability
+        PACKAGES="cmake ninja-build libopenmpi-dev openmpi-bin"
         if [ "${{ inputs.compiler }}" = "gcc" ]; then
           PACKAGES="$PACKAGES gcc g++"
         else
@@ -39,14 +40,14 @@ runs:
       shell: bash
       run: |
         if [ "${{ inputs.compiler }}" = "clang" ]; then
-          echo "mpich_cc=clang" >> $GITHUB_OUTPUT
-          echo "mpich_cxx=clang++" >> $GITHUB_OUTPUT
-          echo "MPICH_CC=clang" >> $GITHUB_ENV
-          echo "MPICH_CXX=clang++" >> $GITHUB_ENV
+          echo "ompi_cc=clang" >> $GITHUB_OUTPUT
+          echo "ompi_cxx=clang++" >> $GITHUB_OUTPUT
+          echo "OMPI_CC=clang" >> $GITHUB_ENV
+          echo "OMPI_CXX=clang++" >> $GITHUB_ENV
         else
-          echo "mpich_cc=gcc" >> $GITHUB_OUTPUT
-          echo "mpich_cxx=g++" >> $GITHUB_OUTPUT
-          echo "MPICH_CC=gcc" >> $GITHUB_ENV
-          echo "MPICH_CXX=g++" >> $GITHUB_ENV
+          echo "ompi_cc=gcc" >> $GITHUB_OUTPUT
+          echo "ompi_cxx=g++" >> $GITHUB_OUTPUT
+          echo "OMPI_CC=gcc" >> $GITHUB_ENV
+          echo "OMPI_CXX=g++" >> $GITHUB_ENV
         fi
 

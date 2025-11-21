@@ -67,7 +67,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       {
          ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          ErrorMsgAddInvalidFilename(filename);
-         return;
+         goto cleanup;
       }
 
       /* Read header contents */
@@ -76,7 +76,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          ErrorMsgAdd("Could not read header from %s", filename);
          fclose(fp);
-         return;
+         goto cleanup;
       }
       fclose(fp);
 
@@ -116,7 +116,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          ErrorMsgAdd("Could not read header from %s", filename);
          fclose(fp);
-         return;
+         goto cleanup;
       }
 
       /* Read vector coefficients */
@@ -129,7 +129,8 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read coeficients from %s", filename);
             fclose(fp);
-            return;
+            free(buffer);
+            goto cleanup;
          }
 
          for (size_t i = 0; i < header[5]; i++)
@@ -148,7 +149,8 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read coeficients from %s", filename);
             fclose(fp);
-            return;
+            free(buffer);
+            goto cleanup;
          }
 
          for (size_t i = 0; i < header[5]; i++)
@@ -164,7 +166,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[1],
                      filename);
          fclose(fp);
-         return;
+         goto cleanup;
       }
       fclose(fp);
 
@@ -182,6 +184,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    HYPRE_IJVectorAssemble(vec);
    *vec_ptr = vec;
 
+cleanup:
    /* Free memory */
    free(partids);
    free(h_vals);
@@ -191,4 +194,12 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
    }
 #endif
+   if (ErrorCodeActive())
+   {
+      if (vec)
+      {
+         HYPRE_IJVectorDestroy(vec);
+      }
+      *vec_ptr = NULL;
+   }
 }

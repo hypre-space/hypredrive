@@ -1,3 +1,8 @@
+# Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+# HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: MIT
+
 # Static code analysis and sanitizer support for hypredrive
 if(HYPREDRV_ENABLE_ANALYSIS)
     message(STATUS "Static code analysis and sanitizers are enabled")
@@ -9,7 +14,9 @@ if(HYPREDRV_ENABLE_ANALYSIS)
     # ============================================================================
     # Sanitizers: AddressSanitizer, UndefinedBehaviorSanitizer, MemorySanitizer
     # ============================================================================
-    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    # Note: Sanitizers are disabled when coverage is enabled to avoid conflicts
+    # Coverage and sanitizers both use compiler instrumentation and can conflict
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT HYPREDRV_ENABLE_COVERAGE)
         # Sanitizer flags - ASan and UBSan are most commonly used
         # Note: -O1 is recommended for sanitizers, but we respect CMAKE_BUILD_TYPE's optimization
         # if it's set. We only add -fno-omit-frame-pointer for better stack traces.
@@ -37,31 +44,31 @@ if(HYPREDRV_ENABLE_ANALYSIS)
             if(TARGET ${tgt})
                 target_compile_options(${tgt} PRIVATE ${_sanitizer_flags})
                 target_link_options(${tgt} PRIVATE ${_sanitizer_link_flags})
-                message(STATUS "Applied sanitizers to target ${tgt}")
+                #message(STATUS "Applied sanitizers to target ${tgt}")
             endif()
         endforeach()
 
-        # Also apply sanitizer flags to test executables (they're created before this module is included)
-        get_property(_test_targets DIRECTORY tests PROPERTY BUILDSYSTEM_TARGETS)
-        if(_test_targets)
-            foreach(test_tgt ${_test_targets})
-                if(TARGET ${test_tgt})
-                    get_target_property(_tgt_type ${test_tgt} TYPE)
-                    if(_tgt_type STREQUAL "EXECUTABLE")
-                        target_compile_options(${test_tgt} PRIVATE ${_sanitizer_flags})
-                        target_link_options(${test_tgt} PRIVATE ${_sanitizer_link_flags})
-                        message(STATUS "Applied sanitizers to test target ${test_tgt}")
-                    endif()
-                endif()
-            endforeach()
-        endif()
+        # Note: We don't apply sanitizer flags specifically to test executables here because:
+        # 1. The directory-wide options added below will apply to all targets including tests
+        # 2. Accessing the tests directory requires it to have been processed by add_subdirectory(),
+        #    which only happens if HYPREDRV_ENABLE_TESTING=ON, and we can't safely check if it's
+        #    been processed without potentially causing an error if it hasn't been.
+        # If you need test-specific sanitizer configuration, it should be done in tests/CMakeLists.txt
 
         # Also apply directory-wide defaults so future targets (e.g., examples) get flags
         add_compile_options(${_sanitizer_flags})
         add_link_options(${_sanitizer_link_flags})
 
+        # Store sanitizer link flags in cache variables and global property so subdirectories can access them
+        set(HYPREDRV_SANITIZER_LINK_FLAGS ${_sanitizer_link_flags} CACHE INTERNAL "Sanitizer link flags for executables")
+        set(HYPREDRV_SANITIZER_ENABLED ON CACHE INTERNAL "Whether sanitizers are enabled")
+        set_property(GLOBAL PROPERTY HYPREDRV_SANITIZER_LINK_FLAGS ${_sanitizer_link_flags})
+        set_property(GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED ON)
+
         message(STATUS "AddressSanitizer and UndefinedBehaviorSanitizer enabled")
         message(STATUS "Set ASAN_OPTIONS and UBSAN_OPTIONS environment variables to control behavior")
+    elseif(HYPREDRV_ENABLE_COVERAGE)
+        message(STATUS "Sanitizers disabled because coverage is enabled (they conflict)")
     else()
         message(WARNING "Sanitizers are only supported with GCC/Clang. Current compiler: ${CMAKE_C_COMPILER_ID}")
     endif()
@@ -69,7 +76,20 @@ if(HYPREDRV_ENABLE_ANALYSIS)
     # ============================================================================
     # clang-tidy static analysis
     # ============================================================================
-    find_program(CLANG_TIDY_EXECUTABLE NAMES clang-tidy clang-tidy-18 clang-tidy-17 clang-tidy-16 clang-tidy-15)
+    # Build list of clang-tidy executable names to search
+    set(_clang_tidy_names)
+    # Try versioned clang-tidy first (e.g., clang-tidy-22), starting from current compiler version
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_C_COMPILER_VERSION_MAJOR)
+        list(APPEND _clang_tidy_names clang-tidy-${CMAKE_C_COMPILER_VERSION_MAJOR})
+    endif()
+    # Also try common version numbers (15-22) as fallback
+    foreach(ver RANGE 22 15 -1)
+        list(APPEND _clang_tidy_names clang-tidy-${ver})
+    endforeach()
+    # Generic name as last resort
+    list(APPEND _clang_tidy_names clang-tidy)
+    
+    find_program(CLANG_TIDY_EXECUTABLE NAMES ${_clang_tidy_names})
     if(CLANG_TIDY_EXECUTABLE)
         message(STATUS "Found clang-tidy at ${CLANG_TIDY_EXECUTABLE}")
 
@@ -129,7 +149,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
         list(FILTER _src_files EXCLUDE REGEX ".*/build/.*")
         list(FILTER _src_files EXCLUDE REGEX ".*/install/.*")
         list(FILTER _src_files EXCLUDE REGEX ".*/docs/.*")
-        
+
         # Exclude gen_macros.h as it contains complex macros that clang-tidy modifies incorrectly
         list(FILTER _src_files EXCLUDE REGEX ".*/gen_macros\\.h$")
         list(FILTER _src_files EXCLUDE REGEX ".*/info\\.c$")
@@ -160,7 +180,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
             COMMENT "Running clang-tidy static analysis"
             VERBATIM
         )
-        
+
         message(STATUS "Output saved to ${CLANG_TIDY_OUTPUT}")
 
         # Create a target to run clang-tidy with fixes
@@ -173,7 +193,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
         )
 
         message(STATUS "Clang-tidy targets 'clang-tidy' and 'clang-tidy-fix' are available")
-        message(STATUS "Run 'cmake --build . --target clang-tidy' to run static analysis")
+        message(STATUS "Use 'cmake --build . --target clang-tidy' to run static analysis")
     else()
         message(WARNING "clang-tidy not found. Install it to enable static analysis. (e.g., apt-get install clang-tidy)")
         message(WARNING "The 'clang-tidy' and 'clang-tidy-fix' targets will not be available")

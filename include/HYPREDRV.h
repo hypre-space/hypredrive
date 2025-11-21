@@ -822,6 +822,31 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemPrint(HYPREDRV_t hypredrv);
 
    /**
+    * @brief Set near-nullspace modes for the current linear system (e.g., elastic RBMs).
+    *
+    * The input array must contain num_components contiguous blocks (component-major/SoA),
+    * each of length num_entries, stored back-to-back (not interleaved). The data is
+    * copied into internal storage owned and freed by HYPREDRV; the caller retains
+    * ownership of its input buffer and is responsible for freeing it after the call
+    * returns.
+    *
+    * Typical use for linear elasticity: provide 6 rigid-body modes with num_entries = 3 *
+    * num_local_nodes.
+    *
+    * @param hypredrv        The HYPREDRV_t object.
+    * @param num_entries     Number of local entries.
+    * @param num_components  Number of components per entry (modes).
+    * @param values          Pointer to contiguous data (length = num_entries *
+    * num_components).
+    *
+    * @return 0 on success; nonzero error code otherwise.
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
+                                         int num_components, const HYPRE_Complex *values);
+
+   /**
     * @brief Retrieves the solution values from the linear system of a HYPREDRV object.
     *
     * This function provides access to the internal pointer where the solution vector of

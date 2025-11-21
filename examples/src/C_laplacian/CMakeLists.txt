@@ -21,6 +21,15 @@ endif()
 add_executable(laplacian laplacian.c)
 target_link_libraries(laplacian PRIVATE HYPREDRV::HYPREDRV)
 
+# Apply sanitizer link flags if sanitizers are enabled
+get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
+get_property(_sanitizer_flags GLOBAL PROPERTY HYPREDRV_SANITIZER_LINK_FLAGS)
+if(_sanitizer_enabled AND _sanitizer_flags)
+    foreach(flag IN LISTS _sanitizer_flags)
+        target_link_options(laplacian PRIVATE ${flag})
+    endforeach()
+endif()
+
 # Add an RPATH to the main build directory for MacOS
 if(APPLE)
     target_link_options(laplacian PRIVATE  "-Wl,-rpath,${CMAKE_BINARY_DIR}")
@@ -28,15 +37,13 @@ endif()
 
 # Add the laplacian driver to the test suite when testing is enabled
 if(HYPREDRV_ENABLE_TESTING)
-    add_test(NAME laplacian_driver_1proc
-        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS}
-                $<TARGET_FILE:laplacian> -n 6 6 6 -ns 1 ${MPIEXEC_POSTFLAGS}
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-
-    set_tests_properties(laplacian_driver_1proc
-        PROPERTIES
-            RUN_SERIAL TRUE
-            FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
+    include(${CMAKE_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
+    add_executable_test(laplacian_test_1proc laplacian 1
+        ARGS -n 6 6 6 -ns 1
+        RUN_SERIAL
+    )
+    add_executable_test(laplacian_test_4proc laplacian 4
+        ARGS -n 6 6 6 -P 2 2 1 -ns 1
     )
 endif()
 

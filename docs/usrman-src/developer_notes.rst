@@ -26,8 +26,7 @@ Hypredrive uses GitHub Actions with the following workflows (see ``.github/workf
 - ``format.yml``: clang-format style checks for ``include/``, ``src/``, ``examples/src/``
 - ``docs.yml``: builds documentation (Sphinx and Doxygen jobs)
 - ``coverage.yml``: builds with coverage instrumentation and generates HTML/XML reports
-- ``analysis.yml``: static analysis (cppcheck and clang-tidy jobs)
-- ``sanitizers.yml``: nightly ASan/UBSan runs on Ubuntu with gcc/clang
+- ``analysis.yml``: code analysis (static: cppcheck and clang-tidy; dynamic: ASan/UBSan with gcc/clang)
 
 To reduce duplication, CI uses composite actions in ``.github/actions``:
 
@@ -99,25 +98,31 @@ On macOS (Apple clang):
    ctest --test-dir build --output-on-failure
 
 
-Static Code Analysis
---------------------
+Code Analysis
+-------------
 
 Overview
 ~~~~~~~~
 
-Static analysis runs in ``analysis.yml`` and is split into two jobs:
+Code analysis runs in ``analysis.yml`` and includes both static and dynamic analysis:
 
+Static analysis:
 - ``cppcheck`` (C99 rules, exhaustive checks)
 - ``clang-tidy`` (driven by ``compile_commands.json``)
+
+Dynamic analysis:
+- ``sanitizers`` (AddressSanitizer and UndefinedBehaviorSanitizer with gcc/clang)
 
 CMake options and targets
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - Enable analysis flags and targets: ``-DHYPREDRV_ENABLE_ANALYSIS=ON``.
 - Configure with export of compile commands for clang-tidy: ``-DCMAKE_EXPORT_COMPILE_COMMANDS=ON``.
-- Targets:
+- Static analysis targets:
   - ``cppcheck``: runs analysis on ``src/`` only, with includes to ``include/`` and the build dir.
   - ``clang-tidy``: runs clang-tidy (non-fix) across the project using the compile database.
+- Dynamic analysis: When ``HYPREDRV_ENABLE_ANALYSIS=ON``, sanitizers (ASan/UBSan) are automatically
+  enabled for all targets. Run tests with ``ctest`` to exercise the sanitizers.
 
 cppcheck configuration
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -140,6 +145,8 @@ clang-tidy usage
 Local runs
 ~~~~~~~~~~
 
+Static analysis:
+
 .. code-block:: bash
 
    cmake -S . -B build-analysis -G Ninja \
@@ -153,6 +160,23 @@ Local runs
    cmake --build build-analysis --target cppcheck
    # clang-tidy
    cmake --build build-analysis --target clang-tidy
+
+Dynamic analysis (sanitizers):
+
+.. code-block:: bash
+
+   cmake -S . -B build-sanitizers -G Ninja \
+     -DCMAKE_BUILD_TYPE=Debug \
+     -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
+     -DHYPREDRV_ENABLE_ANALYSIS=ON \
+     -DCMAKE_C_COMPILER=mpicc \
+     -DCMAKE_PREFIX_PATH=${HYPRE_PREFIX}
+   cmake --build build-sanitizers --parallel
+   cmake --build build-sanitizers --target data
+   # Run tests with sanitizers enabled
+   export ASAN_OPTIONS="detect_leaks=1:abort_on_error=1:print_stacktrace=1"
+   export UBSAN_OPTIONS="print_stacktrace=1:abort_on_error=1"
+   ctest --test-dir build-sanitizers --output-on-failure
 
 
 Code Coverage

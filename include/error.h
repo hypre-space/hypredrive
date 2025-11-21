@@ -67,8 +67,8 @@ void ErrorMsgAddMissingKey(const char *);
 void ErrorMsgAddExtraKey(const char *);
 void ErrorMsgAddUnexpectedVal(const char *);
 void ErrorMsgAddInvalidFilename(const char *);
-void ErrorMsgPrint();
-void ErrorMsgClear();
+void ErrorMsgPrint(void);
+void ErrorMsgClear(void);
 void ErrorMsgPrintAndAbort(MPI_Comm);
 
 #endif /* ERROR_H */

@@ -75,7 +75,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       {
          ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          ErrorMsgAddInvalidFilename(filename);
-         return;
+         goto cleanup;
       }
 
       /* Read header contents */
@@ -84,7 +84,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          ErrorMsgAdd("Could not read header from %s", filename);
          fclose(fp);
-         return;
+         goto cleanup;
       }
       fclose(fp);
 
@@ -124,7 +124,9 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read header from %s", filename);
             fclose(fp);
-            return;
+            free(dsizes);
+            free(osizes);
+            goto cleanup;
          }
 
          /* Read row and column indices */
@@ -135,7 +137,9 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
                ErrorMsgAdd("Could not read row indices from %s", filename);
                fclose(fp);
-               return;
+               free(dsizes);
+               free(osizes);
+               goto cleanup;
             }
 
             if (fread(h_cols, sizeof(HYPRE_BigInt), header[6], fp) != header[6])
@@ -143,7 +147,9 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
                ErrorMsgAdd("Could not read column indices from %s", filename);
                fclose(fp);
-               return;
+               free(dsizes);
+               free(osizes);
+               goto cleanup;
             }
          }
          else if (header[1] == sizeof(uint32_t))
@@ -155,7 +161,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
                ErrorMsgAdd("Could not read row indices from %s", filename);
                fclose(fp);
-               return;
+               free(buffer);
+               free(dsizes);
+               free(osizes);
+               goto cleanup;
             }
 
             for (size_t i = 0; i < header[6]; i++)
@@ -168,7 +177,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
                ErrorMsgAdd("Could not read column indices from %s", filename);
                fclose(fp);
-               return;
+               free(buffer);
+               free(dsizes);
+               free(osizes);
+               goto cleanup;
             }
 
             for (size_t i = 0; i < header[6]; i++)
@@ -187,7 +199,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
                ErrorMsgAdd("Could not read row indices from %s", filename);
                fclose(fp);
-               return;
+               free(buffer);
+               free(dsizes);
+               free(osizes);
+               goto cleanup;
             }
 
             for (size_t i = 0; i < header[6]; i++)
@@ -200,7 +215,10 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
                ErrorMsgAdd("Could not read column indices from %s", filename);
                fclose(fp);
-               return;
+               free(buffer);
+               free(dsizes);
+               free(osizes);
+               goto cleanup;
             }
 
             for (size_t i = 0; i < header[6]; i++)
@@ -215,7 +233,9 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Invalid row/col data type size %lld at %s", header[1], filename);
             fclose(fp);
-            return;
+            free(dsizes);
+            free(osizes);
+            goto cleanup;
          }
          fclose(fp);
 
@@ -302,7 +322,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          ErrorMsgAdd("Could not read header from %s", filename);
          fclose(fp);
-         return;
+         goto cleanup;
       }
 
       /* Read row and column indices */
@@ -313,7 +333,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read row indices from %s", filename);
             fclose(fp);
-            return;
+            goto cleanup;
          }
 
          if (fread(h_cols, sizeof(HYPRE_BigInt), header[6], fp) != header[6])
@@ -321,7 +341,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read column indices from %s", filename);
             fclose(fp);
-            return;
+            goto cleanup;
          }
       }
       else if (header[1] == sizeof(uint32_t))
@@ -333,7 +353,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read row indices from %s", filename);
             fclose(fp);
-            return;
+            free(buffer);
+            goto cleanup;
          }
 
          for (size_t i = 0; i < header[6]; i++)
@@ -346,7 +367,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read column indices from %s", filename);
             fclose(fp);
-            return;
+            free(buffer);
+            goto cleanup;
          }
 
          for (size_t i = 0; i < header[6]; i++)
@@ -365,7 +387,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read row indices from %s", filename);
             fclose(fp);
-            return;
+            free(buffer);
+            goto cleanup;
          }
 
          for (size_t i = 0; i < header[6]; i++)
@@ -378,7 +401,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read column indices from %s", filename);
             fclose(fp);
-            return;
+            free(buffer);
+            goto cleanup;
          }
 
          for (size_t i = 0; i < header[6]; i++)
@@ -393,7 +417,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          ErrorMsgAdd("Invalid row/col data type size %lld at %s", header[1], filename);
          fclose(fp);
-         return;
+         goto cleanup;
       }
 
 #ifdef HYPRE_USING_GPU
@@ -419,7 +443,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read coeficients from %s", filename);
             fclose(fp);
-            return;
+            free(buffer);
+            goto cleanup;
          }
 
          for (size_t i = 0; i < header[6]; i++)
@@ -438,7 +463,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read coeficients from %s", filename);
             fclose(fp);
-            return;
+            free(buffer);
+            goto cleanup;
          }
 
          for (size_t i = 0; i < header[6]; i++)
@@ -454,7 +480,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[2],
                      filename);
          fclose(fp);
-         return;
+         goto cleanup;
       }
       fclose(fp);
 
@@ -472,6 +498,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    HYPRE_IJMatrixAssemble(mat);
    *mat_ptr = mat;
 
+cleanup:
    /* Free memory */
    free(partids);
    free(h_rows);
@@ -485,4 +512,12 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
    }
 #endif
+   if (ErrorCodeActive())
+   {
+      if (mat)
+      {
+         HYPRE_IJMatrixDestroy(mat);
+      }
+      *mat_ptr = NULL;
+   }
 }

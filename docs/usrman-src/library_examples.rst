@@ -540,6 +540,74 @@ for some preconditioners.
      HYPREDRV_LinearSystemSetInitialGuess(hdrv);
      HYPREDRV_LinearSystemSetPrecMatrix(hdrv);
 
+Near-Nullspace and Rigid Body Modes (RBMs)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For linear elasticity, the near-nullspace of the operator (particularly under weak constraints)
+is spanned by the six rigid body modes (RBMs):
+
+- three translations: \(t_x=(1,0,0)\), \(t_y=(0,1,0)\), \(t_z=(0,0,1)\)
+- three rotations about the domain center \(\mathbf{c}=(L_x/2, L_y/2, L_z/2)\):
+  \(\mathbf{u}(\mathbf{x})=\boldsymbol{\omega}\times(\mathbf{x}-\mathbf{c})\) with
+  \(\boldsymbol{\omega}\in\{(1,0,0),(0,1,0),(0,0,1)\}\)
+
+Supplying RBMs to the preconditioner (e.g., BoomerAMG) may improve robustness and convergence,
+especially when using nodal coarsening for vector-valued problems. From the HYPREDRV perspective:
+
+- The elasticity driver computes the six RBMs on the physical mesh coordinates.
+- The modes are arranged in component-major (SoA) order: six contiguous blocks, each of
+  length ``num_entries = 3 * num_local_nodes`` (interleaved dofs per node).
+- Dirichlet-clamped DOFs (the plane ``x=0`` in this example) are explicitly zeroed in all modes.
+- The application transfers the modes to hypre with a single call; the data is copied
+  internally by `libHYPREDRV`, so the application can free its buffer afterwards.
+
+Driver-side mode computation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In the example driver, a helper computes the six RBMs using physical coordinates scaled by
+the input dimensions \(L=(L_x, L_y, L_z)\) and zeros clamped DOFs:
+
+.. code-block:: c
+
+   /* Compute 6 modes (Tx, Ty, Tz, Rx, Ry, Rz) into a single contiguous array.
+      Each block has length num_entries = 3 * local_num_nodes (interleaved dofs per node). */
+   extern int ComputeRigidBodyModes(DistMesh *mesh, ElasticParams *params, HYPRE_Real **rbm_ptr);
+
+   /* ... after BuildElasticitySystem_Q1Hex(...) */
+   HYPRE_Real *rbm = NULL;
+   const int num_entries   = 3 * mesh->local_size;
+   const int num_components = 6;
+   ComputeRigidBodyModes(mesh, &params, &rbm);
+   /* rbm layout (SoA): [Tx block | Ty block | Tz block | Rx block | Ry block | Rz block] */
+
+   /* Tell libHYPREDRV about the near-nullspace modes (data is copied internally; free rbm afterwards) */
+   HYPREDRV_LinearSystemSetNearNullSpace(hdrv, num_entries, num_components, rbm);
+   free(rbm);
+
+Using RBMs in libHYPREDRV
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- Provide the six-mode buffer as above before creating the preconditioner and solver.
+- Hypredrive stores the near-nullspace vector internally and can pass it to the
+  configured preconditioner. For BoomerAMG nodal coarsening, typical settings involve:
+
+  .. code-block:: yaml
+
+     preconditioner:
+       amg:
+         coarsening:
+           nodal: 1   # Nodal coarsening based on row-sum norm (default)
+         # optional advanced controls (implementation-dependent):
+         # interpolation:
+         #   ...
+         # relaxation:
+         #   ...
+
+- Memory and layout:
+  - The call ``HYPREDRV_LinearSystemSetNearNullSpace(h, num_entries, num_components, values)`` expects
+    the values in SoA layout: ``num_components`` contiguous blocks, each with ``num_entries`` degrees of freedom.
+  - The buffer is copied into ``libHYPREDRV``-owned storage; the caller must free its buffer after the call returns.
+
 Linear Solver Setup
 ~~~~~~~~~~~~~~~~~~~
 

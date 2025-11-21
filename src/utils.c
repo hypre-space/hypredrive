@@ -7,6 +7,7 @@
 
 #include "utils.h"
 #include <ctype.h>
+#include <string.h>
 
 /*-----------------------------------------------------------------------------
  * StrToLowerCase
@@ -216,20 +217,33 @@ CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * HasFileExtension
+ * IsYAMLFilename
  *
- * Returns true if string has a 3 or 4 letter extension
+ * Returns true if string is a filename (no spaces) with a YAML extension
+ * (.yaml or .yml)
  *-----------------------------------------------------------------------------*/
 
 bool
-HasFileExtension(const char *str)
+IsYAMLFilename(const char *str)
 {
+   if (!str || *str == '\0')
+   {
+      return false;
+   }
+
+   /* Check for spaces - filenames should not contain spaces */
+   if (strchr(str, ' ') != NULL)
+   {
+      return false;
+   }
+
    const char *dot = strrchr(str, '.');
    if (!dot || dot == str)
    {
       return false;
    }
 
-   size_t ext_len = strlen(dot + 1); // +1 to skip the dot
-   return ext_len >= 3 && ext_len <= 4;
+   /* Check for .yaml or .yml extension */
+   const char *ext = dot + 1;
+   return (strcmp(ext, "yaml") == 0 || strcmp(ext, "yml") == 0);
 }

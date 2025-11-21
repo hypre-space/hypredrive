@@ -1,32 +1,106 @@
+# Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+# HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: MIT
+
+# Remember the directory that contains this helper so functions can reference scripts
+set(HYPREDRV_TESTING_DIR "${CMAKE_CURRENT_LIST_DIR}")
+
 # Function for adding tests
 function(add_hypredrive_test test_name num_procs config_file)
-    add_test(NAME ${test_name}
-        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${num_procs} ${MPIEXEC_PREFLAGS}
-                $<TARGET_FILE:hypredrive> ${CMAKE_SOURCE_DIR}/examples/${config_file} ${MPIEXEC_POSTFLAGS}
+    # Automatically prepend "hypredrive_test_" to the test name
+    set(full_test_name "hypredrive_test_${test_name}")
+    add_test(NAME ${full_test_name}
+        COMMAND ${CMAKE_COMMAND}
+                -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+                -DTARGET_BIN=$<TARGET_FILE:hypredrive>
+                -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+                -DMPI_NUMPROCS=${num_procs}
+                -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+                -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+                -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+                -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/${config_file}
+                -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+
+    set_tests_properties(${full_test_name}
+        PROPERTIES
+        FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
+        SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+    )
+endfunction()
+
+# Function for adding tests for standalone executable drivers
+function(add_executable_test test_name target num_procs)
+    cmake_parse_arguments(EXEC_TEST
+        "RUN_SERIAL"
+        "FAIL_REGULAR_EXPRESSION;WORKING_DIRECTORY"
+        "ARGS"
+        ${ARGN}
+    )
+
+    # Default values
+    if(NOT DEFINED EXEC_TEST_FAIL_REGULAR_EXPRESSION)
+        set(EXEC_TEST_FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure")
+    endif()
+    if(NOT DEFINED EXEC_TEST_WORKING_DIRECTORY)
+        set(EXEC_TEST_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    endif()
+
+    set(_driver_command
+        ${CMAKE_COMMAND}
+            -DLAUNCH_DIR=${EXEC_TEST_WORKING_DIRECTORY}
+            -DTARGET_BIN=$<TARGET_FILE:${target}>
+            -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+            -DMPI_NUMPROCS=${num_procs}
+            -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+            -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+            -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+    )
+    if(EXEC_TEST_ARGS)
+        string(JOIN "|" _driver_args ${EXEC_TEST_ARGS})
+        list(APPEND _driver_command "-DTARGET_ARGS:STRING=${_driver_args}")
+    endif()
+
+    add_test(NAME ${test_name}
+        COMMAND ${_driver_command} -P ${HYPREDRV_TESTING_DIR}/HYPREDRV_RunScript.cmake
     )
 
     set_tests_properties(${test_name}
         PROPERTIES
-        FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
+            FAIL_REGULAR_EXPRESSION "${EXEC_TEST_FAIL_REGULAR_EXPRESSION}"
     )
+
+    if(EXEC_TEST_RUN_SERIAL)
+        set_tests_properties(${test_name}
+            PROPERTIES
+                RUN_SERIAL TRUE
+        )
+    endif()
 endfunction()
 
 # Function for adding tests with output verification
 function(add_hypredrive_test_with_output test_name num_procs config_file example_id)
-    # Create output file path
+    # Create output file path (capturing via CTest output if needed)
     set(OUTPUT_FILE "${CMAKE_BINARY_DIR}/test_output_${test_name}.txt")
     set(REFERENCE_FILE "${CMAKE_SOURCE_DIR}/examples/refOutput/ex${example_id}.txt")
 
-    # Run test and capture output
     add_test(NAME ${test_name}
-        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${num_procs} ${MPIEXEC_PREFLAGS}
-                $<TARGET_FILE:hypredrive> ${CMAKE_SOURCE_DIR}/examples/${config_file} ${MPIEXEC_POSTFLAGS}
-        DEPENDS data
+        COMMAND ${CMAKE_COMMAND}
+                -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+                -DTARGET_BIN=$<TARGET_FILE:hypredrive>
+                -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+                -DMPI_NUMPROCS=${num_procs}
+                -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+                -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+                -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+                -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/${config_file}
+                -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
 
-    # Add output comparison test
+    # Optional output comparison if script and reference exist
     find_program(COMPARE_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/compare_output.sh")
     if(COMPARE_SCRIPT AND EXISTS ${REFERENCE_FILE})
         add_test(NAME ${test_name}_output
@@ -35,11 +109,14 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
         set_tests_properties(${test_name}_output
             PROPERTIES
             DEPENDS ${test_name}
+            SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
         )
     endif()
 endfunction()
 
-if(HYPREDRV_ENABLE_TESTING)
+# Only register tests when included from the main CMakeLists.txt
+# (not when included from subdirectories like examples)
+if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     # Must be called before add_subdirectory(tests) so that add_test() calls work
     enable_testing()
 
@@ -47,18 +124,17 @@ if(HYPREDRV_ENABLE_TESTING)
     add_subdirectory(tests)
 
     # Add tests
-    add_hypredrive_test(test_ex1_1proc  1 ex1.yml)
-    add_hypredrive_test(test_ex1a_1proc 1 ex1a.yml)
-    add_hypredrive_test(test_ex1b_1proc 1 ex1b.yml)
-    add_hypredrive_test(test_ex1c_1proc 1 ex1c.yml)
-    add_hypredrive_test(test_ex1d_1proc 1 ex1d.yml)
-    add_hypredrive_test(test_ex2_4proc  4 ex2.yml)
-    add_hypredrive_test(test_ex3_1proc  1 ex3.yml)
-    add_hypredrive_test(test_ex4_4proc  4 ex4.yml)
-    add_hypredrive_test(test_ex5_1proc  1 ex5.yml)
+    add_hypredrive_test(ex1_1proc  1 ex1.yml)
+    add_hypredrive_test(ex1a_1proc 1 ex1a.yml)
+    add_hypredrive_test(ex1b_1proc 1 ex1b.yml)
+    add_hypredrive_test(ex1c_1proc 1 ex1c.yml)
+    add_hypredrive_test(ex1d_1proc 1 ex1d.yml)
+    add_hypredrive_test(ex2_4proc  4 ex2.yml)
+    add_hypredrive_test(ex3_1proc  1 ex3.yml)
+    add_hypredrive_test(ex4_4proc  4 ex4.yml)
+    add_hypredrive_test(ex5_1proc  1 ex5.yml)
     if (HYPREDRV_ENABLE_EIGSPEC)
-        add_hypredrive_test(test_ex6_1proc 1 ex6.yml)
+        add_hypredrive_test(ex6_1proc 1 ex6.yml)
     endif()
-    add_hypredrive_test(test_ex7_1proc  1 ex7.yml)
-
+    add_hypredrive_test(ex7_1proc  1 ex7.yml)
 endif()

@@ -147,6 +147,61 @@ LinearSystemSetDefaultArgs(LS_args *args)
 }
 
 /*-----------------------------------------------------------------------------
+ * LinearSystemSetNearNullSpace
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemSetNearNullSpace(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
+                             int num_entries, int num_components,
+                             const HYPRE_Complex *values, HYPRE_IJVector *vec_nn_ptr)
+{
+   HYPRE_BigInt ilower, iupper, jlower, jupper;
+
+   /* Destroy previous NN vector if present */
+   if (*vec_nn_ptr)
+   {
+      HYPRE_IJVectorDestroy(*vec_nn_ptr);
+      *vec_nn_ptr = NULL;
+   }
+
+   /* Get local vector range from the matrix columns */
+   HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
+   HYPRE_BigInt loc_expected = jupper - jlower + 1;
+
+   /* Sanity: check if the number of entries matches the expected local size */
+   if (loc_expected != num_entries)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("Number of entries (%d) does not match the expected local size (%d)",
+                  num_entries, loc_expected);
+      return;
+   }
+
+   /* Create a ParCSR IJVector with host memory (we'll migrate later if needed) */
+   HYPRE_IJVectorCreate(comm, jlower, jupper, vec_nn_ptr);
+   HYPRE_IJVectorSetObjectType(*vec_nn_ptr, HYPRE_PARCSR);
+   HYPRE_IJVectorSetNumComponents(*vec_nn_ptr, num_components);
+   HYPRE_IJVectorInitialize_v2(*vec_nn_ptr, HYPRE_MEMORY_HOST);
+
+   /* Set values for each component block contiguously */
+   for (HYPRE_Int c = 0; c < num_components; c++)
+   {
+      const HYPRE_Complex *vals_c =
+         values ? (values + (size_t)c * (size_t)num_entries) : NULL;
+      HYPRE_IJVectorSetComponent(*vec_nn_ptr, c);
+      HYPRE_IJVectorSetValues(*vec_nn_ptr, num_entries, NULL, vals_c);
+   }
+
+   HYPRE_IJVectorAssemble(*vec_nn_ptr);
+
+   /* Migrate to device memory if requested */
+   if (args && args->exec_policy)
+   {
+      HYPRE_IJVectorMigrate(*vec_nn_ptr, HYPRE_MEMORY_DEVICE);
+   }
+}
+
+/*-----------------------------------------------------------------------------
  * LinearSystemSetNumSystems
  *-----------------------------------------------------------------------------*/
 
@@ -474,20 +529,25 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    HYPRE_MemoryLocation memloc =
       (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
+   /* Destroy solution vector if it already exists */
+   if (*x_ptr)
+   {
+      HYPRE_IJVectorDestroy(*x_ptr);
+      *x_ptr = NULL;
+   }
+
    /* Create solution vector
       TODO: implement HYPRE_IJVectorClone in hypre */
-   if (!*x_ptr)
-   {
-      HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
-      HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
-      HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize_v2(*x_ptr, memloc);
-   }
+   HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
+   HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
+   HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize_v2(*x_ptr, memloc);
 
    /* Destroy initial solution vector */
    if (*x0_ptr)
    {
       HYPRE_IJVectorDestroy(*x0_ptr);
+      *x0_ptr = NULL;
    }
 
    if (args->x0_filename[0] == '\0')

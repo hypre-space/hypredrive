@@ -71,7 +71,7 @@ jobs:
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DHYPREDRV_ENABLE_TESTING=ON \
-            -DHYPREDRV_BUILD_EXAMPLES=ON \
+            -DHYPREDRV_ENABLE_EXAMPLES=ON \
             -DHYPREDRV_ENABLE_COVERAGE=ON \
             -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_C_COMPILER=mpicc \
@@ -89,10 +89,12 @@ jobs:
             echo "Datasets already cached, skipping download"
           fi
 
-      - name: Run tests
-        run: ctest --test-dir $BUILD_DIR --output-on-failure
-
       - name: Generate coverage report
+        env:
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+          OMPI_MCA_btl_vader_single_copy_mechanism: none
+          OMPI_MCA_rmaps_base_oversubscribe: 1
         run: |
           cmake --build $BUILD_DIR --target coverage
 
@@ -138,4 +140,3 @@ jobs:
           name: coverage-xml
           path: ${{ env.BUILD_DIR }}/coverage.xml
           retention-days: 7
-
