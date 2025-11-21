@@ -57,40 +57,39 @@ static void BuildGpuBindingString(char *buffer, size_t len);
 #ifdef HAVE_HWLOC
 typedef struct
 {
-   char name[64];
-   char vendor[32];
-   char model[128];
-   char uuid[64];
-   char pci_busid[20];
-   int  smi_id;
-   hwloc_obj_t obj;        // PCI device object
-   hwloc_obj_t ancestor;  // Non-I/O ancestor (has nodeset)
+   char        name[64];
+   char        vendor[32];
+   char        model[128];
+   char        uuid[64];
+   char        pci_busid[20];
+   int         smi_id;
+   hwloc_obj_t obj;      // PCI device object
+   hwloc_obj_t ancestor; // Non-I/O ancestor (has nodeset)
 } GpuInfo;
 
 static hwloc_topology_t topology = NULL;
-static int InitHwlocTopology(void);
-static void CleanupHwlocTopology(void);
-static void PrintSystemInfoHwloc(MPI_Comm comm);
-static void PrintCpuTopologyInfo(MPI_Comm comm);
-static void PrintCacheHierarchy(void);
-static void PrintGpuInfo(GpuInfo *gpus, int gpu_count);
-static int DiscoverGpus(GpuInfo **gpus, int *count);
-static void PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count);
-static void PrintNetworkInfoHwloc(void);
-static void PrintProcessBinding(void);
-static void PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
-static void PrintGpuAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
-static void PrintTopologyTree(void);
-static void PrintTopologyTreeRecursive(hwloc_obj_t obj, int depth);
-static void PrintMemoryInformation(double bytes_to_gib, double mib_to_gib);
-static void PrintOperatingSystemInfo(void);
-static void PrintCompilationInfo(void);
-static void PrintWorkingDirectory(void);
-static void PrintDynamicLibraries(void);
-static void PrintRunningInfo(MPI_Comm comm);
+static int              InitHwlocTopology(void);
+static void             CleanupHwlocTopology(void);
+static void             PrintSystemInfoHwloc(MPI_Comm comm);
+static void             PrintCpuTopologyInfo(MPI_Comm comm);
+static void             PrintCacheHierarchy(void);
+static void             PrintGpuInfo(GpuInfo *gpus, int gpu_count);
+static int              DiscoverGpus(GpuInfo **gpus, int *count);
+static void             PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count);
+static void             PrintNetworkInfoHwloc(void);
+static void             PrintProcessBinding(void);
+static void             PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
+static void             PrintGpuAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
+static void             PrintTopologyTree(void);
+static void             PrintTopologyTreeRecursive(hwloc_obj_t obj, int depth);
+static void             PrintMemoryInformation(double bytes_to_gib, double mib_to_gib);
+static void             PrintOperatingSystemInfo(void);
+static void             PrintCompilationInfo(void);
+static void             PrintWorkingDirectory(void);
+static void             PrintDynamicLibraries(void);
+static void             PrintRunningInfo(MPI_Comm comm);
 #endif
 void PrintSystemInfoLegacy(MPI_Comm comm);
-
 
 #ifndef __APPLE__
 
@@ -152,7 +151,6 @@ PrintSystemInfo(MPI_Comm comm)
 /*--------------------------------------------------------------------------
  * PrintSystemInfoLegacy
  *--------------------------------------------------------------------------*/
-
 
 void
 PrintSystemInfoLegacy(MPI_Comm comm)
@@ -490,16 +488,16 @@ PrintSystemInfoLegacy(MPI_Comm comm)
       }
       if (fp != NULL)
       {
-         char json_buffer[32768];
-         size_t read = fread(json_buffer, 1, sizeof(json_buffer) - 1, fp);
+         char   json_buffer[32768];
+         size_t read       = fread(json_buffer, 1, sizeof(json_buffer) - 1, fp);
          json_buffer[read] = '\0';
          pclose(fp);
 
          // Parse amd-smi JSON format for all GPUs
          const char *total_vram_str = "\"total_vram\"";
-         const char *used_vram_str = "\"used_vram\"";
-         const char *ptr = json_buffer;
-         int gpu_idx = 0;
+         const char *used_vram_str  = "\"used_vram\"";
+         const char *ptr            = json_buffer;
+         int         gpu_idx        = 0;
 
          while ((ptr = strstr(ptr, "\"gpu\"")) != NULL)
          {
@@ -510,12 +508,12 @@ PrintSystemInfoLegacy(MPI_Comm comm)
                ptr++;
                while (*ptr == ' ') ptr++;
                int idx = atoi(ptr);
-               
+
                // Find total_vram for this GPU
                const char *gpu_start = ptr;
                const char *total_ptr = strstr(gpu_start, total_vram_str);
-               const char *used_ptr = strstr(gpu_start, used_vram_str);
-               
+               const char *used_ptr  = strstr(gpu_start, used_vram_str);
+
                if (total_ptr && used_ptr)
                {
                   // Extract total_vram value
@@ -530,7 +528,7 @@ PrintSystemInfoLegacy(MPI_Comm comm)
                         total = strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
                      }
                   }
-                  
+
                   // Extract used_vram value
                   val_ptr = strstr(used_ptr, "\"value\"");
                   if (val_ptr)
@@ -543,16 +541,16 @@ PrintSystemInfoLegacy(MPI_Comm comm)
                         used = strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
                      }
                   }
-                  
+
                   if (total > 0)
                   {
-                     printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n", gcount++,
-                            used / bytes_to_gib, total / bytes_to_gib,
+                     printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
+                            gcount++, used / bytes_to_gib, total / bytes_to_gib,
                             100.0 * used / (double)total);
                   }
                }
             }
-            
+
             // Move to next GPU entry
             ptr = strstr(ptr, "}");
             if (ptr) ptr++;
@@ -784,7 +782,7 @@ InitHwlocTopology(void)
 {
    if (topology != NULL)
    {
-      return 0;    // Already initialized
+      return 0; // Already initialized
    }
    if (hwloc_topology_init(&topology) < 0)
    {
@@ -837,12 +835,23 @@ PrintCacheHierarchy(void)
       hwloc_obj_type_t cache_type;
       switch (level)
       {
-         case 1: cache_type = HWLOC_OBJ_L1CACHE; break;
-         case 2: cache_type = HWLOC_OBJ_L2CACHE; break;
-         case 3: cache_type = HWLOC_OBJ_L3CACHE; break;
-         case 4: cache_type = HWLOC_OBJ_L4CACHE; break;
-         case 5: cache_type = HWLOC_OBJ_L5CACHE; break;
-         default: continue;
+         case 1:
+            cache_type = HWLOC_OBJ_L1CACHE;
+            break;
+         case 2:
+            cache_type = HWLOC_OBJ_L2CACHE;
+            break;
+         case 3:
+            cache_type = HWLOC_OBJ_L3CACHE;
+            break;
+         case 4:
+            cache_type = HWLOC_OBJ_L4CACHE;
+            break;
+         case 5:
+            cache_type = HWLOC_OBJ_L5CACHE;
+            break;
+         default:
+            continue;
       }
 
       int count = hwloc_get_nbobjs_by_type(topology, cache_type);
@@ -860,9 +869,9 @@ PrintCacheHierarchy(void)
 
       char type_name[32];
       hwloc_obj_type_snprintf(type_name, sizeof(type_name), first_cache, 0);
-      
-      unsigned long long size_kb = first_cache->attr->cache.size / 1024;
-      int sharing_pus = hwloc_bitmap_weight(first_cache->cpuset);
+
+      unsigned long long size_kb     = first_cache->attr->cache.size / 1024;
+      int                sharing_pus = hwloc_bitmap_weight(first_cache->cpuset);
 
       // Check if all caches have the same size
       bool uniform_size = true;
@@ -882,7 +891,8 @@ PrintCacheHierarchy(void)
       }
       else if (uniform_size)
       {
-         printf("  %s: %d x %llu KB, each shared by %d PU\n", type_name, count, size_kb, sharing_pus);
+         printf("  %s: %d x %llu KB, each shared by %d PU\n", type_name, count, size_kb,
+                sharing_pus);
       }
       else
       {
@@ -900,11 +910,13 @@ PrintCacheHierarchy(void)
          }
          if (min_size == max_size)
          {
-            printf("  %s: %d x %llu KB, each shared by %d PU\n", type_name, count, min_size, sharing_pus);
+            printf("  %s: %d x %llu KB, each shared by %d PU\n", type_name, count,
+                   min_size, sharing_pus);
          }
          else
          {
-            printf("  %s: %d x %llu-%llu KB, each shared by %d PU\n", type_name, count, min_size, max_size, sharing_pus);
+            printf("  %s: %d x %llu-%llu KB, each shared by %d PU\n", type_name, count,
+                   min_size, max_size, sharing_pus);
          }
       }
    }
@@ -966,9 +978,9 @@ PrintCpuTopologyInfo(MPI_Comm comm)
       }
 
       int packages = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_PACKAGE);
-      int cores = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_CORE);
-      int pus = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_PU);
-      int numas = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_NUMANODE);
+      int cores    = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_CORE);
+      int pus      = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_PU);
+      int numas    = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_NUMANODE);
 
       printf("CPU Topology\n");
       printf("------------\n");
@@ -999,7 +1011,7 @@ PrintCpuTopologyInfo(MPI_Comm comm)
          if (package)
          {
             const char *cpuvendor = hwloc_obj_get_info_by_name(package, "CPUVendor");
-            const char *cpumodel = hwloc_obj_get_info_by_name(package, "CPUModel");
+            const char *cpumodel  = hwloc_obj_get_info_by_name(package, "CPUModel");
             if (cpuvendor || cpumodel)
             {
                if (packages > 1)
@@ -1057,7 +1069,7 @@ DiscoverGpus(GpuInfo **gpus, int *count)
    }
 
    int max_gpus = 16;
-   *gpus = (GpuInfo *)calloc(max_gpus, sizeof(GpuInfo));
+   *gpus        = (GpuInfo *)calloc(max_gpus, sizeof(GpuInfo));
    if (!*gpus)
    {
       *count = 0;
@@ -1065,7 +1077,7 @@ DiscoverGpus(GpuInfo **gpus, int *count)
    }
 
    int gpu_count = 0;
-   
+
    // First try: Use OS devices to find GPUs (like mpibind does)
    hwloc_obj_t os_dev = NULL;
    while ((os_dev = hwloc_get_next_osdev(topology, os_dev)) != NULL)
@@ -1098,16 +1110,14 @@ DiscoverGpus(GpuInfo **gpus, int *count)
          continue;
       }
 
-      GpuInfo *gpu = &(*gpus)[gpu_count];
-      gpu->obj = pci_obj;
+      GpuInfo *gpu  = &(*gpus)[gpu_count];
+      gpu->obj      = pci_obj;
       gpu->ancestor = hwloc_get_non_io_ancestor_obj(topology, os_dev);
-      gpu->smi_id = -1;  // Not set (would need OS device name parsing)
+      gpu->smi_id   = -1; // Not set (would need OS device name parsing)
 
       snprintf(gpu->pci_busid, sizeof(gpu->pci_busid), "%04x:%02x:%02x.%d",
-               pci_obj->attr->pcidev.domain,
-               pci_obj->attr->pcidev.bus,
-               pci_obj->attr->pcidev.dev,
-               pci_obj->attr->pcidev.func);
+               pci_obj->attr->pcidev.domain, pci_obj->attr->pcidev.bus,
+               pci_obj->attr->pcidev.dev, pci_obj->attr->pcidev.func);
 
       // Get UUID from OS device (this is the key fix!)
       const char *uuid = hwloc_obj_get_info_by_name(os_dev, "NVIDIAUUID");
@@ -1146,7 +1156,8 @@ DiscoverGpus(GpuInfo **gpus, int *count)
       }
       else
       {
-         snprintf(gpu->vendor, sizeof(gpu->vendor), "0x%04x", pci_obj->attr->pcidev.vendor_id);
+         snprintf(gpu->vendor, sizeof(gpu->vendor), "0x%04x",
+                  pci_obj->attr->pcidev.vendor_id);
       }
 
       const char *model_name = hwloc_obj_get_info_by_name(os_dev, "GPUModel");
@@ -1165,7 +1176,8 @@ DiscoverGpus(GpuInfo **gpus, int *count)
       }
       else
       {
-         snprintf(gpu->model, sizeof(gpu->model), "0x%04x", pci_obj->attr->pcidev.device_id);
+         snprintf(gpu->model, sizeof(gpu->model), "0x%04x",
+                  pci_obj->attr->pcidev.device_id);
       }
 
       gpu_count++;
@@ -1175,29 +1187,28 @@ DiscoverGpus(GpuInfo **gpus, int *count)
    if (gpu_count == 0)
    {
       hwloc_obj_t pci_obj = NULL;
-      while ((pci_obj = hwloc_get_next_obj_by_type(topology, HWLOC_OBJ_PCI_DEVICE, pci_obj)) != NULL)
+      while ((pci_obj = hwloc_get_next_obj_by_type(topology, HWLOC_OBJ_PCI_DEVICE,
+                                                   pci_obj)) != NULL)
       {
          // Class 0x03xx is a display controller
          if (pci_obj->attr->pcidev.class_id >> 8 != 0x03)
          {
             continue;
          }
-         
+
          if (gpu_count >= max_gpus)
          {
             break;
          }
 
-         GpuInfo *gpu = &(*gpus)[gpu_count];
-         gpu->obj = pci_obj;
+         GpuInfo *gpu  = &(*gpus)[gpu_count];
+         gpu->obj      = pci_obj;
          gpu->ancestor = hwloc_get_non_io_ancestor_obj(topology, pci_obj);
-         gpu->smi_id = -1;
+         gpu->smi_id   = -1;
 
          snprintf(gpu->pci_busid, sizeof(gpu->pci_busid), "%04x:%02x:%02x.%d",
-                  pci_obj->attr->pcidev.domain,
-                  pci_obj->attr->pcidev.bus,
-                  pci_obj->attr->pcidev.dev,
-                  pci_obj->attr->pcidev.func);
+                  pci_obj->attr->pcidev.domain, pci_obj->attr->pcidev.bus,
+                  pci_obj->attr->pcidev.dev, pci_obj->attr->pcidev.func);
 
          // Try to find OS device for UUID
          hwloc_obj_t os_dev = NULL;
@@ -1236,7 +1247,8 @@ DiscoverGpus(GpuInfo **gpus, int *count)
          }
          else
          {
-            snprintf(gpu->vendor, sizeof(gpu->vendor), "0x%04x", pci_obj->attr->pcidev.vendor_id);
+            snprintf(gpu->vendor, sizeof(gpu->vendor), "0x%04x",
+                     pci_obj->attr->pcidev.vendor_id);
          }
 
          // Model
@@ -1248,7 +1260,8 @@ DiscoverGpus(GpuInfo **gpus, int *count)
          }
          else
          {
-            snprintf(gpu->model, sizeof(gpu->model), "0x%04x", pci_obj->attr->pcidev.device_id);
+            snprintf(gpu->model, sizeof(gpu->model), "0x%04x",
+                     pci_obj->attr->pcidev.device_id);
          }
 
          gpu_count++;
@@ -1276,16 +1289,16 @@ PrintGpuInfo(GpuInfo *gpus, int gpu_count)
 
    printf("\nGPU Information\n");
    printf("----------------\n");
-   
-   double mib_to_gib = (double)(1 << 10);
+
+   double mib_to_gib   = (double)(1 << 10);
    double bytes_to_gib = (double)(1 << 30);
-   
+
    for (int i = 0; i < gpu_count; i++)
    {
       printf("GPU #%d\n", i);
       printf("  Model                : %s %s\n", gpus[i].vendor, gpus[i].model);
       printf("  PCI Bus ID           : %s\n", gpus[i].pci_busid);
-      
+
       // Get PCIe link information
       if (gpus[i].obj)
       {
@@ -1295,27 +1308,29 @@ PrintGpuInfo(GpuInfo *gpus, int gpu_count)
             printf("  PCIe Link Speed      : %.2f GT/s\n", linkspeed);
          }
       }
-      
+
       if (strcmp(gpus[i].uuid, "N/A") != 0)
       {
          printf("  UUID                 : %s\n", gpus[i].uuid);
       }
-      
+
       if (gpus[i].smi_id >= 0)
       {
          printf("  SMI ID               : %d\n", gpus[i].smi_id);
       }
-      
+
       // Get GPU memory information from nvidia-smi or rocm-smi
-      FILE *fp = NULL;
-      char buffer[256];
+      FILE  *fp = NULL;
+      char   buffer[256];
       size_t total = 0, used = 0;
-      bool found_memory = false;
-      
+      bool   found_memory = false;
+
       // Try nvidia-smi first - query all GPUs and find the one matching our index
       if (system("command -v nvidia-smi > /dev/null 2>&1") == 0)
       {
-         fp = popen("nvidia-smi --query-gpu=index,memory.total,memory.used --format=csv,noheader,nounits 2>/dev/null", "r");
+         fp = popen("nvidia-smi --query-gpu=index,memory.total,memory.used "
+                    "--format=csv,noheader,nounits 2>/dev/null",
+                    "r");
          if (fp != NULL)
          {
             int line_idx = 0;
@@ -1338,7 +1353,7 @@ PrintGpuInfo(GpuInfo *gpus, int gpu_count)
             pclose(fp);
          }
       }
-      
+
       // Try amd-smi if nvidia-smi didn't work
       if (!found_memory && system("command -v amd-smi > /dev/null 2>&1") == 0)
       {
@@ -1347,16 +1362,16 @@ PrintGpuInfo(GpuInfo *gpus, int gpu_count)
          fp = popen(cmd, "r");
          if (fp != NULL)
          {
-            char json_buffer[32768];
-            size_t read = fread(json_buffer, 1, sizeof(json_buffer) - 1, fp);
+            char   json_buffer[32768];
+            size_t read       = fread(json_buffer, 1, sizeof(json_buffer) - 1, fp);
             json_buffer[read] = '\0';
             pclose(fp);
-            
+
             // Parse amd-smi JSON format: "total_vram": {"value": 20464, "unit": "MB"}
             const char *total_vram_str = "\"total_vram\"";
-            const char *used_vram_str = "\"used_vram\"";
-            const char *ptr = json_buffer;
-            
+            const char *used_vram_str  = "\"used_vram\"";
+            const char *ptr            = json_buffer;
+
             // Find total_vram
             ptr = strstr(ptr, total_vram_str);
             if (ptr)
@@ -1375,7 +1390,7 @@ PrintGpuInfo(GpuInfo *gpus, int gpu_count)
                   }
                }
             }
-            
+
             // Find used_vram
             ptr = json_buffer;
             ptr = strstr(ptr, used_vram_str);
@@ -1395,7 +1410,7 @@ PrintGpuInfo(GpuInfo *gpus, int gpu_count)
                   }
                }
             }
-            
+
             if (total > 0)
             {
                printf("  Memory               : %6.2f / %6.2f GiB (%5.2f %%)\n",
@@ -1434,7 +1449,7 @@ PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count)
       hwloc_bitmap_list_snprintf(cpuset_str, sizeof(cpuset_str), numa->cpuset);
 
       unsigned long long total_mem = numa->attr->numanode.local_memory;
-      int pu_count = hwloc_bitmap_weight(numa->cpuset);
+      int                pu_count  = hwloc_bitmap_weight(numa->cpuset);
 
       printf("NUMA node %-3d\n", numa->os_index);
       printf("  CPUs                 : %s (%d PUs)\n", cpuset_str, pu_count);
@@ -1446,7 +1461,7 @@ PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count)
       {
          for (int i = 0; i < gpu_count; i++)
          {
-            if (gpus[i].ancestor && 
+            if (gpus[i].ancestor &&
                 hwloc_bitmap_isset(gpus[i].ancestor->nodeset, numa->os_index))
             {
                local_gpu_count++;
@@ -1461,7 +1476,7 @@ PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count)
             bool first = true;
             for (int i = 0; i < gpu_count; i++)
             {
-               if (gpus[i].ancestor && 
+               if (gpus[i].ancestor &&
                    hwloc_bitmap_isset(gpus[i].ancestor->nodeset, numa->os_index))
                {
                   if (!first) printf(",");
@@ -1486,31 +1501,30 @@ PrintNetworkInfoHwloc(void)
    printf("\nNetwork / Interconnect\n");
    printf("----------------------\n");
 
-   int found_ib = 0;
-   int found_net = 0;
-   hwloc_obj_t obj = NULL;
+   int         found_ib  = 0;
+   int         found_net = 0;
+   hwloc_obj_t obj       = NULL;
 
    while ((obj = hwloc_get_next_osdev(topology, obj)) != NULL)
    {
       if (obj->attr->osdev.type == HWLOC_OBJ_OSDEV_OPENFABRICS)
       {
-         found_ib = 1;
+         found_ib            = 1;
          hwloc_obj_t pci_dev = obj;
-         while (pci_dev && pci_dev->type != HWLOC_OBJ_PCI_DEVICE) {
+         while (pci_dev && pci_dev->type != HWLOC_OBJ_PCI_DEVICE)
+         {
             pci_dev = pci_dev->parent;
          }
          char pci_busid[20] = {0};
          if (pci_dev)
          {
             snprintf(pci_busid, sizeof(pci_busid), "%04x:%02x:%02x.%d",
-                     pci_dev->attr->pcidev.domain,
-                     pci_dev->attr->pcidev.bus,
-                     pci_dev->attr->pcidev.dev,
-                     pci_dev->attr->pcidev.func);
+                     pci_dev->attr->pcidev.domain, pci_dev->attr->pcidev.bus,
+                     pci_dev->attr->pcidev.dev, pci_dev->attr->pcidev.func);
          }
 
          const char *nodeguid = hwloc_obj_get_info_by_name(obj, "NodeGUID");
-         const char *address = hwloc_obj_get_info_by_name(obj, "Address");
+         const char *address  = hwloc_obj_get_info_by_name(obj, "Address");
 
          printf("InfiniBand %-9s : %s\n", obj->name, obj->name);
          if (pci_busid[0])
@@ -1595,7 +1609,7 @@ PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count)
    int nthreads = omp_get_max_threads();
    if (nthreads <= 1)
    {
-      return;  // No threads to report
+      return; // No threads to report
    }
 
    // Synchronize all ranks before printing
@@ -1609,19 +1623,19 @@ PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count)
       printf("\n");
    }
 
-   // Each thread reports its own affinity
-   #pragma omp parallel
+// Each thread reports its own affinity
+#pragma omp parallel
    {
-      int tid = omp_get_thread_num();
+      int tid            = omp_get_thread_num();
       int nthreads_local = omp_get_num_threads();
-      
+
       hwloc_bitmap_t cpuset = hwloc_bitmap_alloc();
       if (hwloc_get_cpubind(topology, cpuset, HWLOC_CPUBIND_THREAD) == 0)
       {
          char str[256];
          hwloc_bitmap_list_snprintf(str, sizeof(str), cpuset);
          printf("Rank %-3d Thread %-3d/%d: CPUs %s", myid, tid, nthreads_local, str);
-         
+
          // Try to get GPU assignment for this thread
          if (gpus && gpu_count > 0)
          {
@@ -1668,11 +1682,12 @@ PrintGpuAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count)
    {
       printf("GPU Affinity (per rank)\n");
       printf("------------------------\n");
-      
+
       for (int r = 0; r < nprocs; r++)
       {
-         printf("Rank %-3d: %d GPU%s visible", r, gpu_counts[r], gpu_counts[r] != 1 ? "s" : "");
-         
+         printf("Rank %-3d: %d GPU%s visible", r, gpu_counts[r],
+                gpu_counts[r] != 1 ? "s" : "");
+
          // Show which GPUs are visible (based on environment variables)
          char gpuBindingLocal[HYPRE_MAX_GPU_BINDING];
          if (r == 0)
@@ -1686,13 +1701,14 @@ PrintGpuAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count)
          printf("\n");
       }
       printf("\n");
-      
+
       free(gpu_counts);
    }
 }
 
 static void
-CountChildrenRecursive(hwloc_obj_t obj, hwloc_obj_type_t type, int *count, int *first_idx, int *last_idx)
+CountChildrenRecursive(hwloc_obj_t obj, hwloc_obj_type_t type, int *count, int *first_idx,
+                       int *last_idx)
 {
    // Check this object
    if (obj->type == type)
@@ -2031,7 +2047,7 @@ PrintSystemInfoHwloc(MPI_Comm comm)
    double mib_to_gib   = (double)(1 << 10);
 
    // Discover GPUs on all ranks (needed for thread affinity)
-   GpuInfo *gpus = NULL;
+   GpuInfo *gpus      = NULL;
    int      gpu_count = 0;
    DiscoverGpus(&gpus, &gpu_count);
 
@@ -2048,7 +2064,6 @@ PrintSystemInfoHwloc(MPI_Comm comm)
 
    if (!myid)
    {
-
       printf("================================ System Information (hwloc) "
              "================================\n\n");
 
@@ -2113,10 +2128,8 @@ PrintSystemInfoHwloc(MPI_Comm comm)
       printf("hwloc Information\n");
       printf("-----------------\n");
       unsigned version = hwloc_get_api_version();
-      printf("hwloc API version    : %d.%d.%d\n",
-             (version >> 16) & 0xff,
-             (version >> 8) & 0xff,
-             version & 0xff);
+      printf("hwloc API version    : %d.%d.%d\n", (version >> 16) & 0xff,
+             (version >> 8) & 0xff, version & 0xff);
       printf("\n");
 
       // 16. Running Information
@@ -2408,7 +2421,8 @@ PrintAcceleratorRuntimeInformation(void)
          if (fgets(line, sizeof(line), fp) != NULL)
          {
             // Extract ROCm version from the output
-            // Format: "AMDSMI Tool: 25.5.1+41065ee6 | AMDSMI Library version: 25.5.1 | ROCm version: 6.4.3 | ..."
+            // Format: "AMDSMI Tool: 25.5.1+41065ee6 | AMDSMI Library version: 25.5.1 |
+            // ROCm version: 6.4.3 | ..."
             const char *rocm_ver = strstr(line, "ROCm version:");
             if (rocm_ver)
             {
@@ -2416,14 +2430,14 @@ PrintAcceleratorRuntimeInformation(void)
                while (*rocm_ver == ' ') rocm_ver++;
                // Extract version number (until next | or end of line)
                char version[64] = {0};
-               int i = 0;
+               int  i           = 0;
                while (*rocm_ver && *rocm_ver != '|' && i < sizeof(version) - 1)
                {
                   version[i++] = *rocm_ver++;
                }
                version[i] = '\0';
                // Trim trailing spaces
-               while (i > 0 && version[i-1] == ' ') version[--i] = '\0';
+               while (i > 0 && version[i - 1] == ' ') version[--i] = '\0';
                printf("AMD driver            : ROCm %s\n", version);
             }
             else
@@ -2519,5 +2533,3 @@ PrintExitInfo(MPI_Comm comm, const char *argv0)
       printf("Date and time: %s\n%s done!\n", buffer, argv0 ? argv0 : "Driver");
    }
 }
-
-
