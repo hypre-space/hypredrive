@@ -135,7 +135,7 @@ void
 SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
             HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x)
 {
-   StatsTimerStart("prec");
+   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "prec");
 
    void                   *vM = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix      par_M = NULL;
@@ -179,14 +179,14 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
          break;
 
       default:
-         StatsTimerStop("prec");
+         StatsAnnotate(HYPREDRV_ANNOTATE_END, "prec");
          return;
    }
 
    /* Clear pending error codes from hypre */
    HYPRE_ClearAllErrors();
 
-   StatsTimerStop("prec");
+   StatsAnnotate(HYPREDRV_ANNOTATE_END, "prec");
 }
 
 /*-----------------------------------------------------------------------------
@@ -197,7 +197,7 @@ void
 SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
             HYPRE_IJVector b, HYPRE_IJVector x)
 {
-   StatsTimerStart("solve");
+   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
 
    void              *vA = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
@@ -236,7 +236,7 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
 
       default:
          StatsIterSet((int)iters);
-         StatsTimerStop("solve");
+         StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
          return;
    }
 
@@ -244,7 +244,7 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
    HYPRE_ClearAllErrors();
 
    StatsIterSet((int)iters);
-   StatsTimerStop("solve");
+   StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
 
    /* Compute the real relative residual norm. Note this is not timed */
    LinearSystemComputeVectorNorm(b, &b_norm);

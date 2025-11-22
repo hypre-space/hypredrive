@@ -18,6 +18,24 @@ endif()
 add_executable(elasticity elasticity.c)
 target_link_libraries(elasticity PRIVATE HYPREDRV::HYPREDRV)
 
+# If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
+if(HYPREDRV_ENABLE_CALIPER)
+    enable_language(CXX OPTIONAL)
+    if(CMAKE_CXX_COMPILER)
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            target_link_libraries(elasticity PRIVATE stdc++)
+        elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            # Clang can use either libstdc++ or libc++
+            # Default to stdc++ on Linux
+            if(UNIX AND NOT APPLE)
+                target_link_libraries(elasticity PRIVATE stdc++)
+            else()
+                target_link_libraries(elasticity PRIVATE c++)
+            endif()
+        endif()
+    endif()
+endif()
+
 # Add OpenMP support for parallel assembly
 find_package(OpenMP)
 if(OpenMP_C_FOUND)

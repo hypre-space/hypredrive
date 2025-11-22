@@ -233,7 +233,7 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
 void
 LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 {
-   StatsTimerStart("matrix");
+   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "matrix");
 
    char                 matrix_filename[MAX_FILENAME_LENGTH] = {0};
    int                  ls_id                                = StatsGetLinearSystemID();
@@ -270,7 +270,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    {
       ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       ErrorMsgAddInvalidFilename("");
-      StatsTimerStop("matrix");
+      StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
       return;
    }
 
@@ -292,7 +292,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
          {
             ErrorCodeSet(ERROR_FILE_NOT_FOUND);
             ErrorMsgAddInvalidFilename(matrix_filename);
-            StatsTimerStop("matrix");
+            StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
             return;
          }
       }
@@ -315,7 +315,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    {
       ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       ErrorMsgAddInvalidFilename(matrix_filename);
-      StatsTimerStop("matrix");
+      StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
       return;
    }
 
@@ -328,7 +328,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       hypre_ParCSRMatrixMigrate(par_A, HYPRE_MEMORY_DEVICE);
    }
 
-   StatsTimerStop("matrix");
+   StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
 }
 
 /*-----------------------------------------------------------------------------
@@ -383,7 +383,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    HYPRE_MemoryLocation memory_location =
       (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
-   StatsTimerStart("rhs");
+   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "rhs");
 
    /* Destroy vectors */
    if (*refsol_ptr)
@@ -513,7 +513,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    /* Set reference solution vector */
    *refsol_ptr = refsol;
 
-   StatsTimerStop("rhs");
+   StatsAnnotate(HYPREDRV_ANNOTATE_END, "rhs");
 }
 
 /*-----------------------------------------------------------------------------
@@ -625,7 +625,7 @@ LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr)
    HYPRE_ParVector par_x0 = NULL, par_x = NULL;
    void           *obj_x0 = NULL, *obj_x = NULL;
 
-   StatsTimerStart("reset_x0");
+   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
 
    /* TODO: implement HYPRE_IJVectorCopy in hypre */
    HYPRE_IJVectorGetObject(x0_ptr, &obj_x0);
@@ -635,7 +635,7 @@ LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr)
 
    HYPRE_ParVectorCopy(par_x0, par_x);
 
-   StatsTimerStop("reset_x0");
+   StatsAnnotate(HYPREDRV_ANNOTATE_END, "reset_x0");
 }
 
 /*-----------------------------------------------------------------------------
@@ -729,9 +729,9 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
       /* Destroy previous dofmap array */
       IntArrayDestroy(dofmap_ptr);
 
-      StatsTimerStart("dofmap");
+      StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "dofmap");
       IntArrayParRead(comm, dofmap_filename, dofmap_ptr);
-      StatsTimerStop("dofmap");
+      StatsAnnotate(HYPREDRV_ANNOTATE_END, "dofmap");
    }
 
    /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks

@@ -6,6 +6,8 @@
  ******************************************************************************/
 
 #include "stats.h"
+#include <mpi.h>
+#include <stdarg.h>
 
 /* Global timings variable */
 static Stats *global_stats = NULL;
@@ -159,84 +161,117 @@ StatsDestroy(void)
 }
 
 /*--------------------------------------------------------------------------
- * StatsTimerStart
+ * StatsAnnotate
  *--------------------------------------------------------------------------*/
 
 void
-StatsTimerStart(const char *name)
+StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args)
 {
    if (!global_stats)
    {
       return;
    }
 
-   /* Increase internal counters */
-   if (!strcmp(name, "reset_x0"))
-   {
-      global_stats->reps++;
-      global_stats->counter = ((global_stats->ls_counter - 1) * global_stats->num_reps) +
-                              (global_stats->reps - 1);
-   }
-   else if (!strcmp(name, "matrix"))
-   {
-      global_stats->reps = 0;
-      global_stats->ls_counter++;
-      global_stats->counter = (global_stats->ls_counter - 1) * global_stats->num_reps;
-   }
+   /* Format the name string if variadic arguments are provided */
+   char    formatted_name[1024];
+   va_list args_copy;
+   va_copy(args_copy, args);
+   vsnprintf(formatted_name, sizeof(formatted_name), name, args_copy);
+   va_end(args_copy);
 
-   /* Reallocate arrays if needed */
-   if (global_stats->counter >= global_stats->capacity)
+   if (action == HYPREDRV_ANNOTATE_BEGIN)
    {
-      global_stats->capacity += REALLOC_EXPAND_FACTOR;
-      REALLOC(double, matrix);
-      REALLOC(double, rhs);
-      REALLOC(double, dofmap);
-      REALLOC(double, prec);
-      REALLOC(double, solve);
-      REALLOC(double, rrnorms);
-      REALLOC(int, iters);
+      /* Start Caliper region first, before any early returns */
+      /* Prefix with HYPREDRV_ to distinguish from HYPRE's internal regions */
+      HYPREDRV_ANNOTATE_REGION_BEGIN("HYPREDRV_%s", formatted_name)
+
+      /* Ignore "Run" annotation */
+      if (strncmp(formatted_name, "Run", 3) == 0)
+      {
+         return;
+      }
+
+      /* Increase internal counters */
+      if (!strcmp(formatted_name, "reset_x0"))
+      {
+         global_stats->reps++;
+         global_stats->counter =
+            ((global_stats->ls_counter - 1) * global_stats->num_reps) +
+            (global_stats->reps - 1);
+      }
+      else if (!strcmp(formatted_name, "matrix"))
+      {
+         global_stats->reps = 0;
+         global_stats->ls_counter++;
+         global_stats->counter = (global_stats->ls_counter - 1) * global_stats->num_reps;
+      }
+
+      /* Reallocate arrays if needed */
+      if (global_stats->counter >= global_stats->capacity)
+      {
+         global_stats->capacity += REALLOC_EXPAND_FACTOR;
+         REALLOC(double, matrix);
+         REALLOC(double, rhs);
+         REALLOC(double, dofmap);
+         REALLOC(double, prec);
+         REALLOC(double, solve);
+         REALLOC(double, rrnorms);
+         REALLOC(int, iters);
+      }
+
+      /* Start internal timer */
+      STATS_TIMES_START_VEC_ENTRY_ALIAS(matrix, system)
+      STATS_TIMES_START_VEC_ENTRY(matrix)
+      STATS_TIMES_START_VEC_ENTRY(rhs)
+      STATS_TIMES_START_VEC_ENTRY(dofmap)
+      STATS_TIMES_START_VEC_ENTRY(prec)
+      STATS_TIMES_START_VEC_ENTRY(solve)
+      STATS_TIMES_START_ENTRY(reset_x0)
+      STATS_TIMES_START_ENTRY(initialize)
+      STATS_TIMES_START_ENTRY(finalize)
+
+      /* Set an error code if we haven't returned yet */
+      ErrorCodeSet(ERROR_UNKNOWN_TIMING);
+      ErrorMsgAdd("Unknown timer key: '%s'", formatted_name);
+      return;
    }
+   else if (action == HYPREDRV_ANNOTATE_END)
+   {
+      /* Stop Caliper region. Prefix with HYPREDRV_ to distinguish from HYPRE's internal
+       * regions */
+      HYPREDRV_ANNOTATE_REGION_END("HYPREDRV_%s", formatted_name)
 
-   STATS_TIMES_START_VEC_ENTRY_ALIAS(matrix, system)
-   STATS_TIMES_START_VEC_ENTRY(matrix)
-   STATS_TIMES_START_VEC_ENTRY(rhs)
-   STATS_TIMES_START_VEC_ENTRY(dofmap)
-   STATS_TIMES_START_VEC_ENTRY(prec)
-   STATS_TIMES_START_VEC_ENTRY(solve)
-   STATS_TIMES_START_ENTRY(reset_x0)
-   STATS_TIMES_START_ENTRY(initialize)
-   STATS_TIMES_START_ENTRY(finalize)
+      /* Ignore "Run" annotation */
+      if (strncmp(formatted_name, "Run", 3) == 0)
+      {
+         return;
+      }
 
-   /* Set an error code if we haven't returned yet */
-   ErrorCodeSet(ERROR_UNKNOWN_TIMING);
-   ErrorMsgAdd("Unknown timer key: '%s'", name);
+      /* Stop internal timer first */
+      STATS_TIMES_STOP_VEC_ENTRY_ALIAS(matrix, system)
+      STATS_TIMES_STOP_VEC_ENTRY(matrix)
+      STATS_TIMES_STOP_VEC_ENTRY(rhs)
+      STATS_TIMES_STOP_VEC_ENTRY(dofmap)
+      STATS_TIMES_STOP_VEC_ENTRY(prec)
+      STATS_TIMES_STOP_VEC_ENTRY(solve)
+      STATS_TIMES_STOP_ENTRY(reset_x0)
+      STATS_TIMES_STOP_ENTRY(initialize)
+      STATS_TIMES_STOP_ENTRY(finalize)
+
+      /* Set an error code if we haven't returned yet */
+      ErrorCodeSet(ERROR_UNKNOWN_TIMING);
+      ErrorMsgAdd("Unknown timer key: '%s'", formatted_name);
+      return;
+   }
 }
 
-/*--------------------------------------------------------------------------
- * StatsTimerStop
- *--------------------------------------------------------------------------*/
-
 void
-StatsTimerStop(const char *name)
+StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name, ...)
 {
-   if (!global_stats)
-   {
-      return;
-   }
-
-   STATS_TIMES_STOP_VEC_ENTRY_ALIAS(matrix, system)
-   STATS_TIMES_STOP_VEC_ENTRY(matrix)
-   STATS_TIMES_STOP_VEC_ENTRY(rhs)
-   STATS_TIMES_STOP_VEC_ENTRY(dofmap)
-   STATS_TIMES_STOP_VEC_ENTRY(prec)
-   STATS_TIMES_STOP_VEC_ENTRY(solve)
-   STATS_TIMES_STOP_ENTRY(reset_x0)
-   STATS_TIMES_STOP_ENTRY(initialize)
-   STATS_TIMES_STOP_ENTRY(finalize)
-
-   /* Set an error code if we haven't returned yet */
-   ErrorCodeSet(ERROR_UNKNOWN_TIMING);
-   ErrorMsgAdd("Unknown timer key: '%s'", name);
+   va_list args;
+   va_start(args, name);
+   StatsAnnotateV(action, name, args);
+   va_end(args);
 }
 
 /*--------------------------------------------------------------------------

@@ -8,9 +8,11 @@
 #ifndef STATS_HEADER
 #define STATS_HEADER
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "HYPREDRV_config.h"
 #include "error.h"
 #include "utils.h"
 
@@ -18,6 +20,51 @@ enum
 {
    STATS_NUM_ENTRIES = 7
 };
+
+/* HYPREDRV_AnnotateAction enum - internal use only (not in public API) */
+typedef enum
+{
+   HYPREDRV_ANNOTATE_BEGIN = 0,
+   HYPREDRV_ANNOTATE_END   = 1
+} HYPREDRV_AnnotateAction;
+
+/*--------------------------------------------------------------------------
+ * Caliper instrumentation macros
+ *--------------------------------------------------------------------------*/
+
+#ifdef HYPREDRV_USING_CALIPER
+
+#ifdef __cplusplus
+extern "C++"
+{
+#endif
+
+#include <caliper/cali.h>
+
+#ifdef __cplusplus
+}
+#endif
+
+#define HYPREDRV_ANNOTATE_REGION_BEGIN(...)                                  \
+   {                                                                         \
+      char hypredrv__markname[1024];                                         \
+      snprintf(hypredrv__markname, sizeof(hypredrv__markname), __VA_ARGS__); \
+      CALI_MARK_BEGIN(hypredrv__markname);                                   \
+   }
+
+#define HYPREDRV_ANNOTATE_REGION_END(...)                                    \
+   {                                                                         \
+      char hypredrv__markname[1024];                                         \
+      snprintf(hypredrv__markname, sizeof(hypredrv__markname), __VA_ARGS__); \
+      CALI_MARK_END(hypredrv__markname);                                     \
+   }
+
+#else
+
+#define HYPREDRV_ANNOTATE_REGION_BEGIN(...)
+#define HYPREDRV_ANNOTATE_REGION_END(...)
+
+#endif /* HYPREDRV_USING_CALIPER */
 
 /*--------------------------------------------------------------------------
  * Stats struct
@@ -55,8 +102,8 @@ typedef struct Stats_struct
 
 void StatsCreate(void);
 void StatsDestroy(void);
-void StatsTimerStart(const char *);
-void StatsTimerStop(const char *);
+void StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name, ...);
+void StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args);
 void StatsIterSet(int);
 void StatsTimerSetMilliseconds(void);
 void StatsTimerSetSeconds(void);

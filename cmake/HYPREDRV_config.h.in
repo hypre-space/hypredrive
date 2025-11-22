@@ -80,6 +80,9 @@
 /* Define to 1 if you have the `hwloc' library. */
 #cmakedefine HAVE_HWLOC
 
+/* Define to 1 if Caliper instrumentation is enabled. */
+#cmakedefine HYPREDRV_USING_CALIPER
+
 /* Name of package */
 #cmakedefine PACKAGE "@PACKAGE_NAME@"
 

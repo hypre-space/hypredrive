@@ -1607,10 +1607,10 @@ main(int argc, char *argv[])
                   params.P[2], &mesh);
 
    if (!myid && (params.verbose > 0)) printf("Assembling linear system...");
-   HYPREDRV_SAFE_CALL(HYPREDRV_TimerStart("system"));
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system"));
    BuildElasticitySystem_Q1Hex(mesh, &params, &A, &b, comm);
    ComputeRigidBodyModes(mesh, &params, &rbms);
-   HYPREDRV_SAFE_CALL(HYPREDRV_TimerStop("system"));
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system"));
    if (!myid && (params.verbose > 0)) printf(" Done!\n");
 
 #if defined(HYPRE_USING_GPU)
@@ -1640,6 +1640,11 @@ main(int argc, char *argv[])
    for (int isolve = 0; isolve < params.nsolve; isolve++)
    {
       if (!myid) printf("Solve %d/%d...\n", isolve + 1, params.nsolve);
+
+      /* (Optional) Annotate the entire solve iteration */
+      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("Run-%d", isolve));
+
+      /* Build and apply linear solver */
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(hypredrv));
       HYPREDRV_SAFE_CALL(HYPREDRV_PreconCreate(hypredrv));
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverCreate(hypredrv));
@@ -1647,6 +1652,9 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
       HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(hypredrv));
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hypredrv));
+
+      /* (Optional) Annotate the entire solve iteration */
+      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("Run-%d", isolve));
    }
 
    if (!myid && (params.verbose & 0x1)) HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(hypredrv));

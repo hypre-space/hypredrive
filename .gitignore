@@ -15,6 +15,7 @@ old-*
 *.pvd
 *.vtr
 .gdbinit
+__pycache__/
 .libs/
 install*/
 .vscode/

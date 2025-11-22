@@ -350,7 +350,7 @@ main(int argc, char *argv[])
 
    /* Create the linear system */
    if (!myid && (params.verbose > 0)) printf("Assembling linear system...");
-   HYPREDRV_SAFE_CALL(HYPREDRV_TimerStart("system"));
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system"));
    if (params.stencil == 7)
    {
       BuildLaplacianSystem_7pt(mesh, &params, &A, &b);
@@ -367,7 +367,7 @@ main(int argc, char *argv[])
    {
       BuildLaplacianSystem_125pt(mesh, &params, &A, &b);
    }
-   HYPREDRV_SAFE_CALL(HYPREDRV_TimerStop("system"));
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system"));
    if (!myid && (params.verbose > 0))
    {
       printf(" Done!\n");
@@ -398,6 +398,9 @@ main(int argc, char *argv[])
    {
       if (!myid) printf("Solve %d/%d...\n", isolve + 1, params.nsolve);
 
+      /* (Optional) Annotate the entire solve iteration */
+      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("Run-%d", isolve));
+
       /* Reset initial guess to zero before each solve */
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(hypredrv));
 
@@ -412,6 +415,9 @@ main(int argc, char *argv[])
       /* Destroy phase */
       HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(hypredrv));
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hypredrv));
+
+      /* (Optional) Annotate the entire solve iteration */
+      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("Run-%d", isolve));
    }
 
    /* Print solver statistics if requested */

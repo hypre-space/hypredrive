@@ -8,6 +8,7 @@
 #include "HYPREDRV.h"
 
 #include <math.h>
+#include <stdarg.h>
 #include "HYPRE_parcsr_ls.h"
 #include "HYPRE_utilities.h"
 #include "args.h"
@@ -428,10 +429,10 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t obj, HYPRE_Matrix mat_A)
 
    if (obj)
    {
-      StatsTimerStart("matrix");
+      StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "matrix");
       obj->mat_A = (HYPRE_IJMatrix)mat_A;
       obj->mat_M = (HYPRE_IJMatrix)mat_A;
-      StatsTimerStop("matrix");
+      StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
    }
    else
    {
@@ -973,29 +974,35 @@ HYPREDRV_StatsPrint(HYPREDRV_t obj)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_TimerStart
+ * HYPREDRV_AnnotateBegin
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_TimerStart(const char *name)
+HYPREDRV_AnnotateBegin(const char *name, ...)
 {
    HYPREDRV_CHECK_INIT();
 
-   StatsTimerStart(name);
+   va_list args;
+   va_start(args, name);
+   StatsAnnotateV(HYPREDRV_ANNOTATE_BEGIN, name, args);
+   va_end(args);
 
    return ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_TimerStop
+ * HYPREDRV_AnnotateEnd
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_TimerStop(const char *name)
+HYPREDRV_AnnotateEnd(const char *name, ...)
 {
    HYPREDRV_CHECK_INIT();
 
-   StatsTimerStop(name);
+   va_list args;
+   va_start(args, name);
+   StatsAnnotateV(HYPREDRV_ANNOTATE_END, name, args);
+   va_end(args);
 
    return ErrorCodeGet();
 }

@@ -1140,46 +1140,58 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsPrint(HYPREDRV_t hypredrv);
 
    /**
-    * @brief Start a named timer.
+    * @brief Begin annotation of a code region for timing and Caliper instrumentation.
     *
-    * This function starts a timer with the specified name. The timer will track elapsed
-    * time until HYPREDRV_TimerStop is called with the same name.
+    * This function marks the beginning of a code region for performance measurement.
+    * It should be paired with HYPREDRV_AnnotateEnd to mark the end of the region.
     *
-    * @param name The name of the timer to start. Available names are: "system".
+    * @param name The name of the region to annotate (printf-style format string).
+    *             Available names include: "system", "matrix", "rhs", "dofmap", "prec",
+    *             "solve", "reset_x0", "initialize", "finalize", or custom names.
+    * @param ... Additional arguments for the format string.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
     *
+    * @note When Caliper is enabled (via HYPREDRV_ENABLE_CALIPER), this function also
+    * creates Caliper regions that can be captured by Caliper profiling tools.
+    *
     * Example Usage:
     * @code
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStart("system"));
-    *    // ... code to time ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStop("system"));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system"));
+    *    // ... code to measure ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system"));
     * @endcode
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_TimerStart(const char *name);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateBegin(const char *name, ...);
 
    /**
-    * @brief Stop a named timer.
+    * @brief End annotation of a code region for timing and Caliper instrumentation.
     *
-    * This function stops a timer with the specified name and accumulates its elapsed time
-    * into the statistics.
+    * This function marks the end of a code region for performance measurement.
+    * It should be paired with HYPREDRV_AnnotateBegin to mark the beginning of the region.
     *
-    * @param name The name of the timer to stop. Available names are: "system".
+    * @param name The name of the region to annotate (printf-style format string).
+    *             Must match the name used in the corresponding HYPREDRV_AnnotateBegin
+    * call.
+    * @param ... Additional arguments for the format string.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
     *
+    * @note When Caliper is enabled (via HYPREDRV_ENABLE_CALIPER), this function also
+    * creates Caliper regions that can be captured by Caliper profiling tools.
+    *
     * Example Usage:
     * @code
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStart("system"));
-    *    // ... code to time ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_TimerStop("system"));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("Run-%d", iteration));
+    *    // ... code to measure ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("Run-%d", iteration));
     * @endcode
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_TimerStop(const char *name);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateEnd(const char *name, ...);
 
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/
