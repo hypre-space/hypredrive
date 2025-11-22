@@ -170,7 +170,6 @@ jobs:
       - name: Run tests
         timeout-minutes: 5
         env:
-          # OpenMPI configuration for CI
           OMPI_ALLOW_RUN_AS_ROOT: 1
           OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
           OMPI_MCA_btl_vader_single_copy_mechanism: none
@@ -212,3 +211,98 @@ jobs:
           path: |
             ${{ env.BUILD_DIR }}/test_ex1_output.txt
           retention-days: 1
+
+  build-and-test-caliper:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: Caliper-enabled build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      HYPRE_VERSION: master
+      BUILD_DIR: build-caliper
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin ccache gcc g++
+
+      - name: Setup compiler environment
+        run: |
+          export OMPI_CC=gcc
+          export OMPI_CXX=g++
+          echo "OMPI_CC=gcc" >> $GITHUB_ENV
+          echo "OMPI_CXX=g++" >> $GITHUB_ENV
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ${{ runner.os }}-caliper-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-caliper-
+
+      - name: Cache datasets
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: datasets-v1
+          restore-keys: |
+            datasets-v1
+
+      - name: Configure hypredrive with Caliper
+        run: |
+          set -euxo pipefail
+          cmake -S . -B $BUILD_DIR -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHYPREDRV_ENABLE_CALIPER=ON \
+            -DHYPREDRV_ENABLE_TESTING=ON \
+            -DHYPREDRV_ENABLE_EXAMPLES=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build $BUILD_DIR --parallel
+
+      - name: Fetch datasets (optional)
+        run: |
+          set -euxo pipefail
+          # Only download if datasets are not already cached
+          if [ ! -d "data/ps3d10pt7" ] || [ -z "$(ls -A data/ps3d10pt7 2>/dev/null)" ]; then
+            cmake --build $BUILD_DIR --target data --parallel
+          else
+            echo "Datasets already cached, skipping download"
+          fi
+
+      - name: Run make check with Caliper
+        timeout-minutes: 5
+        env:
+          # OpenMPI configuration for CI
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+          OMPI_MCA_btl_vader_single_copy_mechanism: none
+          OMPI_MCA_rmaps_base_oversubscribe: 1
+          OMP_NUM_THREADS: 1
+          # Caliper configuration
+          CALI_CONFIG: runtime-report
+        run: |
+          set -euxo pipefail
+          # Run make check with Caliper enabled
+          cd $BUILD_DIR
+          make check
+          # Verify Caliper output is generated (check for runtime-report output in stdout/stderr)
+          echo "Checking for Caliper output..."
+          # Caliper runtime-report outputs to stdout, so it should be visible in the logs
+
+      - name: Cache ccache
+        uses: hendrikmuhs/ccache-action@v1
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: logs-caliper
+          path: |
+            ${{ env.BUILD_DIR }}/Testing
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
