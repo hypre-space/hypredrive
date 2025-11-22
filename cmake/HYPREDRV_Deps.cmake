@@ -44,6 +44,16 @@ if(HYPREDRV_ENABLE_CALIPER)
 
     if(NOT caliper_FOUND)
         # Caliper not found via find_package - automatically fetch and build
+        # Check if Ninja generator is being used - Caliper auto-build requires Makefiles
+        if(CMAKE_GENERATOR STREQUAL "Ninja" OR CMAKE_GENERATOR MATCHES "^Ninja")
+            message(FATAL_ERROR
+                "Caliper auto-fetch/build is not supported with Ninja generator.\n"
+                "Please either:\n"
+                "  1. Use the default Makefile generator (remove -G Ninja), or\n"
+                "  2. Build Caliper separately and point to it via find_package or CALIPER_DIR"
+            )
+        endif()
+        
         message(STATUS "Caliper not found. Fetching and building Caliper from source (version: ${CALIPER_VERSION})...")
 
         include(FetchContent)

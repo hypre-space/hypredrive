@@ -214,7 +214,7 @@ jobs:
 
   build-and-test-caliper:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
-    name: Caliper-enabled build and test
+    name: ubuntu-latest | Caliper | gcc | Debug
     runs-on: ubuntu-latest
     timeout-minutes: 6
     env:
@@ -226,7 +226,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin ccache gcc g++
+          sudo apt-get install -y cmake libopenmpi-dev openmpi-bin ccache gcc g++ make
 
       - name: Setup compiler environment
         run: |
@@ -253,7 +253,7 @@ jobs:
       - name: Configure hypredrive with Caliper
         run: |
           set -euxo pipefail
-          cmake -S . -B $BUILD_DIR -G Ninja \
+          cmake -S . -B $BUILD_DIR \
             -DCMAKE_BUILD_TYPE=Debug \
             -DHYPREDRV_ENABLE_CALIPER=ON \
             -DHYPREDRV_ENABLE_TESTING=ON \
