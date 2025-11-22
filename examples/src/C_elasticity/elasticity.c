@@ -1215,7 +1215,12 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    }
 
    /* Finish comms before using ghost buffers */
-   if (reqc > 0) MPI_Waitall(reqc, reqs, MPI_STATUSES_IGNORE);
+   if (reqc > 0)
+   {
+      MPI_Status *statuses = (MPI_Status *)malloc(reqc * sizeof(MPI_Status));
+      MPI_Waitall(reqc, reqs, statuses);
+      free(statuses);
+   }
 
    /* Insert faces */
    if (mesh->nbrs[0] != MPI_PROC_NULL)

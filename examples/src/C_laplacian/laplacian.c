@@ -1697,7 +1697,12 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *sol_data)
          }
 
    /* Wait for all communications to complete */
-   MPI_Waitall(req_count, requests, MPI_STATUSES_IGNORE);
+   if (req_count > 0)
+   {
+      MPI_Status *statuses = (MPI_Status *)malloc(req_count * sizeof(MPI_Status));
+      MPI_Waitall(req_count, requests, statuses);
+      free(statuses);
+   }
 
    /* Copy ghost data */
    if (mesh->nbrs[0] != MPI_PROC_NULL) // Left face (x = 0)
