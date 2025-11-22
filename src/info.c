@@ -2376,7 +2376,8 @@ PrintAcceleratorRuntimeInformation(void)
 
    if (system("command -v nvidia-smi > /dev/null 2>&1") == 0)
    {
-      fp = popen("nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1", "r");
+      fp = popen("nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1",
+                 "r");
       if (fp)
       {
          if (fgets(line, sizeof(line), fp) != NULL)
