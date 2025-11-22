@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #include "HYPREDRV.h"
 // #define VTK_USE_ASCII 0
 
@@ -150,7 +153,7 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
    /* Set defaults */
    params->visualize = 0;
    params->print     = 0;
-   params->verbose   = 7;
+   params->verbose   = 3;
    params->nsolve    = 5;
    for (int i = 0; i < 3; i++)
    {
@@ -686,133 +689,161 @@ BuildLaplacianSystem_7pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix *
    HYPRE_IJVectorInitialize_v2(b, HYPRE_MEMORY_HOST);
 
    /* Set matrix coefficients and RHS values */
-   HYPRE_Int    nentries;
-   HYPRE_BigInt row, cols[7];
-   HYPRE_Real   values[7], rhs_value;
-
-   for (HYPRE_BigInt gz = pstarts[2][p[2]]; gz < pstarts[2][p[2] + 1]; gz++)
+#ifdef _OPENMP
+#pragma omp parallel
+#endif
    {
-      for (HYPRE_BigInt gy = pstarts[1][p[1]]; gy < pstarts[1][p[1] + 1]; gy++)
+#ifdef _OPENMP
+      HYPRE_Int tid         = omp_get_thread_num();
+      HYPRE_Int num_threads = omp_get_num_threads();
+#else
+      HYPRE_Int tid         = 0;
+      HYPRE_Int num_threads = 1;
+#endif
+      /* Partition owned row range among OpenMP threads to avoid data races.
+       * Each thread only adds contributions for rows in its partition. */
+      HYPRE_BigInt row_range        = iupper - ilower + 1;
+      HYPRE_BigInt rows_per_thread  = (row_range + num_threads - 1) / num_threads;
+      HYPRE_BigInt thread_row_lower = ilower + tid * rows_per_thread;
+      HYPRE_BigInt thread_row_upper =
+         (tid == num_threads - 1) ? iupper : (ilower + (tid + 1) * rows_per_thread - 1);
+
+      /* Thread-local variables */
+      HYPRE_Int    nentries;
+      HYPRE_BigInt row, cols[7];
+      HYPRE_Real   values[7], rhs_value;
+
+      /* Process all grid points, but only add contributions for rows in this thread's
+       * partition. Each thread processes ALL points to ensure that when a point
+       * contributes to rows in multiple partitions, all contributions are added. */
+      for (HYPRE_BigInt gz = pstarts[2][p[2]]; gz < pstarts[2][p[2] + 1]; gz++)
       {
-         for (HYPRE_BigInt gx = pstarts[0][p[0]]; gx < pstarts[0][p[0] + 1]; gx++)
+         for (HYPRE_BigInt gy = pstarts[1][p[1]]; gy < pstarts[1][p[1] + 1]; gy++)
          {
-            /* Global index in block-partitioned ordering */
-            row      = grid2idx((HYPRE_BigInt[]){gx, gy, gz}, p, gdims, pstarts);
-            nentries = 0;
-
-            /* Center point */
-            cols[nentries]     = row;
-            values[nentries++] = 2.0 * (params->c[0] + params->c[1] + params->c[2]);
-
-            /* Z-direction negative connections */
-            if (gz > pstarts[2][p[2]])
+            for (HYPRE_BigInt gx = pstarts[0][p[0]]; gx < pstarts[0][p[0] + 1]; gx++)
             {
-               cols[nentries]     = row - n[0] * n[1];
-               values[nentries++] = -params->c[2];
-            }
-            else if (gz == pstarts[2][p[2]] && p[2] > 0)
-            {
-               /* Neighboring process coordinates */
-               HYPRE_BigInt ncoords[3] = {gx, gy, gz - 1};
-               HYPRE_Int    np[3]      = {p[0], p[1], p[2] - 1};
+               /* Global index in block-partitioned ordering */
+               row = grid2idx((HYPRE_BigInt[]){gx, gy, gz}, p, gdims, pstarts);
 
-               cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
-               values[nentries++] = -params->c[2];
-            }
+               /* Only process rows in this thread's partition */
+               if (row < thread_row_lower || row > thread_row_upper) continue;
 
-            /* Y-direction negative connections */
-            if (gy > pstarts[1][p[1]])
-            {
-               cols[nentries]     = row - n[0];
-               values[nentries++] = -params->c[1];
-            }
-            else if (gy == pstarts[1][p[1]] && p[1] > 0)
-            {
-               /* Neighboring process coordinates */
-               HYPRE_BigInt ncoords[3] = {gx, gy - 1, gz};
-               HYPRE_Int    np[3]      = {p[0], p[1] - 1, p[2]};
+               nentries = 0;
 
-               cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
-               values[nentries++] = -params->c[1];
-            }
+               /* Center point */
+               cols[nentries]     = row;
+               values[nentries++] = 2.0 * (params->c[0] + params->c[1] + params->c[2]);
 
-            /* X-direction negative connections */
-            if (gx > pstarts[0][p[0]])
-            {
-               cols[nentries]     = row - 1;
-               values[nentries++] = -params->c[0];
-            }
-            else if (gx == pstarts[0][p[0]] && p[0] > 0)
-            {
-               /* Neighboring process coordinates */
-               HYPRE_BigInt ncoords[3] = {gx - 1, gy, gz};
-               HYPRE_Int    np[3]      = {p[0] - 1, p[1], p[2]};
+               /* Z-direction negative connections */
+               if (gz > pstarts[2][p[2]])
+               {
+                  cols[nentries]     = row - n[0] * n[1];
+                  values[nentries++] = -params->c[2];
+               }
+               else if (gz == pstarts[2][p[2]] && p[2] > 0)
+               {
+                  /* Neighboring process coordinates */
+                  HYPRE_BigInt ncoords[3] = {gx, gy, gz - 1};
+                  HYPRE_Int    np[3]      = {p[0], p[1], p[2] - 1};
 
-               cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
-               values[nentries++] = -params->c[0];
-            }
+                  cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
+                  values[nentries++] = -params->c[2];
+               }
 
-            /* X-direction positive connections */
-            if (gx < pstarts[0][p[0] + 1] - 1)
-            {
-               cols[nentries]     = row + 1;
-               values[nentries++] = -params->c[0];
-            }
-            else if (gx == pstarts[0][p[0] + 1] - 1 && p[0] < mesh->pdims[0] - 1)
-            {
-               /* Neighboring process coordinates */
-               HYPRE_BigInt ncoords[3] = {gx + 1, gy, gz};
-               HYPRE_Int    np[3]      = {p[0] + 1, p[1], p[2]};
+               /* Y-direction negative connections */
+               if (gy > pstarts[1][p[1]])
+               {
+                  cols[nentries]     = row - n[0];
+                  values[nentries++] = -params->c[1];
+               }
+               else if (gy == pstarts[1][p[1]] && p[1] > 0)
+               {
+                  /* Neighboring process coordinates */
+                  HYPRE_BigInt ncoords[3] = {gx, gy - 1, gz};
+                  HYPRE_Int    np[3]      = {p[0], p[1] - 1, p[2]};
 
-               cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
-               values[nentries++] = -params->c[0];
-            }
+                  cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
+                  values[nentries++] = -params->c[1];
+               }
 
-            /* Y-direction positive connections */
-            if (gy < pstarts[1][p[1] + 1] - 1)
-            {
-               cols[nentries]     = row + n[0];
-               values[nentries++] = -params->c[1];
-            }
-            else if (gy == pstarts[1][p[1] + 1] - 1 && p[1] < mesh->pdims[1] - 1)
-            {
-               /* Neighboring process coordinates */
-               HYPRE_BigInt ncoords[3] = {gx, gy + 1, gz};
-               HYPRE_Int    np[3]      = {p[0], p[1] + 1, p[2]};
+               /* X-direction negative connections */
+               if (gx > pstarts[0][p[0]])
+               {
+                  cols[nentries]     = row - 1;
+                  values[nentries++] = -params->c[0];
+               }
+               else if (gx == pstarts[0][p[0]] && p[0] > 0)
+               {
+                  /* Neighboring process coordinates */
+                  HYPRE_BigInt ncoords[3] = {gx - 1, gy, gz};
+                  HYPRE_Int    np[3]      = {p[0] - 1, p[1], p[2]};
 
-               cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
-               values[nentries++] = -params->c[1];
-            }
+                  cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
+                  values[nentries++] = -params->c[0];
+               }
 
-            /* Z-direction positive connections */
-            if (gz < pstarts[2][p[2] + 1] - 1)
-            {
-               cols[nentries]     = row + n[0] * n[1];
-               values[nentries++] = -params->c[2];
-            }
-            else if (gz == pstarts[2][p[2] + 1] - 1 && p[2] < mesh->pdims[2] - 1)
-            {
-               /* Neighboring process coordinates */
-               HYPRE_BigInt ncoords[3] = {gx, gy, gz + 1};
-               HYPRE_Int    np[3]      = {p[0], p[1], p[2] + 1};
+               /* X-direction positive connections */
+               if (gx < pstarts[0][p[0] + 1] - 1)
+               {
+                  cols[nentries]     = row + 1;
+                  values[nentries++] = -params->c[0];
+               }
+               else if (gx == pstarts[0][p[0] + 1] - 1 && p[0] < mesh->pdims[0] - 1)
+               {
+                  /* Neighboring process coordinates */
+                  HYPRE_BigInt ncoords[3] = {gx + 1, gy, gz};
+                  HYPRE_Int    np[3]      = {p[0] + 1, p[1], p[2]};
 
-               cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
-               values[nentries++] = -params->c[2];
-            }
+                  cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
+                  values[nentries++] = -params->c[0];
+               }
 
-            /* Set matrix values */
-            HYPRE_IJMatrixSetValues(A, 1, &nentries, &row, cols, values);
+               /* Y-direction positive connections */
+               if (gy < pstarts[1][p[1] + 1] - 1)
+               {
+                  cols[nentries]     = row + n[0];
+                  values[nentries++] = -params->c[1];
+               }
+               else if (gy == pstarts[1][p[1] + 1] - 1 && p[1] < mesh->pdims[1] - 1)
+               {
+                  /* Neighboring process coordinates */
+                  HYPRE_BigInt ncoords[3] = {gx, gy + 1, gz};
+                  HYPRE_Int    np[3]      = {p[0], p[1] + 1, p[2]};
 
-            /* Set RHS value - zero everywhere except back boundary (y = 0) */
-            if (gy == pstarts[1][p[1]] && p[1] == 0)
-            {
-               rhs_value = 1.0;
+                  cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
+                  values[nentries++] = -params->c[1];
+               }
+
+               /* Z-direction positive connections */
+               if (gz < pstarts[2][p[2] + 1] - 1)
+               {
+                  cols[nentries]     = row + n[0] * n[1];
+                  values[nentries++] = -params->c[2];
+               }
+               else if (gz == pstarts[2][p[2] + 1] - 1 && p[2] < mesh->pdims[2] - 1)
+               {
+                  /* Neighboring process coordinates */
+                  HYPRE_BigInt ncoords[3] = {gx, gy, gz + 1};
+                  HYPRE_Int    np[3]      = {p[0], p[1], p[2] + 1};
+
+                  cols[nentries]     = grid2idx(ncoords, np, gdims, pstarts);
+                  values[nentries++] = -params->c[2];
+               }
+
+               /* Set matrix values */
+               HYPRE_IJMatrixSetValues(A, 1, &nentries, &row, cols, values);
+
+               /* Set RHS value - zero everywhere except back boundary (y = 0) */
+               if (gy == pstarts[1][p[1]] && p[1] == 0)
+               {
+                  rhs_value = 1.0;
+               }
+               else
+               {
+                  rhs_value = 0.0;
+               }
+               HYPRE_IJVectorSetValues(b, 1, &row, &rhs_value);
             }
-            else
-            {
-               rhs_value = 0.0;
-            }
-            HYPRE_IJVectorSetValues(b, 1, &row, &rhs_value);
          }
       }
    }
@@ -870,125 +901,155 @@ BuildLaplacianSystem_19pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix 
    HYPRE_IJVectorInitialize_v2(b, HYPRE_MEMORY_HOST);
 
    /* Set matrix coefficients and RHS values */
-   for (HYPRE_BigInt gz = pstarts[2][p[2]]; gz < pstarts[2][p[2] + 1]; gz++)
+#ifdef _OPENMP
+#pragma omp parallel
+#endif
    {
-      for (HYPRE_BigInt gy = pstarts[1][p[1]]; gy < pstarts[1][p[1] + 1]; gy++)
+#ifdef _OPENMP
+      HYPRE_Int tid         = omp_get_thread_num();
+      HYPRE_Int num_threads = omp_get_num_threads();
+#else
+      HYPRE_Int tid         = 0;
+      HYPRE_Int num_threads = 1;
+#endif
+      /* Partition owned row range among OpenMP threads to avoid data races. */
+      HYPRE_BigInt row_range        = iupper - ilower + 1;
+      HYPRE_BigInt rows_per_thread  = (row_range + num_threads - 1) / num_threads;
+      HYPRE_BigInt thread_row_lower = ilower + tid * rows_per_thread;
+      HYPRE_BigInt thread_row_upper =
+         (tid == num_threads - 1) ? iupper : (ilower + (tid + 1) * rows_per_thread - 1);
+
+      for (HYPRE_BigInt gz = pstarts[2][p[2]]; gz < pstarts[2][p[2] + 1]; gz++)
       {
-         for (HYPRE_BigInt gx = pstarts[0][p[0]]; gx < pstarts[0][p[0] + 1]; gx++)
+         for (HYPRE_BigInt gy = pstarts[1][p[1]]; gy < pstarts[1][p[1] + 1]; gy++)
          {
-            HYPRE_BigInt row = grid2idx((HYPRE_BigInt[]){gx, gy, gz}, p, gdims, pstarts);
-            HYPRE_Int    nentries = 0;
-            HYPRE_BigInt cols[19];
-            HYPRE_Real   values[19];
-            HYPRE_Real   center_val = 0.0;
-            HYPRE_Real   rhs_val    = 0.0;
-
-            /* Coefficients for the stencil */
-            HYPRE_Real face_coeff = -1.0; /* For direct neighbors */
-            HYPRE_Real edge_coeff = -0.5; /* For edge neighbors */
-
-            /* Loop over potential neighbors */
-            for (int dz = -1; dz <= 1; dz++)
+            for (HYPRE_BigInt gx = pstarts[0][p[0]]; gx < pstarts[0][p[0] + 1]; gx++)
             {
-               for (int dy = -1; dy <= 1; dy++)
+               HYPRE_BigInt row =
+                  grid2idx((HYPRE_BigInt[]){gx, gy, gz}, p, gdims, pstarts);
+
+               /* Only process rows in this thread's partition */
+               if (row < thread_row_lower || row > thread_row_upper) continue;
+
+               HYPRE_Int    nentries = 0;
+               HYPRE_BigInt cols[19];
+               HYPRE_Real   values[19];
+               HYPRE_Real   center_val = 0.0;
+               HYPRE_Real   rhs_val    = 0.0;
+
+               /* Coefficients for the stencil */
+               HYPRE_Real face_coeff = -1.0; /* For direct neighbors */
+               HYPRE_Real edge_coeff = -0.5; /* For edge neighbors */
+
+               /* Loop over potential neighbors */
+               for (int dz = -1; dz <= 1; dz++)
                {
-                  for (int dx = -1; dx <= 1; dx++)
+                  for (int dy = -1; dy <= 1; dy++)
                   {
-                     /* Skip center point and corner points */
-                     if ((dx == 0 && dy == 0 && dz == 0) ||
-                         (abs(dx) + abs(dy) + abs(dz) == 3))
-                        continue;
-
-                     HYPRE_BigInt nx = gx + dx;
-                     HYPRE_BigInt ny = gy + dy;
-                     HYPRE_BigInt nz = gz + dz;
-
-                     /* Determine coefficient based on neighbor type */
-                     HYPRE_Real coeff;
-                     if (abs(dx) + abs(dy) + abs(dz) == 1)
+                     for (int dx = -1; dx <= 1; dx++)
                      {
-                        /* Face neighbor */
-                        coeff = face_coeff * ((dx != 0)   ? params->c[0]
-                                              : (dy != 0) ? params->c[1]
-                                                          : params->c[2]);
-                     }
-                     else
-                     {
-                        /* Edge neighbor */
-                        coeff = edge_coeff * ((dx == 0) ? params->c[5] : /* yz */
-                                                 (dy == 0) ? params->c[4]
-                                                           :    /* xz */
-                                                 params->c[3]); /* xy */
-                     }
+                        /* Skip center point and corner points */
+                        if ((dx == 0 && dy == 0 && dz == 0) ||
+                            (abs(dx) + abs(dy) + abs(dz) == 3))
+                           continue;
 
-                     /* Check if neighbor is within global domain */
-                     if (nx >= 0 && nx < gdims[0] && ny >= 0 && ny < gdims[1] &&
-                         nz >= 0 && nz < gdims[2])
-                     {
-                        /* Determine processor coordinates */
-                        int neighbor_proc[3] = {p[0], p[1], p[2]};
+                        HYPRE_BigInt nx = gx + dx;
+                        HYPRE_BigInt ny = gy + dy;
+                        HYPRE_BigInt nz = gz + dz;
 
-                        /* Check x */
-                        if (nx < pstarts[0][p[0]] && p[0] > 0)
-                           neighbor_proc[0] = p[0] - 1;
-                        else if (nx >= pstarts[0][p[0] + 1] && p[0] < mesh->pdims[0] - 1)
-                           neighbor_proc[0] = p[0] + 1;
-
-                        /* Check y */
-                        if (ny < pstarts[1][p[1]] && p[1] > 0)
-                           neighbor_proc[1] = p[1] - 1;
-                        else if (ny >= pstarts[1][p[1] + 1] && p[1] < mesh->pdims[1] - 1)
-                           neighbor_proc[1] = p[1] + 1;
-
-                        /* Check z */
-                        if (nz < pstarts[2][p[2]] && p[2] > 0)
-                           neighbor_proc[2] = p[2] - 1;
-                        else if (nz >= pstarts[2][p[2] + 1] && p[2] < mesh->pdims[2] - 1)
-                           neighbor_proc[2] = p[2] + 1;
-
-                        /* Add entry if neighbor is in valid partition */
-                        if (neighbor_proc[0] >= 0 && neighbor_proc[0] < mesh->pdims[0] &&
-                            neighbor_proc[1] >= 0 && neighbor_proc[1] < mesh->pdims[1] &&
-                            neighbor_proc[2] >= 0 && neighbor_proc[2] < mesh->pdims[2])
+                        /* Determine coefficient based on neighbor type */
+                        HYPRE_Real coeff;
+                        if (abs(dx) + abs(dy) + abs(dz) == 1)
                         {
-                           HYPRE_BigInt nrow = grid2idx((HYPRE_BigInt[]){nx, ny, nz},
-                                                        neighbor_proc, gdims, pstarts);
-                           cols[nentries]    = nrow;
-                           values[nentries]  = coeff;
-                           nentries++;
-                           center_val -= coeff;
+                           /* Face neighbor */
+                           coeff = face_coeff * ((dx != 0)   ? params->c[0]
+                                                 : (dy != 0) ? params->c[1]
+                                                             : params->c[2]);
                         }
-                     }
-                     else
-                     {
-                        /* Out-of-domain => Dirichlet boundary = 0, except y=0 => 1
-                         * This affects both the diagonal and possibly the RHS */
-                        if (ny == -1 ||
-                            (ny == 0 && gy == 0)) // Check if this is the y=0 boundary
+                        else
                         {
-                           rhs_val += coeff; // Add to RHS for y=0 boundary condition
+                           /* Edge neighbor */
+                           coeff = edge_coeff * ((dx == 0) ? params->c[5] : /* yz */
+                                                    (dy == 0) ? params->c[4]
+                                                              :    /* xz */
+                                                    params->c[3]); /* xy */
                         }
-                        center_val -= coeff; // Always add to diagonal for all boundaries
-                        continue;
+
+                        /* Check if neighbor is within global domain */
+                        if (nx >= 0 && nx < gdims[0] && ny >= 0 && ny < gdims[1] &&
+                            nz >= 0 && nz < gdims[2])
+                        {
+                           /* Determine processor coordinates */
+                           int neighbor_proc[3] = {p[0], p[1], p[2]};
+
+                           /* Check x */
+                           if (nx < pstarts[0][p[0]] && p[0] > 0)
+                              neighbor_proc[0] = p[0] - 1;
+                           else if (nx >= pstarts[0][p[0] + 1] &&
+                                    p[0] < mesh->pdims[0] - 1)
+                              neighbor_proc[0] = p[0] + 1;
+
+                           /* Check y */
+                           if (ny < pstarts[1][p[1]] && p[1] > 0)
+                              neighbor_proc[1] = p[1] - 1;
+                           else if (ny >= pstarts[1][p[1] + 1] &&
+                                    p[1] < mesh->pdims[1] - 1)
+                              neighbor_proc[1] = p[1] + 1;
+
+                           /* Check z */
+                           if (nz < pstarts[2][p[2]] && p[2] > 0)
+                              neighbor_proc[2] = p[2] - 1;
+                           else if (nz >= pstarts[2][p[2] + 1] &&
+                                    p[2] < mesh->pdims[2] - 1)
+                              neighbor_proc[2] = p[2] + 1;
+
+                           /* Add entry if neighbor is in valid partition */
+                           if (neighbor_proc[0] >= 0 &&
+                               neighbor_proc[0] < mesh->pdims[0] &&
+                               neighbor_proc[1] >= 0 &&
+                               neighbor_proc[1] < mesh->pdims[1] &&
+                               neighbor_proc[2] >= 0 && neighbor_proc[2] < mesh->pdims[2])
+                           {
+                              HYPRE_BigInt nrow = grid2idx((HYPRE_BigInt[]){nx, ny, nz},
+                                                           neighbor_proc, gdims, pstarts);
+                              cols[nentries]    = nrow;
+                              values[nentries]  = coeff;
+                              nentries++;
+                              center_val -= coeff;
+                           }
+                        }
+                        else
+                        {
+                           /* Out-of-domain => Dirichlet boundary = 0, except y=0 => 1
+                            * This affects both the diagonal and possibly the RHS */
+                           if (ny == -1 ||
+                               (ny == 0 && gy == 0)) // Check if this is the y=0 boundary
+                           {
+                              rhs_val += coeff; // Add to RHS for y=0 boundary condition
+                           }
+                           center_val -=
+                              coeff; // Always add to diagonal for all boundaries
+                           continue;
+                        }
                      }
                   }
                }
+
+               /* Add center point */
+               cols[nentries]   = row;
+               values[nentries] = center_val;
+               nentries++;
+
+               /* Set RHS value - zero everywhere except back boundary (y = 0) */
+               if (gy == pstarts[1][p[1]] && p[1] == 0)
+               {
+                  rhs_val = 1.0;
+               }
+
+               /* Set matrix and vector values */
+               HYPRE_IJMatrixSetValues(A, 1, &nentries, &row, cols, values);
+               HYPRE_IJVectorSetValues(b, 1, &row, &rhs_val);
             }
-
-            /* Add center point */
-            cols[nentries]   = row;
-            values[nentries] = center_val;
-            nentries++;
-
-            /* Set RHS value - zero everywhere except back boundary (y = 0) */
-            if (gy == pstarts[1][p[1]] && p[1] == 0)
-            {
-               rhs_val = 1.0;
-            }
-
-            /* Set matrix and vector values */
-            HYPRE_IJMatrixSetValues(A, 1, &nentries, &row, cols, values);
-            HYPRE_IJVectorSetValues(b, 1, &row, &rhs_val);
          }
       }
    }
@@ -1055,138 +1116,169 @@ BuildLaplacianSystem_27pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix 
     * Then each neighbor's off-diagonal gets (-adj), and the center diagonal
     * picks up the sum of all adjacency as a positive value.
     */
-   for (HYPRE_BigInt gz = pstarts[2][p[2]]; gz < pstarts[2][p[2] + 1]; gz++)
+#ifdef _OPENMP
+#pragma omp parallel
+#endif
    {
-      for (HYPRE_BigInt gy = pstarts[1][p[1]]; gy < pstarts[1][p[1] + 1]; gy++)
+#ifdef _OPENMP
+      HYPRE_Int tid         = omp_get_thread_num();
+      HYPRE_Int num_threads = omp_get_num_threads();
+#else
+      HYPRE_Int tid         = 0;
+      HYPRE_Int num_threads = 1;
+#endif
+      /* Partition owned row range among OpenMP threads to avoid data races. */
+      HYPRE_BigInt row_range        = iupper - ilower + 1;
+      HYPRE_BigInt rows_per_thread  = (row_range + num_threads - 1) / num_threads;
+      HYPRE_BigInt thread_row_lower = ilower + tid * rows_per_thread;
+      HYPRE_BigInt thread_row_upper =
+         (tid == num_threads - 1) ? iupper : (ilower + (tid + 1) * rows_per_thread - 1);
+
+      for (HYPRE_BigInt gz = pstarts[2][p[2]]; gz < pstarts[2][p[2] + 1]; gz++)
       {
-         for (HYPRE_BigInt gx = pstarts[0][p[0]]; gx < pstarts[0][p[0] + 1]; gx++)
+         for (HYPRE_BigInt gy = pstarts[1][p[1]]; gy < pstarts[1][p[1] + 1]; gy++)
          {
-            /* Row index in global numbering */
-            HYPRE_BigInt row =
-               grid2idx((HYPRE_BigInt[]){gx, gy, gz}, p, params->N, pstarts);
-
-            /* We'll store neighbor columns and values here */
-            HYPRE_BigInt cols[27];
-            HYPRE_Real   vals[27];
-            HYPRE_Int    nentries = 0;
-
-            /* We'll build the center diagonal by summing neighbor adjacency. */
-            HYPRE_Real center_val = 0.0;
-            HYPRE_Real rhs_val    = 0.0; /* accumulate any boundary offsets here */
-
-            /* Loop over neighbor offsets (dx,dy,dz) ∈ [-1..1], excluding (0,0,0) */
-            for (int dz = -1; dz <= 1; dz++)
+            for (HYPRE_BigInt gx = pstarts[0][p[0]]; gx < pstarts[0][p[0] + 1]; gx++)
             {
-               for (int dy = -1; dy <= 1; dy++)
+               /* Row index in global numbering */
+               HYPRE_BigInt row =
+                  grid2idx((HYPRE_BigInt[]){gx, gy, gz}, p, gdims, pstarts);
+
+               /* Only process rows in this thread's partition */
+               if (row < thread_row_lower || row > thread_row_upper) continue;
+
+               /* We'll store neighbor columns and values here */
+               HYPRE_BigInt cols[27];
+               HYPRE_Real   vals[27];
+               HYPRE_Int    nentries = 0;
+
+               /* We'll build the center diagonal by summing neighbor adjacency. */
+               HYPRE_Real center_val = 0.0;
+               HYPRE_Real rhs_val    = 0.0; /* accumulate any boundary offsets here */
+
+               /* Loop over neighbor offsets (dx,dy,dz) ∈ [-1..1], excluding (0,0,0) */
+               for (int dz = -1; dz <= 1; dz++)
                {
-                  for (int dx = -1; dx <= 1; dx++)
+                  for (int dy = -1; dy <= 1; dy++)
                   {
-                     if (dx == 0 && dy == 0 && dz == 0)
-                        continue; /* skip the center itself in this neighbor pass */
-
-                     /* Count how many dimensions differ to scale the adjacency properly
-                      */
-                     int ndiff = (dx != 0) + (dy != 0) + (dz != 0);
-
-                     /* Proposed neighbor in global coords */
-                     HYPRE_BigInt nx = gx + dx;
-                     HYPRE_BigInt ny = gy + dy;
-                     HYPRE_BigInt nz = gz + dz;
-
-                     /* For each dimension in which we differ, we add c[0], c[1], or c[2],
-                        scaled by 1/ndiff to reduce cross-terms. */
-                     HYPRE_Real adj = 0.0;
-                     if (dx != 0) adj += params->c[0] / ndiff;
-                     if (dy != 0) adj += params->c[1] / ndiff;
-                     if (dz != 0) adj += params->c[2] / ndiff;
-
-                     /* Check if neighbor is within the global domain */
-                     if (nx >= 0 && nx < gdims[0] && ny >= 0 && ny < gdims[1] &&
-                         nz >= 0 && nz < gdims[2])
+                     for (int dx = -1; dx <= 1; dx++)
                      {
-                        /* Figure out which rank this neighbor belongs to */
-                        int neighbor_proc[3] = {p[0], p[1], p[2]};
+                        if (dx == 0 && dy == 0 && dz == 0)
+                           continue; /* skip the center itself in this neighbor pass */
 
-                        /* Check if it's outside this proc's local range in x */
-                        if (nx < pstarts[0][p[0]] && p[0] > 0)
-                           neighbor_proc[0] = p[0] - 1;
-                        else if (nx >= pstarts[0][p[0] + 1] && p[0] < mesh->pdims[0] - 1)
-                           neighbor_proc[0] = p[0] + 1;
+                        /* Count how many dimensions differ to scale the adjacency
+                         * properly
+                         */
+                        int ndiff = (dx != 0) + (dy != 0) + (dz != 0);
 
-                        /* Check y */
-                        if (ny < pstarts[1][p[1]] && p[1] > 0)
-                           neighbor_proc[1] = p[1] - 1;
-                        else if (ny >= pstarts[1][p[1] + 1] && p[1] < mesh->pdims[1] - 1)
-                           neighbor_proc[1] = p[1] + 1;
+                        /* Proposed neighbor in global coords */
+                        HYPRE_BigInt nx = gx + dx;
+                        HYPRE_BigInt ny = gy + dy;
+                        HYPRE_BigInt nz = gz + dz;
 
-                        /* Check z */
-                        if (nz < pstarts[2][p[2]] && p[2] > 0)
-                           neighbor_proc[2] = p[2] - 1;
-                        else if (nz >= pstarts[2][p[2] + 1] && p[2] < mesh->pdims[2] - 1)
-                           neighbor_proc[2] = p[2] + 1;
+                        /* For each dimension in which we differ, we add c[0], c[1], or
+                           c[2], scaled by 1/ndiff to reduce cross-terms. */
+                        HYPRE_Real adj = 0.0;
+                        if (dx != 0) adj += params->c[0] / ndiff;
+                        if (dy != 0) adj += params->c[1] / ndiff;
+                        if (dz != 0) adj += params->c[2] / ndiff;
 
-                        /* If still valid, compute global index for that neighbor */
-                        if (neighbor_proc[0] >= 0 && neighbor_proc[0] < mesh->pdims[0] &&
-                            neighbor_proc[1] >= 0 && neighbor_proc[1] < mesh->pdims[1] &&
-                            neighbor_proc[2] >= 0 && neighbor_proc[2] < mesh->pdims[2])
+                        /* Check if neighbor is within the global domain */
+                        if (nx >= 0 && nx < gdims[0] && ny >= 0 && ny < gdims[1] &&
+                            nz >= 0 && nz < gdims[2])
                         {
-                           HYPRE_BigInt nrow = grid2idx((HYPRE_BigInt[]){nx, ny, nz},
-                                                        neighbor_proc, gdims, pstarts);
-                           /* Off-diagonal entry gets -adj */
-                           cols[nentries]   = nrow;
-                           vals[nentries++] = -adj;
+                           /* Figure out which rank this neighbor belongs to */
+                           int neighbor_proc[3] = {p[0], p[1], p[2]};
 
-                           /* The center picks up +adj */
-                           center_val += adj;
-                        }
-                        else
-                        {
-                           /* Out-of-domain => Dirichlet boundary = 0, except y=0 => 1
-                            * This affects both the diagonal and possibly the RHS */
-                           if (ny == -1 ||
-                               (ny == 0 && gy == 0)) // Check if this is the y=0 boundary
+                           /* Check if it's outside this proc's local range in x */
+                           if (nx < pstarts[0][p[0]] && p[0] > 0)
+                              neighbor_proc[0] = p[0] - 1;
+                           else if (nx >= pstarts[0][p[0] + 1] &&
+                                    p[0] < mesh->pdims[0] - 1)
+                              neighbor_proc[0] = p[0] + 1;
+
+                           /* Check y */
+                           if (ny < pstarts[1][p[1]] && p[1] > 0)
+                              neighbor_proc[1] = p[1] - 1;
+                           else if (ny >= pstarts[1][p[1] + 1] &&
+                                    p[1] < mesh->pdims[1] - 1)
+                              neighbor_proc[1] = p[1] + 1;
+
+                           /* Check z */
+                           if (nz < pstarts[2][p[2]] && p[2] > 0)
+                              neighbor_proc[2] = p[2] - 1;
+                           else if (nz >= pstarts[2][p[2] + 1] &&
+                                    p[2] < mesh->pdims[2] - 1)
+                              neighbor_proc[2] = p[2] + 1;
+
+                           /* If still valid, compute global index for that neighbor */
+                           if (neighbor_proc[0] >= 0 &&
+                               neighbor_proc[0] < mesh->pdims[0] &&
+                               neighbor_proc[1] >= 0 &&
+                               neighbor_proc[1] < mesh->pdims[1] &&
+                               neighbor_proc[2] >= 0 && neighbor_proc[2] < mesh->pdims[2])
                            {
-                              rhs_val += adj; // Add to RHS for y=0 boundary condition
+                              HYPRE_BigInt nrow = grid2idx((HYPRE_BigInt[]){nx, ny, nz},
+                                                           neighbor_proc, gdims, pstarts);
+                              /* Off-diagonal entry gets -adj */
+                              cols[nentries]   = nrow;
+                              vals[nentries++] = -adj;
+
+                              /* The center picks up +adj */
+                              center_val += adj;
                            }
-                           center_val -= adj; // Always add to diagonal for all boundaries
-                           continue;
-                        }
-                     }
-                     else
-                     {
-                        /* Global out-of-domain => Dirichlet boundary = 0 for everything
-                           except if ny=0 => boundary=1 => add to center + RHS. */
-                        if (ny == 0 && ny >= 0 && ny < params->N[1])
-                        {
-                           center_val += adj;
-                           rhs_val += adj;
+                           else
+                           {
+                              /* Out-of-domain => Dirichlet boundary = 0, except y=0 => 1
+                               * This affects both the diagonal and possibly the RHS */
+                              if (ny == -1 ||
+                                  (ny == 0 &&
+                                   gy == 0)) // Check if this is the y=0 boundary
+                              {
+                                 rhs_val += adj; // Add to RHS for y=0 boundary condition
+                              }
+                              center_val -=
+                                 adj; // Always add to diagonal for all boundaries
+                              continue;
+                           }
                         }
                         else
                         {
-                           center_val += adj;
+                           /* Global out-of-domain => Dirichlet boundary = 0 for
+                              everything except if ny=0 => boundary=1 => add to center +
+                              RHS. */
+                           if (ny == 0 && ny >= 0 && ny < params->N[1])
+                           {
+                              center_val += adj;
+                              rhs_val += adj;
+                           }
+                           else
+                           {
+                              center_val += adj;
+                           }
                         }
                      }
                   }
                }
+
+               /* Put the center entry at the end */
+               cols[nentries]   = row;
+               vals[nentries++] = center_val;
+
+               /* Insert row into the matrix */
+               HYPRE_IJMatrixSetValues(A, 1, &nentries, &row, cols, vals);
+
+               /* Set the RHS:
+                * Baseline approach matches the 7pt code: if global y=0 => RHS=1.0
+                * BUT we've already added "adj" contributions above if out-of-domain.
+                * So here we do the same boundary condition as the 7pt code. */
+               if (gy == pstarts[1][p[1]] && p[1] == 0)
+               {
+                  rhs_val = 1.0;
+               }
+
+               HYPRE_IJVectorSetValues(b, 1, &row, &rhs_val);
             }
-
-            /* Put the center entry at the end */
-            cols[nentries]   = row;
-            vals[nentries++] = center_val;
-
-            /* Insert row into the matrix */
-            HYPRE_IJMatrixSetValues(A, 1, &nentries, &row, cols, vals);
-
-            /* Set the RHS:
-             * Baseline approach matches the 7pt code: if global y=0 => RHS=1.0
-             * BUT we've already added "adj" contributions above if out-of-domain.
-             * So here we do the same boundary condition as the 7pt code. */
-            if (gy == pstarts[1][p[1]] && p[1] == 0)
-            {
-               rhs_val = 1.0;
-            }
-
-            HYPRE_IJVectorSetValues(b, 1, &row, &rhs_val);
          }
       }
    }
@@ -1250,141 +1342,167 @@ BuildLaplacianSystem_125pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix
    const HYPRE_Real W_OTHER = -0.01; /* further neighbors with sum of offsets ≥ 2 */
 
    /* Loop over local grid points */
-   for (HYPRE_BigInt gz = pstarts[2][p[2]]; gz < pstarts[2][p[2] + 1]; gz++)
+#ifdef _OPENMP
+#pragma omp parallel
+#endif
    {
-      for (HYPRE_BigInt gy = pstarts[1][p[1]]; gy < pstarts[1][p[1] + 1]; gy++)
+#ifdef _OPENMP
+      HYPRE_Int tid         = omp_get_thread_num();
+      HYPRE_Int num_threads = omp_get_num_threads();
+#else
+      HYPRE_Int tid         = 0;
+      HYPRE_Int num_threads = 1;
+#endif
+      /* Partition owned row range among OpenMP threads to avoid data races. */
+      HYPRE_BigInt row_range        = iupper - ilower + 1;
+      HYPRE_BigInt rows_per_thread  = (row_range + num_threads - 1) / num_threads;
+      HYPRE_BigInt thread_row_lower = ilower + tid * rows_per_thread;
+      HYPRE_BigInt thread_row_upper =
+         (tid == num_threads - 1) ? iupper : (ilower + (tid + 1) * rows_per_thread - 1);
+
+      for (HYPRE_BigInt gz = pstarts[2][p[2]]; gz < pstarts[2][p[2] + 1]; gz++)
       {
-         for (HYPRE_BigInt gx = pstarts[0][p[0]]; gx < pstarts[0][p[0] + 1]; gx++)
+         for (HYPRE_BigInt gy = pstarts[1][p[1]]; gy < pstarts[1][p[1] + 1]; gy++)
          {
-            /* Global row index for (gx, gy, gz) */
-            HYPRE_BigInt row = grid2idx((HYPRE_BigInt[]){gx, gy, gz}, p, gdims, pstarts);
-
-            /* We'll collect column indices & values here */
-            HYPRE_BigInt cols[125];
-            HYPRE_Real   vals[125];
-            HYPRE_Int    nentries = 0;
-
-            /* Baseline RHS = 0, may get overridden if boundary y=0 */
-            HYPRE_Real rhs_val = 0.0;
-
-            /* We'll sum the negative off-diagonals. Our diagonal entry will be
-               diag = - ( sum_of_off_diag ), so the row sums to zero. */
-            HYPRE_Real sum_offdiag = 0.0;
-
-            /* For each offset (dx,dy,dz) in [-2..2]^3 except (0,0,0) */
-            for (int dz = -2; dz <= 2; dz++)
+            for (HYPRE_BigInt gx = pstarts[0][p[0]]; gx < pstarts[0][p[0] + 1]; gx++)
             {
-               for (int dy = -2; dy <= 2; dy++)
+               /* Global row index for (gx, gy, gz) */
+               HYPRE_BigInt row =
+                  grid2idx((HYPRE_BigInt[]){gx, gy, gz}, p, gdims, pstarts);
+
+               /* Only process rows in this thread's partition */
+               if (row < thread_row_lower || row > thread_row_upper) continue;
+
+               /* We'll collect column indices & values here */
+               HYPRE_BigInt cols[125];
+               HYPRE_Real   vals[125];
+               HYPRE_Int    nentries = 0;
+
+               /* Baseline RHS = 0, may get overridden if boundary y=0 */
+               HYPRE_Real rhs_val = 0.0;
+
+               /* We'll sum the negative off-diagonals. Our diagonal entry will be
+                  diag = - ( sum_of_off_diag ), so the row sums to zero. */
+               HYPRE_Real sum_offdiag = 0.0;
+
+               /* For each offset (dx,dy,dz) in [-2..2]^3 except (0,0,0) */
+               for (int dz = -2; dz <= 2; dz++)
                {
-                  for (int dx = -2; dx <= 2; dx++)
+                  for (int dy = -2; dy <= 2; dy++)
                   {
-                     if (dx == 0 && dy == 0 && dz == 0) continue; /* skip center */
-
-                     HYPRE_BigInt nx = gx + dx;
-                     HYPRE_BigInt ny = gy + dy;
-                     HYPRE_BigInt nz = gz + dz;
-
-                     /* Decide the weight. This is always negative or zero. */
-                     int        dist1 = abs(dx) + abs(dy) + abs(dz);
-                     HYPRE_Real w     = 0.0;
-
-                     if (dist1 == 1)
+                     for (int dx = -2; dx <= 2; dx++)
                      {
-                        w = W_FACE; /* face neighbors => e.g. -1.0 */
-                     }
-                     else
-                     {
-                        /* radius-2 edge/corner => -0.01 in this example */
-                        w = W_OTHER;
-                     }
+                        if (dx == 0 && dy == 0 && dz == 0) continue; /* skip center */
 
-                     if (w == 0.0)
-                     {
-                        continue; /* skip if zero weight */
-                     }
+                        HYPRE_BigInt nx = gx + dx;
+                        HYPRE_BigInt ny = gy + dy;
+                        HYPRE_BigInt nz = gz + dz;
 
-                     /* Check if neighbor is out-of-domain => Dirichlet boundary = 0
-                      * except y=0 => 1. This means we do not insert a column for
-                      * out-of-domain, but we add w to the diagonal, and if that boundary
-                      * is y=0 => add w to the RHS as well. */
-                     if (nx < 0 || nx >= gdims[0] || ny < 0 || ny >= gdims[1] || nz < 0 ||
-                         nz >= gdims[2])
-                     {
-                        /* If the boundary is y=0 for this row, add w to RHS: */
-                        if ((gy == 0) && (dy == 0))
+                        /* Decide the weight. This is always negative or zero. */
+                        int        dist1 = abs(dx) + abs(dy) + abs(dz);
+                        HYPRE_Real w     = 0.0;
+
+                        if (dist1 == 1)
                         {
-                           rhs_val += w; /* boundary=1 => +w on RHS */
+                           w = W_FACE; /* face neighbors => e.g. -1.0 */
                         }
-                        sum_offdiag += w; /* we add w to the diagonal. */
-                        continue;
-                     }
-
-                     /* If neighbor is inside the global domain, figure out which process
-                      * subdomain it's on (like the other stencils do). */
-                     int neighbor_proc[3] = {p[0], p[1], p[2]};
-
-                     /* Check x partition */
-                     if (nx < pstarts[0][p[0]] && p[0] > 0) neighbor_proc[0] = p[0] - 1;
-                     else if (nx >= pstarts[0][p[0] + 1] && p[0] < mesh->pdims[0] - 1)
-                        neighbor_proc[0] = p[0] + 1;
-
-                     /* Check y partition */
-                     if (ny < pstarts[1][p[1]] && p[1] > 0) neighbor_proc[1] = p[1] - 1;
-                     else if (ny >= pstarts[1][p[1] + 1] && p[1] < mesh->pdims[1] - 1)
-                        neighbor_proc[1] = p[1] + 1;
-
-                     /* Check z partition */
-                     if (nz < pstarts[2][p[2]] && p[2] > 0) neighbor_proc[2] = p[2] - 1;
-                     else if (nz >= pstarts[2][p[2] + 1] && p[2] < mesh->pdims[2] - 1)
-                        neighbor_proc[2] = p[2] + 1;
-
-                     /* Possibly the neighbor is out-of-partition => treated like
-                      * boundary=0 except y=0 => add w to RHS.
-                      */
-                     if (neighbor_proc[0] < 0 || neighbor_proc[0] >= mesh->pdims[0] ||
-                         neighbor_proc[1] < 0 || neighbor_proc[1] >= mesh->pdims[1] ||
-                         neighbor_proc[2] < 0 || neighbor_proc[2] >= mesh->pdims[2])
-                     {
-                        if ((gy == 0) && (dy == 0))
+                        else
                         {
-                           rhs_val += w;
+                           /* radius-2 edge/corner => -0.01 in this example */
+                           w = W_OTHER;
                         }
+
+                        if (w == 0.0)
+                        {
+                           continue; /* skip if zero weight */
+                        }
+
+                        /* Check if neighbor is out-of-domain => Dirichlet boundary = 0
+                         * except y=0 => 1. This means we do not insert a column for
+                         * out-of-domain, but we add w to the diagonal, and if that
+                         * boundary is y=0 => add w to the RHS as well. */
+                        if (nx < 0 || nx >= gdims[0] || ny < 0 || ny >= gdims[1] ||
+                            nz < 0 || nz >= gdims[2])
+                        {
+                           /* If the boundary is y=0 for this row, add w to RHS: */
+                           if ((gy == 0) && (dy == 0))
+                           {
+                              rhs_val += w; /* boundary=1 => +w on RHS */
+                           }
+                           sum_offdiag += w; /* we add w to the diagonal. */
+                           continue;
+                        }
+
+                        /* If neighbor is inside the global domain, figure out which
+                         * process subdomain it's on (like the other stencils do). */
+                        int neighbor_proc[3] = {p[0], p[1], p[2]};
+
+                        /* Check x partition */
+                        if (nx < pstarts[0][p[0]] && p[0] > 0)
+                           neighbor_proc[0] = p[0] - 1;
+                        else if (nx >= pstarts[0][p[0] + 1] && p[0] < mesh->pdims[0] - 1)
+                           neighbor_proc[0] = p[0] + 1;
+
+                        /* Check y partition */
+                        if (ny < pstarts[1][p[1]] && p[1] > 0)
+                           neighbor_proc[1] = p[1] - 1;
+                        else if (ny >= pstarts[1][p[1] + 1] && p[1] < mesh->pdims[1] - 1)
+                           neighbor_proc[1] = p[1] + 1;
+
+                        /* Check z partition */
+                        if (nz < pstarts[2][p[2]] && p[2] > 0)
+                           neighbor_proc[2] = p[2] - 1;
+                        else if (nz >= pstarts[2][p[2] + 1] && p[2] < mesh->pdims[2] - 1)
+                           neighbor_proc[2] = p[2] + 1;
+
+                        /* Possibly the neighbor is out-of-partition => treated like
+                         * boundary=0 except y=0 => add w to RHS.
+                         */
+                        if (neighbor_proc[0] < 0 || neighbor_proc[0] >= mesh->pdims[0] ||
+                            neighbor_proc[1] < 0 || neighbor_proc[1] >= mesh->pdims[1] ||
+                            neighbor_proc[2] < 0 || neighbor_proc[2] >= mesh->pdims[2])
+                        {
+                           if ((gy == 0) && (dy == 0))
+                           {
+                              rhs_val += w;
+                           }
+                           sum_offdiag += w;
+                           continue;
+                        }
+
+                        /* The neighbor is valid => we add an off-diagonal entry. */
+                        HYPRE_BigInt nrow = grid2idx((HYPRE_BigInt[]){nx, ny, nz},
+                                                     neighbor_proc, gdims, pstarts);
+
+                        cols[nentries] = nrow;
+                        vals[nentries] = w; /* negative or zero => M-matrix requirement */
+                        nentries++;
+
+                        /* Accumulate for the diagonal. Row sum is 0 => diagonal = -
+                         * sum(offdiag). */
                         sum_offdiag += w;
-                        continue;
-                     }
+                     } /* dx */
+                  } /* dy */
+               } /* dz */
 
-                     /* The neighbor is valid => we add an off-diagonal entry. */
-                     HYPRE_BigInt nrow = grid2idx((HYPRE_BigInt[]){nx, ny, nz},
-                                                  neighbor_proc, gdims, pstarts);
+               /* Diagonal entry to ensure row sum is zero => diag = - sum_offdiag */
+               HYPRE_Real diag = -sum_offdiag;
 
-                     cols[nentries] = nrow;
-                     vals[nentries] = w; /* negative or zero => M-matrix requirement */
-                     nentries++;
+               /* Insert diagonal last */
+               cols[nentries] = row;
+               vals[nentries] = diag;
+               nentries++;
 
-                     /* Accumulate for the diagonal. Row sum is 0 => diagonal = -
-                      * sum(offdiag). */
-                     sum_offdiag += w;
-                  } /* dx */
-               } /* dy */
-            } /* dz */
+               /* If y=0 => user wants boundary=1 on entire plane. Overwrite RHS=1. */
+               if (gy == pstarts[1][p[1]] && p[1] == 0)
+               {
+                  rhs_val = 1.0;
+               }
 
-            /* Diagonal entry to ensure row sum is zero => diag = - sum_offdiag */
-            HYPRE_Real diag = -sum_offdiag;
-
-            /* Insert diagonal last */
-            cols[nentries] = row;
-            vals[nentries] = diag;
-            nentries++;
-
-            /* If y=0 => user wants boundary=1 on entire plane. Overwrite RHS=1. */
-            if (gy == pstarts[1][p[1]] && p[1] == 0)
-            {
-               rhs_val = 1.0;
+               /* Fill matrix row and b vector. */
+               HYPRE_IJMatrixSetValues(A, 1, &nentries, &row, cols, vals);
+               HYPRE_IJVectorSetValues(b, 1, &row, &rhs_val);
             }
-
-            /* Fill matrix row and b vector. */
-            HYPRE_IJMatrixSetValues(A, 1, &nentries, &row, cols, vals);
-            HYPRE_IJVectorSetValues(b, 1, &row, &rhs_val);
          }
       }
    }
@@ -1579,7 +1697,12 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *sol_data)
          }
 
    /* Wait for all communications to complete */
-   MPI_Waitall(req_count, requests, MPI_STATUSES_IGNORE);
+   if (req_count > 0)
+   {
+      MPI_Status *statuses = (MPI_Status *)malloc(req_count * sizeof(MPI_Status));
+      MPI_Waitall(req_count, requests, statuses);
+      free(statuses);
+   }
 
    /* Copy ghost data */
    if (mesh->nbrs[0] != MPI_PROC_NULL) // Left face (x = 0)

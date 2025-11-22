@@ -108,6 +108,7 @@ if(HYPREDRV_ENABLE_COVERAGE)
             --exclude ".*(/|^)install/.*"
             --exclude ".*(/|^)docs/.*"
             --exclude ".*\\.h$"
+            --exclude ".*/src/info\\.c$"
             --xml coverage.xml --xml-pretty
             --html-details coverage.html
             --print-summary

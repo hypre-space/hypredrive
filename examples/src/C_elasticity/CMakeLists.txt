@@ -18,6 +18,15 @@ endif()
 add_executable(elasticity elasticity.c)
 target_link_libraries(elasticity PRIVATE HYPREDRV::HYPREDRV)
 
+# Add OpenMP support for parallel assembly
+find_package(OpenMP)
+if(OpenMP_C_FOUND)
+    target_link_libraries(elasticity PRIVATE OpenMP::OpenMP_C)
+    message(STATUS "OpenMP enabled for elasticity driver")
+else()
+    message(STATUS "OpenMP not found - elasticity driver will build without OpenMP")
+endif()
+
 # Apply sanitizer link flags if sanitizers are enabled
 get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
 get_property(_sanitizer_flags GLOBAL PROPERTY HYPREDRV_SANITIZER_LINK_FLAGS)

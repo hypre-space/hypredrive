@@ -21,6 +21,15 @@ endif()
 add_executable(laplacian laplacian.c)
 target_link_libraries(laplacian PRIVATE HYPREDRV::HYPREDRV)
 
+# Add OpenMP support for parallel assembly
+find_package(OpenMP)
+if(OpenMP_C_FOUND)
+    target_link_libraries(laplacian PRIVATE OpenMP::OpenMP_C)
+    message(STATUS "OpenMP enabled for laplacian driver")
+else()
+    message(STATUS "OpenMP not found - laplacian driver will build without OpenMP")
+endif()
+
 # Apply sanitizer link flags if sanitizers are enabled
 get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
 get_property(_sanitizer_flags GLOBAL PROPERTY HYPREDRV_SANITIZER_LINK_FLAGS)
@@ -38,12 +47,41 @@ endif()
 # Add the laplacian driver to the test suite when testing is enabled
 if(HYPREDRV_ENABLE_TESTING)
     include(${CMAKE_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
-    add_executable_test(laplacian_test_1proc laplacian 1
-        ARGS -n 6 6 6 -ns 1
+    
+    # 7-point stencil tests (default)
+    add_executable_test(laplacian_7pt_test_1proc laplacian 1
+        ARGS -n 6 6 6 -s 7 -ns 1
         RUN_SERIAL
     )
-    add_executable_test(laplacian_test_4proc laplacian 4
-        ARGS -n 6 6 6 -P 2 2 1 -ns 1
+    add_executable_test(laplacian_7pt_test_4proc laplacian 4
+        ARGS -n 6 6 6 -P 2 2 1 -s 7 -ns 1
+    )
+    
+    # 19-point stencil tests
+    add_executable_test(laplacian_19pt_test_1proc laplacian 1
+        ARGS -n 6 6 6 -s 19 -ns 1
+        RUN_SERIAL
+    )
+    add_executable_test(laplacian_19pt_test_4proc laplacian 4
+        ARGS -n 6 6 6 -P 2 2 1 -s 19 -ns 1
+    )
+    
+    # 27-point stencil tests
+    add_executable_test(laplacian_27pt_test_1proc laplacian 1
+        ARGS -n 6 6 6 -s 27 -ns 1
+        RUN_SERIAL
+    )
+    add_executable_test(laplacian_27pt_test_4proc laplacian 4
+        ARGS -n 6 6 6 -P 2 2 1 -s 27 -ns 1
+    )
+    
+    # 125-point stencil tests
+    add_executable_test(laplacian_125pt_test_1proc laplacian 1
+        ARGS -n 6 6 6 -s 125 -ns 1
+        RUN_SERIAL
+    )
+    add_executable_test(laplacian_125pt_test_4proc laplacian 4
+        ARGS -n 6 6 6 -P 2 2 1 -s 125 -ns 1
     )
 endif()
 

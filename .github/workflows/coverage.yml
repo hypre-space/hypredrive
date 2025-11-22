@@ -96,6 +96,7 @@ jobs:
           OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
           OMPI_MCA_btl_vader_single_copy_mechanism: none
           OMPI_MCA_rmaps_base_oversubscribe: 1
+          OMP_NUM_THREADS: 1
         run: |
           timeout 5m cmake --build $BUILD_DIR --target coverage
 

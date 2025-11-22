@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #include "HYPREDRV.h"
 
 /*==========================================================================
@@ -171,7 +174,7 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
 {
    /* Defaults */
    params->visualize = 0;
-   params->verbose   = 7;
+   params->verbose   = 3;
    params->nsolve    = 5;
    for (int i = 0; i < 3; i++)
    {
@@ -705,144 +708,184 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
    HYPRE_BigInt gx_hi =
       (pstarts[0][p[0] + 1] < gdims[0]) ? pstarts[0][p[0] + 1] : (gdims[0] - 1);
 
-   for (HYPRE_BigInt gz = gz_lo; gz < gz_hi; gz++)
+   /* Parallelize element loop - each thread processes all elements but only
+    * adds contributions for rows in its partition */
+   HYPRE_Int num_elements_z = (HYPRE_Int)(gz_hi - gz_lo);
+   HYPRE_Int num_elements_y = (HYPRE_Int)(gy_hi - gy_lo);
+   HYPRE_Int num_elements_x = (HYPRE_Int)(gx_hi - gx_lo);
+   HYPRE_Int total_elements = num_elements_z * num_elements_y * num_elements_x;
+
+#ifdef _OPENMP
+#pragma omp parallel
+#endif
    {
-      for (HYPRE_BigInt gy = gy_lo; gy < gy_hi; gy++)
+#ifdef _OPENMP
+      HYPRE_Int tid         = omp_get_thread_num();
+      HYPRE_Int num_threads = omp_get_num_threads();
+#else
+      HYPRE_Int tid         = 0;
+      HYPRE_Int num_threads = 1;
+#endif
+      /* Partition owned DOF range among OpenMP threads to avoid data races.
+       * Each thread only adds contributions for rows in its partition. */
+      HYPRE_BigInt dof_range        = dof_iupper - dof_ilower + 1;
+      HYPRE_BigInt dofs_per_thread  = (dof_range + num_threads - 1) / num_threads;
+      HYPRE_BigInt thread_dof_lower = dof_ilower + tid * dofs_per_thread;
+      HYPRE_BigInt thread_dof_upper = (tid == num_threads - 1)
+                                         ? dof_iupper
+                                         : (dof_ilower + (tid + 1) * dofs_per_thread - 1);
+
+      /* Process all elements, but only add contributions for rows in this thread's
+       * partition. Each thread processes ALL elements to ensure that when an element
+       * contributes to rows in multiple partitions, all contributions are added.
+       * This avoids the need for critical sections while maintaining correctness. */
+      for (HYPRE_Int elem_idx = 0; elem_idx < total_elements; elem_idx++)
       {
-         for (HYPRE_BigInt gx = gx_lo; gx < gx_hi; gx++)
+         /* Convert linear index back to 3D coordinates */
+         HYPRE_Int idx_z = elem_idx / (num_elements_y * num_elements_x);
+         HYPRE_Int idx_y =
+            (elem_idx % (num_elements_y * num_elements_x)) / num_elements_x;
+         HYPRE_Int    idx_x = elem_idx % num_elements_x;
+         HYPRE_BigInt gz    = gz_lo + idx_z;
+         HYPRE_BigInt gy    = gy_lo + idx_y;
+         HYPRE_BigInt gx    = gx_lo + idx_x;
+
+         /* Global node coords of the 8 vertices (lexicograph - x fastest) */
+         HYPRE_BigInt ng[8][3] = {{gx, gy, gz},
+                                  {gx + 1, gy, gz},
+                                  {gx + 1, gy + 1, gz},
+                                  {gx, gy + 1, gz},
+                                  {gx, gy, gz + 1},
+                                  {gx + 1, gy, gz + 1},
+                                  {gx + 1, gy + 1, gz + 1},
+                                  {gx, gy + 1, gz + 1}};
+
+         /* Global scalar node ids and DOF ids */
+         HYPRE_BigInt node_gid[8];
+         HYPRE_BigInt dof_gid[24];
+         for (int a = 0; a < 8; a++)
          {
-            /* Global node coords of the 8 vertices (lexicograph - x fastest) */
-            HYPRE_BigInt ng[8][3] = {{gx, gy, gz},
-                                     {gx + 1, gy, gz},
-                                     {gx + 1, gy + 1, gz},
-                                     {gx, gy + 1, gz},
-                                     {gx, gy, gz + 1},
-                                     {gx + 1, gy, gz + 1},
-                                     {gx + 1, gy + 1, gz + 1},
-                                     {gx, gy + 1, gz + 1}};
-
-            /* Global scalar node ids and DOF ids */
-            HYPRE_BigInt node_gid[8];
-            HYPRE_BigInt dof_gid[24];
-            for (int a = 0; a < 8; a++)
+            HYPRE_Int owner_bc[3];
+            for (int d = 0; d < 3; d++)
             {
-               HYPRE_Int owner_bc[3];
-               for (int d = 0; d < 3; d++)
-               {
-                  HYPRE_Int     pd = mesh->pdims[d];
-                  HYPRE_BigInt *ps = mesh->pstarts[d];
-                  HYPRE_BigInt  cg = ng[a][d];
-                  HYPRE_Int     bd = 0;
-                  while ((bd + 1) < pd && cg >= ps[bd + 1]) bd++;
-                  owner_bc[d] = bd;
-               }
-               node_gid[a]        = grid2idx(ng[a], owner_bc, gdims, pstarts);
-               dof_gid[3 * a + 0] = 3 * node_gid[a] + 0;
-               dof_gid[3 * a + 1] = 3 * node_gid[a] + 1;
-               dof_gid[3 * a + 2] = 3 * node_gid[a] + 2;
+               HYPRE_Int     pd = mesh->pdims[d];
+               HYPRE_BigInt *ps = mesh->pstarts[d];
+               HYPRE_BigInt  cg = ng[a][d];
+               HYPRE_Int     bd = 0;
+               while ((bd + 1) < pd && cg >= ps[bd + 1]) bd++;
+               owner_bc[d] = bd;
             }
+            node_gid[a]        = grid2idx(ng[a], owner_bc, gdims, pstarts);
+            dof_gid[3 * a + 0] = 3 * node_gid[a] + 0;
+            dof_gid[3 * a + 1] = 3 * node_gid[a] + 1;
+            dof_gid[3 * a + 2] = 3 * node_gid[a] + 2;
+         }
 
-            /* Top-face flag for this element (y = Ly plane) */
-            HYPRE_Int on_top_face = (gy + 1 == gdims[1] - 1) ? 1 : 0;
+         /* Top-face flag for this element (y = Ly plane) */
+         HYPRE_Int on_top_face = (gy + 1 == gdims[1] - 1) ? 1 : 0;
 
-            /* Local element vectors (matrix is reused template) */
-            HYPRE_Real fe[24];
+         /* Local element vectors (matrix is reused template) */
+         HYPRE_Real fe[24];
+         for (int a = 0; a < 8; a++)
+         {
+            for (int i3 = 0; i3 < 3; i3++)
+            {
+               fe[3 * a + i3] = bforce[i3] * Nvol_t[a];
+            }
+         }
+         if (on_top_face && params->traction_top)
+         {
             for (int a = 0; a < 8; a++)
             {
                for (int i3 = 0; i3 < 3; i3++)
                {
-                  fe[3 * a + i3] = bforce[i3] * Nvol_t[a];
+                  fe[3 * a + i3] += params->traction[i3] * NfaceTop_t[a];
                }
             }
-            if (on_top_face && params->traction_top)
-            {
-               for (int a = 0; a < 8; a++)
-               {
-                  for (int i3 = 0; i3 < 3; i3++)
-                  {
-                     fe[3 * a + i3] += params->traction[i3] * NfaceTop_t[a];
-                  }
-               }
-            }
+         }
 
-            /* Apply clamped BC at x=0: skip any coupling to DOFs at nodes with
-             * gx==0 */
-            HYPRE_Int is_dirichlet[24];
-            for (int a = 0; a < 8; a++)
-            {
-               HYPRE_Int on_clamped    = (ng[a][0] == 0) ? 1 : 0;
-               is_dirichlet[3 * a + 0] = on_clamped;
-               is_dirichlet[3 * a + 1] = on_clamped;
-               is_dirichlet[3 * a + 2] = on_clamped;
-            }
+         /* Apply clamped BC at x=0: skip any coupling to DOFs at nodes with
+          * gx==0 */
+         HYPRE_Int is_dirichlet[24];
+         for (int a = 0; a < 8; a++)
+         {
+            HYPRE_Int on_clamped    = (ng[a][0] == 0) ? 1 : 0;
+            is_dirichlet[3 * a + 0] = on_clamped;
+            is_dirichlet[3 * a + 1] = on_clamped;
+            is_dirichlet[3 * a + 2] = on_clamped;
+         }
 
-            /* Insert element contributions batched by rows (skip Dirichlet DOFs) */
-            HYPRE_Int    nrows_elem = 0;
-            HYPRE_Int    ncols_row[24];
-            HYPRE_BigInt rows_elem[24];
-            HYPRE_BigInt cols_flat[24 * 24];
-            HYPRE_Real   vals_flat[24 * 24];
-            HYPRE_Int    off = 0;
-            for (int i = 0; i < 24; i++)
+         /* Insert element contributions batched by rows (skip Dirichlet DOFs).
+          * Only add contributions for rows in this thread's partition. */
+         HYPRE_Int    nrows_elem = 0;
+         HYPRE_Int    ncols_row[24];
+         HYPRE_BigInt rows_elem[24];
+         HYPRE_BigInt cols_flat[24 * 24];
+         HYPRE_Real   vals_flat[24 * 24];
+         HYPRE_Int    off = 0;
+         for (int i = 0; i < 24; i++)
+         {
+            if (is_dirichlet[i]) continue; /* row suppressed */
+            if (dof_gid[i] < dof_ilower || dof_gid[i] > dof_iupper)
+               continue; /* only own rows */
+            /* Only process rows in this thread's partition */
+            if (dof_gid[i] < thread_dof_lower || dof_gid[i] > thread_dof_upper) continue;
+            rows_elem[nrows_elem] = dof_gid[i];
+            HYPRE_Int ncols       = 0;
+            for (int j = 0; j < 24; j++)
             {
-               if (is_dirichlet[i]) continue; /* row suppressed */
-               if (dof_gid[i] < dof_ilower || dof_gid[i] > dof_iupper)
-                  continue; /* only own rows */
-               rows_elem[nrows_elem] = dof_gid[i];
-               HYPRE_Int ncols       = 0;
-               for (int j = 0; j < 24; j++)
-               {
-                  if (is_dirichlet[j]) continue; /* column suppressed */
-                  cols_flat[off + ncols] = dof_gid[j];
-                  vals_flat[off + ncols] = Ke_t[i][j];
-                  ncols++;
-               }
-               ncols_row[nrows_elem] = ncols;
-               off += ncols;
-               nrows_elem++;
+               if (is_dirichlet[j]) continue; /* column suppressed */
+               cols_flat[off + ncols] = dof_gid[j];
+               vals_flat[off + ncols] = Ke_t[i][j];
+               ncols++;
             }
-            if (nrows_elem > 0)
+            ncols_row[nrows_elem] = ncols;
+            off += ncols;
+            nrows_elem++;
+         }
+         if (nrows_elem > 0)
+         {
+            HYPRE_Int max_batch =
+               (params->max_rows_per_call > 0) ? params->max_rows_per_call : nrows_elem;
+            for (HYPRE_Int start = 0; start < nrows_elem; start += max_batch)
             {
-               HYPRE_Int max_batch = (params->max_rows_per_call > 0)
-                                        ? params->max_rows_per_call
-                                        : nrows_elem;
-               for (HYPRE_Int start = 0; start < nrows_elem; start += max_batch)
-               {
-                  HYPRE_Int count =
-                     (start + max_batch <= nrows_elem) ? max_batch : (nrows_elem - start);
-                  /* compute offset into flat cols/vals for this chunk */
-                  HYPRE_Int start_off = 0;
-                  for (HYPRE_Int rr = 0; rr < start; rr++) start_off += ncols_row[rr];
-                  HYPRE_IJMatrixAddToValues(A, count, &ncols_row[start],
-                                            &rows_elem[start], &cols_flat[start_off],
-                                            &vals_flat[start_off]);
-               }
+               HYPRE_Int count =
+                  (start + max_batch <= nrows_elem) ? max_batch : (nrows_elem - start);
+               /* compute offset into flat cols/vals for this chunk */
+               HYPRE_Int start_off = 0;
+               for (HYPRE_Int rr = 0; rr < start; rr++) start_off += ncols_row[rr];
+               /* No critical section needed - each thread only touches its own rows */
+               HYPRE_IJMatrixAddToValues(A, count, &ncols_row[start], &rows_elem[start],
+                                         &cols_flat[start_off], &vals_flat[start_off]);
             }
+         }
 
-            /* Add force vector batched (skip Dirichlet dofs) */
-            HYPRE_Int    nvals_elem = 0;
-            HYPRE_BigInt vec_rows[24];
-            HYPRE_Real   vec_vals[24];
-            for (int i = 0; i < 24; i++)
+         /* Add force vector batched (skip Dirichlet dofs).
+          * Only add contributions for rows in this thread's partition. */
+         HYPRE_Int    nvals_elem = 0;
+         HYPRE_BigInt vec_rows[24];
+         HYPRE_Real   vec_vals[24];
+         for (int i = 0; i < 24; i++)
+         {
+            if (is_dirichlet[i]) continue;
+            if (dof_gid[i] < dof_ilower || dof_gid[i] > dof_iupper)
+               continue; /* only own rows */
+            /* Only process rows in this thread's partition */
+            if (dof_gid[i] < thread_dof_lower || dof_gid[i] > thread_dof_upper) continue;
+            vec_rows[nvals_elem] = dof_gid[i];
+            vec_vals[nvals_elem] = fe[i];
+            nvals_elem++;
+         }
+         if (nvals_elem > 0)
+         {
+            HYPRE_Int max_batch =
+               (params->max_rows_per_call > 0) ? params->max_rows_per_call : nvals_elem;
+            for (HYPRE_Int start = 0; start < nvals_elem; start += max_batch)
             {
-               if (is_dirichlet[i]) continue;
-               if (dof_gid[i] < dof_ilower || dof_gid[i] > dof_iupper)
-                  continue; /* only own rows */
-               vec_rows[nvals_elem] = dof_gid[i];
-               vec_vals[nvals_elem] = fe[i];
-               nvals_elem++;
-            }
-            if (nvals_elem > 0)
-            {
-               HYPRE_Int max_batch = (params->max_rows_per_call > 0)
-                                        ? params->max_rows_per_call
-                                        : nvals_elem;
-               for (HYPRE_Int start = 0; start < nvals_elem; start += max_batch)
-               {
-                  HYPRE_Int count =
-                     (start + max_batch <= nvals_elem) ? max_batch : (nvals_elem - start);
-                  HYPRE_IJVectorAddToValues(b, count, &vec_rows[start], &vec_vals[start]);
-               }
+               HYPRE_Int count =
+                  (start + max_batch <= nvals_elem) ? max_batch : (nvals_elem - start);
+               /* No critical section needed - each thread only touches its own rows */
+               HYPRE_IJVectorAddToValues(b, count, &vec_rows[start], &vec_vals[start]);
             }
          }
       }
@@ -863,35 +906,44 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
       HYPRE_Real   *vals_arr  = (HYPRE_Real *)malloc(num_rows * sizeof(HYPRE_Real));
       HYPRE_Real   *rhs_arr   = (HYPRE_Real *)malloc(num_rows * sizeof(HYPRE_Real));
 
-      HYPRE_Int idx = 0;
-      for (HYPRE_BigInt gy = pstarts[1][p[1]]; gy < pstarts[1][p[1] + 1]; gy++)
+      HYPRE_Int idx          = 0;
+      HYPRE_Int num_nodes_gy = (HYPRE_Int)(pstarts[1][p[1] + 1] - pstarts[1][p[1]]);
+      HYPRE_Int num_nodes_gz = (HYPRE_Int)(pstarts[2][p[2] + 1] - pstarts[2][p[2]]);
+      HYPRE_Int total_nodes  = num_nodes_gy * num_nodes_gz;
+
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+      for (HYPRE_Int node_idx = 0; node_idx < total_nodes; node_idx++)
       {
-         for (HYPRE_BigInt gz = pstarts[2][p[2]]; gz < pstarts[2][p[2] + 1]; gz++)
+         HYPRE_Int    idx_y      = node_idx / num_nodes_gz;
+         HYPRE_Int    idx_z      = node_idx % num_nodes_gz;
+         HYPRE_BigInt gy         = pstarts[1][p[1]] + idx_y;
+         HYPRE_BigInt gz         = pstarts[2][p[2]] + idx_z;
+         HYPRE_BigInt ncoords[3] = {0, gy, gz};
+         HYPRE_Int    owner_bc[3];
+         for (int d = 0; d < 3; d++)
          {
-            HYPRE_BigInt ncoords[3] = {0, gy, gz};
-            HYPRE_Int    owner_bc[3];
-            for (int d = 0; d < 3; d++)
-            {
-               HYPRE_Int     pd = mesh->pdims[d];
-               HYPRE_BigInt *ps = mesh->pstarts[d];
-               HYPRE_BigInt  cg = ncoords[d];
-               HYPRE_Int     bd = 0;
-               while ((bd + 1) < pd && cg >= ps[bd + 1]) bd++;
-               owner_bc[d] = bd;
-            }
-            HYPRE_BigInt n_gid = grid2idx(ncoords, owner_bc, gdims, pstarts);
-            for (int c = 0; c < 3; c++)
-            {
-               HYPRE_BigInt r = 3 * n_gid + c;
-               rows_arr[idx]  = r;
-               cols_arr[idx]  = r;
-               vals_arr[idx]  = 1.0;
-               rhs_arr[idx]   = 0.0;
-               ncols_arr[idx] = 1;
-               idx++;
-            }
+            HYPRE_Int     pd = mesh->pdims[d];
+            HYPRE_BigInt *ps = mesh->pstarts[d];
+            HYPRE_BigInt  cg = ncoords[d];
+            HYPRE_Int     bd = 0;
+            while ((bd + 1) < pd && cg >= ps[bd + 1]) bd++;
+            owner_bc[d] = bd;
+         }
+         HYPRE_BigInt n_gid     = grid2idx(ncoords, owner_bc, gdims, pstarts);
+         HYPRE_Int    local_idx = node_idx * 3;
+         for (int c = 0; c < 3; c++)
+         {
+            HYPRE_BigInt r           = 3 * n_gid + c;
+            rows_arr[local_idx + c]  = r;
+            cols_arr[local_idx + c]  = r;
+            vals_arr[local_idx + c]  = 1.0;
+            rhs_arr[local_idx + c]   = 0.0;
+            ncols_arr[local_idx + c] = 1;
          }
       }
+      idx = num_rows;
       if (idx > 0)
       {
          HYPRE_Int max_batch =
@@ -1163,7 +1215,12 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    }
 
    /* Finish comms before using ghost buffers */
-   if (reqc > 0) MPI_Waitall(reqc, reqs, MPI_STATUSES_IGNORE);
+   if (reqc > 0)
+   {
+      MPI_Status *statuses = (MPI_Status *)malloc(reqc * sizeof(MPI_Status));
+      MPI_Waitall(reqc, reqs, statuses);
+      free(statuses);
+   }
 
    /* Insert faces */
    if (mesh->nbrs[0] != MPI_PROC_NULL)
@@ -1575,7 +1632,9 @@ main(int argc, char *argv[])
 
    if (params.verbose & 0x4)
    {
+      if (!myid) printf("Printing linear system...");
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemPrint(hypredrv));
+      if (!myid) printf(" Done!\n");
    }
 
    for (int isolve = 0; isolve < params.nsolve; isolve++)
