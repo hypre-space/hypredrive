@@ -1,8 +1,10 @@
-#!/bin/bash
-# /******************************************************************************
-# * Copyright (c) 2024 Lawrence Livermore National Security, LLC
-# * SPDX-License-Identifier: MIT
-# ******************************************************************************/
+#!/usr/bin/env bash
+#/******************************************************************************
+#* Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+#* HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#*
+#* SPDX-License-Identifier: MIT
+#******************************************************************************/
 #
 # Download and extract a file from a URL to a destination directory
 # Usage: download_and_extract.sh <URL> <TARBALL> <DEST> <MD5>

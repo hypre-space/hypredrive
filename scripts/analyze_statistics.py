@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 #/******************************************************************************
 #* Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
 #* HYPRE Project Developers. See the top-level COPYRIGHT file for details.
@@ -460,7 +460,7 @@ def main():
         if invalid:
             raise argparse.ArgumentTypeError(f"Invalid mode(s): {', '.join(invalid)}. Valid: {', '.join(mode_choices)}")
         return value
-    
+
     # Set up argument parser
     parser = argparse.ArgumentParser(description="Parse the Statistics Summary produced by hypredrive")
     parser.add_argument("-f", "--filename", type=str, nargs="+", required=True, help="Path to the log file")

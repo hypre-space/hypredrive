@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+#/******************************************************************************
+#* Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+#* HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#*
+#* SPDX-License-Identifier: MIT
+#******************************************************************************/
+
 import xml.etree.ElementTree as ET
 import argparse
 import sys
@@ -30,9 +37,9 @@ Examples:
         default=0.90,
         help="Target coverage percentage for improvement planning (default: 0.90)"
     )
-    
+
     args = parser.parse_args()
-    
+
     try:
         root = ET.parse(args.xml_file).getroot()
     except FileNotFoundError:
@@ -55,19 +62,19 @@ Examples:
         filename = cls.get("filename")
         line_rate = float(cls.get("line-rate", 0.0))
         branch_rate = float(cls.get("branch-rate", 0.0))
-        
+
         # Count lines and branches from <lines> elements
         lines_elem = cls.find("lines")
         if lines_elem is not None:
             line_nodes = lines_elem.findall("line")
             lines_valid = len(line_nodes)
             lines_covered = sum(1 for ln in line_nodes if int(ln.get("hits", 0)) > 0)
-            
+
             # Count branches (lines with branch="true")
             branches_valid = sum(1 for ln in line_nodes if ln.get("branch") == "true")
             # Branches covered: those with condition-coverage > 0% or hits > 0
             branches_covered = sum(
-                1 for ln in line_nodes 
+                1 for ln in line_nodes
                 if ln.get("branch") == "true" and (
                     int(ln.get("hits", 0)) > 0 or
                     (ln.get("condition-coverage") and not ln.get("condition-coverage").startswith("0%"))
@@ -78,7 +85,7 @@ Examples:
             lines_covered = 0
             branches_valid = 0
             branches_covered = 0
-        
+
         # Count functions (methods)
         methods_elem = cls.find("methods")
         if methods_elem is not None:
@@ -88,8 +95,8 @@ Examples:
         else:
             funcs_valid = 0
             funcs_covered = 0
-        
-        files.append((line_rate, branch_rate, lines_valid, lines_covered, 
+
+        files.append((line_rate, branch_rate, lines_valid, lines_covered,
                       funcs_valid, funcs_covered, branches_valid, branches_covered, filename))
 
     files.sort(key=lambda x: x[0])
@@ -97,7 +104,7 @@ Examples:
     # Calculate column widths for alignment
     max_path_len = max(len(f[8]) for f in files) if files else 0
     max_path_len = max(max_path_len, 20)  # Minimum width for path column
-    
+
     print("=" * 80)
     print("LOWEST COVERED FILES (Priority for improvement)")
     print("=" * 80)
@@ -152,4 +159,3 @@ Examples:
 
 if __name__ == "__main__":
     main()
-
