@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-# /******************************************************************************
-# * Copyright (c) 2024 Lawrence Livermore National Security, LLC
-# * SPDX-License-Identifier: MIT
-# ******************************************************************************/
+#/******************************************************************************
+#* Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+#* HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#*
+#* SPDX-License-Identifier: MIT
+#******************************************************************************/
 
 import argparse
 import glob
@@ -152,7 +154,7 @@ def main():
             cv = v
         mats = [(r, c, cv, shape, v)]
         ls_ids = [0]
-        labels = [os.path.basename(parts[0])]        
+        labels = [os.path.basename(parts[0])]
         cmins = [float(cv.min())] if cv.size else []
         cmaxs = [float(cv.max())] if cv.size else []
         cmin = min(cmins) if cmins else 0.0
@@ -221,7 +223,7 @@ def main():
             mats.append((r, c, cv, shape, v))
             if cv.size:
                 cmins.append(float(cv.min()))
-                cmaxs.append(float(cv.max()))            
+                cmaxs.append(float(cv.max()))
         cmin = min(cmins) if cmins else 0.0
         cmax = max(cmaxs) if cmaxs else 1.0
         logging.info(f"Global color scale: cmin={cmin:.3g} cmax={cmax:.3g}")
@@ -294,5 +296,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-# /******************************************************************************
-# * Copyright (c) 2024 Lawrence Livermore National Security, LLC
-# * SPDX-License-Identifier: MIT
-# ******************************************************************************/
+#/******************************************************************************
+#* Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+#* HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#*
+#* SPDX-License-Identifier: MIT
+#******************************************************************************/
 
 import argparse
 import math

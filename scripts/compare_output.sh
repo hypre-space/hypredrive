@@ -1,4 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#/******************************************************************************
+#* Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+#* HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#*
+#* SPDX-License-Identifier: MIT
+#******************************************************************************/
+
 # Compare actual output against reference output
 # This script normalizes timestamps and paths before comparison
 
@@ -55,4 +62,3 @@ else
     diff -u "$REFERENCE_NORM" "$ACTUAL_NORM" || true
     exit 1
 fi
-

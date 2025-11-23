@@ -462,7 +462,7 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
    MPI_Comm comm = hypre_IJMatrixComm((hypre_IJMatrix *)mat_A);
 
    /* Use "solve" timer bucket */
-   StatsTimerStart("solve");
+   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
 
    /* Convert sparse matrix to dense (column-major) */
    int     n    = 0;
@@ -471,7 +471,7 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
    if (ErrorCodeActive())
    {
       free(A_cm);
-      StatsTimerStop("solve");
+      StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
       return ErrorCodeGet();
    }
 
@@ -482,7 +482,7 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
       free(A_cm);
       ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
       ErrorMsgAdd("Eigenspectrum guard: n=%d exceeds limit=%d", n, n_guard);
-      StatsTimerStop("solve");
+      StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
       return ErrorCodeGet();
    }
 
@@ -583,7 +583,7 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
       free(A_cm);
    }
 
-   StatsTimerStop("solve");
+   StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
 
    return ErrorCodeGet();
 }

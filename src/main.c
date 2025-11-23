@@ -109,6 +109,9 @@ main(int argc, char **argv)
 
       for (int i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
       {
+         /* (Optional) Annotate the entire solve iteration */
+         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("Run-%d", i));
+
          /* Reset initial guess */
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(obj));
 
@@ -125,6 +128,9 @@ main(int argc, char **argv)
          /* Destroy phase */
          HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(obj));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(obj));
+
+         /* (Optional) Annotate the entire solve iteration */
+         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("Run-%d", i));
       }
    }
 

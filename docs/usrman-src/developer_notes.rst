@@ -227,6 +227,51 @@ Local reproduction
    cmake --build build-coverage --target coverage
    # Open build-coverage/coverage.html
 
+Performance Profiling with Caliper
+-----------------------------------
+
+Overview
+~~~~~~~~
+
+When ``HYPREDRV_ENABLE_CALIPER=ON`` is set during configuration, hypredrive is instrumented with
+Caliper markers for performance profiling. Caliper provides runtime performance measurement and
+profiling capabilities that can help identify performance bottlenecks and optimize code paths.
+
+Building with Caliper
+~~~~~~~~~~~~~~~~~~~~~
+
+Enable Caliper support during CMake configuration:
+
+.. code-block:: bash
+
+   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+     -DHYPREDRV_ENABLE_CALIPER=ON \
+     -DCMAKE_PREFIX_PATH=${HYPRE_PREFIX}
+   cmake --build build --parallel
+
+By default, Caliper will be automatically fetched and built from source if it's not found. To use
+a pre-built Caliper installation, set the ``CALIPER_DIR`` or ``CALIPER_ROOT`` environment variables,
+or ensure ``find_package(caliper)`` can locate it.
+
+Using Caliper for Profiling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To collect performance data, set the ``CALI_CONFIG`` environment variable when running hypredrive:
+
+.. code-block:: bash
+
+   CALI_CONFIG=runtime-report mpirun -np 1 ./build/hypredrive examples/ex1.yml
+
+Common Caliper configurations:
+
+- ``runtime-report``: Print a summary report to stdout at program end
+- ``runtime-report,max_column_width=200,calc.inclusive,output=stdout,mpi-report``: Print a detailed
+ report, including MPI-related information, to stdout at program end.
+- ``spot``: Generate Caliper output files for analysis with Caliper's spot tool
+
+For more information about Caliper configurations and services, see the
+`Caliper documentation <https://software.llnl.gov/Caliper/>`_.
+
 Documentation Builds
 --------------------
 
