@@ -16,6 +16,9 @@
 #include "info.h"
 #include "linsys.h"
 #include "stats.h"
+#ifdef HYPREDRV_ENABLE_CALIPER
+#include <caliper/cali.h>
+#endif
 
 // Flag to check if HYPREDRV is initialized
 static bool hypredrv_is_initialized = 0;
@@ -97,6 +100,11 @@ HYPREDRV_Finalize()
       HYPRE_Finalize();
       hypredrv_is_initialized = false;
    }
+
+#ifdef HYPREDRV_ENABLE_CALIPER
+   /* Flush Caliper data before MPI_Finalize to avoid mpireport warning */
+   cali_flush(0);
+#endif
 
    return ErrorCodeGet();
 }

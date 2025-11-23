@@ -64,6 +64,8 @@ if(HYPREDRV_ENABLE_CALIPER)
             GIT_TAG        ${CALIPER_VERSION}
             GIT_SHALLOW    TRUE
             GIT_PROGRESS   TRUE
+            GIT_SUBMODULES ""  # Skip submodules (scripts/radiuss-spack-configs, scripts/uberenv)
+            PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_SOURCE_DIR}/cmake/caliper.patch
         )
 
         # Enable verbose output for FetchContent to show progress
@@ -86,35 +88,37 @@ if(HYPREDRV_ENABLE_CALIPER)
         set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib CACHE PATH "Single output directory for all static libraries" FORCE)
         set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR} CACHE PATH "Single output directory for all executables" FORCE)
 
-        # Fetch and configure Caliper with progress output
-        FetchContent_GetProperties(caliper)
-        if(NOT caliper_POPULATED)
-            message(STATUS "Fetching Caliper from GitHub (branch/tag: ${CALIPER_VERSION})...")
-            message(STATUS "  Repository: https://github.com/LLNL/Caliper.git")
-
-            # Use FetchContent_Populate to have more control and show progress
-            FetchContent_Populate(caliper)
-
-            message(STATUS "Caliper source fetched successfully")
-            message(STATUS "  Source directory: ${caliper_SOURCE_DIR}")
+        # Explicitly propagate BUILD_SHARED_LIBS to Caliper build
+        # FetchContent subdirectories need cache variables to inherit values
+        # Get the current value from cache (it's defined as an option in main CMakeLists.txt)
+        get_property(BUILD_SHARED_LIBS_VALUE CACHE BUILD_SHARED_LIBS PROPERTY VALUE)
+        if(BUILD_SHARED_LIBS_VALUE)
+            set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
         else()
-            message(STATUS "Caliper source already available at: ${caliper_SOURCE_DIR}")
+            set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
         endif()
+        message(STATUS "  Propagating BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} to Caliper build")
 
-        # Add Caliper subdirectory first
-        message(STATUS "Configuring Caliper build...")
-        message(STATUS "  Libraries will be built to: ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
-        add_subdirectory(${caliper_SOURCE_DIR} ${caliper_BINARY_DIR})
+        # Fetch and configure Caliper using FetchContent_MakeAvailable
+        message(STATUS "Fetching Caliper from GitHub (branch/tag: ${CALIPER_VERSION})...")
+        message(STATUS "  Repository: https://github.com/LLNL/Caliper.git")
+        
+        FetchContent_MakeAvailable(caliper)
 
         # Ensure Caliper target exists and is built before HYPRE
         if(TARGET caliper)
             # Make sure Caliper builds early
             set_target_properties(caliper PROPERTIES EXCLUDE_FROM_ALL FALSE)
         endif()
-
-        # Set TPL variables for HYPRE - must be set after Caliper is configured
-        # Construct the library path - Caliper will be built to our output directory
-        set(CALIPER_LIBRARY_FILE "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_STATIC_LIBRARY_PREFIX}caliper${CMAKE_STATIC_LIBRARY_SUFFIX}")
+        
+        # Construct the library path based on BUILD_SHARED_LIBS
+        # This must match what Caliper will actually build
+        if(BUILD_SHARED_LIBS)
+            set(CALIPER_LIBRARY_FILE "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_SHARED_LIBRARY_PREFIX}caliper${CMAKE_SHARED_LIBRARY_SUFFIX}")
+        else()
+            set(CALIPER_LIBRARY_FILE "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_STATIC_LIBRARY_PREFIX}caliper${CMAKE_STATIC_LIBRARY_SUFFIX}")
+        endif()
+        
         set(TPL_CALIPER_LIBRARIES ${CALIPER_LIBRARY_FILE} CACHE FILEPATH "Caliper library for HYPRE" FORCE)
         
         # Set TPL_CALIPER_INCLUDE_DIRS to a dummy value to satisfy HYPRE's setup_tpl check
@@ -306,16 +310,17 @@ if(NOT HYPRE_FOUND)
         message(STATUS "Forwarded ${_forwarded_count} CMake variables to HYPRE build")
     endif()
 
-    # Fetch and configure HYPRE with progress output
+    # Fetch and configure HYPRE
+    # We need to patch HYPRE's CMakeLists.txt before configuration, so we use
+    # FetchContent_GetProperties and manual populate/add_subdirectory
+    message(STATUS "Fetching HYPRE from GitHub (branch/tag: ${HYPRE_VERSION})...")
+    message(STATUS "  Repository: https://github.com/hypre-space/hypre.git")
+    
     FetchContent_GetProperties(hypre)
     if(NOT hypre_POPULATED)
-        message(STATUS "Fetching HYPRE from GitHub (branch/tag: ${HYPRE_VERSION})...")
-        message(STATUS "  Repository: https://github.com/hypre-space/hypre.git")
-
-        # Use FetchContent_Populate to have more control and show progress
-        # This will show git clone output when FETCHCONTENT_QUIET is OFF
+        # Populate to get the source directory
         FetchContent_Populate(hypre)
-
+        
         message(STATUS "HYPRE source fetched successfully")
         message(STATUS "  Source directory: ${hypre_SOURCE_DIR}")
         
@@ -357,6 +362,13 @@ if(NOT HYPRE_FOUND)
             # Re-add with BUILD_INTERFACE
             target_include_directories(HYPRE PUBLIC $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIR_FOR_HYPRE}>)
             message(STATUS "  Fixed Caliper include directory in HYPRE target using BUILD_INTERFACE")
+        endif()
+        
+        # Ensure HYPRE depends on Caliper target so it builds after Caliper
+        # This is critical because HYPRE links against the Caliper library file
+        if(TARGET caliper)
+            add_dependencies(HYPRE caliper)
+            message(STATUS "  Added dependency: HYPRE -> caliper")
         endif()
     endif()
 
