@@ -183,7 +183,9 @@ StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args)
    {
       /* Start Caliper region first, before any early returns */
       /* Prefix with HYPREDRV_ to distinguish from HYPRE's internal regions */
-      HYPREDRV_ANNOTATE_REGION_BEGIN("HYPREDRV_%s", formatted_name)
+      /* Limit formatted_name to 1014 chars to fit in 1024-byte buffer (9 for "HYPREDRV_"
+       * + 1 for null) */
+      HYPREDRV_ANNOTATE_REGION_BEGIN("HYPREDRV_%.1014s", formatted_name)
 
       /* Ignore "Run" annotation */
       if (strncmp(formatted_name, "Run", 3) == 0)
@@ -239,7 +241,9 @@ StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args)
    {
       /* Stop Caliper region. Prefix with HYPREDRV_ to distinguish from HYPRE's internal
        * regions */
-      HYPREDRV_ANNOTATE_REGION_END("HYPREDRV_%s", formatted_name)
+      /* Limit formatted_name to 1014 chars to fit in 1024-byte buffer (9 for "HYPREDRV_"
+       * + 1 for null) */
+      HYPREDRV_ANNOTATE_REGION_END("HYPREDRV_%.1014s", formatted_name)
 
       /* Ignore "Run" annotation */
       if (strncmp(formatted_name, "Run", 3) == 0)

@@ -214,7 +214,7 @@ jobs:
 
   build-and-test-caliper:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
-    name: ubuntu-latest | Caliper | gcc | Debug
+    name: ubuntu-latest | gcc | Caliper+Debug
     runs-on: ubuntu-latest
     timeout-minutes: 6
     env:
