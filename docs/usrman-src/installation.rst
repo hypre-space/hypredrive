@@ -137,6 +137,11 @@ Using CMake (Recommended)
      information (CPU, GPU, NUMA, cache hierarchy, etc.). Requires the hwloc library to be
      installed. If hwloc is not available, hypredrive will fall back to basic system
      information. Default: ``OFF``.
+   - ``-DHYPREDRV_ENABLE_CALIPER=ON``: Enable Caliper instrumentation support for performance
+     profiling. When enabled, hypredrive will automatically fetch and build Caliper from source
+     if it's not found. Caliper provides runtime performance measurement and profiling
+     capabilities. To use a pre-built Caliper installation, set ``CALIPER_DIR`` or ``CALIPER_ROOT``
+     environment variables, or use ``find_package(caliper)``. Default: ``OFF``.
    - ``-DHYPREDRV_BUILD_EXAMPLES=OFF``: Disable building example programs. Default: ``ON``.
    - ``-DHYPREDRV_ENABLE_TESTING=OFF``: Disable testing support and ``check`` target.
      Default: ``ON``.
