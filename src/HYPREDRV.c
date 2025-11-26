@@ -437,10 +437,10 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t obj, HYPRE_Matrix mat_A)
 
    if (obj)
    {
-      StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "matrix");
+      /* Don't annotate "matrix" here - users annotate with "system" in their code */
+      /* This was causing build times and solve times to be recorded in separate entries */
       obj->mat_A = (HYPRE_IJMatrix)mat_A;
       obj->mat_M = (HYPRE_IJMatrix)mat_A;
-      StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
    }
    else
    {
@@ -754,17 +754,39 @@ HYPREDRV_PreconCreate(HYPREDRV_t obj)
 
    if (obj)
    {
-      if (!(StatsGetLinearSystemID() % (obj->iargs->ls.precon_reuse + 1)))
+      int ls_id = StatsGetLinearSystemID();
+      int reuse = obj->iargs->ls.precon_reuse;
+
+      /* Preconditioner creation logic:
+       * - Always create if preconditioner doesn't exist (precon is NULL)
+       * - If reuse == 0: always create (no reuse)
+       * - Always create on first system (ls_id < 0 or ls_id == 0)
+       * - If reuse > 0: create every (reuse + 1) systems
+       *   This means: create when (ls_id + 1) % (reuse + 1) == 0
+       *   Example: reuse=2 means create on ls_id=0, 3, 6, 9, ...
+       */
+      bool should_create = false;
+      if (obj->precon == NULL)
+      {
+         should_create = true;  /* Must create if it doesn't exist */
+      }
+      else if (reuse == 0)
+      {
+         should_create = true;  /* No reuse: always create */
+      }
+      else if (ls_id < 0 || ls_id == 0)
+      {
+         should_create = true;  /* Always create on first system */
+      }
+      else if ((ls_id + 1) % (reuse + 1) == 0)
+      {
+         should_create = true;  /* Reuse period expired, need new preconditioner */
+      }
+
+      if (should_create)
       {
          PreconCreate(obj->iargs->precon_method, &obj->iargs->precon, obj->dofmap,
                       obj->vec_nn, &obj->precon);
-      }
-      else
-      {
-         if (!obj->mypid)
-         {
-            printf("Reusing preconditioner...\n");
-         }
       }
    }
    else
@@ -786,7 +808,10 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t obj)
 
    if (obj)
    {
-      if (!(StatsGetLinearSystemID() % (obj->iargs->ls.precon_reuse + 1)))
+      int ls_id = StatsGetLinearSystemID();
+      int reuse = obj->iargs->ls.precon_reuse;
+
+      if (!((ls_id + 1) % (reuse + 1)))
       {
          SolverCreate(obj->comm, obj->iargs->solver_method, &obj->iargs->solver,
                       &obj->solver);
@@ -836,7 +861,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t obj)
       int ls_id = StatsGetLinearSystemID();
       int reuse = obj->iargs->ls.precon_reuse;
 
-      if (!(ls_id % (reuse + 1)))
+      if (!((ls_id + 1) % (reuse + 1)))
       {
          SolverSetup(obj->iargs->precon_method, obj->iargs->solver_method, obj->precon,
                      obj->solver, obj->mat_M, obj->vec_b, obj->vec_x);
@@ -923,7 +948,26 @@ HYPREDRV_PreconDestroy(HYPREDRV_t obj)
 
    if (obj)
    {
-      if (!((StatsGetLinearSystemID() + 1) % (obj->iargs->ls.precon_reuse + 1)))
+      int ls_id = StatsGetLinearSystemID();
+      int reuse = obj->iargs->ls.precon_reuse;
+
+      /* Preconditioner reuse logic:
+       * - If reuse == 0: always destroy (no reuse)
+       * - If reuse > 0: destroy every (reuse + 1) linear systems
+       *   This means: destroy when (ls_id + 1) % (reuse + 1) == 0, but not on first system
+       *   Example: reuse=2 means reuse for 2 systems, destroy on 3rd (ls_id=2, 5, 8, ...)
+       */
+      bool should_destroy = false;
+      if (reuse == 0)
+      {
+         should_destroy = true;  /* No reuse: always destroy */
+      }
+      else if (ls_id > 0 && ((ls_id + 1) % (reuse + 1) == 0))
+      {
+         should_destroy = true;  /* Reuse period expired */
+      }
+
+      if (should_destroy)
       {
          PreconDestroy(obj->iargs->precon_method, &obj->iargs->precon, &obj->precon);
       }
@@ -1016,6 +1060,40 @@ HYPREDRV_AnnotateEnd(const char *name, ...)
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_AnnotateLevelBegin
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_AnnotateLevelBegin(int level, const char *name, ...)
+{
+   HYPREDRV_CHECK_INIT();
+
+   va_list args;
+   va_start(args, name);
+   StatsAnnotateLevelBegin(level, name, args);
+   va_end(args);
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_AnnotateLevelEnd
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_AnnotateLevelEnd(int level, const char *name, ...)
+{
+   HYPREDRV_CHECK_INIT();
+
+   va_list args;
+   va_start(args, name);
+   StatsAnnotateLevelEnd(level, name, args);
+   va_end(args);
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
 #ifdef HYPREDRV_ENABLE_EIGSPEC
@@ -1080,6 +1158,50 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t obj)
    ErrorMsgAdd("Eigenspectrum feature disabled at build time. Reconfigure with "
                "-DHYPREDRV_ENABLE_EIGSPEC=ON");
 #endif
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_GetLastStat
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_GetLastStat(HYPREDRV_t obj, const char *name, void *value)
+{
+   HYPREDRV_CHECK_INIT();
+
+   if (!obj)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+      return ErrorCodeGet();
+   }
+
+   if (!name || !value)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("Stat name and value cannot be NULL");
+      return ErrorCodeGet();
+   }
+
+   if (!strcmp(name, "iter"))
+   {
+      *(int *)value = StatsGetLastIter();
+   }
+   else if (!strcmp(name, "setup"))
+   {
+      *(double *)value = StatsGetLastSetupTime();
+   }
+   else if (!strcmp(name, "solve"))
+   {
+      *(double *)value = StatsGetLastSolveTime();
+   }
+   else
+   {
+      // Unknown stat name
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("Unknown stat name: '%s'", name);
+   }
 
    return ErrorCodeGet();
 }

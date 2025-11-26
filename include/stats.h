@@ -16,10 +16,8 @@
 #include "error.h"
 #include "utils.h"
 
-enum
-{
-   STATS_NUM_ENTRIES = 7
-};
+/* Maximum number of hierarchical annotation levels */
+#define STATS_MAX_LEVELS 10
 
 /* HYPREDRV_AnnotateAction enum - internal use only (not in public API) */
 typedef enum
@@ -67,31 +65,49 @@ extern "C++"
 #endif /* HYPREDRV_USING_CALIPER */
 
 /*--------------------------------------------------------------------------
+ * Hierarchical annotation context
+ *--------------------------------------------------------------------------*/
+
+typedef struct
+{
+   const char *name;
+   double      start_time;
+   int         level;
+} AnnotationContext;
+
+/*--------------------------------------------------------------------------
  * Stats struct
  *--------------------------------------------------------------------------*/
 
 typedef struct Stats_struct
 {
+   /* Capacity and counters */
    int capacity;
-   int counter;
-   int reps;
-   int ls_counter;
-   int num_reps;
-   int num_systems;
+   int counter;        /* Current entry index */
+   int reps;           /* Current repetition counter */
+   int ls_counter;     /* Linear system counter (increments on "matrix" annotation) */
+   int num_reps;       /* Number of repetitions per linear system */
+   int num_systems;    /* Number of linear systems (-1 if unknown) */
 
-   double *matrix;
-   double *rhs;
-   double *dofmap;
+   /* Hierarchical annotation stack */
+   AnnotationContext level_stack[STATS_MAX_LEVELS];
+   int               level_depth;  /* Current depth in hierarchy (0 = no active levels) */
 
-   int    *iters;
-   double *prec;
-   double *solve;
-   double *rrnorms;
+   /* Timing arrays (indexed by counter) */
+   double *matrix;    /* Matrix assembly time */
+   double *rhs;       /* RHS assembly time */
+   double *dofmap;    /* DOF map setup time */
+   double *prec;      /* Preconditioner setup time */
+   double *solve;     /* Linear solver time */
+   double *rrnorms;   /* Relative residual norms */
+   int    *iters;     /* Iteration counts */
 
+   /* Global timers */
    double initialize;
    double finalize;
    double reset_x0;
 
+   /* Output formatting */
    double time_factor;
    bool   use_millisec;
 } Stats;
@@ -104,6 +120,8 @@ void StatsCreate(void);
 void StatsDestroy(void);
 void StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name, ...);
 void StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args);
+void StatsAnnotateLevelBegin(int level, const char *name, ...);
+void StatsAnnotateLevelEnd(int level, const char *name, ...);
 void StatsIterSet(int);
 void StatsTimerSetMilliseconds(void);
 void StatsTimerSetSeconds(void);
@@ -112,5 +130,8 @@ void StatsPrint(int);
 int  StatsGetLinearSystemID(void);
 void StatsSetNumReps(int);
 void StatsSetNumLinearSystems(int);
+int  StatsGetLastIter(void);
+double StatsGetLastSetupTime(void);
+double StatsGetLastSolveTime(void);
 
 #endif /* STATS_HEADER */
