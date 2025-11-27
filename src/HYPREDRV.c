@@ -393,7 +393,7 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t obj)
       if (!obj->mypid)
       {
          PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
-         printf("Solving linear system #%d ", StatsGetLinearSystemID());
+         printf("Solving linear system #%d ", StatsGetLinearSystemID() + 1);
          printf("with %lld rows and %lld nonzeros...\n", num_rows, num_nonzeros);
       }
       HYPRE_ClearAllErrors();

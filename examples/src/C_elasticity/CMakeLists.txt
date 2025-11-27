@@ -63,11 +63,11 @@ endif()
 if(HYPREDRV_ENABLE_TESTING)
     include(${CMAKE_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
     add_executable_test(elasticity_test_1proc elasticity 1
-        ARGS -n 12 4 4 -ns 1
+        ARGS -n 12 4 4 -ns 1 -v 1
         RUN_SERIAL
     )
     add_executable_test(elasticity_test_4proc elasticity 4
-        ARGS -n 12 4 4 -P 2 2 1 -ns 1
+        ARGS -n 12 4 4 -P 2 2 1 -ns 1 -v 1
     )
 endif()
 

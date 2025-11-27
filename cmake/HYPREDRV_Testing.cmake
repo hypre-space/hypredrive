@@ -7,19 +7,33 @@
 set(HYPREDRV_TESTING_DIR "${CMAKE_CURRENT_LIST_DIR}")
 
 # Function for adding tests
+# Options:
+#   NO_QUIET - if set, don't pass -q flag (shows full system info)
 function(add_hypredrive_test test_name num_procs config_file)
+    cmake_parse_arguments(TEST_OPTS "NO_QUIET" "" "" ${ARGN})
+
     # Automatically prepend "hypredrive_test_" to the test name
     set(full_test_name "hypredrive_test_${test_name}")
+
+    # Build command arguments
+    set(_cmd_args
+        -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+        -DTARGET_BIN=$<TARGET_FILE:hypredrive>
+        -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+        -DMPI_NUMPROCS=${num_procs}
+        -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+        -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+        -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+        -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/${config_file}
+    )
+
+    # Pass -q flag by default to skip system info (faster tests)
+    if(NOT TEST_OPTS_NO_QUIET)
+        list(APPEND _cmd_args "-DTARGET_ARGS=-q")
+    endif()
+
     add_test(NAME ${full_test_name}
-        COMMAND ${CMAKE_COMMAND}
-                -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
-                -DTARGET_BIN=$<TARGET_FILE:hypredrive>
-                -DMPIEXEC=${MPIEXEC_EXECUTABLE}
-                -DMPI_NUMPROCS=${num_procs}
-                -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
-                -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
-                -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
-                -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/${config_file}
+        COMMAND ${CMAKE_COMMAND} ${_cmd_args}
                 -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
@@ -123,8 +137,8 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     # Add tests subfolder (contains unit tests that use add_test())
     add_subdirectory(tests)
 
-    # Add tests
-    add_hypredrive_test(ex1_1proc  1 ex1.yml)
+    # Add tests (ex1_1proc shows full system info, others use -q for faster runs)
+    add_hypredrive_test(ex1_1proc  1 ex1.yml NO_QUIET)
     add_hypredrive_test(ex1a_1proc 1 ex1a.yml)
     add_hypredrive_test(ex1b_1proc 1 ex1b.yml)
     add_hypredrive_test(ex1c_1proc 1 ex1c.yml)

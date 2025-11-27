@@ -12,8 +12,11 @@
 static void
 PrintUsage(const char *argv0)
 {
-   fprintf(stdout, "Usage: %s <filename>\n", argv0);
+   fprintf(stdout, "Usage: %s [options] <filename>\n", argv0);
    fprintf(stdout, "  filename: config file in YAML format\n");
+   fprintf(stdout, "\nOptions:\n");
+   fprintf(stdout, "  -h, --help       Show this help message\n");
+   fprintf(stdout, "  -q, --quiet      Skip system information printout\n");
    fflush(stdout);
 }
 
@@ -30,10 +33,37 @@ HelpRequested(int argc, char **argv)
    return 0;
 }
 
+static int
+QuietModeRequested(int argc, char **argv)
+{
+   for (int i = 1; i < argc; i++)
+   {
+      if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0)
+      {
+         return 1;
+      }
+   }
+   return 0;
+}
+
+static char *
+FindConfigFile(int argc, char **argv)
+{
+   /* Find the first non-option argument (config file) */
+   for (int i = 1; i < argc; i++)
+   {
+      if (argv[i][0] != '-')
+      {
+         return argv[i];
+      }
+   }
+   return NULL;
+}
+
 static void
 RequireConfigArgumentOrAbort(int argc, char **argv, MPI_Comm comm, int myid)
 {
-   if (argc < 2)
+   if (FindConfigFile(argc, argv) == NULL)
    {
       if (!myid)
       {
@@ -72,16 +102,23 @@ main(int argc, char **argv)
     * Create driver object and print libraries/driver info
     *-----------------------------------------------------------*/
 
+   int quiet_mode = QuietModeRequested(argc, argv);
+
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &obj));
    HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
-   HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
+   if (!quiet_mode)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
+   }
 
    /*-----------------------------------------------------------
     * Parse input parameters
     *-----------------------------------------------------------*/
 
    RequireConfigArgumentOrAbort(argc, argv, comm, myid);
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc - 1, argv + 1, obj));
+   char *config_file     = FindConfigFile(argc, argv);
+   char *config_argv[2]  = {config_file, NULL};
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, config_argv, obj));
 
    /*-----------------------------------------------------------
     * Set hypre's global options and warmup
