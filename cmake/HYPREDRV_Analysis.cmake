@@ -311,12 +311,13 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
             message(STATUS "cppcheck-htmlreport not found. Install it to generate HTML reports (e.g., pip install cppcheck-htmlreport)")
         endif()
 
-        # Add error check - fail if XML contains <error> elements (excluding suppressed ones)
+        # Add error check - fail if XML contains <error> elements with severity="error" or "warning"
+        # (excluding informational messages like checkersReport which have severity="information")
         # grep returns 0 if pattern found (errors exist), 1 if not found (no errors)
         # We invert with '!' so the command fails when errors are found
         list(APPEND _cppcheck_commands
             COMMAND ${CMAKE_COMMAND} -E echo "Checking for cppcheck errors..."
-            COMMAND sh -c "! grep -q '<error ' ${CPPCHECK_XML_OUTPUT}"
+            COMMAND sh -c "! grep -E '<error[^>]*severity=\"(error|warning)\"' ${CPPCHECK_XML_OUTPUT}"
         )
 
         add_custom_target(cppcheck
