@@ -124,6 +124,7 @@ HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
    ErrorCodeDescribe(error_code);
    ErrorMsgPrint();
    ErrorMsgClear();
+   ErrorBacktracePrint();
 }
 
 /*-----------------------------------------------------------------------------

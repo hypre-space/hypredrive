@@ -236,7 +236,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "matrix");
 
    char                 matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int                  ls_id                                = StatsGetLinearSystemID();
+   int                  ls_id                                = StatsGetLinearSystemID() + 1;
    int                  file_not_found                       = 0;
    void                *obj                                  = NULL;
    HYPRE_MemoryLocation memory_location =
@@ -379,7 +379,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    HYPRE_BigInt         ilower = 0, iupper = 0;
    HYPRE_BigInt         jlower = 0, jupper = 0;
    HYPRE_IJVector       refsol = NULL;
-   int                  ls_id  = StatsGetLinearSystemID();
+   int                  ls_id  = StatsGetLinearSystemID() + 1;
    HYPRE_MemoryLocation memory_location =
       (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
@@ -647,11 +647,11 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                           HYPRE_IJMatrix *precmat_ptr)
 {
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int  ls_id                                = StatsGetLinearSystemID();
 
    /* Set matrix filename */
    if (args->dirname[0] != '\0' && args->precmat_filename[0] != '\0')
    {
+      int ls_id = StatsGetLinearSystemID() + 1;
       snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d/%.*s",
                (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
                (int)args->init_suffix + ls_id, (int)strlen(args->precmat_filename),
@@ -663,6 +663,7 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    }
    else if (args->precmat_basename[0] != '\0')
    {
+      int ls_id = StatsGetLinearSystemID() + 1;
       snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d",
                (int)strlen(args->precmat_basename), args->precmat_basename,
                (int)args->digits_suffix, (int)args->init_suffix + ls_id);
@@ -691,7 +692,7 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 void
 LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
 {
-   int ls_id = StatsGetLinearSystemID();
+   int ls_id = StatsGetLinearSystemID() + 1;
 
    /* Destroy pre-existing dofmap */
    if (*dofmap_ptr)
