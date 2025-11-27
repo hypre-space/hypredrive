@@ -47,13 +47,20 @@ EnsureCapacity(void)
       int new_capacity = old_capacity + REALLOC_EXPAND_FACTOR;
 
       /* Reallocate all arrays with the same new capacity */
-      ReallocateArray((void **)&active_stats->matrix, sizeof(double), old_capacity, new_capacity);
-      ReallocateArray((void **)&active_stats->rhs, sizeof(double), old_capacity, new_capacity);
-      ReallocateArray((void **)&active_stats->dofmap, sizeof(double), old_capacity, new_capacity);
-      ReallocateArray((void **)&active_stats->prec, sizeof(double), old_capacity, new_capacity);
-      ReallocateArray((void **)&active_stats->solve, sizeof(double), old_capacity, new_capacity);
-      ReallocateArray((void **)&active_stats->rrnorms, sizeof(double), old_capacity, new_capacity);
-      ReallocateArray((void **)&active_stats->iters, sizeof(int), old_capacity, new_capacity);
+      ReallocateArray((void **)&active_stats->matrix, sizeof(double), old_capacity,
+                      new_capacity);
+      ReallocateArray((void **)&active_stats->rhs, sizeof(double), old_capacity,
+                      new_capacity);
+      ReallocateArray((void **)&active_stats->dofmap, sizeof(double), old_capacity,
+                      new_capacity);
+      ReallocateArray((void **)&active_stats->prec, sizeof(double), old_capacity,
+                      new_capacity);
+      ReallocateArray((void **)&active_stats->solve, sizeof(double), old_capacity,
+                      new_capacity);
+      ReallocateArray((void **)&active_stats->rrnorms, sizeof(double), old_capacity,
+                      new_capacity);
+      ReallocateArray((void **)&active_stats->iters, sizeof(int), old_capacity,
+                      new_capacity);
 
       /* Update capacity after all reallocations */
       active_stats->capacity = new_capacity;
@@ -131,8 +138,7 @@ HandleAnnotationBegin(const char *name)
    {
       active_stats->reps++;
       active_stats->counter =
-         ((active_stats->ls_counter) * active_stats->num_reps) +
-         (active_stats->reps - 1);
+         ((active_stats->ls_counter) * active_stats->num_reps) + (active_stats->reps - 1);
    }
    else if (!strcmp(name, "matrix") || !strcmp(name, "system"))
    {
@@ -300,26 +306,20 @@ PrintEntry(int entry_index)
 {
    if (ShouldPrintBuildTimes(entry_index))
    {
-      double build_time = active_stats->time_factor *
-         (active_stats->dofmap[entry_index] +
-          active_stats->matrix[entry_index] +
-          active_stats->rhs[entry_index]);
-      printf("| %10d | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n",
-             entry_index,
-             build_time,
-             active_stats->time_factor * active_stats->prec[entry_index],
+      double build_time = active_stats->time_factor * (active_stats->dofmap[entry_index] +
+                                                       active_stats->matrix[entry_index] +
+                                                       active_stats->rhs[entry_index]);
+      printf("| %10d | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", entry_index,
+             build_time, active_stats->time_factor * active_stats->prec[entry_index],
              active_stats->time_factor * active_stats->solve[entry_index],
-             active_stats->rrnorms[entry_index],
-             active_stats->iters[entry_index]);
+             active_stats->rrnorms[entry_index], active_stats->iters[entry_index]);
    }
    else
    {
-      printf("| %10d |             | %11.3f | %11.3f | %11.2e |  %10d |\n",
-             entry_index,
+      printf("| %10d |             | %11.3f | %11.3f | %11.2e |  %10d |\n", entry_index,
              active_stats->time_factor * active_stats->prec[entry_index],
              active_stats->time_factor * active_stats->solve[entry_index],
-             active_stats->rrnorms[entry_index],
-             active_stats->iters[entry_index]);
+             active_stats->rrnorms[entry_index], active_stats->iters[entry_index]);
    }
 }
 
@@ -339,7 +339,7 @@ StatsCreate(void)
    stats->counter      = 0;
    stats->reps         = 0;
    stats->num_reps     = 1;
-   stats->num_systems  = -1;  /* Unknown by default */
+   stats->num_systems  = -1; /* Unknown by default */
    stats->ls_counter   = 0;
    stats->level_depth  = 0;
    stats->use_millisec = false;
@@ -499,13 +499,13 @@ StatsAnnotateLevelBegin(int level, const char *name, ...)
    }
 
    /* Push onto level stack - allocate memory for name */
-   size_t name_len = strlen(formatted_name) + 1;
+   size_t name_len                       = strlen(formatted_name) + 1;
    active_stats->level_stack[level].name = (const char *)malloc(name_len);
    if (active_stats->level_stack[level].name)
    {
       memcpy((void *)active_stats->level_stack[level].name, formatted_name, name_len);
    }
-   active_stats->level_stack[level].level = level;
+   active_stats->level_stack[level].level      = level;
    active_stats->level_stack[level].start_time = MPI_Wtime();
    if (level >= active_stats->level_depth)
    {
@@ -552,9 +552,10 @@ StatsAnnotateLevelEnd(int level, const char *name, ...)
        strcmp(active_stats->level_stack[level].name, formatted_name) != 0)
    {
       ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Level %d annotation mismatch: expected '%s', got '%s'",
-                  level,
-                  active_stats->level_stack[level].name ? active_stats->level_stack[level].name : "NULL",
+      ErrorMsgAdd("Level %d annotation mismatch: expected '%s', got '%s'", level,
+                  active_stats->level_stack[level].name
+                     ? active_stats->level_stack[level].name
+                     : "NULL",
                   formatted_name);
       return;
    }

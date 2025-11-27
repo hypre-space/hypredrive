@@ -116,8 +116,8 @@ main(int argc, char **argv)
     *-----------------------------------------------------------*/
 
    RequireConfigArgumentOrAbort(argc, argv, comm, myid);
-   char *config_file     = FindConfigFile(argc, argv);
-   char *config_argv[2]  = {config_file, NULL};
+   char *config_file    = FindConfigFile(argc, argv);
+   char *config_argv[2] = {config_file, NULL};
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, config_argv, obj));
 
    /*-----------------------------------------------------------

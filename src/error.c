@@ -10,11 +10,11 @@
 #if defined(__linux__)
 
 #include <execinfo.h>
+#include <fcntl.h>
 #include <signal.h>
-#include <unistd.h>
 #include <sys/prctl.h>
 #include <sys/wait.h>
-#include <fcntl.h>
+#include <unistd.h>
 
 /*-----------------------------------------------------------------------------
  * ErrorBacktraceGetBaseAddress
@@ -27,7 +27,7 @@ static unsigned long
 ErrorBacktraceGetBaseAddress(void)
 {
    unsigned long base = 0;
-   FILE *fp = fopen("/proc/self/maps", "r");
+   FILE         *fp   = fopen("/proc/self/maps", "r");
    if (fp)
    {
       char line[512];
@@ -39,7 +39,7 @@ ErrorBacktraceGetBaseAddress(void)
          if (dash)
          {
             *dash = '\0';
-            base = strtoul(line, NULL, 16);
+            base  = strtoul(line, NULL, 16);
          }
       }
       fclose(fp);
@@ -58,7 +58,7 @@ ErrorBacktraceSymbolsPrint(void)
    int   nptrs = backtrace(trace, sizeof(trace) / sizeof(trace[0]));
 
    /* Get executable path */
-   char exe_path[4096];
+   char    exe_path[4096];
    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
    if (len > 0)
    {
@@ -80,10 +80,12 @@ ErrorBacktraceSymbolsPrint(void)
       {
          /* Compute offset from base for PIE binaries */
          unsigned long addr = (unsigned long)trace[i];
-         unsigned long offset = (base_addr > 0 && addr > base_addr) ? (addr - base_addr) : addr;
+         unsigned long offset =
+            (base_addr > 0 && addr > base_addr) ? (addr - base_addr) : addr;
 
-         char cmd[512];
-         snprintf(cmd, sizeof(cmd), "addr2line -e %s -f -C -i 0x%lx 2>/dev/null", exe_path, offset);
+         char cmd[4352];
+         snprintf(cmd, sizeof(cmd), "addr2line -e %s -f -C -i 0x%lx 2>/dev/null",
+                  exe_path, offset);
          FILE *fp = popen(cmd, "r");
          if (fp)
          {
@@ -93,20 +95,18 @@ ErrorBacktraceSymbolsPrint(void)
             {
                /* Remove newline */
                char *nl = strchr(func, '\n');
-               if (nl)
-                  *nl = '\0';
+               if (nl) *nl = '\0';
             }
             if (fgets(file, sizeof(file), fp))
             {
                /* Remove newline */
                char *nl = strchr(file, '\n');
-               if (nl)
-                  *nl = '\0';
+               if (nl) *nl = '\0';
             }
             pclose(fp);
 
-            if (func[0] != '\0' && file[0] != '\0' &&
-                strcmp(func, "??") != 0 && strcmp(file, "??:0") != 0)
+            if (func[0] != '\0' && file[0] != '\0' && strcmp(func, "??") != 0 &&
+                strcmp(file, "??:0") != 0)
             {
                saw_output = 1;
                fprintf(stderr, "#%d %s at %s\n", i, func, file);
@@ -139,7 +139,8 @@ ErrorBacktracePrint(void)
    fprintf(stderr, "\nBacktrace:\n");
 
    const char *HYPREDRV_DEBUG = getenv("HYPREDRV_DEBUG");
-   int         debug_mode     = (HYPREDRV_DEBUG && HYPREDRV_DEBUG[0] == '1' && HYPREDRV_DEBUG[1] == '\0');
+   int         debug_mode =
+      (HYPREDRV_DEBUG && HYPREDRV_DEBUG[0] == '1' && HYPREDRV_DEBUG[1] == '\0');
 
    if (!debug_mode)
    {
@@ -217,24 +218,15 @@ ErrorBacktracePrint(void)
        * giving the user an interactive session at the actual error location. */
       if (file_cmd[0] != '\0')
       {
-         execlp("gdb", "gdb", "-nx",
-                "-ex", "set style enabled on",
-                "-ex", "set confirm off",
-                "-ex", "set pagination off",
-                "-ex", file_cmd,
-                "-ex", attach_cmd,
-                "-ex", "continue",
-                (char *)NULL);
+         execlp("gdb", "gdb", "-nx", "-ex", "set style enabled on", "-ex",
+                "set confirm off", "-ex", "set pagination off", "-ex", file_cmd, "-ex",
+                attach_cmd, "-ex", "continue", (char *)NULL);
       }
       else
       {
-         execlp("gdb", "gdb", "-nx",
-                "-ex", "set style enabled on",
-                "-ex", "set confirm off",
-                "-ex", "set pagination off",
-                "-ex", attach_cmd,
-                "-ex", "continue",
-                (char *)NULL);
+         execlp("gdb", "gdb", "-nx", "-ex", "set style enabled on", "-ex",
+                "set confirm off", "-ex", "set pagination off", "-ex", attach_cmd, "-ex",
+                "continue", (char *)NULL);
       }
       /* Try lldb */
       execlp("lldb", "lldb", "-o", "bt", "-o", "quit", "-p", pid_str, (char *)NULL);

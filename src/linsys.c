@@ -236,9 +236,9 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "matrix");
 
    char                 matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int                  ls_id                                = StatsGetLinearSystemID() + 1;
-   int                  file_not_found                       = 0;
-   void                *obj                                  = NULL;
+   int                  ls_id          = StatsGetLinearSystemID() + 1;
+   int                  file_not_found = 0;
+   void                *obj            = NULL;
    HYPRE_MemoryLocation memory_location =
       (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 

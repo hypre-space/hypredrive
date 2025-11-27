@@ -441,7 +441,8 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t obj, HYPRE_Matrix mat_A)
    if (obj)
    {
       /* Don't annotate "matrix" here - users annotate with "system" in their code */
-      /* This was causing build times and solve times to be recorded in separate entries */
+      /* This was causing build times and solve times to be recorded in separate entries
+       */
       obj->mat_A = (HYPRE_IJMatrix)mat_A;
       obj->mat_M = (HYPRE_IJMatrix)mat_A;
    }
@@ -771,19 +772,19 @@ HYPREDRV_PreconCreate(HYPREDRV_t obj)
       bool should_create = false;
       if (obj->precon == NULL)
       {
-         should_create = true;  /* Must create if it doesn't exist */
+         should_create = true; /* Must create if it doesn't exist */
       }
       else if (reuse == 0)
       {
-         should_create = true;  /* No reuse: always create */
+         should_create = true; /* No reuse: always create */
       }
       else if (ls_id < 0 || ls_id == 0)
       {
-         should_create = true;  /* Always create on first system */
+         should_create = true; /* Always create on first system */
       }
       else if ((ls_id + 1) % (reuse + 1) == 0)
       {
-         should_create = true;  /* Reuse period expired, need new preconditioner */
+         should_create = true; /* Reuse period expired, need new preconditioner */
       }
 
       if (should_create)
@@ -957,17 +958,18 @@ HYPREDRV_PreconDestroy(HYPREDRV_t obj)
       /* Preconditioner reuse logic:
        * - If reuse == 0: always destroy (no reuse)
        * - If reuse > 0: destroy every (reuse + 1) linear systems
-       *   This means: destroy when (ls_id + 1) % (reuse + 1) == 0, but not on first system
-       *   Example: reuse=2 means reuse for 2 systems, destroy on 3rd (ls_id=2, 5, 8, ...)
+       *   This means: destroy when (ls_id + 1) % (reuse + 1) == 0, but not on first
+       * system Example: reuse=2 means reuse for 2 systems, destroy on 3rd (ls_id=2, 5, 8,
+       * ...)
        */
       bool should_destroy = false;
       if (reuse == 0)
       {
-         should_destroy = true;  /* No reuse: always destroy */
+         should_destroy = true; /* No reuse: always destroy */
       }
       else if (ls_id > 0 && ((ls_id + 1) % (reuse + 1) == 0))
       {
-         should_destroy = true;  /* Reuse period expired */
+         should_destroy = true; /* Reuse period expired */
       }
 
       if (should_destroy)
