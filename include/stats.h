@@ -17,7 +17,7 @@
 #include "utils.h"
 
 /* Maximum number of hierarchical annotation levels */
-#define STATS_MAX_LEVELS 10
+#define STATS_MAX_LEVELS 4
 
 /* HYPREDRV_AnnotateAction enum - internal use only (not in public API) */
 typedef enum
@@ -116,22 +116,35 @@ typedef struct Stats_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void StatsCreate(void);
-void StatsDestroy(void);
+/* Stats object lifecycle */
+Stats *StatsCreate(void);
+void   StatsDestroy(Stats **stats_ptr);
+void   StatsSetContext(Stats *stats);
+Stats *StatsGetContext(void);
+
+/* Annotation functions */
 void StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name, ...);
 void StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args);
 void StatsAnnotateLevelBegin(int level, const char *name, ...);
 void StatsAnnotateLevelEnd(int level, const char *name, ...);
-void StatsIterSet(int);
+
+/* Timer configuration */
 void StatsTimerSetMilliseconds(void);
 void StatsTimerSetSeconds(void);
+
+/* Statistics setters */
+void StatsIterSet(int);
 void StatsRelativeResNormSet(double);
-void StatsPrint(int);
-int  StatsGetLinearSystemID(void);
 void StatsSetNumReps(int);
 void StatsSetNumLinearSystems(int);
-int  StatsGetLastIter(void);
+
+/* Statistics getters */
+int    StatsGetLinearSystemID(void);
+int    StatsGetLastIter(void);
 double StatsGetLastSetupTime(void);
 double StatsGetLastSolveTime(void);
+
+/* Output */
+void StatsPrint(int);
 
 #endif /* STATS_HEADER */

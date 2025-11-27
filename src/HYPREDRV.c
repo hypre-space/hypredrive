@@ -57,7 +57,7 @@ typedef struct hypredrv_struct
    HYPRE_Precon precon;
    HYPRE_Solver solver;
 
-   // TODO: associate stats variable with hypredrv object
+   Stats *stats;
 } hypredrv_t;
 
 /*-----------------------------------------------------------------------------
@@ -153,12 +153,14 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *obj_ptr)
 
    obj->precon = NULL;
    obj->solver = NULL;
+   obj->stats  = NULL;
 
    /* Disable library mode by default */
    obj->lib_mode = false;
 
-   /* Create global statistics object */
-   StatsCreate();
+   /* Create statistics object and set as active context */
+   obj->stats = StatsCreate();
+   StatsSetContext(obj->stats);
 
    /* Set output pointer */
    *obj_ptr = obj;
@@ -197,8 +199,8 @@ HYPREDRV_Destroy(HYPREDRV_t *obj_ptr)
       IntArrayDestroy(&obj->dofmap);
       InputArgsDestroy(&obj->iargs);
 
-      /* Destroy global stats variable */
-      StatsDestroy();
+      /* Destroy statistics object */
+      StatsDestroy(&obj->stats);
 
       free(*obj_ptr);
       *obj_ptr = NULL;
