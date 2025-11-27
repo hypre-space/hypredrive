@@ -1,0 +1,1720 @@
+/******************************************************************************
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+ *
+ * SPDX-License-Identifier: MIT
+ ******************************************************************************/
+
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+#include "HYPREDRV.h"
+
+/*==========================================================================
+ *   2D Lid Driven Cavity (Q1-Q1 Stabilized) Example Driver
+ *==========================================================================
+ *
+ *   Grid Partitioning:
+ *   ------------------
+ *                     P[1]
+ *                      ↑
+ *                      |
+ *                      |
+ *         P[0] ←———————C
+ *
+ *   Geometry and Axes:
+ *   ------------------
+ *   Ω = [0, L] × [0, L]
+ *
+ *   Physics (Unsteady Incompressible Navier-Stokes):
+ *   -----------------------------------------------
+ *
+ *   Boundary Conditions:
+ *   --------------------
+ *
+ *==========================================================================*/
+
+/*--------------------------------------------------------------------------
+ * Default solver configuration
+ *--------------------------------------------------------------------------*/
+static const char *default_config = "solver:\n"
+                                    "  gmres:\n"
+                                    "    print_level: 0\n"
+                                    "preconditioner:\n"
+                                    "  ilu:\n"
+                                    "    type: bj-ilut\n"
+                                    "    droptol: 1.0e-3\n";
+
+/*--------------------------------------------------------------------------
+ * Problem parameters struct
+ *--------------------------------------------------------------------------*/
+typedef struct
+{
+   HYPRE_Int  visualize;         /* Visualize displacement in VTK format */
+   HYPRE_Int  verbose;           /* Verbosity level bitset */
+   HYPRE_Real final_time;        /* Final simulation time */
+   HYPRE_Int  N[2];              /* Grid dimensions (nodes) */
+   HYPRE_Int  P[2];              /* Processor grid dims */
+   HYPRE_Real L[2];              /* Physical dimensions (Lx, Ly) */
+   HYPRE_Int  max_rows_per_call; /* Max rows per IJ add/set call */
+   HYPRE_Real Re;                /* Reynolds number */
+   HYPRE_Real dt;                /* Time step */
+   HYPRE_Real newton_tol;        /* Non-linear solver tolerance */
+   HYPRE_Int  adaptive_dt;       /* Adaptive time stepping flag */
+   char      *yaml_file;         /* YAML configuration file */
+} LidCavityParams;
+
+/*--------------------------------------------------------------------------
+ * Distributed Mesh struct (reused)
+ *--------------------------------------------------------------------------*/
+typedef struct
+{
+   MPI_Comm      cart_comm;
+   HYPRE_Int     mypid;
+   HYPRE_Int     gdims[2];
+   HYPRE_Int     pdims[2];
+   HYPRE_Int     coords[2];
+   HYPRE_Int     nlocal[2];
+   HYPRE_Int     nbrs[8];
+   HYPRE_Int     local_size; /* local number of nodes */
+   HYPRE_BigInt  ilower;     /* first local node gid (scalar) */
+   HYPRE_BigInt  iupper;     /* last  local node gid (scalar) */
+   HYPRE_BigInt *pstarts[2];
+   HYPRE_Real    gsizes[2];
+} DistMesh2D;
+
+/*--------------------------------------------------------------------------
+ * Ghost Data struct
+ *--------------------------------------------------------------------------*/
+typedef struct
+{
+   double *recv_bufs[8]; /* 0:L, 1:R, 2:B, 3:T, 4:BL, 5:TR, 6:TL, 7:BR */
+   double *send_bufs[8];
+   MPI_Request reqs[16];
+} GhostData;
+
+/*--------------------------------------------------------------------------
+ * Prototypes
+ *--------------------------------------------------------------------------*/
+static inline HYPRE_BigInt grid2idx(const HYPRE_BigInt gcoords[2],
+                                    const HYPRE_Int bcoords[2], const HYPRE_Int gdims[2],
+                                    HYPRE_BigInt **pstarts);
+
+int PrintUsage(void);
+int CreateDistMesh2D(MPI_Comm, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int,
+                   DistMesh2D **);
+int DestroyDistMesh2D(DistMesh2D **);
+int CreateGhostData(DistMesh2D *, GhostData **);
+int DestroyGhostData(GhostData **);
+int ExchangeVectorGhosts(DistMesh2D *, double *, GhostData *);
+
+int ParseArguments(int, char **, LidCavityParams *, int, int);
+int BuildNewtonSystem(DistMesh2D *, LidCavityParams *,
+                      HYPRE_Real *, HYPRE_Real *,
+                      HYPRE_IJMatrix *, HYPRE_IJVector *, GhostData *, GhostData *);
+int WriteVTKsolutionVector(DistMesh2D *, LidCavityParams *, HYPRE_Real *, int);
+void GetVTKBaseName(LidCavityParams *, char *, size_t);
+void GetVTKDataDir(LidCavityParams *, char *, size_t);
+void GetVTKBaseName(LidCavityParams *, char *, size_t);
+void GetVTKDataDir(LidCavityParams *, char *, size_t);
+
+/*--------------------------------------------------------------------------
+ * Print usage info
+ *--------------------------------------------------------------------------*/
+int
+PrintUsage(void)
+{
+   printf("\n");
+   printf("Usage: ${MPIEXEC_COMMAND} <np> ./lidcavity [options]\n");
+   printf("\n");
+   printf("Options:\n");
+   printf("  -i <file>         : YAML configuration file for solver settings (Opt.)\n");
+   printf("  -n <nx> <ny>      : Global grid dimensions in nodes (32 32)\n");
+   printf("  -P <Px> <Py>      : Processor grid dimensions (1 1)\n");
+   printf("  -L <Lx> <Ly>      : Physical dimensions (1 1)\n");
+   printf("  -Re <val>         : Reynolds number (100.0)\n");
+   printf("  -dt <val>         : Initial time step size (0.001)\n");
+   printf("  -tf <val>         : Final simulation time (0.1)\n");
+   printf("  -ntol <val>       : Non-linear solver tolerance (1.0e-6)\n");
+   printf("  -adt              : Enable simple adaptive time stepping\n");
+   printf("  -br <n>           : Batch rows for matrix assembly (128)\n");
+   printf("  -vis <m>          : Visualization mode (0)\n");
+   printf("                         0: none\n");
+   printf("                         1: ASCII VTK\n");
+   printf("                         2: binary VTK\n");
+   printf("  -v|--verbose <n>  : Verbosity bitset (0)\n");
+   printf("                         0x1: Linear solver statistics\n");
+   printf("                         0x2: Library information\n");
+   printf("                         0x4: Linear system printing\n");
+   printf("  -h|--help         : Print this message\n");
+   printf("\n");
+
+   return 0;
+}
+
+/*--------------------------------------------------------------------------
+ * Parse command line arguments
+ *--------------------------------------------------------------------------*/
+int
+ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int num_procs)
+{
+   /* Defaults */
+   params->visualize = 0;
+   params->verbose   = 3;
+   params->final_time = 0.1;
+   for (int i = 0; i < 2; i++)
+   {
+      params->N[i] = 32;
+      params->P[i] = 1;
+      params->L[i] = 1.0;
+   }
+   params->max_rows_per_call = 128;
+   params->Re                = 100.0;
+   params->dt                = 0.001;
+   params->newton_tol        = 1.0e-6;
+   params->adaptive_dt       = 0;
+   params->yaml_file         = NULL;
+
+   for (int i = 1; i < argc; i++)
+   {
+      if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
+      {
+         if (++i < argc) params->yaml_file = argv[i];
+      }
+      else if (!strcmp(argv[i], "-n"))
+      {
+         if (i + 2 >= argc)
+         {
+            if (!myid) printf("Error: -n requires two values\n");
+            return 1;
+         }
+         for (int j = 0; j < 2; j++)
+         {
+            params->N[j] = atoi(argv[++i]);
+         }
+      }
+      else if (!strcmp(argv[i], "-P"))
+      {
+         if (i + 2 >= argc)
+         {
+            if (!myid) printf("Error: -P requires two values\n");
+            return 1;
+         }
+         for (int j = 0; j < 2; j++)
+         {
+            params->P[j] = atoi(argv[++i]);
+         }
+      }
+      else if (!strcmp(argv[i], "-L"))
+      {
+         if (i + 2 >= argc)
+         {
+            if (!myid) printf("Error: -L requires two values\n");
+            return 1;
+         }
+         for (int j = 0; j < 2; j++)
+         {
+            params->L[j] = atof(argv[++i]);
+         }
+      }
+      else if (!strcmp(argv[i], "-Re"))
+      {
+         if (++i < argc) params->Re = atof(argv[i]);
+      }
+      else if (!strcmp(argv[i], "-dt"))
+      {
+         if (++i < argc) params->dt = atof(argv[i]);
+      }
+      else if (!strcmp(argv[i], "-adt"))
+      {
+         params->adaptive_dt = 1;
+      }
+      else if (!strcmp(argv[i], "-br") || !strcmp(argv[i], "--batch-rows"))
+      {
+         if (++i < argc) params->max_rows_per_call = atoi(argv[i]);
+      }
+      else if (!strcmp(argv[i], "-tf") || !strcmp(argv[i], "--final-time"))
+      {
+         if (++i < argc) params->final_time = atof(argv[i]);
+      }
+      else if (!strcmp(argv[i], "-ntol") || !strcmp(argv[i], "--newton-tol"))
+      {
+         if (++i < argc) params->newton_tol = atof(argv[i]);
+      }
+      else if (!strcmp(argv[i], "-vis") || !strcmp(argv[i], "--visualize"))
+      {
+         if (i + 1 < argc && argv[i + 1][0] != '-')
+         {
+            params->visualize = atoi(argv[++i]);
+         }
+         else
+         {
+            /* No argument means ASCII */
+            params->visualize = 1;
+         }
+      }
+      else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
+      {
+         if (++i < argc) params->verbose = atoi(argv[i]);
+      }
+      else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
+      {
+         if (!myid) PrintUsage();
+         return 2;
+      }
+   }
+
+   /* Checks */
+   if (params->P[0] * params->P[1] != num_procs)
+   {
+      if (!myid)
+      {
+         printf("Error: Number of processes (%d) must match processor grid "
+                "dimensions (%d x %d = %d)\n",
+                num_procs, params->P[0], params->P[1],
+                params->P[0] * params->P[1]);
+      }
+      return 1;
+   }
+
+   for (int d = 0; d < 2; d++)
+   {
+      char *name[] = {"First", "Second"};
+      if (params->P[d] > params->N[d])
+      {
+         if (!myid)
+         {
+            printf("Error: %s grid dimension (N = %d) must be larger than the "
+                   "number of ranks (P = %d)\n",
+                   name[d], params->N[d], params->P[d]);
+         }
+         return 1;
+      }
+   }
+
+   return 0;
+}
+
+/*--------------------------------------------------------------------------
+ * Compute global index from global grid coordinates
+ *--------------------------------------------------------------------------*/
+static inline HYPRE_BigInt
+grid2idx(const HYPRE_BigInt gcoords[2], const HYPRE_Int bcoords[2],
+         const HYPRE_Int gdims[2], HYPRE_BigInt **pstarts)
+{
+   return pstarts[1][bcoords[1]] * (HYPRE_BigInt)gdims[0] +
+          pstarts[0][bcoords[0]] * (pstarts[1][bcoords[1] + 1] - pstarts[1][bcoords[1]]) +
+          (gcoords[1] - pstarts[1][bcoords[1]]) *
+             (pstarts[0][bcoords[0] + 1] - pstarts[0][bcoords[0]]) +
+          (gcoords[0] - pstarts[0][bcoords[0]]);
+}
+
+/*--------------------------------------------------------------------------
+ * Create mesh partition information (reused from Laplacian example)
+ *--------------------------------------------------------------------------*/
+int
+CreateDistMesh2D(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Px,
+               HYPRE_Int Py, DistMesh2D **mesh_ptr)
+{
+   DistMesh2D *mesh = (DistMesh2D *)malloc(sizeof(DistMesh2D));
+   int       myid;
+
+   mesh->gdims[0] = Nx;
+   mesh->gdims[1] = Ny;
+   mesh->pdims[0] = Px;
+   mesh->pdims[1] = Py;
+
+   MPI_Cart_create(comm, 2, mesh->pdims, (int[]){0, 0}, 1, &(mesh->cart_comm));
+   MPI_Comm_rank(mesh->cart_comm, &myid);
+   MPI_Cart_coords(mesh->cart_comm, myid, 2, mesh->coords);
+   mesh->mypid = (HYPRE_Int)myid;
+
+   for (int i = 0; i < 2; i++)
+   {
+      HYPRE_Int size = mesh->gdims[i] / mesh->pdims[i];
+      HYPRE_Int rest = mesh->gdims[i] - size * mesh->pdims[i];
+
+      mesh->pstarts[i] = calloc(mesh->pdims[i] + 1, sizeof(HYPRE_BigInt));
+      for (int j = 0; j < mesh->pdims[i] + 1; j++)
+      {
+         mesh->pstarts[i][j] = (HYPRE_BigInt)(size * j + (j < rest ? j : rest));
+      }
+      mesh->nlocal[i] = (HYPRE_Int)(mesh->pstarts[i][mesh->coords[i] + 1] -
+                                    mesh->pstarts[i][mesh->coords[i]]);
+      mesh->gsizes[i] = 1.0 / (mesh->gdims[i] - 1);
+   }
+
+   HYPRE_BigInt gcoords[2] = {mesh->pstarts[0][mesh->coords[0]],
+                              mesh->pstarts[1][mesh->coords[1]]};
+   mesh->ilower            = grid2idx(gcoords, mesh->coords, mesh->gdims, mesh->pstarts);
+   mesh->local_size        = mesh->nlocal[0] * mesh->nlocal[1];
+   mesh->iupper            = mesh->ilower + mesh->local_size - 1;
+
+   MPI_Cart_shift(mesh->cart_comm, 0, 1, &mesh->nbrs[0], &mesh->nbrs[1]);
+   MPI_Cart_shift(mesh->cart_comm, 1, 1, &mesh->nbrs[2], &mesh->nbrs[3]);
+
+   if (mesh->coords[0] > 0 && mesh->coords[1] > 0)
+      MPI_Cart_rank(mesh->cart_comm,
+                    (int[]){mesh->coords[0] - 1, mesh->coords[1] - 1},
+                    &mesh->nbrs[4]);
+   else mesh->nbrs[4] = MPI_PROC_NULL;
+
+   if (mesh->coords[0] < mesh->pdims[0] - 1 && mesh->coords[1] < mesh->pdims[1] - 1)
+      MPI_Cart_rank(mesh->cart_comm,
+                    (int[]){mesh->coords[0] + 1, mesh->coords[1] + 1},
+                    &mesh->nbrs[5]);
+   else mesh->nbrs[5] = MPI_PROC_NULL;
+
+   if (mesh->coords[0] > 0 && mesh->coords[1] < mesh->pdims[1] - 1)
+      MPI_Cart_rank(mesh->cart_comm,
+                    (int[]){mesh->coords[0] - 1, mesh->coords[1] + 1},
+                    &mesh->nbrs[6]);
+   else mesh->nbrs[6] = MPI_PROC_NULL;
+
+   if (mesh->coords[0] < mesh->pdims[0] - 1 && mesh->coords[1] > 0)
+      MPI_Cart_rank(mesh->cart_comm,
+                    (int[]){mesh->coords[0] + 1, mesh->coords[1] - 1},
+                    &mesh->nbrs[7]);
+   else mesh->nbrs[7] = MPI_PROC_NULL;
+
+   *mesh_ptr = mesh;
+   return 0;
+}
+
+/*--------------------------------------------------------------------------
+ * Ghost Data struct and functions
+ *--------------------------------------------------------------------------*/
+
+int CreateGhostData(DistMesh2D *mesh, GhostData **ghost_ptr)
+{
+   GhostData *g = (GhostData *)calloc(1, sizeof(GhostData));
+   int nx = mesh->nlocal[0];
+   int ny = mesh->nlocal[1];
+
+   if (mesh->nbrs[0] != MPI_PROC_NULL) { g->recv_bufs[0] = (double*)calloc(ny * 3, sizeof(double)); g->send_bufs[0] = (double*)calloc(ny * 3, sizeof(double)); }
+   if (mesh->nbrs[1] != MPI_PROC_NULL) { g->recv_bufs[1] = (double*)calloc(ny * 3, sizeof(double)); g->send_bufs[1] = (double*)calloc(ny * 3, sizeof(double)); }
+   if (mesh->nbrs[2] != MPI_PROC_NULL) { g->recv_bufs[2] = (double*)calloc(nx * 3, sizeof(double)); g->send_bufs[2] = (double*)calloc(nx * 3, sizeof(double)); }
+   if (mesh->nbrs[3] != MPI_PROC_NULL) { g->recv_bufs[3] = (double*)calloc(nx * 3, sizeof(double)); g->send_bufs[3] = (double*)calloc(nx * 3, sizeof(double)); }
+   for (int i=4; i<8; i++) if (mesh->nbrs[i] != MPI_PROC_NULL) { g->recv_bufs[i] = (double*)calloc(3, sizeof(double)); g->send_bufs[i] = (double*)calloc(3, sizeof(double)); }
+
+   *ghost_ptr = g;
+   return 0;
+}
+
+int DestroyGhostData(GhostData **ghost_ptr)
+{
+   GhostData *g = *ghost_ptr;
+   if (!g) return 0;
+   for (int i=0; i<8; i++) {
+      if (g->recv_bufs[i]) free(g->recv_bufs[i]);
+      if (g->send_bufs[i]) free(g->send_bufs[i]);
+   }
+   free(g);
+   *ghost_ptr = NULL;
+   return 0;
+}
+
+int ExchangeVectorGhosts(DistMesh2D *mesh, double *vec, GhostData *g)
+{
+   int nx = mesh->nlocal[0];
+   int ny = mesh->nlocal[1];
+   int reqc = 0;
+
+   // Post Recvs (Tag = my_dir_index)
+   // We expect neighbor to send with Tag = my_dir_index (their dest index relative to them? No).
+   // P0 recv from P1 (Right). P1 sends to P0 (Left).
+   // Scheme: Send Tag = Dest_Direction.
+   // P1 sends to P0 (Left=0). Tag=0.
+   // P0 recvs from P1 (Right=1). Expect Tag=0.
+
+   // Recv logic:
+   if (mesh->nbrs[0] != MPI_PROC_NULL) MPI_Irecv(g->recv_bufs[0], ny*3, MPI_DOUBLE, mesh->nbrs[0], 0, mesh->cart_comm, &g->reqs[reqc++]);
+   if (mesh->nbrs[1] != MPI_PROC_NULL) MPI_Irecv(g->recv_bufs[1], ny*3, MPI_DOUBLE, mesh->nbrs[1], 1, mesh->cart_comm, &g->reqs[reqc++]);
+   if (mesh->nbrs[2] != MPI_PROC_NULL) MPI_Irecv(g->recv_bufs[2], nx*3, MPI_DOUBLE, mesh->nbrs[2], 2, mesh->cart_comm, &g->reqs[reqc++]);
+   if (mesh->nbrs[3] != MPI_PROC_NULL) MPI_Irecv(g->recv_bufs[3], nx*3, MPI_DOUBLE, mesh->nbrs[3], 3, mesh->cart_comm, &g->reqs[reqc++]);
+
+   if (mesh->nbrs[4] != MPI_PROC_NULL) MPI_Irecv(g->recv_bufs[4], 3, MPI_DOUBLE, mesh->nbrs[4], 4, mesh->cart_comm, &g->reqs[reqc++]);
+   if (mesh->nbrs[5] != MPI_PROC_NULL) MPI_Irecv(g->recv_bufs[5], 3, MPI_DOUBLE, mesh->nbrs[5], 5, mesh->cart_comm, &g->reqs[reqc++]);
+   if (mesh->nbrs[6] != MPI_PROC_NULL) MPI_Irecv(g->recv_bufs[6], 3, MPI_DOUBLE, mesh->nbrs[6], 6, mesh->cart_comm, &g->reqs[reqc++]);
+   if (mesh->nbrs[7] != MPI_PROC_NULL) MPI_Irecv(g->recv_bufs[7], 3, MPI_DOUBLE, mesh->nbrs[7], 7, mesh->cart_comm, &g->reqs[reqc++]);
+
+   // Pack and Send (Tag = My Direction relative to neighbor)
+   // If I send to Left (0), I am their Right (1). So Tag should be 1.
+   // Wait, previously I said: P1 sends to P0 (Left=0) with Tag 0. P0 recvs from P1 (Right=1) with Tag 0.
+   // Let's stick to: Send Tag = Direction I am sending TO.
+   // Recv Tag = Direction neighbor sent TO (which is ME, from their perspective).
+   // If I am P0, P1 sends to Left (0). So I recv from P1 with Tag 0.
+   // Correct.
+
+   // Send logic:
+   if (mesh->nbrs[0] != MPI_PROC_NULL) {
+      for (int j=0; j<ny; j++) {
+         int idx = (j * nx + 0) * 3;
+         g->send_bufs[0][3*j+0] = vec[idx+0]; g->send_bufs[0][3*j+1] = vec[idx+1]; g->send_bufs[0][3*j+2] = vec[idx+2];
+      }
+      // Send to Left (0). But neighbor P_left receives from Right (1).
+      // If neighbor expects Tag 1, I must send Tag 1.
+      // Neighbor P_left: MPI_Irecv(..., P_me, 1) -> Expects Tag 1.
+      // So I must send Tag 1.
+      MPI_Isend(g->send_bufs[0], ny*3, MPI_DOUBLE, mesh->nbrs[0], 1, mesh->cart_comm, &g->reqs[reqc++]);
+   }
+   if (mesh->nbrs[1] != MPI_PROC_NULL) {
+      for (int j=0; j<ny; j++) {
+         int idx = (j * nx + (nx-1)) * 3;
+         g->send_bufs[1][3*j+0] = vec[idx+0]; g->send_bufs[1][3*j+1] = vec[idx+1]; g->send_bufs[1][3*j+2] = vec[idx+2];
+      }
+      // Send to Right (1). Neighbor P_right receives from Left (0). Expects Tag 0.
+      MPI_Isend(g->send_bufs[1], ny*3, MPI_DOUBLE, mesh->nbrs[1], 0, mesh->cart_comm, &g->reqs[reqc++]);
+   }
+   if (mesh->nbrs[2] != MPI_PROC_NULL) {
+      for (int i=0; i<nx; i++) {
+         int idx = (0 * nx + i) * 3;
+         g->send_bufs[2][3*i+0] = vec[idx+0]; g->send_bufs[2][3*i+1] = vec[idx+1]; g->send_bufs[2][3*i+2] = vec[idx+2];
+      }
+      // Send to Bottom (2). Neighbor P_down receives from Top (3). Expects Tag 3.
+      MPI_Isend(g->send_bufs[2], nx*3, MPI_DOUBLE, mesh->nbrs[2], 3, mesh->cart_comm, &g->reqs[reqc++]);
+   }
+   if (mesh->nbrs[3] != MPI_PROC_NULL) {
+      for (int i=0; i<nx; i++) {
+         int idx = ((ny-1) * nx + i) * 3;
+         g->send_bufs[3][3*i+0] = vec[idx+0]; g->send_bufs[3][3*i+1] = vec[idx+1]; g->send_bufs[3][3*i+2] = vec[idx+2];
+      }
+      // Send to Top (3). Neighbor P_up receives from Bottom (2). Expects Tag 2.
+      MPI_Isend(g->send_bufs[3], nx*3, MPI_DOUBLE, mesh->nbrs[3], 2, mesh->cart_comm, &g->reqs[reqc++]);
+   }
+
+   // Diagonals
+   // 4: Down-Left. Opp: Up-Right (5). Send Tag 5.
+   if (mesh->nbrs[4] != MPI_PROC_NULL) {
+       int idx = (0 * nx + 0) * 3;
+       g->send_bufs[4][0] = vec[idx+0]; g->send_bufs[4][1] = vec[idx+1]; g->send_bufs[4][2] = vec[idx+2];
+       MPI_Isend(g->send_bufs[4], 3, MPI_DOUBLE, mesh->nbrs[4], 5, mesh->cart_comm, &g->reqs[reqc++]);
+   }
+   // 5: Up-Right. Opp: Down-Left (4). Send Tag 4.
+   if (mesh->nbrs[5] != MPI_PROC_NULL) {
+       int idx = ((ny-1) * nx + (nx-1)) * 3;
+       g->send_bufs[5][0] = vec[idx+0]; g->send_bufs[5][1] = vec[idx+1]; g->send_bufs[5][2] = vec[idx+2];
+       MPI_Isend(g->send_bufs[5], 3, MPI_DOUBLE, mesh->nbrs[5], 4, mesh->cart_comm, &g->reqs[reqc++]);
+   }
+   // 6: Up-Left. Opp: Down-Right (7). Send Tag 7.
+   if (mesh->nbrs[6] != MPI_PROC_NULL) {
+       int idx = ((ny-1) * nx + 0) * 3;
+       g->send_bufs[6][0] = vec[idx+0]; g->send_bufs[6][1] = vec[idx+1]; g->send_bufs[6][2] = vec[idx+2];
+       MPI_Isend(g->send_bufs[6], 3, MPI_DOUBLE, mesh->nbrs[6], 7, mesh->cart_comm, &g->reqs[reqc++]);
+   }
+   // 7: Down-Right. Opp: Up-Left (6). Send Tag 6.
+   if (mesh->nbrs[7] != MPI_PROC_NULL) {
+       int idx = (0 * nx + (nx-1)) * 3;
+       g->send_bufs[7][0] = vec[idx+0]; g->send_bufs[7][1] = vec[idx+1]; g->send_bufs[7][2] = vec[idx+2];
+       MPI_Isend(g->send_bufs[7], 3, MPI_DOUBLE, mesh->nbrs[7], 6, mesh->cart_comm, &g->reqs[reqc++]);
+   }
+
+   MPI_Waitall(reqc, g->reqs, MPI_STATUSES_IGNORE);
+   return 0;
+}
+
+/*--------------------------------------------------------------------------
+ * Destroy distributed mesh structure
+ *--------------------------------------------------------------------------*/
+int
+DestroyDistMesh2D(DistMesh2D **mesh_ptr)
+{
+   DistMesh2D *mesh = *mesh_ptr;
+   if (!mesh) return 0;
+
+   MPI_Comm_free(&(mesh->cart_comm));
+   for (int i = 0; i < 2; i++) free(mesh->pstarts[i]);
+   free(mesh);
+   *mesh_ptr = NULL;
+   return 0;
+}
+
+
+
+/*--------------------------------------------------------------------------
+ * 2D Q1 shape functions
+ *--------------------------------------------------------------------------*/
+static const int quad_sgn[4][2] = {{-1, -1}, {+1, -1}, {+1, +1}, {-1, +1}};
+static const HYPRE_Real gauss_x[2] = {-0.5773502691896257, 0.5773502691896257};
+static const HYPRE_Real gauss_w[2] = {1.0, 1.0};
+
+static void
+q1_shape_ref_2d(const HYPRE_Real xi, const HYPRE_Real eta, HYPRE_Real N[4],
+                HYPRE_Real dN_dxi[4], HYPRE_Real dN_deta[4])
+{
+   for (int a = 0; a < 4; a++)
+   {
+      HYPRE_Real sx = quad_sgn[a][0];
+      HYPRE_Real sy = quad_sgn[a][1];
+      HYPRE_Real f1 = (1.0 + sx * xi);
+      HYPRE_Real f2 = (1.0 + sy * eta);
+      N[a]          = 0.25 * f1 * f2;
+      dN_dxi[a]     = 0.25 * sx * f2;
+      dN_deta[a]    = 0.25 * sy * f1;
+   }
+}
+
+static void
+get_global_coords(HYPRE_BigInt global_node_idx, DistMesh2D *mesh, HYPRE_BigInt gcoords[2])
+{
+    // Calculate local index on this processor
+    HYPRE_BigInt local_node_idx_on_proc = global_node_idx - mesh->ilower;
+    // Calculate local x and y coordinates on this processor
+    HYPRE_BigInt local_x = local_node_idx_on_proc % mesh->nlocal[0];
+    HYPRE_BigInt local_y = local_node_idx_on_proc / mesh->nlocal[0];
+    // Convert local processor coordinates to global coordinates
+    gcoords[0] = local_x + mesh->pstarts[0][mesh->coords[0]];
+    gcoords[1] = local_y + mesh->pstarts[1][mesh->coords[1]];
+}
+
+void ComputeComponentNorms(HYPRE_IJVector b, HYPRE_Int local_size,
+                           double *norm_u, double *norm_v, double *norm_p)
+{
+   double sum_u = 0.0, sum_v = 0.0, sum_p = 0.0;
+
+   HYPRE_Int *indices = (HYPRE_Int*) malloc(3 * local_size * sizeof(HYPRE_Int));
+   HYPRE_Complex *values = (HYPRE_Complex*) malloc(3 * local_size * sizeof(HYPRE_Complex));
+
+   // Need to know the global range of this process to generate indices
+   HYPRE_Int ilower, iupper;
+   HYPRE_IJVectorGetLocalRange(b, &ilower, &iupper);
+
+   for(int i=0; i < 3*local_size; i++) {
+      indices[i] = ilower + i;
+   }
+
+   HYPRE_IJVectorGetValues(b, 3*local_size, indices, values);
+
+   for(int i=0; i<local_size; i++) {
+      sum_u += values[3*i+0] * values[3*i+0];
+      sum_v += values[3*i+1] * values[3*i+1];
+      sum_p += values[3*i+2] * values[3*i+2];
+   }
+
+   free(indices);
+   free(values);
+
+   double global_sum_u, global_sum_v, global_sum_p;
+   MPI_Allreduce(&sum_u, &global_sum_u, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+   MPI_Allreduce(&sum_v, &global_sum_v, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+   MPI_Allreduce(&sum_p, &global_sum_p, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+   *norm_u = sqrt(global_sum_u);
+   *norm_v = sqrt(global_sum_v);
+   *norm_p = sqrt(global_sum_p);
+}
+
+int
+BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
+                      HYPRE_Real *u_prev_time, /* u at n */
+                      HYPRE_Real *u_current_iter, /* u at k */
+                      HYPRE_IJMatrix *J_ptr, HYPRE_IJVector *R_ptr,
+                      GhostData *g_u_n, GhostData *g_u_k)
+{
+   HYPRE_IJMatrix A;
+   HYPRE_IJVector b;
+
+   const HYPRE_Int *p       = &mesh->coords[0];
+   const HYPRE_Int *gdims   = &mesh->gdims[0];
+   HYPRE_BigInt   **pstarts = &mesh->pstarts[0];
+
+   HYPRE_BigInt node_ilower = mesh->ilower;
+   HYPRE_BigInt node_iupper = mesh->iupper;
+   HYPRE_BigInt dof_ilower  = node_ilower * 3;
+   HYPRE_BigInt dof_iupper  = node_iupper * 3 + 2;
+
+   /* Create IJ objects */
+   HYPRE_IJMatrixCreate(MPI_COMM_WORLD, dof_ilower, dof_iupper, dof_ilower, dof_iupper, &A);
+   HYPRE_IJVectorCreate(MPI_COMM_WORLD, dof_ilower, dof_iupper, &b);
+   HYPRE_IJMatrixSetObjectType(A, HYPRE_PARCSR);
+   HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
+
+   /* Set row sizes: conservative upper bound 27 per row (9 nodes x 3 dof) */
+   HYPRE_Int  local_dofs = 3 * mesh->local_size;
+   HYPRE_Int *nnzrow     = (HYPRE_Int *)calloc(local_dofs, sizeof(HYPRE_Int));
+   for (int r = 0; r < local_dofs; r++) nnzrow[r] = 27;
+   HYPRE_IJMatrixSetRowSizes(A, nnzrow);
+   free(nnzrow);
+
+   HYPRE_IJMatrixInitialize_v2(A, HYPRE_MEMORY_HOST);
+   HYPRE_IJVectorInitialize_v2(b, HYPRE_MEMORY_HOST);
+
+   /* Element sizes (physical domain) */
+   HYPRE_Real hx = params->L[0] / (gdims[0] - 1);
+   HYPRE_Real hy = params->L[1] / (gdims[1] - 1);
+   const HYPRE_Real Jinv[2] = {2.0 / hx, 2.0 / hy};
+   const HYPRE_Real detJ    = (hx * hy) / 4.0;
+
+   HYPRE_BigInt gx_lo = (pstarts[0][p[0]] > 0) ? (pstarts[0][p[0]] - 1) : 0;
+   HYPRE_BigInt gx_hi =
+      (pstarts[0][p[0] + 1] < gdims[0]) ? pstarts[0][p[0] + 1] : (gdims[0] - 1);
+   HYPRE_BigInt gy_lo = (pstarts[1][p[1]] > 0) ? (pstarts[1][p[1]] - 1) : 0;
+   HYPRE_BigInt gy_hi =
+      (pstarts[1][p[1] + 1] < gdims[1]) ? pstarts[1][p[1] + 1] : (gdims[1] - 1);
+
+   for (HYPRE_BigInt gy = gy_lo; gy < gy_hi; gy++)
+   {
+      for (HYPRE_BigInt gx = gx_lo; gx < gx_hi; gx++)
+      {
+         // Element loop
+         HYPRE_Real K_elem[12][12] = {{0}}; /* Full element Jacobian */
+         HYPRE_Real R_elem[12] = {0};    /* Full element residual */
+
+         HYPRE_Real u_k_e[12]; /* u and p at current Newton iter (element) */
+         HYPRE_Real u_n_e[12]; /* u and p at previous time step (element) */
+         HYPRE_Real u_quad[2]; /* interpolated velocity at quadrature point */
+         HYPRE_BigInt node_gid[4];
+         HYPRE_BigInt dof_gid[12];
+
+         HYPRE_BigInt ng[4][2] = {{gx, gy}, {gx + 1, gy}, {gx + 1, gy + 1}, {gx, gy + 1}};
+         for (int a = 0; a < 4; a++)
+         {
+            HYPRE_Int owner_bc[2];
+            for (int d = 0; d < 2; d++)
+            {
+               HYPRE_Int     pd = mesh->pdims[d];
+               HYPRE_BigInt *ps = mesh->pstarts[d];
+               HYPRE_BigInt  cg = ng[a][d];
+               HYPRE_Int     bd = 0;
+               while ((bd + 1) < pd && cg >= ps[bd + 1]) bd++;
+               owner_bc[d] = bd;
+            }
+            node_gid[a]        = grid2idx(ng[a], owner_bc, gdims, pstarts);
+            dof_gid[3 * a + 0] = 3 * node_gid[a] + 0;
+            dof_gid[3 * a + 1] = 3 * node_gid[a] + 1;
+            dof_gid[3 * a + 2] = 3 * node_gid[a] + 2;
+
+            /* Gather current solution DOFs for element */
+            // Note: node_gid is global, but u_current_iter is local
+            // We can only access nodes owned by this process
+            // For now, assume all nodes in elements we process are owned (or use 0 for ghost nodes)
+            HYPRE_BigInt local_node_idx = node_gid[a] - node_ilower;
+            if (local_node_idx >= 0 && local_node_idx < (HYPRE_BigInt)mesh->local_size)
+            {
+               u_k_e[3 * a + 0] = u_current_iter[3 * local_node_idx + 0];
+               u_k_e[3 * a + 1] = u_current_iter[3 * local_node_idx + 1];
+               u_k_e[3 * a + 2] = u_current_iter[3 * local_node_idx + 2];
+
+               u_n_e[3 * a + 0] = u_prev_time[3 * local_node_idx + 0];
+               u_n_e[3 * a + 1] = u_prev_time[3 * local_node_idx + 1];
+               u_n_e[3 * a + 2] = u_prev_time[3 * local_node_idx + 2];
+            }
+            else
+            {
+               // Ghost node - lookup in ghost data
+               int lx = (int)(ng[a][0] - pstarts[0][p[0]]);
+               int ly = (int)(ng[a][1] - pstarts[1][p[1]]);
+               int nx = (int)mesh->nlocal[0];
+               int ny = (int)mesh->nlocal[1];
+               double *src_k = NULL;
+               double *src_n = NULL;
+               int off = 0;
+
+               if (lx == -1 && ly >= 0 && ly < ny) { // Left
+                   src_k = g_u_k->recv_bufs[0]; src_n = g_u_n->recv_bufs[0]; off = ly*3;
+               } else if (lx == nx && ly >= 0 && ly < ny) { // Right
+                   src_k = g_u_k->recv_bufs[1]; src_n = g_u_n->recv_bufs[1]; off = ly*3;
+               } else if (ly == -1 && lx >= 0 && lx < nx) { // Bottom
+                   src_k = g_u_k->recv_bufs[2]; src_n = g_u_n->recv_bufs[2]; off = lx*3;
+               } else if (ly == ny && lx >= 0 && lx < nx) { // Top
+                   src_k = g_u_k->recv_bufs[3]; src_n = g_u_n->recv_bufs[3]; off = lx*3;
+               } else if (lx == -1 && ly == -1) { // DL
+                   src_k = g_u_k->recv_bufs[4]; src_n = g_u_n->recv_bufs[4]; off = 0;
+               } else if (lx == nx && ly == ny) { // TR
+                   src_k = g_u_k->recv_bufs[5]; src_n = g_u_n->recv_bufs[5]; off = 0;
+               } else if (lx == -1 && ly == ny) { // TL
+                   src_k = g_u_k->recv_bufs[6]; src_n = g_u_n->recv_bufs[6]; off = 0;
+               } else if (lx == nx && ly == -1) { // BR
+                   src_k = g_u_k->recv_bufs[7]; src_n = g_u_n->recv_bufs[7]; off = 0;
+               }
+
+               if (src_k) {
+                   u_k_e[3*a+0] = src_k[off+0]; u_k_e[3*a+1] = src_k[off+1]; u_k_e[3*a+2] = src_k[off+2];
+                   u_n_e[3*a+0] = src_n[off+0]; u_n_e[3*a+1] = src_n[off+1]; u_n_e[3*a+2] = src_n[off+2];
+               } else {
+                   u_k_e[3*a+0] = 0.0; u_k_e[3*a+1] = 0.0; u_k_e[3*a+2] = 0.0;
+                   u_n_e[3*a+0] = 0.0; u_n_e[3*a+1] = 0.0; u_n_e[3*a+2] = 0.0;
+               }
+            }
+         }
+
+         /* Calculate element mean velocity magnitude and stabilization parameter tau_e */
+         HYPRE_Real u_mean_e = 0.0, v_mean_e = 0.0;
+         for (int a = 0; a < 4; a++)
+         {
+            u_mean_e += u_k_e[3 * a + 0];
+            v_mean_e += u_k_e[3 * a + 1];
+         }
+         HYPRE_Real u_mag_e = sqrt(u_mean_e * u_mean_e + v_mean_e * v_mean_e) / 4.0;
+         HYPRE_Real he = sqrt(hx * hx + hy * hy); // Element characteristic length
+         HYPRE_Real nu = 1.0 / params->Re;
+         HYPRE_Real tau_e_denom_term1 = (2.0 / params->dt) * (2.0 / params->dt);
+         HYPRE_Real tau_e_denom_term2 = (2.0 * u_mag_e / he) * (2.0 * u_mag_e / he);
+         HYPRE_Real tau_e_denom_term3 = (4.0 * nu / (he * he)) * (4.0 * nu / (he * he));
+         HYPRE_Real tau_e = 1.0 / sqrt(tau_e_denom_term1 + tau_e_denom_term2 + tau_e_denom_term3);
+
+         for (int iy = 0; iy < 2; iy++)
+         {
+            for (int ix = 0; ix < 2; ix++)
+            {
+               // Quadrature loop
+               HYPRE_Real xi = gauss_x[ix];
+               HYPRE_Real eta = gauss_x[iy];
+               HYPRE_Real w = gauss_w[ix] * gauss_w[iy] * detJ;
+
+               HYPRE_Real N[4], dN_dxi[4], dN_deta[4];
+               q1_shape_ref_2d(xi, eta, N, dN_dxi, dN_deta);
+
+               HYPRE_Real dN_dx[4], dN_dy[4];
+               for (int a = 0; a < 4; a++)
+               {
+                  dN_dx[a] = dN_dxi[a] * Jinv[0];
+                  dN_dy[a] = dN_deta[a] * Jinv[1];
+               }
+               /* Interpolate solution values at quadrature point */
+               HYPRE_Real u_k = 0.0, v_k = 0.0, p_k = 0.0;
+               HYPRE_Real u_n = 0.0, v_n = 0.0;
+               HYPRE_Real du_dx_k = 0.0, du_dy_k = 0.0, dv_dx_k = 0.0, dv_dy_k = 0.0;
+               HYPRE_Real dp_dx_k = 0.0, dp_dy_k = 0.0;
+
+               for (int a = 0; a < 4; a++)
+               {
+                  u_k += N[a] * u_k_e[3 * a + 0];
+                  v_k += N[a] * u_k_e[3 * a + 1];
+                  p_k += N[a] * u_k_e[3 * a + 2];
+
+                  u_n += N[a] * u_n_e[3 * a + 0];
+                  v_n += N[a] * u_n_e[3 * a + 1];
+
+                  du_dx_k += dN_dx[a] * u_k_e[3 * a + 0];
+                  du_dy_k += dN_dy[a] * u_k_e[3 * a + 0];
+                  dv_dx_k += dN_dx[a] * u_k_e[3 * a + 1];
+                  dv_dy_k += dN_dy[a] * u_k_e[3 * a + 1];
+                  dp_dx_k += dN_dx[a] * u_k_e[3 * a + 2];
+                  dp_dy_k += dN_dy[a] * u_k_e[3 * a + 2];
+               }
+
+               // Store current velocity at quadrature point for convenience
+               u_quad[0] = u_k;
+               u_quad[1] = v_k;
+
+               /* Strong form residual components (for stabilization) */
+               HYPRE_Real Res_x = (u_k - u_n) / params->dt +
+                                  (u_k * du_dx_k + v_k * du_dy_k) +
+                                  dp_dx_k;
+               HYPRE_Real Res_y = (v_k - v_n) / params->dt +
+                                  (u_k * dv_dx_k + v_k * dv_dy_k) +
+                                  dp_dy_k;
+
+               for (int a = 0; a < 4; a++)
+               {
+                  for (int b = 0; b < 4; b++)
+                  {
+                     // Galerkin Jacobian contributions
+                     // Time derivative: (1/dt) * M
+                     K_elem[3*a+0][3*b+0] += w * N[a] * N[b] / params->dt;
+                     K_elem[3*a+1][3*b+1] += w * N[a] * N[b] / params->dt;
+
+                     // Viscous term: nu * grad(u) : grad(v)
+                     K_elem[3*a+0][3*b+0] += w * nu * (dN_dx[a] * dN_dx[b] + dN_dy[a] * dN_dy[b]);
+                     K_elem[3*a+1][3*b+1] += w * nu * (dN_dx[a] * dN_dx[b] + dN_dy[a] * dN_dy[b]);
+
+                     // Convection term linearization (Newton)
+                     // Part 1: (u_k * grad(delta u)) * test_func  [Picard part]
+                     K_elem[3*a+0][3*b+0] += w * (u_k * dN_dx[b] + v_k * dN_dy[b]) * N[a];
+                     K_elem[3*a+1][3*b+1] += w * (u_k * dN_dx[b] + v_k * dN_dy[b]) * N[a];
+
+                     // Part 2: (delta u * grad(u_k)) * test_func  [Newton part]
+                     // X-Momentum: (delta_u * du/dx + delta_v * du/dy) * test_func
+                     K_elem[3*a+0][3*b+0] += w * (N[b] * du_dx_k) * N[a]; // d(conv)/du
+                     K_elem[3*a+0][3*b+1] += w * (N[b] * du_dy_k) * N[a]; // d(conv)/dv
+
+                     // Y-Momentum: (delta_u * dv/dx + delta_v * dv/dy) * test_func
+                     K_elem[3*a+1][3*b+0] += w * (N[b] * dv_dx_k) * N[a]; // d(conv)/du
+                     K_elem[3*a+1][3*b+1] += w * (N[b] * dv_dy_k) * N[a]; // d(conv)/dv
+
+                     // Pressure-Velocity coupling (from -p div v and q div u)
+                     K_elem[3*a+0][3*b+2] -= w * dN_dx[a] * N[b]; // du/dp
+                     K_elem[3*a+1][3*b+2] -= w * dN_dy[a] * N[b]; // dv/dp
+                     K_elem[3*a+2][3*b+0] += w * N[a] * dN_dx[b]; // dp/du
+                     K_elem[3*a+2][3*b+1] += w * N[a] * dN_dy[b]; // dp/dv
+
+                     // Stabilization Jacobian contributions (frozen tau_e and conv_vel in test func pert)
+                     // d(R_mom_x)/d(u_b) * SUPG_test_func_x
+                     K_elem[3*a+0][3*b+0] += w * tau_e * (N[b]/params->dt + u_k*dN_dx[b] + v_k*dN_dy[b]) * (u_k * dN_dx[a] + v_k * dN_dy[a]);
+                     // d(R_mom_x)/d(p_b) * SUPG_test_func_x
+                     K_elem[3*a+0][3*b+2] += w * tau_e * dN_dx[b] * (u_k * dN_dx[a] + v_k * dN_dy[a]);
+
+                     // d(R_mom_y)/d(v_b) * SUPG_test_func_y
+                     K_elem[3*a+1][3*b+1] += w * tau_e * (N[b]/params->dt + u_k*dN_dx[b] + v_k*dN_dy[b]) * (u_k * dN_dx[a] + v_k * dN_dy[a]);
+                     // d(R_mom_y)/d(p_b) * SUPG_test_func_y
+                     K_elem[3*a+1][3*b+2] += w * tau_e * dN_dy[b] * (u_k * dN_dx[a] + v_k * dN_dy[a]);
+
+                     // d(R_mom_x)/d(u_b) * PSPG_test_func_x
+                     K_elem[3*a+2][3*b+0] += w * tau_e * (N[b]/params->dt + u_k*dN_dx[b] + v_k*dN_dy[b]) * dN_dx[a];
+                     // d(R_mom_y)/d(v_b) * PSPG_test_func_y
+                     K_elem[3*a+2][3*b+1] += w * tau_e * (N[b]/params->dt + u_k*dN_dx[b] + v_k*dN_dy[b]) * dN_dy[a];
+                     // d(R_mom_x)/d(p_b) * PSPG_test_func_x + d(R_mom_y)/d(p_b) * PSPG_test_func_y
+                     K_elem[3*a+2][3*b+2] += w * tau_e * ( dN_dx[b] * dN_dx[a] + dN_dy[b] * dN_dy[a] );
+                  }
+
+                  // Galerkin Residual contributions
+                  // Momentum x
+                  R_elem[3*a+0] += w * (N[a] * (u_k - u_n) / params->dt +
+                                    N[a] * (u_k * du_dx_k + v_k * du_dy_k) +
+                                    nu * (dN_dx[a] * du_dx_k + dN_dy[a] * du_dy_k) -
+                                    dN_dx[a] * p_k);
+                  // Momentum y
+                  R_elem[3*a+1] += w * (N[a] * (v_k - v_n) / params->dt +
+                                    N[a] * (u_k * dv_dx_k + v_k * dv_dy_k) +
+                                    nu * (dN_dx[a] * dv_dx_k + dN_dy[a] * dv_dy_k) -
+                                    dN_dy[a] * p_k);
+                  // Continuity
+                  R_elem[3*a+2] += w * (N[a] * (du_dx_k + dv_dy_k));
+
+                  // Stabilization Residual contributions (SUPG + PSPG)
+                  // SUPG for x-momentum
+                  R_elem[3*a+0] += w * tau_e * (Res_x * (u_k * dN_dx[a] + v_k * dN_dy[a]));
+                  // SUPG for y-momentum
+                  R_elem[3*a+1] += w * tau_e * (Res_y * (u_k * dN_dx[a] + v_k * dN_dy[a]));
+                  // PSPG for pressure
+                  R_elem[3*a+2] += w * tau_e * (Res_x * dN_dx[a] + Res_y * dN_dy[a]);
+               }
+            }
+         }
+         /* Identify Dirichlet DOFs for this element */
+         HYPRE_Int is_dirichlet[12] = {0};
+         for (int a = 0; a < 4; a++)
+         {
+            HYPRE_BigInt gx = ng[a][0];
+            HYPRE_BigInt gy = ng[a][1];
+            HYPRE_Int on_boundary = 0;
+            HYPRE_Real u_bc = 0.0, v_bc = 0.0;
+
+            if (gy == gdims[1] - 1 && gx != 0 && gx != gdims[0] - 1)
+            {
+               on_boundary = 1; // Lid: u = 1, v = 0
+               u_bc = 1.0;
+            }
+            else if (gx == 0 || gx == gdims[0] - 1 || gy == 0)
+            {
+               on_boundary = 1; // Wall: u = 0, v = 0
+            }
+
+            if (gx == 0 && gy == 0)
+            {
+               // Pressure reference node: p is Dirichlet-like (constrained)
+               is_dirichlet[3*a + 2] = 1;
+            }
+
+            if (on_boundary)
+            {
+               is_dirichlet[3*a + 0] = 1; // u is Dirichlet
+               is_dirichlet[3*a + 1] = 1; // v is Dirichlet
+            }
+         }
+
+         /* Assemble element contributions, skipping Dirichlet rows ONLY */
+         for (int i = 0; i < 12; i++)
+         {
+            if (is_dirichlet[i]) continue; /* Skip Dirichlet rows */
+            if (dof_gid[i] < dof_ilower || dof_gid[i] > dof_iupper) continue; /* Only own rows */
+
+            for (int j = 0; j < 12; j++)
+            {
+               // Do NOT skip Dirichlet columns. We need the coupling K_ij * delta_u_j
+               if (K_elem[i][j] != 0.0)
+               {
+                  HYPRE_BigInt row = dof_gid[i];
+                  HYPRE_BigInt col = dof_gid[j];
+                  HYPRE_Real val = K_elem[i][j];
+                  HYPRE_Int ncols = 1;
+                  HYPRE_IJMatrixAddToValues(A, 1, &ncols, &row, &col, &val);
+               }
+            }
+            if (R_elem[i] != 0.0)
+            {
+               HYPRE_BigInt row = dof_gid[i];
+               HYPRE_Real val = -R_elem[i]; /* Newton RHS is -Residual */
+               HYPRE_IJVectorAddToValues(b, 1, &row, &val);
+            }
+         }
+      }
+   }
+
+    // Apply boundary conditions: Set Dirichlet rows to identity with prescribed RHS
+    for (HYPRE_BigInt i = node_ilower; i <= node_iupper; i++)
+    {
+        HYPRE_BigInt gcoords[2];
+        get_global_coords(i, mesh, gcoords);
+
+        HYPRE_Int boundary_type = 0; // 0: interior, 1: wall, 2: lid
+
+        if (gcoords[1] == gdims[1] - 1)
+        {
+            boundary_type = 2; // Lid (top): u = 1, v = 0
+        }
+        else if (gcoords[0] == 0 || gcoords[0] == gdims[0] - 1 || gcoords[1] == 0)
+        {
+            boundary_type = 1; // Wall (left, right, bottom): u = 0, v = 0
+        }
+
+        // Fix pressure at a reference node (e.g., global (0,0))
+        if (gcoords[0] == 0 && gcoords[1] == 0)
+        {
+            HYPRE_BigInt row = 3 * i + 2; // Pressure DOF
+            HYPRE_Real val_matrix = 1.0;
+            HYPRE_Real val_vector = 0.0; // p = 0
+            HYPRE_Int ncols = 1;
+            HYPRE_IJMatrixSetValues(A, 1, &ncols, &row, &row, &val_matrix);
+            HYPRE_IJVectorSetValues(b, 1, &row, &val_vector);
+        }
+
+        if (boundary_type > 0)
+        {
+            for (int j = 0; j < 2; j++) // Apply to u and v components
+            {
+                HYPRE_BigInt row = 3 * i + j; // u or v DOF (global DOF ID)
+                HYPRE_Real val_matrix = 1.0;
+                HYPRE_Real u_bc = 0.0; // Default to 0 for walls
+
+                if (boundary_type == 2 && j == 0) // Lid, u-component
+                {
+                    u_bc = 1.0; // u = 1 on lid
+                }
+
+                // Convert global node ID to local index for accessing u_current_iter
+                HYPRE_BigInt local_node_idx = i - node_ilower;
+                HYPRE_BigInt local_dof_idx = 3 * local_node_idx + j;
+
+                // Compute residual: R = u_BC - u_current
+                // For Newton: J * delta = -R, so delta = -J^{-1} * R
+                // With J = I: delta = -R = -(u_BC - u_current) = u_current - u_BC
+                // But we want delta = u_BC - u_current, so we set R = u_current - u_BC
+                // Actually, let's use: R = u_BC - u_current, then delta = u_BC - u_current (since J = I)
+                HYPRE_Real u_current = u_current_iter[local_dof_idx];
+                HYPRE_Real val_vector = u_bc - u_current;
+
+                // Set diagonal of Jacobian to 1 and RHS to u_BC - u_current
+                HYPRE_Int ncols = 1;
+                HYPRE_IJMatrixSetValues(A, 1, &ncols, &row, &row, &val_matrix);
+                HYPRE_IJVectorSetValues(b, 1, &row, &val_vector);
+            }
+        }
+    }
+
+   /* Finalize assembly after all values (including Dirichlet rows) are set */
+   HYPRE_IJMatrixAssemble(A);
+   HYPRE_IJVectorAssemble(b);
+
+   *J_ptr = A;
+   *R_ptr = b;
+
+   return 0;
+}
+
+/*--------------------------------------------------------------------------
+ * Write vector VTK (RectilinearGrid, point vectors named "velocity")
+ *--------------------------------------------------------------------------*/
+static void
+WriteCoordArray(FILE *fp, const char *name, double start, double delta, int count)
+{
+   fprintf(fp, "        <DataArray type=\"Float64\" Name=\"%s\" format=\"ascii\">\n",
+           name);
+   fprintf(fp, "          ");
+   for (int i = 0; i < count; i++)
+   {
+      fprintf(fp, "%.15g ", start + i * delta);
+      if ((i + 1) % 6 == 0) fprintf(fp, "\n          ");
+   }
+   fprintf(fp, "\n        </DataArray>\n");
+}
+
+int
+WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *sol_data, int time_step_idx)
+{
+   int myid, num_procs;
+   MPI_Comm_rank(mesh->cart_comm, &myid);
+   MPI_Comm_size(mesh->cart_comm, &num_procs);
+
+   /* Local sizes and offsets */
+   HYPRE_Int     *p       = &mesh->coords[0];
+   HYPRE_Int     *nlocal  = &mesh->nlocal[0];
+   HYPRE_BigInt **pstarts = &mesh->pstarts[0];
+   HYPRE_Real    *gsizes  = &mesh->gsizes[0];
+
+   int nx       = (int)nlocal[0];
+   int ny       = (int)nlocal[1];
+   int ix_start = (int)pstarts[0][p[0]];
+   int iy_start = (int)pstarts[1][p[1]];
+
+   /* Overlap on negative faces */
+   int ofi = (p[0] > 0) ? 1 : 0; /* left  ghost layer */
+   int ofj = (p[1] > 0) ? 1 : 0; /* down  ghost layer */
+   int nxg = nx + ofi;
+   int nyg = ny + ofj;
+
+   /* Allocate ghost buffers (vectors: 3 doubles per point) */
+   double *ghost[8];
+   for (int i = 0; i < 8; i++) ghost[i] = NULL;
+   if (mesh->nbrs[0] != MPI_PROC_NULL)
+      ghost[0] = (double *)calloc(ny * 3, sizeof(double)); /* left  face */
+   if (mesh->nbrs[1] != MPI_PROC_NULL)
+      ghost[1] = (double *)calloc(ny * 3, sizeof(double)); /* right face send */
+   if (mesh->nbrs[2] != MPI_PROC_NULL)
+      ghost[2] = (double *)calloc(nx * 3, sizeof(double)); /* down  face */
+   if (mesh->nbrs[3] != MPI_PROC_NULL)
+      ghost[3] = (double *)calloc(nx * 3, sizeof(double)); /* up    face send */
+   if (mesh->nbrs[4] != MPI_PROC_NULL)
+      ghost[4] = (double *)calloc(3, sizeof(double)); /* left-down corner */
+   if (mesh->nbrs[5] != MPI_PROC_NULL)
+      ghost[5] = (double *)calloc(3, sizeof(double)); /* right-up  corner send */
+    if (mesh->nbrs[6] != MPI_PROC_NULL)
+        ghost[6] = (double *)calloc(3, sizeof(double)); /* left-up corner */
+    if (mesh->nbrs[7] != MPI_PROC_NULL)
+        ghost[7] = (double *)calloc(3, sizeof(double)); /* right-down  corner send */
+
+   /* Fill send buffers and post Irecvs */
+   MPI_Request reqs[16];
+   int         reqc = 0;
+
+   /* X-direction faces */
+   if (mesh->nbrs[1] != MPI_PROC_NULL)
+   {
+      for (int j = 0; j < ny; j++)
+      {
+         int nidx          = j * nx + (nx - 1);
+         int off           = j * 3;
+         ghost[1][off + 0] = sol_data[3 * nidx + 0];
+         ghost[1][off + 1] = sol_data[3 * nidx + 1];
+         ghost[1][off + 2] = sol_data[3 * nidx + 2];
+      }
+      MPI_Isend(ghost[1], ny * 3, MPI_DOUBLE, mesh->nbrs[1], 0, mesh->cart_comm,
+                &reqs[reqc++]);
+   }
+   if (mesh->nbrs[0] != MPI_PROC_NULL)
+   {
+      MPI_Irecv(ghost[0], ny * 3, MPI_DOUBLE, mesh->nbrs[0], 0, mesh->cart_comm,
+                &reqs[reqc++]);
+   }
+
+   /* Y-direction faces */
+   if (mesh->nbrs[3] != MPI_PROC_NULL)
+   {
+      for (int i = 0; i < nx; i++)
+      {
+         int nidx          = (ny - 1) * nx + i;
+         int off           = i * 3;
+         ghost[3][off + 0] = sol_data[3 * nidx + 0];
+         ghost[3][off + 1] = sol_data[3 * nidx + 1];
+         ghost[3][off + 2] = sol_data[3 * nidx + 2];
+      }
+      MPI_Isend(ghost[3], nx * 3, MPI_DOUBLE, mesh->nbrs[3], 1, mesh->cart_comm,
+                &reqs[reqc++]);
+   }
+   if (mesh->nbrs[2] != MPI_PROC_NULL)
+   {
+      MPI_Irecv(ghost[2], nx * 3, MPI_DOUBLE, mesh->nbrs[2], 1, mesh->cart_comm,
+                &reqs[reqc++]);
+   }
+
+   /* Corners */
+    if (mesh->nbrs[5] != MPI_PROC_NULL)
+    {
+        int nidx = (ny - 1) * nx + (nx - 1);
+        ghost[5][0] = sol_data[3 * nidx + 0];
+        ghost[5][1] = sol_data[3 * nidx + 1];
+        ghost[5][2] = sol_data[3 * nidx + 2];
+        MPI_Isend(ghost[5], 3, MPI_DOUBLE, mesh->nbrs[5], 2, mesh->cart_comm, &reqs[reqc++]);
+    }
+    if (mesh->nbrs[4] != MPI_PROC_NULL)
+    {
+        MPI_Irecv(ghost[4], 3, MPI_DOUBLE, mesh->nbrs[4], 2, mesh->cart_comm, &reqs[reqc++]);
+    }
+    if (mesh->nbrs[6] != MPI_PROC_NULL)
+    {
+        int nidx = (ny - 1) * nx;
+        ghost[6][0] = sol_data[3 * nidx + 0];
+        ghost[6][1] = sol_data[3 * nidx + 1];
+        ghost[6][2] = sol_data[3 * nidx + 2];
+        MPI_Isend(ghost[6], 3, MPI_DOUBLE, mesh->nbrs[6], 3, mesh->cart_comm, &reqs[reqc++]);
+    }
+    if (mesh->nbrs[7] != MPI_PROC_NULL)
+    {
+        MPI_Irecv(ghost[7], 3, MPI_DOUBLE, mesh->nbrs[7], 3, mesh->cart_comm, &reqs[reqc++]);
+    }
+
+   /* Build extended data including negative-face ghosts */
+   double *ext = (double *)calloc(nxg * nyg * 3, sizeof(double));
+   for (int j = 0; j < ny; j++)
+   {
+      for (int i = 0; i < nx; i++)
+      {
+         int ig = i + ofi, jg = j + ofj;
+         int idx_e      = (jg * nxg + ig) * 3;
+         int nidx       = j * nx + i;
+         ext[idx_e + 0] = sol_data[3 * nidx + 0];
+         ext[idx_e + 1] = sol_data[3 * nidx + 1];
+         ext[idx_e + 2] = sol_data[3 * nidx + 2];
+      }
+   }
+
+   /* Finish comms before using ghost buffers */
+   if (reqc > 0)
+   {
+      MPI_Status *statuses = (MPI_Status *)malloc(reqc * sizeof(MPI_Status));
+      MPI_Waitall(reqc, reqs, statuses);
+      free(statuses);
+   }
+
+   /* Insert faces */
+   if (mesh->nbrs[0] != MPI_PROC_NULL)
+   {
+      for (int j = 0; j < ny; j++)
+      {
+         int jg = j + ofj;
+         int src      = j * 3;
+         int dst      = (jg * nxg + 0) * 3;
+         ext[dst + 0] = ghost[0][src + 0];
+         ext[dst + 1] = ghost[0][src + 1];
+         ext[dst + 2] = ghost[0][src + 2];
+      }
+   }
+   if (mesh->nbrs[2] != MPI_PROC_NULL)
+   {
+      for (int i = 0; i < nx; i++)
+      {
+         int ig = i + ofi;
+         int src      = i * 3;
+         int dst      = (0 * nxg + ig) * 3;
+         ext[dst + 0] = ghost[2][src + 0];
+         ext[dst + 1] = ghost[2][src + 1];
+         ext[dst + 2] = ghost[2][src + 2];
+      }
+   }
+
+   /* Insert corners */
+    if (mesh->nbrs[4] != MPI_PROC_NULL) /* left-down */
+    {
+        int dst      = (0 * nxg + 0) * 3;
+        ext[dst + 0] = ghost[4][0];
+        ext[dst + 1] = ghost[4][1];
+        ext[dst + 2] = ghost[4][2];
+    }
+
+   /* Create data directory if it doesn't exist (all ranks) */
+   char data_dir[256];
+   GetVTKDataDir(params, data_dir, sizeof(data_dir));
+   struct stat st = {0};
+   if (stat(data_dir, &st) == -1)
+   {
+      mkdir(data_dir, 0755);
+   }
+   MPI_Barrier(mesh->cart_comm); /* Ensure directory exists before writing */
+
+   /* Filenames: step_XXX_rank.vtr in data directory (0-indexed steps) */
+   char filename[512];
+   snprintf(filename, sizeof(filename), "%s/step_%05d_%d.vtr",
+            data_dir, time_step_idx - 1, myid);
+   FILE *fp = fopen(filename, "w");
+   if (!fp)
+   {
+      printf("Error: Cannot open file %s\n", filename);
+      MPI_Abort(mesh->cart_comm, -1);
+   }
+
+   /* Coordinates (scale by physical dimensions) and extents with overlap */
+   double x_step  = params->L[0] * gsizes[0];
+   double y_step  = params->L[1] * gsizes[1];
+   double x_start = (ix_start - ofi) * x_step;
+   double y_start = (iy_start - ofj) * y_step;
+
+   fprintf(fp, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+   fprintf(fp, "<VTKFile type=\"RectilinearGrid\" version=\"0.1\">\n");
+   fprintf(fp, "  <RectilinearGrid WholeExtent=\"%d %d %d %d 0 0\">\n", ix_start - ofi,
+           ix_start + nx - 1, iy_start - ofj, iy_start + ny - 1);
+   fprintf(fp, "    <Piece Extent=\"%d %d %d %d 0 0\">\n", ix_start - ofi,
+           ix_start + nx - 1, iy_start - ofj, iy_start + ny - 1);
+
+   fprintf(fp, "      <Coordinates>\n");
+   WriteCoordArray(fp, "x", x_start, x_step, nxg);
+   WriteCoordArray(fp, "y", y_start, y_step, nyg);
+   WriteCoordArray(fp, "z", 0.0, 0.0, 1);
+   fprintf(fp, "      </Coordinates>\n");
+
+   /* Point data: vectors and scalars */
+   fprintf(fp, "      <PointData Vectors=\"velocity\" Scalars=\"pressure\">\n");
+   if (params->visualize == 1)
+   {
+      /* ASCII */
+      /* Velocity */
+      fprintf(fp, "        <DataArray type=\"Float64\" Name=\"velocity\" "
+                  "NumberOfComponents=\"3\" format=\"ascii\">\n");
+      fprintf(fp, "          ");
+      for (int j = 0; j < nyg; j++)
+      {
+         for (int i = 0; i < nxg; i++)
+         {
+            int idx = (j * nxg + i) * 3;
+            fprintf(fp, "%.15g %.15g 0.0 ", ext[idx + 0], ext[idx + 1]);
+            if ((j * nxg + i + 1) % 2 == 0) fprintf(fp, "\n          ");
+         }
+      }
+      fprintf(fp, "\n        </DataArray>\n");
+
+      /* Pressure */
+      fprintf(fp, "        <DataArray type=\"Float64\" Name=\"pressure\" "
+                  "NumberOfComponents=\"1\" format=\"ascii\">\n");
+      fprintf(fp, "          ");
+      for (int j = 0; j < nyg; j++)
+      {
+         for (int i = 0; i < nxg; i++)
+         {
+            int idx = (j * nxg + i) * 3;
+            fprintf(fp, "%.15g ", ext[idx + 2]);
+            if ((j * nxg + i + 1) % 6 == 0) fprintf(fp, "\n          ");
+         }
+      }
+      fprintf(fp, "\n        </DataArray>\n");
+
+      fprintf(fp, "      </PointData>\n");
+      fprintf(fp, "    </Piece>\n");
+      fprintf(fp, "  </RectilinearGrid>\n");
+   }
+   else if (params->visualize == 2)
+   {
+      /* Appended binary */
+      int npts      = nxg * nyg;
+      int vel_size  = npts * 3 * sizeof(double);
+      int pres_size = npts * 1 * sizeof(double);
+
+      double *vel_buf = (double*)malloc(vel_size);
+      double *pres_buf = (double*)malloc(pres_size);
+
+      for(int k=0; k<npts; k++) {
+          vel_buf[3*k+0] = ext[3*k+0];
+          vel_buf[3*k+1] = ext[3*k+1];
+          vel_buf[3*k+2] = 0.0;
+          pres_buf[k]    = ext[3*k+2];
+      }
+
+      fprintf(fp, "        <DataArray type=\"Float64\" Name=\"velocity\" "
+                  "NumberOfComponents=\"3\" format=\"appended\" offset=\"0\">\n");
+      fprintf(fp, "        </DataArray>\n");
+
+      fprintf(fp, "        <DataArray type=\"Float64\" Name=\"pressure\" "
+                  "NumberOfComponents=\"1\" format=\"appended\" offset=\"%lu\">\n",
+                  sizeof(int) + vel_size);
+      fprintf(fp, "        </DataArray>\n");
+
+      fprintf(fp, "      </PointData>\n");
+      fprintf(fp, "    </Piece>\n");
+      fprintf(fp, "  </RectilinearGrid>\n");
+      fprintf(fp, "  <AppendedData encoding=\"raw\">\n   _");
+
+      fwrite(&vel_size, sizeof(int), 1, fp);
+      fwrite(vel_buf, sizeof(double), npts * 3, fp);
+
+      fwrite(&pres_size, sizeof(int), 1, fp);
+      fwrite(pres_buf, sizeof(double), npts, fp);
+
+      fprintf(fp, "\n  </AppendedData>\n");
+
+      free(vel_buf);
+      free(pres_buf);
+   }
+   fprintf(fp, "</VTKFile>\n");
+   fclose(fp);
+
+   /* PVD file (rank 0) - handled by WritePVDCollection at the end */
+
+   /* Cleanup */
+   for (int i = 0; i < 8; i++)
+      if (ghost[i]) free(ghost[i]);
+   free(ext);
+
+   return 0;
+}
+
+
+typedef struct
+{
+   int    timestep;
+   double time;
+   double residual_norm;
+   int    newton_iters;
+   int    linear_iters;
+   double setup_time;
+   double solve_time;
+} TimeStepStats;
+
+/*--------------------------------------------------------------------------
+ * Get VTK base name (for .pvd file)
+ *--------------------------------------------------------------------------*/
+void GetVTKBaseName(LidCavityParams *params, char *buf, size_t bufsize)
+{
+   snprintf(buf, bufsize, "lidcavity_Re%d_%dx%d_%dx%d",
+            (int)params->Re, (int)params->N[0], (int)params->N[1],
+            (int)params->P[0], (int)params->P[1]);
+}
+
+/*--------------------------------------------------------------------------
+ * Get VTK data directory name
+ *--------------------------------------------------------------------------*/
+void GetVTKDataDir(LidCavityParams *params, char *buf, size_t bufsize)
+{
+   char base[256];
+   GetVTKBaseName(params, base, sizeof(base));
+   snprintf(buf, bufsize, "%s-data", base);
+}
+
+/*--------------------------------------------------------------------------
+ * Write PVD collection file
+ *--------------------------------------------------------------------------*/
+void WritePVDCollection(LidCavityParams *params, TimeStepStats *stats, int num_procs, int num_steps)
+{
+   char filename[256];
+   GetVTKBaseName(params, filename, sizeof(filename));
+   strcat(filename, ".pvd");
+
+   FILE *fp = fopen(filename, "w");
+   if (!fp) return;
+
+   char data_dir[256];
+   GetVTKDataDir(params, data_dir, sizeof(data_dir));
+
+   fprintf(fp, "<?xml version=\"1.0\"?>\n");
+   fprintf(fp, "<VTKFile type=\"Collection\" version=\"0.1\" byte_order=\"LittleEndian\">\n");
+   fprintf(fp, "  <Collection>\n");
+
+   for (int i = 0; i < num_steps; i++)
+   {
+      for (int r = 0; r < num_procs; r++)
+      {
+         char vtr_file[512];
+         snprintf(vtr_file, sizeof(vtr_file), "%s/step_%05d_%d.vtr",
+                  data_dir, stats[i].timestep - 1, r);
+
+         fprintf(fp, "    <DataSet timestep=\"%g\" group=\"\" part=\"%d\" file=\"%s\"/>\n",
+                 stats[i].time, r, vtr_file);
+      }
+   }
+
+   fprintf(fp, "  </Collection>\n");
+   fprintf(fp, "</VTKFile>\n");
+   fclose(fp);
+}
+
+/*--------------------------------------------------------------------------
+ * Main driver
+ *--------------------------------------------------------------------------*/
+int
+main(int argc, char *argv[])
+{
+   MPI_Comm       comm = MPI_COMM_WORLD;
+   HYPREDRV_t     hypredrv;
+   int            myid, num_procs;
+   LidCavityParams  params;
+   DistMesh2D      *mesh;
+   HYPRE_IJMatrix A;
+   HYPRE_IJVector b;
+   HYPRE_Real    *sol_data;
+   HYPRE_Real    *u_old;
+   HYPRE_Real    *u_now;
+
+   /* Time series stats */
+   int stats_capacity = 100;
+   int stats_count = 0;
+   TimeStepStats *stats = NULL;
+
+   MPI_Init(&argc, &argv);
+   MPI_Comm_rank(comm, &myid);
+   MPI_Comm_size(comm, &num_procs);
+
+   if (ParseArguments(argc, argv, &params, myid, num_procs))
+   {
+      MPI_Finalize();
+      return 1;
+   }
+
+   stats = (TimeStepStats *)calloc(stats_capacity, sizeof(TimeStepStats));
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+
+   if (params.verbose & 0x2)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
+      HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
+   }
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
+
+   char *args[2];
+   args[0] = params.yaml_file ? params.yaml_file : (char *)default_config;
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
+   HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
+
+   if (!myid)
+   {
+      printf("\n");
+      printf("=====================================================\n");
+      printf("          Lid-Driven Cavity Problem Setup\n");
+      printf("=====================================================\n");
+      printf("Physical dimensions:     %d x %d\n", (int)params.L[0],
+             (int)params.L[1]);
+      printf("Grid dimensions (nodes): %d x %d\n", (int)params.N[0],
+             (int)params.N[1]);
+      printf("Processor topology:      %d x %d\n", (int)params.P[0],
+             (int)params.P[1]);
+      printf("Reynolds number:         %.1e\n", params.Re);
+      printf("Initial time step:       %.1e\n", params.dt);
+      printf("Adaptive time stepping:  %s\n", params.adaptive_dt ? "true" : "false");
+      printf("Final time:              %.1e\n", params.final_time);
+      printf("Visualization:           %s\n", params.visualize ? "true" : "false");
+      printf("Verbosity level:         0x%x\n", params.verbose);
+      printf("=====================================================\n\n");
+   }
+
+   CreateDistMesh2D(comm, params.N[0], params.N[1], params.P[0], params.P[1], &mesh);
+
+   u_old = (HYPRE_Real *)calloc(3 * mesh->local_size, sizeof(HYPRE_Real));
+   u_now = (HYPRE_Real *)calloc(3 * mesh->local_size, sizeof(HYPRE_Real));
+
+   GhostData *g_u_k = NULL;
+   GhostData *g_u_n = NULL;
+   CreateGhostData(mesh, &g_u_k);
+   CreateGhostData(mesh, &g_u_n);
+
+   double hx = params.L[0] / (params.N[0] - 1);
+   double hy = params.L[1] / (params.N[1] - 1);
+   double h_min = (hx < hy) ? hx : hy;
+
+   double current_time = 0.0;
+   int t_step = 0;
+
+   while (current_time < params.final_time)
+   {
+      if (current_time + params.dt > params.final_time)
+      {
+         params.dt = params.final_time - current_time;
+      }
+
+      current_time += params.dt;
+      int total_linear_iters = 0;
+      int newton_iter_count = 0;
+      double final_residual = 0.0;
+      double timestep_setup_time = 0.0;
+      double timestep_solve_time = 0.0;
+
+      // Initialize u_now with the solution from the previous time step
+      for (int i=0; i<3*mesh->local_size; i++)
+      {
+         u_now[i] = u_old[i];
+      }
+      ExchangeVectorGhosts(mesh, u_old, g_u_n);
+
+
+      for (int newton_iter = 0; newton_iter < 20; newton_iter++)
+      {
+         ExchangeVectorGhosts(mesh, u_now, g_u_k);
+         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system"));
+         BuildNewtonSystem(mesh, &params, u_old, u_now, &A, &b, g_u_n, g_u_k);
+         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system"));
+
+         HYPRE_Real residual_norm;
+         HYPRE_IJVectorInnerProd(b, b, &residual_norm);
+         residual_norm = sqrt(residual_norm);
+
+         final_residual = residual_norm;
+         newton_iter_count = newton_iter + 1;
+
+         if (newton_iter > 0 && residual_norm < params.newton_tol)
+         {
+            break;
+         }
+
+#if defined(HYPRE_USING_GPU)
+         if (!myid && (params.verbose > 0)) printf("Migrating linear system to GPU...");
+         HYPRE_IJMatrixMigrate(A, HYPRE_MEMORY_DEVICE);
+         HYPRE_IJVectorMigrate(b, HYPRE_MEMORY_DEVICE);
+         if (!myid && (params.verbose > 0)) printf(" Done!\n");
+#endif
+
+         /* Tell hypredrv we have 3 interleaved dofs per node */
+         HYPREDRV_SAFE_CALL(
+            HYPREDRV_LinearSystemSetInterleavedDofmap(hypredrv, mesh->local_size, 3));
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(hypredrv, (HYPRE_Matrix)A));
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector)b));
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv));
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv));
+
+         if (params.verbose & 0x4)
+         {
+            if (!myid) printf("Printing linear system...");
+            HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemPrint(hypredrv));
+            if (!myid) printf(" Done!\n");
+         }
+
+         /* Build and apply linear solver */
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(hypredrv));
+         HYPREDRV_SAFE_CALL(HYPREDRV_PreconCreate(hypredrv));
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverCreate(hypredrv));
+
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(hypredrv));
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
+
+         double t_setup, t_solve;
+         HYPREDRV_SAFE_CALL(HYPREDRV_GetLastStat(hypredrv, "setup", &t_setup));
+         HYPREDRV_SAFE_CALL(HYPREDRV_GetLastStat(hypredrv, "solve", &t_solve));
+
+         timestep_setup_time += t_setup;
+         timestep_solve_time += t_solve;
+
+         HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(hypredrv));
+
+         // Get iteration count
+         int num_iterations;
+         HYPREDRV_SAFE_CALL(HYPREDRV_GetLastStat(hypredrv, "iter", &num_iterations));
+         total_linear_iters += num_iterations;
+
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hypredrv));
+
+         double norm_u, norm_v, norm_p;
+         ComputeComponentNorms(b, mesh->local_size, &norm_u, &norm_v, &norm_p);
+
+         if (!myid && params.verbose > 0)
+         {
+             double cfl = params.dt / h_min;
+             printf("Time step: %3d | Time: %.4e [s] | CFL: %8.2f | NL: %2d | Lin: %3d | L2(u)=%.2e  L2(v)=%.2e  L2(p)=%.2e\n",
+                    t_step + 1, current_time, cfl, newton_iter + 1, num_iterations, norm_u, norm_v, norm_p);
+         }
+
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &sol_data));
+         for (int i=0; i<3*mesh->local_size; i++)
+         {
+            u_now[i] += sol_data[i];
+         }
+
+         HYPRE_IJMatrixDestroy(A);
+         HYPRE_IJVectorDestroy(b);
+      }
+
+      // Save stats
+      if (t_step >= stats_capacity)
+      {
+         stats_capacity *= 2;
+         stats = (TimeStepStats *)realloc(stats, stats_capacity * sizeof(TimeStepStats));
+      }
+
+      stats[t_step].timestep = t_step + 1;
+      stats[t_step].time = current_time;
+      stats[t_step].newton_iters = --newton_iter_count;
+      stats[t_step].linear_iters = total_linear_iters;
+      stats[t_step].residual_norm = final_residual;
+      stats[t_step].setup_time = timestep_setup_time;
+      stats[t_step].solve_time = timestep_solve_time;
+      stats_count++;
+
+      // Save VTK if visualization is enabled
+      if (params.visualize)
+      {
+         WriteVTKsolutionVector(mesh, &params, u_now, t_step + 1);
+      }
+
+      for (int i=0; i<3*mesh->local_size; i++)
+      {
+         u_old[i] = u_now[i];
+      }
+
+      if (newton_iter_count == 1)
+      {
+         params.dt *= 2.0;
+         //if (!myid && params.verbose > 0) printf("  [Adaptive DT] Doubling dt to %.4e\n", params.dt);
+      }
+
+      if (params.adaptive_dt)
+      {
+         if (newton_iter_count <= 3)
+         {
+            params.dt *= 1.2;
+            //if (!myid && params.verbose > 0) printf("  [Adaptive DT] Increasing dt to %.4e\n", params.dt);
+         }
+         else if (newton_iter_count >= 6)
+         {
+            params.dt *= 0.8;
+            //if (!myid && params.verbose > 0) printf("  [Adaptive DT] Decreasing dt to %.4e\n", params.dt);
+         }
+      }
+
+      if (!myid && params.verbose > 0 && newton_iter_count > 1) printf("\n");
+      t_step++;
+   }
+
+   /* Free memory */
+   DestroyDistMesh2D(&mesh);
+   free(u_old);
+   free(u_now);
+   DestroyGhostData(&g_u_k);
+   DestroyGhostData(&g_u_n);
+   if (!myid && (params.verbose > 0))
+   {
+      long long total_nl = 0;
+      long long total_lin = 0;
+      double total_setup = 0.0;
+      double total_solve = 0.0;
+
+      for (int i = 0; i < stats_count; i++)
+      {
+         total_nl += stats[i].newton_iters;
+         total_lin += stats[i].linear_iters;
+         total_setup += stats[i].setup_time;
+         total_solve += stats[i].solve_time;
+      }
+
+      double avg_ls_iters = total_nl > 0 ? (double)total_lin / total_nl : 0.0;
+      double avg_ls_setup = total_nl > 0 ? total_setup / total_nl : 0.0;
+      double avg_ls_solve = total_nl > 0 ? total_solve / total_nl : 0.0;
+
+      double avg_ts_iters = (double)total_lin / stats_count;
+      double avg_ts_setup = total_setup / stats_count;
+      double avg_ts_solve = total_solve / stats_count;
+
+      printf("\n");
+      printf("Summary:\n");
+      printf("--------------------------------------------------\n");
+      printf("Total number of Non-linear iterations: %lld\n", total_nl);
+      printf("Total number of linear iterations:     %lld\n", total_lin);
+      printf("Avg. LS iterations:                    %.2f\n", avg_ls_iters);
+      printf("Avg. LS times: (setup, solve, total):  %.4f, %.4f, %.4f\n",
+             avg_ls_setup, avg_ls_solve, avg_ls_setup + avg_ls_solve);
+      printf("Avg. LS iterations per timestep:       %.2f\n", avg_ts_iters);
+      printf("Avg. LS times per timestep: (s, s, t): %.4f, %.4f, %.4f\n",
+             avg_ts_setup, avg_ts_solve, avg_ts_setup + avg_ts_solve);
+      printf("--------------------------------------------------\n");
+      printf("\n");
+   }
+
+   if (!myid && params.visualize)
+   {
+      WritePVDCollection(&params, stats, num_procs, stats_count);
+   }
+
+   free(stats);
+
+   if (!myid && (params.verbose & 0x1)) HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(hypredrv));
+   if (params.verbose & 0x2) HYPREDRV_SAFE_CALL(HYPREDRV_PrintExitInfo(comm, argv[0]));
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
+   HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+   MPI_Finalize();
+
+   return 0;
+}
