@@ -208,7 +208,6 @@ ErrorBacktracePrint(void)
       }
       else
       {
-         exe_path[0] = '\0';
          file_cmd[0] = '\0';
       }
 
@@ -248,8 +247,7 @@ ErrorBacktracePrint(void)
        * This will stop the process and give the user an interactive GDB session
        * with the full stack visible. */
       raise(SIGTRAP);
-
-      /* If GDB detaches or user continues, wait for the child to finish */
+      // cppcheck-suppress unreachableCode
       waitpid(child_pid, NULL, 0);
    }
 }

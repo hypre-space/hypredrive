@@ -56,7 +56,7 @@ StrIntMapArray LinearSystemGetValidValues(const char *);
 
 void LinearSystemSetDefaultArgs(LS_args *);
 
-void LinearSystemSetNearNullSpace(MPI_Comm, LS_args *, HYPRE_IJMatrix, int, int,
+void LinearSystemSetNearNullSpace(MPI_Comm, const LS_args *, HYPRE_IJMatrix, int, int,
                                   const HYPRE_Complex *, HYPRE_IJVector *);
 void LinearSystemSetNumSystems(LS_args *);
 void LinearSystemSetArgsFromYAML(LS_args *, YAMLnode *);

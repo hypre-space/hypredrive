@@ -139,6 +139,7 @@ HandleAnnotationBegin(const char *name)
       active_stats->reps++;
       active_stats->counter =
          ((active_stats->ls_counter) * active_stats->num_reps) + (active_stats->reps - 1);
+      StartScalarTimer(&active_stats->reset_x0);
    }
    else if (!strcmp(name, "matrix") || !strcmp(name, "system"))
    {
@@ -163,10 +164,6 @@ HandleAnnotationBegin(const char *name)
       active_stats->ls_counter++;
       active_stats->counter = (active_stats->ls_counter - 1) * active_stats->num_reps;
       StartVectorTimer(active_stats->solve, active_stats->counter);
-   }
-   else if (!strcmp(name, "reset_x0"))
-   {
-      StartScalarTimer(&active_stats->reset_x0);
    }
    else if (!strcmp(name, "initialize"))
    {
@@ -287,7 +284,7 @@ static bool
 ShouldPrintBuildTimes(int entry_index)
 {
    /* Always print if num_systems is unknown or <= 1 */
-   if (active_stats->num_systems < 0 || active_stats->num_systems <= 1)
+   if (active_stats->num_systems <= 1)
    {
       return true;
    }

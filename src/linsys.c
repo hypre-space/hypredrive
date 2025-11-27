@@ -151,7 +151,7 @@ LinearSystemSetDefaultArgs(LS_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetNearNullSpace(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
+LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
                              int num_entries, int num_components,
                              const HYPRE_Complex *values, HYPRE_IJVector *vec_nn_ptr)
 {
@@ -938,7 +938,7 @@ LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_A,
       DIR *dir     = opendir(root);
       if (dir)
       {
-         struct dirent *ent;
+         const struct dirent *ent;
          while ((ent = readdir(dir)) != NULL)
          {
             if (ent->d_name[0] == 'l' && ent->d_name[1] == 's' && ent->d_name[2] == '_')

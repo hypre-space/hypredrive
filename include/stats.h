@@ -83,24 +83,24 @@ typedef struct Stats_struct
 {
    /* Capacity and counters */
    int capacity;
-   int counter;        /* Current entry index */
-   int reps;           /* Current repetition counter */
-   int ls_counter;     /* Linear system counter (increments on "matrix" annotation) */
-   int num_reps;       /* Number of repetitions per linear system */
-   int num_systems;    /* Number of linear systems (-1 if unknown) */
+   int counter;     /* Current entry index */
+   int reps;        /* Current repetition counter */
+   int ls_counter;  /* Linear system counter (increments on "matrix" annotation) */
+   int num_reps;    /* Number of repetitions per linear system */
+   int num_systems; /* Number of linear systems (-1 if unknown) */
 
    /* Hierarchical annotation stack */
    AnnotationContext level_stack[STATS_MAX_LEVELS];
-   int               level_depth;  /* Current depth in hierarchy (0 = no active levels) */
+   int               level_depth; /* Current depth in hierarchy (0 = no active levels) */
 
    /* Timing arrays (indexed by counter) */
-   double *matrix;    /* Matrix assembly time */
-   double *rhs;       /* RHS assembly time */
-   double *dofmap;    /* DOF map setup time */
-   double *prec;      /* Preconditioner setup time */
-   double *solve;     /* Linear solver time */
-   double *rrnorms;   /* Relative residual norms */
-   int    *iters;     /* Iteration counts */
+   double *matrix;  /* Matrix assembly time */
+   double *rhs;     /* RHS assembly time */
+   double *dofmap;  /* DOF map setup time */
+   double *prec;    /* Preconditioner setup time */
+   double *solve;   /* Linear solver time */
+   double *rrnorms; /* Relative residual norms */
+   int    *iters;   /* Iteration counts */
 
    /* Global timers */
    double initialize;
