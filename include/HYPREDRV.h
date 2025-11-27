@@ -1193,6 +1193,63 @@ extern "C"
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateEnd(const char *name, ...);
 
+   /**
+    * @brief Begin hierarchical annotation of a code region with a specified level.
+    *
+    * This function marks the beginning of a hierarchical code region for performance
+    * measurement. Hierarchical annotations allow tracking nested regions such as
+    * time steps (level 0), non-linear iterations (level 1), etc.
+    *
+    * @param level The hierarchical level (0-9). Lower levels represent outer loops,
+    *              higher levels represent inner loops. For example:
+    *              - Level 0: Time steps
+    *              - Level 1: Non-linear iterations
+    * @param name The name of the region to annotate (printf-style format string).
+    * @param ... Additional arguments for the format string.
+    *
+    * @return Returns an error code with 0 indicating success.
+    *
+    * @note Each level can only have one active annotation at a time. The annotation
+    *       must be ended with HYPREDRV_AnnotateLevelEnd using the same level and name.
+    *
+    * Example Usage:
+    * @code
+    *    // Time step loop (level 0)
+    *    for (int t = 0; t < num_steps; t++)
+    *    {
+    *       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(0, "timestep-%d", t));
+    *
+    *       // Non-linear iteration loop (level 1)
+    *       for (int n = 0; n < max_nl_iters; n++)
+    *       {
+    *          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(1, "newton-%d", n));
+    *          // ... solve linear system ...
+    *          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton-%d", n));
+    *       }
+    *
+    *       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep-%d", t));
+    *    }
+    * @endcode
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelBegin(int         level,
+                                                               const char *name, ...);
+
+   /**
+    * @brief End hierarchical annotation of a code region with a specified level.
+    *
+    * This function marks the end of a hierarchical code region. The level and name
+    * must match the corresponding HYPREDRV_AnnotateLevelBegin call.
+    *
+    * @param level The hierarchical level (0-9), must match the Begin call.
+    * @param name The name of the region (printf-style format string), must match
+    *             the Begin call.
+    * @param ... Additional arguments for the format string.
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelEnd(int level, const char *name,
+                                                             ...);
+
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/
 
@@ -1218,6 +1275,21 @@ extern "C"
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv);
+
+   /**
+    * @brief Get a statistic from the last linear solve.
+    *
+    * @param hypredrv The HYPREDRV_t object.
+    * @param name Name of the statistic ("iter", "setup", "solve").
+    * @param value Pointer to store the value. Type depends on name:
+    *              - "iter": int*
+    *              - "setup": double* (seconds)
+    *              - "solve": double* (seconds)
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_GetLastStat(HYPREDRV_t  hypredrv,
+                                                        const char *name, void *value);
 
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/

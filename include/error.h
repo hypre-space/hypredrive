@@ -69,6 +69,6 @@ void ErrorMsgAddUnexpectedVal(const char *);
 void ErrorMsgAddInvalidFilename(const char *);
 void ErrorMsgPrint(void);
 void ErrorMsgClear(void);
-void ErrorMsgPrintAndAbort(MPI_Comm);
+void ErrorBacktracePrint(void);
 
 #endif /* ERROR_H */

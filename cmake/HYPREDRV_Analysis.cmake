@@ -213,15 +213,36 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
         set(CPPCHECK_CHECKERS_REPORT ${CMAKE_BINARY_DIR}/cppcheck-checkers.txt)
 
         # Get HYPRE include directories
+        # First try the target property (works for pre-installed HYPRE)
         get_target_property(HYPRE_INCLUDE_DIRS HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+        set(CPPCHECK_HYPRE_INCLUDES "")
         if(HYPRE_INCLUDE_DIRS)
-            # Convert list to individual -I flags
-            set(CPPCHECK_HYPRE_INCLUDES "")
             foreach(INCDIR ${HYPRE_INCLUDE_DIRS})
-                list(APPEND CPPCHECK_HYPRE_INCLUDES -I${INCDIR})
+                # Skip generator expressions (start with $<) - they can't be used with cppcheck
+                if(NOT INCDIR MATCHES "^\\$<")
+                    list(APPEND CPPCHECK_HYPRE_INCLUDES "-I${INCDIR}")
+                endif()
             endforeach()
-        else()
-            set(CPPCHECK_HYPRE_INCLUDES "")
+        endif()
+
+        # If no includes found (FetchContent case), try to find HYPRE source directories
+        if(NOT CPPCHECK_HYPRE_INCLUDES)
+            # Check for FetchContent source directory
+            if(EXISTS "${CMAKE_BINARY_DIR}/_deps/hypre-src/src")
+                set(_hypre_src "${CMAKE_BINARY_DIR}/_deps/hypre-src/src")
+                # Add main src directory (for HYPRE.h)
+                list(APPEND CPPCHECK_HYPRE_INCLUDES "-I${_hypre_src}")
+                # Add all HYPRE subdirectories that contain headers
+                foreach(_subdir utilities parcsr_mv parcsr_ls seq_mv IJ_mv krylov struct_mv sstruct_mv distributed_matrix distributed_ls multivector)
+                    if(EXISTS "${_hypre_src}/${_subdir}")
+                        list(APPEND CPPCHECK_HYPRE_INCLUDES "-I${_hypre_src}/${_subdir}")
+                    endif()
+                endforeach()
+                # Add build directory for HYPRE_config.h (it's at the root of hypre-build, not in src)
+                if(EXISTS "${CMAKE_BINARY_DIR}/_deps/hypre-build")
+                    list(APPEND CPPCHECK_HYPRE_INCLUDES "-I${CMAKE_BINARY_DIR}/_deps/hypre-build")
+                endif()
+            endif()
         endif()
 
         # Determine parallelism for cppcheck
@@ -247,16 +268,22 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
             "missingInclude:*_hypre*.h\n"
             "*:*_hypre_IJ_mv.h\n"
             "*:*_hypre_utilities.h\n"
+            "unreachableCode:src/error.c:*\n"
         )
 
         # Simple cppcheck target - analyze only src/ directory
-        add_custom_target(cppcheck
+        # Runs cppcheck, generates HTML report, then fails if errors were found
+        find_program(CPPCHECK_HTMLREPORT_EXECUTABLE NAMES cppcheck-htmlreport)
+
+        # Build the command list - always generate XML first
+        set(_cppcheck_commands
             COMMAND ${CPPCHECK_EXECUTABLE}
                 --enable=all
                 --std=c99
                 --suppress=unusedFunction
                 --suppress=missingIncludeSystem
                 --suppressions-list=${CPPCHECK_SUPPRESSIONS_FILE}
+                --inline-suppr
                 --inconclusive
                 --force
                 --check-level=exhaustive
@@ -267,27 +294,38 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
                 -I${CMAKE_BINARY_DIR}
                 ${CPPCHECK_JOBS_FLAG}
                 ${CPPCHECK_HYPRE_INCLUDES}
+                -i${CMAKE_SOURCE_DIR}/src/info.c
                 ${CMAKE_SOURCE_DIR}/src
                 2> ${CPPCHECK_XML_OUTPUT}
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-            COMMENT "Running cppcheck static analysis on src/ directory"
-            VERBATIM
         )
 
-        # Check for cppcheck-htmlreport and generate HTML automatically
-        find_program(CPPCHECK_HTMLREPORT_EXECUTABLE NAMES cppcheck-htmlreport)
+        # Add HTML report generation if available
         if(CPPCHECK_HTMLREPORT_EXECUTABLE)
-            add_custom_command(TARGET cppcheck POST_BUILD
+            list(APPEND _cppcheck_commands
                 COMMAND ${CPPCHECK_HTMLREPORT_EXECUTABLE}
                     --file=${CPPCHECK_XML_OUTPUT}
                     --report-dir=${CPPCHECK_HTML_DIR}
-                COMMENT "Generating cppcheck HTML report"
-                VERBATIM
             )
             message(STATUS "HTML report will be generated automatically at ${CPPCHECK_HTML_DIR}/index.html")
         else()
             message(STATUS "cppcheck-htmlreport not found. Install it to generate HTML reports (e.g., pip install cppcheck-htmlreport)")
         endif()
+
+        # Add error check - fail if XML contains <error> elements with severity="error" or "warning"
+        # (excluding informational messages like checkersReport which have severity="information")
+        # grep returns 0 if pattern found (errors exist), 1 if not found (no errors)
+        # We invert with '!' so the command fails when errors are found
+        list(APPEND _cppcheck_commands
+            COMMAND ${CMAKE_COMMAND} -E echo "Checking for cppcheck errors..."
+            COMMAND sh -c "! grep -E '<error[^>]*severity=\"(error|warning)\"' ${CPPCHECK_XML_OUTPUT}"
+        )
+
+        add_custom_target(cppcheck
+            ${_cppcheck_commands}
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Running cppcheck static analysis on src/ directory"
+            VERBATIM
+        )
 
         message(STATUS "cppcheck target 'cppcheck' is available")
     endif()
