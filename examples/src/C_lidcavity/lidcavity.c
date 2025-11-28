@@ -67,6 +67,7 @@ typedef struct
    HYPRE_Real dt;                /* Time step */
    HYPRE_Real newton_tol;        /* Non-linear solver tolerance */
    HYPRE_Int  adaptive_dt;       /* Adaptive time stepping flag */
+   HYPRE_Int  regularize_bc;     /* Use regularized lid BC (smooth corners) */
    char      *yaml_file;         /* YAML configuration file */
 } LidCavityParams;
 
@@ -118,11 +119,11 @@ int ParseArguments(int, char **, LidCavityParams *, int, int);
 int BuildNewtonSystem(DistMesh2D *, LidCavityParams *,
                       HYPRE_Real *, HYPRE_Real *,
                       HYPRE_IJMatrix *, HYPRE_IJVector *, GhostData *, GhostData *);
-int WriteVTKsolutionVector(DistMesh2D *, LidCavityParams *, HYPRE_Real *, int);
+double *ComputeDivergence(DistMesh2D *, LidCavityParams *, double *, GhostData *);
+int WriteVTKsolutionVector(DistMesh2D *, LidCavityParams *, HYPRE_Real *, GhostData *, int);
 void GetVTKBaseName(LidCavityParams *, char *, size_t);
 void GetVTKDataDir(LidCavityParams *, char *, size_t);
-void GetVTKBaseName(LidCavityParams *, char *, size_t);
-void GetVTKDataDir(LidCavityParams *, char *, size_t);
+void WritePVDCollectionFromStats(LidCavityParams *, int, double);
 
 /*--------------------------------------------------------------------------
  * Print usage info
@@ -143,6 +144,7 @@ PrintUsage(void)
    printf("  -tf <val>         : Final simulation time (0.1)\n");
    printf("  -ntol <val>       : Non-linear solver tolerance (1.0e-6)\n");
    printf("  -adt              : Enable simple adaptive time stepping\n");
+   printf("  -reg              : Use regularized lid BC (smooth corners)\n");
    printf("  -br <n>           : Batch rows for matrix assembly (128)\n");
    printf("  -vis <m>          : Visualization mode (0)\n");
    printf("                         0: none\n");
@@ -179,6 +181,7 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
    params->dt                = 0.001;
    params->newton_tol        = 1.0e-6;
    params->adaptive_dt       = 0;
+   params->regularize_bc     = 0;
    params->yaml_file         = NULL;
 
    for (int i = 1; i < argc; i++)
@@ -234,6 +237,10 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
       else if (!strcmp(argv[i], "-adt"))
       {
          params->adaptive_dt = 1;
+      }
+      else if (!strcmp(argv[i], "-reg") || !strcmp(argv[i], "--regularize"))
+      {
+         params->regularize_bc = 1;
       }
       else if (!strcmp(argv[i], "-br") || !strcmp(argv[i], "--batch-rows"))
       {
@@ -610,6 +617,113 @@ void ComputeComponentNorms(HYPRE_IJVector b, HYPRE_Int local_size,
    *norm_p = sqrt(global_sum_p);
 }
 
+/*--------------------------------------------------------------------------
+ * Compute divergence of velocity field: div(u) = du/dx + dv/dy
+ * Uses central differences with ghost data from all neighbors.
+ * Returns divergence at local nodes (caller must free the returned array).
+ *--------------------------------------------------------------------------*/
+double *
+ComputeDivergence(DistMesh2D *mesh, LidCavityParams *params,
+                  double *u_vec, GhostData *ghost)
+{
+   int nx = mesh->nlocal[0];
+   int ny = mesh->nlocal[1];
+   int *gdims = mesh->gdims;
+   int *p = mesh->coords;
+   HYPRE_BigInt **pstarts = mesh->pstarts;
+
+   double hx = params->L[0] / (gdims[0] - 1);
+   double hy = params->L[1] / (gdims[1] - 1);
+
+   /* Exchange ghost data with all neighbors */
+   ExchangeVectorGhosts(mesh, u_vec, ghost);
+
+   /* Allocate divergence array for local nodes */
+   double *div_u = (double *)calloc(nx * ny, sizeof(double));
+
+   for (int ly = 0; ly < ny; ly++)
+   {
+      for (int lx = 0; lx < nx; lx++)
+      {
+         /* Global coordinates */
+         int gx = (int)pstarts[0][p[0]] + lx;
+         int gy = (int)pstarts[1][p[1]] + ly;
+
+         /* Skip global boundary nodes - div(u) not enforced there */
+         if (gx == 0 || gx == gdims[0] - 1 || gy == 0 || gy == gdims[1] - 1)
+         {
+            div_u[ly * nx + lx] = 0.0;
+            continue;
+         }
+
+         double u_l, u_r, v_b, v_t;
+         int idx_c = (ly * nx + lx) * 3;
+
+         /* Get u values for du/dx (left and right neighbors) */
+         if (lx > 0)
+         {
+            u_l = u_vec[(ly * nx + (lx - 1)) * 3 + 0];
+         }
+         else if (ghost->recv_bufs[0]) /* Left neighbor */
+         {
+            u_l = ghost->recv_bufs[0][ly * 3 + 0];
+         }
+         else
+         {
+            u_l = u_vec[idx_c + 0]; /* Fallback (shouldn't happen for interior) */
+         }
+
+         if (lx < nx - 1)
+         {
+            u_r = u_vec[(ly * nx + (lx + 1)) * 3 + 0];
+         }
+         else if (ghost->recv_bufs[1]) /* Right neighbor */
+         {
+            u_r = ghost->recv_bufs[1][ly * 3 + 0];
+         }
+         else
+         {
+            u_r = u_vec[idx_c + 0]; /* Fallback */
+         }
+
+         /* Get v values for dv/dy (bottom and top neighbors) */
+         if (ly > 0)
+         {
+            v_b = u_vec[((ly - 1) * nx + lx) * 3 + 1];
+         }
+         else if (ghost->recv_bufs[2]) /* Bottom neighbor */
+         {
+            v_b = ghost->recv_bufs[2][lx * 3 + 1];
+         }
+         else
+         {
+            v_b = u_vec[idx_c + 1]; /* Fallback */
+         }
+
+         if (ly < ny - 1)
+         {
+            v_t = u_vec[((ly + 1) * nx + lx) * 3 + 1];
+         }
+         else if (ghost->recv_bufs[3]) /* Top neighbor */
+         {
+            v_t = ghost->recv_bufs[3][lx * 3 + 1];
+         }
+         else
+         {
+            v_t = u_vec[idx_c + 1]; /* Fallback */
+         }
+
+         /* Central differences */
+         double du_dx = (u_r - u_l) / (2.0 * hx);
+         double dv_dy = (v_t - v_b) / (2.0 * hy);
+
+         div_u[ly * nx + lx] = du_dx + dv_dy;
+      }
+   }
+
+   return div_u;
+}
+
 int
 BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
                       HYPRE_Real *u_prev_time, /* u at n */
@@ -956,13 +1070,13 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
 
         HYPRE_Int boundary_type = 0; // 0: interior, 1: wall, 2: lid
 
-        if (gcoords[1] == gdims[1] - 1)
+        if (gcoords[1] == gdims[1] - 1 && gcoords[0] != 0 && gcoords[0] != gdims[0] - 1)
         {
-            boundary_type = 2; // Lid (top): u = 1, v = 0
+            boundary_type = 2; // Lid (top, excluding corners): u = profile, v = 0
         }
         else if (gcoords[0] == 0 || gcoords[0] == gdims[0] - 1 || gcoords[1] == 0)
         {
-            boundary_type = 1; // Wall (left, right, bottom): u = 0, v = 0
+            boundary_type = 1; // Wall (left, right, bottom, top corners): u = 0, v = 0
         }
 
         // Fix pressure at a reference node (e.g., global (0,0))
@@ -986,7 +1100,23 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
 
                 if (boundary_type == 2 && j == 0) // Lid, u-component
                 {
-                    u_bc = 1.0; // u = 1 on lid
+                    if (params->regularize_bc)
+                    {
+                        // Regularized lid BC: u(x) = [1 - (2x-1)^(2n)]^2 with n=8
+                        // Flatter profile in center, steeper near corners
+                        // u(0) = 0, u(0.5) = 1, u(1) = 0
+                        HYPRE_Real x_norm = (HYPRE_Real)gcoords[0] / (gdims[0] - 1);
+                        HYPRE_Real xi = 2.0 * x_norm - 1.0;  // Map [0,1] to [-1,1]
+                        HYPRE_Real xi16 = xi * xi;           // xi^2
+                        xi16 *= xi16;                        // xi^4
+                        xi16 *= xi16;                        // xi^8
+                        xi16 *= xi16;                        // xi^16
+                        u_bc = (1.0 - xi16) * (1.0 - xi16);
+                    }
+                    else
+                    {
+                        u_bc = 1.0; // Classic BC: u = 1 on entire lid
+                    }
                 }
 
                 // Convert global node ID to local index for accessing u_current_iter
@@ -1037,7 +1167,7 @@ WriteCoordArray(FILE *fp, const char *name, double start, double delta, int coun
 }
 
 int
-WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *sol_data, int time_step_idx)
+WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *sol_data, GhostData *ghost, int time_step_idx)
 {
    int myid, num_procs;
    MPI_Comm_rank(mesh->cart_comm, &myid);
@@ -1060,25 +1190,25 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
    int nxg = nx + ofi;
    int nyg = ny + ofj;
 
-   /* Allocate ghost buffers (vectors: 3 doubles per point) */
-   double *ghost[8];
-   for (int i = 0; i < 8; i++) ghost[i] = NULL;
+   /* Allocate VTK ghost buffers (vectors: 3 doubles per point) */
+   double *vtk_ghost[8];
+   for (int i = 0; i < 8; i++) vtk_ghost[i] = NULL;
    if (mesh->nbrs[0] != MPI_PROC_NULL)
-      ghost[0] = (double *)calloc(ny * 3, sizeof(double)); /* left  face */
+      vtk_ghost[0] = (double *)calloc(ny * 3, sizeof(double)); /* left  face */
    if (mesh->nbrs[1] != MPI_PROC_NULL)
-      ghost[1] = (double *)calloc(ny * 3, sizeof(double)); /* right face send */
+      vtk_ghost[1] = (double *)calloc(ny * 3, sizeof(double)); /* right face send */
    if (mesh->nbrs[2] != MPI_PROC_NULL)
-      ghost[2] = (double *)calloc(nx * 3, sizeof(double)); /* down  face */
+      vtk_ghost[2] = (double *)calloc(nx * 3, sizeof(double)); /* down  face */
    if (mesh->nbrs[3] != MPI_PROC_NULL)
-      ghost[3] = (double *)calloc(nx * 3, sizeof(double)); /* up    face send */
+      vtk_ghost[3] = (double *)calloc(nx * 3, sizeof(double)); /* up    face send */
    if (mesh->nbrs[4] != MPI_PROC_NULL)
-      ghost[4] = (double *)calloc(3, sizeof(double)); /* left-down corner */
+      vtk_ghost[4] = (double *)calloc(3, sizeof(double)); /* left-down corner */
    if (mesh->nbrs[5] != MPI_PROC_NULL)
-      ghost[5] = (double *)calloc(3, sizeof(double)); /* right-up  corner send */
+      vtk_ghost[5] = (double *)calloc(3, sizeof(double)); /* right-up  corner send */
     if (mesh->nbrs[6] != MPI_PROC_NULL)
-        ghost[6] = (double *)calloc(3, sizeof(double)); /* left-up corner */
+        vtk_ghost[6] = (double *)calloc(3, sizeof(double)); /* left-up corner */
     if (mesh->nbrs[7] != MPI_PROC_NULL)
-        ghost[7] = (double *)calloc(3, sizeof(double)); /* right-down  corner send */
+        vtk_ghost[7] = (double *)calloc(3, sizeof(double)); /* right-down  corner send */
 
    /* Fill send buffers and post Irecvs */
    MPI_Request reqs[16];
@@ -1091,16 +1221,16 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
       {
          int nidx          = j * nx + (nx - 1);
          int off           = j * 3;
-         ghost[1][off + 0] = sol_data[3 * nidx + 0];
-         ghost[1][off + 1] = sol_data[3 * nidx + 1];
-         ghost[1][off + 2] = sol_data[3 * nidx + 2];
+         vtk_ghost[1][off + 0] = sol_data[3 * nidx + 0];
+         vtk_ghost[1][off + 1] = sol_data[3 * nidx + 1];
+         vtk_ghost[1][off + 2] = sol_data[3 * nidx + 2];
       }
-      MPI_Isend(ghost[1], ny * 3, MPI_DOUBLE, mesh->nbrs[1], 0, mesh->cart_comm,
+      MPI_Isend(vtk_ghost[1], ny * 3, MPI_DOUBLE, mesh->nbrs[1], 0, mesh->cart_comm,
                 &reqs[reqc++]);
    }
    if (mesh->nbrs[0] != MPI_PROC_NULL)
    {
-      MPI_Irecv(ghost[0], ny * 3, MPI_DOUBLE, mesh->nbrs[0], 0, mesh->cart_comm,
+      MPI_Irecv(vtk_ghost[0], ny * 3, MPI_DOUBLE, mesh->nbrs[0], 0, mesh->cart_comm,
                 &reqs[reqc++]);
    }
 
@@ -1111,16 +1241,16 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
       {
          int nidx          = (ny - 1) * nx + i;
          int off           = i * 3;
-         ghost[3][off + 0] = sol_data[3 * nidx + 0];
-         ghost[3][off + 1] = sol_data[3 * nidx + 1];
-         ghost[3][off + 2] = sol_data[3 * nidx + 2];
+         vtk_ghost[3][off + 0] = sol_data[3 * nidx + 0];
+         vtk_ghost[3][off + 1] = sol_data[3 * nidx + 1];
+         vtk_ghost[3][off + 2] = sol_data[3 * nidx + 2];
       }
-      MPI_Isend(ghost[3], nx * 3, MPI_DOUBLE, mesh->nbrs[3], 1, mesh->cart_comm,
+      MPI_Isend(vtk_ghost[3], nx * 3, MPI_DOUBLE, mesh->nbrs[3], 1, mesh->cart_comm,
                 &reqs[reqc++]);
    }
    if (mesh->nbrs[2] != MPI_PROC_NULL)
    {
-      MPI_Irecv(ghost[2], nx * 3, MPI_DOUBLE, mesh->nbrs[2], 1, mesh->cart_comm,
+      MPI_Irecv(vtk_ghost[2], nx * 3, MPI_DOUBLE, mesh->nbrs[2], 1, mesh->cart_comm,
                 &reqs[reqc++]);
    }
 
@@ -1128,26 +1258,26 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
     if (mesh->nbrs[5] != MPI_PROC_NULL)
     {
         int nidx = (ny - 1) * nx + (nx - 1);
-        ghost[5][0] = sol_data[3 * nidx + 0];
-        ghost[5][1] = sol_data[3 * nidx + 1];
-        ghost[5][2] = sol_data[3 * nidx + 2];
-        MPI_Isend(ghost[5], 3, MPI_DOUBLE, mesh->nbrs[5], 2, mesh->cart_comm, &reqs[reqc++]);
+        vtk_ghost[5][0] = sol_data[3 * nidx + 0];
+        vtk_ghost[5][1] = sol_data[3 * nidx + 1];
+        vtk_ghost[5][2] = sol_data[3 * nidx + 2];
+        MPI_Isend(vtk_ghost[5], 3, MPI_DOUBLE, mesh->nbrs[5], 2, mesh->cart_comm, &reqs[reqc++]);
     }
     if (mesh->nbrs[4] != MPI_PROC_NULL)
     {
-        MPI_Irecv(ghost[4], 3, MPI_DOUBLE, mesh->nbrs[4], 2, mesh->cart_comm, &reqs[reqc++]);
+        MPI_Irecv(vtk_ghost[4], 3, MPI_DOUBLE, mesh->nbrs[4], 2, mesh->cart_comm, &reqs[reqc++]);
     }
     if (mesh->nbrs[6] != MPI_PROC_NULL)
     {
         int nidx = (ny - 1) * nx;
-        ghost[6][0] = sol_data[3 * nidx + 0];
-        ghost[6][1] = sol_data[3 * nidx + 1];
-        ghost[6][2] = sol_data[3 * nidx + 2];
-        MPI_Isend(ghost[6], 3, MPI_DOUBLE, mesh->nbrs[6], 3, mesh->cart_comm, &reqs[reqc++]);
+        vtk_ghost[6][0] = sol_data[3 * nidx + 0];
+        vtk_ghost[6][1] = sol_data[3 * nidx + 1];
+        vtk_ghost[6][2] = sol_data[3 * nidx + 2];
+        MPI_Isend(vtk_ghost[6], 3, MPI_DOUBLE, mesh->nbrs[6], 3, mesh->cart_comm, &reqs[reqc++]);
     }
     if (mesh->nbrs[7] != MPI_PROC_NULL)
     {
-        MPI_Irecv(ghost[7], 3, MPI_DOUBLE, mesh->nbrs[7], 3, mesh->cart_comm, &reqs[reqc++]);
+        MPI_Irecv(vtk_ghost[7], 3, MPI_DOUBLE, mesh->nbrs[7], 3, mesh->cart_comm, &reqs[reqc++]);
     }
 
    /* Build extended data including negative-face ghosts */
@@ -1181,9 +1311,9 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
          int jg = j + ofj;
          int src      = j * 3;
          int dst      = (jg * nxg + 0) * 3;
-         ext[dst + 0] = ghost[0][src + 0];
-         ext[dst + 1] = ghost[0][src + 1];
-         ext[dst + 2] = ghost[0][src + 2];
+         ext[dst + 0] = vtk_ghost[0][src + 0];
+         ext[dst + 1] = vtk_ghost[0][src + 1];
+         ext[dst + 2] = vtk_ghost[0][src + 2];
       }
    }
    if (mesh->nbrs[2] != MPI_PROC_NULL)
@@ -1193,9 +1323,9 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
          int ig = i + ofi;
          int src      = i * 3;
          int dst      = (0 * nxg + ig) * 3;
-         ext[dst + 0] = ghost[2][src + 0];
-         ext[dst + 1] = ghost[2][src + 1];
-         ext[dst + 2] = ghost[2][src + 2];
+         ext[dst + 0] = vtk_ghost[2][src + 0];
+         ext[dst + 1] = vtk_ghost[2][src + 1];
+         ext[dst + 2] = vtk_ghost[2][src + 2];
       }
    }
 
@@ -1203,9 +1333,9 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
     if (mesh->nbrs[4] != MPI_PROC_NULL) /* left-down */
     {
         int dst      = (0 * nxg + 0) * 3;
-        ext[dst + 0] = ghost[4][0];
-        ext[dst + 1] = ghost[4][1];
-        ext[dst + 2] = ghost[4][2];
+        ext[dst + 0] = vtk_ghost[4][0];
+        ext[dst + 1] = vtk_ghost[4][1];
+        ext[dst + 2] = vtk_ghost[4][2];
     }
 
    /* Create data directory if it doesn't exist (all ranks) */
@@ -1248,6 +1378,33 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
    WriteCoordArray(fp, "z", 0.0, 0.0, 1);
    fprintf(fp, "      </Coordinates>\n");
 
+   /* Compute divergence on local nodes using proper MPI ghost exchange */
+   double *div_local = ComputeDivergence(mesh, params, sol_data, ghost);
+
+   /* Expand divergence to extended grid (including VTK overlap ghosts) */
+   double *div_u = (double *)calloc(nxg * nyg, sizeof(double));
+   for (int j = 0; j < ny; j++)
+   {
+      for (int i = 0; i < nx; i++)
+      {
+         int ig = i + ofi, jg = j + ofj;
+         div_u[jg * nxg + ig] = div_local[j * nx + i];
+      }
+   }
+   free(div_local);
+
+   /* Fill ghost regions of divergence with zeros (boundary/overlap regions) */
+   /* Left ghost column (if present) */
+   if (ofi > 0)
+   {
+      for (int j = 0; j < nyg; j++) div_u[j * nxg + 0] = 0.0;
+   }
+   /* Bottom ghost row (if present) */
+   if (ofj > 0)
+   {
+      for (int i = 0; i < nxg; i++) div_u[0 * nxg + i] = 0.0;
+   }
+
    /* Point data: vectors and scalars */
    fprintf(fp, "      <PointData Vectors=\"velocity\" Scalars=\"pressure\">\n");
    if (params->visualize == 1)
@@ -1283,6 +1440,20 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
       }
       fprintf(fp, "\n        </DataArray>\n");
 
+      /* Divergence of velocity */
+      fprintf(fp, "        <DataArray type=\"Float64\" Name=\"div_velocity\" "
+                  "NumberOfComponents=\"1\" format=\"ascii\">\n");
+      fprintf(fp, "          ");
+      for (int j = 0; j < nyg; j++)
+      {
+         for (int i = 0; i < nxg; i++)
+         {
+            fprintf(fp, "%.15g ", div_u[j * nxg + i]);
+            if ((j * nxg + i + 1) % 6 == 0) fprintf(fp, "\n          ");
+         }
+      }
+      fprintf(fp, "\n        </DataArray>\n");
+
       fprintf(fp, "      </PointData>\n");
       fprintf(fp, "    </Piece>\n");
       fprintf(fp, "  </RectilinearGrid>\n");
@@ -1293,6 +1464,7 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
       int npts      = nxg * nyg;
       int vel_size  = npts * 3 * sizeof(double);
       int pres_size = npts * 1 * sizeof(double);
+      int div_size  = npts * 1 * sizeof(double);
 
       double *vel_buf = (double*)malloc(vel_size);
       double *pres_buf = (double*)malloc(pres_size);
@@ -1310,7 +1482,12 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
 
       fprintf(fp, "        <DataArray type=\"Float64\" Name=\"pressure\" "
                   "NumberOfComponents=\"1\" format=\"appended\" offset=\"%lu\">\n",
-                  sizeof(int) + vel_size);
+                  sizeof(int) + (unsigned long)vel_size);
+      fprintf(fp, "        </DataArray>\n");
+
+      fprintf(fp, "        <DataArray type=\"Float64\" Name=\"div_velocity\" "
+                  "NumberOfComponents=\"1\" format=\"appended\" offset=\"%lu\">\n",
+                  2 * sizeof(int) + (unsigned long)vel_size + (unsigned long)pres_size);
       fprintf(fp, "        </DataArray>\n");
 
       fprintf(fp, "      </PointData>\n");
@@ -1324,11 +1501,15 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
       fwrite(&pres_size, sizeof(int), 1, fp);
       fwrite(pres_buf, sizeof(double), npts, fp);
 
+      fwrite(&div_size, sizeof(int), 1, fp);
+      fwrite(div_u, sizeof(double), npts, fp);
+
       fprintf(fp, "\n  </AppendedData>\n");
 
       free(vel_buf);
       free(pres_buf);
    }
+   free(div_u);
    fprintf(fp, "</VTKFile>\n");
    fclose(fp);
 
@@ -1336,23 +1517,16 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
 
    /* Cleanup */
    for (int i = 0; i < 8; i++)
-      if (ghost[i]) free(ghost[i]);
+      if (vtk_ghost[i]) free(vtk_ghost[i]);
    free(ext);
 
    return 0;
 }
 
 
-typedef struct
-{
-   int    timestep;
-   double time;
-   double residual_norm;
-   int    newton_iters;
-   int    linear_iters;
-   double setup_time;
-   double solve_time;
-} TimeStepStats;
+/* TimeStepStats is now tracked internally by hypredrv stats system.
+ * Use HYPREDRV_AnnotateLevelBegin/End with level 0 for timesteps,
+ * level 1 for Newton iterations. Stats are accumulated automatically. */
 
 /*--------------------------------------------------------------------------
  * Get VTK base name (for .pvd file)
@@ -1375,10 +1549,13 @@ void GetVTKDataDir(LidCavityParams *params, char *buf, size_t bufsize)
 }
 
 /*--------------------------------------------------------------------------
- * Write PVD collection file
+ * Write PVD collection file (using internal stats system)
  *--------------------------------------------------------------------------*/
-void WritePVDCollection(LidCavityParams *params, TimeStepStats *stats, int num_procs, int num_steps)
+void WritePVDCollectionFromStats(LidCavityParams *params, int num_procs, double final_time)
 {
+   int num_steps = HYPREDRV_StatsLevelGetCount(0);
+   if (num_steps == 0) return;
+
    char filename[256];
    GetVTKBaseName(params, filename, sizeof(filename));
    strcat(filename, ".pvd");
@@ -1393,16 +1570,24 @@ void WritePVDCollection(LidCavityParams *params, TimeStepStats *stats, int num_p
    fprintf(fp, "<VTKFile type=\"Collection\" version=\"0.1\" byte_order=\"LittleEndian\">\n");
    fprintf(fp, "  <Collection>\n");
 
+   /* Compute time per step (approximate - assumes uniform dt) */
+   double dt_approx = final_time / num_steps;
+
    for (int i = 0; i < num_steps; i++)
    {
+      int timestep_id;
+      HYPREDRV_StatsLevelGetEntry(0, i, &timestep_id, NULL, NULL, NULL, NULL);
+
+      double sim_time = timestep_id * dt_approx;
+
       for (int r = 0; r < num_procs; r++)
       {
          char vtr_file[512];
          snprintf(vtr_file, sizeof(vtr_file), "%s/step_%05d_%d.vtr",
-                  data_dir, stats[i].timestep - 1, r);
+                  data_dir, timestep_id - 1, r);
 
          fprintf(fp, "    <DataSet timestep=\"%g\" group=\"\" part=\"%d\" file=\"%s\"/>\n",
-                 stats[i].time, r, vtr_file);
+                 sim_time, r, vtr_file);
       }
    }
 
@@ -1428,10 +1613,7 @@ main(int argc, char *argv[])
    HYPRE_Real    *u_old;
    HYPRE_Real    *u_now;
 
-   /* Time series stats */
-   int stats_capacity = 100;
-   int stats_count = 0;
-   TimeStepStats *stats = NULL;
+   /* Time series stats are now tracked internally by hypredrv stats system */
 
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
@@ -1443,7 +1625,6 @@ main(int argc, char *argv[])
       return 1;
    }
 
-   stats = (TimeStepStats *)calloc(stats_capacity, sizeof(TimeStepStats));
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
 
@@ -1477,6 +1658,7 @@ main(int argc, char *argv[])
       printf("Reynolds number:         %.1e\n", params.Re);
       printf("Initial time step:       %.1e\n", params.dt);
       printf("Adaptive time stepping:  %s\n", params.adaptive_dt ? "true" : "false");
+      printf("Regularized lid BC:      %s\n", params.regularize_bc ? "true" : "false");
       printf("Final time:              %.1e\n", params.final_time);
       printf("Visualization:           %s\n", params.visualize ? "true" : "false");
       printf("Verbosity level:         0x%x\n", params.verbose);
@@ -1508,11 +1690,11 @@ main(int argc, char *argv[])
       }
 
       current_time += params.dt;
-      int total_linear_iters = 0;
       int newton_iter_count = 0;
-      double final_residual = 0.0;
-      double timestep_setup_time = 0.0;
-      double timestep_solve_time = 0.0;
+      int solves_done = 0;
+
+      /* Begin timestep annotation (level 0) - stats accumulated automatically */
+      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(0, "timestep-%d", t_step));
 
       // Initialize u_now with the solution from the previous time step
       for (int i=0; i<3*mesh->local_size; i++)
@@ -1524,6 +1706,9 @@ main(int argc, char *argv[])
 
       for (int newton_iter = 0; newton_iter < 20; newton_iter++)
       {
+         /* Begin Newton iteration annotation (level 1) */
+         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(1, "newton-%d", newton_iter));
+
          ExchangeVectorGhosts(mesh, u_now, g_u_k);
          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system"));
          BuildNewtonSystem(mesh, &params, u_old, u_now, &A, &b, g_u_n, g_u_k);
@@ -1533,11 +1718,12 @@ main(int argc, char *argv[])
          HYPRE_IJVectorInnerProd(b, b, &residual_norm);
          residual_norm = sqrt(residual_norm);
 
-         final_residual = residual_norm;
          newton_iter_count = newton_iter + 1;
 
          if (newton_iter > 0 && residual_norm < params.newton_tol)
          {
+            /* End Newton iteration annotation before breaking */
+            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton-%d", newton_iter));
             break;
          }
 
@@ -1571,19 +1757,12 @@ main(int argc, char *argv[])
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(hypredrv));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
 
-         double t_setup, t_solve;
-         HYPREDRV_SAFE_CALL(HYPREDRV_GetLastStat(hypredrv, "setup", &t_setup));
-         HYPREDRV_SAFE_CALL(HYPREDRV_GetLastStat(hypredrv, "solve", &t_solve));
-
-         timestep_setup_time += t_setup;
-         timestep_solve_time += t_solve;
-
          HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(hypredrv));
 
-         // Get iteration count
+         // Get iteration count for display
          int num_iterations;
          HYPREDRV_SAFE_CALL(HYPREDRV_GetLastStat(hypredrv, "iter", &num_iterations));
-         total_linear_iters += num_iterations;
+         solves_done++;
 
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hypredrv));
 
@@ -1605,28 +1784,18 @@ main(int argc, char *argv[])
 
          HYPRE_IJMatrixDestroy(A);
          HYPRE_IJVectorDestroy(b);
+
+         /* End Newton iteration annotation (level 1) */
+         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton-%d", newton_iter));
       }
 
-      // Save stats
-      if (t_step >= stats_capacity)
-      {
-         stats_capacity *= 2;
-         stats = (TimeStepStats *)realloc(stats, stats_capacity * sizeof(TimeStepStats));
-      }
-
-      stats[t_step].timestep = t_step + 1;
-      stats[t_step].time = current_time;
-      stats[t_step].newton_iters = --newton_iter_count;
-      stats[t_step].linear_iters = total_linear_iters;
-      stats[t_step].residual_norm = final_residual;
-      stats[t_step].setup_time = timestep_setup_time;
-      stats[t_step].solve_time = timestep_solve_time;
-      stats_count++;
+      /* End timestep annotation (level 0) - stats finalized automatically */
+      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep-%d", t_step));
 
       // Save VTK if visualization is enabled
       if (params.visualize)
       {
-         WriteVTKsolutionVector(mesh, &params, u_now, t_step + 1);
+         WriteVTKsolutionVector(mesh, &params, u_now, g_u_k, t_step + 1);
       }
 
       for (int i=0; i<3*mesh->local_size; i++)
@@ -1654,7 +1823,7 @@ main(int argc, char *argv[])
          }
       }
 
-      if (!myid && params.verbose > 0 && newton_iter_count > 1) printf("\n");
+      if (!myid && params.verbose > 0 && solves_done > 1) printf("\n");
       t_step++;
    }
 
@@ -1664,50 +1833,17 @@ main(int argc, char *argv[])
    free(u_now);
    DestroyGhostData(&g_u_k);
    DestroyGhostData(&g_u_n);
+
+   /* Print timestep statistics summary (uses internal stats system) */
    if (!myid && (params.verbose > 0))
    {
-      long long total_nl = 0;
-      long long total_lin = 0;
-      double total_setup = 0.0;
-      double total_solve = 0.0;
-
-      for (int i = 0; i < stats_count; i++)
-      {
-         total_nl += stats[i].newton_iters;
-         total_lin += stats[i].linear_iters;
-         total_setup += stats[i].setup_time;
-         total_solve += stats[i].solve_time;
-      }
-
-      double avg_ls_iters = total_nl > 0 ? (double)total_lin / total_nl : 0.0;
-      double avg_ls_setup = total_nl > 0 ? total_setup / total_nl : 0.0;
-      double avg_ls_solve = total_nl > 0 ? total_solve / total_nl : 0.0;
-
-      double avg_ts_iters = (double)total_lin / stats_count;
-      double avg_ts_setup = total_setup / stats_count;
-      double avg_ts_solve = total_solve / stats_count;
-
-      printf("\n");
-      printf("Summary:\n");
-      printf("--------------------------------------------------\n");
-      printf("Total number of Non-linear iterations: %lld\n", total_nl);
-      printf("Total number of linear iterations:     %lld\n", total_lin);
-      printf("Avg. LS iterations:                    %.2f\n", avg_ls_iters);
-      printf("Avg. LS times: (setup, solve, total):  %.4f, %.4f, %.4f\n",
-             avg_ls_setup, avg_ls_solve, avg_ls_setup + avg_ls_solve);
-      printf("Avg. LS iterations per timestep:       %.2f\n", avg_ts_iters);
-      printf("Avg. LS times per timestep: (s, s, t): %.4f, %.4f, %.4f\n",
-             avg_ts_setup, avg_ts_solve, avg_ts_setup + avg_ts_solve);
-      printf("--------------------------------------------------\n");
-      printf("\n");
+      HYPREDRV_SAFE_CALL(HYPREDRV_StatsLevelPrint(0));
    }
 
    if (!myid && params.visualize)
    {
-      WritePVDCollection(&params, stats, num_procs, stats_count);
+      WritePVDCollectionFromStats(&params, num_procs, params.final_time);
    }
-
-   free(stats);
 
    if (!myid && (params.verbose & 0x1)) HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(hypredrv));
    if (params.verbose & 0x2) HYPREDRV_SAFE_CALL(HYPREDRV_PrintExitInfo(comm, argv[0]));
