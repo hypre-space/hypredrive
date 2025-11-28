@@ -1218,3 +1218,70 @@ HYPREDRV_GetLastStat(HYPREDRV_t hypredrv, const char *name, void *value)
 
    return ErrorCodeGet();
 }
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_StatsLevelGetCount
+ *-----------------------------------------------------------------------------*/
+
+int
+HYPREDRV_StatsLevelGetCount(int level)
+{
+   return StatsLevelGetCount(level);
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_StatsLevelGetEntry
+ *-----------------------------------------------------------------------------*/
+
+int
+HYPREDRV_StatsLevelGetEntry(int     level,
+                            int     index,
+                            int    *entry_id,
+                            int    *num_solves,
+                            int    *linear_iters,
+                            double *setup_time,
+                            double *solve_time)
+{
+   LevelEntry entry;
+   int        ret = StatsLevelGetEntry(level, index, &entry);
+
+   if (ret == 0)
+   {
+      if (entry_id) *entry_id = entry.id;
+
+      /* Compute aggregates from solve index range */
+      int    n_solves = entry.solve_end - entry.solve_start;
+      int    l_iters  = 0;
+      double s_time   = 0.0;
+      double p_time   = 0.0;
+
+      Stats *stats = StatsGetContext();
+      if (stats)
+      {
+         for (int i = entry.solve_start; i < entry.solve_end; i++)
+         {
+            l_iters += stats->iters[i];
+            p_time  += stats->prec[i];
+            s_time  += stats->solve[i];
+         }
+      }
+
+      if (num_solves)   *num_solves   = n_solves;
+      if (linear_iters) *linear_iters = l_iters;
+      if (setup_time)   *setup_time   = p_time;
+      if (solve_time)   *solve_time   = s_time;
+   }
+
+   return ret;
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_StatsLevelPrint
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_StatsLevelPrint(int level)
+{
+   StatsLevelPrint(level);
+   return ErrorCodeGet();
+}

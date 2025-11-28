@@ -19,6 +19,9 @@
 /* Maximum number of hierarchical annotation levels */
 #define STATS_MAX_LEVELS 4
 
+/* Default capacity for timestep stats */
+#define STATS_TIMESTEP_CAPACITY 64
+
 /* HYPREDRV_AnnotateAction enum - internal use only (not in public API) */
 typedef enum
 {
@@ -76,6 +79,17 @@ typedef struct
 } AnnotationContext;
 
 /*--------------------------------------------------------------------------
+ * Per-level entry (stats computed on-demand from solve index range)
+ *--------------------------------------------------------------------------*/
+
+typedef struct
+{
+   int id;           /* 1-based entry ID within this level */
+   int solve_start;  /* First solve index for this entry */
+   int solve_end;    /* One past last solve index */
+} LevelEntry;
+
+/*--------------------------------------------------------------------------
  * Stats struct
  *--------------------------------------------------------------------------*/
 
@@ -110,6 +124,15 @@ typedef struct Stats_struct
    /* Output formatting */
    double time_factor;
    bool   use_millisec;
+
+   /* Per-level statistics (stats computed on-demand from solve index range) */
+   int          level_count[STATS_MAX_LEVELS];       /* Number of entries per level */
+   LevelEntry  *level_entries[STATS_MAX_LEVELS];     /* Array of entries per level */
+
+   /* Current state per level */
+   int          level_active;                        /* Bitmask: which levels are active */
+   int          level_current_id[STATS_MAX_LEVELS];  /* Current entry ID per level */
+   int          level_solve_start[STATS_MAX_LEVELS]; /* Solve index when level began */
 } Stats;
 
 /*--------------------------------------------------------------------------
@@ -143,6 +166,11 @@ int    StatsGetLinearSystemID(void);
 int    StatsGetLastIter(void);
 double StatsGetLastSetupTime(void);
 double StatsGetLastSolveTime(void);
+
+/* Level statistics (populated automatically from level annotations) */
+int  StatsLevelGetCount(int level);
+int  StatsLevelGetEntry(int level, int index, LevelEntry *entry);
+void StatsLevelPrint(int level);
 
 /* Output */
 void StatsPrint(int);

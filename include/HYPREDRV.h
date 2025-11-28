@@ -1291,6 +1291,57 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_GetLastStat(HYPREDRV_t  hypredrv,
                                                         const char *name, void *value);
 
+   /**
+    * @brief Get the number of entries recorded at a specific level.
+    *
+    * Returns the count of entries recorded via level annotations
+    * (HYPREDRV_AnnotateLevelBegin/End with the specified level).
+    *
+    * @param level The annotation level (0 to STATS_MAX_LEVELS-1).
+    *
+    * @return The number of entries recorded, or 0 if no stats context is active.
+    */
+   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_StatsLevelGetCount(int level);
+
+   /**
+    * @brief Get statistics entry by level and index.
+    *
+    * Retrieves statistics for a specific entry at the given level. Statistics are
+    * computed on-demand from the solve index range.
+    *
+    * @param level The annotation level (0 to STATS_MAX_LEVELS-1).
+    * @param index Zero-based index of the entry (0 to count-1).
+    * @param entry_id Pointer to store the entry ID (1-based).
+    * @param num_solves Pointer to store the number of solves in this entry.
+    * @param linear_iters Pointer to store the total linear iterations.
+    * @param setup_time Pointer to store the total setup time (seconds).
+    * @param solve_time Pointer to store the total solve time (seconds).
+    *
+    * @return Returns 0 on success, -1 on error (invalid level/index or no stats).
+    *
+    * @note Any pointer parameter can be NULL to skip retrieving that value.
+    */
+   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_StatsLevelGetEntry(int     level,
+                                                          int     index,
+                                                          int    *entry_id,
+                                                          int    *num_solves,
+                                                          int    *linear_iters,
+                                                          double *setup_time,
+                                                          double *solve_time);
+
+   /**
+    * @brief Print statistics summary for a specific level.
+    *
+    * Prints a table of all recorded entries at the specified level including
+    * number of solves, linear iterations, setup time, and solve time per entry,
+    * followed by totals and averages.
+    *
+    * @param level The annotation level to print (0 to STATS_MAX_LEVELS-1).
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsLevelPrint(int level);
+
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/
 

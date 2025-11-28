@@ -359,6 +359,17 @@ StatsCreate(void)
       stats->level_stack[i].level      = -1;
    }
 
+   /* Initialize per-level statistics */
+   stats->level_active = 0;
+   for (int i = 0; i < STATS_MAX_LEVELS; i++)
+   {
+      stats->level_count[i]       = 0;
+      stats->level_entries[i]     = (LevelEntry *)calloc(STATS_TIMESTEP_CAPACITY,
+                                                         sizeof(LevelEntry));
+      stats->level_current_id[i]  = 0;
+      stats->level_solve_start[i] = 0;
+   }
+
    return stats;
 }
 
@@ -410,6 +421,12 @@ StatsDestroy(Stats **stats_ptr)
    free(stats->prec);
    free(stats->solve);
    free(stats->rrnorms);
+
+   /* Free level entry arrays */
+   for (int i = 0; i < STATS_MAX_LEVELS; i++)
+   {
+      free(stats->level_entries[i]);
+   }
 
    /* Free the struct itself */
    free(stats);
@@ -509,6 +526,11 @@ StatsAnnotateLevelBegin(int level, const char *name, ...)
       active_stats->level_depth = level + 1;
    }
 
+   /* Record solve index at start for this level */
+   active_stats->level_active |= (1 << level);
+   active_stats->level_current_id[level]++;
+   active_stats->level_solve_start[level] = active_stats->ls_counter;
+
    /* Commenting out for now to avoid multiple caliper regions for each solve call */
 #if 0
    /* Start Caliper region with hierarchical name */
@@ -516,6 +538,40 @@ StatsAnnotateLevelBegin(int level, const char *name, ...)
    snprintf(full_name, sizeof(full_name), "HYPREDRV_L%d_%.1014s", level, formatted_name);
    HYPREDRV_ANNOTATE_REGION_BEGIN("%s", full_name)
 #endif
+}
+
+/*--------------------------------------------------------------------------
+ * StatsAnnotateLevelEnd - End hierarchical annotation
+ *--------------------------------------------------------------------------*/
+
+/*--------------------------------------------------------------------------
+ * Helper: Ensure level array capacity (uses fixed capacity, reallocates if needed)
+ *--------------------------------------------------------------------------*/
+
+static void
+EnsureLevelCapacity(int level)
+{
+   /* Simple approach: reallocate if count reaches capacity */
+   int count = active_stats->level_count[level];
+   int capacity = STATS_TIMESTEP_CAPACITY;
+
+   /* Check if we need more space (count is power-of-2 threshold) */
+   while (capacity <= count)
+   {
+      capacity *= 2;
+   }
+
+   if (count > 0 && (count & (count - 1)) == 0 && count >= STATS_TIMESTEP_CAPACITY)
+   {
+      /* count is a power of 2 and >= initial capacity, time to grow */
+      int new_capacity = count * 2;
+      LevelEntry *new_ptr = (LevelEntry *)realloc(
+         active_stats->level_entries[level], new_capacity * sizeof(LevelEntry));
+      if (new_ptr)
+      {
+         active_stats->level_entries[level] = new_ptr;
+      }
+   }
 }
 
 /*--------------------------------------------------------------------------
@@ -555,6 +611,20 @@ StatsAnnotateLevelEnd(int level, const char *name, ...)
                      : "NULL",
                   formatted_name);
       return;
+   }
+
+   /* Save level entry if this level is active */
+   if (active_stats->level_active & (1 << level))
+   {
+      EnsureLevelCapacity(level);
+
+      int idx = active_stats->level_count[level];
+      active_stats->level_entries[level][idx].id          = active_stats->level_current_id[level];
+      active_stats->level_entries[level][idx].solve_start = active_stats->level_solve_start[level];
+      active_stats->level_entries[level][idx].solve_end   = active_stats->ls_counter;
+
+      active_stats->level_count[level]++;
+      active_stats->level_active &= ~(1 << level);
    }
 
    /* Commenting out for now to avoid multiple caliper regions for each solve call */
@@ -762,4 +832,128 @@ StatsGetLastSolveTime(void)
       return 0.0;
    }
    return active_stats->solve[active_stats->counter] * active_stats->time_factor;
+}
+
+/*--------------------------------------------------------------------------
+ * StatsLevelGetCount - Get number of entries at a level
+ *--------------------------------------------------------------------------*/
+
+int
+StatsLevelGetCount(int level)
+{
+   if (!active_stats || level < 0 || level >= STATS_MAX_LEVELS)
+   {
+      return 0;
+   }
+   return active_stats->level_count[level];
+}
+
+/*--------------------------------------------------------------------------
+ * StatsLevelGetEntry - Get level entry by index
+ *--------------------------------------------------------------------------*/
+
+int
+StatsLevelGetEntry(int level, int index, LevelEntry *entry)
+{
+   if (!active_stats || !entry || level < 0 || level >= STATS_MAX_LEVELS)
+   {
+      return -1;
+   }
+
+   if (index < 0 || index >= active_stats->level_count[level])
+   {
+      return -1;
+   }
+
+   *entry = active_stats->level_entries[level][index];
+   return 0;
+}
+
+/*--------------------------------------------------------------------------
+ * Helper: Compute aggregates from solve index range
+ *--------------------------------------------------------------------------*/
+
+static void
+ComputeLevelStats(LevelEntry *entry, int *num_solves, int *linear_iters,
+                  double *setup_time, double *solve_time)
+{
+   int    n_solves = 0;
+   int    l_iters  = 0;
+   double s_time   = 0.0;
+   double p_time   = 0.0;
+
+   for (int i = entry->solve_start; i < entry->solve_end; i++)
+   {
+      l_iters += active_stats->iters[i];
+      p_time  += active_stats->prec[i];
+      s_time  += active_stats->solve[i];
+   }
+   n_solves = entry->solve_end - entry->solve_start;
+
+   if (num_solves)   *num_solves   = n_solves;
+   if (linear_iters) *linear_iters = l_iters;
+   if (setup_time)   *setup_time   = p_time;
+   if (solve_time)   *solve_time   = s_time;
+}
+
+/*--------------------------------------------------------------------------
+ * StatsLevelPrint - Print statistics summary for a level
+ *--------------------------------------------------------------------------*/
+
+void
+StatsLevelPrint(int level)
+{
+   if (!active_stats || level < 0 || level >= STATS_MAX_LEVELS)
+   {
+      return;
+   }
+
+   int count = active_stats->level_count[level];
+   if (count == 0)
+   {
+      return;
+   }
+
+   /* Compute totals */
+   long long total_solves = 0;
+   long long total_linear = 0;
+   double    total_setup  = 0.0;
+   double    total_solve  = 0.0;
+
+   for (int i = 0; i < count; i++)
+   {
+      LevelEntry *entry = &active_stats->level_entries[level][i];
+      int    num_solves, linear_iters;
+      double setup_time, solve_time;
+
+      ComputeLevelStats(entry, &num_solves, &linear_iters, &setup_time, &solve_time);
+
+      total_solves += num_solves;
+      total_linear += linear_iters;
+      total_setup  += setup_time;
+      total_solve  += solve_time;
+   }
+
+   /* Print summary in original format */
+   double avg_iters_per_solve = total_solves > 0 ? (double)total_linear / total_solves : 0.0;
+   double avg_setup_per_solve = total_solves > 0 ? total_setup / total_solves : 0.0;
+   double avg_solve_per_solve = total_solves > 0 ? total_solve / total_solves : 0.0;
+
+   double avg_iters_per_entry = count > 0 ? (double)total_linear / count : 0.0;
+   double avg_setup_per_entry = count > 0 ? total_setup / count : 0.0;
+   double avg_solve_per_entry = count > 0 ? total_solve / count : 0.0;
+
+   printf("\n");
+   printf("Aggregate Summary:\n");
+   printf("--------------------------------------------------------------\n");
+   printf("Total number of Non-linear iterations: %lld\n", total_solves);
+   printf("Total number of linear iterations:     %lld\n", total_linear);
+   printf("Avg. LS iterations:                    %.2f\n", avg_iters_per_solve);
+   printf("Avg. LS times: (setup, solve, total):  %.4f, %.4f, %.4f\n",
+          avg_setup_per_solve, avg_solve_per_solve, avg_setup_per_solve + avg_solve_per_solve);
+   printf("Avg. LS iterations per timestep:       %.2f\n", avg_iters_per_entry);
+   printf("Avg. LS times per timestep: (s, s, t): %.4f, %.4f, %.4f\n",
+          avg_setup_per_entry, avg_solve_per_entry, avg_setup_per_entry + avg_solve_per_entry);
+   printf("--------------------------------------------------------------\n");
+   printf("\n");
 }
