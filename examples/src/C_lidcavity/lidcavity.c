@@ -20,36 +20,73 @@
  *   2D Lid Driven Cavity (Q1-Q1 Stabilized) Example Driver
  *==========================================================================
  *
- *   Grid Partitioning:
- *   ------------------
- *                     P[1]
- *                      ↑
- *                      |
- *                      |
- *         P[0] ←———————C
- *
  *   Geometry and Axes:
  *   ------------------
- *   Ω = [0, L] × [0, L]
+ *
+ *        y=L  +-------lid (u=1)-------+
+ *             |                       |
+ *             |                       |
+ *             |                       |
+ *        wall |         Domain        | wall
+ *       (u=0) |       [0,L]x[0,L]     | (u=0)
+ *             |                       |          P[1]
+ *             |                       |          ^
+ *             |                       |          |
+ *             |                       |          |
+ *        y=0  +---------wall----------+          +-----> P[0]
+ *            x=0                     x=L    Grid Partitioning
  *
  *   Physics (Unsteady Incompressible Navier-Stokes):
- *   -----------------------------------------------
+ *   ------------------------------------------------
+ *
+ *     du/dt + (U . grad) U - ν * lap(U) + grad(p) = 0   (momentum)
+ *     div(U) = 0                                        (continuity)
+ *
+ *   where:
+ *     U = (u, v)  velocity vector
+ *     p           pressure (normalized by density)
+ *     Re          Reynolds number
+ *     ν = 1/Re    kinematic viscosity
  *
  *   Boundary Conditions:
  *   --------------------
+ *   - Lid (y = L, excluding corners): u = 1, v = 0
+ *       Classic:     u = 1 (discontinuous at corners)
+ *       Regularized: u = [1 - (2x/L - 1)^16]^2 (smooth, zero at corners)
+ *   - Walls (x = 0, x = L, y = 0, and corners): u = 0, v = 0 (no-slip)
+ *   - Pressure: Fixed at one node (e.g., bottom-left corner, p = 0)
  *
+ *   Discretization:
+ *   ---------------
+ *   - Spatial:  Q1-Q1 finite elements (bilinear velocity and pressure)
+ *   - Temporal: Backward Euler (implicit, first-order)
+ *   - Stabilization: SUPG (momentum) + PSPG (pressure)
+ *   - Nonlinear: Newton iteration with analytical Jacobian
  *==========================================================================*/
 
 /*--------------------------------------------------------------------------
- * Default solver configuration
+ * Default linear solver configuration (FGMRES+AMG+ILU)
  *--------------------------------------------------------------------------*/
 static const char *default_config = "solver:\n"
-                                    "  gmres:\n"
+                                    "  fgmres:\n"
+                                    "    krylov_dim: 100\n"
+                                    "    max_iter: 300\n"
                                     "    print_level: 0\n"
-                                    "preconditioner:\n"
-                                    "  ilu:\n"
-                                    "    type: bj-ilut\n"
-                                    "    droptol: 1.0e-3\n";
+                                    "    relative_tol: 1.0e-6\n"
+                                    " preconditioner:\n"
+                                    "  amg:\n"
+                                    "    print_level: 0\n"
+                                    "    coarsening:\n"
+                                    "      strong_th: 0.6\n"
+                                    "      num_functions: 3\n"
+                                    "    smoother:\n"
+                                    "      type: ilu\n"
+                                    "      num_levels: 5\n"
+                                    "      num_sweeps: 1\n"
+                                    "      ilu:\n"
+                                    "        type: bj-ilut\n"
+                                    "        fill_level: 0\n"
+                                    "        droptol: 1e-2\n";
 
 /*--------------------------------------------------------------------------
  * Problem parameters struct
@@ -124,6 +161,7 @@ int WriteVTKsolutionVector(DistMesh2D *, LidCavityParams *, HYPRE_Real *, GhostD
 void GetVTKBaseName(LidCavityParams *, char *, size_t);
 void GetVTKDataDir(LidCavityParams *, char *, size_t);
 void WritePVDCollectionFromStats(LidCavityParams *, int, double);
+void UpdateTimeStep(LidCavityParams *, int);
 
 /*--------------------------------------------------------------------------
  * Print usage info
@@ -146,10 +184,11 @@ PrintUsage(void)
    printf("  -adt              : Enable simple adaptive time stepping\n");
    printf("  -reg              : Use regularized lid BC (smooth corners)\n");
    printf("  -br <n>           : Batch rows for matrix assembly (128)\n");
-   printf("  -vis <m>          : Visualization mode (0)\n");
-   printf("                         0: none\n");
-   printf("                         1: ASCII VTK\n");
-   printf("                         2: binary VTK\n");
+   printf("  -vis <m>          : Visualization mode bitset (0)\n");
+   printf("                         Any nonzero value enables visualization\n");
+   printf("                         Bit 2 (0x2): ASCII (1) or binary (0)\n");
+   printf("                         Bit 3 (0x4): All timesteps (1) or last only (0)\n");
+   printf("                         Examples: 1=binary last, 2=ASCII last, 5=ASCII all, 6=binary all\n");
    printf("  -v|--verbose <n>  : Verbosity bitset (0)\n");
    printf("                         0x1: Linear solver statistics\n");
    printf("                         0x2: Library information\n");
@@ -262,8 +301,8 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
          }
          else
          {
-            /* No argument means ASCII */
-            params->visualize = 1;
+            /* No argument: default is 0 (disabled) */
+            params->visualize = 0;
          }
       }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
@@ -743,6 +782,8 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
    HYPRE_BigInt dof_ilower  = node_ilower * 3;
    HYPRE_BigInt dof_iupper  = node_iupper * 3 + 2;
 
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system"));
+
    /* Create IJ objects */
    HYPRE_IJMatrixCreate(MPI_COMM_WORLD, dof_ilower, dof_iupper, dof_ilower, dof_iupper, &A);
    HYPRE_IJVectorCreate(MPI_COMM_WORLD, dof_ilower, dof_iupper, &b);
@@ -1002,6 +1043,7 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
                }
             }
          }
+
          /* Identify Dirichlet DOFs for this element */
          HYPRE_Int is_dirichlet[12] = {0};
          for (int a = 0; a < 4; a++)
@@ -1145,6 +1187,8 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
 
    *J_ptr = A;
    *R_ptr = b;
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system"));
 
    return 0;
 }
@@ -1407,7 +1451,7 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
 
    /* Point data: vectors and scalars */
    fprintf(fp, "      <PointData Vectors=\"velocity\" Scalars=\"pressure\">\n");
-   if (params->visualize == 1)
+   if (params->visualize & 0x2)
    {
       /* ASCII */
       /* Velocity */
@@ -1458,9 +1502,9 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
       fprintf(fp, "    </Piece>\n");
       fprintf(fp, "  </RectilinearGrid>\n");
    }
-   else if (params->visualize == 2)
+   else
    {
-      /* Appended binary */
+      /* Binary (bit 1 = 0 means binary) */
       int npts      = nxg * nyg;
       int vel_size  = npts * 3 * sizeof(double);
       int pres_size = npts * 1 * sizeof(double);
@@ -1522,11 +1566,6 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
 
    return 0;
 }
-
-
-/* TimeStepStats is now tracked internally by hypredrv stats system.
- * Use HYPREDRV_AnnotateLevelBegin/End with level 0 for timesteps,
- * level 1 for Newton iterations. Stats are accumulated automatically. */
 
 /*--------------------------------------------------------------------------
  * Get VTK base name (for .pvd file)
@@ -1597,21 +1636,52 @@ void WritePVDCollectionFromStats(LidCavityParams *params, int num_procs, double 
 }
 
 /*--------------------------------------------------------------------------
+ * Update time step based on Newton iteration convergence
+ *
+ * Args:
+ *   params: Problem parameters (dt and adaptive_dt flag are modified)
+ *   newton_iter_count: Number of Newton iterations performed (0-indexed)
+ *                      After the loop, this is the last iteration index
+ *--------------------------------------------------------------------------*/
+void
+UpdateTimeStep(LidCavityParams *params, int newton_iter_count)
+{
+   /* Simple adaptive stepping: double dt if Newton iteration count is 1 */
+   if (newton_iter_count == 1)
+   {
+      params->dt *= 2.0;
+   }
+
+   /* More sophisticated adaptive stepping if enabled */
+   if (params->adaptive_dt)
+   {
+      if (newton_iter_count <= 3)
+      {
+         params->dt *= 1.2;
+      }
+      else if (newton_iter_count >= 6)
+      {
+         params->dt *= 0.8;
+      }
+   }
+}
+
+/*--------------------------------------------------------------------------
  * Main driver
  *--------------------------------------------------------------------------*/
 int
 main(int argc, char *argv[])
 {
-   MPI_Comm       comm = MPI_COMM_WORLD;
-   HYPREDRV_t     hypredrv;
-   int            myid, num_procs;
+   MPI_Comm         comm = MPI_COMM_WORLD;
+   HYPREDRV_t       hypredrv;
+   int              myid, num_procs;
    LidCavityParams  params;
    DistMesh2D      *mesh;
-   HYPRE_IJMatrix A;
-   HYPRE_IJVector b;
-   HYPRE_Real    *sol_data;
-   HYPRE_Real    *u_old;
-   HYPRE_Real    *u_now;
+   HYPRE_IJMatrix   A;
+   HYPRE_IJVector   b;
+   HYPRE_Real      *sol_data;
+   HYPRE_Real      *u_old;
+   HYPRE_Real      *u_now;
 
    /* Time series stats are now tracked internally by hypredrv stats system */
 
@@ -1660,7 +1730,16 @@ main(int argc, char *argv[])
       printf("Adaptive time stepping:  %s\n", params.adaptive_dt ? "true" : "false");
       printf("Regularized lid BC:      %s\n", params.regularize_bc ? "true" : "false");
       printf("Final time:              %.1e\n", params.final_time);
-      printf("Visualization:           %s\n", params.visualize ? "true" : "false");
+      if (params.visualize)
+      {
+         const char *format = (params.visualize & 0x2) ? "ASCII" : "binary";
+         const char *timesteps = (params.visualize & 0x4) ? "all" : "last only";
+         printf("Visualization:           enabled (%s, %s timesteps)\n", format, timesteps);
+      }
+      else
+      {
+         printf("Visualization:           disabled\n");
+      }
       printf("Verbosity level:         0x%x\n", params.verbose);
       printf("=====================================================\n\n");
    }
@@ -1680,45 +1759,39 @@ main(int argc, char *argv[])
    double h_min = (hx < hy) ? hx : hy;
 
    double current_time = 0.0;
-   int t_step = 0;
+   int    newton_iter, t_step = 0;
 
-   while (current_time < params.final_time)
+   /* Time solver loop */
+   for (t_step = 0; current_time < params.final_time; ++t_step)
    {
       if (current_time + params.dt > params.final_time)
       {
          params.dt = params.final_time - current_time;
       }
-
       current_time += params.dt;
-      int newton_iter_count = 0;
-      int solves_done = 0;
 
       /* Begin timestep annotation (level 0) - stats accumulated automatically */
       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(0, "timestep-%d", t_step));
 
-      // Initialize u_now with the solution from the previous time step
+      /* Initialize u_now with the solution from the previous time step */
       for (int i=0; i<3*mesh->local_size; i++)
       {
          u_now[i] = u_old[i];
       }
       ExchangeVectorGhosts(mesh, u_old, g_u_n);
 
-
-      for (int newton_iter = 0; newton_iter < 20; newton_iter++)
+      /* Non-linear solver loop */
+      for (newton_iter = 0; newton_iter < 20; newton_iter++)
       {
          /* Begin Newton iteration annotation (level 1) */
          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(1, "newton-%d", newton_iter));
 
          ExchangeVectorGhosts(mesh, u_now, g_u_k);
-         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system"));
          BuildNewtonSystem(mesh, &params, u_old, u_now, &A, &b, g_u_n, g_u_k);
-         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system"));
 
          HYPRE_Real residual_norm;
          HYPRE_IJVectorInnerProd(b, b, &residual_norm);
          residual_norm = sqrt(residual_norm);
-
-         newton_iter_count = newton_iter + 1;
 
          if (newton_iter > 0 && residual_norm < params.newton_tol)
          {
@@ -1758,22 +1831,23 @@ main(int argc, char *argv[])
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
 
          HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(hypredrv));
-
-         // Get iteration count for display
-         int num_iterations;
-         HYPREDRV_SAFE_CALL(HYPREDRV_GetLastStat(hypredrv, "iter", &num_iterations));
-         solves_done++;
-
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hypredrv));
 
-         double norm_u, norm_v, norm_p;
-         ComputeComponentNorms(b, mesh->local_size, &norm_u, &norm_v, &norm_p);
-
-         if (!myid && params.verbose > 0)
+         /* Report running log */
+         if (params.verbose > 0)
          {
-             double cfl = params.dt / h_min;
-             printf("Time step: %3d | Time: %.4e [s] | CFL: %8.2f | NL: %2d | Lin: %3d | L2(u)=%.2e  L2(v)=%.2e  L2(p)=%.2e\n",
-                    t_step + 1, current_time, cfl, newton_iter + 1, num_iterations, norm_u, norm_v, norm_p);
+            int num_iterations;
+            double cfl = params.dt / h_min;
+            double norm_u, norm_v, norm_p;
+
+            HYPREDRV_SAFE_CALL(HYPREDRV_GetLastStat(hypredrv, "iter", &num_iterations));
+            ComputeComponentNorms(b, mesh->local_size, &norm_u, &norm_v, &norm_p);
+            if (!myid)
+            {
+               printf("Time step: %3d | Time: %.4e [s] | CFL: %8.2f | NL: %2d | Lin: %3d | ",
+                      t_step + 1, current_time, cfl, newton_iter + 1, num_iterations);
+               printf("L2(u)=%.2e  L2(v)=%.2e  L2(p)=%.2e\n", norm_u, norm_v, norm_p);
+            }
          }
 
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &sol_data));
@@ -1792,10 +1866,15 @@ main(int argc, char *argv[])
       /* End timestep annotation (level 0) - stats finalized automatically */
       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep-%d", t_step));
 
-      // Save VTK if visualization is enabled
+      /* Save output */
       if (params.visualize)
       {
-         WriteVTKsolutionVector(mesh, &params, u_now, g_u_k, t_step + 1);
+         int is_last_timestep = (current_time >= params.final_time - 1e-10);
+         int write_all = (params.visualize & 0x4) != 0;
+         if (write_all || is_last_timestep)
+         {
+            WriteVTKsolutionVector(mesh, &params, u_now, g_u_k, t_step + 1);
+         }
       }
 
       for (int i=0; i<3*mesh->local_size; i++)
@@ -1803,28 +1882,10 @@ main(int argc, char *argv[])
          u_old[i] = u_now[i];
       }
 
-      if (newton_iter_count == 1)
-      {
-         params.dt *= 2.0;
-         //if (!myid && params.verbose > 0) printf("  [Adaptive DT] Doubling dt to %.4e\n", params.dt);
-      }
+      /* Update time step based on Newton convergence */
+      UpdateTimeStep(&params, newton_iter);
 
-      if (params.adaptive_dt)
-      {
-         if (newton_iter_count <= 3)
-         {
-            params.dt *= 1.2;
-            //if (!myid && params.verbose > 0) printf("  [Adaptive DT] Increasing dt to %.4e\n", params.dt);
-         }
-         else if (newton_iter_count >= 6)
-         {
-            params.dt *= 0.8;
-            //if (!myid && params.verbose > 0) printf("  [Adaptive DT] Decreasing dt to %.4e\n", params.dt);
-         }
-      }
-
-      if (!myid && params.verbose > 0 && solves_done > 1) printf("\n");
-      t_step++;
+      if (!myid && params.verbose > 0 && newton_iter > 1) printf("\n");
    }
 
    /* Free memory */
@@ -1835,7 +1896,7 @@ main(int argc, char *argv[])
    DestroyGhostData(&g_u_n);
 
    /* Print timestep statistics summary (uses internal stats system) */
-   if (!myid && (params.verbose > 0))
+   if (!myid && (params.verbose & 0x1))
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_StatsLevelPrint(0));
    }
