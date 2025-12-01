@@ -398,8 +398,8 @@ HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv, int nstates, HYPRE_IJVector *vecs)
    if (hypredrv)
    {
       hypredrv->nstates = nstates;
-      hypredrv->states  = (int*) malloc(sizeof(int) * nstates);
-      hypredrv->vec_s   = (HYPRE_IJVector*) malloc(sizeof(HYPRE_IJVector) * nstates);
+      hypredrv->states  = (int *)malloc(sizeof(int) * nstates);
+      hypredrv->vec_s   = (HYPRE_IJVector *)malloc(sizeof(HYPRE_IJVector) * nstates);
       for (int i = 0; i < nstates; i++)
       {
          hypredrv->states[i] = i;
@@ -433,16 +433,16 @@ HYPREDRV_StateVectorGetValues(HYPREDRV_t hypredrv, int index, HYPRE_Complex **da
 
    if (hypredrv)
    {
-      int            state = hypredrv->states[index];
+      int             state   = hypredrv->states[index];
       HYPRE_ParVector par_vec = NULL;
-      hypre_Vector  *seq_vec = NULL;
-      void          *obj     = NULL;
+      hypre_Vector   *seq_vec = NULL;
+      void           *obj     = NULL;
 
       if (hypredrv->vec_s[state])
       {
          HYPRE_IJVectorGetObject(hypredrv->vec_s[state], &obj);
-         par_vec = (HYPRE_ParVector)obj;
-         seq_vec = hypre_ParVectorLocalVector(par_vec);
+         par_vec   = (HYPRE_ParVector)obj;
+         seq_vec   = hypre_ParVectorLocalVector(par_vec);
          *data_ptr = hypre_VectorData(seq_vec);
       }
       else
@@ -469,17 +469,17 @@ HYPREDRV_StateVectorCopy(HYPREDRV_t hypredrv, int index_in, int index_out)
 
    if (hypredrv)
    {
-      int            state_in  = hypredrv->states[index_in];
-      int            state_out = hypredrv->states[index_out];
-      void          *obj_in    = NULL;
-      void          *obj_out   = NULL;
+      int   state_in  = hypredrv->states[index_in];
+      int   state_out = hypredrv->states[index_out];
+      void *obj_in    = NULL;
+      void *obj_out   = NULL;
 
       if (hypredrv->vec_s[state_in] && hypredrv->vec_s[state_out])
       {
          HYPRE_IJVectorGetObject(hypredrv->vec_s[state_in], &obj_in);
          HYPRE_IJVectorGetObject(hypredrv->vec_s[state_out], &obj_out);
 
-         HYPRE_ParVectorCopy((HYPRE_ParVector) obj_in, (HYPRE_ParVector) obj_out);
+         HYPRE_ParVectorCopy((HYPRE_ParVector)obj_in, (HYPRE_ParVector)obj_out);
       }
       else
       {
@@ -529,16 +529,15 @@ HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv)
 
    if (hypredrv)
    {
-      void  *obj_s, *obj_delta;
-      int    current = hypredrv->states[0];
+      void *obj_s, *obj_delta;
+      int   current = hypredrv->states[0];
 
       HYPRE_IJVectorGetObject(hypredrv->vec_x, &obj_delta);
       HYPRE_IJVectorGetObject(hypredrv->vec_s[current], &obj_s);
 
       /* U = U + Δx */
-      HYPRE_ParVectorAxpy((HYPRE_Complex) 1.0,
-                          (HYPRE_ParVector) obj_delta,
-                          (HYPRE_ParVector) obj_s);
+      HYPRE_ParVectorAxpy((HYPRE_Complex)1.0, (HYPRE_ParVector)obj_delta,
+                          (HYPRE_ParVector)obj_s);
    }
    else
    {
@@ -1434,13 +1433,8 @@ HYPREDRV_StatsLevelGetCount(int level)
  *-----------------------------------------------------------------------------*/
 
 int
-HYPREDRV_StatsLevelGetEntry(int     level,
-                            int     index,
-                            int    *entry_id,
-                            int    *num_solves,
-                            int    *linear_iters,
-                            double *setup_time,
-                            double *solve_time)
+HYPREDRV_StatsLevelGetEntry(int level, int index, int *entry_id, int *num_solves,
+                            int *linear_iters, double *setup_time, double *solve_time)
 {
    LevelEntry entry;
    int        ret = StatsLevelGetEntry(level, index, &entry);
@@ -1461,15 +1455,15 @@ HYPREDRV_StatsLevelGetEntry(int     level,
          for (int i = entry.solve_start; i < entry.solve_end; i++)
          {
             l_iters += stats->iters[i];
-            p_time  += stats->prec[i];
-            s_time  += stats->solve[i];
+            p_time += stats->prec[i];
+            s_time += stats->solve[i];
          }
       }
 
-      if (num_solves)   *num_solves   = n_solves;
+      if (num_solves) *num_solves = n_solves;
       if (linear_iters) *linear_iters = l_iters;
-      if (setup_time)   *setup_time   = p_time;
-      if (solve_time)   *solve_time   = s_time;
+      if (setup_time) *setup_time = p_time;
+      if (solve_time) *solve_time = s_time;
    }
 
    return ret;

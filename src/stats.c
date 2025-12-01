@@ -363,9 +363,9 @@ StatsCreate(void)
    stats->level_active = 0;
    for (int i = 0; i < STATS_MAX_LEVELS; i++)
    {
-      stats->level_count[i]       = 0;
-      stats->level_entries[i]     = (LevelEntry *)calloc(STATS_TIMESTEP_CAPACITY,
-                                                         sizeof(LevelEntry));
+      stats->level_count[i] = 0;
+      stats->level_entries[i] =
+         (LevelEntry *)calloc(STATS_TIMESTEP_CAPACITY, sizeof(LevelEntry));
       stats->level_current_id[i]  = 0;
       stats->level_solve_start[i] = 0;
    }
@@ -552,7 +552,7 @@ static void
 EnsureLevelCapacity(int level)
 {
    /* Simple approach: reallocate if count reaches capacity */
-   int count = active_stats->level_count[level];
+   int count    = active_stats->level_count[level];
    int capacity = STATS_TIMESTEP_CAPACITY;
 
    /* Check if we need more space (count is power-of-2 threshold) */
@@ -564,9 +564,9 @@ EnsureLevelCapacity(int level)
    if (count > 0 && (count & (count - 1)) == 0 && count >= STATS_TIMESTEP_CAPACITY)
    {
       /* count is a power of 2 and >= initial capacity, time to grow */
-      int new_capacity = count * 2;
-      LevelEntry *new_ptr = (LevelEntry *)realloc(
-         active_stats->level_entries[level], new_capacity * sizeof(LevelEntry));
+      int         new_capacity = count * 2;
+      LevelEntry *new_ptr      = (LevelEntry *)realloc(active_stats->level_entries[level],
+                                                       new_capacity * sizeof(LevelEntry));
       if (new_ptr)
       {
          active_stats->level_entries[level] = new_ptr;
@@ -618,10 +618,11 @@ StatsAnnotateLevelEnd(int level, const char *name, ...)
    {
       EnsureLevelCapacity(level);
 
-      int idx = active_stats->level_count[level];
-      active_stats->level_entries[level][idx].id          = active_stats->level_current_id[level];
-      active_stats->level_entries[level][idx].solve_start = active_stats->level_solve_start[level];
-      active_stats->level_entries[level][idx].solve_end   = active_stats->ls_counter;
+      int idx                                    = active_stats->level_count[level];
+      active_stats->level_entries[level][idx].id = active_stats->level_current_id[level];
+      active_stats->level_entries[level][idx].solve_start =
+         active_stats->level_solve_start[level];
+      active_stats->level_entries[level][idx].solve_end = active_stats->ls_counter;
 
       active_stats->level_count[level]++;
       active_stats->level_active &= ~(1 << level);
@@ -874,7 +875,7 @@ StatsLevelGetEntry(int level, int index, LevelEntry *entry)
  *--------------------------------------------------------------------------*/
 
 static void
-ComputeLevelStats(LevelEntry *entry, int *num_solves, int *linear_iters,
+ComputeLevelStats(const LevelEntry *entry, int *num_solves, int *linear_iters,
                   double *setup_time, double *solve_time)
 {
    int    n_solves = 0;
@@ -885,15 +886,15 @@ ComputeLevelStats(LevelEntry *entry, int *num_solves, int *linear_iters,
    for (int i = entry->solve_start; i < entry->solve_end; i++)
    {
       l_iters += active_stats->iters[i];
-      p_time  += active_stats->prec[i];
-      s_time  += active_stats->solve[i];
+      p_time += active_stats->prec[i];
+      s_time += active_stats->solve[i];
    }
    n_solves = entry->solve_end - entry->solve_start;
 
-   if (num_solves)   *num_solves   = n_solves;
+   if (num_solves) *num_solves = n_solves;
    if (linear_iters) *linear_iters = l_iters;
-   if (setup_time)   *setup_time   = p_time;
-   if (solve_time)   *solve_time   = s_time;
+   if (setup_time) *setup_time = p_time;
+   if (solve_time) *solve_time = s_time;
 }
 
 /*--------------------------------------------------------------------------
@@ -923,19 +924,20 @@ StatsLevelPrint(int level)
    for (int i = 0; i < count; i++)
    {
       LevelEntry *entry = &active_stats->level_entries[level][i];
-      int    num_solves, linear_iters;
-      double setup_time, solve_time;
+      int         num_solves, linear_iters;
+      double      setup_time, solve_time;
 
       ComputeLevelStats(entry, &num_solves, &linear_iters, &setup_time, &solve_time);
 
       total_solves += num_solves;
       total_linear += linear_iters;
-      total_setup  += setup_time;
-      total_solve  += solve_time;
+      total_setup += setup_time;
+      total_solve += solve_time;
    }
 
    /* Print summary in original format */
-   double avg_iters_per_solve = total_solves > 0 ? (double)total_linear / total_solves : 0.0;
+   double avg_iters_per_solve =
+      total_solves > 0 ? (double)total_linear / total_solves : 0.0;
    double avg_setup_per_solve = total_solves > 0 ? total_setup / total_solves : 0.0;
    double avg_solve_per_solve = total_solves > 0 ? total_solve / total_solves : 0.0;
 
@@ -950,10 +952,12 @@ StatsLevelPrint(int level)
    printf("Total number of linear iterations:     %lld\n", total_linear);
    printf("Avg. LS iterations:                    %.2f\n", avg_iters_per_solve);
    printf("Avg. LS times: (setup, solve, total):  %.4f, %.4f, %.4f\n",
-          avg_setup_per_solve, avg_solve_per_solve, avg_setup_per_solve + avg_solve_per_solve);
+          avg_setup_per_solve, avg_solve_per_solve,
+          avg_setup_per_solve + avg_solve_per_solve);
    printf("Avg. LS iterations per timestep:       %.2f\n", avg_iters_per_entry);
    printf("Avg. LS times per timestep: (s, s, t): %.4f, %.4f, %.4f\n",
-          avg_setup_per_entry, avg_solve_per_entry, avg_setup_per_entry + avg_solve_per_entry);
+          avg_setup_per_entry, avg_solve_per_entry,
+          avg_setup_per_entry + avg_solve_per_entry);
    printf("--------------------------------------------------------------\n");
    printf("\n");
 }
