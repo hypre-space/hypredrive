@@ -8,7 +8,7 @@
 #include "HYPREDRV.h"
 
 #include <math.h>
-#include <stdarg.h>
+#include <stdio.h>
 #include "HYPRE_parcsr_ls.h"
 #include "HYPRE_utilities.h"
 #include "_hypre_parcsr_mv.h" /* For hypre_VectorData, hypre_ParVectorLocalVector */
@@ -1241,14 +1241,20 @@ HYPREDRV_StatsPrint(HYPREDRV_t hypredrv)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateBegin(const char *name, ...)
+HYPREDRV_AnnotateBegin(const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
 
-   va_list args;
-   va_start(args, name);
-   StatsAnnotateV(HYPREDRV_ANNOTATE_BEGIN, name, args);
-   va_end(args);
+   char formatted_name[1024];
+   if (id >= 0)
+   {
+      snprintf(formatted_name, sizeof(formatted_name), "%s-%d", name, id);
+   }
+   else
+   {
+      snprintf(formatted_name, sizeof(formatted_name), "%s", name);
+   }
+   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, formatted_name);
 
    return ErrorCodeGet();
 }
@@ -1258,14 +1264,20 @@ HYPREDRV_AnnotateBegin(const char *name, ...)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateEnd(const char *name, ...)
+HYPREDRV_AnnotateEnd(const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
 
-   va_list args;
-   va_start(args, name);
-   StatsAnnotateV(HYPREDRV_ANNOTATE_END, name, args);
-   va_end(args);
+   char formatted_name[1024];
+   if (id >= 0)
+   {
+      snprintf(formatted_name, sizeof(formatted_name), "%s-%d", name, id);
+   }
+   else
+   {
+      snprintf(formatted_name, sizeof(formatted_name), "%s", name);
+   }
+   StatsAnnotate(HYPREDRV_ANNOTATE_END, formatted_name);
 
    return ErrorCodeGet();
 }
@@ -1275,14 +1287,13 @@ HYPREDRV_AnnotateEnd(const char *name, ...)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateLevelBegin(int level, const char *name, ...)
+HYPREDRV_AnnotateLevelBegin(int level, const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
 
-   va_list args;
-   va_start(args, name);
-   StatsAnnotateLevelBegin(level, name, args);
-   va_end(args);
+   char formatted_name[1024];
+   snprintf(formatted_name, sizeof(formatted_name), "%s-%d", name, id);
+   StatsAnnotateLevelBegin(level, formatted_name);
 
    return ErrorCodeGet();
 }
@@ -1292,14 +1303,13 @@ HYPREDRV_AnnotateLevelBegin(int level, const char *name, ...)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateLevelEnd(int level, const char *name, ...)
+HYPREDRV_AnnotateLevelEnd(int level, const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
 
-   va_list args;
-   va_start(args, name);
-   StatsAnnotateLevelEnd(level, name, args);
-   va_end(args);
+   char formatted_name[1024];
+   snprintf(formatted_name, sizeof(formatted_name), "%s-%d", name, id);
+   StatsAnnotateLevelEnd(level, formatted_name);
 
    return ErrorCodeGet();
 }

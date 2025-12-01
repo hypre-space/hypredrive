@@ -847,7 +847,7 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
    HYPRE_BigInt dof_ilower  = mesh->dof_ilower;
    HYPRE_BigInt dof_iupper  = mesh->dof_iupper;
 
-   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system"));
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system", -1));
 
    /* Create IJ objects */
    HYPRE_IJMatrixCreate(MPI_COMM_WORLD, dof_ilower, dof_iupper, dof_ilower, dof_iupper,
@@ -1380,7 +1380,7 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
    *J_ptr = A;
    *R_ptr = b;
 
-   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system"));
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system", -1));
 
    return 0;
 }
@@ -1890,8 +1890,6 @@ main(int argc, char *argv[])
    HYPRE_Real     *u_old;
    HYPRE_Real     *u_now;
 
-   /* Time series stats are now tracked internally by hypredrv stats system */
-
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &num_procs);
@@ -1974,7 +1972,7 @@ main(int argc, char *argv[])
       current_time += params.dt;
 
       /* Begin timestep annotation (level 0) - stats accumulated automatically */
-      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(0, "timestep-%d", t_step));
+      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(0, "timestep", t_step));
 
       /* Initialize u_now with the solution from the previous time step */
       HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorCopy(hypredrv, 1, 0));
@@ -1988,7 +1986,7 @@ main(int argc, char *argv[])
       for (newton_iter = 0; newton_iter < 20; newton_iter++)
       {
          /* Begin Newton iteration annotation (level 1) */
-         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(1, "newton-%d", newton_iter));
+         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(1, "newton", newton_iter));
 
          /* Retrieve solution values from the current state (U^{n}) and exchange ghost
           * data */
@@ -2001,7 +1999,11 @@ main(int argc, char *argv[])
          /* Check Newton convergence */
          if (newton_iter > 0 && res_norm < params.newton_tol)
          {
-            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton-%d", newton_iter));
+            /* Free memory */
+            HYPRE_IJMatrixDestroy(A);
+            HYPRE_IJVectorDestroy(b);
+
+            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton", newton_iter));
             break;
          }
 
@@ -2060,7 +2062,7 @@ main(int argc, char *argv[])
          HYPRE_IJVectorDestroy(b);
 
          /* End Newton iteration annotation (level 1) */
-         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton-%d", newton_iter));
+         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton", newton_iter));
       }
       if (!myid && params.verbose > 0 && newton_iter > 1) printf("\n");
 
@@ -2068,7 +2070,7 @@ main(int argc, char *argv[])
       UpdateTimeStep(&params, newton_iter);
 
       /* End timestep annotation (level 0) - stats finalized automatically */
-      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep-%d", t_step));
+      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep", t_step));
 
       /* Save output */
       if (params.visualize)

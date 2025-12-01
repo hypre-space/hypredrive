@@ -446,11 +446,20 @@ StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args)
    }
 
    /* Format the name string if variadic arguments are provided */
-   char    formatted_name[1024];
-   va_list args_copy;
-   va_copy(args_copy, args);
-   vsnprintf(formatted_name, sizeof(formatted_name), name, args_copy);
-   va_end(args_copy);
+   char formatted_name[1024];
+   if (args)
+   {
+      va_list args_copy;
+      va_copy(args_copy, args);
+      vsnprintf(formatted_name, sizeof(formatted_name), name, args_copy);
+      va_end(args_copy);
+   }
+   else
+   {
+      /* No variadic args - use name as-is */
+      strncpy(formatted_name, name, sizeof(formatted_name) - 1);
+      formatted_name[sizeof(formatted_name) - 1] = '\0';
+   }
 
    if (action == HYPREDRV_ANNOTATE_BEGIN)
    {
@@ -469,12 +478,9 @@ StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args)
  *--------------------------------------------------------------------------*/
 
 void
-StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name, ...)
+StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name)
 {
-   va_list args;
-   va_start(args, name);
-   StatsAnnotateV(action, name, args);
-   va_end(args);
+   StatsAnnotateV(action, name, NULL);
 }
 
 /*--------------------------------------------------------------------------
@@ -482,7 +488,7 @@ StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name, ...)
  *--------------------------------------------------------------------------*/
 
 void
-StatsAnnotateLevelBegin(int level, const char *name, ...)
+StatsAnnotateLevelBegin(int level, const char *name)
 {
    if (!active_stats)
    {
@@ -496,12 +502,8 @@ StatsAnnotateLevelBegin(int level, const char *name, ...)
       return;
    }
 
-   /* Format the name string */
-   char    formatted_name[1024];
-   va_list args;
-   va_start(args, name);
-   vsnprintf(formatted_name, sizeof(formatted_name), name, args);
-   va_end(args);
+   /* Use name as-is (caller should format before calling) */
+   const char *formatted_name = name;
 
    /* Check if level is already active */
    if (active_stats->level_stack[level].name != NULL)
@@ -579,7 +581,7 @@ EnsureLevelCapacity(int level)
  *--------------------------------------------------------------------------*/
 
 void
-StatsAnnotateLevelEnd(int level, const char *name, ...)
+StatsAnnotateLevelEnd(int level, const char *name)
 {
    if (!active_stats)
    {
@@ -593,12 +595,8 @@ StatsAnnotateLevelEnd(int level, const char *name, ...)
       return;
    }
 
-   /* Format the name string */
-   char    formatted_name[1024];
-   va_list args;
-   va_start(args, name);
-   vsnprintf(formatted_name, sizeof(formatted_name), name, args);
-   va_end(args);
+   /* Use name as-is (caller should format before calling) */
+   const char *formatted_name = name;
 
    /* Check if level matches */
    if (active_stats->level_stack[level].name == NULL ||

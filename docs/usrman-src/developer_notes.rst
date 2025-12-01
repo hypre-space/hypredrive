@@ -266,7 +266,7 @@ Common Caliper configurations:
 
 - ``runtime-report``: Print a summary report to stdout at program end
 - ``runtime-report,max_column_width=200,calc.inclusive,output=stdout,mpi-report``: Print a detailed
- report, including MPI-related information, to stdout at program end.
+  report, including MPI-related information, to stdout at program end.
 - ``spot``: Generate Caliper output files for analysis with Caliper's spot tool
 
 For more information about Caliper configurations and services, see the
@@ -323,5 +323,3 @@ Where to Look in the Tree
 - Composite actions: ``.github/actions/setup-ubuntu``, ``.github/actions/build-hypre``
 - CMake options: see the top-level ``CMakeLists.txt`` and the ``cmake/`` modules
 - Tests: ``tests/`` and ``cmake/HYPREDRV_Testing.cmake``
-
-

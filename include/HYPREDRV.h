@@ -1315,10 +1315,12 @@ extern "C"
     * This function marks the beginning of a code region for performance measurement.
     * It should be paired with HYPREDRV_AnnotateEnd to mark the end of the region.
     *
-    * @param name The name of the region to annotate (printf-style format string).
-    *             Available names include: "system", "matrix", "rhs", "dofmap", "prec",
-    *             "solve", "reset_x0", "initialize", "finalize", or custom names.
-    * @param ... Additional arguments for the format string.
+    * @param name The name of the region to annotate. Available names include: "system",
+    *             "matrix", "rhs", "dofmap", "prec", "solve", "reset_x0", "initialize",
+    *             "finalize", or custom names.
+    * @param id An integer identifier for the region. If id >= 0, the region name will
+    *           be formatted as "name-id" (e.g., "system-1"). If id < 0, the name is
+    *           used as-is (e.g., "system").
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -1329,12 +1331,12 @@ extern "C"
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system"));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system", -1));
     *    // ... code to measure ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system"));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system", -1));
     * @endcode
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateBegin(const char *name, ...);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateBegin(const char *name, int id);
 
    /**
     * @brief End annotation of a code region for timing and Caliper instrumentation.
@@ -1342,10 +1344,10 @@ extern "C"
     * This function marks the end of a code region for performance measurement.
     * It should be paired with HYPREDRV_AnnotateBegin to mark the beginning of the region.
     *
-    * @param name The name of the region to annotate (printf-style format string).
-    *             Must match the name used in the corresponding HYPREDRV_AnnotateBegin
-    * call.
-    * @param ... Additional arguments for the format string.
+    * @param name The name of the region to annotate. Must match the name used in the
+    *             corresponding HYPREDRV_AnnotateBegin call.
+    * @param id An integer identifier for the region. Must match the id used in the
+    *           corresponding HYPREDRV_AnnotateBegin call.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -1356,12 +1358,12 @@ extern "C"
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("Run-%d", iteration));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system", -1));
     *    // ... code to measure ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("Run-%d", iteration));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system", -1));
     * @endcode
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateEnd(const char *name, ...);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateEnd(const char *name, int id);
 
    /**
     * @brief Begin hierarchical annotation of a code region with a specified level.
@@ -1374,51 +1376,50 @@ extern "C"
     *              higher levels represent inner loops. For example:
     *              - Level 0: Time steps
     *              - Level 1: Non-linear iterations
-    * @param name The name of the region to annotate (printf-style format string).
-    * @param ... Additional arguments for the format string.
+    * @param name The name of the region to annotate (e.g., "timestep", "newton").
+    * @param id An integer identifier for the region. The region name will be formatted
+    *           as "name-id" (e.g., "timestep-0", "newton-1").
     *
     * @return Returns an error code with 0 indicating success.
     *
     * @note Each level can only have one active annotation at a time. The annotation
-    *       must be ended with HYPREDRV_AnnotateLevelEnd using the same level and name.
+    *       must be ended with HYPREDRV_AnnotateLevelEnd using the same level, name,
+    *       and id.
     *
     * Example Usage:
     * @code
     *    // Time step loop (level 0)
     *    for (int t = 0; t < num_steps; t++)
     *    {
-    *       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(0, "timestep-%d", t));
+    *       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(0, "timestep", t));
     *
     *       // Non-linear iteration loop (level 1)
     *       for (int n = 0; n < max_nl_iters; n++)
     *       {
-    *          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(1, "newton-%d", n));
+    *          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(1, "newton", n));
     *          // ... solve linear system ...
-    *          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton-%d", n));
+    *          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton", n));
     *       }
     *
-    *       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep-%d", t));
+    *       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep", t));
     *    }
     * @endcode
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelBegin(int         level,
-                                                               const char *name, ...);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelBegin(int level, const char *name, int id);
 
    /**
     * @brief End hierarchical annotation of a code region with a specified level.
     *
-    * This function marks the end of a hierarchical code region. The level and name
-    * must match the corresponding HYPREDRV_AnnotateLevelBegin call.
+    * This function marks the end of a hierarchical code region. The level, name, and
+    * id must match the corresponding HYPREDRV_AnnotateLevelBegin call.
     *
     * @param level The hierarchical level (0-9), must match the Begin call.
-    * @param name The name of the region (printf-style format string), must match
-    *             the Begin call.
-    * @param ... Additional arguments for the format string.
+    * @param name The name of the region, must match the Begin call.
+    * @param id An integer identifier for the region, must match the Begin call.
     *
     * @return Returns an error code with 0 indicating success.
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelEnd(int level, const char *name,
-                                                             ...);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelEnd(int level, const char *name, int id);
 
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/

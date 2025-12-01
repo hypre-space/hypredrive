@@ -146,10 +146,10 @@ void   StatsSetContext(Stats *stats);
 Stats *StatsGetContext(void);
 
 /* Annotation functions */
-void StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name, ...);
+void StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name);
 void StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args);
-void StatsAnnotateLevelBegin(int level, const char *name, ...);
-void StatsAnnotateLevelEnd(int level, const char *name, ...);
+void StatsAnnotateLevelBegin(int level, const char *name);
+void StatsAnnotateLevelEnd(int level, const char *name);
 
 /* Timer configuration */
 void StatsTimerSetMilliseconds(void);
