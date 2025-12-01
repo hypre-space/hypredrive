@@ -910,6 +910,176 @@ extern "C"
    HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv, HYPRE_Complex **rhs_data);
 
    /**
+    * @brief Set state vectors for time-stepping or multi-state applications.
+    *
+    * This function initializes the state vector management system, which is useful for
+    * time-stepping applications where multiple solution states need to be maintained
+    * (e.g., previous time step, current time step). The state vectors are managed
+    * internally using a circular indexing scheme.
+    *
+    * @param hypredrv The HYPREDRV_t object for which state vectors are to be set.
+    * @param nstates The number of state vectors to manage.
+    * @param vecs An array of HYPRE_Vector objects (HYPRE_IJVector) representing the
+    *             state vectors. The array must contain at least nstates valid vectors.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note The state vectors must be created and initialized by the caller before
+    * calling this function. Typically, these are HYPRE_IJVector objects created with
+    * the same row range as the linear system.
+    *
+    * @note This function must be called before using other state vector functions
+    * such as HYPREDRV_StateVectorGetValues, HYPREDRV_StateVectorCopy, etc.
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t hypredrv;
+    *    HYPRE_IJVector vec_s[2];
+    *    // ... (create and initialize vec_s[0] and vec_s[1]) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorSet(hypredrv, 2, vec_s));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorSet(HYPREDRV_t      hypredrv,
+                                                           int             nstates,
+                                                           HYPRE_IJVector *vecs);
+
+   /**
+    * @brief Retrieve a pointer to the data array of a state vector.
+    *
+    * This function provides direct access to the underlying data array of a state
+    * vector, allowing efficient read/write access without copying. The returned
+    * pointer points to the local portion of the distributed vector on the current
+    * MPI rank.
+    *
+    * @param hypredrv The HYPREDRV_t object containing the state vectors.
+    * @param index The logical index of the state vector (0-based, relative to the
+    *              current state mapping).
+    * @param data_ptr A pointer to a HYPRE_Complex pointer, which will be set to
+    *                 point to the local data array. The user must not free this
+    *                 pointer, but may read and write to the array.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note The returned pointer is valid only as long as the state vector exists
+    * and has not been modified by operations that may reallocate the underlying
+    * storage.
+    *
+    * @note The data layout is contiguous and follows the DOF ordering of the
+    * linear system (e.g., interleaved u, v, p for Navier-Stokes).
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t hypredrv;
+    *    HYPRE_Complex *u_old = NULL;
+    *    // Get pointer to state vector at index 1 (e.g., previous time step)
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorGetValues(hypredrv, 1, &u_old));
+    *    // Now u_old points to the local data array
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorGetValues(
+      HYPREDRV_t hypredrv, int index, HYPRE_Complex **data_ptr);
+
+   /**
+    * @brief Copy one state vector to another.
+    *
+    * This function copies the contents of one state vector to another. It is
+    * commonly used in time-stepping applications to initialize the new time step
+    * with the solution from the previous time step.
+    *
+    * @param hypredrv The HYPREDRV_t object containing the state vectors.
+    * @param index_in The logical index of the source state vector (0-based).
+    * @param index_out The logical index of the destination state vector (0-based).
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note Both state vectors must have been set via HYPREDRV_StateVectorSet and
+    * must have compatible sizes (same row ranges).
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t hypredrv;
+    *    // Copy state 1 (previous time step) to state 0 (current time step)
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorCopy(hypredrv, 1, 0));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorCopy(HYPREDRV_t hypredrv,
+                                                            int index_in, int index_out);
+
+   /**
+    * @brief Cycle through state vector indices (advance state mapping).
+    *
+    * This function advances the internal state mapping by one position in a
+    * circular manner. After calling this function, the logical indices (0, 1, ...)
+    * now refer to different physical state vectors. This is useful for time-stepping
+    * applications where state vectors are reused in a circular buffer pattern.
+    *
+    * @param hypredrv The HYPREDRV_t object containing the state vectors.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note This function modifies the internal state mapping but does not copy
+    * any data. It is typically called at the end of a time step to prepare for the
+    * next iteration.
+    *
+    * @note After calling this function, the logical index 0 will refer to what was
+    * previously index 1, index 1 will refer to what was previously index 2, etc.,
+    * wrapping around for the last index.
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t hypredrv;
+    *    // At end of time step, cycle states so next iteration uses updated mapping
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorUpdateAll(hypredrv));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorUpdateAll(HYPREDRV_t hypredrv);
+
+   /**
+    * @brief Apply the linear solver correction to the current state vector.
+    *
+    * This function adds the solution increment from the linear solver (stored in
+    * vec_x) to the current state vector (state at logical index 0). This implements
+    * the Newton update: U^{k+1} = U^k + ΔU, where ΔU is the solution from the
+    * linear system J ΔU = -R.
+    *
+    * @param hypredrv The HYPREDRV_t object containing the state vectors and the
+    *                 linear solver solution (vec_x).
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note This function should be called after HYPREDRV_LinearSolverApply has
+    * completed successfully. The linear solver solution (vec_x) must be set via
+    * HYPREDRV_LinearSystemSetRHS or similar functions.
+    *
+    * @note The operation performed is: state[0] = state[0] + vec_x (in-place update).
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t hypredrv;
+    *    // ... (assemble linear system, solve) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorApplyCorrection(hypredrv));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv);
+
+   /**
     * @brief Create a preconditioner for the HYPREDRV object based on the specified
     * method.
     *
@@ -1145,10 +1315,12 @@ extern "C"
     * This function marks the beginning of a code region for performance measurement.
     * It should be paired with HYPREDRV_AnnotateEnd to mark the end of the region.
     *
-    * @param name The name of the region to annotate (printf-style format string).
-    *             Available names include: "system", "matrix", "rhs", "dofmap", "prec",
-    *             "solve", "reset_x0", "initialize", "finalize", or custom names.
-    * @param ... Additional arguments for the format string.
+    * @param name The name of the region to annotate. Available names include: "system",
+    *             "matrix", "rhs", "dofmap", "prec", "solve", "reset_x0", "initialize",
+    *             "finalize", or custom names.
+    * @param id An integer identifier for the region. If id >= 0, the region name will
+    *           be formatted as "name-id" (e.g., "system-1"). If id < 0, the name is
+    *           used as-is (e.g., "system").
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -1159,12 +1331,12 @@ extern "C"
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system"));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system", -1));
     *    // ... code to measure ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system"));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system", -1));
     * @endcode
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateBegin(const char *name, ...);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateBegin(const char *name, int id);
 
    /**
     * @brief End annotation of a code region for timing and Caliper instrumentation.
@@ -1172,10 +1344,10 @@ extern "C"
     * This function marks the end of a code region for performance measurement.
     * It should be paired with HYPREDRV_AnnotateBegin to mark the beginning of the region.
     *
-    * @param name The name of the region to annotate (printf-style format string).
-    *             Must match the name used in the corresponding HYPREDRV_AnnotateBegin
-    * call.
-    * @param ... Additional arguments for the format string.
+    * @param name The name of the region to annotate. Must match the name used in the
+    *             corresponding HYPREDRV_AnnotateBegin call.
+    * @param id An integer identifier for the region. Must match the id used in the
+    *           corresponding HYPREDRV_AnnotateBegin call.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -1186,12 +1358,12 @@ extern "C"
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("Run-%d", iteration));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system", -1));
     *    // ... code to measure ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("Run-%d", iteration));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system", -1));
     * @endcode
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateEnd(const char *name, ...);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateEnd(const char *name, int id);
 
    /**
     * @brief Begin hierarchical annotation of a code region with a specified level.
@@ -1204,51 +1376,52 @@ extern "C"
     *              higher levels represent inner loops. For example:
     *              - Level 0: Time steps
     *              - Level 1: Non-linear iterations
-    * @param name The name of the region to annotate (printf-style format string).
-    * @param ... Additional arguments for the format string.
+    * @param name The name of the region to annotate (e.g., "timestep", "newton").
+    * @param id An integer identifier for the region. The region name will be formatted
+    *           as "name-id" (e.g., "timestep-0", "newton-1").
     *
     * @return Returns an error code with 0 indicating success.
     *
     * @note Each level can only have one active annotation at a time. The annotation
-    *       must be ended with HYPREDRV_AnnotateLevelEnd using the same level and name.
+    *       must be ended with HYPREDRV_AnnotateLevelEnd using the same level, name,
+    *       and id.
     *
     * Example Usage:
     * @code
     *    // Time step loop (level 0)
     *    for (int t = 0; t < num_steps; t++)
     *    {
-    *       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(0, "timestep-%d", t));
+    *       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(0, "timestep", t));
     *
     *       // Non-linear iteration loop (level 1)
     *       for (int n = 0; n < max_nl_iters; n++)
     *       {
-    *          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(1, "newton-%d", n));
+    *          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(1, "newton", n));
     *          // ... solve linear system ...
-    *          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton-%d", n));
+    *          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton", n));
     *       }
     *
-    *       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep-%d", t));
+    *       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep", t));
     *    }
     * @endcode
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelBegin(int         level,
-                                                               const char *name, ...);
+                                                               const char *name, int id);
 
    /**
     * @brief End hierarchical annotation of a code region with a specified level.
     *
-    * This function marks the end of a hierarchical code region. The level and name
-    * must match the corresponding HYPREDRV_AnnotateLevelBegin call.
+    * This function marks the end of a hierarchical code region. The level, name, and
+    * id must match the corresponding HYPREDRV_AnnotateLevelBegin call.
     *
     * @param level The hierarchical level (0-9), must match the Begin call.
-    * @param name The name of the region (printf-style format string), must match
-    *             the Begin call.
-    * @param ... Additional arguments for the format string.
+    * @param name The name of the region, must match the Begin call.
+    * @param id An integer identifier for the region, must match the Begin call.
     *
     * @return Returns an error code with 0 indicating success.
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelEnd(int level, const char *name,
-                                                             ...);
+                                                             int id);
 
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/
@@ -1290,6 +1463,53 @@ extern "C"
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_GetLastStat(HYPREDRV_t  hypredrv,
                                                         const char *name, void *value);
+
+   /**
+    * @brief Get the number of entries recorded at a specific level.
+    *
+    * Returns the count of entries recorded via level annotations
+    * (HYPREDRV_AnnotateLevelBegin/End with the specified level).
+    *
+    * @param level The annotation level (0 to STATS_MAX_LEVELS-1).
+    *
+    * @return The number of entries recorded, or 0 if no stats context is active.
+    */
+   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_StatsLevelGetCount(int level);
+
+   /**
+    * @brief Get statistics entry by level and index.
+    *
+    * Retrieves statistics for a specific entry at the given level. Statistics are
+    * computed on-demand from the solve index range.
+    *
+    * @param level The annotation level (0 to STATS_MAX_LEVELS-1).
+    * @param index Zero-based index of the entry (0 to count-1).
+    * @param entry_id Pointer to store the entry ID (1-based).
+    * @param num_solves Pointer to store the number of solves in this entry.
+    * @param linear_iters Pointer to store the total linear iterations.
+    * @param setup_time Pointer to store the total setup time (seconds).
+    * @param solve_time Pointer to store the total solve time (seconds).
+    *
+    * @return Returns 0 on success, -1 on error (invalid level/index or no stats).
+    *
+    * @note Any pointer parameter can be NULL to skip retrieving that value.
+    */
+   HYPREDRV_EXPORT_SYMBOL int
+   HYPREDRV_StatsLevelGetEntry(int level, int index, int *entry_id, int *num_solves,
+                               int *linear_iters, double *setup_time, double *solve_time);
+
+   /**
+    * @brief Print statistics summary for a specific level.
+    *
+    * Prints a table of all recorded entries at the specified level including
+    * number of solves, linear iterations, setup time, and solve time per entry,
+    * followed by totals and averages.
+    *
+    * @param level The annotation level to print (0 to STATS_MAX_LEVELS-1).
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsLevelPrint(int level);
 
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/

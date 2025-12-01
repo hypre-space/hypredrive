@@ -258,6 +258,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Docs.cmake)
 if(HYPREDRV_ENABLE_EXAMPLES)
     add_subdirectory(examples/src/C_laplacian)
     add_subdirectory(examples/src/C_elasticity)
+    add_subdirectory(examples/src/C_lidcavity)
 endif()
 
 # Add a check target

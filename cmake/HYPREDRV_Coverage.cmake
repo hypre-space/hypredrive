@@ -109,6 +109,7 @@ if(HYPREDRV_ENABLE_COVERAGE)
             --exclude ".*(/|^)docs/.*"
             --exclude ".*\\.h$"
             --exclude ".*/src/info\\.c$"
+            --merge-mode-functions=merge-use-line-0
             --xml coverage.xml --xml-pretty
             --html-details coverage.html
             --print-summary

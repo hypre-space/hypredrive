@@ -36,7 +36,7 @@ jobs:
 
       - name: Build Sphinx documentation
         run: |
-          sphinx-build -b html docs/usrman-src docs/_build/html
+          sphinx-build -W -b html docs/usrman-src docs/_build/html
 
   doxygen:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}

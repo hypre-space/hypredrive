@@ -71,11 +71,9 @@ A minimal skeleton of a program using the library is shown below.
      HYPREDRV_LinearSystemSetPrecMatrix(h);
 
      // Solve lifecycle
-     HYPREDRV_PreconCreate(h);
      HYPREDRV_LinearSolverCreate(h);
      HYPREDRV_LinearSolverSetup(h);
      HYPREDRV_LinearSolverApply(h);
-     HYPREDRV_PreconDestroy(h);
      HYPREDRV_LinearSolverDestroy(h);
 
      // (Optional) Query statistics and solution values
@@ -220,11 +218,10 @@ Solver and preconditioner options (PCG+AMG by default) are provided via YAML par
    HYPREDRV_LinearSystemSetInitialGuess(hdrv);   // zero by default
    HYPREDRV_LinearSystemSetPrecMatrix(hdrv);     // reuse A if desired
 
-   HYPREDRV_PreconCreate(hdrv);
+   // Solve lifecycle
    HYPREDRV_LinearSolverCreate(hdrv);
    HYPREDRV_LinearSolverSetup(hdrv);
    HYPREDRV_LinearSolverApply(hdrv);
-   HYPREDRV_PreconDestroy(hdrv);
    HYPREDRV_LinearSolverDestroy(hdrv);
 
 The default in the example is a conjugate gradient solver with a BoomerAMG preconditioner.
@@ -604,8 +601,7 @@ Using RBMs in libHYPREDRV
          #   ...
 
 - Memory and layout:
-  - The call ``HYPREDRV_LinearSystemSetNearNullSpace(h, num_entries, num_components, values)`` expects
-    the values in SoA layout: ``num_components`` contiguous blocks, each with ``num_entries`` degrees of freedom.
+  - The call ``HYPREDRV_LinearSystemSetNearNullSpace(h, num_entries, num_components, values)`` expects the values in SoA layout: ``num_components`` contiguous blocks, each with ``num_entries`` degrees of freedom.
   - The buffer is copied into ``libHYPREDRV``-owned storage; the caller must free its buffer after the call returns.
 
 Linear Solver Setup
@@ -618,11 +614,9 @@ other options are provided via the YAML configuration parsed earlier with
 
   .. code-block:: c
 
-     HYPREDRV_PreconCreate(hdrv);
      HYPREDRV_LinearSolverCreate(hdrv);
      HYPREDRV_LinearSolverSetup(hdrv);
      HYPREDRV_LinearSolverApply(hdrv);
-     HYPREDRV_PreconDestroy(hdrv);
      HYPREDRV_LinearSolverDestroy(hdrv);
 
 The default in the example is a conjugate gradient solver with an unknown-based BoomerAMG
@@ -649,7 +643,7 @@ Output artifacts:
 
 To visualize, open the ``.pvd`` in ParaView. Display the ``displacement`` vector and,
 optionally, use “Warp By Vector” or “Glyph” filters to view deformations or vectors.
-  
+
 .. figure:: figures/elasticity_30x10x10_1x1x1_solution.png
    :alt: Displacement field (Warp By Vector, colored by |u|)
    :align: center
@@ -704,3 +698,496 @@ For a single-process run, the output should be similar to the following:
 
 .. literalinclude:: ../../examples/refOutput/elasticity.txt
    :language: text
+
+.. _LibraryExample3:
+
+Example 3: Lid-Driven Cavity (Navier-Stokes)
+--------------------------------------------
+
+This section documents the mathematical model, discretization, and hypre usage
+for the 2D lid-driven cavity driver implemented in ``examples/src/C_lidcavity/lidcavity.c``.
+This is a classical benchmark problem for incompressible fluid flow solvers, featuring
+time-dependent Navier-Stokes equations solved with stabilized finite elements and
+Newton iteration.
+
+Governing Equations (Incompressible Navier-Stokes)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+We consider the unit square domain :math:`\Omega = [0, L] \times [0, L]` with the
+lid-driven cavity configuration. The unknowns are the velocity field
+:math:`\mathbf{u} = (u, v)` and the pressure :math:`p`.
+
+- Momentum equation:
+
+  .. math::
+
+     \frac{\partial \mathbf{u}}{\partial t} + (\mathbf{u} \cdot \nabla) \mathbf{u}
+     - \nu \nabla^2 \mathbf{u} + \nabla p = \mathbf{0} \quad \text{in } \Omega,
+
+- Continuity equation (incompressibility):
+
+  .. math::
+
+     \nabla \cdot \mathbf{u} = 0 \quad \text{in } \Omega,
+
+where the kinematic viscosity :math:`\nu = 1/\text{Re}` is the inverse of the
+Reynolds number.
+
+Geometry and Boundary Conditions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The lid-driven cavity is a square domain with the following boundary conditions:
+
+- **Lid** (:math:`y = L`, excluding corners): :math:`u = u_{\text{lid}}(x)`, :math:`v = 0`
+
+  - *Classic BC*: :math:`u_{\text{lid}} = 1` (discontinuous at corners)
+  - *Regularized BC*: :math:`u_{\text{lid}} = [1 - (2x/L - 1)^{16}]^2` (smooth, zero at corners)
+
+- **Walls** (:math:`x = 0`, :math:`x = L`, :math:`y = 0`, and corners): :math:`\mathbf{u} = \mathbf{0}` (no-slip)
+- **Pressure**: Fixed at one node (bottom-left corner, :math:`p = 0`) to remove the nullspace
+
+The regularized boundary condition eliminates the velocity discontinuity at the
+top corners, which can cause numerical difficulties at high Reynolds numbers.
+
+Numerical Discretization
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+This section describes the spatial and temporal discretization of the lid-driven cavity problem.
+
+Spatial Discretization
+^^^^^^^^^^^^^^^^^^^^^^
+
+We use equal-order bilinear (Q1) finite elements for both velocity and pressure on a
+structured quadrilateral mesh. This violates the Ladyzhenskaya-Babuška-Brezzi (LBB)
+inf-sup condition, requiring stabilization to obtain a well-posed system.
+
+Temporal Discretization
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Backward Euler (implicit, first-order) is used for time integration:
+
+.. math::
+
+   \frac{\mathbf{u}^{n+1} - \mathbf{u}^n}{\Delta t} + (\mathbf{u}^{n+1} \cdot \nabla) \mathbf{u}^{n+1}
+   - \nu \nabla^2 \mathbf{u}^{n+1} + \nabla p^{n+1} = \mathbf{0}
+
+The nonlinear convective term is handled by Newton iteration within each time step.
+
+SUPG and PSPG Stabilization
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To stabilize the equal-order discretization, we add SUPG (Streamline-Upwind/Petrov-Galerkin)
+for the momentum equations and PSPG (Pressure-Stabilizing/Petrov-Galerkin) for the
+continuity equation. The stabilized residual is:
+
+.. math::
+
+   \mathbf{R}(\mathbf{u}, p) = \mathbf{R}_{\text{Gal}} + \sum_{e} \mathbf{R}_{\text{SUPG}}^e
+   + \sum_{e} \mathbf{R}_{\text{PSPG}}^e = \mathbf{0}
+
+The SUPG term adds streamline diffusion to the momentum equations:
+
+.. math::
+
+   \mathbf{R}_{\text{SUPG}}^e = \int_{\Omega_e} (\mathbf{u} \cdot \nabla \mathbf{w}) \, \tau_{\text{SUPG}}
+   \left( \rho \mathbf{u} \cdot \nabla \mathbf{u} + \nabla p \right) d\Omega
+
+The PSPG term stabilizes the pressure field:
+
+.. math::
+
+   \mathbf{R}_{\text{PSPG}}^e = \int_{\Omega_e} (\nabla q) \, \tau_{\text{PSPG}}
+   \left( \rho \mathbf{u} \cdot \nabla \mathbf{u} + \nabla p \right) d\Omega
+
+where :math:`\mathbf{w}` and :math:`q` are velocity and pressure test functions,
+and :math:`\tau` is the element-wise stabilization parameter computed from:
+
+.. math::
+
+   \tau = \left[ \left(\frac{2}{\Delta t}\right)^2 + \left(\frac{2|\mathbf{u}|}{h}\right)^2
+   + \left(\frac{4\nu}{h^2}\right)^2 \right]^{-1/2}
+
+Jacobian Matrix Structure
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The Newton-Raphson iteration solves :math:`\mathbf{J} \delta \mathbf{U} = -\mathbf{R}`,
+where the Jacobian has a 2×2 block structure:
+
+.. math::
+
+   \mathbf{J} =
+   \begin{bmatrix}
+   \mathbf{J}_{\mathbf{uu}} & \mathbf{J}_{\mathbf{up}} \\
+   \mathbf{J}_{p\mathbf{u}} & \mathbf{J}_{pp}
+   \end{bmatrix}
+
+- :math:`\mathbf{J}_{\mathbf{uu}}`: Momentum-momentum block (advection, diffusion, SUPG)
+- :math:`\mathbf{J}_{\mathbf{u}p}`: Momentum-pressure block (pressure gradient, SUPG pressure)
+- :math:`\mathbf{J}_{p\mathbf{u}}`: Continuity-velocity block (divergence, PSPG advection)
+- :math:`\mathbf{J}_{pp}`: Continuity-pressure block (PSPG pressure Laplacian)
+
+The PSPG stabilization populates :math:`\mathbf{J}_{pp}` with a pressure-Laplacian-like
+term, which would be zero in standard Galerkin Q1-Q1 formulation. This is the key
+mechanism that allows equal-order interpolation to work.
+
+Element Assembly
+^^^^^^^^^^^^^^^^
+
+Each quadrilateral element has 4 nodes with 3 DOFs per node (interleaved as :math:`u, v, p`),
+giving 12 element DOFs. The element stiffness matrix :math:`K_e \in \mathbb{R}^{12 \times 12}`
+and residual vector :math:`\mathbf{r}_e \in \mathbb{R}^{12}` are computed using 2×2 Gauss
+quadrature. The global system is assembled using the hypre IJ interface.
+
+Parallel Partitioning
+~~~~~~~~~~~~~~~~~~~~~
+
+The domain is partitioned using an MPI Cartesian grid :math:`P = (P_x, P_y)`. Each rank
+owns a rectangular subdomain with local node counts determined by balanced partitioning.
+Ghost data exchange is performed for velocity values needed in element assembly at
+partition boundaries.
+
+The global DOF numbering uses block-aware lexicographic ordering: for a node with
+global coordinates :math:`(i, j)`, the three DOF indices are:
+
+.. math::
+
+   \text{dof}_{\text{gid}}(i, j, c) = 3 \cdot \text{node}_{\text{gid}}(i, j) + c,
+   \qquad c \in \{0, 1, 2\}
+
+where :math:`c = 0` is :math:`u`, :math:`c = 1` is :math:`v`, and :math:`c = 2` is :math:`p`.
+
+Linear System Creation
+~~~~~~~~~~~~~~~~~~~~~~
+
+At each Newton iteration within each time step:
+
+1. Create ``HYPRE_IJMatrix`` and ``HYPRE_IJVector`` with global DOF bounds for this rank.
+2. Set per-row nnz bounds (conservative 27 per row for 9 nodes × 3 DOFs).
+3. For each local element, compute the Jacobian and residual contributions and
+   assemble using ``HYPRE_IJMatrixAddToValues`` and ``HYPRE_IJVectorAddToValues``.
+4. Apply Dirichlet boundary conditions by setting identity rows and prescribed RHS values.
+5. Finalize with ``HYPRE_IJMatrixAssemble`` and ``HYPRE_IJVectorAssemble``.
+6. Optionally migrate to GPU with ``HYPRE_IJMatrixMigrate``/``HYPRE_IJVectorMigrate``.
+
+The following code snippet shows the linear system setup and solve within a Newton iteration:
+
+.. code-block:: c
+
+   HYPRE_IJMatrix A;
+   HYPRE_IJVector b;
+   /* ... BuildNewtonSystem creates and assembles A, b ... */
+
+   // Tell hypredrive we have 3 interleaved DOFs per node (u, v, p)
+   HYPREDRV_LinearSystemSetInterleavedDofmap(hdrv, local_num_nodes, 3);
+   HYPREDRV_LinearSystemSetMatrix(hdrv, (HYPRE_Matrix)A);
+   HYPREDRV_LinearSystemSetRHS(hdrv, (HYPRE_Vector)b);
+   HYPREDRV_LinearSystemSetInitialGuess(hdrv);
+   HYPREDRV_LinearSystemSetPrecMatrix(hdrv);
+
+   // Solve lifecycle
+   HYPREDRV_LinearSolverCreate(hdrv);
+   HYPREDRV_LinearSolverSetup(hdrv);
+   HYPREDRV_LinearSolverApply(hdrv);
+   HYPREDRV_LinearSolverDestroy(hdrv);
+
+   // Update solution vector (U^{k + 1} = U^{k} + ΔU)
+   HYPREDRV_StateVectorApplyCorrection(hdrv);
+
+   // Cleanup IJ objects (recreated each Newton iteration)
+   HYPRE_IJMatrixDestroy(A);
+   HYPRE_IJVectorDestroy(b);
+
+State Vector Management for Time-Stepping
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For time-dependent problems, HYPREDRV provides a state vector management system that
+efficiently handles multiple solution states (e.g., previous time step, current time step)
+using a circular indexing scheme. This is particularly useful for time-stepping applications
+where you need to maintain and access multiple solution states.
+
+The state vector system is initialized with ``HYPREDRV_StateVectorSet``, which registers
+an array of ``HYPRE_IJVector`` objects that will be managed internally. The system uses
+logical indices (0, 1, ...) that map to physical state vectors through a circular buffer,
+allowing efficient state rotation without data copying.
+
+The following code snippet shows how to set up state vectors for a time-stepping application:
+
+.. code-block:: c
+
+   // Create state vectors for time-stepping (e.g., old and new time steps)
+   HYPRE_IJVector vec_s[2];
+   for (int i = 0; i < 2; i++)
+   {
+      HYPRE_IJVectorCreate(MPI_COMM_WORLD, dof_ilower, dof_iupper, &vec_s[i]);
+      HYPRE_IJVectorSetObjectType(vec_s[i], HYPRE_PARCSR);
+      HYPRE_IJVectorInitialize(vec_s[i]);
+   }
+   HYPREDRV_StateVectorSet(hdrv, 2, vec_s);
+
+   // In the time-stepping loop:
+   for (int t = 0; t < num_steps; t++)
+   {
+      // Copy previous time step to current (state 1 -> state 0)
+      HYPREDRV_StateVectorCopy(hdrv, 1, 0);
+
+      // Get pointers to state vector data for assembly
+      HYPRE_Complex *u_old = NULL;
+      HYPRE_Complex *u_now = NULL;
+      HYPREDRV_StateVectorGetValues(hdrv, 1, &u_old);  // Previous time step
+      HYPREDRV_StateVectorGetValues(hdrv, 0, &u_now);  // Current time step
+
+      // ... Newton iteration loop ...
+      for (int k = 0; k < max_newton_iters; k++)
+      {
+         // Assemble linear system using u_old and u_now
+         BuildNewtonSystem(..., u_old, u_now, &A, &b, ...);
+
+         // Solve linear system
+         HYPREDRV_LinearSolverApply(hdrv);
+
+         // Apply Newton correction: U^{k+1} = U^k + ΔU
+         HYPREDRV_StateVectorApplyCorrection(hdrv);
+      }
+
+      // At end of time step, cycle states for next iteration
+      HYPREDRV_StateVectorUpdateAll(hdrv);
+   }
+
+The main function APIs are listed below:
+
+- **HYPREDRV_StateVectorSet**: Initializes the state vector management system with
+  an array of ``HYPRE_IJVector`` objects. Must be called before using other state vector
+  functions.
+
+- **HYPREDRV_StateVectorGetValues**: Retrieves a pointer to the underlying data
+  array of a state vector, allowing direct read/write access without copying. The
+  pointer is valid as long as the state vector exists.
+
+- **HYPREDRV_StateVectorCopy**: Copies the contents of one state vector to another.
+  Commonly used to initialize the new time step with the solution from the previous
+  time step.
+
+- **HYPREDRV_StateVectorApplyCorrection**: Applies the linear solver correction
+  (ΔU) to the current state vector (logical index 0), implementing the Newton update:
+  :math:`U^{k+1} = U^k + \Delta U`.
+
+- **HYPREDRV_StateVectorUpdateAll**: Advances the internal state mapping by one
+  position in a circular manner. After calling this, logical indices refer to different
+  physical state vectors. Typically called at the end of each time step.
+
+The circular indexing scheme allows efficient state management: after ``HYPREDRV_StateVectorUpdateAll``,
+what was previously state 1 becomes state 0, state 2 becomes state 1, etc., wrapping around.
+This avoids unnecessary data copying while maintaining clear logical indexing.
+
+Linear Solver Configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+One of the main goals of hypredrive is to provide a flexible and easy-to-use interface for solving
+linear systems. In this example, we provide a comparison script to evaluate different preconditioner strategies:
+
+.. code-block:: bash
+
+   ./reproduce.sh --solvers
+
+This script runs the simulation with five different solver configurations and
+generates performance comparison plots. The tested configurations are stored in
+the ``examples/src/C_lidcavity/`` directory and are listed below:
+
+- **ILUK(0)**: Block Jacobi ILU with zero fill level (``fgmres-ilu0.yml``)
+- **ILUK(1)**: Block Jacobi ILU with fill level 1 (``fgmres-ilu1.yml``)
+- **ILUT(1e-2)**: Block Jacobi ILUT with drop tolerance 1.0e-2 (``fgmres-ilut_1e-2.yml``)
+- **AMG**: Algebraic multigrid preconditioner (``fgmres-amg.yml``)
+- **AMG+ILUT(1e-2)**: AMG with block Jacobi ILUT smoothing (``fgmres-amg-ilut.yml``)
+
+All configurations use flexible GMRES (FGMRES) with a relative tolerance of
+1.0e-6. The comparison uses a 256×256 grid with 64 MPI ranks, running from
+t=0 to t=50 with adaptive time stepping.
+
+.. figure:: figures/lidcavity_256x256_Re0100_iters.png
+   :alt: Linear solver iteration comparison for Re=100
+   :width: 80%
+   :align: center
+
+   Linear solver iterations for different preconditioner
+   configurations (Re=100, 256×256 grid).
+
+.. figure:: figures/lidcavity_256x256_Re0100_total.png
+   :alt: Total execution time comparison for Re=100
+   :width: 80%
+   :align: center
+
+   Total execution time for different preconditioner
+   configurations (Re=100, 256×256 grid).
+
+Time Stepping and Newton Convergence
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The simulation advances in time using backward Euler with adaptive time stepping:
+
+1. Initialize velocity and pressure to zero.
+2. For each time step until final time:
+
+   a. Perform Newton iterations until the residual norm is below tolerance.
+   b. At each Newton iteration, assemble and solve the linearized system.
+   c. Update the solution with the Newton correction.
+   d. Optionally adjust :math:`\Delta t` based on Newton convergence (adaptive stepping).
+
+3. Write VTK output at specified intervals or at steady state.
+
+The driver supports simple adaptive time stepping: if Newton converges quickly
+(≤3 iterations), :math:`\Delta t` is increased; if convergence is slow (≥6 iterations),
+:math:`\Delta t` is decreased.
+
+Visualizing the Solution
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The driver outputs VTK ``RectilinearGrid`` files with velocity vectors, pressure,
+and divergence fields. A PVD collection file is written at the end to group all
+time steps for visualization in ParaView.
+
+- ``-vis 1``: Binary VTK, last time step only
+- ``-vis 2``: ASCII VTK, last time step only
+- ``-vis 4``: Binary VTK, all time steps
+- ``-vis 6``: ASCII VTK, all time steps
+
+Output includes:
+
+- ``velocity``: 3-component vector field :math:`(u, v, 0)`
+- ``pressure``: Scalar field :math:`p`
+- ``div_velocity``: Divergence :math:`\nabla \cdot \mathbf{u}` (should be near zero)
+
+Open the ``.pvd`` file in ParaView to visualize the flow evolution. Use "Stream Tracer"
+or "Glyph" filters to visualize the velocity field and vortex structures.
+
+Validation Results
+~~~~~~~~~~~~~~~~~~
+
+In this section, we validate the lid-driven cavity simulation by comparing 128×128
+simulation centerline velocity profiles with high-resolution (8192×8192 grid) reference
+data from Marchi et al. (2021). The plots were generated using the ``postprocess.py`` script.
+They show the u-velocity profiles along the vertical centerline (x = 0.5) as a function of y
+and the v-velocity profiles along the horizontal centerline (y = 0.5) as a function of x.
+The error metrics (maximum error and RMSE) for both components are also displayed.
+
+.. code-block:: bash
+
+   # Run test cases and plot centerlines comparison
+   ./reproduce.sh --centerlines
+
+   # (Optional) Generate individual comparison plots (Re = 100)
+   python3 postprocess.py results.pvd --Re 100 --save lidcavity.png --compact
+
+.. list-table:: Centerline Velocity Profile Validation
+   :widths: 50 50
+   :header-rows: 0
+
+   * - |image_re1|
+
+     - |image_re10|
+
+   * - |image_re100|
+
+     - |image_re400|
+
+   * - |image_re1000|
+
+     - |image_re3200|
+
+   * - |image_re5000|
+
+     - |image_re7500|
+
+.. |image_re1| image:: figures/lidcavity_128x128_Re0001_centerlines.png
+   :alt: Centerline velocity profiles for Re=1
+   :width: 100%
+
+.. |image_re10| image:: figures/lidcavity_128x128_Re0010_centerlines.png
+   :alt: Centerline velocity profiles for Re=10
+   :width: 100%
+
+.. |image_re100| image:: figures/lidcavity_128x128_Re0100_centerlines.png
+   :alt: Centerline velocity profiles for Re=100
+   :width: 100%
+
+.. |image_re400| image:: figures/lidcavity_128x128_Re0400_centerlines.png
+   :alt: Centerline velocity profiles for Re=400
+   :width: 100%
+
+.. |image_re1000| image:: figures/lidcavity_128x128_Re1000_centerlines.png
+   :alt: Centerline velocity profiles for Re=1000
+   :width: 100%
+
+.. |image_re3200| image:: figures/lidcavity_128x128_Re3200_centerlines.png
+   :alt: Centerline velocity profiles for Re=3200
+   :width: 100%
+
+.. |image_re5000| image:: figures/lidcavity_128x128_Re5000_centerlines.png
+   :alt: Centerline velocity profiles for Re=5000
+   :width: 100%
+
+.. |image_re7500| image:: figures/lidcavity_128x128_Re7500_centerlines.png
+   :alt: Centerline velocity profiles for Re=7500
+   :width: 100%
+
+The validation demonstrates that the current numerical implementation provides
+accurate results across a wide range of Reynolds numbers, from creeping flow
+(Re = 1) to turbulent flow (Re = 7500). The agreement with high-resolution reference
+data (Marchi et al., 2021) confirms the correctness of the implementation. The compact
+plots show excellent agreement between simulation results and reference data,
+with error metrics (maximum error and RMSE) displayed for each Reynolds number.
+
+Reproducible Run
+~~~~~~~~~~~~~~~~
+
+Command-line parameters (see ``lidcavity -h``) control problem size, Reynolds number,
+time stepping, partitioning, and visualization.
+
+.. code-block:: bash
+
+   mpirun -np 1 /path/to/build/examples/src/C_lidcavity/lidcavity -h
+
+.. code-block:: text
+
+   Usage: ${MPIEXEC_COMMAND} <np> ./lidcavity [options]
+
+   Options:
+     -i <file>         : YAML configuration file for solver settings (Opt.)
+     -n <nx> <ny>      : Global grid dimensions in nodes (32 32)
+     -P <Px> <Py>      : Processor grid dimensions (1 1)
+     -L <Lx> <Ly>      : Physical dimensions (1 1)
+     -Re <val>         : Reynolds number (100.0)
+     -dt <val>         : Initial time step size (1)
+     -tf <val>         : Final simulation time (50)
+     -ntol <val>       : Non-linear solver tolerance (1.0e-6)
+     -adt              : Enable simple adaptive time stepping
+     -reg              : Use regularized lid BC (smooth corners)
+     -br <n>           : Batch rows for matrix assembly (128)
+     -vis <m>          : Visualization mode bitset (0)
+                            Any nonzero value enables visualization
+                            Bit 2 (0x2): ASCII (1) or binary (0)
+                            Bit 3 (0x4): All timesteps (1) or last only (0)
+     -v|--verbose <n>  : Verbosity bitset (0)
+                            0x1: Linear solver statistics
+                            0x2: Library information
+                            0x4: Linear system printing
+     -h|--help         : Print this message
+
+Example run for Re=100 with visualization:
+
+.. code-block:: bash
+
+   mpirun -np 1 /path/to/build/examples/src/C_lidcavity/lidcavity -vis 1
+
+.. literalinclude:: ../../examples/src/C_lidcavity/refOutput/default_Re100.out
+   :language: text
+
+Resulting streamlines can be plot via the ``postprocess.py`` script in the following way:
+
+.. code-block:: bash
+
+   ./postprocess.py lidcavity_Re100_32x32_1x1.pvd -s --Re 100 --save lidcavity_32x32.png
+
+.. figure:: figures/lidcavity_32x32_Re100_streamlines.png
+   :alt: Streamlines for Re = 100 at T = 50s
+   :width: 70%
+   :align: center
