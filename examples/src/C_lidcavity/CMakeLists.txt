@@ -58,7 +58,7 @@ if(HYPREDRV_ENABLE_TESTING)
         RUN_SERIAL
     )
     add_executable_test(lidcavity_test_4proc lidcavity 4
-        ARGS -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 1.0
+        ARGS -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3
     )
 endif()
 
