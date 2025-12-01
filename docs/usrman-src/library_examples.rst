@@ -71,11 +71,9 @@ A minimal skeleton of a program using the library is shown below.
      HYPREDRV_LinearSystemSetPrecMatrix(h);
 
      // Solve lifecycle
-     HYPREDRV_PreconCreate(h);
      HYPREDRV_LinearSolverCreate(h);
      HYPREDRV_LinearSolverSetup(h);
      HYPREDRV_LinearSolverApply(h);
-     HYPREDRV_PreconDestroy(h);
      HYPREDRV_LinearSolverDestroy(h);
 
      // (Optional) Query statistics and solution values
@@ -220,11 +218,10 @@ Solver and preconditioner options (PCG+AMG by default) are provided via YAML par
    HYPREDRV_LinearSystemSetInitialGuess(hdrv);   // zero by default
    HYPREDRV_LinearSystemSetPrecMatrix(hdrv);     // reuse A if desired
 
-   HYPREDRV_PreconCreate(hdrv);
+   // Solve lifecycle
    HYPREDRV_LinearSolverCreate(hdrv);
    HYPREDRV_LinearSolverSetup(hdrv);
    HYPREDRV_LinearSolverApply(hdrv);
-   HYPREDRV_PreconDestroy(hdrv);
    HYPREDRV_LinearSolverDestroy(hdrv);
 
 The default in the example is a conjugate gradient solver with a BoomerAMG preconditioner.
@@ -617,11 +614,9 @@ other options are provided via the YAML configuration parsed earlier with
 
   .. code-block:: c
 
-     HYPREDRV_PreconCreate(hdrv);
      HYPREDRV_LinearSolverCreate(hdrv);
      HYPREDRV_LinearSolverSetup(hdrv);
      HYPREDRV_LinearSolverApply(hdrv);
-     HYPREDRV_PreconDestroy(hdrv);
      HYPREDRV_LinearSolverDestroy(hdrv);
 
 The default in the example is a conjugate gradient solver with an unknown-based BoomerAMG
@@ -960,23 +955,23 @@ The following code snippet shows how to set up state vectors for a time-stepping
 
 The main function APIs are listed below:
 
-- **``HYPREDRV_StateVectorSet``**: Initializes the state vector management system with
+- **HYPREDRV_StateVectorSet**: Initializes the state vector management system with
   an array of ``HYPRE_IJVector`` objects. Must be called before using other state vector
   functions.
 
-- **``HYPREDRV_StateVectorGetValues``**: Retrieves a pointer to the underlying data
+- **HYPREDRV_StateVectorGetValues**: Retrieves a pointer to the underlying data
   array of a state vector, allowing direct read/write access without copying. The
   pointer is valid as long as the state vector exists.
 
-- **``HYPREDRV_StateVectorCopy``**: Copies the contents of one state vector to another.
+- **HYPREDRV_StateVectorCopy**: Copies the contents of one state vector to another.
   Commonly used to initialize the new time step with the solution from the previous
   time step.
 
-- **``HYPREDRV_StateVectorApplyCorrection``**: Applies the linear solver correction
+- **HYPREDRV_StateVectorApplyCorrection**: Applies the linear solver correction
   (ΔU) to the current state vector (logical index 0), implementing the Newton update:
   :math:`U^{k+1} = U^k + \Delta U`.
 
-- **``HYPREDRV_StateVectorUpdateAll``**: Advances the internal state mapping by one
+- **HYPREDRV_StateVectorUpdateAll**: Advances the internal state mapping by one
   position in a circular manner. After calling this, logical indices refer to different
   physical state vectors. Typically called at the end of each time step.
 
@@ -1013,7 +1008,7 @@ t=0 to t=50 with adaptive time stepping.
    :width: 80%
    :align: center
 
-   Linear solver iterations per timestep for different preconditioner
+   Linear solver iterations for different preconditioner
    configurations (Re=100, 256×256 grid).
 
 .. figure:: figures/lidcavity_256x256_Re0100_total.png
@@ -1021,7 +1016,7 @@ t=0 to t=50 with adaptive time stepping.
    :width: 80%
    :align: center
 
-   Total execution time per timestep for different preconditioner
+   Total execution time for different preconditioner
    configurations (Re=100, 256×256 grid).
 
 Time Stepping and Newton Convergence
@@ -1076,7 +1071,10 @@ The error metrics (maximum error and RMSE) for both components are also displaye
 
 .. code-block:: bash
 
-   # Generate comparison plot
+   # Run test cases and plot centerlines comparison
+   ./reproduce.sh --centerlines
+
+   # (Optional) Generate individual comparison plots (Re = 100)
    python3 postprocess.py results.pvd --Re 100 --save lidcavity.png --compact
 
 .. list-table:: Centerline Velocity Profile Validation
@@ -1178,4 +1176,18 @@ Example run for Re=100 with visualization:
 
 .. code-block:: bash
 
-   mpirun -np 4 /path/to/build/examples/src/C_lidcavity/lidcavity -vis 1
+   mpirun -np 1 /path/to/build/examples/src/C_lidcavity/lidcavity -vis 1
+
+.. literalinclude:: ../../examples/src/C_lidcavity/refOutput/default_Re100.out
+   :language: text
+
+Resulting streamlines can be plot via the ``postprocess.py`` script in the following way:
+
+.. code-block:: bash
+
+   ./postprocess.py lidcavity_Re100_32x32_1x1.pvd -s --Re 100 --save lidcavity_32x32.png
+
+.. figure:: figures/lidcavity_32x32_Re100_streamlines.png
+   :alt: Streamlines for Re = 100 at T = 50s
+   :width: 70%
+   :align: center

@@ -214,7 +214,6 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
       StatsDestroy(&hypredrv->stats);
 
       if ((*hypredrv_ptr)->states) free((*hypredrv_ptr)->states);
-      if ((*hypredrv_ptr)->vec_s) free((*hypredrv_ptr)->vec_s);
       free(*hypredrv_ptr);
       *hypredrv_ptr = NULL;
    }

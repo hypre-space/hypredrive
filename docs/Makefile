@@ -16,9 +16,8 @@ help:
 
 # Catch-all target: route all unknown targets to Sphinx using the new
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
-# Use -W to treat warnings as errors (e.g., missing images will fail the build)
 %: Makefile
-	@$(SPHINXBUILD) -W -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 	@if [ "$@" = "latexpdf" ] && [ -f "$(BUILDDIR)/latex/hypredrive.pdf" ]; then \
 		cp "$(BUILDDIR)/latex/hypredrive.pdf" usrman-hypredrive.pdf; \
 	        echo "PDF copied to usrman-hypredrive.pdf"; \

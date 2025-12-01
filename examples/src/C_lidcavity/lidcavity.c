@@ -1812,10 +1812,17 @@ WritePVDCollectionFromStats(LidCavityParams *params, int num_procs, double final
            "<VTKFile type=\"Collection\" version=\"0.1\" byte_order=\"LittleEndian\">\n");
    fprintf(fp, "  <Collection>\n");
 
+   /* Check if all timesteps should be included (bit 3: 0x4) */
+   int write_all = (params->visualize & 0x4) != 0;
+
    /* Compute time per step (approximate - assumes uniform dt) */
    double dt_approx = final_time / num_steps;
 
-   for (int i = 0; i < num_steps; i++)
+   /* Determine which timesteps to include in PVD */
+   int start_idx = write_all ? 0 : (num_steps - 1); /* All timesteps or only last */
+   int end_idx   = num_steps;
+
+   for (int i = start_idx; i < end_idx; i++)
    {
       int timestep_id;
       HYPREDRV_StatsLevelGetEntry(0, i, &timestep_id, NULL, NULL, NULL, NULL);
