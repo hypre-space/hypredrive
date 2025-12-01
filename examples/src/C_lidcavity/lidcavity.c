@@ -120,9 +120,12 @@ typedef struct
    HYPRE_Int     coords[2];
    HYPRE_Int     nlocal[2];
    HYPRE_Int     nbrs[8];
+   HYPRE_Real    h[3];       /* local length array */
    HYPRE_Int     local_size; /* local number of nodes */
    HYPRE_BigInt  ilower;     /* first local node gid (scalar) */
    HYPRE_BigInt  iupper;     /* last  local node gid (scalar) */
+   HYPRE_BigInt  dof_ilower; /* first local row (in global numbering) */
+   HYPRE_BigInt  dof_iupper; /* last  local row (in global numbering) */
    HYPRE_BigInt *pstarts[2];
    HYPRE_Real    gsizes[2];
 } DistMesh2D;
@@ -145,17 +148,17 @@ static inline HYPRE_BigInt grid2idx(const HYPRE_BigInt gcoords[2],
                                     HYPRE_BigInt **pstarts);
 
 int PrintUsage(void);
-int CreateDistMesh2D(MPI_Comm, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int,
-                   DistMesh2D **);
+int CreateDistMesh2D(MPI_Comm, HYPRE_Real, HYPRE_Real, HYPRE_Int, HYPRE_Int,
+                     HYPRE_Int, HYPRE_Int, DistMesh2D **);
 int DestroyDistMesh2D(DistMesh2D **);
 int CreateGhostData(DistMesh2D *, GhostData **);
 int DestroyGhostData(GhostData **);
 int ExchangeVectorGhosts(DistMesh2D *, double *, GhostData *);
-
 int ParseArguments(int, char **, LidCavityParams *, int, int);
 int BuildNewtonSystem(DistMesh2D *, LidCavityParams *,
                       HYPRE_Real *, HYPRE_Real *,
-                      HYPRE_IJMatrix *, HYPRE_IJVector *, GhostData *, GhostData *);
+                      HYPRE_IJMatrix *, HYPRE_IJVector *,
+                      HYPRE_Real *, GhostData *, GhostData *);
 double *ComputeDivergence(DistMesh2D *, LidCavityParams *, double *, GhostData *);
 int WriteVTKsolutionVector(DistMesh2D *, LidCavityParams *, HYPRE_Real *, GhostData *, int);
 void GetVTKBaseName(LidCavityParams *, char *, size_t);
@@ -178,8 +181,8 @@ PrintUsage(void)
    printf("  -P <Px> <Py>      : Processor grid dimensions (1 1)\n");
    printf("  -L <Lx> <Ly>      : Physical dimensions (1 1)\n");
    printf("  -Re <val>         : Reynolds number (100.0)\n");
-   printf("  -dt <val>         : Initial time step size (0.001)\n");
-   printf("  -tf <val>         : Final simulation time (0.1)\n");
+   printf("  -dt <val>         : Initial time step size (1)\n");
+   printf("  -tf <val>         : Final simulation time (50)\n");
    printf("  -ntol <val>       : Non-linear solver tolerance (1.0e-6)\n");
    printf("  -adt              : Enable simple adaptive time stepping\n");
    printf("  -reg              : Use regularized lid BC (smooth corners)\n");
@@ -206,9 +209,9 @@ int
 ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int num_procs)
 {
    /* Defaults */
-   params->visualize = 0;
-   params->verbose   = 3;
-   params->final_time = 0.1;
+   params->visualize  = 0;
+   params->verbose    = 3;
+   params->final_time = 50;
    for (int i = 0; i < 2; i++)
    {
       params->N[i] = 32;
@@ -217,7 +220,7 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
    }
    params->max_rows_per_call = 128;
    params->Re                = 100.0;
-   params->dt                = 0.001;
+   params->dt                = 1.0;
    params->newton_tol        = 1.0e-6;
    params->adaptive_dt       = 0;
    params->regularize_bc     = 0;
@@ -365,16 +368,22 @@ grid2idx(const HYPRE_BigInt gcoords[2], const HYPRE_Int bcoords[2],
  * Create mesh partition information (reused from Laplacian example)
  *--------------------------------------------------------------------------*/
 int
-CreateDistMesh2D(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Px,
-               HYPRE_Int Py, DistMesh2D **mesh_ptr)
+CreateDistMesh2D(MPI_Comm comm,
+                 HYPRE_Real Lx, HYPRE_Real Ly,
+                 HYPRE_Int Nx, HYPRE_Int Ny,
+                 HYPRE_Int Px, HYPRE_Int Py,
+                 DistMesh2D **mesh_ptr)
 {
    DistMesh2D *mesh = (DistMesh2D *)malloc(sizeof(DistMesh2D));
-   int       myid;
+   int         myid;
 
    mesh->gdims[0] = Nx;
    mesh->gdims[1] = Ny;
    mesh->pdims[0] = Px;
    mesh->pdims[1] = Py;
+   mesh->h[0] = Lx / (Nx - 1);
+   mesh->h[1] = Ly / (Ny - 1);
+   mesh->h[2] = (mesh->h[0] < mesh->h[1]) ? mesh->h[0] : mesh->h[1];
 
    MPI_Cart_create(comm, 2, mesh->pdims, (int[]){0, 0}, 1, &(mesh->cart_comm));
    MPI_Comm_rank(mesh->cart_comm, &myid);
@@ -401,6 +410,8 @@ CreateDistMesh2D(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Px,
    mesh->ilower            = grid2idx(gcoords, mesh->coords, mesh->gdims, mesh->pstarts);
    mesh->local_size        = mesh->nlocal[0] * mesh->nlocal[1];
    mesh->iupper            = mesh->ilower + mesh->local_size - 1;
+   mesh->dof_ilower        = mesh->ilower * 3;
+   mesh->dof_iupper        = mesh->iupper * 3 + 2;
 
    MPI_Cart_shift(mesh->cart_comm, 0, 1, &mesh->nbrs[0], &mesh->nbrs[1]);
    MPI_Cart_shift(mesh->cart_comm, 1, 1, &mesh->nbrs[2], &mesh->nbrs[3]);
@@ -765,10 +776,11 @@ ComputeDivergence(DistMesh2D *mesh, LidCavityParams *params,
 
 int
 BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
-                      HYPRE_Real *u_prev_time, /* u at n */
-                      HYPRE_Real *u_current_iter, /* u at k */
-                      HYPRE_IJMatrix *J_ptr, HYPRE_IJVector *R_ptr,
-                      GhostData *g_u_n, GhostData *g_u_k)
+                  HYPRE_Real *u_prev_time, /* u at n */
+                  HYPRE_Real *u_current_iter, /* u at k */
+                  HYPRE_IJMatrix *J_ptr, HYPRE_IJVector *R_ptr,
+                  HYPRE_Real *res_norm,
+                  GhostData *g_u_n, GhostData *g_u_k)
 {
    HYPRE_IJMatrix A;
    HYPRE_IJVector b;
@@ -779,8 +791,8 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
 
    HYPRE_BigInt node_ilower = mesh->ilower;
    HYPRE_BigInt node_iupper = mesh->iupper;
-   HYPRE_BigInt dof_ilower  = node_ilower * 3;
-   HYPRE_BigInt dof_iupper  = node_iupper * 3 + 2;
+   HYPRE_BigInt dof_ilower  = mesh->dof_ilower;
+   HYPRE_BigInt dof_iupper  = mesh->dof_iupper;
 
    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system"));
 
@@ -812,6 +824,19 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
    HYPRE_BigInt gy_lo = (pstarts[1][p[1]] > 0) ? (pstarts[1][p[1]] - 1) : 0;
    HYPRE_BigInt gy_hi =
       (pstarts[1][p[1] + 1] < gdims[1]) ? pstarts[1][p[1] + 1] : (gdims[1] - 1);
+
+   /* Batch assembly buffers - accumulate across elements, flush when full */
+   const int max_rows = params->max_rows_per_call;
+   const int max_nnz  = max_rows * 27; /* Conservative: 27 nnz per row max */
+   HYPRE_BigInt *batch_rows  = (HYPRE_BigInt *)malloc(max_rows * sizeof(HYPRE_BigInt));
+   HYPRE_Int    *batch_ncols = (HYPRE_Int *)malloc(max_rows * sizeof(HYPRE_Int));
+   HYPRE_BigInt *batch_cols  = (HYPRE_BigInt *)malloc(max_nnz * sizeof(HYPRE_BigInt));
+   HYPRE_Real   *batch_vals  = (HYPRE_Real *)malloc(max_nnz * sizeof(HYPRE_Real));
+   HYPRE_BigInt *rhs_rows    = (HYPRE_BigInt *)malloc(max_rows * sizeof(HYPRE_BigInt));
+   HYPRE_Real   *rhs_vals    = (HYPRE_Real *)malloc(max_rows * sizeof(HYPRE_Real));
+   int batch_nrows = 0;
+   int batch_nnz   = 0;
+   int rhs_count   = 0;
 
    for (HYPRE_BigInt gy = gy_lo; gy < gy_hi; gy++)
    {
@@ -1076,114 +1101,159 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
             }
          }
 
-         /* Assemble element contributions, skipping Dirichlet rows ONLY */
+         /* Accumulate element contributions into batch buffers */
          for (int i = 0; i < 12; i++)
          {
             if (is_dirichlet[i]) continue; /* Skip Dirichlet rows */
             if (dof_gid[i] < dof_ilower || dof_gid[i] > dof_iupper) continue; /* Only own rows */
 
+            /* Check if batch is full - flush before adding */
+            int row_nnz = 0;
+            for (int j = 0; j < 12; j++)
+               if (K_elem[i][j] != 0.0) row_nnz++;
+
+            if (batch_nrows >= max_rows || batch_nnz + row_nnz > max_nnz)
+            {
+               /* Flush matrix batch */
+               if (batch_nrows > 0)
+               {
+                  HYPRE_IJMatrixAddToValues(A, batch_nrows, batch_ncols,
+                                            batch_rows, batch_cols, batch_vals);
+               }
+               /* Flush RHS batch */
+               if (rhs_count > 0)
+               {
+                  HYPRE_IJVectorAddToValues(b, rhs_count, rhs_rows, rhs_vals);
+               }
+               batch_nrows = 0;
+               batch_nnz   = 0;
+               rhs_count   = 0;
+            }
+
+            /* Add row to batch */
+            batch_rows[batch_nrows] = dof_gid[i];
+            int row_ncols = 0;
             for (int j = 0; j < 12; j++)
             {
-               // Do NOT skip Dirichlet columns. We need the coupling K_ij * delta_u_j
                if (K_elem[i][j] != 0.0)
                {
-                  HYPRE_BigInt row = dof_gid[i];
-                  HYPRE_BigInt col = dof_gid[j];
-                  HYPRE_Real val = K_elem[i][j];
-                  HYPRE_Int ncols = 1;
-                  HYPRE_IJMatrixAddToValues(A, 1, &ncols, &row, &col, &val);
+                  batch_cols[batch_nnz] = dof_gid[j];
+                  batch_vals[batch_nnz] = K_elem[i][j];
+                  batch_nnz++;
+                  row_ncols++;
                }
             }
+            batch_ncols[batch_nrows] = row_ncols;
+            batch_nrows++;
+
             if (R_elem[i] != 0.0)
             {
-               HYPRE_BigInt row = dof_gid[i];
-               HYPRE_Real val = -R_elem[i]; /* Newton RHS is -Residual */
-               HYPRE_IJVectorAddToValues(b, 1, &row, &val);
+               rhs_rows[rhs_count] = dof_gid[i];
+               rhs_vals[rhs_count] = -R_elem[i]; /* Newton RHS is -Residual */
+               rhs_count++;
             }
          }
       }
    }
 
-    // Apply boundary conditions: Set Dirichlet rows to identity with prescribed RHS
-    for (HYPRE_BigInt i = node_ilower; i <= node_iupper; i++)
-    {
-        HYPRE_BigInt gcoords[2];
-        get_global_coords(i, mesh, gcoords);
+   /* Flush remaining batch */
+   if (batch_nrows > 0)
+   {
+      HYPRE_IJMatrixAddToValues(A, batch_nrows, batch_ncols,
+                                batch_rows, batch_cols, batch_vals);
+   }
+   if (rhs_count > 0)
+   {
+      HYPRE_IJVectorAddToValues(b, rhs_count, rhs_rows, rhs_vals);
+   }
 
-        HYPRE_Int boundary_type = 0; // 0: interior, 1: wall, 2: lid
+   free(batch_rows);
+   free(batch_ncols);
+   free(batch_cols);
+   free(batch_vals);
+   free(rhs_rows);
+   free(rhs_vals);
 
-        if (gcoords[1] == gdims[1] - 1 && gcoords[0] != 0 && gcoords[0] != gdims[0] - 1)
-        {
-            boundary_type = 2; // Lid (top, excluding corners): u = profile, v = 0
-        }
-        else if (gcoords[0] == 0 || gcoords[0] == gdims[0] - 1 || gcoords[1] == 0)
-        {
-            boundary_type = 1; // Wall (left, right, bottom, top corners): u = 0, v = 0
-        }
+   // Apply boundary conditions: Set Dirichlet rows to identity with prescribed RHS
+   for (HYPRE_BigInt i = node_ilower; i <= node_iupper; i++)
+   {
+      HYPRE_BigInt gcoords[2];
+      get_global_coords(i, mesh, gcoords);
 
-        // Fix pressure at a reference node (e.g., global (0,0))
-        if (gcoords[0] == 0 && gcoords[1] == 0)
-        {
-            HYPRE_BigInt row = 3 * i + 2; // Pressure DOF
-            HYPRE_Real val_matrix = 1.0;
-            HYPRE_Real val_vector = 0.0; // p = 0
-            HYPRE_Int ncols = 1;
-            HYPRE_IJMatrixSetValues(A, 1, &ncols, &row, &row, &val_matrix);
-            HYPRE_IJVectorSetValues(b, 1, &row, &val_vector);
-        }
+      HYPRE_Int boundary_type = 0; // 0: interior, 1: wall, 2: lid
 
-        if (boundary_type > 0)
-        {
-            for (int j = 0; j < 2; j++) // Apply to u and v components
-            {
-                HYPRE_BigInt row = 3 * i + j; // u or v DOF (global DOF ID)
-                HYPRE_Real val_matrix = 1.0;
-                HYPRE_Real u_bc = 0.0; // Default to 0 for walls
+      if (gcoords[1] == gdims[1] - 1 && gcoords[0] != 0 && gcoords[0] != gdims[0] - 1)
+      {
+          boundary_type = 2; // Lid (top, excluding corners): u = profile, v = 0
+      }
+      else if (gcoords[0] == 0 || gcoords[0] == gdims[0] - 1 || gcoords[1] == 0)
+      {
+          boundary_type = 1; // Wall (left, right, bottom, top corners): u = 0, v = 0
+      }
 
-                if (boundary_type == 2 && j == 0) // Lid, u-component
-                {
-                    if (params->regularize_bc)
-                    {
-                        // Regularized lid BC: u(x) = [1 - (2x-1)^(2n)]^2 with n=8
-                        // Flatter profile in center, steeper near corners
-                        // u(0) = 0, u(0.5) = 1, u(1) = 0
-                        HYPRE_Real x_norm = (HYPRE_Real)gcoords[0] / (gdims[0] - 1);
-                        HYPRE_Real xi = 2.0 * x_norm - 1.0;  // Map [0,1] to [-1,1]
-                        HYPRE_Real xi16 = xi * xi;           // xi^2
-                        xi16 *= xi16;                        // xi^4
-                        xi16 *= xi16;                        // xi^8
-                        xi16 *= xi16;                        // xi^16
-                        u_bc = (1.0 - xi16) * (1.0 - xi16);
-                    }
-                    else
-                    {
-                        u_bc = 1.0; // Classic BC: u = 1 on entire lid
-                    }
-                }
+      // Fix pressure at a reference node (e.g., global (0,0))
+      if (gcoords[0] == 0 && gcoords[1] == 0)
+      {
+          HYPRE_BigInt row = 3 * i + 2; // Pressure DOF
+          HYPRE_Real val_matrix = 1.0;
+          HYPRE_Real val_vector = 0.0; // p = 0
+          HYPRE_Int ncols = 1;
+          HYPRE_IJMatrixSetValues(A, 1, &ncols, &row, &row, &val_matrix);
+          HYPRE_IJVectorSetValues(b, 1, &row, &val_vector);
+      }
 
-                // Convert global node ID to local index for accessing u_current_iter
-                HYPRE_BigInt local_node_idx = i - node_ilower;
-                HYPRE_BigInt local_dof_idx = 3 * local_node_idx + j;
+      if (boundary_type > 0)
+      {
+         for (int j = 0; j < 2; j++) // Apply to u and v components
+         {
+             HYPRE_BigInt row = 3 * i + j; // u or v DOF (global DOF ID)
+             HYPRE_Real val_matrix = 1.0;
+             HYPRE_Real u_bc = 0.0; // Default to 0 for walls
 
-                // Compute residual: R = u_BC - u_current
-                // For Newton: J * delta = -R, so delta = -J^{-1} * R
-                // With J = I: delta = -R = -(u_BC - u_current) = u_current - u_BC
-                // But we want delta = u_BC - u_current, so we set R = u_current - u_BC
-                // Actually, let's use: R = u_BC - u_current, then delta = u_BC - u_current (since J = I)
-                HYPRE_Real u_current = u_current_iter[local_dof_idx];
-                HYPRE_Real val_vector = u_bc - u_current;
+             if (boundary_type == 2 && j == 0) // Lid, u-component
+             {
+                 if (params->regularize_bc)
+                 {
+                     // Regularized lid BC: u(x) = [1 - (2x-1)^(2n)]^2 with n=8
+                     // Flatter profile in center, steeper near corners
+                     // u(0) = 0, u(0.5) = 1, u(1) = 0
+                     HYPRE_Real x_norm = (HYPRE_Real)gcoords[0] / (gdims[0] - 1);
+                     HYPRE_Real xi = 2.0 * x_norm - 1.0;  // Map [0,1] to [-1,1]
+                     HYPRE_Real xi16 = xi * xi;           // xi^2
+                     xi16 *= xi16;                        // xi^4
+                     xi16 *= xi16;                        // xi^8
+                     xi16 *= xi16;                        // xi^16
+                     u_bc = (1.0 - xi16) * (1.0 - xi16);
+                 }
+                 else
+                 {
+                     u_bc = 1.0; // Classic BC: u = 1 on entire lid
+                 }
+             }
 
-                // Set diagonal of Jacobian to 1 and RHS to u_BC - u_current
-                HYPRE_Int ncols = 1;
-                HYPRE_IJMatrixSetValues(A, 1, &ncols, &row, &row, &val_matrix);
-                HYPRE_IJVectorSetValues(b, 1, &row, &val_vector);
-            }
-        }
-    }
+             // Convert global node ID to local index for accessing u_current_iter
+             HYPRE_BigInt local_node_idx = i - node_ilower;
+             HYPRE_BigInt local_dof_idx = 3 * local_node_idx + j;
+
+             // Compute residual: R = u_BC - u_current
+             HYPRE_Real u_current = u_current_iter[local_dof_idx];
+             HYPRE_Real val_vector = u_bc - u_current;
+
+             // Set diagonal of Jacobian to 1 and RHS to u_BC - u_current
+             HYPRE_Int ncols = 1;
+             HYPRE_IJMatrixSetValues(A, 1, &ncols, &row, &row, &val_matrix);
+             HYPRE_IJVectorSetValues(b, 1, &row, &val_vector);
+         }
+      }
+   }
 
    /* Finalize assembly after all values (including Dirichlet rows) are set */
    HYPRE_IJMatrixAssemble(A);
    HYPRE_IJVectorAssemble(b);
+
+   /* Compute current residual */
+   HYPRE_IJVectorInnerProd(b, b, res_norm);
+   *res_norm = sqrt(*res_norm);
 
    *J_ptr = A;
    *R_ptr = b;
@@ -1673,13 +1743,16 @@ int
 main(int argc, char *argv[])
 {
    MPI_Comm         comm = MPI_COMM_WORLD;
+   char            *hypredrv_args[2];
    HYPREDRV_t       hypredrv;
    int              myid, num_procs;
+   HYPRE_Real       res_norm;
    LidCavityParams  params;
    DistMesh2D      *mesh;
+   GhostData       *g_u_k = NULL, *g_u_n = NULL;
    HYPRE_IJMatrix   A;
    HYPRE_IJVector   b;
-   HYPRE_Real      *sol_data;
+   HYPRE_IJVector   vec_s[2];
    HYPRE_Real      *u_old;
    HYPRE_Real      *u_now;
 
@@ -1694,24 +1767,7 @@ main(int argc, char *argv[])
       MPI_Finalize();
       return 1;
    }
-
-
-   HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
-
-   if (params.verbose & 0x2)
-   {
-      HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
-      HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
-   }
-
-   HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
-
-   char *args[2];
-   args[0] = params.yaml_file ? params.yaml_file : (char *)default_config;
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
-
-   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
-   HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
+   hypredrv_args[0] = params.yaml_file ? params.yaml_file : (char *)default_config;
 
    if (!myid)
    {
@@ -1744,19 +1800,34 @@ main(int argc, char *argv[])
       printf("=====================================================\n\n");
    }
 
-   CreateDistMesh2D(comm, params.N[0], params.N[1], params.P[0], params.P[1], &mesh);
+   /* Initialize hypredrive library and create main object */
+   HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+   if (params.verbose & 0x2)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
+      HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
+   }
+   HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, hypredrv_args, hypredrv));
+   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
+   HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
 
-   u_old = (HYPRE_Real *)calloc(3 * mesh->local_size, sizeof(HYPRE_Real));
-   u_now = (HYPRE_Real *)calloc(3 * mesh->local_size, sizeof(HYPRE_Real));
+   /* Create distributed mesh object */
+   CreateDistMesh2D(comm, params.L[0], params.L[1], params.N[0], params.N[1],
+                    params.P[0], params.P[1], &mesh);
 
-   GhostData *g_u_k = NULL;
-   GhostData *g_u_n = NULL;
+   /* Create state vectors */
+   for (int i = 0; i < 2; i++)
+   {
+      HYPRE_IJVectorCreate(MPI_COMM_WORLD, mesh->dof_ilower, mesh->dof_iupper, &vec_s[i]);
+      HYPRE_IJVectorSetObjectType(vec_s[i], HYPRE_PARCSR);
+      HYPRE_IJVectorInitialize(vec_s[i]);
+   }
+   HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorSet(hypredrv, 2, vec_s));
+
+   /* Create ghost exchange objects */
    CreateGhostData(mesh, &g_u_k);
    CreateGhostData(mesh, &g_u_n);
-
-   double hx = params.L[0] / (params.N[0] - 1);
-   double hy = params.L[1] / (params.N[1] - 1);
-   double h_min = (hx < hy) ? hx : hy;
 
    double current_time = 0.0;
    int    newton_iter, t_step = 0;
@@ -1774,10 +1845,10 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(0, "timestep-%d", t_step));
 
       /* Initialize u_now with the solution from the previous time step */
-      for (int i=0; i<3*mesh->local_size; i++)
-      {
-         u_now[i] = u_old[i];
-      }
+      HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorCopy(hypredrv, 1, 0));
+
+      /* Retrieve solution values from the old state (U^{n - 1}) and exchange ghost data */
+      HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorGetValues(hypredrv, 1, &u_old));
       ExchangeVectorGhosts(mesh, u_old, g_u_n);
 
       /* Non-linear solver loop */
@@ -1786,16 +1857,16 @@ main(int argc, char *argv[])
          /* Begin Newton iteration annotation (level 1) */
          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(1, "newton-%d", newton_iter));
 
+         /* Retrieve solution values from the current state (U^{n}) and exchange ghost data */
+         HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorGetValues(hypredrv, 0, &u_now));
          ExchangeVectorGhosts(mesh, u_now, g_u_k);
-         BuildNewtonSystem(mesh, &params, u_old, u_now, &A, &b, g_u_n, g_u_k);
 
-         HYPRE_Real residual_norm;
-         HYPRE_IJVectorInnerProd(b, b, &residual_norm);
-         residual_norm = sqrt(residual_norm);
+         /* Assemble linear system: J ΔU = -R */
+         BuildNewtonSystem(mesh, &params, u_old, u_now, &A, &b, &res_norm, g_u_n, g_u_k);
 
-         if (newton_iter > 0 && residual_norm < params.newton_tol)
+         /* Check Newton convergence */
+         if (newton_iter > 0 && res_norm < params.newton_tol)
          {
-            /* End Newton iteration annotation before breaking */
             HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton-%d", newton_iter));
             break;
          }
@@ -1814,6 +1885,7 @@ main(int argc, char *argv[])
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector)b));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv));
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(hypredrv));
 
          if (params.verbose & 0x4)
          {
@@ -1823,21 +1895,19 @@ main(int argc, char *argv[])
          }
 
          /* Build and apply linear solver */
-         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(hypredrv));
-         HYPREDRV_SAFE_CALL(HYPREDRV_PreconCreate(hypredrv));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverCreate(hypredrv));
-
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(hypredrv));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
-
-         HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(hypredrv));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hypredrv));
+
+         /* U = U + ΔU */
+         HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorApplyCorrection(hypredrv));
 
          /* Report running log */
          if (params.verbose > 0)
          {
             int num_iterations;
-            double cfl = params.dt / h_min;
+            double cfl = params.dt / mesh->h[2];
             double norm_u, norm_v, norm_p;
 
             HYPREDRV_SAFE_CALL(HYPREDRV_GetLastStat(hypredrv, "iter", &num_iterations));
@@ -1850,18 +1920,17 @@ main(int argc, char *argv[])
             }
          }
 
-         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &sol_data));
-         for (int i=0; i<3*mesh->local_size; i++)
-         {
-            u_now[i] += sol_data[i];
-         }
-
+         /* Free memory */
          HYPRE_IJMatrixDestroy(A);
          HYPRE_IJVectorDestroy(b);
 
          /* End Newton iteration annotation (level 1) */
          HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton-%d", newton_iter));
       }
+      if (!myid && params.verbose > 0 && newton_iter > 1) printf("\n");
+
+      /* Update timestep based on Newton convergence */
+      UpdateTimeStep(&params, newton_iter);
 
       /* End timestep annotation (level 0) - stats finalized automatically */
       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep-%d", t_step));
@@ -1877,23 +1946,18 @@ main(int argc, char *argv[])
          }
       }
 
-      for (int i=0; i<3*mesh->local_size; i++)
-      {
-         u_old[i] = u_now[i];
-      }
-
-      /* Update time step based on Newton convergence */
-      UpdateTimeStep(&params, newton_iter);
-
-      if (!myid && params.verbose > 0 && newton_iter > 1) printf("\n");
+      /* Update "old" and "new" state vectors (U^{n} = U^{n + 1})*/
+      HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorUpdateAll(hypredrv));
    }
 
    /* Free memory */
    DestroyDistMesh2D(&mesh);
-   free(u_old);
-   free(u_now);
    DestroyGhostData(&g_u_k);
    DestroyGhostData(&g_u_n);
+   for (int i = 0; i < 2; i++)
+   {
+      HYPRE_IJVectorDestroy(vec_s[i]);
+   }
 
    /* Print timestep statistics summary (uses internal stats system) */
    if (!myid && (params.verbose & 0x1))

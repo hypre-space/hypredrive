@@ -910,6 +910,177 @@ extern "C"
    HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv, HYPRE_Complex **rhs_data);
 
    /**
+    * @brief Set state vectors for time-stepping or multi-state applications.
+    *
+    * This function initializes the state vector management system, which is useful for
+    * time-stepping applications where multiple solution states need to be maintained
+    * (e.g., previous time step, current time step). The state vectors are managed
+    * internally using a circular indexing scheme.
+    *
+    * @param hypredrv The HYPREDRV_t object for which state vectors are to be set.
+    * @param nstates The number of state vectors to manage.
+    * @param vecs An array of HYPRE_Vector objects (HYPRE_IJVector) representing the
+    *             state vectors. The array must contain at least nstates valid vectors.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note The state vectors must be created and initialized by the caller before
+    * calling this function. Typically, these are HYPRE_IJVector objects created with
+    * the same row range as the linear system.
+    *
+    * @note This function must be called before using other state vector functions
+    * such as HYPREDRV_StateVectorGetValues, HYPREDRV_StateVectorCopy, etc.
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t hypredrv;
+    *    HYPRE_IJVector vec_s[2];
+    *    // ... (create and initialize vec_s[0] and vec_s[1]) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorSet(hypredrv, 2, vec_s));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv,
+                                                            int       nstates,
+                                                            HYPRE_IJVector *vecs);
+
+   /**
+    * @brief Retrieve a pointer to the data array of a state vector.
+    *
+    * This function provides direct access to the underlying data array of a state
+    * vector, allowing efficient read/write access without copying. The returned
+    * pointer points to the local portion of the distributed vector on the current
+    * MPI rank.
+    *
+    * @param hypredrv The HYPREDRV_t object containing the state vectors.
+    * @param index The logical index of the state vector (0-based, relative to the
+    *              current state mapping).
+    * @param data_ptr A pointer to a HYPRE_Complex pointer, which will be set to
+    *                 point to the local data array. The user must not free this
+    *                 pointer, but may read and write to the array.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note The returned pointer is valid only as long as the state vector exists
+    * and has not been modified by operations that may reallocate the underlying
+    * storage.
+    *
+    * @note The data layout is contiguous and follows the DOF ordering of the
+    * linear system (e.g., interleaved u, v, p for Navier-Stokes).
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t hypredrv;
+    *    HYPRE_Complex *u_old = NULL;
+    *    // Get pointer to state vector at index 1 (e.g., previous time step)
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorGetValues(hypredrv, 1, &u_old));
+    *    // Now u_old points to the local data array
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorGetValues(HYPREDRV_t        hypredrv,
+                                                                  int              index,
+                                                                  HYPRE_Complex   **data_ptr);
+
+   /**
+    * @brief Copy one state vector to another.
+    *
+    * This function copies the contents of one state vector to another. It is
+    * commonly used in time-stepping applications to initialize the new time step
+    * with the solution from the previous time step.
+    *
+    * @param hypredrv The HYPREDRV_t object containing the state vectors.
+    * @param index_in The logical index of the source state vector (0-based).
+    * @param index_out The logical index of the destination state vector (0-based).
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note Both state vectors must have been set via HYPREDRV_StateVectorSet and
+    * must have compatible sizes (same row ranges).
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t hypredrv;
+    *    // Copy state 1 (previous time step) to state 0 (current time step)
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorCopy(hypredrv, 1, 0));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorCopy(HYPREDRV_t hypredrv,
+                                                             int       index_in,
+                                                             int       index_out);
+
+   /**
+    * @brief Cycle through state vector indices (advance state mapping).
+    *
+    * This function advances the internal state mapping by one position in a
+    * circular manner. After calling this function, the logical indices (0, 1, ...)
+    * now refer to different physical state vectors. This is useful for time-stepping
+    * applications where state vectors are reused in a circular buffer pattern.
+    *
+    * @param hypredrv The HYPREDRV_t object containing the state vectors.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note This function modifies the internal state mapping but does not copy
+    * any data. It is typically called at the end of a time step to prepare for the
+    * next iteration.
+    *
+    * @note After calling this function, the logical index 0 will refer to what was
+    * previously index 1, index 1 will refer to what was previously index 2, etc.,
+    * wrapping around for the last index.
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t hypredrv;
+    *    // At end of time step, cycle states so next iteration uses updated mapping
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorUpdateAll(hypredrv));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorUpdateAll(HYPREDRV_t hypredrv);
+
+   /**
+    * @brief Apply the linear solver correction to the current state vector.
+    *
+    * This function adds the solution increment from the linear solver (stored in
+    * vec_x) to the current state vector (state at logical index 0). This implements
+    * the Newton update: U^{k+1} = U^k + ΔU, where ΔU is the solution from the
+    * linear system J ΔU = -R.
+    *
+    * @param hypredrv The HYPREDRV_t object containing the state vectors and the
+    *                 linear solver solution (vec_x).
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note This function should be called after HYPREDRV_LinearSolverApply has
+    * completed successfully. The linear solver solution (vec_x) must be set via
+    * HYPREDRV_LinearSystemSetRHS or similar functions.
+    *
+    * @note The operation performed is: state[0] = state[0] + vec_x (in-place update).
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t hypredrv;
+    *    // ... (assemble linear system, solve) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorApplyCorrection(hypredrv));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv);
+
+   /**
     * @brief Create a preconditioner for the HYPREDRV object based on the specified
     * method.
     *
