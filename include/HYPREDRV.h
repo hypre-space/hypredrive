@@ -942,9 +942,9 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv,
-                                                            int       nstates,
-                                                            HYPRE_IJVector *vecs);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorSet(HYPREDRV_t        hypredrv,
+                                                            int               nstates,
+                                                            HYPRE_IJVector   *vecs);
 
    /**
     * @brief Retrieve a pointer to the data array of a state vector.
@@ -982,9 +982,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorGetValues(HYPREDRV_t        hypredrv,
-                                                                  int              index,
-                                                                  HYPRE_Complex   **data_ptr);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_StateVectorGetValues(HYPREDRV_t hypredrv, int index, HYPRE_Complex **data_ptr);
 
    /**
     * @brief Copy one state vector to another.
@@ -1013,8 +1012,8 @@ extern "C"
     */
 
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorCopy(HYPREDRV_t hypredrv,
-                                                             int       index_in,
-                                                             int       index_out);
+                                                             int        index_in,
+                                                             int        index_out);
 
    /**
     * @brief Cycle through state vector indices (advance state mapping).
@@ -1078,7 +1077,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv);
 
    /**
     * @brief Create a preconditioner for the HYPREDRV object based on the specified
@@ -1492,11 +1492,11 @@ extern "C"
     *
     * @note Any pointer parameter can be NULL to skip retrieving that value.
     */
-   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_StatsLevelGetEntry(int     level,
-                                                          int     index,
-                                                          int    *entry_id,
-                                                          int    *num_solves,
-                                                          int    *linear_iters,
+   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_StatsLevelGetEntry(int    level,
+                                                          int    index,
+                                                          int   *entry_id,
+                                                          int   *num_solves,
+                                                          int   *linear_iters,
                                                           double *setup_time,
                                                           double *solve_time);
 

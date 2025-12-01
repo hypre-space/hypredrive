@@ -2,8 +2,9 @@ cmake_minimum_required(VERSION 3.12)
 project(lidcavity C)
 
 # Disallow in-source builds
-
-# Disallow in-source builds
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+   message(FATAL_ERROR "In-source builds are not allowed. Please create a separate build directory and run CMake from there.")
+endif()
 
 set(CMAKE_C_STANDARD 99)
 
@@ -35,15 +36,6 @@ if(HYPREDRV_ENABLE_CALIPER)
     endif()
 endif()
 
-# Add OpenMP support for parallel assembly
-find_package(OpenMP)
-if(OpenMP_C_FOUND)
-    target_link_libraries(lidcavity PRIVATE OpenMP::OpenMP_C)
-    message(STATUS "OpenMP enabled for lidcavity driver")
-else()
-    message(STATUS "OpenMP not found - lidcavity driver will build without OpenMP")
-endif()
-
 # Apply sanitizer link flags if sanitizers are enabled
 get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
 get_property(_sanitizer_flags GLOBAL PROPERTY HYPREDRV_SANITIZER_LINK_FLAGS)
@@ -62,11 +54,11 @@ endif()
 if(HYPREDRV_ENABLE_TESTING)
     include(${CMAKE_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
     add_executable_test(lidcavity_test_1proc lidcavity 1
-        ARGS -n 12 4 4 -ns 1
+        ARGS -n 12 12 -ns 1 -dt 0.1 -tf 1.0
         RUN_SERIAL
     )
     add_executable_test(lidcavity_test_4proc lidcavity 4
-        ARGS -n 12 4 4 -P 2 2 1 -ns 1
+        ARGS -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 1.0
     )
 endif()
 
