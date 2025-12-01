@@ -54,11 +54,11 @@ endif()
 if(HYPREDRV_ENABLE_TESTING)
     include(${CMAKE_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
     add_executable_test(lidcavity_test_1proc lidcavity 1
-        ARGS -n 12 12 -ns 1 -dt 0.1 -tf 1.0
+        ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
         RUN_SERIAL
     )
     add_executable_test(lidcavity_test_4proc lidcavity 4
-        ARGS -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3
+        ARGS -v 1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3
     )
 endif()
 

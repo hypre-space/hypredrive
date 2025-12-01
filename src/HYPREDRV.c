@@ -820,6 +820,7 @@ HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t hypredrv, int num_local_blo
 
    if (hypredrv)
    {
+      IntArrayDestroy(&hypredrv->dofmap);
       IntArrayBuildInterleaved(hypredrv->comm, num_local_blocks, num_dof_types,
                                &hypredrv->dofmap);
    }
@@ -843,6 +844,7 @@ HYPREDRV_LinearSystemSetContiguousDofmap(HYPREDRV_t hypredrv, int num_local_bloc
 
    if (hypredrv)
    {
+      IntArrayDestroy(&hypredrv->dofmap);
       IntArrayBuildContiguous(hypredrv->comm, num_local_blocks, num_dof_types,
                               &hypredrv->dofmap);
    }

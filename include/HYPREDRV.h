@@ -1405,7 +1405,8 @@ extern "C"
     *    }
     * @endcode
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelBegin(int level, const char *name, int id);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelBegin(int         level,
+                                                               const char *name, int id);
 
    /**
     * @brief End hierarchical annotation of a code region with a specified level.
@@ -1419,7 +1420,8 @@ extern "C"
     *
     * @return Returns an error code with 0 indicating success.
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelEnd(int level, const char *name, int id);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelEnd(int level, const char *name,
+                                                             int id);
 
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/
