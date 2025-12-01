@@ -84,7 +84,7 @@ typedef struct
 
 typedef struct
 {
-   int id;         /* 1-based entry ID within this level */
+   int id;          /* 1-based entry ID within this level */
    int solve_start; /* First solve index for this entry */
    int solve_end;   /* One past last solve index */
 } LevelEntry;
@@ -126,8 +126,8 @@ typedef struct Stats_struct
    bool   use_millisec;
 
    /* Per-level statistics (stats computed on-demand from solve index range) */
-   int         level_count[STATS_MAX_LEVELS];       /* Number of entries per level */
-   LevelEntry *level_entries[STATS_MAX_LEVELS];     /* Array of entries per level */
+   int         level_count[STATS_MAX_LEVELS];   /* Number of entries per level */
+   LevelEntry *level_entries[STATS_MAX_LEVELS]; /* Array of entries per level */
 
    /* Current state per level */
    int level_active;                        /* Bitmask: which levels are active */

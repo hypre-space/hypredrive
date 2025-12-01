@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.21)
 project(lidcavity C)
 
 # Disallow in-source builds
@@ -16,7 +16,7 @@ endif()
 
 # Common build configuration
 add_executable(lidcavity lidcavity.c)
-target_link_libraries(lidcavity PRIVATE HYPREDRV::HYPREDRV)
+target_link_libraries(lidcavity PRIVATE HYPREDRV::HYPREDRV m)
 
 # If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
 if(HYPREDRV_ENABLE_CALIPER)
