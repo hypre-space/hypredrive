@@ -357,7 +357,7 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
     The function does not return anything but displays the plot.
     """
     logger.debug(f"Plotting iters-and-times (cumulative={cumulative}, xtype={xtype})")
-    fig, ax1 = plt.figure(figsize=fgs), plt.gca()
+    fig, ax1 = plt.subplots(figsize=fgs)
 
     # Determine grouping by source (if present)
     has_source = 'source' in df.columns
@@ -471,8 +471,9 @@ def main():
     parser.add_argument("-s", "--savefig", default=None, help="Save figure(s) given this name suffix")
     parser.add_argument("-c", "--cumulative", action='store_true', help='Plot cumulative quantities')
     parser.add_argument("-u", "--use_title", action='store_true', help='Show title in plots')
-    parser.add_argument("--linestyle", type=str, default='auto', choices=['auto', '-', '--', '-.', ':', 'none'], help="Line style for plots; 'none' draws markers only; 'auto' preserves defaults")
-    parser.add_argument("--markersize", type=float, default=None, help="Marker size (points); defaults to Matplotlib rcParams")
+    parser.add_argument("-ls", "--linestyle", type=str, default='auto', choices=['auto', '-', '--', '-.', ':', 'none'], help="Line style for plots; 'none' draws markers only; 'auto' preserves defaults")
+    parser.add_argument("-ms", "--markersize", type=float, default=None, help="Marker size (points); defaults to Matplotlib rcParams")
+    parser.add_argument("-ll", "--legend-labels", type=str, nargs="+", default=None, help="Custom legend labels for each input file (must match number of files)")
     parser.add_argument("-v", "--verbose", action='count', default=0, help='Increase verbosity (-v=INFO, -vv=DEBUG)')
 
     # Parse arguments
@@ -496,6 +497,16 @@ def main():
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
     logger.debug(f"Arguments parsed: {vars(args) = }")
 
+    # Create label mapping from source filenames to custom labels
+    label_map = {}
+    if args.legend_labels:
+        if len(args.legend_labels) != len(args.filename):
+            raise ValueError(f"Number of legend labels ({len(args.legend_labels)}) must match number of files ({len(args.filename)})")
+        for filename, label in zip(args.filename, args.legend_labels):
+            source_key = os.path.basename(filename)
+            label_map[source_key] = label
+        logger.debug(f"Label mapping: {label_map = }")
+
     # Parse the statistics summary
     data = []
     for filename in args.filename:
@@ -508,13 +519,18 @@ def main():
 
     # Assemble all series into a single DataFrame
     df = pd.concat(data, axis=1).T.reset_index(drop=True)
+    
+    # Apply custom labels to the DataFrame if provided
+    if label_map:
+        df['source'] = df['source'].map(lambda x: label_map.get(x, x))
 
     # Explicitly specify data types for each column
+    # Use nullable integer types (Int64) for columns that can have None values
     data_types = {
         'entry':    'int',
         'nranks':   'int',
-        'rows':     'int',
-        'nonzeros': 'int',
+        'rows':     'Int64',  # Nullable integer type
+        'nonzeros': 'Int64',  # Nullable integer type
         'build':    'float',
         'setup':    'float',
         'solve':    'float',
