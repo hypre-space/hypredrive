@@ -1,0 +1,11 @@
+solver:
+  fgmres:
+    max_iter: 500
+    krylov_dim: 500
+    print_level: 0
+    relative_tol: 1.0e-6
+
+preconditioner:
+  ilu:
+    type: bj-iluk
+    fill_level: 0

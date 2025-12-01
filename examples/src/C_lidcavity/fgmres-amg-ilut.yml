@@ -1,0 +1,20 @@
+solver:
+  fgmres:
+    max_iter: 500
+    krylov_dim: 500
+    print_level: 0
+    relative_tol: 1.0e-6
+
+preconditioner:
+  amg:
+    max_iter: 1
+    coarsening:
+      strong_th: 0.8
+      num_functions: 3
+    smoother:
+      type: ilu
+      num_levels: 5
+      num_sweeps: 1
+      ilu:
+        type: bj-ilut
+        droptol: 1e-2
