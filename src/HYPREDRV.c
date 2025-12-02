@@ -33,11 +33,11 @@ static bool hypredrv_is_initialized = 0;
    }
 
 // Macro to check if HYPREDRV object is valid
-#define HYPREDRV_CHECK_OBJ()                        \
-   if (!hypredrv)                                   \
-   {                                                \
-      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);     \
-      return ErrorCodeGet();                        \
+#define HYPREDRV_CHECK_OBJ()                    \
+   if (!hypredrv)                               \
+   {                                            \
+      ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ); \
+      return ErrorCodeGet();                    \
    }
 
 /*-----------------------------------------------------------------------------
@@ -604,8 +604,7 @@ HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
    HYPREDRV_CHECK_OBJ();
 
    LinearSystemSetNearNullSpace(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
-                                num_entries, num_components, values,
-                                &hypredrv->vec_nn);
+                                num_entries, num_components, values, &hypredrv->vec_nn);
 
    return ErrorCodeGet();
 }
@@ -1181,8 +1180,8 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
       HYPREDRV_PreconSetup(hypredrv);
 
       return hypredrv_EigSpecCompute(&hypredrv->iargs->ls.eigspec,
-                                      (void *)hypredrv->mat_A, (void *)hypredrv,
-                                      hypredrv_PreconApplyWrapper);
+                                     (void *)hypredrv->mat_A, (void *)hypredrv,
+                                     hypredrv_PreconApplyWrapper);
    }
    else
    {
@@ -1208,7 +1207,6 @@ HYPREDRV_GetLastStat(HYPREDRV_t hypredrv, const char *name, void *value)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
-
 
    if (!name || !value)
    {
