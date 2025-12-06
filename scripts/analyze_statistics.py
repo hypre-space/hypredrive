@@ -23,7 +23,15 @@ lgfs = 14            # Legends font size
 
 logger = logging.getLogger(__name__)
 
-def parse_statistics_summary(filename, exclude):
+def parse_statistics_summary(filename, exclude, source_label=None):
+    """
+    Parse statistics from a log file.
+    
+    Args:
+        filename: Path to the log file
+        exclude: List of entry numbers to exclude
+        source_label: Optional label to use for this source (defaults to filename)
+    """
     logger.info(f"Parsing statistics from {filename = }")
     # Initialize an empty string to hold the current section being processed
     target_section = ""
@@ -90,7 +98,7 @@ def parse_statistics_summary(filename, exclude):
 
         entry_data = {
             'entry': int(row[0]),
-            'source': os.path.basename(filename),
+            'source': source_label if source_label is not None else filename,
             'nranks': int(nranks),
             'rows': int(rows[i]) if i < len(rows) else None,
             'nonzeros': int(nonzeros[i]) if i < len(nonzeros) else None,
@@ -436,6 +444,110 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
     plt.grid(True, which='both', axis='both', linestyle='--', linewidth=0.5, zorder=0)
     save_and_show_plot(f"iters_times_{agg_str}{savefig}")
 
+def plot_throughput(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None):
+    """
+    Plots throughput (degrees of freedom per second) as a function of a specified column in the DataFrame.
+    Throughput is calculated as number of rows (degrees of freedom) divided by total time (setup + solve).
+
+    Parameters:
+    - df (pandas.DataFrame): DataFrame containing the log data with 'total' and 'rows' among its columns.
+    - cumulative (boolean): Plot cumulative sums of the quantities if True.
+    - xtype (str): Column name in 'df' to use as the x-axis for the plot.
+    - xlabel (str): Label for the x-axis.
+    - time_unit (str): Unit used for time (e.g., "[s]" or "[ms]")
+    - use_title (boolean, optional): Turn on figure's title.
+    - savefig (str, optional): File path to save the figure to. If not provided, the plot is displayed.
+
+    Globals:
+    - fgs (tuple): Figure size for the plot.
+    - tfs (int): Font size for the title.
+    - alfs (int): Font size for the axis labels.
+    - lgfs (int): Font size for the legend.
+
+    The function does not return anything but displays the plot.
+    """
+    has_source = 'source' in df.columns
+    sources = df['source'].unique().tolist() if has_source else []
+    multiple_sources = has_source and len(sources) > 1
+
+    agg_str = "agg_" if cumulative else ''
+    ms = markersize if markersize is not None else plt.rcParams['lines.markersize']
+
+    def resolve_ls(user_ls, default_ls='-'):
+        if user_ls == 'auto':
+            return default_ls
+        if user_ls == 'none':
+            return 'None'
+        return user_ls
+
+    logger.debug(f"Plotting throughput (cumulative={cumulative}, xtype={xtype})")
+    plt.figure(figsize=fgs)
+
+    # Calculate throughput: rows / total time (DOFs per second)
+    # Handle None values in rows column and zero/negative time values
+    df_with_throughput = df.copy()
+    df_with_throughput['throughput'] = df_with_throughput.apply(
+        lambda row: row['rows'] / row['total'] if (pd.notna(row['rows']) and row['rows'] > 0 and 
+                                                    pd.notna(row['total']) and row['total'] > 0) else None,
+        axis=1
+    )
+
+    if multiple_sources:
+        for src in sources:
+            grp = df_with_throughput[df_with_throughput['source'] == src].sort_values(by=xtype)
+            # Filter out rows where throughput is None
+            grp = grp[grp['throughput'].notna()]
+            if len(grp) == 0:
+                continue
+            if cumulative:
+                # For cumulative: cumulative_rows / cumulative_total_time (average throughput)
+                cum_rows = grp['rows'].cumsum()
+                cum_total = grp['total'].cumsum()
+                y = cum_rows / cum_total
+            else:
+                y = grp['throughput']
+            ls = resolve_ls(linestyle, '-')
+            plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=f"Throughput ({src})")
+        plt.legend(loc="best", fontsize=lgfs)
+    else:
+        grp = df_with_throughput.sort_values(by=xtype)
+        # Filter out rows where throughput is None
+        grp = grp[grp['throughput'].notna()]
+        if len(grp) > 0:
+            if cumulative:
+                # For cumulative: cumulative_rows / cumulative_total_time (average throughput)
+                cum_rows = grp['rows'].cumsum()
+                cum_total = grp['total'].cumsum()
+                y = cum_rows / cum_total
+            else:
+                y = grp['throughput']
+            ls = resolve_ls(linestyle, '-')
+            plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label="Throughput")
+            plt.legend(loc="best", fontsize=lgfs)
+
+    if use_title:
+        prefix = 'Cumulative ' if cumulative else ''
+        plt.title(f'{prefix}Throughput (DOFs/s) vs {xlabel}', fontsize=tfs, fontweight='bold')
+    
+    # Format y-axis label based on time unit
+    if time_unit == "[s]":
+        throughput_unit = "DOFs/s"
+    elif time_unit == "[ms]":
+        throughput_unit = "DOFs/ms"
+    else:
+        throughput_unit = f"DOFs/{time_unit}"
+    
+    plt.ylabel(f'Throughput ({throughput_unit})', fontsize=alfs)
+    plt.xlabel(xlabel, fontsize=alfs)
+    ax = plt.gca()
+    ax.tick_params(axis='x', labelsize=alfs)
+    ax.tick_params(axis='y', labelsize=alfs)
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+    plt.ylim(bottom=0.0)
+    plt.grid(True)
+    plt.tight_layout()
+    save_and_show_plot(f"throughput_{agg_str}{savefig}")
+
 def check_mode_exact_match(mode, word):
     # Split the mode string into parts separated by '+'
     parts = mode.split('+')
@@ -451,7 +563,7 @@ def main():
               'nranks': "Number of MPI ranks"}
 
     # List of pre-defined modes:
-    mode_choices = ('iters', 'times', 'iters-and-times', 'setup', 'solve', 'total')
+    mode_choices = ('iters', 'times', 'iters-and-times', 'setup', 'solve', 'total', 'throughput')
 
     # Parser for plus-separated multiple modes, e.g., "setup+solve"
     def parse_modes(value):
@@ -509,8 +621,24 @@ def main():
 
     # Parse the statistics summary
     data = []
-    for filename in args.filename:
-        series_list, time_unit = parse_statistics_summary(filename, args.exclude)
+    for idx, filename in enumerate(args.filename):
+        # Use custom label if provided, otherwise generate a unique label
+        if args.legend_labels and idx < len(args.legend_labels):
+            source_label = args.legend_labels[idx]
+        elif len(args.filename) > 1:
+            # If multiple files, use a shortened path to distinguish them
+            # Try to use a meaningful part of the path (e.g., parent directory)
+            path_parts = os.path.normpath(filename).split(os.sep)
+            if len(path_parts) > 1:
+                # Use parent directory + filename if available
+                source_label = os.path.join(path_parts[-2], path_parts[-1])
+            else:
+                source_label = filename
+        else:
+            # Single file: use basename
+            source_label = os.path.basename(filename)
+        
+        series_list, time_unit = parse_statistics_summary(filename, args.exclude, source_label)
         data.extend(series_list)
     num_input_files  = len(args.filename)
     num_data_entries = len(data)
@@ -520,7 +648,8 @@ def main():
     # Assemble all series into a single DataFrame
     df = pd.concat(data, axis=1).T.reset_index(drop=True)
     
-    # Apply custom labels to the DataFrame if provided
+    # Note: Custom labels are now applied during parsing, so label_map is no longer needed here
+    # But we keep it for backward compatibility if someone passes both --legend-labels and expects mapping
     if label_map:
         df['source'] = df['source'].map(lambda x: label_map.get(x, x))
 
@@ -572,6 +701,9 @@ def main():
 
     if check_mode_exact_match(args.mode, 'total'):
         plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'total', args.use_title, savefig, args.linestyle, args.markersize)
+
+    if check_mode_exact_match(args.mode, 'throughput'):
+        plot_throughput(df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, savefig, args.linestyle, args.markersize)
 
 if __name__ == "__main__":
     main()
