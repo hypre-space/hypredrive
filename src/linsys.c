@@ -8,6 +8,7 @@
 #include "linsys.h"
 #include <dirent.h>
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -780,10 +781,62 @@ LinearSystemGetRHSValues(HYPRE_IJVector rhs, HYPRE_Complex **data_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemComputeVectorNorm(HYPRE_IJVector vec, HYPRE_Complex *norm)
+LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double *norm)
 {
-   HYPRE_IJVectorInnerProd(vec, vec, norm);
-   *norm = sqrt(*norm);
+   HYPRE_ParVector par_vec = NULL;
+   hypre_Vector   *seq_vec = NULL;
+   void           *obj     = NULL;
+   HYPRE_Complex  *data    = NULL;
+   HYPRE_Int       size    = 0;
+
+   HYPRE_IJVectorGetObject(vec, &obj);
+   par_vec = (HYPRE_ParVector)obj;
+   seq_vec = hypre_ParVectorLocalVector(par_vec);
+   data    = hypre_VectorData(seq_vec);
+   size    = hypre_VectorSize(seq_vec);
+
+   double local_norm = 0.0;
+   double global_norm = 0.0;
+   MPI_Comm comm = hypre_ParVectorComm(par_vec);
+
+   if (!strcmp(norm_type, "L1") || !strcmp(norm_type, "l1"))
+   {
+      /* L1 norm: sum of absolute values */
+      for (HYPRE_Int i = 0; i < size; i++)
+      {
+         local_norm += fabs((double)data[i]);
+      }
+      MPI_Allreduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_SUM, comm);
+      *norm = global_norm;
+   }
+   else if (!strcmp(norm_type, "L2") || !strcmp(norm_type, "l2"))
+   {
+      /* L2 norm: sqrt of sum of squares */
+      for (HYPRE_Int i = 0; i < size; i++)
+      {
+         double val = (double)data[i];
+         local_norm += val * val;
+      }
+      MPI_Allreduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_SUM, comm);
+      *norm = sqrt(global_norm);
+   }
+   else if (!strcmp(norm_type, "inf") ||
+            !strcmp(norm_type, "Linf") ||
+            !strcmp(norm_type, "linf"))
+   {
+      /* Linf norm: maximum absolute value */
+      for (HYPRE_Int i = 0; i < size; i++)
+      {
+         double val = fabs((double)data[i]);
+         if (val > local_norm) local_norm = val;
+      }
+      MPI_Allreduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_MAX, comm);
+      *norm = global_norm;
+   }
+   else
+   {
+      *norm = -1.0; /* Invalid norm type */
+   }
 }
 
 /*-----------------------------------------------------------------------------
@@ -792,7 +845,7 @@ LinearSystemComputeVectorNorm(HYPRE_IJVector vec, HYPRE_Complex *norm)
 
 void
 LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector vec_x,
-                             HYPRE_Complex *e_norm)
+                             const char* norm_type, double *e_norm)
 {
    HYPRE_ParVector par_xref = NULL;
    HYPRE_ParVector par_x    = NULL;
@@ -822,8 +875,7 @@ LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector vec_x,
    hypre_ParVectorAxpyz(one, par_x, neg_one, par_xref, par_e);
 
    /* Compute error norm */
-   HYPRE_ParVectorInnerProd(par_e, par_e, e_norm);
-   *e_norm = sqrt(*e_norm);
+   LinearSystemComputeVectorNorm(vec_e, norm_type, e_norm);
 
    /* Free memory */
    HYPRE_IJVectorDestroy(vec_e);
@@ -835,7 +887,8 @@ LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector vec_x,
 
 void
 LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
-                                HYPRE_IJVector vec_x, HYPRE_Complex *res_norm)
+                                HYPRE_IJVector vec_x, const char* norm_type,
+                                double *res_norm)
 {
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL;
@@ -870,8 +923,7 @@ LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
    HYPRE_ParCSRMatrixMatvec(neg_one, par_A, par_x, one, par_r);
 
    /* Compute residual norm */
-   HYPRE_ParVectorInnerProd(par_r, par_r, res_norm);
-   *res_norm = sqrt(*res_norm);
+   LinearSystemComputeVectorNorm(vec_r, norm_type, res_norm);
 
    /* Free memory */
    HYPRE_IJVectorDestroy(vec_r);
