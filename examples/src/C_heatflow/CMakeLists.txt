@@ -14,11 +14,56 @@ if(NOT TARGET HYPREDRV::HYPREDRV)
     find_package(HYPREDRV REQUIRED)
 endif()
 
+# Common build configuration
 add_executable(heatflow heatflow.c)
 target_link_libraries(heatflow PRIVATE HYPREDRV::HYPREDRV)
 
+# If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
+if(HYPREDRV_ENABLE_CALIPER)
+    enable_language(CXX OPTIONAL)
+    if(CMAKE_CXX_COMPILER)
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            target_link_libraries(heatflow PRIVATE stdc++)
+        elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            # Clang can use either libstdc++ or libc++
+            # Default to stdc++ on Linux
+            if(UNIX AND NOT APPLE)
+                target_link_libraries(heatflow PRIVATE stdc++)
+            else()
+                target_link_libraries(heatflow PRIVATE c++)
+            endif()
+        endif()
+    endif()
+endif()
+
+# Apply sanitizer link flags if sanitizers are enabled
+get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
+get_property(_sanitizer_flags GLOBAL PROPERTY HYPREDRV_SANITIZER_LINK_FLAGS)
+if(_sanitizer_enabled AND _sanitizer_flags)
+    foreach(flag IN LISTS _sanitizer_flags)
+        target_link_options(heatflow PRIVATE ${flag})
+    endforeach()
+endif()
+
+# Add an RPATH to the lib directory for MacOS (libraries are in lib/)
+if(APPLE)
+    target_link_options(heatflow PRIVATE  "-Wl,-rpath,${CMAKE_BINARY_DIR}/lib")
+endif()
+
+# Add the heatflow driver to the test suite when testing is enabled
+if(HYPREDRV_ENABLE_TESTING)
+    include(${CMAKE_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
+    # Single-rank test: small grid, verify MMS convergence
+    add_executable_test(heatflow_test_1proc heatflow 1
+        ARGS -n 9 9 9 -beta -4 -dt 0.02 -tf 0.1 -v 1
+        RUN_SERIAL
+    )
+    # Multi-rank test: 2x2x1 partitioning
+    add_executable_test(heatflow_test_4proc heatflow 4
+        ARGS -n 17 17 9 -P 2 2 1 -beta -4 -dt 0.02 -tf 0.1 -v 1
+    )
+endif()
+
+# Install the heatflow example binary when examples are built
 install(TARGETS heatflow
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-
-
-
