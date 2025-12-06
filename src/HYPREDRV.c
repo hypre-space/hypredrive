@@ -662,7 +662,8 @@ HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_LinearSystemGetSolutionNorm(HYPREDRV_t hypredrv, const char *norm_type, double *norm)
+HYPREDRV_LinearSystemGetSolutionNorm(HYPREDRV_t hypredrv, const char *norm_type,
+                                     double *norm)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();

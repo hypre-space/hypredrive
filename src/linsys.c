@@ -795,9 +795,9 @@ LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double 
    data    = hypre_VectorData(seq_vec);
    size    = hypre_VectorSize(seq_vec);
 
-   double local_norm = 0.0;
-   double global_norm = 0.0;
-   MPI_Comm comm = hypre_ParVectorComm(par_vec);
+   double   local_norm  = 0.0;
+   double   global_norm = 0.0;
+   MPI_Comm comm        = hypre_ParVectorComm(par_vec);
 
    if (!strcmp(norm_type, "L1") || !strcmp(norm_type, "l1"))
    {
@@ -820,8 +820,7 @@ LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double 
       MPI_Allreduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_SUM, comm);
       *norm = sqrt(global_norm);
    }
-   else if (!strcmp(norm_type, "inf") ||
-            !strcmp(norm_type, "Linf") ||
+   else if (!strcmp(norm_type, "inf") || !strcmp(norm_type, "Linf") ||
             !strcmp(norm_type, "linf"))
    {
       /* Linf norm: maximum absolute value */
@@ -845,7 +844,7 @@ LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double 
 
 void
 LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector vec_x,
-                             const char* norm_type, double *e_norm)
+                             const char *norm_type, double *e_norm)
 {
    HYPRE_ParVector par_xref = NULL;
    HYPRE_ParVector par_x    = NULL;
@@ -887,7 +886,7 @@ LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector vec_x,
 
 void
 LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
-                                HYPRE_IJVector vec_x, const char* norm_type,
+                                HYPRE_IJVector vec_x, const char *norm_type,
                                 double *res_norm)
 {
    HYPRE_ParCSRMatrix par_A = NULL;
