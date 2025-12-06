@@ -896,12 +896,13 @@ extern "C"
     * Example Usage:
     * @code
     *    double norm_inf;
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionNorm(hypredrv, "inf", &norm_inf));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionNorm(hypredrv, "inf",
+    * &norm_inf));
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t
-   HYPREDRV_LinearSystemGetSolutionNorm(HYPREDRV_t hypredrv, const char *norm_type, double *norm);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemGetSolutionNorm(
+      HYPREDRV_t hypredrv, const char *norm_type, double *norm);
 
    /**
     * @brief Retrieves the right-hand side values from the linear system of a HYPREDRV

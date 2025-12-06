@@ -71,8 +71,7 @@ void LinearSystemReadDofmap(MPI_Comm, LS_args *, IntArray **);
 void LinearSystemGetSolutionValues(HYPRE_IJVector, HYPRE_Complex **);
 void LinearSystemGetRHSValues(HYPRE_IJVector, HYPRE_Complex **);
 void LinearSystemComputeVectorNorm(HYPRE_IJVector, const char *, double *);
-void LinearSystemComputeErrorNorm(HYPRE_IJVector, HYPRE_IJVector,
-                                  const char *, double *);
+void LinearSystemComputeErrorNorm(HYPRE_IJVector, HYPRE_IJVector, const char *, double *);
 void LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector,
                                      const char *, double *);
 void LinearSystemPrintData(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJVector,
