@@ -131,7 +131,7 @@
          char *temp_key = strdup(parent->key);                                        \
          free(parent->key);                                                           \
          parent->key = (char *)malloc(5 * sizeof(char));                              \
-         sprintf(parent->key, "type");                                                \
+         snprintf(parent->key, 5, "type");                                            \
                                                                                       \
          YAML_NODE_VALIDATE(parent, _prefix##GetValidKeys, _prefix##GetValidValues)   \
          YAML_NODE_SET_FIELD(parent, args, _prefix##SetFieldByName)                   \

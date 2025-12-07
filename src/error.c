@@ -504,7 +504,7 @@ ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
    int         length = strlen(suffix) + 24;
 
    msg = (char *)malloc(length);
-   sprintf(msg, "Found %d %s%s!", (int)count, suffix, plural);
+   snprintf(msg, length, "Found %d %s%s!", (int)count, suffix, plural);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -520,7 +520,7 @@ ErrorMsgAddMissingKey(const char *key)
    int   length = strlen(key) + 16;
 
    msg = (char *)malloc(length);
-   sprintf(msg, "Missing key: %s", key);
+   snprintf(msg, length, "Missing key: %s", key);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -536,7 +536,7 @@ ErrorMsgAddExtraKey(const char *key)
    int   length = strlen(key) + 24;
 
    msg = (char *)malloc(length);
-   sprintf(msg, "Extra (unused) key: %s", key);
+   snprintf(msg, length, "Extra (unused) key: %s", key);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -552,7 +552,7 @@ ErrorMsgAddUnexpectedVal(const char *key)
    int   length = strlen(key) + 40;
 
    msg = (char *)malloc(length);
-   sprintf(msg, "Unexpected value associated with %s key", key);
+   snprintf(msg, length, "Unexpected value associated with %s key", key);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -566,7 +566,7 @@ ErrorMsgAddInvalidFilename(const char *string)
 {
    char msg[1024];
 
-   sprintf(msg, "Invalid filename: %s", string);
+   snprintf(msg, sizeof(msg), "Invalid filename: %s", string);
    ErrorMsgAdd(msg);
 }
 

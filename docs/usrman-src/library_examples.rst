@@ -701,7 +701,180 @@ For a single-process run, the output should be similar to the following:
 
 .. _LibraryExample3:
 
-Example 3: Lid-Driven Cavity (Navier-Stokes)
+Example 3: Nonlinear Heat Flow
+------------------------------
+
+This section documents the transient nonlinear heat conduction driver implemented in
+``examples/src/C_heatflow/heatflow.c``. It solves a scalar diffusion equation with
+temperature-dependent conductivity on a structured 3D mesh using Q1 hexahedral elements,
+backward Euler time integration, and a full Newton method.
+
+Geometry and Boundary Conditions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The domain is :math:`\Omega = [0, L_x] \times [0, L_y] \times [0, L_z]` with a Cartesian
+grid of :math:`N_x \times N_y \times N_z` nodes. The y-axis represents the vertical
+direction with a cold base:
+
+
+- **Dirichlet**: :math:`T = 0` on the bottom plane :math:`y = 0` (cold base)
+- **Neumann (insulated)**: :math:`\partial T / \partial n = 0` on all other faces
+  (:math:`x = 0`, :math:`x = L_x`, :math:`y = L_y`, :math:`z = 0`, :math:`z = L_z`)
+
+This configuration models heat conduction in a body with an isothermal cold base and
+thermally insulated sides and top.
+
+Governing Equation
+~~~~~~~~~~~~~~~~~~
+
+We consider the PDE
+
+.. math::
+
+   \rho c\, \partial_t T \;-\; \nabla\!\cdot\!\big(k(T)\,\nabla T\big) \;=\; Q_{\text{MMS}}(x,y,z,t),
+   \qquad k(T) \;=\; k_0\,e^{\beta T}.
+
+The nonlinear conductivity :math:`k(T)` allows modeling temperature-dependent thermal properties:
+
+- :math:`\beta = 0`: linear conductivity (:math:`k = k_0`)
+- :math:`\beta > 0`: conductivity increases with temperature
+- :math:`\beta < 0`: conductivity decreases with temperature
+
+MMS Validation
+~~~~~~~~~~~~~~
+
+The example uses a transient Method of Manufactured Solutions (MMS) with a 3D exact solution:
+
+.. math::
+
+   T_{\text{exact}}(x,y,z,t) \;=\; e^{-t}\,
+   \frac{1 + \cos(2\pi x/L_x)}{2}\,
+   \sin\!\left(\frac{\pi y}{2 L_y}\right)\,
+   \frac{1 + \cos(2\pi z/L_z)}{2},
+
+which satisfy the boundary conditions:
+
+  - :math:`T = 0` at :math:`y = 0` (since :math:`\sin(0) = 0`)
+  - :math:`\partial T / \partial x = 0` at :math:`x = 0, L_x` (since :math:`\sin(0) = \sin(2\pi) = 0`)
+  - :math:`\partial T / \partial y = 0` at :math:`y = L_y` (since :math:`\cos(\pi/2) = 0`)
+  - :math:`\partial T / \partial z = 0` at :math:`z = 0, L_z` (since :math:`\sin(0) = \sin(2\pi) = 0`)
+
+The corresponding source term :math:`Q_{\text{MMS}}` is computed analytically so that
+:math:`T_{\text{exact}}` satisfies the PDE, enabling verification of the numerical
+implementation. The solution has full 3D spatial variation, with temperature maxima at the
+corners :math:`(0,L_y,0)` and :math:`(L_x,L_y,L_z)` and minima along the :math:`y=0` plane.
+
+Discretization and Nonlinear Formulation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Space: trilinear Q1 hexahedral elements on a uniform Cartesian grid.
+- Time: backward Euler (implicit, first order).
+- Unknown: scalar temperature, one DOF per node.
+- Nonlinear conductivity: :math:`k(T)=k_0 e^{\beta T}`, so :math:`k'(T)=\beta k(T)`.
+
+At a Newton iterate :math:`T^k` the residual reads
+
+.. math::
+   R(T^k) \;=\; \frac{\rho c}{\Delta t}\,M\,(T^k - T^n) \;+\;
+                \int_{\Omega} k(T^k)\,\nabla v \cdot \nabla T^k \, d\Omega
+                \;-\; \int_{\Omega} v\,Q_{\text{MMS}} \, d\Omega.
+
+The Jacobian applied to :math:`\delta T` is
+
+.. math::
+   J(T^k)\,\delta T \;=\; \frac{\rho c}{\Delta t}\,M\,\delta T
+   \;+\; \int_{\Omega} k(T^k)\,\nabla v \cdot \nabla(\delta T) \, d\Omega
+   \;+\; \int_{\Omega} k'(T^k)\,(\delta T)\,\big(\nabla v \cdot \nabla T^k\big) \, d\Omega.
+
+Implementation notes:
+
+- Precomputed Q1 templates provide consistent mass and unit-diffusion stiffness on uniform
+  hexes; conductivity and nonlinear terms are accumulated at Gauss points.
+- Dirichlet rows are set to identity with zero RHS (Newton solves for the update), and
+  interior rows include zero entries for Dirichlet columns to preserve a symmetric
+  sparsity pattern (AMG friendly).
+- Parallel assembly uses face/edge/corner ghost exchanges so each rank can evaluate
+  boundary-straddling elements without cracks in the global solution or VTK output.
+
+Jacobian Symmetry and Solver Choice
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The Jacobian matrix is **symmetric only when** :math:`\beta = 0` (linear conductivity). For nonlinear
+conductivity (:math:`\beta \neq 0`), the extra Jacobian term
+
+.. math::
+
+   \int_{\Omega} k'(T^k)\,(\delta T)\,\big(\nabla v \cdot \nabla T^k\big)\, d\Omega
+
+introduces asymmetry because :math:`\nabla v \cdot \nabla T^k` differs from
+:math:`\nabla(\delta T) \cdot \nabla T^k` when expanded in the finite element basis.
+
+- **PCG** (conjugate gradient) works correctly for :math:`\beta = 0` and may work for
+  small :math:`|\beta|` where the asymmetry is negligible.
+- **GMRES** (or FGMRES) is recommended for nonlinear problems (:math:`\beta \neq 0`) as it
+  handles non-symmetric systems robustly. The default configuration uses GMRES+AMG for
+  this reason.
+
+Output and Diagnostics
+~~~~~~~~~~~~~~~~~~~~~~
+
+- VTK RectilinearGrid per rank with point fields:
+
+  - ``temperature`` (numerical solution)
+  - ``conductivity`` (derived via :math:`k(T)`)
+  - ``temperature_exact`` (MMS exact solution, enable with ``-vis 16`` bit)
+  - ``heat_flux`` vector field :math:`\mathbf{q}=-k(T)\nabla T` (enable with ``-vis 8`` bit)
+
+- PVD collection at the end for easy time series loading in ParaView.
+- The header and iteration logs report:
+
+  - Fourier number :math:`\text{Fo} = \alpha_0 \Delta t / h_{\min}^2` where :math:`\alpha_0 = k_0 / (\rho c)`
+  - Total internal energy :math:`E = \int_\Omega \rho c\, T\, d\Omega` and :math:`\Delta E` per step
+  - MMS L2 error :math:`\|T - T_{\text{exact}}\|_{L^2}` at each Newton iteration
+
+Reproducible Run
+~~~~~~~~~~~~~~~~
+
+.. code-block:: text
+
+  Usage: mpirun -np <np> ./heatflow [options]
+
+  Options:
+    -i <file>         : YAML configuration file for solver settings
+    -n <nx> <ny> <nz> : Global grid nodes (default: 17 17 17)
+    -P <Px> <Py> <Pz> : Processor grid (default: 1 1 1)
+    -L <Lx> <Ly> <Lz> : Domain lengths (default: 1 1 1)
+    -rho <val>        : Density (default: 1)
+    -cp <val>         : Heat capacity (default: 1)
+    -dt <val>         : Time step (default: 1e-2)
+    -tf <val>         : Final time (default: 1.0)
+    -k0 <val>         : Base conductivity (default: 1)
+    -beta <val>       : Conductivity exponent (default: 0 = linear)
+    -br <n>           : Batch rows per IJ call (default: 128)
+    -adt              : Enable adaptive time stepping
+    -vis <m>          : Visualization mode bitset (default: 0)
+                         Any nonzero value enables visualization
+                         Bit 1 (0x2): ASCII (1) or binary (0)
+                         Bit 2 (0x4): All timesteps (1) or last only (0)
+                         Bit 3 (0x8): Include heat flux in output
+                         Bit 4 (0x10): Include exact MMS solution
+    -nw_max <n>       : Newton max iterations (default: 20)
+    -nw_tol <t>       : Newton update tolerance ||delta||_inf (default: 1e-5)
+    -nw_rtol <t>      : Newton residual tolerance ||R||_2 (default: 1e-5)
+    -v|--verbose <n>  : Verbosity bitset (default: 7)
+                         0x1: Newton iteration info
+                         0x2: Library and system info
+                         0x4: Print linear system
+    -h|--help         : Print this message
+
+.. code-block:: bash
+
+   # 2×2×2 parallel, transient MMS with insulated BCs, moderate nonlinearity
+   mpirun -np 8 ./heatflow -n 33 33 33 -P 2 2 2 -beta 0.5 -dt 0.01 -tf 0.1 -v 1
+
+.. _LibraryExample4:
+
+Example 4: Lid-Driven Cavity (Navier-Stokes)
 --------------------------------------------
 
 This section documents the mathematical model, discretization, and hypre usage

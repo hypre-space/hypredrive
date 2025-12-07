@@ -878,6 +878,33 @@ extern "C"
    HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_data);
 
    /**
+    * @brief Computes a norm of the solution vector from the linear system.
+    *
+    * This function computes the specified norm of the solution vector. Valid norm types
+    * are:
+    * - "L1" or "l1": L1 norm (sum of absolute values)
+    * - "L2" or "l2": L2 norm (Euclidean norm, sqrt of sum of squares)
+    * - "inf", "Linf", or "linf": Infinity norm (maximum absolute value)
+    *
+    * @param hypredrv A valid HYPREDRV_t object with a solved linear system.
+    * @param norm_type String specifying the norm type ("L1", "L2", or "inf"/"Linf").
+    * @param norm Pointer to a double where the computed norm will be stored.
+    *
+    * @return Returns an error code, with 0 indicating success. If the norm_type is
+    * invalid, the norm will be set to -1.0.
+    *
+    * Example Usage:
+    * @code
+    *    double norm_inf;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionNorm(hypredrv, "inf",
+    * &norm_inf));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemGetSolutionNorm(
+      HYPREDRV_t hypredrv, const char *norm_type, double *norm);
+
+   /**
     * @brief Retrieves the right-hand side values from the linear system of a HYPREDRV
     * object.
     *
