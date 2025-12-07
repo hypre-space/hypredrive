@@ -265,13 +265,16 @@ PreconDestroy(precon_t       precon_method,
             if (args->mgr.coarsest_level.type == 0)
             {
                HYPRE_BoomerAMGDestroy(args->mgr.csolver);
-               args->mgr.csolver = NULL;
+            }
+            else if (args->mgr.coarsest_level.type == 29)
+            {
+               HYPRE_MGRDirectSolverDestroy(args->mgr.csolver);
             }
             else if (args->mgr.coarsest_level.type == 32)
             {
                HYPRE_ILUDestroy(args->mgr.csolver);
-               args->mgr.csolver = NULL;
             }
+            args->mgr.csolver = NULL;
 
             if (args->mgr.level[0].f_relaxation.type == 2)
             {

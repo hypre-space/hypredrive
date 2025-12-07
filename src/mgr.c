@@ -81,7 +81,8 @@ DEFINE_SET_ARGS_FUNC(MGR);
 void
 MGRclsSetDefaultArgs(MGRcls_args *args)
 {
-   args->type = 0;
+   //args->type = 0;
+   args->type = 29;
 
    /* TODO: revisit default amg iters */
    AMGSetDefaultArgs(&args->amg); args->amg.max_iter = 1;
@@ -165,6 +166,7 @@ MGRclsGetValidValues(const char* key)
    if (!strcmp(key, "type"))
    {
       static StrIntMap map[] = {{"amg",        0},
+                                {"spdirect",  29},
                                 {"ilu",       32}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
@@ -253,7 +255,8 @@ MGRlvlGetValidValues(const char* key)
                                 {"jacobi",         2},
                                 {"classical-mod",  3},
                                 {"approx-inv",     4},
-                                {"blk-jacobi",    12}};
+                                {"blk-jacobi",    12},
+                                {"blk-rowlump",   13}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -364,15 +367,37 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
          if (!strcmp(child->key, "coarsest_level"))
          {
             args->num_levels++;
+            YAML_NODE_SET_VALID(child);
+            if (child->children)
+            {
+               YAML_NODE_ITERATE(child, grandchild)
+               {
+                  YAML_NODE_VALIDATE(grandchild,
+                                     MGRclsGetValidKeys,
+                                     MGRclsGetValidValues);
+
+                  YAML_NODE_SET_FIELD(grandchild,
+                                      &args->coarsest_level,
+                                      MGRclsSetFieldByName);
+               }
+            }
+            else
+            {
+               YAML_NODE_SET_FIELD(child,
+                                   &args->coarsest_level,
+                                   MGRclsSetFieldByName);
+            }
          }
+         else
+         {
+            YAML_NODE_VALIDATE(child,
+                               MGRGetValidKeys,
+                               MGRGetValidValues);
 
-         YAML_NODE_VALIDATE(child,
-                            MGRGetValidKeys,
-                            MGRGetValidValues);
-
-         YAML_NODE_SET_FIELD(child,
-                             args,
-                             MGRSetFieldByName);
+            YAML_NODE_SET_FIELD(child,
+                                args,
+                                MGRSetFieldByName);
+         }
       }
    }
 }
@@ -550,6 +575,14 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    {
       ILUCreate(&args->coarsest_level.ilu, &args->csolver);
       HYPRE_MGRSetCoarseSolver(precon, HYPRE_ILUSolve, HYPRE_ILUSetup, args->csolver);
+   }
+   else if (args->coarsest_level.type == 29)
+   {
+      HYPRE_MGRDirectSolverCreate(&args->csolver);
+      HYPRE_MGRSetCoarseSolver(precon,
+                               HYPRE_MGRDirectSolverSolve,
+                               HYPRE_MGRDirectSolverSetup,
+                               args->csolver);
    }
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 11)

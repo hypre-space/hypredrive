@@ -177,18 +177,20 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
             ls = resolve_ls(linestyle, '-')
             legend_name = get_legend_name(src, legend_names or {})
             plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=legend_name)
-        plt.legend(loc="best", fontsize=lgfs)
     else:
         grp = df.sort_values(by=xtype)
         y = grp['iters'].cumsum() if cumulative else grp['iters']
         ls = resolve_ls(linestyle, '-')
-        plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms)
+        legend_name = legend_names[sources[0]]
+        plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=legend_name)
 
+    plt.legend(loc="best", fontsize=lgfs)
     if use_title:
         prefix = 'Cumulative ' if cumulative else ''
         plt.title(f'{prefix}Linear solver iterations vs {xlabel}', fontsize=tfs, fontweight='bold')
     plt.ylabel('Iterations', fontsize=alfs)
     plt.xlabel(xlabel, fontsize=alfs)
+    plt.ylim(bottom=0.0)
     ax = plt.gca()
     ax.tick_params(axis='x', labelsize=alfs)
     ax.tick_params(axis='y', labelsize=alfs)
@@ -449,7 +451,8 @@ def check_mode_exact_match(mode, word):
 
 def get_legend_name(source, legend_names):
     """Get legend name for a source, using custom mapping if available."""
-    return legend_names.get(source, str(source))
+    #return legend_names.get(source, str(source))
+    return f"${legend_names.get(source, str(source))}$"
 
 def main():
     # List of pre-defined labels
