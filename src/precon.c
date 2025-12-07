@@ -276,13 +276,18 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
             if (args->mgr.coarsest_level.type == 0)
             {
                HYPRE_BoomerAMGDestroy(args->mgr.csolver);
-               args->mgr.csolver = NULL;
             }
+#if defined(HYPRE_USING_DSUPERLU)
+            else if (args->mgr.coarsest_level.type == 29)
+            {
+               HYPRE_MGRDirectSolverDestroy(args->mgr.csolver);
+            }
+#endif
             else if (args->mgr.coarsest_level.type == 32)
             {
                HYPRE_ILUDestroy(args->mgr.csolver);
-               args->mgr.csolver = NULL;
             }
+            args->mgr.csolver = NULL;
 
             if (args->mgr.level[0].f_relaxation.type == 2)
             {

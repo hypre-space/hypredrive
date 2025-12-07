@@ -16,6 +16,117 @@ import numpy as np
 import plotly.graph_objects as go
 
 
+def read_text_coordinate_matrix(parts: List[str], threshold: float = 0.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Tuple[int, int]]:
+    """Read matrix from text coordinate format files (row col value per line)."""
+    rows_all: List[np.ndarray] = []
+    cols_all: List[np.ndarray] = []
+    vals_all: List[np.ndarray] = []
+    nrows_glob = -1
+    ncols_glob = -1
+    tot_before = 0
+    tot_after = 0
+
+    for p in sorted(parts):
+        logging.debug(f"Reading text part file: {p}")
+        rows_part = []
+        cols_part = []
+        vals_part = []
+        
+        with open(p, 'r') as f:
+            # Check if first line is header (matrix dimensions)
+            first_line = f.readline().strip()
+            first_values = first_line.split()
+            
+            # If first line has exactly 4 numbers, it might be a header (nrows_start nrows_end ncols_start ncols_end)
+            # Otherwise, treat it as a data line
+            header_read = False
+            if len(first_values) == 4:
+                try:
+                    # Try to parse as header - if values are reasonable, use as dimensions
+                    v0, v1, v2, v3 = map(int, first_values)
+                    if v0 == 0 and v3 > 0:  # Common header format
+                        nrows_part = v3
+                        ncols_part = v3  # Assume square if not specified
+                        header_read = True
+                        logging.debug(f"  detected header: rows={nrows_part}, cols={ncols_part}")
+                except ValueError:
+                    header_read = False
+            
+            if not header_read:
+                # First line is data, rewind
+                f.seek(0)
+            
+            # Read coordinate entries
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                parts_line = line.split()
+                if len(parts_line) >= 3:
+                    try:
+                        r = int(parts_line[0])
+                        c = int(parts_line[1])
+                        v = float(parts_line[2])
+                        rows_part.append(r)
+                        cols_part.append(c)
+                        vals_part.append(v)
+                    except (ValueError, IndexError):
+                        continue
+        
+        if not rows_part:
+            logging.debug(f"  empty part file, skipping")
+            continue
+        
+        r = np.array(rows_part, dtype=np.int64)
+        c = np.array(cols_part, dtype=np.int64)
+        v = np.array(vals_part, dtype=np.float64)
+        
+        # Determine global dimensions from max indices
+        if nrows_glob < 0:
+            nrows_glob = int(r.max()) + 1 if r.size > 0 else 0
+            ncols_glob = int(c.max()) + 1 if c.size > 0 else 0
+        else:
+            nrows_glob = max(nrows_glob, int(r.max()) + 1 if r.size > 0 else 0)
+            ncols_glob = max(ncols_glob, int(c.max()) + 1 if c.size > 0 else 0)
+        
+        loc_nnz = r.size
+        logging.debug(f"  local nnz before threshold: {loc_nnz}")
+        
+        if threshold > 0.0:
+            mask = np.abs(v) > threshold
+            kept = int(mask.sum())
+            logging.debug(f"  applying threshold {threshold}: keeping {kept} / {loc_nnz} ({100.0 * kept / loc_nnz:.1f}%)")
+            r = r[mask]
+            c = c[mask]
+            v = v[mask]
+            tot_before += loc_nnz
+            tot_after += kept
+        else:
+            tot_before += loc_nnz
+            tot_after += loc_nnz
+        
+        rows_all.append(r)
+        cols_all.append(c)
+        vals_all.append(v)
+    
+    if nrows_glob < 0:
+        raise RuntimeError("No part files found or empty matrix")
+    
+    if rows_all:
+        rows = np.concatenate(rows_all)
+        cols = np.concatenate(cols_all)
+        vals = np.concatenate(vals_all)
+    else:
+        rows = np.zeros(0, dtype=np.int64)
+        cols = np.zeros(0, dtype=np.int64)
+        vals = np.zeros(0, dtype=np.float64)
+    
+    if threshold > 0.0:
+        logging.info(f"Threshold {threshold}: kept {tot_after}/{tot_before} ({100.0 * tot_after / tot_before:.1f}%) entries across all parts")
+    
+    return rows, cols, vals, (nrows_glob, ncols_glob)
+
+
 def read_hypre_binary_matrix(parts: List[str], threshold: float = 0.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Tuple[int, int]]:
     rows_all: List[np.ndarray] = []
     cols_all: List[np.ndarray] = []
@@ -143,7 +254,15 @@ def main():
         parts = args.filename
         # Load single system from provided parts
         logging.debug(f"  using {len(parts)} file(s): {parts}")
-        r, c, v, shape = read_hypre_binary_matrix(parts, threshold=args.threshold)
+        # Auto-detect format: try binary first, fall back to text
+        try:
+            r, c, v, shape = read_hypre_binary_matrix(parts, threshold=args.threshold)
+            logging.debug("  successfully read as binary format")
+        except (RuntimeError, ValueError, IOError) as e:
+            # Fall back to text format
+            logging.debug(f"  binary read failed ({e}), trying text format")
+            r, c, v, shape = read_text_coordinate_matrix(parts, threshold=args.threshold)
+            logging.debug("  successfully read as text format")
         logging.info(f"Loaded matrix from files: shape={shape} nnz={r.size}")
         if args.log and v.size:
             av = np.abs(v)
@@ -207,11 +326,23 @@ def main():
         cmaxs = []
         for d in subdirs:
             logging.info(f"Loading matrix from {d}")
+            # Try .bin extension first, then files without extension (just numbered parts)
             parts = sorted(glob.glob(os.path.join(d, f"{args.prefix}.*.bin")))
+            if not parts:
+                # Try without .bin extension (e.g., IJ.out.A.00000, IJ.out.A.00001, ...)
+                parts = sorted(glob.glob(os.path.join(d, f"{args.prefix}.[0-9]*")))
             if not parts:
                 raise SystemExit(f"No part files found in {d} for prefix {args.prefix}")
             logging.debug(f"  found {len(parts)} part files")
-            r, c, v, shape = read_hypre_binary_matrix(parts, threshold=args.threshold)
+            # Auto-detect format: try binary first, fall back to text
+            try:
+                r, c, v, shape = read_hypre_binary_matrix(parts, threshold=args.threshold)
+                logging.debug("  successfully read as binary format")
+            except (RuntimeError, ValueError, IOError) as e:
+                # Fall back to text format
+                logging.debug(f"  binary read failed ({e}), trying text format")
+                r, c, v, shape = read_text_coordinate_matrix(parts, threshold=args.threshold)
+                logging.debug("  successfully read as text format")
             logging.info(f"  shape={shape} nnz={r.size}")
             if args.log and v.size:
                 av = np.abs(v)
