@@ -1,0 +1,84 @@
+name: Docs
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - 'docs/**'
+      - 'Doxyfile.in'
+      - 'include/**'
+      - 'cmake/HYPREDRV_Docs.cmake'
+  push:
+    branches: [ master ]
+    paths:
+      - 'docs/**'
+      - 'Doxyfile.in'
+      - 'include/**'
+      - 'cmake/HYPREDRV_Docs.cmake'
+  workflow_dispatch:    # Allow manual triggering
+
+jobs:
+  sphinx:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: Sphinx Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r docs/usrman-src/requirements.txt
+
+      - name: Build Sphinx documentation
+        run: |
+          sphinx-build -W -b html docs/usrman-src docs/_build/html
+
+  doxygen:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: Doxygen Documentation
+    runs-on: ubuntu-latest
+    env:
+      BUILD_DIR: build-docs
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Ubuntu environment
+        uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: 'gcc'
+          extra_packages: 'doxygen graphviz'
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: master
+          compiler: 'gcc'
+          build_type: 'Debug'
+          hypre_shared_libs: 'ON'
+          os: 'ubuntu-latest'
+
+      - name: Configure hypredrive with Doxygen
+        run: |
+          set -euxo pipefail
+          cmake -S . -B $BUILD_DIR -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DHYPREDRV_ENABLE_DOCS=ON \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+
+      - name: Build Doxygen documentation
+        run: cmake --build $BUILD_DIR --target doxygen-doc
+
+      - name: Upload Doxygen documentation
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: doxygen-docs
+          path: ${{ env.BUILD_DIR }}/docs/html
+          retention-days: 7

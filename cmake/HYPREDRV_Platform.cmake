@@ -1,5 +1,20 @@
+# Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+# HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: MIT
+
 # macOS RPATH settings
 if(APPLE)
+    # Set library install name to use @rpath
+    set_target_properties(HYPREDRV PROPERTIES
+        INSTALL_NAME_DIR "@rpath"
+        BUILD_WITH_INSTALL_RPATH FALSE
+    )
+    
+    # Add lib directory to rpath for executables (since libraries are in lib/)
+    set(LIB_OUTPUT_DIR "${CMAKE_BINARY_DIR}/lib")
+    target_link_options(hypredrive PRIVATE "-Wl,-rpath,${LIB_OUTPUT_DIR}")
+    
     # Check if HYPRE library is shared
     get_property(HYPRE_LIB_TYPE TARGET HYPRE::HYPRE PROPERTY TYPE)
     if(HYPRE_LIB_TYPE STREQUAL "SHARED_LIBRARY")
@@ -14,7 +29,6 @@ if(APPLE)
         if(HYPRE_LIBRARY_FILE_NEW)
             get_filename_component(HYPRE_LIBRARY_DIR "${HYPRE_LIBRARY_FILE_NEW}" DIRECTORY)
             set(CMAKE_INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
-            set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
             set_target_properties(hypredrive PROPERTIES INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
             set_target_properties(HYPREDRV PROPERTIES INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
         endif()

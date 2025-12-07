@@ -1,0 +1,203 @@
+name: Code Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'COPYRIGHT'
+  push:
+    branches: [ master ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'COPYRIGHT'
+  schedule:
+    - cron: '0 3 * * 0' # Runs at 03:00 UTC every Sunday
+  workflow_dispatch:    # Allow manual triggering
+
+concurrency:
+  group: analysis-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cppcheck:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: cppcheck
+    runs-on: ubuntu-latest
+    env:
+      HYPRE_VERSION: master
+      BUILD_DIR: build-analysis
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Ubuntu environment
+        uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: 'gcc'
+          extra_packages: 'cppcheck'
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: 'gcc'
+          build_type: 'Debug'
+          hypre_shared_libs: 'ON'
+          os: 'ubuntu-latest'
+
+      - name: Configure hypredrive
+        run: |
+          set -euxo pipefail
+          cmake -S . -B $BUILD_DIR -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHYPREDRV_ENABLE_ANALYSIS=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+
+      - name: Build
+        run: cmake --build $BUILD_DIR --parallel
+
+      - name: Run cppcheck
+        run: cmake --build $BUILD_DIR --target cppcheck
+
+      - name: Upload cppcheck report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: cppcheck-report
+          path: ${{ env.BUILD_DIR }}/cppcheck-report.xml
+          retention-days: 7
+
+  clang-tidy:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: clang-tidy
+    runs-on: ubuntu-latest
+    env:
+      HYPRE_VERSION: master
+      BUILD_DIR: build-analysis
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Ubuntu environment
+        uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: 'clang'
+          extra_packages: 'clang-tidy'
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: 'clang'
+          build_type: 'Debug'
+          hypre_shared_libs: 'ON'
+          os: 'ubuntu-latest'
+
+      - name: Configure hypredrive
+        run: |
+          set -euxo pipefail
+          cmake -S . -B $BUILD_DIR -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHYPREDRV_ENABLE_ANALYSIS=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+
+      - name: Build
+        run: cmake --build $BUILD_DIR --parallel
+
+      - name: Run clang-tidy
+        run: cmake --build $BUILD_DIR --target clang-tidy
+        continue-on-error: true
+
+      - name: Upload clang-tidy report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: clang-tidy-report
+          path: ${{ env.BUILD_DIR }}/clang-tidy-output.txt
+          retention-days: 7
+
+  sanitizers:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: ASan and UBSan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [clang] # gcc, clang
+    env:
+      HYPRE_VERSION: master
+      BUILD_DIR: build-sanitizers-${{ matrix.compiler }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Ubuntu environment
+        uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: ${{ matrix.compiler }}
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: ${{ matrix.compiler }}
+          build_type: 'Debug'
+          hypre_shared_libs: 'ON'
+          os: 'ubuntu-latest'
+
+      - name: Configure hypredrive with sanitizers
+        run: |
+          set -euxo pipefail
+          cmake -S . -B $BUILD_DIR -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
+            -DHYPREDRV_ENABLE_ANALYSIS=ON \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }} \
+            -DCMAKE_C_COMPILER=mpicc
+
+      - name: Build
+        run: cmake --build $BUILD_DIR --parallel
+
+      - name: Fetch datasets (optional)
+        run: cmake --build $BUILD_DIR --target data --parallel
+
+      - name: Run tests with sanitizers
+        timeout-minutes: 8
+        env:
+          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1:print_stacktrace=1:fast_unwind_on_malloc=0"
+          LSAN_OPTIONS: "suppressions=${{ github.workspace }}/.github/lsan.supp"
+          UBSAN_OPTIONS: "print_stacktrace=1:abort_on_error=1"
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+          OMPI_MCA_btl_vader_single_copy_mechanism: none
+          OMPI_MCA_rmaps_base_oversubscribe: 1
+          OMP_NUM_THREADS: 1
+        run: ctest --test-dir $BUILD_DIR --output-on-failure --timeout 40 # 40 seconds per test
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: sanitizer-logs-${{ matrix.compiler }}
+          path: |
+            ${{ env.BUILD_DIR }}/Testing
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log

@@ -12,31 +12,33 @@
 #include "containers.h"
 #include "yaml.h"
 
-typedef void (*SetterFnc)(void*, YAMLnode*);
+typedef void (*SetterFnc)(void *, const YAMLnode *);
 
 typedef struct FieldOffsetMap_struct
 {
-   const char  *name;
-   size_t       offset;
-   SetterFnc    setter;
+   const char *name;
+   size_t      offset;
+   SetterFnc   setter;
 } FieldOffsetMap;
 
 /*-----------------------------------------------------------------------------
  * Macros
  *-----------------------------------------------------------------------------*/
 
+// clang-format off
 #define FIELD_OFFSET_MAP_ENTRY(_st, _field_name, _setter) \
    {#_field_name, offsetof(_st, _field_name), _setter}
+// clang-format on
 
 /*-----------------------------------------------------------------------------
  * Prototypes
  *-----------------------------------------------------------------------------*/
 
-void FieldTypeIntSet(void*, YAMLnode*);
-void FieldTypeIntArraySet(void*, YAMLnode*);
-void FieldTypeStackIntArraySet(void*, YAMLnode*);
-void FieldTypeDoubleSet(void*, YAMLnode*);
-void FieldTypeCharSet(void*, YAMLnode*);
-void FieldTypeStringSet(void*, YAMLnode*);
+void FieldTypeIntSet(void *, const YAMLnode *);
+void FieldTypeIntArraySet(void *, const YAMLnode *);
+void FieldTypeStackIntArraySet(void *, const YAMLnode *);
+void FieldTypeDoubleSet(void *, const YAMLnode *);
+void FieldTypeCharSet(void *, const YAMLnode *);
+void FieldTypeStringSet(void *, const YAMLnode *);
 
 #endif /* FIELD_HEADER */

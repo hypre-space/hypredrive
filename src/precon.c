@@ -6,16 +6,17 @@
  ******************************************************************************/
 
 #include "precon.h"
+#include "HYPRE_parcsr_mv.h"
 
 static const FieldOffsetMap precon_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(precon_args, amg, AMGSetArgs),
    FIELD_OFFSET_MAP_ENTRY(precon_args, mgr, MGRSetArgs),
    FIELD_OFFSET_MAP_ENTRY(precon_args, ilu, ILUSetArgs),
    FIELD_OFFSET_MAP_ENTRY(precon_args, fsai, FSAISetArgs),
-   FIELD_OFFSET_MAP_ENTRY(precon_args, reuse, FieldTypeIntSet)
-};
+   FIELD_OFFSET_MAP_ENTRY(precon_args, reuse, FieldTypeIntSet)};
 
-#define PRECON_NUM_FIELDS (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
+#define PRECON_NUM_FIELDS \
+   (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
 
 /*-----------------------------------------------------------------------------
  * PreconSetFieldByName
@@ -30,8 +31,7 @@ PreconSetFieldByName(precon_args *args, YAMLnode *node)
       if (!strcmp(precon_field_offset_map[i].name, node->key))
       {
          precon_field_offset_map[i].setter(
-            (void*)((char*) args + precon_field_offset_map[i].offset),
-            node);
+            (void *)((char *)args + precon_field_offset_map[i].offset), node);
          return;
       }
    }
@@ -44,7 +44,7 @@ PreconSetFieldByName(precon_args *args, YAMLnode *node)
 StrArray
 PreconGetValidKeys(void)
 {
-   static const char* keys[PRECON_NUM_FIELDS];
+   static const char *keys[PRECON_NUM_FIELDS];
 
    for (size_t i = 0; i < PRECON_NUM_FIELDS; i++)
    {
@@ -59,7 +59,7 @@ PreconGetValidKeys(void)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-PreconGetValidValues(const char* key)
+PreconGetValidValues(const char *key)
 {
    /* The "preconditioner" entry does not hold values, so we create a void map */
    return STR_INT_MAP_ARRAY_VOID();
@@ -72,10 +72,10 @@ PreconGetValidValues(const char* key)
 StrIntMapArray
 PreconGetValidTypeIntMap(void)
 {
-   static StrIntMap map[] = {{"amg",  (int) PRECON_BOOMERAMG},
-                             {"mgr",  (int) PRECON_MGR},
-                             {"ilu",  (int) PRECON_ILU},
-                             {"fsai", (int) PRECON_FSAI}};
+   static StrIntMap map[] = {{"amg", (int)PRECON_BOOMERAMG},
+                             {"mgr", (int)PRECON_MGR},
+                             {"ilu", (int)PRECON_ILU},
+                             {"fsai", (int)PRECON_FSAI}};
 
    return STR_INT_MAP_ARRAY_CREATE(map);
 }
@@ -99,13 +99,9 @@ PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 {
    YAML_NODE_ITERATE(parent, child)
    {
-      YAML_NODE_VALIDATE(child,
-                         PreconGetValidKeys,
-                         PreconGetValidValues);
+      YAML_NODE_VALIDATE(child, PreconGetValidKeys, PreconGetValidValues);
 
-      YAML_NODE_SET_FIELD(child,
-                          args,
-                          PreconSetFieldByName);
+      YAML_NODE_SET_FIELD(child, args, PreconSetFieldByName);
    }
 }
 
@@ -114,16 +110,15 @@ PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
  *-----------------------------------------------------------------------------*/
 
 void
-PreconCreate(precon_t         precon_method,
-             precon_args     *args,
-             IntArray        *dofmap,
-             HYPRE_Precon    *precon_ptr)
+PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
+             HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr)
 {
    HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
 
    switch (precon_method)
    {
       case PRECON_BOOMERAMG:
+         AMGSetRBMs(&args->amg, vec_nn);
          AMGCreate(&args->amg, &precon->main);
          break;
 
@@ -140,8 +135,14 @@ PreconCreate(precon_t         precon_method,
          FSAICreate(&args->fsai, &precon->main);
          break;
 
+      case PRECON_NONE:
+         break;
+
       default:
-         precon->main = NULL;
+         ErrorCodeSet(ERROR_INVALID_PRECON);
+         free(precon);
+         *precon_ptr = NULL;
+         return;
    }
 
    *precon_ptr = precon;
@@ -152,16 +153,15 @@ PreconCreate(precon_t         precon_method,
  *-----------------------------------------------------------------------------*/
 
 void
-PreconSetup(precon_t       precon_method,
-            HYPRE_Precon   precon,
-            HYPRE_IJMatrix A)
+PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A)
 {
-   void               *vA;
-   HYPRE_ParCSRMatrix  par_A;
-   HYPRE_ParVector     par_b = NULL, par_x = NULL;
-   HYPRE_Solver        prec = precon->main;
+   void              *vA    = NULL;
+   HYPRE_ParCSRMatrix par_A = NULL;
+   HYPRE_ParVector    par_b = NULL, par_x = NULL;
+   HYPRE_Solver       prec = precon->main;
 
-   HYPRE_IJMatrixGetObject(A, &vA); par_A = (HYPRE_ParCSRMatrix) vA;
+   HYPRE_IJMatrixGetObject(A, &vA);
+   par_A = (HYPRE_ParCSRMatrix)vA;
 
    switch (precon_method)
    {
@@ -181,12 +181,16 @@ PreconSetup(precon_t       precon_method,
          HYPRE_FSAISetup(prec, par_A, par_b, par_x);
          break;
 
+      case PRECON_NONE:
+         break;
+
       default:
-         return;
+         ErrorCodeSet(ERROR_INVALID_PRECON);
+         break;
    }
 
    // TODO: fix timing. Adjust LinearSolverSetup.
-   //StatsTimerStop("prec");
+   // StatsTimerStop("prec");
 }
 
 /*-----------------------------------------------------------------------------
@@ -194,20 +198,20 @@ PreconSetup(precon_t       precon_method,
  *-----------------------------------------------------------------------------*/
 
 void
-PreconApply(precon_t       precon_method,
-            HYPRE_Precon   precon,
-            HYPRE_IJMatrix A,
-            HYPRE_IJVector b,
-            HYPRE_IJVector x)
+PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
+            HYPRE_IJVector b, HYPRE_IJVector x)
 {
-   void               *vA, *vb, *vx;
-   HYPRE_ParCSRMatrix  par_A;
-   HYPRE_ParVector     par_b, par_x;
-   HYPRE_Solver        prec = precon->main;
+   void              *vA = NULL, *vb = NULL, *vx = NULL;
+   HYPRE_ParCSRMatrix par_A = NULL;
+   HYPRE_ParVector    par_b = NULL, par_x = NULL;
+   HYPRE_Solver       prec = precon->main;
 
-   HYPRE_IJMatrixGetObject(A, &vA); par_A = (HYPRE_ParCSRMatrix) vA;
-   HYPRE_IJVectorGetObject(b, &vb); par_b = (HYPRE_ParVector) vb;
-   HYPRE_IJVectorGetObject(x, &vx); par_x = (HYPRE_ParVector) vx;
+   HYPRE_IJMatrixGetObject(A, &vA);
+   par_A = (HYPRE_ParCSRMatrix)vA;
+   HYPRE_IJVectorGetObject(b, &vb);
+   par_b = (HYPRE_ParVector)vb;
+   HYPRE_IJVectorGetObject(x, &vx);
+   par_x = (HYPRE_ParVector)vx;
 
    switch (precon_method)
    {
@@ -227,11 +231,15 @@ PreconApply(precon_t       precon_method,
          HYPRE_FSAISolve(prec, par_A, par_b, par_x);
          break;
 
+      case PRECON_NONE:
+         break;
+
       default:
-         return;
+         ErrorCodeSet(ERROR_INVALID_PRECON);
+         break;
    }
 
-   //StatsTimerStop("prec_apply");
+   // StatsTimerStop("prec_apply");
 }
 
 /*-----------------------------------------------------------------------------
@@ -239,9 +247,7 @@ PreconApply(precon_t       precon_method,
  *-----------------------------------------------------------------------------*/
 
 void
-PreconDestroy(precon_t       precon_method,
-              precon_args   *args,
-              HYPRE_Precon  *precon_ptr)
+PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_ptr)
 {
    HYPRE_Precon precon = *precon_ptr;
 
@@ -255,6 +261,11 @@ PreconDestroy(precon_t       precon_method,
       switch (precon_method)
       {
          case PRECON_BOOMERAMG:
+            for (HYPRE_Int i = 0; i < args->amg.num_rbms; i++)
+            {
+               HYPRE_ParVectorDestroy(args->amg.rbms[i]);
+               args->amg.rbms[i] = NULL;
+            }
             HYPRE_BoomerAMGDestroy(precon->main);
             break;
 
@@ -296,8 +307,8 @@ PreconDestroy(precon_t       precon_method,
             HYPRE_FSAIDestroy(precon->main);
             break;
 
-         default:
-            return;
+         case PRECON_NONE:
+            break;
       }
 
       precon->main = NULL;

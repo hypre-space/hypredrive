@@ -6,9 +6,9 @@
  ******************************************************************************/
 
 #include "args.h"
-#include "yaml.h"
-#include "HYPRE_parcsr_ls.h"
 #include "HYPRE_krylov.h"
+#include "HYPRE_parcsr_ls.h"
+#include "yaml.h"
 
 /*-----------------------------------------------------------------------------
  * InputArgsCreate
@@ -17,7 +17,7 @@
 void
 InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
 {
-   input_args *iargs = (input_args*) malloc(sizeof(input_args));
+   input_args *iargs = (input_args *)malloc(sizeof(input_args));
 
    /* Set general default options */
    iargs->warmup              = 0;
@@ -60,8 +60,8 @@ InputArgsDestroy(input_args **iargs_ptr)
 void
 InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode    *parent;
-   YAMLnode    *child;
+   YAMLnode *parent = NULL;
+   YAMLnode *child  = NULL;
 
    parent = YAMLnodeFindByKey(tree->root, "general");
    if (!parent)
@@ -70,10 +70,7 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
          so we don't set an error code if it's not found. */
       return;
    }
-   else
-   {
-      YAML_NODE_SET_VALID(parent);
-   }
+   YAML_NODE_SET_VALID(parent);
 
    child = parent->children;
    while (child)
@@ -81,15 +78,12 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
       /* TODO: implement validation of "general" keywords */
       YAML_NODE_SET_VALID(child);
 
-      if (!strcmp(child->key, "warmup") ||
-          !strcmp(child->key, "statistics") ||
+      if (!strcmp(child->key, "warmup") || !strcmp(child->key, "statistics") ||
           !strcmp(child->key, "use_millisec") ||
           !strcmp(child->key, "print_config_params"))
       {
-         if (!strcmp(child->val, "off") ||
-             !strcmp(child->val, "no") ||
-             !strcmp(child->val, "false") ||
-             !strcmp(child->val, "0")  ||
+         if (!strcmp(child->val, "off") || !strcmp(child->val, "no") ||
+             !strcmp(child->val, "false") || !strcmp(child->val, "0") ||
              !strcmp(child->val, "n"))
          {
             if (!strcmp(child->key, "warmup"))
@@ -109,10 +103,8 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
                StatsTimerSetSeconds();
             }
          }
-         else if (!strcmp(child->val, "on") ||
-                  !strcmp(child->val, "yes") ||
-                  !strcmp(child->val, "true") ||
-                  !strcmp(child->val, "1")  ||
+         else if (!strcmp(child->val, "on") || !strcmp(child->val, "yes") ||
+                  !strcmp(child->val, "true") || !strcmp(child->val, "1") ||
                   !strcmp(child->val, "y"))
          {
             if (!strcmp(child->key, "warmup"))
@@ -185,23 +177,21 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 void
 InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
 {
-   const char   key[]  = {"linear_system"};
-   YAMLnode    *parent = YAMLnodeFindByKey(tree->root, key);
+   const char key[]  = {"linear_system"};
+   YAMLnode  *parent = YAMLnodeFindByKey(tree->root, key);
 
    if (!parent)
    {
       // TODO: Add "library" mode to skip the following checks
-      //ErrorCodeSet(ERROR_MISSING_KEY);
-      //ErrorMsgAddMissingKey(key);
+      // ErrorCodeSet(ERROR_MISSING_KEY);
+      // ErrorMsgAddMissingKey(key);
       return;
    }
-   else
+   YAML_NODE_SET_VALID_IF_NO_VAL(parent);
+
+   if (YAML_NODE_GET_VALIDITY(parent) == YAML_NODE_UNEXPECTED_VAL)
    {
-      YAML_NODE_SET_VALID_IF_NO_VAL(parent);
-      if (YAML_NODE_GET_VALIDITY(parent) == YAML_NODE_UNEXPECTED_VAL)
-      {
-         ErrorMsgAddUnexpectedVal(key);
-      }
+      ErrorMsgAddUnexpectedVal(key);
    }
 
    LinearSystemSetArgsFromYAML(&iargs->ls, parent);
@@ -215,20 +205,17 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
 void
 InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode  *parent;
+   YAMLnode *parent = NULL;
 
    parent = YAMLnodeFindByKey(tree->root, "solver");
    if (!parent)
    {
       // TODO: Add "library" mode to skip the following checks
-      //ErrorCodeSet(ERROR_MISSING_KEY);
-      //ErrorMsgAddMissingKey("solver");
+      // ErrorCodeSet(ERROR_MISSING_KEY);
+      // ErrorMsgAddMissingKey("solver");
       return;
    }
-   else
-   {
-      YAML_NODE_SET_VALID(parent);
-   }
+   YAML_NODE_SET_VALID(parent);
 
    /* Check if the solver type was set with a single (key, val) pair */
    if (!strcmp(parent->val, ""))
@@ -248,19 +235,19 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
          return;
       }
 
-      iargs->solver_method = (solver_t) StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
-                                                               parent->children->key);
+      iargs->solver_method = (solver_t)StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
+                                                              parent->children->key);
 
       SolverSetArgsFromYAML(&iargs->solver, parent);
    }
    else
    {
-      iargs->solver_method = (solver_t) StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
-                                                               parent->val);
+      iargs->solver_method =
+         (solver_t)StrIntMapArrayGetImage(SolverGetValidTypeIntMap(), parent->val);
 
       /* Hack for setting default parameters */
-      YAMLnode *dummy = YAMLnodeCreate("solver", "", 0);
-      dummy->children = YAMLnodeCreate(parent->val, "", 1);
+      YAMLnode *dummy           = YAMLnodeCreate("solver", "", 0);
+      dummy->children           = YAMLnodeCreate(parent->val, "", 1);
       dummy->children->children = YAMLnodeCreate("print_level", "0", 2);
 
       SolverSetArgsFromYAML(&iargs->solver, dummy);
@@ -277,7 +264,7 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
 void
 InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode  *parent;
+   YAMLnode *parent = NULL;
 
    parent = YAMLnodeFindByKey(tree->root, "preconditioner");
    if (!parent)
@@ -286,10 +273,7 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
       ErrorMsgAddMissingKey("preconditioner");
       return;
    }
-   else
-   {
-      YAML_NODE_SET_VALID(parent);
-   }
+   YAML_NODE_SET_VALID(parent);
 
    /* Check if the solver type was set with a single (key, val) pair */
    if (!strcmp(parent->val, ""))
@@ -309,19 +293,19 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
          return;
       }
 
-      iargs->precon_method = (precon_t) StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
-                                                               parent->children->key);
+      iargs->precon_method = (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
+                                                              parent->children->key);
 
       PreconSetArgsFromYAML(&iargs->precon, parent);
    }
    else
    {
-      iargs->precon_method = (precon_t) StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
-                                                               parent->val);
+      iargs->precon_method =
+         (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), parent->val);
 
       /* Hack for setting default parameters */
-      YAMLnode *dummy = YAMLnodeCreate("preconditioner", "", 0);
-      dummy->children = YAMLnodeCreate(parent->val, "", 1);
+      YAMLnode *dummy           = YAMLnodeCreate("preconditioner", "", 0);
+      dummy->children           = YAMLnodeCreate(parent->val, "", 1);
       dummy->children->children = YAMLnodeCreate("print_level", "0", 2);
 
       PreconSetArgsFromYAML(&iargs->precon, dummy);
@@ -338,13 +322,12 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
 void
 InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_ptr)
 {
-   size_t        text_size = 0;
-   int           level = 0;
-   int           base_indent = -1;
-   char         *text = NULL;
-   char         *dirname = NULL;
-   char         *basename = NULL;
-   int           myid;
+   size_t text_size   = 0;
+   int    base_indent = -1;
+   char  *text        = NULL;
+   char  *dirname     = NULL;
+   char  *basename    = NULL;
+   int    myid        = 0;
 
    MPI_Comm_rank(comm, &myid);
 
@@ -373,29 +356,35 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    SplitFilename(filename, &dirname, &basename);
 
    /* Rank 0: Expand text from base file */
-   if (!myid) YAMLtextRead(dirname, basename, level, &base_indent, &text_size, &text);
+   if (!myid)
+   {
+      YAMLtextRead(dirname, basename, 0, &base_indent, &text_size, &text);
+   }
    if (DistributedErrorCodeActive(comm))
    {
       return;
    }
 
    /* Broadcast the text size and base indentation */
-   MPI_Bcast(&base_indent, 1, MPI_UNSIGNED_LONG, 0, comm);
+   MPI_Bcast(&base_indent, 1, MPI_INT, 0, comm);
    MPI_Bcast(&text_size, 1, MPI_UNSIGNED_LONG, 0, comm);
 
    /* Broadcast the text */
    MPI_Comm_rank(comm, &myid);
-   if (myid) text = (char*) malloc(text_size + 1); /* +1: Extra space for null terminator */
+   if (myid)
+   {
+      text = (char *)malloc(text_size + 1);
+   } /* +1: for null terminator */
    MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
 
    /* Make sure null terminator is in the right place */
    text[text_size] = '\0';
 
-   //printf("text_size: %ld | strlen(text): %ld\n", text_size, strlen(text));
+   // printf("text_size: %ld | strlen(text): %ld\n", text_size, strlen(text));
 
    /* Set output pointers */
    *base_indent_ptr = base_indent;
-   *text_ptr = text;
+   *text_ptr        = text;
 
    /* Free memory */
    free(dirname);
@@ -409,16 +398,16 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
 void
 InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args **args_ptr)
 {
-   input_args   *iargs;
-   char         *text;
-   YAMLtree     *tree;
-   int           base_indent;
-   int           myid;
+   input_args *iargs       = NULL;
+   char       *text        = NULL;
+   YAMLtree   *tree        = NULL;
+   int         base_indent = 2;
+   int         myid        = 0;
 
    MPI_Comm_rank(comm, &myid);
 
    /* Read input arguments from file or string */
-   if (HasFileExtension(argv[0]))
+   if (IsYAMLFilename(argv[0]))
    {
       /* Treat as file input - will error if file doesn't exist */
       InputArgsRead(comm, argv[0], &base_indent, &text);
@@ -437,7 +426,7 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    }
 
    /* Quick way to view/debug the tree */
-   //printf("%*s", (int) strlen(text), text);
+   // printf("%*s", (int) strlen(text), text);
 
    /* Build YAML tree */
    YAMLtreeBuild(base_indent, text, &tree);
@@ -456,6 +445,8 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    {
       YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
       ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      free(text);
+      YAMLtreeDestroy(&tree);
       return;
    }
    MPI_Barrier(comm);
@@ -485,6 +476,8 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    {
       YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
       ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      InputArgsDestroy(&iargs);
+      YAMLtreeDestroy(&tree);
       return;
    }
 

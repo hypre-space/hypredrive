@@ -8,30 +8,31 @@
 #ifndef FGMRES_HEADER
 #define FGMRES_HEADER
 
-#include "yaml.h"
-#include "field.h"
-#include "HYPRE_parcsr_ls.h"
 #include "HYPRE_krylov.h"
+#include "HYPRE_parcsr_ls.h"
+#include "field.h"
+#include "yaml.h"
 
 /*--------------------------------------------------------------------------
  * FGMRES solver arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct FGMRES_args_struct {
-   HYPRE_Int     min_iter;
-   HYPRE_Int     max_iter;
-   HYPRE_Int     krylov_dim;
-   HYPRE_Int     logging;
-   HYPRE_Int     print_level;
-   HYPRE_Real    relative_tol;
-   HYPRE_Real    absolute_tol;
+typedef struct FGMRES_args_struct
+{
+   HYPRE_Int  min_iter;
+   HYPRE_Int  max_iter;
+   HYPRE_Int  krylov_dim;
+   HYPRE_Int  logging;
+   HYPRE_Int  print_level;
+   HYPRE_Real relative_tol;
+   HYPRE_Real absolute_tol;
 } FGMRES_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void FGMRESSetArgs(void*, YAMLnode*);
-void FGMRESCreate(MPI_Comm, FGMRES_args*, HYPRE_Solver*);
+void FGMRESSetArgs(void *, const YAMLnode *);
+void FGMRESCreate(MPI_Comm, const FGMRES_args *, HYPRE_Solver *);
 
 #endif /* FGMRES_HEADER */

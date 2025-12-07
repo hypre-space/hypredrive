@@ -8,59 +8,171 @@
 #ifndef STATS_HEADER
 #define STATS_HEADER
 
+#include <stdarg.h>
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
-#include "mpi.h"
+#include <string.h>
+#include "HYPREDRV_config.h"
 #include "error.h"
 #include "utils.h"
 
-#define STATS_NUM_ENTRIES 7
+/* Maximum number of hierarchical annotation levels */
+#define STATS_MAX_LEVELS 4
+
+/* Default capacity for timestep stats */
+#define STATS_TIMESTEP_CAPACITY 64
+
+/* HYPREDRV_AnnotateAction enum - internal use only (not in public API) */
+typedef enum
+{
+   HYPREDRV_ANNOTATE_BEGIN = 0,
+   HYPREDRV_ANNOTATE_END   = 1
+} HYPREDRV_AnnotateAction;
+
+/*--------------------------------------------------------------------------
+ * Caliper instrumentation macros
+ *--------------------------------------------------------------------------*/
+
+#ifdef HYPREDRV_USING_CALIPER
+
+#ifdef __cplusplus
+extern "C++"
+{
+#endif
+
+#include <caliper/cali.h>
+
+#ifdef __cplusplus
+}
+#endif
+
+#define HYPREDRV_ANNOTATE_REGION_BEGIN(...)                                  \
+   {                                                                         \
+      char hypredrv__markname[1024];                                         \
+      snprintf(hypredrv__markname, sizeof(hypredrv__markname), __VA_ARGS__); \
+      CALI_MARK_BEGIN(hypredrv__markname);                                   \
+   }
+
+#define HYPREDRV_ANNOTATE_REGION_END(...)                                    \
+   {                                                                         \
+      char hypredrv__markname[1024];                                         \
+      snprintf(hypredrv__markname, sizeof(hypredrv__markname), __VA_ARGS__); \
+      CALI_MARK_END(hypredrv__markname);                                     \
+   }
+
+#else
+
+#define HYPREDRV_ANNOTATE_REGION_BEGIN(...)
+#define HYPREDRV_ANNOTATE_REGION_END(...)
+
+#endif /* HYPREDRV_USING_CALIPER */
+
+/*--------------------------------------------------------------------------
+ * Hierarchical annotation context
+ *--------------------------------------------------------------------------*/
+
+typedef struct
+{
+   const char *name;
+   double      start_time;
+   int         level;
+} AnnotationContext;
+
+/*--------------------------------------------------------------------------
+ * Per-level entry (stats computed on-demand from solve index range)
+ *--------------------------------------------------------------------------*/
+
+typedef struct
+{
+   int id;          /* 1-based entry ID within this level */
+   int solve_start; /* First solve index for this entry */
+   int solve_end;   /* One past last solve index */
+} LevelEntry;
 
 /*--------------------------------------------------------------------------
  * Stats struct
  *--------------------------------------------------------------------------*/
 
-typedef struct Stats_struct {
-   int       capacity;
-   int       counter;
-   int       reps;
-   int       ls_counter;
-   int       num_reps;
-   int       num_systems;
+typedef struct Stats_struct
+{
+   /* Capacity and counters */
+   int capacity;
+   int counter;     /* Current entry index */
+   int reps;        /* Current repetition counter */
+   int ls_counter;  /* Linear system counter (increments on "matrix" annotation) */
+   int num_reps;    /* Number of repetitions per linear system */
+   int num_systems; /* Number of linear systems (-1 if unknown) */
 
-   double   *matrix;
-   double   *rhs;
-   double   *dofmap;
+   /* Hierarchical annotation stack */
+   AnnotationContext level_stack[STATS_MAX_LEVELS];
+   int               level_depth; /* Current depth in hierarchy (0 = no active levels) */
 
-   int      *iters;
-   double   *prec;
-   double   *solve;
-   double   *rrnorms;
+   /* Timing arrays (indexed by counter) */
+   double *matrix;  /* Matrix assembly time */
+   double *rhs;     /* RHS assembly time */
+   double *dofmap;  /* DOF map setup time */
+   double *prec;    /* Preconditioner setup time */
+   double *solve;   /* Linear solver time */
+   double *rrnorms; /* Relative residual norms */
+   int    *iters;   /* Iteration counts */
 
-   double    initialize;
-   double    finalize;
-   double    reset_x0;
+   /* Global timers */
+   double initialize;
+   double finalize;
+   double reset_x0;
 
-   double    time_factor;
-   bool      use_millisec;
+   /* Output formatting */
+   double time_factor;
+   bool   use_millisec;
+
+   /* Per-level statistics (stats computed on-demand from solve index range) */
+   int         level_count[STATS_MAX_LEVELS];   /* Number of entries per level */
+   LevelEntry *level_entries[STATS_MAX_LEVELS]; /* Array of entries per level */
+
+   /* Current state per level */
+   int level_active;                        /* Bitmask: which levels are active */
+   int level_current_id[STATS_MAX_LEVELS];  /* Current entry ID per level */
+   int level_solve_start[STATS_MAX_LEVELS]; /* Solve index when level began */
 } Stats;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void StatsCreate(void);
-void StatsDestroy(void);
-void StatsTimerStart(const char*);
-void StatsTimerStop(const char*);
-void StatsIterSet(int);
+/* Stats object lifecycle */
+Stats *StatsCreate(void);
+void   StatsDestroy(Stats **stats_ptr);
+void   StatsSetContext(Stats *stats);
+Stats *StatsGetContext(void);
+
+/* Annotation functions */
+void StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name);
+void StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args);
+void StatsAnnotateLevelBegin(int level, const char *name);
+void StatsAnnotateLevelEnd(int level, const char *name);
+
+/* Timer configuration */
 void StatsTimerSetMilliseconds(void);
 void StatsTimerSetSeconds(void);
+
+/* Statistics setters */
+void StatsIterSet(int);
 void StatsRelativeResNormSet(double);
-void StatsPrint(int);
-int  StatsGetLinearSystemID(void);
 void StatsSetNumReps(int);
 void StatsSetNumLinearSystems(int);
+
+/* Statistics getters */
+int    StatsGetLinearSystemID(void);
+int    StatsGetLastIter(void);
+double StatsGetLastSetupTime(void);
+double StatsGetLastSolveTime(void);
+
+/* Level statistics (populated automatically from level annotations) */
+int  StatsLevelGetCount(int level);
+int  StatsLevelGetEntry(int level, int index, LevelEntry *entry);
+void StatsLevelPrint(int level);
+
+/* Output */
+void StatsPrint(int);
 
 #endif /* STATS_HEADER */

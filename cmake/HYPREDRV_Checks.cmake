@@ -1,3 +1,8 @@
+# Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+# HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: MIT
+
 include(CheckIncludeFile)
 include(CheckLibraryExists)
 include(CheckFunctionExists)
@@ -7,11 +12,11 @@ include(CheckSymbolExists)
 
 # Check for libraries
 if(TARGET HYPRE::HYPRE)
-  set(HAVE_LIBHYPRE 1)
+    set(HAVE_LIBHYPRE 1)
 endif()
 check_library_exists(m sqrt "" HAVE_LIBM)
 if(HAVE_LIBM)
-  set(CMAKE_REQUIRED_LIBRARIES m)
+    set(CMAKE_REQUIRED_LIBRARIES m)
 endif()
 
 # Check for headers
