@@ -69,7 +69,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    nrows_sum = nnzs_max = 0;
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
+      snprintf(filename, sizeof(filename), "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
       if (!fp)
       {
@@ -117,7 +117,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
       for (part = 0; part < nparts; part++)
       {
-         sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
+         snprintf(filename, sizeof(filename), "%s.%05d.bin", prefixname,
+                  (int)partids[part]);
          fp = fopen(filename, "rb");
          if (fread(header, sizeof(uint64_t), 11, fp) != 11)
          {
@@ -315,7 +316,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    /* Set matrix values */
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
+      snprintf(filename, sizeof(filename), "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
       if (fread(header, sizeof(uint64_t), 11, fp) != 11)
       {

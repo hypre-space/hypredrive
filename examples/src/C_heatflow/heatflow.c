@@ -167,9 +167,9 @@ static void q1_shape_ref(HYPRE_Real, HYPRE_Real, HYPRE_Real, HYPRE_Real N[8],
                          HYPRE_Real dxi[8], HYPRE_Real deta[8], HYPRE_Real dzeta[8]);
 static void PrecomputeQ1ScalarTemplates(HYPRE_Real, HYPRE_Real, HYPRE_Real,
                                         HYPRE_Real M_t[8][8], HYPRE_Real K_t[8][8]);
-int  BuildNonlinearSystem_Heat(DistMesh *, HeatParams *, const HYPRE_Real *,
-                               const HYPRE_Real *, HYPRE_IJMatrix *, HYPRE_IJVector *,
-                               double *, double, GhostData3D *, GhostData3D *);
+int         BuildNonlinearSystem_Heat(DistMesh *, HeatParams *, const HYPRE_Real *,
+                                      const HYPRE_Real *, HYPRE_IJMatrix *, HYPRE_IJVector *,
+                                      double *, double, GhostData3D *, GhostData3D *);
 int  WriteVTKsolutionScalar(DistMesh *, HeatParams *, HYPRE_Real *, GhostData3D *, int,
                             double);
 void GetVTKBaseName(HeatParams *, char *, size_t);
