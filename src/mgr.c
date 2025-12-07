@@ -540,6 +540,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       ILUCreate(&args->coarsest_level.ilu, &args->csolver);
       HYPRE_MGRSetCoarseSolver(precon, HYPRE_ILUSolve, HYPRE_ILUSetup, args->csolver);
    }
+#if defined(HYPRE_USING_DSUPERLU)
    else if (args->coarsest_level.type == 29)
    {
       HYPRE_MGRDirectSolverCreate(&args->csolver);
@@ -548,6 +549,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
                                HYPRE_MGRDirectSolverSetup,
                                args->csolver);
    }
+#endif
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 11)
    HYPRE_MGRSetNonGalerkinMaxElmts(precon, args->nonglk_max_elmts);
