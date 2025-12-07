@@ -61,7 +61,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    nrows_max = nrows_sum = 0;
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
+      snprintf(filename, sizeof(filename), "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
       if (!fp)
       {
@@ -109,7 +109,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    /* 4) Fill entries */
    for (part = 0; part < nparts; part++)
    {
-      sprintf(filename, "%s.%05d.bin", prefixname, (int)partids[part]);
+      snprintf(filename, sizeof(filename), "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
       if (fread(header, sizeof(uint64_t), 8, fp) != 8)
       {

@@ -247,8 +247,8 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
    StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
 
    /* Compute the real relative residual norm. Note this is not timed */
-   LinearSystemComputeVectorNorm(b, &b_norm);
-   LinearSystemComputeResidualNorm(A, b, x, &r_norm);
+   LinearSystemComputeVectorNorm(b, "L2", &b_norm);
+   LinearSystemComputeResidualNorm(A, b, x, "L2", &r_norm);
    b_norm = (b_norm > 0.0) ? b_norm : 1.0;
 
    StatsRelativeResNormSet(r_norm / b_norm);

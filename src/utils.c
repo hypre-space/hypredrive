@@ -55,7 +55,7 @@ CheckBinaryDataExists(const char *prefix)
    FILE *fp          = NULL;
 
    /* Check if binary data exist */
-   sprintf(filename, "%*s.00000.bin", (int)strlen(prefix), prefix);
+   snprintf(filename, sizeof(filename), "%*s.00000.bin", (int)strlen(prefix), prefix);
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp)
    {
@@ -77,7 +77,7 @@ CheckASCIIDataExists(const char *prefix)
    FILE *fp          = NULL;
 
    /* Check if ASCII data exist */
-   sprintf(filename, "%*s.00000", (int)strlen(prefix), prefix);
+   snprintf(filename, sizeof(filename), "%*s.00000", (int)strlen(prefix), prefix);
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp)
    {
@@ -107,7 +107,8 @@ CountNumberOfPartitions(const char *prefix)
    {
       FILE *fp = NULL;
 
-      sprintf(filename, "%*s.%05d.bin", (int)strlen(prefix), prefix, num_files);
+      snprintf(filename, sizeof(filename), "%*s.%05d.bin", (int)strlen(prefix), prefix,
+               num_files);
       file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
       if (fp)
       {
@@ -115,7 +116,8 @@ CountNumberOfPartitions(const char *prefix)
       }
       if (!file_exists)
       {
-         sprintf(filename, "%*s.%05d", (int)strlen(prefix), prefix, num_files);
+         snprintf(filename, sizeof(filename), "%*s.%05d", (int)strlen(prefix), prefix,
+                  num_files);
          file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
          if (fp)
          {

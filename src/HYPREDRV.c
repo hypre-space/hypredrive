@@ -658,6 +658,28 @@ HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemGetSolutionNorm
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemGetSolutionNorm(HYPREDRV_t hypredrv, const char *norm_type,
+                                     double *norm)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!norm_type || !norm)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      return ErrorCodeGet();
+   }
+
+   LinearSystemComputeVectorNorm(hypredrv->vec_x, norm_type, norm);
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_LinearSystemGetRHSValues
  *-----------------------------------------------------------------------------*/
 
@@ -932,16 +954,17 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   HYPRE_Complex e_norm = NAN, x_norm = NAN, xref_norm = NAN;
+   double e_norm = 0.0, x_norm = 0.0, xref_norm = 0.0;
+
    SolverApply(hypredrv->iargs->solver_method, hypredrv->solver, hypredrv->mat_A,
                hypredrv->vec_b, hypredrv->vec_x);
    HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
 
    if (hypredrv->vec_xref)
    {
-      LinearSystemComputeVectorNorm(hypredrv->vec_xref, &xref_norm);
-      LinearSystemComputeVectorNorm(hypredrv->vec_x, &x_norm);
-      LinearSystemComputeErrorNorm(hypredrv->vec_xref, hypredrv->vec_x, &e_norm);
+      LinearSystemComputeVectorNorm(hypredrv->vec_xref, "L2", &xref_norm);
+      LinearSystemComputeVectorNorm(hypredrv->vec_x, "L2", &x_norm);
+      LinearSystemComputeErrorNorm(hypredrv->vec_xref, hypredrv->vec_x, "L2", &e_norm);
       if (!hypredrv->mypid)
       {
          printf("L2 norm of error: %e\n", (double)e_norm);
