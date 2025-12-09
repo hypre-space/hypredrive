@@ -81,8 +81,7 @@ DEFINE_SET_ARGS_FUNC(MGR);
 void
 MGRclsSetDefaultArgs(MGRcls_args *args)
 {
-   // args->type = 0;
-   args->type = 29;
+   args->type = 0;
 
    /* TODO: revisit default amg iters */
    AMGSetDefaultArgs(&args->amg);
