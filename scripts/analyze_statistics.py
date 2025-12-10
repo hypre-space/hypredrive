@@ -596,7 +596,7 @@ def main():
     parser.add_argument("-u", "--use_title", action='store_true', help='Show title in plots')
     parser.add_argument("-ls", "--linestyle", type=str, default='auto', choices=['auto', '-', '--', '-.', ':', 'none'], help="Line style for plots; 'none' draws markers only; 'auto' preserves defaults")
     parser.add_argument("-ms", "--markersize", type=float, default=None, help="Marker size (points); defaults to Matplotlib rcParams")
-    parser.add_argument("-ll", "--legend-labels", type=str, nargs="+", default=None, help="Custom legend labels for each input file (must match number of files)")
+    parser.add_argument("-ln", "--legend-names", type=str, nargs="+", default=None, help="Custom legend labels for each input file (must match number of files)")
     parser.add_argument("-v", "--verbose", action='count', default=0, help='Increase verbosity (-v=INFO, -vv=DEBUG)')
 
     # Parse arguments
@@ -622,10 +622,10 @@ def main():
 
     # Create label mapping from source filenames to custom labels
     label_map = {}
-    if args.legend_labels:
-        if len(args.legend_labels) != len(args.filename):
-            raise ValueError(f"Number of legend labels ({len(args.legend_labels)}) must match number of files ({len(args.filename)})")
-        for filename, label in zip(args.filename, args.legend_labels):
+    if args.legend_names:
+        if len(args.legend_names) != len(args.filename):
+            raise ValueError(f"Number of legend names ({len(args.legend_names)}) must match number of files ({len(args.filename)})")
+        for filename, label in zip(args.filename, args.legend_names):
             source_key = os.path.basename(filename)
             label_map[source_key] = label
         logger.debug(f"Label mapping: {label_map = }")
@@ -634,8 +634,8 @@ def main():
     data = []
     for idx, filename in enumerate(args.filename):
         # Use custom label if provided, otherwise generate a unique label
-        if args.legend_labels and idx < len(args.legend_labels):
-            source_label = args.legend_labels[idx]
+        if args.legend_names and idx < len(args.legend_names):
+            source_label = args.legend_names[idx]
         elif len(args.filename) > 1:
             # If multiple files, use a shortened path to distinguish them
             # Try to use a meaningful part of the path (e.g., parent directory)
@@ -684,9 +684,9 @@ def main():
 
     # Create legend name mapping
     legend_names = {}
-    if args.names:
-        if len(args.names) != len(args.filename):
-            raise ValueError(f"Number of legend names ({len(args.names)}) must match number of input files ({len(args.filename)})")
+    if args.legend_names:
+        if len(args.legend_names) != len(args.filename):
+            raise ValueError(f"Number of legend labels ({len(args.legend_names)}) must match number of input files ({len(args.filename)})")
         # Map source (basename of filename) to custom legend name
         for filename, legend_name in zip(args.filename, args.names):
             source = os.path.basename(filename)
