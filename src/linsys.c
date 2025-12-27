@@ -777,7 +777,7 @@ LinearSystemGetRHSValues(HYPRE_IJVector rhs, HYPRE_Complex **data_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemComputeVectorNorm
+ * TODO: leverage internal hypre APIs for device exec
  *-----------------------------------------------------------------------------*/
 
 void
@@ -811,13 +811,7 @@ LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double 
    }
    else if (!strcmp(norm_type, "L2") || !strcmp(norm_type, "l2"))
    {
-      /* L2 norm: sqrt of sum of squares */
-      for (HYPRE_Int i = 0; i < size; i++)
-      {
-         double val = (double)data[i];
-         local_norm += val * val;
-      }
-      MPI_Allreduce(&local_norm, &global_norm, 1, MPI_DOUBLE, MPI_SUM, comm);
+      global_norm = hypre_ParVectorInnerProd(par_vec, par_vec);
       *norm = sqrt(global_norm);
    }
    else if (!strcmp(norm_type, "inf") || !strcmp(norm_type, "Linf") ||
