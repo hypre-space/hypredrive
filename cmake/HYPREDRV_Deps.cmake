@@ -221,7 +221,7 @@ if(NOT HYPRE_FOUND)
         GIT_TAG        ${HYPRE_VERSION}
         GIT_SHALLOW    TRUE
         GIT_PROGRESS   TRUE
-        SOURCE_SUBDIR  src
+        # SOURCE_SUBDIR removed - we'll add it manually after patching
     )
 
     # Enable verbose output for FetchContent to show progress
@@ -312,42 +312,43 @@ if(NOT HYPRE_FOUND)
 
     # Fetch and configure HYPRE
     # We need to patch HYPRE's CMakeLists.txt before configuration, so we use
-    # FetchContent_GetProperties and manual populate/add_subdirectory
+    # FetchContent_MakeAvailable to populate, then patch, then manually add subdirectory
     message(STATUS "Fetching HYPRE from GitHub (branch/tag: ${HYPRE_VERSION})...")
     message(STATUS "  Repository: https://github.com/hypre-space/hypre.git")
     
-    FetchContent_GetProperties(hypre)
-    if(NOT hypre_POPULATED)
-        # Populate to get the source directory
-        FetchContent_Populate(hypre)
-        
-        message(STATUS "HYPRE source fetched successfully")
-        message(STATUS "  Source directory: ${hypre_SOURCE_DIR}")
-        
-        # Patch HYPRE's CMakeLists.txt to skip export when Caliper is auto-built
-        if(HYPRE_BUILD_CALIPER AND EXISTS "${hypre_SOURCE_DIR}/src/CMakeLists.txt")
-            file(READ "${hypre_SOURCE_DIR}/src/CMakeLists.txt" HYPRE_CMAKE_CONTENT)
-            if(HYPRE_CMAKE_CONTENT MATCHES "Export from build tree" AND NOT HYPRE_CMAKE_CONTENT MATCHES "HYPRE_BUILD_CALIPER")
-                string(REGEX REPLACE
-                    "if\\(NOT \\(HYPRE_BUILD_UMPIRE AND TARGET umpire\\)\\)"
-                    "if(NOT (HYPRE_BUILD_UMPIRE AND TARGET umpire) AND NOT (HYPRE_BUILD_CALIPER AND TARGET caliper))"
-                    HYPRE_CMAKE_CONTENT "${HYPRE_CMAKE_CONTENT}")
-                string(REGEX REPLACE
-                    "Skipping build-tree export of HYPRETargets due to auto-built Umpire dependency"
-                    "Skipping build-tree export of HYPRETargets due to auto-built Umpire or Caliper dependency"
-                    HYPRE_CMAKE_CONTENT "${HYPRE_CMAKE_CONTENT}")
-                file(WRITE "${hypre_SOURCE_DIR}/src/CMakeLists.txt" "${HYPRE_CMAKE_CONTENT}")
-                message(STATUS "  HYPRE CMakeLists.txt patched to skip export when Caliper is auto-built")
-            endif()
+    # Use FetchContent_MakeAvailable to populate the source
+    # Since SOURCE_SUBDIR was removed from FetchContent_Declare, it won't automatically
+    # add the subdirectory, allowing us to patch first
+    FetchContent_MakeAvailable(hypre)
+    
+    message(STATUS "HYPRE source fetched successfully")
+    message(STATUS "  Source directory: ${hypre_SOURCE_DIR}")
+    
+    # Patch HYPRE's CMakeLists.txt to skip export when Caliper is auto-built
+    # This must be done before add_subdirectory is called
+    if(HYPRE_BUILD_CALIPER AND EXISTS "${hypre_SOURCE_DIR}/src/CMakeLists.txt")
+        file(READ "${hypre_SOURCE_DIR}/src/CMakeLists.txt" HYPRE_CMAKE_CONTENT)
+        if(HYPRE_CMAKE_CONTENT MATCHES "Export from build tree" AND NOT HYPRE_CMAKE_CONTENT MATCHES "HYPRE_BUILD_CALIPER")
+            string(REGEX REPLACE
+                "if\\(NOT \\(HYPRE_BUILD_UMPIRE AND TARGET umpire\\)\\)"
+                "if(NOT (HYPRE_BUILD_UMPIRE AND TARGET umpire) AND NOT (HYPRE_BUILD_CALIPER AND TARGET caliper))"
+                HYPRE_CMAKE_CONTENT "${HYPRE_CMAKE_CONTENT}")
+            string(REGEX REPLACE
+                "Skipping build-tree export of HYPRETargets due to auto-built Umpire dependency"
+                "Skipping build-tree export of HYPRETargets due to auto-built Umpire or Caliper dependency"
+                HYPRE_CMAKE_CONTENT "${HYPRE_CMAKE_CONTENT}")
+            file(WRITE "${hypre_SOURCE_DIR}/src/CMakeLists.txt" "${HYPRE_CMAKE_CONTENT}")
+            message(STATUS "  HYPRE CMakeLists.txt patched to skip export when Caliper is auto-built")
         endif()
-    else()
-        message(STATUS "HYPRE source already available at: ${hypre_SOURCE_DIR}")
     endif()
 
-    # Add HYPRE subdirectory (SOURCE_SUBDIR is handled by pointing to src subdirectory)
-    message(STATUS "Configuring HYPRE build...")
-    message(STATUS "  Libraries will be built to: ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
-    add_subdirectory(${hypre_SOURCE_DIR}/src ${hypre_BINARY_DIR})
+    # Add HYPRE subdirectory manually (pointing to src subdirectory)
+    # This is done after MakeAvailable and patching to allow patching before configuration
+    if(NOT TARGET HYPRE::HYPRE)
+        message(STATUS "Configuring HYPRE build...")
+        message(STATUS "  Libraries will be built to: ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+        add_subdirectory(${hypre_SOURCE_DIR}/src ${hypre_BINARY_DIR})
+    endif()
 
     # Remove Caliper include directory from HYPRE's INTERFACE_INCLUDE_DIRECTORIES and re-add with BUILD_INTERFACE
     # This avoids CMake errors about _deps paths in INTERFACE_INCLUDE_DIRECTORIES
