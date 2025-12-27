@@ -1485,7 +1485,11 @@ GetVTKDataDir(HeatParams *params, char *buf, size_t bufsize)
 {
    char base[256];
    GetVTKBaseName(params, base, sizeof(base));
-   snprintf(buf, bufsize, "%s-data", base);
+   /* Limit base length to leave room for "-data" (5 bytes) */
+   size_t base_len = strlen(base);
+   size_t max_base_len = (bufsize > 5) ? bufsize - 5 : 0;
+   if (base_len > max_base_len) base_len = max_base_len;
+   snprintf(buf, bufsize, "%.*s-data", (int)base_len, base);
 }
 
 void
