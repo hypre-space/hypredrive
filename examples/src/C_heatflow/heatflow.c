@@ -178,12 +178,12 @@ static const char *HeatOutDir(void);
 static void        EnsureDir(const char *path);
 static void        ProjectDirichlet(DistMesh *, HeatParams *, HYPRE_Real *);
 static void        InitializeTemperatureField(DistMesh *, HeatParams *, HYPRE_Real *);
-static void q1_shape_ref(HYPRE_Real, HYPRE_Real, HYPRE_Real, HYPRE_Real N[8],
-                         HYPRE_Real dxi[8], HYPRE_Real deta[8], HYPRE_Real dzeta[8]);
-static void PrecomputeQ1ScalarTemplates(HYPRE_Real, HYPRE_Real, HYPRE_Real,
-                                        HYPRE_Real M_t[8][8], HYPRE_Real K_t[8][8]);
-static void ComputeMMSError(DistMesh *m, HeatParams *p, HYPRE_Real *T, double t,
-                            double *L2_err, double *Linf_err);
+static void        q1_shape_ref(HYPRE_Real, HYPRE_Real, HYPRE_Real, HYPRE_Real N[8],
+                                HYPRE_Real dxi[8], HYPRE_Real deta[8], HYPRE_Real dzeta[8]);
+static void        PrecomputeQ1ScalarTemplates(HYPRE_Real, HYPRE_Real, HYPRE_Real,
+                                               HYPRE_Real M_t[8][8], HYPRE_Real K_t[8][8]);
+static void        ComputeMMSError(DistMesh *m, HeatParams *p, HYPRE_Real *T, double t,
+                                   double *L2_err, double *Linf_err);
 static void ComputeHeatFlux(DistMesh *m, HeatParams *p, HYPRE_Real *T, GhostData3D *g,
                             HYPRE_Real *qx, HYPRE_Real *qy, HYPRE_Real *qz);
 
