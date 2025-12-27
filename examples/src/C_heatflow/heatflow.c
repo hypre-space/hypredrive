@@ -167,9 +167,9 @@ static void q1_shape_ref(HYPRE_Real, HYPRE_Real, HYPRE_Real, HYPRE_Real N[8],
                          HYPRE_Real dxi[8], HYPRE_Real deta[8], HYPRE_Real dzeta[8]);
 static void PrecomputeQ1ScalarTemplates(HYPRE_Real, HYPRE_Real, HYPRE_Real,
                                         HYPRE_Real M_t[8][8], HYPRE_Real K_t[8][8]);
-int         BuildNonlinearSystem_Heat(DistMesh *, HeatParams *, const HYPRE_Real *,
-                                      const HYPRE_Real *, HYPRE_IJMatrix *, HYPRE_IJVector *,
-                                      double *, double, GhostData3D *, GhostData3D *);
+int  BuildNonlinearSystem_Heat(DistMesh *, HeatParams *, const HYPRE_Real *,
+                               const HYPRE_Real *, HYPRE_IJMatrix *, HYPRE_IJVector *,
+                               double *, double, GhostData3D *, GhostData3D *);
 int  WriteVTKsolutionScalar(DistMesh *, HeatParams *, HYPRE_Real *, GhostData3D *, int,
                             double);
 void GetVTKBaseName(HeatParams *, char *, size_t);
@@ -1486,7 +1486,7 @@ GetVTKDataDir(HeatParams *params, char *buf, size_t bufsize)
    char base[256];
    GetVTKBaseName(params, base, sizeof(base));
    /* Limit base length to leave room for "-data" (5 bytes) */
-   size_t base_len = strlen(base);
+   size_t base_len     = strlen(base);
    size_t max_base_len = (bufsize > 5) ? bufsize - 5 : 0;
    if (base_len > max_base_len) base_len = max_base_len;
    snprintf(buf, bufsize, "%.*s-data", (int)base_len, base);

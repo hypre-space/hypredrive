@@ -812,7 +812,7 @@ LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double 
    else if (!strcmp(norm_type, "L2") || !strcmp(norm_type, "l2"))
    {
       global_norm = hypre_ParVectorInnerProd(par_vec, par_vec);
-      *norm = sqrt(global_norm);
+      *norm       = sqrt(global_norm);
    }
    else if (!strcmp(norm_type, "inf") || !strcmp(norm_type, "Linf") ||
             !strcmp(norm_type, "linf"))
