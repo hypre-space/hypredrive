@@ -155,18 +155,12 @@ static inline HYPRE_BigInt grid2idx(const HYPRE_BigInt g[3], const HYPRE_Int c[3
 int                        PrintUsage(void);
 int                        ParseArguments(int, char **, HeatParams *, int, int);
 static double ComputeTotalEnergyLumped(DistMesh *, HeatParams *, const HYPRE_Real *);
-int CreateDistMesh(MPI_Comm, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int,
-                   HYPRE_Int, DistMesh **);
-int DestroyDistMesh(DistMesh **);
-int CreateGhostData3D(DistMesh *, GhostData3D **);
-int DestroyGhostData3D(GhostData3D **);
-int ExchangeScalarGhosts(DistMesh *, double *, GhostData3D *);
-static void ProjectDirichlet(DistMesh *, HeatParams *, HYPRE_Real *);
-static void InitializeTemperatureField(DistMesh *, HeatParams *, HYPRE_Real *);
-static void q1_shape_ref(HYPRE_Real, HYPRE_Real, HYPRE_Real, HYPRE_Real N[8],
-                         HYPRE_Real dxi[8], HYPRE_Real deta[8], HYPRE_Real dzeta[8]);
-static void PrecomputeQ1ScalarTemplates(HYPRE_Real, HYPRE_Real, HYPRE_Real,
-                                        HYPRE_Real M_t[8][8], HYPRE_Real K_t[8][8]);
+int  CreateDistMesh(MPI_Comm, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int,
+                    HYPRE_Int, DistMesh **);
+int  DestroyDistMesh(DistMesh **);
+int  CreateGhostData3D(DistMesh *, GhostData3D **);
+int  DestroyGhostData3D(GhostData3D **);
+int  ExchangeScalarGhosts(DistMesh *, double *, GhostData3D *);
 int  BuildNonlinearSystem_Heat(DistMesh *, HeatParams *, const HYPRE_Real *,
                                const HYPRE_Real *, HYPRE_IJMatrix *, HYPRE_IJVector *,
                                double *, double, GhostData3D *, GhostData3D *);
@@ -176,16 +170,22 @@ void GetVTKBaseName(HeatParams *, char *, size_t);
 void GetVTKDataDir(HeatParams *, char *, size_t);
 void WritePVDCollectionFromStats(HeatParams *, int, double);
 void UpdateTimeStep(HeatParams *, int);
-static HYPRE_Real MMS_ExactSolution(HYPRE_Real x, HYPRE_Real y, HYPRE_Real z,
-                                    HYPRE_Real t, HeatParams *p);
-static HYPRE_Real MMS_SourceTerm(HYPRE_Real x, HYPRE_Real y, HYPRE_Real z, HYPRE_Real t,
-                                 HeatParams *p);
-static void       ComputeMMSError(DistMesh *m, HeatParams *p, HYPRE_Real *T, double t,
-                                  double *L2_err, double *Linf_err);
-static void ComputeHeatFlux(DistMesh *m, HeatParams *p, HYPRE_Real *T, GhostData3D *g,
-                            HYPRE_Real *qx, HYPRE_Real *qy, HYPRE_Real *qz);
+static HYPRE_Real  MMS_ExactSolution(HYPRE_Real x, HYPRE_Real y, HYPRE_Real z,
+                                     HYPRE_Real t, HeatParams *p);
+static HYPRE_Real  MMS_SourceTerm(HYPRE_Real x, HYPRE_Real y, HYPRE_Real z, HYPRE_Real t,
+                                  HeatParams *p);
 static const char *HeatOutDir(void);
 static void        EnsureDir(const char *path);
+static void        ProjectDirichlet(DistMesh *, HeatParams *, HYPRE_Real *);
+static void        InitializeTemperatureField(DistMesh *, HeatParams *, HYPRE_Real *);
+static void q1_shape_ref(HYPRE_Real, HYPRE_Real, HYPRE_Real, HYPRE_Real N[8],
+                         HYPRE_Real dxi[8], HYPRE_Real deta[8], HYPRE_Real dzeta[8]);
+static void PrecomputeQ1ScalarTemplates(HYPRE_Real, HYPRE_Real, HYPRE_Real,
+                                        HYPRE_Real M_t[8][8], HYPRE_Real K_t[8][8]);
+static void ComputeMMSError(DistMesh *m, HeatParams *p, HYPRE_Real *T, double t,
+                            double *L2_err, double *Linf_err);
+static void ComputeHeatFlux(DistMesh *m, HeatParams *p, HYPRE_Real *T, GhostData3D *g,
+                            HYPRE_Real *qx, HYPRE_Real *qy, HYPRE_Real *qz);
 
 /* Safe exponential to avoid under/overflow in k(T) = k0 * exp(beta*T) */
 static inline HYPRE_Real
