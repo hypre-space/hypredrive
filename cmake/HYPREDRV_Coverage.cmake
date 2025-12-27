@@ -80,18 +80,29 @@ if(HYPREDRV_ENABLE_COVERAGE)
             message(WARNING "llvm-cov not found; falling back to gcov (may not work with Clang)")
         endif()
     elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-        # For GCC, use gcov
-        list(APPEND _gcov_candidates gcov)
+        # For GCC, prefer versioned gcov that matches the compiler, then fallback to generic
         if(CMAKE_C_COMPILER_VERSION)
             list(APPEND _gcov_candidates gcov-${CMAKE_C_COMPILER_VERSION_MAJOR})
         endif()
+        list(APPEND _gcov_candidates gcov)
     else()
         list(APPEND _gcov_candidates gcov)
     endif()
 
-    # Find gcov if not already set (for GCC or fallback)
-    if(NOT GCOV_EXECUTABLE)
-        find_program(GCOV_EXECUTABLE NAMES ${_gcov_candidates})
+    # Find gcov if not already set (for GCC or fallback). Prefer versioned gcov matching the compiler.
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION_MAJOR)
+        find_program(_GCOV_VERSIONED NAMES gcov-${CMAKE_C_COMPILER_VERSION_MAJOR})
+        if(_GCOV_VERSIONED)
+            set(GCOV_EXECUTABLE ${_GCOV_VERSIONED} CACHE FILEPATH "gcov executable" FORCE)
+        else()
+            if(NOT GCOV_EXECUTABLE)
+                find_program(GCOV_EXECUTABLE NAMES ${_gcov_candidates})
+            endif()
+        endif()
+    else()
+        if(NOT GCOV_EXECUTABLE)
+            find_program(GCOV_EXECUTABLE NAMES ${_gcov_candidates})
+        endif()
     endif()
 
     if(GCOV_EXECUTABLE)
@@ -103,12 +114,16 @@ if(HYPREDRV_ENABLE_COVERAGE)
         set(_gcovr_args
             --root ${CMAKE_SOURCE_DIR}
             --object-directory ${CMAKE_BINARY_DIR}
+            --filter "${CMAKE_SOURCE_DIR}/src/.*"
+            --exclude ".*\\.h$"
+            --exclude ".*/src/info\\.c$"
             --exclude ".*(/|^)cmake/.*"
             --exclude ".*(/|^)examples/.*"
             --exclude ".*(/|^)install/.*"
             --exclude ".*(/|^)docs/.*"
-            --exclude ".*\\.h$"
-            --exclude ".*/src/info\\.c$"
+            --exclude-directories "${CMAKE_BINARY_DIR}/tests"
+            --gcov-ignore-errors all
+            --gcov-ignore-parse-errors
             --merge-mode-functions=merge-use-line-0
             --xml coverage.xml --xml-pretty
             --html-details coverage.html
