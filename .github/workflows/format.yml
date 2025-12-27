@@ -24,28 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Cache LLVM tarball
-        id: cache-llvm
-        uses: actions/cache@v4
-        with:
-          path: clang+llvm-22.0.0-x86_64-linux-gnu-ubuntu-24.04.tar.xz
-          key: llvm-22.0.0-ubuntu-24.04-tarball
-
-      - name: Download LLVM tarball
-        if: steps.cache-llvm.outputs.cache-hit != 'true'
+      - name: Install clang-format
         run: |
-          # Note: LLVM doesn't provide standalone clang-format downloads
-          wget -q https://github.com/llvm/llvm-project/releases/download/llvmorg-22.0.0/clang+llvm-22.0.0-x86_64-linux-gnu-ubuntu-24.04.tar.xz
-
-      - name: Install clang-format-22
-        run: |
-          tar -xf clang+llvm-22.0.0-x86_64-linux-gnu-ubuntu-24.04.tar.xz --strip-components=2 clang+llvm-22.0.0-x86_64-linux-gnu-ubuntu-24.04/bin/clang-format
-          sudo mv clang-format /usr/local/bin/clang-format-22
-          sudo chmod +x /usr/local/bin/clang-format-22
-          rm -f clang+llvm-22.0.0-x86_64-linux-gnu-ubuntu-24.04.tar.xz
+          sudo apt-get update
+          sudo apt-get install -y clang-format
 
       - name: clang-format check
         run: |
           set -euxo pipefail
           find include src examples/src -type f \( -name "*.c" -o -name "*.h" \) | \
-            xargs clang-format-22 -n --Werror
+            xargs clang-format -n --Werror
