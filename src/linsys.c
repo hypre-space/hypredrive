@@ -530,19 +530,24 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                 * builds */
 #if defined(HYPRE_BIG_INT)
                long long tmpM = 0, tmpN = 0;
-               if (sscanf(line, "%lld %lld", &tmpM, &tmpN) == 2)
-               {
-                  M = (HYPRE_BigInt)tmpM;
-                  N = (HYPRE_BigInt)tmpN;
-               }
+               int       read_ok = (sscanf(line, "%lld %lld", &tmpM, &tmpN) == 2);
 #else
                int tmpM = 0, tmpN = 0;
-               if (sscanf(line, "%d %d", &tmpM, &tmpN) == 2)
+               int read_ok = (sscanf(line, "%d %d", &tmpM, &tmpN) == 2);
+#endif
+
+               if (read_ok)
                {
                   M = (HYPRE_BigInt)tmpM;
                   N = (HYPRE_BigInt)tmpN;
                }
-#endif
+               else
+               {
+                  ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+                  ErrorMsgAdd("Failed to read vector dimensions from %s", rhs_filename);
+                  M = -1; /* Signal error */
+                  N = 0;
+               }
 
                if (N != 1)
                {
@@ -957,11 +962,11 @@ LinearSystemGetRHSValues(HYPRE_IJVector rhs, HYPRE_Complex **data_ptr)
 void
 LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double *norm)
 {
-   HYPRE_ParVector par_vec = NULL;
-   hypre_Vector   *seq_vec = NULL;
-   void           *obj     = NULL;
-   HYPRE_Complex  *data    = NULL;
-   HYPRE_Int       size    = 0;
+   HYPRE_ParVector      par_vec = NULL;
+   const hypre_Vector  *seq_vec = NULL;
+   void                *obj     = NULL;
+   const HYPRE_Complex *data    = NULL;
+   HYPRE_Int            size    = 0;
 
    HYPRE_IJVectorGetObject(vec, &obj);
    par_vec = (HYPRE_ParVector)obj;
@@ -985,7 +990,7 @@ LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double 
    }
    else if (!strcmp(norm_type, "L2") || !strcmp(norm_type, "l2"))
    {
-      global_norm = hypre_ParVectorInnerProd(par_vec, par_vec);
+      global_norm = (double) hypre_ParVectorInnerProd(par_vec, par_vec);
       *norm       = sqrt(global_norm);
    }
    else if (!strcmp(norm_type, "inf") || !strcmp(norm_type, "Linf") ||
