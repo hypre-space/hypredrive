@@ -922,8 +922,8 @@ StatsLevelPrint(int level)
    for (int i = 0; i < count; i++)
    {
       const LevelEntry *entry = &active_stats->level_entries[level][i];
-      int         num_solves, linear_iters;
-      double      setup_time, solve_time;
+      int               num_solves, linear_iters;
+      double            setup_time, solve_time;
 
       ComputeLevelStats(entry, &num_solves, &linear_iters, &setup_time, &solve_time);
 
