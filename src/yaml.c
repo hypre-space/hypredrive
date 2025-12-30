@@ -56,7 +56,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
    char  *filename    = NULL;
    char  *new_text    = NULL;
    int    inner_level = 0, pos = 0;
-   size_t num_whitespaces = 0;
+   size_t num_whitespaces     = 0;
    size_t new_length          = 0;
    int    base_indent         = *base_indent_ptr; // Track base indentation level
    int    prev_indent         = -1;               // Track previous indentation level

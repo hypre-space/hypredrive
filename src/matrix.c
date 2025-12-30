@@ -134,7 +134,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          }
 
          /* Read row and column indices */
-         if (header[1] == sizeof(HYPRE_BigInt) && h_rows != NULL && h_cols != NULL && header[6] > 0)
+         if (header[1] == sizeof(HYPRE_BigInt) && h_rows != NULL && h_cols != NULL &&
+             header[6] > 0)
          {
             if (fread(h_rows, sizeof(HYPRE_BigInt), header[6], fp) != header[6])
             {
@@ -337,7 +338,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       }
 
       /* Read row and column indices */
-      if (header[1] == sizeof(HYPRE_BigInt) && h_rows != NULL && h_cols != NULL && header[6] > 0)
+      if (header[1] == sizeof(HYPRE_BigInt) && h_rows != NULL && h_cols != NULL &&
+          header[6] > 0)
       {
          if (fread(h_rows, sizeof(HYPRE_BigInt), header[6], fp) != header[6])
          {
