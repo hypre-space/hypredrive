@@ -118,25 +118,25 @@ LinearSystemGetValidValues(const char *key)
 void
 LinearSystemSetDefaultArgs(LS_args *args)
 {
-   strcpy(args->dirname, "");
-   strcpy(args->matrix_filename, "");
-   strcpy(args->matrix_basename, "");
-   strcpy(args->precmat_filename, "");
-   strcpy(args->precmat_basename, "");
-   strcpy(args->rhs_filename, "");
-   strcpy(args->rhs_basename, "");
-   strcpy(args->x0_filename, "");
-   strcpy(args->sol_filename, "");
-   strcpy(args->dofmap_filename, "");
-   strcpy(args->dofmap_basename, "");
-   args->digits_suffix   = 5;
-   args->init_suffix     = -1;
-   args->last_suffix     = -1;
-   args->init_guess_mode = 0;
-   args->rhs_mode        = 0;
-   args->type            = 1;
-   args->precon_reuse    = 0;
-   args->num_systems     = 1;
+   args->dirname[0]          = '\0';
+   args->matrix_filename[0]  = '\0';
+   args->matrix_basename[0]  = '\0';
+   args->precmat_filename[0] = '\0';
+   args->precmat_basename[0] = '\0';
+   args->rhs_filename[0]     = '\0';
+   args->rhs_basename[0]     = '\0';
+   args->x0_filename[0]      = '\0';
+   args->sol_filename[0]     = '\0';
+   args->dofmap_filename[0]  = '\0';
+   args->dofmap_basename[0]  = '\0';
+   args->digits_suffix       = 5;
+   args->init_suffix         = -1;
+   args->last_suffix         = -1;
+   args->init_guess_mode     = 0;
+   args->rhs_mode            = 0;
+   args->type                = 1;
+   args->precon_reuse        = 0;
+   args->num_systems         = 1;
 #ifdef HYPRE_USING_GPU
    args->exec_policy = 1;
 #else
@@ -156,7 +156,7 @@ LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix 
                              int num_entries, int num_components,
                              const HYPRE_Complex *values, HYPRE_IJVector *vec_nn_ptr)
 {
-   HYPRE_BigInt ilower, iupper, jlower, jupper;
+   HYPRE_BigInt ilower = 0, iupper = 0, jlower = 0, jupper = 0;
 
    /* Destroy previous NN vector if present */
    if (*vec_nn_ptr)
@@ -188,7 +188,7 @@ LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix 
    for (HYPRE_Int c = 0; c < num_components; c++)
    {
       const HYPRE_Complex *vals_c =
-         values ? (values + (size_t)c * (size_t)num_entries) : NULL;
+         values ? (values + ((size_t)c * (size_t)num_entries)) : NULL;
       HYPRE_IJVectorSetComponent(*vec_nn_ptr, c);
       HYPRE_IJVectorSetValues(*vec_nn_ptr, num_entries, NULL, vals_c);
    }
@@ -259,7 +259,7 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    }
    else if (args->matrix_filename[0] != '\0')
    {
-      strcpy(matrix_filename, args->matrix_filename);
+      snprintf(matrix_filename, sizeof(matrix_filename), "%s", args->matrix_filename);
    }
    else if (args->matrix_basename[0] != '\0')
    {
@@ -462,7 +462,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       }
       else if (args->rhs_filename[0] != '\0')
       {
-         strcpy(rhs_filename, args->rhs_filename);
+         snprintf(rhs_filename, sizeof(rhs_filename), "%s", args->rhs_filename);
       }
       else if (args->rhs_basename[0] != '\0')
       {
@@ -489,14 +489,14 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       }
       else if (args->type == 3)
       {
-         int                myid;
-         int                num_procs;
-         FILE              *file;
+         int                myid      = 0;
+         int                num_procs = 0;
+         FILE              *file      = NULL;
          char               line[1024];
-         HYPRE_BigInt       M, N;
-         HYPRE_Complex     *all_values = NULL;
-         HYPRE_Complex     *local_values;
-         HYPRE_BigInt       global_num_rows, global_num_cols;
+         HYPRE_BigInt       M = 0, N = 0;
+         HYPRE_Complex     *all_values      = NULL;
+         HYPRE_Complex     *local_values    = NULL;
+         HYPRE_BigInt       global_num_rows = 0, global_num_cols = 0;
          HYPRE_ParCSRMatrix par_A  = NULL;
          void              *obj    = NULL;
          int               *counts = NULL;
@@ -512,7 +512,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 
          if (myid == 0)
          {
-            if ((file = fopen(rhs_filename, "r")) == NULL)
+            file = fopen(rhs_filename, "r");
+            if (file == NULL)
             {
                ErrorCodeSet(ERROR_FILE_NOT_FOUND);
                ErrorMsgAdd("Cannot open file %s", rhs_filename);
@@ -528,12 +529,16 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 
                /* Read dimensions with type-safe temps to satisfy both int and long long
                 * builds */
-#if defined(HYPRE_BIG_INT)
-               long long tmpM = 0, tmpN = 0;
-               int       read_ok = (sscanf(line, "%lld %lld", &tmpM, &tmpN) == 2);
+#ifdef HYPRE_BIG_INT
+               long long tmpM     = strtoll(line, NULL, 10);
+               char     *line_ptr = strchr(line, ' ');
+               long long tmpN = (line_ptr != NULL) ? strtoll(line_ptr + 1, NULL, 10) : 0;
+               int       read_ok = (tmpM != 0 && tmpN != 0);
 #else
-               int tmpM = 0, tmpN = 0;
-               int read_ok = (sscanf(line, "%d %d", &tmpM, &tmpN) == 2);
+               int   tmpM     = (int)strtol(line, NULL, 10);
+               char *line_ptr = strchr(line, ' ');
+               int   tmpN = (line_ptr != NULL) ? (int)strtol(line_ptr + 1, NULL, 10) : 0;
+               int   read_ok = (tmpM != 0 && tmpN != 0);
 #endif
 
                if (read_ok)
@@ -569,13 +574,24 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                   all_values = hypre_TAlloc(HYPRE_Complex, M, HYPRE_MEMORY_HOST);
                   for (HYPRE_BigInt i = 0; i < M; i++)
                   {
-                     double tmp_val = 0.0;
-                     if (fscanf(file, "%lf", &tmp_val) != 1)
+                     char *endptr = NULL;
+                     if (fgets(line, sizeof(line), file) == NULL)
                      {
                         ErrorCodeSet(ERROR_UNKNOWN);
                         ErrorMsgAdd("Error reading value for index " HYPRE_BIG_INT_SSCANF
                                     " from %s",
                                     i, rhs_filename);
+                        M = -1;
+                        break;
+                     }
+                     double tmp_val = strtod(line, &endptr);
+                     if (endptr == line || (*endptr != '\0' && *endptr != '\n'))
+                     {
+                        ErrorCodeSet(ERROR_UNKNOWN);
+                        ErrorMsgAdd(
+                           "Error converting value for index " HYPRE_BIG_INT_SSCANF
+                           " from %s",
+                           i, rhs_filename);
                         M = -1;
                         break;
                      }
@@ -839,7 +855,7 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    }
    else if (args->precmat_filename[0] != '\0')
    {
-      strcpy(matrix_filename, args->precmat_filename);
+      snprintf(matrix_filename, sizeof(matrix_filename), "%s", args->precmat_filename);
    }
    else if (args->precmat_basename[0] != '\0')
    {
@@ -898,7 +914,7 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
       }
       else if (args->dofmap_filename[0] != '\0')
       {
-         strcpy(dofmap_filename, args->dofmap_filename);
+         snprintf(dofmap_filename, sizeof(dofmap_filename), "%s", args->dofmap_filename);
       }
       else
       {
@@ -1162,13 +1178,12 @@ LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_A,
       DIR *dir     = opendir(root);
       if (dir)
       {
-         const struct dirent *ent;
+         const struct dirent *ent = NULL;
          while ((ent = readdir(dir)) != NULL)
          {
             if (ent->d_name[0] == 'l' && ent->d_name[1] == 's' && ent->d_name[2] == '_')
             {
-               int idx = -1;
-               if (sscanf(ent->d_name + 3, "%d", &idx) == 1)
+               int idx = (int)strtol(ent->d_name + 3, NULL, 10);
                {
                   if (idx > max_idx) max_idx = idx;
                }

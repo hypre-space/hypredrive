@@ -432,9 +432,9 @@ AMGsmtGetValidValues(const char *key)
 void
 AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 {
-   HYPRE_BigInt   jlower, jupper;
-   HYPRE_Int      num_entries;
-   HYPRE_Complex *values = NULL;
+   HYPRE_BigInt   jlower = 0, jupper = 0;
+   HYPRE_Int      num_entries = 0;
+   HYPRE_Complex *values      = NULL;
 
    /* Sanity: check if the near null space vector is set
       We do not error out when NOT using nodal coarsening. */

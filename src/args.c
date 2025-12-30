@@ -143,23 +143,23 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
       }
       else if (!strcmp(child->key, "num_repetitions"))
       {
-         iargs->num_repetitions = atoi(child->val);
+         iargs->num_repetitions = (int)strtol(child->val, NULL, 10);
       }
       else if (!strcmp(child->key, "dev_pool_size"))
       {
-         iargs->dev_pool_size = GB_TO_BYTES * atof(child->val);
+         iargs->dev_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
       }
       else if (!strcmp(child->key, "uvm_pool_size"))
       {
-         iargs->uvm_pool_size = GB_TO_BYTES * atof(child->val);
+         iargs->uvm_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
       }
       else if (!strcmp(child->key, "host_pool_size"))
       {
-         iargs->host_pool_size = GB_TO_BYTES * atof(child->val);
+         iargs->host_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
       }
       else if (!strcmp(child->key, "pinned_pool_size"))
       {
-         iargs->pinned_pool_size = GB_TO_BYTES * atof(child->val);
+         iargs->pinned_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
       }
       else
       {
@@ -375,10 +375,13 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    {
       text = (char *)malloc(text_size + 1);
    } /* +1: for null terminator */
-   MPI_Bcast(text, text_size, MPI_CHAR, 0, comm);
+   MPI_Bcast(text, (int)text_size, MPI_CHAR, 0, comm);
 
    /* Make sure null terminator is in the right place */
-   text[text_size] = '\0';
+   if (text)
+   {
+      text[text_size] = '\0';
+   }
 
    // printf("text_size: %ld | strlen(text): %ld\n", text_size, strlen(text));
 

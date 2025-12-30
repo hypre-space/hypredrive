@@ -11,7 +11,8 @@
 #include <string.h>
 
 /* Active stats context (pointer to stats owned by a hypredrv_t object) */
-static Stats *active_stats = NULL;
+static Stats *active_stats =
+   NULL; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 /* Reallocation expansion factor */
 #define REALLOC_EXPAND_FACTOR 16
@@ -534,12 +535,6 @@ StatsAnnotateLevelBegin(int level, const char *name)
    active_stats->level_solve_start[level] = active_stats->ls_counter;
 
    /* Commenting out for now to avoid multiple caliper regions for each solve call */
-#if 0
-   /* Start Caliper region with hierarchical name */
-   char full_name[2048];
-   snprintf(full_name, sizeof(full_name), "HYPREDRV_L%d_%.1014s", level, formatted_name);
-   HYPREDRV_ANNOTATE_REGION_BEGIN("%s", full_name)
-#endif
 }
 
 /*--------------------------------------------------------------------------
@@ -627,12 +622,6 @@ StatsAnnotateLevelEnd(int level, const char *name)
    }
 
    /* Commenting out for now to avoid multiple caliper regions for each solve call */
-#if 0
-   /* Stop Caliper region */
-   char full_name[2048];
-   snprintf(full_name, sizeof(full_name), "HYPREDRV_L%d_%.1014s", level, formatted_name);
-   HYPREDRV_ANNOTATE_REGION_END("%s", full_name)
-#endif
 
    /* Pop from level stack - free allocated memory */
    if (active_stats->level_stack[level].name)
@@ -921,9 +910,9 @@ StatsLevelPrint(int level)
 
    for (int i = 0; i < count; i++)
    {
-      const LevelEntry *entry = &active_stats->level_entries[level][i];
-      int               num_solves, linear_iters;
-      double            setup_time, solve_time;
+      const LevelEntry *entry      = &active_stats->level_entries[level][i];
+      int               num_solves = 0, linear_iters = 0;
+      double            setup_time = 0.0, solve_time = 0.0;
 
       ComputeLevelStats(entry, &num_solves, &linear_iters, &setup_time, &solve_time);
 
@@ -935,9 +924,11 @@ StatsLevelPrint(int level)
 
    /* Print summary in original format */
    double avg_iters_per_solve =
-      total_solves > 0 ? (double)total_linear / total_solves : 0.0;
-   double avg_setup_per_solve = total_solves > 0 ? total_setup / total_solves : 0.0;
-   double avg_solve_per_solve = total_solves > 0 ? total_solve / total_solves : 0.0;
+      total_solves > 0 ? (double)total_linear / (double)total_solves : 0.0;
+   double avg_setup_per_solve =
+      total_solves > 0 ? total_setup / (double)total_solves : 0.0;
+   double avg_solve_per_solve =
+      total_solves > 0 ? total_solve / (double)total_solves : 0.0;
 
    double avg_iters_per_entry = count > 0 ? (double)total_linear / count : 0.0;
    double avg_setup_per_entry = count > 0 ? total_setup / count : 0.0;

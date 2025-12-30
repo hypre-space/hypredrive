@@ -17,10 +17,11 @@
 #include "utils.h"
 
 /* Maximum number of hierarchical annotation levels */
-#define STATS_MAX_LEVELS 4
-
-/* Default capacity for timestep stats */
-#define STATS_TIMESTEP_CAPACITY 64
+enum StatsConstants
+{
+   STATS_MAX_LEVELS        = 4,
+   STATS_TIMESTEP_CAPACITY = 64
+};
 
 /* HYPREDRV_AnnotateAction enum - internal use only (not in public API) */
 typedef enum

@@ -71,11 +71,11 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       }
 
       /* Read header contents */
-      if (fread(header, sizeof(uint64_t), 8, fp) != 8)
+      if (!fp || fread(header, sizeof(uint64_t), 8, fp) != 8)
       {
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          ErrorMsgAdd("Could not read header from %s", filename);
-         fclose(fp);
+         if (fp) fclose(fp);
          goto cleanup;
       }
       fclose(fp);
@@ -94,7 +94,8 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    HYPRE_IJVectorInitialize_v2(vec, memory_location);
 
    /* Allocate variables */
-   h_vals = (HYPRE_Complex *)malloc(nrows_max * sizeof(HYPRE_Complex));
+   h_vals =
+      (nrows_max > 0) ? (HYPRE_Complex *)malloc(nrows_max * sizeof(HYPRE_Complex)) : NULL;
 #ifdef HYPRE_USING_GPU
    if (memory_location == HYPRE_MEMORY_DEVICE)
    {
@@ -111,20 +112,24 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    {
       snprintf(filename, sizeof(filename), "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
-      if (fread(header, sizeof(uint64_t), 8, fp) != 8)
+      if (!fp || fread(header, sizeof(uint64_t), 8, fp) != 8)
       {
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          ErrorMsgAdd("Could not read header from %s", filename);
-         fclose(fp);
+         if (fp) fclose(fp);
          goto cleanup;
       }
 
       /* Read vector coefficients */
       if (header[1] == sizeof(float))
       {
-         float *buffer = (float *)malloc(header[5] * sizeof(float));
+         float *buffer = NULL;
+         if (header[5] > 0)
+         {
+            buffer = (float *)malloc(header[5] * sizeof(float));
+         }
 
-         if (fread(buffer, sizeof(float), header[5], fp) != header[5])
+         if (!buffer || fread(buffer, sizeof(float), header[5], fp) != header[5])
          {
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read coeficients from %s", filename);
@@ -133,7 +138,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             goto cleanup;
          }
 
-         for (size_t i = 0; i < header[5]; i++)
+         for (size_t i = 0; h_vals && i < header[5]; i++)
          {
             h_vals[i] = (HYPRE_Complex)buffer[i];
          }
@@ -142,9 +147,13 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       }
       else if (header[1] == sizeof(double))
       {
-         double *buffer = (double *)malloc(header[5] * sizeof(double));
+         double *buffer = NULL;
+         if (header[5] > 0)
+         {
+            buffer = (double *)malloc(header[5] * sizeof(double));
+         }
 
-         if (fread(buffer, sizeof(double), header[5], fp) != header[5])
+         if (!buffer || fread(buffer, sizeof(double), header[5], fp) != header[5])
          {
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read coeficients from %s", filename);
@@ -153,7 +162,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             goto cleanup;
          }
 
-         for (size_t i = 0; i < header[5]; i++)
+         for (size_t i = 0; h_vals && i < header[5]; i++)
          {
             h_vals[i] = (HYPRE_Complex)buffer[i];
          }

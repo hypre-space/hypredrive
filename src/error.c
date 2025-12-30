@@ -6,8 +6,11 @@
  ******************************************************************************/
 
 #include "error.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-#if defined(__linux__)
+#ifdef __linux__
 
 #include <execinfo.h>
 #include <fcntl.h>
@@ -155,6 +158,10 @@ ErrorBacktracePrint(void)
    size_t  size   = 0;
    char   *line   = NULL;
    ssize_t length = 0;
+   if (!f)
+   {
+      return;
+   }
    while ((length = getline(&line, &size, f)) > 0)
    {
       if (!strncmp(line, "TracerPid:", sizeof("TracerPid:") - 1) &&
@@ -199,7 +206,7 @@ ErrorBacktracePrint(void)
       char exe_link[64];
       char exe_path[4096];
       snprintf(exe_link, sizeof(exe_link), "/proc/%d/exe", parent_pid);
-      ssize_t len = readlink(exe_link, exe_path, sizeof(exe_path) - 1);
+      ssize_t len = readlink(exe_path, exe_link, sizeof(exe_link) - 1);
       if (len > 0)
       {
          exe_path[len] = '\0';
@@ -501,7 +508,7 @@ ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
    char       *msg    = NULL;
    uint32_t    count  = ErrorCodeCountGet(code);
    const char *plural = (count > 1) ? "s" : "";
-   int         length = strlen(suffix) + 24;
+   int         length = (int)strlen(suffix) + 24;
 
    msg = (char *)malloc(length);
    snprintf(msg, length, "Found %d %s%s!", (int)count, suffix, plural);
@@ -517,7 +524,7 @@ void
 ErrorMsgAddMissingKey(const char *key)
 {
    char *msg    = NULL;
-   int   length = strlen(key) + 16;
+   int   length = (int)strlen(key) + 16;
 
    msg = (char *)malloc(length);
    snprintf(msg, length, "Missing key: %s", key);
@@ -533,7 +540,7 @@ void
 ErrorMsgAddExtraKey(const char *key)
 {
    char *msg    = NULL;
-   int   length = strlen(key) + 24;
+   int   length = (int)strlen(key) + 24;
 
    msg = (char *)malloc(length);
    snprintf(msg, length, "Extra (unused) key: %s", key);
@@ -549,7 +556,7 @@ void
 ErrorMsgAddUnexpectedVal(const char *key)
 {
    char *msg    = NULL;
-   int   length = strlen(key) + 40;
+   int   length = (int)strlen(key) + 40;
 
    msg = (char *)malloc(length);
    snprintf(msg, length, "Unexpected value associated with %s key", key);

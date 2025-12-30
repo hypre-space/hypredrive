@@ -304,7 +304,7 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
          YAML_NODE_SET_VALID(child);
          YAML_NODE_ITERATE(child, grandchild)
          {
-            int lvl = atoi(grandchild->key);
+            int lvl = (int)strtol(grandchild->key, NULL, 10);
 
             if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1)
             {
@@ -412,7 +412,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_Int    num_c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *inactive_dofs = NULL;
-   HYPRE_Int    lvl = 0, i = 0, j;
+   HYPRE_Int    lvl = 0, i = 0, j = 0;
 
    /* Sanity checks */
    if (!args->dofmap)
@@ -423,7 +423,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
    /* Initialize variables */
    dofmap     = args->dofmap;
-   num_dofs   = dofmap->g_unique_size;
+   num_dofs   = (HYPRE_Int)dofmap->g_unique_size;
    num_levels = args->num_levels;
 
    /* Compute num_c_dofs and c_dofs */
@@ -432,7 +432,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
       c_dofs[lvl]     = (HYPRE_Int *)malloc(num_dofs * sizeof(HYPRE_Int));
-      num_c_dofs[lvl] = num_dofs_last - args->level[lvl].f_dofs.size;
+      num_c_dofs[lvl] = (HYPRE_Int)(num_dofs_last - args->level[lvl].f_dofs.size);
 
       for (i = 0; i < (int)args->level[lvl].f_dofs.size; i++)
       {
@@ -534,7 +534,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       ILUCreate(&args->coarsest_level.ilu, &args->csolver);
       HYPRE_MGRSetCoarseSolver(precon, HYPRE_ILUSolve, HYPRE_ILUSetup, args->csolver);
    }
-#if defined(HYPRE_USING_DSUPERLU)
+#ifdef HYPRE_USING_DSUPERLU
    else if (args->coarsest_level.type == 29)
    {
       HYPRE_MGRDirectSolverCreate(&args->csolver);

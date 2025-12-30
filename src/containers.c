@@ -13,8 +13,8 @@
 void
 IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char *filename)
 {
-   int   myid, nprocs;
-   FILE *fp;
+   int   myid = 0, nprocs = 0;
+   FILE *fp = NULL;
    char  fname[MAX_FILENAME_LENGTH];
 
    if (!ia || !ia->data) return;
@@ -121,19 +121,20 @@ IntArrayDestroy(IntArray **int_array_ptr)
 void
 StrToIntArray(const char *string, IntArray **int_array_ptr)
 {
-   char       *buffer    = NULL;
-   const char *token     = NULL;
-   int         count     = 0;
-   IntArray   *int_array = NULL;
+   char     *buffer    = NULL;
+   char     *token     = NULL;
+   char     *saveptr   = NULL;
+   int       count     = 0;
+   IntArray *int_array = NULL;
 
    /* Find number of elements in array */
    buffer = strdup(string);
-   token  = strtok(buffer, "[], ");
+   token  = strtok_r(buffer, "[], ", &saveptr);
    count  = 0;
    while (token)
    {
       count++;
-      token = strtok(NULL, "[], ");
+      token = strtok_r(NULL, "[], ", &saveptr);
    }
    free(buffer);
 
@@ -142,13 +143,13 @@ StrToIntArray(const char *string, IntArray **int_array_ptr)
 
    /* Build array */
    buffer = strdup(string);
-   token  = strtok(buffer, "[], ");
+   token  = strtok_r(buffer, "[], ", &saveptr);
    count  = 0;
    while (token)
    {
       int_array->data[count] = atoi(token);
       count++;
-      token = strtok(NULL, "[], ");
+      token = strtok_r(NULL, "[], ", &saveptr);
    }
    free(buffer);
 
@@ -319,7 +320,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
       free(all_num_entries);
       free(displs);
    }
-   MPI_Bcast(int_array->g_unique_data, int_array->g_unique_size, MPI_INT, 0, comm);
+   MPI_Bcast(int_array->g_unique_data, (int)int_array->g_unique_size, MPI_INT, 0, comm);
 }
 
 /*-----------------------------------------------------------------------------
@@ -331,7 +332,7 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
 {
    char      filename[MAX_FILENAME_LENGTH];
    char      suffix[5], code[3];
-   size_t    num_entries = 0, num_entries_all = 0, count;
+   size_t    num_entries = 0, num_entries_all = 0, count = 0;
    IntArray *int_array = NULL;
    FILE     *fp        = NULL;
    int       myid = 0, nprocs = 0, nparts = 0, g_nparts = 0, offset = 0;
