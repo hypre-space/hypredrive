@@ -50,7 +50,7 @@ extern "C"
          }                                                                           \
          else                                                                        \
          {                                                                           \
-            MPI_Abort(MPI_COMM_WORLD, error_code);                                   \
+            MPI_Abort(MPI_COMM_WORLD, (int)error_code);                              \
          }                                                                           \
       }                                                                              \
    } while (0)

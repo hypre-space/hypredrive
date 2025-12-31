@@ -387,8 +387,8 @@ HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv, int nstates, HYPRE_IJVector *vecs)
    HYPREDRV_CHECK_OBJ();
 
    hypredrv->nstates = nstates;
-   hypredrv->states  = (int *)malloc(sizeof(int) * nstates);
-   hypredrv->vec_s   = (HYPRE_IJVector *)malloc(sizeof(HYPRE_IJVector) * nstates);
+   hypredrv->states  = (int *)malloc(sizeof(int) * (size_t)nstates);
+   hypredrv->vec_s   = (HYPRE_IJVector *)malloc(sizeof(HYPRE_IJVector) * (size_t)nstates);
    for (int i = 0; i < nstates; i++)
    {
       hypredrv->states[i] = i;

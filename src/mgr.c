@@ -428,11 +428,11 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
    /* Compute num_c_dofs and c_dofs */
    num_dofs_last = num_dofs;
-   inactive_dofs = (HYPRE_Int *)calloc(num_dofs, sizeof(HYPRE_Int));
+   inactive_dofs = (HYPRE_Int *)calloc((size_t)num_dofs, sizeof(HYPRE_Int));
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
-      c_dofs[lvl]     = (HYPRE_Int *)malloc(num_dofs * sizeof(HYPRE_Int));
-      num_c_dofs[lvl] = (HYPRE_Int)(num_dofs_last - args->level[lvl].f_dofs.size);
+      c_dofs[lvl]     = (HYPRE_Int *)malloc((size_t)num_dofs * sizeof(HYPRE_Int));
+      num_c_dofs[lvl] = (HYPRE_Int)((size_t)num_dofs_last - args->level[lvl].f_dofs.size);
 
       for (i = 0; i < (int)args->level[lvl].f_dofs.size; i++)
       {
@@ -457,7 +457,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    else
    {
       dofmap_data = (HYPRE_Int *)malloc(dofmap->size * sizeof(HYPRE_Int));
-      for (i = 0; i < dofmap->size; i++)
+      for (i = 0; i < (int)dofmap->size; i++)
       {
          dofmap_data[i] = (HYPRE_Int)dofmap->data[i];
       }

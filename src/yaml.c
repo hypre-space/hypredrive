@@ -362,6 +362,9 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
 void
 YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 {
+   (void)argc;
+   (void)argv;
+   (void)tree;
    /* TODO */
    return;
 }

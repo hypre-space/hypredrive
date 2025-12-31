@@ -50,9 +50,10 @@ StrTrim(char *str)
 int
 CheckBinaryDataExists(const char *prefix)
 {
-   char  filename[MAX_FILENAME_LENGTH];
-   int   file_exists = 0;
-   FILE *fp          = NULL;
+   (void)prefix;
+   char  filename[MAX_FILENAME_LENGTH] = {0};
+   int   file_exists                   = 0;
+   FILE *fp                            = NULL;
 
    /* Check if binary data exist */
    fp          = fopen(filename, "r");
@@ -72,9 +73,10 @@ CheckBinaryDataExists(const char *prefix)
 int
 CheckASCIIDataExists(const char *prefix)
 {
-   char  filename[MAX_FILENAME_LENGTH];
-   int   file_exists = 0;
-   FILE *fp          = NULL;
+   (void)prefix;
+   char  filename[MAX_FILENAME_LENGTH] = {0};
+   int   file_exists                   = 0;
+   FILE *fp                            = NULL;
 
    /* Check if ASCII data exist */
    fp          = fopen(filename, "r");
@@ -172,10 +174,10 @@ SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
       /* Allocate memory and copy dirname */
       int dirname_length = (int)(last_slash - filename);
 
-      dirname = (char *)malloc(dirname_length + 1);
+      dirname = (char *)malloc((size_t)dirname_length + 1);
       if (dirname)
       {
-         snprintf(dirname, dirname_length + 1, "%.*s", dirname_length, filename);
+         snprintf(dirname, (size_t)dirname_length + 1, "%.*s", dirname_length, filename);
       }
 
       /* Allocate memory and copy basename */

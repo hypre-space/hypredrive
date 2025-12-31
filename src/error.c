@@ -488,9 +488,9 @@ ErrorMsgAdd(const char *format, ...)
    va_end(args);
 
    /* Format the message */
-   new->message = (char *)malloc(length + 1);
+   new->message = (char *)malloc((size_t)length + 1);
    va_start(args, format);
-   vsnprintf(new->message, length + 1, fmt, args);
+   vsnprintf(new->message, (size_t)length + 1, fmt, args);
    va_end(args);
 
    /* Insert the new node at the head of the list */
@@ -510,8 +510,8 @@ ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
    const char *plural = (count > 1) ? "s" : "";
    int         length = (int)strlen(suffix) + 24;
 
-   msg = (char *)malloc(length);
-   snprintf(msg, length, "Found %d %s%s!", (int)count, suffix, plural);
+   msg = (char *)malloc((size_t)length);
+   snprintf(msg, (size_t)length, "Found %d %s%s!", (int)count, suffix, plural);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -526,8 +526,8 @@ ErrorMsgAddMissingKey(const char *key)
    char *msg    = NULL;
    int   length = (int)strlen(key) + 16;
 
-   msg = (char *)malloc(length);
-   snprintf(msg, length, "Missing key: %s", key);
+   msg = (char *)malloc((size_t)length);
+   snprintf(msg, (size_t)length, "Missing key: %s", key);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -542,8 +542,8 @@ ErrorMsgAddExtraKey(const char *key)
    char *msg    = NULL;
    int   length = (int)strlen(key) + 24;
 
-   msg = (char *)malloc(length);
-   snprintf(msg, length, "Extra (unused) key: %s", key);
+   msg = (char *)malloc((size_t)length);
+   snprintf(msg, (size_t)length, "Extra (unused) key: %s", key);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -558,8 +558,8 @@ ErrorMsgAddUnexpectedVal(const char *key)
    char *msg    = NULL;
    int   length = (int)strlen(key) + 40;
 
-   msg = (char *)malloc(length);
-   snprintf(msg, length, "Unexpected value associated with %s key", key);
+   msg = (char *)malloc((size_t)length);
+   snprintf(msg, (size_t)length, "Unexpected value associated with %s key", key);
    ErrorMsgAdd(msg);
    free(msg);
 }

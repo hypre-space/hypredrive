@@ -80,6 +80,7 @@
 #define DEFINE_VOID_GET_VALID_VALUES_FUNC(_prefix)         \
    StrIntMapArray _prefix##GetValidValues(const char *key) \
    {                                                       \
+      (void)key;                                           \
       return STR_INT_MAP_ARRAY_VOID();                     \
    }
 

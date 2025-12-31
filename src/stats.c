@@ -24,11 +24,11 @@ static Stats *active_stats =
 static void
 ReallocateArray(void **ptr, size_t elem_size, int old_capacity, int new_capacity)
 {
-   void *new_ptr = realloc(*ptr, new_capacity * elem_size);
+   void *new_ptr = realloc(*ptr, (size_t)new_capacity * elem_size);
    if (new_ptr)
    {
       /* Zero out the newly allocated portion */
-      memset((char *)new_ptr + (old_capacity * elem_size), 0,
+      memset((char *)new_ptr + ((size_t)old_capacity * elem_size), 0,
              REALLOC_EXPAND_FACTOR * elem_size);
       *ptr = new_ptr;
    }
@@ -344,13 +344,13 @@ StatsCreate(void)
    stats->time_factor  = 1.0;
 
    /* Allocate timing arrays */
-   stats->dofmap  = (double *)calloc(capacity, sizeof(double));
-   stats->matrix  = (double *)calloc(capacity, sizeof(double));
-   stats->rhs     = (double *)calloc(capacity, sizeof(double));
-   stats->iters   = (int *)calloc(capacity, sizeof(int));
-   stats->prec    = (double *)calloc(capacity, sizeof(double));
-   stats->solve   = (double *)calloc(capacity, sizeof(double));
-   stats->rrnorms = (double *)calloc(capacity, sizeof(double));
+   stats->dofmap  = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->matrix  = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->rhs     = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->iters   = (int *)calloc((size_t)capacity, sizeof(int));
+   stats->prec    = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->solve   = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->rrnorms = (double *)calloc((size_t)capacity, sizeof(double));
 
    /* Initialize level stack */
    for (int i = 0; i < STATS_MAX_LEVELS; i++)
@@ -562,8 +562,8 @@ EnsureLevelCapacity(int level)
    {
       /* count is a power of 2 and >= initial capacity, time to grow */
       int         new_capacity = count * 2;
-      LevelEntry *new_ptr      = (LevelEntry *)realloc(active_stats->level_entries[level],
-                                                       new_capacity * sizeof(LevelEntry));
+      LevelEntry *new_ptr      = (LevelEntry *)realloc(
+         active_stats->level_entries[level], (size_t)new_capacity * sizeof(LevelEntry));
       if (new_ptr)
       {
          active_stats->level_entries[level] = new_ptr;

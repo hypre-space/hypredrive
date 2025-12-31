@@ -37,7 +37,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);
    MPI_Comm_rank(comm, &myid);
-   nparts = g_nparts / (uint64_t)nprocs;
+   nparts = (uint32_t)(g_nparts / (uint64_t)nprocs);
    nparts += (myid < ((int)g_nparts % nprocs)) ? 1 : 0;
    if (g_nparts < (size_t)nprocs)
    {
@@ -54,7 +54,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                                                : (uint32_t)((int)g_nparts % nprocs);
    for (part = 0; part < nparts; part++)
    {
-      partids[part] = offset + part;
+      partids[part] = (uint32_t)(offset + part);
    }
 
    /* 2) Read nrows/nnz for each part */
@@ -87,7 +87,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    /* 3) Build IJVector */
    MPI_Scan(&nrows_sum, &nrows_offset, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
    ilower = (HYPRE_BigInt)(nrows_offset - nrows_sum);
-   iupper = (HYPRE_BigInt)(ilower + nrows_sum - 1);
+   iupper = (HYPRE_BigInt)(ilower + (HYPRE_BigInt)nrows_sum - 1);
 
    HYPRE_IJVectorCreate(comm, ilower, iupper, &vec);
    HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR);

@@ -101,29 +101,29 @@ char     *YAMLnodeFindChildValueByKey(YAMLnode *, const char *);
  * Public macros
  *-----------------------------------------------------------------------------*/
 
-#define YAML_NODE_VALIDATE_HELPER(_node, _map_array)                       \
-   do                                                                      \
-   {                                                                       \
-      if (StrIntMapArrayDomainEntryExists(_map_array, _node->val))         \
-      {                                                                    \
-         int _mapped = StrIntMapArrayGetImage(_map_array, _node->val);     \
-         int _length = snprintf(NULL, 0, "%d", _mapped) + 1;               \
-         if (!_node->mapped_val)                                           \
-         {                                                                 \
-            _node->mapped_val = (char *)malloc(_length * sizeof(char));    \
-         }                                                                 \
-         else if (_length > (int)strlen(_node->mapped_val))                \
-         {                                                                 \
-            _node->mapped_val =                                            \
-               (char *)realloc(_node->mapped_val, _length * sizeof(char)); \
-         }                                                                 \
-         snprintf(_node->mapped_val, _length, "%d", _mapped);              \
-         _node->valid = YAML_NODE_VALID;                                   \
-      }                                                                    \
-      else                                                                 \
-      {                                                                    \
-         _node->valid = YAML_NODE_INVALID_VAL;                             \
-      }                                                                    \
+#define YAML_NODE_VALIDATE_HELPER(_node, _map_array)                               \
+   do                                                                              \
+   {                                                                               \
+      if (StrIntMapArrayDomainEntryExists(_map_array, _node->val))                 \
+      {                                                                            \
+         int _mapped = StrIntMapArrayGetImage(_map_array, _node->val);             \
+         int _length = snprintf(NULL, 0, "%d", _mapped) + 1;                       \
+         if (!_node->mapped_val)                                                   \
+         {                                                                         \
+            _node->mapped_val = (char *)malloc((size_t)_length * sizeof(char));    \
+         }                                                                         \
+         else if (_length > (int)strlen(_node->mapped_val))                        \
+         {                                                                         \
+            _node->mapped_val =                                                    \
+               (char *)realloc(_node->mapped_val, (size_t)_length * sizeof(char)); \
+         }                                                                         \
+         snprintf(_node->mapped_val, (size_t)_length, "%d", _mapped);              \
+         _node->valid = YAML_NODE_VALID;                                           \
+      }                                                                            \
+      else                                                                         \
+      {                                                                            \
+         _node->valid = YAML_NODE_INVALID_VAL;                                     \
+      }                                                                            \
    } while (0);
 
 #define YAML_NODE_VALIDATE(_node, _callA, _callB)                                  \

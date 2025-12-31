@@ -479,8 +479,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
          nparts = CountNumberOfPartitions(rhs_filename);
          if (nparts >= nprocs)
          {
-            IJVectorReadMultipartBinary(rhs_filename, comm, nparts, memory_location,
-                                        rhs_ptr);
+            IJVectorReadMultipartBinary(rhs_filename, comm, (uint64_t)nparts,
+                                        memory_location, rhs_ptr);
          }
          else
          {
@@ -672,8 +672,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
             nparts = CountNumberOfPartitions(rhs_filename);
             if (nparts >= nprocs)
             {
-               IJVectorReadMultipartBinary(rhs_filename, comm, nparts, memory_location,
-                                           rhs_ptr);
+               IJVectorReadMultipartBinary(rhs_filename, comm, (uint64_t)nparts,
+                                           memory_location, rhs_ptr);
             }
             else
             {
@@ -721,6 +721,7 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                             HYPRE_IJVector rhs, HYPRE_IJVector *x0_ptr,
                             HYPRE_IJVector *x_ptr)
 {
+   (void)mat;
    HYPRE_BigInt         jlower = 0, jupper = 0;
    HYPRE_MemoryLocation memloc =
       (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;

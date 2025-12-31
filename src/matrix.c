@@ -45,7 +45,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);
    MPI_Comm_rank(comm, &myid);
-   nparts = g_nparts / (uint64_t)nprocs;
+   nparts = (uint32_t)(g_nparts / (uint64_t)nprocs);
    nparts += (myid < ((int)g_nparts % nprocs)) ? 1 : 0;
    if (g_nparts < (size_t)nprocs)
    {
@@ -62,7 +62,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                                                : (uint32_t)((int)g_nparts % nprocs);
    for (part = 0; part < nparts; part++)
    {
-      partids[part] = offset + part;
+      partids[part] = (uint32_t)(offset + part);
    }
 
    /* 2) Read nrows/nnz for each part */
@@ -99,7 +99,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    MPI_Allreduce(&nrows_sum, &nrows, 1, MPI_UINT64_T, MPI_SUM, comm);
    MPI_Scan(&nrows_sum, &nrows_offset, 1, MPI_UINT64_T, MPI_SUM, comm);
    ilower = (HYPRE_BigInt)(nrows_offset - nrows_sum);
-   iupper = (HYPRE_BigInt)(ilower + nrows_sum - 1);
+   iupper = (HYPRE_BigInt)(ilower + (HYPRE_BigInt)nrows_sum - 1);
 
    HYPRE_IJMatrixCreate(comm, ilower, iupper, ilower, iupper, &mat);
    HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
@@ -267,13 +267,13 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
                       (unsigned long long)col);
                fflush(stdout);
             }
-            else if (row >= nrows)
+            else if ((uint64_t)row >= nrows)
             {
                printf("[%d]: Warning! Detected out-of-bounds row: %llu\n", myid,
                       (unsigned long long)row);
                fflush(stdout);
             }
-            else if (col >= nrows)
+            else if ((uint64_t)col >= nrows)
             {
                printf("[%d]: Warning! Detected out-of-bounds column: %llu\n", myid,
                       (unsigned long long)col);
