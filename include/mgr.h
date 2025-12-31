@@ -150,7 +150,7 @@ void MGRCreate(MGR_args *, HYPRE_Solver *);
       {                                                                               \
          if (!strcmp(#_type, "f_relaxation.num_sweeps"))                              \
          {                                                                            \
-            for (size_t i = 0; i < args->num_levels - 1; i++)                         \
+            for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)               \
             {                                                                         \
                _buffer[i] =                                                           \
                   (args->level[i].f_relaxation.type >= 0) ? args->level[i]._type : 0; \
@@ -158,7 +158,7 @@ void MGRCreate(MGR_args *, HYPRE_Solver *);
          }                                                                            \
          else if (!strcmp(#_type, "g_relaxation.num_sweeps"))                         \
          {                                                                            \
-            for (size_t i = 0; i < args->num_levels - 1; i++)                         \
+            for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)               \
             {                                                                         \
                _buffer[i] =                                                           \
                   (args->level[i].g_relaxation.type >= 0) ? args->level[i]._type : 0; \
@@ -166,13 +166,13 @@ void MGRCreate(MGR_args *, HYPRE_Solver *);
          }                                                                            \
          else                                                                         \
          {                                                                            \
-            for (size_t i = 0; i < args->num_levels - 1; i++)                         \
+            for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)               \
             {                                                                         \
                _buffer[i] = args->level[i]._type;                                     \
             }                                                                         \
             if (!strcmp(#_type, "f_relaxation.type")) /* Adjust iteration counts */   \
             {                                                                         \
-               for (size_t i = 0; i < args->num_levels - 1; i++)                      \
+               for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)            \
                {                                                                      \
                   if (args->level[i].f_relaxation.amg.max_iter > 0)                   \
                   {                                                                   \
@@ -209,7 +209,7 @@ void MGRCreate(MGR_args *, HYPRE_Solver *);
             }                                                                         \
             else if (!strcmp(#_type, "g_relaxation.type"))                            \
             {                                                                         \
-               for (size_t i = 0; i < args->num_levels - 1; i++)                      \
+               for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)            \
                {                                                                      \
                   if (args->level[i].g_relaxation.ilu.max_iter > 0)                   \
                   {                                                                   \

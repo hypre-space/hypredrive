@@ -18,7 +18,7 @@ StrToLowerCase(char *str)
 {
    for (int i = 0; str[i]; i++)
    {
-      str[i] = tolower((unsigned char)str[i]);
+      str[i] = (char)tolower((unsigned char)str[i]);
    }
    return str;
 }
@@ -35,7 +35,7 @@ StrTrim(char *str)
       return NULL;
    }
 
-   for (int i = strlen(str) - 1; i >= 0 && str[i] == ' '; i--)
+   for (int i = (int)strlen(str) - 1; i >= 0 && str[i] == ' '; i--)
    {
       str[i] = '\0';
    }
@@ -50,7 +50,8 @@ StrTrim(char *str)
 int
 CheckBinaryDataExists(const char *prefix)
 {
-   char  filename[MAX_FILENAME_LENGTH];
+   char filename[MAX_FILENAME_LENGTH] = {0};
+
    int   file_exists = 0;
    FILE *fp          = NULL;
 
@@ -72,7 +73,8 @@ CheckBinaryDataExists(const char *prefix)
 int
 CheckASCIIDataExists(const char *prefix)
 {
-   char  filename[MAX_FILENAME_LENGTH];
+   char filename[MAX_FILENAME_LENGTH] = {0};
+
    int   file_exists = 0;
    FILE *fp          = NULL;
 
@@ -95,21 +97,22 @@ int
 CountNumberOfPartitions(const char *prefix)
 {
    char filename[MAX_FILENAME_LENGTH];
-   int  file_exists = 1;
-   int  num_files   = 0;
+   int  num_files = 0;
 
    if (prefix == NULL)
    {
       return 0;
    }
 
-   while (file_exists)
+   while (1)
    {
       FILE *fp = NULL;
+      int   file_exists;
 
       snprintf(filename, sizeof(filename), "%*s.%05d.bin", (int)strlen(prefix), prefix,
                num_files);
-      file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
+      fp          = fopen(filename, "r");
+      file_exists = (fp == NULL) ? 0 : 1;
       if (fp)
       {
          fclose(fp);
@@ -118,17 +121,23 @@ CountNumberOfPartitions(const char *prefix)
       {
          snprintf(filename, sizeof(filename), "%*s.%05d", (int)strlen(prefix), prefix,
                   num_files);
-         file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
+         fp          = fopen(filename, "r");
+         file_exists = (fp == NULL) ? 0 : 1;
          if (fp)
          {
             fclose(fp);
          }
       }
 
+      if (!file_exists)
+      {
+         break;
+      }
+
       num_files++;
    }
 
-   return --num_files;
+   return num_files;
 }
 
 /*-----------------------------------------------------------------------------
@@ -163,14 +172,20 @@ SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
    if (last_slash != NULL)
    {
       /* Allocate memory and copy dirname */
-      int dirname_length = last_slash - filename;
+      int dirname_length = (int)(last_slash - filename);
 
-      dirname = (char *)malloc(dirname_length + 1);
-      strncpy(dirname, filename, dirname_length);
-      dirname[dirname_length] = '\0';
+      dirname = (char *)malloc((size_t)dirname_length + 1);
+      if (dirname)
+      {
+         snprintf(dirname, (size_t)dirname_length + 1, "%.*s", dirname_length, filename);
+      }
 
       /* Allocate memory and copy basename */
-      basename = strdup(last_slash + 1);
+      basename = (char *)malloc(strlen(last_slash + 1) + 1);
+      if (basename)
+      {
+         snprintf(basename, strlen(last_slash + 1) + 1, "%s", last_slash + 1);
+      }
    }
    else
    {
@@ -203,15 +218,15 @@ CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
    /* Combine dirname and basename */
    if (filename != NULL)
    {
-      strcpy(filename, dirname);
+      snprintf(filename, length, "%s", dirname);
 
       /* Add a slash only if dirname is not empty and does not already end in a slash */
       if (dirname[0] != '\0' && dirname[strlen(dirname) - 1] != '/')
       {
-         strcat(filename, "/");
+         strncat(filename, "/", length - strlen(filename) - 1);
       }
 
-      strcat(filename, basename);
+      strncat(filename, basename, length - strlen(filename) - 1);
    }
 
    /* Set output pointer */

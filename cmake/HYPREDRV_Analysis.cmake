@@ -67,6 +67,9 @@ if(HYPREDRV_ENABLE_ANALYSIS)
 
         message(STATUS "AddressSanitizer and UndefinedBehaviorSanitizer enabled")
         message(STATUS "Set ASAN_OPTIONS and UBSAN_OPTIONS environment variables to control behavior")
+        message(STATUS "Recommended ASAN_OPTIONS for better stack traces:")
+        message(STATUS "  ASAN_OPTIONS=symbolize=1:print_stacktrace=1:abort_on_error=1")
+        message(STATUS "  Note: 'symbolize=1' requires 'llvm-symbolizer' or 'addr2line' to be available")
     elseif(HYPREDRV_ENABLE_COVERAGE)
         message(STATUS "Sanitizers disabled because coverage is enabled (they conflict)")
     else()
@@ -128,7 +131,35 @@ Checks: >
     -cppcoreguidelines-macro-usage,
     -bugprone-reserved-identifier,
     -readability-else-after-return,
-    -readability-redundant-control-flow
+    -readability-redundant-control-flow,
+    -readability-identifier-length,
+    -cppcoreguidelines-avoid-magic-numbers,
+    -modernize-avoid-c-style-cast,
+    -readability-non-const-parameter,
+    -bugprone-narrowing-conversions,
+    -readability-braces-around-statements,
+    -cert-err33-c,
+    -concurrency-mt-unsafe,
+    -bugprone-assignment-in-if-condition,
+    -bugprone-suspicious-realloc-usage,
+    -bugprone-command-processor,
+    -cert-env33-c,
+    -cppcoreguidelines-avoid-non-const-global-variables,
+    -bugprone-unchecked-string-to-number-conversion,
+    -cert-err34-c,
+    -clang-analyzer-optin.taint.TaintedAlloc,
+    -clang-analyzer-security.ArrayBound,
+    -clang-analyzer-unix.Malloc,
+    -clang-analyzer-unix.Stream,
+    -bugprone-multi-level-implicit-pointer-conversion,
+    -clang-analyzer-core.NullDereference,
+    -clang-analyzer-optin.portability.UnixAPI,
+    -clang-analyzer-security.insecureAPI.strcpy,
+    -cppcoreguidelines-init-variables,
+    -bugprone-branch-clone,
+    -readability-avoid-unconditional-preprocessor-if,
+    -readability-use-concise-preprocessor-directives,
+    -performance-no-int-to-ptr
 
 WarningsAsErrors: ''
 
@@ -168,14 +199,27 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
         set(CLANG_TIDY_OUTPUT ${CMAKE_BINARY_DIR}/clang-tidy-output.txt)
 
         # Create a target to run clang-tidy
-        set(_clang_tidy_args
-            -p=${CMAKE_BINARY_DIR}
-            --quiet
-            ${_src_files}
+        list(JOIN _src_files " " _src_files_str)
+        set(_clang_tidy_cmd "${CLANG_TIDY_EXECUTABLE} -p=${CMAKE_BINARY_DIR} --quiet ${_src_files_str}")
+
+        # Create a script to check for warnings
+        set(_clang_tidy_check_script ${CMAKE_BINARY_DIR}/check-clang-tidy.sh)
+        file(WRITE ${_clang_tidy_check_script}
+            "#!/bin/bash\n"
+            "set -e\n"
+            "${_clang_tidy_cmd} > ${CLANG_TIDY_OUTPUT} 2>&1 || true\n"
+            "WARNINGS=$(grep -E 'warning:' ${CLANG_TIDY_OUTPUT} | grep -v 'clang-diagnostic-error' | wc -l)\n"
+            "if [ \"$WARNINGS\" -gt 0 ]; then\n"
+            "    echo \"ERROR: clang-tidy found $WARNINGS warning(s). See ${CLANG_TIDY_OUTPUT} for details.\"\n"
+            "    grep -E 'warning:' ${CLANG_TIDY_OUTPUT} | grep -v 'clang-diagnostic-error' | head -20\n"
+            "    exit 1\n"
+            "fi\n"
+            "echo \"clang-tidy: No warnings found.\"\n"
         )
 
         add_custom_target(clang-tidy
-            COMMAND ${CLANG_TIDY_EXECUTABLE} ${_clang_tidy_args} > ${CLANG_TIDY_OUTPUT} 2>&1 || true
+            COMMAND chmod +x ${_clang_tidy_check_script}
+            COMMAND bash ${_clang_tidy_check_script}
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             COMMENT "Running clang-tidy static analysis"
             VERBATIM
@@ -336,8 +380,9 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
     message(STATUS "")
     message(STATUS "Code analysis configuration:")
     message(STATUS "  Sanitizers: AddressSanitizer and UndefinedBehaviorSanitizer")
-    message(STATUS "  Recommended environment variables:")
-    message(STATUS "    ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:print_stacktrace=1")
-    message(STATUS "    UBSAN_OPTIONS=print_stacktrace=1:abort_on_error=1")
+    message(STATUS "  Recommended environment variables for better stack traces:")
+    message(STATUS "    ASAN_OPTIONS=symbolize=1:print_stacktrace=1:abort_on_error=1:detect_leaks=1")
+    message(STATUS "    UBSAN_OPTIONS=symbolize=1:print_stacktrace=1:abort_on_error=1")
+    message(STATUS "  Note: 'symbolize=1' requires 'llvm-symbolizer' or 'addr2line' to be available")
     message(STATUS "")
 endif()

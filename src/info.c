@@ -102,6 +102,8 @@ void PrintSystemInfoLegacy(MPI_Comm comm);
 int
 dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
 {
+   (void)size;
+   (void)data;
    if (info->dlpi_name && info->dlpi_name[0])
    {
       const char *filename = strrchr(info->dlpi_name, '/');
@@ -255,10 +257,10 @@ PrintSystemInfoLegacy(MPI_Comm comm)
                int physicalID = atoi(strchr(buffer, ':') + 2);
                if (physicalID >= 0 && physicalID < 8)
                {
-                  unsigned long long mask = 1ULL << physicalID;
-                  if (!(physicalCPUSeen & mask))
+                  unsigned long long mask = 1ULL << (unsigned)physicalID;
+                  if (!((unsigned long long)physicalCPUSeen & mask))
                   {
-                     physicalCPUSeen |= mask;
+                     physicalCPUSeen = (int)((unsigned long long)physicalCPUSeen | mask);
                      numPhysicalCPUs++;
                   }
                }
@@ -307,7 +309,7 @@ PrintSystemInfoLegacy(MPI_Comm comm)
          }
       }
 
-      numCPUs = sysconf(_SC_NPROCESSORS_ONLN);
+      numCPUs = (int)sysconf(_SC_NPROCESSORS_ONLN);
 #endif
       if (strlen(gpuInfo) == 0)
       {
@@ -453,7 +455,7 @@ PrintSystemInfoLegacy(MPI_Comm comm)
          printf("CPU RAM               : %6.2f / %6.2f  (%5.2f %%) GiB\n",
                 (double)(info.totalram - info.freeram) * info.mem_unit / bytes_to_gib,
                 (double)info.totalram * info.mem_unit / bytes_to_gib,
-                100.0 * (info.totalram - info.freeram) / (double)info.totalram);
+                100.0 * (double)(info.totalram - info.freeram) / (double)info.totalram);
       }
 #endif
 
@@ -473,8 +475,8 @@ PrintSystemInfoLegacy(MPI_Comm comm)
             if (sscanf(buffer, "%zu, %zu", &total, &used) == 2)
             {
                printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                      gcount++, used / mib_to_gib, total / mib_to_gib,
-                      100.0 * used / (double)total);
+                      gcount++, (double)used / mib_to_gib, (double)total / mib_to_gib,
+                      100.0 * (double)used / (double)total);
             }
          }
          pclose(fp);
@@ -497,7 +499,6 @@ PrintSystemInfoLegacy(MPI_Comm comm)
          const char *total_vram_str = "\"total_vram\"";
          const char *used_vram_str  = "\"used_vram\"";
          const char *ptr            = json_buffer;
-         int         gpu_idx        = 0;
 
          while ((ptr = strstr(ptr, "\"gpu\"")) != NULL)
          {
@@ -507,7 +508,7 @@ PrintSystemInfoLegacy(MPI_Comm comm)
             {
                ptr++;
                while (*ptr == ' ') ptr++;
-               int idx = atoi(ptr);
+               (void)atoi(ptr); /* idx unused */
 
                // Find total_vram for this GPU
                const char *gpu_start = ptr;
@@ -545,8 +546,9 @@ PrintSystemInfoLegacy(MPI_Comm comm)
                   if (total > 0)
                   {
                      printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                            gcount++, used / bytes_to_gib, total / bytes_to_gib,
-                            100.0 * used / (double)total);
+                            gcount++, (double)used / bytes_to_gib,
+                            (double)total / bytes_to_gib,
+                            100.0 * (double)used / (double)total);
                   }
                }
             }
@@ -2167,7 +2169,7 @@ ReadLineFromFile(const char *path, char *out, size_t len)
       return 0;
    }
 
-   if (!fgets(out, len, fp))
+   if (!fgets(out, (int)len, fp))
    {
       fclose(fp);
       return 0;
@@ -2434,7 +2436,7 @@ PrintAcceleratorRuntimeInformation(void)
                // Extract version number (until next | or end of line)
                char version[64] = {0};
                int  i           = 0;
-               while (*rocm_ver && *rocm_ver != '|' && i < sizeof(version) - 1)
+               while (*rocm_ver && *rocm_ver != '|' && i < (int)(sizeof(version) - 1))
                {
                   version[i++] = *rocm_ver++;
                }

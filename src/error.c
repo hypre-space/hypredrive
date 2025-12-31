@@ -6,8 +6,11 @@
  ******************************************************************************/
 
 #include "error.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-#if defined(__linux__)
+#ifdef __linux__
 
 #include <execinfo.h>
 #include <fcntl.h>
@@ -30,16 +33,32 @@ ErrorBacktraceGetBaseAddress(void)
    FILE         *fp   = fopen("/proc/self/maps", "r");
    if (fp)
    {
-      char line[512];
-      /* The first line typically contains the base address of the executable */
-      if (fgets(line, sizeof(line), fp))
+      char    line[512];
+      char    exe_path[4096];
+      ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+      if (len > 0)
       {
-         /* Parse the start address (format: "start-end perms offset ...") */
-         char *dash = strchr(line, '-');
-         if (dash)
+         exe_path[len] = '\0';
+      }
+      else
+      {
+         exe_path[0] = '\0';
+      }
+
+      /* Find the line that corresponds to the executable */
+      while (fgets(line, sizeof(line), fp))
+      {
+         /* Check if this line contains the executable path */
+         if (exe_path[0] != '\0' && strstr(line, exe_path) != NULL)
          {
-            *dash = '\0';
-            base  = strtoul(line, NULL, 16);
+            /* Parse the start address (format: "start-end perms offset ...") */
+            char *dash = strchr(line, '-');
+            if (dash)
+            {
+               *dash = '\0';
+               base  = strtoul(line, NULL, 16);
+               break;
+            }
          }
       }
       fclose(fp);
@@ -69,56 +88,112 @@ ErrorBacktraceSymbolsPrint(void)
       exe_path[0] = '\0';
    }
 
-   /* Get base address for PIE executables */
+   /* Get symbol strings from backtrace_symbols */
+   char **symbols = backtrace_symbols(trace, nptrs);
+   if (!symbols)
+   {
+      /* Fallback if backtrace_symbols fails */
+      backtrace_symbols_fd(trace, nptrs, STDERR_FILENO);
+      return;
+   }
+
+   /* Get base address for PIE executables (used as fallback if offset parsing fails) */
    unsigned long base_addr = ErrorBacktraceGetBaseAddress();
 
-   /* Try to use addr2line for each address individually */
+   /* Try to use addr2line for each address */
    if (exe_path[0] != '\0' && nptrs > 0)
    {
       int saw_output = 0;
       for (int i = 0; i < nptrs; i++)
       {
-         /* Compute offset from base for PIE binaries */
-         unsigned long addr = (unsigned long)trace[i];
-         unsigned long offset =
-            (base_addr > 0 && addr > base_addr) ? (addr - base_addr) : addr;
+         char          func[256] = "";
+         char          file[256] = "";
+         unsigned long offset    = 0;
 
-         char cmd[4352];
-         snprintf(cmd, sizeof(cmd), "addr2line -e %s -f -C -i 0x%lx 2>/dev/null",
-                  exe_path, offset);
-         FILE *fp = popen(cmd, "r");
-         if (fp)
+         /* Parse offset from symbol string (format: "executable(+0xoffset)" or
+          * "executable[+0xoffset]") */
+         if (symbols[i])
          {
-            char func[256] = "";
-            char file[256] = "";
-            if (fgets(func, sizeof(func), fp))
+            const char *plus = strstr(symbols[i], "(+0x");
+            if (!plus)
             {
-               /* Remove newline */
-               char *nl = strchr(func, '\n');
-               if (nl) *nl = '\0';
+               plus = strstr(symbols[i], "[+0x");
             }
-            if (fgets(file, sizeof(file), fp))
+            if (plus)
             {
-               /* Remove newline */
-               char *nl = strchr(file, '\n');
-               if (nl) *nl = '\0';
+               offset = strtoul(plus + 4, NULL, 16);
             }
-            pclose(fp);
+         }
 
-            if (func[0] != '\0' && file[0] != '\0' && strcmp(func, "??") != 0 &&
-                strcmp(file, "??:0") != 0)
+         /* Fallback: if we couldn't parse offset from symbol string, compute it from base
+          * address */
+         if (offset == 0 && base_addr > 0)
+         {
+            unsigned long addr = (unsigned long)trace[i];
+            if (addr >= base_addr)
             {
-               saw_output = 1;
-               fprintf(stderr, "#%d %s at %s\n", i, func, file);
+               offset = addr - base_addr;
             }
+         }
+
+         /* If we found an offset, use addr2line with it */
+         if (offset > 0)
+         {
+            char cmd[4352];
+            /* Use absolute path and redirect stderr to avoid noise */
+            /* Note: -p outputs on one line, so we use separate -f and -l flags */
+            snprintf(cmd, sizeof(cmd), "addr2line -e %s -f -C -i 0x%lx 2>/dev/null",
+                     exe_path, offset);
+            FILE *fp = popen(cmd, "r");
+            if (fp)
+            {
+               /* Read function name (first line) */
+               if (fgets(func, sizeof(func), fp))
+               {
+                  /* Remove newline */
+                  char *nl = strchr(func, '\n');
+                  if (nl) *nl = '\0';
+               }
+               /* Read file:line (second line) */
+               if (fgets(file, sizeof(file), fp))
+               {
+                  /* Remove newline */
+                  char *nl = strchr(file, '\n');
+                  if (nl) *nl = '\0';
+               }
+               int status = pclose(fp);
+               /* If addr2line failed (non-zero exit), clear the output */
+               if (status != 0)
+               {
+                  func[0] = '\0';
+                  file[0] = '\0';
+               }
+            }
+         }
+
+         /* Print if we got valid output from addr2line */
+         if (func[0] != '\0' && file[0] != '\0' && strcmp(func, "??") != 0 &&
+             strcmp(file, "??:0") != 0)
+         {
+            saw_output = 1;
+            fprintf(stderr, "#%d %s at %s\n", i, func, file);
+         }
+         /* For addresses in our executable that addr2line couldn't resolve, show the
+          * symbol string */
+         else if (symbols[i] && strstr(symbols[i], "hypredrive") != NULL)
+         {
+            saw_output = 1;
+            fprintf(stderr, "#%d %s\n", i, symbols[i]);
          }
       }
       if (saw_output)
       {
+         free(symbols);
          return;
       }
    }
 
+   free(symbols);
    /* Fallback to backtrace_symbols_fd */
    backtrace_symbols_fd(trace, nptrs, STDERR_FILENO);
 }
@@ -155,6 +230,10 @@ ErrorBacktracePrint(void)
    size_t  size   = 0;
    char   *line   = NULL;
    ssize_t length = 0;
+   if (!f)
+   {
+      return;
+   }
    while ((length = getline(&line, &size, f)) > 0)
    {
       if (!strncmp(line, "TracerPid:", sizeof("TracerPid:") - 1) &&
@@ -199,7 +278,7 @@ ErrorBacktracePrint(void)
       char exe_link[64];
       char exe_path[4096];
       snprintf(exe_link, sizeof(exe_link), "/proc/%d/exe", parent_pid);
-      ssize_t len = readlink(exe_link, exe_path, sizeof(exe_path) - 1);
+      ssize_t len = readlink(exe_path, exe_link, sizeof(exe_link) - 1);
       if (len > 0)
       {
          exe_path[len] = '\0';
@@ -481,9 +560,9 @@ ErrorMsgAdd(const char *format, ...)
    va_end(args);
 
    /* Format the message */
-   new->message = (char *)malloc(length + 1);
+   new->message = (char *)malloc((size_t)length + 1);
    va_start(args, format);
-   vsnprintf(new->message, length + 1, fmt, args);
+   vsnprintf(new->message, (size_t)length + 1, fmt, args);
    va_end(args);
 
    /* Insert the new node at the head of the list */
@@ -501,10 +580,10 @@ ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
    char       *msg    = NULL;
    uint32_t    count  = ErrorCodeCountGet(code);
    const char *plural = (count > 1) ? "s" : "";
-   int         length = strlen(suffix) + 24;
+   int         length = (int)strlen(suffix) + 24;
 
-   msg = (char *)malloc(length);
-   snprintf(msg, length, "Found %d %s%s!", (int)count, suffix, plural);
+   msg = (char *)malloc((size_t)length);
+   snprintf(msg, (size_t)length, "Found %d %s%s!", (int)count, suffix, plural);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -517,10 +596,10 @@ void
 ErrorMsgAddMissingKey(const char *key)
 {
    char *msg    = NULL;
-   int   length = strlen(key) + 16;
+   int   length = (int)strlen(key) + 16;
 
-   msg = (char *)malloc(length);
-   snprintf(msg, length, "Missing key: %s", key);
+   msg = (char *)malloc((size_t)length);
+   snprintf(msg, (size_t)length, "Missing key: %s", key);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -533,10 +612,10 @@ void
 ErrorMsgAddExtraKey(const char *key)
 {
    char *msg    = NULL;
-   int   length = strlen(key) + 24;
+   int   length = (int)strlen(key) + 24;
 
-   msg = (char *)malloc(length);
-   snprintf(msg, length, "Extra (unused) key: %s", key);
+   msg = (char *)malloc((size_t)length);
+   snprintf(msg, (size_t)length, "Extra (unused) key: %s", key);
    ErrorMsgAdd(msg);
    free(msg);
 }
@@ -549,10 +628,10 @@ void
 ErrorMsgAddUnexpectedVal(const char *key)
 {
    char *msg    = NULL;
-   int   length = strlen(key) + 40;
+   int   length = (int)strlen(key) + 40;
 
-   msg = (char *)malloc(length);
-   snprintf(msg, length, "Unexpected value associated with %s key", key);
+   msg = (char *)malloc((size_t)length);
+   snprintf(msg, (size_t)length, "Unexpected value associated with %s key", key);
    ErrorMsgAdd(msg);
    free(msg);
 }

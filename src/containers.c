@@ -13,8 +13,8 @@
 void
 IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char *filename)
 {
-   int   myid, nprocs;
-   FILE *fp;
+   int   myid = 0, nprocs = 0;
+   FILE *fp = NULL;
    char  fname[MAX_FILENAME_LENGTH];
 
    if (!ia || !ia->data) return;
@@ -123,32 +123,33 @@ StrToIntArray(const char *string, IntArray **int_array_ptr)
 {
    char       *buffer    = NULL;
    const char *token     = NULL;
+   char       *saveptr   = NULL;
    int         count     = 0;
    IntArray   *int_array = NULL;
 
    /* Find number of elements in array */
    buffer = strdup(string);
-   token  = strtok(buffer, "[], ");
+   token  = strtok_r(buffer, "[], ", &saveptr);
    count  = 0;
    while (token)
    {
       count++;
-      token = strtok(NULL, "[], ");
+      token = strtok_r(NULL, "[], ", &saveptr);
    }
    free(buffer);
 
    /* Create IntArray */
-   int_array = IntArrayCreate(count);
+   int_array = IntArrayCreate((size_t)count);
 
    /* Build array */
    buffer = strdup(string);
-   token  = strtok(buffer, "[], ");
+   token  = strtok_r(buffer, "[], ", &saveptr);
    count  = 0;
    while (token)
    {
       int_array->data[count] = atoi(token);
       count++;
-      token = strtok(NULL, "[], ");
+      token = strtok_r(NULL, "[], ", &saveptr);
    }
    free(buffer);
 
@@ -180,7 +181,7 @@ StrToStackIntArray(const char *string, StackIntArray *int_array)
 
    /* Set StackIntArray size */
    int_array->size =
-      (count < MAX_STACK_ARRAY_LENGTH) ? count : MAX_STACK_ARRAY_LENGTH - 1;
+      (count < MAX_STACK_ARRAY_LENGTH) ? (size_t)count : MAX_STACK_ARRAY_LENGTH - 1;
 
    /* Build array */
    buffer = strdup(string);
@@ -265,7 +266,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
    /* Gather sizes of local unique arrays */
    if (!myid)
    {
-      all_num_entries = (int *)malloc(nprocs * sizeof(int));
+      all_num_entries = (int *)malloc((size_t)nprocs * sizeof(int));
    }
    num_entries_int = (int)int_array->unique_size;
    MPI_Gather(&num_entries_int, 1, MPI_INT, all_num_entries, 1, MPI_INT, 0, comm);
@@ -273,14 +274,14 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
    /* Gather local unique arrays */
    if (!myid)
    {
-      displs            = (int *)calloc(nprocs, sizeof(int));
+      displs            = (int *)calloc((size_t)nprocs, sizeof(int));
       total_num_entries = all_num_entries[0];
       for (int i = 1; i < nprocs; i++)
       {
          displs[i] = displs[i - 1] + all_num_entries[i - 1];
          total_num_entries += all_num_entries[i];
       }
-      all_data = (int *)malloc(total_num_entries * sizeof(int));
+      all_data = (int *)malloc((size_t)total_num_entries * sizeof(int));
    }
    MPI_Gatherv(int_array->unique_data, (int)int_array->unique_size, MPI_INT, all_data,
                all_num_entries, displs, MPI_INT, 0, comm);
@@ -289,7 +290,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
    if (!myid)
    {
       /* Sort input array */
-      qsort(all_data, total_num_entries, sizeof(int), IntArrayCompare);
+      qsort(all_data, (size_t)total_num_entries, sizeof(int), IntArrayCompare);
 
       /* Find number of unique entries */
       int_array->g_unique_size = 1;
@@ -319,7 +320,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
       free(all_num_entries);
       free(displs);
    }
-   MPI_Bcast(int_array->g_unique_data, int_array->g_unique_size, MPI_INT, 0, comm);
+   MPI_Bcast(int_array->g_unique_data, (int)int_array->g_unique_size, MPI_INT, 0, comm);
 }
 
 /*-----------------------------------------------------------------------------
@@ -331,7 +332,8 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
 {
    char      filename[MAX_FILENAME_LENGTH];
    char      suffix[5], code[3];
-   size_t    num_entries = 0, num_entries_all = 0, count;
+   size_t    num_entries = 0, num_entries_all = 0;
+   size_t    count;
    IntArray *int_array = NULL;
    FILE     *fp        = NULL;
    int       myid = 0, nprocs = 0, nparts = 0, g_nparts = 0, offset = 0;
@@ -354,7 +356,7 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
    }
 
    /* 1b) Compute partids array */
-   partids = malloc(nparts * sizeof(int));
+   partids = malloc((size_t)nparts * sizeof(int));
    offset  = myid * nparts;
    offset += (myid < (g_nparts % nprocs)) ? myid : (g_nparts % nprocs);
    for (int part = 0; part < nparts; part++)
@@ -464,8 +466,8 @@ IntArrayBuild(MPI_Comm comm, int size, const int *dofmap, IntArray **int_array_p
 {
    IntArray *int_array = NULL;
 
-   int_array = IntArrayCreate(size);
-   memcpy(int_array->data, dofmap, size * sizeof(int));
+   int_array = IntArrayCreate((size_t)size);
+   memcpy(int_array->data, dofmap, (size_t)size * sizeof(int));
    IntArrayUnique(comm, int_array);
 
    *int_array_ptr = int_array;
@@ -482,7 +484,7 @@ IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types,
    IntArray *int_array = NULL;
    int       size      = num_dof_types * num_local_blocks; // TODO: check overflow
 
-   int_array = IntArrayCreate(size);
+   int_array = IntArrayCreate((size_t)size);
    for (int i = 0; i < num_local_blocks; i++)
    {
       for (int j = 0; j < num_dof_types; j++)
@@ -506,7 +508,7 @@ IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types,
    IntArray *int_array = NULL;
    int       size      = num_dof_types * num_local_blocks; // TODO: check overflow
 
-   int_array = IntArrayCreate(size);
+   int_array = IntArrayCreate((size_t)size);
    for (int i = 0; i < num_dof_types; i++)
    {
       for (int j = 0; j < num_local_blocks; j++)

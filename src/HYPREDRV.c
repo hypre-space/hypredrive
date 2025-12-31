@@ -88,7 +88,8 @@ HYPREDRV_Initialize()
 #if HYPRE_CHECK_MIN_VERSION(23100, 16)
       /* Check for environment variables */
       const char *env_log_level = getenv("HYPRE_LOG_LEVEL");
-      HYPRE_Int   log_level     = (env_log_level) ? (HYPRE_Int)atoi(env_log_level) : 0;
+      HYPRE_Int   log_level =
+         (env_log_level) ? (HYPRE_Int)strtol(env_log_level, NULL, 10) : 0;
 
       HYPRE_SetLogLevel(log_level);
 #endif
@@ -226,7 +227,7 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    StatsDestroy(&hypredrv->stats);
 
    if ((*hypredrv_ptr)->states) free((*hypredrv_ptr)->states);
-   if ((*hypredrv_ptr)->vec_s) free((*hypredrv_ptr)->vec_s);
+   if ((*hypredrv_ptr)->vec_s) free((void *)(*hypredrv_ptr)->vec_s);
    free(*hypredrv_ptr);
    *hypredrv_ptr = NULL;
 
@@ -386,8 +387,8 @@ HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv, int nstates, HYPRE_IJVector *vecs)
    HYPREDRV_CHECK_OBJ();
 
    hypredrv->nstates = nstates;
-   hypredrv->states  = (int *)malloc(sizeof(int) * nstates);
-   hypredrv->vec_s   = (HYPRE_IJVector *)malloc(sizeof(HYPRE_IJVector) * nstates);
+   hypredrv->states  = (int *)malloc(sizeof(int) * (size_t)nstates);
+   hypredrv->vec_s   = (HYPRE_IJVector *)malloc(sizeof(HYPRE_IJVector) * (size_t)nstates);
    for (int i = 0; i < nstates; i++)
    {
       hypredrv->states[i] = i;
@@ -493,7 +494,7 @@ HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   void *obj_s, *obj_delta;
+   void *obj_s = NULL, *obj_delta = NULL;
    int   current = hypredrv->states[0];
 
    HYPRE_IJVectorGetObject(hypredrv->vec_x, &obj_delta);
@@ -844,23 +845,8 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
     *   This means: create when (ls_id + 1) % (reuse + 1) == 0
     *   Example: reuse=2 means create on ls_id=0, 3, 6, 9, ...
     */
-   bool should_create = false;
-   if (hypredrv->precon == NULL)
-   {
-      should_create = true; /* Must create if it doesn't exist */
-   }
-   else if (reuse == 0)
-   {
-      should_create = true; /* No reuse: always create */
-   }
-   else if (ls_id < 0 || ls_id == 0)
-   {
-      should_create = true; /* Always create on first system */
-   }
-   else if ((ls_id + 1) % (reuse + 1) == 0)
-   {
-      should_create = true; /* Reuse period expired, need new preconditioner */
-   }
+   bool should_create = (hypredrv->precon == NULL) || (reuse == 0) ||
+                        (ls_id < 0 || ls_id == 0) || ((ls_id + 1) % (reuse + 1) == 0);
 
    if (should_create)
    {
@@ -1013,15 +999,7 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
     * system Example: reuse=2 means reuse for 2 systems, destroy on 3rd (ls_id=2, 5, 8,
     * ...)
     */
-   bool should_destroy = false;
-   if (reuse == 0)
-   {
-      should_destroy = true; /* No reuse: always destroy */
-   }
-   else if (ls_id > 0 && ((ls_id + 1) % (reuse + 1) == 0))
-   {
-      should_destroy = true; /* Reuse period expired */
-   }
+   bool should_destroy = (reuse == 0) || (ls_id > 0 && ((ls_id + 1) % (reuse + 1) == 0));
 
    if (should_destroy)
    {

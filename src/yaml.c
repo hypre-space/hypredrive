@@ -56,7 +56,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
    char  *filename    = NULL;
    char  *new_text    = NULL;
    int    inner_level = 0, pos = 0;
-   size_t num_whitespaces     = 2 * level;
+   size_t num_whitespaces     = 0;
    size_t new_length          = 0;
    int    base_indent         = *base_indent_ptr; // Track base indentation level
    int    prev_indent         = -1;               // Track previous indentation level
@@ -193,7 +193,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
       else
       {
          /* Use actual indentation spacing */
-         num_whitespaces = (base_indent > 0 ? base_indent : 1) * level;
+         num_whitespaces = (size_t)(base_indent > 0 ? base_indent : 1) * (size_t)level;
 
          /* Regular line, append it to the text */
          new_length = *length_ptr + strlen(backup) + num_whitespaces;
@@ -362,6 +362,9 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
 void
 YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 {
+   (void)argc;
+   (void)argv;
+   (void)tree;
    /* TODO */
    return;
 }

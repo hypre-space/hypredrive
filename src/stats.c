@@ -11,7 +11,8 @@
 #include <string.h>
 
 /* Active stats context (pointer to stats owned by a hypredrv_t object) */
-static Stats *active_stats = NULL;
+static Stats *active_stats =
+   NULL; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 /* Reallocation expansion factor */
 #define REALLOC_EXPAND_FACTOR 16
@@ -23,11 +24,11 @@ static Stats *active_stats = NULL;
 static void
 ReallocateArray(void **ptr, size_t elem_size, int old_capacity, int new_capacity)
 {
-   void *new_ptr = realloc(*ptr, new_capacity * elem_size);
+   void *new_ptr = realloc(*ptr, (size_t)new_capacity * elem_size);
    if (new_ptr)
    {
       /* Zero out the newly allocated portion */
-      memset((char *)new_ptr + (old_capacity * elem_size), 0,
+      memset((char *)new_ptr + ((size_t)old_capacity * elem_size), 0,
              REALLOC_EXPAND_FACTOR * elem_size);
       *ptr = new_ptr;
    }
@@ -343,13 +344,13 @@ StatsCreate(void)
    stats->time_factor  = 1.0;
 
    /* Allocate timing arrays */
-   stats->dofmap  = (double *)calloc(capacity, sizeof(double));
-   stats->matrix  = (double *)calloc(capacity, sizeof(double));
-   stats->rhs     = (double *)calloc(capacity, sizeof(double));
-   stats->iters   = (int *)calloc(capacity, sizeof(int));
-   stats->prec    = (double *)calloc(capacity, sizeof(double));
-   stats->solve   = (double *)calloc(capacity, sizeof(double));
-   stats->rrnorms = (double *)calloc(capacity, sizeof(double));
+   stats->dofmap  = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->matrix  = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->rhs     = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->iters   = (int *)calloc((size_t)capacity, sizeof(int));
+   stats->prec    = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->solve   = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->rrnorms = (double *)calloc((size_t)capacity, sizeof(double));
 
    /* Initialize level stack */
    for (int i = 0; i < STATS_MAX_LEVELS; i++)
@@ -534,12 +535,6 @@ StatsAnnotateLevelBegin(int level, const char *name)
    active_stats->level_solve_start[level] = active_stats->ls_counter;
 
    /* Commenting out for now to avoid multiple caliper regions for each solve call */
-#if 0
-   /* Start Caliper region with hierarchical name */
-   char full_name[2048];
-   snprintf(full_name, sizeof(full_name), "HYPREDRV_L%d_%.1014s", level, formatted_name);
-   HYPREDRV_ANNOTATE_REGION_BEGIN("%s", full_name)
-#endif
 }
 
 /*--------------------------------------------------------------------------
@@ -567,8 +562,8 @@ EnsureLevelCapacity(int level)
    {
       /* count is a power of 2 and >= initial capacity, time to grow */
       int         new_capacity = count * 2;
-      LevelEntry *new_ptr      = (LevelEntry *)realloc(active_stats->level_entries[level],
-                                                       new_capacity * sizeof(LevelEntry));
+      LevelEntry *new_ptr      = (LevelEntry *)realloc(
+         active_stats->level_entries[level], (size_t)new_capacity * sizeof(LevelEntry));
       if (new_ptr)
       {
          active_stats->level_entries[level] = new_ptr;
@@ -627,12 +622,6 @@ StatsAnnotateLevelEnd(int level, const char *name)
    }
 
    /* Commenting out for now to avoid multiple caliper regions for each solve call */
-#if 0
-   /* Stop Caliper region */
-   char full_name[2048];
-   snprintf(full_name, sizeof(full_name), "HYPREDRV_L%d_%.1014s", level, formatted_name);
-   HYPREDRV_ANNOTATE_REGION_END("%s", full_name)
-#endif
 
    /* Pop from level stack - free allocated memory */
    if (active_stats->level_stack[level].name)
@@ -921,9 +910,9 @@ StatsLevelPrint(int level)
 
    for (int i = 0; i < count; i++)
    {
-      const LevelEntry *entry = &active_stats->level_entries[level][i];
-      int               num_solves, linear_iters;
-      double            setup_time, solve_time;
+      const LevelEntry *entry      = &active_stats->level_entries[level][i];
+      int               num_solves = 0, linear_iters = 0;
+      double            setup_time = 0.0, solve_time = 0.0;
 
       ComputeLevelStats(entry, &num_solves, &linear_iters, &setup_time, &solve_time);
 
@@ -935,9 +924,11 @@ StatsLevelPrint(int level)
 
    /* Print summary in original format */
    double avg_iters_per_solve =
-      total_solves > 0 ? (double)total_linear / total_solves : 0.0;
-   double avg_setup_per_solve = total_solves > 0 ? total_setup / total_solves : 0.0;
-   double avg_solve_per_solve = total_solves > 0 ? total_solve / total_solves : 0.0;
+      total_solves > 0 ? (double)total_linear / (double)total_solves : 0.0;
+   double avg_setup_per_solve =
+      total_solves > 0 ? total_setup / (double)total_solves : 0.0;
+   double avg_solve_per_solve =
+      total_solves > 0 ? total_solve / (double)total_solves : 0.0;
 
    double avg_iters_per_entry = count > 0 ? (double)total_linear / count : 0.0;
    double avg_setup_per_entry = count > 0 ? total_setup / count : 0.0;

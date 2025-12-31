@@ -366,6 +366,7 @@ CreateDistMesh(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Nz, HYPRE_In
 {
    DistMesh *mesh = (DistMesh *)malloc(sizeof(DistMesh));
    int       myid, num_procs;
+   (void)num_procs; /* Reserved for future use */
 
    mesh->gdims[0] = Nx;
    mesh->gdims[1] = Ny;
@@ -384,7 +385,7 @@ CreateDistMesh(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Nz, HYPRE_In
       HYPRE_Int size = mesh->gdims[i] / mesh->pdims[i];
       HYPRE_Int rest = mesh->gdims[i] - size * mesh->pdims[i];
 
-      mesh->pstarts[i] = calloc(mesh->pdims[i] + 1, sizeof(HYPRE_BigInt));
+      mesh->pstarts[i] = calloc((size_t)(mesh->pdims[i] + 1), sizeof(HYPRE_BigInt));
       for (int j = 0; j < mesh->pdims[i] + 1; j++)
       {
          mesh->pstarts[i][j] = (HYPRE_BigInt)(size * j + (j < rest ? j : rest));
@@ -671,7 +672,7 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
 
    /* Set row sizes: conservative upper bound 81 per row (27 nodes x 3 dof) */
    HYPRE_Int  local_dofs = 3 * mesh->local_size;
-   HYPRE_Int *nnzrow     = (HYPRE_Int *)calloc(local_dofs, sizeof(HYPRE_Int));
+   HYPRE_Int *nnzrow     = (HYPRE_Int *)calloc((size_t)local_dofs, sizeof(HYPRE_Int));
    for (int r = 0; r < local_dofs; r++) nnzrow[r] = 81;
    HYPRE_IJMatrixSetRowSizes(A, nnzrow);
    free(nnzrow);
@@ -900,11 +901,13 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
       HYPRE_Int     nz_plane  = (HYPRE_Int)(pstarts[2][p[2] + 1] - pstarts[2][p[2]]);
       HYPRE_Int     num_nodes = ny_plane * nz_plane;
       HYPRE_Int     num_rows  = 3 * num_nodes;
-      HYPRE_Int    *ncols_arr = (HYPRE_Int *)malloc(num_rows * sizeof(HYPRE_Int));
-      HYPRE_BigInt *rows_arr  = (HYPRE_BigInt *)malloc(num_rows * sizeof(HYPRE_BigInt));
-      HYPRE_BigInt *cols_arr  = (HYPRE_BigInt *)malloc(num_rows * sizeof(HYPRE_BigInt));
-      HYPRE_Real   *vals_arr  = (HYPRE_Real *)malloc(num_rows * sizeof(HYPRE_Real));
-      HYPRE_Real   *rhs_arr   = (HYPRE_Real *)malloc(num_rows * sizeof(HYPRE_Real));
+      HYPRE_Int    *ncols_arr = (HYPRE_Int *)malloc((size_t)num_rows * sizeof(HYPRE_Int));
+      HYPRE_BigInt *rows_arr =
+         (HYPRE_BigInt *)malloc((size_t)num_rows * sizeof(HYPRE_BigInt));
+      HYPRE_BigInt *cols_arr =
+         (HYPRE_BigInt *)malloc((size_t)num_rows * sizeof(HYPRE_BigInt));
+      HYPRE_Real *vals_arr = (HYPRE_Real *)malloc((size_t)num_rows * sizeof(HYPRE_Real));
+      HYPRE_Real *rhs_arr  = (HYPRE_Real *)malloc((size_t)num_rows * sizeof(HYPRE_Real));
 
       HYPRE_Int idx          = 0;
       HYPRE_Int num_nodes_gy = (HYPRE_Int)(pstarts[1][p[1] + 1] - pstarts[1][p[1]]);
@@ -1022,29 +1025,35 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    double *ghost[14];
    for (int i = 0; i < 14; i++) ghost[i] = NULL;
    if (mesh->nbrs[0] != MPI_PROC_NULL)
-      ghost[0] = (double *)calloc(ny * nz * 3, sizeof(double)); /* left  face */
+      ghost[0] = (double *)calloc((size_t)(ny * nz * 3), sizeof(double)); /* left  face */
    if (mesh->nbrs[1] != MPI_PROC_NULL)
-      ghost[1] = (double *)calloc(ny * nz * 3, sizeof(double)); /* right face send */
+      ghost[1] =
+         (double *)calloc((size_t)(ny * nz * 3), sizeof(double)); /* right face send */
    if (mesh->nbrs[2] != MPI_PROC_NULL)
-      ghost[2] = (double *)calloc(nx * nz * 3, sizeof(double)); /* down  face */
+      ghost[2] = (double *)calloc((size_t)(nx * nz * 3), sizeof(double)); /* down  face */
    if (mesh->nbrs[3] != MPI_PROC_NULL)
-      ghost[3] = (double *)calloc(nx * nz * 3, sizeof(double)); /* up    face send */
+      ghost[3] =
+         (double *)calloc((size_t)(nx * nz * 3), sizeof(double)); /* up    face send */
    if (mesh->nbrs[4] != MPI_PROC_NULL)
-      ghost[4] = (double *)calloc(nx * ny * 3, sizeof(double)); /* back  face */
+      ghost[4] = (double *)calloc((size_t)(nx * ny * 3), sizeof(double)); /* back  face */
    if (mesh->nbrs[5] != MPI_PROC_NULL)
-      ghost[5] = (double *)calloc(nx * ny * 3, sizeof(double)); /* front face send */
+      ghost[5] =
+         (double *)calloc((size_t)(nx * ny * 3), sizeof(double)); /* front face send */
    if (mesh->nbrs[6] != MPI_PROC_NULL)
-      ghost[6] = (double *)calloc(nz * 3, sizeof(double)); /* left-down edge */
+      ghost[6] = (double *)calloc((size_t)(nz * 3), sizeof(double)); /* left-down edge */
    if (mesh->nbrs[7] != MPI_PROC_NULL)
-      ghost[7] = (double *)calloc(nz * 3, sizeof(double)); /* right-up  edge send */
+      ghost[7] =
+         (double *)calloc((size_t)(nz * 3), sizeof(double)); /* right-up  edge send */
    if (mesh->nbrs[8] != MPI_PROC_NULL)
-      ghost[8] = (double *)calloc(ny * 3, sizeof(double)); /* left-back edge */
+      ghost[8] = (double *)calloc((size_t)(ny * 3), sizeof(double)); /* left-back edge */
    if (mesh->nbrs[9] != MPI_PROC_NULL)
-      ghost[9] = (double *)calloc(ny * 3, sizeof(double)); /* right-front edge send */
+      ghost[9] =
+         (double *)calloc((size_t)(ny * 3), sizeof(double)); /* right-front edge send */
    if (mesh->nbrs[10] != MPI_PROC_NULL)
-      ghost[10] = (double *)calloc(nx * 3, sizeof(double)); /* down-back edge */
+      ghost[10] = (double *)calloc((size_t)(nx * 3), sizeof(double)); /* down-back edge */
    if (mesh->nbrs[11] != MPI_PROC_NULL)
-      ghost[11] = (double *)calloc(nx * 3, sizeof(double)); /* up-front  edge send */
+      ghost[11] =
+         (double *)calloc((size_t)(nx * 3), sizeof(double)); /* up-front  edge send */
    if (mesh->nbrs[12] != MPI_PROC_NULL)
       ghost[12] = (double *)calloc(3, sizeof(double)); /* left-down-back corner */
    if (mesh->nbrs[13] != MPI_PROC_NULL)
@@ -1197,7 +1206,7 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    }
 
    /* Build extended data including negative-face ghosts */
-   double *ext = (double *)calloc(nxg * nyg * nzg * 3, sizeof(double));
+   double *ext = (double *)calloc((size_t)(nxg * nyg * nzg * 3), sizeof(double));
    for (int k = 0; k < nz; k++)
    {
       for (int j = 0; j < ny; j++)
@@ -1217,7 +1226,7 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
    /* Finish comms before using ghost buffers */
    if (reqc > 0)
    {
-      MPI_Status *statuses = (MPI_Status *)malloc(reqc * sizeof(MPI_Status));
+      MPI_Status *statuses = (MPI_Status *)malloc((size_t)reqc * sizeof(MPI_Status));
       MPI_Waitall(reqc, reqs, statuses);
       free(statuses);
    }
@@ -1384,10 +1393,11 @@ WriteVTKsolutionVector(DistMesh *mesh, ElasticParams *params, HYPRE_Real *sol_da
       fprintf(fp, "    </Piece>\n");
       fprintf(fp, "  </RectilinearGrid>\n");
       fprintf(fp, "  <AppendedData encoding=\"raw\">\n   _");
-      int npts      = nxg * nyg * nzg;
-      int data_size = npts * 3 * sizeof(double);
-      fwrite(&data_size, sizeof(int), 1, fp);
-      fwrite(ext, sizeof(double), npts * 3, fp);
+      int    npts          = nxg * nyg * nzg;
+      size_t data_size     = (size_t)(npts * 3) * sizeof(double);
+      int    data_size_int = (int)data_size;
+      fwrite(&data_size_int, sizeof(int), 1, fp);
+      fwrite(ext, sizeof(double), (size_t)(npts * 3), fp);
       fprintf(fp, "\n  </AppendedData>\n");
    }
    fprintf(fp, "</VTKFile>\n");
@@ -1438,7 +1448,8 @@ ComputeRigidBodyModes(DistMesh *mesh, ElasticParams *params, HYPRE_Real **rbm_pt
    HYPRE_Int     *nlocal  = &mesh->nlocal[0];
    HYPRE_BigInt **pstarts = &mesh->pstarts[0];
    HYPRE_Int     *gdims   = &mesh->gdims[0];
-   HYPRE_Real    *gsizes  = &mesh->gsizes[0];
+   (void)gdims; /* Reserved for future use */
+   HYPRE_Real *gsizes = &mesh->gsizes[0];
 
    const HYPRE_Int    nx  = nlocal[0];
    const HYPRE_Int    ny  = nlocal[1];
@@ -1461,7 +1472,7 @@ ComputeRigidBodyModes(DistMesh *mesh, ElasticParams *params, HYPRE_Real **rbm_pt
    const HYPRE_Int stride_mode     = dofs_per_node * num_nodes_local;
 
    HYPRE_Real *rbm =
-      (HYPRE_Real *)calloc((size_t)num_modes * stride_mode, sizeof(HYPRE_Real));
+      (HYPRE_Real *)calloc((size_t)num_modes * (size_t)stride_mode, sizeof(HYPRE_Real));
    for (HYPRE_Int k = 0; k < nz; k++)
    {
       const HYPRE_BigInt gz = iz0 + k;
