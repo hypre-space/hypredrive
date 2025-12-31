@@ -33,16 +33,32 @@ ErrorBacktraceGetBaseAddress(void)
    FILE         *fp   = fopen("/proc/self/maps", "r");
    if (fp)
    {
-      char line[512];
-      /* The first line typically contains the base address of the executable */
-      if (fgets(line, sizeof(line), fp))
+      char    line[512];
+      char    exe_path[4096];
+      ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+      if (len > 0)
       {
-         /* Parse the start address (format: "start-end perms offset ...") */
-         char *dash = strchr(line, '-');
-         if (dash)
+         exe_path[len] = '\0';
+      }
+      else
+      {
+         exe_path[0] = '\0';
+      }
+
+      /* Find the line that corresponds to the executable */
+      while (fgets(line, sizeof(line), fp))
+      {
+         /* Check if this line contains the executable path */
+         if (exe_path[0] != '\0' && strstr(line, exe_path) != NULL)
          {
-            *dash = '\0';
-            base  = strtoul(line, NULL, 16);
+            /* Parse the start address (format: "start-end perms offset ...") */
+            char *dash = strchr(line, '-');
+            if (dash)
+            {
+               *dash = '\0';
+               base  = strtoul(line, NULL, 16);
+               break;
+            }
          }
       }
       fclose(fp);
@@ -72,56 +88,96 @@ ErrorBacktraceSymbolsPrint(void)
       exe_path[0] = '\0';
    }
 
-   /* Get base address for PIE executables */
-   unsigned long base_addr = ErrorBacktraceGetBaseAddress();
+   /* Get symbol strings from backtrace_symbols */
+   char **symbols = backtrace_symbols(trace, nptrs);
+   if (!symbols)
+   {
+      /* Fallback if backtrace_symbols fails */
+      backtrace_symbols_fd(trace, nptrs, STDERR_FILENO);
+      return;
+   }
 
-   /* Try to use addr2line for each address individually */
+   /* Try to use addr2line for each address */
    if (exe_path[0] != '\0' && nptrs > 0)
    {
       int saw_output = 0;
       for (int i = 0; i < nptrs; i++)
       {
-         /* Compute offset from base for PIE binaries */
-         unsigned long addr = (unsigned long)trace[i];
-         unsigned long offset =
-            (base_addr > 0 && addr > base_addr) ? (addr - base_addr) : addr;
+         char func[256] = "";
+         char file[256] = "";
+         unsigned long offset = 0;
 
-         char cmd[4352];
-         snprintf(cmd, sizeof(cmd), "addr2line -e %s -f -C -i 0x%lx 2>/dev/null",
-                  exe_path, offset);
-         FILE *fp = popen(cmd, "r");
-         if (fp)
+         /* Parse offset from symbol string (format: "executable(+0xoffset)" or "executable[+0xoffset]") */
+         if (symbols[i])
          {
-            char func[256] = "";
-            char file[256] = "";
-            if (fgets(func, sizeof(func), fp))
+            char *plus = strstr(symbols[i], "(+0x");
+            if (!plus)
             {
-               /* Remove newline */
-               char *nl = strchr(func, '\n');
-               if (nl) *nl = '\0';
+               plus = strstr(symbols[i], "[+0x");
             }
-            if (fgets(file, sizeof(file), fp))
+            if (plus)
             {
-               /* Remove newline */
-               char *nl = strchr(file, '\n');
-               if (nl) *nl = '\0';
+               offset = strtoul(plus + 4, NULL, 16);
             }
-            pclose(fp);
+         }
 
-            if (func[0] != '\0' && file[0] != '\0' && strcmp(func, "??") != 0 &&
-                strcmp(file, "??:0") != 0)
+         /* If we found an offset, use addr2line with it */
+         if (offset > 0)
+         {
+            char cmd[4352];
+            /* Use absolute path and redirect stderr to avoid noise */
+            /* Note: -p outputs on one line, so we use separate -f and -l flags */
+            snprintf(cmd, sizeof(cmd), "addr2line -e %s -f -C -i 0x%lx 2>/dev/null",
+                     exe_path, offset);
+            FILE *fp = popen(cmd, "r");
+            if (fp)
             {
-               saw_output = 1;
-               fprintf(stderr, "#%d %s at %s\n", i, func, file);
+               /* Read function name (first line) */
+               if (fgets(func, sizeof(func), fp))
+               {
+                  /* Remove newline */
+                  char *nl = strchr(func, '\n');
+                  if (nl) *nl = '\0';
+               }
+               /* Read file:line (second line) */
+               if (fgets(file, sizeof(file), fp))
+               {
+                  /* Remove newline */
+                  char *nl = strchr(file, '\n');
+                  if (nl) *nl = '\0';
+               }
+               int status = pclose(fp);
+               /* If addr2line failed (non-zero exit), clear the output */
+               if (status != 0)
+               {
+                  func[0] = '\0';
+                  file[0] = '\0';
+               }
             }
+         }
+
+         /* Print if we got valid output from addr2line */
+         if (func[0] != '\0' && file[0] != '\0' && strcmp(func, "??") != 0 &&
+             strcmp(file, "??:0") != 0)
+         {
+            saw_output = 1;
+            fprintf(stderr, "#%d %s at %s\n", i, func, file);
+         }
+         /* For addresses in our executable that addr2line couldn't resolve, show the symbol string */
+         else if (symbols[i] && strstr(symbols[i], "hypredrive") != NULL)
+         {
+            saw_output = 1;
+            fprintf(stderr, "#%d %s\n", i, symbols[i]);
          }
       }
       if (saw_output)
       {
+         free(symbols);
          return;
       }
    }
 
+   free(symbols);
    /* Fallback to backtrace_symbols_fd */
    backtrace_symbols_fd(trace, nptrs, STDERR_FILENO);
 }
