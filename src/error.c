@@ -97,17 +97,21 @@ ErrorBacktraceSymbolsPrint(void)
       return;
    }
 
+   /* Get base address for PIE executables (used as fallback if offset parsing fails) */
+   unsigned long base_addr = ErrorBacktraceGetBaseAddress();
+
    /* Try to use addr2line for each address */
    if (exe_path[0] != '\0' && nptrs > 0)
    {
       int saw_output = 0;
       for (int i = 0; i < nptrs; i++)
       {
-         char func[256] = "";
-         char file[256] = "";
-         unsigned long offset = 0;
+         char          func[256] = "";
+         char          file[256] = "";
+         unsigned long offset    = 0;
 
-         /* Parse offset from symbol string (format: "executable(+0xoffset)" or "executable[+0xoffset]") */
+         /* Parse offset from symbol string (format: "executable(+0xoffset)" or
+          * "executable[+0xoffset]") */
          if (symbols[i])
          {
             char *plus = strstr(symbols[i], "(+0x");
@@ -118,6 +122,17 @@ ErrorBacktraceSymbolsPrint(void)
             if (plus)
             {
                offset = strtoul(plus + 4, NULL, 16);
+            }
+         }
+
+         /* Fallback: if we couldn't parse offset from symbol string, compute it from base
+          * address */
+         if (offset == 0 && base_addr > 0)
+         {
+            unsigned long addr = (unsigned long)trace[i];
+            if (addr >= base_addr)
+            {
+               offset = addr - base_addr;
             }
          }
 
@@ -163,7 +178,8 @@ ErrorBacktraceSymbolsPrint(void)
             saw_output = 1;
             fprintf(stderr, "#%d %s at %s\n", i, func, file);
          }
-         /* For addresses in our executable that addr2line couldn't resolve, show the symbol string */
+         /* For addresses in our executable that addr2line couldn't resolve, show the
+          * symbol string */
          else if (symbols[i] && strstr(symbols[i], "hypredrive") != NULL)
          {
             saw_output = 1;

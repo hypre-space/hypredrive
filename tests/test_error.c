@@ -240,6 +240,96 @@ test_ErrorMsgPrint_with_no_messages(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * Test backtrace symbolization
+ *-----------------------------------------------------------------------------*/
+
+/* Helper to call ErrorBacktracePrint directly */
+static void
+call_ErrorBacktracePrint(void)
+{
+   ErrorBacktracePrint();
+}
+
+static void
+test_ErrorBacktracePrint_has_filenames_and_lines(void)
+{
+#ifdef __linux__
+   ErrorCodeResetAll();
+   ErrorMsgClear();
+
+   /* Capture output from ErrorBacktracePrint directly */
+   char buffer[4096];
+   capture_error_output(call_ErrorBacktracePrint, buffer, sizeof(buffer));
+
+   /* Verify backtrace section exists */
+   const char *backtrace_start = strstr(buffer, "Backtrace:");
+   ASSERT_NOT_NULL(backtrace_start);
+
+   /* Verify backtrace contains file paths and line numbers (not just raw addresses) */
+   /* Look for patterns like "at /path/to/file.c:123" or "at file.c:123" */
+   /* This ensures addr2line is working and producing meaningful output */
+   
+   /* Check that we have at least one line with file:line format */
+   /* Format should be: "#N function_name at /path/to/file.c:line" */
+   int found_file_line = 0;
+   
+   /* Look for ".c:" pattern which indicates file:line format */
+   const char *dot_c = strstr(backtrace_start, ".c:");
+   if (dot_c)
+   {
+      /* Verify there's a digit after the colon (line number) */
+      const char *after_colon = dot_c + 3; /* Skip ".c:" */
+      if (*after_colon >= '0' && *after_colon <= '9')
+      {
+         found_file_line = 1;
+      }
+   }
+   
+   /* Alternative: look for " at " followed by file path with colon and digits */
+   if (!found_file_line)
+   {
+      const char *at_pos = strstr(backtrace_start, " at ");
+      if (at_pos)
+      {
+         /* Look for colon followed by digits (line number) */
+         const char *colon = strchr(at_pos, ':');
+         if (colon)
+         {
+            /* Check if there are digits after the colon */
+            const char *after_colon = colon + 1;
+            if (*after_colon >= '0' && *after_colon <= '9')
+            {
+               found_file_line = 1;
+            }
+         }
+      }
+   }
+
+   /* Regression check: fail if we see raw addresses instead of file:line */
+   const char *raw_addr_pattern = strstr(backtrace_start, "(+0x");
+   if (raw_addr_pattern && !found_file_line)
+   {
+      /* If we see raw addresses like "(+0x...)" and no file:line, that's a regression */
+      TEST_FAIL("Backtrace shows raw addresses instead of file:line. "
+                "This indicates addr2line is not working correctly.");
+   }
+   
+   /* Require file:line format for the test to pass */
+   if (!found_file_line)
+   {
+      TEST_FAIL("Backtrace does not contain file:line information. "
+                "Expected format: 'function_name at /path/to/file.c:line'");
+   }
+
+   ErrorCodeResetAll();
+   ErrorMsgClear();
+#else
+   /* Backtrace is only supported on Linux */
+   fprintf(stderr, "SKIP: Backtrace test only runs on Linux\n");
+#endif
+}
+
+/*-----------------------------------------------------------------------------
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
@@ -261,6 +351,7 @@ main(int argc, char **argv)
    RUN_TEST(test_ErrorCodeDescribe_prints_counts);
    RUN_TEST(test_DistributedErrorCodeActive);
    RUN_TEST(test_ErrorMsgPrint_with_no_messages);
+   RUN_TEST(test_ErrorBacktracePrint_has_filenames_and_lines);
 
    ErrorCodeResetAll();
    ErrorMsgClear();

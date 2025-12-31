@@ -50,14 +50,14 @@ StrTrim(char *str)
 int
 CheckBinaryDataExists(const char *prefix)
 {
-   (void)prefix;
-   char  filename[MAX_FILENAME_LENGTH] = {0};
-   int   file_exists                   = 0;
-   FILE *fp                            = NULL;
+   char filename[MAX_FILENAME_LENGTH] = {0};
+
+   int   file_exists = 0;
+   FILE *fp          = NULL;
 
    /* Check if binary data exist */
-   fp          = fopen(filename, "r");
-   file_exists = (fp == NULL) ? 0 : 1;
+   snprintf(filename, sizeof(filename), "%*s.00000.bin", (int)strlen(prefix), prefix);
+   file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp)
    {
       fclose(fp);
@@ -73,14 +73,14 @@ CheckBinaryDataExists(const char *prefix)
 int
 CheckASCIIDataExists(const char *prefix)
 {
-   (void)prefix;
-   char  filename[MAX_FILENAME_LENGTH] = {0};
-   int   file_exists                   = 0;
-   FILE *fp                            = NULL;
+   char filename[MAX_FILENAME_LENGTH] = {0};
+
+   int   file_exists = 0;
+   FILE *fp          = NULL;
 
    /* Check if ASCII data exist */
-   fp          = fopen(filename, "r");
-   file_exists = (fp == NULL) ? 0 : 1;
+   snprintf(filename, sizeof(filename), "%*s.00000", (int)strlen(prefix), prefix);
+   file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp)
    {
       fclose(fp);
@@ -137,7 +137,7 @@ CountNumberOfPartitions(const char *prefix)
       num_files++;
    }
 
-   return --num_files;
+   return num_files;
 }
 
 /*-----------------------------------------------------------------------------
