@@ -391,7 +391,7 @@ CreateDistMesh2D(MPI_Comm comm, HYPRE_Real Lx, HYPRE_Real Ly, HYPRE_Int Nx, HYPR
       HYPRE_Int size = mesh->gdims[i] / mesh->pdims[i];
       HYPRE_Int rest = mesh->gdims[i] - size * mesh->pdims[i];
 
-      mesh->pstarts[i] = calloc(mesh->pdims[i] + 1, sizeof(HYPRE_BigInt));
+      mesh->pstarts[i] = calloc((size_t)(mesh->pdims[i] + 1), sizeof(HYPRE_BigInt));
       for (int j = 0; j < mesh->pdims[i] + 1; j++)
       {
          mesh->pstarts[i][j] = (HYPRE_BigInt)(size * j + (j < rest ? j : rest));
@@ -449,23 +449,23 @@ CreateGhostData(DistMesh2D *mesh, GhostData **ghost_ptr)
 
    if (mesh->nbrs[0] != MPI_PROC_NULL)
    {
-      g->recv_bufs[0] = (double *)calloc(ny * 3, sizeof(double));
-      g->send_bufs[0] = (double *)calloc(ny * 3, sizeof(double));
+      g->recv_bufs[0] = (double *)calloc((size_t)(ny * 3), sizeof(double));
+      g->send_bufs[0] = (double *)calloc((size_t)(ny * 3), sizeof(double));
    }
    if (mesh->nbrs[1] != MPI_PROC_NULL)
    {
-      g->recv_bufs[1] = (double *)calloc(ny * 3, sizeof(double));
-      g->send_bufs[1] = (double *)calloc(ny * 3, sizeof(double));
+      g->recv_bufs[1] = (double *)calloc((size_t)(ny * 3), sizeof(double));
+      g->send_bufs[1] = (double *)calloc((size_t)(ny * 3), sizeof(double));
    }
    if (mesh->nbrs[2] != MPI_PROC_NULL)
    {
-      g->recv_bufs[2] = (double *)calloc(nx * 3, sizeof(double));
-      g->send_bufs[2] = (double *)calloc(nx * 3, sizeof(double));
+      g->recv_bufs[2] = (double *)calloc((size_t)(nx * 3), sizeof(double));
+      g->send_bufs[2] = (double *)calloc((size_t)(nx * 3), sizeof(double));
    }
    if (mesh->nbrs[3] != MPI_PROC_NULL)
    {
-      g->recv_bufs[3] = (double *)calloc(nx * 3, sizeof(double));
-      g->send_bufs[3] = (double *)calloc(nx * 3, sizeof(double));
+      g->recv_bufs[3] = (double *)calloc((size_t)(nx * 3), sizeof(double));
+      g->send_bufs[3] = (double *)calloc((size_t)(nx * 3), sizeof(double));
    }
    for (int i = 4; i < 8; i++)
       if (mesh->nbrs[i] != MPI_PROC_NULL)
@@ -698,7 +698,8 @@ ComputeComponentNorms(HYPRE_IJVector b, HYPRE_Int local_size, double *norm_u,
 {
    double         local_sum[3] = {0.0, 0.0, 0.0};
    double         global_sum[3];
-   HYPRE_Complex *val = (HYPRE_Complex *)malloc(3 * local_size * sizeof(HYPRE_Complex));
+   HYPRE_Complex *val =
+      (HYPRE_Complex *)malloc((size_t)(3 * local_size) * sizeof(HYPRE_Complex));
 
    /* Gather local values */
    HYPRE_IJVectorGetValues(b, 3 * local_size, NULL, val);
@@ -743,7 +744,7 @@ ComputeDivergence(DistMesh2D *mesh, LidCavityParams *params, double *u_vec,
    ExchangeVectorGhosts(mesh, u_vec, ghost);
 
    /* Allocate divergence array for local nodes */
-   double *div_u = (double *)calloc(nx * ny, sizeof(double));
+   double *div_u = (double *)calloc((size_t)(nx * ny), sizeof(double));
 
    for (int ly = 0; ly < ny; ly++)
    {
@@ -858,7 +859,7 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
 
    /* Set row sizes: conservative upper bound 27 per row (9 nodes x 3 dof) */
    HYPRE_Int  local_dofs = 3 * mesh->local_size;
-   HYPRE_Int *nnzrow     = (HYPRE_Int *)calloc(local_dofs, sizeof(HYPRE_Int));
+   HYPRE_Int *nnzrow     = (HYPRE_Int *)calloc((size_t)local_dofs, sizeof(HYPRE_Int));
    for (int r = 0; r < local_dofs; r++) nnzrow[r] = 27;
    HYPRE_IJMatrixSetRowSizes(A, nnzrow);
    free(nnzrow);
@@ -880,17 +881,20 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
       (pstarts[1][p[1] + 1] < gdims[1]) ? pstarts[1][p[1] + 1] : (gdims[1] - 1);
 
    /* Batch assembly buffers - accumulate across elements, flush when full */
-   const int     max_rows    = params->max_rows_per_call;
-   const int     max_nnz     = max_rows * 27; /* Conservative: 27 nnz per row max */
-   HYPRE_BigInt *batch_rows  = (HYPRE_BigInt *)malloc(max_rows * sizeof(HYPRE_BigInt));
-   HYPRE_Int    *batch_ncols = (HYPRE_Int *)malloc(max_rows * sizeof(HYPRE_Int));
-   HYPRE_BigInt *batch_cols  = (HYPRE_BigInt *)malloc(max_nnz * sizeof(HYPRE_BigInt));
-   HYPRE_Real   *batch_vals  = (HYPRE_Real *)malloc(max_nnz * sizeof(HYPRE_Real));
-   HYPRE_BigInt *rhs_rows    = (HYPRE_BigInt *)malloc(max_rows * sizeof(HYPRE_BigInt));
-   HYPRE_Real   *rhs_vals    = (HYPRE_Real *)malloc(max_rows * sizeof(HYPRE_Real));
-   int           batch_nrows = 0;
-   int           batch_nnz   = 0;
-   int           rhs_count   = 0;
+   const int     max_rows = params->max_rows_per_call;
+   const int     max_nnz  = max_rows * 27; /* Conservative: 27 nnz per row max */
+   HYPRE_BigInt *batch_rows =
+      (HYPRE_BigInt *)malloc((size_t)max_rows * sizeof(HYPRE_BigInt));
+   HYPRE_Int    *batch_ncols = (HYPRE_Int *)malloc((size_t)max_rows * sizeof(HYPRE_Int));
+   HYPRE_BigInt *batch_cols =
+      (HYPRE_BigInt *)malloc((size_t)max_nnz * sizeof(HYPRE_BigInt));
+   HYPRE_Real   *batch_vals = (HYPRE_Real *)malloc((size_t)max_nnz * sizeof(HYPRE_Real));
+   HYPRE_BigInt *rhs_rows =
+      (HYPRE_BigInt *)malloc((size_t)max_rows * sizeof(HYPRE_BigInt));
+   HYPRE_Real *rhs_vals    = (HYPRE_Real *)malloc((size_t)max_rows * sizeof(HYPRE_Real));
+   int         batch_nrows = 0;
+   int         batch_nnz   = 0;
+   int         rhs_count   = 0;
 
    for (HYPRE_BigInt gy = gy_lo; gy < gy_hi; gy++)
    {
@@ -900,9 +904,10 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
          HYPRE_Real K_elem[12][12] = {{0}}; /* Full element Jacobian */
          HYPRE_Real R_elem[12]     = {0};   /* Full element residual */
 
-         HYPRE_Real   u_k_e[12]; /* u and p at current Newton iter (element) */
-         HYPRE_Real   u_n_e[12]; /* u and p at previous time step (element) */
-         HYPRE_Real   u_quad[2]; /* interpolated velocity at quadrature point */
+         HYPRE_Real u_k_e[12]; /* u and p at current Newton iter (element) */
+         HYPRE_Real u_n_e[12]; /* u and p at previous time step (element) */
+         HYPRE_Real u_quad[2]; /* interpolated velocity at quadrature point */
+         (void)u_quad;         /* Reserved for future use */
          HYPRE_BigInt node_gid[4];
          HYPRE_BigInt dof_gid[12];
 
@@ -1089,76 +1094,82 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
 
                for (int a = 0; a < 4; a++)
                {
-                  for (int b = 0; b < 4; b++)
+                  for (int b_idx = 0; b_idx < 4; b_idx++)
                   {
                      // Galerkin Jacobian contributions
                      // Time derivative: (1/dt) * M
-                     K_elem[3 * a + 0][3 * b + 0] += w * N[a] * N[b] / params->dt;
-                     K_elem[3 * a + 1][3 * b + 1] += w * N[a] * N[b] / params->dt;
+                     K_elem[3 * a + 0][3 * b_idx + 0] += w * N[a] * N[b_idx] / params->dt;
+                     K_elem[3 * a + 1][3 * b_idx + 1] += w * N[a] * N[b_idx] / params->dt;
 
                      // Viscous term: nu * grad(u) : grad(v)
-                     K_elem[3 * a + 0][3 * b + 0] +=
-                        w * nu * (dN_dx[a] * dN_dx[b] + dN_dy[a] * dN_dy[b]);
-                     K_elem[3 * a + 1][3 * b + 1] +=
-                        w * nu * (dN_dx[a] * dN_dx[b] + dN_dy[a] * dN_dy[b]);
+                     K_elem[3 * a + 0][3 * b_idx + 0] +=
+                        w * nu * (dN_dx[a] * dN_dx[b_idx] + dN_dy[a] * dN_dy[b_idx]);
+                     K_elem[3 * a + 1][3 * b_idx + 1] +=
+                        w * nu * (dN_dx[a] * dN_dx[b_idx] + dN_dy[a] * dN_dy[b_idx]);
 
                      // Convection term linearization (Newton)
                      // Part 1: (u_k * grad(delta u)) * test_func  [Picard part]
-                     K_elem[3 * a + 0][3 * b + 0] +=
-                        w * (u_k * dN_dx[b] + v_k * dN_dy[b]) * N[a];
-                     K_elem[3 * a + 1][3 * b + 1] +=
-                        w * (u_k * dN_dx[b] + v_k * dN_dy[b]) * N[a];
+                     K_elem[3 * a + 0][3 * b_idx + 0] +=
+                        w * (u_k * dN_dx[b_idx] + v_k * dN_dy[b_idx]) * N[a];
+                     K_elem[3 * a + 1][3 * b_idx + 1] +=
+                        w * (u_k * dN_dx[b_idx] + v_k * dN_dy[b_idx]) * N[a];
 
                      // Part 2: (delta u * grad(u_k)) * test_func  [Newton part]
                      // X-Momentum: (delta_u * du/dx + delta_v * du/dy) * test_func
-                     K_elem[3 * a + 0][3 * b + 0] +=
-                        w * (N[b] * du_dx_k) * N[a]; // d(conv)/du
-                     K_elem[3 * a + 0][3 * b + 1] +=
-                        w * (N[b] * du_dy_k) * N[a]; // d(conv)/dv
+                     K_elem[3 * a + 0][3 * b_idx + 0] +=
+                        w * (N[b_idx] * du_dx_k) * N[a]; // d(conv)/du
+                     K_elem[3 * a + 0][3 * b_idx + 1] +=
+                        w * (N[b_idx] * du_dy_k) * N[a]; // d(conv)/dv
 
                      // Y-Momentum: (delta_u * dv/dx + delta_v * dv/dy) * test_func
-                     K_elem[3 * a + 1][3 * b + 0] +=
-                        w * (N[b] * dv_dx_k) * N[a]; // d(conv)/du
-                     K_elem[3 * a + 1][3 * b + 1] +=
-                        w * (N[b] * dv_dy_k) * N[a]; // d(conv)/dv
+                     K_elem[3 * a + 1][3 * b_idx + 0] +=
+                        w * (N[b_idx] * dv_dx_k) * N[a]; // d(conv)/du
+                     K_elem[3 * a + 1][3 * b_idx + 1] +=
+                        w * (N[b_idx] * dv_dy_k) * N[a]; // d(conv)/dv
 
                      // Pressure-Velocity coupling (from -p div v and q div u)
-                     K_elem[3 * a + 0][3 * b + 2] -= w * dN_dx[a] * N[b]; // du/dp
-                     K_elem[3 * a + 1][3 * b + 2] -= w * dN_dy[a] * N[b]; // dv/dp
-                     K_elem[3 * a + 2][3 * b + 0] += w * N[a] * dN_dx[b]; // dp/du
-                     K_elem[3 * a + 2][3 * b + 1] += w * N[a] * dN_dy[b]; // dp/dv
+                     K_elem[3 * a + 0][3 * b_idx + 2] -= w * dN_dx[a] * N[b_idx]; // du/dp
+                     K_elem[3 * a + 1][3 * b_idx + 2] -= w * dN_dy[a] * N[b_idx]; // dv/dp
+                     K_elem[3 * a + 2][3 * b_idx + 0] += w * N[a] * dN_dx[b_idx]; // dp/du
+                     K_elem[3 * a + 2][3 * b_idx + 1] += w * N[a] * dN_dy[b_idx]; // dp/dv
 
                      // Stabilization Jacobian contributions (frozen tau_e and conv_vel in
                      // test func pert) d(R_mom_x)/d(u_b) * SUPG_test_func_x
-                     K_elem[3 * a + 0][3 * b + 0] +=
+                     K_elem[3 * a + 0][3 * b_idx + 0] +=
                         w * tau_e *
-                        (N[b] / params->dt + u_k * dN_dx[b] + v_k * dN_dy[b]) *
+                        (N[b_idx] / params->dt + u_k * dN_dx[b_idx] +
+                         v_k * dN_dy[b_idx]) *
                         (u_k * dN_dx[a] + v_k * dN_dy[a]);
                      // d(R_mom_x)/d(p_b) * SUPG_test_func_x
-                     K_elem[3 * a + 0][3 * b + 2] +=
-                        w * tau_e * dN_dx[b] * (u_k * dN_dx[a] + v_k * dN_dy[a]);
+                     K_elem[3 * a + 0][3 * b_idx + 2] +=
+                        w * tau_e * dN_dx[b_idx] * (u_k * dN_dx[a] + v_k * dN_dy[a]);
 
                      // d(R_mom_y)/d(v_b) * SUPG_test_func_y
-                     K_elem[3 * a + 1][3 * b + 1] +=
+                     K_elem[3 * a + 1][3 * b_idx + 1] +=
                         w * tau_e *
-                        (N[b] / params->dt + u_k * dN_dx[b] + v_k * dN_dy[b]) *
+                        (N[b_idx] / params->dt + u_k * dN_dx[b_idx] +
+                         v_k * dN_dy[b_idx]) *
                         (u_k * dN_dx[a] + v_k * dN_dy[a]);
                      // d(R_mom_y)/d(p_b) * SUPG_test_func_y
-                     K_elem[3 * a + 1][3 * b + 2] +=
-                        w * tau_e * dN_dy[b] * (u_k * dN_dx[a] + v_k * dN_dy[a]);
+                     K_elem[3 * a + 1][3 * b_idx + 2] +=
+                        w * tau_e * dN_dy[b_idx] * (u_k * dN_dx[a] + v_k * dN_dy[a]);
 
                      // d(R_mom_x)/d(u_b) * PSPG_test_func_x
-                     K_elem[3 * a + 2][3 * b + 0] +=
+                     K_elem[3 * a + 2][3 * b_idx + 0] +=
                         w * tau_e *
-                        (N[b] / params->dt + u_k * dN_dx[b] + v_k * dN_dy[b]) * dN_dx[a];
+                        (N[b_idx] / params->dt + u_k * dN_dx[b_idx] +
+                         v_k * dN_dy[b_idx]) *
+                        dN_dx[a];
                      // d(R_mom_y)/d(v_b) * PSPG_test_func_y
-                     K_elem[3 * a + 2][3 * b + 1] +=
+                     K_elem[3 * a + 2][3 * b_idx + 1] +=
                         w * tau_e *
-                        (N[b] / params->dt + u_k * dN_dx[b] + v_k * dN_dy[b]) * dN_dy[a];
+                        (N[b_idx] / params->dt + u_k * dN_dx[b_idx] +
+                         v_k * dN_dy[b_idx]) *
+                        dN_dy[a];
                      // d(R_mom_x)/d(p_b) * PSPG_test_func_x + d(R_mom_y)/d(p_b) *
                      // PSPG_test_func_y
-                     K_elem[3 * a + 2][3 * b + 2] +=
-                        w * tau_e * (dN_dx[b] * dN_dx[a] + dN_dy[b] * dN_dy[a]);
+                     K_elem[3 * a + 2][3 * b_idx + 2] +=
+                        w * tau_e * (dN_dx[b_idx] * dN_dx[a] + dN_dy[b_idx] * dN_dy[a]);
                   }
 
                   // Galerkin Residual contributions
@@ -1194,22 +1205,25 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
          HYPRE_Int is_dirichlet[12] = {0};
          for (int a = 0; a < 4; a++)
          {
-            HYPRE_BigInt gx          = ng[a][0];
-            HYPRE_BigInt gy          = ng[a][1];
+            HYPRE_BigInt gx_local    = ng[a][0];
+            HYPRE_BigInt gy_local    = ng[a][1];
             HYPRE_Int    on_boundary = 0;
-            HYPRE_Real   u_bc = 0.0, v_bc = 0.0;
+            HYPRE_Real   u_bc        = 0.0;
+            HYPRE_Real   v_bc        = 0.0;
+            (void)u_bc; /* Reserved for future use */
+            (void)v_bc; /* Reserved for future use */
 
-            if (gy == gdims[1] - 1 && gx != 0 && gx != gdims[0] - 1)
+            if (gy_local == gdims[1] - 1 && gx_local != 0 && gx_local != gdims[0] - 1)
             {
                on_boundary = 1; // Lid: u = 1, v = 0
                u_bc        = 1.0;
             }
-            else if (gx == 0 || gx == gdims[0] - 1 || gy == 0)
+            else if (gx_local == 0 || gx_local == gdims[0] - 1 || gy_local == 0)
             {
                on_boundary = 1; // Wall: u = 0, v = 0
             }
 
-            if (gx == 0 && gy == 0)
+            if (gx_local == 0 && gy_local == 0)
             {
                // Pressure reference node: p is Dirichlet-like (constrained)
                is_dirichlet[3 * a + 2] = 1;
@@ -1431,13 +1445,15 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
    double *vtk_ghost[8];
    for (int i = 0; i < 8; i++) vtk_ghost[i] = NULL;
    if (mesh->nbrs[0] != MPI_PROC_NULL)
-      vtk_ghost[0] = (double *)calloc(ny * 3, sizeof(double)); /* left  face */
+      vtk_ghost[0] = (double *)calloc((size_t)(ny * 3), sizeof(double)); /* left  face */
    if (mesh->nbrs[1] != MPI_PROC_NULL)
-      vtk_ghost[1] = (double *)calloc(ny * 3, sizeof(double)); /* right face send */
+      vtk_ghost[1] =
+         (double *)calloc((size_t)(ny * 3), sizeof(double)); /* right face send */
    if (mesh->nbrs[2] != MPI_PROC_NULL)
-      vtk_ghost[2] = (double *)calloc(nx * 3, sizeof(double)); /* down  face */
+      vtk_ghost[2] = (double *)calloc((size_t)(nx * 3), sizeof(double)); /* down  face */
    if (mesh->nbrs[3] != MPI_PROC_NULL)
-      vtk_ghost[3] = (double *)calloc(nx * 3, sizeof(double)); /* up    face send */
+      vtk_ghost[3] =
+         (double *)calloc((size_t)(nx * 3), sizeof(double)); /* up    face send */
    if (mesh->nbrs[4] != MPI_PROC_NULL)
       vtk_ghost[4] = (double *)calloc(3, sizeof(double)); /* left-down corner */
    if (mesh->nbrs[5] != MPI_PROC_NULL)
@@ -1522,7 +1538,7 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
    }
 
    /* Build extended data including negative-face ghosts */
-   double *ext = (double *)calloc(nxg * nyg * 3, sizeof(double));
+   double *ext = (double *)calloc((size_t)(nxg * nyg * 3), sizeof(double));
    for (int j = 0; j < ny; j++)
    {
       for (int i = 0; i < nx; i++)
@@ -1539,7 +1555,7 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
    /* Finish comms before using ghost buffers */
    if (reqc > 0)
    {
-      MPI_Status *statuses = (MPI_Status *)malloc(reqc * sizeof(MPI_Status));
+      MPI_Status *statuses = (MPI_Status *)malloc((size_t)reqc * sizeof(MPI_Status));
       MPI_Waitall(reqc, reqs, statuses);
       free(statuses);
    }
@@ -1623,7 +1639,7 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
    double *div_local = ComputeDivergence(mesh, params, sol_data, ghost);
 
    /* Expand divergence to extended grid (including VTK overlap ghosts) */
-   double *div_u = (double *)calloc(nxg * nyg, sizeof(double));
+   double *div_u = (double *)calloc((size_t)(nxg * nyg), sizeof(double));
    for (int j = 0; j < ny; j++)
    {
       for (int i = 0; i < nx; i++)
@@ -1702,10 +1718,10 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
    else
    {
       /* Binary (bit 1 = 0 means binary) */
-      int npts      = nxg * nyg;
-      int vel_size  = npts * 3 * sizeof(double);
-      int pres_size = npts * 1 * sizeof(double);
-      int div_size  = npts * 1 * sizeof(double);
+      int    npts      = nxg * nyg;
+      size_t vel_size  = (size_t)(npts * 3) * sizeof(double);
+      size_t pres_size = (size_t)(npts * 1) * sizeof(double);
+      size_t div_size  = (size_t)(npts * 1) * sizeof(double);
 
       double *vel_buf  = (double *)malloc(vel_size);
       double *pres_buf = (double *)malloc(pres_size);
@@ -1740,13 +1756,13 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
       fprintf(fp, "  <AppendedData encoding=\"raw\">\n   _");
 
       fwrite(&vel_size, sizeof(int), 1, fp);
-      fwrite(vel_buf, sizeof(double), npts * 3, fp);
+      fwrite(vel_buf, sizeof(double), (size_t)(npts * 3), fp);
 
       fwrite(&pres_size, sizeof(int), 1, fp);
-      fwrite(pres_buf, sizeof(double), npts, fp);
+      fwrite(pres_buf, sizeof(double), (size_t)npts, fp);
 
       fwrite(&div_size, sizeof(int), 1, fp);
-      fwrite(div_u, sizeof(double), npts, fp);
+      fwrite(div_u, sizeof(double), (size_t)npts, fp);
 
       fprintf(fp, "\n  </AppendedData>\n");
 

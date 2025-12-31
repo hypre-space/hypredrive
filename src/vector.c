@@ -71,14 +71,16 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       }
 
       /* Read header contents */
-      if (!fp || fread(header, sizeof(uint64_t), 8, fp) != 8)
+      if (fread(header, sizeof(uint64_t), 8, fp) != 8)
       {
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          ErrorMsgAdd("Could not read header from %s", filename);
-         if (fp) fclose(fp);
+         fclose(fp);
+         fp = NULL;
          goto cleanup;
       }
       fclose(fp);
+      fp = NULL;
 
       nrows_sum += header[5];
       nrows_max = (header[5] > nrows_max) ? header[5] : nrows_max;
@@ -112,11 +114,19 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    {
       snprintf(filename, sizeof(filename), "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
-      if (!fp || fread(header, sizeof(uint64_t), 8, fp) != 8)
+      if (!fp)
+      {
+         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         ErrorMsgAddInvalidFilename(filename);
+         goto cleanup;
+      }
+
+      if (fread(header, sizeof(uint64_t), 8, fp) != 8)
       {
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          ErrorMsgAdd("Could not read header from %s", filename);
-         if (fp) fclose(fp);
+         fclose(fp);
+         fp = NULL;
          goto cleanup;
       }
 
@@ -134,6 +144,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read coeficients from %s", filename);
             fclose(fp);
+            fp = NULL;
             free(buffer);
             goto cleanup;
          }
@@ -158,6 +169,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
             ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             ErrorMsgAdd("Could not read coeficients from %s", filename);
             fclose(fp);
+            fp = NULL;
             free(buffer);
             goto cleanup;
          }
@@ -175,9 +187,11 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[1],
                      filename);
          fclose(fp);
+         fp = NULL;
          goto cleanup;
       }
       fclose(fp);
+      fp = NULL;
 
 #ifdef HYPRE_USING_GPU
       if (vals != h_vals)
@@ -195,6 +209,10 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
 cleanup:
    /* Free memory */
+   if (fp)
+   {
+      fclose(fp);
+   }
    free(partids);
    free(h_vals);
 #ifdef HYPRE_USING_GPU

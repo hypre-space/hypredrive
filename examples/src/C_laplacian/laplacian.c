@@ -478,6 +478,7 @@ CreateDistMesh(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Nz, HYPRE_In
 {
    DistMesh *mesh = (DistMesh *)malloc(sizeof(DistMesh));
    int       myid, num_procs;
+   (void)num_procs; /* Reserved for future use */
 
    /* Store dimensions */
    mesh->gdims[0] = Nx;
@@ -502,7 +503,7 @@ CreateDistMesh(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Nz, HYPRE_In
       HYPRE_Int size = mesh->gdims[i] / mesh->pdims[i];
       HYPRE_Int rest = mesh->gdims[i] - size * mesh->pdims[i];
 
-      mesh->pstarts[i] = calloc(mesh->pdims[i] + 1, sizeof(HYPRE_BigInt));
+      mesh->pstarts[i] = calloc((size_t)(mesh->pdims[i] + 1), sizeof(HYPRE_BigInt));
       for (int j = 0; j < mesh->pdims[i] + 1; j++)
       {
          mesh->pstarts[i][j] = (HYPRE_BigInt)(size * j + (j < rest ? j : rest));
@@ -676,7 +677,7 @@ BuildLaplacianSystem_7pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix *
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
 
    /* Set sizes for diagonal and off-diagonal entries per row */
-   HYPRE_Int *nnzrow = (HYPRE_Int *)calloc(local_size, sizeof(HYPRE_Int));
+   HYPRE_Int *nnzrow = (HYPRE_Int *)calloc((size_t)local_size, sizeof(HYPRE_Int));
    for (int row = 0; row < local_size; row++)
    {
       nnzrow[row] = 7; /* Maximum stencil size */
@@ -875,11 +876,12 @@ BuildLaplacianSystem_19pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix 
    HYPRE_IJVector b;
    HYPRE_Int      local_size = mesh->local_size;
    HYPRE_Int     *n          = &mesh->nlocal[0];
-   HYPRE_Int     *p          = &mesh->coords[0];
-   HYPRE_Int     *gdims      = &mesh->gdims[0];
-   HYPRE_BigInt **pstarts    = &mesh->pstarts[0];
-   HYPRE_BigInt   ilower     = mesh->ilower;
-   HYPRE_BigInt   iupper     = mesh->iupper;
+   (void)n; /* Reserved for future use */
+   HYPRE_Int     *p       = &mesh->coords[0];
+   HYPRE_Int     *gdims   = &mesh->gdims[0];
+   HYPRE_BigInt **pstarts = &mesh->pstarts[0];
+   HYPRE_BigInt   ilower  = mesh->ilower;
+   HYPRE_BigInt   iupper  = mesh->iupper;
 
    /* Create matrix and vector */
    HYPRE_IJMatrixCreate(mesh->cart_comm, ilower, iupper, ilower, iupper, &A);
@@ -888,7 +890,7 @@ BuildLaplacianSystem_19pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix 
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
 
    /* Set sizes for diagonal and off-diagonal entries per row */
-   HYPRE_Int *nnzrow = (HYPRE_Int *)calloc(local_size, sizeof(HYPRE_Int));
+   HYPRE_Int *nnzrow = (HYPRE_Int *)calloc((size_t)local_size, sizeof(HYPRE_Int));
    for (int row = 0; row < local_size; row++)
    {
       nnzrow[row] = 19; /* Maximum stencil size */
@@ -1092,7 +1094,7 @@ BuildLaplacianSystem_27pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix 
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
 
    /* Row nnz sizes: up to 27 entries per row for a 27-point stencil */
-   HYPRE_Int *nnzrow = (HYPRE_Int *)calloc(local_size, sizeof(HYPRE_Int));
+   HYPRE_Int *nnzrow = (HYPRE_Int *)calloc((size_t)local_size, sizeof(HYPRE_Int));
    for (int i = 0; i < local_size; i++)
    {
       nnzrow[i] = 27;
@@ -1309,6 +1311,7 @@ int
 BuildLaplacianSystem_125pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix *A_ptr,
                            HYPRE_IJVector *b_ptr)
 {
+   (void)params; /* Reserved for future use */
    MPI_Comm       comm       = mesh->cart_comm;
    HYPRE_Int      local_size = mesh->local_size;
    HYPRE_Int     *p          = &mesh->coords[0];
@@ -1326,7 +1329,7 @@ BuildLaplacianSystem_125pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
 
    /* We allow up to 125 neighbors (3^3=27 for radius=1, 5^3=125 for radius=2) */
-   HYPRE_Int *nnzrow = (HYPRE_Int *)calloc(local_size, sizeof(HYPRE_Int));
+   HYPRE_Int *nnzrow = (HYPRE_Int *)calloc((size_t)local_size, sizeof(HYPRE_Int));
    for (int i = 0; i < local_size; i++)
    {
       nnzrow[i] = 125; /* maximum possible neighbors including center */
@@ -1549,8 +1552,9 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *sol_data)
    double t0          = MPI_Wtime();
 
    /* Mesh info */
-   HYPRE_Int     *p       = &mesh->coords[0];
-   HYPRE_Int     *gdims   = &mesh->gdims[0];
+   HYPRE_Int *p     = &mesh->coords[0];
+   HYPRE_Int *gdims = &mesh->gdims[0];
+   (void)gdims; /* Reserved for future use */
    HYPRE_Int     *nlocal  = &mesh->nlocal[0];
    HYPRE_BigInt **pstarts = &mesh->pstarts[0];
    HYPRE_Real    *gsizes  = &mesh->gsizes[0];
@@ -1584,13 +1588,19 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *sol_data)
 
    /* Allocate buffers for ghost data */
    double *ghost_data[14];
-   for (int i = 0; i < 2; i++) ghost_data[i] = calloc(ny * nz, sizeof(double)); // x-faces
-   for (int i = 2; i < 4; i++) ghost_data[i] = calloc(nx * nz, sizeof(double)); // y-faces
-   for (int i = 4; i < 6; i++) ghost_data[i] = calloc(nx * ny, sizeof(double)); // z-faces
-   for (int i = 6; i < 8; i++) ghost_data[i] = calloc(nz, sizeof(double));   // xy-edges
-   for (int i = 8; i < 10; i++) ghost_data[i] = calloc(ny, sizeof(double));  // xz-edges
-   for (int i = 10; i < 12; i++) ghost_data[i] = calloc(nx, sizeof(double)); // yz-edges
-   for (int i = 12; i < 14; i++) ghost_data[i] = calloc(1, sizeof(double));  // xyz-corner
+   for (int i = 0; i < 2; i++)
+      ghost_data[i] = calloc((size_t)(ny * nz), sizeof(double)); // x-faces
+   for (int i = 2; i < 4; i++)
+      ghost_data[i] = calloc((size_t)(nx * nz), sizeof(double)); // y-faces
+   for (int i = 4; i < 6; i++)
+      ghost_data[i] = calloc((size_t)(nx * ny), sizeof(double)); // z-faces
+   for (int i = 6; i < 8; i++)
+      ghost_data[i] = calloc((size_t)nz, sizeof(double)); // xy-edges
+   for (int i = 8; i < 10; i++)
+      ghost_data[i] = calloc((size_t)ny, sizeof(double)); // xz-edges
+   for (int i = 10; i < 12; i++)
+      ghost_data[i] = calloc((size_t)nx, sizeof(double));                   // yz-edges
+   for (int i = 12; i < 14; i++) ghost_data[i] = calloc(1, sizeof(double)); // xyz-corner
 
    /* Exchange ghost layers using non-blocking communication */
    MPI_Request requests[28];
@@ -1683,7 +1693,7 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *sol_data)
                 &requests[req_count++]);
 
    /* Create extended solution array including ghost points */
-   double *extended_data = calloc(nxg * nyg * nzg, sizeof(double));
+   double *extended_data = calloc((size_t)(nxg * nyg * nzg), sizeof(double));
 
    /* Copy interior solution data */
    for (int k = 0; k < nz; k++)
@@ -1699,7 +1709,7 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *sol_data)
    /* Wait for all communications to complete */
    if (req_count > 0)
    {
-      MPI_Status *statuses = (MPI_Status *)malloc(req_count * sizeof(MPI_Status));
+      MPI_Status *statuses = (MPI_Status *)malloc((size_t)req_count * sizeof(MPI_Status));
       MPI_Waitall(req_count, requests, statuses);
       free(statuses);
    }
@@ -1810,9 +1820,10 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *sol_data)
 
    /* Write appended binary data */
    fprintf(fp, "  <AppendedData encoding=\"raw\">\n   _");
-   int data_size = nxg * nyg * nzg * sizeof(double);
-   fwrite(&data_size, sizeof(int), 1, fp);
-   fwrite(extended_data, sizeof(double), nxg * nyg * nzg, fp);
+   size_t data_size     = (size_t)(nxg * nyg * nzg) * sizeof(double);
+   int    data_size_int = (int)data_size;
+   fwrite(&data_size_int, sizeof(int), 1, fp);
+   fwrite(extended_data, sizeof(double), (size_t)(nxg * nyg * nzg), fp);
    fprintf(fp, "\n  </AppendedData>\n");
 #endif
    fprintf(fp, "</VTKFile>\n");

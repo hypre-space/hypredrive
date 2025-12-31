@@ -493,7 +493,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
          int                num_procs = 0;
          FILE              *file      = NULL;
          char               line[1024];
-         HYPRE_BigInt       M = 0, N = 0;
+         HYPRE_BigInt       M = 0;
+         HYPRE_BigInt       N;
          HYPRE_Complex     *all_values      = NULL;
          HYPRE_Complex     *local_values    = NULL;
          HYPRE_BigInt       global_num_rows = 0, global_num_cols = 0;
@@ -530,15 +531,15 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                /* Read dimensions with type-safe temps to satisfy both int and long long
                 * builds */
 #ifdef HYPRE_BIG_INT
-               long long tmpM     = strtoll(line, NULL, 10);
-               char     *line_ptr = strchr(line, ' ');
+               long long   tmpM     = strtoll(line, NULL, 10);
+               const char *line_ptr = strchr(line, ' ');
                long long tmpN = (line_ptr != NULL) ? strtoll(line_ptr + 1, NULL, 10) : 0;
                int       read_ok = (tmpM != 0 && tmpN != 0);
 #else
-               int   tmpM     = (int)strtol(line, NULL, 10);
-               char *line_ptr = strchr(line, ' ');
-               int   tmpN = (line_ptr != NULL) ? (int)strtol(line_ptr + 1, NULL, 10) : 0;
-               int   read_ok = (tmpM != 0 && tmpN != 0);
+               int         tmpM     = (int)strtol(line, NULL, 10);
+               const char *line_ptr = strchr(line, ' ');
+               int tmpN    = (line_ptr != NULL) ? (int)strtol(line_ptr + 1, NULL, 10) : 0;
+               int read_ok = (tmpM != 0 && tmpN != 0);
 #endif
 
                if (read_ok)

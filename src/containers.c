@@ -121,11 +121,11 @@ IntArrayDestroy(IntArray **int_array_ptr)
 void
 StrToIntArray(const char *string, IntArray **int_array_ptr)
 {
-   char     *buffer    = NULL;
-   char     *token     = NULL;
-   char     *saveptr   = NULL;
-   int       count     = 0;
-   IntArray *int_array = NULL;
+   char       *buffer    = NULL;
+   const char *token     = NULL;
+   char       *saveptr   = NULL;
+   int         count     = 0;
+   IntArray   *int_array = NULL;
 
    /* Find number of elements in array */
    buffer = strdup(string);
@@ -332,7 +332,8 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
 {
    char      filename[MAX_FILENAME_LENGTH];
    char      suffix[5], code[3];
-   size_t    num_entries = 0, num_entries_all = 0, count = 0;
+   size_t    num_entries = 0, num_entries_all = 0;
+   size_t    count;
    IntArray *int_array = NULL;
    FILE     *fp        = NULL;
    int       myid = 0, nprocs = 0, nparts = 0, g_nparts = 0, offset = 0;

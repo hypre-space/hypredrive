@@ -97,8 +97,7 @@ int
 CountNumberOfPartitions(const char *prefix)
 {
    char filename[MAX_FILENAME_LENGTH];
-   int  file_exists = 1;
-   int  num_files   = 0;
+   int  num_files = 0;
 
    if (prefix == NULL)
    {
@@ -108,6 +107,7 @@ CountNumberOfPartitions(const char *prefix)
    while (1)
    {
       FILE *fp = NULL;
+      int   file_exists;
 
       snprintf(filename, sizeof(filename), "%*s.%05d.bin", (int)strlen(prefix), prefix,
                num_files);

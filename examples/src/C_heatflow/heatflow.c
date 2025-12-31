@@ -170,20 +170,20 @@ void GetVTKBaseName(HeatParams *, char *, size_t);
 void GetVTKDataDir(HeatParams *, char *, size_t);
 void WritePVDCollectionFromStats(HeatParams *, int, double);
 void UpdateTimeStep(HeatParams *, int);
-static HYPRE_Real  MMS_ExactSolution(HYPRE_Real x, HYPRE_Real y, HYPRE_Real z,
-                                     HYPRE_Real t, HeatParams *p);
-static HYPRE_Real  MMS_SourceTerm(HYPRE_Real x, HYPRE_Real y, HYPRE_Real z, HYPRE_Real t,
-                                  HeatParams *p);
-static const char *HeatOutDir(void);
-static void        EnsureDir(const char *path);
-static void        ProjectDirichlet(DistMesh *, HeatParams *, HYPRE_Real *);
-static void        InitializeTemperatureField(DistMesh *, HeatParams *, HYPRE_Real *);
-static void        q1_shape_ref(HYPRE_Real, HYPRE_Real, HYPRE_Real, HYPRE_Real N[8],
-                                HYPRE_Real dxi[8], HYPRE_Real deta[8], HYPRE_Real dzeta[8]);
-static void        PrecomputeQ1ScalarTemplates(HYPRE_Real, HYPRE_Real, HYPRE_Real,
-                                               HYPRE_Real M_t[8][8], HYPRE_Real K_t[8][8]);
-static void        ComputeMMSError(DistMesh *m, HeatParams *p, HYPRE_Real *T, double t,
-                                   double *L2_err, double *Linf_err);
+static HYPRE_Real MMS_ExactSolution(HYPRE_Real x, HYPRE_Real y, HYPRE_Real z,
+                                    HYPRE_Real t, HeatParams *p);
+static HYPRE_Real MMS_SourceTerm(HYPRE_Real x, HYPRE_Real y, HYPRE_Real z, HYPRE_Real t,
+                                 HeatParams *p);
+/* static const char *HeatOutDir(void); */ /* Reserved for future use */
+static void EnsureDir(const char *path);
+static void ProjectDirichlet(DistMesh *, HeatParams *, HYPRE_Real *);
+static void InitializeTemperatureField(DistMesh *, HeatParams *, HYPRE_Real *);
+static void q1_shape_ref(HYPRE_Real, HYPRE_Real, HYPRE_Real, HYPRE_Real N[8],
+                         HYPRE_Real dxi[8], HYPRE_Real deta[8], HYPRE_Real dzeta[8]);
+static void PrecomputeQ1ScalarTemplates(HYPRE_Real, HYPRE_Real, HYPRE_Real,
+                                        HYPRE_Real M_t[8][8], HYPRE_Real K_t[8][8]);
+static void ComputeMMSError(DistMesh *m, HeatParams *p, HYPRE_Real *T, double t,
+                            double *L2_err, double *Linf_err);
 static void ComputeHeatFlux(DistMesh *m, HeatParams *p, HYPRE_Real *T, GhostData3D *g,
                             HYPRE_Real *qx, HYPRE_Real *qy, HYPRE_Real *qz);
 
@@ -502,7 +502,7 @@ CreateDistMesh(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Nz, HYPRE_In
       HYPRE_Int size = m->gdims[i] / m->pdims[i];
       HYPRE_Int rest = m->gdims[i] - size * m->pdims[i];
 
-      m->pstarts[i] = calloc(m->pdims[i] + 1, sizeof(HYPRE_BigInt));
+      m->pstarts[i] = calloc((size_t)(m->pdims[i] + 1), sizeof(HYPRE_BigInt));
       for (int j = 0; j < m->pdims[i] + 1; j++)
       {
          m->pstarts[i][j] = (HYPRE_BigInt)(size * j + (j < rest ? j : rest));
@@ -569,99 +569,99 @@ CreateGhostData3D(DistMesh *mesh, GhostData3D **ghost_ptr)
    /* Faces: 0=x-, 1=x+, 2=y-, 3=y+, 4=z-, 5=z+ */
    if (cd[0] > 0)
    {
-      g->recv_bufs[0] = (double *)calloc(ny * nz, sizeof(double));
-      g->send_bufs[0] = (double *)calloc(ny * nz, sizeof(double));
+      g->recv_bufs[0] = (double *)calloc((size_t)(ny * nz), sizeof(double));
+      g->send_bufs[0] = (double *)calloc((size_t)(ny * nz), sizeof(double));
    }
    if (cd[0] < pd[0] - 1)
    {
-      g->recv_bufs[1] = (double *)calloc(ny * nz, sizeof(double));
-      g->send_bufs[1] = (double *)calloc(ny * nz, sizeof(double));
+      g->recv_bufs[1] = (double *)calloc((size_t)(ny * nz), sizeof(double));
+      g->send_bufs[1] = (double *)calloc((size_t)(ny * nz), sizeof(double));
    }
    if (cd[1] > 0)
    {
-      g->recv_bufs[2] = (double *)calloc(nx * nz, sizeof(double));
-      g->send_bufs[2] = (double *)calloc(nx * nz, sizeof(double));
+      g->recv_bufs[2] = (double *)calloc((size_t)(nx * nz), sizeof(double));
+      g->send_bufs[2] = (double *)calloc((size_t)(nx * nz), sizeof(double));
    }
    if (cd[1] < pd[1] - 1)
    {
-      g->recv_bufs[3] = (double *)calloc(nx * nz, sizeof(double));
-      g->send_bufs[3] = (double *)calloc(nx * nz, sizeof(double));
+      g->recv_bufs[3] = (double *)calloc((size_t)(nx * nz), sizeof(double));
+      g->send_bufs[3] = (double *)calloc((size_t)(nx * nz), sizeof(double));
    }
    if (cd[2] > 0)
    {
-      g->recv_bufs[4] = (double *)calloc(nx * ny, sizeof(double));
-      g->send_bufs[4] = (double *)calloc(nx * ny, sizeof(double));
+      g->recv_bufs[4] = (double *)calloc((size_t)(nx * ny), sizeof(double));
+      g->send_bufs[4] = (double *)calloc((size_t)(nx * ny), sizeof(double));
    }
    if (cd[2] < pd[2] - 1)
    {
-      g->recv_bufs[5] = (double *)calloc(nx * ny, sizeof(double));
-      g->send_bufs[5] = (double *)calloc(nx * ny, sizeof(double));
+      g->recv_bufs[5] = (double *)calloc((size_t)(nx * ny), sizeof(double));
+      g->send_bufs[5] = (double *)calloc((size_t)(nx * ny), sizeof(double));
    }
 
    /* Edges along z (xy combinations): 6=x+y+, 7=x-y-, 8=x+y-, 9=x-y+ */
    if (cd[0] < pd[0] - 1 && cd[1] < pd[1] - 1)
    {
-      g->recv_bufs[6] = (double *)calloc(nz, sizeof(double));
-      g->send_bufs[6] = (double *)calloc(nz, sizeof(double));
+      g->recv_bufs[6] = (double *)calloc((size_t)nz, sizeof(double));
+      g->send_bufs[6] = (double *)calloc((size_t)nz, sizeof(double));
    }
    if (cd[0] > 0 && cd[1] > 0)
    {
-      g->recv_bufs[7] = (double *)calloc(nz, sizeof(double));
-      g->send_bufs[7] = (double *)calloc(nz, sizeof(double));
+      g->recv_bufs[7] = (double *)calloc((size_t)nz, sizeof(double));
+      g->send_bufs[7] = (double *)calloc((size_t)nz, sizeof(double));
    }
    if (cd[0] < pd[0] - 1 && cd[1] > 0)
    {
-      g->recv_bufs[8] = (double *)calloc(nz, sizeof(double));
-      g->send_bufs[8] = (double *)calloc(nz, sizeof(double));
+      g->recv_bufs[8] = (double *)calloc((size_t)nz, sizeof(double));
+      g->send_bufs[8] = (double *)calloc((size_t)nz, sizeof(double));
    }
    if (cd[0] > 0 && cd[1] < pd[1] - 1)
    {
-      g->recv_bufs[9] = (double *)calloc(nz, sizeof(double));
-      g->send_bufs[9] = (double *)calloc(nz, sizeof(double));
+      g->recv_bufs[9] = (double *)calloc((size_t)nz, sizeof(double));
+      g->send_bufs[9] = (double *)calloc((size_t)nz, sizeof(double));
    }
 
    /* Edges along y (xz combinations): 10=x+z+, 11=x-z-, 12=x+z-, 13=x-z+ */
    if (cd[0] < pd[0] - 1 && cd[2] < pd[2] - 1)
    {
-      g->recv_bufs[10] = (double *)calloc(ny, sizeof(double));
-      g->send_bufs[10] = (double *)calloc(ny, sizeof(double));
+      g->recv_bufs[10] = (double *)calloc((size_t)ny, sizeof(double));
+      g->send_bufs[10] = (double *)calloc((size_t)ny, sizeof(double));
    }
    if (cd[0] > 0 && cd[2] > 0)
    {
-      g->recv_bufs[11] = (double *)calloc(ny, sizeof(double));
-      g->send_bufs[11] = (double *)calloc(ny, sizeof(double));
+      g->recv_bufs[11] = (double *)calloc((size_t)ny, sizeof(double));
+      g->send_bufs[11] = (double *)calloc((size_t)ny, sizeof(double));
    }
    if (cd[0] < pd[0] - 1 && cd[2] > 0)
    {
-      g->recv_bufs[12] = (double *)calloc(ny, sizeof(double));
-      g->send_bufs[12] = (double *)calloc(ny, sizeof(double));
+      g->recv_bufs[12] = (double *)calloc((size_t)ny, sizeof(double));
+      g->send_bufs[12] = (double *)calloc((size_t)ny, sizeof(double));
    }
    if (cd[0] > 0 && cd[2] < pd[2] - 1)
    {
-      g->recv_bufs[13] = (double *)calloc(ny, sizeof(double));
-      g->send_bufs[13] = (double *)calloc(ny, sizeof(double));
+      g->recv_bufs[13] = (double *)calloc((size_t)ny, sizeof(double));
+      g->send_bufs[13] = (double *)calloc((size_t)ny, sizeof(double));
    }
 
    /* Edges along x (yz combinations): 14=y+z+, 15=y-z-, 16=y+z-, 17=y-z+ */
    if (cd[1] < pd[1] - 1 && cd[2] < pd[2] - 1)
    {
-      g->recv_bufs[14] = (double *)calloc(nx, sizeof(double));
-      g->send_bufs[14] = (double *)calloc(nx, sizeof(double));
+      g->recv_bufs[14] = (double *)calloc((size_t)nx, sizeof(double));
+      g->send_bufs[14] = (double *)calloc((size_t)nx, sizeof(double));
    }
    if (cd[1] > 0 && cd[2] > 0)
    {
-      g->recv_bufs[15] = (double *)calloc(nx, sizeof(double));
-      g->send_bufs[15] = (double *)calloc(nx, sizeof(double));
+      g->recv_bufs[15] = (double *)calloc((size_t)nx, sizeof(double));
+      g->send_bufs[15] = (double *)calloc((size_t)nx, sizeof(double));
    }
    if (cd[1] < pd[1] - 1 && cd[2] > 0)
    {
-      g->recv_bufs[16] = (double *)calloc(nx, sizeof(double));
-      g->send_bufs[16] = (double *)calloc(nx, sizeof(double));
+      g->recv_bufs[16] = (double *)calloc((size_t)nx, sizeof(double));
+      g->send_bufs[16] = (double *)calloc((size_t)nx, sizeof(double));
    }
    if (cd[1] > 0 && cd[2] < pd[2] - 1)
    {
-      g->recv_bufs[17] = (double *)calloc(nx, sizeof(double));
-      g->send_bufs[17] = (double *)calloc(nx, sizeof(double));
+      g->recv_bufs[17] = (double *)calloc((size_t)nx, sizeof(double));
+      g->send_bufs[17] = (double *)calloc((size_t)nx, sizeof(double));
    }
 
    /* Corners: 18=+++, 19=++-, 20=+-+, 21=+--, 22=-++, 23=-+-, 24=--+, 25=--- */
@@ -1221,7 +1221,7 @@ InitializeTemperatureField(DistMesh *mesh, HeatParams *params, HYPRE_Real *T_now
          }
 }
 
-static void
+static void __attribute__((unused))
 EnsureDir(const char *path)
 {
    if (!path || !*path) return;
@@ -1636,10 +1636,12 @@ PrecomputeQ1ScalarTemplates(HYPRE_Real hx, HYPRE_Real hy, HYPRE_Real hz,
 
             for (int a = 0; a < 8; a++)
             {
-               for (int b = 0; b < 8; b++)
+               for (int b_idx = 0; b_idx < 8; b_idx++)
                {
-                  M_t[a][b] += N[a] * N[b] * w;
-                  K_t[a][b] += (dNx[a] * dNx[b] + dNy[a] * dNy[b] + dNz[a] * dNz[b]) * w;
+                  M_t[a][b_idx] += N[a] * N[b_idx] * w;
+                  K_t[a][b_idx] +=
+                     (dNx[a] * dNx[b_idx] + dNy[a] * dNy[b_idx] + dNz[a] * dNz[b_idx]) *
+                     w;
                }
             }
          }
@@ -1669,7 +1671,7 @@ BuildNonlinearSystem_Heat(DistMesh *m, HeatParams *p, const HYPRE_Real *T_state,
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
 
    HYPRE_Int  local_dofs = m->local_size;
-   HYPRE_Int *nnzrow     = (HYPRE_Int *)calloc(local_dofs, sizeof(HYPRE_Int));
+   HYPRE_Int *nnzrow     = (HYPRE_Int *)calloc((size_t)local_dofs, sizeof(HYPRE_Int));
    for (int i = 0; i < local_dofs; i++) nnzrow[i] = 64;
    HYPRE_IJMatrixSetRowSizes(A, nnzrow);
    free(nnzrow);
@@ -1831,8 +1833,8 @@ BuildNonlinearSystem_Heat(DistMesh *m, HeatParams *p, const HYPRE_Real *T_state,
 
    /* For residual norm on free rows only */
    HYPRE_Int   local_nodes = m->local_size;
-   HYPRE_Real *res_accum   = (HYPRE_Real *)calloc(local_nodes, sizeof(HYPRE_Real));
-   HYPRE_Int  *dir_mask    = (HYPRE_Int *)calloc(local_nodes, sizeof(HYPRE_Int));
+   HYPRE_Real *res_accum = (HYPRE_Real *)calloc((size_t)local_nodes, sizeof(HYPRE_Real));
+   HYPRE_Int  *dir_mask  = (HYPRE_Int *)calloc((size_t)local_nodes, sizeof(HYPRE_Int));
 
    /* Element loop: Process all elements that touch at least one local node.
     * This includes elements anchored in neighbor's domain (one element earlier
@@ -1965,12 +1967,12 @@ BuildNonlinearSystem_Heat(DistMesh *m, HeatParams *p, const HYPRE_Real *T_state,
                            dNx[a] * dTdx + dNy[a] * dTdy + dNz[a] * dTdz;
                         fe_cond[a] += k * gradTa_dot * w;
 
-                        for (int b = 0; b < 8; b++)
+                        for (int b_idx = 0; b_idx < 8; b_idx++)
                         {
                            /* Linear stiffness part: k ∫ ∇φ_a·∇φ_b */
-                           HYPRE_Real gradab =
-                              dNx[a] * dNx[b] + dNy[a] * dNy[b] + dNz[a] * dNz[b];
-                           K_lin[a][b] += k * gradab * w;
+                           HYPRE_Real gradab = dNx[a] * dNx[b_idx] + dNy[a] * dNy[b_idx] +
+                                               dNz[a] * dNz[b_idx];
+                           K_lin[a][b_idx] += k * gradab * w;
                         }
                         /* Nonlinear Jacobian extra: k'(T) φ_l (∇φ_a·∇T) */
                         for (int l = 0; l < 8; l++)
@@ -2004,10 +2006,12 @@ BuildNonlinearSystem_Heat(DistMesh *m, HeatParams *p, const HYPRE_Real *T_state,
             for (int a = 0; a < 8; a++)
             {
                HYPRE_Real acc_prev = 0.0, acc_curr = 0.0;
-               for (int b = 0; b < 8; b++)
+               for (int b_idx = 0; b_idx < 8; b_idx++)
                {
-                  if (T_prev) acc_prev += M_t[a][b] * GET_T_VALUE(T_prev, g_T_n, ng[b]);
-                  if (T_state) acc_curr += M_t[a][b] * GET_T_VALUE(T_state, g_T_k, ng[b]);
+                  if (T_prev)
+                     acc_prev += M_t[a][b_idx] * GET_T_VALUE(T_prev, g_T_n, ng[b_idx]);
+                  if (T_state)
+                     acc_curr += M_t[a][b_idx] * GET_T_VALUE(T_state, g_T_k, ng[b_idx]);
                }
                fe_mass[a] += mass_coeff * (acc_prev - acc_curr);
             }
@@ -2024,10 +2028,10 @@ BuildNonlinearSystem_Heat(DistMesh *m, HeatParams *p, const HYPRE_Real *T_state,
 
                /* Interior row: normal assembly, but include Dirichlet columns with zero
                 */
-               for (int b = 0; b < 8; b++)
+               for (int b_idx = 0; b_idx < 8; b_idx++)
                {
                   HYPRE_Real val;
-                  if (is_dirichlet[b])
+                  if (is_dirichlet[b_idx])
                   {
                      /* Column is Dirichlet: still add entry but with zero value
                       * to maintain symmetric sparsity pattern for AMG */
@@ -2035,11 +2039,12 @@ BuildNonlinearSystem_Heat(DistMesh *m, HeatParams *p, const HYPRE_Real *T_state,
                   }
                   else
                   {
-                     val = mass_coeff * M_t[a][b] + K_lin[a][b] + J_extra[a][b];
+                     val =
+                        mass_coeff * M_t[a][b_idx] + K_lin[a][b_idx] + J_extra[a][b_idx];
                   }
-                  if (val != 0.0 || is_dirichlet[b])
+                  if (val != 0.0 || is_dirichlet[b_idx])
                   {
-                     cols_flat[off + ncols] = dof[b];
+                     cols_flat[off + ncols] = dof[b_idx];
                      vals_flat[off + ncols] = val;
                      ncols++;
                   }
@@ -2197,7 +2202,7 @@ WriteVTKsolutionScalar(DistMesh *m, HeatParams *p, HYPRE_Real *sol, GhostData3D 
    }
 
    /* Build extended data array including ghost overlap for VTK connectivity */
-   HYPRE_Real *ext_T = (HYPRE_Real *)calloc(npts, sizeof(HYPRE_Real));
+   HYPRE_Real *ext_T = (HYPRE_Real *)calloc((size_t)npts, sizeof(HYPRE_Real));
 
    /* Copy local data to extended array */
    for (int k = 0; k < nz; k++)
@@ -2287,7 +2292,7 @@ WriteVTKsolutionScalar(DistMesh *m, HeatParams *p, HYPRE_Real *sol, GhostData3D 
 
    if (include_exact)
    {
-      T_exact = (HYPRE_Real *)calloc(npts, sizeof(HYPRE_Real));
+      T_exact = (HYPRE_Real *)calloc((size_t)npts, sizeof(HYPRE_Real));
       /* Compute exact solution at all extended grid points */
       HYPRE_Real hx = p->L[0] / (m->gdims[0] - 1);
       HYPRE_Real hy = p->L[1] / (m->gdims[1] - 1);
@@ -2306,13 +2311,16 @@ WriteVTKsolutionScalar(DistMesh *m, HeatParams *p, HYPRE_Real *sol, GhostData3D 
 
    if (include_flux)
    {
-      qx = (HYPRE_Real *)calloc(npts, sizeof(HYPRE_Real));
-      qy = (HYPRE_Real *)calloc(npts, sizeof(HYPRE_Real));
-      qz = (HYPRE_Real *)calloc(npts, sizeof(HYPRE_Real));
+      qx = (HYPRE_Real *)calloc((size_t)npts, sizeof(HYPRE_Real));
+      qy = (HYPRE_Real *)calloc((size_t)npts, sizeof(HYPRE_Real));
+      qz = (HYPRE_Real *)calloc((size_t)npts, sizeof(HYPRE_Real));
       /* Note: flux computed on local grid, not extended */
-      HYPRE_Real *qx_loc = (HYPRE_Real *)calloc(nx * ny * nz, sizeof(HYPRE_Real));
-      HYPRE_Real *qy_loc = (HYPRE_Real *)calloc(nx * ny * nz, sizeof(HYPRE_Real));
-      HYPRE_Real *qz_loc = (HYPRE_Real *)calloc(nx * ny * nz, sizeof(HYPRE_Real));
+      HYPRE_Real *qx_loc =
+         (HYPRE_Real *)calloc((size_t)(nx * ny * nz), sizeof(HYPRE_Real));
+      HYPRE_Real *qy_loc =
+         (HYPRE_Real *)calloc((size_t)(nx * ny * nz), sizeof(HYPRE_Real));
+      HYPRE_Real *qz_loc =
+         (HYPRE_Real *)calloc((size_t)(nx * ny * nz), sizeof(HYPRE_Real));
       ComputeHeatFlux(m, p, sol, ghost, qx_loc, qy_loc, qz_loc);
       /* Expand to extended grid */
       for (int k = 0; k < nz; k++)

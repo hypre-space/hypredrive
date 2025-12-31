@@ -114,7 +114,7 @@ ErrorBacktraceSymbolsPrint(void)
           * "executable[+0xoffset]") */
          if (symbols[i])
          {
-            char *plus = strstr(symbols[i], "(+0x");
+            const char *plus = strstr(symbols[i], "(+0x");
             if (!plus)
             {
                plus = strstr(symbols[i], "[+0x");
