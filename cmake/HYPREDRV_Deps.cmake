@@ -28,7 +28,7 @@ elseif(HYPRE_ENABLE_CALIPER)
     set(HYPREDRV_ENABLE_CALIPER ON CACHE BOOL "Enable Caliper instrumentation support" FORCE)
     message(STATUS "HYPRE_ENABLE_CALIPER=ON detected - enabling HYPREDRV_ENABLE_CALIPER")
 endif()
-# Note: For find_package case, additional detection from HYPRE target properties 
+# Note: For find_package case, additional detection from HYPRE target properties
 # is done after HYPRE is found (see below)
 
 ############################################################
@@ -53,7 +53,7 @@ if(HYPREDRV_ENABLE_CALIPER)
                 "  2. Build Caliper separately and point to it via find_package or CALIPER_DIR"
             )
         endif()
-        
+
         message(STATUS "Caliper not found. Fetching and building Caliper from source (version: ${CALIPER_VERSION})...")
 
         include(FetchContent)
@@ -65,7 +65,7 @@ if(HYPREDRV_ENABLE_CALIPER)
             GIT_SHALLOW    TRUE
             GIT_PROGRESS   TRUE
             GIT_SUBMODULES ""  # Skip submodules (scripts/radiuss-spack-configs, scripts/uberenv)
-            PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_SOURCE_DIR}/cmake/caliper.patch
+            #PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_SOURCE_DIR}/cmake/caliper.patch
         )
 
         # Enable verbose output for FetchContent to show progress
@@ -102,7 +102,7 @@ if(HYPREDRV_ENABLE_CALIPER)
         # Fetch and configure Caliper using FetchContent_MakeAvailable
         message(STATUS "Fetching Caliper from GitHub (branch/tag: ${CALIPER_VERSION})...")
         message(STATUS "  Repository: https://github.com/LLNL/Caliper.git")
-        
+
         FetchContent_MakeAvailable(caliper)
 
         # Ensure Caliper target exists and is built before HYPRE
@@ -110,7 +110,7 @@ if(HYPREDRV_ENABLE_CALIPER)
             # Make sure Caliper builds early
             set_target_properties(caliper PROPERTIES EXCLUDE_FROM_ALL FALSE)
         endif()
-        
+
         # Construct the library path based on BUILD_SHARED_LIBS
         # This must match what Caliper will actually build
         if(BUILD_SHARED_LIBS)
@@ -118,18 +118,18 @@ if(HYPREDRV_ENABLE_CALIPER)
         else()
             set(CALIPER_LIBRARY_FILE "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_STATIC_LIBRARY_PREFIX}caliper${CMAKE_STATIC_LIBRARY_SUFFIX}")
         endif()
-        
+
         set(TPL_CALIPER_LIBRARIES ${CALIPER_LIBRARY_FILE} CACHE FILEPATH "Caliper library for HYPRE" FORCE)
-        
+
         # Set TPL_CALIPER_INCLUDE_DIRS to a dummy value to satisfy HYPRE's setup_tpl check
         # We'll override it manually after HYPRE is configured to use BUILD_INTERFACE
         # This prevents CMake errors about _deps paths in INTERFACE_INCLUDE_DIRECTORIES
         set(TPL_CALIPER_INCLUDE_DIRS "${caliper_SOURCE_DIR}/include" CACHE PATH "Caliper include directories for HYPRE" FORCE)
-        
+
         # Mark that Caliper is being built as part of this project
         set(HYPRE_BUILD_CALIPER ON CACHE INTERNAL "Caliper is being built as part of this project" FORCE)
         set(CALIPER_INCLUDE_DIR_FOR_HYPRE "${caliper_SOURCE_DIR}/include" CACHE INTERNAL "Caliper include directory for manual addition to HYPRE" FORCE)
-        
+
         message(STATUS "  Setting TPL_CALIPER_LIBRARIES: ${TPL_CALIPER_LIBRARIES}")
         message(STATUS "  Note: TPL_CALIPER_INCLUDE_DIRS not set to avoid CMake export issues")
         message(STATUS "  Caliper headers will be added to HYPRE manually with BUILD_INTERFACE")
@@ -315,15 +315,15 @@ if(NOT HYPRE_FOUND)
     # FetchContent_MakeAvailable to populate, then patch, then manually add subdirectory
     message(STATUS "Fetching HYPRE from GitHub (branch/tag: ${HYPRE_VERSION})...")
     message(STATUS "  Repository: https://github.com/hypre-space/hypre.git")
-    
+
     # Use FetchContent_MakeAvailable to populate the source
     # Since SOURCE_SUBDIR was removed from FetchContent_Declare, it won't automatically
     # add the subdirectory, allowing us to patch first
     FetchContent_MakeAvailable(hypre)
-    
+
     message(STATUS "HYPRE source fetched successfully")
     message(STATUS "  Source directory: ${hypre_SOURCE_DIR}")
-    
+
     # Patch HYPRE's CMakeLists.txt to skip export when Caliper is auto-built
     # This must be done before add_subdirectory is called
     if(HYPRE_BUILD_CALIPER AND EXISTS "${hypre_SOURCE_DIR}/src/CMakeLists.txt")
@@ -364,7 +364,7 @@ if(NOT HYPRE_FOUND)
             target_include_directories(HYPRE PUBLIC $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIR_FOR_HYPRE}>)
             message(STATUS "  Fixed Caliper include directory in HYPRE target using BUILD_INTERFACE")
         endif()
-        
+
         # Ensure HYPRE depends on Caliper target so it builds after Caliper
         # This is critical because HYPRE links against the Caliper library file
         if(TARGET caliper)
@@ -399,7 +399,7 @@ if(TARGET HYPRE::HYPRE)
         # Check if HYPRE links to Caliper
         get_target_property(HYPRE_LINK_LIBS HYPRE::HYPRE INTERFACE_LINK_LIBRARIES)
         set(HYPRE_HAS_CALIPER FALSE)
-        
+
         if(HYPRE_LINK_LIBS)
             # Check if caliper is in the link libraries (could be caliper::caliper, caliper, or libcaliper)
             foreach(lib ${HYPRE_LINK_LIBS})
@@ -409,7 +409,7 @@ if(TARGET HYPRE::HYPRE)
                 endif()
             endforeach()
         endif()
-        
+
         # Also check compile definitions for Caliper-related defines
         if(NOT HYPRE_HAS_CALIPER)
             get_target_property(HYPRE_COMPILE_DEFS HYPRE::HYPRE INTERFACE_COMPILE_DEFINITIONS)
@@ -422,7 +422,7 @@ if(TARGET HYPRE::HYPRE)
                 endforeach()
             endif()
         endif()
-        
+
         # If we detected Caliper support, enable HYPREDRV_ENABLE_CALIPER
         if(HYPRE_HAS_CALIPER)
             set(HYPREDRV_ENABLE_CALIPER ON CACHE BOOL "Enable Caliper instrumentation support" FORCE)
