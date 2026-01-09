@@ -528,7 +528,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                   if (fgets(line, sizeof(line), file) == NULL)
                   {
                      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-                     ErrorMsgAdd("Unexpected end of file or error reading %s", rhs_filename);
+                     ErrorMsgAdd("Unexpected end of file or error reading %s",
+                                 rhs_filename);
                      M = -1; /* Signal error */
                      break;
                   }
@@ -541,12 +542,13 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 #ifdef HYPRE_BIG_INT
                   long long   tmpM     = strtoll(line, NULL, 10);
                   const char *line_ptr = strchr(line, ' ');
-                  long long tmpN = (line_ptr != NULL) ? strtoll(line_ptr + 1, NULL, 10) : 0;
-                  int       read_ok = (tmpM != 0 && tmpN != 0);
+                  long long   tmpN =
+                     (line_ptr != NULL) ? strtoll(line_ptr + 1, NULL, 10) : 0;
+                  int read_ok = (tmpM != 0 && tmpN != 0);
 #else
                   int         tmpM     = (int)strtol(line, NULL, 10);
                   const char *line_ptr = strchr(line, ' ');
-                  int tmpN    = (line_ptr != NULL) ? (int)strtol(line_ptr + 1, NULL, 10) : 0;
+                  int tmpN = (line_ptr != NULL) ? (int)strtol(line_ptr + 1, NULL, 10) : 0;
                   int read_ok = (tmpM != 0 && tmpN != 0);
 #endif
 
@@ -558,7 +560,8 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                   else
                   {
                      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-                     ErrorMsgAdd("Failed to read vector dimensions from %s", rhs_filename);
+                     ErrorMsgAdd("Failed to read vector dimensions from %s",
+                                 rhs_filename);
                      M = -1; /* Signal error */
                      N = 0;
                   }
@@ -587,9 +590,10 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                         if (fgets(line, sizeof(line), file) == NULL)
                         {
                            ErrorCodeSet(ERROR_UNKNOWN);
-                           ErrorMsgAdd("Error reading value for index " HYPRE_BIG_INT_SSCANF
-                                       " from %s",
-                                       i, rhs_filename);
+                           ErrorMsgAdd(
+                              "Error reading value for index " HYPRE_BIG_INT_SSCANF
+                              " from %s",
+                              i, rhs_filename);
                            M = -1;
                            break;
                         }
