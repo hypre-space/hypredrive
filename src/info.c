@@ -508,7 +508,11 @@ PrintSystemInfoLegacy(MPI_Comm comm)
             {
                ptr++;
                while (*ptr == ' ') ptr++;
-               (void)atoi(ptr); /* idx unused */
+               {
+                  char *endptr;
+                  (void)strtol(ptr, &endptr, 10); /* idx unused, advance past it */
+                  ptr = endptr;
+               }
 
                // Find total_vram for this GPU
                const char *gpu_start = ptr;

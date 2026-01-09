@@ -525,78 +525,91 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                /* Skip comments */
                do
                {
-                  fgets(line, sizeof(line), file);
+                  if (fgets(line, sizeof(line), file) == NULL)
+                  {
+                     ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+                     ErrorMsgAdd("Unexpected end of file or error reading %s",
+                                 rhs_filename);
+                     M = -1; /* Signal error */
+                     break;
+                  }
                } while (line[0] == '%');
 
                /* Read dimensions with type-safe temps to satisfy both int and long long
                 * builds */
+               if (M != -1)
+               {
 #ifdef HYPRE_BIG_INT
-               long long   tmpM     = strtoll(line, NULL, 10);
-               const char *line_ptr = strchr(line, ' ');
-               long long tmpN = (line_ptr != NULL) ? strtoll(line_ptr + 1, NULL, 10) : 0;
-               int       read_ok = (tmpM != 0 && tmpN != 0);
+                  long long   tmpM     = strtoll(line, NULL, 10);
+                  const char *line_ptr = strchr(line, ' ');
+                  long long   tmpN =
+                     (line_ptr != NULL) ? strtoll(line_ptr + 1, NULL, 10) : 0;
+                  int read_ok = (tmpM != 0 && tmpN != 0);
 #else
-               int         tmpM     = (int)strtol(line, NULL, 10);
-               const char *line_ptr = strchr(line, ' ');
-               int tmpN    = (line_ptr != NULL) ? (int)strtol(line_ptr + 1, NULL, 10) : 0;
-               int read_ok = (tmpM != 0 && tmpN != 0);
+                  int         tmpM     = (int)strtol(line, NULL, 10);
+                  const char *line_ptr = strchr(line, ' ');
+                  int tmpN = (line_ptr != NULL) ? (int)strtol(line_ptr + 1, NULL, 10) : 0;
+                  int read_ok = (tmpM != 0 && tmpN != 0);
 #endif
 
-               if (read_ok)
-               {
-                  M = (HYPRE_BigInt)tmpM;
-                  N = (HYPRE_BigInt)tmpN;
-               }
-               else
-               {
-                  ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-                  ErrorMsgAdd("Failed to read vector dimensions from %s", rhs_filename);
-                  M = -1; /* Signal error */
-                  N = 0;
-               }
-
-               if (N != 1)
-               {
-                  ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-                  ErrorMsgAdd("File %s is not a vector (N=" HYPRE_BIG_INT_SSCANF ")",
-                              rhs_filename, N);
-                  M = -1; /* Signal error */
-               }
-               else if (M != global_num_rows)
-               {
-                  ErrorCodeSet(ERROR_UNKNOWN);
-                  ErrorMsgAdd("RHS vector size " HYPRE_BIG_INT_SSCANF
-                              " does not match matrix size " HYPRE_BIG_INT_SSCANF,
-                              M, global_num_rows);
-                  M = -1; /* Signal error */
-               }
-               else
-               {
-                  all_values = hypre_TAlloc(HYPRE_Complex, M, HYPRE_MEMORY_HOST);
-                  for (HYPRE_BigInt i = 0; i < M; i++)
+                  if (read_ok)
                   {
-                     char *endptr = NULL;
-                     if (fgets(line, sizeof(line), file) == NULL)
+                     M = (HYPRE_BigInt)tmpM;
+                     N = (HYPRE_BigInt)tmpN;
+                  }
+                  else
+                  {
+                     ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+                     ErrorMsgAdd("Failed to read vector dimensions from %s",
+                                 rhs_filename);
+                     M = -1; /* Signal error */
+                     N = 0;
+                  }
+
+                  if (N != 1)
+                  {
+                     ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+                     ErrorMsgAdd("File %s is not a vector (N=" HYPRE_BIG_INT_SSCANF ")",
+                                 rhs_filename, N);
+                     M = -1; /* Signal error */
+                  }
+                  else if (M != global_num_rows)
+                  {
+                     ErrorCodeSet(ERROR_UNKNOWN);
+                     ErrorMsgAdd("RHS vector size " HYPRE_BIG_INT_SSCANF
+                                 " does not match matrix size " HYPRE_BIG_INT_SSCANF,
+                                 M, global_num_rows);
+                     M = -1; /* Signal error */
+                  }
+                  else
+                  {
+                     all_values = hypre_TAlloc(HYPRE_Complex, M, HYPRE_MEMORY_HOST);
+                     for (HYPRE_BigInt i = 0; i < M; i++)
                      {
-                        ErrorCodeSet(ERROR_UNKNOWN);
-                        ErrorMsgAdd("Error reading value for index " HYPRE_BIG_INT_SSCANF
-                                    " from %s",
-                                    i, rhs_filename);
-                        M = -1;
-                        break;
+                        char *endptr = NULL;
+                        if (fgets(line, sizeof(line), file) == NULL)
+                        {
+                           ErrorCodeSet(ERROR_UNKNOWN);
+                           ErrorMsgAdd(
+                              "Error reading value for index " HYPRE_BIG_INT_SSCANF
+                              " from %s",
+                              i, rhs_filename);
+                           M = -1;
+                           break;
+                        }
+                        double tmp_val = strtod(line, &endptr);
+                        if (endptr == line || (*endptr != '\0' && *endptr != '\n'))
+                        {
+                           ErrorCodeSet(ERROR_UNKNOWN);
+                           ErrorMsgAdd(
+                              "Error converting value for index " HYPRE_BIG_INT_SSCANF
+                              " from %s",
+                              i, rhs_filename);
+                           M = -1;
+                           break;
+                        }
+                        all_values[i] = (HYPRE_Complex)tmp_val;
                      }
-                     double tmp_val = strtod(line, &endptr);
-                     if (endptr == line || (*endptr != '\0' && *endptr != '\n'))
-                     {
-                        ErrorCodeSet(ERROR_UNKNOWN);
-                        ErrorMsgAdd(
-                           "Error converting value for index " HYPRE_BIG_INT_SSCANF
-                           " from %s",
-                           i, rhs_filename);
-                        M = -1;
-                        break;
-                     }
-                     all_values[i] = (HYPRE_Complex)tmp_val;
                   }
                }
                fclose(file);
