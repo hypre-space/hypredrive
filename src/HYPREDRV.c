@@ -215,10 +215,19 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
       }
    }
 
-   /* Always destroy these vectors since they are created by HYPREDRV */
-   HYPRE_IJVectorDestroy(hypredrv->vec_x);
-   HYPRE_IJVectorDestroy(hypredrv->vec_x0);
-   HYPRE_IJVectorDestroy(hypredrv->vec_nn);
+   /* Always destroy these vectors since they are created by HYPREDRV. */
+   if (hypredrv->vec_x)
+   {
+      HYPRE_IJVectorDestroy(hypredrv->vec_x);
+   }
+   if (hypredrv->vec_x0)
+   {
+      HYPRE_IJVectorDestroy(hypredrv->vec_x0);
+   }
+   if (hypredrv->vec_nn)
+   {
+      HYPRE_IJVectorDestroy(hypredrv->vec_nn);
+   }
 
    IntArrayDestroy(&hypredrv->dofmap);
    InputArgsDestroy(&hypredrv->iargs);
