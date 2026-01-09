@@ -169,7 +169,7 @@ MGRclsGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"amg", 0}, {"spdirect", 29}, {"ilu", 32}};
+      static StrIntMap map[] = {{"def", -1}, {"amg", 0}, {"spdirect", 29}, {"ilu", 32}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -339,8 +339,24 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
                   YAML_NODE_VALIDATE(grandchild, MGRclsGetValidKeys,
                                      MGRclsGetValidValues);
 
-                  YAML_NODE_SET_FIELD(grandchild, &args->coarsest_level,
-                                      MGRclsSetFieldByName);
+                  /* TODO: improve parsing mechanism */
+                  if (!strcmp(grandchild->val, "def"))
+                  {
+                     args->coarsest_level.type = -1;
+                  }
+                  if (!strcmp(grandchild->val, "spdirect"))
+                  {
+                     args->coarsest_level.type = 29;
+                  }
+                  else if (!strcmp(grandchild->val, "ilu"))
+                  {
+                     args->coarsest_level.type = 32;
+                  }
+                  else
+                  {
+                     YAML_NODE_SET_FIELD(grandchild, &args->coarsest_level,
+                                         MGRclsSetFieldByName);
+                  }
                }
             }
             else
