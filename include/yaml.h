@@ -49,6 +49,19 @@ typedef enum YAMLprintMode_enum
 
 /*-----------------------------------------------------------------------------
  * YAML node struct
+ *
+ * Represents a key-value pair in the YAML tree. Important distinction:
+ *
+ *   - For flat entries like "solver: gmres":
+ *       key = "solver", val = "gmres", children = NULL
+ *
+ *   - For nested entries like:
+ *       ilu:
+ *         type: bj-ilut
+ *       key = "ilu", val = "" (empty!), children = [type node, ...]
+ *
+ * When processing nested structures, check the KEY to identify the block type,
+ * not the VAL (which is empty for parent nodes with children).
  *-----------------------------------------------------------------------------*/
 
 typedef struct YAMLnode_struct

@@ -9,8 +9,9 @@
 #include "gen_macros.h"
 #include "stats.h"
 
-#define MGRcls_FIELDS(_prefix)                      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs) \
+#define MGRcls_FIELDS(_prefix)                       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
 
 #define MGRfrlx_FIELDS(_prefix)                                 \
@@ -81,11 +82,13 @@ DEFINE_SET_ARGS_FUNC(MGR);
 void
 MGRclsSetDefaultArgs(MGRcls_args *args)
 {
-   args->type = 0;
+   /* type = -1 means "not explicitly set" - will be inferred in MGRCreate */
+   args->type = -1;
 
-   /* TODO: revisit default amg iters */
+   /* Initialize both sub-solvers with max_iter = 0.
+    * The actual type is inferred in MGRCreate based on which was configured. */
    AMGSetDefaultArgs(&args->amg);
-   args->amg.max_iter = 1;
+   args->amg.max_iter = 0;
    ILUSetDefaultArgs(&args->ilu);
    args->ilu.max_iter = 0;
 }
@@ -292,6 +295,29 @@ MGRGetValidValues(const char *key)
 
 /*-----------------------------------------------------------------------------
  * MGRSetArgsFromYAML
+ *
+ * Parses MGR preconditioner arguments from a YAML tree. Handles the following
+ * structure:
+ *
+ *   mgr:
+ *     print_level: 1
+ *     level:
+ *       0:
+ *         f_dofs: [2]
+ *         f_relaxation: jacobi          # flat value -> type
+ *         g_relaxation:                 # or nested block
+ *           ilu:
+ *             print_level: 1
+ *       1:
+ *         f_dofs: [1]
+ *         ...
+ *     coarsest_level:
+ *       ilu:                            # nested solver block
+ *         type: bj-ilut
+ *         droptol: 1e-4
+ *
+ * Key insight: When a key like "ilu" or "amg" has children, its `val` field
+ * is empty - the actual solver type is determined by the key name, not the val.
  *-----------------------------------------------------------------------------*/
 
 void
@@ -332,37 +358,11 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
          {
             args->num_levels++;
             YAML_NODE_SET_VALID(child);
-            if (child->children)
-            {
-               YAML_NODE_ITERATE(child, grandchild)
-               {
-                  YAML_NODE_VALIDATE(grandchild, MGRclsGetValidKeys,
-                                     MGRclsGetValidValues);
-
-                  /* TODO: improve parsing mechanism */
-                  if (!strcmp(grandchild->val, "def"))
-                  {
-                     args->coarsest_level.type = -1;
-                  }
-                  if (!strcmp(grandchild->val, "spdirect"))
-                  {
-                     args->coarsest_level.type = 29;
-                  }
-                  else if (!strcmp(grandchild->val, "ilu"))
-                  {
-                     args->coarsest_level.type = 32;
-                  }
-                  else
-                  {
-                     YAML_NODE_SET_FIELD(grandchild, &args->coarsest_level,
-                                         MGRclsSetFieldByName);
-                  }
-               }
-            }
-            else
-            {
-               YAML_NODE_SET_FIELD(child, &args->coarsest_level, MGRclsSetFieldByName);
-            }
+            /* MGRclsSetArgsFromYAML handles both patterns:
+             *   coarsest_level: spdirect        (flat value -> sets type)
+             *   coarsest_level: { ilu: {...} }  (nested -> configures sub-solver)
+             */
+            MGRclsSetArgsFromYAML(&args->coarsest_level, child);
          }
          else
          {
@@ -503,7 +503,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_MGRSetCoarseGridMethod(precon, MGRConvertArgInt(args, "coarse_level_type"));
 
    /* Config f-relaxation at each MGR level */
-   for (i = 0; i < num_levels; i++)
+   for (i = 0; i < num_levels - 1; i++)
    {
       if (args->level[i].f_relaxation.type == 2)
       {
@@ -528,7 +528,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
    /* Config global relaxation at each MGR level */
 #if HYPRE_CHECK_MIN_VERSION(23100, 8)
-   for (i = 0; i < num_levels; i++)
+   for (i = 0; i < num_levels - 1; i++)
    {
       if (args->level[i].g_relaxation.type == 16)
       {
@@ -539,7 +539,34 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    }
 #endif
 
-   /* Config coarsest level solver - TODO: shouldn't need to pass setup/solve pointers */
+   /* Infer coarsest level solver type if not explicitly set (type == -1).
+    * This allows both patterns:
+    *   coarsest_level: spdirect        -> type = 29 (explicitly set)
+    *   coarsest_level: { ilu: {...} }  -> type inferred from ilu.max_iter > 0
+    */
+   if (args->coarsest_level.type == -1)
+   {
+      if (args->coarsest_level.ilu.max_iter > 0)
+      {
+         args->coarsest_level.type = 32; /* ILU */
+      }
+      else
+      {
+         args->coarsest_level.type = 0; /* AMG (default) */
+      }
+   }
+
+   /* Ensure the selected solver has valid max_iter */
+   if (args->coarsest_level.type == 0 && args->coarsest_level.amg.max_iter < 1)
+   {
+      args->coarsest_level.amg.max_iter = 1;
+   }
+   else if (args->coarsest_level.type == 32 && args->coarsest_level.ilu.max_iter < 1)
+   {
+      args->coarsest_level.ilu.max_iter = 1;
+   }
+
+   /* Config coarsest level solver */
    if (args->coarsest_level.type == 0)
    {
       AMGCreate(&args->coarsest_level.amg, &args->csolver);

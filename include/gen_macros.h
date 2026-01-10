@@ -109,8 +109,22 @@
 /**
  * @brief Defines a function to set arguments from a YAML node.
  *
- * @details This macro generates a function that iterates over child nodes,
- * validates them, and sets fields, indicated by the node's keys, by name.
+ * @details This macro generates a function that handles two YAML patterns:
+ *
+ * 1. Nested structure (parent has children):
+ *    @code
+ *    solver:
+ *      type: pcg
+ *      max_iter: 100
+ *    @endcode
+ *    In this case, iterate over children and set each field by name.
+ *
+ * 2. Flat value (parent has no children, just a value):
+ *    @code
+ *    solver: pcg
+ *    @endcode
+ *    In this case, treat the value as the "type" field. We temporarily
+ *    swap the key to "type" for validation and field setting.
  *
  * @param _prefix Prefix used in the naming of the generated function.
  */
@@ -119,9 +133,9 @@
    {                                                                                  \
       if (parent->children)                                                           \
       {                                                                               \
+         /* Case 1: Nested structure - iterate over children */                       \
          YAML_NODE_ITERATE(parent, child)                                             \
          {                                                                            \
-            /* printf("child->key: %s\n", child->key); */                             \
             YAML_NODE_VALIDATE(child, _prefix##GetValidKeys, _prefix##GetValidValues) \
                                                                                       \
             YAML_NODE_SET_FIELD(child, args, _prefix##SetFieldByName)                 \
@@ -129,6 +143,8 @@
       }                                                                               \
       else                                                                            \
       {                                                                               \
+         /* Case 2: Flat value - treat val as "type" */                               \
+         /* Temporarily swap key to "type" for validation/setting */                  \
          char *temp_key = strdup(parent->key);                                        \
          free(parent->key);                                                           \
          parent->key = (char *)malloc(5 * sizeof(char));                              \
@@ -137,6 +153,7 @@
          YAML_NODE_VALIDATE(parent, _prefix##GetValidKeys, _prefix##GetValidValues)   \
          YAML_NODE_SET_FIELD(parent, args, _prefix##SetFieldByName)                   \
                                                                                       \
+         /* Restore original key */                                                   \
          free(parent->key);                                                           \
          parent->key = strdup(temp_key);                                              \
          free(temp_key);                                                              \
