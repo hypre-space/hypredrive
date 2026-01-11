@@ -60,8 +60,12 @@ typedef struct MGRgrlx_args_struct
    HYPRE_Int type;
    HYPRE_Int num_sweeps;
 
-   /* TODO: Ideally, these should be inside a union */
-   ILU_args ilu;
+   /* Only one global-relaxation solver is active at a time. */
+   union
+   {
+      AMG_args amg;
+      ILU_args ilu;
+   };
 } MGRgrlx_args;
 
 /*--------------------------------------------------------------------------
@@ -197,10 +201,10 @@ void MGRCreate(MGR_args *, HYPRE_Solver *);
  * @param _setter    Real setter function (e.g., AMGSetArgs)
  *-----------------------------------------------------------------------------*/
 #define DEFINE_TYPED_SETTER(_func_name, _parent, _field, _type, _setter)    \
-static void _func_name(void *v, const YAMLnode *n)                       \
-{                                                                        \
-   ((_parent *)((char *)v - offsetof(_parent, _field)))->type = (_type); \
-   _setter(v, n);                                                        \
-}
+   static void _func_name(void *v, const YAMLnode *n)                       \
+   {                                                                        \
+      ((_parent *)((char *)v - offsetof(_parent, _field)))->type = (_type); \
+      _setter(v, n);                                                        \
+   }
 
 #endif /* MGR_HEADER */
