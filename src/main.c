@@ -93,19 +93,6 @@ FindConfigFile(int argc, char **argv)
    return NULL;
 }
 
-static int
-FindArgsListStart(int argc, char **argv)
-{
-   for (int i = 1; i < argc; i++)
-   {
-      if (strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--args") == 0)
-      {
-         return i + 1;
-      }
-   }
-   return -1;
-}
-
 static void
 RequireConfigArgumentOrAbort(int argc, char **argv, MPI_Comm comm, int myid)
 {
@@ -162,39 +149,7 @@ main(int argc, char **argv)
     *-----------------------------------------------------------*/
 
    RequireConfigArgumentOrAbort(argc, argv, comm, myid);
-   char *config_file    = FindConfigFile(argc, argv);
-   int   args_start_idx = FindArgsListStart(argc, argv);
-
-   if (args_start_idx >= 0)
-   {
-      int override_argc = argc - args_start_idx;
-      if (override_argc <= 0 || (override_argc % 2) != 0)
-      {
-         if (!myid)
-         {
-            fprintf(stderr,
-                    "Invalid -a/--args usage: expected pairs of '--path:to:key value'\n");
-            PrintUsage(argv[0]);
-         }
-         MPI_Abort(comm, 1);
-      }
-
-      char **config_argv = (char **)malloc((size_t)(override_argc + 2) * sizeof(char *));
-      config_argv[0]     = config_file;
-      for (int j = 0; j < override_argc; j++)
-      {
-         config_argv[j + 1] = argv[args_start_idx + j];
-      }
-      config_argv[override_argc + 1] = NULL;
-
-      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(override_argc + 1, config_argv, obj));
-      free(config_argv);
-   }
-   else
-   {
-      char *config_argv[2] = {config_file, NULL};
-      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, config_argv, obj));
-   }
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, obj));
 
    /*-----------------------------------------------------------
     * Set hypre's global options and warmup

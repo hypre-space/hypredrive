@@ -437,6 +437,34 @@ YAMLnodeGetOrCreateChild(YAMLnode *parent, const char *key)
    return child;
 }
 
+static int
+YAMLargsFindFlagIndex(int argc, char **argv, const char *short_flag,
+                      const char *long_flag)
+{
+   for (int i = 0; i < argc; i++)
+   {
+      if ((short_flag && !strcmp(argv[i], short_flag)) ||
+          (long_flag && !strcmp(argv[i], long_flag)))
+      {
+         return i;
+      }
+   }
+   return -1;
+}
+
+static int
+YAMLargsFindConfigFileIndex(int argc, char **argv)
+{
+   for (int i = 0; i < argc; i++)
+   {
+      if (argv[i] && IsYAMLFilename(argv[i]))
+      {
+         return i;
+      }
+   }
+   return -1;
+}
+
 void
 YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 {
@@ -447,7 +475,77 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
       return;
    }
 
-   for (int i = 0; i < argc; i += 2)
+   /* Support two calling conventions:
+    *
+    * 1) Legacy "pair list" mode (library / internal calls):
+    *      argv = ["--path:to:key", "val", ...]
+    *
+    * 2) Driver "full argv" mode:
+    *      argv contains many tokens including -q, config file, etc.
+    *      Overrides are only parsed after -a/--args and stop at the YAML filename
+    *      if it appears after -a (some test harnesses append it at the end).
+    */
+   int  args_flag_idx  = YAMLargsFindFlagIndex(argc, argv, "-a", "--args");
+   int  cfg_idx        = YAMLargsFindConfigFileIndex(argc, argv);
+   int  override_start = 0;
+   int  override_end   = argc;
+   bool full_argv_mode = (args_flag_idx >= 0);
+   bool pair_list_mode = false;
+
+   if (full_argv_mode)
+   {
+      override_start = args_flag_idx + 1;
+      if (cfg_idx >= 0 && cfg_idx >= override_start)
+      {
+         override_end = cfg_idx;
+      }
+      if (override_start >= override_end)
+      {
+         return; /* nothing to do */
+      }
+   }
+   else
+   {
+      /* No -a provided:
+       * - If argv looks like a pure override pair list, parse it.
+       * - Otherwise assume caller passed a full argv without overrides -> no-op. */
+      if (argc > 0 && (argc % 2) == 0)
+      {
+         bool looks_like_pairs = true;
+         for (int i = 0; i < argc; i += 2)
+         {
+            const char *k = argv[i];
+            const char *v = argv[i + 1];
+            if (!k || !v || strncmp(k, "--", 2) != 0)
+            {
+               looks_like_pairs = false;
+               break;
+            }
+         }
+         pair_list_mode = looks_like_pairs;
+      }
+
+      if (!pair_list_mode)
+      {
+         return;
+      }
+   }
+
+   int n_override_tokens = override_end - override_start;
+   if (n_override_tokens <= 0)
+   {
+      return;
+   }
+
+   /* In full-argv mode, enforce pairs after -a. In pair-list mode, enforce pairs too. */
+   if ((n_override_tokens % 2) != 0)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Invalid CLI overrides: expected pairs of '--path:to:key value'");
+      return;
+   }
+
+   for (int i = override_start; i < override_end; i += 2)
    {
       const char *k = argv[i];
       if (!k)
@@ -455,19 +553,17 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
          continue;
       }
 
-      /* Allow passing -a/--args through; ignore it if present.
-       * (In normal usage main() strips it, but this keeps YAMLtreeUpdate robust.) */
-      if (!strcmp(k, "-a") || !strcmp(k, "--args"))
-      {
-         i -= 1; /* compensate for loop i += 2 */
-         continue;
-      }
-
       if (strncmp(k, "--", 2) != 0)
       {
-         ErrorCodeSet(ERROR_INVALID_KEY);
-         ErrorMsgAdd("Invalid override key '%s' (expected --path:to:key)", k);
-         return;
+         /* In full argv mode, ignore non override tokens (we only parse pairs after -a
+          * anyway), but keep strictness in pair-list mode. */
+         if (!full_argv_mode)
+         {
+            ErrorCodeSet(ERROR_INVALID_KEY);
+            ErrorMsgAdd("Invalid override key '%s' (expected --path:to:key)", k);
+            return;
+         }
+         continue;
       }
 
       if (i + 1 >= argc)

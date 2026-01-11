@@ -45,6 +45,56 @@ function(add_hypredrive_test test_name num_procs config_file)
     )
 endfunction()
 
+# Function for adding an integration test that verifies CLI overrides (-a/--args)
+function(add_hypredrive_cli_test test_name num_procs config_file)
+    # Automatically prepend "hypredrive_test_" to the test name
+    set(full_test_name "hypredrive_test_${test_name}")
+
+    # CLI overrides: set nested solver/precon options via -a
+    set(_cli_args
+        -q
+        -a
+        --solver:pcg:max_iter 5
+        --preconditioner:amg:print_level 0
+    )
+
+    # Encode args for the run script (uses '|' as separator)
+    string(JOIN "|" _target_args ${_cli_args})
+
+    # Substrings that must appear in output (prove -a reached InputArgsParse)
+    set(_must_contain
+        "solver:"
+        "pcg:"
+        "max_iter: 5"
+        "preconditioner:"
+        "amg:"
+        "print_level: 0"
+    )
+    string(JOIN "|" _require_contains ${_must_contain})
+
+    add_test(NAME ${full_test_name}
+        COMMAND ${CMAKE_COMMAND}
+                -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+                -DTARGET_BIN=$<TARGET_FILE:hypredrive>
+                -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+                -DMPI_NUMPROCS=${num_procs}
+                -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+                -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+                -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+                -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/${config_file}
+                -DTARGET_ARGS:STRING=${_target_args}
+                -DREQUIRE_CONTAINS:STRING=${_require_contains}
+                -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+
+    set_tests_properties(${full_test_name}
+        PROPERTIES
+        FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
+        SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+    )
+endfunction()
+
 # Function for adding tests for standalone executable drivers
 function(add_executable_test test_name target num_procs)
     cmake_parse_arguments(EXEC_TEST
@@ -139,6 +189,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
 
     # Add tests (ex1_1proc shows full system info, others use -q for faster runs)
     add_hypredrive_test(ex1_1proc  1 ex1.yml NO_QUIET)
+    add_hypredrive_cli_test(ex1_cli 1 ex1.yml)
     add_hypredrive_test(ex1a_1proc 1 ex1a.yml)
     add_hypredrive_test(ex1b_1proc 1 ex1b.yml)
     add_hypredrive_test(ex1c_1proc 1 ex1c.yml)
