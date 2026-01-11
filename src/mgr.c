@@ -214,12 +214,12 @@ MGRgrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {
-         {"", -1},        {"none", -1},    {"blk-jacobi", 0}, {"blk-gs", 1},
-         {"mixed-gs", 2}, {"amg", 20},     {"h-fgs", 3},      {"h-bgs", 4},
-         {"ch-gs", 5},    {"h-ssor", 6},   {"euclid", 8},     {"2stg-fgs", 11},
-         {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},  {"ilu", 16},
-         {"l1-hsgs", 88}};
+      static StrIntMap map[] = {{"", -1},         {"none", -1},    {"blk-jacobi", 0},
+                                {"blk-gs", 1},    {"mixed-gs", 2}, {"amg", 20},
+                                {"h-fgs", 3},     {"h-bgs", 4},    {"ch-gs", 5},
+                                {"h-ssor", 6},    {"euclid", 8},   {"2stg-fgs", 11},
+                                {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},
+                                {"ilu", 16},      {"l1-hsgs", 88}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }

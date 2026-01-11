@@ -31,6 +31,27 @@ parse_config(const char *yaml_text)
    return args;
 }
 
+static input_args *
+parse_config_with_overrides(const char *yaml_text, int override_argc, char **override_argv)
+{
+   input_args *args = NULL;
+   char       *argv0 = strdup(yaml_text);
+
+   char **argv = (char **)calloc((size_t)override_argc + 1, sizeof(char *));
+   argv[0]     = argv0;
+   for (int i = 0; i < override_argc; i++)
+   {
+      argv[i + 1] = override_argv[i];
+   }
+
+   ErrorCodeResetAll();
+   InputArgsParse(MPI_COMM_SELF, false, override_argc + 1, argv, &args);
+
+   free(argv);
+   free(argv0);
+   return args;
+}
+
 static void
 test_InputArgsParseGeneral_flags(void)
 {
@@ -135,6 +156,34 @@ test_YAMLtextRead_missing_file(void)
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
 }
 
+static void
+test_YAMLtreeUpdate_overrides_solver_and_precon(void)
+{
+   const char yaml_text[] = "solver: gmres\n"
+                            "preconditioner:\n"
+                            "  amg:\n"
+                            "    print_level: 0\n";
+
+   char *overrides[] = {
+      "--solver:pcg:max_iter",
+      "50",
+      "--preconditioner:amg:print_level",
+      "2",
+      "--general:statistics",
+      "off",
+   };
+
+   input_args *args = parse_config_with_overrides(yaml_text, 6, overrides);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->solver_method, SOLVER_PCG);
+   ASSERT_EQ(args->solver.pcg.max_iter, 50);
+   ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
+   ASSERT_EQ(args->precon.amg.print_level, 2);
+   ASSERT_EQ(args->statistics, 0);
+
+   InputArgsDestroy(&args);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -146,6 +195,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParsePrecon_missing);
    RUN_TEST(test_YAMLtreeBuild_inconsistent_indent);
    RUN_TEST(test_YAMLtextRead_missing_file);
+   RUN_TEST(test_YAMLtreeUpdate_overrides_solver_and_precon);
 
    MPI_Finalize();
    return 0;

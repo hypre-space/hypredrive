@@ -359,14 +359,184 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
  * Update a YAML tree with information passed via command line
  *-----------------------------------------------------------------------------*/
 
+/* Helpers for YAMLtreeUpdate */
+static void
+YAMLnodeDestroyChildren(YAMLnode *node)
+{
+   if (!node)
+   {
+      return;
+   }
+
+   YAMLnode *child = node->children;
+   while (child)
+   {
+      YAMLnode *next = child->next;
+      YAMLnodeDestroy(child);
+      child = next;
+   }
+   node->children = NULL;
+}
+
+static void
+YAMLnodeClearMappedVal(YAMLnode *node)
+{
+   if (node && node->mapped_val)
+   {
+      free(node->mapped_val);
+      node->mapped_val = NULL;
+   }
+}
+
+static void
+YAMLnodeSetScalarValue(YAMLnode *node, const char *val)
+{
+   if (!node)
+   {
+      return;
+   }
+
+   YAMLnodeClearMappedVal(node);
+
+   free(node->val);
+   node->val = StrTrim(strdup(val ? val : ""));
+   if (!strstr(node->key, "name"))
+   {
+      StrToLowerCase(node->val);
+   }
+   node->valid = YAML_NODE_UNKNOWN;
+}
+
+static void
+YAMLnodeEnsureMapping(YAMLnode *node)
+{
+   if (!node)
+   {
+      return;
+   }
+
+   YAMLnodeClearMappedVal(node);
+
+   if (strcmp(node->val, "") != 0)
+   {
+      free(node->val);
+      node->val = strdup("");
+   }
+   node->valid = YAML_NODE_UNKNOWN;
+}
+
+static YAMLnode *
+YAMLnodeGetOrCreateChild(YAMLnode *parent, const char *key)
+{
+   YAMLnode *child = YAMLnodeFindChildByKey(parent, key);
+   if (!child)
+   {
+      child = YAMLnodeCreate(key, "", parent->level + 1);
+      YAMLnodeAddChild(parent, child);
+   }
+   return child;
+}
+
 void
 YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 {
-   (void)argc;
-   (void)argv;
-   (void)tree;
-   /* TODO */
-   return;
+   if (!tree || !tree->root)
+   {
+      ErrorCodeSet(ERROR_YAML_TREE_NULL);
+      ErrorMsgAdd("Cannot update a void YAML tree!");
+      return;
+   }
+
+   for (int i = 0; i < argc; i += 2)
+   {
+      const char *k = argv[i];
+      if (!k)
+      {
+         continue;
+      }
+
+      /* Allow passing -a/--args through; ignore it if present.
+       * (In normal usage main() strips it, but this keeps YAMLtreeUpdate robust.) */
+      if (!strcmp(k, "-a") || !strcmp(k, "--args"))
+      {
+         i -= 1; /* compensate for loop i += 2 */
+         continue;
+      }
+
+      if (strncmp(k, "--", 2) != 0)
+      {
+         ErrorCodeSet(ERROR_INVALID_KEY);
+         ErrorMsgAdd("Invalid override key '%s' (expected --path:to:key)", k);
+         return;
+      }
+
+      if (i + 1 >= argc)
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Missing value for override '%s'", k);
+         return;
+      }
+
+      const char *v = argv[i + 1];
+      if (!v || (strncmp(v, "--", 2) == 0))
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Missing value for override '%s'", k);
+         return;
+      }
+
+      /* Apply override */
+      {
+         char *path = strdup(k);
+         char *p    = path;
+
+         if (!strncmp(p, "--", 2))
+         {
+            p += 2;
+         }
+
+         YAMLnode *cur  = tree->root;
+         char     *save = NULL;
+         char     *seg  = strtok_r(p, ":", &save);
+
+         if (!seg || *seg == '\0')
+         {
+            ErrorCodeSet(ERROR_INVALID_KEY);
+            ErrorMsgAdd("Invalid override path: '%s'", k);
+            free(path);
+            return;
+         }
+
+         while (seg)
+         {
+            char *next_seg = strtok_r(NULL, ":", &save);
+            if (next_seg) /* intermediate */
+            {
+               YAMLnode *child = YAMLnodeGetOrCreateChild(cur, seg);
+               YAMLnodeEnsureMapping(child);
+               cur = child;
+               seg = next_seg;
+            }
+            else /* leaf */
+            {
+               YAMLnode *leaf = YAMLnodeFindChildByKey(cur, seg);
+               if (!leaf)
+               {
+                  leaf = YAMLnodeCreate(seg, v, cur->level + 1);
+                  YAMLnodeAddChild(cur, leaf);
+               }
+               else
+               {
+                  YAMLnodeDestroyChildren(leaf);
+                  YAMLnodeSetScalarValue(leaf, v);
+               }
+               break;
+            }
+         }
+
+         free(path);
+      }
+   }
 }
 
 /*-----------------------------------------------------------------------------
