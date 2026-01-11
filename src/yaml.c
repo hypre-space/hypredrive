@@ -306,7 +306,7 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
       level = indent / 2;
 
       /* Check for divisor character */
-      divisor_is_ok = ((sep = strchr(line, ':')) == NULL) ? false : true;
+      divisor_is_ok = ((sep = strchr(line, ':')) != NULL);
 
       /* Extract (key, val) pair */
       if (divisor_is_ok)
@@ -490,7 +490,6 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
    int  override_start = 0;
    int  override_end   = argc;
    bool full_argv_mode = (args_flag_idx >= 0);
-   bool pair_list_mode = false;
 
    if (full_argv_mode)
    {
@@ -509,6 +508,7 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
       /* No -a provided:
        * - If argv looks like a pure override pair list, parse it.
        * - Otherwise assume caller passed a full argv without overrides -> no-op. */
+      bool pair_list_mode = false;
       if (argc > 0 && (argc % 2) == 0)
       {
          bool looks_like_pairs = true;
@@ -532,10 +532,6 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
    }
 
    int n_override_tokens = override_end - override_start;
-   if (n_override_tokens <= 0)
-   {
-      return;
-   }
 
    /* In full-argv mode, enforce pairs after -a. In pair-list mode, enforce pairs too. */
    if ((n_override_tokens % 2) != 0)
@@ -605,20 +601,21 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 
          while (seg)
          {
-            char *next_seg = strtok_r(NULL, ":", &save);
+            const char *seg_const = seg; /* Use const pointer for read-only access */
+            char       *next_seg  = strtok_r(NULL, ":", &save);
             if (next_seg) /* intermediate */
             {
-               YAMLnode *child = YAMLnodeGetOrCreateChild(cur, seg);
+               YAMLnode *child = YAMLnodeGetOrCreateChild(cur, seg_const);
                YAMLnodeEnsureMapping(child);
                cur = child;
                seg = next_seg;
             }
             else /* leaf */
             {
-               YAMLnode *leaf = YAMLnodeFindChildByKey(cur, seg);
+               YAMLnode *leaf = YAMLnodeFindChildByKey(cur, seg_const);
                if (!leaf)
                {
-                  leaf = YAMLnodeCreate(seg, v, cur->level + 1);
+                  leaf = YAMLnodeCreate(seg_const, v, cur->level + 1);
                   YAMLnodeAddChild(cur, leaf);
                }
                else

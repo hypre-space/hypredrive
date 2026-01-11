@@ -22,7 +22,7 @@
 #endif
 
 // Flag to check if HYPREDRV is initialized
-static bool hypredrv_is_initialized = 0;
+static bool hypredrv_is_initialized = false;
 
 // Macro to check if HYPREDRV is initialized
 #define HYPREDRV_CHECK_INIT()                       \
@@ -854,8 +854,9 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
     *   This means: create when (ls_id + 1) % (reuse + 1) == 0
     *   Example: reuse=2 means create on ls_id=0, 3, 6, 9, ...
     */
-   bool should_create = (hypredrv->precon == NULL) || (reuse == 0) ||
-                        (ls_id < 0 || ls_id == 0) || ((ls_id + 1) % (reuse + 1) == 0);
+   bool should_create =
+      ((hypredrv->precon == NULL) || (reuse == 0) || (ls_id < 0 || ls_id == 0) ||
+       (((ls_id + 1) % (reuse + 1)) == 0)) != 0;
 
    if (should_create)
    {
@@ -1008,7 +1009,8 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
     * system Example: reuse=2 means reuse for 2 systems, destroy on 3rd (ls_id=2, 5, 8,
     * ...)
     */
-   bool should_destroy = (reuse == 0) || (ls_id > 0 && ((ls_id + 1) % (reuse + 1) == 0));
+   bool should_destroy =
+      ((reuse == 0) || (ls_id > 0 && (((ls_id + 1) % (reuse + 1)) == 0))) != 0;
 
    if (should_destroy)
    {

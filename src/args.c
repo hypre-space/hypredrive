@@ -334,6 +334,12 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    /* Rank 0: Check if file exists */
    if (!myid)
    {
+      if (filename == NULL)
+      {
+         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         ErrorMsgAdd("Configuration filename is NULL");
+         return;
+      }
       FILE *fp = fopen(filename, "r");
       if (!fp)
       {
@@ -452,6 +458,13 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    else
    {
       /* Direct YAML string input */
+      if (argv[0] == NULL)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("YAML string input is NULL");
+         *args_ptr = NULL;
+         return;
+      }
       text = strdup(argv[0]); // Make a copy since we'll free it later
    }
 
