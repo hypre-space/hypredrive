@@ -262,5 +262,5 @@ IsYAMLFilename(const char *str)
 
    /* Check for .yaml or .yml extension */
    const char *ext = dot + 1;
-   return (strcmp(ext, "yaml") == 0 || strcmp(ext, "yml") == 0);
+   return (strcmp(ext, "yaml") == 0 || strcmp(ext, "yml") == 0) != 0;
 }

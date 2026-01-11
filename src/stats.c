@@ -712,7 +712,7 @@ StatsPrint(int print_level)
       return;
    }
 
-   const char *scale = active_stats->use_millisec ? "[ms]" : "[s]";
+   const char *scale = ((int)active_stats->use_millisec) ? "[ms]" : "[s]";
 
    PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
    printf("\n\nSTATISTICS SUMMARY:\n\n");

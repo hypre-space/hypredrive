@@ -90,16 +90,38 @@ if(HYPREDRV_ENABLE_COVERAGE)
     endif()
 
     # Find gcov if not already set (for GCC or fallback). Prefer versioned gcov matching the compiler.
-    if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION_MAJOR)
-        find_program(_GCOV_VERSIONED NAMES gcov-${CMAKE_C_COMPILER_VERSION_MAJOR})
-        if(_GCOV_VERSIONED)
-            set(GCOV_EXECUTABLE ${_GCOV_VERSIONED} CACHE FILEPATH "gcov executable" FORCE)
+    # Always check for versioned gcov first to ensure we use the correct version matching the compiler.
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION)
+        # Extract major version if CMAKE_C_COMPILER_VERSION_MAJOR is not set
+        if(CMAKE_C_COMPILER_VERSION_MAJOR)
+            set(_gcc_major_version ${CMAKE_C_COMPILER_VERSION_MAJOR})
         else()
+            # Extract major version from full version string (e.g., "14.2.0" -> "14")
+            string(REGEX MATCH "^([0-9]+)" _match_result "${CMAKE_C_COMPILER_VERSION}")
+            if(_match_result)
+                set(_gcc_major_version ${CMAKE_MATCH_1})
+            endif()
+        endif()
+        
+        if(_gcc_major_version)
+            find_program(_GCOV_VERSIONED NAMES gcov-${_gcc_major_version})
+            if(_GCOV_VERSIONED)
+                # Always update cache to use versioned gcov matching the compiler
+                set(GCOV_EXECUTABLE ${_GCOV_VERSIONED} CACHE FILEPATH "gcov executable" FORCE)
+            else()
+                # Versioned gcov not found, fall back to generic
+                if(NOT GCOV_EXECUTABLE)
+                    find_program(GCOV_EXECUTABLE NAMES ${_gcov_candidates})
+                endif()
+            endif()
+        else()
+            # Could not determine compiler version, use generic search
             if(NOT GCOV_EXECUTABLE)
                 find_program(GCOV_EXECUTABLE NAMES ${_gcov_candidates})
             endif()
         endif()
     else()
+        # For non-GCC or if version info is unavailable, use generic search
         if(NOT GCOV_EXECUTABLE)
             find_program(GCOV_EXECUTABLE NAMES ${_gcov_candidates})
         endif()

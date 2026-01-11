@@ -334,6 +334,12 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    /* Rank 0: Check if file exists */
    if (!myid)
    {
+      if (filename == NULL)
+      {
+         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         ErrorMsgAdd("Configuration filename is NULL");
+         return;
+      }
       FILE *fp = fopen(filename, "r");
       if (!fp)
       {
@@ -409,8 +415,25 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
 
    MPI_Comm_rank(comm, &myid);
 
-   /* Read input arguments from file or string */
-   if (IsYAMLFilename(argv[0]))
+   /* Read input arguments from file or string.
+    *
+    * Supported calling patterns:
+    * - Legacy/library mode: argv[0] is YAML filename (and argv[1..] are override pairs)
+    * - Driver mode: argv is the full CLI (contains YAML filename somewhere and optionally
+    * -a ...)
+    * - Unit tests: argv[0] is a YAML string (and argv[1..] are override pairs)
+    */
+   int config_idx = -1;
+   for (int i = 0; i < argc; i++)
+   {
+      if (argv[i] && IsYAMLFilename(argv[i]))
+      {
+         config_idx = i;
+         break;
+      }
+   }
+
+   if (argc > 0 && IsYAMLFilename(argv[0]))
    {
       /* Treat as file input - will error if file doesn't exist */
       InputArgsRead(comm, argv[0], &base_indent, &text);
@@ -422,9 +445,26 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
          return;
       }
    }
+   else if (config_idx >= 0)
+   {
+      /* Driver-style argv: find YAML filename anywhere */
+      InputArgsRead(comm, argv[config_idx], &base_indent, &text);
+      if (ErrorCodeActive())
+      {
+         *args_ptr = NULL;
+         return;
+      }
+   }
    else
    {
       /* Direct YAML string input */
+      if (argv[0] == NULL)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("YAML string input is NULL");
+         *args_ptr = NULL;
+         return;
+      }
       text = strdup(argv[0]); // Make a copy since we'll free it later
    }
 
@@ -434,13 +474,27 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    /* Build YAML tree */
    YAMLtreeBuild(base_indent, text, &tree);
 
-   /* TODO: check if any config option has been passed in via CLI.
-            If so, overwrite the data stored in the YAMLtree object
-            with it. */
+   /* Check if any config option has been passed in via CLI.
+      If so, overwrite the data stored in the YAMLtree object
+      with the new values. */
    if (argc > 1)
    {
       /* Update YAML tree with command line arguments info */
-      YAMLtreeUpdate(argc - 1, argv + 1, tree);
+      if (IsYAMLFilename(argv[0]))
+      {
+         /* Legacy: overrides are in argv[1..] */
+         YAMLtreeUpdate(argc - 1, argv + 1, tree);
+      }
+      else if (config_idx >= 0)
+      {
+         /* Driver: allow YAMLtreeUpdate to parse -a/--args inside full argv */
+         YAMLtreeUpdate(argc, argv, tree);
+      }
+      else
+      {
+         /* YAML string input: overrides are in argv[1..] */
+         YAMLtreeUpdate(argc - 1, argv + 1, tree);
+      }
    }
 
    /* Return earlier if YAML tree was not built properly */

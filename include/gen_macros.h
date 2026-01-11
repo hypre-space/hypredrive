@@ -107,10 +107,50 @@
    void _prefix##SetArgsFromYAML(_prefix##_args *, YAMLnode *);
 
 /**
+ * @brief Define a wrapper setter that also sets a "type" field on the parent struct.
+ *
+ * @details Useful when a YAML key (e.g., "ilu") selects a variant stored in a union
+ * and the parent args struct must record the selected variant type.
+ *
+ * The generated function has signature compatible with FieldOffsetMap setters:
+ *   void (*setter)(void*, const YAMLnode*)
+ *
+ * @param _func_name Name of the generated wrapper function.
+ * @param _parent    Parent struct type (e.g., MGRcls_args).
+ * @param _field     Field name within _parent (e.g., amg, ilu).
+ * @param _type      Integer type value to write into ((_parent*)...)->type.
+ * @param _setter    The real setter to invoke after setting the type.
+ */
+#define DEFINE_TYPED_SETTER(_func_name, _parent, _field, _type, _setter)    \
+   static void _func_name(void *v, const YAMLnode *n)                       \
+   {                                                                        \
+      ((_parent *)((char *)v - offsetof(_parent, _field)))->type = (_type); \
+      _setter(v, n);                                                        \
+   }
+
+/**
  * @brief Defines a function to set arguments from a YAML node.
  *
- * @details This macro generates a function that iterates over child nodes,
- * validates them, and sets fields, indicated by the node's keys, by name.
+ * @details This macro generates a function that handles two YAML patterns:
+ *
+ * 1. Nested structure (parent has children):
+ *    @code
+ *    solver:
+ *      type: pcg
+ *      max_iter: 100
+ *    @endcode
+ *    In this case, iterate over children and set each field by name.
+ *
+ *    **Union support**: If a child's key (e.g., "ilu") exists in GetValidValues("type"),
+ *    we also set args->type to the mapped value. This allows unions where the type
+ *    determines which member is active.
+ *
+ * 2. Flat value (parent has no children, just a value):
+ *    @code
+ *    solver: pcg
+ *    @endcode
+ *    In this case, treat the value as the "type" field. We temporarily
+ *    swap the key to "type" for validation and field setting.
  *
  * @param _prefix Prefix used in the naming of the generated function.
  */
@@ -119,9 +159,9 @@
    {                                                                                  \
       if (parent->children)                                                           \
       {                                                                               \
+         /* Case 1: Nested structure - iterate over children */                       \
          YAML_NODE_ITERATE(parent, child)                                             \
          {                                                                            \
-            /* printf("child->key: %s\n", child->key); */                             \
             YAML_NODE_VALIDATE(child, _prefix##GetValidKeys, _prefix##GetValidValues) \
                                                                                       \
             YAML_NODE_SET_FIELD(child, args, _prefix##SetFieldByName)                 \
@@ -129,6 +169,8 @@
       }                                                                               \
       else                                                                            \
       {                                                                               \
+         /* Case 2: Flat value - treat val as "type" */                               \
+         /* Temporarily swap key to "type" for validation/setting */                  \
          char *temp_key = strdup(parent->key);                                        \
          free(parent->key);                                                           \
          parent->key = (char *)malloc(5 * sizeof(char));                              \
@@ -137,6 +179,7 @@
          YAML_NODE_VALIDATE(parent, _prefix##GetValidKeys, _prefix##GetValidValues)   \
          YAML_NODE_SET_FIELD(parent, args, _prefix##SetFieldByName)                   \
                                                                                       \
+         /* Restore original key */                                                   \
          free(parent->key);                                                           \
          parent->key = strdup(temp_key);                                              \
          free(temp_key);                                                              \
@@ -252,6 +295,26 @@
    DECLARE_GET_VALID_VALUES_FUNC(prefix);                                         \
    DECLARE_SET_DEFAULT_ARGS_FUNC(prefix);                                         \
    DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix);                                        \
+   DEFINE_SET_ARGS_FUNC(prefix);
+
+/**
+ * @brief Like GENERATE_PREFIXED_COMPONENTS, but uses a custom prefixSetArgsFromYAML.
+ *
+ * @details Use this when you want all the standard boilerplate (field map,
+ * SetFieldByName, GetValidKeys, and the top-level SetArgs wrapper), but the YAML parsing
+ * for the prefix needs to be custom:
+ *
+ *   void prefixSetArgsFromYAML(prefix_args*, YAMLnode*);
+ */
+#define GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(prefix)                          \
+   DEFINE_FIELD_OFFSET_MAP(prefix);                                               \
+   DEFINE_SET_FIELD_BY_NAME_FUNC(prefix##SetFieldByName, prefix##_args,           \
+                                 prefix##_field_offset_map, prefix##_NUM_FIELDS); \
+   DEFINE_GET_VALID_KEYS_FUNC(prefix##GetValidKeys, prefix##_NUM_FIELDS,          \
+                              prefix##_field_offset_map);                         \
+   DECLARE_GET_VALID_VALUES_FUNC(prefix);                                         \
+   DECLARE_SET_DEFAULT_ARGS_FUNC(prefix);                                         \
+   DECLARE_SET_ARGS_FROM_YAML_FUNC(prefix);                                       \
    DEFINE_SET_ARGS_FUNC(prefix);
 
 #endif /* GEN_MACROS_HEADER */

@@ -31,6 +31,40 @@ All example inputs can be found in the ``examples`` folder and reference outputs
    Alternatively, you can download the datasets manually from the Zenodo record and extract
    them into the ``data/`` directory. See ``data/README.md`` for more details.
 
+CLI overrides (``-a/--args``)
+-----------------------------
+
+When developing or benchmarking, it is often convenient to keep a base YAML file and
+override a few parameters from the command line.
+
+The driver supports this via the ``-a`` / ``--args`` flag, followed by pairs of:
+
+- ``--path:to:key <value>``
+
+The ``path:to:key`` is interpreted as a YAML path where ``:`` separates nested blocks.
+Overrides are applied *after* reading the YAML file, so the CLI has precedence over the
+file.
+
+Examples (based on ``examples/ex1.yml``):
+
+.. code-block:: bash
+
+   # Override solver parameters (keep solver as PCG, but change max_iter)
+   $ mpirun -np 1 ./hypredrive examples/ex1.yml -q -a --solver:pcg:max_iter 50
+
+.. code-block:: bash
+
+   # Switch solver type and set a nested option (changes solver from PCG to GMRES)
+   $ mpirun -np 1 ./hypredrive examples/ex1.yml -q -a --solver gmres --solver:gmres:max_iter 30
+
+.. note::
+
+   - Overrides must be provided as **key/value pairs** after ``-a``.
+   - Accepts also key/value pairs not present in the base YAML file.
+   - The key/value pairs must be separated by a space, for example: ``--solver:pcg:max_iter 50``.
+   - If you pass values that include spaces or YAML syntax (e.g., lists like ``[1, 2]``),
+     you will need to quote them according to your shell.
+
 .. _Example1:
 
 Example 1: Minimal configuration

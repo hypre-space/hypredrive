@@ -306,7 +306,7 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
       level = indent / 2;
 
       /* Check for divisor character */
-      divisor_is_ok = ((sep = strchr(line, ':')) == NULL) ? false : true;
+      divisor_is_ok = ((sep = strchr(line, ':')) != NULL);
 
       /* Extract (key, val) pair */
       if (divisor_is_ok)
@@ -359,14 +359,277 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
  * Update a YAML tree with information passed via command line
  *-----------------------------------------------------------------------------*/
 
+/* Helpers for YAMLtreeUpdate */
+static void
+YAMLnodeDestroyChildren(YAMLnode *node)
+{
+   if (!node)
+   {
+      return;
+   }
+
+   YAMLnode *child = node->children;
+   while (child)
+   {
+      YAMLnode *next = child->next;
+      YAMLnodeDestroy(child);
+      child = next;
+   }
+   node->children = NULL;
+}
+
+static void
+YAMLnodeClearMappedVal(YAMLnode *node)
+{
+   if (node && node->mapped_val)
+   {
+      free(node->mapped_val);
+      node->mapped_val = NULL;
+   }
+}
+
+static void
+YAMLnodeSetScalarValue(YAMLnode *node, const char *val)
+{
+   if (!node)
+   {
+      return;
+   }
+
+   YAMLnodeClearMappedVal(node);
+
+   free(node->val);
+   node->val = StrTrim(strdup(val ? val : ""));
+   if (!strstr(node->key, "name"))
+   {
+      StrToLowerCase(node->val);
+   }
+   node->valid = YAML_NODE_UNKNOWN;
+}
+
+static void
+YAMLnodeEnsureMapping(YAMLnode *node)
+{
+   if (!node)
+   {
+      return;
+   }
+
+   YAMLnodeClearMappedVal(node);
+
+   if (strcmp(node->val, "") != 0)
+   {
+      free(node->val);
+      node->val = strdup("");
+   }
+   node->valid = YAML_NODE_UNKNOWN;
+}
+
+static YAMLnode *
+YAMLnodeGetOrCreateChild(YAMLnode *parent, const char *key)
+{
+   YAMLnode *child = YAMLnodeFindChildByKey(parent, key);
+   if (!child)
+   {
+      child = YAMLnodeCreate(key, "", parent->level + 1);
+      YAMLnodeAddChild(parent, child);
+   }
+   return child;
+}
+
+static int
+YAMLargsFindFlagIndex(int argc, char **argv, const char *short_flag,
+                      const char *long_flag)
+{
+   for (int i = 0; i < argc; i++)
+   {
+      if ((short_flag && !strcmp(argv[i], short_flag)) ||
+          (long_flag && !strcmp(argv[i], long_flag)))
+      {
+         return i;
+      }
+   }
+   return -1;
+}
+
+static int
+YAMLargsFindConfigFileIndex(int argc, char **argv)
+{
+   for (int i = 0; i < argc; i++)
+   {
+      if (argv[i] && IsYAMLFilename(argv[i]))
+      {
+         return i;
+      }
+   }
+   return -1;
+}
+
 void
 YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 {
-   (void)argc;
-   (void)argv;
-   (void)tree;
-   /* TODO */
-   return;
+   if (!tree || !tree->root)
+   {
+      ErrorCodeSet(ERROR_YAML_TREE_NULL);
+      ErrorMsgAdd("Cannot update a void YAML tree!");
+      return;
+   }
+
+   /* Support two calling conventions:
+    *
+    * 1) Legacy "pair list" mode (library / internal calls):
+    *      argv = ["--path:to:key", "val", ...]
+    *
+    * 2) Driver "full argv" mode:
+    *      argv contains many tokens including -q, config file, etc.
+    *      Overrides are only parsed after -a/--args and stop at the YAML filename
+    *      if it appears after -a (some test harnesses append it at the end).
+    */
+   int  args_flag_idx  = YAMLargsFindFlagIndex(argc, argv, "-a", "--args");
+   int  cfg_idx        = YAMLargsFindConfigFileIndex(argc, argv);
+   int  override_start = 0;
+   int  override_end   = argc;
+   bool full_argv_mode = (args_flag_idx >= 0);
+
+   if (full_argv_mode)
+   {
+      override_start = args_flag_idx + 1;
+      if (cfg_idx >= 0 && cfg_idx >= override_start)
+      {
+         override_end = cfg_idx;
+      }
+      if (override_start >= override_end)
+      {
+         return; /* nothing to do */
+      }
+   }
+   else
+   {
+      /* No -a provided:
+       * - If argv looks like a pure override pair list, parse it.
+       * - Otherwise assume caller passed a full argv without overrides -> no-op. */
+      bool pair_list_mode = false;
+      if (argc > 0 && (argc % 2) == 0)
+      {
+         bool looks_like_pairs = true;
+         for (int i = 0; i < argc; i += 2)
+         {
+            const char *k = argv[i];
+            const char *v = argv[i + 1];
+            if (!k || !v || strncmp(k, "--", 2) != 0)
+            {
+               looks_like_pairs = false;
+               break;
+            }
+         }
+         pair_list_mode = looks_like_pairs;
+      }
+
+      if (!pair_list_mode)
+      {
+         return;
+      }
+   }
+
+   int n_override_tokens = override_end - override_start;
+
+   /* In full-argv mode, enforce pairs after -a. In pair-list mode, enforce pairs too. */
+   if ((n_override_tokens % 2) != 0)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Invalid CLI overrides: expected pairs of '--path:to:key value'");
+      return;
+   }
+
+   for (int i = override_start; i < override_end; i += 2)
+   {
+      const char *k = argv[i];
+      if (!k)
+      {
+         continue;
+      }
+
+      if (strncmp(k, "--", 2) != 0)
+      {
+         /* In full argv mode, ignore non override tokens (we only parse pairs after -a
+          * anyway), but keep strictness in pair-list mode. */
+         if (!full_argv_mode)
+         {
+            ErrorCodeSet(ERROR_INVALID_KEY);
+            ErrorMsgAdd("Invalid override key '%s' (expected --path:to:key)", k);
+            return;
+         }
+         continue;
+      }
+
+      if (i + 1 >= argc)
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Missing value for override '%s'", k);
+         return;
+      }
+
+      const char *v = argv[i + 1];
+      if (!v || (strncmp(v, "--", 2) == 0))
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Missing value for override '%s'", k);
+         return;
+      }
+
+      /* Apply override */
+      {
+         char *path = strdup(k);
+         char *p    = path;
+
+         if (!strncmp(p, "--", 2))
+         {
+            p += 2;
+         }
+
+         YAMLnode *cur  = tree->root;
+         char     *save = NULL;
+         char     *seg  = strtok_r(p, ":", &save);
+
+         if (!seg || *seg == '\0')
+         {
+            ErrorCodeSet(ERROR_INVALID_KEY);
+            ErrorMsgAdd("Invalid override path: '%s'", k);
+            free(path);
+            return;
+         }
+
+         while (seg)
+         {
+            const char *seg_const = seg; /* Use const pointer for read-only access */
+            char       *next_seg  = strtok_r(NULL, ":", &save);
+            if (next_seg) /* intermediate */
+            {
+               YAMLnode *child = YAMLnodeGetOrCreateChild(cur, seg_const);
+               YAMLnodeEnsureMapping(child);
+               cur = child;
+               seg = next_seg;
+            }
+            else /* leaf */
+            {
+               YAMLnode *leaf = YAMLnodeFindChildByKey(cur, seg_const);
+               if (!leaf)
+               {
+                  leaf = YAMLnodeCreate(seg_const, v, cur->level + 1);
+                  YAMLnodeAddChild(cur, leaf);
+               }
+               else
+               {
+                  YAMLnodeDestroyChildren(leaf);
+                  YAMLnodeSetScalarValue(leaf, v);
+               }
+               break;
+            }
+         }
+
+         free(path);
+      }
+   }
 }
 
 /*-----------------------------------------------------------------------------

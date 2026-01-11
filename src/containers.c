@@ -390,8 +390,8 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
          return;
       }
 
-      count = (is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
-                          : (size_t)fscanf(fp, "%zu", &num_entries);
+      count = ((int)is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
+                               : (size_t)fscanf(fp, "%zu", &num_entries);
       if (count != 1)
       {
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -414,8 +414,8 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
          return;
       }
 
-      count = (is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
-                          : (size_t)fscanf(fp, "%zu", &num_entries);
+      count = ((int)is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
+                               : (size_t)fscanf(fp, "%zu", &num_entries);
       if (count != 1)
       {
          ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -595,5 +595,5 @@ StrIntMapArrayGetImage(const StrIntMapArray valid, const char *string)
 bool
 StrIntMapArrayDomainEntryExists(const StrIntMapArray valid, const char *string)
 {
-   return (StrIntMapArrayGetImage(valid, string) > INT_MIN) ? true : false;
+   return (StrIntMapArrayGetImage(valid, string) > INT_MIN) != 0;
 }

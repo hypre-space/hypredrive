@@ -25,9 +25,13 @@ typedef struct MGRcls_args_struct
 {
    HYPRE_Int type;
 
-   /* TODO: Use union */
-   AMG_args amg;
-   ILU_args ilu;
+   /* Only one coarsest solver is active at a time; store its args in a union.
+    * Note: anonymous union is a GNU C extension. */
+   union
+   {
+      AMG_args amg;
+      ILU_args ilu;
+   };
 } MGRcls_args;
 
 /*--------------------------------------------------------------------------
@@ -39,9 +43,12 @@ typedef struct MGRfrlx_args_struct
    HYPRE_Int type;
    HYPRE_Int num_sweeps;
 
-   /* TODO: Ideally, these should be inside a union */
-   AMG_args amg;
-   ILU_args ilu;
+   /* Only one fine-relaxation solver is active at a time. */
+   union
+   {
+      AMG_args amg;
+      ILU_args ilu;
+   };
 } MGRfrlx_args;
 
 /*--------------------------------------------------------------------------
@@ -53,8 +60,12 @@ typedef struct MGRgrlx_args_struct
    HYPRE_Int type;
    HYPRE_Int num_sweeps;
 
-   /* TODO: Ideally, these should be inside a union */
-   ILU_args ilu;
+   /* Only one global-relaxation solver is active at a time. */
+   union
+   {
+      AMG_args amg;
+      ILU_args ilu;
+   };
 } MGRgrlx_args;
 
 /*--------------------------------------------------------------------------
@@ -170,70 +181,30 @@ void MGRCreate(MGR_args *, HYPRE_Solver *);
             {                                                                         \
                _buffer[i] = args->level[i]._type;                                     \
             }                                                                         \
-            if (!strcmp(#_type, "f_relaxation.type")) /* Adjust iteration counts */   \
-            {                                                                         \
-               for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)            \
-               {                                                                      \
-                  if (args->level[i].f_relaxation.amg.max_iter > 0)                   \
-                  {                                                                   \
-                     args->level[i].f_relaxation.type = _buffer[i] = 2;               \
-                     if (args->level[i].f_relaxation.num_sweeps < 1)                  \
-                     {                                                                \
-                        args->level[i].f_relaxation.num_sweeps =                      \
-                           args->level[i].f_relaxation.amg.max_iter;                  \
-                     }                                                                \
-                  }                                                                   \
-                  else if (args->level[i].f_relaxation.ilu.max_iter > 0)              \
-                  {                                                                   \
-                     args->level[i].f_relaxation.type = _buffer[i] = 32;              \
-                     if (args->level[i].f_relaxation.num_sweeps < 1)                  \
-                     {                                                                \
-                        args->level[i].f_relaxation.num_sweeps =                      \
-                           args->level[i].f_relaxation.ilu.max_iter;                  \
-                     }                                                                \
-                  }                                                                   \
-                  else if (args->level[i].f_relaxation.type > -1 &&                   \
-                           args->level[i].f_relaxation.num_sweeps < 1)                \
-                  {                                                                   \
-                     args->level[i].f_relaxation.num_sweeps = 1;                      \
-                     if (args->level[i].f_relaxation.type == 2)                       \
-                     {                                                                \
-                        args->level[i].f_relaxation.amg.max_iter = 1;                 \
-                     }                                                                \
-                     else if (args->level[i].f_relaxation.type == 32)                 \
-                     {                                                                \
-                        args->level[i].f_relaxation.ilu.max_iter = 1;                 \
-                     }                                                                \
-                  }                                                                   \
-               }                                                                      \
-            }                                                                         \
-            else if (!strcmp(#_type, "g_relaxation.type"))                            \
-            {                                                                         \
-               for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)            \
-               {                                                                      \
-                  if (args->level[i].g_relaxation.ilu.max_iter > 0)                   \
-                  {                                                                   \
-                     args->level[i].g_relaxation.type = _buffer[i] = 16;              \
-                     if (args->level[i].g_relaxation.num_sweeps < 1)                  \
-                     {                                                                \
-                        args->level[i].g_relaxation.num_sweeps =                      \
-                           args->level[i].g_relaxation.ilu.max_iter;                  \
-                     }                                                                \
-                  }                                                                   \
-                  else if (args->level[i].g_relaxation.type > -1 &&                   \
-                           args->level[i].g_relaxation.num_sweeps < 1)                \
-                  {                                                                   \
-                     args->level[i].g_relaxation.num_sweeps = 1;                      \
-                     if (args->level[i].g_relaxation.type == 16)                      \
-                     {                                                                \
-                        args->level[i].g_relaxation.ilu.max_iter = 1;                 \
-                     }                                                                \
-                  }                                                                   \
-               }                                                                      \
-            }                                                                         \
          }                                                                            \
          return _buffer;                                                              \
       }                                                                               \
+   }
+
+/*-----------------------------------------------------------------------------
+ * Type-setting wrapper macro for union fields.
+ *
+ * For structs with unions (MGRcls, MGRfrlx, MGRgrlx), when we parse a nested
+ * block like `ilu: {...}`, we need to also set the `type` field. This macro
+ * generates a wrapper that recovers the parent struct and sets type before
+ * calling the real setter.
+ *
+ * @param _func_name Desired generated wrapper name (e.g., MGRclsILUSetArgs)
+ * @param _parent    Parent struct type (e.g., MGRcls_args)
+ * @param _field     Union field name (e.g., amg, ilu)
+ * @param _type      Type value to set (e.g., 0, 32)
+ * @param _setter    Real setter function (e.g., AMGSetArgs)
+ *-----------------------------------------------------------------------------*/
+#define DEFINE_TYPED_SETTER(_func_name, _parent, _field, _type, _setter)    \
+   static void _func_name(void *v, const YAMLnode *n)                       \
+   {                                                                        \
+      ((_parent *)((char *)v - offsetof(_parent, _field)))->type = (_type); \
+      _setter(v, n);                                                        \
    }
 
 #endif /* MGR_HEADER */

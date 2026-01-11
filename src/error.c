@@ -437,7 +437,7 @@ ErrorCodeGet(void)
 bool
 ErrorCodeActive(void)
 {
-   return (global_error_code == ERROR_NONE) ? false : true;
+   return (global_error_code != ERROR_NONE);
 }
 
 /*-----------------------------------------------------------------------------
@@ -451,7 +451,7 @@ DistributedErrorCodeActive(MPI_Comm comm)
 
    MPI_Allreduce(&global_error_code, &flag, 1, MPI_UINT32_T, MPI_BOR, comm);
 
-   return (flag == ERROR_NONE) ? false : true;
+   return (flag != ERROR_NONE);
 }
 
 /*-----------------------------------------------------------------------------

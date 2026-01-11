@@ -9,20 +9,34 @@
 #include "gen_macros.h"
 #include "stats.h"
 
-#define MGRcls_FIELDS(_prefix)                      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
+/*-----------------------------------------------------------------------------
+ * Field definitions using the type-setting wrappers
+ *-----------------------------------------------------------------------------*/
+
+/* Generate type-setting wrappers for union fields */
+DEFINE_TYPED_SETTER(MGRclsAMGSetArgs, MGRcls_args, amg, 0, AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRclsILUSetArgs, MGRcls_args, ilu, 32, ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxAMGSetArgs, MGRfrlx_args, amg, 2, AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxILUSetArgs, MGRfrlx_args, ilu, 32, ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRgrlxAMGSetArgs, MGRgrlx_args, amg, 20, AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, ILUSetArgs)
+
+#define MGRcls_FIELDS(_prefix)                            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRclsILUSetArgs)
 
 #define MGRfrlx_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)
 
 #define MGRgrlx_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)
 
 #define MGRlvl_FIELDS(_prefix)                                         \
    ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, FieldTypeStackIntArraySet)  \
@@ -61,18 +75,9 @@
    GENERATE_PREFIXED_COMPONENTS(MGRgrlx) \
    GENERATE_PREFIXED_COMPONENTS(MGRlvl)
 
-/* Iterates over each prefix in the list and
-   generates the various function declarations/definitions and field_offset_map object */
+/* Generate all boilerplate (field maps, setters, YAML parsing, etc.) */
 GENERATE_PREFIXED_LIST_MGR
-
-DEFINE_FIELD_OFFSET_MAP(MGR);
-DEFINE_SET_FIELD_BY_NAME_FUNC(MGRSetFieldByName, MGR_args, MGR_field_offset_map,
-                              MGR_NUM_FIELDS);
-DEFINE_GET_VALID_KEYS_FUNC(MGRGetValidKeys, MGR_NUM_FIELDS, MGR_field_offset_map);
-DECLARE_GET_VALID_VALUES_FUNC(MGR);
-DECLARE_SET_DEFAULT_ARGS_FUNC(MGR);
-DECLARE_SET_ARGS_FROM_YAML_FUNC(MGR);
-DEFINE_SET_ARGS_FUNC(MGR);
+GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR)
 
 /*-----------------------------------------------------------------------------
  * MGRclsSetDefaultArgs
@@ -81,13 +86,12 @@ DEFINE_SET_ARGS_FUNC(MGR);
 void
 MGRclsSetDefaultArgs(MGRcls_args *args)
 {
-   args->type = 0;
+   /* Default coarsest solver: let MGRCreate interpret type < 0 as "default AMG". */
+   args->type = -1;
 
-   /* TODO: revisit default amg iters */
+   /* Initialize default AMG args (union storage). If user later selects ILU via YAML,
+    * ILUSetArgs/ILUSetDefaultArgs will reinitialize the union storage. */
    AMGSetDefaultArgs(&args->amg);
-   args->amg.max_iter = 1;
-   ILUSetDefaultArgs(&args->ilu);
-   args->ilu.max_iter = 0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -99,11 +103,8 @@ MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
 {
    args->type       = 7;
    args->num_sweeps = 1;
-
-   AMGSetDefaultArgs(&args->amg);
-   args->amg.max_iter = 0;
-   ILUSetDefaultArgs(&args->ilu);
-   args->ilu.max_iter = 0;
+   /* Solver-specific args live in a union. We only (re)initialize them if/when a
+    * specific solver type is selected during YAML parsing. */
 }
 
 /*-----------------------------------------------------------------------------
@@ -113,11 +114,14 @@ MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
 void
 MGRgrlxSetDefaultArgs(MGRgrlx_args *args)
 {
-   args->type       = 2;
-   args->num_sweeps = 0;
+   /* Default to "none" (disabled). If user selects a global smoother type via YAML
+    * but omits num_sweeps, we want at least one sweep. */
+   args->type       = -1;
+   args->num_sweeps = 1;
 
-   ILUSetDefaultArgs(&args->ilu);
-   args->ilu.max_iter = 0;
+   /* Initialize default AMG args (union storage). If user later selects ILU via YAML,
+    * ILUSetArgs/ILUSetDefaultArgs will reinitialize the union storage. */
+   AMGSetDefaultArgs(&args->amg);
 }
 
 /*-----------------------------------------------------------------------------
@@ -210,11 +214,12 @@ MGRgrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {
-         {"", -1},        {"none", -1},    {"blk-jacobi", 0}, {"blk-gs", 1},
-         {"mixed-gs", 2}, {"h-fgs", 3},    {"h-bgs", 4},      {"ch-gs", 5},
-         {"h-ssor", 6},   {"euclid", 8},   {"2stg-fgs", 11},  {"2stg-bgs", 12},
-         {"l1-hfgs", 13}, {"l1-hbgs", 14}, {"ilu", 16},       {"l1-hsgs", 88}};
+      static StrIntMap map[] = {{"", -1},         {"none", -1},    {"blk-jacobi", 0},
+                                {"blk-gs", 1},    {"mixed-gs", 2}, {"amg", 20},
+                                {"h-fgs", 3},     {"h-bgs", 4},    {"ch-gs", 5},
+                                {"h-ssor", 6},    {"euclid", 8},   {"2stg-fgs", 11},
+                                {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},
+                                {"ilu", 16},      {"l1-hsgs", 88}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -292,6 +297,29 @@ MGRGetValidValues(const char *key)
 
 /*-----------------------------------------------------------------------------
  * MGRSetArgsFromYAML
+ *
+ * Parses MGR preconditioner arguments from a YAML tree. Handles the following
+ * structure:
+ *
+ *   mgr:
+ *     print_level: 1
+ *     level:
+ *       0:
+ *         f_dofs: [2]
+ *         f_relaxation: jacobi          # flat value -> type
+ *         g_relaxation:                 # or nested block
+ *           ilu:
+ *             print_level: 1
+ *       1:
+ *         f_dofs: [1]
+ *         ...
+ *     coarsest_level:
+ *       ilu:                            # nested solver block
+ *         type: bj-ilut
+ *         droptol: 1e-4
+ *
+ * Key insight: When a key like "ilu" or "amg" has children, its `val` field
+ * is empty - the actual solver type is determined by the key name, not the val.
  *-----------------------------------------------------------------------------*/
 
 void
@@ -326,49 +354,16 @@ MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
             }
          }
       }
+      else if (!strcmp(child->key, "coarsest_level"))
+      {
+         args->num_levels++;
+         YAML_NODE_SET_VALID(child);
+         MGRclsSetArgsFromYAML(&args->coarsest_level, child);
+      }
       else
       {
-         if (!strcmp(child->key, "coarsest_level"))
-         {
-            args->num_levels++;
-            YAML_NODE_SET_VALID(child);
-            if (child->children)
-            {
-               YAML_NODE_ITERATE(child, grandchild)
-               {
-                  YAML_NODE_VALIDATE(grandchild, MGRclsGetValidKeys,
-                                     MGRclsGetValidValues);
-
-                  /* TODO: improve parsing mechanism */
-                  if (!strcmp(grandchild->val, "def"))
-                  {
-                     args->coarsest_level.type = -1;
-                  }
-                  if (!strcmp(grandchild->val, "spdirect"))
-                  {
-                     args->coarsest_level.type = 29;
-                  }
-                  else if (!strcmp(grandchild->val, "ilu"))
-                  {
-                     args->coarsest_level.type = 32;
-                  }
-                  else
-                  {
-                     YAML_NODE_SET_FIELD(grandchild, &args->coarsest_level,
-                                         MGRclsSetFieldByName);
-                  }
-               }
-            }
-            else
-            {
-               YAML_NODE_SET_FIELD(child, &args->coarsest_level, MGRclsSetFieldByName);
-            }
-         }
-         else
-         {
-            YAML_NODE_VALIDATE(child, MGRGetValidKeys, MGRGetValidValues);
-            YAML_NODE_SET_FIELD(child, args, MGRSetFieldByName);
-         }
+         YAML_NODE_VALIDATE(child, MGRGetValidKeys, MGRGetValidValues);
+         YAML_NODE_SET_FIELD(child, args, MGRSetFieldByName);
       }
    }
 }
@@ -503,7 +498,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_MGRSetCoarseGridMethod(precon, MGRConvertArgInt(args, "coarse_level_type"));
 
    /* Config f-relaxation at each MGR level */
-   for (i = 0; i < num_levels; i++)
+   for (i = 0; i < num_levels - 1; i++)
    {
       if (args->level[i].f_relaxation.type == 2)
       {
@@ -528,9 +523,15 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
    /* Config global relaxation at each MGR level */
 #if HYPRE_CHECK_MIN_VERSION(23100, 8)
-   for (i = 0; i < num_levels; i++)
+   for (i = 0; i < num_levels - 1; i++)
    {
-      if (args->level[i].g_relaxation.type == 16)
+      if (args->level[i].g_relaxation.type == 20)
+      {
+         AMGCreate(&args->level[i].g_relaxation.amg, &grelax);
+         HYPRE_MGRSetGlobalSmootherAtLevel(precon, grelax, i);
+         args->grelax[i] = grelax;
+      }
+      else if (args->level[i].g_relaxation.type == 16)
       {
          ILUCreate(&args->level[i].g_relaxation.ilu, &grelax);
          HYPRE_MGRSetGlobalSmootherAtLevel(precon, grelax, i);
@@ -539,7 +540,34 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    }
 #endif
 
-   /* Config coarsest level solver - TODO: shouldn't need to pass setup/solve pointers */
+   /* Infer coarsest level solver type if not explicitly set (type == -1).
+    * This allows both patterns:
+    *   coarsest_level: spdirect        -> type = 29 (explicitly set)
+    *   coarsest_level: { ilu: {...} }  -> type inferred from ilu.max_iter > 0
+    */
+   if (args->coarsest_level.type == -1)
+   {
+      if (args->coarsest_level.ilu.max_iter > 0)
+      {
+         args->coarsest_level.type = 32; /* ILU */
+      }
+      else
+      {
+         args->coarsest_level.type = 0; /* AMG (default) */
+      }
+   }
+
+   /* Ensure the selected solver has valid max_iter */
+   if (args->coarsest_level.type == 0 && args->coarsest_level.amg.max_iter < 1)
+   {
+      args->coarsest_level.amg.max_iter = 1;
+   }
+   else if (args->coarsest_level.type == 32 && args->coarsest_level.ilu.max_iter < 1)
+   {
+      args->coarsest_level.ilu.max_iter = 1;
+   }
+
+   /* Config coarsest level solver */
    if (args->coarsest_level.type == 0)
    {
       AMGCreate(&args->coarsest_level.amg, &args->csolver);

@@ -14,7 +14,8 @@
 #   MPI_PREFLAGS     : extra flags before program
 #   MPI_POSTFLAGS    : extra flags after program
 #   CONFIG_FILE      : optional YAML config (enables dataset checks)
-#   TARGET_ARGS      : optional semicolon-separated list of extra arguments
+#   TARGET_ARGS      : optional '|' separated list of extra arguments
+#   REQUIRE_CONTAINS : optional '|' separated list of substrings that must appear in output
 #
 if(NOT DEFINED LAUNCH_DIR OR NOT DEFINED TARGET_BIN)
   message(FATAL_ERROR "HYPREDRV_RunScript.cmake: LAUNCH_DIR and TARGET_BIN must be defined")
@@ -74,19 +75,62 @@ endif()
 message(STATUS "[test] TARGET_ARGS=${_target_args}")
 
 # Run executable (optionally via MPI)
-if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
-  execute_process(
-    COMMAND "${MPIEXEC}" "${MPI_NUMPROC_FLAG}" "${MPI_NUMPROCS}" ${MPI_PREFLAGS} "${TARGET_BIN}" ${_target_args} ${MPI_POSTFLAGS}
-    WORKING_DIRECTORY "${LAUNCH_DIR}"
-    RESULT_VARIABLE _ret
-  )
-else()
-  execute_process(
-    COMMAND "${TARGET_BIN}" ${_target_args}
-    WORKING_DIRECTORY "${LAUNCH_DIR}"
-    RESULT_VARIABLE _ret
-  )
+set(_capture_output FALSE)
+if(DEFINED REQUIRE_CONTAINS AND NOT REQUIRE_CONTAINS STREQUAL "")
+  set(_capture_output TRUE)
 endif()
-if(NOT _ret EQUAL 0)
-  message(FATAL_ERROR "Executable failed with exit code ${_ret}")
+
+if(_capture_output)
+  if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
+    execute_process(
+      COMMAND "${MPIEXEC}" "${MPI_NUMPROC_FLAG}" "${MPI_NUMPROCS}" ${MPI_PREFLAGS} "${TARGET_BIN}" ${_target_args} ${MPI_POSTFLAGS}
+      WORKING_DIRECTORY "${LAUNCH_DIR}"
+      RESULT_VARIABLE _ret
+      OUTPUT_VARIABLE _out
+      ERROR_VARIABLE _err
+    )
+  else()
+    execute_process(
+      COMMAND "${TARGET_BIN}" ${_target_args}
+      WORKING_DIRECTORY "${LAUNCH_DIR}"
+      RESULT_VARIABLE _ret
+      OUTPUT_VARIABLE _out
+      ERROR_VARIABLE _err
+    )
+  endif()
+
+  if(NOT _ret EQUAL 0)
+    message(FATAL_ERROR "Executable failed with exit code ${_ret}\n\nstdout:\n${_out}\n\nstderr:\n${_err}")
+  endif()
+
+  set(_combined "${_out}\n${_err}")
+
+  # Check required substrings
+  string(REPLACE "|" ";" _req_list "${REQUIRE_CONTAINS}")
+  foreach(_needle IN LISTS _req_list)
+    if(NOT _needle STREQUAL "")
+      string(FIND "${_combined}" "${_needle}" _pos)
+      if(_pos EQUAL -1)
+        message(FATAL_ERROR "Missing required substring '${_needle}'\n\nOutput:\n${_combined}")
+      endif()
+    endif()
+  endforeach()
+else()
+  if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
+    execute_process(
+      COMMAND "${MPIEXEC}" "${MPI_NUMPROC_FLAG}" "${MPI_NUMPROCS}" ${MPI_PREFLAGS} "${TARGET_BIN}" ${_target_args} ${MPI_POSTFLAGS}
+      WORKING_DIRECTORY "${LAUNCH_DIR}"
+      RESULT_VARIABLE _ret
+    )
+  else()
+    execute_process(
+      COMMAND "${TARGET_BIN}" ${_target_args}
+      WORKING_DIRECTORY "${LAUNCH_DIR}"
+      RESULT_VARIABLE _ret
+    )
+  endif()
+
+  if(NOT _ret EQUAL 0)
+    message(FATAL_ERROR "Executable failed with exit code ${_ret}")
+  endif()
 endif()

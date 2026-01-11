@@ -5,9 +5,35 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include "HYPREDRV.h"
 #include "HYPREDRV_config.h"
+
+static bool
+LooksLikeYAMLFilename(const char *str)
+{
+   if (!str || *str == '\0')
+   {
+      return false;
+   }
+
+   /* Filenames should not contain spaces */
+   if (strchr(str, ' ') != NULL)
+   {
+      return false;
+   }
+
+   const char *dot = strrchr(str, '.');
+   if (!dot || dot == str)
+   {
+      return false;
+   }
+
+   const char *ext = dot + 1;
+   return (strcmp(ext, "yaml") == 0 || strcmp(ext, "yml") == 0) != 0;
+}
 
 static void
 PrintUsage(const char *argv0)
@@ -17,6 +43,12 @@ PrintUsage(const char *argv0)
    fprintf(stdout, "\nOptions:\n");
    fprintf(stdout, "  -h, --help       Show this help message\n");
    fprintf(stdout, "  -q, --quiet      Skip system information printout\n");
+   fprintf(stdout, "  -a, --args       Override YAML parameters from the CLI\n");
+   fprintf(stdout, "\nOverride syntax (after -a/--args):\n");
+   fprintf(stdout, "  --path:to:key  <value>\n");
+   fprintf(stdout, "Examples:\n");
+   fprintf(stdout, "  %s input.yml -a --solver:pcg:print_level 1\n", argv0);
+   fprintf(stdout, "  %s input.yml -a --preconditioner:amg:print_level 2\n", argv0);
    fflush(stdout);
 }
 
@@ -49,10 +81,11 @@ QuietModeRequested(int argc, char **argv)
 static char *
 FindConfigFile(int argc, char **argv)
 {
-   /* Find the first non-option argument (config file) */
+   /* Find the first arg that looks like a YAML filename.
+    * This avoids mis-detecting override values as the config file. */
    for (int i = 1; i < argc; i++)
    {
-      if (argv[i][0] != '-')
+      if (LooksLikeYAMLFilename(argv[i]))
       {
          return argv[i];
       }
@@ -116,9 +149,7 @@ main(int argc, char **argv)
     *-----------------------------------------------------------*/
 
    RequireConfigArgumentOrAbort(argc, argv, comm, myid);
-   char *config_file    = FindConfigFile(argc, argv);
-   char *config_argv[2] = {config_file, NULL};
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, config_argv, obj));
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, obj));
 
    /*-----------------------------------------------------------
     * Set hypre's global options and warmup
