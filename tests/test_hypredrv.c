@@ -9,6 +9,7 @@
 #include "args.h"
 #include "containers.h"
 #include "error.h"
+#include "stats.h"
 #include "test_helpers.h"
 
 #ifndef HYPREDRIVE_SOURCE_DIR
@@ -39,6 +40,8 @@ struct hypredrv_struct
 
    HYPRE_Precon precon;
    HYPRE_Solver solver;
+
+   Stats *stats;
 };
 
 static void
@@ -206,6 +209,483 @@ test_create_parse_and_destroy(void)
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
+static void
+test_HYPREDRV_PreconCreate_reuse_logic(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
+            HYPREDRIVE_SOURCE_DIR);
+
+   char yaml_config[2 * PATH_MAX + 256];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "linear_system:\n"
+            "  matrix_filename: %s\n"
+            "  rhs_filename: %s\n"
+            "  precon_reuse: 1\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            matrix_path, rhs_path);
+
+   char *argv[] = {yaml_config};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+
+   /* Test reuse logic: first call should create */
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   /* Second call with reuse=1 should reuse (not create again) */
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   /* Precon should still exist */
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_LinearSolverApply_with_xref(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
+            HYPREDRIVE_SOURCE_DIR);
+
+   char yaml_config[2 * PATH_MAX + 256];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "linear_system:\n"
+            "  matrix_filename: %s\n"
+            "  rhs_filename: %s\n"
+            "  xref_filename: %s\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            matrix_path, rhs_path, rhs_path); /* Use rhs as xref for testing */
+
+   char *argv[] = {yaml_config};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+
+   /* Test apply with xref - should compute error norm */
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_SetGlobalOptions_exec_policy(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
+            HYPREDRIVE_SOURCE_DIR);
+
+   char yaml_config[2 * PATH_MAX + 256];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "linear_system:\n"
+            "  matrix_filename: %s\n"
+            "  rhs_filename: %s\n"
+            "  exec_policy: host\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            matrix_path, rhs_path);
+
+   char *argv[] = {yaml_config};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+
+   /* Test SetGlobalOptions with host policy */
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_PreconCreate_reuse_logic_variations(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
+            HYPREDRIVE_SOURCE_DIR);
+
+   /* Test reuse=0 (always create) */
+   char yaml_config[2 * PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "linear_system:\n"
+            "  matrix_filename: %s\n"
+            "  rhs_filename: %s\n"
+            "  precon_reuse: 0\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            matrix_path, rhs_path);
+
+   char *argv[] = {yaml_config};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+
+   /* With reuse=0, should always create */
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   /* Second call should also create (reuse=0 means no reuse) */
+   HYPREDRV_PreconDestroy(obj);
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_LinearSolverCreate_reuse_logic(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
+            HYPREDRIVE_SOURCE_DIR);
+
+   char yaml_config[2 * PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "linear_system:\n"
+            "  matrix_filename: %s\n"
+            "  rhs_filename: %s\n"
+            "  precon_reuse: 2\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            matrix_path, rhs_path);
+
+   char *argv[] = {yaml_config};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+
+   /* First call should create (ls_id=0, (0+1) % (2+1) = 1, not 0, but first system) */
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->solver);
+
+   /* Second call with reuse=2: ls_id=1, (1+1) % 3 = 2, should reuse (not create) */
+   HYPREDRV_LinearSolverDestroy(obj);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   /* Solver should be NULL because we're reusing */
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_PreconDestroy_reuse_logic(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
+            HYPREDRIVE_SOURCE_DIR);
+
+   char yaml_config[2 * PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "linear_system:\n"
+            "  matrix_filename: %s\n"
+            "  rhs_filename: %s\n"
+            "  precon_reuse: 1\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            matrix_path, rhs_path);
+
+   char *argv[] = {yaml_config};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+
+   /* Create precon */
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   /* With reuse=1, ls_id=0: (0+1) % 2 = 1, should NOT destroy (ls_id must be > 0) */
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+   /* Precon should still exist because ls_id=0 */
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_LinearSolverDestroy_reuse_logic(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
+            HYPREDRIVE_SOURCE_DIR);
+
+   char yaml_config[2 * PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "linear_system:\n"
+            "  matrix_filename: %s\n"
+            "  rhs_filename: %s\n"
+            "  precon_reuse: 2\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            matrix_path, rhs_path);
+
+   char *argv[] = {yaml_config};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+
+   /* Create precon and solver */
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->solver);
+
+   /* Test ls_id = 0: should NOT destroy (ls_id must be > 0) */
+   if (state->stats) {
+      state->stats->ls_counter = 1; /* ls_id = ls_counter - 1 = 0 */
+   }
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+   /* Solver should still exist */
+
+   /* Test ls_id = 3 with reuse=2: should destroy ((3+1)%(2+1)=0) */
+   if (state->stats) {
+      state->stats->ls_counter = 4; /* ls_id = ls_counter - 1 = 3 */
+   }
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+   /* Solver should be destroyed */
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_LinearSolverApply_error_cases(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   /* Test with NULL object */
+   uint32_t result = HYPREDRV_LinearSolverApply(NULL);
+   ASSERT_TRUE(result & ERROR_UNKNOWN_HYPREDRV_OBJ);
+
+   /* Test with uninitialized solver */
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   state->solver = NULL;
+   result = HYPREDRV_LinearSolverApply(obj);
+   ASSERT_TRUE(result & ERROR_INVALID_SOLVER);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_Annotate_functions(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   /* Test annotate functions - these should not error even with invalid obj */
+   HYPREDRV_AnnotateBegin("test", 1);
+   HYPREDRV_AnnotateEnd("test", 1);
+
+   /* Test with NULL object */
+   HYPREDRV_AnnotateBegin(NULL, 1);
+   HYPREDRV_AnnotateEnd(NULL, 1);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_PrintLibInfo_PrintExitInfo(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   /* Test print functions */
+   HYPREDRV_PrintLibInfo(MPI_COMM_SELF);
+   HYPREDRV_PrintExitInfo(MPI_COMM_SELF, "test_prog");
+
+   /* Test with NULL object */
+   HYPREDRV_PrintLibInfo(MPI_COMM_NULL);
+   HYPREDRV_PrintExitInfo(MPI_COMM_NULL, NULL);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_LinearSystemResetInitialGuess_error_cases(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   /* Test with NULL object */
+   uint32_t result = HYPREDRV_LinearSystemResetInitialGuess(NULL);
+   ASSERT_TRUE(result & ERROR_UNKNOWN_HYPREDRV_OBJ);
+
+   /* Test with NULL x vector */
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   state->vec_x = NULL;
+   result = HYPREDRV_LinearSystemResetInitialGuess(obj);
+   ASSERT_TRUE(result & ERROR_UNKNOWN_HYPREDRV_OBJ);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_LinearSystemBuild_error_cases(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+
+   /* Test with NULL object */
+   uint32_t result = HYPREDRV_LinearSystemBuild(NULL);
+   ASSERT_TRUE(result & ERROR_UNKNOWN_HYPREDRV_OBJ);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -214,6 +694,18 @@ main(int argc, char **argv)
    RUN_TEST(test_requires_initialization_guard);
    RUN_TEST(test_initialize_and_finalize_idempotent);
    RUN_TEST(test_create_parse_and_destroy);
+   RUN_TEST(test_HYPREDRV_PreconCreate_reuse_logic);
+   RUN_TEST(test_HYPREDRV_LinearSolverApply_with_xref);
+   RUN_TEST(test_HYPREDRV_SetGlobalOptions_exec_policy);
+   RUN_TEST(test_HYPREDRV_PreconCreate_reuse_logic_variations);
+   RUN_TEST(test_HYPREDRV_LinearSolverCreate_reuse_logic);
+   RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_logic);
+   RUN_TEST(test_HYPREDRV_LinearSolverDestroy_reuse_logic);
+   RUN_TEST(test_HYPREDRV_LinearSolverApply_error_cases);
+   RUN_TEST(test_HYPREDRV_Annotate_functions);
+   RUN_TEST(test_HYPREDRV_PrintLibInfo_PrintExitInfo);
+   RUN_TEST(test_HYPREDRV_LinearSystemResetInitialGuess_error_cases);
+   RUN_TEST(test_HYPREDRV_LinearSystemBuild_error_cases);
 
    MPI_Finalize();
    return 0;

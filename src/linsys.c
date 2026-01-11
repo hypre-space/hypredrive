@@ -343,8 +343,18 @@ LinearSystemMatrixGetNumRows(HYPRE_IJMatrix matrix)
    void              *obj   = NULL;
    HYPRE_BigInt       nrows = 0, ncols = 0;
 
+   if (!matrix)
+   {
+      return 0;
+   }
+
    HYPRE_IJMatrixGetObject(matrix, &obj);
    par_A = (HYPRE_ParCSRMatrix)obj;
+
+   if (!par_A)
+   {
+      return 0;
+   }
 
    HYPRE_ParCSRMatrixGetDims(par_A, &nrows, &ncols);
 
@@ -361,8 +371,18 @@ LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
    HYPRE_ParCSRMatrix par_A = NULL;
    void              *obj   = NULL;
 
+   if (!matrix)
+   {
+      return 0;
+   }
+
    HYPRE_IJMatrixGetObject(matrix, &obj);
    par_A = (HYPRE_ParCSRMatrix)obj;
+
+   if (!par_A)
+   {
+      return 0;
+   }
 
    hypre_ParCSRMatrixSetDNumNonzeros(par_A);
 

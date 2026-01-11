@@ -1,12 +1,24 @@
 #include <mpi.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "HYPRE.h"
 #include "containers.h"
 #include "error.h"
+#include "fsai.h"
+#include "ilu.h"
 #include "precon.h"
 #include "test_helpers.h"
 #include "yaml.h"
+
+void           ILUSetFieldByName(ILU_args *, const YAMLnode *);
+void           ILUSetDefaultArgs(ILU_args *);
+StrArray       ILUGetValidKeys(void);
+StrIntMapArray ILUGetValidValues(const char *);
+void           FSAISetFieldByName(FSAI_args *, const YAMLnode *);
+void           FSAISetDefaultArgs(FSAI_args *);
+StrArray       FSAIGetValidKeys(void);
+StrIntMapArray FSAIGetValidValues(const char *);
 
 static YAMLnode *
 add_child(YAMLnode *parent, const char *key, const char *val, int level)
@@ -14,6 +26,14 @@ add_child(YAMLnode *parent, const char *key, const char *val, int level)
    YAMLnode *child = YAMLnodeCreate(key, val, level);
    YAMLnodeAddChild(parent, child);
    return child;
+}
+
+static YAMLnode *
+make_scalar_node(const char *key, const char *value)
+{
+   YAMLnode *node   = YAMLnodeCreate(key, "", 0);
+   node->mapped_val = strdup(value);
+   return node;
 }
 
 static void
@@ -235,6 +255,172 @@ test_PreconApply_default_case(void)
    HYPRE_Finalize();
 }
 
+static void
+test_ILUSetFieldByName_all_fields(void)
+{
+   static const struct
+   {
+      const char *key;
+      const char *value;
+   } updates[] = {
+      {.key = "max_iter", .value = "3"},
+      {.key = "print_level", .value = "2"},
+      {.key = "type", .value = "1"},
+      {.key = "fill_level", .value = "2"},
+      {.key = "reordering", .value = "1"},
+      {.key = "tri_solve", .value = "0"},
+      {.key = "lower_jac_iters", .value = "3"},
+      {.key = "upper_jac_iters", .value = "4"},
+      {.key = "max_row_nnz", .value = "300"},
+      {.key = "schur_max_iter", .value = "5"},
+      {.key = "droptol", .value = "1.0e-3"},
+      {.key = "nsh_droptol", .value = "1.0e-4"},
+      {.key = "tolerance", .value = "1.0e-5"},
+   };
+
+   ILU_args args;
+   ILUSetDefaultArgs(&args);
+
+   for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
+   {
+      YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
+      ILUSetFieldByName(&args, node);
+      YAMLnodeDestroy(node);
+   }
+
+   ASSERT_EQ(args.max_iter, 3);
+   ASSERT_EQ(args.print_level, 2);
+   ASSERT_EQ(args.type, 1);
+   ASSERT_EQ(args.fill_level, 2);
+   ASSERT_EQ(args.reordering, 1);
+   ASSERT_EQ(args.tri_solve, 0);
+   ASSERT_EQ(args.lower_jac_iters, 3);
+   ASSERT_EQ(args.upper_jac_iters, 4);
+   ASSERT_EQ(args.max_row_nnz, 300);
+   ASSERT_EQ(args.schur_max_iter, 5);
+   ASSERT_EQ_DOUBLE(args.droptol, 1.0e-3, 1e-12);
+   ASSERT_EQ_DOUBLE(args.nsh_droptol, 1.0e-4, 1e-12);
+   ASSERT_EQ_DOUBLE(args.tolerance, 1.0e-5, 1e-12);
+}
+
+static void
+test_ILUSetFieldByName_unknown_key(void)
+{
+   ILU_args args;
+   ILUSetDefaultArgs(&args);
+   int original_max_iter = args.max_iter;
+
+   YAMLnode *unknown_node = make_scalar_node("unknown_key", "value");
+   ErrorCodeResetAll();
+   ILUSetFieldByName(&args, unknown_node);
+
+   /* SetFieldByName doesn't validate - verify args weren't modified */
+   ASSERT_EQ(args.max_iter, original_max_iter);
+   YAMLnodeDestroy(unknown_node);
+}
+
+static void
+test_ILUGetValidValues_type(void)
+{
+   StrIntMapArray map = ILUGetValidValues("type");
+   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "bj-iluk"));
+   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "bj-ilut"));
+   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "gmres-iluk"));
+   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "rap-mod-ilu0"));
+   ASSERT_EQ(StrIntMapArrayGetImage(map, "bj-iluk"), 0);
+   ASSERT_EQ(StrIntMapArrayGetImage(map, "bj-ilut"), 1);
+   ASSERT_EQ(StrIntMapArrayGetImage(map, "gmres-iluk"), 10);
+   ASSERT_EQ(StrIntMapArrayGetImage(map, "rap-mod-ilu0"), 50);
+}
+
+static void
+test_ILUGetValidValues_unknown_key(void)
+{
+   StrIntMapArray map = ILUGetValidValues("unknown_key");
+   ASSERT_EQ(map.size, 0);
+}
+
+static void
+test_FSAISetFieldByName_all_fields(void)
+{
+   static const struct
+   {
+      const char *key;
+      const char *value;
+   } updates[] = {
+      {.key = "max_iter", .value = "2"},
+      {.key = "print_level", .value = "1"},
+      {.key = "algo_type", .value = "2"},
+      {.key = "ls_type", .value = "2"},
+      {.key = "max_steps", .value = "6"},
+      {.key = "max_step_size", .value = "4"},
+      {.key = "max_nnz_row", .value = "20"},
+      {.key = "num_levels", .value = "2"},
+      {.key = "eig_max_iters", .value = "6"},
+      {.key = "threshold", .value = "1.0e-4"},
+      {.key = "kap_tolerance", .value = "1.0e-4"},
+      {.key = "tolerance", .value = "1.0e-6"},
+   };
+
+   FSAI_args args;
+   FSAISetDefaultArgs(&args);
+
+   for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
+   {
+      YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
+      FSAISetFieldByName(&args, node);
+      YAMLnodeDestroy(node);
+   }
+
+   ASSERT_EQ(args.max_iter, 2);
+   ASSERT_EQ(args.print_level, 1);
+   ASSERT_EQ(args.algo_type, 2);
+   ASSERT_EQ(args.ls_type, 2);
+   ASSERT_EQ(args.max_steps, 6);
+   ASSERT_EQ(args.max_step_size, 4);
+   ASSERT_EQ(args.max_nnz_row, 20);
+   ASSERT_EQ(args.num_levels, 2);
+   ASSERT_EQ(args.eig_max_iters, 6);
+   ASSERT_EQ_DOUBLE(args.threshold, 1.0e-4, 1e-12);
+   ASSERT_EQ_DOUBLE(args.kap_tolerance, 1.0e-4, 1e-12);
+   ASSERT_EQ_DOUBLE(args.tolerance, 1.0e-6, 1e-12);
+}
+
+static void
+test_FSAISetFieldByName_unknown_key(void)
+{
+   FSAI_args args;
+   FSAISetDefaultArgs(&args);
+   int original_max_iter = args.max_iter;
+
+   YAMLnode *unknown_node = make_scalar_node("unknown_key", "value");
+   ErrorCodeResetAll();
+   FSAISetFieldByName(&args, unknown_node);
+
+   /* SetFieldByName doesn't validate - verify args weren't modified */
+   ASSERT_EQ(args.max_iter, original_max_iter);
+   YAMLnodeDestroy(unknown_node);
+}
+
+static void
+test_FSAIGetValidValues_algo_type(void)
+{
+   StrIntMapArray map = FSAIGetValidValues("algo_type");
+   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "bj-afsai"));
+   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "bj-afsai-omp"));
+   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "bj-sfsai"));
+   ASSERT_EQ(StrIntMapArrayGetImage(map, "bj-afsai"), 1);
+   ASSERT_EQ(StrIntMapArrayGetImage(map, "bj-afsai-omp"), 2);
+   ASSERT_EQ(StrIntMapArrayGetImage(map, "bj-sfsai"), 3);
+}
+
+static void
+test_FSAIGetValidValues_unknown_key(void)
+{
+   StrIntMapArray map = FSAIGetValidValues("unknown_key");
+   ASSERT_EQ(map.size, 0);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -252,6 +438,14 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconDestroy_null_main);
    RUN_TEST(test_PreconSetup_default_case);
    RUN_TEST(test_PreconApply_default_case);
+   RUN_TEST(test_ILUSetFieldByName_all_fields);
+   RUN_TEST(test_ILUSetFieldByName_unknown_key);
+   RUN_TEST(test_ILUGetValidValues_type);
+   RUN_TEST(test_ILUGetValidValues_unknown_key);
+   RUN_TEST(test_FSAISetFieldByName_all_fields);
+   RUN_TEST(test_FSAISetFieldByName_unknown_key);
+   RUN_TEST(test_FSAIGetValidValues_algo_type);
+   RUN_TEST(test_FSAIGetValidValues_unknown_key);
 
    MPI_Finalize();
    return 0;

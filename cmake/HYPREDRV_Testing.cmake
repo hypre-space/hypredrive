@@ -202,4 +202,10 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         add_hypredrive_test(ex6_1proc 1 ex6.yml)
     endif()
     add_hypredrive_test(ex7_1proc  1 ex7.yml)
+
+    # Test main.c help/usage/error branches
+    # Note: --help exits with 0, so we need to allow that
+    add_executable_test(hypredrive_help hypredrive 1 ARGS "--help" FAIL_REGULAR_EXPRESSION "^$")
+    add_executable_test(hypredrive_no_args hypredrive 1 ARGS "" FAIL_REGULAR_EXPRESSION "^$")
+    set_tests_properties(hypredrive_no_args PROPERTIES WILL_FAIL TRUE)
 endif()

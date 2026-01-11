@@ -70,10 +70,25 @@ setup_test_executable(test_precon test_precon.c)
 add_test(NAME unit_test_precon COMMAND test_precon)
 set_tests_properties(unit_test_precon PROPERTIES RUN_SERIAL TRUE)
 
+# AMG argument mapping tests
+setup_test_executable(test_amg_args test_amg_args.c)
+add_test(NAME unit_test_amg_args COMMAND test_amg_args)
+set_tests_properties(unit_test_amg_args PROPERTIES RUN_SERIAL TRUE)
+
 # Solver argument helpers
 setup_test_executable(test_solver test_solver.c)
 add_test(NAME unit_test_solver COMMAND test_solver)
 set_tests_properties(unit_test_solver PROPERTIES RUN_SERIAL TRUE)
+
+# Solver dispatch (create/destroy/setup/apply) tests
+setup_test_executable(test_solver_dispatch test_solver_dispatch.c)
+add_test(NAME unit_test_solver_dispatch COMMAND test_solver_dispatch)
+set_tests_properties(unit_test_solver_dispatch PROPERTIES RUN_SERIAL TRUE)
+
+# Solver×precon integration tests (all combinations)
+setup_test_executable(test_solver_precon_integration test_solver_precon_integration.c)
+add_test(NAME unit_test_solver_precon_integration COMMAND test_solver_precon_integration)
+set_tests_properties(unit_test_solver_precon_integration PROPERTIES RUN_SERIAL TRUE)
 
 # HYPREDRV API smoke tests
 setup_test_executable(test_hypredrv test_hypredrv.c)
@@ -93,3 +108,8 @@ set_tests_properties(unit_test_vector PROPERTIES RUN_SERIAL TRUE)
 # EigSpec configuration helpers
 setup_test_executable(test_eigspec test_eigspec.c)
 add_test(NAME unit_test_eigspec COMMAND test_eigspec)
+
+# Linear system helpers
+setup_test_executable(test_linsys test_linsys.c)
+add_test(NAME unit_test_linsys COMMAND test_linsys)
+set_tests_properties(unit_test_linsys PROPERTIES RUN_SERIAL TRUE)
