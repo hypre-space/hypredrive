@@ -119,6 +119,10 @@
  *    @endcode
  *    In this case, iterate over children and set each field by name.
  *
+ *    **Union support**: If a child's key (e.g., "ilu") exists in GetValidValues("type"),
+ *    we also set args->type to the mapped value. This allows unions where the type
+ *    determines which member is active.
+ *
  * 2. Flat value (parent has no children, just a value):
  *    @code
  *    solver: pcg

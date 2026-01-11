@@ -9,21 +9,36 @@
 #include "gen_macros.h"
 #include "stats.h"
 
-#define MGRcls_FIELDS(_prefix)                       \
+/*-----------------------------------------------------------------------------
+ * Field definitions using the type-setting wrappers
+ *-----------------------------------------------------------------------------*/
+
+ /* Generate type-setting wrappers for union fields */
+DEFINE_TYPED_SETTER(MGRclsAMGSetArgs, MGRcls_args, amg, 0, AMGSetArgs) /* coarsest: AMG */
+DEFINE_TYPED_SETTER(MGRclsILUSetArgs, MGRcls_args, ilu, 32,
+                    ILUSetArgs) /* coarsest: ILU */
+DEFINE_TYPED_SETTER(MGRfrlxAMGSetArgs, MGRfrlx_args, amg, 2,
+                    AMGSetArgs) /* f-relax: AMG */
+DEFINE_TYPED_SETTER(MGRfrlxILUSetArgs, MGRfrlx_args, ilu, 32,
+                    ILUSetArgs) /* f-relax: ILU */
+DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16,
+                    ILUSetArgs) /* g-relax: ILU */
+
+#define MGRcls_FIELDS(_prefix)                            \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRclsILUSetArgs)
 
 #define MGRfrlx_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)
 
 #define MGRgrlx_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)
 
 #define MGRlvl_FIELDS(_prefix)                                         \
    ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, FieldTypeStackIntArraySet)  \
@@ -62,8 +77,7 @@
    GENERATE_PREFIXED_COMPONENTS(MGRgrlx) \
    GENERATE_PREFIXED_COMPONENTS(MGRlvl)
 
-/* Iterates over each prefix in the list and
-   generates the various function declarations/definitions and field_offset_map object */
+/* Generate all boilerplate (field maps, setters, YAML parsing, etc.) */
 GENERATE_PREFIXED_LIST_MGR
 
 DEFINE_FIELD_OFFSET_MAP(MGR);
@@ -82,15 +96,12 @@ DEFINE_SET_ARGS_FUNC(MGR);
 void
 MGRclsSetDefaultArgs(MGRcls_args *args)
 {
-   /* type = -1 means "not explicitly set" - will be inferred in MGRCreate */
+   /* Default coarsest solver: let MGRCreate interpret type < 0 as "default AMG". */
    args->type = -1;
 
-   /* Initialize both sub-solvers with max_iter = 0.
-    * The actual type is inferred in MGRCreate based on which was configured. */
+   /* Initialize default AMG args (union storage). If user later selects ILU via YAML,
+    * ILUSetArgs/ILUSetDefaultArgs will reinitialize the union storage. */
    AMGSetDefaultArgs(&args->amg);
-   args->amg.max_iter = 0;
-   ILUSetDefaultArgs(&args->ilu);
-   args->ilu.max_iter = 0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -102,11 +113,8 @@ MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
 {
    args->type       = 7;
    args->num_sweeps = 1;
-
-   AMGSetDefaultArgs(&args->amg);
-   args->amg.max_iter = 0;
-   ILUSetDefaultArgs(&args->ilu);
-   args->ilu.max_iter = 0;
+   /* Solver-specific args live in a union. We only (re)initialize them if/when a
+    * specific solver type is selected during YAML parsing. */
 }
 
 /*-----------------------------------------------------------------------------

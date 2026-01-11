@@ -76,6 +76,66 @@ test_PreconSetArgsFromYAML_sets_fields(void)
 }
 
 static void
+test_PreconSetArgsFromYAML_mgr_coarsest_level_spdirect_flat(void)
+{
+   precon_args args;
+   PreconSetDefaultArgs(&args);
+
+   YAMLnode *parent   = YAMLnodeCreate("preconditioner", "", 0);
+   YAMLnode *mgr_node = add_child(parent, "mgr", "", 1);
+   add_child(mgr_node, "coarsest_level", "spdirect", 2);
+
+   ErrorCodeResetAll();
+   PreconSetArgsFromYAML(&args, parent);
+
+   /* Flat value must map to type=29 (spdirect) */
+   ASSERT_EQ(args.mgr.coarsest_level.type, 29);
+
+   YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_flat_sets_type(void)
+{
+   precon_args args;
+   PreconSetDefaultArgs(&args);
+
+   YAMLnode *parent   = YAMLnodeCreate("preconditioner", "", 0);
+   YAMLnode *mgr_node = add_child(parent, "mgr", "", 1);
+   add_child(mgr_node, "coarsest_level", "ilu", 2);
+
+   ErrorCodeResetAll();
+   PreconSetArgsFromYAML(&args, parent);
+
+   /* Flat value must map to MGR coarsest ILU type=32 */
+   ASSERT_EQ(args.mgr.coarsest_level.type, 32);
+
+   YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_nested_sets_type_and_args(void)
+{
+   precon_args args;
+   PreconSetDefaultArgs(&args);
+
+   YAMLnode *parent   = YAMLnodeCreate("preconditioner", "", 0);
+   YAMLnode *mgr_node = add_child(parent, "mgr", "", 1);
+   YAMLnode *cls_node = add_child(mgr_node, "coarsest_level", "", 2);
+   YAMLnode *ilu_node = add_child(cls_node, "ilu", "", 3);
+   add_child(ilu_node, "type", "bj-ilut", 4);
+
+   ErrorCodeResetAll();
+   PreconSetArgsFromYAML(&args, parent);
+
+   ASSERT_EQ(args.mgr.coarsest_level.type, 32);
+   /* ILU type bj-ilut should map to 1 */
+   ASSERT_EQ(args.mgr.coarsest_level.ilu.type, 1);
+
+   YAMLnodeDestroy(parent);
+}
+
+static void
 test_PreconSetArgsFromYAML_ignores_unknown_key(void)
 {
    precon_args args;
@@ -185,6 +245,9 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconSetDefaultArgs_resets_reuse);
    RUN_TEST(test_PreconSetArgsFromYAML_sets_fields);
    RUN_TEST(test_PreconSetArgsFromYAML_ignores_unknown_key);
+   RUN_TEST(test_PreconSetArgsFromYAML_mgr_coarsest_level_spdirect_flat);
+   RUN_TEST(test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_flat_sets_type);
+   RUN_TEST(test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_nested_sets_type_and_args);
    RUN_TEST(test_PreconDestroy_null_precon);
    RUN_TEST(test_PreconDestroy_null_main);
    RUN_TEST(test_PreconSetup_default_case);
