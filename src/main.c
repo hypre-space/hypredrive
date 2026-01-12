@@ -165,7 +165,10 @@ main(int argc, char **argv)
     * Build and solve linear system(s)
     *-----------------------------------------------------------*/
 
-   for (int k = 0; k < HYPREDRV_InputArgsGetNumLinearSystems(obj); k++)
+   int num_linear_systems  = HYPREDRV_InputArgsGetNumLinearSystems(obj);
+   int num_precon_variants = HYPREDRV_InputArgsGetNumPreconVariants(obj);
+
+   for (int k = 0; k < num_linear_systems; k++)
    {
       /* Build linear system (matrix, RHS, LHS, and auxiliary data) */
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemBuild(obj));
@@ -175,30 +178,37 @@ main(int argc, char **argv)
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemComputeEigenspectrum(obj));
 #endif
 
-      for (int i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
+      /* Loop over preconditioner variants */
+      for (int v = 0; v < num_precon_variants; v++)
       {
-         /* (Optional) Annotate the entire solve iteration */
-         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("Run-%d", i));
+         /* Set active variant */
+         HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconVariant(obj, v));
 
-         /* Reset initial guess */
-         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(obj));
+         for (int i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
+         {
+            /* (Optional) Annotate the entire solve iteration */
+            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("Run-%d", i));
 
-         /* Create phase */
-         HYPREDRV_SAFE_CALL(HYPREDRV_PreconCreate(obj));
-         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverCreate(obj));
+            /* Reset initial guess */
+            HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(obj));
 
-         /* Setup phase */
-         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(obj));
+            /* Create phase */
+            HYPREDRV_SAFE_CALL(HYPREDRV_PreconCreate(obj));
+            HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverCreate(obj));
 
-         /* Solve phase */
-         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(obj));
+            /* Setup phase */
+            HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(obj));
 
-         /* Destroy phase */
-         HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(obj));
-         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(obj));
+            /* Solve phase */
+            HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(obj));
 
-         /* (Optional) Annotate the entire solve iteration */
-         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("Run-%d", i));
+            /* Destroy phase */
+            HYPREDRV_SAFE_CALL(HYPREDRV_PreconDestroy(obj));
+            HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(obj));
+
+            /* (Optional) Annotate the entire solve iteration */
+            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("Run-%d", i));
+         }
       }
    }
 

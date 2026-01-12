@@ -62,6 +62,8 @@ EnsureCapacity(void)
                       new_capacity);
       ReallocateArray((void **)&active_stats->iters, sizeof(int), old_capacity,
                       new_capacity);
+      ReallocateArray((void **)&active_stats->entry_ls_id, sizeof(int), old_capacity,
+                      new_capacity);
 
       /* Update capacity after all reallocations */
       active_stats->capacity = new_capacity;
@@ -165,6 +167,11 @@ HandleAnnotationBegin(const char *name)
       active_stats->ls_counter++;
       active_stats->counter = (active_stats->ls_counter - 1) * active_stats->num_reps;
       StartVectorTimer(active_stats->solve, active_stats->counter);
+      /* Tag this entry with its linear system id */
+      if (active_stats->entry_ls_id && active_stats->counter < active_stats->capacity)
+      {
+         active_stats->entry_ls_id[active_stats->counter] = active_stats->ls_counter - 1;
+      }
    }
    else if (!strcmp(name, "initialize"))
    {
@@ -278,35 +285,19 @@ PrintHeader(const char *scale)
 }
 
 /*--------------------------------------------------------------------------
- * Helper: Determine if build times should be printed for this entry
- *--------------------------------------------------------------------------*/
-
-static bool
-ShouldPrintBuildTimes(int entry_index)
-{
-   /* Always print if num_systems is unknown or <= 1 */
-   if (active_stats->num_systems <= 1)
-   {
-      return true;
-   }
-
-   /* For multiple systems, only print for first entry of each system */
-   int entries_per_system = (active_stats->counter + 1) / active_stats->num_systems;
-   return (entry_index % entries_per_system == 0);
-}
-
-/*--------------------------------------------------------------------------
  * Helper: Print single table entry
  *--------------------------------------------------------------------------*/
 
 static void
 PrintEntry(int entry_index)
 {
-   if (ShouldPrintBuildTimes(entry_index))
+   double build_time = active_stats->time_factor * (active_stats->dofmap[entry_index] +
+                                                    active_stats->matrix[entry_index] +
+                                                    active_stats->rhs[entry_index]);
+   bool   show_build = (build_time > 0.0);
+
+   if (show_build)
    {
-      double build_time = active_stats->time_factor * (active_stats->dofmap[entry_index] +
-                                                       active_stats->matrix[entry_index] +
-                                                       active_stats->rhs[entry_index]);
       printf("| %10d | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", entry_index,
              build_time, active_stats->time_factor * active_stats->prec[entry_index],
              active_stats->time_factor * active_stats->solve[entry_index],
@@ -344,13 +335,14 @@ StatsCreate(void)
    stats->time_factor  = 1.0;
 
    /* Allocate timing arrays */
-   stats->dofmap  = (double *)calloc((size_t)capacity, sizeof(double));
-   stats->matrix  = (double *)calloc((size_t)capacity, sizeof(double));
-   stats->rhs     = (double *)calloc((size_t)capacity, sizeof(double));
-   stats->iters   = (int *)calloc((size_t)capacity, sizeof(int));
-   stats->prec    = (double *)calloc((size_t)capacity, sizeof(double));
-   stats->solve   = (double *)calloc((size_t)capacity, sizeof(double));
-   stats->rrnorms = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->dofmap      = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->matrix      = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->rhs         = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->iters       = (int *)calloc((size_t)capacity, sizeof(int));
+   stats->prec        = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->solve       = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->rrnorms     = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->entry_ls_id = (int *)calloc((size_t)capacity, sizeof(int));
 
    /* Initialize level stack */
    for (int i = 0; i < STATS_MAX_LEVELS; i++)
@@ -422,6 +414,7 @@ StatsDestroy(Stats **stats_ptr)
    free(stats->prec);
    free(stats->solve);
    free(stats->rrnorms);
+   free(stats->entry_ls_id);
 
    /* Free level entry arrays */
    for (int i = 0; i < STATS_MAX_LEVELS; i++)

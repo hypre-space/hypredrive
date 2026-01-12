@@ -508,6 +508,89 @@ test_YAMLtreeBuild_siblings(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * Test YAML sequence parsing
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeBuild_sequence_items(void)
+{
+   const char *yaml_text = "preconditioner:\n"
+                           "  amg:\n"
+                           "    - print_level: 1\n"
+                           "      coarsening:\n"
+                           "        type: HMIS\n"
+                           "    - print_level: 2\n"
+                           "      coarsening:\n"
+                           "        type: PMIS\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   YAMLtreeBuild(2, text, &tree);
+
+   ASSERT_NOT_NULL(tree);
+   ASSERT_NOT_NULL(tree->root);
+
+   YAMLnode *precon = YAMLnodeFindChildByKey(tree->root, "preconditioner");
+   ASSERT_NOT_NULL(precon);
+
+   YAMLnode *amg = YAMLnodeFindChildByKey(precon, "amg");
+   ASSERT_NOT_NULL(amg);
+
+   /* Count sequence items */
+   int seq_count = 0;
+   YAML_NODE_ITERATE(amg, child)
+   {
+      if (!strcmp(child->key, "-"))
+      {
+         seq_count++;
+      }
+   }
+   ASSERT_EQ(seq_count, 2);
+
+   /* Check first sequence item */
+   YAMLnode *first_item = NULL;
+   YAML_NODE_ITERATE(amg, child)
+   {
+      if (!strcmp(child->key, "-"))
+      {
+         first_item = child;
+         break;
+      }
+   }
+   ASSERT_NOT_NULL(first_item);
+
+   char *print_level = YAMLnodeFindChildValueByKey(first_item, "print_level");
+   ASSERT_NOT_NULL(print_level);
+   ASSERT_STREQ(print_level, "1");
+
+   YAMLnode *coarsening = YAMLnodeFindChildByKey(first_item, "coarsening");
+   ASSERT_NOT_NULL(coarsening);
+   char *type = YAMLnodeFindChildValueByKey(coarsening, "type");
+   ASSERT_NOT_NULL(type);
+   ASSERT_STREQ(type, "hmis");
+
+   /* Check second sequence item */
+   YAMLnode *second_item = first_item->next;
+   ASSERT_NOT_NULL(second_item);
+   ASSERT_STREQ(second_item->key, "-");
+
+   print_level = YAMLnodeFindChildValueByKey(second_item, "print_level");
+   ASSERT_NOT_NULL(print_level);
+   ASSERT_STREQ(print_level, "2");
+
+   coarsening = YAMLnodeFindChildByKey(second_item, "coarsening");
+   ASSERT_NOT_NULL(coarsening);
+   type = YAMLnodeFindChildValueByKey(coarsening, "type");
+   ASSERT_NOT_NULL(type);
+   ASSERT_STREQ(type, "pmis");
+
+   free(text);
+   YAMLtreeDestroy(&tree);
+}
+
+/*-----------------------------------------------------------------------------
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
@@ -536,6 +619,7 @@ main(void)
    RUN_TEST(test_YAMLtreeUpdate_fullargv_longflag_and_skip_nonoverride_tokens);
    RUN_TEST(test_YAMLtreeUpdate_fullargv_shortflag);
    RUN_TEST(test_YAMLnodePrint_only_valid_mode);
+   RUN_TEST(test_YAMLtreeBuild_sequence_items);
 
    return 0; /* Success - CTest handles reporting */
 }

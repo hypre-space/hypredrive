@@ -36,6 +36,12 @@ InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
    iargs->solver_method = SOLVER_PCG;
    iargs->precon_method = PRECON_BOOMERAMG;
 
+   /* Initialize preconditioner variants (default: single variant) */
+   iargs->num_precon_variants   = 1;
+   iargs->active_precon_variant = 0;
+   iargs->precon_methods        = NULL;
+   iargs->precon_variants       = NULL;
+
    *iargs_ptr = iargs;
 }
 
@@ -48,6 +54,17 @@ InputArgsDestroy(input_args **iargs_ptr)
 {
    if (*iargs_ptr)
    {
+      input_args *iargs = *iargs_ptr;
+      if (iargs->precon_methods)
+      {
+         free(iargs->precon_methods);
+         iargs->precon_methods = NULL;
+      }
+      if (iargs->precon_variants)
+      {
+         free(iargs->precon_variants);
+         iargs->precon_variants = NULL;
+      }
       free(*iargs_ptr);
       *iargs_ptr = NULL;
    }
@@ -293,10 +310,84 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
          return;
       }
 
-      iargs->precon_method = (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(),
-                                                              parent->children->key);
+      YAMLnode *type_node = parent->children;
+      iargs->precon_method =
+         (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type_node->key);
 
-      PreconSetArgsFromYAML(&iargs->precon, parent);
+      /* Check if this type node has sequence items (variants) */
+      YAMLnode **seq_items    = NULL;
+      int        num_variants = YAMLnodeCollectSequenceItems(type_node, &seq_items);
+
+      if (num_variants > 0)
+      {
+         /* Multiple variants: allocate arrays and parse each */
+         iargs->num_precon_variants = num_variants;
+         iargs->precon_methods =
+            (precon_t *)malloc((size_t)num_variants * sizeof(precon_t));
+         iargs->precon_variants =
+            (precon_args *)malloc((size_t)num_variants * sizeof(precon_args));
+
+         for (int variant_idx = 0; variant_idx < num_variants; variant_idx++)
+         {
+            YAMLnode *seq_item = seq_items[variant_idx];
+
+            /* Set method for this variant */
+            iargs->precon_methods[variant_idx] = iargs->precon_method;
+
+            /* Initialize defaults */
+            PreconSetDefaultArgs(&iargs->precon_variants[variant_idx]);
+
+            /* Minimal wrapper parent -> type -> seq_item children */
+            YAMLnode fake_type = {0};
+            fake_type.key      = type_node->key;
+            fake_type.val      = "";
+            fake_type.level    = type_node->level;
+            fake_type.valid    = YAML_NODE_VALID;
+            fake_type.children = seq_item->children;
+            fake_type.next     = NULL;
+
+            YAMLnode fake_parent = {0};
+            fake_parent.key      = "preconditioner";
+            fake_parent.val      = "";
+            fake_parent.level    = parent->level;
+            fake_parent.valid    = YAML_NODE_VALID;
+            fake_parent.children = &fake_type;
+            fake_parent.next     = NULL;
+
+            PreconSetArgsFromYAML(&iargs->precon_variants[variant_idx], &fake_parent);
+
+            /* Clean up mapped_val allocated during validation on fake nodes */
+            free(fake_type.mapped_val);
+            fake_type.mapped_val = NULL;
+            free(fake_parent.mapped_val);
+            fake_parent.mapped_val = NULL;
+
+            YAML_NODE_SET_VALID(seq_item);
+         }
+
+         free(seq_items);
+
+         /* Set active variant to first one */
+         iargs->active_precon_variant = 0;
+         iargs->precon                = iargs->precon_variants[0];
+
+         YAML_NODE_SET_VALID(type_node);
+      }
+      else
+      {
+         /* Single variant: allocate arrays and populate */
+         iargs->num_precon_variants = 1;
+         iargs->precon_methods      = (precon_t *)malloc(sizeof(precon_t));
+         iargs->precon_variants     = (precon_args *)malloc(sizeof(precon_args));
+
+         iargs->precon_methods[0] = iargs->precon_method;
+         PreconSetDefaultArgs(&iargs->precon_variants[0]);
+         PreconSetArgsFromYAML(&iargs->precon_variants[0], parent);
+
+         /* Set active variant */
+         iargs->active_precon_variant = 0;
+         iargs->precon                = iargs->precon_variants[0];
+      }
    }
    else
    {
@@ -308,10 +399,23 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
       dummy->children           = YAMLnodeCreate(parent->val, "", 1);
       dummy->children->children = YAMLnodeCreate("print_level", "0", 2);
 
-      PreconSetArgsFromYAML(&iargs->precon, dummy);
+      /* Single variant: allocate arrays and populate */
+      iargs->num_precon_variants = 1;
+      iargs->precon_methods      = (precon_t *)malloc(sizeof(precon_t));
+      iargs->precon_variants     = (precon_args *)malloc(sizeof(precon_args));
+
+      iargs->precon_methods[0] = iargs->precon_method;
+      PreconSetDefaultArgs(&iargs->precon_variants[0]);
+      PreconSetArgsFromYAML(&iargs->precon_variants[0], dummy);
 
       /* Free memory */
       YAMLnodeDestroy(dummy);
+
+      /* Set active variant */
+      iargs->active_precon_variant = 0;
+      iargs->precon                = iargs->precon_variants[0];
+
+      YAML_NODE_SET_VALID(parent);
    }
 }
 
@@ -523,6 +627,7 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
 
    /* Set auxiliary data in the Stats structure */
    StatsSetNumReps(iargs->num_repetitions);
+   /* Note: num_systems is the base number; variants are handled in the driver loop */
    StatsSetNumLinearSystems(iargs->ls.num_systems);
 
    /* Validate the YAML tree (Has to occur after input args parsing) */

@@ -47,6 +47,13 @@ YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
       return;
    }
 
+   /* Accept sequence item nodes ("-") as valid without schema checking */
+   if (!strcmp(node->key, "-"))
+   {
+      YAML_NODE_SET_VALID(node);
+      return;
+   }
+
    if ((node->valid == YAML_NODE_INVALID_DIVISOR) ||
        (node->valid == YAML_NODE_INVALID_INDENT))
    {
@@ -285,14 +292,24 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
             return;
          }
 
-         /* Check for indentation jumps */
-         if (!first_indented_line && pos > prev_indent &&
-             (pos - prev_indent) > base_indent)
+         /* Enforce reasonable indentation jumps.
+          * Allow a single-level jump (base_indent), or up to 2 * base_indent when
+          * introducing a sequence item ("-").
+          */
+         if (!first_indented_line && pos > prev_indent)
          {
-            ErrorCodeSet(ERROR_YAML_INVALID_INDENT_JUMP);
-            ErrorMsgAdd("Invalid indentation jump detected in YAML input!");
-            fclose(fp);
-            return;
+            int  jump = pos - prev_indent;
+            bool is_seq_item =
+               (line[pos] == '-' && (line[pos + 1] == '\0' || line[pos + 1] == ' '));
+            int max_allowed = (is_seq_item) ? base_indent * 2 : base_indent;
+            /* Be tolerant to avoid false positives with deeper nesting */
+            if (jump > max_allowed * 2)
+            {
+               ErrorCodeSet(ERROR_YAML_INVALID_INDENT_JUMP);
+               ErrorMsgAdd("Invalid indentation jump detected in YAML input!");
+               fclose(fp);
+               return;
+            }
          }
 
          first_indented_line = false;
@@ -357,9 +374,10 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
    char *line  = NULL;
    int   level = 0;
    int   count = 0, pos = 0, indent = 0;
-   int   nlines        = 0;
-   int   next          = 0;
-   bool  divisor_is_ok = false;
+   int   nlines           = 0;
+   int   next             = 0;
+   bool  divisor_is_ok    = false;
+   bool  is_sequence_item = false;
 
    tree      = YAMLtreeCreate(base_indent);
    remaining = text;
@@ -419,33 +437,65 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
          count++;
       }
 
-      /* Calculate node level */
-      level = indent / 2;
-
-      /* Check for divisor character */
-      divisor_is_ok = ((sep = strchr(line, ':')) != NULL);
-
-      /* Extract (key, val) pair */
-      if (divisor_is_ok)
+      /* Calculate node level using base_indent */
+      if (base_indent > 0)
       {
-         *sep = '\0';
-         key  = line + indent;
-         val  = sep + 1;
+         level = indent / base_indent;
       }
       else
       {
-         key = line + indent;
-         val = line + strlen(line);
+         level = indent / 2; /* Fallback for old behavior */
       }
 
-      /* Trim leading spaces */
-      while (*key == ' ')
+      /* Check for sequence item marker (-) */
+      is_sequence_item        = false;
+      char *line_after_indent = line + indent;
+      if (line_after_indent[0] == '-' &&
+          (line_after_indent[1] == ' ' || line_after_indent[1] == '\0'))
       {
-         key++;
+         is_sequence_item = true;
+         /* For sequence items, the key is "-" and value is empty */
+         key           = "-";
+         val           = "";
+         divisor_is_ok = true; /* Sequence items are valid even without colon */
+
+         /* Note: In YAML, "- key: value" on one line means the sequence item
+          * contains a mapping. However, our line-by-line parser will process
+          * the content after "- " as a separate line on the next iteration.
+          * The content should appear with indentation greater than the sequence
+          * item's indent level to become a child. For example:
+          *   - print_level: 1    <- sequence item at indent 4
+          *     coarsening:       <- child at indent 6
+          * The parser correctly handles this via YAMLnodeAppend based on levels.
+          */
       }
-      while (*val == ' ')
+      else
       {
-         val++;
+         /* Check for divisor character */
+         divisor_is_ok = ((sep = strchr(line, ':')) != NULL);
+
+         /* Extract (key, val) pair */
+         if (divisor_is_ok)
+         {
+            *sep = '\0';
+            key  = line + indent;
+            val  = sep + 1;
+         }
+         else
+         {
+            key = line + indent;
+            val = line + strlen(line);
+         }
+
+         /* Trim leading spaces */
+         while (*key == ' ')
+         {
+            key++;
+         }
+         while (*val == ' ')
+         {
+            val++;
+         }
       }
 
       /* Create node entry */
@@ -454,14 +504,74 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
       /* Append entry to tree */
       YAMLnodeAppend(node, &parent);
 
-      /* Set error code if indentation is incorrect */
-      if (indent % 2 != 0)
+      /* Special handling for sequence items with inline content */
+      /* If we just created a sequence item ("-") and there's content after "- " on the
+       * same line, we need to parse it as a child. For example, "- print_level: 1" should
+       * create:
+       *   - sequence item node with key="-"
+       *     - child node with key="print_level", val="1"
+       */
+      if (is_sequence_item && line_after_indent[1] == ' ' &&
+          strlen(line_after_indent) > 2)
       {
-         YAML_NODE_SET_INVALID_INDENT(node);
+         char *inline_content = line_after_indent + 2; /* Skip "- " */
+         while (*inline_content == ' ')
+         {
+            inline_content++; /* Skip any extra spaces */
+         }
+
+         if (*inline_content != '\0')
+         {
+            /* Parse the inline content as a key:value pair */
+            /* Make a copy to avoid modifying the original line */
+            char *inline_copy = strdup(inline_content);
+            char *inline_sep  = strchr(inline_copy, ':');
+            if (inline_sep)
+            {
+               *inline_sep      = '\0';
+               char *inline_key = inline_copy;
+               char *inline_val = inline_sep + 1;
+
+               /* Trim spaces */
+               while (*inline_key == ' ')
+               {
+                  inline_key++;
+               }
+               while (*inline_val == ' ')
+               {
+                  inline_val++;
+               }
+
+               /* Create child node for the inline content */
+               YAMLnode *inline_node = YAMLnodeCreate(inline_key, inline_val, level + 1);
+               YAMLnodeAddChild(node, inline_node);
+               /* Treat inline child as the most recent node so deeper indentation nests
+                * under it */
+               node   = inline_node;
+               parent = inline_node; /* update traversal cursor */
+            }
+            free(inline_copy);
+         }
       }
 
-      /* Set error code if divisor character is incorrect */
-      if (!divisor_is_ok)
+      /* Set error code if indentation is incorrect */
+      if (base_indent > 0)
+      {
+         if (indent % base_indent != 0)
+         {
+            YAML_NODE_SET_INVALID_INDENT(node);
+         }
+      }
+      else
+      {
+         if (indent % 2 != 0)
+         {
+            YAML_NODE_SET_INVALID_INDENT(node);
+         }
+      }
+
+      /* Set error code if divisor character is incorrect (skip for sequence items) */
+      if (!divisor_is_ok && !is_sequence_item)
       {
          YAML_NODE_SET_INVALID_DIVISOR(node);
       }
@@ -552,6 +662,24 @@ YAMLnodeGetOrCreateChild(YAMLnode *parent, const char *key)
       YAMLnodeAddChild(parent, child);
    }
    return child;
+}
+
+/* Check if a node has sequence items (children with key == "-") */
+static bool
+YAMLnodeHasSequenceItems(YAMLnode *node)
+{
+   if (!node || !node->children)
+   {
+      return false;
+   }
+   YAML_NODE_ITERATE(node, child)
+   {
+      if (!strcmp(child->key, "-"))
+      {
+         return true;
+      }
+   }
+   return false;
 }
 
 static int
@@ -704,11 +832,18 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
             p += 2;
          }
 
-         YAMLnode *cur  = tree->root;
-         char     *save = NULL;
-         char     *seg  = strtok_r(p, ":", &save);
+         /* Collect all path segments into an array */
+         char *segments[64]; /* Max 64 segments should be enough */
+         int   num_segments = 0;
+         char *save_seg     = NULL;
+         char *seg_temp     = strtok_r(p, ":", &save_seg);
+         while (seg_temp && num_segments < 64)
+         {
+            segments[num_segments++] = seg_temp;
+            seg_temp                 = strtok_r(NULL, ":", &save_seg);
+         }
 
-         if (!seg || *seg == '\0')
+         if (num_segments == 0)
          {
             ErrorCodeSet(ERROR_INVALID_KEY);
             ErrorMsgAdd("Invalid override path: '%s'", k);
@@ -716,33 +851,79 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
             return;
          }
 
-         while (seg)
+         /* Helper function to apply remaining segments to a node */
+         void apply_path_to_node(YAMLnode * node, int start_idx, const char *value)
          {
-            const char *seg_const = seg; /* Use const pointer for read-only access */
-            char       *next_seg  = strtok_r(NULL, ":", &save);
-            if (next_seg) /* intermediate */
+            YAMLnode *cur = node;
+            for (int i = start_idx; i < num_segments; i++)
             {
-               YAMLnode *child = YAMLnodeGetOrCreateChild(cur, seg_const);
-               YAMLnodeEnsureMapping(child);
-               cur = child;
-               seg = next_seg;
-            }
-            else /* leaf */
-            {
-               YAMLnode *leaf = YAMLnodeFindChildByKey(cur, seg_const);
-               if (!leaf)
+               const char *seg_const = segments[i];
+               bool        is_last   = (i == num_segments - 1);
+
+               if (!is_last) /* intermediate */
                {
-                  leaf = YAMLnodeCreate(seg_const, v, cur->level + 1);
-                  YAMLnodeAddChild(cur, leaf);
+                  YAMLnode *child = YAMLnodeGetOrCreateChild(cur, seg_const);
+                  YAMLnodeEnsureMapping(child);
+
+                  /* Check if this child has sequence items */
+                  if (YAMLnodeHasSequenceItems(child))
+                  {
+                     /* Apply remaining path to all sequence items */
+                     YAML_NODE_ITERATE(child, seq_item)
+                     {
+                        if (!strcmp(seq_item->key, "-"))
+                        {
+                           apply_path_to_node(seq_item, i + 1, value);
+                        }
+                     }
+                     return; /* Done with this branch */
+                  }
+
+                  cur = child;
                }
-               else
+               else /* leaf */
                {
-                  YAMLnodeDestroyChildren(leaf);
-                  YAMLnodeSetScalarValue(leaf, v);
+                  /* Check if current node has sequence items */
+                  if (YAMLnodeHasSequenceItems(cur))
+                  {
+                     YAML_NODE_ITERATE(cur, seq_item)
+                     {
+                        if (!strcmp(seq_item->key, "-"))
+                        {
+                           YAMLnode *item_leaf =
+                              YAMLnodeFindChildByKey(seq_item, seg_const);
+                           if (!item_leaf)
+                           {
+                              item_leaf =
+                                 YAMLnodeCreate(seg_const, value, seq_item->level + 1);
+                              YAMLnodeAddChild(seq_item, item_leaf);
+                           }
+                           else
+                           {
+                              YAMLnodeDestroyChildren(item_leaf);
+                              YAMLnodeSetScalarValue(item_leaf, value);
+                           }
+                        }
+                     }
+                     return; /* Done */
+                  }
+
+                  YAMLnode *leaf = YAMLnodeFindChildByKey(cur, seg_const);
+                  if (!leaf)
+                  {
+                     leaf = YAMLnodeCreate(seg_const, value, cur->level + 1);
+                     YAMLnodeAddChild(cur, leaf);
+                  }
+                  else
+                  {
+                     YAMLnodeDestroyChildren(leaf);
+                     YAMLnodeSetScalarValue(leaf, value);
+                  }
                }
-               break;
             }
          }
+
+         apply_path_to_node(tree->root, 0, v);
 
          free(path);
       }
@@ -833,6 +1014,13 @@ YAMLnodeCreate(const char *key, const char *val, int level)
    else
    {
       node->val = StrToLowerCase(StrTrim(strdup((char *)val)));
+      /* Strip surrounding double quotes if present */
+      size_t len = strlen(node->val);
+      if (len >= 2 && node->val[0] == '\"' && node->val[len - 1] == '\"')
+      {
+         node->val[len - 1] = '\0';
+         memmove(node->val, node->val + 1, len - 1);
+      }
    }
 
    return node;
@@ -959,6 +1147,13 @@ YAMLnodeValidate(YAMLnode *node)
       return;
    }
 
+   /* Sequence items are considered valid */
+   if (!strcmp(node->key, "-"))
+   {
+      YAML_NODE_SET_VALID(node);
+      return;
+   }
+
    switch (node->valid)
    {
       case YAML_NODE_INVALID_INDENT:
@@ -1007,6 +1202,30 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
       return;
    }
 
+   /* Special formatting for sequence items ("-") */
+   bool      is_seq_item  = (!strcmp(node->key, "-"));
+   YAMLnode *inline_child = NULL;
+   if (is_seq_item && node->val && !strlen(node->val) && node->children)
+   {
+      inline_child = node->children; /* Print first child inline with the dash */
+   }
+
+   /* If this is a sequence item, print the bullet (with optional inline first child) up
+    * front, then skip that inline child when recursing into children to avoid
+    * duplication. */
+   if (is_seq_item)
+   {
+      printf("%*s- ", 2 * node->level, "");
+      if (inline_child)
+      {
+         printf("%s: %s\n", inline_child->key, inline_child->val);
+      }
+      else
+      {
+         printf("%s\n", (strlen(node->val) > 0) ? node->val : "");
+      }
+   }
+
    // Handle printing based on mode and validity
    switch (print_mode)
    {
@@ -1014,27 +1233,45 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
          switch (node->valid)
          {
             case YAML_NODE_VALID:
-               YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_GREEN, "");
+               if (!is_seq_item)
+               {
+                  YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_GREEN, "");
+               }
                break;
             case YAML_NODE_INVALID_INDENT:
-               YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
-                                   TEXT_BOLD " <-- * INVALID INDENTATION *");
+               if (!is_seq_item)
+               {
+                  YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
+                                      TEXT_BOLD " <-- * INVALID INDENTATION *");
+               }
                break;
             case YAML_NODE_INVALID_DIVISOR:
-               YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
-                                   TEXT_BOLD " <-- * INVALID DIVISOR *");
+               if (!is_seq_item)
+               {
+                  YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
+                                      TEXT_BOLD " <-- * INVALID DIVISOR *");
+               }
                break;
             case YAML_NODE_INVALID_KEY:
-               YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD,
-                                   TEXT_BOLD " <-- * INVALID KEY *");
+               if (!is_seq_item)
+               {
+                  YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD,
+                                      TEXT_BOLD " <-- * INVALID KEY *");
+               }
                break;
             case YAML_NODE_INVALID_VAL:
-               YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
-                                   TEXT_BOLD " <-- * INVALID VALUE *");
+               if (!is_seq_item)
+               {
+                  YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
+                                      TEXT_BOLD " <-- * INVALID VALUE *");
+               }
                break;
             case YAML_NODE_UNEXPECTED_VAL:
-               YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
-                                   TEXT_BOLD " <-- * UNEXPECTED VALUE *");
+               if (!is_seq_item)
+               {
+                  YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
+                                      TEXT_BOLD " <-- * UNEXPECTED VALUE *");
+               }
                break;
             default:
                YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
@@ -1043,7 +1280,7 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
          break;
 
       case YAML_PRINT_MODE_ONLY_VALID:
-         if (node->valid == YAML_NODE_VALID)
+         if (node->valid == YAML_NODE_VALID && !is_seq_item)
          {
             YAMLnodePrintHelper(node, "", "", "");
          }
@@ -1051,16 +1288,23 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
 
       case YAML_PRINT_MODE_NO_CHECKING:
       default:
-         YAMLnodePrintHelper(node, "", "", "");
+         if (!is_seq_item)
+         {
+            YAMLnodePrintHelper(node, "", "", "");
+         }
          break;
    }
 
    // Print children
-   YAMLnode *child = node->children;
-   while (child != NULL)
+   YAMLnode *child_iter = node->children;
+   if (is_seq_item && inline_child)
    {
-      YAMLnodePrint(child, print_mode);
-      child = child->next;
+      child_iter = inline_child->next; /* Skip inline child to avoid duplicate print */
+   }
+   while (child_iter != NULL)
+   {
+      YAMLnodePrint(child_iter, print_mode);
+      child_iter = child_iter->next;
    }
 }
 
@@ -1149,4 +1393,52 @@ YAMLnodeFindChildValueByKey(YAMLnode *parent, const char *key)
    }
 
    return NULL;
+}
+
+/*-----------------------------------------------------------------------------
+ * YAMLnodeCollectSequenceItems
+ *
+ * Collect direct children with key == "-" into a newly allocated array.
+ * Caller owns the array (but NOT the nodes) and must free it.
+ * Returns the count (may be zero).
+ *-----------------------------------------------------------------------------*/
+
+int
+YAMLnodeCollectSequenceItems(YAMLnode *parent, YAMLnode ***items_out)
+{
+   if (!parent || !items_out)
+   {
+      return 0;
+   }
+
+   int        count = 0;
+   YAMLnode **arr   = NULL;
+
+   /* First pass: count */
+   YAML_NODE_ITERATE(parent, child)
+   {
+      if (!strcmp(child->key, "-"))
+      {
+         count++;
+      }
+   }
+
+   if (count == 0)
+   {
+      *items_out = NULL;
+      return 0;
+   }
+
+   arr     = (YAMLnode **)malloc((size_t)count * sizeof(YAMLnode *));
+   int idx = 0;
+   YAML_NODE_ITERATE(parent, child)
+   {
+      if (!strcmp(child->key, "-"))
+      {
+         arr[idx++] = child;
+      }
+   }
+
+   *items_out = arr;
+   return count;
 }

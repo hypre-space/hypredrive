@@ -1134,6 +1134,105 @@ test_HYPREDRV_misc_0hit_branches(void)
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
+static void
+test_HYPREDRV_preconditioner_variants(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+   ASSERT_NOT_NULL(obj);
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
+            HYPREDRIVE_SOURCE_DIR);
+
+   char yaml_config[2 * PATH_MAX + 512];
+   int  yaml_len = snprintf(yaml_config, sizeof(yaml_config),
+                            "general:\n"
+                            "  warmup: false\n"
+                            "  num_repetitions: 1\n"
+                            "  statistics: off\n"
+                            "linear_system:\n"
+                            "  type: ij\n"
+                            "  rhs_filename: %s\n"
+                            "  matrix_filename: %s\n"
+                            "solver:\n"
+                            "  pcg:\n"
+                            "    relative_tol: 1.0e-9\n"
+                            "    max_iter: 500\n"
+                            "    print_level: 3\n"
+                            "preconditioner:\n"
+                            "  amg:\n"
+                            "    - print_level: 1\n"
+                            "      coarsening:\n"
+                            "        type: HMIS\n"
+                            "        strong_th: 0.25\n"
+                            "      interpolation:\n"
+                            "        prolongation_type: \"MM-ext+i\"\n"
+                            "      relaxation:\n"
+                            "        down_type: 16\n"
+                            "        down_sweeps: 1\n"
+                            "        up_type: 16\n"
+                            "        up_sweeps: 1\n"
+                            "    - print_level: 1\n"
+                            "      coarsening:\n"
+                            "        type: PMIS\n"
+                            "        strong_th: 0.5\n"
+                            "      interpolation:\n"
+                            "        prolongation_type: standard\n"
+                            "      relaxation:\n"
+                            "        down_type: 8\n"
+                            "        down_sweeps: 2\n"
+                            "        up_type: 8\n"
+                            "        up_sweeps: 2\n",
+                            rhs_path, matrix_path);
+   ASSERT_TRUE(yaml_len > 0 && (size_t)yaml_len < sizeof(yaml_config));
+
+   char *argv[] = {yaml_config};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+   ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
+
+   /* Check that variants were parsed */
+   int num_variants = HYPREDRV_InputArgsGetNumPreconVariants(obj);
+   ASSERT_EQ(num_variants, 2);
+
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   /* Test setting and using each variant */
+   for (int v = 0; v < num_variants; v++)
+   {
+      ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, v), ERROR_NONE);
+
+      /* Reset initial guess */
+      ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+
+      /* Create and setup */
+      ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+
+      /* Solve */
+      ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+
+      /* Destroy */
+      ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+   }
+
+   ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_NULL(obj);
+
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1158,6 +1257,7 @@ main(int argc, char **argv)
    RUN_TEST(test_HYPREDRV_LinearSystemResetInitialGuess_error_cases);
    RUN_TEST(test_HYPREDRV_LinearSystemBuild_error_cases);
    RUN_TEST(test_HYPREDRV_misc_0hit_branches);
+   RUN_TEST(test_HYPREDRV_preconditioner_variants);
 
    MPI_Finalize();
    return 0;

@@ -202,6 +202,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         add_hypredrive_test(ex6_1proc 1 ex6.yml)
     endif()
     add_hypredrive_test(ex7_1proc  1 ex7.yml)
+    add_hypredrive_test(ex8_1proc  1 ex8.yml)
 
     # Test main.c help/usage/error branches
     # Note: --help exits with 0, so we need to allow that

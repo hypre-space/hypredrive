@@ -37,6 +37,12 @@ typedef struct input_args_struct
 
    precon_args precon;
    precon_t    precon_method;
+
+   /* Preconditioner variants support */
+   int          num_precon_variants;
+   int          active_precon_variant;
+   precon_t    *precon_methods;  /* Array of size num_precon_variants */
+   precon_args *precon_variants; /* Array of size num_precon_variants */
 } input_args;
 
 /*-----------------------------------------------------------------------------

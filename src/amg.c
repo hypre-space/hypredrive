@@ -249,7 +249,9 @@ AMGintGetValidValues(const char *key)
                                 {"direct_sep_weights",   15},
                                 {"mm_extended",          16},
                                 {"mm_extended+i",        17},
+                                {"mm-ext+i",             17},
                                 {"mm_extended+e",        18},
+                                {"mm-ext+e",             18},
                                 {"blk_direct",           24},
                                 {"one_point",           100}};
 
