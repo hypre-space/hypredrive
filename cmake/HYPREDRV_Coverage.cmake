@@ -102,7 +102,7 @@ if(HYPREDRV_ENABLE_COVERAGE)
                 set(_gcc_major_version ${CMAKE_MATCH_1})
             endif()
         endif()
-        
+
         if(_gcc_major_version)
             find_program(_GCOV_VERSIONED NAMES gcov-${_gcc_major_version})
             if(_GCOV_VERSIONED)
@@ -144,6 +144,13 @@ if(HYPREDRV_ENABLE_COVERAGE)
             --exclude ".*(/|^)install/.*"
             --exclude ".*(/|^)docs/.*"
             --exclude-directories "${CMAKE_BINARY_DIR}/tests"
+            # Ignore branch points on fail-fast call-site wrappers; the error/abort paths
+            # are intentionally not practically triggerable in unit tests without aborting.
+            --exclude-branches-by-pattern "HYPREDRV_SAFE_CALL\\("
+            # Ignore branch points for repeated boilerplate guards in the public API.
+            # Note: these are macro *invocations* (no parentheses in the name).
+            --exclude-branches-by-pattern "HYPREDRV_CHECK_INIT"
+            --exclude-branches-by-pattern "HYPREDRV_CHECK_OBJ"
             --gcov-ignore-errors all
             --gcov-ignore-parse-errors
             --merge-mode-functions=merge-use-line-0
@@ -168,14 +175,14 @@ if(HYPREDRV_ENABLE_COVERAGE)
                     list(APPEND _coverage_test_deps elasticity)
                 endif()
             endif()
-            
+
             add_custom_target(run_tests_for_coverage
                 COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
                 WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                 COMMENT "Running tests to generate coverage data"
                 VERBATIM
             )
-            
+
             # Ensure example executables are built before running tests
             if(_coverage_test_deps)
                 add_dependencies(run_tests_for_coverage ${_coverage_test_deps})

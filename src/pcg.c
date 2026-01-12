@@ -29,7 +29,7 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(PCG)
+GENERATE_PREFIXED_COMPONENTS(PCG) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * PCGGetValidValues

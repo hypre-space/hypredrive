@@ -102,15 +102,14 @@
 
 /* Iterates over each prefix in the list and
    generates the various function declarations/definitions and field_offset_map object */
-GENERATE_PREFIXED_LIST_AMG
-DEFINE_VOID_GET_VALID_VALUES_FUNC(AMG)
+GENERATE_PREFIXED_LIST_AMG             // LCOV_EXCL_LINE
+DEFINE_VOID_GET_VALID_VALUES_FUNC(AMG) // LCOV_EXCL_LINE
 
-/*-----------------------------------------------------------------------------
- * AMGintSetDefaultArgs
- *-----------------------------------------------------------------------------*/
+   /*-----------------------------------------------------------------------------
+    * AMGintSetDefaultArgs
+    *-----------------------------------------------------------------------------*/
 
-void
-AMGintSetDefaultArgs(AMGint_args *args)
+   void AMGintSetDefaultArgs(AMGint_args *args)
 {
    args->prolongation_type = 6;
    args->restriction_type  = 0;

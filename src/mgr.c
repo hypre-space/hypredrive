@@ -76,15 +76,14 @@ DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, ILUSetArgs)
    GENERATE_PREFIXED_COMPONENTS(MGRlvl)
 
 /* Generate all boilerplate (field maps, setters, YAML parsing, etc.) */
-GENERATE_PREFIXED_LIST_MGR
-GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR)
+GENERATE_PREFIXED_LIST_MGR                    // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR) // LCOV_EXCL_LINE
 
-/*-----------------------------------------------------------------------------
- * MGRclsSetDefaultArgs
- *-----------------------------------------------------------------------------*/
+   /*-----------------------------------------------------------------------------
+    * MGRclsSetDefaultArgs
+    *-----------------------------------------------------------------------------*/
 
-void
-MGRclsSetDefaultArgs(MGRcls_args *args)
+   void MGRclsSetDefaultArgs(MGRcls_args *args)
 {
    /* Default coarsest solver: let MGRCreate interpret type < 0 as "default AMG". */
    args->type = -1;

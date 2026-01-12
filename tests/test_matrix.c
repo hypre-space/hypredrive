@@ -111,6 +111,98 @@ test_IJMatrixReadMultipartBinary_short_header(void)
 }
 
 static void
+test_IJMatrixReadMultipartBinary_short_header_device_path(void)
+{
+   /* Covers the second-pass header read error path (skips host-side precompute). */
+   const char *prefix = "test_matrix_short_dev";
+   char        filename[256];
+   snprintf(filename, sizeof(filename), "%s.00000.bin", prefix);
+
+   FILE *fp = fopen(filename, "wb");
+   ASSERT_NOT_NULL(fp);
+   uint64_t header[5] = {0};
+   ASSERT_EQ(fwrite(header, sizeof(uint64_t), 5, fp), 5u);
+   fclose(fp);
+   add_temp_file(filename);
+
+   HYPRE_IJMatrix mat = NULL;
+   ErrorCodeResetAll();
+   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
+   ASSERT_NULL(mat);
+   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+
+   cleanup_temp_files();
+}
+
+static void
+test_IJMatrixReadMultipartBinary_uint32_truncated_rows_device_path(void)
+{
+   /* Trigger fread(row indices) != header[6] in the device path. */
+   const char *prefix = "test_matrix_u32_trunc_rows_dev";
+   char        filename[256];
+   snprintf(filename, sizeof(filename), "%s.00000.bin", prefix);
+
+   FILE *fp = fopen(filename, "wb");
+   ASSERT_NOT_NULL(fp);
+   uint64_t header[11] = {0};
+   header[1]           = (uint64_t)sizeof(uint32_t); /* row/col dtype */
+   header[2]           = (uint64_t)sizeof(double);   /* val dtype */
+   header[5]           = 1;                          /* nrows */
+   header[6]           = 2;                          /* nnz */
+   header[7]           = 0;                          /* row_lower */
+   header[8]           = 0;                          /* row_upper */
+   ASSERT_EQ(fwrite(header, sizeof(uint64_t), 11, fp), 11u);
+
+   uint32_t rows32[1] = {0}; /* intentionally short (need 2) */
+   ASSERT_EQ(fwrite(rows32, sizeof(uint32_t), 1, fp), 1u);
+   fclose(fp);
+   add_temp_file(filename);
+
+   HYPRE_IJMatrix mat = NULL;
+   ErrorCodeResetAll();
+   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
+   ASSERT_NULL(mat);
+   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+
+   cleanup_temp_files();
+}
+
+static void
+test_IJMatrixReadMultipartBinary_uint32_truncated_cols_device_path(void)
+{
+   /* Trigger fread(col indices) != header[6] in the device path after rows succeed. */
+   const char *prefix = "test_matrix_u32_trunc_cols_dev";
+   char        filename[256];
+   snprintf(filename, sizeof(filename), "%s.00000.bin", prefix);
+
+   FILE *fp = fopen(filename, "wb");
+   ASSERT_NOT_NULL(fp);
+   uint64_t header[11] = {0};
+   header[1]           = (uint64_t)sizeof(uint32_t);
+   header[2]           = (uint64_t)sizeof(double);
+   header[5]           = 1;
+   header[6]           = 2;
+   header[7]           = 0;
+   header[8]           = 0;
+   ASSERT_EQ(fwrite(header, sizeof(uint64_t), 11, fp), 11u);
+
+   uint32_t rows32[2] = {0, 0};
+   ASSERT_EQ(fwrite(rows32, sizeof(uint32_t), 2, fp), 2u);
+   uint32_t cols32[1] = {0}; /* intentionally short (need 2) */
+   ASSERT_EQ(fwrite(cols32, sizeof(uint32_t), 1, fp), 1u);
+   fclose(fp);
+   add_temp_file(filename);
+
+   HYPRE_IJMatrix mat = NULL;
+   ErrorCodeResetAll();
+   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
+   ASSERT_NULL(mat);
+   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+
+   cleanup_temp_files();
+}
+
+static void
 test_IJMatrixReadMultipartBinary_invalid_dtype(void)
 {
    const char *prefix = "test_matrix_invalid";
@@ -294,8 +386,11 @@ main(int argc, char **argv)
    RUN_TEST(test_IJMatrixReadMultipartBinary_success);
    RUN_TEST(test_IJMatrixReadMultipartBinary_missing_file);
    RUN_TEST(test_IJMatrixReadMultipartBinary_short_header);
+   RUN_TEST(test_IJMatrixReadMultipartBinary_short_header_device_path);
    RUN_TEST(test_IJMatrixReadMultipartBinary_invalid_dtype);
    RUN_TEST(test_IJMatrixReadMultipartBinary_uint32_indices);
+   RUN_TEST(test_IJMatrixReadMultipartBinary_uint32_truncated_rows_device_path);
+   RUN_TEST(test_IJMatrixReadMultipartBinary_uint32_truncated_cols_device_path);
    RUN_TEST(test_IJMatrixReadMultipartBinary_float_coefficients);
    RUN_TEST(test_IJMatrixReadMultipartBinary_uint32_indices_float_coeffs);
    RUN_TEST(test_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs);

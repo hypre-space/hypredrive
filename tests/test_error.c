@@ -329,6 +329,28 @@ test_ErrorBacktracePrint_has_filenames_and_lines(void)
 #endif
 }
 
+static void
+test_ErrorBacktracePrint_respects_no_backtrace_env(void)
+{
+#ifdef __linux__
+   ErrorCodeResetAll();
+   ErrorMsgClear();
+
+   /* Force early return */
+   setenv("HYPREDRV_NO_BACKTRACE", "1", 1);
+
+   char buffer[2048];
+   capture_error_output(call_ErrorBacktracePrint, buffer, sizeof(buffer));
+
+   /* Should not print the backtrace header at all */
+   ASSERT_NULL(strstr(buffer, "Backtrace:"));
+
+   unsetenv("HYPREDRV_NO_BACKTRACE");
+#else
+   fprintf(stderr, "SKIP: Backtrace env test only runs on Linux\n");
+#endif
+}
+
 /*-----------------------------------------------------------------------------
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
@@ -352,6 +374,7 @@ main(int argc, char **argv)
    RUN_TEST(test_DistributedErrorCodeActive);
    RUN_TEST(test_ErrorMsgPrint_with_no_messages);
    RUN_TEST(test_ErrorBacktracePrint_has_filenames_and_lines);
+   RUN_TEST(test_ErrorBacktracePrint_respects_no_backtrace_env);
 
    ErrorCodeResetAll();
    ErrorMsgClear();

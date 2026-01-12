@@ -32,6 +32,9 @@ extern "C"
 {
 #endif
 
+// Visibility control macros
+#define HYPREDRV_EXPORT_SYMBOL __attribute__((visibility("default")))
+
 // Macro for safely calling HYPREDRV functions.
 // Always uses MPI_COMM_WORLD for MPI_Abort as a safe fallback.
 #ifndef HYPREDRV_SAFE_CALL
@@ -55,9 +58,6 @@ extern "C"
       }                                                                              \
    } while (0)
 #endif
-
-// Visibility control macros
-#define HYPREDRV_EXPORT_SYMBOL __attribute__((visibility("default")))
 
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/

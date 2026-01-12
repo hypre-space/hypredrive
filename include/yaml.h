@@ -88,6 +88,18 @@ typedef struct YAMLtree
 } YAMLtree;
 
 /*-----------------------------------------------------------------------------
+ * Schema-driven validation helpers (used heavily by config-driven components)
+ *-----------------------------------------------------------------------------*/
+
+typedef StrArray (*YAMLGetValidKeysFunc)(void);
+typedef StrIntMapArray (*YAMLGetValidValuesFunc)(const char *);
+typedef void (*YAMLSetFieldByNameFunc)(void *, const YAMLnode *);
+
+void YAMLnodeValidateSchema(YAMLnode *, YAMLGetValidKeysFunc, YAMLGetValidValuesFunc);
+void YAMLSetArgsGeneric(void *, YAMLnode *, YAMLGetValidKeysFunc, YAMLGetValidValuesFunc,
+                        YAMLSetFieldByNameFunc);
+
+/*-----------------------------------------------------------------------------
  * Public prototypes
  *-----------------------------------------------------------------------------*/
 
@@ -139,39 +151,11 @@ char     *YAMLnodeFindChildValueByKey(YAMLnode *, const char *);
       }                                                                            \
    } while (0);
 
-#define YAML_NODE_VALIDATE(_node, _callA, _callB)                                  \
-   if ((_node->valid != YAML_NODE_INVALID_DIVISOR) &&                              \
-       (_node->valid != YAML_NODE_INVALID_INDENT))                                 \
-   {                                                                               \
-      StrArray       _keys = _callA();                                             \
-      StrIntMapArray _map_array_type;                                              \
-      /* printf(" 0_node->key: %s\n", _node->key); */                              \
-      if (StrArrayEntryExists(_keys, _node->key))                                  \
-      {                                                                            \
-         /* printf(" 1_node->key: %s - level: %d\n", _node->key, _node->level); */ \
-         StrIntMapArray _map_array_key = _callB(_node->key);                       \
-         if (_map_array_key.size > 0)                                              \
-         {                                                                         \
-            YAML_NODE_VALIDATE_HELPER(_node, _map_array_key)                       \
-         }                                                                         \
-         else                                                                      \
-         {                                                                         \
-            if (!_node->mapped_val) _node->mapped_val = strdup(_node->val);        \
-            _node->valid = YAML_NODE_VALID;                                        \
-         }                                                                         \
-      }                                                                            \
-      else if ((_map_array_type = _callB("type")),                                 \
-               !strcmp(_node->key, "type") && _map_array_type.size > 0)            \
-      {                                                                            \
-         /* printf(" 2_node->key: %s - level: %d\n", _node->key, _node->level); */ \
-         YAML_NODE_VALIDATE_HELPER(_node, _map_array_type)                         \
-      }                                                                            \
-      else                                                                         \
-      {                                                                            \
-         /* printf(" 3_node->key: %s\n", _node->key); */                           \
-         _node->valid = YAML_NODE_INVALID_KEY;                                     \
-      }                                                                            \
-   }
+#define YAML_NODE_VALIDATE(_node, _callA, _callB)          \
+   do                                                      \
+   {                                                       \
+      YAMLnodeValidateSchema((_node), (_callA), (_callB)); \
+   } while (0)
 
 #define YAML_NODE_SET_FIELD(_node, _args, _call) \
    if (_node->valid == YAML_NODE_VALID)          \

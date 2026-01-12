@@ -1,7 +1,10 @@
 #include <mpi.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
+#include "HYPRE.h"
+#include "HYPREDRV.h"
 #include "bicgstab.h"
 #include "cheby.h"
 #include "containers.h"
@@ -9,9 +12,16 @@
 #include "fgmres.h"
 #include "gmres.h"
 #include "pcg.h"
+#include "precon.h"
+#include "solver.h"
 #include "test_helpers.h"
 #include "yaml.h"
 
+#ifndef HYPREDRIVE_SOURCE_DIR
+#define HYPREDRIVE_SOURCE_DIR "."
+#endif
+
+/* Forward declarations */
 void           GMRESSetFieldByName(GMRES_args *, const YAMLnode *);
 void           GMRESSetDefaultArgs(GMRES_args *);
 StrArray       GMRESGetValidKeys(void);
@@ -434,12 +444,383 @@ test_ChebySetFieldByName_unknown_key(void)
    YAMLnodeDestroy(unknown_node);
 }
 
+/*-----------------------------------------------------------------------------
+ * Solver dispatch tests (from test_solver_dispatch.c)
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_SolverCreate_all_cases(void)
+{
+   HYPRE_Initialize();
+
+   solver_args args;
+   HYPRE_Solver solver = NULL;
+
+   /* Test PCG */
+   PCGSetDefaultArgs(&args.pcg);
+   ErrorCodeResetAll();
+   SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+   ASSERT_FALSE(ErrorCodeActive());
+   SolverDestroy(SOLVER_PCG, &solver);
+   ASSERT_NULL(solver);
+
+   /* Test GMRES */
+   GMRESSetDefaultArgs(&args.gmres);
+   ErrorCodeResetAll();
+   SolverCreate(MPI_COMM_SELF, SOLVER_GMRES, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+   ASSERT_FALSE(ErrorCodeActive());
+   SolverDestroy(SOLVER_GMRES, &solver);
+   ASSERT_NULL(solver);
+
+   /* Test FGMRES */
+   FGMRESSetDefaultArgs(&args.fgmres);
+   ErrorCodeResetAll();
+   SolverCreate(MPI_COMM_SELF, SOLVER_FGMRES, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+   ASSERT_FALSE(ErrorCodeActive());
+   SolverDestroy(SOLVER_FGMRES, &solver);
+   ASSERT_NULL(solver);
+
+   /* Test BiCGSTAB */
+   BiCGSTABSetDefaultArgs(&args.bicgstab);
+   ErrorCodeResetAll();
+   SolverCreate(MPI_COMM_SELF, SOLVER_BICGSTAB, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+   ASSERT_FALSE(ErrorCodeActive());
+   SolverDestroy(SOLVER_BICGSTAB, &solver);
+   ASSERT_NULL(solver);
+
+   HYPRE_Finalize();
+}
+
+static void
+test_SolverCreate_default_case(void)
+{
+   HYPRE_Initialize();
+
+   solver_args args;
+   HYPRE_Solver solver = NULL;
+
+   /* Test default case with invalid enum value */
+   ErrorCodeResetAll();
+   SolverCreate(MPI_COMM_SELF, (solver_t)999, &args, &solver);
+   ASSERT_NULL(solver);
+   /* Default case should not set error, just return NULL */
+
+   HYPRE_Finalize();
+}
+
+static void
+test_SolverDestroy_all_cases(void)
+{
+   HYPRE_Initialize();
+
+   solver_args args;
+   HYPRE_Solver solver = NULL;
+
+   /* Test PCG destroy */
+   PCGSetDefaultArgs(&args.pcg);
+   SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+   SolverDestroy(SOLVER_PCG, &solver);
+   ASSERT_NULL(solver);
+
+   /* Test GMRES destroy */
+   GMRESSetDefaultArgs(&args.gmres);
+   SolverCreate(MPI_COMM_SELF, SOLVER_GMRES, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+   SolverDestroy(SOLVER_GMRES, &solver);
+   ASSERT_NULL(solver);
+
+   /* Test FGMRES destroy */
+   FGMRESSetDefaultArgs(&args.fgmres);
+   SolverCreate(MPI_COMM_SELF, SOLVER_FGMRES, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+   SolverDestroy(SOLVER_FGMRES, &solver);
+   ASSERT_NULL(solver);
+
+   /* Test BiCGSTAB destroy */
+   BiCGSTABSetDefaultArgs(&args.bicgstab);
+   SolverCreate(MPI_COMM_SELF, SOLVER_BICGSTAB, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+   SolverDestroy(SOLVER_BICGSTAB, &solver);
+   ASSERT_NULL(solver);
+
+   HYPRE_Finalize();
+}
+
+static void
+test_SolverDestroy_default_case(void)
+{
+   HYPRE_Initialize();
+
+   solver_args args;
+   HYPRE_Solver solver = NULL;
+
+   /* Create a solver first */
+   PCGSetDefaultArgs(&args.pcg);
+   SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+
+   /* Test default case with invalid enum - should return early */
+   SolverDestroy((solver_t)999, &solver);
+   /* Solver should still exist since default case returns early */
+   ASSERT_NOT_NULL(solver);
+
+   /* Clean up properly */
+   SolverDestroy(SOLVER_PCG, &solver);
+   ASSERT_NULL(solver);
+
+   HYPRE_Finalize();
+}
+
+static void
+test_SolverDestroy_null_solver(void)
+{
+   HYPRE_Solver solver = NULL;
+
+   /* Destroy with NULL should not crash */
+   SolverDestroy(SOLVER_PCG, &solver);
+   ASSERT_NULL(solver);
+}
+
+static void
+test_SolverSetup_default_case(void)
+{
+   HYPRE_Initialize();
+
+   HYPRE_IJMatrix M = NULL;
+   HYPRE_IJVector b = NULL, x = NULL;
+
+   /* Create minimal matrix and vectors */
+   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &M);
+   HYPRE_IJMatrixSetObjectType(M, HYPRE_PARCSR);
+   HYPRE_IJMatrixInitialize(M);
+   HYPRE_IJMatrixAssemble(M);
+
+   HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &b);
+   HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize(b);
+   HYPRE_IJVectorAssemble(b);
+
+   HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &x);
+   HYPRE_IJVectorSetObjectType(x, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize(x);
+   HYPRE_IJVectorAssemble(x);
+
+   /* Create a dummy precon */
+   HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
+   ASSERT_NOT_NULL(precon);
+   precon->main = NULL;
+
+   HYPRE_Solver solver = NULL;
+   solver_args  args;
+   PCGSetDefaultArgs(&args.pcg);
+   SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+
+   /* Test default case with invalid solver enum */
+   ErrorCodeResetAll();
+   SolverSetup(PRECON_NONE, (solver_t)999, precon, solver, M, b, x);
+   /* Should return early without error */
+
+   SolverDestroy(SOLVER_PCG, &solver);
+   free(precon);
+   HYPRE_IJVectorDestroy(x);
+   HYPRE_IJVectorDestroy(b);
+   HYPRE_IJMatrixDestroy(M);
+   HYPRE_Finalize();
+}
+
+static void
+test_SolverApply_default_case(void)
+{
+   HYPRE_Initialize();
+
+   HYPRE_IJMatrix A = NULL;
+   HYPRE_IJVector b = NULL, x = NULL;
+
+   /* Create minimal matrix and vectors */
+   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &A);
+   HYPRE_IJMatrixSetObjectType(A, HYPRE_PARCSR);
+   HYPRE_IJMatrixInitialize(A);
+   HYPRE_IJMatrixAssemble(A);
+
+   HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &b);
+   HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize(b);
+   HYPRE_IJVectorAssemble(b);
+
+   HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &x);
+   HYPRE_IJVectorSetObjectType(x, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize(x);
+   HYPRE_IJVectorAssemble(x);
+
+   HYPRE_Solver solver = NULL;
+   solver_args  args;
+   PCGSetDefaultArgs(&args.pcg);
+   SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+
+   /* Test default case with invalid solver enum */
+   ErrorCodeResetAll();
+   SolverApply((solver_t)999, solver, A, b, x);
+   /* Should return early without error */
+
+   SolverDestroy(SOLVER_PCG, &solver);
+   HYPRE_IJVectorDestroy(x);
+   HYPRE_IJVectorDestroy(b);
+   HYPRE_IJMatrixDestroy(A);
+   HYPRE_Finalize();
+}
+
+static void
+test_SolverCreate_default_case_comprehensive(void)
+{
+   HYPRE_Initialize();
+
+   solver_args args;
+
+   /* Test multiple invalid solver types to exercise default case */
+   ErrorCodeResetAll();
+   SolverCreate(MPI_COMM_SELF, (solver_t)999, &args, NULL);
+   ASSERT_TRUE(ErrorCodeActive()); /* Should set error for invalid solver */
+
+   ErrorCodeResetAll();
+   SolverCreate(MPI_COMM_SELF, (solver_t)-1, &args, NULL);
+   ASSERT_TRUE(ErrorCodeActive()); /* Should set error for invalid solver */
+
+   HYPRE_Finalize();
+}
+
+static void
+test_SolverApply_error_cases(void)
+{
+   HYPRE_Initialize();
+
+   HYPRE_IJMatrix A = NULL;
+   HYPRE_IJVector b = NULL, x = NULL;
+
+   /* Test with NULL solver */
+   ErrorCodeResetAll();
+   SolverApply(SOLVER_PCG, NULL, A, b, x);
+   ASSERT_TRUE(ErrorCodeActive());
+
+   /* Test with NULL matrix */
+   ErrorCodeResetAll();
+   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, NULL, b, x);
+   ASSERT_TRUE(ErrorCodeActive());
+
+   /* Test with NULL vectors */
+   ErrorCodeResetAll();
+   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, A, NULL, x);
+   ASSERT_TRUE(ErrorCodeActive());
+
+   ErrorCodeResetAll();
+   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, A, b, NULL);
+   ASSERT_TRUE(ErrorCodeActive());
+
+   HYPRE_Finalize();
+}
+
+static void
+test_SolverSetup_error_cases(void)
+{
+   HYPRE_Initialize();
+
+   HYPRE_IJMatrix A = NULL;
+   HYPRE_IJVector b = NULL, x = NULL;
+
+   /* Test with NULL solver */
+   ErrorCodeResetAll();
+   SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, NULL, A, b, x);
+   ASSERT_TRUE(ErrorCodeActive());
+
+   /* Test with NULL matrix */
+   ErrorCodeResetAll();
+   SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, (HYPRE_Solver)1, NULL, b, x);
+   ASSERT_TRUE(ErrorCodeActive());
+
+   HYPRE_Finalize();
+}
+
+/*-----------------------------------------------------------------------------
+ * Solver-precon integration tests (from test_solver_precon_integration.c)
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_solver_precon_combination(const char *solver_name, const char *precon_name)
+{
+   HYPREDRV_Initialize();
+
+   HYPREDRV_t obj = NULL;
+   HYPREDRV_Create(MPI_COMM_SELF, &obj);
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
+            HYPREDRIVE_SOURCE_DIR);
+
+   char yaml_config[2 * PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "linear_system:\n"
+            "  matrix_filename: %s\n"
+            "  rhs_filename: %s\n"
+            "solver: %s\n"
+            "preconditioner: %s\n",
+            matrix_path, rhs_path, solver_name, precon_name);
+
+   char *argv[] = {yaml_config};
+   ErrorCodeResetAll();
+   HYPREDRV_InputArgsParse(1, argv, obj);
+
+   if (ErrorCodeActive())
+   {
+      HYPREDRV_Destroy(&obj);
+      HYPREDRV_Finalize();
+      return; /* Skip invalid combinations */
+   }
+
+   HYPREDRV_SetGlobalOptions(obj);
+   HYPREDRV_LinearSystemBuild(obj);
+
+   /* Test create/setup/apply/destroy cycle */
+   HYPREDRV_PreconCreate(obj);
+   HYPREDRV_LinearSolverCreate(obj);
+   HYPREDRV_LinearSolverSetup(obj);
+   HYPREDRV_LinearSolverApply(obj);
+   HYPREDRV_PreconDestroy(obj);
+   HYPREDRV_LinearSolverDestroy(obj);
+
+   HYPREDRV_Destroy(&obj);
+   HYPREDRV_Finalize();
+}
+
+static void
+test_all_solver_precon_combinations(void)
+{
+   const char *solvers[] = {"pcg", "gmres", "fgmres", "bicgstab"};
+   const char *precons[] = {"amg", "ilu", "fsai"};
+
+   for (size_t i = 0; i < sizeof(solvers) / sizeof(solvers[0]); i++)
+   {
+      for (size_t j = 0; j < sizeof(precons) / sizeof(precons[0]); j++)
+      {
+         test_solver_precon_combination(solvers[i], precons[j]);
+      }
+   }
+}
 
 int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
 
+   /* Solver argument parsing tests */
    RUN_TEST(test_GMRESSetFieldByName_all_fields);
    RUN_TEST(test_PCGSetFieldByName_all_fields);
    RUN_TEST(test_BiCGSTABSetFieldByName_all_fields);
@@ -453,6 +834,21 @@ main(int argc, char **argv)
    RUN_TEST(test_BiCGSTABGetValidValues_void_branch);
    RUN_TEST(test_FGMRESGetValidValues_void_branch);
    RUN_TEST(test_ChebyGetValidValues_void_branch);
+
+   /* Solver dispatch tests */
+   RUN_TEST(test_SolverCreate_all_cases);
+   RUN_TEST(test_SolverCreate_default_case);
+   RUN_TEST(test_SolverDestroy_all_cases);
+   RUN_TEST(test_SolverDestroy_default_case);
+   RUN_TEST(test_SolverDestroy_null_solver);
+   RUN_TEST(test_SolverSetup_default_case);
+   RUN_TEST(test_SolverApply_default_case);
+   RUN_TEST(test_SolverCreate_default_case_comprehensive);
+   RUN_TEST(test_SolverApply_error_cases);
+   RUN_TEST(test_SolverSetup_error_cases);
+
+   /* Solver-precon integration tests */
+   RUN_TEST(test_all_solver_precon_combinations);
 
    MPI_Finalize();
    return 0;

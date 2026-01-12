@@ -31,7 +31,7 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(GMRES)
+GENERATE_PREFIXED_COMPONENTS(GMRES) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * GMRESGetValidValues

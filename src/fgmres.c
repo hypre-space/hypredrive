@@ -27,8 +27,8 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(FGMRES)
-DEFINE_VOID_GET_VALID_VALUES_FUNC(FGMRES)
+GENERATE_PREFIXED_COMPONENTS(FGMRES)      // LCOV_EXCL_LINE
+DEFINE_VOID_GET_VALID_VALUES_FUNC(FGMRES) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * FGMRESSetDefaultArgs

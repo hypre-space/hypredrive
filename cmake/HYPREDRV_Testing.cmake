@@ -206,6 +206,19 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     # Test main.c help/usage/error branches
     # Note: --help exits with 0, so we need to allow that
     add_executable_test(hypredrive_help hypredrive 1 ARGS "--help" FAIL_REGULAR_EXPRESSION "^$")
+    add_executable_test(hypredrive_help_short hypredrive 1 ARGS "-h" FAIL_REGULAR_EXPRESSION "^$")
     add_executable_test(hypredrive_no_args hypredrive 1 ARGS "" FAIL_REGULAR_EXPRESSION "^$")
     set_tests_properties(hypredrive_no_args PROPERTIES WILL_FAIL TRUE)
+
+    # Exercise the long-form quiet flag parsing ("--quiet")
+    add_executable_test(hypredrive_quiet_longflag hypredrive 1
+        ARGS "--quiet" "examples/ex1.yml"
+        FAIL_REGULAR_EXPRESSION "^$"
+    )
+
+    # Exercise config-file detection when override args are present
+    add_executable_test(hypredrive_cli_extra hypredrive 1
+        ARGS "examples/ex1.yml" "--args" "--solver:pcg:max_iter" "5"
+        FAIL_REGULAR_EXPRESSION "^$"
+    )
 endif()

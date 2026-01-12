@@ -102,6 +102,13 @@ void
 SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args,
              HYPRE_Solver *solver_ptr)
 {
+   if (!solver_ptr)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("SolverCreate: solver_ptr is NULL");
+      return;
+   }
+
    switch (solver_method)
    {
       case SOLVER_PCG:
@@ -122,6 +129,8 @@ SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args,
 
       default:
          *solver_ptr = NULL;
+         ErrorCodeSet(ERROR_INVALID_SOLVER);
+         ErrorMsgAdd("SolverCreate: invalid solver method");
    }
 }
 
@@ -135,6 +144,27 @@ void
 SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
             HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x)
 {
+   if (!solver)
+   {
+      ErrorCodeSet(ERROR_INVALID_SOLVER);
+      ErrorMsgAdd("SolverSetup: solver is NULL");
+      return;
+   }
+
+   if (!M || !b || !x)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("SolverSetup: matrix or vector is NULL");
+      return;
+   }
+
+   if (precon_method != PRECON_NONE && !precon)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("SolverSetup: precon is NULL but precon_method is not PRECON_NONE");
+      return;
+   }
+
    StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "prec");
 
    void                   *vM = NULL, *vb = NULL, *vx = NULL;
@@ -155,26 +185,38 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
    switch (solver_method)
    {
       case SOLVER_PCG:
-         HYPRE_ParCSRPCGSetPrecond(solver, solve_ptrs[precon_method],
-                                   setup_ptrs[precon_method], precon->main);
+         if (precon_method != PRECON_NONE)
+         {
+            HYPRE_ParCSRPCGSetPrecond(solver, solve_ptrs[precon_method],
+                                      setup_ptrs[precon_method], precon->main);
+         }
          HYPRE_ParCSRPCGSetup(solver, par_M, par_b, par_x);
          break;
 
       case SOLVER_GMRES:
-         HYPRE_ParCSRGMRESSetPrecond(solver, solve_ptrs[precon_method],
-                                     setup_ptrs[precon_method], precon->main);
+         if (precon_method != PRECON_NONE)
+         {
+            HYPRE_ParCSRGMRESSetPrecond(solver, solve_ptrs[precon_method],
+                                        setup_ptrs[precon_method], precon->main);
+         }
          HYPRE_ParCSRGMRESSetup(solver, par_M, par_b, par_x);
          break;
 
       case SOLVER_FGMRES:
-         HYPRE_ParCSRFlexGMRESSetPrecond(solver, solve_ptrs[precon_method],
-                                         setup_ptrs[precon_method], precon->main);
+         if (precon_method != PRECON_NONE)
+         {
+            HYPRE_ParCSRFlexGMRESSetPrecond(solver, solve_ptrs[precon_method],
+                                            setup_ptrs[precon_method], precon->main);
+         }
          HYPRE_ParCSRFlexGMRESSetup(solver, par_M, par_b, par_x);
          break;
 
       case SOLVER_BICGSTAB:
-         HYPRE_ParCSRBiCGSTABSetPrecond(solver, solve_ptrs[precon_method],
-                                        setup_ptrs[precon_method], precon->main);
+         if (precon_method != PRECON_NONE)
+         {
+            HYPRE_ParCSRBiCGSTABSetPrecond(solver, solve_ptrs[precon_method],
+                                           setup_ptrs[precon_method], precon->main);
+         }
          HYPRE_ParCSRBiCGSTABSetup(solver, par_M, par_b, par_x);
          break;
 
@@ -197,6 +239,20 @@ void
 SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
             HYPRE_IJVector b, HYPRE_IJVector x)
 {
+   if (!solver)
+   {
+      ErrorCodeSet(ERROR_INVALID_SOLVER);
+      ErrorMsgAdd("SolverApply: solver is NULL");
+      return;
+   }
+
+   if (!A || !b || !x)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("SolverApply: matrix or vector is NULL");
+      return;
+   }
+
    StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
 
    void              *vA = NULL, *vb = NULL, *vx = NULL;
