@@ -224,6 +224,11 @@ ErrorBacktracePrint(void)
       return;
    }
 
+   /* GCOVR/LCOV exclusion: the interactive debugger attach path is inherently
+    * environment-dependent (procfs, fork/exec, gdb/lldb availability) and not
+    * meaningfully testable in CI/unit tests without hanging or spawning debuggers. */
+   /* GCOVR_EXCL_START */
+   /* LCOV_EXCL_START */
    /* Interactive debug mode (HYPREDRV_DEBUG=1) */
    /* Check if already being debugged */
    FILE   *f      = fopen("/proc/self/status", "r");
@@ -329,6 +334,8 @@ ErrorBacktracePrint(void)
       // cppcheck-suppress unreachableCode
       waitpid(child_pid, NULL, 0);
    }
+   /* LCOV_EXCL_STOP */
+   /* GCOVR_EXCL_STOP */
 }
 
 #else
@@ -533,7 +540,8 @@ ErrorCodeReset(uint32_t code)
 void
 ErrorCodeResetAll(void)
 {
-   ErrorCodeReset(0x7FFFFFFFu);
+   /* Clear *all* bits, including ERROR_UNKNOWN (0x80000000). */
+   ErrorCodeReset(0xFFFFFFFFu);
 }
 
 /*-----------------------------------------------------------------------------

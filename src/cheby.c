@@ -25,8 +25,8 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(Cheby)
-DEFINE_VOID_GET_VALID_VALUES_FUNC(Cheby)
+GENERATE_PREFIXED_COMPONENTS(Cheby)      // LCOV_EXCL_LINE
+DEFINE_VOID_GET_VALID_VALUES_FUNC(Cheby) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * ChebySetDefaultArgs

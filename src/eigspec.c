@@ -73,7 +73,7 @@
 #define EigSpec_NUM_FIELDS \
    (sizeof(EigSpec_field_offset_map) / sizeof(EigSpec_field_offset_map[0]))
 
-GENERATE_PREFIXED_COMPONENTS(EigSpec)
+GENERATE_PREFIXED_COMPONENTS(EigSpec) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/

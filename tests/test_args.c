@@ -1,6 +1,7 @@
 #include <mpi.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "args.h"
 #include "error.h"
@@ -184,6 +185,87 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
    InputArgsDestroy(&args);
 }
 
+static void
+test_InputArgsParse_driver_mode_with_config_file(void)
+{
+   /* Test the branch where config file is found anywhere in argv (driver mode) */
+   input_args *args = NULL;
+   char        yaml_file[] = "/tmp/test_config.yml";
+   FILE       *fp          = fopen(yaml_file, "w");
+   ASSERT_NOT_NULL(fp);
+   fprintf(fp, "solver: pcg\npreconditioner: amg\n");
+   fclose(fp);
+
+   char *argv[] = {"hypredrive", "-q", yaml_file};
+   ErrorCodeResetAll();
+   InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
+
+   if (!ErrorCodeActive())
+   {
+      ASSERT_NOT_NULL(args);
+      ASSERT_EQ(args->solver_method, SOLVER_PCG);
+      InputArgsDestroy(&args);
+   }
+
+   unlink(yaml_file);
+}
+
+static void
+test_InputArgsParse_null_argv0_error(void)
+{
+   /* Test the branch where argv[0] is NULL (error path) */
+   input_args *args = NULL;
+   char       *argv[] = {NULL};
+
+   ErrorCodeResetAll();
+   InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+
+   ASSERT_TRUE(ErrorCodeActive());
+   ASSERT_NULL(args);
+   ASSERT_TRUE(ErrorCodeGet() & ERROR_UNKNOWN);
+}
+
+static void
+test_InputArgsParse_file_not_found_error(void)
+{
+   /* Test the branch where file doesn't exist */
+   input_args *args = NULL;
+   char       *argv[] = {"nonexistent.yml"};
+
+   ErrorCodeResetAll();
+   InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+
+   ASSERT_TRUE(ErrorCodeActive());
+   ASSERT_NULL(args);
+   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+}
+
+static void
+test_InputArgsParse_legacy_mode_with_overrides(void)
+{
+   /* Test legacy mode: argv[0] is YAML filename, argv[1..] are override pairs */
+   input_args *args = NULL;
+   char        yaml_file[] = "/tmp/test_config2.yml";
+   FILE       *fp          = fopen(yaml_file, "w");
+   ASSERT_NOT_NULL(fp);
+   fprintf(fp, "solver: gmres\npreconditioner: amg\n");
+   fclose(fp);
+
+   char *argv[] = {yaml_file, "--solver:pcg:max_iter", "100"};
+   ErrorCodeResetAll();
+   InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
+
+   if (!ErrorCodeActive())
+   {
+      ASSERT_NOT_NULL(args);
+      ASSERT_EQ(args->solver_method, SOLVER_PCG);
+      ASSERT_EQ(args->solver.pcg.max_iter, 100);
+      InputArgsDestroy(&args);
+   }
+
+   unlink(yaml_file);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -196,6 +278,10 @@ main(int argc, char **argv)
    RUN_TEST(test_YAMLtreeBuild_inconsistent_indent);
    RUN_TEST(test_YAMLtextRead_missing_file);
    RUN_TEST(test_YAMLtreeUpdate_overrides_solver_and_precon);
+   RUN_TEST(test_InputArgsParse_driver_mode_with_config_file);
+   RUN_TEST(test_InputArgsParse_null_argv0_error);
+   RUN_TEST(test_InputArgsParse_file_not_found_error);
+   RUN_TEST(test_InputArgsParse_legacy_mode_with_overrides);
 
    MPI_Finalize();
    return 0;

@@ -250,6 +250,73 @@ test_YAMLnodeFindChildValueByKey_nonexistent(void)
    YAMLtreeDestroy(&tree);
 }
 
+static void
+test_YAMLtreeUpdate_fullargv_longflag_and_skip_nonoverride_tokens(void)
+{
+   YAMLtree *tree = YAMLtreeCreate(10);
+   ASSERT_NOT_NULL(tree);
+
+   /* Full argv mode: use the long flag (--args), include a non-override token after it
+    * (should be ignored in full-argv mode), then a real override pair. */
+   char *argv[] = {(char *)"--args", (char *)"not_an_override", (char *)"1",
+                   (char *)"--foo:bar", (char *)"baz"};
+
+   ErrorCodeResetAll();
+   YAMLtreeUpdate(5, argv, tree);
+   ASSERT_FALSE(ErrorCodeActive());
+
+   YAMLnode *foo = YAMLnodeFindChildByKey(tree->root, "foo");
+   ASSERT_NOT_NULL(foo);
+   YAMLnode *bar = YAMLnodeFindChildByKey(foo, "bar");
+   ASSERT_NOT_NULL(bar);
+   ASSERT_STREQ(bar->val, "baz");
+
+   YAMLtreeDestroy(&tree);
+}
+
+static void
+test_YAMLtreeUpdate_fullargv_shortflag(void)
+{
+   YAMLtree *tree = YAMLtreeCreate(10);
+   ASSERT_NOT_NULL(tree);
+
+   /* Full argv mode using the short flag (-a). */
+   char *argv[] = {(char *)"-a", (char *)"--x:y", (char *)"1"};
+
+   ErrorCodeResetAll();
+   YAMLtreeUpdate(3, argv, tree);
+   ASSERT_FALSE(ErrorCodeActive());
+
+   YAMLnode *x = YAMLnodeFindChildByKey(tree->root, "x");
+   ASSERT_NOT_NULL(x);
+   YAMLnode *y = YAMLnodeFindChildByKey(x, "y");
+   ASSERT_NOT_NULL(y);
+   ASSERT_STREQ(y->val, "1");
+
+   YAMLtreeDestroy(&tree);
+}
+
+static void
+test_YAMLnodePrint_only_valid_mode(void)
+{
+   YAMLtree *tree = YAMLtreeCreate(10);
+   ASSERT_NOT_NULL(tree);
+
+   /* Ensure at least one node is YAML_NODE_VALID so YAML_PRINT_MODE_ONLY_VALID
+    * executes its conditional printing branch. */
+   tree->root->valid = YAML_NODE_VALID;
+   YAMLnode *a       = YAMLnodeCreate("a", "1", 1);
+   YAMLnode *b       = YAMLnodeCreate("b", "2", 1);
+   a->valid          = YAML_NODE_VALID;
+   b->valid          = YAML_NODE_INVALID_KEY;
+   YAMLnodeAddChild(tree->root, a);
+   YAMLnodeAddChild(tree->root, b);
+
+   YAMLnodePrint(tree->root, YAML_PRINT_MODE_ONLY_VALID);
+
+   YAMLtreeDestroy(&tree);
+}
+
 /*-----------------------------------------------------------------------------
  * Test YAML tree building with deeply nested structure (3+ levels)
  * This tests parsing patterns like:
@@ -466,6 +533,9 @@ main(void)
    RUN_TEST(test_YAMLtreeBuild_invalid_indent);
    RUN_TEST(test_YAMLnodeFindByKey_nonexistent);
    RUN_TEST(test_YAMLnodeFindChildValueByKey_nonexistent);
+   RUN_TEST(test_YAMLtreeUpdate_fullargv_longflag_and_skip_nonoverride_tokens);
+   RUN_TEST(test_YAMLtreeUpdate_fullargv_shortflag);
+   RUN_TEST(test_YAMLnodePrint_only_valid_mode);
 
    return 0; /* Success - CTest handles reporting */
 }

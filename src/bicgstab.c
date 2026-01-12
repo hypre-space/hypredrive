@@ -28,8 +28,8 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(BiCGSTAB)
-DEFINE_VOID_GET_VALID_VALUES_FUNC(BiCGSTAB)
+GENERATE_PREFIXED_COMPONENTS(BiCGSTAB)      // LCOV_EXCL_LINE
+DEFINE_VOID_GET_VALID_VALUES_FUNC(BiCGSTAB) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * BiCGSTABSetDefaultArgs

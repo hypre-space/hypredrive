@@ -154,36 +154,12 @@
  *
  * @param _prefix Prefix used in the naming of the generated function.
  */
-#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix)                                       \
-   void _prefix##SetArgsFromYAML(_prefix##_args *args, YAMLnode *parent)              \
-   {                                                                                  \
-      if (parent->children)                                                           \
-      {                                                                               \
-         /* Case 1: Nested structure - iterate over children */                       \
-         YAML_NODE_ITERATE(parent, child)                                             \
-         {                                                                            \
-            YAML_NODE_VALIDATE(child, _prefix##GetValidKeys, _prefix##GetValidValues) \
-                                                                                      \
-            YAML_NODE_SET_FIELD(child, args, _prefix##SetFieldByName)                 \
-         }                                                                            \
-      }                                                                               \
-      else                                                                            \
-      {                                                                               \
-         /* Case 2: Flat value - treat val as "type" */                               \
-         /* Temporarily swap key to "type" for validation/setting */                  \
-         char *temp_key = strdup(parent->key);                                        \
-         free(parent->key);                                                           \
-         parent->key = (char *)malloc(5 * sizeof(char));                              \
-         snprintf(parent->key, 5, "type");                                            \
-                                                                                      \
-         YAML_NODE_VALIDATE(parent, _prefix##GetValidKeys, _prefix##GetValidValues)   \
-         YAML_NODE_SET_FIELD(parent, args, _prefix##SetFieldByName)                   \
-                                                                                      \
-         /* Restore original key */                                                   \
-         free(parent->key);                                                           \
-         parent->key = strdup(temp_key);                                              \
-         free(temp_key);                                                              \
-      }                                                                               \
+#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix)                            \
+   void _prefix##SetArgsFromYAML(_prefix##_args *args, YAMLnode *parent)   \
+   {                                                                       \
+      YAMLSetArgsGeneric((void *)args, parent, _prefix##GetValidKeys,      \
+                         _prefix##GetValidValues,                          \
+                         (YAMLSetFieldByNameFunc)_prefix##SetFieldByName); \
    }
 
 /**

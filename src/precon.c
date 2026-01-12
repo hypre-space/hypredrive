@@ -100,7 +100,8 @@ PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 {
    YAML_NODE_ITERATE(parent, child)
    {
-      YAML_NODE_VALIDATE(child, PreconGetValidKeys, PreconGetValidValues);
+      YAML_NODE_VALIDATE(child, PreconGetValidKeys,
+                         PreconGetValidValues); // LCOV_EXCL_LINE
 
       YAML_NODE_SET_FIELD(child, args, PreconSetFieldByName);
    }

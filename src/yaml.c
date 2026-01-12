@@ -8,6 +8,123 @@
 #include "yaml.h"
 
 /*-----------------------------------------------------------------------------
+ * Schema-driven validation helpers (shared by macro-generated parsers)
+ *-----------------------------------------------------------------------------*/
+
+static void
+YAMLnodeValidateMap(YAMLnode *node, StrIntMapArray map_array)
+{
+   if (StrIntMapArrayDomainEntryExists(map_array, node->val))
+   {
+      int mapped = StrIntMapArrayGetImage(map_array, node->val);
+      int length = snprintf(NULL, 0, "%d", mapped) + 1;
+
+      if (!node->mapped_val)
+      {
+         node->mapped_val = (char *)malloc((size_t)length * sizeof(char));
+      }
+      else if (length > (int)strlen(node->mapped_val))
+      {
+         node->mapped_val =
+            (char *)realloc(node->mapped_val, (size_t)length * sizeof(char));
+      }
+
+      snprintf(node->mapped_val, (size_t)length, "%d", mapped);
+      node->valid = YAML_NODE_VALID;
+   }
+   else
+   {
+      node->valid = YAML_NODE_INVALID_VAL;
+   }
+}
+
+void
+YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
+                       YAMLGetValidValuesFunc get_vals)
+{
+   if (!node)
+   {
+      return;
+   }
+
+   if ((node->valid == YAML_NODE_INVALID_DIVISOR) ||
+       (node->valid == YAML_NODE_INVALID_INDENT))
+   {
+      return;
+   }
+
+   StrArray keys = get_keys();
+   if (StrArrayEntryExists(keys, node->key))
+   {
+      StrIntMapArray map_array_key = get_vals(node->key);
+      if (map_array_key.size > 0)
+      {
+         YAMLnodeValidateMap(node, map_array_key);
+      }
+      else
+      {
+         if (!node->mapped_val)
+         {
+            node->mapped_val = strdup(node->val);
+         }
+         node->valid = YAML_NODE_VALID;
+      }
+      return;
+   }
+
+   StrIntMapArray map_array_type = get_vals("type");
+   if (!strcmp(node->key, "type") && map_array_type.size > 0)
+   {
+      YAMLnodeValidateMap(node, map_array_type);
+      return;
+   }
+
+   node->valid = YAML_NODE_INVALID_KEY;
+}
+
+void
+YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc get_keys,
+                   YAMLGetValidValuesFunc get_vals, YAMLSetFieldByNameFunc set_field)
+{
+   if (!parent)
+   {
+      return;
+   }
+
+   if (parent->children)
+   {
+      /* Case 1: Nested structure - iterate over children */
+      for (YAMLnode *child = parent->children; child != NULL; child = child->next)
+      {
+         YAMLnodeValidateSchema(child, get_keys, get_vals);
+         if (child->valid == YAML_NODE_VALID)
+         {
+            set_field(args, child);
+         }
+      }
+   }
+   else
+   {
+      /* Case 2: Flat value - treat val as "type" */
+      char *temp_key = strdup(parent->key);
+      free(parent->key);
+      parent->key = (char *)malloc(5 * sizeof(char));
+      snprintf(parent->key, 5, "type");
+
+      YAMLnodeValidateSchema(parent, get_keys, get_vals);
+      if (parent->valid == YAML_NODE_VALID)
+      {
+         set_field(args, parent);
+      }
+
+      /* Restore original key */
+      free(parent->key);
+      parent->key = strdup(temp_key);
+      free(temp_key);
+   }
+}
+
+/*-----------------------------------------------------------------------------
  * YAMLtreeCreate
  *-----------------------------------------------------------------------------*/
 

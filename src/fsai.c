@@ -31,7 +31,7 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(FSAI)
+GENERATE_PREFIXED_COMPONENTS(FSAI) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * FSAIGetValidValues

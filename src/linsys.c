@@ -343,8 +343,18 @@ LinearSystemMatrixGetNumRows(HYPRE_IJMatrix matrix)
    void              *obj   = NULL;
    HYPRE_BigInt       nrows = 0, ncols = 0;
 
+   if (!matrix)
+   {
+      return 0;
+   }
+
    HYPRE_IJMatrixGetObject(matrix, &obj);
    par_A = (HYPRE_ParCSRMatrix)obj;
+
+   if (!par_A)
+   {
+      return 0;
+   }
 
    HYPRE_ParCSRMatrixGetDims(par_A, &nrows, &ncols);
 
@@ -361,8 +371,18 @@ LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
    HYPRE_ParCSRMatrix par_A = NULL;
    void              *obj   = NULL;
 
+   if (!matrix)
+   {
+      return 0;
+   }
+
    HYPRE_IJMatrixGetObject(matrix, &obj);
    par_A = (HYPRE_ParCSRMatrix)obj;
+
+   if (!par_A)
+   {
+      return 0;
+   }
 
    hypre_ParCSRMatrixSetDNumNonzeros(par_A);
 
@@ -838,6 +858,13 @@ LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr)
 
    StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
 
+   if (!x0_ptr || !x_ptr)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      StatsAnnotate(HYPREDRV_ANNOTATE_END, "reset_x0");
+      return;
+   }
+
    /* TODO: implement HYPRE_IJVectorCopy in hypre */
    HYPRE_IJVectorGetObject(x0_ptr, &obj_x0);
    HYPRE_IJVectorGetObject(x_ptr, &obj_x);
@@ -1153,17 +1180,17 @@ LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_A,
 
    {
       int max_base = (int)sizeof(A_name) - 1 - 4;
-      if (max_base < 0) max_base = 0;
+      if (max_base < 0) max_base = 0; /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
       snprintf(A_name, sizeof(A_name), "%.*s.out", max_base, A_base);
    }
    {
       int max_base = (int)sizeof(b_name) - 1 - 4;
-      if (max_base < 0) max_base = 0;
+      if (max_base < 0) max_base = 0; /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
       snprintf(b_name, sizeof(b_name), "%.*s.out", max_base, b_base);
    }
    {
       int max_base = (int)sizeof(d_name) - 1 - 4;
-      if (max_base < 0) max_base = 0;
+      if (max_base < 0) max_base = 0; /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
       snprintf(d_name, sizeof(d_name), "%.*s.out", max_base, d_base);
    }
 
