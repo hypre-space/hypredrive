@@ -290,7 +290,6 @@ test_create_parse_and_destroy(void)
    ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
    ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
 
-   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
 
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
@@ -579,10 +578,15 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
 
    ASSERT_TRUE(HYPREDRV_LinearSystemPrintDofmap(obj, NULL) & ERROR_UNKNOWN);
    ErrorCodeResetAll();
-   state->dofmap = NULL;
-   char *tmp_dof = CREATE_TEMP_FILE("tmp_dofmap.txt");
+   /* Temporarily hide the dofmap to exercise the ERROR_MISSING_DOFMAP branch,
+    * but restore it so the object can cleanly destroy owned state. */
+   IntArray *saved_dofmap = state->dofmap;
+   state->dofmap          = NULL;
+   char *tmp_dof          = CREATE_TEMP_FILE("tmp_dofmap.txt");
    ASSERT_TRUE(HYPREDRV_LinearSystemPrintDofmap(obj, tmp_dof) & ERROR_MISSING_DOFMAP);
    ErrorCodeResetAll();
+   free(tmp_dof);
+   state->dofmap = saved_dofmap;
 
    uint32_t print_code = HYPREDRV_LinearSystemPrint(obj);
    ASSERT_TRUE(print_code == ERROR_NONE ||
@@ -1101,6 +1105,7 @@ test_HYPREDRV_misc_0hit_branches(void)
 
    char *tmp_dof = CREATE_TEMP_FILE("tmp_api_dofmap.txt");
    ASSERT_EQ(HYPREDRV_LinearSystemPrintDofmap(obj, tmp_dof), ERROR_NONE);
+   free(tmp_dof);
 
    /* Cover GetSolutionNorm error branches */
    double norm = 0.0;

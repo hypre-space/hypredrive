@@ -55,6 +55,16 @@ function(add_unit_test test_name target_name)
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort\\("
     )
+
+    # When running with sanitizers, suppress known external leaks (MPI runtime, etc.)
+    # so unit tests fail only on leaks in hypredrive itself.
+    get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
+    if(_sanitizer_enabled AND EXISTS "${CMAKE_SOURCE_DIR}/.github/lsan.supp")
+        set_tests_properties(${test_name}
+            PROPERTIES
+                ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/.github/lsan.supp"
+        )
+    endif()
 endfunction()
 
 # Test utilities functions

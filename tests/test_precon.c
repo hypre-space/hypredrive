@@ -296,6 +296,12 @@ test_MGRCreate_coarsest_level_branches(void)
    MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
+   /* Clean up coarsest solver (inferred as ILU) */
+   if (mgr.csolver)
+   {
+      HYPRE_ILUDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
 
    /* 2) Infer AMG when type == -1 and ilu.max_iter <= 0 */
    mgr.coarsest_level.type = -1;
@@ -306,6 +312,12 @@ test_MGRCreate_coarsest_level_branches(void)
    MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
+   /* Clean up coarsest solver (inferred as AMG) */
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
 
    /* 3) Explicit AMG coarsest solver type */
    mgr.coarsest_level.type = 0;
@@ -315,6 +327,12 @@ test_MGRCreate_coarsest_level_branches(void)
    MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
+   /* Clean up coarsest solver (explicit AMG) */
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
 
    /* 4) Explicit ILU coarsest solver type */
    mgr.coarsest_level.type = 32;
@@ -324,6 +342,12 @@ test_MGRCreate_coarsest_level_branches(void)
    MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
+   /* Clean up coarsest solver (explicit ILU) */
+   if (mgr.csolver)
+   {
+      HYPRE_ILUDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
 
    IntArrayDestroy(&dofmap);
    HYPRE_Finalize();

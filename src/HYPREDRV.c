@@ -157,6 +157,7 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->comm     = comm;
    hypredrv->nstates  = 0;
    hypredrv->states   = NULL;
+   hypredrv->iargs    = NULL;
    hypredrv->mat_A    = NULL;
    hypredrv->mat_M    = NULL;
    hypredrv->vec_b    = NULL;
@@ -199,6 +200,20 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    {
       ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
       return ErrorCodeGet();
+   }
+
+   /* Destroy solver/preconditioner objects before tearing down dependent state. */
+   if (hypredrv->iargs)
+   {
+      if (hypredrv->solver)
+      {
+         SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+      }
+      if (hypredrv->precon)
+      {
+         PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                       &hypredrv->precon);
+      }
    }
 
    if (hypredrv->mat_A != hypredrv->mat_M)
@@ -746,6 +761,8 @@ HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t hypredrv, int size, const int *dofmap)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
+   /* Keep ownership clean when this is called multiple times */
+   IntArrayDestroy(&hypredrv->dofmap);
    IntArrayBuild(hypredrv->comm, size, dofmap, &hypredrv->dofmap);
 
    return ErrorCodeGet();
@@ -876,6 +893,12 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
 
    if (should_create)
    {
+      /* If we're recreating, destroy the existing preconditioner first to avoid leaks. */
+      if (hypredrv->precon)
+      {
+         PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                       &hypredrv->precon);
+      }
       PreconCreate(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                    hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon);
    }
@@ -909,6 +932,11 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
    /* Create the solver object (if not reusing) */
    if (!((ls_id + 1) % (reuse + 1)))
    {
+      /* If we're recreating, destroy the existing solver first to avoid leaks. */
+      if (hypredrv->solver)
+      {
+         SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+      }
       SolverCreate(hypredrv->comm, hypredrv->iargs->solver_method,
                    &hypredrv->iargs->solver, &hypredrv->solver);
    }

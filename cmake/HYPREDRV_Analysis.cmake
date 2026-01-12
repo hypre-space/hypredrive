@@ -7,6 +7,37 @@
 if(HYPREDRV_ENABLE_ANALYSIS)
     message(STATUS "Static code analysis and sanitizers are enabled")
 
+    # Make sure `ctest` can run analysis builds without requiring manual
+    # LD_LIBRARY_PATH exports (common pain point when HYPRE pulls in DSUPERLU).
+    #
+    # Important: do NOT force BUILD_WITH_INSTALL_RPATH here; that breaks running
+    # build-tree tests because it can drop the build-tree rpath to libHYPREDRV.
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+    # Always allow build-tree executables to find our build-tree shared libs.
+    set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
+    list(APPEND CMAKE_BUILD_RPATH "$ORIGIN/lib")
+
+    # Heuristic: derive potential external lib dirs from HYPRE's include dirs.
+    # This typically finds prefixes like <superlu_prefix>/include -> <superlu_prefix>/lib.
+    if(TARGET HYPRE::HYPRE)
+        get_target_property(_hypre_inc_dirs HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+        if(_hypre_inc_dirs)
+            foreach(_inc IN LISTS _hypre_inc_dirs)
+                # Skip generator expressions
+                if(_inc MATCHES "^\\$<")
+                    continue()
+                endif()
+                get_filename_component(_prefix "${_inc}" DIRECTORY)
+                set(_libdir "${_prefix}/lib")
+                if(EXISTS "${_libdir}")
+                    list(APPEND CMAKE_BUILD_RPATH "${_libdir}")
+                endif()
+            endforeach()
+        endif()
+    endif()
+    list(REMOVE_DUPLICATES CMAKE_BUILD_RPATH)
+
     if(NOT CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
         message(WARNING "HYPREDRV_ENABLE_ANALYSIS is ON, but CMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}'. Consider using Debug for better analysis.")
     endif()
