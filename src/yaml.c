@@ -250,7 +250,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
 
       /* Allow YAML sequence item lines (which may not contain ':') */
       bool is_seq_item_line =
-         (line[pos] == '-' && (line[pos + 1] == '\0' || line[pos + 1] == ' '));
+         (bool)(line[pos] == '-' && (line[pos + 1] == '\0' || line[pos + 1] == ' '));
 
       /* Establish base indentation on first indented line */
       if (base_indent == -1 && pos > 0)
@@ -282,10 +282,10 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
           */
          if (!first_indented_line && pos > prev_indent)
          {
-            int  jump = pos - prev_indent;
-            bool is_seq_item =
-               (line[pos] == '-' && (line[pos + 1] == '\0' || line[pos + 1] == ' '));
-            int max_allowed = (is_seq_item) ? base_indent * 2 : base_indent;
+            int  jump        = pos - prev_indent;
+            bool is_seq_item = (bool)(line[pos] == '-' &&
+                                      (line[pos + 1] == '\0' || line[pos + 1] == ' '));
+            int  max_allowed = (int)is_seq_item ? base_indent * 2 : base_indent;
             /* Be tolerant to avoid false positives with deeper nesting */
             if (jump > max_allowed * 2)
             {
@@ -799,7 +799,21 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
          {
             if (!strcmp(inc_item->key, "-") && inc_item->val && strlen(inc_item->val) > 0)
             {
-               paths = (char **)realloc(paths, (size_t)(n_paths + 1) * sizeof(char *));
+               char **new_paths =
+                  (char **)realloc(paths, (size_t)(n_paths + 1) * sizeof(char *));
+               if (!new_paths)
+               {
+                  /* Free existing paths array and all its elements */
+                  for (int j = 0; j < n_paths; j++)
+                  {
+                     free(paths[j]);
+                  }
+                  free(paths);
+                  ErrorCodeSet(ERROR_ALLOCATION);
+                  ErrorMsgAdd("Failed to allocate memory for include paths");
+                  return;
+               }
+               paths            = new_paths;
                paths[n_paths++] = strdup(inc_item->val);
             }
          }
@@ -1416,7 +1430,7 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
    }
 
    /* Special formatting for sequence items ("-") */
-   bool      is_seq_item  = (!strcmp(node->key, "-"));
+   bool      is_seq_item  = (strcmp(node->key, "-") == 0);
    YAMLnode *inline_child = NULL;
    if (is_seq_item && node->val && !strlen(node->val) && node->children)
    {
@@ -1435,7 +1449,7 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
       }
       else
       {
-         printf("%s\n", (strlen(node->val) > 0) ? node->val : "");
+         printf("%s\n", (node->val && strlen(node->val) > 0) ? node->val : "");
       }
    }
 

@@ -598,7 +598,8 @@ static void
 test_YAMLtreeExpandIncludes_list_under_type(void)
 {
    const char *tmpdir = "/tmp/hypredrv_test_includes";
-   (void)system("rm -rf /tmp/hypredrv_test_includes && mkdir -p /tmp/hypredrv_test_includes");
+   int ret = system("rm -rf /tmp/hypredrv_test_includes && mkdir -p /tmp/hypredrv_test_includes");
+   (void)ret;
 
    FILE *f = fopen("/tmp/hypredrv_test_includes/v1.yml", "w");
    ASSERT_NOT_NULL(f);
@@ -651,7 +652,8 @@ static void
 test_YAMLtreeExpandIncludes_list_under_preconditioner(void)
 {
    const char *tmpdir = "/tmp/hypredrv_test_includes2";
-   (void)system("rm -rf /tmp/hypredrv_test_includes2 && mkdir -p /tmp/hypredrv_test_includes2");
+   int ret = system("rm -rf /tmp/hypredrv_test_includes2 && mkdir -p /tmp/hypredrv_test_includes2");
+   (void)ret;
 
    FILE *f = fopen("/tmp/hypredrv_test_includes2/amg.yml", "w");
    ASSERT_NOT_NULL(f);
