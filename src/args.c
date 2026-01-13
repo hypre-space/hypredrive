@@ -8,6 +8,7 @@
 #include "args.h"
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
+#include "utils.h"
 #include "yaml.h"
 
 /*-----------------------------------------------------------------------------
@@ -295,6 +296,72 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
    /* Check if the solver type was set with a single (key, val) pair */
    if (!strcmp(parent->val, ""))
    {
+      /* Case A: preconditioner is a sequence of variants (possibly different types):
+       * preconditioner:
+       *   - amg: ...
+       *   - ilu: ...
+       */
+      YAMLnode **precon_items = NULL;
+      int        num_items    = YAMLnodeCollectSequenceItems(parent, &precon_items);
+      if (num_items > 0)
+      {
+         iargs->num_precon_variants = num_items;
+         iargs->precon_methods = (precon_t *)malloc((size_t)num_items * sizeof(precon_t));
+         iargs->precon_variants =
+            (precon_args *)malloc((size_t)num_items * sizeof(precon_args));
+
+         for (int vi = 0; vi < num_items; vi++)
+         {
+            YAMLnode *item = precon_items[vi];
+            if (!item->children || item->children->next)
+            {
+               ErrorCodeSet(ERROR_INVALID_KEY);
+               ErrorMsgAdd(
+                  "Each preconditioner variant must contain exactly one type key");
+               free(precon_items);
+               return;
+            }
+
+            YAMLnode *type = item->children;
+            precon_t  method =
+               (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type->key);
+            iargs->precon_methods[vi] = method;
+
+            PreconSetDefaultArgs(&iargs->precon_variants[vi]);
+
+            /* Wrap for existing parser: preconditioner -> <type> -> fields */
+            YAMLnode fake_type = {0};
+            fake_type.key      = type->key;
+            fake_type.val      = "";
+            fake_type.level    = type->level;
+            fake_type.valid    = YAML_NODE_VALID;
+            fake_type.children = type->children;
+            fake_type.next     = NULL;
+
+            YAMLnode fake_parent = {0};
+            fake_parent.key      = "preconditioner";
+            fake_parent.val      = "";
+            fake_parent.level    = parent->level;
+            fake_parent.valid    = YAML_NODE_VALID;
+            fake_parent.children = &fake_type;
+            fake_parent.next     = NULL;
+
+            PreconSetArgsFromYAML(&iargs->precon_variants[vi], &fake_parent);
+
+            /* Clean up mapped_val allocated during validation on fake nodes */
+            free(fake_type.mapped_val);
+            free(fake_parent.mapped_val);
+         }
+
+         free(precon_items);
+
+         /* Set active variant to first one */
+         iargs->active_precon_variant = 0;
+         iargs->precon_method         = iargs->precon_methods[0];
+         iargs->precon                = iargs->precon_variants[0];
+         return;
+      }
+
       /* Check if a preconditioner type was set */
       if (!parent->children)
       {
@@ -315,6 +382,7 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
          (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type_node->key);
 
       /* Check if this type node has sequence items (variants) */
+      YAML_NODE_SET_VALID(type_node);
       YAMLnode **seq_items    = NULL;
       int        num_variants = YAMLnodeCollectSequenceItems(type_node, &seq_items);
 
@@ -516,6 +584,8 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    YAMLtree   *tree        = NULL;
    int         base_indent = 2;
    int         myid        = 0;
+   char       *config_dir  = NULL;
+   char       *config_base = NULL;
 
    MPI_Comm_rank(comm, &myid);
 
@@ -548,6 +618,8 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
          *args_ptr = NULL;
          return;
       }
+
+      SplitFilename(argv[0], &config_dir, &config_base);
    }
    else if (config_idx >= 0)
    {
@@ -558,6 +630,8 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
          *args_ptr = NULL;
          return;
       }
+
+      SplitFilename(argv[config_idx], &config_dir, &config_base);
    }
    else
    {
@@ -577,6 +651,9 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
 
    /* Build YAML tree */
    YAMLtreeBuild(base_indent, text, &tree);
+
+   /* Expand nested include files (post-build to keep parser simple) */
+   YAMLtreeExpandIncludes(tree, config_dir ? config_dir : ".");
 
    /* Check if any config option has been passed in via CLI.
       If so, overwrite the data stored in the YAMLtree object
@@ -614,6 +691,8 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
 
    /* Free memory */
    free(text);
+   free(config_dir);
+   free(config_base);
 
    /*--------------------------------------------
     * Parse file sections

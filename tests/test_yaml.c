@@ -591,6 +591,110 @@ test_YAMLtreeBuild_sequence_items(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * Test YAML include expansion into sequences
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeExpandIncludes_list_under_type(void)
+{
+   const char *tmpdir = "/tmp/hypredrv_test_includes";
+   (void)system("rm -rf /tmp/hypredrv_test_includes && mkdir -p /tmp/hypredrv_test_includes");
+
+   FILE *f = fopen("/tmp/hypredrv_test_includes/v1.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "coarsening:\n  type: HMIS\n");
+   fclose(f);
+
+   f = fopen("/tmp/hypredrv_test_includes/v2.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "coarsening:\n  type: PMIS\n");
+   fclose(f);
+
+   const char *yaml_text = "preconditioner:\n"
+                           "  amg:\n"
+                           "    include:\n"
+                           "      - v1.yml\n"
+                           "      - v2.yml\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   YAMLtreeBuild(2, text, &tree);
+   ASSERT_NOT_NULL(tree);
+
+   YAMLtreeExpandIncludes(tree, tmpdir);
+
+   YAMLnode *precon = YAMLnodeFindChildByKey(tree->root, "preconditioner");
+   ASSERT_NOT_NULL(precon);
+   YAMLnode *amg = YAMLnodeFindChildByKey(precon, "amg");
+   ASSERT_NOT_NULL(amg);
+
+   YAMLnode **items = NULL;
+   int        n     = YAMLnodeCollectSequenceItems(amg, &items);
+   ASSERT_EQ(n, 2);
+
+   YAMLnode *c0 = YAMLnodeFindChildByKey(items[0], "coarsening");
+   ASSERT_NOT_NULL(c0);
+   ASSERT_STREQ(YAMLnodeFindChildValueByKey(c0, "type"), "hmis");
+
+   YAMLnode *c1 = YAMLnodeFindChildByKey(items[1], "coarsening");
+   ASSERT_NOT_NULL(c1);
+   ASSERT_STREQ(YAMLnodeFindChildValueByKey(c1, "type"), "pmis");
+
+   free(items);
+   free(text);
+   YAMLtreeDestroy(&tree);
+}
+
+static void
+test_YAMLtreeExpandIncludes_list_under_preconditioner(void)
+{
+   const char *tmpdir = "/tmp/hypredrv_test_includes2";
+   (void)system("rm -rf /tmp/hypredrv_test_includes2 && mkdir -p /tmp/hypredrv_test_includes2");
+
+   FILE *f = fopen("/tmp/hypredrv_test_includes2/amg.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "amg:\n  print_level: 0\n");
+   fclose(f);
+
+   f = fopen("/tmp/hypredrv_test_includes2/ilu.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "ilu:\n  type: bj-iluk\n");
+   fclose(f);
+
+   const char *yaml_text = "preconditioner:\n"
+                           "  include:\n"
+                           "    - amg.yml\n"
+                           "    - ilu.yml\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   YAMLtreeBuild(2, text, &tree);
+   ASSERT_NOT_NULL(tree);
+
+   YAMLtreeExpandIncludes(tree, tmpdir);
+
+   YAMLnode *precon = YAMLnodeFindChildByKey(tree->root, "preconditioner");
+   ASSERT_NOT_NULL(precon);
+
+   YAMLnode **items = NULL;
+   int        n     = YAMLnodeCollectSequenceItems(precon, &items);
+   ASSERT_EQ(n, 2);
+
+   ASSERT_NOT_NULL(items[0]->children);
+   ASSERT_NOT_NULL(items[1]->children);
+   ASSERT_TRUE(!strcmp(items[0]->children->key, "amg") || !strcmp(items[1]->children->key, "amg"));
+   ASSERT_TRUE(!strcmp(items[0]->children->key, "ilu") || !strcmp(items[1]->children->key, "ilu"));
+
+   free(items);
+   free(text);
+   YAMLtreeDestroy(&tree);
+}
+
+/*-----------------------------------------------------------------------------
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
@@ -620,6 +724,8 @@ main(void)
    RUN_TEST(test_YAMLtreeUpdate_fullargv_shortflag);
    RUN_TEST(test_YAMLnodePrint_only_valid_mode);
    RUN_TEST(test_YAMLtreeBuild_sequence_items);
+   RUN_TEST(test_YAMLtreeExpandIncludes_list_under_type);
+   RUN_TEST(test_YAMLtreeExpandIncludes_list_under_preconditioner);
 
    return 0; /* Success - CTest handles reporting */
 }

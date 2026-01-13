@@ -228,26 +228,6 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
          continue;
       }
 
-      /* Check for divisor character */
-      if ((sep = strchr(line, ':')) == NULL)
-      {
-         continue;
-      }
-
-      *sep = '\0';
-      key  = line;
-      val  = sep + 1;
-
-      /* Trim leading spaces */
-      while (*key == ' ')
-      {
-         key++;
-      }
-      while (*val == ' ')
-      {
-         val++;
-      }
-
       /* Calculate indentation */
       pos = 0;
       while (line[pos] == ' ' || line[pos] == '\t')
@@ -267,6 +247,10 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
       {
          continue;
       }
+
+      /* Allow YAML sequence item lines (which may not contain ':') */
+      bool is_seq_item_line =
+         (line[pos] == '-' && (line[pos + 1] == '\0' || line[pos + 1] == ' '));
 
       /* Establish base indentation on first indented line */
       if (base_indent == -1 && pos > 0)
@@ -316,7 +300,36 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
          prev_indent         = pos;
       }
 
-      if (!strcmp(key, "include"))
+      /* Parse key/val only for non-sequence lines */
+      if (!is_seq_item_line)
+      {
+         /* Check for divisor character */
+         if ((sep = strchr(line, ':')) == NULL)
+         {
+            continue;
+         }
+
+         *sep = '\0';
+         key  = line;
+         val  = sep + 1;
+
+         /* Trim leading spaces */
+         while (*key == ' ')
+         {
+            key++;
+         }
+         while (*val == ' ')
+         {
+            val++;
+         }
+      }
+
+      /* Preprocessor include directive:
+       * only treat "include: <file>" (scalar) as a directive.
+       * For "include:" with a YAML sequence underneath, keep it in the text and
+       * handle it later at the YAML tree level.
+       */
+      if (!is_seq_item_line && key && !strcmp(key, "include") && val && strlen(val) > 0)
       {
          /* Calculate node level based on actual indentation */
          inner_level = pos / (base_indent > 0 ? base_indent : 1);
@@ -454,7 +467,10 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
           (line_after_indent[1] == ' ' || line_after_indent[1] == '\0'))
       {
          is_sequence_item = true;
-         /* For sequence items, the key is "-" and value is empty */
+         /* For sequence items, the key is "-". Value is either:
+          * - empty (sequence item is a mapping; parsed as children)
+          * - inline scalar (e.g., "- ex8-amg-1.yml") stored in val
+          */
          key           = "-";
          val           = "";
          divisor_is_ok = true; /* Sequence items are valid even without colon */
@@ -468,6 +484,23 @@ YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
           *     coarsening:       <- child at indent 6
           * The parser correctly handles this via YAMLnodeAppend based on levels.
           */
+
+         if (line_after_indent[1] == ' ' && strlen(line_after_indent) > 2)
+         {
+            char *inline_content = line_after_indent + 2; /* Skip "- " */
+            while (*inline_content == ' ')
+            {
+               inline_content++;
+            }
+            if (*inline_content != '\0')
+            {
+               /* If there is no ':' then this is an inline scalar list item */
+               if (!strchr(inline_content, ':'))
+               {
+                  val = inline_content;
+               }
+            }
+         }
       }
       else
       {
@@ -680,6 +713,150 @@ YAMLnodeHasSequenceItems(YAMLnode *node)
       }
    }
    return false;
+}
+
+/*-----------------------------------------------------------------------------
+ * Helper functions for include expansion
+ *-----------------------------------------------------------------------------*/
+
+static void
+YAMLnodeRemoveChild(YAMLnode *parent, YAMLnode *child)
+{
+   if (!parent || !child)
+   {
+      return;
+   }
+   YAMLnode *cur  = parent->children;
+   YAMLnode *prev = NULL;
+   while (cur)
+   {
+      if (cur == child)
+      {
+         if (prev)
+         {
+            prev->next = cur->next;
+         }
+         else
+         {
+            parent->children = cur->next;
+         }
+         cur->next = NULL;
+         return;
+      }
+      prev = cur;
+      cur  = cur->next;
+   }
+}
+
+static YAMLnode *
+YAMLnodeCloneDeep(const YAMLnode *src, int level_offset)
+{
+   if (!src)
+   {
+      return NULL;
+   }
+   YAMLnode *clone = YAMLnodeCreate(src->key, src->val, src->level + level_offset);
+   clone->valid    = src->valid;
+   if (src->mapped_val)
+   {
+      clone->mapped_val = strdup(src->mapped_val);
+   }
+   YAML_NODE_ITERATE(src, child_src)
+   {
+      YAMLnode *child_clone = YAMLnodeCloneDeep(child_src, level_offset);
+      YAMLnodeAddChild(clone, child_clone);
+   }
+   return clone;
+}
+
+static void
+YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_indent)
+{
+   if (!node)
+   {
+      return;
+   }
+
+   YAMLnode *child = node->children;
+   while (child)
+   {
+      YAMLnode *next = child->next;
+
+      if (!strcmp(child->key, "include"))
+      {
+         const int include_level = child->level;
+         /* Collect include paths */
+         char **paths   = NULL;
+         int    n_paths = 0;
+         if (child->val && strlen(child->val) > 0)
+         {
+            paths    = (char **)malloc(sizeof(char *));
+            paths[0] = strdup(child->val);
+            n_paths  = 1;
+         }
+
+         YAML_NODE_ITERATE(child, inc_item)
+         {
+            if (!strcmp(inc_item->key, "-") && inc_item->val && strlen(inc_item->val) > 0)
+            {
+               paths = (char **)realloc(paths, (size_t)(n_paths + 1) * sizeof(char *));
+               paths[n_paths++] = strdup(inc_item->val);
+            }
+         }
+
+         /* Remove the include node before inserting new nodes */
+         YAMLnodeRemoveChild(node, child);
+         /* Free removed subtree (include node + its list items) to avoid leaks */
+         YAMLnodeDestroy(child);
+
+         for (int i = 0; i < n_paths; i++)
+         {
+            char *inc_dir  = NULL;
+            char *inc_base = NULL;
+            SplitFilename(paths[i], &inc_dir, &inc_base);
+
+            int    inc_base_indent = base_indent;
+            size_t inc_len         = 0;
+            char  *inc_text        = NULL;
+
+            const char *use_dir = (!inc_dir || !strlen(inc_dir) || !strcmp(inc_dir, "."))
+                                     ? base_dir
+                                     : inc_dir;
+            YAMLtextRead(use_dir, inc_base ? inc_base : paths[i], 0, &inc_base_indent,
+                         &inc_len, &inc_text);
+            if (inc_text)
+            {
+               YAMLtree *inc_tree = NULL;
+               YAMLtreeBuild(inc_base_indent, inc_text, &inc_tree);
+
+               /* Wrap included content as a sequence item */
+               YAMLnode *seq_node = YAMLnodeCreate("-", "", include_level);
+               YAML_NODE_ITERATE(inc_tree->root, inc_child)
+               {
+                  YAMLnode *clone =
+                     YAMLnodeCloneDeep(inc_child, include_level - inc_child->level + 1);
+                  YAMLnodeAddChild(seq_node, clone);
+               }
+               YAMLnodeAddChild(node, seq_node);
+
+               YAMLtreeDestroy(&inc_tree);
+               free(inc_text);
+            }
+
+            free(inc_dir);
+            free(inc_base);
+            free(paths[i]);
+         }
+         free(paths);
+
+         /* Continue from next sibling (include node already removed) */
+         child = next;
+         continue;
+      }
+
+      YAMLnodeExpandIncludesRecursive(child, base_dir, base_indent);
+      child = next;
+   }
 }
 
 static int
@@ -984,6 +1161,18 @@ YAMLtreeValidate(YAMLtree *tree)
    tree->is_validated = true; // Mark tree as validated
 }
 
+void
+YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
+{
+   if (!tree || !tree->root)
+   {
+      return;
+   }
+   const char *dir = (base_dir && strlen(base_dir) > 0) ? base_dir : ".";
+   int         bi  = tree->base_indent > 0 ? tree->base_indent : 2;
+   YAMLnodeExpandIncludesRecursive(tree->root, dir, bi);
+}
+
 /******************************************************************************
  *******************************************************************************/
 
@@ -1151,7 +1340,7 @@ YAMLnodeValidate(YAMLnode *node)
    if (!strcmp(node->key, "-"))
    {
       YAML_NODE_SET_VALID(node);
-      return;
+      /* Still validate children so invalid keys inside sequence items are caught */
    }
 
    switch (node->valid)
@@ -1296,15 +1485,34 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
    }
 
    // Print children
-   YAMLnode *child_iter = node->children;
    if (is_seq_item && inline_child)
    {
-      child_iter = inline_child->next; /* Skip inline child to avoid duplicate print */
+      /* For "- key:" style sequence items, we printed "key:" inline above.
+       * Now print that key's children (so nested mappings show up), then print any
+       * additional siblings.
+       */
+      YAMLnode *gc = inline_child->children;
+      while (gc)
+      {
+         YAMLnodePrint(gc, print_mode);
+         gc = gc->next;
+      }
+
+      YAMLnode *sib = inline_child->next;
+      while (sib)
+      {
+         YAMLnodePrint(sib, print_mode);
+         sib = sib->next;
+      }
    }
-   while (child_iter != NULL)
+   else
    {
-      YAMLnodePrint(child_iter, print_mode);
-      child_iter = child_iter->next;
+      YAMLnode *child_iter = node->children;
+      while (child_iter != NULL)
+      {
+         YAMLnodePrint(child_iter, print_mode);
+         child_iter = child_iter->next;
+      }
    }
 }
 
