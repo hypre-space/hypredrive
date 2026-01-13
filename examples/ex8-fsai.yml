@@ -1,0 +1,5 @@
+fsai:
+  algo_type: bj-afsai
+  max_steps: 4
+  max_step_size: 4
+  max_iter: 2

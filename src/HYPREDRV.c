@@ -401,6 +401,60 @@ HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_InputArgsGetNumPreconVariants
+ *-----------------------------------------------------------------------------*/
+
+int
+HYPREDRV_InputArgsGetNumPreconVariants(HYPREDRV_t hypredrv)
+{
+   return (hypredrv && hypredrv->iargs) ? hypredrv->iargs->num_precon_variants : -1;
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_InputArgsSetPreconVariant
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!hypredrv->iargs)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("Input arguments not parsed");
+      return ErrorCodeGet();
+   }
+
+   if (variant_idx < 0 || variant_idx >= hypredrv->iargs->num_precon_variants)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Invalid preconditioner variant index: %d (valid range: 0-%d)",
+                  variant_idx, hypredrv->iargs->num_precon_variants - 1);
+      return ErrorCodeGet();
+   }
+
+   /* Destroy existing solver/preconditioner objects to avoid stale configuration */
+   if (hypredrv->solver)
+   {
+      SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+   }
+   if (hypredrv->precon)
+   {
+      PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                    &hypredrv->precon);
+   }
+
+   /* Set active variant */
+   hypredrv->iargs->active_precon_variant = variant_idx;
+   hypredrv->iargs->precon_method         = hypredrv->iargs->precon_methods[variant_idx];
+   hypredrv->iargs->precon                = hypredrv->iargs->precon_variants[variant_idx];
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_StateVectorSet
  *-----------------------------------------------------------------------------*/
 

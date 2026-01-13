@@ -131,6 +131,47 @@ test_InputArgsParsePrecon_missing(void)
 }
 
 static void
+test_InputArgsParsePrecon_variants(void)
+{
+   const char yaml_text[] = "solver:\n"
+                            "  pcg:\n"
+                            "    max_iter: 10\n"
+                            "preconditioner:\n"
+                            "  amg:\n"
+                            "    - print_level: 1\n"
+                            "      coarsening:\n"
+                            "        type: HMIS\n"
+                            "        strong_th: 0.25\n"
+                            "    - print_level: 1\n"
+                            "      coarsening:\n"
+                            "        type: PMIS\n"
+                            "        strong_th: 0.5\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->num_precon_variants, 2);
+   ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
+
+   /* Check first variant */
+   ASSERT_EQ(args->precon_variants[0].amg.print_level, 1);
+   ASSERT_EQ(args->precon_variants[0].amg.coarsening.type, 10); /* HMIS */
+   ASSERT_TRUE(args->precon_variants[0].amg.coarsening.strong_th > 0.24 &&
+               args->precon_variants[0].amg.coarsening.strong_th < 0.26);
+
+   /* Check second variant */
+   ASSERT_EQ(args->precon_variants[1].amg.print_level, 1);
+   ASSERT_EQ(args->precon_variants[1].amg.coarsening.type, 8); /* PMIS */
+   ASSERT_TRUE(args->precon_variants[1].amg.coarsening.strong_th > 0.49 &&
+               args->precon_variants[1].amg.coarsening.strong_th < 0.51);
+
+   /* Check active variant is set to first */
+   ASSERT_EQ(args->active_precon_variant, 0);
+   ASSERT_EQ(args->precon.amg.print_level, 1);
+
+   InputArgsDestroy(&args);
+}
+
+static void
 test_YAMLtreeBuild_inconsistent_indent(void)
 {
    const char yaml_text[] = "root:\n"
@@ -275,6 +316,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParseSolver_value_only);
    RUN_TEST(test_InputArgsParsePrecon_value_only);
    RUN_TEST(test_InputArgsParsePrecon_missing);
+   RUN_TEST(test_InputArgsParsePrecon_variants);
    RUN_TEST(test_YAMLtreeBuild_inconsistent_indent);
    RUN_TEST(test_YAMLtextRead_missing_file);
    RUN_TEST(test_YAMLtreeUpdate_overrides_solver_and_precon);

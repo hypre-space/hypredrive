@@ -62,6 +62,8 @@ EnsureCapacity(void)
                       new_capacity);
       ReallocateArray((void **)&active_stats->iters, sizeof(int), old_capacity,
                       new_capacity);
+      ReallocateArray((void **)&active_stats->entry_ls_id, sizeof(int), old_capacity,
+                      new_capacity);
 
       /* Update capacity after all reallocations */
       active_stats->capacity = new_capacity;
@@ -132,46 +134,92 @@ HandleAnnotationBegin(const char *name)
    {
       return;
    }
-   EnsureCapacity();
 
    /* Update counters for special annotations */
-   if (!strcmp(name, "reset_x0"))
+   if (!strcmp(name, "matrix") || !strcmp(name, "system"))
    {
-      active_stats->reps++;
-      active_stats->counter =
-         ((active_stats->ls_counter) * active_stats->num_reps) + (active_stats->reps - 1);
-      StartScalarTimer(&active_stats->reset_x0);
-   }
-   else if (!strcmp(name, "matrix") || !strcmp(name, "system"))
-   {
+      /* Start of a new linear system build:
+       * - reset repetition counter
+       * - reserve the next stats entry so build timers attach to the upcoming solve entry
+       */
+      active_stats->reps = 0;
+      active_stats->counter++;
+      EnsureCapacity();
       StartVectorTimer(active_stats->matrix, active_stats->counter);
+   }
+   else if (!strcmp(name, "reset_x0"))
+   {
+      /* Beginning of a solve entry (one repetition / one variant):
+       * - advance entry index for all but the first repetition after a build
+       * - keep indices contiguous: 0,1,2,... across repetitions and variants
+       */
+      if (active_stats->counter < 0)
+      {
+         active_stats->counter = 0;
+      }
+      else if (active_stats->reps > 0)
+      {
+         active_stats->counter++;
+      }
+      active_stats->reps++;
+      EnsureCapacity();
+      StartScalarTimer(&active_stats->reset_x0);
    }
    else if (!strcmp(name, "rhs"))
    {
+      if (active_stats->counter < 0)
+      {
+         active_stats->counter = 0;
+      }
+      EnsureCapacity();
       StartVectorTimer(active_stats->rhs, active_stats->counter);
    }
    else if (!strcmp(name, "dofmap"))
    {
+      if (active_stats->counter < 0)
+      {
+         active_stats->counter = 0;
+      }
+      EnsureCapacity();
       StartVectorTimer(active_stats->dofmap, active_stats->counter);
    }
    else if (!strcmp(name, "prec"))
    {
+      if (active_stats->counter < 0)
+      {
+         active_stats->counter = 0;
+      }
+      EnsureCapacity();
       StartVectorTimer(active_stats->prec, active_stats->counter);
    }
    else if (!strcmp(name, "solve"))
    {
-      /* Increment linear system counter */
-      active_stats->reps = 0;
-      active_stats->ls_counter++;
-      active_stats->counter = (active_stats->ls_counter - 1) * active_stats->num_reps;
+      /* Increment linear system counter only on the first solve for a new system.
+       * (reset_x0 has already set reps=1 for the first repetition) */
+      if (active_stats->reps == 1)
+      {
+         active_stats->ls_counter++;
+      }
+      if (active_stats->counter < 0)
+      {
+         active_stats->counter = 0;
+      }
+      EnsureCapacity();
       StartVectorTimer(active_stats->solve, active_stats->counter);
+      /* Tag this entry with its linear system id */
+      if (active_stats->entry_ls_id && active_stats->counter < active_stats->capacity)
+      {
+         active_stats->entry_ls_id[active_stats->counter] = active_stats->ls_counter - 1;
+      }
    }
    else if (!strcmp(name, "initialize"))
    {
+      EnsureCapacity();
       StartScalarTimer(&active_stats->initialize);
    }
    else if (!strcmp(name, "finalize"))
    {
+      EnsureCapacity();
       StartScalarTimer(&active_stats->finalize);
    }
    else
@@ -278,35 +326,19 @@ PrintHeader(const char *scale)
 }
 
 /*--------------------------------------------------------------------------
- * Helper: Determine if build times should be printed for this entry
- *--------------------------------------------------------------------------*/
-
-static bool
-ShouldPrintBuildTimes(int entry_index)
-{
-   /* Always print if num_systems is unknown or <= 1 */
-   if (active_stats->num_systems <= 1)
-   {
-      return true;
-   }
-
-   /* For multiple systems, only print for first entry of each system */
-   int entries_per_system = (active_stats->counter + 1) / active_stats->num_systems;
-   return (entry_index % entries_per_system == 0);
-}
-
-/*--------------------------------------------------------------------------
  * Helper: Print single table entry
  *--------------------------------------------------------------------------*/
 
 static void
 PrintEntry(int entry_index)
 {
-   if (ShouldPrintBuildTimes(entry_index))
+   double build_time = active_stats->time_factor * (active_stats->dofmap[entry_index] +
+                                                    active_stats->matrix[entry_index] +
+                                                    active_stats->rhs[entry_index]);
+   bool   show_build = (build_time > 0.0);
+
+   if (show_build)
    {
-      double build_time = active_stats->time_factor * (active_stats->dofmap[entry_index] +
-                                                       active_stats->matrix[entry_index] +
-                                                       active_stats->rhs[entry_index]);
       printf("| %10d | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", entry_index,
              build_time, active_stats->time_factor * active_stats->prec[entry_index],
              active_stats->time_factor * active_stats->solve[entry_index],
@@ -333,8 +365,10 @@ StatsCreate(void)
    Stats *stats = (Stats *)malloc(sizeof(Stats));
    memset(stats, 0, sizeof(Stats));
 
-   stats->capacity     = capacity;
-   stats->counter      = 0;
+   stats->capacity = capacity;
+   /* First solve entry should start at index 0, but we increment at the start of
+    * a new build ("matrix"/"system"), so initialize to -1. */
+   stats->counter      = -1;
    stats->reps         = 0;
    stats->num_reps     = 1;
    stats->num_systems  = -1; /* Unknown by default */
@@ -344,13 +378,14 @@ StatsCreate(void)
    stats->time_factor  = 1.0;
 
    /* Allocate timing arrays */
-   stats->dofmap  = (double *)calloc((size_t)capacity, sizeof(double));
-   stats->matrix  = (double *)calloc((size_t)capacity, sizeof(double));
-   stats->rhs     = (double *)calloc((size_t)capacity, sizeof(double));
-   stats->iters   = (int *)calloc((size_t)capacity, sizeof(int));
-   stats->prec    = (double *)calloc((size_t)capacity, sizeof(double));
-   stats->solve   = (double *)calloc((size_t)capacity, sizeof(double));
-   stats->rrnorms = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->dofmap      = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->matrix      = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->rhs         = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->iters       = (int *)calloc((size_t)capacity, sizeof(int));
+   stats->prec        = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->solve       = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->rrnorms     = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->entry_ls_id = (int *)calloc((size_t)capacity, sizeof(int));
 
    /* Initialize level stack */
    for (int i = 0; i < STATS_MAX_LEVELS; i++)
@@ -422,6 +457,7 @@ StatsDestroy(Stats **stats_ptr)
    free(stats->prec);
    free(stats->solve);
    free(stats->rrnorms);
+   free(stats->entry_ls_id);
 
    /* Free level entry arrays */
    for (int i = 0; i < STATS_MAX_LEVELS; i++)

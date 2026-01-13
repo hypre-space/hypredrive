@@ -109,13 +109,14 @@ typedef struct Stats_struct
    int               level_depth; /* Current depth in hierarchy (0 = no active levels) */
 
    /* Timing arrays (indexed by counter) */
-   double *matrix;  /* Matrix assembly time */
-   double *rhs;     /* RHS assembly time */
-   double *dofmap;  /* DOF map setup time */
-   double *prec;    /* Preconditioner setup time */
-   double *solve;   /* Linear solver time */
-   double *rrnorms; /* Relative residual norms */
-   int    *iters;   /* Iteration counts */
+   double *matrix;      /* Matrix assembly time */
+   double *rhs;         /* RHS assembly time */
+   double *dofmap;      /* DOF map setup time */
+   double *prec;        /* Preconditioner setup time */
+   double *solve;       /* Linear solver time */
+   double *rrnorms;     /* Relative residual norms */
+   int    *iters;       /* Iteration counts */
+   int    *entry_ls_id; /* Linear system id per entry (for build-time printing) */
 
    /* Global timers */
    double initialize;

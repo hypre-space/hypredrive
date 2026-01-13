@@ -508,6 +508,295 @@ test_YAMLtreeBuild_siblings(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * Test YAML sequence parsing
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeBuild_sequence_items(void)
+{
+   const char *yaml_text = "preconditioner:\n"
+                           "  amg:\n"
+                           "    - print_level: 1\n"
+                           "      coarsening:\n"
+                           "        type: HMIS\n"
+                           "    - print_level: 2\n"
+                           "      coarsening:\n"
+                           "        type: PMIS\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   YAMLtreeBuild(2, text, &tree);
+
+   ASSERT_NOT_NULL(tree);
+   ASSERT_NOT_NULL(tree->root);
+
+   YAMLnode *precon = YAMLnodeFindChildByKey(tree->root, "preconditioner");
+   ASSERT_NOT_NULL(precon);
+
+   YAMLnode *amg = YAMLnodeFindChildByKey(precon, "amg");
+   ASSERT_NOT_NULL(amg);
+
+   /* Count sequence items */
+   int seq_count = 0;
+   YAML_NODE_ITERATE(amg, child)
+   {
+      if (!strcmp(child->key, "-"))
+      {
+         seq_count++;
+      }
+   }
+   ASSERT_EQ(seq_count, 2);
+
+   /* Check first sequence item */
+   YAMLnode *first_item = NULL;
+   YAML_NODE_ITERATE(amg, child)
+   {
+      if (!strcmp(child->key, "-"))
+      {
+         first_item = child;
+         break;
+      }
+   }
+   ASSERT_NOT_NULL(first_item);
+
+   char *print_level = YAMLnodeFindChildValueByKey(first_item, "print_level");
+   ASSERT_NOT_NULL(print_level);
+   ASSERT_STREQ(print_level, "1");
+
+   YAMLnode *coarsening = YAMLnodeFindChildByKey(first_item, "coarsening");
+   ASSERT_NOT_NULL(coarsening);
+   char *type = YAMLnodeFindChildValueByKey(coarsening, "type");
+   ASSERT_NOT_NULL(type);
+   ASSERT_STREQ(type, "hmis");
+
+   /* Check second sequence item */
+   YAMLnode *second_item = first_item->next;
+   ASSERT_NOT_NULL(second_item);
+   ASSERT_STREQ(second_item->key, "-");
+
+   print_level = YAMLnodeFindChildValueByKey(second_item, "print_level");
+   ASSERT_NOT_NULL(print_level);
+   ASSERT_STREQ(print_level, "2");
+
+   coarsening = YAMLnodeFindChildByKey(second_item, "coarsening");
+   ASSERT_NOT_NULL(coarsening);
+   type = YAMLnodeFindChildValueByKey(coarsening, "type");
+   ASSERT_NOT_NULL(type);
+   ASSERT_STREQ(type, "pmis");
+
+   free(text);
+   YAMLtreeDestroy(&tree);
+}
+
+/*-----------------------------------------------------------------------------
+ * Test YAML include expansion into sequences
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeExpandIncludes_list_under_type(void)
+{
+   const char *tmpdir = "/tmp/hypredrv_test_includes";
+   int ret = system("rm -rf /tmp/hypredrv_test_includes && mkdir -p /tmp/hypredrv_test_includes");
+   (void)ret;
+
+   FILE *f = fopen("/tmp/hypredrv_test_includes/v1.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "coarsening:\n  type: HMIS\n");
+   fclose(f);
+
+   f = fopen("/tmp/hypredrv_test_includes/v2.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "coarsening:\n  type: PMIS\n");
+   fclose(f);
+
+   const char *yaml_text = "preconditioner:\n"
+                           "  amg:\n"
+                           "    include:\n"
+                           "      - v1.yml\n"
+                           "      - v2.yml\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   YAMLtreeBuild(2, text, &tree);
+   ASSERT_NOT_NULL(tree);
+
+   YAMLtreeExpandIncludes(tree, tmpdir);
+
+   YAMLnode *precon = YAMLnodeFindChildByKey(tree->root, "preconditioner");
+   ASSERT_NOT_NULL(precon);
+   YAMLnode *amg = YAMLnodeFindChildByKey(precon, "amg");
+   ASSERT_NOT_NULL(amg);
+
+   YAMLnode **items = NULL;
+   int        n     = YAMLnodeCollectSequenceItems(amg, &items);
+   ASSERT_EQ(n, 2);
+
+   YAMLnode *c0 = YAMLnodeFindChildByKey(items[0], "coarsening");
+   ASSERT_NOT_NULL(c0);
+   ASSERT_STREQ(YAMLnodeFindChildValueByKey(c0, "type"), "hmis");
+
+   YAMLnode *c1 = YAMLnodeFindChildByKey(items[1], "coarsening");
+   ASSERT_NOT_NULL(c1);
+   ASSERT_STREQ(YAMLnodeFindChildValueByKey(c1, "type"), "pmis");
+
+   free(items);
+   free(text);
+   YAMLtreeDestroy(&tree);
+}
+
+static void
+test_YAMLtreeExpandIncludes_list_under_preconditioner(void)
+{
+   const char *tmpdir = "/tmp/hypredrv_test_includes2";
+   int ret = system("rm -rf /tmp/hypredrv_test_includes2 && mkdir -p /tmp/hypredrv_test_includes2");
+   (void)ret;
+
+   FILE *f = fopen("/tmp/hypredrv_test_includes2/amg.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "amg:\n  print_level: 0\n");
+   fclose(f);
+
+   f = fopen("/tmp/hypredrv_test_includes2/ilu.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "ilu:\n  type: bj-iluk\n");
+   fclose(f);
+
+   const char *yaml_text = "preconditioner:\n"
+                           "  include:\n"
+                           "    - amg.yml\n"
+                           "    - ilu.yml\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   YAMLtreeBuild(2, text, &tree);
+   ASSERT_NOT_NULL(tree);
+
+   YAMLtreeExpandIncludes(tree, tmpdir);
+
+   YAMLnode *precon = YAMLnodeFindChildByKey(tree->root, "preconditioner");
+   ASSERT_NOT_NULL(precon);
+
+   YAMLnode **items = NULL;
+   int        n     = YAMLnodeCollectSequenceItems(precon, &items);
+   ASSERT_EQ(n, 2);
+
+   ASSERT_NOT_NULL(items[0]->children);
+   ASSERT_NOT_NULL(items[1]->children);
+   ASSERT_TRUE(!strcmp(items[0]->children->key, "amg") || !strcmp(items[1]->children->key, "amg"));
+   ASSERT_TRUE(!strcmp(items[0]->children->key, "ilu") || !strcmp(items[1]->children->key, "ilu"));
+
+   free(items);
+   free(text);
+   YAMLtreeDestroy(&tree);
+}
+
+/*-----------------------------------------------------------------------------
+ * Test indentation spacing equal to 3
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeBuild_indent_3_spaces(void)
+{
+   /* Test with 3-space indentation - should work */
+   const char *yaml_text = "key:\n   child: value\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   ErrorCodeResetAll();
+   YAMLtreeBuild(0, text, &tree);
+
+   ASSERT_NOT_NULL(tree);
+   ASSERT_NOT_NULL(tree->root);
+   ASSERT_FALSE(ErrorCodeActive());
+
+   YAMLnode *key = YAMLnodeFindChildByKey(tree->root, "key");
+   ASSERT_NOT_NULL(key);
+
+   YAMLnode *child = YAMLnodeFindChildByKey(key, "child");
+   ASSERT_NOT_NULL(child);
+   ASSERT_STREQ(child->val, "value");
+
+   free(text);
+   YAMLtreeDestroy(&tree);
+}
+
+/*-----------------------------------------------------------------------------
+ * Test indentation spacing equal to 4
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeBuild_indent_4_spaces(void)
+{
+   /* Test with 4-space indentation - should work */
+   const char *yaml_text = "key:\n    child: value\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   ErrorCodeResetAll();
+   YAMLtreeBuild(0, text, &tree);
+
+   ASSERT_NOT_NULL(tree);
+   ASSERT_NOT_NULL(tree->root);
+   ASSERT_FALSE(ErrorCodeActive());
+
+   YAMLnode *key = YAMLnodeFindChildByKey(tree->root, "key");
+   ASSERT_NOT_NULL(key);
+
+   YAMLnode *child = YAMLnodeFindChildByKey(key, "child");
+   ASSERT_NOT_NULL(child);
+   ASSERT_STREQ(child->val, "value");
+
+   free(text);
+   YAMLtreeDestroy(&tree);
+}
+
+/*-----------------------------------------------------------------------------
+ * Test indentation with tabs - should fail
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeBuild_indent_with_tabs(void)
+{
+   /* Test with tab indentation - should fail with ERROR_YAML_MIXED_INDENT */
+   const char *tmpfile = "/tmp/hypredrv_test_tabs.yml";
+   FILE       *f       = fopen(tmpfile, "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "key:\n\tchild: value\n");
+   fclose(f);
+
+   ErrorCodeResetAll();
+
+   /* Use YAMLtextRead to trigger the tab detection */
+   int    base_indent = -1;
+   size_t text_len    = 0;
+   char  *yaml_text   = NULL;
+   YAMLtextRead("/tmp", "hypredrv_test_tabs.yml", 0, &base_indent, &text_len, &yaml_text);
+
+   /* Should have detected the error */
+   ASSERT_TRUE(ErrorCodeActive());
+   ASSERT_EQ(ErrorCodeGet() & ERROR_YAML_MIXED_INDENT, ERROR_YAML_MIXED_INDENT);
+
+   if (yaml_text)
+   {
+      free(yaml_text);
+   }
+
+   /* Clean up */
+   int ret = system("rm -f /tmp/hypredrv_test_tabs.yml");
+   (void)ret;
+}
+
+/*-----------------------------------------------------------------------------
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
@@ -536,6 +825,12 @@ main(void)
    RUN_TEST(test_YAMLtreeUpdate_fullargv_longflag_and_skip_nonoverride_tokens);
    RUN_TEST(test_YAMLtreeUpdate_fullargv_shortflag);
    RUN_TEST(test_YAMLnodePrint_only_valid_mode);
+   RUN_TEST(test_YAMLtreeBuild_sequence_items);
+   RUN_TEST(test_YAMLtreeExpandIncludes_list_under_type);
+   RUN_TEST(test_YAMLtreeExpandIncludes_list_under_preconditioner);
+   RUN_TEST(test_YAMLtreeBuild_indent_3_spaces);
+   RUN_TEST(test_YAMLtreeBuild_indent_4_spaces);
+   RUN_TEST(test_YAMLtreeBuild_indent_with_tabs);
 
    return 0; /* Success - CTest handles reporting */
 }

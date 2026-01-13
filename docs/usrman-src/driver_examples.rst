@@ -310,3 +310,39 @@ See ``data/poromech2k/README.md`` for more details about the problem in GEOS.
 .. code-block:: bash
 
    $ scripts/spyplot.py -d data/poromech2k/np1 -r 0:24 -l -t 1e-20
+
+.. _Example8:
+
+Example 8: Multiple preconditioner variants in one YAML
+-------------------------------------------------------
+
+This example demonstrates how to run several preconditioner variants defined as a
+YAML sequence under a single ``preconditioner`` block. `hypredrive` will loop over each
+variant and report a separate stats entry per variant while reusing the same linear system.
+
+.. note::
+   This example uses the ``ps3d10pt7`` dataset (multiple ranks). Ensure the dataset is
+   available (see the note at the top of this page).
+
+1. Use the YAML configuration file ``ex8.yml``:
+
+.. literalinclude:: ../../examples/ex8.yml
+   :language: yaml
+
+2. Run `hypredrive` with the configuration file (single rank):
+
+.. code-block:: bash
+
+   $ mpirun -np 1 ./hypredrive examples/ex8.yml -q
+
+3. Your output should look like:
+
+.. literalinclude:: ../../examples/refOutput/ex8.txt
+   :language: text
+
+.. note::
+   A multi-file version of this input is also provided as ``examples/ex8-multi-1.yml``,
+   where the individual preconditioner variants are split into separate YAML files and
+   pulled in via ``include``. The solver configuration and per-variant iteration
+   counts/residuals should match the single-file version. Minor differences in reported
+   timings are expected.

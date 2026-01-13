@@ -14,22 +14,22 @@
 #include "yaml.h"
 
 /* Forward declarations for internal AMG functions */
-void           AMGSetFieldByName(AMG_args *, const YAMLnode *);
-void           AMGintSetFieldByName(AMGint_args *, const YAMLnode *);
+void           AMGSetFieldByName(void *, const YAMLnode *);
+void           AMGintSetFieldByName(void *, const YAMLnode *);
 void           AMGintSetDefaultArgs(AMGint_args *);
 StrIntMapArray AMGintGetValidValues(const char *);
-void           AMGcsnSetFieldByName(AMGcsn_args *, const YAMLnode *);
+void           AMGcsnSetFieldByName(void *, const YAMLnode *);
 void           AMGcsnSetDefaultArgs(AMGcsn_args *);
 StrIntMapArray AMGcsnGetValidValues(const char *);
 StrIntMapArray AMGaggGetValidValues(const char *);
 StrIntMapArray AMGrlxGetValidValues(const char *);
 StrIntMapArray AMGsmtGetValidValues(const char *);
 
-void           ILUSetFieldByName(ILU_args *, const YAMLnode *);
+void           ILUSetFieldByName(void *, const YAMLnode *);
 void           ILUSetDefaultArgs(ILU_args *);
 StrArray       ILUGetValidKeys(void);
 StrIntMapArray ILUGetValidValues(const char *);
-void           FSAISetFieldByName(FSAI_args *, const YAMLnode *);
+void           FSAISetFieldByName(void *, const YAMLnode *);
 void           FSAISetDefaultArgs(FSAI_args *);
 StrArray       FSAIGetValidKeys(void);
 StrIntMapArray FSAIGetValidValues(const char *);

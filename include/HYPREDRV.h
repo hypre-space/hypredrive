@@ -454,6 +454,53 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t hypredrv);
 
    /**
+    * @brief Retrieve the number of preconditioner variants from a HYPREDRV object.
+    *
+    * This function accesses the HYPREDRV object's input arguments structure to retrieve
+    * the number of preconditioner variants configured in the YAML input.
+    *
+    * @param hypredrv The HYPREDRV_t object from which the number of variants is to be
+    * retrieved.
+    *
+    * @return Returns the number of preconditioner variants as an integer (default: 1).
+    * If the input object is NULL or not properly initialized, the function returns -1.
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t *hypredrv;
+    *    // ... (hypredrv is created, and its components are set) ...
+    *    int num_variants = HYPREDRV_InputArgsGetNumPreconVariants(hypredrv);
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetNumPreconVariants(HYPREDRV_t hypredrv);
+
+   /**
+    * @brief Set the active preconditioner variant index.
+    *
+    * This function sets which preconditioner variant should be used for subsequent
+    * solve operations. It updates the active variant and destroys any existing
+    * solver/preconditioner objects to avoid stale configuration.
+    *
+    * @param hypredrv The HYPREDRV_t object for which to set the variant.
+    * @param variant_idx The zero-based index of the variant to activate (must be in
+    * range [0, num_variants-1]).
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure (e.g., invalid index, object not initialized).
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t *hypredrv;
+    *    // ... (hypredrv is created, and its components are set) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconVariant(hypredrv, 1));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv,
+                                                                      int variant_idx);
+
+   /**
     * @brief Build the linear system (matrix, RHS, and LHS) according to the YAML input
     * passed to the HYPREDRV object.
     *

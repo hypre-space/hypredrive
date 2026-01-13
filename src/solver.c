@@ -25,8 +25,9 @@ static const FieldOffsetMap solver_field_offset_map[] = {
  *-----------------------------------------------------------------------------*/
 
 void
-SolverSetFieldByName(solver_args *args, const YAMLnode *node)
+SolverSetFieldByName(void *vargs, const YAMLnode *node)
 {
+   solver_args *args = (solver_args *)vargs;
    for (size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
    {
       /* Which union type are we trying to set? */

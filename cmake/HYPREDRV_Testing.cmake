@@ -47,29 +47,51 @@ endfunction()
 
 # Function for adding an integration test that verifies CLI overrides (-a/--args)
 function(add_hypredrive_cli_test test_name num_procs config_file)
+    # Optional:
+    #   OVERRIDES        : full list of override tokens to use after -a (replaces defaults)
+    #   EXTRA_ARGS       : additional CLI override pairs to append after -a
+    #   REQUIRE_CONTAINS : additional substrings that must appear in output
+    cmake_parse_arguments(TEST_OPTS "" "" "OVERRIDES;EXTRA_ARGS;REQUIRE_CONTAINS" ${ARGN})
+
     # Automatically prepend "hypredrive_test_" to the test name
     set(full_test_name "hypredrive_test_${test_name}")
 
-    # CLI overrides: set nested solver/precon options via -a
+    # CLI overrides via -a
     set(_cli_args
         -q
         -a
-        --solver:pcg:max_iter 5
-        --preconditioner:amg:print_level 0
     )
+    if(TEST_OPTS_OVERRIDES)
+        list(APPEND _cli_args ${TEST_OPTS_OVERRIDES})
+    else()
+        # Default overrides used by the generic CLI integration test (ex1.yml)
+        list(APPEND _cli_args
+            --solver:pcg:max_iter 5
+            --preconditioner:amg:print_level 0
+        )
+    endif()
+    if(TEST_OPTS_EXTRA_ARGS)
+        list(APPEND _cli_args ${TEST_OPTS_EXTRA_ARGS})
+    endif()
 
     # Encode args for the run script (uses '|' as separator)
     string(JOIN "|" _target_args ${_cli_args})
 
     # Substrings that must appear in output (prove -a reached InputArgsParse)
-    set(_must_contain
-        "solver:"
-        "pcg:"
-        "max_iter: 5"
-        "preconditioner:"
-        "amg:"
-        "print_level: 0"
-    )
+    set(_must_contain "")
+    if(NOT TEST_OPTS_OVERRIDES)
+        list(APPEND _must_contain
+            "solver:"
+            "pcg:"
+            "max_iter: 5"
+            "preconditioner:"
+            "amg:"
+            "print_level: 0"
+        )
+    endif()
+    if(TEST_OPTS_REQUIRE_CONTAINS)
+        list(APPEND _must_contain ${TEST_OPTS_REQUIRE_CONTAINS})
+    endif()
     string(JOIN "|" _require_contains ${_must_contain})
 
     add_test(NAME ${full_test_name}
@@ -187,9 +209,30 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     # Add tests subfolder (contains unit tests that use add_test())
     add_subdirectory(tests)
 
+    # Regression: CLI override of num_repetitions should produce contiguous stats entries.
+    set(_cli_reps5_require_contains
+        "num_repetitions: 5"
+        "|          0 |"
+        "|          1 |"
+        "|          2 |"
+        "|          3 |"
+        "|          4 |"
+    )
+
+    # Regression: exercise CLI overrides for ex7 (multiple linear systems + repetitions).
+    set(_cli_ex7_reps4_ls4_require_contains
+        "num_repetitions: 4"
+        "last_suffix: 4"
+        "Solving linear system #4"
+    )
+
     # Add tests (ex1_1proc shows full system info, others use -q for faster runs)
     add_hypredrive_test(ex1_1proc  1 ex1.yml NO_QUIET)
     add_hypredrive_cli_test(ex1_cli 1 ex1.yml)
+    add_hypredrive_cli_test(ex1_cli_reps5 1 ex1.yml
+        EXTRA_ARGS --general:num_repetitions 5
+        REQUIRE_CONTAINS ${_cli_reps5_require_contains}
+    )
     add_hypredrive_test(ex1a_1proc 1 ex1a.yml)
     add_hypredrive_test(ex1b_1proc 1 ex1b.yml)
     add_hypredrive_test(ex1c_1proc 1 ex1c.yml)
@@ -201,7 +244,14 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     if (HYPREDRV_ENABLE_EIGSPEC)
         add_hypredrive_test(ex6_1proc 1 ex6.yml)
     endif()
-    add_hypredrive_test(ex7_1proc  1 ex7.yml)
+    add_hypredrive_test(ex7_1proc   1 ex7.yml)
+    add_hypredrive_cli_test(ex7_cli_reps4_ls4 1 ex7.yml
+        OVERRIDES --general:num_repetitions 4 --linear_system:last_suffix 4
+        REQUIRE_CONTAINS ${_cli_ex7_reps4_ls4_require_contains}
+    )
+    add_hypredrive_test(ex8_1proc   1 ex8.yml)
+    add_hypredrive_test(ex8a_4proc  4 ex8-multi-1.yml)
+    add_hypredrive_test(ex8b_4proc  4 ex8-multi-2.yml)
 
     # Test main.c help/usage/error branches
     # Note: --help exits with 0, so we need to allow that

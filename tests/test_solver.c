@@ -22,21 +22,21 @@
 #endif
 
 /* Forward declarations */
-void           GMRESSetFieldByName(GMRES_args *, const YAMLnode *);
+void           GMRESSetFieldByName(void *, const YAMLnode *);
 void           GMRESSetDefaultArgs(GMRES_args *);
 StrArray       GMRESGetValidKeys(void);
 StrIntMapArray GMRESGetValidValues(const char *);
-void           PCGSetFieldByName(PCG_args *, const YAMLnode *);
+void           PCGSetFieldByName(void *, const YAMLnode *);
 void           PCGSetDefaultArgs(PCG_args *);
 StrIntMapArray PCGGetValidValues(const char *);
-void           BiCGSTABSetFieldByName(BiCGSTAB_args *, const YAMLnode *);
+void           BiCGSTABSetFieldByName(void *, const YAMLnode *);
 void           BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
 StrIntMapArray BiCGSTABGetValidValues(const char *);
-void           FGMRESSetFieldByName(FGMRES_args *, const YAMLnode *);
+void           FGMRESSetFieldByName(void *, const YAMLnode *);
 void           FGMRESSetDefaultArgs(FGMRES_args *);
 StrArray       FGMRESGetValidKeys(void);
 StrIntMapArray FGMRESGetValidValues(const char *);
-void           ChebySetFieldByName(Cheby_args *, const YAMLnode *);
+void           ChebySetFieldByName(void *, const YAMLnode *);
 void           ChebySetDefaultArgs(Cheby_args *);
 StrArray       ChebyGetValidKeys(void);
 StrIntMapArray ChebyGetValidValues(const char *);

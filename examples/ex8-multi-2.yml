@@ -1,0 +1,21 @@
+general:
+  warmup: false
+  num_repetitions: 1
+  use_millisec: on
+
+linear_system:
+  type: ij
+  rhs_filename: data/ps3d10pt7/np4/IJ.out.b
+  matrix_filename: data/ps3d10pt7/np4/IJ.out.A
+
+solver:
+  pcg:
+    relative_tol: 1.0e-9
+    max_iter: 500
+    print_level: 0
+
+preconditioner:
+  include:
+    - ex8-amg.yml
+    - ex8-ilu.yml
+    - ex8-fsai.yml

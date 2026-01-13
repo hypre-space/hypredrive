@@ -1,0 +1,10 @@
+coarsening:
+  type: HMIS
+  strong_th: 0.8
+interpolation:
+  prolongation_type: "MM-ext+i"
+relaxation:
+  down_type: l1sym-hgs
+  down_sweeps: 1
+  up_type: l1sym-hgs
+  up_sweeps: 1

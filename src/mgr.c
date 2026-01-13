@@ -322,8 +322,9 @@ MGRGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRSetArgsFromYAML(MGR_args *args, YAMLnode *parent)
+MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
+   MGR_args *args = (MGR_args *)vargs;
    YAML_NODE_ITERATE(parent, child)
    {
       if (!strcmp(child->key, "level"))

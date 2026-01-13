@@ -121,6 +121,8 @@ void      YAMLnodePrint(YAMLnode *, YAMLprintMode);
 YAMLnode *YAMLnodeFindByKey(YAMLnode *, const char *);
 YAMLnode *YAMLnodeFindChildByKey(YAMLnode *, const char *);
 char     *YAMLnodeFindChildValueByKey(YAMLnode *, const char *);
+int       YAMLnodeCollectSequenceItems(YAMLnode *, YAMLnode ***);
+void      YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir);
 
 /*-----------------------------------------------------------------------------
  * Public macros
