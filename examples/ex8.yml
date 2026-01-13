@@ -37,6 +37,9 @@ preconditioner:
         down_sweeps: 1
         up_type: 16
         up_sweeps: 1
+        chebyshev:
+          order: 4
+          fraction: 0.1
 
     - coarsening:
         type: HMIS
@@ -44,9 +47,9 @@ preconditioner:
       interpolation:
         prolongation_type: "MM-ext+i"
       relaxation:
-        down_type: 16
+        down_type: l1sym-hgs
         down_sweeps: 1
-        up_type: 16
+        up_type: l1sym-hgs
         up_sweeps: 1
 
     - coarsening:
@@ -59,6 +62,11 @@ preconditioner:
         down_sweeps: 1
         up_type: 16
         up_sweeps: 1
+      smoother:
+        type: ilu
+        num_levels: 1
+        ilu:
+          type: bj-iluk
 
     - coarsening:
         type: PMIS

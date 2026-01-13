@@ -1,0 +1,11 @@
+amg:
+  coarsening:
+    type: HMIS
+    strong_th: 0.25
+  interpolation:
+    prolongation_type: "MM-ext+i"
+  relaxation:
+    down_type: 16
+    down_sweeps: 1
+    up_type: 16
+    up_sweeps: 1

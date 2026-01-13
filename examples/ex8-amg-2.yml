@@ -1,0 +1,13 @@
+coarsening:
+  type: HMIS
+  strong_th: 0.5
+interpolation:
+  prolongation_type: "MM-ext+i"
+relaxation:
+  down_type: 16
+  down_sweeps: 1
+  up_type: 16
+  up_sweeps: 1
+  chebyshev:
+    order: 4
+    fraction: 0.1

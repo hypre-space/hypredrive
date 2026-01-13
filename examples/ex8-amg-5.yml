@@ -1,0 +1,10 @@
+coarsening:
+  type: PMIS
+  strong_th: 0.5
+interpolation:
+  prolongation_type: standard
+relaxation:
+  down_type: 8
+  down_sweeps: 2
+  up_type: 8
+  up_sweeps: 2

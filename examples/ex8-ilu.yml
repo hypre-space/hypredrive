@@ -1,0 +1,4 @@
+ilu:
+  type: bj-iluk
+  print_level: 0
+  max_iter: 2
