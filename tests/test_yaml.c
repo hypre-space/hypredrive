@@ -697,6 +697,106 @@ test_YAMLtreeExpandIncludes_list_under_preconditioner(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * Test indentation spacing equal to 3
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeBuild_indent_3_spaces(void)
+{
+   /* Test with 3-space indentation - should work */
+   const char *yaml_text = "key:\n   child: value\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   ErrorCodeResetAll();
+   YAMLtreeBuild(0, text, &tree);
+
+   ASSERT_NOT_NULL(tree);
+   ASSERT_NOT_NULL(tree->root);
+   ASSERT_FALSE(ErrorCodeActive());
+
+   YAMLnode *key = YAMLnodeFindChildByKey(tree->root, "key");
+   ASSERT_NOT_NULL(key);
+
+   YAMLnode *child = YAMLnodeFindChildByKey(key, "child");
+   ASSERT_NOT_NULL(child);
+   ASSERT_STREQ(child->val, "value");
+
+   free(text);
+   YAMLtreeDestroy(&tree);
+}
+
+/*-----------------------------------------------------------------------------
+ * Test indentation spacing equal to 4
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeBuild_indent_4_spaces(void)
+{
+   /* Test with 4-space indentation - should work */
+   const char *yaml_text = "key:\n    child: value\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   ErrorCodeResetAll();
+   YAMLtreeBuild(0, text, &tree);
+
+   ASSERT_NOT_NULL(tree);
+   ASSERT_NOT_NULL(tree->root);
+   ASSERT_FALSE(ErrorCodeActive());
+
+   YAMLnode *key = YAMLnodeFindChildByKey(tree->root, "key");
+   ASSERT_NOT_NULL(key);
+
+   YAMLnode *child = YAMLnodeFindChildByKey(key, "child");
+   ASSERT_NOT_NULL(child);
+   ASSERT_STREQ(child->val, "value");
+
+   free(text);
+   YAMLtreeDestroy(&tree);
+}
+
+/*-----------------------------------------------------------------------------
+ * Test indentation with tabs - should fail
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeBuild_indent_with_tabs(void)
+{
+   /* Test with tab indentation - should fail with ERROR_YAML_MIXED_INDENT */
+   const char *tmpfile = "/tmp/hypredrv_test_tabs.yml";
+   FILE       *f       = fopen(tmpfile, "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "key:\n\tchild: value\n");
+   fclose(f);
+
+   ErrorCodeResetAll();
+
+   /* Use YAMLtextRead to trigger the tab detection */
+   int    base_indent = -1;
+   size_t text_len    = 0;
+   char  *yaml_text   = NULL;
+   YAMLtextRead("/tmp", "hypredrv_test_tabs.yml", 0, &base_indent, &text_len, &yaml_text);
+
+   /* Should have detected the error */
+   ASSERT_TRUE(ErrorCodeActive());
+   ASSERT_EQ(ErrorCodeGet() & ERROR_YAML_MIXED_INDENT, ERROR_YAML_MIXED_INDENT);
+
+   if (yaml_text)
+   {
+      free(yaml_text);
+   }
+
+   /* Clean up */
+   int ret = system("rm -f /tmp/hypredrv_test_tabs.yml");
+   (void)ret;
+}
+
+/*-----------------------------------------------------------------------------
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
@@ -728,6 +828,9 @@ main(void)
    RUN_TEST(test_YAMLtreeBuild_sequence_items);
    RUN_TEST(test_YAMLtreeExpandIncludes_list_under_type);
    RUN_TEST(test_YAMLtreeExpandIncludes_list_under_preconditioner);
+   RUN_TEST(test_YAMLtreeBuild_indent_3_spaces);
+   RUN_TEST(test_YAMLtreeBuild_indent_4_spaces);
+   RUN_TEST(test_YAMLtreeBuild_indent_with_tabs);
 
    return 0; /* Success - CTest handles reporting */
 }

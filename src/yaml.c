@@ -237,6 +237,13 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
             ErrorCodeSet(ERROR_YAML_MIXED_INDENT);
             ErrorMsgAdd("Tab characters are not allowed in YAML input!");
             fclose(fp);
+            /* Free any allocated text before returning */
+            if (*text_ptr)
+            {
+               free(*text_ptr);
+               *text_ptr   = NULL;
+               *length_ptr = 0;
+            }
             return;
          }
          pos++;
@@ -261,6 +268,13 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
             ErrorCodeSet(ERROR_YAML_INVALID_BASE_INDENT);
             ErrorMsgAdd("Base indentation in YAML input must be at least 2 spaces");
             fclose(fp);
+            /* Free any allocated text before returning */
+            if (*text_ptr)
+            {
+               free(*text_ptr);
+               *text_ptr   = NULL;
+               *length_ptr = 0;
+            }
             return;
          }
       }
@@ -273,6 +287,13 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
             ErrorCodeSet(ERROR_YAML_INCONSISTENT_INDENT);
             ErrorMsgAdd("Inconsistent indentation detected in YAML input!");
             fclose(fp);
+            /* Free any allocated text before returning */
+            if (*text_ptr)
+            {
+               free(*text_ptr);
+               *text_ptr   = NULL;
+               *length_ptr = 0;
+            }
             return;
          }
 
@@ -292,6 +313,13 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
                ErrorCodeSet(ERROR_YAML_INVALID_INDENT_JUMP);
                ErrorMsgAdd("Invalid indentation jump detected in YAML input!");
                fclose(fp);
+               /* Free any allocated text before returning */
+               if (*text_ptr)
+               {
+                  free(*text_ptr);
+                  *text_ptr   = NULL;
+                  *length_ptr = 0;
+               }
                return;
             }
          }
@@ -348,6 +376,13 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
          if (!new_text)
          {
             fclose(fp);
+            /* Free any allocated text before returning */
+            if (*text_ptr)
+            {
+               free(*text_ptr);
+               *text_ptr   = NULL;
+               *length_ptr = 0;
+            }
             return;
          }
          *text_ptr = new_text;

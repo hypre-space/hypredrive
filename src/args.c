@@ -540,6 +540,9 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    }
    if (DistributedErrorCodeActive(comm))
    {
+      /* Free allocated memory before returning on error */
+      free(dirname);
+      free(basename);
       return;
    }
 
