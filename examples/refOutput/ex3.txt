@@ -2,6 +2,7 @@ Date and time: YYYY-MM-DD HH:MM:SS
 
 Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
 
+
 Running on 1 MPI rank
 ------------------------------------------------------------------------------------
 general: 
@@ -16,8 +17,11 @@ preconditioner:
     level: 
       0: 
         f_dofs: [2]
+        prolongation_type: jacobi
       1: 
         f_dofs: [1]
+        g_relaxation: l1-hsgs
+        restriction_type: columped
     coarsest_level: amg
 ------------------------------------------------------------------------------------
 ====================================================================================
@@ -31,7 +35,7 @@ STATISTICS SUMMARY:
 |            |    LS build |       setup |       solve |    relative |             |
 |      Entry |  times [ms] |  times [ms] |  times [ms] |   res. norm |       iters |
 +------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       4.642 |       8.746 |      37.479 |    8.86e-07 |          20 |
+|          0 |       3.210 |       5.010 |       2.116 |    1.74e-07 |           8 |
 +------------+-------------+-------------+-------------+-------------+-------------+
 
 Date and time: YYYY-MM-DD HH:MM:SS

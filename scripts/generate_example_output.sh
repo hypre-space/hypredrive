@@ -14,7 +14,7 @@ generate_output() {
     local EXAMPLE_ID=$1
 
     case ${EXAMPLE_ID} in
-        1|3|5|6|7)
+        1|3|5|6|7|8)
             NP=1
             ;;
         2|4)
@@ -72,7 +72,7 @@ fi
 
 if [[ "$1" == "all" || "$1" == "a" ]]; then
     # Loop through all example IDs and generate output
-    EXAMPLE_IDS=({1..7})
+    EXAMPLE_IDS=({1..8})
 
     for ID in "${EXAMPLE_IDS[@]}"; do
         generate_output "$ID"
