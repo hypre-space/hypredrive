@@ -24,8 +24,9 @@
  * @param _numFields Number of fields in the map.
  */
 #define DEFINE_SET_FIELD_BY_NAME_FUNC(_funcName, _argsType, _map, _numFields)        \
-   void _funcName(_argsType *_args, const YAMLnode *_node)                           \
+   void _funcName(void *vargs, const YAMLnode *_node)                                \
    {                                                                                 \
+      _argsType *_args = (_argsType *)vargs;                                         \
       for (size_t i = 0; i < (_numFields); i++)                                      \
       {                                                                              \
          if (!strcmp((_map)[i].name, (_node)->key))                                  \
@@ -104,7 +105,7 @@
  * @param _prefix Prefix used in the naming of the declared function.
  */
 #define DECLARE_SET_ARGS_FROM_YAML_FUNC(_prefix) \
-   void _prefix##SetArgsFromYAML(_prefix##_args *, YAMLnode *);
+   void _prefix##SetArgsFromYAML(void *, YAMLnode *);
 
 /**
  * @brief Define a wrapper setter that also sets a "type" field on the parent struct.
@@ -154,12 +155,12 @@
  *
  * @param _prefix Prefix used in the naming of the generated function.
  */
-#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix)                            \
-   void _prefix##SetArgsFromYAML(_prefix##_args *args, YAMLnode *parent)   \
-   {                                                                       \
-      YAMLSetArgsGeneric((void *)args, parent, _prefix##GetValidKeys,      \
-                         _prefix##GetValidValues,                          \
-                         (YAMLSetFieldByNameFunc)_prefix##SetFieldByName); \
+#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix)                             \
+   void _prefix##SetArgsFromYAML(void *vargs, YAMLnode *parent)             \
+   {                                                                        \
+      _prefix##_args *args = (_prefix##_args *)vargs;                       \
+      YAMLSetArgsGeneric((void *)args, parent, _prefix##GetValidKeys,       \
+                         _prefix##GetValidValues, _prefix##SetFieldByName); \
    }
 
 /**
@@ -280,7 +281,7 @@
  * SetFieldByName, GetValidKeys, and the top-level SetArgs wrapper), but the YAML parsing
  * for the prefix needs to be custom:
  *
- *   void prefixSetArgsFromYAML(prefix_args*, YAMLnode*);
+ *   void prefixSetArgsFromYAML(void*, YAMLnode*);
  */
 #define GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(prefix)                          \
    DEFINE_FIELD_OFFSET_MAP(prefix);                                               \

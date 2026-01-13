@@ -17,12 +17,12 @@
 #include "yaml.h"
 
 /* Internal/generated functions not in public headers */
-void           AMGSetArgsFromYAML(AMG_args *, YAMLnode *);
-void           AMGintSetArgsFromYAML(AMGint_args *, YAMLnode *);
-void           AMGaggSetArgsFromYAML(AMGagg_args *, YAMLnode *);
-void           AMGcsnSetArgsFromYAML(AMGcsn_args *, YAMLnode *);
-void           AMGrlxSetArgsFromYAML(AMGrlx_args *, YAMLnode *);
-void           AMGsmtSetArgsFromYAML(AMGsmt_args *, YAMLnode *);
+void           AMGSetArgsFromYAML(void *, YAMLnode *);
+void           AMGintSetArgsFromYAML(void *, YAMLnode *);
+void           AMGaggSetArgsFromYAML(void *, YAMLnode *);
+void           AMGcsnSetArgsFromYAML(void *, YAMLnode *);
+void           AMGrlxSetArgsFromYAML(void *, YAMLnode *);
+void           AMGsmtSetArgsFromYAML(void *, YAMLnode *);
 StrArray       AMGGetValidKeys(void);
 StrIntMapArray AMGGetValidValues(const char *);
 StrArray       AMGintGetValidKeys(void);
@@ -35,37 +35,37 @@ StrArray       AMGrlxGetValidKeys(void);
 StrIntMapArray AMGrlxGetValidValues(const char *);
 StrArray       AMGsmtGetValidKeys(void);
 StrIntMapArray AMGsmtGetValidValues(const char *);
-void           FSAISetArgsFromYAML(FSAI_args *, YAMLnode *);
+void           FSAISetArgsFromYAML(void *, YAMLnode *);
 StrArray       FSAIGetValidKeys(void);
 StrIntMapArray FSAIGetValidValues(const char *);
-void           ILUSetArgsFromYAML(ILU_args *, YAMLnode *);
+void           ILUSetArgsFromYAML(void *, YAMLnode *);
 StrArray       ILUGetValidKeys(void);
 StrIntMapArray ILUGetValidValues(const char *);
 void           ILUSetDefaultArgs(ILU_args *);
 void           FSAISetDefaultArgs(FSAI_args *);
 void           PCGSetDefaultArgs(PCG_args *);
-void           PCGSetArgsFromYAML(PCG_args *, YAMLnode *);
+void           PCGSetArgsFromYAML(void *, YAMLnode *);
 StrArray       PCGGetValidKeys(void);
 StrIntMapArray PCGGetValidValues(const char *);
 void           GMRESSetDefaultArgs(GMRES_args *);
-void           GMRESSetArgsFromYAML(GMRES_args *, YAMLnode *);
+void           GMRESSetArgsFromYAML(void *, YAMLnode *);
 StrArray       GMRESGetValidKeys(void);
 StrIntMapArray GMRESGetValidValues(const char *);
 void           FGMRESSetDefaultArgs(FGMRES_args *);
-void           FGMRESSetArgsFromYAML(FGMRES_args *, YAMLnode *);
+void           FGMRESSetArgsFromYAML(void *, YAMLnode *);
 StrArray       FGMRESGetValidKeys(void);
 StrIntMapArray FGMRESGetValidValues(const char *);
 void           BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
-void           BiCGSTABSetArgsFromYAML(BiCGSTAB_args *, YAMLnode *);
+void           BiCGSTABSetArgsFromYAML(void *, YAMLnode *);
 StrArray       BiCGSTABGetValidKeys(void);
 StrIntMapArray BiCGSTABGetValidValues(const char *);
-void           ChebySetArgsFromYAML(Cheby_args *, YAMLnode *);
+void           ChebySetArgsFromYAML(void *, YAMLnode *);
 StrArray       ChebyGetValidKeys(void);
 StrIntMapArray ChebyGetValidValues(const char *);
 
 /* MGR (custom YAML parser + generated sub-components) */
 void           MGRSetDefaultArgs(MGR_args *);
-void           MGRSetArgsFromYAML(MGR_args *, YAMLnode *);
+void           MGRSetArgsFromYAML(void *, YAMLnode *);
 StrIntMapArray MGRGetValidValues(const char *);
 StrIntMapArray MGRlvlGetValidValues(const char *);
 HYPRE_Int     *MGRConvertArgInt(MGR_args *, const char *);
@@ -320,28 +320,22 @@ test_exhaustive_solver_parsers(void)
    BiCGSTABSetDefaultArgs(&bicg);
    ChebySetDefaultArgs(&cheby);
 
-   exercise_solver_component((void (*)(void *, YAMLnode *))PCGSetArgsFromYAML,
-                             PCGGetValidKeys, PCGGetValidValues, &pcg);
-   exercise_solver_component((void (*)(void *, YAMLnode *))GMRESSetArgsFromYAML,
-                             GMRESGetValidKeys, GMRESGetValidValues, &gmres);
-   exercise_solver_component((void (*)(void *, YAMLnode *))FGMRESSetArgsFromYAML,
-                             FGMRESGetValidKeys, FGMRESGetValidValues, &fgmres);
-   exercise_solver_component((void (*)(void *, YAMLnode *))BiCGSTABSetArgsFromYAML,
-                             BiCGSTABGetValidKeys, BiCGSTABGetValidValues, &bicg);
-   exercise_solver_component((void (*)(void *, YAMLnode *))ChebySetArgsFromYAML,
-                             ChebyGetValidKeys, ChebyGetValidValues, &cheby);
+   exercise_solver_component(PCGSetArgsFromYAML, PCGGetValidKeys, PCGGetValidValues, &pcg);
+   exercise_solver_component(GMRESSetArgsFromYAML, GMRESGetValidKeys, GMRESGetValidValues,
+                             &gmres);
+   exercise_solver_component(FGMRESSetArgsFromYAML, FGMRESGetValidKeys, FGMRESGetValidValues,
+                             &fgmres);
+   exercise_solver_component(BiCGSTABSetArgsFromYAML, BiCGSTABGetValidKeys,
+                             BiCGSTABGetValidValues, &bicg);
+   exercise_solver_component(ChebySetArgsFromYAML, ChebyGetValidKeys, ChebyGetValidValues,
+                             &cheby);
 
    /* Also exercise the flat-value SetArgsFromYAML branch (no children) */
-   exercise_component_flat((void (*)(void *, YAMLnode *))PCGSetArgsFromYAML, &pcg, "pcg",
-                           "pcg");
-   exercise_component_flat((void (*)(void *, YAMLnode *))GMRESSetArgsFromYAML, &gmres, "gmres",
-                           "gmres");
-   exercise_component_flat((void (*)(void *, YAMLnode *))FGMRESSetArgsFromYAML, &fgmres,
-                           "fgmres", "fgmres");
-   exercise_component_flat((void (*)(void *, YAMLnode *))BiCGSTABSetArgsFromYAML, &bicg,
-                           "bicgstab", "bicgstab");
-   exercise_component_flat((void (*)(void *, YAMLnode *))ChebySetArgsFromYAML, &cheby, "cheby",
-                           "cheby");
+   exercise_component_flat(PCGSetArgsFromYAML, &pcg, "pcg", "pcg");
+   exercise_component_flat(GMRESSetArgsFromYAML, &gmres, "gmres", "gmres");
+   exercise_component_flat(FGMRESSetArgsFromYAML, &fgmres, "fgmres", "fgmres");
+   exercise_component_flat(BiCGSTABSetArgsFromYAML, &bicg, "bicgstab", "bicgstab");
+   exercise_component_flat(ChebySetArgsFromYAML, &cheby, "cheby", "cheby");
 }
 
 static void
@@ -364,9 +358,8 @@ test_exhaustive_ilu_fsai_parsers(void)
    ASSERT_FALSE(ErrorCodeActive());
    YAMLnodeDestroy(fsai_parent);
 
-   exercise_component_flat((void (*)(void *, YAMLnode *))ILUSetArgsFromYAML, &ilu, "ilu", "ilu");
-   exercise_component_flat((void (*)(void *, YAMLnode *))FSAISetArgsFromYAML, &fsai, "fsai",
-                           "fsai");
+   exercise_component_flat(ILUSetArgsFromYAML, &ilu, "ilu", "ilu");
+   exercise_component_flat(FSAISetArgsFromYAML, &fsai, "fsai", "fsai");
 }
 
 static void

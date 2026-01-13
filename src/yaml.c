@@ -887,6 +887,93 @@ YAMLargsFindConfigFileIndex(int argc, char **argv)
    return -1;
 }
 
+/*-----------------------------------------------------------------------------
+ * Helpers for YAMLtreeUpdate (must be file-scope for Clang; no nested functions)
+ *-----------------------------------------------------------------------------*/
+
+typedef struct YAMLOverridePathCtx_struct
+{
+   char     *segments[64];
+   int       num_segments;
+   YAMLtree *tree;
+} YAMLOverridePathCtx;
+
+static void
+YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int start_idx,
+                              const char *value)
+{
+   if (!ctx || !node)
+   {
+      return;
+   }
+
+   YAMLnode *cur = node;
+   for (int i = start_idx; i < ctx->num_segments; i++)
+   {
+      const char *seg_const = ctx->segments[i];
+      bool        is_last   = (i == ctx->num_segments - 1);
+
+      if (!is_last) /* intermediate */
+      {
+         YAMLnode *child = YAMLnodeGetOrCreateChild(cur, seg_const);
+         YAMLnodeEnsureMapping(child);
+
+         /* Check if this child has sequence items */
+         if (YAMLnodeHasSequenceItems(child))
+         {
+            /* Apply remaining path to all sequence items */
+            YAML_NODE_ITERATE(child, seq_item)
+            {
+               if (!strcmp(seq_item->key, "-"))
+               {
+                  YAMLtreeUpdateApplyPathToNode(ctx, seq_item, i + 1, value);
+               }
+            }
+            return; /* Done with this branch */
+         }
+
+         cur = child;
+      }
+      else /* leaf */
+      {
+         /* Check if current node has sequence items */
+         if (YAMLnodeHasSequenceItems(cur))
+         {
+            YAML_NODE_ITERATE(cur, seq_item)
+            {
+               if (!strcmp(seq_item->key, "-"))
+               {
+                  YAMLnode *item_leaf = YAMLnodeFindChildByKey(seq_item, seg_const);
+                  if (!item_leaf)
+                  {
+                     item_leaf = YAMLnodeCreate(seg_const, value, seq_item->level + 1);
+                     YAMLnodeAddChild(seq_item, item_leaf);
+                  }
+                  else
+                  {
+                     YAMLnodeDestroyChildren(item_leaf);
+                     YAMLnodeSetScalarValue(item_leaf, value);
+                  }
+               }
+            }
+            return; /* Done */
+         }
+
+         YAMLnode *leaf = YAMLnodeFindChildByKey(cur, seg_const);
+         if (!leaf)
+         {
+            leaf = YAMLnodeCreate(seg_const, value, cur->level + 1);
+            YAMLnodeAddChild(cur, leaf);
+         }
+         else
+         {
+            YAMLnodeDestroyChildren(leaf);
+            YAMLnodeSetScalarValue(leaf, value);
+         }
+      }
+   }
+}
+
 void
 YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 {
@@ -1028,79 +1115,16 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
             return;
          }
 
-         /* Helper function to apply remaining segments to a node */
-         void apply_path_to_node(YAMLnode * node, int start_idx, const char *value)
+         YAMLOverridePathCtx ctx;
+         memset(&ctx, 0, sizeof(ctx));
+         ctx.num_segments = num_segments;
+         ctx.tree         = tree;
+         for (int si = 0; si < num_segments; si++)
          {
-            YAMLnode *cur = node;
-            for (int i = start_idx; i < num_segments; i++)
-            {
-               const char *seg_const = segments[i];
-               bool        is_last   = (i == num_segments - 1);
-
-               if (!is_last) /* intermediate */
-               {
-                  YAMLnode *child = YAMLnodeGetOrCreateChild(cur, seg_const);
-                  YAMLnodeEnsureMapping(child);
-
-                  /* Check if this child has sequence items */
-                  if (YAMLnodeHasSequenceItems(child))
-                  {
-                     /* Apply remaining path to all sequence items */
-                     YAML_NODE_ITERATE(child, seq_item)
-                     {
-                        if (!strcmp(seq_item->key, "-"))
-                        {
-                           apply_path_to_node(seq_item, i + 1, value);
-                        }
-                     }
-                     return; /* Done with this branch */
-                  }
-
-                  cur = child;
-               }
-               else /* leaf */
-               {
-                  /* Check if current node has sequence items */
-                  if (YAMLnodeHasSequenceItems(cur))
-                  {
-                     YAML_NODE_ITERATE(cur, seq_item)
-                     {
-                        if (!strcmp(seq_item->key, "-"))
-                        {
-                           YAMLnode *item_leaf =
-                              YAMLnodeFindChildByKey(seq_item, seg_const);
-                           if (!item_leaf)
-                           {
-                              item_leaf =
-                                 YAMLnodeCreate(seg_const, value, seq_item->level + 1);
-                              YAMLnodeAddChild(seq_item, item_leaf);
-                           }
-                           else
-                           {
-                              YAMLnodeDestroyChildren(item_leaf);
-                              YAMLnodeSetScalarValue(item_leaf, value);
-                           }
-                        }
-                     }
-                     return; /* Done */
-                  }
-
-                  YAMLnode *leaf = YAMLnodeFindChildByKey(cur, seg_const);
-                  if (!leaf)
-                  {
-                     leaf = YAMLnodeCreate(seg_const, value, cur->level + 1);
-                     YAMLnodeAddChild(cur, leaf);
-                  }
-                  else
-                  {
-                     YAMLnodeDestroyChildren(leaf);
-                     YAMLnodeSetScalarValue(leaf, value);
-                  }
-               }
-            }
+            ctx.segments[si] = segments[si];
          }
 
-         apply_path_to_node(tree->root, 0, v);
+         YAMLtreeUpdateApplyPathToNode(&ctx, tree->root, 0, v);
 
          free(path);
       }
