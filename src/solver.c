@@ -10,52 +10,19 @@
 #include <math.h>
 #include "gen_macros.h"
 
-static const FieldOffsetMap solver_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(solver_args, pcg, PCGSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(solver_args, gmres, GMRESSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(solver_args, fgmres, FGMRESSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(solver_args, bicgstab, BiCGSTABSetArgs),
-};
+#define Solver_FIELDS(_prefix)                            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, pcg, PCGSetArgs)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, gmres, GMRESSetArgs)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fgmres, FGMRESSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, bicgstab, BiCGSTABSetArgs)
 
-#define SOLVER_NUM_FIELDS \
-   (sizeof(solver_field_offset_map) / sizeof(solver_field_offset_map[0]))
+DEFINE_FIELD_OFFSET_MAP(Solver)
+#define Solver_NUM_FIELDS \
+   (sizeof(Solver_field_offset_map) / sizeof(Solver_field_offset_map[0]))
 
-/*-----------------------------------------------------------------------------
- * SolverSetFieldByName
- *-----------------------------------------------------------------------------*/
-
-void
-SolverSetFieldByName(void *vargs, const YAMLnode *node)
-{
-   solver_args *args = (solver_args *)vargs;
-   for (size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
-   {
-      /* Which union type are we trying to set? */
-      if (!strcmp(solver_field_offset_map[i].name, node->key))
-      {
-         solver_field_offset_map[i].setter(
-            (void *)((char *)args + solver_field_offset_map[i].offset), node);
-         return;
-      }
-   }
-}
-
-/*-----------------------------------------------------------------------------
- * SolverGetValidKeys
- *-----------------------------------------------------------------------------*/
-
-StrArray
-SolverGetValidKeys(void)
-{
-   static const char *keys[SOLVER_NUM_FIELDS];
-
-   for (size_t i = 0; i < SOLVER_NUM_FIELDS; i++)
-   {
-      keys[i] = solver_field_offset_map[i].name;
-   }
-
-   return STR_ARRAY_CREATE(keys);
-}
+DEFINE_SET_FIELD_BY_NAME_FUNC(SolverSetFieldByName, Solver_args, Solver_field_offset_map,
+                              Solver_NUM_FIELDS)
+DEFINE_GET_VALID_KEYS_FUNC(SolverGetValidKeys, Solver_NUM_FIELDS, Solver_field_offset_map)
 
 /*-----------------------------------------------------------------------------
  * SolverGetValidTypeIntMap
@@ -86,6 +53,40 @@ SolverGetValidValues(const char *key)
    else
    {
       return STR_INT_MAP_ARRAY_VOID();
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * SolverArgsSetDefaultsForMethod
+ *
+ * Convenience helper for callers that need per-method defaults without constructing
+ * fake YAML nodes (e.g., value-only `solver: gmres`).
+ *-----------------------------------------------------------------------------*/
+
+void
+SolverArgsSetDefaultsForMethod(solver_t method, solver_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   switch (method)
+   {
+      case SOLVER_PCG:
+         PCGSetDefaultArgs(&args->pcg);
+         break;
+      case SOLVER_GMRES:
+         GMRESSetDefaultArgs(&args->gmres);
+         break;
+      case SOLVER_FGMRES:
+         FGMRESSetDefaultArgs(&args->fgmres);
+         break;
+      case SOLVER_BICGSTAB:
+         BiCGSTABSetDefaultArgs(&args->bicgstab);
+         break;
+      default:
+         break;
    }
 }
 

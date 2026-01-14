@@ -124,6 +124,7 @@ test_InputArgsParseSolver_value_only(void)
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->solver_method, SOLVER_BICGSTAB);
+   ASSERT_EQ(args->solver.bicgstab.print_level, 0);
 
    InputArgsDestroy(&args);
 }
@@ -139,6 +140,7 @@ test_InputArgsParsePrecon_value_only(void)
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->precon_method, PRECON_FSAI);
+   ASSERT_EQ(args->precon.fsai.print_level, 0);
 
    InputArgsDestroy(&args);
 }

@@ -44,6 +44,8 @@ typedef struct precon_args_struct
    int reuse;
 } precon_args;
 
+typedef precon_args Precon_args;
+
 /*--------------------------------------------------------------------------
  * Generic preconditioner struct
  *--------------------------------------------------------------------------*/
@@ -63,6 +65,7 @@ StrArray       PreconGetValidKeys(void);
 StrIntMapArray PreconGetValidValues(const char *);
 StrIntMapArray PreconGetValidTypeIntMap(void);
 void           PreconSetDefaultArgs(precon_args *);
+void           PreconArgsSetDefaultsForMethod(precon_t, precon_args *);
 
 void PreconSetArgsFromYAML(precon_args *, YAMLnode *); /* TODO: change to PreconSetArgs */
 void PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector, HYPRE_Precon *);

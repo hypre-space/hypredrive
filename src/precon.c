@@ -7,52 +7,22 @@
 
 #include "precon.h"
 #include "HYPRE_parcsr_mv.h"
+#include "gen_macros.h"
 
-static const FieldOffsetMap precon_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(precon_args, amg, AMGSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(precon_args, mgr, MGRSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(precon_args, ilu, ILUSetArgs),
-   FIELD_OFFSET_MAP_ENTRY(precon_args, fsai, FSAISetArgs),
-   FIELD_OFFSET_MAP_ENTRY(precon_args, reuse, FieldTypeIntSet)};
+#define Precon_FIELDS(_prefix)                        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRSetArgs)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, FSAISetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, reuse, FieldTypeIntSet)
 
-#define PRECON_NUM_FIELDS \
-   (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
+DEFINE_FIELD_OFFSET_MAP(Precon)
+#define Precon_NUM_FIELDS \
+   (sizeof(Precon_field_offset_map) / sizeof(Precon_field_offset_map[0]))
 
-/*-----------------------------------------------------------------------------
- * PreconSetFieldByName
- *-----------------------------------------------------------------------------*/
-
-void
-PreconSetFieldByName(precon_args *args, YAMLnode *node)
-{
-   for (size_t i = 0; i < PRECON_NUM_FIELDS; i++)
-   {
-      /* Which union type are we trying to set? */
-      if (!strcmp(precon_field_offset_map[i].name, node->key))
-      {
-         precon_field_offset_map[i].setter(
-            (void *)((char *)args + precon_field_offset_map[i].offset), node);
-         return;
-      }
-   }
-}
-
-/*-----------------------------------------------------------------------------
- * PreconGetValidKeys
- *-----------------------------------------------------------------------------*/
-
-StrArray
-PreconGetValidKeys(void)
-{
-   static const char *keys[PRECON_NUM_FIELDS];
-
-   for (size_t i = 0; i < PRECON_NUM_FIELDS; i++)
-   {
-      keys[i] = precon_field_offset_map[i].name;
-   }
-
-   return STR_ARRAY_CREATE(keys);
-}
+DEFINE_SET_FIELD_BY_NAME_FUNC(PreconSetFieldByName, Precon_args, Precon_field_offset_map,
+                              Precon_NUM_FIELDS)
+DEFINE_GET_VALID_KEYS_FUNC(PreconGetValidKeys, Precon_NUM_FIELDS, Precon_field_offset_map)
 
 /*-----------------------------------------------------------------------------
  * PreconGetValidValues
@@ -91,6 +61,36 @@ PreconSetDefaultArgs(precon_args *args)
    args->reuse = 0;
 }
 
+void
+PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   PreconSetDefaultArgs(args);
+
+   switch (method)
+   {
+      case PRECON_BOOMERAMG:
+         AMGSetDefaultArgs(&args->amg);
+         break;
+      case PRECON_MGR:
+         MGRSetDefaultArgs(&args->mgr);
+         break;
+      case PRECON_ILU:
+         ILUSetDefaultArgs(&args->ilu);
+         break;
+      case PRECON_FSAI:
+         FSAISetDefaultArgs(&args->fsai);
+         break;
+      case PRECON_NONE:
+      default:
+         break;
+   }
+}
+
 /*-----------------------------------------------------------------------------
  * PreconSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
@@ -98,13 +98,13 @@ PreconSetDefaultArgs(precon_args *args)
 void
 PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 {
-   YAML_NODE_ITERATE(parent, child)
+   if (!parent || !parent->children)
    {
-      YAML_NODE_VALIDATE(child, PreconGetValidKeys,
-                         PreconGetValidValues); // LCOV_EXCL_LINE
-
-      YAML_NODE_SET_FIELD(child, args, PreconSetFieldByName);
+      return;
    }
+
+   YAMLSetArgsGeneric((void *)args, parent, PreconGetValidKeys, PreconGetValidValues,
+                      PreconSetFieldByName);
 }
 
 /*-----------------------------------------------------------------------------

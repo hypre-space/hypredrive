@@ -235,15 +235,28 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
       iargs->solver_method =
          (solver_t)StrIntMapArrayGetImage(SolverGetValidTypeIntMap(), parent->val);
 
-      /* Hack for setting default parameters */
-      YAMLnode *dummy           = YAMLnodeCreate("solver", "", 0);
-      dummy->children           = YAMLnodeCreate(parent->val, "", 1);
-      dummy->children->children = YAMLnodeCreate("print_level", "0", 2);
+      /* Value-only form (e.g., `solver: gmres`): use per-method defaults. */
+      SolverArgsSetDefaultsForMethod(iargs->solver_method, &iargs->solver);
 
-      SolverSetArgsFromYAML(&iargs->solver, dummy);
-
-      /* Free memory */
-      YAMLnodeDestroy(dummy);
+      /* Preserve legacy behavior: suppress solver print by default for value-only form.
+       */
+      switch (iargs->solver_method)
+      {
+         case SOLVER_PCG:
+            iargs->solver.pcg.print_level = 0;
+            break;
+         case SOLVER_GMRES:
+            iargs->solver.gmres.print_level = 0;
+            break;
+         case SOLVER_FGMRES:
+            iargs->solver.fgmres.print_level = 0;
+            break;
+         case SOLVER_BICGSTAB:
+            iargs->solver.bicgstab.print_level = 0;
+            break;
+         default:
+            break;
+      }
    }
 }
 
@@ -251,12 +264,42 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
  * InputArgsParsePrecon
  *-----------------------------------------------------------------------------*/
 
+static void
+PreconParseVariantWrapped(precon_args *dst, precon_t method,
+                          const YAMLnode *precon_parent, const char *type_key,
+                          int type_level, YAMLnode *type_children)
+{
+   PreconArgsSetDefaultsForMethod(method, dst);
+
+   YAMLnode fake_type = {0};
+   fake_type.key      = (char *)type_key;
+   fake_type.val      = "";
+   fake_type.level    = type_level;
+   fake_type.valid    = YAML_NODE_VALID;
+   fake_type.children = type_children;
+   fake_type.next     = NULL;
+
+   YAMLnode fake_parent = {0};
+   fake_parent.key      = "preconditioner";
+   fake_parent.val      = "";
+   fake_parent.level    = precon_parent ? precon_parent->level : 0;
+   fake_parent.valid    = YAML_NODE_VALID;
+   fake_parent.children = &fake_type;
+   fake_parent.next     = NULL;
+
+   PreconSetArgsFromYAML(dst, &fake_parent);
+
+   /* Clean up mapped_val allocated during validation on fake nodes */
+   free(fake_type.mapped_val);
+   fake_type.mapped_val = NULL;
+   free(fake_parent.mapped_val);
+   fake_parent.mapped_val = NULL;
+}
+
 void
 InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode *parent = NULL;
-
-   parent = YAMLnodeFindByKey(tree->root, "preconditioner");
+   YAMLnode *parent = YAMLnodeFindByKey(tree->root, "preconditioner");
    if (!parent)
    {
       ErrorCodeSet(ERROR_MISSING_KEY);
@@ -265,198 +308,172 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
    }
    YAML_NODE_SET_VALID(parent);
 
-   /* Check if the solver type was set with a single (key, val) pair */
-   if (!strcmp(parent->val, ""))
+   precon_t    *methods      = NULL;
+   precon_args *variants     = NULL;
+   YAMLnode   **precon_items = NULL;
+   YAMLnode   **seq_items    = NULL;
+
+   int num_variants = 0;
+
+   /* Case 1: value-only preconditioner (e.g., `preconditioner: amg`) */
+   if (strcmp(parent->val, "") != 0)
    {
-      /* Case A: preconditioner is a sequence of variants (possibly different types):
-       * preconditioner:
-       *   - amg: ...
-       *   - ilu: ...
-       */
-      YAMLnode **precon_items = NULL;
-      int        num_items    = YAMLnodeCollectSequenceItems(parent, &precon_items);
-      if (num_items > 0)
-      {
-         iargs->num_precon_variants = num_items;
-         iargs->precon_methods = (precon_t *)malloc((size_t)num_items * sizeof(precon_t));
-         iargs->precon_variants =
-            (precon_args *)malloc((size_t)num_items * sizeof(precon_args));
-
-         for (int vi = 0; vi < num_items; vi++)
-         {
-            YAMLnode *item = precon_items[vi];
-            if (!item->children || item->children->next)
-            {
-               ErrorCodeSet(ERROR_INVALID_KEY);
-               ErrorMsgAdd(
-                  "Each preconditioner variant must contain exactly one type key");
-               free(precon_items);
-               return;
-            }
-
-            YAMLnode *type = item->children;
-            precon_t  method =
-               (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type->key);
-            iargs->precon_methods[vi] = method;
-
-            PreconSetDefaultArgs(&iargs->precon_variants[vi]);
-
-            /* Wrap for existing parser: preconditioner -> <type> -> fields */
-            YAMLnode fake_type = {0};
-            fake_type.key      = type->key;
-            fake_type.val      = "";
-            fake_type.level    = type->level;
-            fake_type.valid    = YAML_NODE_VALID;
-            fake_type.children = type->children;
-            fake_type.next     = NULL;
-
-            YAMLnode fake_parent = {0};
-            fake_parent.key      = "preconditioner";
-            fake_parent.val      = "";
-            fake_parent.level    = parent->level;
-            fake_parent.valid    = YAML_NODE_VALID;
-            fake_parent.children = &fake_type;
-            fake_parent.next     = NULL;
-
-            PreconSetArgsFromYAML(&iargs->precon_variants[vi], &fake_parent);
-
-            /* Clean up mapped_val allocated during validation on fake nodes */
-            free(fake_type.mapped_val);
-            free(fake_parent.mapped_val);
-         }
-
-         free(precon_items);
-
-         /* Set active variant to first one */
-         iargs->active_precon_variant = 0;
-         iargs->precon_method         = iargs->precon_methods[0];
-         iargs->precon                = iargs->precon_variants[0];
-         return;
-      }
-
-      /* Check if a preconditioner type was set */
-      if (!parent->children)
-      {
-         ErrorCodeSet(ERROR_MISSING_PRECON);
-         return;
-      }
-
-      /* Check if more than one preconditioner type was set (this is not supported!) */
-      if (parent->children->next)
-      {
-         ErrorCodeSet(ERROR_EXTRA_KEY);
-         ErrorMsgAddExtraKey(parent->children->next->key);
-         return;
-      }
-
-      YAMLnode *type_node = parent->children;
-      iargs->precon_method =
-         (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type_node->key);
-
-      /* Check if this type node has sequence items (variants) */
-      YAML_NODE_SET_VALID(type_node);
-      YAMLnode **seq_items    = NULL;
-      int        num_variants = YAMLnodeCollectSequenceItems(type_node, &seq_items);
-
-      if (num_variants > 0)
-      {
-         /* Multiple variants: allocate arrays and parse each */
-         iargs->num_precon_variants = num_variants;
-         iargs->precon_methods =
-            (precon_t *)malloc((size_t)num_variants * sizeof(precon_t));
-         iargs->precon_variants =
-            (precon_args *)malloc((size_t)num_variants * sizeof(precon_args));
-
-         for (int variant_idx = 0; variant_idx < num_variants; variant_idx++)
-         {
-            YAMLnode *seq_item = seq_items[variant_idx];
-
-            /* Set method for this variant */
-            iargs->precon_methods[variant_idx] = iargs->precon_method;
-
-            /* Initialize defaults */
-            PreconSetDefaultArgs(&iargs->precon_variants[variant_idx]);
-
-            /* Minimal wrapper parent -> type -> seq_item children */
-            YAMLnode fake_type = {0};
-            fake_type.key      = type_node->key;
-            fake_type.val      = "";
-            fake_type.level    = type_node->level;
-            fake_type.valid    = YAML_NODE_VALID;
-            fake_type.children = seq_item->children;
-            fake_type.next     = NULL;
-
-            YAMLnode fake_parent = {0};
-            fake_parent.key      = "preconditioner";
-            fake_parent.val      = "";
-            fake_parent.level    = parent->level;
-            fake_parent.valid    = YAML_NODE_VALID;
-            fake_parent.children = &fake_type;
-            fake_parent.next     = NULL;
-
-            PreconSetArgsFromYAML(&iargs->precon_variants[variant_idx], &fake_parent);
-
-            /* Clean up mapped_val allocated during validation on fake nodes */
-            free(fake_type.mapped_val);
-            fake_type.mapped_val = NULL;
-            free(fake_parent.mapped_val);
-            fake_parent.mapped_val = NULL;
-
-            YAML_NODE_SET_VALID(seq_item);
-         }
-
-         free(seq_items);
-
-         /* Set active variant to first one */
-         iargs->active_precon_variant = 0;
-         iargs->precon                = iargs->precon_variants[0];
-
-         YAML_NODE_SET_VALID(type_node);
-      }
-      else
-      {
-         /* Single variant: allocate arrays and populate */
-         iargs->num_precon_variants = 1;
-         iargs->precon_methods      = (precon_t *)malloc(sizeof(precon_t));
-         iargs->precon_variants     = (precon_args *)malloc(sizeof(precon_args));
-
-         iargs->precon_methods[0] = iargs->precon_method;
-         PreconSetDefaultArgs(&iargs->precon_variants[0]);
-         PreconSetArgsFromYAML(&iargs->precon_variants[0], parent);
-
-         /* Set active variant */
-         iargs->active_precon_variant = 0;
-         iargs->precon                = iargs->precon_variants[0];
-      }
-   }
-   else
-   {
-      iargs->precon_method =
+      precon_t method =
          (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), parent->val);
 
-      /* Hack for setting default parameters */
-      YAMLnode *dummy           = YAMLnodeCreate("preconditioner", "", 0);
-      dummy->children           = YAMLnodeCreate(parent->val, "", 1);
-      dummy->children->children = YAMLnodeCreate("print_level", "0", 2);
+      methods  = (precon_t *)malloc(sizeof(precon_t));
+      variants = (precon_args *)malloc(sizeof(precon_args));
+      if (!methods || !variants)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("Failed to allocate preconditioner args");
+         goto cleanup;
+      }
 
-      /* Single variant: allocate arrays and populate */
-      iargs->num_precon_variants = 1;
-      iargs->precon_methods      = (precon_t *)malloc(sizeof(precon_t));
-      iargs->precon_variants     = (precon_args *)malloc(sizeof(precon_args));
+      methods[0] = method;
+      PreconArgsSetDefaultsForMethod(method, &variants[0]);
 
-      iargs->precon_methods[0] = iargs->precon_method;
-      PreconSetDefaultArgs(&iargs->precon_variants[0]);
-      PreconSetArgsFromYAML(&iargs->precon_variants[0], dummy);
-
-      /* Free memory */
-      YAMLnodeDestroy(dummy);
-
-      /* Set active variant */
+      iargs->num_precon_variants   = 1;
+      iargs->precon_methods        = methods;
+      iargs->precon_variants       = variants;
       iargs->active_precon_variant = 0;
-      iargs->precon                = iargs->precon_variants[0];
-
+      iargs->precon_method         = methods[0];
+      iargs->precon                = variants[0];
       YAML_NODE_SET_VALID(parent);
+      return;
    }
+
+   /* Case 2: sequence of variants at the preconditioner level:
+    * preconditioner:
+    *   - amg: ...
+    *   - ilu: ...
+    */
+   num_variants = YAMLnodeCollectSequenceItems(parent, &precon_items);
+   if (num_variants > 0)
+   {
+      methods  = (precon_t *)malloc((size_t)num_variants * sizeof(precon_t));
+      variants = (precon_args *)malloc((size_t)num_variants * sizeof(precon_args));
+      if (!methods || !variants)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("Failed to allocate preconditioner variants");
+         goto cleanup;
+      }
+
+      for (int vi = 0; vi < num_variants; vi++)
+      {
+         YAMLnode *item = precon_items[vi];
+         if (!item->children || item->children->next)
+         {
+            ErrorCodeSet(ERROR_INVALID_KEY);
+            ErrorMsgAdd("Each preconditioner variant must contain exactly one type key");
+            goto cleanup;
+         }
+
+         YAMLnode *type = item->children;
+         precon_t  method =
+            (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type->key);
+         methods[vi] = method;
+
+         PreconParseVariantWrapped(&variants[vi], method, parent, type->key, type->level,
+                                   type->children);
+      }
+
+      iargs->num_precon_variants   = num_variants;
+      iargs->precon_methods        = methods;
+      iargs->precon_variants       = variants;
+      iargs->active_precon_variant = 0;
+      iargs->precon_method         = methods[0];
+      iargs->precon                = variants[0];
+      free(precon_items);
+      precon_items = NULL;
+      return;
+   }
+
+   /* Case 3: single preconditioner type block, with optional sequence variants inside:
+    * preconditioner:
+    *   amg:
+    *     - ...
+    *     - ...
+    */
+   if (!parent->children)
+   {
+      ErrorCodeSet(ERROR_MISSING_PRECON);
+      goto cleanup;
+   }
+   if (parent->children->next)
+   {
+      ErrorCodeSet(ERROR_EXTRA_KEY);
+      ErrorMsgAddExtraKey(parent->children->next->key);
+      goto cleanup;
+   }
+
+   YAMLnode *type_node = parent->children;
+   precon_t  method =
+      (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type_node->key);
+
+   YAML_NODE_SET_VALID(type_node);
+   num_variants = YAMLnodeCollectSequenceItems(type_node, &seq_items);
+
+   if (num_variants > 0)
+   {
+      methods  = (precon_t *)malloc((size_t)num_variants * sizeof(precon_t));
+      variants = (precon_args *)malloc((size_t)num_variants * sizeof(precon_args));
+      if (!methods || !variants)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("Failed to allocate preconditioner variants");
+         goto cleanup;
+      }
+
+      for (int vi = 0; vi < num_variants; vi++)
+      {
+         methods[vi]        = method;
+         YAMLnode *seq_item = seq_items[vi];
+         PreconParseVariantWrapped(&variants[vi], method, parent, type_node->key,
+                                   type_node->level, seq_item->children);
+         YAML_NODE_SET_VALID(seq_item);
+      }
+
+      iargs->num_precon_variants   = num_variants;
+      iargs->precon_methods        = methods;
+      iargs->precon_variants       = variants;
+      iargs->active_precon_variant = 0;
+      iargs->precon_method         = methods[0];
+      iargs->precon                = variants[0];
+      YAML_NODE_SET_VALID(type_node);
+      free(seq_items);
+      seq_items = NULL;
+      return;
+   }
+
+   /* Single variant (type node is a mapping) */
+   methods  = (precon_t *)malloc(sizeof(precon_t));
+   variants = (precon_args *)malloc(sizeof(precon_args));
+   if (!methods || !variants)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("Failed to allocate preconditioner args");
+      goto cleanup;
+   }
+
+   methods[0] = method;
+   PreconArgsSetDefaultsForMethod(method, &variants[0]);
+   PreconSetArgsFromYAML(&variants[0], parent);
+
+   iargs->num_precon_variants   = 1;
+   iargs->precon_methods        = methods;
+   iargs->precon_variants       = variants;
+   iargs->active_precon_variant = 0;
+   iargs->precon_method         = methods[0];
+   iargs->precon                = variants[0];
+   return;
+
+cleanup:
+   free(precon_items);
+   free(seq_items);
+   free(methods);
+   free(variants);
 }
 
 /*-----------------------------------------------------------------------------
