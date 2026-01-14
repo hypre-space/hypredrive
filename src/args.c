@@ -30,6 +30,7 @@ FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
    ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, FieldTypeIntSet)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, FieldTypeIntSet)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, FieldTypeIntSet)              \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_repetitions, FieldTypeIntSet)          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, dev_pool_size, FieldTypePoolGBToBytesSet)  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, uvm_pool_size, FieldTypePoolGBToBytesSet)  \
@@ -49,6 +50,11 @@ GeneralGetValidValues(const char *key)
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }
+   if (!strcmp(key, "exec_policy"))
+   {
+      static StrIntMap map[] = {{"host", 0}, {"device", 1}};
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
 
    return STR_INT_MAP_ARRAY_VOID();
 }
@@ -60,11 +66,16 @@ GeneralSetDefaultArgs(General_args *args)
    args->statistics          = 1;
    args->print_config_params = 1;
    args->use_millisec        = 0;
-   args->num_repetitions     = 1;
-   args->dev_pool_size       = 8.0 * GB_TO_BYTES;
-   args->uvm_pool_size       = 8.0 * GB_TO_BYTES;
-   args->host_pool_size      = 8.0 * GB_TO_BYTES;
-   args->pinned_pool_size    = 0.5 * GB_TO_BYTES;
+#ifdef HYPRE_USING_GPU
+   args->exec_policy = 1;
+#else
+   args->exec_policy = 0;
+#endif
+   args->num_repetitions  = 1;
+   args->dev_pool_size    = 8.0 * GB_TO_BYTES;
+   args->uvm_pool_size    = 8.0 * GB_TO_BYTES;
+   args->host_pool_size   = 8.0 * GB_TO_BYTES;
+   args->pinned_pool_size = 0.5 * GB_TO_BYTES;
 }
 
 void
@@ -78,6 +89,7 @@ InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
 
    /* Set default Linear System options */
    LinearSystemSetDefaultArgs(&iargs->ls);
+   iargs->ls.exec_policy = iargs->general.exec_policy;
 
    /* Set default preconditioner and solver */
    iargs->solver_method = SOLVER_PCG;
@@ -128,6 +140,7 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
    if (!parent)
    {
       /* The \"general\" key is optional */
+      iargs->ls.exec_policy = iargs->general.exec_policy;
       return;
    }
 
@@ -142,6 +155,9 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
    {
       StatsTimerSetSeconds();
    }
+
+   /* Mirror general exec policy into linear-system args for downstream use */
+   iargs->ls.exec_policy = iargs->general.exec_policy;
 }
 
 /*-----------------------------------------------------------------------------

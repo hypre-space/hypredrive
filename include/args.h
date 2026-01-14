@@ -24,6 +24,7 @@ typedef struct General_args_struct
    int    statistics;
    int    print_config_params;
    int    use_millisec;
+   int    exec_policy;
    int    num_repetitions;
    double dev_pool_size;
    double uvm_pool_size;
