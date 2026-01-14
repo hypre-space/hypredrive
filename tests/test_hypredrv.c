@@ -673,10 +673,10 @@ test_HYPREDRV_SetGlobalOptions_exec_policy(void)
    snprintf(yaml_config, sizeof(yaml_config),
             "general:\n"
             "  statistics: off\n"
+            "  exec_policy: host\n"
             "linear_system:\n"
             "  matrix_filename: %s\n"
             "  rhs_filename: %s\n"
-            "  exec_policy: host\n"
             "solver:\n"
             "  pcg:\n"
             "    max_iter: 5\n"

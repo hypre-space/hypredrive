@@ -8,12 +8,75 @@
 #include "args.h"
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
+#include "field.h"
+#include "gen_macros.h"
+#include "stats.h"
 #include "utils.h"
 #include "yaml.h"
 
 /*-----------------------------------------------------------------------------
- * InputArgsCreate
+ * General args helpers (schema-driven parsing)
  *-----------------------------------------------------------------------------*/
+
+static void
+FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
+{
+   double gb          = strtod(node->mapped_val, NULL);
+   *((double *)field) = gb * GB_TO_BYTES;
+}
+
+#define General_FIELDS(_prefix)                                               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, warmup, FieldTypeIntSet)                   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, FieldTypeIntSet)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, FieldTypeIntSet)              \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_repetitions, FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, dev_pool_size, FieldTypePoolGBToBytesSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, uvm_pool_size, FieldTypePoolGBToBytesSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, host_pool_size, FieldTypePoolGBToBytesSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, pinned_pool_size, FieldTypePoolGBToBytesSet)
+
+#define General_NUM_FIELDS \
+   (sizeof(General_field_offset_map) / sizeof(General_field_offset_map[0]))
+
+GENERATE_PREFIXED_COMPONENTS(General) // LCOV_EXCL_LINE
+
+StrIntMapArray
+GeneralGetValidValues(const char *key)
+{
+   if (!strcmp(key, "warmup") || !strcmp(key, "statistics") ||
+       !strcmp(key, "print_config_params") || !strcmp(key, "use_millisec"))
+   {
+      return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
+   }
+   if (!strcmp(key, "exec_policy"))
+   {
+      static StrIntMap map[] = {{"host", 0}, {"device", 1}};
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+
+   return STR_INT_MAP_ARRAY_VOID();
+}
+
+void
+GeneralSetDefaultArgs(General_args *args)
+{
+   args->warmup              = 0;
+   args->statistics          = 1;
+   args->print_config_params = 1;
+   args->use_millisec        = 0;
+#ifdef HYPRE_USING_GPU
+   args->exec_policy = 1;
+#else
+   args->exec_policy = 0;
+#endif
+   args->num_repetitions  = 1;
+   args->dev_pool_size    = 8.0 * GB_TO_BYTES;
+   args->uvm_pool_size    = 8.0 * GB_TO_BYTES;
+   args->host_pool_size   = 8.0 * GB_TO_BYTES;
+   args->pinned_pool_size = 0.5 * GB_TO_BYTES;
+}
 
 void
 InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
@@ -21,17 +84,12 @@ InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
    input_args *iargs = (input_args *)malloc(sizeof(input_args));
 
    /* Set general default options */
-   iargs->warmup              = 0;
-   iargs->num_repetitions     = 1;
-   iargs->statistics          = 1;
-   iargs->print_config_params = !lib_mode;
-   iargs->dev_pool_size       = 8.0 * GB_TO_BYTES;
-   iargs->uvm_pool_size       = 8.0 * GB_TO_BYTES;
-   iargs->host_pool_size      = 8.0 * GB_TO_BYTES;
-   iargs->pinned_pool_size    = 0.5 * GB_TO_BYTES;
+   GeneralSetDefaultArgs(&iargs->general);
+   iargs->general.print_config_params = !lib_mode;
 
    /* Set default Linear System options */
    LinearSystemSetDefaultArgs(&iargs->ls);
+   iargs->ls.exec_policy = iargs->general.exec_policy;
 
    /* Set default preconditioner and solver */
    iargs->solver_method = SOLVER_PCG;
@@ -78,114 +136,28 @@ InputArgsDestroy(input_args **iargs_ptr)
 void
 InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode *parent = NULL;
-   YAMLnode *child  = NULL;
-
-   parent = YAMLnodeFindByKey(tree->root, "general");
+   YAMLnode *parent = YAMLnodeFindByKey(tree->root, "general");
    if (!parent)
    {
-      /* The "general" key is not mandatory,
-         so we don't set an error code if it's not found. */
+      /* The \"general\" key is optional */
+      iargs->ls.exec_policy = iargs->general.exec_policy;
       return;
    }
+
    YAML_NODE_SET_VALID(parent);
+   GeneralSetArgsFromYAML(&iargs->general, parent);
 
-   child = parent->children;
-   while (child)
+   if (iargs->general.use_millisec)
    {
-      /* TODO: implement validation of "general" keywords */
-      YAML_NODE_SET_VALID(child);
-
-      if (!strcmp(child->key, "warmup") || !strcmp(child->key, "statistics") ||
-          !strcmp(child->key, "use_millisec") ||
-          !strcmp(child->key, "print_config_params"))
-      {
-         if (!strcmp(child->val, "off") || !strcmp(child->val, "no") ||
-             !strcmp(child->val, "false") || !strcmp(child->val, "0") ||
-             !strcmp(child->val, "n"))
-         {
-            if (!strcmp(child->key, "warmup"))
-            {
-               iargs->warmup = 0;
-            }
-            else if (!strcmp(child->key, "statistics"))
-            {
-               iargs->statistics = 0;
-            }
-            else if (!strcmp(child->key, "print_config_params"))
-            {
-               iargs->print_config_params = 0;
-            }
-            else if (!strcmp(child->key, "use_millisec"))
-            {
-               StatsTimerSetSeconds();
-            }
-         }
-         else if (!strcmp(child->val, "on") || !strcmp(child->val, "yes") ||
-                  !strcmp(child->val, "true") || !strcmp(child->val, "1") ||
-                  !strcmp(child->val, "y"))
-         {
-            if (!strcmp(child->key, "warmup"))
-            {
-               iargs->warmup = 1;
-            }
-            else if (!strcmp(child->key, "statistics"))
-            {
-               iargs->statistics = 1;
-            }
-            else if (!strcmp(child->key, "print_config_params"))
-            {
-               iargs->print_config_params = 1;
-            }
-            else if (!strcmp(child->key, "use_millisec"))
-            {
-               StatsTimerSetMilliseconds();
-            }
-         }
-         else
-         {
-            if (!strcmp(child->key, "warmup"))
-            {
-               iargs->warmup = 0;
-            }
-            else if (!strcmp(child->key, "statistics"))
-            {
-               iargs->statistics = 0;
-            }
-            else if (!strcmp(child->key, "print_config_params"))
-            {
-               iargs->print_config_params = 0;
-            }
-            ErrorCodeSet(ERROR_INVALID_VAL);
-         }
-      }
-      else if (!strcmp(child->key, "num_repetitions"))
-      {
-         iargs->num_repetitions = (int)strtol(child->val, NULL, 10);
-      }
-      else if (!strcmp(child->key, "dev_pool_size"))
-      {
-         iargs->dev_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
-      }
-      else if (!strcmp(child->key, "uvm_pool_size"))
-      {
-         iargs->uvm_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
-      }
-      else if (!strcmp(child->key, "host_pool_size"))
-      {
-         iargs->host_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
-      }
-      else if (!strcmp(child->key, "pinned_pool_size"))
-      {
-         iargs->pinned_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
-      }
-      else
-      {
-         ErrorCodeSet(ERROR_INVALID_KEY);
-      }
-
-      child = child->next;
+      StatsTimerSetMilliseconds();
    }
+   else
+   {
+      StatsTimerSetSeconds();
+   }
+
+   /* Mirror general exec policy into linear-system args for downstream use */
+   iargs->ls.exec_policy = iargs->general.exec_policy;
 }
 
 /*-----------------------------------------------------------------------------
@@ -263,15 +235,28 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
       iargs->solver_method =
          (solver_t)StrIntMapArrayGetImage(SolverGetValidTypeIntMap(), parent->val);
 
-      /* Hack for setting default parameters */
-      YAMLnode *dummy           = YAMLnodeCreate("solver", "", 0);
-      dummy->children           = YAMLnodeCreate(parent->val, "", 1);
-      dummy->children->children = YAMLnodeCreate("print_level", "0", 2);
+      /* Value-only form (e.g., `solver: gmres`): use per-method defaults. */
+      SolverArgsSetDefaultsForMethod(iargs->solver_method, &iargs->solver);
 
-      SolverSetArgsFromYAML(&iargs->solver, dummy);
-
-      /* Free memory */
-      YAMLnodeDestroy(dummy);
+      /* Preserve legacy behavior: suppress solver print by default for value-only form.
+       */
+      switch (iargs->solver_method)
+      {
+         case SOLVER_PCG:
+            iargs->solver.pcg.print_level = 0;
+            break;
+         case SOLVER_GMRES:
+            iargs->solver.gmres.print_level = 0;
+            break;
+         case SOLVER_FGMRES:
+            iargs->solver.fgmres.print_level = 0;
+            break;
+         case SOLVER_BICGSTAB:
+            iargs->solver.bicgstab.print_level = 0;
+            break;
+         default:
+            break;
+      }
    }
 }
 
@@ -279,12 +264,42 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
  * InputArgsParsePrecon
  *-----------------------------------------------------------------------------*/
 
+static void
+PreconParseVariantWrapped(precon_args *dst, precon_t method,
+                          const YAMLnode *precon_parent, const char *type_key,
+                          int type_level, YAMLnode *type_children)
+{
+   PreconArgsSetDefaultsForMethod(method, dst);
+
+   YAMLnode fake_type = {0};
+   fake_type.key      = (char *)type_key;
+   fake_type.val      = "";
+   fake_type.level    = type_level;
+   fake_type.valid    = YAML_NODE_VALID;
+   fake_type.children = type_children;
+   fake_type.next     = NULL;
+
+   YAMLnode fake_parent = {0};
+   fake_parent.key      = "preconditioner";
+   fake_parent.val      = "";
+   fake_parent.level    = precon_parent ? precon_parent->level : 0;
+   fake_parent.valid    = YAML_NODE_VALID;
+   fake_parent.children = &fake_type;
+   fake_parent.next     = NULL;
+
+   PreconSetArgsFromYAML(dst, &fake_parent);
+
+   /* Clean up mapped_val allocated during validation on fake nodes */
+   free(fake_type.mapped_val);
+   fake_type.mapped_val = NULL;
+   free(fake_parent.mapped_val);
+   fake_parent.mapped_val = NULL;
+}
+
 void
 InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode *parent = NULL;
-
-   parent = YAMLnodeFindByKey(tree->root, "preconditioner");
+   YAMLnode *parent = YAMLnodeFindByKey(tree->root, "preconditioner");
    if (!parent)
    {
       ErrorCodeSet(ERROR_MISSING_KEY);
@@ -293,198 +308,172 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
    }
    YAML_NODE_SET_VALID(parent);
 
-   /* Check if the solver type was set with a single (key, val) pair */
-   if (!strcmp(parent->val, ""))
+   precon_t    *methods      = NULL;
+   precon_args *variants     = NULL;
+   YAMLnode   **precon_items = NULL;
+   YAMLnode   **seq_items    = NULL;
+
+   int num_variants = 0;
+
+   /* Case 1: value-only preconditioner (e.g., `preconditioner: amg`) */
+   if (strcmp(parent->val, "") != 0)
    {
-      /* Case A: preconditioner is a sequence of variants (possibly different types):
-       * preconditioner:
-       *   - amg: ...
-       *   - ilu: ...
-       */
-      YAMLnode **precon_items = NULL;
-      int        num_items    = YAMLnodeCollectSequenceItems(parent, &precon_items);
-      if (num_items > 0)
-      {
-         iargs->num_precon_variants = num_items;
-         iargs->precon_methods = (precon_t *)malloc((size_t)num_items * sizeof(precon_t));
-         iargs->precon_variants =
-            (precon_args *)malloc((size_t)num_items * sizeof(precon_args));
-
-         for (int vi = 0; vi < num_items; vi++)
-         {
-            YAMLnode *item = precon_items[vi];
-            if (!item->children || item->children->next)
-            {
-               ErrorCodeSet(ERROR_INVALID_KEY);
-               ErrorMsgAdd(
-                  "Each preconditioner variant must contain exactly one type key");
-               free(precon_items);
-               return;
-            }
-
-            YAMLnode *type = item->children;
-            precon_t  method =
-               (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type->key);
-            iargs->precon_methods[vi] = method;
-
-            PreconSetDefaultArgs(&iargs->precon_variants[vi]);
-
-            /* Wrap for existing parser: preconditioner -> <type> -> fields */
-            YAMLnode fake_type = {0};
-            fake_type.key      = type->key;
-            fake_type.val      = "";
-            fake_type.level    = type->level;
-            fake_type.valid    = YAML_NODE_VALID;
-            fake_type.children = type->children;
-            fake_type.next     = NULL;
-
-            YAMLnode fake_parent = {0};
-            fake_parent.key      = "preconditioner";
-            fake_parent.val      = "";
-            fake_parent.level    = parent->level;
-            fake_parent.valid    = YAML_NODE_VALID;
-            fake_parent.children = &fake_type;
-            fake_parent.next     = NULL;
-
-            PreconSetArgsFromYAML(&iargs->precon_variants[vi], &fake_parent);
-
-            /* Clean up mapped_val allocated during validation on fake nodes */
-            free(fake_type.mapped_val);
-            free(fake_parent.mapped_val);
-         }
-
-         free(precon_items);
-
-         /* Set active variant to first one */
-         iargs->active_precon_variant = 0;
-         iargs->precon_method         = iargs->precon_methods[0];
-         iargs->precon                = iargs->precon_variants[0];
-         return;
-      }
-
-      /* Check if a preconditioner type was set */
-      if (!parent->children)
-      {
-         ErrorCodeSet(ERROR_MISSING_PRECON);
-         return;
-      }
-
-      /* Check if more than one preconditioner type was set (this is not supported!) */
-      if (parent->children->next)
-      {
-         ErrorCodeSet(ERROR_EXTRA_KEY);
-         ErrorMsgAddExtraKey(parent->children->next->key);
-         return;
-      }
-
-      YAMLnode *type_node = parent->children;
-      iargs->precon_method =
-         (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type_node->key);
-
-      /* Check if this type node has sequence items (variants) */
-      YAML_NODE_SET_VALID(type_node);
-      YAMLnode **seq_items    = NULL;
-      int        num_variants = YAMLnodeCollectSequenceItems(type_node, &seq_items);
-
-      if (num_variants > 0)
-      {
-         /* Multiple variants: allocate arrays and parse each */
-         iargs->num_precon_variants = num_variants;
-         iargs->precon_methods =
-            (precon_t *)malloc((size_t)num_variants * sizeof(precon_t));
-         iargs->precon_variants =
-            (precon_args *)malloc((size_t)num_variants * sizeof(precon_args));
-
-         for (int variant_idx = 0; variant_idx < num_variants; variant_idx++)
-         {
-            YAMLnode *seq_item = seq_items[variant_idx];
-
-            /* Set method for this variant */
-            iargs->precon_methods[variant_idx] = iargs->precon_method;
-
-            /* Initialize defaults */
-            PreconSetDefaultArgs(&iargs->precon_variants[variant_idx]);
-
-            /* Minimal wrapper parent -> type -> seq_item children */
-            YAMLnode fake_type = {0};
-            fake_type.key      = type_node->key;
-            fake_type.val      = "";
-            fake_type.level    = type_node->level;
-            fake_type.valid    = YAML_NODE_VALID;
-            fake_type.children = seq_item->children;
-            fake_type.next     = NULL;
-
-            YAMLnode fake_parent = {0};
-            fake_parent.key      = "preconditioner";
-            fake_parent.val      = "";
-            fake_parent.level    = parent->level;
-            fake_parent.valid    = YAML_NODE_VALID;
-            fake_parent.children = &fake_type;
-            fake_parent.next     = NULL;
-
-            PreconSetArgsFromYAML(&iargs->precon_variants[variant_idx], &fake_parent);
-
-            /* Clean up mapped_val allocated during validation on fake nodes */
-            free(fake_type.mapped_val);
-            fake_type.mapped_val = NULL;
-            free(fake_parent.mapped_val);
-            fake_parent.mapped_val = NULL;
-
-            YAML_NODE_SET_VALID(seq_item);
-         }
-
-         free(seq_items);
-
-         /* Set active variant to first one */
-         iargs->active_precon_variant = 0;
-         iargs->precon                = iargs->precon_variants[0];
-
-         YAML_NODE_SET_VALID(type_node);
-      }
-      else
-      {
-         /* Single variant: allocate arrays and populate */
-         iargs->num_precon_variants = 1;
-         iargs->precon_methods      = (precon_t *)malloc(sizeof(precon_t));
-         iargs->precon_variants     = (precon_args *)malloc(sizeof(precon_args));
-
-         iargs->precon_methods[0] = iargs->precon_method;
-         PreconSetDefaultArgs(&iargs->precon_variants[0]);
-         PreconSetArgsFromYAML(&iargs->precon_variants[0], parent);
-
-         /* Set active variant */
-         iargs->active_precon_variant = 0;
-         iargs->precon                = iargs->precon_variants[0];
-      }
-   }
-   else
-   {
-      iargs->precon_method =
+      precon_t method =
          (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), parent->val);
 
-      /* Hack for setting default parameters */
-      YAMLnode *dummy           = YAMLnodeCreate("preconditioner", "", 0);
-      dummy->children           = YAMLnodeCreate(parent->val, "", 1);
-      dummy->children->children = YAMLnodeCreate("print_level", "0", 2);
+      methods  = (precon_t *)malloc(sizeof(precon_t));
+      variants = (precon_args *)malloc(sizeof(precon_args));
+      if (!methods || !variants)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("Failed to allocate preconditioner args");
+         goto cleanup;
+      }
 
-      /* Single variant: allocate arrays and populate */
-      iargs->num_precon_variants = 1;
-      iargs->precon_methods      = (precon_t *)malloc(sizeof(precon_t));
-      iargs->precon_variants     = (precon_args *)malloc(sizeof(precon_args));
+      methods[0] = method;
+      PreconArgsSetDefaultsForMethod(method, &variants[0]);
 
-      iargs->precon_methods[0] = iargs->precon_method;
-      PreconSetDefaultArgs(&iargs->precon_variants[0]);
-      PreconSetArgsFromYAML(&iargs->precon_variants[0], dummy);
-
-      /* Free memory */
-      YAMLnodeDestroy(dummy);
-
-      /* Set active variant */
+      iargs->num_precon_variants   = 1;
+      iargs->precon_methods        = methods;
+      iargs->precon_variants       = variants;
       iargs->active_precon_variant = 0;
-      iargs->precon                = iargs->precon_variants[0];
-
+      iargs->precon_method         = methods[0];
+      iargs->precon                = variants[0];
       YAML_NODE_SET_VALID(parent);
+      return;
    }
+
+   /* Case 2: sequence of variants at the preconditioner level:
+    * preconditioner:
+    *   - amg: ...
+    *   - ilu: ...
+    */
+   num_variants = YAMLnodeCollectSequenceItems(parent, &precon_items);
+   if (num_variants > 0)
+   {
+      methods  = (precon_t *)malloc((size_t)num_variants * sizeof(precon_t));
+      variants = (precon_args *)malloc((size_t)num_variants * sizeof(precon_args));
+      if (!methods || !variants)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("Failed to allocate preconditioner variants");
+         goto cleanup;
+      }
+
+      for (int vi = 0; vi < num_variants; vi++)
+      {
+         YAMLnode *item = precon_items[vi];
+         if (!item->children || item->children->next)
+         {
+            ErrorCodeSet(ERROR_INVALID_KEY);
+            ErrorMsgAdd("Each preconditioner variant must contain exactly one type key");
+            goto cleanup;
+         }
+
+         YAMLnode *type = item->children;
+         precon_t  method =
+            (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type->key);
+         methods[vi] = method;
+
+         PreconParseVariantWrapped(&variants[vi], method, parent, type->key, type->level,
+                                   type->children);
+      }
+
+      iargs->num_precon_variants   = num_variants;
+      iargs->precon_methods        = methods;
+      iargs->precon_variants       = variants;
+      iargs->active_precon_variant = 0;
+      iargs->precon_method         = methods[0];
+      iargs->precon                = variants[0];
+      free(precon_items);
+      precon_items = NULL;
+      return;
+   }
+
+   /* Case 3: single preconditioner type block, with optional sequence variants inside:
+    * preconditioner:
+    *   amg:
+    *     - ...
+    *     - ...
+    */
+   if (!parent->children)
+   {
+      ErrorCodeSet(ERROR_MISSING_PRECON);
+      goto cleanup;
+   }
+   if (parent->children->next)
+   {
+      ErrorCodeSet(ERROR_EXTRA_KEY);
+      ErrorMsgAddExtraKey(parent->children->next->key);
+      goto cleanup;
+   }
+
+   YAMLnode *type_node = parent->children;
+   precon_t  method =
+      (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type_node->key);
+
+   YAML_NODE_SET_VALID(type_node);
+   num_variants = YAMLnodeCollectSequenceItems(type_node, &seq_items);
+
+   if (num_variants > 0)
+   {
+      methods  = (precon_t *)malloc((size_t)num_variants * sizeof(precon_t));
+      variants = (precon_args *)malloc((size_t)num_variants * sizeof(precon_args));
+      if (!methods || !variants)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("Failed to allocate preconditioner variants");
+         goto cleanup;
+      }
+
+      for (int vi = 0; vi < num_variants; vi++)
+      {
+         methods[vi]        = method;
+         YAMLnode *seq_item = seq_items[vi];
+         PreconParseVariantWrapped(&variants[vi], method, parent, type_node->key,
+                                   type_node->level, seq_item->children);
+         YAML_NODE_SET_VALID(seq_item);
+      }
+
+      iargs->num_precon_variants   = num_variants;
+      iargs->precon_methods        = methods;
+      iargs->precon_variants       = variants;
+      iargs->active_precon_variant = 0;
+      iargs->precon_method         = methods[0];
+      iargs->precon                = variants[0];
+      YAML_NODE_SET_VALID(type_node);
+      free(seq_items);
+      seq_items = NULL;
+      return;
+   }
+
+   /* Single variant (type node is a mapping) */
+   methods  = (precon_t *)malloc(sizeof(precon_t));
+   variants = (precon_args *)malloc(sizeof(precon_args));
+   if (!methods || !variants)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("Failed to allocate preconditioner args");
+      goto cleanup;
+   }
+
+   methods[0] = method;
+   PreconArgsSetDefaultsForMethod(method, &variants[0]);
+   PreconSetArgsFromYAML(&variants[0], parent);
+
+   iargs->num_precon_variants   = 1;
+   iargs->precon_methods        = methods;
+   iargs->precon_variants       = variants;
+   iargs->active_precon_variant = 0;
+   iargs->precon_method         = methods[0];
+   iargs->precon                = variants[0];
+   return;
+
+cleanup:
+   free(precon_items);
+   free(seq_items);
+   free(methods);
+   free(variants);
 }
 
 /*-----------------------------------------------------------------------------
@@ -575,6 +564,86 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    free(basename);
 }
 
+static int
+FindConfigIndex(int argc, char **argv)
+{
+   for (int i = 0; i < argc; i++)
+   {
+      if (argv[i] && IsYAMLFilename(argv[i]))
+      {
+         return i;
+      }
+   }
+   return -1;
+}
+
+static bool
+LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_indent_ptr,
+               char **text_ptr, char **config_dir_ptr)
+{
+   char *config_base = NULL;
+
+   if (argc > 0 && IsYAMLFilename(argv[0]))
+   {
+      InputArgsRead(comm, argv[0], base_indent_ptr, text_ptr);
+      if (ErrorCodeActive())
+      {
+         return false;
+      }
+      SplitFilename(argv[0], config_dir_ptr, &config_base);
+      free(config_base);
+      return true;
+   }
+
+   if (config_idx >= 0)
+   {
+      InputArgsRead(comm, argv[config_idx], base_indent_ptr, text_ptr);
+      if (ErrorCodeActive())
+      {
+         return false;
+      }
+      SplitFilename(argv[config_idx], config_dir_ptr, &config_base);
+      free(config_base);
+      return true;
+   }
+
+   /* Direct YAML string input */
+   if (argv[0] == NULL)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("YAML string input is NULL");
+      return false;
+   }
+
+   *text_ptr = strdup(argv[0]); // Make a copy since we'll free it later
+   return true;
+}
+
+static void
+ApplyCLIOverrides(int argc, char **argv, int config_idx, YAMLtree *tree)
+{
+   if (argc <= 1)
+   {
+      return;
+   }
+
+   if (IsYAMLFilename(argv[0]))
+   {
+      /* Legacy: overrides are in argv[1..] */
+      YAMLtreeUpdate(argc - 1, argv + 1, tree);
+   }
+   else if (config_idx >= 0)
+   {
+      /* Driver: allow YAMLtreeUpdate to parse -a/--args inside full argv */
+      YAMLtreeUpdate(argc, argv, tree);
+   }
+   else
+   {
+      /* YAML string input: overrides are in argv[1..] */
+      YAMLtreeUpdate(argc - 1, argv + 1, tree);
+   }
+}
+
 /*-----------------------------------------------------------------------------
  * InputArgsParse
  *-----------------------------------------------------------------------------*/
@@ -588,7 +657,6 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    int         base_indent = 2;
    int         myid        = 0;
    char       *config_dir  = NULL;
-   char       *config_base = NULL;
 
    MPI_Comm_rank(comm, &myid);
 
@@ -600,53 +668,11 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
     * -a ...)
     * - Unit tests: argv[0] is a YAML string (and argv[1..] are override pairs)
     */
-   int config_idx = -1;
-   for (int i = 0; i < argc; i++)
+   const int config_idx = FindConfigIndex(argc, argv);
+   if (!LoadConfigText(comm, argc, argv, config_idx, &base_indent, &text, &config_dir))
    {
-      if (argv[i] && IsYAMLFilename(argv[i]))
-      {
-         config_idx = i;
-         break;
-      }
-   }
-
-   if (argc > 0 && IsYAMLFilename(argv[0]))
-   {
-      /* Treat as file input - will error if file doesn't exist */
-      InputArgsRead(comm, argv[0], &base_indent, &text);
-
-      /* Return if there was an error reading the file */
-      if (ErrorCodeActive())
-      {
-         *args_ptr = NULL;
-         return;
-      }
-
-      SplitFilename(argv[0], &config_dir, &config_base);
-   }
-   else if (config_idx >= 0)
-   {
-      /* Driver-style argv: find YAML filename anywhere */
-      InputArgsRead(comm, argv[config_idx], &base_indent, &text);
-      if (ErrorCodeActive())
-      {
-         *args_ptr = NULL;
-         return;
-      }
-
-      SplitFilename(argv[config_idx], &config_dir, &config_base);
-   }
-   else
-   {
-      /* Direct YAML string input */
-      if (argv[0] == NULL)
-      {
-         ErrorCodeSet(ERROR_UNKNOWN);
-         ErrorMsgAdd("YAML string input is NULL");
-         *args_ptr = NULL;
-         return;
-      }
-      text = strdup(argv[0]); // Make a copy since we'll free it later
+      *args_ptr = NULL;
+      return;
    }
 
    /* Quick way to view/debug the tree */
@@ -661,25 +687,7 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    /* Check if any config option has been passed in via CLI.
       If so, overwrite the data stored in the YAMLtree object
       with the new values. */
-   if (argc > 1)
-   {
-      /* Update YAML tree with command line arguments info */
-      if (IsYAMLFilename(argv[0]))
-      {
-         /* Legacy: overrides are in argv[1..] */
-         YAMLtreeUpdate(argc - 1, argv + 1, tree);
-      }
-      else if (config_idx >= 0)
-      {
-         /* Driver: allow YAMLtreeUpdate to parse -a/--args inside full argv */
-         YAMLtreeUpdate(argc, argv, tree);
-      }
-      else
-      {
-         /* YAML string input: overrides are in argv[1..] */
-         YAMLtreeUpdate(argc - 1, argv + 1, tree);
-      }
-   }
+   ApplyCLIOverrides(argc, argv, config_idx, tree);
 
    /* Return earlier if YAML tree was not built properly */
    if (!myid && ErrorCodeActive())
@@ -695,7 +703,6 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    /* Free memory */
    free(text);
    free(config_dir);
-   free(config_base);
 
    /*--------------------------------------------
     * Parse file sections
@@ -708,7 +715,7 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    InputArgsParsePrecon(iargs, tree);
 
    /* Set auxiliary data in the Stats structure */
-   StatsSetNumReps(iargs->num_repetitions);
+   StatsSetNumReps(iargs->general.num_repetitions);
    /* Note: num_systems is the base number; variants are handled in the driver loop */
    StatsSetNumLinearSystems(iargs->ls.num_systems);
 
@@ -726,7 +733,7 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    }
 
    /* Rank 0: Print tree to stdout */
-   if (!myid && iargs->print_config_params)
+   if (!myid && iargs->general.print_config_params)
    {
       YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
    }

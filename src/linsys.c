@@ -35,7 +35,6 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, precon_reuse, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, exec_policy, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, EigSpecSetArgs)};
 
 #define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
@@ -97,12 +96,6 @@ LinearSystemGetValidValues(const char *key)
    {
       static StrIntMap map[] = {
          {"zeros", 0}, {"ones", 1}, {"file", 2}, {"random", 3}, {"previous", 4}};
-      return STR_INT_MAP_ARRAY_CREATE(map);
-   }
-   if (!strcmp(key, "exec_policy"))
-   {
-      /* TODO: move to general? */
-      static StrIntMap map[] = {{"host", 0}, {"device", 1}};
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    else

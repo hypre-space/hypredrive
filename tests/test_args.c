@@ -5,6 +5,7 @@
 
 #include "args.h"
 #include "error.h"
+#include "stats.h"
 #include "test_helpers.h"
 #include "utils.h"
 #include "yaml.h"
@@ -75,17 +76,41 @@ test_InputArgsParseGeneral_flags(void)
 
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
-   ASSERT_EQ(args->warmup, 1);
-   ASSERT_EQ(args->statistics, 0);
-   ASSERT_EQ(args->print_config_params, 0);
-   ASSERT_EQ(args->num_repetitions, 3);
-   ASSERT_EQ((int)(args->dev_pool_size / GB_TO_BYTES), 2);
-   ASSERT_EQ((int)(args->uvm_pool_size / GB_TO_BYTES), 3);
-   ASSERT_EQ((int)(args->host_pool_size / GB_TO_BYTES), 4);
-   ASSERT_TRUE(args->pinned_pool_size > 0);
+   ASSERT_EQ(args->general.warmup, 1);
+   ASSERT_EQ(args->general.statistics, 0);
+   ASSERT_EQ(args->general.print_config_params, 0);
+   ASSERT_EQ(args->general.num_repetitions, 3);
+   ASSERT_EQ((int)(args->general.dev_pool_size / GB_TO_BYTES), 2);
+   ASSERT_EQ((int)(args->general.uvm_pool_size / GB_TO_BYTES), 3);
+   ASSERT_EQ((int)(args->general.host_pool_size / GB_TO_BYTES), 4);
+   ASSERT_TRUE(args->general.pinned_pool_size > 0);
    ASSERT_EQ(args->solver_method, SOLVER_PCG);
 
    InputArgsDestroy(&args);
+}
+
+static void
+test_InputArgsParseGeneral_use_millisec_sets_timer(void)
+{
+   Stats *stats = StatsCreate();
+   StatsSetContext(stats);
+
+   const char yaml_text[] = "general:\n"
+                            "  use_millisec: yes\n"
+                            "solver:\n"
+                            "  pcg:\n"
+                            "    max_iter: 10\n"
+                            "preconditioner:\n"
+                            "  amg:\n"
+                            "    print_level: 0\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_NOT_NULL(StatsGetContext());
+   ASSERT_TRUE(StatsGetContext()->use_millisec);
+
+   InputArgsDestroy(&args);
+   StatsDestroy(&stats);
 }
 
 static void
@@ -99,6 +124,7 @@ test_InputArgsParseSolver_value_only(void)
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->solver_method, SOLVER_BICGSTAB);
+   ASSERT_EQ(args->solver.bicgstab.print_level, 0);
 
    InputArgsDestroy(&args);
 }
@@ -114,6 +140,7 @@ test_InputArgsParsePrecon_value_only(void)
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->precon_method, PRECON_FSAI);
+   ASSERT_EQ(args->precon.fsai.print_level, 0);
 
    InputArgsDestroy(&args);
 }
@@ -221,7 +248,7 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
    ASSERT_EQ(args->solver.pcg.max_iter, 50);
    ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
    ASSERT_EQ(args->precon.amg.print_level, 2);
-   ASSERT_EQ(args->statistics, 0);
+   ASSERT_EQ(args->general.statistics, 0);
 
    InputArgsDestroy(&args);
 }
@@ -313,6 +340,7 @@ main(int argc, char **argv)
    MPI_Init(&argc, &argv);
 
    RUN_TEST(test_InputArgsParseGeneral_flags);
+   RUN_TEST(test_InputArgsParseGeneral_use_millisec_sets_timer);
    RUN_TEST(test_InputArgsParseSolver_value_only);
    RUN_TEST(test_InputArgsParsePrecon_value_only);
    RUN_TEST(test_InputArgsParsePrecon_missing);

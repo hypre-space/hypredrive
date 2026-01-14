@@ -85,16 +85,6 @@ test_LinearSystemGetValidValues_init_guess_mode(void)
 }
 
 static void
-test_LinearSystemGetValidValues_exec_policy(void)
-{
-   StrIntMapArray map = LinearSystemGetValidValues("exec_policy");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "host"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "device"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "host"), 0);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "device"), 1);
-}
-
-static void
 test_LinearSystemGetValidValues_unknown_key(void)
 {
    StrIntMapArray map = LinearSystemGetValidValues("unknown_key");
@@ -111,7 +101,6 @@ test_LinearSystemSetArgsFromYAML_valid_keys(void)
    add_child(parent, "type", "2", 1);
    add_child(parent, "rhs_mode", "1", 1);
    add_child(parent, "init_guess_mode", "2", 1);
-   add_child(parent, "exec_policy", "0", 1);
    add_child(parent, "digits_suffix", "6", 1);
 
    ErrorCodeResetAll();
@@ -120,7 +109,6 @@ test_LinearSystemSetArgsFromYAML_valid_keys(void)
    ASSERT_EQ(args.type, 2);
    ASSERT_EQ(args.rhs_mode, 1);
    ASSERT_EQ(args.init_guess_mode, 2);
-   ASSERT_EQ(args.exec_policy, 0);
    ASSERT_EQ(args.digits_suffix, 6);
 
    YAMLnodeDestroy(parent);
@@ -307,10 +295,6 @@ test_LinearSystemGetValidValues_all_branches(void)
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(init_map, "file"));
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(init_map, "random"));
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(init_map, "previous"));
-
-   StrIntMapArray exec_map = LinearSystemGetValidValues("exec_policy");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(exec_map, "host"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(exec_map, "device"));
 
    /* Test else branch - key that doesn't match any condition */
    StrIntMapArray void_map = LinearSystemGetValidValues("unknown_key");
@@ -1117,7 +1101,6 @@ main(int argc, char **argv)
    RUN_TEST(test_LinearSystemGetValidValues_type);
    RUN_TEST(test_LinearSystemGetValidValues_rhs_mode);
    RUN_TEST(test_LinearSystemGetValidValues_init_guess_mode);
-   RUN_TEST(test_LinearSystemGetValidValues_exec_policy);
    RUN_TEST(test_LinearSystemGetValidValues_unknown_key);
    RUN_TEST(test_LinearSystemSetArgsFromYAML_valid_keys);
    RUN_TEST(test_LinearSystemSetArgsFromYAML_unknown_key);

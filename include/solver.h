@@ -52,6 +52,7 @@ StrIntMapArray SolverGetValidValues(const char *);
 StrIntMapArray SolverGetValidTypeIntMap(void);
 
 void SolverSetArgsFromYAML(void *, YAMLnode *);
+void SolverArgsSetDefaultsForMethod(solver_t, solver_args *);
 void SolverCreate(MPI_Comm, solver_t, solver_args *, HYPRE_Solver *);
 void SolverSetup(precon_t, solver_t, HYPRE_Precon, HYPRE_Solver, HYPRE_IJMatrix,
                  HYPRE_IJVector, HYPRE_IJVector);

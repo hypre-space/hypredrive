@@ -114,6 +114,7 @@ typedef struct MGR_args_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
+void MGRSetDefaultArgs(MGR_args *);
 void MGRSetArgs(void *, const YAMLnode *);
 void MGRSetDofmap(MGR_args *, IntArray *);
 void MGRCreate(MGR_args *, HYPRE_Solver *);

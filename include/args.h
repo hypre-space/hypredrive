@@ -18,17 +18,23 @@
  * Input arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct input_args_struct
+typedef struct General_args_struct
 {
-   /* TODO: move the following block to a separate "general_args" struct */
    int    warmup;
    int    statistics;
    int    print_config_params;
+   int    use_millisec;
+   int    exec_policy;
    int    num_repetitions;
    double dev_pool_size;
    double uvm_pool_size;
    double host_pool_size;
    double pinned_pool_size;
+} General_args;
+
+typedef struct input_args_struct
+{
+   General_args general;
 
    LS_args ls;
 
