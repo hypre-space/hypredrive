@@ -355,10 +355,10 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
       HYPRE_SetUmpireHostPoolName("HYPRE_HOST");
       HYPRE_SetUmpirePinnedPoolName("HYPRE_PINNED");
 
-      HYPRE_SetUmpireDevicePoolSize(hypredrv->iargs->dev_pool_size);
-      HYPRE_SetUmpireUMPoolSize(hypredrv->iargs->uvm_pool_size);
-      HYPRE_SetUmpireHostPoolSize(hypredrv->iargs->host_pool_size);
-      HYPRE_SetUmpirePinnedPoolSize(hypredrv->iargs->pinned_pool_size);
+      HYPRE_SetUmpireDevicePoolSize(hypredrv->iargs->general.dev_pool_size);
+      HYPRE_SetUmpireUMPoolSize(hypredrv->iargs->general.uvm_pool_size);
+      HYPRE_SetUmpireHostPoolSize(hypredrv->iargs->general.host_pool_size);
+      HYPRE_SetUmpirePinnedPoolSize(hypredrv->iargs->general.pinned_pool_size);
 #endif
    }
    else
@@ -377,7 +377,7 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
 int
 HYPREDRV_InputArgsGetWarmup(HYPREDRV_t hypredrv)
 {
-   return (hypredrv) ? hypredrv->iargs->warmup : -1;
+   return (hypredrv) ? hypredrv->iargs->general.warmup : -1;
 }
 
 /*-----------------------------------------------------------------------------
@@ -387,7 +387,7 @@ HYPREDRV_InputArgsGetWarmup(HYPREDRV_t hypredrv)
 int
 HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t hypredrv)
 {
-   return (hypredrv) ? hypredrv->iargs->num_repetitions : -1;
+   return (hypredrv) ? hypredrv->iargs->general.num_repetitions : -1;
 }
 
 /*-----------------------------------------------------------------------------
@@ -1167,7 +1167,7 @@ HYPREDRV_StatsPrint(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   StatsPrint(hypredrv->iargs->statistics);
+   StatsPrint(hypredrv->iargs->general.statistics);
 
    return ErrorCodeGet();
 }

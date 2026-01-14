@@ -8,12 +8,64 @@
 #include "args.h"
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
+#include "field.h"
+#include "gen_macros.h"
+#include "stats.h"
 #include "utils.h"
 #include "yaml.h"
 
 /*-----------------------------------------------------------------------------
- * InputArgsCreate
+ * General args helpers (schema-driven parsing)
  *-----------------------------------------------------------------------------*/
+
+static void
+FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
+{
+   double gb          = strtod(node->mapped_val, NULL);
+   *((double *)field) = gb * GB_TO_BYTES;
+}
+
+#define General_FIELDS(_prefix)                                               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, warmup, FieldTypeIntSet)                   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, FieldTypeIntSet)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_repetitions, FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, dev_pool_size, FieldTypePoolGBToBytesSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, uvm_pool_size, FieldTypePoolGBToBytesSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, host_pool_size, FieldTypePoolGBToBytesSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, pinned_pool_size, FieldTypePoolGBToBytesSet)
+
+#define General_NUM_FIELDS \
+   (sizeof(General_field_offset_map) / sizeof(General_field_offset_map[0]))
+
+GENERATE_PREFIXED_COMPONENTS(General) // LCOV_EXCL_LINE
+
+StrIntMapArray
+GeneralGetValidValues(const char *key)
+{
+   if (!strcmp(key, "warmup") || !strcmp(key, "statistics") ||
+       !strcmp(key, "print_config_params") || !strcmp(key, "use_millisec"))
+   {
+      return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
+   }
+
+   return STR_INT_MAP_ARRAY_VOID();
+}
+
+void
+GeneralSetDefaultArgs(General_args *args)
+{
+   args->warmup              = 0;
+   args->statistics          = 1;
+   args->print_config_params = 1;
+   args->use_millisec        = 0;
+   args->num_repetitions     = 1;
+   args->dev_pool_size       = 8.0 * GB_TO_BYTES;
+   args->uvm_pool_size       = 8.0 * GB_TO_BYTES;
+   args->host_pool_size      = 8.0 * GB_TO_BYTES;
+   args->pinned_pool_size    = 0.5 * GB_TO_BYTES;
+}
 
 void
 InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
@@ -21,14 +73,8 @@ InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
    input_args *iargs = (input_args *)malloc(sizeof(input_args));
 
    /* Set general default options */
-   iargs->warmup              = 0;
-   iargs->num_repetitions     = 1;
-   iargs->statistics          = 1;
-   iargs->print_config_params = !lib_mode;
-   iargs->dev_pool_size       = 8.0 * GB_TO_BYTES;
-   iargs->uvm_pool_size       = 8.0 * GB_TO_BYTES;
-   iargs->host_pool_size      = 8.0 * GB_TO_BYTES;
-   iargs->pinned_pool_size    = 0.5 * GB_TO_BYTES;
+   GeneralSetDefaultArgs(&iargs->general);
+   iargs->general.print_config_params = !lib_mode;
 
    /* Set default Linear System options */
    LinearSystemSetDefaultArgs(&iargs->ls);
@@ -78,113 +124,23 @@ InputArgsDestroy(input_args **iargs_ptr)
 void
 InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode *parent = NULL;
-   YAMLnode *child  = NULL;
-
-   parent = YAMLnodeFindByKey(tree->root, "general");
+   YAMLnode *parent = YAMLnodeFindByKey(tree->root, "general");
    if (!parent)
    {
-      /* The "general" key is not mandatory,
-         so we don't set an error code if it's not found. */
+      /* The \"general\" key is optional */
       return;
    }
+
    YAML_NODE_SET_VALID(parent);
+   GeneralSetArgsFromYAML(&iargs->general, parent);
 
-   child = parent->children;
-   while (child)
+   if (iargs->general.use_millisec)
    {
-      /* TODO: implement validation of "general" keywords */
-      YAML_NODE_SET_VALID(child);
-
-      if (!strcmp(child->key, "warmup") || !strcmp(child->key, "statistics") ||
-          !strcmp(child->key, "use_millisec") ||
-          !strcmp(child->key, "print_config_params"))
-      {
-         if (!strcmp(child->val, "off") || !strcmp(child->val, "no") ||
-             !strcmp(child->val, "false") || !strcmp(child->val, "0") ||
-             !strcmp(child->val, "n"))
-         {
-            if (!strcmp(child->key, "warmup"))
-            {
-               iargs->warmup = 0;
-            }
-            else if (!strcmp(child->key, "statistics"))
-            {
-               iargs->statistics = 0;
-            }
-            else if (!strcmp(child->key, "print_config_params"))
-            {
-               iargs->print_config_params = 0;
-            }
-            else if (!strcmp(child->key, "use_millisec"))
-            {
-               StatsTimerSetSeconds();
-            }
-         }
-         else if (!strcmp(child->val, "on") || !strcmp(child->val, "yes") ||
-                  !strcmp(child->val, "true") || !strcmp(child->val, "1") ||
-                  !strcmp(child->val, "y"))
-         {
-            if (!strcmp(child->key, "warmup"))
-            {
-               iargs->warmup = 1;
-            }
-            else if (!strcmp(child->key, "statistics"))
-            {
-               iargs->statistics = 1;
-            }
-            else if (!strcmp(child->key, "print_config_params"))
-            {
-               iargs->print_config_params = 1;
-            }
-            else if (!strcmp(child->key, "use_millisec"))
-            {
-               StatsTimerSetMilliseconds();
-            }
-         }
-         else
-         {
-            if (!strcmp(child->key, "warmup"))
-            {
-               iargs->warmup = 0;
-            }
-            else if (!strcmp(child->key, "statistics"))
-            {
-               iargs->statistics = 0;
-            }
-            else if (!strcmp(child->key, "print_config_params"))
-            {
-               iargs->print_config_params = 0;
-            }
-            ErrorCodeSet(ERROR_INVALID_VAL);
-         }
-      }
-      else if (!strcmp(child->key, "num_repetitions"))
-      {
-         iargs->num_repetitions = (int)strtol(child->val, NULL, 10);
-      }
-      else if (!strcmp(child->key, "dev_pool_size"))
-      {
-         iargs->dev_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
-      }
-      else if (!strcmp(child->key, "uvm_pool_size"))
-      {
-         iargs->uvm_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
-      }
-      else if (!strcmp(child->key, "host_pool_size"))
-      {
-         iargs->host_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
-      }
-      else if (!strcmp(child->key, "pinned_pool_size"))
-      {
-         iargs->pinned_pool_size = GB_TO_BYTES * strtod(child->val, NULL);
-      }
-      else
-      {
-         ErrorCodeSet(ERROR_INVALID_KEY);
-      }
-
-      child = child->next;
+      StatsTimerSetMilliseconds();
+   }
+   else
+   {
+      StatsTimerSetSeconds();
    }
 }
 
@@ -575,6 +531,86 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    free(basename);
 }
 
+static int
+FindConfigIndex(int argc, char **argv)
+{
+   for (int i = 0; i < argc; i++)
+   {
+      if (argv[i] && IsYAMLFilename(argv[i]))
+      {
+         return i;
+      }
+   }
+   return -1;
+}
+
+static bool
+LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_indent_ptr,
+               char **text_ptr, char **config_dir_ptr)
+{
+   char *config_base = NULL;
+
+   if (argc > 0 && IsYAMLFilename(argv[0]))
+   {
+      InputArgsRead(comm, argv[0], base_indent_ptr, text_ptr);
+      if (ErrorCodeActive())
+      {
+         return false;
+      }
+      SplitFilename(argv[0], config_dir_ptr, &config_base);
+      free(config_base);
+      return true;
+   }
+
+   if (config_idx >= 0)
+   {
+      InputArgsRead(comm, argv[config_idx], base_indent_ptr, text_ptr);
+      if (ErrorCodeActive())
+      {
+         return false;
+      }
+      SplitFilename(argv[config_idx], config_dir_ptr, &config_base);
+      free(config_base);
+      return true;
+   }
+
+   /* Direct YAML string input */
+   if (argv[0] == NULL)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("YAML string input is NULL");
+      return false;
+   }
+
+   *text_ptr = strdup(argv[0]); // Make a copy since we'll free it later
+   return true;
+}
+
+static void
+ApplyCLIOverrides(int argc, char **argv, int config_idx, YAMLtree *tree)
+{
+   if (argc <= 1)
+   {
+      return;
+   }
+
+   if (IsYAMLFilename(argv[0]))
+   {
+      /* Legacy: overrides are in argv[1..] */
+      YAMLtreeUpdate(argc - 1, argv + 1, tree);
+   }
+   else if (config_idx >= 0)
+   {
+      /* Driver: allow YAMLtreeUpdate to parse -a/--args inside full argv */
+      YAMLtreeUpdate(argc, argv, tree);
+   }
+   else
+   {
+      /* YAML string input: overrides are in argv[1..] */
+      YAMLtreeUpdate(argc - 1, argv + 1, tree);
+   }
+}
+
 /*-----------------------------------------------------------------------------
  * InputArgsParse
  *-----------------------------------------------------------------------------*/
@@ -588,7 +624,6 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    int         base_indent = 2;
    int         myid        = 0;
    char       *config_dir  = NULL;
-   char       *config_base = NULL;
 
    MPI_Comm_rank(comm, &myid);
 
@@ -600,53 +635,11 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
     * -a ...)
     * - Unit tests: argv[0] is a YAML string (and argv[1..] are override pairs)
     */
-   int config_idx = -1;
-   for (int i = 0; i < argc; i++)
+   const int config_idx = FindConfigIndex(argc, argv);
+   if (!LoadConfigText(comm, argc, argv, config_idx, &base_indent, &text, &config_dir))
    {
-      if (argv[i] && IsYAMLFilename(argv[i]))
-      {
-         config_idx = i;
-         break;
-      }
-   }
-
-   if (argc > 0 && IsYAMLFilename(argv[0]))
-   {
-      /* Treat as file input - will error if file doesn't exist */
-      InputArgsRead(comm, argv[0], &base_indent, &text);
-
-      /* Return if there was an error reading the file */
-      if (ErrorCodeActive())
-      {
-         *args_ptr = NULL;
-         return;
-      }
-
-      SplitFilename(argv[0], &config_dir, &config_base);
-   }
-   else if (config_idx >= 0)
-   {
-      /* Driver-style argv: find YAML filename anywhere */
-      InputArgsRead(comm, argv[config_idx], &base_indent, &text);
-      if (ErrorCodeActive())
-      {
-         *args_ptr = NULL;
-         return;
-      }
-
-      SplitFilename(argv[config_idx], &config_dir, &config_base);
-   }
-   else
-   {
-      /* Direct YAML string input */
-      if (argv[0] == NULL)
-      {
-         ErrorCodeSet(ERROR_UNKNOWN);
-         ErrorMsgAdd("YAML string input is NULL");
-         *args_ptr = NULL;
-         return;
-      }
-      text = strdup(argv[0]); // Make a copy since we'll free it later
+      *args_ptr = NULL;
+      return;
    }
 
    /* Quick way to view/debug the tree */
@@ -661,25 +654,7 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    /* Check if any config option has been passed in via CLI.
       If so, overwrite the data stored in the YAMLtree object
       with the new values. */
-   if (argc > 1)
-   {
-      /* Update YAML tree with command line arguments info */
-      if (IsYAMLFilename(argv[0]))
-      {
-         /* Legacy: overrides are in argv[1..] */
-         YAMLtreeUpdate(argc - 1, argv + 1, tree);
-      }
-      else if (config_idx >= 0)
-      {
-         /* Driver: allow YAMLtreeUpdate to parse -a/--args inside full argv */
-         YAMLtreeUpdate(argc, argv, tree);
-      }
-      else
-      {
-         /* YAML string input: overrides are in argv[1..] */
-         YAMLtreeUpdate(argc - 1, argv + 1, tree);
-      }
-   }
+   ApplyCLIOverrides(argc, argv, config_idx, tree);
 
    /* Return earlier if YAML tree was not built properly */
    if (!myid && ErrorCodeActive())
@@ -695,7 +670,6 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    /* Free memory */
    free(text);
    free(config_dir);
-   free(config_base);
 
    /*--------------------------------------------
     * Parse file sections
@@ -708,7 +682,7 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    InputArgsParsePrecon(iargs, tree);
 
    /* Set auxiliary data in the Stats structure */
-   StatsSetNumReps(iargs->num_repetitions);
+   StatsSetNumReps(iargs->general.num_repetitions);
    /* Note: num_systems is the base number; variants are handled in the driver loop */
    StatsSetNumLinearSystems(iargs->ls.num_systems);
 
@@ -726,7 +700,7 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    }
 
    /* Rank 0: Print tree to stdout */
-   if (!myid && iargs->print_config_params)
+   if (!myid && iargs->general.print_config_params)
    {
       YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
    }
