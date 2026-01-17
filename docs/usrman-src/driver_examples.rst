@@ -340,6 +340,24 @@ variant and report a separate stats entry per variant while reusing the same lin
 .. literalinclude:: ../../examples/refOutput/ex8.txt
    :language: text
 
+4. (Optional) Plot per-variant timing or iteration bars using ``scripts/analyze_statistics.py``.
+   Provide one label per table entry via ``-ln`` (order matches the stats table):
+
+.. code-block:: bash
+
+   $ scripts/analyze_statistics.py -f examples/refOutput/ex8.txt -m bar -p total \
+       -ln "AMG-1" "AMG-2" "AMG-3" "AMG-4" "AMG-5" \
+       -s ex8.svg -T "Example 8 total time"
+
+   # Use -p iters to compare iteration counts instead of timings
+
+.. figure:: figures/ex8_total_bar.svg
+   :alt: Total time per preconditioner variant (Example 8)
+   :width: 80%
+   :align: center
+
+   Total time (setup + solve) for each preconditioner variant in Example 8.
+
 .. note::
    A multi-file version of this input is also provided as ``examples/ex8-multi-1.yml``,
    where the individual preconditioner variants are split into separate YAML files and
