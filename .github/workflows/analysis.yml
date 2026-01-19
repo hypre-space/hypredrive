@@ -34,7 +34,7 @@ jobs:
       HYPRE_VERSION: master
       BUILD_DIR: build-analysis
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -86,7 +86,7 @@ jobs:
       HYPRE_VERSION: master
       BUILD_DIR: build-analysis
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -145,7 +145,7 @@ jobs:
       HYPRE_VERSION: master
       BUILD_DIR: build-sanitizers-${{ matrix.compiler }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
