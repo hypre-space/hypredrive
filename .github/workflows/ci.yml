@@ -222,6 +222,7 @@ jobs:
       HYPRE_COMPILER: gcc
       HYPRE_BUILD_TYPE: Debug
       HYPRE_LIBTYPE: shared
+      HYPRE_OS: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
@@ -236,7 +237,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
-          key: hypre-${{ env.HYPRE_VERSION }}-${{ runner.os }}-${{ env.HYPRE_COMPILER }}-${{ env.HYPRE_BUILD_TYPE }}-${{ env.HYPRE_LIBTYPE }}
+          key: hypre-${{ env.HYPRE_VERSION }}-${{ env.HYPRE_OS }}-${{ env.HYPRE_COMPILER }}-${{ env.HYPRE_BUILD_TYPE }}-${{ env.HYPRE_LIBTYPE }}
 
       - name: Build HYPRE (cache miss)
         if: steps.hypre-cache.outputs.cache-hit != 'true'
@@ -257,6 +258,11 @@ jobs:
           ./configure --with-hypre-dir="${HYPRE_DIR}" \
                       --prefix="$(pwd)/install-autotools"
           make -j
+          OMPI_ALLOW_RUN_AS_ROOT=1 \
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
+          OMPI_MCA_btl_vader_single_copy_mechanism=none \
+          OMPI_MCA_rmaps_base_oversubscribe=1 \
+          OMP_NUM_THREADS=1 \
           make check
           make install
 
