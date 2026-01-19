@@ -310,6 +310,9 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
+   /* If preset/defaults were configured before parsing, clear old args first. */
+   InputArgsDestroy(&hypredrv->iargs);
+
    InputArgsParse(hypredrv->comm, hypredrv->lib_mode, argc, argv, &hypredrv->iargs);
 
    return ErrorCodeGet();
@@ -340,8 +343,20 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   // TODO: remove this API and move functionality to InputArgsParse?
-   if (hypredrv->iargs->ls.exec_policy)
+   /* Initialize Stats from input args (works for both YAML and preset-based config) */
+   StatsSetNumReps(hypredrv->iargs->general.num_repetitions);
+   StatsSetNumLinearSystems(hypredrv->iargs->ls.num_systems);
+   if (hypredrv->iargs->general.use_millisec)
+   {
+      StatsTimerSetMilliseconds();
+   }
+   else
+   {
+      StatsTimerSetSeconds();
+   }
+
+   /* Set HYPRE execution policy */
+   if (hypredrv->iargs->general.exec_policy)
    {
       HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
       HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
@@ -450,6 +465,111 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
    hypredrv->iargs->active_precon_variant = variant_idx;
    hypredrv->iargs->precon_method         = hypredrv->iargs->precon_methods[variant_idx];
    hypredrv->iargs->precon                = hypredrv->iargs->precon_variants[variant_idx];
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_InputArgsSetPreconPreset
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!preset)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Preconditioner preset name cannot be NULL");
+      return ErrorCodeGet();
+   }
+
+   if (!hypredrv->iargs)
+   {
+      InputArgsCreate(hypredrv->lib_mode, &hypredrv->iargs);
+      PreconArgsSetDefaultsForMethod(hypredrv->iargs->precon_method,
+                                     &hypredrv->iargs->precon);
+   }
+
+   int variant_idx = hypredrv->iargs->active_precon_variant;
+   if (variant_idx < 0)
+   {
+      variant_idx                            = 0;
+      hypredrv->iargs->active_precon_variant = 0;
+   }
+
+   /* Destroy existing preconditioner object if any */
+   if (hypredrv->precon)
+   {
+      PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                    &hypredrv->precon);
+   }
+
+   if (hypredrv->iargs->num_precon_variants <= 0)
+   {
+      hypredrv->iargs->num_precon_variants   = 1;
+      hypredrv->iargs->active_precon_variant = 0;
+      variant_idx                            = 0;
+   }
+
+   if (variant_idx >= hypredrv->iargs->num_precon_variants)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Active preconditioner variant index %d is out of range (0-%d)",
+                  variant_idx, hypredrv->iargs->num_precon_variants - 1);
+      return ErrorCodeGet();
+   }
+
+   InputArgsApplyPreconPreset(hypredrv->iargs, preset, variant_idx);
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_InputArgsSetSolverPreset
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!preset)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Solver preset name cannot be NULL");
+      return ErrorCodeGet();
+   }
+
+   if (!hypredrv->iargs)
+   {
+      InputArgsCreate(hypredrv->lib_mode, &hypredrv->iargs);
+   }
+
+   /* Validate solver name */
+   if (!StrIntMapArrayDomainEntryExists(SolverGetValidTypeIntMap(), preset))
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd(
+         "Unknown solver preset: '%s'. Valid options: pcg, gmres, fgmres, bicgstab",
+         preset);
+      return ErrorCodeGet();
+   }
+
+   /* Destroy existing solver if any */
+   if (hypredrv->solver)
+   {
+      SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+   }
+
+   /* Set solver method and defaults */
+   hypredrv->iargs->solver_method =
+      (solver_t)StrIntMapArrayGetImage(SolverGetValidTypeIntMap(), preset);
+   SolverArgsSetDefaultsForMethod(hypredrv->iargs->solver_method,
+                                  &hypredrv->iargs->solver);
 
    return ErrorCodeGet();
 }

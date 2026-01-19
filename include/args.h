@@ -9,6 +9,7 @@
 #define ARGS_HEADER
 
 #include <HYPRE_utilities.h>
+#include <stdint.h>
 #include "linsys.h"
 #include "precon.h"
 #include "solver.h"
@@ -59,5 +60,6 @@ void InputArgsCreate(bool, input_args **);
 void InputArgsDestroy(input_args **);
 void InputArgsRead(MPI_Comm, char *, int *, char **);
 void InputArgsParse(MPI_Comm, bool, int, char **, input_args **);
+void InputArgsApplyPreconPreset(input_args *, const char *, int);
 
 #endif /* ARGS_HEADER */

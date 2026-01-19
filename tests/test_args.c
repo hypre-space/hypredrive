@@ -92,9 +92,6 @@ test_InputArgsParseGeneral_flags(void)
 static void
 test_InputArgsParseGeneral_use_millisec_sets_timer(void)
 {
-   Stats *stats = StatsCreate();
-   StatsSetContext(stats);
-
    const char yaml_text[] = "general:\n"
                             "  use_millisec: yes\n"
                             "solver:\n"
@@ -106,11 +103,10 @@ test_InputArgsParseGeneral_use_millisec_sets_timer(void)
 
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
-   ASSERT_NOT_NULL(StatsGetContext());
-   ASSERT_TRUE(StatsGetContext()->use_millisec);
+   /* Verify parsed value; Stats initialization now happens in HYPREDRV_SetGlobalOptions */
+   ASSERT_TRUE(args->general.use_millisec);
 
    InputArgsDestroy(&args);
-   StatsDestroy(&stats);
 }
 
 static void
@@ -141,6 +137,39 @@ test_InputArgsParsePrecon_value_only(void)
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->precon_method, PRECON_FSAI);
    ASSERT_EQ(args->precon.fsai.print_level, 0);
+
+   InputArgsDestroy(&args);
+}
+
+static void
+test_InputArgsParsePrecon_preset_value_only(void)
+{
+   const char yaml_text[] = "solver:\n"
+                            "  gmres:\n"
+                            "    max_iter: 30\n"
+                            "preconditioner: poisson\n";
+
+   input_args *args = parse_config(yaml_text);
+   /* Value-only presets are not supported. */
+   ASSERT_TRUE(ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_NULL(args);
+}
+
+static void
+test_InputArgsParsePrecon_preset_explicit_key(void)
+{
+   const char yaml_text[] = "solver:\n"
+                            "  pcg:\n"
+                            "    max_iter: 10\n"
+                            "preconditioner:\n"
+                            "  preset: elasticity-2D\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
+   ASSERT_EQ(args->precon.amg.coarsening.num_functions, 2);
+   ASSERT_TRUE(args->precon.amg.coarsening.strong_th > 0.79 &&
+               args->precon.amg.coarsening.strong_th < 0.81);
 
    InputArgsDestroy(&args);
 }
@@ -343,6 +372,8 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParseGeneral_use_millisec_sets_timer);
    RUN_TEST(test_InputArgsParseSolver_value_only);
    RUN_TEST(test_InputArgsParsePrecon_value_only);
+   RUN_TEST(test_InputArgsParsePrecon_preset_value_only);
+   RUN_TEST(test_InputArgsParsePrecon_preset_explicit_key);
    RUN_TEST(test_InputArgsParsePrecon_missing);
    RUN_TEST(test_InputArgsParsePrecon_variants);
    RUN_TEST(test_YAMLtreeBuild_inconsistent_indent);

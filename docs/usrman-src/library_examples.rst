@@ -95,6 +95,17 @@ A minimal skeleton of a program using the library is shown below.
 - If compiled with GPU support, you may migrate assembled IJ objects to device memory with
   ``HYPRE_IJMatrixMigrate(..., HYPRE_MEMORY_DEVICE)`` and analogous calls for vectors.
 
+You can also configure a predefined preconditioner preset without parsing YAML:
+
+.. code-block:: c
+
+   HYPREDRV_SetLibraryMode(h);
+   HYPREDRV_InputArgsSetPreconPreset(h, "poisson");
+   HYPREDRV_SetGlobalOptions(h);
+
+If you later call ``HYPREDRV_InputArgsParse``, the YAML configuration will override
+the preset.
+
 .. _LibraryExample1:
 
 Example 1: Laplace's equation

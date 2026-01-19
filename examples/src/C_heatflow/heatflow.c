@@ -80,15 +80,6 @@
 #include <sys/types.h>
 #include "HYPREDRV.h"
 
-/* Default hypredrv config when no -i YAML file is supplied */
-static const char *default_config = "solver:\n"
-                                    "  gmres:\n"
-                                    "    krylov_dim: 50\n"
-                                    "    max_iter: 200\n"
-                                    "    print_level: 0\n"
-                                    "    relative_tol: 1.0e-6\n"
-                                    "preconditioner: amg\n";
-
 typedef struct
 {
    HYPRE_Int  max_iters;
@@ -2568,7 +2559,6 @@ int
 main(int argc, char *argv[])
 {
    MPI_Comm       comm = MPI_COMM_WORLD;
-   char          *hypredrv_args[2];
    HYPREDRV_t     hypredrv;
    int            myid, nprocs;
    HeatParams     params;
@@ -2592,7 +2582,6 @@ main(int argc, char *argv[])
       MPI_Finalize();
       return 1;
    }
-   hypredrv_args[0] = params.yaml_file ? params.yaml_file : (char *)default_config;
 
    if (!myid)
    {
@@ -2642,9 +2631,22 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, hypredrv_args, hypredrv));
-   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
+
+   /* Configure solver using YAML input or default presets */
+   if (params.yaml_file)
+   {
+      char *args[2] = {params.yaml_file, NULL};
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
+   }
+   else
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, "gmres"));
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "poisson"));
+   }
+
+   /* Set HYPREDRV global options */
+   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
 
    /* Create distributed mesh object */
    CreateDistMesh(comm, params.N[0], params.N[1], params.N[2], params.P[0], params.P[1],

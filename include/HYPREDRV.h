@@ -342,8 +342,8 @@ extern "C"
                                                            HYPREDRV_t hypredrv);
 
    /**
-    * @brief Set library mode to HYPREDRV, in which matrices and vectors are not assumed
-    * to be owned by the HYPREDRV_t object.
+    * @brief Set library mode to HYPREDRV, in which matrices and vectors are not
+    * assumed to be owned by the HYPREDRV_t object.
     *
     * @param hypredrv The HYPREDRV_t object.
     *
@@ -499,6 +499,56 @@ extern "C"
 
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv,
                                                                       int variant_idx);
+
+   /**
+    * @brief Configure the active preconditioner variant using a predefined preset.
+    *
+    * This function allows library users to select a named preset (e.g., "poisson",
+    * "elasticity-2D") without calling HYPREDRV_InputArgsParse. It ensures that the
+    * input argument structure exists and that solver/preconditioner defaults are
+    * initialized, then applies the preset to the active variant only.
+    *
+    * @param hypredrv The HYPREDRV_t object for which to set the preset.
+    * @param preset The preset name string.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure (e.g., invalid preset, object not initialized).
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t *hypredrv;
+    *    // ... (hypredrv is created) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "poisson"));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t  hypredrv,
+                                                                     const char *preset);
+
+   /**
+    * @brief Configure the solver using a predefined preset name.
+    *
+    * This function allows library users to select a named solver (e.g., "pcg",
+    * "gmres", "fgmres", "bicgstab") without calling HYPREDRV_InputArgsParse. It
+    * ensures that the input argument structure exists, then sets the solver method
+    * and initializes its defaults.
+    *
+    * @param hypredrv The HYPREDRV_t object for which to set the solver.
+    * @param preset The solver name string (e.g., "pcg", "gmres").
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure (e.g., invalid solver name, object not initialized).
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t *hypredrv;
+    *    // ... (hypredrv is created) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, "pcg"));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t  hypredrv,
+                                                                     const char *preset);
 
    /**
     * @brief Build the linear system (matrix, RHS, and LHS) according to the YAML input

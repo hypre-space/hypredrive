@@ -65,16 +65,6 @@
  *==========================================================================*/
 
 /*--------------------------------------------------------------------------
- * Default solver configuration
- *--------------------------------------------------------------------------*/
-static const char *default_config = "solver: pcg\n"
-                                    "preconditioner:\n"
-                                    "  amg:\n"
-                                    "    coarsening:\n"
-                                    "      strong_th: 0.6\n"
-                                    "      num_functions: 3\n";
-
-/*--------------------------------------------------------------------------
  * Problem parameters struct
  *--------------------------------------------------------------------------*/
 typedef struct
@@ -1572,22 +1562,34 @@ main(int argc, char *argv[])
       return 1;
    }
 
+   /* Initialize hypredrive */
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
 
+   /* Print library info if requested */
    if (params.verbose & 0x2)
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
    }
 
+   /* Create hypredrive object */
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
-
-   char *args[2];
-   args[0] = params.yaml_file ? params.yaml_file : (char *)default_config;
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
-
-   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
+
+   /* Configure solver using YAML input or default presets */
+   if (params.yaml_file)
+   {
+      char *args[2] = {params.yaml_file, NULL};
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
+   }
+   else
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, "pcg"));
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "elasticity_3D"));
+   }
+
+   /* Set HYPREDRV global options */
+   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
 
    if (!myid)
    {
