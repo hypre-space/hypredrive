@@ -56,7 +56,8 @@ hypredrv_PresetHelp(void)
    {
       const char *name = g_presets[i].name ? g_presets[i].name : "";
       const char *help = g_presets[i].help ? g_presets[i].help : "";
-      bytes += strlen("    - ") + strlen(name) + strlen(": ") + strlen(help) + strlen("\n");
+      bytes +=
+         strlen("    - ") + strlen(name) + strlen(": ") + strlen(help) + strlen("\n");
    }
 
    char *out = (char *)malloc(bytes);
