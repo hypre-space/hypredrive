@@ -133,6 +133,7 @@ jobs:
           build_type: 'Debug'
           hypre_shared_libs: 'ON'
           os: ${{ matrix.os }}
+          mpi_flavor: ${{ startsWith(matrix.os, 'macos') && 'mpich' || 'openmpi' }}
 
       - name: Configure hypredrive
         run: |
@@ -223,6 +224,7 @@ jobs:
       HYPRE_BUILD_TYPE: Debug
       HYPRE_LIBTYPE: shared
       HYPRE_OS: ubuntu-latest
+      HYPRE_MPI_FLAVOR: openmpi
     steps:
       - uses: actions/checkout@v6
 
@@ -237,7 +239,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
-          key: hypre-${{ env.HYPRE_VERSION }}-${{ env.HYPRE_OS }}-${{ env.HYPRE_COMPILER }}-${{ env.HYPRE_BUILD_TYPE }}-${{ env.HYPRE_LIBTYPE }}
+          key: hypre-${{ env.HYPRE_VERSION }}-${{ env.HYPRE_OS }}-${{ env.HYPRE_COMPILER }}-${{ env.HYPRE_BUILD_TYPE }}-${{ env.HYPRE_LIBTYPE }}-${{ env.HYPRE_MPI_FLAVOR }}
 
       - name: Build HYPRE (cache miss)
         if: steps.hypre-cache.outputs.cache-hit != 'true'
@@ -249,6 +251,7 @@ jobs:
           build_type: ${{ env.HYPRE_BUILD_TYPE }}
           hypre_shared_libs: 'ON'
           os: ubuntu-latest
+          mpi_flavor: ${{ env.HYPRE_MPI_FLAVOR }}
 
       - name: Build and test (autotools)
         run: |
