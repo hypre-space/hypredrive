@@ -17,6 +17,10 @@ inputs:
     description: 'Build shared libraries (ON or OFF)'
     required: false
     default: 'ON'
+  hypre_mixedint:
+    description: 'Enable mixed int mode (ON or OFF)'
+    required: false
+    default: 'OFF'
   os:
     description: 'Operating system (ubuntu-latest or macos-latest)'
     required: false
@@ -47,7 +51,7 @@ runs:
       id: hypre-cache
       with:
         path: ${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}
-        key: hypre-${{ inputs.hypre_version }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}-${{ inputs.mpi_flavor }}
+        key: hypre-${{ inputs.hypre_version }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}-mixedint-${{ inputs.hypre_mixedint }}-${{ inputs.mpi_flavor }}
 
     - name: Build & install HYPRE
       id: build
@@ -63,6 +67,7 @@ runs:
             -G Ninja
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }}
             -DBUILD_SHARED_LIBS=${{ inputs.hypre_shared_libs }}
+            -DHYPRE_MIXEDINT=${{ inputs.hypre_mixedint }}
             -DHYPRE_BUILD_TESTS=OFF
             -DHYPRE_BUILD_EXAMPLES=OFF
             -DCMAKE_INSTALL_PREFIX="$PREFIX"

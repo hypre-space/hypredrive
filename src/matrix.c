@@ -33,8 +33,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    HYPRE_BigInt        *h_rows = NULL;
    HYPRE_BigInt        *h_cols = NULL;
    HYPRE_Complex       *h_vals = NULL;
-   const HYPRE_Int     *rows   = NULL;
-   const HYPRE_Int     *cols   = NULL;
+   const HYPRE_BigInt  *rows   = NULL;
+   const HYPRE_BigInt  *cols   = NULL;
    const HYPRE_Complex *vals   = NULL;
 #ifdef HYPRE_USING_GPU
    HYPRE_BigInt  *d_rows = NULL;

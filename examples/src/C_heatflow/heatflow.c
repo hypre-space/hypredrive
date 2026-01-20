@@ -142,7 +142,7 @@ static const HYPRE_Real gauss_w[2] = {1.0, 1.0};
 
 /* Prototypes */
 static inline HYPRE_BigInt grid2idx(const HYPRE_BigInt g[3], const HYPRE_Int c[3],
-                                    const HYPRE_BigInt gd[3], HYPRE_BigInt **ps);
+                                    const HYPRE_Int gd[3], HYPRE_BigInt **ps);
 int                        PrintUsage(void);
 int                        ParseArguments(int, char **, HeatParams *, int, int);
 static double ComputeTotalEnergyLumped(DistMesh *, HeatParams *, const HYPRE_Real *);
@@ -446,7 +446,7 @@ find_owner(const HYPRE_BigInt g[3], const HYPRE_Int pd[3], HYPRE_BigInt **ps,
 /* Compute global DOF ID for node at grid coordinates g.
  * This MUST be called with the correct owner processor coordinates. */
 static inline HYPRE_BigInt
-grid2idx(const HYPRE_BigInt g[3], const HYPRE_Int c[3], const HYPRE_BigInt gd[3],
+grid2idx(const HYPRE_BigInt g[3], const HYPRE_Int c[3], const HYPRE_Int gd[3],
          HYPRE_BigInt **ps)
 {
    return ps[2][c[2]] * gd[0] * gd[1] +
@@ -461,7 +461,7 @@ grid2idx(const HYPRE_BigInt g[3], const HYPRE_Int c[3], const HYPRE_BigInt gd[3]
 
 /* Compute global DOF ID for any node, finding the correct owner first */
 static inline HYPRE_BigInt
-grid2idx_any(const HYPRE_BigInt g[3], const HYPRE_Int pd[3], const HYPRE_BigInt gd[3],
+grid2idx_any(const HYPRE_BigInt g[3], const HYPRE_Int pd[3], const HYPRE_Int gd[3],
              HYPRE_BigInt **ps)
 {
    HYPRE_Int owner_c[3];

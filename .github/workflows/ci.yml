@@ -102,7 +102,7 @@ jobs:
         if: startsWith(runner.os, 'macOS')
         run: |
           brew update
-          brew install cmake ninja mpich clang-format
+          brew install mpich clang-format
           # Get and display compiler version
           VERSION=$(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')
           echo "::notice::Using clang version $VERSION"
@@ -223,6 +223,7 @@ jobs:
       HYPRE_COMPILER: gcc
       HYPRE_BUILD_TYPE: Debug
       HYPRE_LIBTYPE: shared
+      HYPRE_MIXEDINT: OFF
       HYPRE_OS: ubuntu-latest
       HYPRE_MPI_FLAVOR: openmpi
     steps:
@@ -239,7 +240,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
-          key: hypre-${{ env.HYPRE_VERSION }}-${{ env.HYPRE_OS }}-${{ env.HYPRE_COMPILER }}-${{ env.HYPRE_BUILD_TYPE }}-${{ env.HYPRE_LIBTYPE }}-${{ env.HYPRE_MPI_FLAVOR }}
+          key: hypre-${{ env.HYPRE_VERSION }}-${{ env.HYPRE_OS }}-${{ env.HYPRE_COMPILER }}-${{ env.HYPRE_BUILD_TYPE }}-${{ env.HYPRE_LIBTYPE }}-mixedint-${{ env.HYPRE_MIXEDINT }}-${{ env.HYPRE_MPI_FLAVOR }}
 
       - name: Build HYPRE (cache miss)
         if: steps.hypre-cache.outputs.cache-hit != 'true'
@@ -250,6 +251,7 @@ jobs:
           compiler: ${{ env.HYPRE_COMPILER }}
           build_type: ${{ env.HYPRE_BUILD_TYPE }}
           hypre_shared_libs: 'ON'
+          hypre_mixedint: ${{ env.HYPRE_MIXEDINT }}
           os: ubuntu-latest
           mpi_flavor: ${{ env.HYPRE_MPI_FLAVOR }}
 
@@ -363,3 +365,84 @@ jobs:
             ${{ env.BUILD_DIR }}/Testing
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
+
+  build-and-test-mixedint:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: ubuntu-latest | gcc | mixedint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HYPRE_VERSION: master
+      BUILD_DIR: build-mixedint
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies (Ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin ccache gcc g++ clang-format
+
+      - name: Setup compiler environment
+        run: |
+          export OMPI_CC=gcc
+          export OMPI_CXX=g++
+          echo "OMPI_CC=gcc" >> $GITHUB_ENV
+          echo "OMPI_CXX=g++" >> $GITHUB_ENV
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ${{ runner.os }}-mixedint-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-mixedint-
+
+      - name: Cache datasets
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: datasets-v1
+          restore-keys: |
+            datasets-v1
+
+      - name: Build HYPRE (mixedint)
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: gcc
+          build_type: 'Debug'
+          hypre_shared_libs: 'ON'
+          hypre_mixedint: 'ON'
+          os: ubuntu-latest
+
+      - name: Configure hypredrive (mixedint)
+        run: |
+          set -euxo pipefail
+          cmake -S . -B $BUILD_DIR -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }} \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build $BUILD_DIR --parallel
+
+      - name: Fetch datasets (optional)
+        run: |
+          set -euxo pipefail
+          if [ ! -d "data/ps3d10pt7" ] || [ -z "$(ls -A data/ps3d10pt7 2>/dev/null)" ]; then
+            cmake --build $BUILD_DIR --target data --parallel
+          else
+            echo "Datasets already cached, skipping download"
+          fi
+
+      - name: Run tests
+        timeout-minutes: 5
+        env:
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+          OMPI_MCA_btl_vader_single_copy_mechanism: none
+          OMPI_MCA_rmaps_base_oversubscribe: 1
+          OMP_NUM_THREADS: 1
+        run: ctest --test-dir $BUILD_DIR --output-on-failure --timeout 30

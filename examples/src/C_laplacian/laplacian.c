@@ -456,7 +456,7 @@ main(int argc, char *argv[])
  *--------------------------------------------------------------------------*/
 static inline HYPRE_BigInt
 grid2idx(const HYPRE_BigInt gcoords[3], const HYPRE_Int bcoords[3],
-         const HYPRE_BigInt gdims[3], HYPRE_BigInt **pstarts)
+         const HYPRE_Int gdims[3], HYPRE_BigInt **pstarts)
 {
    return pstarts[2][bcoords[2]] * gdims[0] * gdims[1] +
           pstarts[1][bcoords[1]] * gdims[0] *
