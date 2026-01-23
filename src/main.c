@@ -40,14 +40,16 @@ PrintUsage(const char *argv0)
    fprintf(stdout, "Usage: %s [options] <filename>\n", argv0);
    fprintf(stdout, "  filename: config file in YAML format\n");
    fprintf(stdout, "\nOptions:\n");
-   fprintf(stdout, "  -h, --help       Show this help message\n");
-   fprintf(stdout, "  -q, --quiet      Skip system information printout\n");
-   fprintf(stdout, "  -a, --args       Override YAML parameters from the CLI\n");
+   fprintf(stdout, "  -h, --help         Show this help message\n");
+   fprintf(stdout, "  -q, --quiet        Skip system information printout\n");
+   fprintf(stdout, "  -a, --args         Override YAML parameters from the CLI\n");
+   fprintf(stdout, "  -p, --prec-preset  Override preconditioner with a preset\n");
    fprintf(stdout, "\nOverride syntax (after -a/--args):\n");
    fprintf(stdout, "  --path:to:key  <value>\n");
    fprintf(stdout, "Examples:\n");
    fprintf(stdout, "  %s input.yml -a --solver:pcg:print_level 1\n", argv0);
    fprintf(stdout, "  %s input.yml -a --preconditioner:amg:print_level 2\n", argv0);
+   fprintf(stdout, "  %s input.yml -p poisson\n", argv0);
    fflush(stdout);
 }
 
@@ -75,6 +77,19 @@ QuietModeRequested(int argc, char **argv)
       }
    }
    return 0;
+}
+
+static const char *
+FindPreconPreset(int argc, char **argv)
+{
+   for (int i = 1; i < argc - 1; i++)
+   {
+      if (strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--prec-preset") == 0)
+      {
+         return argv[i + 1];
+      }
+   }
+   return NULL;
 }
 
 static char *
@@ -149,6 +164,13 @@ main(int argc, char **argv)
 
    RequireConfigArgumentOrAbort(argc, argv, comm, myid);
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, obj));
+
+   /* If --precon-preset was given, override the preconditioner */
+   const char *preset_name = FindPreconPreset(argc, argv);
+   if (preset_name)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(obj, preset_name));
+   }
 
    /*-----------------------------------------------------------
     * Set hypre's global options and warmup

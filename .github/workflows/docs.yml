@@ -23,7 +23,7 @@ jobs:
     name: Sphinx Documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -45,7 +45,7 @@ jobs:
     env:
       BUILD_DIR: build-docs
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Setup Ubuntu environment
         uses: ./.github/actions/setup-ubuntu

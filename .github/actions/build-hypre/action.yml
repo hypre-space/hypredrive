@@ -25,6 +25,10 @@ inputs:
     description: 'Operating system (ubuntu-latest or macos-latest)'
     required: false
     default: 'ubuntu-latest'
+  mpi_flavor:
+    description: 'MPI flavor to use on Linux (openmpi or mpich)'
+    required: false
+    default: 'openmpi'
 outputs:
   hypre_prefix:
     description: 'Path to HYPRE installation'
@@ -43,11 +47,11 @@ runs:
         fi
 
     - name: Cache HYPRE install
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       id: hypre-cache
       with:
         path: ${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}
-        key: hypre-${{ inputs.hypre_version }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}-mixedint-${{ inputs.hypre_mixedint }}
+        key: hypre-${{ inputs.hypre_version }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}-mixedint-${{ inputs.hypre_mixedint }}-${{ inputs.mpi_flavor }}
 
     - name: Build & install HYPRE
       id: build
@@ -55,7 +59,7 @@ runs:
       run: |
         set -euxo pipefail
         PREFIX="${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}"
-        if [ ! -f "$PREFIX/lib/cmake/hypre/HYPREConfig.cmake" ]; then
+        if [ ! -f "$PREFIX/lib/cmake/HYPRE/HYPREConfig.cmake" ]; then
           git clone --depth 1 --branch ${{ inputs.hypre_version }} https://github.com/hypre-space/hypre.git
           CMAKE_ARGS=(
             -S hypre/src
@@ -70,7 +74,11 @@ runs:
             -DCMAKE_C_COMPILER=mpicc
           )
           if [ "${{ inputs.os }}" = "ubuntu-latest" ]; then
-            CMAKE_ARGS+=(-DMPI_INCLUDE_DIR=/usr/include/x86_64-linux-gnu/mpich)
+            if [ "${{ inputs.mpi_flavor }}" = "openmpi" ]; then
+              CMAKE_ARGS+=(-DMPI_INCLUDE_DIR=/usr/lib/x86_64-linux-gnu/openmpi/include)
+            else
+              CMAKE_ARGS+=(-DMPI_INCLUDE_DIR=/usr/include/x86_64-linux-gnu/mpich)
+            fi
           fi
           cmake "${CMAKE_ARGS[@]}"
           cmake --build hypre/build --parallel

@@ -39,7 +39,7 @@ The user's manual has a detailed section about running examples. For a quick-sta
 running the first example from the top-level folder:
 
 ```
-$ mpirun -np 1 ./hypredrive examples/ex1.yml
+$ mpirun -np 1 ./hypredrive examples/ex1.yml -q
 
 Date and time: YYYY-MM-DD HH:MM:SS
 

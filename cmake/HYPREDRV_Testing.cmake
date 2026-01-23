@@ -237,6 +237,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     add_hypredrive_test(ex1b_1proc 1 ex1b.yml)
     add_hypredrive_test(ex1c_1proc 1 ex1c.yml)
     add_hypredrive_test(ex1d_1proc 1 ex1d.yml)
+    add_hypredrive_test(ex1_preset_1proc 1 ex1-preset.yml)
     add_hypredrive_test(ex2_4proc  4 ex2.yml)
     add_hypredrive_test(ex3_1proc  1 ex3.yml)
     add_hypredrive_test(ex4_4proc  4 ex4.yml)

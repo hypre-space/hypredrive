@@ -10,6 +10,7 @@
 #include "HYPRE_parcsr_ls.h"
 #include "field.h"
 #include "gen_macros.h"
+#include "presets.h"
 #include "stats.h"
 #include "utils.h"
 #include "yaml.h"
@@ -147,15 +148,6 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
    YAML_NODE_SET_VALID(parent);
    GeneralSetArgsFromYAML(&iargs->general, parent);
 
-   if (iargs->general.use_millisec)
-   {
-      StatsTimerSetMilliseconds();
-   }
-   else
-   {
-      StatsTimerSetSeconds();
-   }
-
    /* Mirror general exec policy into linear-system args for downstream use */
    iargs->ls.exec_policy = iargs->general.exec_policy;
 }
@@ -261,7 +253,6 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
 }
 
 /*-----------------------------------------------------------------------------
- * InputArgsParsePrecon
  *-----------------------------------------------------------------------------*/
 
 static void
@@ -272,8 +263,10 @@ PreconParseVariantWrapped(precon_args *dst, precon_t method,
    PreconArgsSetDefaultsForMethod(method, dst);
 
    YAMLnode fake_type = {0};
-   fake_type.key      = (char *)type_key;
-   fake_type.val      = "";
+   /* IMPORTANT: YAMLSetArgsGeneric may free/replace parent->key for flat-value nodes.
+    * Never point into another YAML tree's storage here. */
+   fake_type.key      = strdup(type_key ? type_key : "");
+   fake_type.val      = strdup("");
    fake_type.level    = type_level;
    fake_type.valid    = YAML_NODE_VALID;
    fake_type.children = type_children;
@@ -292,9 +285,84 @@ PreconParseVariantWrapped(precon_args *dst, precon_t method,
    /* Clean up mapped_val allocated during validation on fake nodes */
    free(fake_type.mapped_val);
    fake_type.mapped_val = NULL;
+   free(fake_type.key);
+   fake_type.key = NULL;
+   free(fake_type.val);
+   fake_type.val = NULL;
    free(fake_parent.mapped_val);
    fake_parent.mapped_val = NULL;
 }
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+static void
+PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
+                      precon_args *args_out)
+{
+   if (!method_out || !args_out)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Preset output arguments must be non-NULL");
+      return;
+   }
+
+   const hypredrv_Preset *preset = hypredrv_PresetFind(preset_name);
+   if (!preset)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Unknown preconditioner preset: '%s'", preset_name ? preset_name : "");
+      char *help = hypredrv_PresetHelp();
+      if (help)
+      {
+         ErrorMsgAdd("%s", help);
+         free(help);
+      }
+      return;
+   }
+
+   char *text = strdup(preset->text);
+   if (!text)
+   {
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate preset YAML text");
+      return;
+   }
+
+   YAMLtree *preset_tree = NULL;
+   YAMLtreeBuild(2, text, &preset_tree);
+   free(text);
+
+   if (!preset_tree || !preset_tree->root || !preset_tree->root->children ||
+       preset_tree->root->children->next)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Preset '%s' must expand to a single preconditioner type",
+                  preset->name);
+      YAMLtreeDestroy(&preset_tree);
+      return;
+   }
+
+   YAMLnode *type_node = preset_tree->root->children;
+   if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), type_node->key))
+   {
+      ErrorCodeSet(ERROR_INVALID_KEY);
+      ErrorMsgAdd("Unknown preconditioner type: '%s'", type_node->key);
+      YAMLtreeDestroy(&preset_tree);
+      return;
+   }
+
+   *method_out =
+      (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type_node->key);
+   PreconParseVariantWrapped(args_out, *method_out, preset_tree->root, type_node->key,
+                             type_node->level, type_node->children);
+
+   YAMLtreeDestroy(&preset_tree);
+   return;
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
 
 void
 InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
@@ -318,6 +386,13 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
    /* Case 1: value-only preconditioner (e.g., `preconditioner: amg`) */
    if (strcmp(parent->val, "") != 0)
    {
+      if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), parent->val))
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Unknown preconditioner type: '%s'", parent->val);
+         goto cleanup;
+      }
+
       precon_t method =
          (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), parent->val);
 
@@ -371,7 +446,46 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
          }
 
          YAMLnode *type = item->children;
-         precon_t  method =
+         if (!strcmp(type->key, "preset"))
+         {
+            if (!strcmp(type->val, ""))
+            {
+               ErrorCodeSet(ERROR_INVALID_VAL);
+               ErrorMsgAdd("Preconditioner preset name is missing");
+               goto cleanup;
+            }
+            char *preset_name = strdup(type->val);
+            if (!preset_name)
+            {
+               ErrorCodeSet(ERROR_ALLOCATION);
+               ErrorMsgAdd("Failed to allocate preset name");
+               goto cleanup;
+            }
+            PreconPresetBuildArgs(preset_name, &methods[vi], &variants[vi]);
+            if (ErrorCodeGet())
+            {
+               free(preset_name);
+               goto cleanup;
+            }
+            free(preset_name);
+            YAML_NODE_SET_VALID(item);
+            YAML_NODE_SET_VALID(type);
+            continue;
+         }
+
+         if (!type || type->next)
+         {
+            ErrorCodeSet(ERROR_INVALID_KEY);
+            ErrorMsgAdd("Each preconditioner variant must contain exactly one type key");
+            goto cleanup;
+         }
+         if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), type->key))
+         {
+            ErrorCodeSet(ERROR_INVALID_KEY);
+            ErrorMsgAdd("Unknown preconditioner type: '%s'", type->key);
+            goto cleanup;
+         }
+         precon_t method =
             (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type->key);
          methods[vi] = method;
 
@@ -409,7 +523,60 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
    }
 
    YAMLnode *type_node = parent->children;
-   precon_t  method =
+   if (!strcmp(type_node->key, "preset"))
+   {
+      if (!strcmp(type_node->val, ""))
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Preconditioner preset name is missing");
+         goto cleanup;
+      }
+      char *preset_name = strdup(type_node->val);
+      if (!preset_name)
+      {
+         ErrorCodeSet(ERROR_ALLOCATION);
+         ErrorMsgAdd("Failed to allocate preset name");
+         goto cleanup;
+      }
+      methods  = (precon_t *)malloc(sizeof(precon_t));
+      variants = (precon_args *)malloc(sizeof(precon_args));
+      if (!methods || !variants)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("Failed to allocate preconditioner args");
+         goto cleanup;
+      }
+
+      precon_t    method = PRECON_NONE;
+      precon_args args;
+      PreconPresetBuildArgs(preset_name, &method, &args);
+      if (ErrorCodeGet())
+      {
+         free(preset_name);
+         goto cleanup;
+      }
+      free(preset_name);
+
+      methods[0]  = method;
+      variants[0] = args;
+
+      iargs->num_precon_variants   = 1;
+      iargs->precon_methods        = methods;
+      iargs->precon_variants       = variants;
+      iargs->active_precon_variant = 0;
+      iargs->precon_method         = methods[0];
+      iargs->precon                = variants[0];
+      YAML_NODE_SET_VALID(parent);
+      YAML_NODE_SET_VALID(type_node);
+      return;
+   }
+   if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), type_node->key))
+   {
+      ErrorCodeSet(ERROR_INVALID_KEY);
+      ErrorMsgAdd("Unknown preconditioner type: '%s'", type_node->key);
+      goto cleanup;
+   }
+   precon_t method =
       (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type_node->key);
 
    YAML_NODE_SET_VALID(type_node);
@@ -474,6 +641,55 @@ cleanup:
    free(seq_items);
    free(methods);
    free(variants);
+}
+
+/*-----------------------------------------------------------------------------
+ * InputArgsApplyPreconPreset
+ *-----------------------------------------------------------------------------*/
+
+void
+InputArgsApplyPreconPreset(input_args *iargs, const char *preset, int variant_idx)
+{
+   precon_t    method = PRECON_NONE;
+   precon_args args;
+
+   if (!iargs || !preset)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Input args and preset name must be non-NULL");
+      return;
+   }
+
+   if (variant_idx < 0 || variant_idx >= iargs->num_precon_variants)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Invalid preconditioner variant index: %d (valid range: 0-%d)",
+                  variant_idx, iargs->num_precon_variants - 1);
+      return;
+   }
+
+   if (!iargs->precon_methods || !iargs->precon_variants)
+   {
+      iargs->precon_methods =
+         (precon_t *)malloc(sizeof(precon_t) * (size_t)iargs->num_precon_variants);
+      iargs->precon_variants =
+         (precon_args *)malloc(sizeof(precon_args) * (size_t)iargs->num_precon_variants);
+      if (!iargs->precon_methods || !iargs->precon_variants)
+      {
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("Failed to allocate preconditioner variants");
+         return;
+      }
+   }
+
+   PreconPresetBuildArgs(preset, &method, &args);
+
+   iargs->precon_methods[variant_idx]  = method;
+   iargs->precon_variants[variant_idx] = args;
+   iargs->precon_method                = method;
+   iargs->precon                       = args;
+
+   return;
 }
 
 /*-----------------------------------------------------------------------------
@@ -713,11 +929,6 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    InputArgsParseLinearSystem(iargs, tree);
    InputArgsParseSolver(iargs, tree);
    InputArgsParsePrecon(iargs, tree);
-
-   /* Set auxiliary data in the Stats structure */
-   StatsSetNumReps(iargs->general.num_repetitions);
-   /* Note: num_systems is the base number; variants are handled in the driver loop */
-   StatsSetNumLinearSystems(iargs->ls.num_systems);
 
    /* Validate the YAML tree (Has to occur after input args parsing) */
    YAMLtreeValidate(tree);

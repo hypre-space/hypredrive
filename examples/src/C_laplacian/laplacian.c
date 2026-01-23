@@ -54,12 +54,6 @@
  *==========================================================================*/
 
 /*--------------------------------------------------------------------------
- * Default solver configuration
- *--------------------------------------------------------------------------*/
-static const char *default_config = "solver: pcg\n"
-                                    "preconditioner: amg\n";
-
-/*--------------------------------------------------------------------------
  * Problem parameters struct
  *--------------------------------------------------------------------------*/
 typedef struct
@@ -319,15 +313,22 @@ main(int argc, char *argv[])
 
    /* Create hypredrive object */
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
-
-   /* Configure solver using YAML input or default configuration */
-   char *args[2];
-   args[0] = params.yaml_file ? params.yaml_file : (char *)default_config;
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
-
-   /* Set HYPREDRV options */
-   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
+
+   /* Configure solver using YAML input or default presets */
+   if (params.yaml_file)
+   {
+      char *args[2] = {params.yaml_file, NULL};
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
+   }
+   else
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, "pcg"));
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "poisson"));
+   }
+
+   /* Set HYPREDRV global options */
+   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
 
    /* Print problem parameters */
    if (!myid)

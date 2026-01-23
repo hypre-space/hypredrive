@@ -1233,6 +1233,84 @@ test_HYPREDRV_preconditioner_variants(void)
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
+static void
+test_HYPREDRV_preconditioner_preset_yaml(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+   ASSERT_NOT_NULL(obj);
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
+            HYPREDRIVE_SOURCE_DIR);
+
+   char yaml_config[2 * PATH_MAX + 256];
+   int  yaml_len = snprintf(yaml_config, sizeof(yaml_config),
+                            "general:\n"
+                            "  statistics: off\n"
+                            "linear_system:\n"
+                            "  matrix_filename: %s\n"
+                            "  rhs_filename: %s\n"
+                            "solver:\n"
+                            "  pcg:\n"
+                            "    max_iter: 5\n"
+                            "preconditioner:\n"
+                            "  preset: poisson\n",
+                            matrix_path, rhs_path);
+   ASSERT_TRUE(yaml_len > 0 && (size_t)yaml_len < sizeof(yaml_config));
+
+   char *argv[] = {yaml_config};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+   ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_PreconSetup(obj), ERROR_NONE);
+   ASSERT_EQ(
+      HYPREDRV_PreconApply(obj, (HYPRE_Vector)state->vec_b, (HYPRE_Vector)state->vec_x),
+      ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_NULL(obj);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_preconditioner_preset_invalid(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+   ASSERT_NOT_NULL(obj);
+
+   ErrorCodeResetAll();
+   ASSERT_HAS_FLAG(HYPREDRV_InputArgsSetPreconPreset(obj, "not-a-preset"),
+                   ERROR_INVALID_VAL);
+   ASSERT_HAS_FLAG(ErrorCodeGet(), ERROR_INVALID_VAL);
+
+   /* Clear error state so Destroy() isn't masked by the expected preset failure. */
+   ErrorCodeResetAll();
+   ErrorMsgClear();
+   HYPRE_ClearAllErrors();
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_NULL(obj);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1258,6 +1336,8 @@ main(int argc, char **argv)
    RUN_TEST(test_HYPREDRV_LinearSystemBuild_error_cases);
    RUN_TEST(test_HYPREDRV_misc_0hit_branches);
    RUN_TEST(test_HYPREDRV_preconditioner_variants);
+   RUN_TEST(test_HYPREDRV_preconditioner_preset_yaml);
+   RUN_TEST(test_HYPREDRV_preconditioner_preset_invalid);
 
    MPI_Finalize();
    return 0;

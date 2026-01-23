@@ -331,6 +331,26 @@ configuration. Available options for the preconditioner type are:
 The preconditioner type must be entered as a key in a new indentation level under
 ``preconditioner``.
 
+Preconditioner presets
+^^^^^^^^^^^^^^^^^^^^^^
+
+Presets are named default configurations that select a preconditioner and apply
+a small set of tuned settings. They are useful when you want a reasonable
+default without enumerating all options.
+
+.. code-block:: yaml
+
+    preconditioner:
+      preset: elasticity-2D
+
+Available presets:
+
+- ``poisson``: BoomerAMG defaults (same as ``preconditioner: amg`` with defaults).
+- ``elasticity-2D``: BoomerAMG defaults with
+  ``coarsening.num_functions = 2`` and ``coarsening.strong_th = 0.8``.
+
+Preset names are case-insensitive.
+
 .. _AMG:
 
 AMG

@@ -1,7 +1,7 @@
 Date and time: YYYY-MM-DD HH:MM:SS
 
+Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
 Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
-
 
 Running on 4 MPI ranks
 ------------------------------------------------------------------------------------
@@ -176,7 +176,7 @@ STATISTICS SUMMARY:
 |            |    LS build |       setup |       solve |    relative |             |
 |      Entry |  times [ms] |  times [ms] |  times [ms] |   res. norm |       iters |
 +------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.604 |       3.236 |       0.486 |    9.44e-07 |           5 |
+|          0 |       0.355 |       2.054 |       0.321 |    9.44e-07 |           5 |
 +------------+-------------+-------------+-------------+-------------+-------------+
 
 Date and time: YYYY-MM-DD HH:MM:SS

@@ -42,7 +42,7 @@ jobs:
       HYPRE_VERSION: master
       BUILD_DIR: build
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Get compiler version
         id: compiler_version
@@ -102,7 +102,7 @@ jobs:
         if: startsWith(runner.os, 'macOS')
         run: |
           brew update
-          brew install cmake ninja mpich clang-format
+          brew install mpich clang-format
           # Get and display compiler version
           VERSION=$(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')
           echo "::notice::Using clang version $VERSION"
@@ -117,7 +117,7 @@ jobs:
           echo "MPICH_CXX=clang++" >> $GITHUB_ENV
 
       - name: Cache datasets
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: data
           key: datasets-v1
@@ -133,6 +133,7 @@ jobs:
           build_type: 'Debug'
           hypre_shared_libs: 'ON'
           os: ${{ matrix.os }}
+          mpi_flavor: ${{ startsWith(matrix.os, 'macos') && 'mpich' || 'openmpi' }}
 
       - name: Configure hypredrive
         run: |
@@ -212,6 +213,64 @@ jobs:
             ${{ env.BUILD_DIR }}/test_ex1_output.txt
           retention-days: 1
 
+  autotools-build-and-test:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: ubuntu-latest | autotools
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HYPRE_VERSION: master
+      HYPRE_COMPILER: gcc
+      HYPRE_BUILD_TYPE: Debug
+      HYPRE_LIBTYPE: shared
+      HYPRE_MIXEDINT: OFF
+      HYPRE_OS: ubuntu-latest
+      HYPRE_MPI_FLAVOR: openmpi
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies (Ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool m4 make \
+            libopenmpi-dev openmpi-bin gcc g++
+
+      - name: Restore HYPRE cache
+        id: hypre-cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
+          key: hypre-${{ env.HYPRE_VERSION }}-${{ env.HYPRE_OS }}-${{ env.HYPRE_COMPILER }}-${{ env.HYPRE_BUILD_TYPE }}-${{ env.HYPRE_LIBTYPE }}-mixedint-${{ env.HYPRE_MIXEDINT }}-${{ env.HYPRE_MPI_FLAVOR }}
+
+      - name: Build HYPRE (cache miss)
+        if: steps.hypre-cache.outputs.cache-hit != 'true'
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: ${{ env.HYPRE_COMPILER }}
+          build_type: ${{ env.HYPRE_BUILD_TYPE }}
+          hypre_shared_libs: 'ON'
+          hypre_mixedint: ${{ env.HYPRE_MIXEDINT }}
+          os: ubuntu-latest
+          mpi_flavor: ${{ env.HYPRE_MPI_FLAVOR }}
+
+      - name: Build and test (autotools)
+        run: |
+          set -euxo pipefail
+          HYPRE_DIR="${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}"
+          autoreconf -iv
+          ./configure --with-hypre-dir="${HYPRE_DIR}" \
+                      --prefix="$(pwd)/install-autotools"
+          make -j
+          OMPI_ALLOW_RUN_AS_ROOT=1 \
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
+          OMPI_MCA_btl_vader_single_copy_mechanism=none \
+          OMPI_MCA_rmaps_base_oversubscribe=1 \
+          OMP_NUM_THREADS=1 \
+          make check
+          make install
+
   build-and-test-caliper:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
     name: ubuntu-latest | gcc | Caliper+Debug
@@ -221,7 +280,7 @@ jobs:
       HYPRE_VERSION: master
       BUILD_DIR: build-caliper
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
@@ -243,7 +302,7 @@ jobs:
             ${{ runner.os }}-caliper-
 
       - name: Cache datasets
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: data
           key: datasets-v1
