@@ -72,6 +72,19 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Checks.cmake)
 # Download and extract datasets
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Data.cmake)
 
+# Capture git version info for hypredrive
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Git.cmake)
+hypredrv_setup_git_version_info(${CMAKE_CURRENT_SOURCE_DIR})
+if(HYPREDRV_GIT_FOUND)
+    message(STATUS "HYPREDRV develop string: ${HYPREDRV_DEVELOP_STRING}")
+    message(STATUS "HYPREDRV branch: ${HYPREDRV_BRANCH_NAME}")
+    if(HYPREDRV_GIT_SHA)
+        message(STATUS "HYPREDRV git SHA: ${HYPREDRV_GIT_SHA}")
+    endif()
+else()
+    message(STATUS "HYPREDRV git SHA: not available (using release ${PROJECT_VERSION})")
+endif()
+
 # Generate the config header
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_config.h.in"

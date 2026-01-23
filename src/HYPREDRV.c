@@ -263,11 +263,11 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_PrintLibInfo(MPI_Comm comm)
+HYPREDRV_PrintLibInfo(MPI_Comm comm, int print_datetime)
 {
    HYPREDRV_CHECK_INIT();
 
-   PrintLibInfo(comm);
+   PrintLibInfo(comm, print_datetime);
 
    return ErrorCodeGet();
 }

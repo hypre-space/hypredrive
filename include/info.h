@@ -20,7 +20,7 @@
  *--------------------------------------------------------------------------*/
 
 void PrintUsage(const char *);
-void PrintLibInfo(MPI_Comm);
+void PrintLibInfo(MPI_Comm, int);
 void PrintSystemInfo(MPI_Comm);
 void PrintExitInfo(MPI_Comm, const char *);
 

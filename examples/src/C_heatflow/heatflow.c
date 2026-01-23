@@ -260,9 +260,9 @@ PrintUsage(void)
       "  -nw_tol <t>       : Newton update tolerance ||delta||_inf (default: 1e-5)\n");
    printf("  -nw_rtol <t>      : Newton residual tolerance ||R||_2 (default: 1e-5)\n");
    printf("  -v|--verbose <n>  : Verbosity bitset (default: 7)\n");
-   printf("                         0x1: Newton iteration info\n");
-   printf("                         0x2: Library and system info\n");
-   printf("                         0x8: Print linear system\n");
+   printf("                         0x1: Library info and Newton iteration info\n");
+   printf("                         0x2: System info\n");
+   printf("                         0x4: Print linear system matrices\n");
    printf("  -h|--help         : This help\n\n");
    return 0;
 }
@@ -2636,9 +2636,12 @@ main(int argc, char *argv[])
 
    /* Initialize hypredrive library and create main object */
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+   if (params.verbose & 0x1)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm, 1));
+   }
    if (params.verbose & 0x2)
    {
-      HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
