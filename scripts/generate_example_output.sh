@@ -45,6 +45,7 @@ generate_output() {
     # Postprocess the output file
     sed -r '
         s/(Date and time: ).*/\1YYYY-MM-DD HH:MM:SS/g
+        s/(Using HYPREDRV_DEVELOP_STRING: ).*/\1HYPREDRV_VERSION_GOES_HERE/g
         s/(Using HYPRE_DEVELOP_STRING: ).*/\1HYPRE_VERSION_GOES_HERE/g
         s|(.*/hypredrive)( done!)|\${HYPREDRIVE_PATH}/hypredrive\2|g
         /^=+ System Information =+$/,/^=+ System Information =+$/d

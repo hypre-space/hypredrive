@@ -9,7 +9,6 @@
 #include <stdio.h>
 #include <string.h>
 #include "HYPREDRV.h"
-#include "HYPREDRV_config.h"
 
 static bool
 LooksLikeYAMLFilename(const char *str)
@@ -153,7 +152,7 @@ main(int argc, char **argv)
    int quiet_mode = QuietModeRequested(argc, argv);
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &obj));
-   HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
+   HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm, 1));
    if (!quiet_mode)
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));

@@ -95,6 +95,12 @@
 /* Define to the full name and version of this package. */
 #cmakedefine PACKAGE_STRING "@PACKAGE_STRING@"
 
+/* Git metadata for hypredrive. */
+#cmakedefine HYPREDRV_DEVELOP_STRING "@HYPREDRV_DEVELOP_STRING@"
+#cmakedefine HYPREDRV_BRANCH_NAME "@HYPREDRV_BRANCH_NAME@"
+#cmakedefine HYPREDRV_GIT_SHA "@HYPREDRV_GIT_SHA@"
+#cmakedefine HYPREDRV_GIT_BRANCH "@HYPREDRV_GIT_BRANCH@"
+
 /* Define to the one symbol short name of this package. */
 #cmakedefine PACKAGE_TARNAME "@PACKAGE_TARNAME@"
 
@@ -103,6 +109,9 @@
 
 /* Define to the version of this package. */
 #cmakedefine PACKAGE_VERSION "@PACKAGE_VERSION@"
+
+/* Define to the release version of hypredrive. */
+#cmakedefine HYPREDRV_RELEASE_VERSION "@PROJECT_VERSION@"
 
 /* Version number of package */
 #cmakedefine VERSION "@PACKAGE_VERSION@"

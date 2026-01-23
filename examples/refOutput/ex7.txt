@@ -1,36 +1,37 @@
 Date and time: YYYY-MM-DD HH:MM:SS
 
+Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
 Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
 
 Running on 1 MPI rank
 ------------------------------------------------------------------------------------
-general:
+general: 
   use_millisec: on
-linear_system:
+linear_system: 
   dirname: data/poromech2k/np1/ls
   init_suffix: 0
   last_suffix: 24
   rhs_filename: IJ.out.b
   matrix_filename: IJ.out.A
   dofmap_filename: dofmap.out
-solver:
-  fgmres:
+solver: 
+  fgmres: 
     max_iter: 100
     krylov_dim: 30
     print_level: 1
     relative_tol: 1.0e-6
-preconditioner:
-  mgr:
+preconditioner: 
+  mgr: 
     max_iter: 1
     tolerance: 0.0
     print_level: 0
     coarse_th: 1e-20
-    level:
-      0:
+    level: 
+      0: 
         f_dofs: [0, 1, 2]
         f_relaxation: amg
-          amg:
-            coarsening:
+          amg: 
+            coarsening: 
               type: pmis
               strong_th: 0.5
               num_functions: 3
@@ -39,25 +40,25 @@ preconditioner:
         restriction_type: injection
         prolongation_type: blk-jacobi
         coarse_level_type: non-galerkin
-      1:
+      1: 
         f_dofs: [5]
         f_relaxation: jacobi
         g_relaxation: none
         restriction_type: injection
         prolongation_type: jacobi
         coarse_level_type: rap
-      2:
+      2: 
         f_dofs: [4]
         f_relaxation: single
         g_relaxation: ilu
         restriction_type: columped
         prolongation_type: injection
         coarse_level_type: rap
-    coarsest_level:
-      amg:
+    coarsest_level: 
+      amg: 
         max_iter: 1
         tolerance: 0.0
-        relaxation:
+        relaxation: 
           down_type: l1-jacobi
           up_type: l1-jacobi
 ------------------------------------------------------------------------------------
@@ -120,31 +121,31 @@ STATISTICS SUMMARY:
 |            |    LS build |       setup |       solve |    relative |             |
 |      Entry |  times [ms] |  times [ms] |  times [ms] |   res. norm |       iters |
 +------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       6.374 |       6.647 |      23.095 |    6.95e-07 |          13 |
-|          1 |       4.527 |       6.258 |      32.155 |    3.43e-07 |          18 |
-|          2 |       4.333 |       5.934 |      21.245 |    6.57e-07 |          12 |
-|          3 |       4.293 |       6.008 |      19.557 |    7.34e-07 |          11 |
-|          4 |       4.435 |       6.179 |      28.566 |    4.51e-07 |          16 |
-|          5 |       4.452 |       6.125 |      26.817 |    7.15e-07 |          15 |
-|          6 |       4.345 |       5.824 |      25.128 |    5.45e-07 |          14 |
-|          7 |       4.447 |       5.614 |      23.442 |    9.57e-07 |          13 |
-|          8 |       4.472 |       5.720 |      25.200 |    4.98e-07 |          14 |
-|          9 |       4.684 |       5.652 |      23.352 |    8.35e-07 |          13 |
-|         10 |       4.355 |       5.713 |      23.580 |    4.16e-07 |          13 |
-|         11 |       4.648 |       5.784 |      21.719 |    6.23e-07 |          12 |
-|         12 |       4.371 |       5.681 |      25.193 |    5.42e-07 |          14 |
-|         13 |       4.338 |       5.656 |      25.124 |    3.80e-07 |          14 |
-|         14 |       4.330 |       5.761 |      21.712 |    9.85e-07 |          12 |
-|         15 |       4.432 |       5.700 |      21.680 |    7.68e-07 |          12 |
-|         16 |       4.345 |       5.685 |      12.832 |    9.83e-07 |           7 |
-|         17 |       4.358 |       6.001 |      25.284 |    4.99e-07 |          14 |
-|         18 |       4.387 |       5.877 |      23.463 |    9.53e-07 |          13 |
-|         19 |       4.323 |       5.639 |      28.681 |    5.09e-07 |          16 |
-|         20 |       4.365 |       5.607 |      19.849 |    5.39e-07 |          11 |
-|         21 |       4.353 |       5.627 |      25.228 |    7.61e-07 |          14 |
-|         22 |       4.398 |       5.673 |      28.758 |    5.99e-07 |          16 |
-|         23 |       4.378 |       5.953 |      21.622 |    6.34e-07 |          12 |
-|         24 |       4.413 |       5.661 |      25.157 |    4.20e-07 |          14 |
+|          0 |       4.152 |       4.098 |       5.065 |    9.70e-07 |          13 |
+|          1 |       2.949 |       3.662 |       5.451 |    4.51e-07 |          18 |
+|          2 |       2.864 |       3.884 |       3.908 |    8.86e-07 |          12 |
+|          3 |       3.660 |       3.782 |       3.840 |    3.94e-07 |          12 |
+|          4 |       2.795 |       3.749 |       4.907 |    6.55e-07 |          16 |
+|          5 |       3.516 |       3.844 |       4.865 |    4.88e-07 |          16 |
+|          6 |       2.795 |       3.677 |       4.221 |    9.06e-07 |          14 |
+|          7 |       3.031 |       3.663 |       3.990 |    5.48e-07 |          14 |
+|          8 |       3.715 |       3.584 |       4.139 |    8.11e-07 |          14 |
+|          9 |       2.717 |       3.469 |       4.090 |    4.39e-07 |          14 |
+|         10 |       2.707 |       3.549 |       3.708 |    5.96e-07 |          13 |
+|         11 |       3.304 |       4.057 |       3.667 |    4.05e-07 |          13 |
+|         12 |       2.934 |       3.492 |       4.180 |    4.65e-07 |          14 |
+|         13 |       2.831 |       3.542 |       4.022 |    6.07e-07 |          14 |
+|         14 |       2.574 |       3.492 |       3.866 |    5.01e-07 |          13 |
+|         15 |       3.417 |       3.438 |       3.905 |    4.86e-07 |          13 |
+|         16 |       2.893 |       3.506 |       3.015 |    5.62e-07 |           8 |
+|         17 |       4.175 |       4.380 |       6.047 |    7.91e-07 |          14 |
+|         18 |       4.866 |       5.219 |       6.244 |    5.40e-07 |          14 |
+|         19 |       4.832 |       5.170 |       7.297 |    6.37e-07 |          16 |
+|         20 |       3.302 |       3.815 |       3.898 |    4.64e-07 |          12 |
+|         21 |       2.858 |       3.765 |       4.487 |    3.67e-07 |          15 |
+|         22 |       3.032 |       4.786 |       5.341 |    8.41e-07 |          16 |
+|         23 |       3.070 |       3.954 |       3.596 |    9.49e-07 |          12 |
+|         24 |       3.461 |       3.859 |       3.904 |    8.28e-07 |          13 |
 +------------+-------------+-------------+-------------+-------------+-------------+
 
 Date and time: YYYY-MM-DD HH:MM:SS

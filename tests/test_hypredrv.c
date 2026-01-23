@@ -82,7 +82,7 @@ test_HYPREDRV_all_api_init_guard(void)
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
 
    /* Non-object utilities */
-   code = HYPREDRV_PrintLibInfo(MPI_COMM_SELF);
+   code = HYPREDRV_PrintLibInfo(MPI_COMM_SELF, 1);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
    code = HYPREDRV_PrintSystemInfo(MPI_COMM_SELF);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
@@ -984,7 +984,7 @@ test_HYPREDRV_PrintLibInfo_PrintExitInfo(void)
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    /* Test print functions */
-   HYPREDRV_PrintLibInfo(MPI_COMM_SELF);
+   HYPREDRV_PrintLibInfo(MPI_COMM_SELF, 1);
    HYPREDRV_PrintExitInfo(MPI_COMM_SELF, "test_prog");
 
    /* Avoid MPI_COMM_NULL here: some MPI implementations abort on MPI_Comm_rank(NULL). */

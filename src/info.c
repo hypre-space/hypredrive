@@ -2482,36 +2482,47 @@ PrintAcceleratorRuntimeInformation(void)
  *--------------------------------------------------------------------------*/
 
 void
-PrintLibInfo(MPI_Comm comm)
+PrintLibInfo(MPI_Comm comm, int print_datetime)
 {
-   int              myid    = 0;
-   time_t           t       = 0;
-   const struct tm *tm_info = NULL;
+   int myid = 0;
 
    MPI_Comm_rank(comm, &myid);
 
    if (!myid)
    {
-      char buffer[100];
+      if (print_datetime)
+      {
+         time_t           t       = 0;
+         const struct tm *tm_info = NULL;
+         char             buffer[100];
 
-      /* Get current time */
-      time(&t);
-      tm_info = localtime(&t);
+         /* Get current time */
+         time(&t);
+         tm_info = localtime(&t);
 
-      /* Format and print the date and time */
-      strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
-      printf("Date and time: %s\n", buffer);
+         /* Format and print the date and time */
+         strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
+         printf("Date and time: %s\n", buffer);
+      }
 
-      /* Print hypre info */
+#if defined(HYPREDRV_DEVELOP_STRING) && defined(HYPREDRV_BRANCH_NAME)
+      printf("\nUsing HYPREDRV_DEVELOP_STRING: %s (%s)\n", HYPREDRV_DEVELOP_STRING,
+             HYPREDRV_BRANCH_NAME);
+#elif defined(HYPREDRV_DEVELOP_STRING)
+      printf("\nUsing HYPREDRV_DEVELOP_STRING: %s\n", HYPREDRV_DEVELOP_STRING);
+#elif defined(HYPREDRV_GIT_SHA)
+      printf("\nUsing HYPREDRV_GIT_SHA: %s\n", HYPREDRV_GIT_SHA);
+#elif defined(HYPREDRV_RELEASE_VERSION)
+      printf("\nUsing HYPREDRV_RELEASE_VERSION: %s\n", HYPREDRV_RELEASE_VERSION);
+#endif
+
 #if defined(HYPRE_DEVELOP_STRING) && defined(HYPRE_BRANCH_NAME)
-      printf("\nUsing HYPRE_DEVELOP_STRING: %s (%s)\n\n", HYPRE_DEVELOP_STRING,
+      printf("Using HYPRE_DEVELOP_STRING: %s (%s)\n", HYPRE_DEVELOP_STRING,
              HYPRE_BRANCH_NAME);
-
 #elif defined(HYPRE_DEVELOP_STRING) && !defined(HYPRE_BRANCH_NAME)
-      printf("\nUsing HYPRE_DEVELOP_STRING: %s\n\n", HYPRE_DEVELOP_STRING);
-
+      printf("Using HYPRE_DEVELOP_STRING: %s\n", HYPRE_DEVELOP_STRING);
 #elif defined(HYPRE_RELEASE_VERSION)
-      printf("\nUsing HYPRE_RELEASE_VERSION: %s\n\n", HYPRE_RELEASE_VERSION);
+      printf("Using HYPRE_RELEASE_VERSION: %s\n", HYPRE_RELEASE_VERSION);
 #endif
    }
 }
