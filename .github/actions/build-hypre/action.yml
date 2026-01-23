@@ -59,7 +59,7 @@ runs:
       run: |
         set -euxo pipefail
         PREFIX="${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}"
-        if [ ! -f "$PREFIX/lib/cmake/hypre/HYPREConfig.cmake" ]; then
+        if [ ! -f "$PREFIX/lib/cmake/HYPRE/HYPREConfig.cmake" ]; then
           git clone --depth 1 --branch ${{ inputs.hypre_version }} https://github.com/hypre-space/hypre.git
           CMAKE_ARGS=(
             -S hypre/src
