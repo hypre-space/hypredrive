@@ -15,6 +15,7 @@
 
 #include <HYPRE.h>
 #include <HYPRE_IJ_mv.h>
+#include <HYPRE_config.h>
 #include <HYPRE_parcsr_ls.h>
 #include <HYPRE_parcsr_mv.h>
 #include <HYPRE_utilities.h>
@@ -26,6 +27,8 @@
 #undef PACKAGE_TARNAME
 #undef PACKAGE_URL
 #undef PACKAGE_VERSION
+
+#include "HYPREDRV_config.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -243,26 +246,25 @@ extern "C"
    /**
     * @brief Print library information at entrance.
     *
-    * This function prints the current date and time, followed by version information
-    * about the HYPRE library.
+    * This function optionally prints the current date and time, followed by version
+    * information about hypredrive and hypre.
     *
     * @param comm The MPI communicator associated with the HYPREDRV object.
+    * @param print_datetime Whether to print the date/time header (nonzero => on).
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
     *
-    * @note This function uses conditional compilation to determine what information about
-    * the HYPRE library to print.
-    *
     * Example Usage:
     * @code
     *    MPI_Comm comm = MPI_COMM_WORLD; // or any other valid MPI_Comm
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm, 1));
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PrintLibInfo(MPI_Comm comm);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PrintLibInfo(MPI_Comm comm,
+                                                         int      print_datetime);
 
    /**
     * @brief Print system information.

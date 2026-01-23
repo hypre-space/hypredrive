@@ -193,9 +193,9 @@ PrintUsage(void)
    printf("                         Bit 3 (0x4): All timesteps (1) or last only (0)\n");
    printf("                         Examples: 1=binary last, 4=binary all\n");
    printf("  -v|--verbose <n>  : Verbosity bitset (0)\n");
-   printf("                         0x1: Linear solver statistics\n");
-   printf("                         0x2: Library information\n");
-   printf("                         0x4: Linear system printing\n");
+   printf("                         0x1: Library info and linear solver statistics\n");
+   printf("                         0x2: System info\n");
+   printf("                         0x4: Print linear system matrices\n");
    printf("  -h|--help         : Print this message\n");
    printf("\n");
 
@@ -1959,9 +1959,16 @@ main(int argc, char *argv[])
 
    /* Initialize hypredrive library and create main object */
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+
+   /* Print library info if requested */
+   if (params.verbose & 0x1)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm, 1));
+   }
+
+   /* Print system info if requested */
    if (params.verbose & 0x2)
    {
-      HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm));
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
