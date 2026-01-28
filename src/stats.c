@@ -326,11 +326,11 @@ PrintHeader(const char *scale)
 }
 
 /*--------------------------------------------------------------------------
- * Helper: Print single table entry
+ * Helper: Print single table entry with a given display index
  *--------------------------------------------------------------------------*/
 
 static void
-PrintEntry(int entry_index)
+PrintEntryWithIndex(int entry_index, int display_index)
 {
    double build_time = active_stats->time_factor * (active_stats->dofmap[entry_index] +
                                                     active_stats->matrix[entry_index] +
@@ -339,14 +339,14 @@ PrintEntry(int entry_index)
 
    if (show_build)
    {
-      printf("| %10d | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", entry_index,
+      printf("| %10d | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", display_index,
              build_time, active_stats->time_factor * active_stats->prec[entry_index],
              active_stats->time_factor * active_stats->solve[entry_index],
              active_stats->rrnorms[entry_index], active_stats->iters[entry_index]);
    }
    else
    {
-      printf("| %10d |             | %11.3f | %11.3f | %11.2e |  %10d |\n", entry_index,
+      printf("| %10d |             | %11.3f | %11.3f | %11.2e |  %10d |\n", display_index,
              active_stats->time_factor * active_stats->prec[entry_index],
              active_stats->time_factor * active_stats->solve[entry_index],
              active_stats->rrnorms[entry_index], active_stats->iters[entry_index]);
@@ -759,13 +759,16 @@ StatsPrint(int print_level)
 
    /* Print statistics for each entry that had a solve */
    /* This filters out Newton iterations that broke before solving */
-   int max_entry = active_stats->counter;
+   /* Use a display index to avoid gaps in the entry column */
+   int max_entry    = active_stats->counter;
+   int display_idx  = 0;
    for (int i = 0; i <= max_entry; i++)
    {
       /* Only print entries that had a solve (iterations > 0 or solve time > 0) */
       if (active_stats->iters[i] > 0 || active_stats->solve[i] > 0.0)
       {
-         PrintEntry(i);
+         PrintEntryWithIndex(i, display_idx);
+         display_idx++;
       }
    }
 
