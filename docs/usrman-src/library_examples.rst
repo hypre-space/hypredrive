@@ -863,6 +863,7 @@ Reproducible Run
     -beta <val>       : Conductivity exponent (default: 0 = linear)
     -br <n>           : Batch rows per IJ call (default: 128)
     -adt              : Enable adaptive time stepping
+    -cfl <val>        : Maximum CFL for adaptive time stepping (0=no limit)
     -vis <m>          : Visualization mode bitset (default: 0)
                          Any nonzero value enables visualization
                          Bit 1 (0x2): ASCII (1) or binary (0)
@@ -1220,7 +1221,9 @@ The simulation advances in time using backward Euler with adaptive time stepping
 
 The driver supports simple adaptive time stepping: if Newton converges quickly
 (≤3 iterations), :math:`\Delta t` is increased; if convergence is slow (≥6 iterations),
-:math:`\Delta t` is decreased.
+:math:`\Delta t` is decreased. Additionally, a maximum CFL constraint can be specified
+using the ``-cfl`` option to prevent the time step from growing too large; when enabled,
+the time step is limited to :math:`\Delta t \leq \text{CFL}_{\max} \cdot h_{\min}`.
 
 Visualizing the Solution
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1344,6 +1347,7 @@ time stepping, partitioning, and visualization.
      -tf <val>         : Final simulation time (50)
      -ntol <val>       : Non-linear solver tolerance (1.0e-6)
      -adt              : Enable simple adaptive time stepping
+     -cfl <val>        : Maximum CFL for adaptive time stepping (0=no limit)
      -reg              : Use regularized lid BC (smooth corners)
      -br <n>           : Batch rows for matrix assembly (128)
      -vis <m>          : Visualization mode bitset (0)
