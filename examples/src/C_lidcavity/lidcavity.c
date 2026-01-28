@@ -104,6 +104,7 @@ typedef struct
    HYPRE_Real dt;                /* Time step */
    HYPRE_Real newton_tol;        /* Non-linear solver tolerance */
    HYPRE_Int  adaptive_dt;       /* Adaptive time stepping flag */
+   HYPRE_Real max_cfl;           /* Maximum CFL for adaptive time stepping (0=no limit) */
    HYPRE_Int  regularize_bc;     /* Use regularized lid BC (smooth corners) */
    char      *yaml_file;         /* YAML configuration file */
 } LidCavityParams;
@@ -164,7 +165,7 @@ int     WriteVTKsolutionVector(DistMesh2D *, LidCavityParams *, HYPRE_Real *, Gh
 void    GetVTKBaseName(LidCavityParams *, char *, size_t);
 void    GetVTKDataDir(LidCavityParams *, char *, size_t);
 void    WritePVDCollectionFromStats(LidCavityParams *, int, double);
-void    UpdateTimeStep(LidCavityParams *, int);
+void    UpdateTimeStep(LidCavityParams *, int, HYPRE_Real);
 
 /*--------------------------------------------------------------------------
  * Print usage info
@@ -185,6 +186,7 @@ PrintUsage(void)
    printf("  -tf <val>         : Final simulation time (50)\n");
    printf("  -ntol <val>       : Non-linear solver tolerance (1.0e-6)\n");
    printf("  -adt              : Enable simple adaptive time stepping\n");
+   printf("  -cfl <val>        : Maximum CFL for adaptive time stepping (0=no limit)\n");
    printf("  -reg              : Use regularized lid BC (smooth corners)\n");
    printf("  -br <n>           : Batch rows for matrix assembly (128)\n");
    printf("  -vis <m>          : Visualization mode bitset (0)\n");
@@ -223,6 +225,7 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
    params->dt                = 1.0;
    params->newton_tol        = 1.0e-6;
    params->adaptive_dt       = 0;
+   params->max_cfl           = 0.0; /* 0 means no limit */
    params->regularize_bc     = 0;
    params->yaml_file         = NULL;
 
@@ -279,6 +282,10 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
       else if (!strcmp(argv[i], "-adt"))
       {
          params->adaptive_dt = 1;
+      }
+      else if (!strcmp(argv[i], "-cfl") || !strcmp(argv[i], "--max-cfl"))
+      {
+         if (++i < argc) params->max_cfl = atof(argv[i]);
       }
       else if (!strcmp(argv[i], "-reg") || !strcmp(argv[i], "--regularize"))
       {
@@ -1870,12 +1877,13 @@ WritePVDCollectionFromStats(LidCavityParams *params, int num_procs, double final
  * Update time step based on Newton iteration convergence
  *
  * Args:
- *   params: Problem parameters (dt and adaptive_dt flag are modified)
+ *   params: Problem parameters (dt, adaptive_dt, max_cfl flags are used/modified)
  *   newton_iter_count: Number of Newton iterations performed (0-indexed)
  *                      After the loop, this is the last iteration index
+ *   h_min: Minimum mesh spacing (for CFL limiting)
  *--------------------------------------------------------------------------*/
 void
-UpdateTimeStep(LidCavityParams *params, int newton_iter_count)
+UpdateTimeStep(LidCavityParams *params, int newton_iter_count, HYPRE_Real h_min)
 {
    /* Simple adaptive stepping: double dt if Newton iteration count is 1 */
    if (newton_iter_count == 1)
@@ -1893,6 +1901,16 @@ UpdateTimeStep(LidCavityParams *params, int newton_iter_count)
       else if (newton_iter_count >= 6)
       {
          params->dt *= 0.8;
+      }
+   }
+
+   /* Enforce maximum CFL constraint if specified */
+   if (params->max_cfl > 0.0)
+   {
+      HYPRE_Real dt_max = params->max_cfl * h_min;
+      if (params->dt > dt_max)
+      {
+         params->dt = dt_max;
       }
    }
 }
@@ -1940,6 +1958,10 @@ main(int argc, char *argv[])
       printf("Reynolds number:         %.1e\n", params.Re);
       printf("Initial time step:       %.1e\n", params.dt);
       printf("Adaptive time stepping:  %s\n", params.adaptive_dt ? "true" : "false");
+      if (params.max_cfl > 0.0)
+      {
+         printf("Maximum CFL:             %.1f\n", params.max_cfl);
+      }
       printf("Regularized lid BC:      %s\n", params.regularize_bc ? "true" : "false");
       printf("Final time:              %.1e\n", params.final_time);
       if (params.visualize)
@@ -2101,7 +2123,7 @@ main(int argc, char *argv[])
       if (!myid && params.verbose > 0 && newton_iter > 1) printf("\n");
 
       /* Update timestep based on Newton convergence */
-      UpdateTimeStep(&params, newton_iter);
+      UpdateTimeStep(&params, newton_iter, mesh->h[2]);
 
       /* End timestep annotation (level 0) - stats finalized automatically */
       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep", t_step));

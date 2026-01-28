@@ -107,6 +107,7 @@ typedef struct
    HYPRE_Real   beta;   /* k(T) = k0 * exp(beta*T) */
    HYPRE_Int    max_rows_per_call;
    HYPRE_Int    adaptive_dt; /* adaptive time stepping flag */
+   HYPRE_Real   max_cfl;     /* Maximum CFL for adaptive time stepping (0=no limit) */
    NewtonParams newton;
    char        *yaml_file;
 } HeatParams;
@@ -240,6 +241,7 @@ PrintUsage(void)
    printf("  -beta <val>       : Conductivity exponent (default: 1)\n");
    printf("  -br <n>           : Batch rows per IJ call (default: 128)\n");
    printf("  -adt              : Enable adaptive time stepping\n");
+   printf("  -cfl <val>        : Maximum CFL for adaptive time stepping (0=no limit)\n");
    printf("  -vis <m>          : Visualization mode bitset (default: 0)\n");
    printf("                         Any nonzero value enables visualization\n");
    printf("                         Bit 0x2: ASCII format (default: binary)\n");
@@ -283,6 +285,7 @@ ParseArguments(int argc, char *argv[], HeatParams *p, int myid, int nprocs)
 
    p->max_rows_per_call = 128;
    p->adaptive_dt       = 0;
+   p->max_cfl           = 0.0; /* 0 means no limit */
    p->newton.max_iters  = 20;
    p->newton.tol        = 1e-5;
    p->newton.rtol       = 1e-5;
@@ -336,6 +339,10 @@ ParseArguments(int argc, char *argv[], HeatParams *p, int myid, int nprocs)
       else if (!strcmp(argv[i], "-adt"))
       {
          p->adaptive_dt = 1;
+      }
+      else if (!strcmp(argv[i], "-cfl") || !strcmp(argv[i], "--max-cfl"))
+      {
+         if (++i < argc) p->max_cfl = atof(argv[i]);
       }
       else if (!strcmp(argv[i], "-ls_min"))
       {
@@ -1561,6 +1568,16 @@ UpdateTimeStep(HeatParams *params, int newton_iter_count)
          params->dt *= 0.8;
       }
    }
+
+   /* Enforce maximum CFL constraint if specified */
+   if (params->max_cfl > 0.0)
+   {
+      HYPRE_Real dt_max = params->max_cfl * params->hmin;
+      if (params->dt > dt_max)
+      {
+         params->dt = dt_max;
+      }
+   }
 }
 
 static void
@@ -2606,6 +2623,10 @@ main(int argc, char *argv[])
       printf("Time step:               %.2e\n", params.dt);
       printf("Final time:              %.2e\n", params.tf);
       printf("Adaptive time stepping:  %s\n", params.adaptive_dt ? "true" : "false");
+      if (params.max_cfl > 0.0)
+      {
+         printf("Maximum CFL:             %.1f\n", params.max_cfl);
+      }
       if (params.visualize)
       {
          const char *format    = (params.visualize & 0x2) ? "ASCII" : "binary";
