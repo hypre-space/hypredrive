@@ -871,10 +871,10 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
    const HYPRE_Int *gdims   = &mesh->gdims[0];
    HYPRE_BigInt   **pstarts = &mesh->pstarts[0];
 
-   HYPRE_BigInt node_ilower = mesh->ilower;
-   HYPRE_BigInt node_iupper = mesh->iupper;
-   HYPRE_BigInt dof_ilower  = mesh->dof_ilower;
-   HYPRE_BigInt dof_iupper  = mesh->dof_iupper;
+   HYPRE_BigInt       node_ilower      = mesh->ilower;
+   HYPRE_BigInt       node_iupper      = mesh->iupper;
+   HYPRE_BigInt       dof_ilower       = mesh->dof_ilower;
+   HYPRE_BigInt       dof_iupper       = mesh->dof_iupper;
    const HYPRE_BigInt global_num_nodes = (HYPRE_BigInt)gdims[0] * (HYPRE_BigInt)gdims[1];
    const HYPRE_BigInt global_num_dofs  = 3 * global_num_nodes;
 
@@ -954,16 +954,17 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
                while ((bd + 1) < pd && cg >= ps[bd + 1]) bd++;
                owner_bc[d] = bd;
             }
-            node_gid[a]        = grid2idx(ng[a], owner_bc, gdims, pstarts);
+            node_gid[a] = grid2idx(ng[a], owner_bc, gdims, pstarts);
             /* Sanity check: global IDs must be within [0, global_num_nodes) */
             if (node_gid[a] < 0 || node_gid[a] >= global_num_nodes)
             {
-               printf("[rank %d coords %d,%d] ERROR: node_gid out of range: node_gid=%lld "
-                      "global_num_nodes=%lld (gx=%lld gy=%lld owner_bc=%d,%d)\n",
-                      (int)mesh->mypid, (int)mesh->coords[0], (int)mesh->coords[1],
-                      (long long)node_gid[a], (long long)global_num_nodes,
-                      (long long)ng[a][0], (long long)ng[a][1], (int)owner_bc[0],
-                      (int)owner_bc[1]);
+               printf(
+                  "[rank %d coords %d,%d] ERROR: node_gid out of range: node_gid=%lld "
+                  "global_num_nodes=%lld (gx=%lld gy=%lld owner_bc=%d,%d)\n",
+                  (int)mesh->mypid, (int)mesh->coords[0], (int)mesh->coords[1],
+                  (long long)node_gid[a], (long long)global_num_nodes,
+                  (long long)ng[a][0], (long long)ng[a][1], (int)owner_bc[0],
+                  (int)owner_bc[1]);
                MPI_Abort(mesh->cart_comm, -1);
             }
             dof_gid[3 * a + 0] = 3 * node_gid[a] + 0;
@@ -975,10 +976,11 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
                HYPRE_BigInt gid = dof_gid[3 * a + d];
                if (gid < 0 || gid >= global_num_dofs)
                {
-                  printf("[rank %d coords %d,%d] ERROR: dof_gid out of range: dof_gid=%lld "
-                         "global_num_dofs=%lld (node_gid=%lld)\n",
-                         (int)mesh->mypid, (int)mesh->coords[0], (int)mesh->coords[1],
-                         (long long)gid, (long long)global_num_dofs, (long long)node_gid[a]);
+                  printf(
+                     "[rank %d coords %d,%d] ERROR: dof_gid out of range: dof_gid=%lld "
+                     "global_num_dofs=%lld (node_gid=%lld)\n",
+                     (int)mesh->mypid, (int)mesh->coords[0], (int)mesh->coords[1],
+                     (long long)gid, (long long)global_num_dofs, (long long)node_gid[a]);
                   MPI_Abort(mesh->cart_comm, -1);
                }
             }
