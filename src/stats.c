@@ -760,8 +760,8 @@ StatsPrint(int print_level)
    /* Print statistics for each entry that had a solve */
    /* This filters out Newton iterations that broke before solving */
    /* Use a display index to avoid gaps in the entry column */
-   int max_entry    = active_stats->counter;
-   int display_idx  = 0;
+   int max_entry   = active_stats->counter;
+   int display_idx = 0;
    for (int i = 0; i <= max_entry; i++)
    {
       /* Only print entries that had a solve (iterations > 0 or solve time > 0) */

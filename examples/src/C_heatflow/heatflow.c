@@ -107,7 +107,7 @@ typedef struct
    HYPRE_Real   beta;   /* k(T) = k0 * exp(beta*T) */
    HYPRE_Int    max_rows_per_call;
    HYPRE_Int    adaptive_dt; /* adaptive time stepping flag */
-   HYPRE_Real   max_cfl;      /* Maximum CFL for adaptive time stepping (0=no limit) */
+   HYPRE_Real   max_cfl;     /* Maximum CFL for adaptive time stepping (0=no limit) */
    NewtonParams newton;
    char        *yaml_file;
 } HeatParams;
