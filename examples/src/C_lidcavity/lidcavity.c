@@ -388,10 +388,23 @@ CreateDistMesh2D(MPI_Comm comm, HYPRE_Real Lx, HYPRE_Real Ly, HYPRE_Int Nx, HYPR
    mesh->h[1]     = Ly / (Ny - 1);
    mesh->h[2]     = (mesh->h[0] < mesh->h[1]) ? mesh->h[0] : mesh->h[1];
 
-   MPI_Cart_create(comm, 2, mesh->pdims, (int[]){0, 0}, 1, &(mesh->cart_comm));
+   /* Use int arrays for MPI calls to avoid type mismatch if HYPRE_Int != int */
+   int mpi_dims[2]   = {(int)Px, (int)Py};
+   int mpi_coords[2] = {0, 0};
+   int mpi_nbrs[8]   = {0};
+
+   /* IMPORTANT: keep cart ranks consistent with MPI_COMM_WORLD ranks.
+    * Hypre/HYPREDRV objects in this example are built on MPI_COMM_WORLD, so if MPI
+    * reorders ranks here (reorder=1), the global row partition can become inconsistent
+    * with the communicator rank ordering and can trigger failures in ParCSR comm pkg. */
+   MPI_Cart_create(comm, 2, mpi_dims, (int[]){0, 0}, 0, &(mesh->cart_comm));
    MPI_Comm_rank(mesh->cart_comm, &myid);
-   MPI_Cart_coords(mesh->cart_comm, myid, 2, mesh->coords);
-   mesh->mypid = (HYPRE_Int)myid;
+   MPI_Cart_coords(mesh->cart_comm, myid, 2, mpi_coords);
+
+   /* Copy to HYPRE_Int members */
+   mesh->coords[0] = mpi_coords[0];
+   mesh->coords[1] = mpi_coords[1];
+   mesh->mypid     = (HYPRE_Int)myid;
 
    for (int i = 0; i < 2; i++)
    {
@@ -416,28 +429,36 @@ CreateDistMesh2D(MPI_Comm comm, HYPRE_Real Lx, HYPRE_Real Ly, HYPRE_Int Nx, HYPR
    mesh->dof_ilower        = mesh->ilower * 3;
    mesh->dof_iupper        = mesh->iupper * 3 + 2;
 
-   MPI_Cart_shift(mesh->cart_comm, 0, 1, &mesh->nbrs[0], &mesh->nbrs[1]);
-   MPI_Cart_shift(mesh->cart_comm, 1, 1, &mesh->nbrs[2], &mesh->nbrs[3]);
+   /* Get face neighbors using int temporaries */
+   MPI_Cart_shift(mesh->cart_comm, 0, 1, &mpi_nbrs[0], &mpi_nbrs[1]);
+   MPI_Cart_shift(mesh->cart_comm, 1, 1, &mpi_nbrs[2], &mpi_nbrs[3]);
 
-   if (mesh->coords[0] > 0 && mesh->coords[1] > 0)
-      MPI_Cart_rank(mesh->cart_comm, (int[]){mesh->coords[0] - 1, mesh->coords[1] - 1},
-                    &mesh->nbrs[4]);
-   else mesh->nbrs[4] = MPI_PROC_NULL;
+   /* Get diagonal neighbors */
+   if (mpi_coords[0] > 0 && mpi_coords[1] > 0)
+      MPI_Cart_rank(mesh->cart_comm, (int[]){mpi_coords[0] - 1, mpi_coords[1] - 1},
+                    &mpi_nbrs[4]);
+   else mpi_nbrs[4] = MPI_PROC_NULL;
 
-   if (mesh->coords[0] < mesh->pdims[0] - 1 && mesh->coords[1] < mesh->pdims[1] - 1)
-      MPI_Cart_rank(mesh->cart_comm, (int[]){mesh->coords[0] + 1, mesh->coords[1] + 1},
-                    &mesh->nbrs[5]);
-   else mesh->nbrs[5] = MPI_PROC_NULL;
+   if (mpi_coords[0] < mpi_dims[0] - 1 && mpi_coords[1] < mpi_dims[1] - 1)
+      MPI_Cart_rank(mesh->cart_comm, (int[]){mpi_coords[0] + 1, mpi_coords[1] + 1},
+                    &mpi_nbrs[5]);
+   else mpi_nbrs[5] = MPI_PROC_NULL;
 
-   if (mesh->coords[0] > 0 && mesh->coords[1] < mesh->pdims[1] - 1)
-      MPI_Cart_rank(mesh->cart_comm, (int[]){mesh->coords[0] - 1, mesh->coords[1] + 1},
-                    &mesh->nbrs[6]);
-   else mesh->nbrs[6] = MPI_PROC_NULL;
+   if (mpi_coords[0] > 0 && mpi_coords[1] < mpi_dims[1] - 1)
+      MPI_Cart_rank(mesh->cart_comm, (int[]){mpi_coords[0] - 1, mpi_coords[1] + 1},
+                    &mpi_nbrs[6]);
+   else mpi_nbrs[6] = MPI_PROC_NULL;
 
-   if (mesh->coords[0] < mesh->pdims[0] - 1 && mesh->coords[1] > 0)
-      MPI_Cart_rank(mesh->cart_comm, (int[]){mesh->coords[0] + 1, mesh->coords[1] - 1},
-                    &mesh->nbrs[7]);
-   else mesh->nbrs[7] = MPI_PROC_NULL;
+   if (mpi_coords[0] < mpi_dims[0] - 1 && mpi_coords[1] > 0)
+      MPI_Cart_rank(mesh->cart_comm, (int[]){mpi_coords[0] + 1, mpi_coords[1] - 1},
+                    &mpi_nbrs[7]);
+   else mpi_nbrs[7] = MPI_PROC_NULL;
+
+   /* Copy neighbors to HYPRE_Int array */
+   for (int i = 0; i < 8; i++)
+   {
+      mesh->nbrs[i] = mpi_nbrs[i];
+   }
 
    *mesh_ptr = mesh;
    return 0;
@@ -854,6 +875,8 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
    HYPRE_BigInt node_iupper = mesh->iupper;
    HYPRE_BigInt dof_ilower  = mesh->dof_ilower;
    HYPRE_BigInt dof_iupper  = mesh->dof_iupper;
+   const HYPRE_BigInt global_num_nodes = (HYPRE_BigInt)gdims[0] * (HYPRE_BigInt)gdims[1];
+   const HYPRE_BigInt global_num_dofs  = 3 * global_num_nodes;
 
    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system", -1));
 
@@ -932,9 +955,33 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
                owner_bc[d] = bd;
             }
             node_gid[a]        = grid2idx(ng[a], owner_bc, gdims, pstarts);
+            /* Sanity check: global IDs must be within [0, global_num_nodes) */
+            if (node_gid[a] < 0 || node_gid[a] >= global_num_nodes)
+            {
+               printf("[rank %d coords %d,%d] ERROR: node_gid out of range: node_gid=%lld "
+                      "global_num_nodes=%lld (gx=%lld gy=%lld owner_bc=%d,%d)\n",
+                      (int)mesh->mypid, (int)mesh->coords[0], (int)mesh->coords[1],
+                      (long long)node_gid[a], (long long)global_num_nodes,
+                      (long long)ng[a][0], (long long)ng[a][1], (int)owner_bc[0],
+                      (int)owner_bc[1]);
+               MPI_Abort(mesh->cart_comm, -1);
+            }
             dof_gid[3 * a + 0] = 3 * node_gid[a] + 0;
             dof_gid[3 * a + 1] = 3 * node_gid[a] + 1;
             dof_gid[3 * a + 2] = 3 * node_gid[a] + 2;
+            /* Sanity check: global DOF IDs must be within [0, global_num_dofs) */
+            for (int d = 0; d < 3; d++)
+            {
+               HYPRE_BigInt gid = dof_gid[3 * a + d];
+               if (gid < 0 || gid >= global_num_dofs)
+               {
+                  printf("[rank %d coords %d,%d] ERROR: dof_gid out of range: dof_gid=%lld "
+                         "global_num_dofs=%lld (node_gid=%lld)\n",
+                         (int)mesh->mypid, (int)mesh->coords[0], (int)mesh->coords[1],
+                         (long long)gid, (long long)global_num_dofs, (long long)node_gid[a]);
+                  MPI_Abort(mesh->cart_comm, -1);
+               }
+            }
 
             /* Gather current solution DOFs for element */
             // Note: node_gid is global, but u_current_iter is local

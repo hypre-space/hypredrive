@@ -365,9 +365,20 @@ CreateDistMesh(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Nz, HYPRE_In
    mesh->pdims[1] = Py;
    mesh->pdims[2] = Pz;
 
-   MPI_Cart_create(comm, 3, mesh->pdims, (int[]){0, 0, 0}, 1, &(mesh->cart_comm));
+   /* Use int arrays for MPI calls to avoid type mismatch if HYPRE_Int != int */
+   int mpi_dims[3]   = {(int)Px, (int)Py, (int)Pz};
+   int mpi_coords[3] = {0, 0, 0};
+
+   /* Keep cart ranks consistent with MPI_COMM_WORLD ranks (avoid reorder=1). */
+   MPI_Cart_create(comm, 3, mpi_dims, (int[]){0, 0, 0}, 0, &(mesh->cart_comm));
    MPI_Comm_rank(mesh->cart_comm, &myid);
-   MPI_Cart_coords(mesh->cart_comm, myid, 3, mesh->coords);
+   MPI_Cart_coords(mesh->cart_comm, myid, 3, mpi_coords);
+
+   /* Copy to HYPRE_Int members */
+   mesh->coords[0] = mpi_coords[0];
+   mesh->coords[1] = mpi_coords[1];
+   mesh->coords[2] = mpi_coords[2];
+
    mesh->mypid = (HYPRE_Int)myid;
 
    for (int i = 0; i < 3; i++)
