@@ -982,6 +982,8 @@ StatsLevelPrint(int level)
    printf("Avg. LS times: (setup, solve, total):  %.4f, %.4f, %.4f\n",
           avg_setup_per_solve, avg_solve_per_solve,
           avg_setup_per_solve + avg_solve_per_solve);
+   printf("Total LS times: (setup, solve, total): %.4f, %.4f, %.4f\n",
+          total_setup, total_solve, total_setup + total_solve);
    printf("Avg. LS iterations per timestep:       %.2f\n", avg_iters_per_entry);
    printf("Avg. LS times per timestep: (s, s, t): %.4f, %.4f, %.4f\n",
           avg_setup_per_entry, avg_solve_per_entry,
