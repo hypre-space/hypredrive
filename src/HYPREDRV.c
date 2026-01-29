@@ -5,12 +5,8 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "HYPREDRV.h"
-
 #include <math.h>
 #include <stdio.h>
-#include "HYPRE_parcsr_ls.h"
-#include "HYPRE_utilities.h"
 #include "_hypre_parcsr_mv.h" /* For hypre_VectorData, hypre_ParVectorLocalVector */
 #include "args.h"
 #include "containers.h"
@@ -20,6 +16,16 @@
 #ifdef HYPREDRV_ENABLE_CALIPER
 #include <caliper/cali.h>
 #endif
+
+/* Undefine autotools package macros from hypre */
+#undef PACKAGE_NAME
+#undef PACKAGE_BUGREPORT
+#undef PACKAGE_STRING
+#undef PACKAGE_TARNAME
+#undef PACKAGE_URL
+#undef PACKAGE_VERSION
+
+#include "HYPREDRV.h"
 
 // Flag to check if HYPREDRV is initialized
 static bool hypredrv_is_initialized = false;

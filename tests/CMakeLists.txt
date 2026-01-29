@@ -101,6 +101,11 @@ setup_test_executable(test_parser test_parser.c)
 add_unit_test(unit_test_parser test_parser)
 set_tests_properties(unit_test_parser PROPERTIES RUN_SERIAL TRUE)
 
+# Nested MGR YAML regression
+setup_test_executable(test_mgr_nested_yaml test_mgr_nested_yaml.c)
+add_unit_test(unit_test_mgr_nested_yaml test_mgr_nested_yaml)
+set_tests_properties(unit_test_mgr_nested_yaml PROPERTIES RUN_SERIAL TRUE)
+
 # Solver argument helpers, dispatch, and integration tests (all merged)
 setup_test_executable(test_solver test_solver.c)
 add_unit_test(unit_test_solver test_solver)

@@ -839,6 +839,24 @@ optional keywords:
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv428HYPRE_MGRSetGlobalSmoothType12HYPRE_Solver9HYPRE_Int>`_. Default
     value is `2` (Jacobi). Use ``none`` to deactivate global relaxation.
 
+  - ``f_relaxation`` and ``g_relaxation`` also accept a nested Krylov solver block with an
+    optional nested preconditioner. Supported Krylov solvers are ``pcg``, ``gmres``,
+    ``fgmres``, and ``bicgstab``. Supported nested preconditioners are ``amg``, ``ilu``,
+    and ``fsai``. Nested ``preconditioner: mgr`` is not supported.
+
+    Example:
+
+    .. code-block:: yaml
+
+        f_relaxation:
+          gmres:
+            max_iter: 2
+            preconditioner:
+              amg:
+                max_iter: 1
+                coarsening:
+                  num_levels: 1
+
   - ``restriction_type`` - algorithm for computing the restriction operator. For available
     options, see `HYPRE_MGRSetRestrictType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv424HYPRE_MGRSetRestrictType12HYPRE_Solver9HYPRE_Int>`_. Default
@@ -856,6 +874,8 @@ optional keywords:
 
 - ``coarsest_level`` - special keyword for defining specific parameters for MGR's coarsest
   level.
+
+  ``coarsest_level`` also supports the same nested Krylov solver block described above.
 
 The default parameter values for the ``preconditioner:mgr`` section are represented in the
 code block below:
@@ -891,6 +911,9 @@ code block below:
           amg: # AMG parameters can be specified with a new indentation level
 
 .. warning::
+
+   Nested Krylov-in-MGR requires the vendored Hypre build in the ``hypre/`` folder. Make
+   sure to build Hypre with ``hypre/build-hypre.sh`` before building HypreDrive.
 
    MGR cannot be fully defined by the ``mgr`` keyword only. Instead, it is also necessary
    to specify which types of degrees of freedom are treated as F points in each MGR level,

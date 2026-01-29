@@ -12,9 +12,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "HYPREDRV_config.h"
 #include "error.h"
 #include "utils.h"
+
+/* Undefine autotools package macros from hypre */
+#undef PACKAGE_NAME
+#undef PACKAGE_BUGREPORT
+#undef PACKAGE_STRING
+#undef PACKAGE_TARNAME
+#undef PACKAGE_URL
+#undef PACKAGE_VERSION
+#include "HYPREDRV_config.h"
 
 /* Maximum number of hierarchical annotation levels */
 enum StatsConstants

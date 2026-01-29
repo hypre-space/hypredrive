@@ -233,26 +233,28 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         EXTRA_ARGS --general:num_repetitions 5
         REQUIRE_CONTAINS ${_cli_reps5_require_contains}
     )
-    add_hypredrive_test(ex1a_1proc 1 ex1a.yml)
-    add_hypredrive_test(ex1b_1proc 1 ex1b.yml)
-    add_hypredrive_test(ex1c_1proc 1 ex1c.yml)
-    add_hypredrive_test(ex1d_1proc 1 ex1d.yml)
-    add_hypredrive_test(ex1_preset_1proc 1 ex1-preset.yml)
-    add_hypredrive_test(ex2_4proc  4 ex2.yml)
-    add_hypredrive_test(ex3_1proc  1 ex3.yml)
-    add_hypredrive_test(ex4_4proc  4 ex4.yml)
-    add_hypredrive_test(ex5_1proc  1 ex5.yml)
+    add_hypredrive_test(ex1a_1proc    1 ex1a.yml)
+    add_hypredrive_test(ex1b_1proc    1 ex1b.yml)
+    add_hypredrive_test(ex1c_1proc    1 ex1c.yml)
+    add_hypredrive_test(ex1d_1proc    1 ex1d.yml)
+    add_hypredrive_test(ex1_preset    1 ex1-preset.yml)
+    add_hypredrive_test(ex2_4proc     4 ex2.yml)
+    add_hypredrive_test(ex3_1proc     1 ex3.yml)
+    add_hypredrive_test(ex3_nested_1  1 ex3-mgr_Frelax_gmres.yml)
+    add_hypredrive_test(ex3_nested_2  1 ex3-mgr_coarse_gmres_amg.yml)
+    add_hypredrive_test(ex4_4proc     4 ex4.yml)
+    add_hypredrive_test(ex5_1proc     1 ex5.yml)
     if (HYPREDRV_ENABLE_EIGSPEC)
         add_hypredrive_test(ex6_1proc 1 ex6.yml)
     endif()
-    add_hypredrive_test(ex7_1proc   1 ex7.yml)
+    add_hypredrive_test(ex7_1proc     1 ex7.yml)
     add_hypredrive_cli_test(ex7_cli_reps4_ls4 1 ex7.yml
         OVERRIDES --general:num_repetitions 4 --linear_system:last_suffix 4
         REQUIRE_CONTAINS ${_cli_ex7_reps4_ls4_require_contains}
     )
-    add_hypredrive_test(ex8_1proc   1 ex8.yml)
-    add_hypredrive_test(ex8a_4proc  4 ex8-multi-1.yml)
-    add_hypredrive_test(ex8b_4proc  4 ex8-multi-2.yml)
+    add_hypredrive_test(ex8_1proc     1 ex8.yml)
+    add_hypredrive_test(ex8a_4proc    4 ex8-multi-1.yml)
+    add_hypredrive_test(ex8b_4proc    4 ex8-multi-2.yml)
 
     # Test main.c help/usage/error branches
     # Note: --help exits with 0, so we need to allow that

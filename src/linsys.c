@@ -5,6 +5,18 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+/* Add internal hypre headers */
+#include "_hypre_IJ_mv.h"
+#include "_hypre_parcsr_mv.h"
+
+/* Undefine autotools package macros from hypre */
+#undef PACKAGE_NAME
+#undef PACKAGE_BUGREPORT
+#undef PACKAGE_STRING
+#undef PACKAGE_TARNAME
+#undef PACKAGE_URL
+#undef PACKAGE_VERSION
+
 #include "linsys.h"
 #include <dirent.h>
 #include <errno.h>
@@ -12,9 +24,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
-#include "HYPRE_parcsr_mv.h" /* TODO: remove after implementing IJVectorClone/Copy */
-#include "_hypre_IJ_mv.h"    /* TODO: remove after implementing IJVectorClone */
-#include "_hypre_parcsr_mv.h" /* TODO: remove after implementing IJVectorMigrate/IJMatrix */
+
+/* TODO: implement IJVectorClone/Copy and IJVectorMigrate/IJMatrix in hypre*/
 
 static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, dirname, FieldTypeStringSet),

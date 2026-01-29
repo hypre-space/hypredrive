@@ -6,7 +6,9 @@
  ******************************************************************************/
 
 #include "mgr.h"
+#include <mpi.h>
 #include "gen_macros.h"
+#include "nested_krylov.h"
 #include "stats.h"
 
 /*-----------------------------------------------------------------------------
@@ -69,10 +71,10 @@ DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, ILUSetArgs)
 #define MGR_NUM_FIELDS (sizeof(MGR_field_offset_map) / sizeof(MGR_field_offset_map[0]))
 
 /* Define the prefix list */
-#define GENERATE_PREFIXED_LIST_MGR       \
-   GENERATE_PREFIXED_COMPONENTS(MGRcls)  \
-   GENERATE_PREFIXED_COMPONENTS(MGRfrlx) \
-   GENERATE_PREFIXED_COMPONENTS(MGRgrlx) \
+#define GENERATE_PREFIXED_LIST_MGR                   \
+   GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRcls)  \
+   GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRfrlx) \
+   GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRgrlx) \
    GENERATE_PREFIXED_COMPONENTS(MGRlvl)
 
 /* Generate all boilerplate (field maps, setters, YAML parsing, etc.) */
@@ -80,13 +82,80 @@ GENERATE_PREFIXED_LIST_MGR                    // LCOV_EXCL_LINE
 GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR) // LCOV_EXCL_LINE
 
    /*-----------------------------------------------------------------------------
-    * MGRclsSetDefaultArgs
     *-----------------------------------------------------------------------------*/
 
-   void MGRclsSetDefaultArgs(MGRcls_args *args)
+   static bool MGRIsNestedKrylovKey(const char *key)
+{
+   if (!key)
+   {
+      return false;
+   }
+
+   char *tmp = StrTrim(strdup(key));
+   if (!tmp)
+   {
+      return false;
+   }
+   StrToLowerCase(tmp);
+   bool is_valid = StrIntMapArrayDomainEntryExists(SolverGetValidTypeIntMap(), tmp);
+   free(tmp);
+   return is_valid;
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+static NestedKrylov_args *
+MGRGetOrCreateNestedKrylov(NestedKrylov_args **ptr)
+{
+   if (!ptr)
+   {
+      return NULL;
+   }
+
+   if (!*ptr)
+   {
+      *ptr = (NestedKrylov_args *)malloc(sizeof(NestedKrylov_args));
+      if (*ptr)
+      {
+         NestedKrylovSetDefaultArgs(*ptr);
+      }
+   }
+
+   return *ptr;
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+static HYPRE_Int
+MGRBaseParSolverSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                      HYPRE_ParVector x)
+{
+   return HYPRE_SolverSetup(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b, (HYPRE_Vector)x);
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+static HYPRE_Int
+MGRBaseParSolverSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                      HYPRE_ParVector x)
+{
+   return HYPRE_SolverSolve(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b, (HYPRE_Vector)x);
+}
+
+/*-----------------------------------------------------------------------------
+ * MGRclsSetDefaultArgs
+ *-----------------------------------------------------------------------------*/
+
+void
+MGRclsSetDefaultArgs(MGRcls_args *args)
 {
    /* Default coarsest solver: let MGRCreate interpret type < 0 as "default AMG". */
-   args->type = -1;
+   args->type       = -1;
+   args->use_krylov = 0;
+   args->krylov     = NULL;
 
    /* Initialize default AMG args (union storage). If user later selects ILU via YAML,
     * ILUSetArgs/ILUSetDefaultArgs will reinitialize the union storage. */
@@ -102,6 +171,8 @@ MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
 {
    args->type       = 7;
    args->num_sweeps = 1;
+   args->use_krylov = 0;
+   args->krylov     = NULL;
    /* Solver-specific args live in a union. We only (re)initialize them if/when a
     * specific solver type is selected during YAML parsing. */
 }
@@ -117,6 +188,8 @@ MGRgrlxSetDefaultArgs(MGRgrlx_args *args)
     * but omits num_sweeps, we want at least one sweep. */
    args->type       = -1;
    args->num_sweeps = 1;
+   args->use_krylov = 0;
+   args->krylov     = NULL;
 
    /* Initialize default AMG args (union storage). If user later selects ILU via YAML,
     * ILUSetArgs/ILUSetDefaultArgs will reinitialize the union storage. */
@@ -159,8 +232,164 @@ MGRSetDefaultArgs(MGR_args *args)
    for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
    {
       MGRlvlSetDefaultArgs(&args->level[i]);
+      args->frelax[i] = NULL;
+      args->grelax[i] = NULL;
    }
    MGRclsSetDefaultArgs(&args->coarsest_level);
+   args->csolver = NULL;
+   args->vec_nn  = NULL;
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+void
+MGRclsSetArgsFromYAML(void *vargs, YAMLnode *parent)
+{
+   MGRcls_args *args = (MGRcls_args *)vargs;
+
+   if (!parent)
+   {
+      return;
+   }
+
+   if (parent->children)
+   {
+      for (YAMLnode *child = parent->children; child != NULL; child = child->next)
+      {
+         if (MGRIsNestedKrylovKey(child->key))
+         {
+            YAML_NODE_SET_VALID(child);
+            args->use_krylov          = 1;
+            args->type                = -1;
+            NestedKrylov_args *krylov = MGRGetOrCreateNestedKrylov(&args->krylov);
+            if (krylov)
+            {
+               NestedKrylovSetArgsFromYAML(krylov, child);
+            }
+            continue;
+         }
+
+         YAML_NODE_VALIDATE(child, MGRclsGetValidKeys, MGRclsGetValidValues);
+         YAML_NODE_SET_FIELD(child, args, MGRclsSetFieldByName);
+      }
+   }
+   else
+   {
+      char *temp_key = strdup(parent->key);
+      free(parent->key);
+      parent->key = (char *)malloc(5 * sizeof(char));
+      snprintf(parent->key, 5, "type");
+
+      YAML_NODE_VALIDATE(parent, MGRclsGetValidKeys, MGRclsGetValidValues);
+      YAML_NODE_SET_FIELD(parent, args, MGRclsSetFieldByName);
+
+      free(parent->key);
+      parent->key = strdup(temp_key);
+      free(temp_key);
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+void
+MGRfrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
+{
+   MGRfrlx_args *args = (MGRfrlx_args *)vargs;
+
+   if (!parent)
+   {
+      return;
+   }
+
+   if (parent->children)
+   {
+      for (YAMLnode *child = parent->children; child != NULL; child = child->next)
+      {
+         if (MGRIsNestedKrylovKey(child->key))
+         {
+            YAML_NODE_SET_VALID(child);
+            args->use_krylov          = 1;
+            NestedKrylov_args *krylov = MGRGetOrCreateNestedKrylov(&args->krylov);
+            if (krylov)
+            {
+               NestedKrylovSetArgsFromYAML(krylov, child);
+            }
+            continue;
+         }
+
+         YAML_NODE_VALIDATE(child, MGRfrlxGetValidKeys, MGRfrlxGetValidValues);
+         YAML_NODE_SET_FIELD(child, args, MGRfrlxSetFieldByName);
+      }
+   }
+   else
+   {
+      char *temp_key = strdup(parent->key);
+      free(parent->key);
+      parent->key = (char *)malloc(5 * sizeof(char));
+      snprintf(parent->key, 5, "type");
+
+      YAML_NODE_VALIDATE(parent, MGRfrlxGetValidKeys, MGRfrlxGetValidValues);
+      YAML_NODE_SET_FIELD(parent, args, MGRfrlxSetFieldByName);
+
+      free(parent->key);
+      parent->key = strdup(temp_key);
+      free(temp_key);
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+void
+MGRgrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
+{
+   MGRgrlx_args *args = (MGRgrlx_args *)vargs;
+
+   if (!parent)
+   {
+      return;
+   }
+
+   if (parent->children)
+   {
+      for (YAMLnode *child = parent->children; child != NULL; child = child->next)
+      {
+         if (MGRIsNestedKrylovKey(child->key))
+         {
+            YAML_NODE_SET_VALID(child);
+            args->use_krylov = 1;
+            if (args->type < 0)
+            {
+               args->type = 0;
+            }
+            NestedKrylov_args *krylov = MGRGetOrCreateNestedKrylov(&args->krylov);
+            if (krylov)
+            {
+               NestedKrylovSetArgsFromYAML(krylov, child);
+            }
+            continue;
+         }
+
+         YAML_NODE_VALIDATE(child, MGRgrlxGetValidKeys, MGRgrlxGetValidValues);
+         YAML_NODE_SET_FIELD(child, args, MGRgrlxSetFieldByName);
+      }
+   }
+   else
+   {
+      char *temp_key = strdup(parent->key);
+      free(parent->key);
+      parent->key = (char *)malloc(5 * sizeof(char));
+      snprintf(parent->key, 5, "type");
+
+      YAML_NODE_VALIDATE(parent, MGRgrlxGetValidKeys, MGRgrlxGetValidValues);
+      YAML_NODE_SET_FIELD(parent, args, MGRgrlxSetFieldByName);
+
+      free(parent->key);
+      parent->key = strdup(temp_key);
+      free(temp_key);
+   }
 }
 
 /*-----------------------------------------------------------------------------
@@ -338,6 +567,17 @@ MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
             {
                YAML_NODE_ITERATE(grandchild, great_grandchild)
                {
+                  if ((!strcmp(great_grandchild->key, "f_relaxation") ||
+                       !strcmp(great_grandchild->key, "g_relaxation")) &&
+                      great_grandchild->children &&
+                      MGRIsNestedKrylovKey(great_grandchild->children->key))
+                  {
+                     YAML_NODE_SET_VALID(great_grandchild);
+                     YAML_NODE_SET_FIELD(great_grandchild, &args->level[lvl],
+                                         MGRlvlSetFieldByName);
+                     continue;
+                  }
+
                   YAML_NODE_VALIDATE(great_grandchild, MGRlvlGetValidKeys,
                                      MGRlvlGetValidValues);
 
@@ -403,6 +643,48 @@ void
 MGRSetDofmap(MGR_args *args, IntArray *dofmap)
 {
    args->dofmap = dofmap;
+}
+
+void
+MGRSetNearNullSpace(MGR_args *args, HYPRE_IJVector vec_nn)
+{
+   args->vec_nn = vec_nn;
+}
+
+void
+MGRDestroyNestedKrylovArgs(MGR_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
+   {
+      if (args->level[i].f_relaxation.krylov)
+      {
+         NestedKrylovDestroy(args->level[i].f_relaxation.krylov);
+         free(args->level[i].f_relaxation.krylov);
+         args->level[i].f_relaxation.krylov     = NULL;
+         args->level[i].f_relaxation.use_krylov = 0;
+      }
+
+      if (args->level[i].g_relaxation.krylov)
+      {
+         NestedKrylovDestroy(args->level[i].g_relaxation.krylov);
+         free(args->level[i].g_relaxation.krylov);
+         args->level[i].g_relaxation.krylov     = NULL;
+         args->level[i].g_relaxation.use_krylov = 0;
+      }
+   }
+
+   if (args->coarsest_level.krylov)
+   {
+      NestedKrylovDestroy(args->coarsest_level.krylov);
+      free(args->coarsest_level.krylov);
+      args->coarsest_level.krylov     = NULL;
+      args->coarsest_level.use_krylov = 0;
+   }
 }
 
 /*-----------------------------------------------------------------------------
@@ -500,7 +782,22 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    /* Config f-relaxation at each MGR level */
    for (i = 0; i < num_levels - 1; i++)
    {
-      if (args->level[i].f_relaxation.type == 2)
+      if (args->level[i].f_relaxation.use_krylov && args->level[i].f_relaxation.krylov)
+      {
+         HYPRE_Solver wrapper = NULL;
+         NestedKrylovCreate(MPI_COMM_WORLD, args->level[i].f_relaxation.krylov,
+                            args->dofmap, args->vec_nn, &wrapper);
+         if (ErrorCodeActive())
+         {
+            return;
+         }
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+         HYPRE_MGRSetFSolverAtLevel(precon, wrapper, i);
+#else
+         HYPRE_MGRSetFSolverAtLevel(i, precon, wrapper);
+#endif
+      }
+      else if (args->level[i].f_relaxation.type == 2)
       {
          AMGCreate(&args->level[i].f_relaxation.amg, &frelax);
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
@@ -525,7 +822,18 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 #if HYPRE_CHECK_MIN_VERSION(23100, 8)
    for (i = 0; i < num_levels - 1; i++)
    {
-      if (args->level[i].g_relaxation.type == 20)
+      if (args->level[i].g_relaxation.use_krylov && args->level[i].g_relaxation.krylov)
+      {
+         HYPRE_Solver wrapper = NULL;
+         NestedKrylovCreate(MPI_COMM_WORLD, args->level[i].g_relaxation.krylov,
+                            args->dofmap, args->vec_nn, &wrapper);
+         if (ErrorCodeActive())
+         {
+            return;
+         }
+         HYPRE_MGRSetGlobalSmootherAtLevel(precon, wrapper, i);
+      }
+      else if (args->level[i].g_relaxation.type == 20)
       {
          AMGCreate(&args->level[i].g_relaxation.amg, &grelax);
          HYPRE_MGRSetGlobalSmootherAtLevel(precon, grelax, i);
@@ -540,53 +848,68 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    }
 #endif
 
-   /* Infer coarsest level solver type if not explicitly set (type == -1).
-    * This allows both patterns:
-    *   coarsest_level: spdirect        -> type = 29 (explicitly set)
-    *   coarsest_level: { ilu: {...} }  -> type inferred from ilu.max_iter > 0
-    */
-   if (args->coarsest_level.type == -1)
+   if (args->coarsest_level.use_krylov && args->coarsest_level.krylov)
    {
-      if (args->coarsest_level.ilu.max_iter > 0)
+      HYPRE_Solver wrapper = NULL;
+      NestedKrylovCreate(MPI_COMM_WORLD, args->coarsest_level.krylov, args->dofmap,
+                         args->vec_nn, &wrapper);
+      if (ErrorCodeActive())
       {
-         args->coarsest_level.type = 32; /* ILU */
+         return;
       }
-      else
+      HYPRE_MGRSetCoarseSolver(precon, MGRBaseParSolverSolve, MGRBaseParSolverSetup,
+                               wrapper);
+   }
+   else
+   {
+      /* Infer coarsest level solver type if not explicitly set (type == -1).
+       * This allows both patterns:
+       *   coarsest_level: spdirect        -> type = 29 (explicitly set)
+       *   coarsest_level: { ilu: {...} }  -> type inferred from ilu.max_iter > 0
+       */
+      if (args->coarsest_level.type == -1)
       {
-         args->coarsest_level.type = 0; /* AMG (default) */
+         if (args->coarsest_level.ilu.max_iter > 0)
+         {
+            args->coarsest_level.type = 32; /* ILU */
+         }
+         else
+         {
+            args->coarsest_level.type = 0; /* AMG (default) */
+         }
       }
-   }
 
-   /* Ensure the selected solver has valid max_iter */
-   if (args->coarsest_level.type == 0 && args->coarsest_level.amg.max_iter < 1)
-   {
-      args->coarsest_level.amg.max_iter = 1;
-   }
-   else if (args->coarsest_level.type == 32 && args->coarsest_level.ilu.max_iter < 1)
-   {
-      args->coarsest_level.ilu.max_iter = 1;
-   }
+      /* Ensure the selected solver has valid max_iter */
+      if (args->coarsest_level.type == 0 && args->coarsest_level.amg.max_iter < 1)
+      {
+         args->coarsest_level.amg.max_iter = 1;
+      }
+      else if (args->coarsest_level.type == 32 && args->coarsest_level.ilu.max_iter < 1)
+      {
+         args->coarsest_level.ilu.max_iter = 1;
+      }
 
-   /* Config coarsest level solver */
-   if (args->coarsest_level.type == 0)
-   {
-      AMGCreate(&args->coarsest_level.amg, &args->csolver);
-      HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup,
-                               args->csolver);
-   }
-   else if (args->coarsest_level.type == 32)
-   {
-      ILUCreate(&args->coarsest_level.ilu, &args->csolver);
-      HYPRE_MGRSetCoarseSolver(precon, HYPRE_ILUSolve, HYPRE_ILUSetup, args->csolver);
-   }
+      /* Config coarsest level solver */
+      if (args->coarsest_level.type == 0)
+      {
+         AMGCreate(&args->coarsest_level.amg, &args->csolver);
+         HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup,
+                                  args->csolver);
+      }
+      else if (args->coarsest_level.type == 32)
+      {
+         ILUCreate(&args->coarsest_level.ilu, &args->csolver);
+         HYPRE_MGRSetCoarseSolver(precon, HYPRE_ILUSolve, HYPRE_ILUSetup, args->csolver);
+      }
 #ifdef HYPRE_USING_DSUPERLU
-   else if (args->coarsest_level.type == 29)
-   {
-      HYPRE_MGRDirectSolverCreate(&args->csolver);
-      HYPRE_MGRSetCoarseSolver(precon, HYPRE_MGRDirectSolverSolve,
-                               HYPRE_MGRDirectSolverSetup, args->csolver);
-   }
+      else if (args->coarsest_level.type == 29)
+      {
+         HYPRE_MGRDirectSolverCreate(&args->csolver);
+         HYPRE_MGRSetCoarseSolver(precon, HYPRE_MGRDirectSolverSolve,
+                                  HYPRE_MGRDirectSolverSetup, args->csolver);
+      }
 #endif
+   }
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 11)
    HYPRE_MGRSetNonGalerkinMaxElmts(precon, args->nonglk_max_elmts);

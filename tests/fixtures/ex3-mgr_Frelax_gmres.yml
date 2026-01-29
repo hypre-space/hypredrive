@@ -1,0 +1,33 @@
+general:
+  use_millisec: on # Turn this off for reporting times in [s]
+
+linear_system:
+  rhs_filename: data/compflow6k/np1/IJ.out.b
+  matrix_filename: data/compflow6k/np1/IJ.out.A
+  dofmap_filename: data/compflow6k/np1/dofmap.out
+
+solver: gmres
+
+preconditioner:
+  mgr:
+    level:
+      0:
+        f_dofs: [2]
+        f_relaxation: jacobi
+        g_relaxation: none
+        prolongation_type: jacobi
+
+      1:
+        f_dofs: [1]
+        f_relaxation:
+          gmres:
+            max_iter: 2
+            preconditioner:
+              amg:
+                max_iter: 1
+                aggressive:
+                  num_levels: 1
+        g_relaxation: none
+        restriction_type: columped
+
+    coarsest_level: amg

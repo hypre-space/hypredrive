@@ -8,6 +8,7 @@
 #include "precon.h"
 #include "HYPRE_parcsr_mv.h"
 #include "gen_macros.h"
+#include "nested_krylov.h"
 
 #define Precon_FIELDS(_prefix)                        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs)   \
@@ -126,6 +127,7 @@ PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
 
       case PRECON_MGR:
          MGRSetDofmap(&args->mgr, dofmap);
+         MGRSetNearNullSpace(&args->mgr, vec_nn);
          MGRCreate(&args->mgr, &precon->main);
          break;
 
@@ -275,7 +277,11 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
             HYPRE_MGRDestroy(precon->main);
 
             /* TODO: should MGR free these internally? */
-            if (args->mgr.coarsest_level.type == 0)
+            if (args->mgr.coarsest_level.use_krylov && args->mgr.coarsest_level.krylov)
+            {
+               NestedKrylovDestroy(args->mgr.coarsest_level.krylov);
+            }
+            else if (args->mgr.coarsest_level.type == 0)
             {
                HYPRE_BoomerAMGDestroy(args->mgr.csolver);
             }
@@ -291,15 +297,22 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
             }
             args->mgr.csolver = NULL;
 
-            if (args->mgr.level[0].f_relaxation.type == 2)
+            int max_levels = (args->mgr.num_levels > 0) ? (args->mgr.num_levels - 1) : 0;
+            for (int i = 0; i < max_levels; i++)
             {
-               HYPRE_BoomerAMGDestroy(args->mgr.frelax[0]);
-               args->mgr.frelax[0] = NULL;
-            }
-            else if (args->mgr.level[0].f_relaxation.type == 32)
-            {
-               HYPRE_ILUDestroy(args->mgr.frelax[0]);
-               args->mgr.frelax[0] = NULL;
+               if (args->mgr.level[i].f_relaxation.use_krylov &&
+                   args->mgr.level[i].f_relaxation.krylov)
+               {
+                  args->mgr.level[i].f_relaxation.krylov->base_solver = NULL;
+                  NestedKrylovDestroy(args->mgr.level[i].f_relaxation.krylov);
+               }
+
+               if (args->mgr.level[i].g_relaxation.use_krylov &&
+                   args->mgr.level[i].g_relaxation.krylov)
+               {
+                  args->mgr.level[i].g_relaxation.krylov->base_solver = NULL;
+                  NestedKrylovDestroy(args->mgr.level[i].g_relaxation.krylov);
+               }
             }
             break;
 
