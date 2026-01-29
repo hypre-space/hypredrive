@@ -10,6 +10,9 @@
 #include "gen_macros.h"
 #include "nested_krylov.h"
 #include "stats.h"
+#if !HYPRE_CHECK_MIN_VERSION(30100, 1)
+#include "_hypre_utilities.h" // for hypre_Solver
+#endif
 
 /*-----------------------------------------------------------------------------
  * Field definitions using the type-setting wrappers
@@ -132,7 +135,12 @@ static HYPRE_Int
 MGRBaseParSolverSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
                       HYPRE_ParVector x)
 {
+#if HYPRE_CHECK_MIN_VERSION(30100, 2)
    return HYPRE_SolverSetup(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b, (HYPRE_Vector)x);
+#else
+   return hypre_SolverSetup((hypre_Solver *)solver)(solver, (HYPRE_Matrix)A,
+                                                    (HYPRE_Vector)b, (HYPRE_Vector)x);
+#endif
 }
 
 /*-----------------------------------------------------------------------------
@@ -142,7 +150,12 @@ static HYPRE_Int
 MGRBaseParSolverSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
                       HYPRE_ParVector x)
 {
+#if HYPRE_CHECK_MIN_VERSION(30100, 2)
    return HYPRE_SolverSolve(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b, (HYPRE_Vector)x);
+#else
+   return hypre_SolverSolve((hypre_Solver *)solver)(solver, (HYPRE_Matrix)A,
+                                                    (HYPRE_Vector)b, (HYPRE_Vector)x);
+#endif
 }
 
 /*-----------------------------------------------------------------------------

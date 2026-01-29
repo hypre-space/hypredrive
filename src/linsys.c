@@ -17,13 +17,13 @@
 #undef PACKAGE_URL
 #undef PACKAGE_VERSION
 
-#include "linsys.h"
 #include <dirent.h>
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include "linsys.h"
 
 /* TODO: implement IJVectorClone/Copy and IJVectorMigrate/IJMatrix in hypre*/
 
