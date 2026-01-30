@@ -12,7 +12,7 @@
 #include "ilu.h"
 #include "utils.h"
 
-typedef struct NestedKrylov_args_struct NestedKrylov_args;
+struct NestedKrylov_args_struct;
 
 enum
 {
@@ -27,8 +27,8 @@ typedef struct MGRcls_args_struct
 {
    HYPRE_Int type;
 
-   int                use_krylov;
-   NestedKrylov_args *krylov;
+   int                              use_krylov;
+   struct NestedKrylov_args_struct *krylov;
 
    /* Only one coarsest solver is active at a time; store its args in a union.
     * Note: anonymous union is a GNU C extension. */
@@ -48,8 +48,8 @@ typedef struct MGRfrlx_args_struct
    HYPRE_Int type;
    HYPRE_Int num_sweeps;
 
-   int                use_krylov;
-   NestedKrylov_args *krylov;
+   int                              use_krylov;
+   struct NestedKrylov_args_struct *krylov;
 
    /* Only one fine-relaxation solver is active at a time. */
    union
@@ -68,8 +68,8 @@ typedef struct MGRgrlx_args_struct
    HYPRE_Int type;
    HYPRE_Int num_sweeps;
 
-   int                use_krylov;
-   NestedKrylov_args *krylov;
+   int                              use_krylov;
+   struct NestedKrylov_args_struct *krylov;
 
    /* Only one global-relaxation solver is active at a time. */
    union
