@@ -288,26 +288,25 @@ test_MGRCreate_coarsest_level_branches(void)
    ASSERT_NOT_NULL(dofmap);
    MGRSetDofmap(&mgr, dofmap);
 
-   /* 1) Infer ILU when type == -1 and ilu.max_iter > 0 */
-   mgr.coarsest_level.type = -1;
+   /* 1) Explicit ILU coarsest solver type */
+   mgr.coarsest_level.type = 32;
    ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
-   mgr.coarsest_level.ilu.max_iter = 2;
    HYPRE_Solver precon = NULL;
    ErrorCodeResetAll();
    MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
-   /* Clean up coarsest solver (inferred as ILU) */
+   /* Clean up coarsest solver (explicit ILU) */
    if (mgr.csolver)
    {
       HYPRE_ILUDestroy(mgr.csolver);
       mgr.csolver = NULL;
+      mgr.csolver_type = -1;
    }
 
-   /* 2) Infer AMG when type == -1 and ilu.max_iter <= 0 */
+   /* 2) Infer AMG when type == -1 */
    mgr.coarsest_level.type = -1;
    ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
-   mgr.coarsest_level.ilu.max_iter = 0;
    precon                      = NULL;
    ErrorCodeResetAll();
    MGRCreate(&mgr, &precon);
@@ -318,6 +317,7 @@ test_MGRCreate_coarsest_level_branches(void)
    {
       HYPRE_BoomerAMGDestroy(mgr.csolver);
       mgr.csolver = NULL;
+      mgr.csolver_type = -1;
    }
 
    /* 3) Explicit AMG coarsest solver type */
@@ -333,9 +333,10 @@ test_MGRCreate_coarsest_level_branches(void)
    {
       HYPRE_BoomerAMGDestroy(mgr.csolver);
       mgr.csolver = NULL;
+      mgr.csolver_type = -1;
    }
 
-   /* 4) Explicit ILU coarsest solver type */
+   /* 4) Explicit ILU coarsest solver type (repeat to cover reuse) */
    mgr.coarsest_level.type = 32;
    ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
    precon = NULL;
@@ -343,11 +344,11 @@ test_MGRCreate_coarsest_level_branches(void)
    MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
-   /* Clean up coarsest solver (explicit ILU) */
    if (mgr.csolver)
    {
       HYPRE_ILUDestroy(mgr.csolver);
       mgr.csolver = NULL;
+      mgr.csolver_type = -1;
    }
 
    IntArrayDestroy(&dofmap);
@@ -357,6 +358,9 @@ test_MGRCreate_coarsest_level_branches(void)
 static void
 test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
 {
+#if !HYPRE_CHECK_MIN_VERSION(30100, 2)
+   return;
+#endif
    HYPRE_Initialize();
 
    precon_args args;

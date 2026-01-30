@@ -249,8 +249,9 @@ MGRSetDefaultArgs(MGR_args *args)
       args->grelax[i] = NULL;
    }
    MGRclsSetDefaultArgs(&args->coarsest_level);
-   args->csolver = NULL;
-   args->vec_nn  = NULL;
+   args->csolver      = NULL;
+   args->csolver_type = -1;
+   args->vec_nn       = NULL;
 }
 
 /*-----------------------------------------------------------------------------
@@ -882,14 +883,8 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
        */
       if (args->coarsest_level.type == -1)
       {
-         if (args->coarsest_level.ilu.max_iter > 0)
-         {
-            args->coarsest_level.type = 32; /* ILU */
-         }
-         else
-         {
-            args->coarsest_level.type = 0; /* AMG (default) */
-         }
+         /* Default to AMG unless the user explicitly selected ILU. */
+         args->coarsest_level.type = 0;
       }
 
       /* Ensure the selected solver has valid max_iter */
@@ -906,18 +901,21 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       if (args->coarsest_level.type == 0)
       {
          AMGCreate(&args->coarsest_level.amg, &args->csolver);
+         args->csolver_type = 0;
          HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup,
                                   args->csolver);
       }
       else if (args->coarsest_level.type == 32)
       {
          ILUCreate(&args->coarsest_level.ilu, &args->csolver);
+         args->csolver_type = 32;
          HYPRE_MGRSetCoarseSolver(precon, HYPRE_ILUSolve, HYPRE_ILUSetup, args->csolver);
       }
 #ifdef HYPRE_USING_DSUPERLU
       else if (args->coarsest_level.type == 29)
       {
          HYPRE_MGRDirectSolverCreate(&args->csolver);
+         args->csolver_type = 29;
          HYPRE_MGRSetCoarseSolver(precon, HYPRE_MGRDirectSolverSolve,
                                   HYPRE_MGRDirectSolverSetup, args->csolver);
       }

@@ -118,6 +118,7 @@ typedef struct MGR_args_struct
    MGRcls_args coarsest_level;
 
    HYPRE_Solver csolver;
+   HYPRE_Int    csolver_type;
    HYPRE_Solver frelax[MAX_MGR_LEVELS - 1];
    HYPRE_Solver grelax[MAX_MGR_LEVELS - 1];
 } MGR_args;

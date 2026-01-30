@@ -345,7 +345,8 @@ NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *dofmap,
    }
 
    /* Set output pointer */
-   *solver_ptr = base_solver;
+   *solver_ptr       = base_solver;
+   args->base_solver = base_solver;
 
    return;
 }

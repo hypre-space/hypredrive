@@ -281,21 +281,27 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
             {
                NestedKrylovDestroy(args->mgr.coarsest_level.krylov);
             }
-            else if (args->mgr.coarsest_level.type == 0)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 3)
+            else if (args->mgr.csolver)
             {
-               HYPRE_BoomerAMGDestroy(args->mgr.csolver);
-            }
+               if (args->mgr.csolver_type == 0)
+               {
+                  HYPRE_BoomerAMGDestroy(args->mgr.csolver);
+               }
 #if defined(HYPRE_USING_DSUPERLU)
-            else if (args->mgr.coarsest_level.type == 29)
-            {
-               HYPRE_MGRDirectSolverDestroy(args->mgr.csolver);
+               else if (args->mgr.csolver_type == 29)
+               {
+                  HYPRE_MGRDirectSolverDestroy(args->mgr.csolver);
+               }
+#endif
+               else if (args->mgr.csolver_type == 32)
+               {
+                  HYPRE_ILUDestroy(args->mgr.csolver);
+               }
             }
 #endif
-            else if (args->mgr.coarsest_level.type == 32)
-            {
-               HYPRE_ILUDestroy(args->mgr.csolver);
-            }
             args->mgr.csolver = NULL;
+            args->mgr.csolver_type = -1;
 
             int max_levels = (args->mgr.num_levels > 0) ? (args->mgr.num_levels - 1) : 0;
             for (int i = 0; i < max_levels; i++)
@@ -305,6 +311,22 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
                {
                   args->mgr.level[i].f_relaxation.krylov->base_solver = NULL;
                   NestedKrylovDestroy(args->mgr.level[i].f_relaxation.krylov);
+               }
+               else if (i == 0 && args->mgr.frelax[i])
+               {
+#if !HYPRE_CHECK_MIN_VERSION(30100, 3)
+                  if (args->mgr.level[i].f_relaxation.type == 2)
+                  {
+                     HYPRE_BoomerAMGDestroy(args->mgr.frelax[i]);
+                  }
+#if HYPRE_CHECK_MIN_VERSION(23200, 14)
+                  else if (args->mgr.level[i].f_relaxation.type == 32)
+                  {
+                     HYPRE_ILUDestroy(args->mgr.frelax[i]);
+                  }
+#endif
+#endif
+                  args->mgr.frelax[i] = NULL;
                }
 
                if (args->mgr.level[i].g_relaxation.use_krylov &&
