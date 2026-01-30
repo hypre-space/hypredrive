@@ -237,6 +237,15 @@ if(NOT HYPRE_FOUND)
     # Check for MPI (required by HYPRE)
     find_package(MPI REQUIRED COMPONENTS C)
 
+    # Decide whether to use autotools (hypre < 3.0.0) or CMake build
+    set(_hypre_use_autotools FALSE)
+    if(HYPRE_VERSION MATCHES "^v?([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+        set(_hypre_major "${CMAKE_MATCH_1}")
+        if(_hypre_major LESS 3)
+            set(_hypre_use_autotools TRUE)
+        endif()
+    endif()
+
     FetchContent_Declare(
         hypre
         GIT_REPOSITORY https://github.com/hypre-space/hypre.git
@@ -249,6 +258,53 @@ if(NOT HYPRE_FOUND)
     # Enable verbose output for FetchContent to show progress
     set(FETCHCONTENT_QUIET OFF)
 
+    if(_hypre_use_autotools)
+        message(STATUS "HYPRE version < 3.0.0 detected - building with autotools.")
+
+        FetchContent_GetProperties(hypre)
+        if(NOT hypre_POPULATED)
+            FetchContent_Populate(hypre)
+        endif()
+
+        include(ExternalProject)
+
+        string(REPLACE "/" "_" _hypre_version_tag "${HYPRE_VERSION}")
+        set(_hypre_autotools_prefix "${CMAKE_BINARY_DIR}/hypre-autotools-${_hypre_version_tag}")
+        set(_hypre_autotools_src "${hypre_SOURCE_DIR}/src")
+        set(_hypre_autotools_build "${hypre_BINARY_DIR}/autotools")
+        set(_hypre_autotools_cflags "${CMAKE_C_FLAGS} -O3 -DNDEBUG")
+
+        ExternalProject_Add(hypre_autotools
+            SOURCE_DIR ${_hypre_autotools_src}
+            BINARY_DIR ${_hypre_autotools_build}
+            CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
+                CC=${MPI_C_COMPILER}
+                CFLAGS=${_hypre_autotools_cflags}
+                ${_hypre_autotools_src}/configure --prefix=${_hypre_autotools_prefix}
+            BUILD_COMMAND ${CMAKE_MAKE_PROGRAM}
+            INSTALL_COMMAND ${CMAKE_MAKE_PROGRAM} install
+            BUILD_IN_SOURCE 0
+        )
+
+        set(HYPRE_INCLUDE_DIRS "${_hypre_autotools_prefix}/include")
+        set(HYPRE_LIBRARIES "${_hypre_autotools_prefix}/lib/libHYPRE.a")
+
+        add_library(HYPRE::HYPRE INTERFACE IMPORTED)
+        set_target_properties(HYPRE::HYPRE PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${HYPRE_INCLUDE_DIRS}"
+            INTERFACE_LINK_LIBRARIES "${HYPRE_LIBRARIES}"
+        )
+        add_dependencies(HYPRE::HYPRE hypre_autotools)
+
+        set(HYPREDRV_HYPRE_USER_PROVIDED TRUE)
+        set(HYPRE_FOUND TRUE)
+
+        unset(_hypre_version_tag)
+        unset(_hypre_autotools_prefix)
+        unset(_hypre_autotools_src)
+        unset(_hypre_autotools_build)
+        unset(_hypre_autotools_cflags)
+    else()
     # Generic CMake argument inheritance
     # Forward all relevant cache variables to HYPRE build, including TPLs (MAGMA, CUDA, etc.)
     message(STATUS "Inheriting CMake arguments to HYPRE build...")
@@ -396,6 +452,7 @@ if(NOT HYPRE_FOUND)
     endif()
 
     message(STATUS "HYPRE configured and ready")
+    endif()
 endif()
 
 # Get HYPRE properties
