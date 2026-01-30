@@ -300,7 +300,7 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
                }
             }
 #endif
-            args->mgr.csolver = NULL;
+            args->mgr.csolver      = NULL;
             args->mgr.csolver_type = -1;
 
             int max_levels = (args->mgr.num_levels > 0) ? (args->mgr.num_levels - 1) : 0;
