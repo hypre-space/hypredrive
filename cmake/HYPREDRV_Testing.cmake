@@ -6,6 +6,10 @@
 # Remember the directory that contains this helper so functions can reference scripts
 set(HYPREDRV_TESTING_DIR "${CMAKE_CURRENT_LIST_DIR}")
 
+# Some regression tests require newer Hypre APIs. We gate those tests at CMake
+# configure time by probing Hypre version macros from headers.
+include(CheckCSourceCompiles)
+
 # Function for adding tests
 # Options:
 #   NO_QUIET - if set, don't pass -q flag (shows full system info)
@@ -203,6 +207,22 @@ endfunction()
 # Only register tests when included from the main CMakeLists.txt
 # (not when included from subdirectories like examples)
 if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    # Determine hypre version checks for selecting which tests to run.
+    #set(CMAKE_MESSAGE_LOG_LEVEL DEBUG) # or TRACE for maximum noise
+    # Include Hypre headers (from find_package) and HypreDrive headers (for utils.h)
+    set(CMAKE_REQUIRED_INCLUDES ${HYPRE_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
+    check_c_source_compiles("
+      #include \"HYPRE_config.h\"
+      #define HYPRE_SEQUENTIAL
+      #include \"utils.h\"
+      #if !HYPRE_CHECK_MIN_VERSION(30100, 3)
+      #error \"need HYPRE >= 3.1.0 + develop >= 3\"
+      #endif
+      int main(void) { return 0; }
+    " HYPREDRV_HAVE_HYPRE_30100_DEV3)
+    unset(CMAKE_REQUIRED_INCLUDES)
+    message(STATUS "HYPREDRV_HAVE_HYPRE_30100_DEV3: ${HYPREDRV_HAVE_HYPRE_30100_DEV3}")
+
     # Must be called before add_subdirectory(tests) so that add_test() calls work
     enable_testing()
 
@@ -233,26 +253,32 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         EXTRA_ARGS --general:num_repetitions 5
         REQUIRE_CONTAINS ${_cli_reps5_require_contains}
     )
-    add_hypredrive_test(ex1a_1proc 1 ex1a.yml)
-    add_hypredrive_test(ex1b_1proc 1 ex1b.yml)
-    add_hypredrive_test(ex1c_1proc 1 ex1c.yml)
-    add_hypredrive_test(ex1d_1proc 1 ex1d.yml)
-    add_hypredrive_test(ex1_preset_1proc 1 ex1-preset.yml)
-    add_hypredrive_test(ex2_4proc  4 ex2.yml)
-    add_hypredrive_test(ex3_1proc  1 ex3.yml)
-    add_hypredrive_test(ex4_4proc  4 ex4.yml)
-    add_hypredrive_test(ex5_1proc  1 ex5.yml)
+    add_hypredrive_test(ex1a_1proc    1 ex1a.yml)
+    add_hypredrive_test(ex1b_1proc    1 ex1b.yml)
+    add_hypredrive_test(ex1c_1proc    1 ex1c.yml)
+    add_hypredrive_test(ex1d_1proc    1 ex1d.yml)
+    add_hypredrive_test(ex1_preset    1 ex1-preset.yml)
+    add_hypredrive_test(ex2_4proc     4 ex2.yml)
+    add_hypredrive_test(ex3_1proc     1 ex3.yml)
+
+    if (HYPREDRV_HAVE_HYPRE_30100_DEV3)
+        add_hypredrive_test(ex3_nested_1  1 ex3-mgr_Frelax_gmres.yml)
+        add_hypredrive_test(ex3_nested_2  1 ex3-mgr_coarse_gmres_amg.yml)
+    endif()
+
+    add_hypredrive_test(ex4_4proc     4 ex4.yml)
+    add_hypredrive_test(ex5_1proc     1 ex5.yml)
     if (HYPREDRV_ENABLE_EIGSPEC)
         add_hypredrive_test(ex6_1proc 1 ex6.yml)
     endif()
-    add_hypredrive_test(ex7_1proc   1 ex7.yml)
+    add_hypredrive_test(ex7_1proc     1 ex7.yml)
     add_hypredrive_cli_test(ex7_cli_reps4_ls4 1 ex7.yml
         OVERRIDES --general:num_repetitions 4 --linear_system:last_suffix 4
         REQUIRE_CONTAINS ${_cli_ex7_reps4_ls4_require_contains}
     )
-    add_hypredrive_test(ex8_1proc   1 ex8.yml)
-    add_hypredrive_test(ex8a_4proc  4 ex8-multi-1.yml)
-    add_hypredrive_test(ex8b_4proc  4 ex8-multi-2.yml)
+    add_hypredrive_test(ex8_1proc     1 ex8.yml)
+    add_hypredrive_test(ex8a_4proc    4 ex8-multi-1.yml)
+    add_hypredrive_test(ex8b_4proc    4 ex8-multi-2.yml)
 
     # Test main.c help/usage/error branches
     # Note: --help exits with 0, so we need to allow that

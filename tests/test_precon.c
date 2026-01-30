@@ -9,6 +9,7 @@
 #include "fsai.h"
 #include "ilu.h"
 #include "mgr.h"
+#include "nested_krylov.h"
 #include "precon.h"
 #include "test_helpers.h"
 #include "yaml.h"
@@ -287,26 +288,25 @@ test_MGRCreate_coarsest_level_branches(void)
    ASSERT_NOT_NULL(dofmap);
    MGRSetDofmap(&mgr, dofmap);
 
-   /* 1) Infer ILU when type == -1 and ilu.max_iter > 0 */
-   mgr.coarsest_level.type = -1;
+   /* 1) Explicit ILU coarsest solver type */
+   mgr.coarsest_level.type = 32;
    ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
-   mgr.coarsest_level.ilu.max_iter = 2;
    HYPRE_Solver precon = NULL;
    ErrorCodeResetAll();
    MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
-   /* Clean up coarsest solver (inferred as ILU) */
+   /* Clean up coarsest solver (explicit ILU) */
    if (mgr.csolver)
    {
       HYPRE_ILUDestroy(mgr.csolver);
       mgr.csolver = NULL;
+      mgr.csolver_type = -1;
    }
 
-   /* 2) Infer AMG when type == -1 and ilu.max_iter <= 0 */
+   /* 2) Infer AMG when type == -1 */
    mgr.coarsest_level.type = -1;
    ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
-   mgr.coarsest_level.ilu.max_iter = 0;
    precon                      = NULL;
    ErrorCodeResetAll();
    MGRCreate(&mgr, &precon);
@@ -317,6 +317,7 @@ test_MGRCreate_coarsest_level_branches(void)
    {
       HYPRE_BoomerAMGDestroy(mgr.csolver);
       mgr.csolver = NULL;
+      mgr.csolver_type = -1;
    }
 
    /* 3) Explicit AMG coarsest solver type */
@@ -332,9 +333,10 @@ test_MGRCreate_coarsest_level_branches(void)
    {
       HYPRE_BoomerAMGDestroy(mgr.csolver);
       mgr.csolver = NULL;
+      mgr.csolver_type = -1;
    }
 
-   /* 4) Explicit ILU coarsest solver type */
+   /* 4) Explicit ILU coarsest solver type (repeat to cover reuse) */
    mgr.coarsest_level.type = 32;
    ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
    precon = NULL;
@@ -342,13 +344,62 @@ test_MGRCreate_coarsest_level_branches(void)
    MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
-   /* Clean up coarsest solver (explicit ILU) */
    if (mgr.csolver)
    {
       HYPRE_ILUDestroy(mgr.csolver);
       mgr.csolver = NULL;
+      mgr.csolver_type = -1;
    }
 
+   IntArrayDestroy(&dofmap);
+   HYPRE_Finalize();
+}
+
+static void
+test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(30100, 2)
+   return;
+#endif
+   HYPRE_Initialize();
+
+   precon_args args;
+   PreconSetDefaultArgs(&args);
+   MGRSetDefaultArgs(&args.mgr);
+
+   args.mgr.num_levels = 1; /* minimal valid MGR setup (num_levels-1 == 0) */
+
+   /* Minimal dofmap required by MGR */
+   IntArray *dofmap = NULL;
+   const int map[1] = {0};
+   IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   args.mgr.coarsest_level.use_krylov = 1;
+   args.mgr.coarsest_level.krylov =
+      (NestedKrylov_args *)malloc(sizeof(NestedKrylov_args));
+   ASSERT_NOT_NULL(args.mgr.coarsest_level.krylov);
+   NestedKrylovSetDefaultArgs(args.mgr.coarsest_level.krylov);
+   args.mgr.coarsest_level.krylov->is_set = 1;
+   args.mgr.coarsest_level.krylov->solver_method = SOLVER_GMRES;
+   SolverArgsSetDefaultsForMethod(SOLVER_GMRES, &args.mgr.coarsest_level.krylov->solver);
+   args.mgr.coarsest_level.krylov->solver.gmres.max_iter = 2;
+   args.mgr.coarsest_level.krylov->has_precon = 1;
+   args.mgr.coarsest_level.krylov->precon_method = PRECON_BOOMERAMG;
+   PreconArgsSetDefaultsForMethod(PRECON_BOOMERAMG,
+                                  &args.mgr.coarsest_level.krylov->precon);
+   args.mgr.coarsest_level.krylov->precon.amg.max_iter = 1;
+
+   HYPRE_Precon precon = NULL;
+   ErrorCodeResetAll();
+   PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   ErrorCodeResetAll();
+   PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+
+   MGRDestroyNestedKrylovArgs(&args.mgr);
    IntArrayDestroy(&dofmap);
    HYPRE_Finalize();
 }
@@ -850,6 +901,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconSetup_default_case);
    RUN_TEST(test_PreconApply_default_case);
    RUN_TEST(test_MGRCreate_coarsest_level_branches);
+   RUN_TEST(test_PreconCreate_mgr_coarsest_level_krylov_nested);
    RUN_TEST(test_PreconDestroy_mgr_csolver_destroy_branches);
    RUN_TEST(test_ILUSetFieldByName_all_fields);
    RUN_TEST(test_ILUSetFieldByName_unknown_key);

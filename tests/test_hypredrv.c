@@ -1323,6 +1323,7 @@ main(int argc, char **argv)
    RUN_TEST(test_create_parse_and_destroy);
    RUN_TEST(test_HYPREDRV_PreconCreate_reuse_logic);
    RUN_TEST(test_HYPREDRV_LinearSolverApply_with_xref);
+   RUN_TEST(test_HYPREDRV_stats_level_apis);
    RUN_TEST(test_HYPREDRV_state_vectors_and_eigspec_error_paths);
    RUN_TEST(test_HYPREDRV_SetGlobalOptions_exec_policy);
    RUN_TEST(test_HYPREDRV_PreconCreate_reuse_logic_variations);

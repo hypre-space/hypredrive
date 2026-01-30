@@ -23,14 +23,6 @@ write_text_file(const char *path, const char *contents)
 }
 
 static YAMLnode *
-make_scalar_node(const char *key, const char *value)
-{
-   YAMLnode *node   = YAMLnodeCreate(key, "", 0);
-   node->mapped_val = strdup(value);
-   return node;
-}
-
-static YAMLnode *
 add_child(YAMLnode *parent, const char *key, const char *val, int level)
 {
    YAMLnode *child = YAMLnodeCreate(key, val, level);
@@ -688,10 +680,10 @@ static void
 test_LinearSystemMatrixGetNumRows_GetNumNonzeros_error_cases(void)
 {
    /* Test with NULL matrix */
-   long long int result = LinearSystemMatrixGetNumRows(NULL);
+   (void) LinearSystemMatrixGetNumRows(NULL);
    /* Should not crash, returns 0 */
 
-   result = LinearSystemMatrixGetNumNonzeros(NULL);
+   (void) LinearSystemMatrixGetNumNonzeros(NULL);
    /* Should not crash, returns 0 */
 }
 

@@ -8,14 +8,22 @@
 #ifndef CONTAINERS_HEADER
 #define CONTAINERS_HEADER
 
+#include "HYPRE.h"
+#include "HYPRE_utilities.h"
+
+/* Undefine autotools package macros from hypre */
+#undef PACKAGE_NAME
+#undef PACKAGE_BUGREPORT
+#undef PACKAGE_STRING
+#undef PACKAGE_TARNAME
+#undef PACKAGE_URL
+#undef PACKAGE_VERSION
+
 #include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "HYPRE.h"
-#include "HYPRE_config.h"
-#include "HYPRE_utilities.h"
 #include "utils.h"
 
 enum

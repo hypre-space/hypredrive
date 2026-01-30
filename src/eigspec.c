@@ -1,13 +1,24 @@
 /******************************************************************************
- * Copyright (c) 2024 Lawrence Livermore National Security, LLC
+ * Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+ * HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+ *
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "eigspec.h"
-#include "HYPREDRV.h"
-#include "HYPRE_parcsr_mv.h"
+/* Add internal hypre headers */
 #include "_hypre_IJ_mv.h" // hypre_IJMatrixComm
 #include "_hypre_parcsr_mv.h"
+
+/* Undefine autotools package macros from hypre */
+#undef PACKAGE_NAME
+#undef PACKAGE_BUGREPORT
+#undef PACKAGE_STRING
+#undef PACKAGE_TARNAME
+#undef PACKAGE_URL
+#undef PACKAGE_VERSION
+
+#include "HYPREDRV.h"
+#include "eigspec.h"
 #include "error.h"
 #include "gen_macros.h"
 #include "linsys.h"

@@ -12,6 +12,7 @@
 #include "gmres.h"
 #include "ilu.h"
 #include "mgr.h"
+#include "nested_krylov.h"
 #include "pcg.h"
 #include "test_helpers.h"
 #include "yaml.h"
@@ -404,7 +405,12 @@ test_exhaustive_mgr_parser(void)
    add_child(lvl0, "prolongation_type", pick_value(MGRlvlGetValidValues("prolongation_type")), 3);
    add_child(lvl0, "restriction_type", pick_value(MGRlvlGetValidValues("restriction_type")), 3);
    add_child(lvl0, "coarse_level_type", pick_value(MGRlvlGetValidValues("coarse_level_type")), 3);
-   add_child(lvl0, "f_relaxation", pick_value(MGRlvlGetValidValues("f_relaxation")), 3);
+   YAMLnode *f0 = add_child(lvl0, "f_relaxation", "", 3);
+   YAMLnode *f0_gmres = add_child(f0, "gmres", "", 4);
+   add_child(f0_gmres, "max_iter", "2", 5);
+   YAMLnode *f0_prec = add_child(f0_gmres, "preconditioner", "", 5);
+   YAMLnode *f0_amg = add_child(f0_prec, "amg", "", 6);
+   add_child(f0_amg, "max_iter", "1", 7);
 
    YAMLnode *g0 = add_child(lvl0, "g_relaxation", "", 3);
    add_child(g0, "num_sweeps", "2", 4);
@@ -416,7 +422,9 @@ test_exhaustive_mgr_parser(void)
    YAMLnode *lvl1 = add_child(levels, "1", "", 2);
    add_child(lvl1, "f_dofs", "[1]", 3);
    add_child(lvl1, "f_relaxation", "none", 3); /* triggers num_sweeps special-case logic */
-   add_child(lvl1, "g_relaxation", "ilu", 3);  /* flat value -> type */
+   YAMLnode *g1 = add_child(lvl1, "g_relaxation", "", 3);
+   YAMLnode *g1_gmres = add_child(g1, "gmres", "", 4);
+   add_child(g1_gmres, "max_iter", "3", 5);
 
    /* invalid level index to hit out-of-range branch */
    YAMLnode *lvl_bad = add_child(levels, "99", "", 2);
@@ -429,6 +437,18 @@ test_exhaustive_mgr_parser(void)
    ErrorCodeResetAll();
    MGRSetArgsFromYAML(&args, mgr);
    ASSERT_FALSE(ErrorCodeActive());
+
+   ASSERT_TRUE(args.level[0].f_relaxation.use_krylov);
+   ASSERT_NOT_NULL(args.level[0].f_relaxation.krylov);
+   ASSERT_EQ(args.level[0].f_relaxation.krylov->solver_method, SOLVER_GMRES);
+   ASSERT_EQ(args.level[0].f_relaxation.krylov->solver.gmres.max_iter, 2);
+   ASSERT_TRUE(args.level[0].f_relaxation.krylov->has_precon);
+   ASSERT_EQ(args.level[0].f_relaxation.krylov->precon_method, PRECON_BOOMERAMG);
+   ASSERT_EQ(args.level[0].f_relaxation.krylov->precon.amg.max_iter, 1);
+   ASSERT_TRUE(args.level[1].g_relaxation.use_krylov);
+   ASSERT_NOT_NULL(args.level[1].g_relaxation.krylov);
+   ASSERT_EQ(args.level[1].g_relaxation.krylov->solver_method, SOLVER_GMRES);
+   ASSERT_EQ(args.level[1].g_relaxation.krylov->solver.gmres.max_iter, 3);
 
    ASSERT_EQ(lvl_bad->valid, YAML_NODE_INVALID_KEY);
 
@@ -443,6 +463,33 @@ test_exhaustive_mgr_parser(void)
    ASSERT_NULL(MGRConvertArgInt(&args, "unknown:name"));
 
    YAMLnodeDestroy(mgr);
+   MGRDestroyNestedKrylovArgs(&args);
+}
+
+static void
+test_mgr_nested_krylov_rejects_mgr_precon(void)
+{
+   MGR_args args;
+   MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   add_child(lvl0, "f_dofs", "[0]", 3);
+
+   YAMLnode *f0 = add_child(lvl0, "f_relaxation", "", 3);
+   YAMLnode *gmres = add_child(f0, "gmres", "", 4);
+   YAMLnode *prec = add_child(gmres, "preconditioner", "", 5);
+   YAMLnode *mgr_prec = add_child(prec, "mgr", "", 6);
+
+   ErrorCodeResetAll();
+   MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_TRUE(ErrorCodeActive());
+   ASSERT_EQ(mgr_prec->valid, YAML_NODE_INVALID_VAL);
+
+   ErrorCodeResetAll();
+   YAMLnodeDestroy(mgr);
+   MGRDestroyNestedKrylovArgs(&args);
 }
 
 int
@@ -454,6 +501,7 @@ main(int argc, char **argv)
    RUN_TEST(test_exhaustive_ilu_fsai_parsers);
    RUN_TEST(test_exhaustive_amg_parser);
    RUN_TEST(test_exhaustive_mgr_parser);
+   RUN_TEST(test_mgr_nested_krylov_rejects_mgr_precon);
 
    MPI_Finalize();
    return 0;

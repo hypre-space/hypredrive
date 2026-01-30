@@ -12,6 +12,8 @@
 #include "ilu.h"
 #include "utils.h"
 
+struct NestedKrylov_args_struct;
+
 enum
 {
    MAX_MGR_LEVELS = 32
@@ -24,6 +26,9 @@ enum
 typedef struct MGRcls_args_struct
 {
    HYPRE_Int type;
+
+   int                              use_krylov;
+   struct NestedKrylov_args_struct *krylov;
 
    /* Only one coarsest solver is active at a time; store its args in a union.
     * Note: anonymous union is a GNU C extension. */
@@ -43,6 +48,9 @@ typedef struct MGRfrlx_args_struct
    HYPRE_Int type;
    HYPRE_Int num_sweeps;
 
+   int                              use_krylov;
+   struct NestedKrylov_args_struct *krylov;
+
    /* Only one fine-relaxation solver is active at a time. */
    union
    {
@@ -59,6 +67,9 @@ typedef struct MGRgrlx_args_struct
 {
    HYPRE_Int type;
    HYPRE_Int num_sweeps;
+
+   int                              use_krylov;
+   struct NestedKrylov_args_struct *krylov;
 
    /* Only one global-relaxation solver is active at a time. */
    union
@@ -90,7 +101,8 @@ typedef struct MGRlvl_args_struct
 
 typedef struct MGR_args_struct
 {
-   IntArray *dofmap;
+   IntArray      *dofmap;
+   HYPRE_IJVector vec_nn;
 
    HYPRE_Int  non_c_to_f;
    HYPRE_Int  pmax;
@@ -106,6 +118,7 @@ typedef struct MGR_args_struct
    MGRcls_args coarsest_level;
 
    HYPRE_Solver csolver;
+   HYPRE_Int    csolver_type;
    HYPRE_Solver frelax[MAX_MGR_LEVELS - 1];
    HYPRE_Solver grelax[MAX_MGR_LEVELS - 1];
 } MGR_args;
@@ -117,7 +130,9 @@ typedef struct MGR_args_struct
 void MGRSetDefaultArgs(MGR_args *);
 void MGRSetArgs(void *, const YAMLnode *);
 void MGRSetDofmap(MGR_args *, IntArray *);
+void MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
 void MGRCreate(MGR_args *, HYPRE_Solver *);
+void MGRDestroyNestedKrylovArgs(MGR_args *);
 
 /*--------------------------------------------------------------------------
  * Macros

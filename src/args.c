@@ -115,6 +115,16 @@ InputArgsDestroy(input_args **iargs_ptr)
    if (*iargs_ptr)
    {
       input_args *iargs = *iargs_ptr;
+      if (iargs->precon_methods && iargs->precon_variants)
+      {
+         for (int i = 0; i < iargs->num_precon_variants; i++)
+         {
+            if (iargs->precon_methods[i] == PRECON_MGR)
+            {
+               MGRDestroyNestedKrylovArgs(&iargs->precon_variants[i].mgr);
+            }
+         }
+      }
       if (iargs->precon_methods)
       {
          free(iargs->precon_methods);
@@ -433,6 +443,10 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
          ErrorCodeSet(ERROR_UNKNOWN);
          ErrorMsgAdd("Failed to allocate preconditioner variants");
          goto cleanup;
+      }
+      for (int vi = 0; vi < num_variants; vi++)
+      {
+         methods[vi] = PRECON_NONE;
       }
 
       for (int vi = 0; vi < num_variants; vi++)
