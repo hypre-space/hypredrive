@@ -32,9 +32,6 @@ bool  IsYAMLFilename(const char *);
 /*******************************************************************************
  *******************************************************************************/
 
-/* Helper macros for HYPRE develop/release version checks (compatible with older hypre) */
-#define HYPRE_DEVELOP_NUMBER_EXISTS (HYPREDRV_HYPRE_DEVELOP_NUMBER > 0)
-
 /* Check if HYPRE_DEVELOP_NUMBER is greater or equal than a given value */
 #define HYPRE_DEVELOP_NUMBER_GE(develop) (HYPREDRV_HYPRE_DEVELOP_NUMBER >= (develop))
 
@@ -44,8 +41,7 @@ bool  IsYAMLFilename(const char *);
 /* Check for a specific hypre release number and whether
    HYPRE_DEVELOP_NUMBER is defined and greater or equal than a given value */
 #define HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(release, develop) \
-   (HYPREDRV_HYPRE_RELEASE_NUMBER == (release) && HYPRE_DEVELOP_NUMBER_EXISTS && \
-    HYPRE_DEVELOP_NUMBER_GE(develop))
+   (HYPREDRV_HYPRE_RELEASE_NUMBER == (release) && HYPRE_DEVELOP_NUMBER_GE(develop))
 
 /* Check for minimum HYPRE version in order to allow certain features */
 #define HYPRE_CHECK_MIN_VERSION(release, develop) \

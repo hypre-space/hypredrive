@@ -903,8 +903,8 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
    HYPRE_IJMatrixSetRowSizes(A, nnzrow);
    free(nnzrow);
 
-   HYPRE_IJMatrixInitialize_v2(A, HYPRE_MEMORY_HOST);
-   HYPRE_IJVectorInitialize_v2(b, HYPRE_MEMORY_HOST);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(A);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(b);
 
    /* Element sizes (physical domain) */
    HYPRE_Real       hx      = params->L[0] / (gdims[0] - 1);

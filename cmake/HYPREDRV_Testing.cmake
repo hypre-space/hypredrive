@@ -46,7 +46,7 @@ function(add_hypredrive_test test_name num_procs config_file)
         PROPERTIES
         FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
-        LABELS "integration"
+        LABELS "integration;hypredrive"
     )
 endfunction()
 
@@ -119,7 +119,7 @@ function(add_hypredrive_cli_test test_name num_procs config_file)
         PROPERTIES
         FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
-        LABELS "integration"
+        LABELS "integration;hypredrive"
     )
 endfunction()
 
@@ -164,6 +164,13 @@ function(add_executable_test test_name target num_procs)
             FAIL_REGULAR_EXPRESSION "${EXEC_TEST_FAIL_REGULAR_EXPRESSION}"
     )
 
+    if(target STREQUAL "hypredrive")
+        set_tests_properties(${test_name}
+            PROPERTIES
+                LABELS "hypredrive"
+        )
+    endif()
+
     if(EXEC_TEST_RUN_SERIAL)
         set_tests_properties(${test_name}
             PROPERTIES
@@ -192,6 +199,13 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
 
+    set_tests_properties(${test_name}
+        PROPERTIES
+        FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
+        SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+        LABELS "integration;hypredrive"
+    )
+
     # Optional output comparison if script and reference exist
     find_program(COMPARE_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/compare_output.sh")
     if(COMPARE_SCRIPT AND EXISTS ${REFERENCE_FILE})
@@ -202,6 +216,7 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
             PROPERTIES
             DEPENDS ${test_name}
             SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+            LABELS "hypredrive"
         )
     endif()
 endfunction()
@@ -212,7 +227,23 @@ function(hypredrv_check_hypre_version release develop)
     #set(CMAKE_MESSAGE_LOG_LEVEL DEBUG) # or TRACE for maximum noise
     # Include Hypre headers (from find_package) and HypreDrive headers (for utils.h)
     set(_hypredrv_saved_includes "${CMAKE_REQUIRED_INCLUDES}")
-    set(CMAKE_REQUIRED_INCLUDES ${HYPRE_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
+    set(_hypredrv_saved_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
+    set(CMAKE_REQUIRED_INCLUDES
+        ${HYPRE_INCLUDE_DIRS}
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_BINARY_DIR}
+        ${MPI_C_INCLUDE_DIRS}
+    )
+    if(DEFINED HYPREDRV_HYPRE_RELEASE_NUMBER)
+        list(APPEND CMAKE_REQUIRED_DEFINITIONS
+            "-DHYPREDRV_HYPRE_RELEASE_NUMBER=${HYPREDRV_HYPRE_RELEASE_NUMBER}"
+        )
+    endif()
+    if(DEFINED HYPREDRV_HYPRE_DEVELOP_NUMBER)
+        list(APPEND CMAKE_REQUIRED_DEFINITIONS
+            "-DHYPREDRV_HYPRE_DEVELOP_NUMBER=${HYPREDRV_HYPRE_DEVELOP_NUMBER}"
+        )
+    endif()
     check_c_source_compiles("
       #include \"HYPRE_config.h\"
       #define HYPRE_SEQUENTIAL
@@ -223,7 +254,9 @@ function(hypredrv_check_hypre_version release develop)
       int main(void) { return 0; }
     " ${_hypredrv_out_var})
     set(CMAKE_REQUIRED_INCLUDES "${_hypredrv_saved_includes}")
+    set(CMAKE_REQUIRED_DEFINITIONS "${_hypredrv_saved_definitions}")
     unset(_hypredrv_saved_includes)
+    unset(_hypredrv_saved_definitions)
     unset(_hypredrv_out_var)
 endfunction()
 
@@ -231,6 +264,10 @@ endfunction()
 # (not when included from subdirectories like examples)
 if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     # Define hypre version checks for selecting which tests to run.
+    hypredrv_check_hypre_version(21900 0)
+    hypredrv_check_hypre_version(22500 0)
+    hypredrv_check_hypre_version(22900 0)
+    hypredrv_check_hypre_version(23000 0)
     hypredrv_check_hypre_version(30100 3)
 
     # Must be called before add_subdirectory(tests) so that add_test() calls work
@@ -256,56 +293,70 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         "Solving linear system #4"
     )
 
-    # Add tests (ex1_1proc shows full system info, others use -q for faster runs)
-    add_hypredrive_test(ex1_1proc  1 ex1.yml NO_QUIET)
-    add_hypredrive_cli_test(ex1_cli 1 ex1.yml)
-    add_hypredrive_cli_test(ex1_cli_reps5 1 ex1.yml
-        EXTRA_ARGS --general:num_repetitions 5
-        REQUIRE_CONTAINS ${_cli_reps5_require_contains}
-    )
-    add_hypredrive_test(ex1a_1proc    1 ex1a.yml)
-    add_hypredrive_test(ex1b_1proc    1 ex1b.yml)
-    add_hypredrive_test(ex1c_1proc    1 ex1c.yml)
-    add_hypredrive_test(ex1d_1proc    1 ex1d.yml)
-    add_hypredrive_test(ex1_preset    1 ex1-preset.yml)
-    add_hypredrive_test(ex2_4proc     4 ex2.yml)
-    add_hypredrive_test(ex3_1proc     1 ex3.yml)
+    if (HYPREDRV_HAVE_HYPRE_21900_DEV0)
+        # Add tests (ex1_1proc shows full system info, others use -q for faster runs)
+        add_hypredrive_test(ex1_1proc  1 ex1.yml NO_QUIET)
+        add_hypredrive_cli_test(ex1_cli 1 ex1.yml)
+        add_hypredrive_cli_test(ex1_cli_reps5 1 ex1.yml
+            EXTRA_ARGS --general:num_repetitions 5
+            REQUIRE_CONTAINS ${_cli_reps5_require_contains}
+        )
+        add_hypredrive_test(ex1a_1proc    1 ex1a.yml)
+        if (HYPREDRV_HAVE_HYPRE_23000_DEV0)
+            add_hypredrive_test(ex1b_1proc    1 ex1b.yml)
+        endif()
+        if (HYPREDRV_HAVE_HYPRE_22500_DEV0)
+            add_hypredrive_test(ex1c_1proc    1 ex1c.yml)
+            add_hypredrive_test(ex1d_1proc    1 ex1d.yml)
+        endif()
+        add_hypredrive_test(ex1_preset    1 ex1-preset.yml)
+        add_hypredrive_test(ex2_4proc     4 ex2.yml)
+        if (HYPREDRV_HAVE_HYPRE_22900_DEV0)
+            add_hypredrive_test(ex3_1proc     1 ex3.yml)
 
-    if (HYPREDRV_HAVE_HYPRE_30100_DEV3)
-        add_hypredrive_test(ex3_nested_1  1 ex3-mgr_Frelax_gmres.yml)
-        add_hypredrive_test(ex3_nested_2  1 ex3-mgr_coarse_gmres_amg.yml)
+            if (HYPREDRV_HAVE_HYPRE_30100_DEV3)
+                add_hypredrive_test(ex3_nested_1  1 ex3-mgr_Frelax_gmres.yml)
+                add_hypredrive_test(ex3_nested_2  1 ex3-mgr_coarse_gmres_amg.yml)
+            endif()
+
+            add_hypredrive_test(ex4_4proc     4 ex4.yml)
+            add_hypredrive_test(ex5_1proc     1 ex5.yml)
+        endif()
+        if (HYPREDRV_ENABLE_EIGSPEC)
+            add_hypredrive_test(ex6_1proc 1 ex6.yml)
+        endif()
+        if (HYPREDRV_HAVE_HYPRE_22900_DEV0)
+            add_hypredrive_test(ex7_1proc     1 ex7.yml)
+            add_hypredrive_cli_test(ex7_cli_reps4_ls4 1 ex7.yml
+                OVERRIDES --general:num_repetitions 4 --linear_system:last_suffix 4
+                REQUIRE_CONTAINS ${_cli_ex7_reps4_ls4_require_contains}
+            )
+        endif()
+        if (HYPREDRV_HAVE_HYPRE_23000_DEV0)
+            add_hypredrive_test(ex8_1proc     1 ex8.yml)
+            add_hypredrive_test(ex8a_4proc    4 ex8-multi-1.yml)
+            add_hypredrive_test(ex8b_4proc    4 ex8-multi-2.yml)
+        endif()
+
+        # Test main.c help/usage/error branches
+        # Note: --help exits with 0, so we need to allow that
+        add_executable_test(hypredrive_help hypredrive 1 ARGS "--help" FAIL_REGULAR_EXPRESSION "^$")
+        add_executable_test(hypredrive_help_short hypredrive 1 ARGS "-h" FAIL_REGULAR_EXPRESSION "^$")
+        add_executable_test(hypredrive_no_args hypredrive 1 ARGS "" FAIL_REGULAR_EXPRESSION "^$")
+        set_tests_properties(hypredrive_no_args PROPERTIES WILL_FAIL TRUE)
+
+        # Exercise the long-form quiet flag parsing ("--quiet")
+        add_executable_test(hypredrive_quiet_longflag hypredrive 1
+            ARGS "--quiet" "examples/ex1.yml"
+            FAIL_REGULAR_EXPRESSION "^$"
+        )
+
+        # Exercise config-file detection when override args are present
+        add_executable_test(hypredrive_cli_extra hypredrive 1
+            ARGS "examples/ex1.yml" "--args" "--solver:pcg:max_iter" "5"
+            FAIL_REGULAR_EXPRESSION "^$"
+        )
+    else()
+        message(STATUS "Skipping hypredrive integration tests (requires hypre >= 2.19.0).")
     endif()
-
-    add_hypredrive_test(ex4_4proc     4 ex4.yml)
-    add_hypredrive_test(ex5_1proc     1 ex5.yml)
-    if (HYPREDRV_ENABLE_EIGSPEC)
-        add_hypredrive_test(ex6_1proc 1 ex6.yml)
-    endif()
-    add_hypredrive_test(ex7_1proc     1 ex7.yml)
-    add_hypredrive_cli_test(ex7_cli_reps4_ls4 1 ex7.yml
-        OVERRIDES --general:num_repetitions 4 --linear_system:last_suffix 4
-        REQUIRE_CONTAINS ${_cli_ex7_reps4_ls4_require_contains}
-    )
-    add_hypredrive_test(ex8_1proc     1 ex8.yml)
-    add_hypredrive_test(ex8a_4proc    4 ex8-multi-1.yml)
-    add_hypredrive_test(ex8b_4proc    4 ex8-multi-2.yml)
-
-    # Test main.c help/usage/error branches
-    # Note: --help exits with 0, so we need to allow that
-    add_executable_test(hypredrive_help hypredrive 1 ARGS "--help" FAIL_REGULAR_EXPRESSION "^$")
-    add_executable_test(hypredrive_help_short hypredrive 1 ARGS "-h" FAIL_REGULAR_EXPRESSION "^$")
-    add_executable_test(hypredrive_no_args hypredrive 1 ARGS "" FAIL_REGULAR_EXPRESSION "^$")
-    set_tests_properties(hypredrive_no_args PROPERTIES WILL_FAIL TRUE)
-
-    # Exercise the long-form quiet flag parsing ("--quiet")
-    add_executable_test(hypredrive_quiet_longflag hypredrive 1
-        ARGS "--quiet" "examples/ex1.yml"
-        FAIL_REGULAR_EXPRESSION "^$"
-    )
-
-    # Exercise config-file detection when override args are present
-    add_executable_test(hypredrive_cli_extra hypredrive 1
-        ARGS "examples/ex1.yml" "--args" "--solver:pcg:max_iter" "5"
-        FAIL_REGULAR_EXPRESSION "^$"
-    )
 endif()
