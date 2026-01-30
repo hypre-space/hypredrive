@@ -13,6 +13,20 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include "utils.h"
+
+/*-----------------------------------------------------------------------------
+ * Hypre init/finalize helpers (older hypre releases do not provide them)
+ *-----------------------------------------------------------------------------*/
+
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+#define TEST_HYPRE_INIT() HYPRE_Initialize()
+#define TEST_HYPRE_FINALIZE() HYPRE_Finalize()
+#else
+#define TEST_HYPRE_INIT() ((void)0)
+#define TEST_HYPRE_FINALIZE() ((void)0)
+#endif
+
 /*-----------------------------------------------------------------------------
  * Fail-fast assertion macros (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/

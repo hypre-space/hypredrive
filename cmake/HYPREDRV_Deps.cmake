@@ -203,8 +203,30 @@ endif()
 # Option to specify HYPRE version/branch/tag for FetchContent
 set(HYPRE_VERSION "master" CACHE STRING "HYPRE version/branch/tag to fetch (e.g., master, v2.32.0)")
 
+# Allow users to point to an autotools build by providing include/lib paths.
+# This bypasses find_package(CONFIG) which only works with CMake installs.
+if(NOT TARGET HYPRE::HYPRE AND DEFINED HYPRE_INCLUDE_DIRS AND
+   (DEFINED HYPRE_LIBRARIES OR DEFINED HYPRE_LIBRARY))
+    if(DEFINED HYPRE_LIBRARIES)
+        set(_hypre_libs "${HYPRE_LIBRARIES}")
+    else()
+        set(_hypre_libs "${HYPRE_LIBRARY}")
+    endif()
+
+    message(STATUS "Using user-provided HYPRE include/lib paths (autotools or custom install)")
+    add_library(HYPRE::HYPRE INTERFACE IMPORTED)
+    set_target_properties(HYPRE::HYPRE PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${HYPRE_INCLUDE_DIRS}"
+        INTERFACE_LINK_LIBRARIES "${_hypre_libs}"
+    )
+    set(HYPREDRV_HYPRE_USER_PROVIDED TRUE)
+    set(HYPRE_FOUND TRUE)
+endif()
+
 # First, try to find HYPRE via find_package
-find_package(HYPRE CONFIG QUIET)
+if(NOT HYPRE_FOUND)
+    find_package(HYPRE CONFIG QUIET)
+endif()
 
 if(NOT HYPRE_FOUND)
     # HYPRE not found via find_package - automatically fetch and build
@@ -380,7 +402,9 @@ endif()
 if(TARGET HYPRE::HYPRE)
     get_target_property(HYPRE_INCLUDE_DIRS HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
 
-    # Try to get library location - handle both Release and Debug configurations
+    # Try to get library location - handle both Release and Debug configurations.
+    # For autotools/custom installs we only have INTERFACE_LINK_LIBRARIES, so
+    # fall back to the user-provided variables for a clearer message.
     get_target_property(HYPRE_LIBRARY_FILE HYPRE::HYPRE IMPORTED_LOCATION)
     if(NOT HYPRE_LIBRARY_FILE)
         get_target_property(HYPRE_LIBRARY_FILE HYPRE::HYPRE IMPORTED_LOCATION_RELEASE)
@@ -389,7 +413,13 @@ if(TARGET HYPRE::HYPRE)
         get_target_property(HYPRE_LIBRARY_FILE HYPRE::HYPRE IMPORTED_LOCATION_DEBUG)
     endif()
     if(NOT HYPRE_LIBRARY_FILE)
-        set(HYPRE_LIBRARY_FILE "not found (using target)")
+        if(DEFINED HYPRE_LIBRARIES)
+            set(HYPRE_LIBRARY_FILE "${HYPRE_LIBRARIES}")
+        elseif(DEFINED HYPRE_LIBRARY)
+            set(HYPRE_LIBRARY_FILE "${HYPRE_LIBRARY}")
+        else()
+            set(HYPRE_LIBRARY_FILE "not found (using target)")
+        endif()
     endif()
 
     # Check if HYPRE was built with Caliper support (for find_package case)
@@ -433,6 +463,73 @@ if(TARGET HYPRE::HYPRE)
     message(STATUS "Found HYPRE:")
     message(STATUS "  include directories: ${HYPRE_INCLUDE_DIRS}")
     message(STATUS "  libraries: ${HYPRE_LIBRARY_FILE}")
+
+    # For autotools/custom HYPRE, read HYPRE_config.h to derive version info and MPI mode.
+    if(HYPREDRV_HYPRE_USER_PROVIDED AND HYPRE_INCLUDE_DIRS)
+        set(_hypre_config_found FALSE)
+        foreach(_inc_dir IN LISTS HYPRE_INCLUDE_DIRS)
+            if(EXISTS "${_inc_dir}/HYPRE_config.h")
+                set(_hypre_config_found TRUE)
+                file(READ "${_inc_dir}/HYPRE_config.h" _hypre_cfg)
+
+                # Extract release number if available (2.21+), otherwise compute from release version.
+                string(REGEX MATCH "#define[ \t]+HYPRE_RELEASE_NUMBER[ \t]+([0-9]+)" _hypre_rel_num_match "${_hypre_cfg}")
+                string(REGEX MATCH "#define[ \t]+HYPRE_RELEASE_VERSION[ \t]+\"([0-9]+\\.[0-9]+\\.[0-9]+)\"" _hypre_rel_ver_match "${_hypre_cfg}")
+                string(REGEX MATCH "#define[ \t]+HYPRE_DEVELOP_NUMBER[ \t]+([0-9]+)" _hypre_dev_num_match "${_hypre_cfg}")
+
+                if(CMAKE_MATCH_1)
+                    set(HYPREDRV_HYPRE_RELEASE_NUMBER "${CMAKE_MATCH_1}")
+                endif()
+                if(_hypre_rel_ver_match)
+                    set(HYPREDRV_HYPRE_RELEASE_VERSION "${CMAKE_MATCH_1}")
+                endif()
+                if(_hypre_dev_num_match)
+                    set(HYPREDRV_HYPRE_DEVELOP_NUMBER "${CMAKE_MATCH_1}")
+                endif()
+
+                if(NOT HYPREDRV_HYPRE_RELEASE_NUMBER AND HYPREDRV_HYPRE_RELEASE_VERSION)
+                    string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _hypre_ver_parts "${HYPREDRV_HYPRE_RELEASE_VERSION}")
+                    if(CMAKE_MATCH_1 AND CMAKE_MATCH_2 AND CMAKE_MATCH_3)
+                        math(EXPR HYPREDRV_HYPRE_RELEASE_NUMBER
+                             "${CMAKE_MATCH_1}*10000 + ${CMAKE_MATCH_2}*100 + ${CMAKE_MATCH_3}")
+                    endif()
+                endif()
+
+                if(HYPREDRV_HYPRE_RELEASE_NUMBER)
+                    add_compile_definitions(HYPREDRV_HYPRE_RELEASE_NUMBER=${HYPREDRV_HYPRE_RELEASE_NUMBER})
+                endif()
+                if(HYPREDRV_HYPRE_DEVELOP_NUMBER)
+                    add_compile_definitions(HYPREDRV_HYPRE_DEVELOP_NUMBER=${HYPREDRV_HYPRE_DEVELOP_NUMBER})
+                endif()
+                if(HYPREDRV_HYPRE_RELEASE_VERSION)
+                    add_compile_definitions(HYPREDRV_HYPRE_RELEASE_VERSION=\"${HYPREDRV_HYPRE_RELEASE_VERSION}\")
+                endif()
+
+                # If HYPRE was built with MPI (HYPRE_SEQUENTIAL not defined), make sure MPI is available.
+                string(REGEX MATCH "#define[ \t]+HYPRE_SEQUENTIAL" _hypre_seq "${_hypre_cfg}")
+                if(NOT _hypre_seq)
+                    message(STATUS "  HYPRE built with MPI support; checking MPI...")
+                    find_package(MPI REQUIRED COMPONENTS C)
+                    if(TARGET MPI::MPI_C)
+                        target_link_libraries(HYPRE::HYPRE INTERFACE MPI::MPI_C)
+                    else()
+                        if(MPI_C_LIBRARIES)
+                            target_link_libraries(HYPRE::HYPRE INTERFACE ${MPI_C_LIBRARIES})
+                        endif()
+                        if(MPI_C_INCLUDE_DIRS)
+                            target_include_directories(HYPRE::HYPRE INTERFACE ${MPI_C_INCLUDE_DIRS})
+                        endif()
+                    endif()
+                else()
+                    message(STATUS "  HYPRE built in sequential mode; MPI not required")
+                endif()
+                break()
+            endif()
+        endforeach()
+        if(NOT _hypre_config_found)
+            message(WARNING "HYPRE_config.h not found in HYPRE_INCLUDE_DIRS; cannot determine MPI requirement or version")
+        endif()
+    endif()
 else()
     message(FATAL_ERROR "HYPRE::HYPRE target not available")
 endif()

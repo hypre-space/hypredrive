@@ -10,6 +10,66 @@
 #include <math.h>
 #include "gen_macros.h"
 
+#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
+static HYPRE_Int
+HYPREDRV_FSAISetupStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                       HYPRE_ParVector x)
+{
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
+}
+
+static HYPRE_Int
+HYPREDRV_FSAISolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                       HYPRE_ParVector x)
+{
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
+}
+
+#define HYPREDRV_FSAI_SETUP HYPREDRV_FSAISetupStub
+#define HYPREDRV_FSAI_SOLVE HYPREDRV_FSAISolveStub
+#else
+#define HYPREDRV_FSAI_SETUP HYPRE_FSAISetup
+#define HYPREDRV_FSAI_SOLVE HYPRE_FSAISolve
+#endif
+
+#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+static HYPRE_Int
+HYPREDRV_ILUSetupStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                      HYPRE_ParVector x)
+{
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
+}
+
+static HYPRE_Int
+HYPREDRV_ILUSolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                      HYPRE_ParVector x)
+{
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
+}
+
+#define HYPREDRV_ILU_SETUP HYPREDRV_ILUSetupStub
+#define HYPREDRV_ILU_SOLVE HYPREDRV_ILUSolveStub
+#else
+#define HYPREDRV_ILU_SETUP HYPRE_ILUSetup
+#define HYPREDRV_ILU_SOLVE HYPRE_ILUSolve
+#endif
+
 #define Solver_FIELDS(_prefix)                            \
    ADD_FIELD_OFFSET_ENTRY(_prefix, pcg, PCGSetArgs)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, gmres, GMRESSetArgs)   \
@@ -173,9 +233,9 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
    HYPRE_ParCSRMatrix      par_M = NULL;
    HYPRE_ParVector         par_b = NULL, par_x = NULL;
    HYPRE_PtrToParSolverFcn setup_ptrs[] = {HYPRE_BoomerAMGSetup, HYPRE_MGRSetup,
-                                           HYPRE_ILUSetup, HYPRE_FSAISetup};
+                                           HYPREDRV_ILU_SETUP, HYPREDRV_FSAI_SETUP};
    HYPRE_PtrToParSolverFcn solve_ptrs[] = {HYPRE_BoomerAMGSolve, HYPRE_MGRSolve,
-                                           HYPRE_ILUSolve, HYPRE_FSAISolve};
+                                           HYPREDRV_ILU_SOLVE, HYPREDRV_FSAI_SOLVE};
 
    HYPRE_IJMatrixGetObject(M, &vM);
    par_M = (HYPRE_ParCSRMatrix)vM;

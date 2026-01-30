@@ -46,6 +46,7 @@ function(add_hypredrive_test test_name num_procs config_file)
         PROPERTIES
         FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+        LABELS "integration"
     )
 endfunction()
 
@@ -118,6 +119,7 @@ function(add_hypredrive_cli_test test_name num_procs config_file)
         PROPERTIES
         FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+        LABELS "integration"
     )
 endfunction()
 

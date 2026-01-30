@@ -138,8 +138,11 @@ MGRBaseParSolverSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector
 #if HYPRE_CHECK_MIN_VERSION(30100, 2)
    return HYPRE_SolverSetup(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b, (HYPRE_Vector)x);
 #else
-   return hypre_SolverSetup((hypre_Solver *)solver)(solver, (HYPRE_Matrix)A,
-                                                    (HYPRE_Vector)b, (HYPRE_Vector)x);
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
 #endif
 }
 
@@ -153,8 +156,11 @@ MGRBaseParSolverSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector
 #if HYPRE_CHECK_MIN_VERSION(30100, 2)
    return HYPRE_SolverSolve(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b, (HYPRE_Vector)x);
 #else
-   return hypre_SolverSolve((hypre_Solver *)solver)(solver, (HYPRE_Matrix)A,
-                                                    (HYPRE_Vector)b, (HYPRE_Vector)x);
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
 #endif
 }
 
@@ -249,9 +255,9 @@ MGRSetDefaultArgs(MGR_args *args)
       args->grelax[i] = NULL;
    }
    MGRclsSetDefaultArgs(&args->coarsest_level);
-   args->csolver      = NULL;
+   args->csolver = NULL;
    args->csolver_type = -1;
-   args->vec_nn       = NULL;
+   args->vec_nn  = NULL;
 }
 
 /*-----------------------------------------------------------------------------
@@ -708,6 +714,13 @@ MGRDestroyNestedKrylovArgs(MGR_args *args)
 void
 MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 {
+#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+   (void)args;
+   ErrorCodeSet(ERROR_INVALID_PRECON);
+   ErrorMsgAdd("MGR requires hypre >= 2.19.0");
+   *precon_ptr = NULL;
+   return;
+#else
    HYPRE_Solver precon        = NULL;
    HYPRE_Solver frelax        = NULL;
    HYPRE_Solver grelax        = NULL;
@@ -779,10 +792,13 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
    HYPRE_MGRSetTol(precon, args->tolerance);
    HYPRE_MGRSetPrintLevel(precon, args->print_level);
+#if HYPRE_CHECK_MIN_VERSION(22000, 0)
    HYPRE_MGRSetTruncateCoarseGridThreshold(precon, args->coarse_th);
+#endif
    HYPRE_MGRSetRelaxType(precon, args->relax_type); /* TODO: we shouldn't need this */
 
    /* Set level parameters */
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_MGRSetLevelFRelaxType(precon, MGRConvertArgInt(args, "f_relaxation:type"));
    HYPRE_MGRSetLevelNumRelaxSweeps(precon,
                                    MGRConvertArgInt(args, "f_relaxation:num_sweeps"));
@@ -792,6 +808,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_MGRSetLevelInterpType(precon, MGRConvertArgInt(args, "prolongation_type"));
    HYPRE_MGRSetLevelRestrictType(precon, MGRConvertArgInt(args, "restriction_type"));
    HYPRE_MGRSetCoarseGridMethod(precon, MGRConvertArgInt(args, "coarse_level_type"));
+#endif
 
    /* Config f-relaxation at each MGR level */
    for (i = 0; i < num_levels - 1; i++)
@@ -808,7 +825,9 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
          HYPRE_MGRSetFSolverAtLevel(precon, wrapper, i);
 #else
-         HYPRE_MGRSetFSolverAtLevel(i, precon, wrapper);
+         ErrorCodeSet(ERROR_INVALID_PRECON);
+         ErrorMsgAdd("Nested Krylov F-relaxation requires hypre >= 2.31.0");
+         return;
 #endif
       }
       else if (args->level[i].f_relaxation.type == 2)
@@ -817,7 +836,8 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
          HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
 #else
-         HYPRE_MGRSetFSolverAtLevel(i, precon, frelax);
+         (void)precon;
+         (void)i;
 #endif
          args->frelax[i] = frelax;
       }
@@ -871,8 +891,14 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       {
          return;
       }
+#if HYPRE_CHECK_MIN_VERSION(30100, 2)
       HYPRE_MGRSetCoarseSolver(precon, MGRBaseParSolverSolve, MGRBaseParSolverSetup,
                                wrapper);
+#else
+      ErrorCodeSet(ERROR_INVALID_PRECON);
+      ErrorMsgAdd("Nested Krylov coarsest solver requires hypre >= 3.1.0");
+      return;
+#endif
    }
    else
    {
@@ -939,4 +965,5 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    {
       free(dofmap_data);
    }
+#endif
 }

@@ -8,6 +8,7 @@
 /* Add internal hypre headers */
 #include "_hypre_IJ_mv.h"
 #include "_hypre_parcsr_mv.h"
+#include "hypre_compat_version.h"
 
 /* Undefine autotools package macros from hypre */
 #undef PACKAGE_NAME
@@ -16,6 +17,19 @@
 #undef PACKAGE_TARNAME
 #undef PACKAGE_URL
 #undef PACKAGE_VERSION
+
+static void
+HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
+{
+#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
+   HYPRE_IJVectorInitialize_v2(vec, memory_location);
+#else
+   (void)memory_location;
+   HYPRE_IJVectorInitialize(vec);
+#endif
+}
+
+#define HYPREDRV_HAVE_MEMORY_APIS (HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900)
 
 #include <dirent.h>
 #include <errno.h>
@@ -185,7 +199,9 @@ LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix 
    /* Create a ParCSR IJVector with host memory (we'll migrate later if needed) */
    HYPRE_IJVectorCreate(comm, jlower, jupper, vec_nn_ptr);
    HYPRE_IJVectorSetObjectType(*vec_nn_ptr, HYPRE_PARCSR);
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_IJVectorSetNumComponents(*vec_nn_ptr, num_components);
+#endif
    HYPRE_IJVectorInitialize_v2(*vec_nn_ptr, HYPRE_MEMORY_HOST);
 
    /* Set values for each component block contiguously */
@@ -193,7 +209,9 @@ LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix 
    {
       const HYPRE_Complex *vals_c =
          values ? (values + ((size_t)c * (size_t)num_entries)) : NULL;
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
       HYPRE_IJVectorSetComponent(*vec_nn_ptr, c);
+#endif
       HYPRE_IJVectorSetValues(*vec_nn_ptr, num_entries, NULL, vals_c);
    }
 
@@ -202,7 +220,9 @@ LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix 
    /* Migrate to device memory if requested */
    if (args && args->exec_policy)
    {
+#if HYPRE_CHECK_MIN_VERSION(23300, 0)
       HYPRE_IJVectorMigrate(*vec_nn_ptr, HYPRE_MEMORY_DEVICE);
+#endif
    }
 }
 
@@ -312,7 +332,11 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
    }
    else if (args->type == 3)
    {
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
       HYPRE_IJMatrixReadMM(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+#else
+      HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+#endif
    }
 
    /* Check if hypre had problems reading the input file */
@@ -330,7 +354,9 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       HYPRE_IJMatrixGetObject(*matrix_ptr, &obj);
       HYPRE_ParCSRMatrix par_A = (HYPRE_ParCSRMatrix)obj;
 
+#if HYPREDRV_HAVE_MEMORY_APIS
       hypre_ParCSRMatrixMigrate(par_A, HYPRE_MEMORY_DEVICE);
+#endif
    }
 
    StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
@@ -508,7 +534,15 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
          }
          else
          {
+#if HYPRE_CHECK_MIN_VERSION(23000, 0)
+#if HYPRE_CHECK_MIN_VERSION(23000, 0)
             HYPRE_IJVectorReadBinary(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
+#else
+            HYPRE_IJVectorRead(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
+#endif
+#else
+            HYPRE_IJVectorRead(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
+#endif
          }
       }
       else if (args->type == 3)
@@ -715,7 +749,11 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
             }
             else
             {
+#if HYPRE_CHECK_MIN_VERSION(23000, 0)
                HYPRE_IJVectorReadBinary(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
+#else
+               HYPRE_IJVectorRead(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
+#endif
             }
          }
          else
@@ -740,7 +778,9 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
          HYPRE_IJVectorGetObject(*rhs_ptr, &obj);
          par_rhs = (HYPRE_ParVector)obj;
 
+#if HYPREDRV_HAVE_MEMORY_APIS
          hypre_ParVectorMigrate(par_rhs, HYPRE_MEMORY_DEVICE);
+#endif
       }
    }
 
@@ -829,7 +869,11 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    {
       if (CheckBinaryDataExists(args->x0_filename))
       {
+#if HYPRE_CHECK_MIN_VERSION(23000, 0)
          HYPRE_IJVectorReadBinary(args->x0_filename, comm, HYPRE_PARCSR, x0_ptr);
+#else
+         HYPRE_IJVectorRead(args->x0_filename, comm, HYPRE_PARCSR, x0_ptr);
+#endif
       }
       else
       {
@@ -845,7 +889,9 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
          HYPRE_IJVectorGetObject(*x0_ptr, &obj);
          par_x0 = (HYPRE_ParVector)obj;
 
+#if HYPREDRV_HAVE_MEMORY_APIS
          hypre_ParVectorMigrate(par_x0, HYPRE_MEMORY_DEVICE);
+#endif
       }
    }
 }
@@ -1101,12 +1147,21 @@ LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector vec_x,
    HYPRE_IJVectorGetLocalRange(vec_x, &jlower, &jupper);
    HYPRE_IJVectorCreate(hypre_IJVectorComm(vec_x), jlower, jupper, &vec_e);
    HYPRE_IJVectorSetObjectType(vec_e, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(vec_e, hypre_IJVectorMemoryLocation(vec_x));
+#if HYPREDRV_HAVE_MEMORY_APIS
+   HYPREDRV_IJVectorInitialize(vec_e, hypre_IJVectorMemoryLocation(vec_x));
+#else
+   HYPREDRV_IJVectorInitialize(vec_e, HYPRE_MEMORY_HOST);
+#endif
    HYPRE_IJVectorGetObject(vec_e, &obj_e);
    par_e = (HYPRE_ParVector)obj_e;
 
    /* Compute error */
+#if HYPRE_CHECK_MIN_VERSION(22800, 0)
    hypre_ParVectorAxpyz(one, par_x, neg_one, par_xref, par_e);
+#else
+   hypre_ParVectorCopy(par_x, par_e);
+   hypre_ParVectorAxpy(neg_one, par_xref, par_e);
+#endif
 
    /* Compute error norm */
    LinearSystemComputeVectorNorm(vec_e, norm_type, e_norm);
@@ -1148,7 +1203,11 @@ LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
    HYPRE_IJVectorGetLocalRange(vec_b, &jlower, &jupper);
    HYPRE_IJVectorCreate(hypre_IJVectorComm(vec_b), jlower, jupper, &vec_r);
    HYPRE_IJVectorSetObjectType(vec_r, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(vec_r, hypre_IJVectorMemoryLocation(vec_b));
+#if HYPREDRV_HAVE_MEMORY_APIS
+   HYPREDRV_IJVectorInitialize(vec_r, hypre_IJVectorMemoryLocation(vec_b));
+#else
+   HYPREDRV_IJVectorInitialize(vec_r, HYPRE_MEMORY_HOST);
+#endif
    HYPRE_IJVectorGetObject(vec_r, &obj_r);
    par_r = (HYPRE_ParVector)obj_r;
    HYPRE_ParVectorCopy(par_b, par_r);

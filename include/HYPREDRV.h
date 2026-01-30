@@ -10,11 +10,13 @@
 
 #include <mpi.h>
 #include <signal.h> // For: raise
+#include <stdlib.h> // For: getenv
 #include <stdint.h> // For: uint
 #include <string.h> // For: strcmp
 
 #include <HYPRE.h>
 #include <HYPRE_IJ_mv.h>
+#include <HYPRE_krylov.h>
 #include <HYPRE_config.h>
 #include <HYPRE_parcsr_ls.h>
 #include <HYPRE_parcsr_mv.h>

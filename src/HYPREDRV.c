@@ -88,8 +88,12 @@ HYPREDRV_Initialize()
    if (!hypredrv_is_initialized)
    {
       /* Initialize hypre */
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
       HYPRE_Initialize();
+#if HYPRE_CHECK_MIN_VERSION(23100, 0)
       HYPRE_DeviceInitialize();
+#endif
+#endif
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 16)
       /* Check for environment variables */
@@ -116,7 +120,9 @@ HYPREDRV_Finalize()
 {
    if (hypredrv_is_initialized)
    {
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
       HYPRE_Finalize();
+#endif
       hypredrv_is_initialized = false;
    }
 
@@ -364,10 +370,14 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
    /* Set HYPRE execution policy */
    if (hypredrv->iargs->general.exec_policy)
    {
+#if HYPRE_CHECK_MIN_VERSION(22100, 0)
       HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
       HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
       HYPRE_SetSpGemmUseVendor(0); // TODO: Control this via input option
       HYPRE_SetSpMVUseVendor(0);   // TODO: Control this via input option
+#endif
+#endif
 
 #ifdef HYPRE_USING_UMPIRE
       /* Setup Umpire pools */
@@ -384,8 +394,10 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
    }
    else
    {
+#if HYPRE_CHECK_MIN_VERSION(22100, 0)
       HYPRE_SetMemoryLocation(HYPRE_MEMORY_HOST);
       HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST);
+#endif
    }
 
    return ErrorCodeGet();

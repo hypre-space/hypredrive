@@ -126,7 +126,7 @@ test_LinearSystemSetArgsFromYAML_unknown_key(void)
 static void
 test_LinearSystemSetNearNullSpace_mismatch_error(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    /* Create a minimal 1x1 matrix */
    HYPRE_IJMatrix mat = NULL;
@@ -161,13 +161,13 @@ test_LinearSystemSetNearNullSpace_mismatch_error(void)
    ASSERT_NULL(vec_nn);
 
    HYPRE_IJMatrixDestroy(mat);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemSetNearNullSpace_success(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    /* Create a minimal 1x1 matrix */
    HYPRE_IJMatrix mat = NULL;
@@ -205,13 +205,13 @@ test_LinearSystemSetNearNullSpace_success(void)
    }
 
    HYPRE_IJMatrixDestroy(mat);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemSetNearNullSpace_destroy_previous(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    /* Create a minimal 1x1 matrix */
    HYPRE_IJMatrix mat = NULL;
@@ -261,7 +261,7 @@ test_LinearSystemSetNearNullSpace_destroy_previous(void)
    }
 
    HYPRE_IJMatrixDestroy(mat);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
@@ -299,7 +299,7 @@ test_LinearSystemGetValidValues_all_branches(void)
 static void
 test_LinearSystemReadMatrix_filename_patterns(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    LS_args args;
    LinearSystemSetDefaultArgs(&args);
@@ -342,13 +342,13 @@ test_LinearSystemReadMatrix_filename_patterns(void)
       HYPRE_IJMatrixDestroy(mat);
    }
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemReadMatrix_no_filename_error(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    LS_args args;
    LinearSystemSetDefaultArgs(&args);
@@ -364,13 +364,13 @@ test_LinearSystemReadMatrix_no_filename_error(void)
    ASSERT_NULL(mat);
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemReadMatrix_type_branches(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    LS_args args;
    LinearSystemSetDefaultArgs(&args);
@@ -397,13 +397,13 @@ test_LinearSystemReadMatrix_type_branches(void)
    LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat);
    /* Should fail but branch was exercised */
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemReadMatrix_exec_policy_branches(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    LS_args args;
    LinearSystemSetDefaultArgs(&args);
@@ -435,13 +435,13 @@ test_LinearSystemReadMatrix_exec_policy_branches(void)
       HYPRE_IJMatrixDestroy(mat);
    }
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemReadMatrix_partition_count_errors(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    LS_args args;
    LinearSystemSetDefaultArgs(&args);
@@ -478,13 +478,13 @@ test_LinearSystemReadMatrix_partition_count_errors(void)
       unlink(fake_file);
    }
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemReadRHS_file_patterns(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    LS_args args;
    LinearSystemSetDefaultArgs(&args);
@@ -526,13 +526,13 @@ test_LinearSystemReadRHS_file_patterns(void)
    }
    HYPRE_IJMatrixDestroy(mat);
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemSetRHS_mode_branches(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    LS_args args;
    LinearSystemSetDefaultArgs(&args);
@@ -589,13 +589,13 @@ test_LinearSystemSetRHS_mode_branches(void)
    }
    HYPRE_IJMatrixDestroy(mat);
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemPrintData_series_dir_and_null_objects(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    /* Ensure series dir does not exist so we hit the mkdir(root) branch */
    int ret = system("rm -rf hypre-data");
@@ -673,7 +673,7 @@ test_LinearSystemPrintData_series_dir_and_null_objects(void)
 
    ret = system("rm -rf hypre-data");
    (void)ret; /* Ignore cleanup failures in tests */
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
@@ -690,7 +690,7 @@ test_LinearSystemMatrixGetNumRows_GetNumNonzeros_error_cases(void)
 static void
 test_LinearSystemReadRHS_error_cases(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    LS_args args;
    LinearSystemSetDefaultArgs(&args);
@@ -736,13 +736,13 @@ test_LinearSystemReadRHS_error_cases(void)
    }
    HYPRE_IJMatrixDestroy(mat);
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemReadMatrix_mtx_success(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
    HYPRE_ClearAllErrors();
 
    char matfile[256];
@@ -772,13 +772,13 @@ test_LinearSystemReadMatrix_mtx_success(void)
       HYPRE_IJMatrixDestroy(mat);
    }
    unlink(matfile);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemSetRHS_mtx_file_success(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
    HYPRE_ClearAllErrors();
 
    char rhsfile[256];
@@ -827,13 +827,13 @@ test_LinearSystemSetRHS_mtx_file_success(void)
    HYPRE_IJMatrixDestroy(mat);
 
    unlink(rhsfile);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemSetRHS_mtx_dim_mismatch_errors(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
    HYPRE_ClearAllErrors();
 
    char rhsfile[256];
@@ -877,7 +877,7 @@ test_LinearSystemSetRHS_mtx_dim_mismatch_errors(void)
    HYPRE_IJMatrixDestroy(mat);
 
    unlink(rhsfile);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static HYPRE_IJVector
@@ -906,7 +906,7 @@ create_test_ijvector(MPI_Comm comm, HYPRE_BigInt ilower, HYPRE_BigInt iupper,
 static void
 test_LinearSystemComputeVectorNorm_all_modes(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
    HYPRE_ClearAllErrors();
 
    /* Build a small vector with known values: [1, -2, 3] */
@@ -934,13 +934,13 @@ test_LinearSystemComputeVectorNorm_all_modes(void)
    ASSERT_EQ_DOUBLE(norm, -1.0, 0.0);
 
    HYPRE_IJVectorDestroy(v);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_LinearSystemSetInitialGuess_x0_filename_branches(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
    HYPRE_ClearAllErrors();
 
    LS_args args;
@@ -992,7 +992,7 @@ test_LinearSystemSetInitialGuess_x0_filename_branches(void)
    unlink("tmp_x0.00000.bin");
 
    HYPRE_IJVectorDestroy(rhs);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static HYPRE_IJMatrix
@@ -1016,7 +1016,7 @@ create_test_ijmatrix_1x1(MPI_Comm comm, double diag)
 static void
 test_LinearSystemSetPrecMatrix_branchy_paths(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
    HYPRE_ClearAllErrors();
 
    LS_args args;
@@ -1082,7 +1082,7 @@ test_LinearSystemSetPrecMatrix_branchy_paths(void)
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrixDestroy(mat_A);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 int

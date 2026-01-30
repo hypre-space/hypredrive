@@ -80,11 +80,19 @@ FSAISetDefaultArgs(FSAI_args *args)
 void
 FSAICreate(const FSAI_args *args, HYPRE_Solver *precon_ptr)
 {
+#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
+   (void)args;
+   ErrorCodeSet(ERROR_INVALID_PRECON);
+   ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
+   *precon_ptr = NULL;
+   return;
+#else
    HYPRE_Solver precon = NULL;
 
    HYPRE_FSAICreate(&precon);
 
    HYPRE_FSAISetAlgoType(precon, args->algo_type);
+#if HYPRE_CHECK_MIN_VERSION(23000, 0)
    HYPRE_FSAISetLocalSolveType(precon, args->ls_type);
    HYPRE_FSAISetMaxSteps(precon, args->max_steps);
    HYPRE_FSAISetMaxStepSize(precon, args->max_step_size);
@@ -92,9 +100,11 @@ FSAICreate(const FSAI_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_FSAISetNumLevels(precon, args->num_levels);
    HYPRE_FSAISetThreshold(precon, args->threshold);
    HYPRE_FSAISetKapTolerance(precon, args->kap_tolerance);
+#endif
    HYPRE_FSAISetMaxIterations(precon, args->max_iter);
    HYPRE_FSAISetTolerance(precon, args->tolerance);
    HYPRE_FSAISetPrintLevel(precon, args->print_level);
 
    *precon_ptr = precon;
+#endif
 }
