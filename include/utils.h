@@ -10,9 +10,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "HYPRE_utilities.h"
 #include "containers.h"
 #include "error.h"
-#include "hypre_compat_version.h"
+#include "compatibility.h"
 
 /*-----------------------------------------------------------------------------
  * Public prototypes

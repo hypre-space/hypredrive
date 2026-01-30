@@ -269,6 +269,8 @@ test_create_parse_and_destroy(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 256];
    int  yaml_len = snprintf(yaml_config, sizeof(yaml_config),
@@ -381,6 +383,8 @@ test_HYPREDRV_PreconCreate_reuse_logic(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -433,6 +437,8 @@ test_HYPREDRV_LinearSolverApply_with_xref(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -486,6 +492,8 @@ test_HYPREDRV_stats_level_apis(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -547,6 +555,8 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -668,6 +678,8 @@ test_HYPREDRV_SetGlobalOptions_exec_policy(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -711,6 +723,8 @@ test_HYPREDRV_PreconCreate_reuse_logic_variations(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    /* Test reuse=0 (always create) */
    char yaml_config[2 * PATH_MAX + 512];
@@ -765,6 +779,8 @@ test_HYPREDRV_LinearSolverCreate_reuse_logic(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 512];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -819,6 +835,8 @@ test_HYPREDRV_PreconDestroy_reuse_logic(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 512];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -871,6 +889,8 @@ test_HYPREDRV_LinearSolverDestroy_reuse_logic(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 512];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -1060,6 +1080,8 @@ test_HYPREDRV_misc_0hit_branches(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -1151,6 +1173,8 @@ test_HYPREDRV_preconditioner_variants(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 512];
    int  yaml_len = snprintf(yaml_config, sizeof(yaml_config),
@@ -1250,6 +1274,8 @@ test_HYPREDRV_preconditioner_preset_yaml(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 256];
    int  yaml_len = snprintf(yaml_config, sizeof(yaml_config),

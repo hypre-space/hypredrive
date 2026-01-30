@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 #include "utils.h"
 
@@ -122,6 +123,14 @@
 #define RUN_TEST(test_func) \
    do { \
       test_func(); \
+   } while (0)
+
+#define TEST_REQUIRE_FILE(path) \
+   do { \
+      if (access((path), F_OK) != 0) { \
+         fprintf(stderr, "SKIP: missing data file: %s\n", (path)); \
+         return; \
+      } \
    } while (0)
 
 /*-----------------------------------------------------------------------------

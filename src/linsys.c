@@ -8,7 +8,6 @@
 /* Add internal hypre headers */
 #include "_hypre_IJ_mv.h"
 #include "_hypre_parcsr_mv.h"
-#include "hypre_compat_version.h"
 
 /* Undefine autotools package macros from hypre */
 #undef PACKAGE_NAME
@@ -17,6 +16,14 @@
 #undef PACKAGE_TARNAME
 #undef PACKAGE_URL
 #undef PACKAGE_VERSION
+
+#include <dirent.h>
+#include <errno.h>
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include "linsys.h"
 
 static void
 HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
@@ -30,14 +37,6 @@ HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_loca
 }
 
 #define HYPREDRV_HAVE_MEMORY_APIS (HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900)
-
-#include <dirent.h>
-#include <errno.h>
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/stat.h>
-#include "linsys.h"
 
 /* TODO: implement IJVectorClone/Copy and IJVectorMigrate/IJMatrix in hypre*/
 
@@ -202,7 +201,22 @@ LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix 
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_IJVectorSetNumComponents(*vec_nn_ptr, num_components);
 #endif
-   HYPRE_IJVectorInitialize_v2(*vec_nn_ptr, HYPRE_MEMORY_HOST);
+   HYPREDRV_IJVectorInitialize(*vec_nn_ptr, HYPRE_MEMORY_HOST);
+
+   HYPRE_BigInt  *indices = NULL;
+   HYPRE_Complex *zeros   = NULL;
+   if (num_entries > 0)
+   {
+      indices = (HYPRE_BigInt *)malloc((size_t)num_entries * sizeof(HYPRE_BigInt));
+      if (values == NULL)
+      {
+         zeros = (HYPRE_Complex *)calloc((size_t)num_entries, sizeof(HYPRE_Complex));
+      }
+      for (int i = 0; i < num_entries; i++)
+      {
+         indices[i] = jlower + (HYPRE_BigInt)i;
+      }
+   }
 
    /* Set values for each component block contiguously */
    for (HYPRE_Int c = 0; c < num_components; c++)
@@ -212,10 +226,13 @@ LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix 
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
       HYPRE_IJVectorSetComponent(*vec_nn_ptr, c);
 #endif
-      HYPRE_IJVectorSetValues(*vec_nn_ptr, num_entries, NULL, vals_c);
+      HYPRE_IJVectorSetValues(*vec_nn_ptr, num_entries, indices, vals_c ? vals_c : zeros);
    }
 
    HYPRE_IJVectorAssemble(*vec_nn_ptr);
+
+   free(indices);
+   free(zeros);
 
    /* Migrate to device memory if requested */
    if (args && args->exec_policy)
@@ -454,7 +471,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
       HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
       HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location);
+      HYPREDRV_IJVectorInitialize(*rhs_ptr, memory_location);
 
       /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
       void           *obj   = NULL;
@@ -479,7 +496,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
             /* Solution has random values */
             HYPRE_IJVectorCreate(comm, ilower, iupper, &refsol);
             HYPRE_IJVectorSetObjectType(refsol, HYPRE_PARCSR);
-            HYPRE_IJVectorInitialize_v2(refsol, memory_location);
+            HYPREDRV_IJVectorInitialize(refsol, memory_location);
 
             /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
             HYPRE_ParVector par_x = NULL;
@@ -692,7 +709,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
          HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
          HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
          HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
-         HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location);
+         HYPREDRV_IJVectorInitialize(*rhs_ptr, memory_location);
 
          HYPRE_BigInt local_size    = iupper - ilower + 1;
          int          my_local_size = local_size;
@@ -816,7 +833,7 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
    HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
    HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(*x_ptr, memloc);
+   HYPREDRV_IJVectorInitialize(*x_ptr, memloc);
 
    /* Destroy initial solution vector */
    if (*x0_ptr)
@@ -830,7 +847,7 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
       HYPRE_IJVectorCreate(comm, jlower, jupper, x0_ptr);
       HYPRE_IJVectorSetObjectType(*x0_ptr, HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize_v2(*x0_ptr, memloc);
+      HYPREDRV_IJVectorInitialize(*x0_ptr, memloc);
 
       /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
       void           *obj    = NULL;

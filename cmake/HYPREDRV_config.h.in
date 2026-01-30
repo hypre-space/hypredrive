@@ -38,6 +38,10 @@
 /* Define to 1 if you have the <stdint.h> header file. */
 #cmakedefine HAVE_STDINT_H
 
+/* HYPRE version info for compat checks */
+#cmakedefine HYPREDRV_HYPRE_RELEASE_NUMBER @HYPREDRV_HYPRE_RELEASE_NUMBER@
+#cmakedefine HYPREDRV_HYPRE_DEVELOP_NUMBER @HYPREDRV_HYPRE_DEVELOP_NUMBER@
+
 /* Define to 1 if you have the <stdio.h> header file. */
 #cmakedefine HAVE_STDIO_H
 

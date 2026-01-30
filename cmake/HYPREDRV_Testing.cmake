@@ -206,24 +206,32 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
     endif()
 endfunction()
 
-# Only register tests when included from the main CMakeLists.txt
-# (not when included from subdirectories like examples)
-if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+function(hypredrv_check_hypre_version release develop)
+    set(_hypredrv_out_var "HYPREDRV_HAVE_HYPRE_${release}_DEV${develop}")
     # Determine hypre version checks for selecting which tests to run.
     #set(CMAKE_MESSAGE_LOG_LEVEL DEBUG) # or TRACE for maximum noise
     # Include Hypre headers (from find_package) and HypreDrive headers (for utils.h)
+    set(_hypredrv_saved_includes "${CMAKE_REQUIRED_INCLUDES}")
     set(CMAKE_REQUIRED_INCLUDES ${HYPRE_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/include)
     check_c_source_compiles("
       #include \"HYPRE_config.h\"
       #define HYPRE_SEQUENTIAL
       #include \"utils.h\"
-      #if !HYPRE_CHECK_MIN_VERSION(30100, 3)
-      #error \"need HYPRE >= 3.1.0 + develop >= 3\"
+      #if !HYPRE_CHECK_MIN_VERSION(${release}, ${develop})
+      #error \"need HYPRE >= ${release} + develop >= ${develop}\"
       #endif
       int main(void) { return 0; }
-    " HYPREDRV_HAVE_HYPRE_30100_DEV3)
-    unset(CMAKE_REQUIRED_INCLUDES)
-    message(STATUS "HYPREDRV_HAVE_HYPRE_30100_DEV3: ${HYPREDRV_HAVE_HYPRE_30100_DEV3}")
+    " ${_hypredrv_out_var})
+    set(CMAKE_REQUIRED_INCLUDES "${_hypredrv_saved_includes}")
+    unset(_hypredrv_saved_includes)
+    unset(_hypredrv_out_var)
+endfunction()
+
+# Only register tests when included from the main CMakeLists.txt
+# (not when included from subdirectories like examples)
+if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    # Define hypre version checks for selecting which tests to run.
+    hypredrv_check_hypre_version(30100 3)
 
     # Must be called before add_subdirectory(tests) so that add_test() calls work
     enable_testing()

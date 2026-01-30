@@ -409,6 +409,7 @@ test_LinearSystemReadMatrix_exec_policy_branches(void)
    LinearSystemSetDefaultArgs(&args);
    HYPRE_IJMatrix mat = NULL;
 
+#ifdef HYPRE_USING_GPU
    /* Test exec_policy = 1 (device) */
    args.exec_policy = 1;
    strncpy(args.matrix_filename, "data/ps3d10pt7/np1/IJ.out.A",
@@ -423,6 +424,7 @@ test_LinearSystemReadMatrix_exec_policy_branches(void)
       HYPRE_IJMatrixDestroy(mat);
       mat = NULL;
    }
+#endif
 
    /* Test exec_policy = 0 (host) */
    args.exec_policy = 0;
@@ -970,6 +972,7 @@ test_LinearSystemSetInitialGuess_x0_filename_branches(void)
    if (x0) HYPRE_IJVectorDestroy(x0);
    x = x0 = NULL;
 
+#ifdef HYPRE_USING_GPU
    /* 1b) Same ASCII path with exec_policy enabled (covers migrate branch) */
    args.exec_policy = 1;
    ErrorCodeResetAll();
@@ -978,6 +981,7 @@ test_LinearSystemSetInitialGuess_x0_filename_branches(void)
    if (x) HYPRE_IJVectorDestroy(x);
    if (x0) HYPRE_IJVectorDestroy(x0);
    x = x0 = NULL;
+#endif
 
    /* 2) Binary-detection branch (create <prefix>.00000.bin so CheckBinaryDataExists true) */
    (void)memset(args.x0_filename, 0, sizeof(args.x0_filename));
@@ -1089,6 +1093,7 @@ int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
+   TEST_HYPRE_INIT();
 
    RUN_TEST(test_LinearSystemGetValidValues_type);
    RUN_TEST(test_LinearSystemGetValidValues_rhs_mode);
@@ -1117,6 +1122,7 @@ main(int argc, char **argv)
    RUN_TEST(test_LinearSystemSetInitialGuess_x0_filename_branches);
    RUN_TEST(test_LinearSystemSetPrecMatrix_branchy_paths);
 
+   TEST_HYPRE_FINALIZE();
    MPI_Finalize();
    return 0;
 }

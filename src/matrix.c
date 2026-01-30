@@ -13,7 +13,14 @@ static void
 HYPREDRV_IJMatrixInitialize(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_location)
 {
 #if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
-   HYPRE_IJMatrixInitialize_v2(mat, memory_location);
+   if (memory_location == HYPRE_MEMORY_HOST)
+   {
+      HYPRE_IJMatrixInitialize(mat);
+   }
+   else
+   {
+      HYPRE_IJMatrixInitialize_v2(mat, memory_location);
+   }
 #else
    (void)memory_location;
    HYPRE_IJMatrixInitialize(mat);
@@ -325,7 +332,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    }
 
    /* Allocate matrix on the final memory */
-   HYPRE_IJMatrixInitialize_v2(mat, memory_location);
+   HYPREDRV_IJMatrixInitialize(mat, memory_location);
 
    /* Allocate device variables */
 #ifdef HYPRE_USING_GPU

@@ -11,7 +11,7 @@
 #include "HYPRE.h"
 #include "HYPRE_IJ_mv.h"
 #include "HYPRE_utilities.h"
-#include "hypre_compat_version.h"
+#include "compatibility.h"
 #include "eigspec.h"
 #include "field.h"
 #include "stats.h"

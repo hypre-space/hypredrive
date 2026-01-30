@@ -104,7 +104,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
    HYPRE_IJVectorCreate(comm, ilower, iupper, &vec);
    HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(vec, memory_location);
+   HYPREDRV_IJVectorInitialize(vec, memory_location);
 
    /* Allocate variables */
    h_vals =

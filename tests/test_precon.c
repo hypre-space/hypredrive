@@ -288,6 +288,13 @@ test_MGRCreate_coarsest_level_branches(void)
    ASSERT_NOT_NULL(dofmap);
    MGRSetDofmap(&mgr, dofmap);
 
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   fprintf(stderr, "SKIP: MGR tests require hypre >= 2.21.0\n");
+   IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+   return;
+#endif
+
    /* 1) Explicit ILU coarsest solver type */
    mgr.coarsest_level.type = 32;
    ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
@@ -891,6 +898,12 @@ int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
+
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   fprintf(stderr, "SKIP: preconditioner tests require hypre >= 2.21.0\n");
+   MPI_Finalize();
+   return 0;
+#endif
 
    RUN_TEST(test_PreconGetValidKeys_contains_expected);
    RUN_TEST(test_PreconGetValidTypeIntMap_contains_known_types);

@@ -762,6 +762,8 @@ test_solver_precon_combination(const char *solver_name, const char *precon_name)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
 
    char yaml_config[2 * PATH_MAX + 512];
    snprintf(yaml_config, sizeof(yaml_config),
