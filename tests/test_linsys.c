@@ -1105,21 +1105,33 @@ main(int argc, char **argv)
    RUN_TEST(test_LinearSystemSetNearNullSpace_success);
    RUN_TEST(test_LinearSystemSetNearNullSpace_destroy_previous);
    RUN_TEST(test_LinearSystemGetValidValues_all_branches);
+
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_LinearSystemReadMatrix_filename_patterns);
    RUN_TEST(test_LinearSystemReadMatrix_no_filename_error);
    RUN_TEST(test_LinearSystemReadMatrix_type_branches);
    RUN_TEST(test_LinearSystemReadMatrix_exec_policy_branches);
    RUN_TEST(test_LinearSystemReadMatrix_partition_count_errors);
    RUN_TEST(test_LinearSystemReadRHS_file_patterns);
+#endif
+
    RUN_TEST(test_LinearSystemSetRHS_mode_branches);
+
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_LinearSystemReadMatrix_mtx_success);
    RUN_TEST(test_LinearSystemSetRHS_mtx_file_success);
    RUN_TEST(test_LinearSystemSetRHS_mtx_dim_mismatch_errors);
+#endif
+
    RUN_TEST(test_LinearSystemPrintData_series_dir_and_null_objects);
    RUN_TEST(test_LinearSystemMatrixGetNumRows_GetNumNonzeros_error_cases);
+   #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_LinearSystemReadRHS_error_cases);
+   #endif
    RUN_TEST(test_LinearSystemComputeVectorNorm_all_modes);
+   #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_LinearSystemSetInitialGuess_x0_filename_branches);
+   #endif
    RUN_TEST(test_LinearSystemSetPrecMatrix_branchy_paths);
 
    TEST_HYPRE_FINALIZE();

@@ -751,11 +751,6 @@ test_SolverSetup_error_cases(void)
 static void
 test_solver_precon_combination(const char *solver_name, const char *precon_name)
 {
-   HYPREDRV_Initialize();
-
-   HYPREDRV_t obj = NULL;
-   HYPREDRV_Create(MPI_COMM_SELF, &obj);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
@@ -764,6 +759,11 @@ test_solver_precon_combination(const char *solver_name, const char *precon_name)
             HYPREDRIVE_SOURCE_DIR);
    TEST_REQUIRE_FILE(matrix_path);
    TEST_REQUIRE_FILE(rhs_path);
+
+   HYPREDRV_Initialize();
+
+   HYPREDRV_t obj = NULL;
+   HYPREDRV_Create(MPI_COMM_SELF, &obj);
 
    char yaml_config[2 * PATH_MAX + 512];
    snprintf(yaml_config, sizeof(yaml_config),

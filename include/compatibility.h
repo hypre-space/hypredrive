@@ -28,20 +28,12 @@
 #endif
 #endif
 
-/* Older hypre releases don't provide memory location APIs or HYPRE_Matrix types. */
+/* Older hypre releases don't provide memory location APIs. */
 #if HYPREDRV_HYPRE_RELEASE_NUMBER < 21900
-#ifndef HYPRE_MemoryLocation
 typedef int HYPRE_MemoryLocation;
-#endif
-#ifndef HYPRE_MEMORY_HOST
 #define HYPRE_MEMORY_HOST 0
-#endif
-#ifndef HYPRE_MEMORY_DEVICE
 #define HYPRE_MEMORY_DEVICE 0
-#endif
-#ifndef HYPRE_MEMORY_UNDEFINED
 #define HYPRE_MEMORY_UNDEFINED 0
-#endif
 #endif
 
 /* Older hypre releases may not define HYPRE_BigInt or HYPRE_MPI_BIG_INT. */

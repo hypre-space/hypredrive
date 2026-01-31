@@ -610,7 +610,7 @@ AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_BoomerAMGSetNodalDiag(precon, 1);
       HYPRE_BoomerAMGSetInterpVecVariant(precon, 2); // GM-2
       HYPRE_BoomerAMGSetInterpVecQMax(precon, 4);
-#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
       HYPRE_BoomerAMGSetSmoothInterpVectors(precon, 1);
 #endif
       HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms,

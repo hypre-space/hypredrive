@@ -261,6 +261,26 @@ if(NOT HYPRE_FOUND)
     if(_hypre_use_autotools)
         message(STATUS "HYPRE version < 3.0.0 detected - building with autotools.")
 
+        if(HYPRE_VERSION MATCHES "^v?([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+            math(EXPR _hypre_release_number
+                 "${CMAKE_MATCH_1}*10000 + ${CMAKE_MATCH_2}*100 + ${CMAKE_MATCH_3}")
+            if(NOT HYPREDRV_HYPRE_RELEASE_NUMBER)
+                set(HYPREDRV_HYPRE_RELEASE_NUMBER "${_hypre_release_number}")
+                add_compile_definitions(HYPREDRV_HYPRE_RELEASE_NUMBER=${HYPREDRV_HYPRE_RELEASE_NUMBER})
+            endif()
+            if(NOT HYPREDRV_HYPRE_DEVELOP_NUMBER)
+                set(HYPREDRV_HYPRE_DEVELOP_NUMBER 0)
+                add_compile_definitions(HYPREDRV_HYPRE_DEVELOP_NUMBER=0)
+            endif()
+            if(NOT HYPREDRV_HYPRE_RELEASE_VERSION)
+                set(HYPREDRV_HYPRE_RELEASE_VERSION
+                    "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+                add_compile_definitions(
+                    HYPREDRV_HYPRE_RELEASE_VERSION=\"${HYPREDRV_HYPRE_RELEASE_VERSION}\")
+            endif()
+            unset(_hypre_release_number)
+        endif()
+
         FetchContent_GetProperties(hypre)
         if(NOT hypre_POPULATED)
             FetchContent_Populate(hypre)

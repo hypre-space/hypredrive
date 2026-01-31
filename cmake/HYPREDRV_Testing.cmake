@@ -268,6 +268,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     hypredrv_check_hypre_version(22500 0)
     hypredrv_check_hypre_version(22900 0)
     hypredrv_check_hypre_version(23000 0)
+    hypredrv_check_hypre_version(23300 0)
     hypredrv_check_hypre_version(30100 3)
 
     # Must be called before add_subdirectory(tests) so that add_test() calls work
@@ -311,7 +312,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         endif()
         add_hypredrive_test(ex1_preset    1 ex1-preset.yml)
         add_hypredrive_test(ex2_4proc     4 ex2.yml)
-        if (HYPREDRV_HAVE_HYPRE_22900_DEV0)
+        if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
             add_hypredrive_test(ex3_1proc     1 ex3.yml)
 
             if (HYPREDRV_HAVE_HYPRE_30100_DEV3)
@@ -325,7 +326,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         if (HYPREDRV_ENABLE_EIGSPEC)
             add_hypredrive_test(ex6_1proc 1 ex6.yml)
         endif()
-        if (HYPREDRV_HAVE_HYPRE_22900_DEV0)
+        if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
             add_hypredrive_test(ex7_1proc     1 ex7.yml)
             add_hypredrive_cli_test(ex7_cli_reps4_ls4 1 ex7.yml
                 OVERRIDES --general:num_repetitions 4 --linear_system:last_suffix 4
