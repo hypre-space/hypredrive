@@ -552,11 +552,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
          else
          {
 #if HYPRE_CHECK_MIN_VERSION(23000, 0)
-#if HYPRE_CHECK_MIN_VERSION(23000, 0)
             HYPRE_IJVectorReadBinary(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
-#else
-            HYPRE_IJVectorRead(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
-#endif
 #else
             HYPRE_IJVectorRead(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
 #endif

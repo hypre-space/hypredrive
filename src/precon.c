@@ -327,9 +327,7 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
 #endif
                else if (args->mgr.csolver_type == 32)
                {
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
                   HYPRE_ILUDestroy(args->mgr.csolver);
-#endif
                }
             }
 #endif
