@@ -35,7 +35,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         build_type: [Debug]
         compiler: [gcc, clang]
-        hypre_version: [master, v3.1.0]
+        hypre_version: [master, v3.1.0, v2.20.0]
         exclude:
           - os: macos-latest
             compiler: gcc

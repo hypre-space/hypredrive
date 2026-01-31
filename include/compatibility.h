@@ -31,17 +31,29 @@
 /* Older hypre releases don't provide memory location APIs. */
 #if HYPREDRV_HYPRE_RELEASE_NUMBER < 21900
 typedef int HYPRE_MemoryLocation;
+#ifndef HYPRE_MEMORY_HOST
 #define HYPRE_MEMORY_HOST 0
+#endif
+#ifndef HYPRE_MEMORY_DEVICE
 #define HYPRE_MEMORY_DEVICE 0
+#endif
+#ifndef HYPRE_MEMORY_UNDEFINED
 #define HYPRE_MEMORY_UNDEFINED 0
 #endif
-
-/* Older hypre releases may not define HYPRE_BigInt or HYPRE_MPI_BIG_INT. */
-#ifndef HYPRE_BigInt
-typedef HYPRE_Int HYPRE_BigInt;
 #endif
+
+/* Older hypre releases may not define HYPRE_MPI_BIG_INT. */
 #ifndef HYPRE_MPI_BIG_INT
 #define HYPRE_MPI_BIG_INT HYPRE_MPI_INT
+#endif
+
+/* Very old hypre releases may not define HYPRE_BigInt at all. */
+#if HYPREDRV_HYPRE_RELEASE_NUMBER < 21900
+#ifndef HYPRE_BIGINT
+#ifndef HYPRE_MIXEDINT
+typedef int HYPRE_BigInt;
+#endif
+#endif
 #endif
 
 #endif /* HYPREDRV_COMPATIBILITY_HEADER */

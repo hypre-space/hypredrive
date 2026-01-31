@@ -10,7 +10,7 @@
 #include "gen_macros.h"
 #include "nested_krylov.h"
 #include "stats.h"
-#if !HYPRE_CHECK_MIN_VERSION(30100, 1)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 5)
 #include "_hypre_utilities.h" // for hypre_Solver
 #endif
 
@@ -135,7 +135,7 @@ static HYPRE_Int
 MGRBaseParSolverSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
                       HYPRE_ParVector x)
 {
-#if HYPRE_CHECK_MIN_VERSION(30100, 2)
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
    return HYPRE_SolverSetup(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b, (HYPRE_Vector)x);
 #else
    (void)solver;
@@ -153,7 +153,7 @@ static HYPRE_Int
 MGRBaseParSolverSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
                       HYPRE_ParVector x)
 {
-#if HYPRE_CHECK_MIN_VERSION(30100, 2)
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
    return HYPRE_SolverSolve(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b, (HYPRE_Vector)x);
 #else
    (void)solver;
@@ -891,7 +891,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       {
          return;
       }
-#if HYPRE_CHECK_MIN_VERSION(30100, 2)
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
       HYPRE_MGRSetCoarseSolver(precon, MGRBaseParSolverSolve, MGRBaseParSolverSetup,
                                wrapper);
 #else

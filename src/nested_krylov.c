@@ -424,7 +424,7 @@ NestedKrylovDestroy(NestedKrylov_args *args)
 
    if (args->base_solver)
    {
-#if HYPRE_CHECK_MIN_VERSION(30100, 2)
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
       HYPRE_SolverDestroy(args->base_solver);
 #else
       switch (args->solver_method)

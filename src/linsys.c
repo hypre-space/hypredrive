@@ -28,7 +28,7 @@
 static void
 HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
 {
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
+#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 22000
    HYPRE_IJVectorInitialize_v2(vec, memory_location);
 #else
    (void)memory_location;
@@ -36,7 +36,7 @@ HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_loca
 #endif
 }
 
-#define HYPREDRV_HAVE_MEMORY_APIS (HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900)
+#define HYPREDRV_HAVE_MEMORY_APIS (HYPREDRV_HYPRE_RELEASE_NUMBER >= 22000)
 
 /* TODO: implement IJVectorClone/Copy and IJVectorMigrate/IJMatrix in hypre*/
 
@@ -1089,11 +1089,51 @@ LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double 
    const HYPRE_Complex *data    = NULL;
    HYPRE_Int            size    = 0;
 
+   if (!vec || !norm)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      return;
+   }
+
    HYPRE_IJVectorGetObject(vec, &obj);
+   if (!obj)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      *norm = -1.0;
+      return;
+   }
+
    par_vec = (HYPRE_ParVector)obj;
+   if (!par_vec)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      *norm = -1.0;
+      return;
+   }
+
    seq_vec = hypre_ParVectorLocalVector(par_vec);
-   data    = hypre_VectorData(seq_vec);
-   size    = hypre_VectorSize(seq_vec);
+   if (!seq_vec)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      *norm = -1.0;
+      return;
+   }
+
+   data = hypre_VectorData(seq_vec);
+   if (!data)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      *norm = -1.0;
+      return;
+   }
+
+   size = hypre_VectorSize(seq_vec);
+   if (size < 0)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      *norm = -1.0;
+      return;
+   }
 
    double   local_norm  = 0.0;
    double   global_norm = 0.0;

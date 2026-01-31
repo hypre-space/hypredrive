@@ -278,7 +278,6 @@ if(NOT HYPRE_FOUND)
                 add_compile_definitions(
                     HYPREDRV_HYPRE_RELEASE_VERSION=\"${HYPREDRV_HYPRE_RELEASE_VERSION}\")
             endif()
-            unset(_hypre_release_number)
         endif()
 
         FetchContent_GetProperties(hypre)
@@ -302,6 +301,14 @@ if(NOT HYPRE_FOUND)
         endif()
 
         set(_hypre_autotools_configure_extra "")
+        if(HYPRE_ENABLE_MIXEDINT)
+            if(DEFINED _hypre_release_number AND _hypre_release_number GREATER_EQUAL 22000)
+                list(APPEND _hypre_autotools_configure_extra --enable-mixedint)
+            else()
+                list(APPEND _hypre_autotools_configure_extra --disable-mixedint)
+                message(WARNING "HYPRE_ENABLE_MIXEDINT=ON but ${HYPRE_VERSION} does not support mixedint; forcing --disable-mixedint.")
+            endif()
+        endif()
         if(HYPREDRV_ENABLE_CALIPER)
             if(TPL_CALIPER_INCLUDE_DIRS AND TPL_CALIPER_LIBRARIES)
                 list(APPEND _hypre_autotools_configure_extra
