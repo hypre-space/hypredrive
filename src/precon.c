@@ -174,30 +174,30 @@ PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A)
          break;
 
       case PRECON_MGR:
- #if HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_MGRSetup(prec, par_A, par_b, par_x);
- #else
+#else
          ErrorCodeSet(ERROR_INVALID_PRECON);
          ErrorMsgAdd("MGR requires hypre >= 2.19.0");
- #endif
+#endif
          break;
 
       case PRECON_ILU:
- #if HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_ILUSetup(prec, par_A, par_b, par_x);
- #else
+#else
          ErrorCodeSet(ERROR_INVALID_PRECON);
          ErrorMsgAdd("ILU requires hypre >= 2.19.0");
- #endif
+#endif
          break;
 
       case PRECON_FSAI:
- #if HYPRE_CHECK_MIN_VERSION(22500, 0)
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
          HYPRE_FSAISetup(prec, par_A, par_b, par_x);
- #else
+#else
          ErrorCodeSet(ERROR_INVALID_PRECON);
          ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
- #endif
+#endif
          break;
 
       case PRECON_NONE:
@@ -239,30 +239,30 @@ PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
          break;
 
       case PRECON_MGR:
- #if HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_MGRSolve(prec, par_A, par_b, par_x);
- #else
+#else
          ErrorCodeSet(ERROR_INVALID_PRECON);
          ErrorMsgAdd("MGR requires hypre >= 2.19.0");
- #endif
+#endif
          break;
 
       case PRECON_ILU:
- #if HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_ILUSolve(prec, par_A, par_b, par_x);
- #else
+#else
          ErrorCodeSet(ERROR_INVALID_PRECON);
          ErrorMsgAdd("ILU requires hypre >= 2.19.0");
- #endif
+#endif
          break;
 
       case PRECON_FSAI:
- #if HYPRE_CHECK_MIN_VERSION(22500, 0)
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
          HYPRE_FSAISolve(prec, par_A, par_b, par_x);
- #else
+#else
          ErrorCodeSet(ERROR_INVALID_PRECON);
          ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
- #endif
+#endif
          break;
 
       case PRECON_NONE:
@@ -375,15 +375,15 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
 #endif
 
          case PRECON_ILU:
- #if HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
             HYPRE_ILUDestroy(precon->main);
- #endif
+#endif
             break;
 
          case PRECON_FSAI:
- #if HYPRE_CHECK_MIN_VERSION(22500, 0)
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
             HYPRE_FSAIDestroy(precon->main);
- #endif
+#endif
             break;
 
          case PRECON_NONE:

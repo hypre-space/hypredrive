@@ -255,9 +255,9 @@ MGRSetDefaultArgs(MGR_args *args)
       args->grelax[i] = NULL;
    }
    MGRclsSetDefaultArgs(&args->coarsest_level);
-   args->csolver = NULL;
+   args->csolver      = NULL;
    args->csolver_type = -1;
-   args->vec_nn  = NULL;
+   args->vec_nn       = NULL;
 }
 
 /*-----------------------------------------------------------------------------

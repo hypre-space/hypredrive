@@ -479,8 +479,8 @@ AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
       HYPRE_IJVectorGetValues(vec_nn, num_entries, NULL, values);
 
       /* Fill entries */
-      hypre_Vector *seq_vec = hypre_ParVectorLocalVector(args->rbms[i]);
-      HYPRE_Complex *data   = hypre_VectorData(seq_vec);
+      hypre_Vector  *seq_vec = hypre_ParVectorLocalVector(args->rbms[i]);
+      HYPRE_Complex *data    = hypre_VectorData(seq_vec);
       for (HYPRE_Int j = 0; j < num_entries; j++)
       {
          data[j] = values[j];

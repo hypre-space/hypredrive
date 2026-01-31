@@ -18,8 +18,10 @@
 #include "compatibility.h"
 
 #if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
-#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
-#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) HYPRE_IJVectorInitialize_v2((vec), HYPRE_MEMORY_HOST)
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) \
+   HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) \
+   HYPRE_IJVectorInitialize_v2((vec), HYPRE_MEMORY_HOST)
 #else
 #define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) HYPRE_IJMatrixInitialize((mat))
 #define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) HYPRE_IJVectorInitialize((vec))
@@ -1456,7 +1458,7 @@ BuildNewtonSystem(DistMesh2D *mesh, LidCavityParams *params,
 #if HYPREDRV_HYPRE_RELEASE_NUMBER >= 22600
    HYPRE_IJVectorInnerProd(b, b, res_norm);
 #else
-   void *b_obj = NULL;
+   void           *b_obj = NULL;
    HYPRE_ParVector b_par = NULL;
    HYPRE_IJVectorGetObject(b, &b_obj);
    b_par = (HYPRE_ParVector)b_obj;

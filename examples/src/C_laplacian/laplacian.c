@@ -17,8 +17,10 @@
 // #define VTK_USE_ASCII 0
 
 #if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900
-#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
-#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) HYPRE_IJVectorInitialize_v2((vec), HYPRE_MEMORY_HOST)
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) \
+   HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) \
+   HYPRE_IJVectorInitialize_v2((vec), HYPRE_MEMORY_HOST)
 #else
 #define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) HYPRE_IJMatrixInitialize((mat))
 #define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) HYPRE_IJVectorInitialize((vec))
