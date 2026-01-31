@@ -199,7 +199,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v5
         with:
-          name: logs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          name: logs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}-${{ matrix.hypre_version }}
           path: |
             ${{ env.BUILD_DIR }}/Testing
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
@@ -209,7 +209,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: example-outputs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          name: example-outputs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}-${{ matrix.hypre_version }}
           path: |
             ${{ env.BUILD_DIR }}/test_ex1_output.txt
           retention-days: 1
