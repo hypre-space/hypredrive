@@ -81,7 +81,7 @@ runs:
             fi
             AR="ar -rc" \
             CC=mpicc \
-            ./configure --prefix="$PREFIX" $SHARED_FLAG $MIXEDINT_FLAG
+            ./configure --prefix="$PREFIX" --disable-fortran $SHARED_FLAG $MIXEDINT_FLAG
             make -j
             make install
             popd
