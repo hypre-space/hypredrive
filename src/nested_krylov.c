@@ -15,6 +15,66 @@
 #include "_hypre_utilities.h" // for hypre_Solver
 #endif
 
+#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
+static HYPRE_Int
+HYPREDRV_FSAISetupStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                       HYPRE_ParVector x)
+{
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
+}
+
+static HYPRE_Int
+HYPREDRV_FSAISolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                       HYPRE_ParVector x)
+{
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
+}
+
+#define HYPREDRV_FSAI_SETUP HYPREDRV_FSAISetupStub
+#define HYPREDRV_FSAI_SOLVE HYPREDRV_FSAISolveStub
+#else
+#define HYPREDRV_FSAI_SETUP HYPRE_FSAISetup
+#define HYPREDRV_FSAI_SOLVE HYPRE_FSAISolve
+#endif
+
+#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+static HYPRE_Int
+HYPREDRV_ILUSetupStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                      HYPRE_ParVector x)
+{
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
+}
+
+static HYPRE_Int
+HYPREDRV_ILUSolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                      HYPRE_ParVector x)
+{
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
+}
+
+#define HYPREDRV_ILU_SETUP HYPREDRV_ILUSetupStub
+#define HYPREDRV_ILU_SOLVE HYPREDRV_ILUSolveStub
+#else
+#define HYPREDRV_ILU_SETUP HYPRE_ILUSetup
+#define HYPREDRV_ILU_SOLVE HYPRE_ILUSolve
+#endif
+
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
@@ -169,9 +229,9 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
    }
 
    HYPRE_PtrToParSolverFcn setup_ptrs[] = {HYPRE_BoomerAMGSetup, HYPRE_MGRSetup,
-                                           HYPRE_ILUSetup, HYPRE_FSAISetup};
+                                           HYPREDRV_ILU_SETUP, HYPREDRV_FSAI_SETUP};
    HYPRE_PtrToParSolverFcn solve_ptrs[] = {HYPRE_BoomerAMGSolve, HYPRE_MGRSolve,
-                                           HYPRE_ILUSolve, HYPRE_FSAISolve};
+                                           HYPREDRV_ILU_SOLVE, HYPREDRV_FSAI_SOLVE};
 
    switch (solver_method)
    {
@@ -364,10 +424,26 @@ NestedKrylovDestroy(NestedKrylov_args *args)
 
    if (args->base_solver)
    {
-#if HYPRE_CHECK_MIN_VERSION(30100, 2)
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
       HYPRE_SolverDestroy(args->base_solver);
 #else
-      hypre_SolverDestroy((hypre_Solver *)args->base_solver)(args->base_solver);
+      switch (args->solver_method)
+      {
+         case SOLVER_PCG:
+            HYPRE_ParCSRPCGDestroy(args->base_solver);
+            break;
+         case SOLVER_GMRES:
+            HYPRE_ParCSRGMRESDestroy(args->base_solver);
+            break;
+         case SOLVER_FGMRES:
+            HYPRE_ParCSRFlexGMRESDestroy(args->base_solver);
+            break;
+         case SOLVER_BICGSTAB:
+            HYPRE_ParCSRBiCGSTABDestroy(args->base_solver);
+            break;
+         default:
+            break;
+      }
 #endif
       args->base_solver = NULL;
    }

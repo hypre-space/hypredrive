@@ -54,6 +54,7 @@ function(add_unit_test test_name target_name)
         PROPERTIES
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort\\("
+            LABELS "unit"
     )
 
     # When running with sanitizers, suppress known external leaks (MPI runtime, etc.)

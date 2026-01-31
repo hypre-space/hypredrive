@@ -203,8 +203,30 @@ endif()
 # Option to specify HYPRE version/branch/tag for FetchContent
 set(HYPRE_VERSION "master" CACHE STRING "HYPRE version/branch/tag to fetch (e.g., master, v2.32.0)")
 
+# Allow users to point to an autotools build by providing include/lib paths.
+# This bypasses find_package(CONFIG) which only works with CMake installs.
+if(NOT TARGET HYPRE::HYPRE AND DEFINED HYPRE_INCLUDE_DIRS AND
+   (DEFINED HYPRE_LIBRARIES OR DEFINED HYPRE_LIBRARY))
+    if(DEFINED HYPRE_LIBRARIES)
+        set(_hypre_libs "${HYPRE_LIBRARIES}")
+    else()
+        set(_hypre_libs "${HYPRE_LIBRARY}")
+    endif()
+
+    message(STATUS "Using user-provided HYPRE include/lib paths (autotools or custom install)")
+    add_library(HYPRE::HYPRE INTERFACE IMPORTED)
+    set_target_properties(HYPRE::HYPRE PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${HYPRE_INCLUDE_DIRS}"
+        INTERFACE_LINK_LIBRARIES "${_hypre_libs}"
+    )
+    set(HYPREDRV_HYPRE_USER_PROVIDED TRUE)
+    set(HYPRE_FOUND TRUE)
+endif()
+
 # First, try to find HYPRE via find_package
-find_package(HYPRE CONFIG QUIET)
+if(NOT HYPRE_FOUND)
+    find_package(HYPRE CONFIG QUIET)
+endif()
 
 if(NOT HYPRE_FOUND)
     # HYPRE not found via find_package - automatically fetch and build
@@ -214,6 +236,15 @@ if(NOT HYPRE_FOUND)
 
     # Check for MPI (required by HYPRE)
     find_package(MPI REQUIRED COMPONENTS C)
+
+    # Decide whether to use autotools (hypre < 3.0.0) or CMake build
+    set(_hypre_use_autotools FALSE)
+    if(HYPRE_VERSION MATCHES "^v?([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+        set(_hypre_major "${CMAKE_MATCH_1}")
+        if(_hypre_major LESS 3)
+            set(_hypre_use_autotools TRUE)
+        endif()
+    endif()
 
     FetchContent_Declare(
         hypre
@@ -227,6 +258,154 @@ if(NOT HYPRE_FOUND)
     # Enable verbose output for FetchContent to show progress
     set(FETCHCONTENT_QUIET OFF)
 
+    if(_hypre_use_autotools)
+        message(STATUS "HYPRE version < 3.0.0 detected - building with autotools.")
+
+        if(HYPRE_VERSION MATCHES "^v?([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+            math(EXPR _hypre_release_number
+                 "${CMAKE_MATCH_1}*10000 + ${CMAKE_MATCH_2}*100 + ${CMAKE_MATCH_3}")
+            if(NOT HYPREDRV_HYPRE_RELEASE_NUMBER)
+                set(HYPREDRV_HYPRE_RELEASE_NUMBER "${_hypre_release_number}")
+                add_compile_definitions(HYPREDRV_HYPRE_RELEASE_NUMBER=${HYPREDRV_HYPRE_RELEASE_NUMBER})
+            endif()
+            if(NOT HYPREDRV_HYPRE_DEVELOP_NUMBER)
+                set(HYPREDRV_HYPRE_DEVELOP_NUMBER 0)
+                add_compile_definitions(HYPREDRV_HYPRE_DEVELOP_NUMBER=0)
+            endif()
+            if(NOT HYPREDRV_HYPRE_RELEASE_VERSION)
+                set(HYPREDRV_HYPRE_RELEASE_VERSION
+                    "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+                add_compile_definitions(
+                    HYPREDRV_HYPRE_RELEASE_VERSION=\"${HYPREDRV_HYPRE_RELEASE_VERSION}\")
+            endif()
+        endif()
+
+        FetchContent_GetProperties(hypre)
+        if(NOT hypre_POPULATED)
+            FetchContent_Populate(hypre)
+        endif()
+
+        include(ExternalProject)
+
+        string(REPLACE "/" "_" _hypre_version_tag "${HYPRE_VERSION}")
+        set(_hypre_autotools_prefix "${CMAKE_BINARY_DIR}/hypre-autotools-${_hypre_version_tag}")
+        set(_hypre_autotools_src "${hypre_SOURCE_DIR}/src")
+        # Match typical CMake build-type flags for autotools builds.
+        set(_hypre_autotools_cflags "${CMAKE_C_FLAGS}")
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O0 -g")
+        elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+            set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O2 -g")
+        else()
+            set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O3 -DNDEBUG")
+        endif()
+
+        set(_hypre_autotools_configure_extra "")
+        if(HYPRE_ENABLE_MIXEDINT)
+            if(DEFINED _hypre_release_number AND _hypre_release_number GREATER_EQUAL 22000)
+                list(APPEND _hypre_autotools_configure_extra --enable-mixedint)
+            else()
+                list(APPEND _hypre_autotools_configure_extra --disable-mixedint)
+                message(WARNING "HYPRE_ENABLE_MIXEDINT=ON but ${HYPRE_VERSION} does not support mixedint; forcing --disable-mixedint.")
+            endif()
+        endif()
+        if(HYPREDRV_ENABLE_CALIPER)
+            if(TPL_CALIPER_INCLUDE_DIRS AND TPL_CALIPER_LIBRARIES)
+                list(APPEND _hypre_autotools_configure_extra
+                    --with-caliper
+                    --with-caliper-include=${TPL_CALIPER_INCLUDE_DIRS}
+                    --with-caliper-lib=${TPL_CALIPER_LIBRARIES}
+                )
+            elseif(CALIPER_INCLUDE_DIR AND CALIPER_LIBRARY)
+                list(APPEND _hypre_autotools_configure_extra
+                    --with-caliper
+                    --with-caliper-include=${CALIPER_INCLUDE_DIR}
+                    --with-caliper-lib=${CALIPER_LIBRARY}
+                )
+            else()
+                message(WARNING "HYPREDRV_ENABLE_CALIPER=ON but Caliper include/lib not found for hypre autotools build.")
+            endif()
+        endif()
+
+        if(HYPRE_ENABLE_CUDA OR CMAKE_CUDA_ARCHITECTURES OR CUDA_ROOT OR CUDA_TOOLKIT_ROOT_DIR OR CUDAToolkit_ROOT)
+            list(APPEND _hypre_autotools_configure_extra --with-cuda)
+            if(CUDA_ROOT)
+                list(APPEND _hypre_autotools_configure_extra --with-cuda-home=${CUDA_ROOT})
+            elseif(CUDA_TOOLKIT_ROOT_DIR)
+                list(APPEND _hypre_autotools_configure_extra --with-cuda-home=${CUDA_TOOLKIT_ROOT_DIR})
+            elseif(CUDAToolkit_ROOT)
+                list(APPEND _hypre_autotools_configure_extra --with-cuda-home=${CUDAToolkit_ROOT})
+            endif()
+            if(CMAKE_CUDA_ARCHITECTURES)
+                string(REPLACE ";" "," _hypre_cuda_arch "${CMAKE_CUDA_ARCHITECTURES}")
+                list(APPEND _hypre_autotools_configure_extra --with-gpu-arch=${_hypre_cuda_arch})
+            endif()
+        endif()
+
+        if(HYPRE_ENABLE_HIP OR CMAKE_HIP_ARCHITECTURES OR HIP_ROOT OR ROCM_ROOT OR ROCM_PATH)
+            list(APPEND _hypre_autotools_configure_extra --with-hip)
+            list(APPEND _hypre_autotools_configure_extra --with-MPI-include=${MPI_C_INCLUDE_DIRS})
+            if(HIP_ROOT)
+                list(APPEND _hypre_autotools_configure_extra ROCM_PATH=${HIP_ROOT})
+            elseif(ROCM_ROOT)
+                list(APPEND _hypre_autotools_configure_extra ROCM_PATH=${ROCM_ROOT})
+            elseif(ROCM_PATH)
+                list(APPEND _hypre_autotools_configure_extra ROCM_PATH=${ROCM_PATH})
+            endif()
+            if(CMAKE_HIP_ARCHITECTURES)
+                string(REPLACE ";" "," _hypre_hip_arch "${CMAKE_HIP_ARCHITECTURES}")
+                list(APPEND _hypre_autotools_configure_extra --with-gpu-arch=${_hypre_hip_arch})
+            endif()
+        endif()
+
+        ExternalProject_Add(hypre_autotools
+            SOURCE_DIR ${_hypre_autotools_src}
+            CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
+                CC=${MPI_C_COMPILER}
+                CFLAGS=${_hypre_autotools_cflags}
+                ${_hypre_autotools_src}/configure --prefix=${_hypre_autotools_prefix}
+                ${_hypre_autotools_configure_extra}
+            BUILD_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${CMAKE_MAKE_PROGRAM}
+            INSTALL_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${CMAKE_MAKE_PROGRAM} install
+            BUILD_IN_SOURCE 1
+        )
+
+        # Ensure the install prefix directories exist at configure time for imported targets.
+        file(MAKE_DIRECTORY "${_hypre_autotools_prefix}/include")
+        file(MAKE_DIRECTORY "${_hypre_autotools_prefix}/lib")
+
+        set(HYPRE_INCLUDE_DIRS "${_hypre_autotools_prefix}/include")
+        set(HYPRE_LIBRARIES "${_hypre_autotools_prefix}/lib/libHYPRE.a")
+
+        add_library(HYPRE::HYPRE INTERFACE IMPORTED)
+        set_target_properties(HYPRE::HYPRE PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${HYPRE_INCLUDE_DIRS}"
+            INTERFACE_LINK_LIBRARIES "${HYPRE_LIBRARIES}"
+        )
+        if(TARGET MPI::MPI_C)
+            target_link_libraries(HYPRE::HYPRE INTERFACE MPI::MPI_C)
+        else()
+            if(MPI_C_LIBRARIES)
+                target_link_libraries(HYPRE::HYPRE INTERFACE ${MPI_C_LIBRARIES})
+            endif()
+            if(MPI_C_INCLUDE_DIRS)
+                target_include_directories(HYPRE::HYPRE INTERFACE ${MPI_C_INCLUDE_DIRS})
+            endif()
+        endif()
+        add_dependencies(HYPRE::HYPRE hypre_autotools)
+
+        set(HYPREDRV_HYPRE_USER_PROVIDED TRUE)
+        set(HYPREDRV_HYPRE_AUTOTOOLS TRUE)
+        set(HYPRE_FOUND TRUE)
+
+        unset(_hypre_version_tag)
+        unset(_hypre_autotools_prefix)
+        unset(_hypre_autotools_src)
+        unset(_hypre_autotools_cflags)
+        unset(_hypre_autotools_configure_extra)
+        unset(_hypre_cuda_arch)
+        unset(_hypre_hip_arch)
+    else()
     # Generic CMake argument inheritance
     # Forward all relevant cache variables to HYPRE build, including TPLs (MAGMA, CUDA, etc.)
     message(STATUS "Inheriting CMake arguments to HYPRE build...")
@@ -374,13 +553,16 @@ if(NOT HYPRE_FOUND)
     endif()
 
     message(STATUS "HYPRE configured and ready")
+    endif()
 endif()
 
 # Get HYPRE properties
 if(TARGET HYPRE::HYPRE)
     get_target_property(HYPRE_INCLUDE_DIRS HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
 
-    # Try to get library location - handle both Release and Debug configurations
+    # Try to get library location - handle both Release and Debug configurations.
+    # For autotools/custom installs we only have INTERFACE_LINK_LIBRARIES, so
+    # fall back to the user-provided variables for a clearer message.
     get_target_property(HYPRE_LIBRARY_FILE HYPRE::HYPRE IMPORTED_LOCATION)
     if(NOT HYPRE_LIBRARY_FILE)
         get_target_property(HYPRE_LIBRARY_FILE HYPRE::HYPRE IMPORTED_LOCATION_RELEASE)
@@ -389,7 +571,13 @@ if(TARGET HYPRE::HYPRE)
         get_target_property(HYPRE_LIBRARY_FILE HYPRE::HYPRE IMPORTED_LOCATION_DEBUG)
     endif()
     if(NOT HYPRE_LIBRARY_FILE)
-        set(HYPRE_LIBRARY_FILE "not found (using target)")
+        if(DEFINED HYPRE_LIBRARIES)
+            set(HYPRE_LIBRARY_FILE "${HYPRE_LIBRARIES}")
+        elseif(DEFINED HYPRE_LIBRARY)
+            set(HYPRE_LIBRARY_FILE "${HYPRE_LIBRARY}")
+        else()
+            set(HYPRE_LIBRARY_FILE "not found (using target)")
+        endif()
     endif()
 
     # Check if HYPRE was built with Caliper support (for find_package case)
@@ -433,6 +621,87 @@ if(TARGET HYPRE::HYPRE)
     message(STATUS "Found HYPRE:")
     message(STATUS "  include directories: ${HYPRE_INCLUDE_DIRS}")
     message(STATUS "  libraries: ${HYPRE_LIBRARY_FILE}")
+
+    # For autotools/custom HYPRE, read HYPRE_config.h to derive version info and MPI mode.
+    if(HYPREDRV_HYPRE_USER_PROVIDED AND HYPRE_INCLUDE_DIRS AND NOT HYPREDRV_HYPRE_AUTOTOOLS)
+        set(_hypre_config_found FALSE)
+        foreach(_inc_dir IN LISTS HYPRE_INCLUDE_DIRS)
+            if(EXISTS "${_inc_dir}/HYPRE_config.h")
+                set(_hypre_config_found TRUE)
+                file(READ "${_inc_dir}/HYPRE_config.h" _hypre_cfg)
+
+                # Extract release number if available (2.21+), otherwise compute from release version.
+                set(_hypre_rel_num "")
+                set(_hypre_rel_ver "")
+                set(_hypre_dev_num "")
+
+                string(REGEX MATCH "#define[ \t]+HYPRE_RELEASE_NUMBER[ \t]+([0-9]+)" _hypre_rel_num_match "${_hypre_cfg}")
+                if(_hypre_rel_num_match)
+                    set(_hypre_rel_num "${CMAKE_MATCH_1}")
+                endif()
+
+                string(REGEX REPLACE ".*#define[ \t]+HYPRE_RELEASE_VERSION[ \t]+\"([0-9]+)\\.([0-9]+)\\.([0-9]+)\".*" "\\1;\\2;\\3" _hypre_rel_parts "${_hypre_cfg}")
+                if(_hypre_rel_parts MATCHES ";")
+                    list(GET _hypre_rel_parts 0 _hypre_rel_major)
+                    list(GET _hypre_rel_parts 1 _hypre_rel_minor)
+                    list(GET _hypre_rel_parts 2 _hypre_rel_patch)
+                    set(_hypre_rel_ver "${_hypre_rel_major}.${_hypre_rel_minor}.${_hypre_rel_patch}")
+                    if(NOT _hypre_rel_num)
+                        math(EXPR _hypre_rel_num
+                             "${_hypre_rel_major}*10000 + ${_hypre_rel_minor}*100 + ${_hypre_rel_patch}")
+                    endif()
+                endif()
+
+                string(REGEX MATCH "#define[ \t]+HYPRE_DEVELOP_NUMBER[ \t]+([0-9]+)" _hypre_dev_num_match "${_hypre_cfg}")
+                if(_hypre_dev_num_match)
+                    set(_hypre_dev_num "${CMAKE_MATCH_1}")
+                endif()
+
+                if(_hypre_rel_num)
+                    set(HYPREDRV_HYPRE_RELEASE_NUMBER "${_hypre_rel_num}")
+                endif()
+                if(_hypre_rel_ver)
+                    set(HYPREDRV_HYPRE_RELEASE_VERSION "${_hypre_rel_ver}")
+                endif()
+                if(_hypre_dev_num)
+                    set(HYPREDRV_HYPRE_DEVELOP_NUMBER "${_hypre_dev_num}")
+                endif()
+
+                if(HYPREDRV_HYPRE_RELEASE_NUMBER)
+                    add_compile_definitions(HYPREDRV_HYPRE_RELEASE_NUMBER=${HYPREDRV_HYPRE_RELEASE_NUMBER})
+                endif()
+                if(HYPREDRV_HYPRE_DEVELOP_NUMBER)
+                    add_compile_definitions(HYPREDRV_HYPRE_DEVELOP_NUMBER=${HYPREDRV_HYPRE_DEVELOP_NUMBER})
+                endif()
+                if(HYPREDRV_HYPRE_RELEASE_VERSION)
+                    add_compile_definitions(HYPREDRV_HYPRE_RELEASE_VERSION=\"${HYPREDRV_HYPRE_RELEASE_VERSION}\")
+                endif()
+
+                # If HYPRE was built with MPI (HYPRE_SEQUENTIAL not defined), make sure MPI is available.
+                string(REGEX MATCH "#define[ \t]+HYPRE_SEQUENTIAL" _hypre_seq "${_hypre_cfg}")
+                if(NOT _hypre_seq)
+                    message(STATUS "  HYPRE built with MPI support; checking MPI...")
+                    find_package(MPI REQUIRED COMPONENTS C)
+                    if(TARGET MPI::MPI_C)
+                        target_link_libraries(HYPRE::HYPRE INTERFACE MPI::MPI_C)
+                    else()
+                        if(MPI_C_LIBRARIES)
+                            target_link_libraries(HYPRE::HYPRE INTERFACE ${MPI_C_LIBRARIES})
+                        endif()
+                        if(MPI_C_INCLUDE_DIRS)
+                            target_include_directories(HYPRE::HYPRE INTERFACE ${MPI_C_INCLUDE_DIRS})
+                        endif()
+                    endif()
+                else()
+                    message(STATUS "  HYPRE built in sequential mode; MPI not required")
+                endif()
+                break()
+            endif()
+        endforeach()
+        if(NOT _hypre_config_found)
+            message(WARNING "HYPRE_config.h not found in HYPRE_INCLUDE_DIRS; cannot determine MPI requirement or version")
+        endif()
+    endif()
 else()
     message(FATAL_ERROR "HYPRE::HYPRE target not available")
 endif()

@@ -26,7 +26,7 @@ concurrency:
 jobs:
   build-and-test:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
-    name: ${{ matrix.os }} | ${{ matrix.compiler }} | ${{ matrix.build_type }}
+    name: ${{ matrix.os }} | ${{ matrix.compiler }} | ${{ matrix.build_type }} | ${{ matrix.hypre_version }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -35,11 +35,12 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         build_type: [Debug]
         compiler: [gcc, clang]
+        hypre_version: [master, v3.1.0, v2.20.0]
         exclude:
           - os: macos-latest
             compiler: gcc
     env:
-      HYPRE_VERSION: master
+      HYPRE_VERSION: ${{ matrix.hypre_version }}
       BUILD_DIR: build
     steps:
       - uses: actions/checkout@v6
@@ -148,11 +149,25 @@ jobs:
           else
             echo "::notice::Configuring with clang $(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')"
           fi
+          HYPRE_PREFIX="${{ steps.build-hypre.outputs.hypre_prefix }}"
+          HYPRE_ARGS="-DCMAKE_PREFIX_PATH=${HYPRE_PREFIX} -DHYPRE_VERSION=${{ matrix.hypre_version }}"
+          if [[ "${{ matrix.hypre_version }}" =~ ^v ]] && \
+             printf "%s\n" "v2.32.0" "${{ matrix.hypre_version }}" | sort -V | head -n1 | grep -q "^${{ matrix.hypre_version }}$"; then
+            HYPRE_INCLUDE_DIRS="${HYPRE_PREFIX}/include"
+            if [ -f "${HYPRE_PREFIX}/lib/libHYPRE.so" ]; then
+              HYPRE_LIBRARIES="${HYPRE_PREFIX}/lib/libHYPRE.so"
+            elif [ -f "${HYPRE_PREFIX}/lib/libHYPRE.dylib" ]; then
+              HYPRE_LIBRARIES="${HYPRE_PREFIX}/lib/libHYPRE.dylib"
+            else
+              HYPRE_LIBRARIES="${HYPRE_PREFIX}/lib/libHYPRE.a"
+            fi
+            HYPRE_ARGS="${HYPRE_ARGS} -DHYPRE_INCLUDE_DIRS=${HYPRE_INCLUDE_DIRS} -DHYPRE_LIBRARIES=${HYPRE_LIBRARIES}"
+          fi
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }} \
+            ${HYPRE_ARGS} \
             $CCACHE_ARGS
 
       - name: Build
@@ -198,7 +213,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v5
         with:
-          name: logs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          name: logs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}-${{ matrix.hypre_version }}
           path: |
             ${{ env.BUILD_DIR }}/Testing
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
@@ -208,7 +223,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: example-outputs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          name: example-outputs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}-${{ matrix.hypre_version }}
           path: |
             ${{ env.BUILD_DIR }}/test_ex1_output.txt
           retention-days: 1

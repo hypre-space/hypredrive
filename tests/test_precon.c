@@ -220,7 +220,7 @@ test_PreconDestroy_null_main(void)
 static void
 test_PreconSetup_default_case(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    HYPRE_Precon precon = malloc(sizeof(struct hypre_Precon_struct));
    ASSERT_NOT_NULL(precon);
@@ -236,13 +236,13 @@ test_PreconSetup_default_case(void)
 
    free(precon);
    HYPRE_IJMatrixDestroy(mat);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_PreconApply_default_case(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    HYPRE_Precon precon = malloc(sizeof(struct hypre_Precon_struct));
    ASSERT_NOT_NULL(precon);
@@ -269,13 +269,13 @@ test_PreconApply_default_case(void)
    HYPRE_IJVectorDestroy(vec_b);
    HYPRE_IJVectorDestroy(vec_x);
    HYPRE_IJMatrixDestroy(mat);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_MGRCreate_coarsest_level_branches(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    MGR_args mgr;
    MGRSetDefaultArgs(&mgr);
@@ -288,6 +288,13 @@ test_MGRCreate_coarsest_level_branches(void)
    ASSERT_NOT_NULL(dofmap);
    MGRSetDofmap(&mgr, dofmap);
 
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   fprintf(stderr, "SKIP: MGR tests require hypre >= 2.21.0\n");
+   IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+   return;
+#endif
+
    /* 1) Explicit ILU coarsest solver type */
    mgr.coarsest_level.type = 32;
    ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
@@ -299,7 +306,9 @@ test_MGRCreate_coarsest_level_branches(void)
    /* Clean up coarsest solver (explicit ILU) */
    if (mgr.csolver)
    {
+ #if HYPRE_CHECK_MIN_VERSION(21900, 0)
       HYPRE_ILUDestroy(mgr.csolver);
+ #endif
       mgr.csolver = NULL;
       mgr.csolver_type = -1;
    }
@@ -346,13 +355,15 @@ test_MGRCreate_coarsest_level_branches(void)
    HYPRE_MGRDestroy(precon);
    if (mgr.csolver)
    {
+ #if HYPRE_CHECK_MIN_VERSION(21900, 0)
       HYPRE_ILUDestroy(mgr.csolver);
+ #endif
       mgr.csolver = NULL;
       mgr.csolver_type = -1;
    }
 
    IntArrayDestroy(&dofmap);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
@@ -361,7 +372,7 @@ test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
 #if !HYPRE_CHECK_MIN_VERSION(30100, 2)
    return;
 #endif
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    precon_args args;
    PreconSetDefaultArgs(&args);
@@ -401,13 +412,13 @@ test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
 
    MGRDestroyNestedKrylovArgs(&args.mgr);
    IntArrayDestroy(&dofmap);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_PreconDestroy_mgr_csolver_destroy_branches(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    precon_args args;
    PreconSetDefaultArgs(&args);
@@ -447,7 +458,7 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
 #endif
 
    IntArrayDestroy(&dofmap);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
@@ -887,6 +898,12 @@ int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
+
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   fprintf(stderr, "SKIP: preconditioner tests require hypre >= 2.21.0\n");
+   MPI_Finalize();
+   return 0;
+#endif
 
    RUN_TEST(test_PreconGetValidKeys_contains_expected);
    RUN_TEST(test_PreconGetValidTypeIntMap_contains_known_types);

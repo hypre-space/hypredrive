@@ -13,6 +13,17 @@
 #include <omp.h>
 #endif
 #include "HYPREDRV.h"
+#include "compatibility.h"
+
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) \
+   HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) \
+   HYPRE_IJVectorInitialize_v2((vec), HYPRE_MEMORY_HOST)
+#else
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) HYPRE_IJMatrixInitialize((mat))
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) HYPRE_IJVectorInitialize((vec))
+#endif
 
 /*==========================================================================
  *   3D Linear Elasticity (Q1 Hexahedra) Example Driver
@@ -678,8 +689,8 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
    HYPRE_IJMatrixSetRowSizes(A, nnzrow);
    free(nnzrow);
 
-   HYPRE_IJMatrixInitialize_v2(A, HYPRE_MEMORY_HOST);
-   HYPRE_IJVectorInitialize_v2(b, HYPRE_MEMORY_HOST);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(A);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(b);
 
    /* Element sizes (physical domain) */
    HYPRE_Real hx = params->L[0] / (gdims[0] - 1);

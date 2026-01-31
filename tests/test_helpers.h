@@ -12,6 +12,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <unistd.h>
+
+#include "utils.h"
+
+/*-----------------------------------------------------------------------------
+ * Hypre init/finalize helpers (older hypre releases do not provide them)
+ *-----------------------------------------------------------------------------*/
+
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+#define TEST_HYPRE_INIT() HYPRE_Initialize()
+#define TEST_HYPRE_FINALIZE() HYPRE_Finalize()
+#else
+#define TEST_HYPRE_INIT() ((void)0)
+#define TEST_HYPRE_FINALIZE() ((void)0)
+#endif
 
 /*-----------------------------------------------------------------------------
  * Fail-fast assertion macros (CTest handles test counting and reporting)
@@ -108,6 +123,14 @@
 #define RUN_TEST(test_func) \
    do { \
       test_func(); \
+   } while (0)
+
+#define TEST_REQUIRE_FILE(path) \
+   do { \
+      if (access((path), F_OK) != 0) { \
+         fprintf(stderr, "SKIP: missing data file: %s\n", (path)); \
+         return; \
+      } \
    } while (0)
 
 /*-----------------------------------------------------------------------------

@@ -257,18 +257,20 @@ test_create_parse_and_destroy(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-   ASSERT_NOT_NULL(obj);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+   ASSERT_NOT_NULL(obj);
 
    char yaml_config[2 * PATH_MAX + 256];
    int  yaml_len = snprintf(yaml_config, sizeof(yaml_config),
@@ -370,17 +372,19 @@ test_HYPREDRV_PreconCreate_reuse_logic(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -422,17 +426,19 @@ test_HYPREDRV_LinearSolverApply_with_xref(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -475,17 +481,19 @@ test_HYPREDRV_stats_level_apis(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -536,17 +544,19 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -657,17 +667,19 @@ test_HYPREDRV_SetGlobalOptions_exec_policy(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -700,17 +712,19 @@ test_HYPREDRV_PreconCreate_reuse_logic_variations(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    /* Test reuse=0 (always create) */
    char yaml_config[2 * PATH_MAX + 512];
@@ -754,17 +768,19 @@ test_HYPREDRV_LinearSolverCreate_reuse_logic(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    char yaml_config[2 * PATH_MAX + 512];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -808,17 +824,19 @@ test_HYPREDRV_PreconDestroy_reuse_logic(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    char yaml_config[2 * PATH_MAX + 512];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -860,17 +878,19 @@ test_HYPREDRV_LinearSolverDestroy_reuse_logic(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    char yaml_config[2 * PATH_MAX + 512];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -1049,10 +1069,6 @@ static void
 test_HYPREDRV_misc_0hit_branches(void)
 {
    reset_state();
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
@@ -1060,6 +1076,13 @@ test_HYPREDRV_misc_0hit_branches(void)
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
    char yaml_config[2 * PATH_MAX + 256];
    snprintf(yaml_config, sizeof(yaml_config),
@@ -1139,18 +1162,20 @@ test_HYPREDRV_preconditioner_variants(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-   ASSERT_NOT_NULL(obj);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+   ASSERT_NOT_NULL(obj);
 
    char yaml_config[2 * PATH_MAX + 512];
    int  yaml_len = snprintf(yaml_config, sizeof(yaml_config),
@@ -1238,18 +1263,20 @@ test_HYPREDRV_preconditioner_preset_yaml(void)
 {
    reset_state();
 
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-   ASSERT_NOT_NULL(obj);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+   ASSERT_NOT_NULL(obj);
 
    char yaml_config[2 * PATH_MAX + 256];
    int  yaml_len = snprintf(yaml_config, sizeof(yaml_config),

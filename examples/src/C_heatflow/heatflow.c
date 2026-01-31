@@ -79,6 +79,17 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "HYPREDRV.h"
+#include "compatibility.h"
+
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) \
+   HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) \
+   HYPRE_IJVectorInitialize_v2((vec), HYPRE_MEMORY_HOST)
+#else
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) HYPRE_IJMatrixInitialize((mat))
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) HYPRE_IJVectorInitialize((vec))
+#endif
 
 typedef struct
 {
@@ -1693,8 +1704,8 @@ BuildNonlinearSystem_Heat(DistMesh *m, HeatParams *p, const HYPRE_Real *T_state,
    for (int i = 0; i < local_dofs; i++) nnzrow[i] = 64;
    HYPRE_IJMatrixSetRowSizes(A, nnzrow);
    free(nnzrow);
-   HYPRE_IJMatrixInitialize_v2(A, HYPRE_MEMORY_HOST);
-   HYPRE_IJVectorInitialize_v2(b, HYPRE_MEMORY_HOST);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(A);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(b);
 
    /* Exchange ghost data for T_state and T_prev */
    if (g_T_k) ExchangeScalarGhosts(m, (double *)T_state, g_T_k);

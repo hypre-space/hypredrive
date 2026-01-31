@@ -451,7 +451,7 @@ test_ChebySetFieldByName_unknown_key(void)
 static void
 test_SolverCreate_all_cases(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    solver_args args;
    HYPRE_Solver solver = NULL;
@@ -492,13 +492,13 @@ test_SolverCreate_all_cases(void)
    SolverDestroy(SOLVER_BICGSTAB, &solver);
    ASSERT_NULL(solver);
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_SolverCreate_default_case(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    solver_args args;
    HYPRE_Solver solver = NULL;
@@ -509,13 +509,13 @@ test_SolverCreate_default_case(void)
    ASSERT_NULL(solver);
    /* Default case should not set error, just return NULL */
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_SolverDestroy_all_cases(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    solver_args args;
    HYPRE_Solver solver = NULL;
@@ -548,13 +548,13 @@ test_SolverDestroy_all_cases(void)
    SolverDestroy(SOLVER_BICGSTAB, &solver);
    ASSERT_NULL(solver);
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_SolverDestroy_default_case(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    solver_args args;
    HYPRE_Solver solver = NULL;
@@ -573,7 +573,7 @@ test_SolverDestroy_default_case(void)
    SolverDestroy(SOLVER_PCG, &solver);
    ASSERT_NULL(solver);
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
@@ -589,7 +589,7 @@ test_SolverDestroy_null_solver(void)
 static void
 test_SolverSetup_default_case(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    HYPRE_IJMatrix M = NULL;
    HYPRE_IJVector b = NULL, x = NULL;
@@ -630,13 +630,13 @@ test_SolverSetup_default_case(void)
    HYPRE_IJVectorDestroy(x);
    HYPRE_IJVectorDestroy(b);
    HYPRE_IJMatrixDestroy(M);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_SolverApply_default_case(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    HYPRE_IJMatrix A = NULL;
    HYPRE_IJVector b = NULL, x = NULL;
@@ -671,13 +671,13 @@ test_SolverApply_default_case(void)
    HYPRE_IJVectorDestroy(x);
    HYPRE_IJVectorDestroy(b);
    HYPRE_IJMatrixDestroy(A);
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_SolverCreate_default_case_comprehensive(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    solver_args args;
 
@@ -690,13 +690,13 @@ test_SolverCreate_default_case_comprehensive(void)
    SolverCreate(MPI_COMM_SELF, (solver_t)-1, &args, NULL);
    ASSERT_TRUE(ErrorCodeActive()); /* Should set error for invalid solver */
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_SolverApply_error_cases(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    HYPRE_IJMatrix A = NULL;
    HYPRE_IJVector b = NULL, x = NULL;
@@ -720,13 +720,13 @@ test_SolverApply_error_cases(void)
    SolverApply(SOLVER_PCG, (HYPRE_Solver)1, A, b, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
 test_SolverSetup_error_cases(void)
 {
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    HYPRE_IJMatrix A = NULL;
    HYPRE_IJVector b = NULL, x = NULL;
@@ -741,7 +741,7 @@ test_SolverSetup_error_cases(void)
    SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, (HYPRE_Solver)1, NULL, b, x);
    ASSERT_TRUE(ErrorCodeActive());
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
 }
 
 /*-----------------------------------------------------------------------------
@@ -751,17 +751,19 @@ test_SolverSetup_error_cases(void)
 static void
 test_solver_precon_combination(const char *solver_name, const char *precon_name)
 {
-   HYPREDRV_Initialize();
-
-   HYPREDRV_t obj = NULL;
-   HYPREDRV_Create(MPI_COMM_SELF, &obj);
-
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
    snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
             HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
             HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_path);
+   TEST_REQUIRE_FILE(rhs_path);
+
+   HYPREDRV_Initialize();
+
+   HYPREDRV_t obj = NULL;
+   HYPREDRV_Create(MPI_COMM_SELF, &obj);
 
    char yaml_config[2 * PATH_MAX + 512];
    snprintf(yaml_config, sizeof(yaml_config),

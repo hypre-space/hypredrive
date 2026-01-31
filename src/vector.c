@@ -9,6 +9,17 @@
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
 #include "utils.h"
 
+static void
+HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
+{
+#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
+   HYPRE_IJVectorInitialize_v2(vec, memory_location);
+#else
+   (void)memory_location;
+   HYPRE_IJVectorInitialize(vec);
+#endif
+}
+
 void
 IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_nparts,
                             HYPRE_MemoryLocation memory_location, HYPRE_IJVector *vec_ptr)
@@ -93,7 +104,7 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
    HYPRE_IJVectorCreate(comm, ilower, iupper, &vec);
    HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(vec, memory_location);
+   HYPREDRV_IJVectorInitialize(vec, memory_location);
 
    /* Allocate variables */
    h_vals =

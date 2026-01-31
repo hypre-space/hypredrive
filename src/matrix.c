@@ -9,6 +9,24 @@
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
 #include "utils.h"
 
+static void
+HYPREDRV_IJMatrixInitialize(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_location)
+{
+#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
+   if (memory_location == HYPRE_MEMORY_HOST)
+   {
+      HYPRE_IJMatrixInitialize(mat);
+   }
+   else
+   {
+      HYPRE_IJMatrixInitialize_v2(mat, memory_location);
+   }
+#else
+   (void)memory_location;
+   HYPRE_IJMatrixInitialize(mat);
+#endif
+}
+
 void
 IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_nparts,
                             HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *mat_ptr)
@@ -314,7 +332,7 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    }
 
    /* Allocate matrix on the final memory */
-   HYPRE_IJMatrixInitialize_v2(mat, memory_location);
+   HYPREDRV_IJMatrixInitialize(mat, memory_location);
 
    /* Allocate device variables */
 #ifdef HYPRE_USING_GPU

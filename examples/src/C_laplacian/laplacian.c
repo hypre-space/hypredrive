@@ -13,7 +13,18 @@
 #include <omp.h>
 #endif
 #include "HYPREDRV.h"
+#include "compatibility.h"
 // #define VTK_USE_ASCII 0
+
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) \
+   HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) \
+   HYPRE_IJVectorInitialize_v2((vec), HYPRE_MEMORY_HOST)
+#else
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) HYPRE_IJMatrixInitialize((mat))
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) HYPRE_IJVectorInitialize((vec))
+#endif
 
 /*==========================================================================
  *   3D Laplacian PDE Solver with Multiple Stencil Options
@@ -699,11 +710,11 @@ BuildLaplacianSystem_7pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix *
       nnzrow[row] = 7; /* Maximum stencil size */
    }
    HYPRE_IJMatrixSetRowSizes(A, nnzrow);
-   HYPRE_IJMatrixInitialize_v2(A, HYPRE_MEMORY_HOST);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(A);
    free(nnzrow);
 
    /* Initialize the RHS vector */
-   HYPRE_IJVectorInitialize_v2(b, HYPRE_MEMORY_HOST);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(b);
 
    /* Set matrix coefficients and RHS values */
 #ifdef _OPENMP
@@ -912,11 +923,11 @@ BuildLaplacianSystem_19pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix 
       nnzrow[row] = 19; /* Maximum stencil size */
    }
    HYPRE_IJMatrixSetRowSizes(A, nnzrow);
-   HYPRE_IJMatrixInitialize_v2(A, HYPRE_MEMORY_HOST);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(A);
    free(nnzrow);
 
    /* Initialize the RHS vector */
-   HYPRE_IJVectorInitialize_v2(b, HYPRE_MEMORY_HOST);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(b);
 
    /* Set matrix coefficients and RHS values */
 #ifdef _OPENMP
@@ -1116,11 +1127,11 @@ BuildLaplacianSystem_27pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix 
       nnzrow[i] = 27;
    }
    HYPRE_IJMatrixSetRowSizes(A, nnzrow);
-   HYPRE_IJMatrixInitialize_v2(A, HYPRE_MEMORY_HOST);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(A);
    free(nnzrow);
 
    /* Initialize the RHS */
-   HYPRE_IJVectorInitialize_v2(b, HYPRE_MEMORY_HOST);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(b);
 
    /*
     * Fill matrix and RHS with a "classic" style 27-pt discretization.
@@ -1353,8 +1364,8 @@ BuildLaplacianSystem_125pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix
    HYPRE_IJMatrixSetRowSizes(A, nnzrow);
    free(nnzrow);
 
-   HYPRE_IJMatrixInitialize_v2(A, HYPRE_MEMORY_HOST);
-   HYPRE_IJVectorInitialize_v2(b, HYPRE_MEMORY_HOST);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(A);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(b);
 
    /* Some uniform negative weights for the off-diagonals. */
    const HYPRE_Real W_FACE  = -1.0;  /* neighbors with |dx|+|dy|+|dz| = 1 */

@@ -449,6 +449,8 @@ AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
       }
       return;
    }
+
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
    num_entries = (HYPRE_Int)(jupper - jlower + 1);
    values      = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
@@ -477,14 +479,20 @@ AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
       HYPRE_IJVectorGetValues(vec_nn, num_entries, NULL, values);
 
       /* Fill entries */
+      hypre_Vector  *seq_vec = hypre_ParVectorLocalVector(args->rbms[i]);
+      HYPRE_Complex *data    = hypre_VectorData(seq_vec);
       for (HYPRE_Int j = 0; j < num_entries; j++)
       {
-         hypre_ParVectorEntryI(args->rbms[i], j) = values[j];
+         data[j] = values[j];
       }
    }
 
    /* Free memory */
    free(values);
+#else
+   (void)vec_nn;
+   return;
+#endif
 }
 
 /*-----------------------------------------------------------------------------
@@ -521,15 +529,22 @@ AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetSmoothNumSweeps(precon, args->smoother.num_sweeps);
    HYPRE_BoomerAMGSetSmoothNumLevels(precon, args->smoother.num_levels);
    HYPRE_BoomerAMGSetMaxRowSum(precon, args->coarsening.max_row_sum);
+#if HYPRE_CHECK_MIN_VERSION(22100, 0)
    HYPRE_BoomerAMGSetILUType(precon, args->smoother.ilu.type);
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_BoomerAMGSetILULocalReordering(precon, args->smoother.ilu.reordering);
    HYPRE_BoomerAMGSetILUTriSolve(precon, args->smoother.ilu.tri_solve);
    HYPRE_BoomerAMGSetILULowerJacobiIters(precon, args->smoother.ilu.lower_jac_iters);
    HYPRE_BoomerAMGSetILUUpperJacobiIters(precon, args->smoother.ilu.upper_jac_iters);
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22100, 0)
    HYPRE_BoomerAMGSetILULevel(precon, args->smoother.ilu.fill_level);
    HYPRE_BoomerAMGSetILUDroptol(precon, args->smoother.ilu.droptol);
    HYPRE_BoomerAMGSetILUMaxRowNnz(precon, args->smoother.ilu.max_row_nnz);
    HYPRE_BoomerAMGSetILUMaxIter(precon, args->smoother.num_sweeps);
+#endif
+#if HYPRE_CHECK_MIN_VERSION(23000, 0)
    HYPRE_BoomerAMGSetFSAIAlgoType(precon, args->smoother.fsai.algo_type);
    HYPRE_BoomerAMGSetFSAILocalSolveType(precon, args->smoother.fsai.ls_type);
    HYPRE_BoomerAMGSetFSAIMaxSteps(precon, args->smoother.fsai.max_steps);
@@ -539,6 +554,7 @@ AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetFSAIThreshold(precon, args->smoother.fsai.threshold);
    HYPRE_BoomerAMGSetFSAIEigMaxIters(precon, args->smoother.fsai.eig_max_iters);
    HYPRE_BoomerAMGSetFSAIKapTolerance(precon, args->smoother.fsai.kap_tolerance);
+#endif
    HYPRE_BoomerAMGSetNumFunctions(precon, args->coarsening.num_functions);
    HYPRE_BoomerAMGSetAggNumLevels(precon, args->aggressive.num_levels);
    HYPRE_BoomerAMGSetAggInterpType(precon, args->aggressive.prolongation_type);
@@ -549,7 +565,9 @@ AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetNumPaths(precon, args->aggressive.num_paths);
    HYPRE_BoomerAMGSetMaxIter(precon, args->max_iter);
    HYPRE_BoomerAMGSetRAP2(precon, args->coarsening.rap2);
+#if HYPRE_CHECK_MIN_VERSION(21800, 0)
    HYPRE_BoomerAMGSetModuleRAP2(precon, args->coarsening.mod_rap2);
+#endif
    HYPRE_BoomerAMGSetKeepTranspose(precon, args->coarsening.keep_transpose);
 
    /* Pre-smoothing */
@@ -592,7 +610,9 @@ AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_BoomerAMGSetNodalDiag(precon, 1);
       HYPRE_BoomerAMGSetInterpVecVariant(precon, 2); // GM-2
       HYPRE_BoomerAMGSetInterpVecQMax(precon, 4);
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
       HYPRE_BoomerAMGSetSmoothInterpVectors(precon, 1);
+#endif
       HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms,
                                       (HYPRE_ParVector *)args->rbms);
    }
