@@ -381,7 +381,7 @@ int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
-   HYPRE_Initialize();
+   TEST_HYPRE_INIT();
 
    RUN_TEST(test_IJMatrixReadMultipartBinary_success);
    RUN_TEST(test_IJMatrixReadMultipartBinary_missing_file);
@@ -397,7 +397,7 @@ main(int argc, char **argv)
    RUN_TEST(test_IJMatrixReadMultipartBinary_uint64_indices_float_coeffs);
    RUN_TEST(test_IJMatrixReadMultipartBinary_invalid_value_type);
 
-   HYPRE_Finalize();
+   TEST_HYPRE_FINALIZE();
    MPI_Finalize();
    return 0;
 }

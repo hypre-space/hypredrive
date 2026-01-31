@@ -94,6 +94,13 @@ ILUSetDefaultArgs(ILU_args *args)
 void
 ILUCreate(const ILU_args *args, HYPRE_Solver *precon_ptr)
 {
+#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+   (void)args;
+   ErrorCodeSet(ERROR_INVALID_PRECON);
+   ErrorMsgAdd("ILU requires hypre >= 2.19.0");
+   *precon_ptr = NULL;
+   return;
+#else
    HYPRE_Solver precon = NULL;
 
    HYPRE_ILUCreate(&precon);
@@ -101,9 +108,11 @@ ILUCreate(const ILU_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_ILUSetType(precon, args->type);
    HYPRE_ILUSetLevelOfFill(precon, args->fill_level);
    HYPRE_ILUSetLocalReordering(precon, args->reordering);
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_ILUSetTriSolve(precon, args->tri_solve);
    HYPRE_ILUSetLowerJacobiIters(precon, args->lower_jac_iters);
    HYPRE_ILUSetUpperJacobiIters(precon, args->upper_jac_iters);
+#endif
    HYPRE_ILUSetPrintLevel(precon, args->print_level);
    HYPRE_ILUSetMaxIter(precon, args->max_iter);
    HYPRE_ILUSetTol(precon, args->tolerance);
@@ -113,4 +122,5 @@ ILUCreate(const ILU_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_ILUSetNSHDropThreshold(precon, args->nsh_droptol);
 
    *precon_ptr = precon;
+#endif
 }

@@ -10,6 +10,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "HYPRE_utilities.h"
+#include "compatibility.h"
 #include "containers.h"
 #include "error.h"
 
@@ -30,24 +32,16 @@ bool  IsYAMLFilename(const char *);
 /*******************************************************************************
  *******************************************************************************/
 
-/* Helper macros to check if HYPRE_DEVELOP_NUMBER is defined */
-#ifdef HYPRE_DEVELOP_NUMBER
-#define HYPRE_DEVELOP_NUMBER_EXISTS 1
-#else
-#define HYPRE_DEVELOP_NUMBER_EXISTS 0
-#endif
-
 /* Check if HYPRE_DEVELOP_NUMBER is greater or equal than a given value */
-#define HYPRE_DEVELOP_NUMBER_GE(develop) (HYPRE_DEVELOP_NUMBER >= (develop))
+#define HYPRE_DEVELOP_NUMBER_GE(develop) (HYPREDRV_HYPRE_DEVELOP_NUMBER >= (develop))
 
 /* Check if HYPRE_RELEASE_NUMBER is greater than a given value */
-#define HYPRE_RELEASE_NUMBER_GT(release) (HYPRE_RELEASE_NUMBER > (release))
+#define HYPRE_RELEASE_NUMBER_GT(release) (HYPREDRV_HYPRE_RELEASE_NUMBER > (release))
 
 /* Check for a specific hypre release number and whether
    HYPRE_DEVELOP_NUMBER is defined and greater or equal than a given value */
 #define HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(release, develop) \
-   (HYPRE_RELEASE_NUMBER == (release) && HYPRE_DEVELOP_NUMBER_EXISTS && \
-    HYPRE_DEVELOP_NUMBER_GE(develop))
+   (HYPREDRV_HYPRE_RELEASE_NUMBER == (release) && HYPRE_DEVELOP_NUMBER_GE(develop))
 
 /* Check for minimum HYPRE version in order to allow certain features */
 #define HYPRE_CHECK_MIN_VERSION(release, develop) \
