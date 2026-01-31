@@ -271,20 +271,50 @@ if(NOT HYPRE_FOUND)
         string(REPLACE "/" "_" _hypre_version_tag "${HYPRE_VERSION}")
         set(_hypre_autotools_prefix "${CMAKE_BINARY_DIR}/hypre-autotools-${_hypre_version_tag}")
         set(_hypre_autotools_src "${hypre_SOURCE_DIR}/src")
-        set(_hypre_autotools_build "${hypre_BINARY_DIR}/autotools")
-        set(_hypre_autotools_cflags "${CMAKE_C_FLAGS} -O3 -DNDEBUG")
+        # Match typical CMake build-type flags for autotools builds.
+        set(_hypre_autotools_cflags "${CMAKE_C_FLAGS}")
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O0 -g")
+        elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+            set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O2 -g")
+        else()
+            set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O3 -DNDEBUG")
+        endif()
+
+        set(_hypre_autotools_configure_extra "")
+        if(HYPREDRV_ENABLE_CALIPER)
+            if(TPL_CALIPER_INCLUDE_DIRS AND TPL_CALIPER_LIBRARIES)
+                list(APPEND _hypre_autotools_configure_extra
+                    --with-caliper
+                    --with-caliper-include=${TPL_CALIPER_INCLUDE_DIRS}
+                    --with-caliper-lib=${TPL_CALIPER_LIBRARIES}
+                )
+            elseif(CALIPER_INCLUDE_DIR AND CALIPER_LIBRARY)
+                list(APPEND _hypre_autotools_configure_extra
+                    --with-caliper
+                    --with-caliper-include=${CALIPER_INCLUDE_DIR}
+                    --with-caliper-lib=${CALIPER_LIBRARY}
+                )
+            else()
+                message(WARNING "HYPREDRV_ENABLE_CALIPER=ON but Caliper include/lib not found for hypre autotools build.")
+            endif()
+        endif()
 
         ExternalProject_Add(hypre_autotools
             SOURCE_DIR ${_hypre_autotools_src}
-            BINARY_DIR ${_hypre_autotools_build}
             CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
                 CC=${MPI_C_COMPILER}
                 CFLAGS=${_hypre_autotools_cflags}
                 ${_hypre_autotools_src}/configure --prefix=${_hypre_autotools_prefix}
-            BUILD_COMMAND ${CMAKE_MAKE_PROGRAM}
-            INSTALL_COMMAND ${CMAKE_MAKE_PROGRAM} install
-            BUILD_IN_SOURCE 0
+                ${_hypre_autotools_configure_extra}
+            BUILD_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${CMAKE_MAKE_PROGRAM}
+            INSTALL_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${CMAKE_MAKE_PROGRAM} install
+            BUILD_IN_SOURCE 1
         )
+
+        # Ensure the install prefix directories exist at configure time for imported targets.
+        file(MAKE_DIRECTORY "${_hypre_autotools_prefix}/include")
+        file(MAKE_DIRECTORY "${_hypre_autotools_prefix}/lib")
 
         set(HYPRE_INCLUDE_DIRS "${_hypre_autotools_prefix}/include")
         set(HYPRE_LIBRARIES "${_hypre_autotools_prefix}/lib/libHYPRE.a")
@@ -294,16 +324,27 @@ if(NOT HYPRE_FOUND)
             INTERFACE_INCLUDE_DIRECTORIES "${HYPRE_INCLUDE_DIRS}"
             INTERFACE_LINK_LIBRARIES "${HYPRE_LIBRARIES}"
         )
+        if(TARGET MPI::MPI_C)
+            target_link_libraries(HYPRE::HYPRE INTERFACE MPI::MPI_C)
+        else()
+            if(MPI_C_LIBRARIES)
+                target_link_libraries(HYPRE::HYPRE INTERFACE ${MPI_C_LIBRARIES})
+            endif()
+            if(MPI_C_INCLUDE_DIRS)
+                target_include_directories(HYPRE::HYPRE INTERFACE ${MPI_C_INCLUDE_DIRS})
+            endif()
+        endif()
         add_dependencies(HYPRE::HYPRE hypre_autotools)
 
         set(HYPREDRV_HYPRE_USER_PROVIDED TRUE)
+        set(HYPREDRV_HYPRE_AUTOTOOLS TRUE)
         set(HYPRE_FOUND TRUE)
 
         unset(_hypre_version_tag)
         unset(_hypre_autotools_prefix)
         unset(_hypre_autotools_src)
-        unset(_hypre_autotools_build)
         unset(_hypre_autotools_cflags)
+        unset(_hypre_autotools_configure_extra)
     else()
     # Generic CMake argument inheritance
     # Forward all relevant cache variables to HYPRE build, including TPLs (MAGMA, CUDA, etc.)
@@ -522,7 +563,7 @@ if(TARGET HYPRE::HYPRE)
     message(STATUS "  libraries: ${HYPRE_LIBRARY_FILE}")
 
     # For autotools/custom HYPRE, read HYPRE_config.h to derive version info and MPI mode.
-    if(HYPREDRV_HYPRE_USER_PROVIDED AND HYPRE_INCLUDE_DIRS)
+    if(HYPREDRV_HYPRE_USER_PROVIDED AND HYPRE_INCLUDE_DIRS AND NOT HYPREDRV_HYPRE_AUTOTOOLS)
         set(_hypre_config_found FALSE)
         foreach(_inc_dir IN LISTS HYPRE_INCLUDE_DIRS)
             if(EXISTS "${_inc_dir}/HYPRE_config.h")
