@@ -18,6 +18,7 @@ against two hypre versions (defaults: v2.30.0 and v3.0.0).
 Options:
   -a|--version-a <ver>    Baseline hypre version (default: v2.30.0)
   -b|--version-b <ver>    Comparison hypre version (default: v3.0.0)
+  -c|--version-c <ver>    Optional third hypre version (default: unset)
   --build-type <type>     CMake build type (default: RelWithDebInfo)
   --n <nx> <ny> <nz>      Grid dimensions (default: 100 100 100)
   --pgrid <Px> <Py> <Pz>  Processor grid (default: 1 1 1)
@@ -57,6 +58,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 VERSION_A="v2.30.0"
 VERSION_B="v3.0.0"
+VERSION_C=""
 BUILD_TYPE="${BUILD_TYPE:-RelWithDebInfo}"
 CFLAGS="${CFLAGS:--fno-omit-frame-pointer -fno-optimize-sibling-calls}"
 
@@ -95,24 +97,19 @@ MPIEXEC_ARGS="${MPIEXEC_ARGS:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --version-a)
-      [[ $# -ge 2 ]] || fail "missing value for --version-a"
+    -a|--version-a)
+      [[ $# -ge 2 ]] || fail "missing value for -a or --version-a"
       VERSION_A="$2"
       shift 2
       ;;
-    -a)
-      [[ $# -ge 2 ]] || fail "missing value for -a"
-      VERSION_A="$2"
-      shift 2
-      ;;
-    --version-b)
-      [[ $# -ge 2 ]] || fail "missing value for --version-b"
+    -b|--version-b)
+      [[ $# -ge 2 ]] || fail "missing value for -b or --version-b"
       VERSION_B="$2"
       shift 2
       ;;
-    -b)
-      [[ $# -ge 2 ]] || fail "missing value for -b"
-      VERSION_B="$2"
+    -c|--version-c)
+      [[ $# -ge 2 ]] || fail "missing value for -c or --version-c"
+      VERSION_C="$2"
       shift 2
       ;;
     --build-type)
@@ -621,6 +618,9 @@ mkdir -p "${PERF_OUT}"
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   build_version "${VERSION_A}"
   build_version "${VERSION_B}"
+  if [[ -n "${VERSION_C}" ]]; then
+    build_version "${VERSION_C}"
+  fi
 fi
 
 run_suite() {
@@ -629,10 +629,14 @@ run_suite() {
 
   run_perf_for_version "${VERSION_A}"
   run_perf_for_version "${VERSION_B}"
+  if [[ -n "${VERSION_C}" ]]; then
+    run_perf_for_version "${VERSION_C}"
+  fi
 
   summary_times="${RUN_OUT}/summary_times.txt"
   echo "scaling=${SCALING_MODE} pgrid=${PGRID_ARR[*]} n=${GLOBAL_NXYZ_ARR[*]} mpi_np=${MPI_NP}" > "${summary_times}"
-  for version in "${VERSION_A}" "${VERSION_B}"; do
+  for version in "${VERSION_A}" "${VERSION_B}" "${VERSION_C}"; do
+    [[ -n "${version}" ]] || continue
     if [[ -f "${RUN_OUT}/${version}/cmd.txt" ]]; then
       echo "cmd ${version}: $(tr -d '\n' < ${RUN_OUT}/${version}/cmd.txt)" >> "${summary_times}"
     fi
@@ -645,6 +649,9 @@ run_suite() {
     "------------" "----------" "----------" "----------" "----" >> "${summary_times}"
   summarize_times_row "${VERSION_A}" "setup"
   summarize_times_row "${VERSION_B}" "setup"
+  if [[ -n "${VERSION_C}" ]]; then
+    summarize_times_row "${VERSION_C}" "setup"
+  fi
   echo "" >> "${summary_times}"
   echo "Solve (seconds)" >> "${summary_times}"
   printf "%-12s | %10s | %10s | %10s | %4s\n" \
@@ -653,27 +660,52 @@ run_suite() {
     "------------" "----------" "----------" "----------" "----" >> "${summary_times}"
   summarize_times_row "${VERSION_A}" "solve"
   summarize_times_row "${VERSION_B}" "solve"
+  if [[ -n "${VERSION_C}" ]]; then
+    summarize_times_row "${VERSION_C}" "solve"
+  fi
 
   if [[ "${PERF_ENABLED}" -eq 1 ]]; then
-    diff_folded="${RUN_OUT}/diff.folded"
-    perl "${FLAMEGRAPH_DIR}/difffolded.pl" \
-      "${RUN_OUT}/${VERSION_A}/perf.folded" \
-      "${RUN_OUT}/${VERSION_B}/perf.folded" \
-      > "${diff_folded}"
-
     diff_flag=""
     if perl "${FLAMEGRAPH_DIR}/flamegraph.pl" --help 2>&1 | grep -q -- '--diff'; then
       diff_flag="--diff"
     fi
 
+    diff_ab_folded="${RUN_OUT}/diff_ab.folded"
+    perl "${FLAMEGRAPH_DIR}/difffolded.pl" \
+      "${RUN_OUT}/${VERSION_A}/perf.folded" \
+      "${RUN_OUT}/${VERSION_B}/perf.folded" \
+      > "${diff_ab_folded}"
     perl "${FLAMEGRAPH_DIR}/flamegraph.pl" ${diff_flag} \
       --title "laplacian ${VERSION_B} vs ${VERSION_A}" --countname "samples" \
       --width "${SVG_WIDTH}" --fontsize "${FONT_SIZE}" --minwidth "${MIN_WIDTH}" \
-      "${diff_folded}" > "${RUN_OUT}/diff.svg"
+      "${diff_ab_folded}" > "${RUN_OUT}/diff_ab.svg"
+
+    if [[ -n "${VERSION_C}" ]]; then
+      diff_ac_folded="${RUN_OUT}/diff_ac.folded"
+      perl "${FLAMEGRAPH_DIR}/difffolded.pl" \
+        "${RUN_OUT}/${VERSION_A}/perf.folded" \
+        "${RUN_OUT}/${VERSION_C}/perf.folded" \
+        > "${diff_ac_folded}"
+      perl "${FLAMEGRAPH_DIR}/flamegraph.pl" ${diff_flag} \
+        --title "laplacian ${VERSION_C} vs ${VERSION_A}" --countname "samples" \
+        --width "${SVG_WIDTH}" --fontsize "${FONT_SIZE}" --minwidth "${MIN_WIDTH}" \
+        "${diff_ac_folded}" > "${RUN_OUT}/diff_ac.svg"
+
+      diff_bc_folded="${RUN_OUT}/diff_bc.folded"
+      perl "${FLAMEGRAPH_DIR}/difffolded.pl" \
+        "${RUN_OUT}/${VERSION_B}/perf.folded" \
+        "${RUN_OUT}/${VERSION_C}/perf.folded" \
+        > "${diff_bc_folded}"
+      perl "${FLAMEGRAPH_DIR}/flamegraph.pl" ${diff_flag} \
+        --title "laplacian ${VERSION_C} vs ${VERSION_B}" --countname "samples" \
+        --width "${SVG_WIDTH}" --fontsize "${FONT_SIZE}" --minwidth "${MIN_WIDTH}" \
+        "${diff_bc_folded}" > "${RUN_OUT}/diff_bc.svg"
+    fi
 
     summary_csv="${RUN_OUT}/summary.csv"
     echo "version,event,value,unit" > "${summary_csv}"
-    for version in "${VERSION_A}" "${VERSION_B}"; do
+    for version in "${VERSION_A}" "${VERSION_B}" "${VERSION_C}"; do
+      [[ -n "${version}" ]] || continue
       stat_file="${RUN_OUT}/${version}/perf_stat.csv"
       if [[ -f "$stat_file" ]]; then
         awk -F, -v ver="${version}" '
@@ -697,7 +729,12 @@ run_suite() {
     echo "FlameGraphs:"
     echo "  ${RUN_OUT}/${VERSION_A}/flame.svg"
     echo "  ${RUN_OUT}/${VERSION_B}/flame.svg"
-    echo "  ${RUN_OUT}/diff.svg"
+    echo "  ${RUN_OUT}/diff_ab.svg"
+    if [[ -n "${VERSION_C}" ]]; then
+      echo "  ${RUN_OUT}/${VERSION_C}/flame.svg"
+      echo "  ${RUN_OUT}/diff_ac.svg"
+      echo "  ${RUN_OUT}/diff_bc.svg"
+    fi
     echo "Summary:"
     echo "  ${summary_csv}"
   else
