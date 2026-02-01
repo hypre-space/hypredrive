@@ -131,6 +131,11 @@ endif()
 if(CALIPER_FOUND)
     if(TARGET caliper::caliper)
         target_link_libraries(HYPREDRV PRIVATE caliper::caliper)
+        # Ensure Caliper headers are visible to dependents when HYPRE enables Caliper
+        get_target_property(CALIPER_INCLUDE_DIRS caliper::caliper INTERFACE_INCLUDE_DIRECTORIES)
+        if(CALIPER_INCLUDE_DIRS)
+            target_include_directories(HYPREDRV PUBLIC $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIRS}>)
+        endif()
         # Caliper is a C++ library - ensure C++ standard library is available
         # Enable C++ language support for linking C++ libraries
         enable_language(CXX OPTIONAL)
@@ -153,7 +158,7 @@ if(CALIPER_FOUND)
         # Caliper was built via FetchContent - add include directories
         get_property(CALIPER_INCLUDE_DIR_FOR_HYPRE CACHE CALIPER_INCLUDE_DIR_FOR_HYPRE PROPERTY VALUE)
         if(CALIPER_INCLUDE_DIR_FOR_HYPRE)
-            target_include_directories(HYPREDRV PRIVATE $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIR_FOR_HYPRE}>)
+            target_include_directories(HYPREDRV PUBLIC $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIR_FOR_HYPRE}>)
         endif()
         target_link_libraries(HYPREDRV PRIVATE caliper)
         # Enable C++ and link standard library PUBLIC
@@ -170,7 +175,7 @@ if(CALIPER_FOUND)
             endif()
         endif()
     else()
-        target_include_directories(HYPREDRV PRIVATE ${CALIPER_INCLUDE_DIR})
+        target_include_directories(HYPREDRV PUBLIC $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIR}>)
         target_link_libraries(HYPREDRV PRIVATE ${CALIPER_LIBRARY})
         # Enable C++ and link standard library PUBLIC for manual linking case
         enable_language(CXX OPTIONAL)

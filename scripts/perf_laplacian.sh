@@ -40,6 +40,7 @@ Options:
   --no-warmup             Skip warmup run
   --no-report             Skip perf report text output
   --no-perf               Disable perf stat/record/flamegraphs
+  --caliper               Use Caliper instead of perf (sets CALI_CONFIG)
   --help                  Show this help
 Environment overrides:
   CFLAGS, MPIEXEC, MPIEXEC_ARGS, FLAMEGRAPH_DIR, PERF_EVENTS,
@@ -81,6 +82,8 @@ FONT_SIZE="${FONT_SIZE:-12}"
 MIN_WIDTH="${MIN_WIDTH:-1}"
 GENERATE_REPORT="${GENERATE_REPORT:-1}"
 PERF_ENABLED="${PERF_ENABLED:-1}"
+CALIPER_ENABLED="${CALIPER_ENABLED:-0}"
+CALI_CONFIG="${CALI_CONFIG:-runtime-report,max_column_width=200,calc.inclusive,output=stdout,mpi-report}"
 
 FLAMEGRAPH_DIR="${FLAMEGRAPH_DIR:-$ROOT_DIR/FlameGraph}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
@@ -209,6 +212,11 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --no-perf)
+      PERF_ENABLED=0
+      shift
+      ;;
+    --caliper)
+      CALIPER_ENABLED=1
       PERF_ENABLED=0
       shift
       ;;
@@ -490,10 +498,28 @@ setup_flamegraph() {
 build_version() {
   local version="$1"
   local build_dir="${ROOT_DIR}/build-${version}"
+  local need_rebuild=0
 
   if [[ -x "${build_dir}/laplacian" ]]; then
-    echo "==> Build exists for ${version}, skipping"
-    return
+    if [[ "${CALIPER_ENABLED}" -eq 1 ]]; then
+      if ! grep -q "HYPREDRV_ENABLE_CALIPER:BOOL=ON" "${build_dir}/CMakeCache.txt" 2>/dev/null; then
+        echo "==> Build exists for ${version} but without Caliper, rebuilding"
+        need_rebuild=1
+      else
+        echo "==> Build exists for ${version}, skipping"
+        return
+      fi
+    else
+      echo "==> Build exists for ${version}, skipping"
+      return
+    fi
+  fi
+
+  local caliper_flag="-DHYPREDRV_ENABLE_CALIPER=OFF"
+  local hypre_caliper_flag="-DHYPRE_ENABLE_CALIPER=OFF"
+  if [[ "${CALIPER_ENABLED}" -eq 1 ]]; then
+    caliper_flag="-DHYPREDRV_ENABLE_CALIPER=ON"
+    hypre_caliper_flag="-DHYPRE_ENABLE_CALIPER=ON"
   fi
 
   cmake -DCMAKE_C_COMPILER=clang \
@@ -501,9 +527,12 @@ build_version() {
         -DCMAKE_C_FLAGS="${CFLAGS}" \
         -DHYPRE_VERSION="${version}" \
         -DHYPREDRV_ENABLE_EXAMPLES=ON \
+        ${caliper_flag} \
+        ${hypre_caliper_flag} \
         -B "${build_dir}" -S "${ROOT_DIR}" --fresh
   cmake --build "${build_dir}" --parallel
 }
+
 
 
 run_perf_for_version() {
@@ -531,11 +560,15 @@ run_perf_for_version() {
   fi
 
   printf '%q ' "${cmd[@]}" > "${out_dir}/cmd.txt"
-  printf '
-' >> "${out_dir}/cmd.txt"
+  printf '\n' >> "${out_dir}/cmd.txt"
+
+  local env_prefix=()
+  if [[ "${CALIPER_ENABLED}" -eq 1 ]]; then
+    env_prefix=("env" "CALI_CONFIG=${CALI_CONFIG}")
+  fi
 
   if [[ "$WARMUP" -eq 1 ]]; then
-    (cd "${build_dir}" && "${cmd[@]}" > "${out_dir}/warmup.log" 2>&1)
+    (cd "${build_dir}" && "${env_prefix[@]}" "${cmd[@]}" > "${out_dir}/warmup.log" 2>&1)
   fi
 
   if [[ "${PERF_ENABLED}" -eq 1 ]]; then
@@ -568,12 +601,13 @@ run_perf_for_version() {
       --width "${SVG_WIDTH}" --fontsize "${FONT_SIZE}" --minwidth "${MIN_WIDTH}" \
       "${out_dir}/perf.folded" > "${out_dir}/flame.svg"
   else
-    if ! (cd "${build_dir}" && "${cmd[@]}" > "${out_dir}/run.log" 2>&1); then
+    if ! (cd "${build_dir}" && "${env_prefix[@]}" "${cmd[@]}" > "${out_dir}/run.log" 2>&1); then
       echo "run failed for ${version}. Check ${out_dir}/run.log" >&2
       exit 1
     fi
   fi
 }
+
 
 
 
@@ -667,7 +701,11 @@ run_suite() {
     echo "Summary:"
     echo "  ${summary_csv}"
   else
-    echo "Perf disabled (--no-perf): no perf stats/flamegraphs generated."
+    if [[ "${CALIPER_ENABLED}" -eq 1 ]]; then
+      echo "Caliper enabled (--caliper): perf stats/flamegraphs skipped."
+    else
+      echo "Perf disabled (--no-perf): no perf stats/flamegraphs generated."
+    fi
   fi
   echo "Timing summary:"
   echo "  ${summary_times}"
