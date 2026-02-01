@@ -37,6 +37,8 @@ Options:
   --font-size <px>        FlameGraph font size (default: 12)
   --minwidth <px>         FlameGraph min frame width (default: 1)
   --scaling <mode>        strong|weak (default: strong)
+  --plot-scaling          Generate scaling plots from summary_times.txt
+  -t|--trace              Enable bash tracing (set -x)
   --skip-build            Skip CMake builds (reuse existing build dirs)
   --no-warmup             Skip warmup run
   --no-report             Skip perf report text output
@@ -72,6 +74,8 @@ STENCIL="${STENCIL:-7}"
 VERBOSE="${VERBOSE:-1}"
 YAML_INPUT="${YAML_INPUT:-}"
 SCALING_MODE="${SCALING_MODE:-strong}"
+PLOT_SCALING="${PLOT_SCALING:-0}"
+TRACE="${TRACE:-0}"
 
 PERF_OUT="${PERF_OUT:-$ROOT_DIR/perf-out/laplacian}"
 PERF_FREQ="${PERF_FREQ:-99}"
@@ -196,6 +200,14 @@ while [[ $# -gt 0 ]]; do
       SCALING_MODE="$2"
       shift 2
       ;;
+    --plot-scaling)
+      PLOT_SCALING=1
+      shift
+      ;;
+    -t|--trace)
+      TRACE=1
+      shift
+      ;;
     --skip-build)
       SKIP_BUILD=1
       shift
@@ -226,6 +238,10 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${TRACE}" -eq 1 ]]; then
+  set -x
+fi
 
 if [[ "${PERF_ENABLED}" -eq 1 ]]; then
   command -v perf >/dev/null 2>&1 || fail "perf not found in PATH"
@@ -374,8 +390,8 @@ summarize_times_row() {
   fi
 
   if [[ ! -f "$log_file" ]]; then
-    printf "%-12s | %10s | %10s | %10s | %4s\n" \
-      "$version" "NA" "NA" "NA" "0" >> "${out_file}"
+    printf "%-12s | %10s | %10s | %10s | %10s | %4s\n" \
+      "$version" "NA" "NA" "NA" "NA" "0" >> "${out_file}"
     return
   fi
 
@@ -390,19 +406,25 @@ summarize_times_row() {
         if (count == 0 || v < vmin) vmin = v
         if (count == 0 || v > vmax) vmax = v
         sum += v
+        sumsq += v * v
         count++
       }
     }
     END {
       if (count > 0)
       {
-        printf("%-12s | %10.6f | %10.6f | %10.6f | %4d\n",
-               ver, sum/count, vmin, vmax, count)
+        avg = sum / count
+        if (count > 1)
+          std = sqrt((sumsq - sum * sum / count) / (count - 1))
+        else
+          std = 0.0
+        printf("%-12s | %10.6f | %10.6f | %10.6f | %10.6f | %4d\n",
+               ver, avg, vmin, vmax, std, count)
       }
       else
       {
-        printf("%-12s | %10s | %10s | %10s | %4s\n",
-               ver, "NA", "NA", "NA", "0")
+        printf("%-12s | %10s | %10s | %10s | %10s | %4s\n",
+               ver, "NA", "NA", "NA", "NA", "0")
       }
     }
   ' "${log_file}" >> "${out_file}"
@@ -417,17 +439,17 @@ append_scaling_summary() {
   local solve_file="${PERF_OUT}/summary_scaling_solve.txt"
 
   if [[ ! -f "$setup_file" ]]; then
-    printf "%4s | %-9s | %-10s | %10s | %10s | %10s | %4s\n" \
-      "np" "pgrid" "version" "AVG" "MIN" "MAX" "n" > "${setup_file}"
-    printf "%4s-+-%-9s-+-%-10s-+-%10s-+-%10s-+-%10s-+-%4s\n" \
-      "----" "---------" "----------" "----------" "----------" "----------" "----" >> "${setup_file}"
+    printf "%4s | %-9s | %-10s | %10s | %10s | %10s | %10s | %4s\n" \
+      "np" "pgrid" "version" "AVG" "MIN" "MAX" "STD" "n" > "${setup_file}"
+    printf "%4s-+-%-9s-+-%-10s-+-%10s-+-%10s-+-%10s-+-%10s-+-%4s\n" \
+      "----" "---------" "----------" "----------" "----------" "----------" "----------" "----" >> "${setup_file}"
   fi
 
   if [[ ! -f "$solve_file" ]]; then
-    printf "%4s | %-9s | %-10s | %10s | %10s | %10s | %4s\n" \
-      "np" "pgrid" "version" "AVG" "MIN" "MAX" "n" > "${solve_file}"
-    printf "%4s-+-%-9s-+-%-10s-+-%10s-+-%10s-+-%10s-+-%4s\n" \
-      "----" "---------" "----------" "----------" "----------" "----------" "----" >> "${solve_file}"
+    printf "%4s | %-9s | %-10s | %10s | %10s | %10s | %10s | %4s\n" \
+      "np" "pgrid" "version" "AVG" "MIN" "MAX" "STD" "n" > "${solve_file}"
+    printf "%4s-+-%-9s-+-%-10s-+-%10s-+-%10s-+-%10s-+-%10s-+-%4s\n" \
+      "----" "---------" "----------" "----------" "----------" "----------" "----------" "----" >> "${solve_file}"
   fi
 
   awk -F'|' -v np="${np}" -v pgrid="${pgrid}" '
@@ -437,10 +459,10 @@ append_scaling_summary() {
     $0 ~ /\|/ {
       v = trim($1)
       if (v == "version" || v ~ /^-+$/ || v == "") next
-      avg = trim($2); min = trim($3); max = trim($4); n = trim($5)
+      avg = trim($2); min = trim($3); max = trim($4); std = trim($5); n = trim($6)
       if (section == "setup")
-        printf("%4s | %-9s | %-10s | %10s | %10s | %10s | %4s\n",
-               np, pgrid, v, avg, min, max, n)
+        printf("%4s | %-9s | %-10s | %10s | %10s | %10s | %10s | %4s\n",
+               np, pgrid, v, avg, min, max, std, n)
     }
   ' "${summary_file}" >> "${setup_file}"
 
@@ -451,10 +473,10 @@ append_scaling_summary() {
     $0 ~ /\|/ {
       v = trim($1)
       if (v == "version" || v ~ /^-+$/ || v == "") next
-      avg = trim($2); min = trim($3); max = trim($4); n = trim($5)
+      avg = trim($2); min = trim($3); max = trim($4); std = trim($5); n = trim($6)
       if (section == "solve")
-        printf("%4s | %-9s | %-10s | %10s | %10s | %10s | %4s\n",
-               np, pgrid, v, avg, min, max, n)
+        printf("%4s | %-9s | %-10s | %10s | %10s | %10s | %10s | %4s\n",
+               np, pgrid, v, avg, min, max, std, n)
     }
   ' "${summary_file}" >> "${solve_file}"
 }
@@ -643,10 +665,10 @@ run_suite() {
   done
   echo "" >> "${summary_times}"
   echo "Setup (seconds)" >> "${summary_times}"
-  printf "%-12s | %10s | %10s | %10s | %4s\n" \
-    "version" "AVG" "MIN" "MAX" "n" >> "${summary_times}"
-  printf "%-12s-+-%10s-+-%10s-+-%10s-+-%4s\n" \
-    "------------" "----------" "----------" "----------" "----" >> "${summary_times}"
+  printf "%-12s | %10s | %10s | %10s | %10s | %4s\n" \
+    "version" "AVG" "MIN" "MAX" "STD" "n" >> "${summary_times}"
+  printf "%-12s-+-%10s-+-%10s-+-%10s-+-%10s-+-%4s\n" \
+    "------------" "----------" "----------" "----------" "----------" "----" >> "${summary_times}"
   summarize_times_row "${VERSION_A}" "setup"
   summarize_times_row "${VERSION_B}" "setup"
   if [[ -n "${VERSION_C}" ]]; then
@@ -654,10 +676,10 @@ run_suite() {
   fi
   echo "" >> "${summary_times}"
   echo "Solve (seconds)" >> "${summary_times}"
-  printf "%-12s | %10s | %10s | %10s | %4s\n" \
-    "version" "AVG" "MIN" "MAX" "n" >> "${summary_times}"
-  printf "%-12s-+-%10s-+-%10s-+-%10s-+-%4s\n" \
-    "------------" "----------" "----------" "----------" "----" >> "${summary_times}"
+  printf "%-12s | %10s | %10s | %10s | %10s | %4s\n" \
+    "version" "AVG" "MIN" "MAX" "STD" "n" >> "${summary_times}"
+  printf "%-12s-+-%10s-+-%10s-+-%10s-+-%10s-+-%4s\n" \
+    "------------" "----------" "----------" "----------" "----------" "----" >> "${summary_times}"
   summarize_times_row "${VERSION_A}" "solve"
   summarize_times_row "${VERSION_B}" "solve"
   if [[ -n "${VERSION_C}" ]]; then
@@ -757,6 +779,147 @@ run_suite() {
   fi
 }
 
+plot_scaling() {
+  local plot_dir="${PERF_OUT}"
+  local plot_file_setup="${plot_dir}/scaling_setup.png"
+  local plot_file_solve="${plot_dir}/scaling_solve.png"
+  local plot_log="${plot_dir}/plot_scaling.log"
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "warning: python3 not found; skipping scaling plots" >&2
+    return 0
+  fi
+
+  if ! PLOT_DIR="${plot_dir}" python3 - <<'PY' > "${plot_log}" 2>&1
+import glob
+import os
+import re
+import sys
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+
+perf_out = os.environ.get("PLOT_DIR", "")
+if not perf_out:
+    sys.exit("PLOT_DIR not set")
+
+summary_files = sorted(glob.glob(os.path.join(perf_out, "np*", "summary_times.txt")))
+if not summary_files:
+    sys.exit(f"No summary_times.txt files found under {perf_out}")
+
+data = {"Setup": {}, "Solve": {}}
+np_values = set()
+
+def parse_table(lines, start_idx):
+    rows = []
+    for line in lines[start_idx:]:
+        line = line.rstrip()
+        if not line or line.startswith("Solve"):
+            break
+        if line.startswith("-") or line.startswith("version"):
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) < 5:
+            continue
+        ver = parts[0]
+        vmin = parts[2]
+        try:
+            min_val = float(vmin)
+        except ValueError:
+            continue
+        rows.append((ver, min_val))
+    return rows
+
+for path in summary_files:
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    np_match = None
+    for line in lines:
+        if line.startswith("scaling="):
+            m = re.search(r"mpi_np=([0-9]+)", line)
+            if m:
+                np_match = int(m.group(1))
+            break
+    if np_match is None:
+        continue
+    np_values.add(np_match)
+
+    for i, line in enumerate(lines):
+        if line.startswith("Setup (seconds)"):
+            for ver, min_val in parse_table(lines, i + 1):
+                data["Setup"].setdefault(ver, []).append((np_match, min_val))
+        if line.startswith("Solve (seconds)"):
+            for ver, min_val in parse_table(lines, i + 1):
+                data["Solve"].setdefault(ver, []).append((np_match, min_val))
+
+def _log2_ticks(min_val, max_val):
+    if min_val <= 0 or max_val <= 0:
+        return [], []
+    min_pow = int(np.floor(np.log2(min_val)))
+    max_pow = int(np.ceil(np.log2(max_val)))
+    ticks = [2 ** p for p in range(min_pow, max_pow + 1)]
+    labels = [str(int(t)) for t in ticks]
+    return ticks, labels
+
+def plot_section(section, out_path):
+    if not data[section]:
+        return
+
+    versions = sorted(data[section].keys())
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4.5))
+
+    # Line plot of MIN vs np for each version
+    for ver in versions:
+        points = sorted(data[section][ver], key=lambda x: x[0])
+        nps = [p[0] for p in points]
+        mins = [p[1] for p in points]
+        ax.plot(nps, mins, marker="o", label=ver)
+
+    ax.set_title(f"{section} (min)")
+    ax.set_xlabel("MPI ranks")
+    ax.set_ylabel("Time (s)")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend()
+
+    # Log2 scaling for x-axis with decimal tick labels
+    ax.set_xscale("log", base=2)
+    all_nps = []
+    all_vals = []
+    for ver in versions:
+        for p in data[section][ver]:
+            all_nps.append(p[0])
+            all_vals.append(p[1])
+    xticks, xticklabels = _log2_ticks(min(all_nps), max(all_nps))
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticklabels)
+
+    # Log2 scale for y-axis with decimal tick labels (powers of 2 only)
+    ax.set_yscale("log", base=2)
+    yticks, _ = _log2_ticks(min(all_vals), max(all_vals))
+    yticklabels = [f"{t:.4g}" for t in yticks]
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(yticklabels)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+
+plot_section("Setup", os.path.join(perf_out, "scaling_setup.png"))
+plot_section("Solve", os.path.join(perf_out, "scaling_solve.png"))
+PY
+  then
+    echo "warning: scaling plot generation failed. See ${plot_log}" >&2
+    return 0
+  fi
+
+  if [[ ! -f "${plot_file_setup}" || ! -f "${plot_file_solve}" ]]; then
+    echo "warning: scaling plots not found. See ${plot_log}" >&2
+    return 0
+  fi
+}
+
 
 if [[ ${#MPI_LIST_ARR[@]} -gt 0 ]]; then
   for np in "${MPI_LIST_ARR[@]}"; do
@@ -781,6 +944,15 @@ if [[ ${#MPI_LIST_ARR[@]} -gt 0 ]]; then
 
     echo "Scaling summary:"
     echo "  ${PERF_OUT}/summary_scaling.txt"
+  fi
+
+  if [[ "${PLOT_SCALING}" -eq 1 ]]; then
+    plot_scaling
+    if [[ -f "${PERF_OUT}/scaling_setup.png" && -f "${PERF_OUT}/scaling_solve.png" ]]; then
+      echo "Scaling plots:"
+      echo "  ${PERF_OUT}/scaling_setup.png"
+      echo "  ${PERF_OUT}/scaling_solve.png"
+    fi
   fi
 else
   prepare_run "$MPI_NP"
