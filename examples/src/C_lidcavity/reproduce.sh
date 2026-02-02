@@ -94,6 +94,7 @@ elif [[ "$MODE" == "solvers" ]]; then
         "fgmres-ilut_1e-2.yml"
         "fgmres-amg.yml"
         "fgmres-amg-ilut.yml"
+        "fgmres-mgr.yml"
     )
 
     # List of methods
@@ -102,7 +103,7 @@ elif [[ "$MODE" == "solvers" ]]; then
         "ILUK(1)"
         "ILUT(1e-2)"
         "AMG"
-        "AMG+ILUT(1e-2)"
+        "MGR"
     )
 
     # Array to store output filenames for the post-process step

@@ -487,8 +487,9 @@ MGRlvlGetValidValues(const char *key)
    if (!strcmp(key, "prolongation_type"))
    {
       static StrIntMap map[] = {
-         {"injection", 0},  {"l1-jacobi", 1},   {"jacobi", 2},      {"classical-mod", 3},
-         {"approx-inv", 4}, {"blk-jacobi", 12}, {"blk-rowlump", 13}};
+         {"injection", 0},     {"l1-jacobi", 1},   {"jacobi", 2},
+         {"classical-mod", 3}, {"approx-inv", 4},  {"blk-jacobi", 12},
+         {"blk-rowlump", 13},  {"blk-rowsum", 13}, {"blk-absrowsum", 14}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -501,9 +502,13 @@ MGRlvlGetValidValues(const char *key)
    }
    if (!strcmp(key, "coarse_level_type"))
    {
-      static StrIntMap map[] = {{"rap", 0},           {"non-galerkin", 1},
-                                {"cpr-like-diag", 2}, {"cpr-like-bdiag", 3},
-                                {"approx-inv", 4},    {"acc", 5}};
+      static StrIntMap map[] = {{"rap", 0},
+                                {"galerkin", 0},
+                                {"non-galerkin", 1},
+                                {"cpr-like-diag", 2},
+                                {"cpr-like-bdiag", 3},
+                                {"approx-inv", 4},
+                                {"acc", 5}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
