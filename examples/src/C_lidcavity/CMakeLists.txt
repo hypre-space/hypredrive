@@ -69,7 +69,6 @@ if(HYPREDRV_ENABLE_TESTING)
         )
         add_executable_test(lidcavity_test_mgr_4proc lidcavity 4
             ARGS -v 1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3 -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr.yml
-            RUN_SERIAL
         )
     endif()
 endif()
