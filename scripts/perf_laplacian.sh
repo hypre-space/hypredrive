@@ -12,8 +12,8 @@ usage() {
   cat <<'EOF'
 Usage: ./perf_laplacian [options]
 
-Runs perf+FlameGraph profiling for the standalone laplacian driver built
-against two hypre versions (defaults: v2.30.0 and v3.0.0).
+Runs the standalone laplacian driver across hypre versions, with optional perf/caliper
+profiling and scaling/plot summaries.
 
 Options:
   -a|--version-a <ver>    Baseline hypre version (default: v2.30.0)
@@ -40,10 +40,8 @@ Options:
   --plot-scaling          Generate scaling plots from summary_times.txt
   -t|--trace              Enable bash tracing (set -x)
   --skip-build            Skip CMake builds (reuse existing build dirs)
-  --no-warmup             Skip warmup run
   --no-report             Skip perf report text output
   --perf                  Enable perf stat/record/flamegraphs
-  --no-perf               Disable perf stat/record/flamegaphs
   --caliper               Use Caliper instead of perf (sets CALI_CONFIG)
   --help                  Show this help
 Environment overrides:
@@ -63,7 +61,11 @@ VERSION_A="v2.30.0"
 VERSION_B="v3.0.0"
 VERSION_C=""
 BUILD_TYPE="${BUILD_TYPE:-RelWithDebInfo}"
-CFLAGS="${CFLAGS:--fno-omit-frame-pointer -fno-optimize-sibling-calls}"
+USER_CFLAGS_SET=0
+if [[ -n "${CFLAGS+x}" && -n "${CFLAGS}" ]]; then
+  USER_CFLAGS_SET=1
+fi
+CFLAGS="${CFLAGS:-}"
 
 MPI_NP="${MPI_NP:-1}"
 MPI_LIST="${MPI_LIST:-}"
@@ -94,7 +96,6 @@ CALI_CONFIG="${CALI_CONFIG:-runtime-report,max_column_width=200,calc.inclusive,o
 
 FLAMEGRAPH_DIR="${FLAMEGRAPH_DIR:-$ROOT_DIR/FlameGraph}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
-WARMUP="${WARMUP:-1}"
 
 MPIEXEC="${MPIEXEC:-}"
 MPIEXEC_NP_FLAG="${MPIEXEC_NP_FLAG:--np}"
@@ -213,10 +214,6 @@ while [[ $# -gt 0 ]]; do
       SKIP_BUILD=1
       shift
       ;;
-    --no-warmup)
-      WARMUP=0
-      shift
-      ;;
     --no-report)
       GENERATE_REPORT=0
       shift
@@ -242,6 +239,14 @@ done
 
 if [[ "${TRACE}" -eq 1 ]]; then
   set -x
+fi
+
+if [[ "${USER_CFLAGS_SET}" -eq 0 ]]; then
+  if [[ "${PERF_ENABLED}" -eq 1 ]]; then
+    CFLAGS="-O3 -fno-omit-frame-pointer -fno-optimize-sibling-calls"
+  else
+    CFLAGS="-O3"
+  fi
 fi
 
 if [[ "${PERF_ENABLED}" -eq 1 ]]; then
@@ -585,10 +590,6 @@ run_perf_for_version() {
   local env_prefix=()
   if [[ "${CALIPER_ENABLED}" -eq 1 ]]; then
     env_prefix=("env" "CALI_CONFIG=${CALI_CONFIG}")
-  fi
-
-  if [[ "$WARMUP" -eq 1 ]]; then
-    (cd "${build_dir}" && "${env_prefix[@]}" "${cmd[@]}" > "${out_dir}/warmup.log" 2>&1)
   fi
 
   if [[ "${PERF_ENABLED}" -eq 1 ]]; then
