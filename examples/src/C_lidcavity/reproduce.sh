@@ -103,6 +103,7 @@ elif [[ "$MODE" == "solvers" ]]; then
         "ILUK(1)"
         "ILUT(1e-2)"
         "AMG"
+        "AMG-ILUT(1e-2)"
         "MGR"
     )
 
@@ -123,7 +124,7 @@ elif [[ "$MODE" == "solvers" ]]; then
     done
 
     # Post process (iteration and execution time plots)
-    python3 "$STATS" -f "${OUT_FILES[@]}" -ll "${METHODS[@]}" -m "iters+total"
+    python3 "$STATS" -f "${OUT_FILES[@]}" -ln "${METHODS[@]}" -m "iters+total" -s lidcavity
 else
     echo "Error: Unknown mode: $MODE"
     exit 1
