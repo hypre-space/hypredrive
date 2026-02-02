@@ -1174,7 +1174,7 @@ linear systems. In this example, we provide a comparison script to evaluate diff
 
    ./reproduce.sh --solvers
 
-This script runs the simulation with five different solver configurations and
+This script runs the simulation with six different solver configurations and
 generates performance comparison plots. The tested configurations are stored in
 the ``examples/src/C_lidcavity/`` directory and are listed below:
 
