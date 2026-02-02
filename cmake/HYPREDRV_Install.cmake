@@ -61,25 +61,35 @@ install(FILES
 )
 
 # Export the targets for use in the build tree
-# Only export if HYPRE is imported (from find_package), otherwise HYPRE built via FetchContent
-# will cause export errors since it's not in an export set
+# Only export if all non-imported dependencies are handled in an export set.
+# If HYPRE or Caliper were built via FetchContent, skip build-tree export to avoid errors.
+set(_caliper_imported TRUE)
+if(TARGET caliper)
+    get_target_property(_caliper_imported caliper IMPORTED)
+elseif(TARGET caliper::caliper)
+    get_target_property(_caliper_imported caliper::caliper IMPORTED)
+endif()
+
 if(TARGET HYPRE::HYPRE)
     get_target_property(_hypre_imported HYPRE::HYPRE IMPORTED)
-    if(_hypre_imported)
-        # HYPRE is imported, safe to export
+    if(_hypre_imported AND _caliper_imported)
+        # HYPRE and Caliper are imported, safe to export
         export(EXPORT HYPREDRVTargets
                FILE "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVTargets.cmake"
                NAMESPACE HYPREDRV::)
     else()
-        # HYPRE was built via FetchContent, skip build-tree export to avoid errors
-        # The install export will work since we include HYPRE in the install
-        message(STATUS "Skipping build-tree export (HYPRE built via FetchContent)")
+        # HYPRE and/or Caliper were built via FetchContent, skip build-tree export to avoid errors
+        message(STATUS "Skipping build-tree export (HYPRE/Caliper built via FetchContent)")
     endif()
 else()
-    # No HYPRE target, export normally
-    export(EXPORT HYPREDRVTargets
-           FILE "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVTargets.cmake"
-           NAMESPACE HYPREDRV::)
+    if(_caliper_imported)
+        # No HYPRE target, export normally
+        export(EXPORT HYPREDRVTargets
+               FILE "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVTargets.cmake"
+               NAMESPACE HYPREDRV::)
+    else()
+        message(STATUS "Skipping build-tree export (Caliper built via FetchContent)")
+    endif()
 endif()
 
 # Register package in user's package registry
