@@ -42,7 +42,8 @@ Options:
   --skip-build            Skip CMake builds (reuse existing build dirs)
   --no-warmup             Skip warmup run
   --no-report             Skip perf report text output
-  --no-perf               Disable perf stat/record/flamegraphs
+  --perf                  Enable perf stat/record/flamegraphs
+  --no-perf               Disable perf stat/record/flamegaphs
   --caliper               Use Caliper instead of perf (sets CALI_CONFIG)
   --help                  Show this help
 Environment overrides:
@@ -87,7 +88,7 @@ SVG_WIDTH="${SVG_WIDTH:-2400}"
 FONT_SIZE="${FONT_SIZE:-12}"
 MIN_WIDTH="${MIN_WIDTH:-1}"
 GENERATE_REPORT="${GENERATE_REPORT:-1}"
-PERF_ENABLED="${PERF_ENABLED:-1}"
+PERF_ENABLED="${PERF_ENABLED:-0}"
 CALIPER_ENABLED="${CALIPER_ENABLED:-0}"
 CALI_CONFIG="${CALI_CONFIG:-runtime-report,max_column_width=200,calc.inclusive,output=stdout,mpi-report}"
 
@@ -220,8 +221,8 @@ while [[ $# -gt 0 ]]; do
       GENERATE_REPORT=0
       shift
       ;;
-    --no-perf)
-      PERF_ENABLED=0
+    --perf)
+      PERF_ENABLED=1
       shift
       ;;
     --caliper)
@@ -790,7 +791,11 @@ plot_scaling() {
     return 0
   fi
 
-  if ! PLOT_DIR="${plot_dir}" python3 - <<'PY' > "${plot_log}" 2>&1
+  if ! PLOT_DIR="${plot_dir}" \
+       PLOT_VERSION_A="${VERSION_A}" \
+       PLOT_VERSION_B="${VERSION_B}" \
+       PLOT_VERSION_C="${VERSION_C}" \
+       python3 - <<'PY' > "${plot_log}" 2>&1
 import glob
 import os
 import re
@@ -804,6 +809,10 @@ import numpy as np
 perf_out = os.environ.get("PLOT_DIR", "")
 if not perf_out:
     sys.exit("PLOT_DIR not set")
+
+version_a = os.environ.get("PLOT_VERSION_A", "")
+version_b = os.environ.get("PLOT_VERSION_B", "")
+version_c = os.environ.get("PLOT_VERSION_C", "")
 
 summary_files = sorted(glob.glob(os.path.join(perf_out, "np*", "summary_times.txt")))
 if not summary_files:
@@ -855,6 +864,29 @@ for path in summary_files:
             for ver, min_val in parse_table(lines, i + 1):
                 data["Solve"].setdefault(ver, []).append((np_match, min_val))
 
+def _parse_title_meta(lines):
+    nxyz = None
+    stencil = None
+    for line in lines:
+        if line.startswith("scaling="):
+            m = re.search(r"n=([0-9]+) ([0-9]+) ([0-9]+)", line)
+            if m:
+                nxyz = (m.group(1), m.group(2), m.group(3))
+        if line.startswith("cmd ") and stencil is None:
+            m = re.search(r"-s ([0-9]+)", line)
+            if m:
+                stencil = m.group(1)
+        if nxyz and stencil:
+            break
+    return nxyz, stencil
+
+title_prefix = "laplacian"
+with open(summary_files[0], "r", encoding="utf-8") as f:
+    meta_lines = f.readlines()
+nxyz, stencil = _parse_title_meta(meta_lines)
+if nxyz and stencil:
+    title_prefix = f"laplacian_{stencil}pt_{nxyz[0]}x{nxyz[1]}x{nxyz[2]}"
+
 def _log2_ticks(min_val, max_val):
     if min_val <= 0 or max_val <= 0:
         return [], []
@@ -878,7 +910,7 @@ def plot_section(section, out_path):
         mins = [p[1] for p in points]
         ax.plot(nps, mins, marker="o", label=ver)
 
-    ax.set_title(f"{section} (min)")
+    ax.set_title(f"{title_prefix} - {section} phase (min)")
     ax.set_xlabel("MPI ranks")
     ax.set_ylabel("Time (s)")
     ax.grid(True, which="both", alpha=0.3)
@@ -906,8 +938,48 @@ def plot_section(section, out_path):
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
 
+def plot_comparison(section, out_path):
+    if not data[section]:
+        return
+
+    versions = sorted(data[section].keys())
+    baseline = version_a if version_a in versions else versions[0]
+    baseline_points = {np_val: min_val for np_val, min_val in data[section][baseline]}
+
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4.5))
+    for ver in versions:
+        points = sorted(data[section][ver], key=lambda x: x[0])
+        nps = []
+        ratios = []
+        for np_val, min_val in points:
+            base_val = baseline_points.get(np_val)
+            if base_val is None or base_val == 0:
+                continue
+            nps.append(np_val)
+            ratios.append(min_val / base_val)
+        if nps:
+            ax.plot(nps, ratios, marker="o", label=ver)
+
+    ax.axhline(1.0, color="black", linestyle="--", linewidth=0.8)
+    ax.set_title(f"{title_prefix} - {section} phase (relative to {baseline})")
+    ax.set_xlabel("MPI ranks")
+    ax.set_ylabel("Relative min time")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend()
+
+    ax.set_xscale("log", base=2)
+    all_nps = [p[0] for v in versions for p in data[section][v]]
+    xticks, xticklabels = _log2_ticks(min(all_nps), max(all_nps))
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticklabels)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+
 plot_section("Setup", os.path.join(perf_out, "scaling_setup.png"))
 plot_section("Solve", os.path.join(perf_out, "scaling_solve.png"))
+plot_comparison("Setup", os.path.join(perf_out, "comparison_setup.png"))
+plot_comparison("Solve", os.path.join(perf_out, "comparison_solve.png"))
 PY
   then
     echo "warning: scaling plot generation failed. See ${plot_log}" >&2
@@ -952,6 +1024,11 @@ if [[ ${#MPI_LIST_ARR[@]} -gt 0 ]]; then
       echo "Scaling plots:"
       echo "  ${PERF_OUT}/scaling_setup.png"
       echo "  ${PERF_OUT}/scaling_solve.png"
+      if [[ -f "${PERF_OUT}/comparison_setup.png" && -f "${PERF_OUT}/comparison_solve.png" ]]; then
+        echo "Comparison plots:"
+        echo "  ${PERF_OUT}/comparison_setup.png"
+        echo "  ${PERF_OUT}/comparison_solve.png"
+      fi
     fi
   fi
 else
