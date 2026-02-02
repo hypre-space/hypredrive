@@ -312,9 +312,9 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
             {
                NestedKrylovDestroy(args->mgr.coarsest_level.krylov);
             }
-#if !HYPRE_CHECK_MIN_VERSION(30100, 3)
             else if (args->mgr.csolver)
             {
+               /* MGR does not destroy user-provided coarse solvers. */
                if (args->mgr.csolver_type == 0)
                {
                   HYPRE_BoomerAMGDestroy(args->mgr.csolver);
@@ -330,7 +330,6 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
                   HYPRE_ILUDestroy(args->mgr.csolver);
                }
             }
-#endif
             args->mgr.csolver      = NULL;
             args->mgr.csolver_type = -1;
 
@@ -345,7 +344,8 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
                }
                else if (i == 0 && args->mgr.frelax[i])
                {
-#if !HYPRE_CHECK_MIN_VERSION(30100, 3)
+                  /* MGR does not destroy user-provided F-relaxation solvers at level 0.
+                   */
                   if (args->mgr.level[i].f_relaxation.type == 2)
                   {
                      HYPRE_BoomerAMGDestroy(args->mgr.frelax[i]);
@@ -355,7 +355,6 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
                   {
                      HYPRE_ILUDestroy(args->mgr.frelax[i]);
                   }
-#endif
 #endif
                   args->mgr.frelax[i] = NULL;
                }

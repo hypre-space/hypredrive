@@ -94,6 +94,7 @@ elif [[ "$MODE" == "solvers" ]]; then
         "fgmres-ilut_1e-2.yml"
         "fgmres-amg.yml"
         "fgmres-amg-ilut.yml"
+        "fgmres-mgr.yml"
     )
 
     # List of methods
@@ -102,7 +103,8 @@ elif [[ "$MODE" == "solvers" ]]; then
         "ILUK(1)"
         "ILUT(1e-2)"
         "AMG"
-        "AMG+ILUT(1e-2)"
+        "AMG-ILUT(1e-2)"
+        "MGR"
     )
 
     # Array to store output filenames for the post-process step
@@ -122,7 +124,7 @@ elif [[ "$MODE" == "solvers" ]]; then
     done
 
     # Post process (iteration and execution time plots)
-    python3 "$STATS" -f "${OUT_FILES[@]}" -ll "${METHODS[@]}" -m "iters+total"
+    python3 "$STATS" -f "${OUT_FILES[@]}" -ln "${METHODS[@]}" -m "iters+total" -s lidcavity
 else
     echo "Error: Unknown mode: $MODE"
     exit 1

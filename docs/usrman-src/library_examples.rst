@@ -1183,6 +1183,7 @@ the ``examples/src/C_lidcavity/`` directory and are listed below:
 - **ILUT(1e-2)**: Block Jacobi ILUT with drop tolerance 1.0e-2 (``fgmres-ilut_1e-2.yml``)
 - **AMG**: Algebraic multigrid preconditioner (``fgmres-amg.yml``)
 - **AMG+ILUT(1e-2)**: AMG with block Jacobi ILUT smoothing (``fgmres-amg-ilut.yml``)
+- **MGR**: MGR with absolute block rowsum prolongation (``fgmres-mgr.yml``)
 
 All configurations use flexible GMRES (FGMRES) with a relative tolerance of
 1.0e-6. The comparison uses a 256×256 grid with 64 MPI ranks, running from
