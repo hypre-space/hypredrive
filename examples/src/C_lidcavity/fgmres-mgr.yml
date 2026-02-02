@@ -3,7 +3,7 @@ solver:
     max_iter: 200
     krylov_dim: 200
     print_level: 0
-    relative_tol: 1.0e-3
+    relative_tol: 1.0e-6
 
 preconditioner:
   mgr:
