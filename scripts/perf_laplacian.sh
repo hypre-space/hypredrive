@@ -38,6 +38,8 @@ Options:
   --minwidth <px>         FlameGraph min frame width (default: 1)
   --scaling <mode>        strong|weak (default: strong)
   --plot-scaling          Generate scaling plots from summary_times.txt
+  --metric <m>            Plot metric: min|max|avg|std (default: min)
+  --dry-run <dir>         Only read results in <dir> and plot scaling/compare
   -t|--trace              Enable bash tracing (set -x)
   --skip-build            Skip CMake builds (reuse existing build dirs)
   --no-report             Skip perf report text output
@@ -79,6 +81,9 @@ YAML_INPUT="${YAML_INPUT:-}"
 SCALING_MODE="${SCALING_MODE:-strong}"
 PLOT_SCALING="${PLOT_SCALING:-0}"
 TRACE="${TRACE:-0}"
+DRY_RUN="${DRY_RUN:-0}"
+DRY_RUN_DIR="${DRY_RUN_DIR:-}"
+PLOT_METRIC="${PLOT_METRIC:-min}"
 
 PERF_OUT="${PERF_OUT:-$ROOT_DIR/perf-out/laplacian}"
 PERF_FREQ="${PERF_FREQ:-99}"
@@ -206,6 +211,17 @@ while [[ $# -gt 0 ]]; do
       PLOT_SCALING=1
       shift
       ;;
+    --metric)
+      [[ $# -ge 2 ]] || fail "missing value for --metric"
+      PLOT_METRIC="$2"
+      shift 2
+      ;;
+    --dry-run)
+      [[ $# -ge 2 ]] || fail "missing value for --dry-run"
+      DRY_RUN=1
+      DRY_RUN_DIR="$2"
+      shift 2
+      ;;
     -t|--trace)
       TRACE=1
       shift
@@ -240,6 +256,15 @@ done
 if [[ "${TRACE}" -eq 1 ]]; then
   set -x
 fi
+
+case "${PLOT_METRIC}" in
+  min|max|avg|std)
+    ;;
+  *)
+    fail "invalid --metric: ${PLOT_METRIC} (use min|max|avg|std)"
+    ;;
+esac
+
 
 if [[ "${USER_CFLAGS_SET}" -eq 0 ]]; then
   if [[ "${PERF_ENABLED}" -eq 1 ]]; then
@@ -632,21 +657,6 @@ run_perf_for_version() {
 
 
 
-if [[ "${PERF_ENABLED}" -eq 1 ]]; then
-  setup_flamegraph "${FLAMEGRAPH_DIR}"
-fi
-TIMESTAMP="$(date +"%Y%m%d-%H%M%S")"
-PERF_OUT="${PERF_OUT%/}-${TIMESTAMP}"
-mkdir -p "${PERF_OUT}"
-
-if [[ "$SKIP_BUILD" -eq 0 ]]; then
-  build_version "${VERSION_A}"
-  build_version "${VERSION_B}"
-  if [[ -n "${VERSION_C}" ]]; then
-    build_version "${VERSION_C}"
-  fi
-fi
-
 run_suite() {
   local np="$1"
   local pgrid_str="$2"
@@ -796,6 +806,7 @@ plot_scaling() {
        PLOT_VERSION_A="${VERSION_A}" \
        PLOT_VERSION_B="${VERSION_B}" \
        PLOT_VERSION_C="${VERSION_C}" \
+       PLOT_METRIC="${PLOT_METRIC}" \
        python3 - <<'PY' > "${plot_log}" 2>&1
 import glob
 import os
@@ -814,6 +825,7 @@ if not perf_out:
 version_a = os.environ.get("PLOT_VERSION_A", "")
 version_b = os.environ.get("PLOT_VERSION_B", "")
 version_c = os.environ.get("PLOT_VERSION_C", "")
+plot_metric = os.environ.get("PLOT_METRIC", "min").lower()
 
 summary_files = sorted(glob.glob(os.path.join(perf_out, "np*", "summary_times.txt")))
 if not summary_files:
@@ -831,15 +843,21 @@ def parse_table(lines, start_idx):
         if line.startswith("-") or line.startswith("version"):
             continue
         parts = [p.strip() for p in line.split("|")]
-        if len(parts) < 5:
+        if len(parts) < 6:
             continue
         ver = parts[0]
+        avg = parts[1]
         vmin = parts[2]
+        vmax = parts[3]
+        std = parts[4]
         try:
+            avg_val = float(avg)
             min_val = float(vmin)
+            max_val = float(vmax)
+            std_val = float(std)
         except ValueError:
             continue
-        rows.append((ver, min_val))
+        rows.append((ver, avg_val, min_val, max_val, std_val))
     return rows
 
 for path in summary_files:
@@ -859,11 +877,15 @@ for path in summary_files:
 
     for i, line in enumerate(lines):
         if line.startswith("Setup (seconds)"):
-            for ver, min_val in parse_table(lines, i + 1):
-                data["Setup"].setdefault(ver, []).append((np_match, min_val))
+            for ver, avg_val, min_val, max_val, std_val in parse_table(lines, i + 1):
+                data["Setup"].setdefault(ver, []).append(
+                    (np_match, avg_val, min_val, max_val, std_val)
+                )
         if line.startswith("Solve (seconds)"):
-            for ver, min_val in parse_table(lines, i + 1):
-                data["Solve"].setdefault(ver, []).append((np_match, min_val))
+            for ver, avg_val, min_val, max_val, std_val in parse_table(lines, i + 1):
+                data["Solve"].setdefault(ver, []).append(
+                    (np_match, avg_val, min_val, max_val, std_val)
+                )
 
 def _parse_title_meta(lines):
     nxyz = None
@@ -904,14 +926,41 @@ def plot_section(section, out_path):
     versions = sorted(data[section].keys())
     fig, ax = plt.subplots(1, 1, figsize=(8, 4.5))
 
-    # Line plot of MIN vs np for each version
+    metric_label = plot_metric
+    if plot_metric == "std":
+        metric_label = "avg (std)"
+
+    # Line plot of metric vs np for each version
     for ver in versions:
         points = sorted(data[section][ver], key=lambda x: x[0])
         nps = [p[0] for p in points]
-        mins = [p[1] for p in points]
-        ax.plot(nps, mins, marker="o", label=ver)
+        avg_vals = [p[1] for p in points]
+        min_vals = [p[2] for p in points]
+        max_vals = [p[3] for p in points]
+        std_vals = [p[4] for p in points]
 
-    ax.set_title(f"{title_prefix} - {section} phase (min)")
+        if plot_metric == "min":
+            vals = min_vals
+            ax.plot(nps, vals, marker="o", label=ver)
+        elif plot_metric == "max":
+            vals = max_vals
+            ax.plot(nps, vals, marker="o", label=ver)
+        elif plot_metric == "avg":
+            vals = avg_vals
+            ax.plot(nps, vals, marker="o", label=ver)
+        else:
+            vals = avg_vals
+            ax.errorbar(
+                nps,
+                vals,
+                yerr=std_vals,
+                marker="o",
+                linewidth=1.2,
+                capsize=3,
+                label=ver,
+            )
+
+    ax.set_title(f"{title_prefix} - {section} phase ({metric_label})")
     ax.set_xlabel("MPI ranks")
     ax.set_ylabel("Time (s)")
     ax.grid(True, which="both", alpha=0.3)
@@ -924,7 +973,12 @@ def plot_section(section, out_path):
     for ver in versions:
         for p in data[section][ver]:
             all_nps.append(p[0])
-            all_vals.append(p[1])
+            if plot_metric == "min":
+                all_vals.append(p[2])
+            elif plot_metric == "max":
+                all_vals.append(p[3])
+            else:
+                all_vals.append(p[1])
     xticks, xticklabels = _log2_ticks(min(all_nps), max(all_nps))
     ax.set_xticks(xticks)
     ax.set_xticklabels(xticklabels)
@@ -945,19 +999,32 @@ def plot_comparison(section, out_path):
 
     versions = sorted(data[section].keys())
     baseline = version_a if version_a in versions else versions[0]
-    baseline_points = {np_val: min_val for np_val, min_val in data[section][baseline]}
+    baseline_points = {}
+    for np_val, avg_val, min_val, max_val, std_val in data[section][baseline]:
+        if plot_metric == "min":
+            baseline_points[np_val] = min_val
+        elif plot_metric == "max":
+            baseline_points[np_val] = max_val
+        else:
+            baseline_points[np_val] = avg_val
 
     fig, ax = plt.subplots(1, 1, figsize=(8, 4.5))
     for ver in versions:
         points = sorted(data[section][ver], key=lambda x: x[0])
         nps = []
         ratios = []
-        for np_val, min_val in points:
+        for np_val, avg_val, min_val, max_val, std_val in points:
             base_val = baseline_points.get(np_val)
             if base_val is None or base_val == 0:
                 continue
+            if plot_metric == "min":
+                val = min_val
+            elif plot_metric == "max":
+                val = max_val
+            else:
+                val = avg_val
             nps.append(np_val)
-            ratios.append(min_val / base_val)
+            ratios.append(val / base_val)
         if nps:
             ax.plot(nps, ratios, marker="o", label=ver)
 
@@ -992,6 +1059,40 @@ PY
     return 0
   fi
 }
+
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+  [[ -n "${DRY_RUN_DIR}" ]] || fail "--dry-run requires a results directory"
+  [[ -d "${DRY_RUN_DIR}" ]] || fail "--dry-run directory not found: ${DRY_RUN_DIR}"
+  PERF_OUT="${DRY_RUN_DIR%/}"
+  PLOT_SCALING=1
+  plot_scaling
+  if [[ -f "${PERF_OUT}/scaling_setup.png" && -f "${PERF_OUT}/scaling_solve.png" ]]; then
+    echo "Scaling plots:"
+    echo "  ${PERF_OUT}/scaling_setup.png"
+    echo "  ${PERF_OUT}/scaling_solve.png"
+    if [[ -f "${PERF_OUT}/comparison_setup.png" && -f "${PERF_OUT}/comparison_solve.png" ]]; then
+      echo "Comparison plots:"
+      echo "  ${PERF_OUT}/comparison_setup.png"
+      echo "  ${PERF_OUT}/comparison_solve.png"
+    fi
+  fi
+  exit 0
+fi
+
+if [[ "${PERF_ENABLED}" -eq 1 ]]; then
+  setup_flamegraph "${FLAMEGRAPH_DIR}"
+fi
+TIMESTAMP="$(date +"%Y%m%d-%H%M%S")"
+PERF_OUT="${PERF_OUT%/}-${TIMESTAMP}"
+mkdir -p "${PERF_OUT}"
+
+if [[ "$SKIP_BUILD" -eq 0 ]]; then
+  build_version "${VERSION_A}"
+  build_version "${VERSION_B}"
+  if [[ -n "${VERSION_C}" ]]; then
+    build_version "${VERSION_C}"
+  fi
+fi
 
 
 if [[ ${#MPI_LIST_ARR[@]} -gt 0 ]]; then
