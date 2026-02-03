@@ -10,6 +10,7 @@ import re
 import os
 import pandas as pd
 import argparse
+import bisect
 import logging
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
@@ -178,6 +179,13 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
         if user_ls == 'none':
             return 'None'
         return user_ls
+ 
+    def resolve_single_legend():
+        if sources:
+            return get_legend_name(sources[0], legend_names or {})
+        if legend_names:
+            return next(iter(legend_names.values()))
+        return "data"
 
     if multiple_sources:
         for src in sources:
@@ -190,7 +198,7 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
         grp = df.sort_values(by=xtype)
         y = grp['iters'].cumsum() if cumulative else grp['iters']
         ls = resolve_ls(linestyle, '-')
-        legend_name = legend_names[sources[0]]
+        legend_name = resolve_single_legend()
         plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=legend_name)
 
     plt.legend(loc="best", fontsize=lgfs)
@@ -613,12 +621,69 @@ def get_legend_name(source, legend_names):
     #return legend_names.get(source, str(source))
     return f"${legend_names.get(source, str(source))}$"
 
+def read_timesteps_file(path):
+    """
+    Reads a timesteps file with format:
+      <num_timesteps>
+      <timestep_index> <ls_start>
+    Returns a list of (timestep_index, ls_start) sorted by ls_start.
+    """
+    entries = []
+    with open(path, "r") as f:
+        header = f.readline()
+        if not header:
+            raise ValueError(f"Empty timesteps file: {path}")
+        try:
+            total = int(header.strip())
+        except ValueError as exc:
+            raise ValueError(f"Invalid timesteps header in {path}") from exc
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) != 2:
+                raise ValueError(f"Invalid timesteps line in {path}: {line}")
+            tstep = int(parts[0])
+            start = int(parts[1])
+            entries.append((tstep, start))
+
+    if len(entries) != total:
+        raise ValueError(f"Expected {total} timesteps, found {len(entries)} in {path}")
+
+    entries.sort(key=lambda x: x[1])
+    return entries
+
+def map_entry_to_timestep(entries, entry):
+    starts = [s for _, s in entries]
+    pos = bisect.bisect_right(starts, entry) - 1
+    if pos < 0:
+        return entries[0][0]
+    return entries[pos][0]
+
+def map_entry_to_timestep_offset(entries, entry):
+    starts = [s for _, s in entries]
+    pos = bisect.bisect_right(starts, entry) - 1
+    if pos < 0:
+        pos = 0
+    tstep = entries[pos][0]
+    start = entries[pos][1]
+    next_start = starts[pos + 1] if pos + 1 < len(starts) else None
+    if next_start is None:
+        count = max(1, entry - start + 1)
+    else:
+        count = max(1, next_start - start)
+    local_index = entry - start
+    return tstep + (local_index / count)
+
 def main():
     # List of pre-defined labels
     labels = {'rows': "Number of rows",
               'nonzeros': "Number of nonzeros",
               'entry': "Linear system number",
-              'nranks': "Number of MPI ranks"}
+              'nranks': "Number of MPI ranks",
+              'timestep': "Timestep",
+              'timestep_offset': "Timestep"}
 
     # List of pre-defined modes:
     mode_choices = ('iters', 'times', 'iters-and-times', 'setup', 'solve', 'total', 'throughput', 'bar')
@@ -645,6 +710,9 @@ def main():
     parser.add_argument("-ls", "--linestyle", type=str, default='auto', choices=['auto', '-', '--', '-.', ':', 'none'], help="Line style for plots; 'none' draws markers only; 'auto' preserves defaults")
     parser.add_argument("-ms", "--markersize", type=float, default=None, help="Marker size (points); defaults to Matplotlib rcParams")
     parser.add_argument("-ln", "--legend-names", type=str, nargs="+", default=None, help="Custom legend labels for each input file (must match number of files)")
+    parser.add_argument("--tsteps", type=str, default=None, help="Timesteps file mapping timestep index to starting ls id")
+    parser.add_argument("--tsteps-aggregate", action="store_true",
+                        help="Aggregate stats within each timestep (requires --tsteps)")
     parser.add_argument("-p", "--phase", type=str, default='total', choices=['setup', 'solve', 'total', 'iters'],
                         help="Phase for bar mode: setup, solve, total (setup+solve), or iters")
     parser.add_argument("-v", "--verbose", action='count', default=0, help='Increase verbosity (-v=INFO, -vv=DEBUG)')
@@ -733,6 +801,34 @@ def main():
 
     # Convert data types
     df = df.astype(data_types)
+
+    if args.tsteps:
+        tsteps = read_timesteps_file(args.tsteps)
+        df['timestep'] = df['entry'].apply(lambda e: map_entry_to_timestep(tsteps, int(e)))
+        df['timestep_offset'] = df['entry'].apply(lambda e: map_entry_to_timestep_offset(tsteps, int(e)))
+        if args.xtype == 'entry':
+            args.xtype = 'timestep_offset'
+        if args.tsteps_aggregate:
+            group_cols = ['timestep']
+            if 'source' in df.columns:
+                group_cols = ['source', 'timestep']
+            agg_map = {
+                'entry': 'min',
+                'nranks': 'first',
+                'rows': 'sum',
+                'nonzeros': 'sum',
+                'build': 'sum',
+                'setup': 'sum',
+                'solve': 'sum',
+                'total': 'sum',
+                'resnorm': 'mean',
+                'iters': 'sum',
+            }
+            df = df.groupby(group_cols, as_index=False).agg(agg_map)
+            if args.xtype in ('entry', 'timestep_offset'):
+                args.xtype = 'timestep'
+    elif args.tsteps_aggregate:
+        raise ValueError("--tsteps-aggregate requires --tsteps")
 
     # Create legend name mapping
     legend_names = {}
