@@ -1,12 +1,12 @@
 Date and time: YYYY-MM-DD HH:MM:SS
 
 Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
-Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
 
 Running on 1 MPI rank
 ------------------------------------------------------------------------------------
 general: 
   use_millisec: on
+  dev_pool_size: 0.01
 linear_system: 
   rhs_filename: data/ps3d10pt7/np1/IJ.out.b
   matrix_filename: data/ps3d10pt7/np1/IJ.out.A
@@ -20,12 +20,12 @@ Solving linear system #0 with 1000 rows and 6400 nonzeros...
 
 STATISTICS SUMMARY:
 
-+------------+-------------+-------------+-------------+-------------+-------------+
-|            |    LS build |       setup |       solve |    relative |             |
-|      Entry |  times [ms] |  times [ms] |  times [ms] |   res. norm |       iters |
-+------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       1.548 |       1.335 |       0.306 |    4.98e-08 |           6 |
-+------------+-------------+-------------+-------------+-------------+-------------+
++--------+-------------+-------------+-------------+------------+------------+--------+
+|        |    LS build |       setup |       solve |    initial |   relative |        |
+|  Entry |  times [ms] |  times [ms] |  times [ms] |  res. norm |  res. norm |  iters |
++--------+-------------+-------------+-------------+------------+------------+--------+
+|      0 |       1.500 |       1.286 |       0.262 |   3.16e+01 |   4.98e-08 |      6 |
++--------+-------------+-------------+-------------+------------+------------+--------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
 ${HYPREDRIVE_PATH}/hypredrive done!

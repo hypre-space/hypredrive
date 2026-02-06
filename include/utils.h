@@ -51,7 +51,7 @@ bool  IsYAMLFilename(const char *);
 enum
 {
    GB_TO_BYTES        = (1 << 30),
-   MAX_DIVISOR_LENGTH = 84
+   MAX_DIVISOR_LENGTH = 90
 };
 
 #define PRINT_DASHED_LINE(_l)        \

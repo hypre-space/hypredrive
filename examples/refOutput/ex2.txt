@@ -1,7 +1,6 @@
 Date and time: YYYY-MM-DD HH:MM:SS
 
 Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
-Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
 
 Running on 4 MPI ranks
 ------------------------------------------------------------------------------------
@@ -113,7 +112,10 @@ BoomerAMG SETUP PARAMETERS:
  Coarsening Type = PMIS 
  measures are determined locally
 
- Interpolation = extended+i
+
+ No global partition option chosen.
+
+ Interpolation = extended+i interpolation
 
 Operator Matrix Information:
 
@@ -172,12 +174,12 @@ Iters       ||r||_2     conv.rate  ||r||_2/||b||_2
 
 STATISTICS SUMMARY:
 
-+------------+-------------+-------------+-------------+-------------+-------------+
-|            |    LS build |       setup |       solve |    relative |             |
-|      Entry |  times [ms] |  times [ms] |  times [ms] |   res. norm |       iters |
-+------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.355 |       2.054 |       0.321 |    9.44e-07 |           5 |
-+------------+-------------+-------------+-------------+-------------+-------------+
++--------+-------------+-------------+-------------+------------+------------+--------+
+|        |    LS build |       setup |       solve |    initial |   relative |        |
+|  Entry |  times [ms] |  times [ms] |  times [ms] |  res. norm |  res. norm |  iters |
++--------+-------------+-------------+-------------+------------+------------+--------+
+|      0 |       0.228 |       2.175 |       0.591 |   3.16e+01 |   9.44e-07 |      5 |
++--------+-------------+-------------+-------------+------------+------------+--------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
 ${HYPREDRIVE_PATH}/hypredrive done!

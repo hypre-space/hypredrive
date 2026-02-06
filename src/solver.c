@@ -315,13 +315,11 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
       return;
    }
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
-
    void              *vA = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
    HYPRE_Int          iters  = 0;
-   HYPRE_Complex      b_norm = NAN, r_norm = NAN;
+   HYPRE_Complex      b_norm = NAN, r_norm = NAN, r0_norm = NAN;
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;
@@ -329,6 +327,12 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
    par_b = (HYPRE_ParVector)vb;
    HYPRE_IJVectorGetObject(x, &vx);
    par_x = (HYPRE_ParVector)vx;
+
+   /* Compute initial residual norm (absolute L2) before timing the solve */
+   LinearSystemComputeResidualNorm(A, b, x, "L2", &r0_norm);
+
+   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
+   StatsInitialResNormSet(r0_norm);
 
    switch (solver_method)
    {
