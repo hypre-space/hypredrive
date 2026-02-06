@@ -1,7 +1,6 @@
 Date and time: YYYY-MM-DD HH:MM:SS
 
 Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
-Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
 
 Running on 4 MPI ranks
 ------------------------------------------------------------------------------------
@@ -116,12 +115,12 @@ Final L2 norm of residual: 1.527692e-07
 
 STATISTICS SUMMARY:
 
-+------------+-------------+-------------+-------------+-------------+-------------+
-|            |    LS build |       setup |       solve |    relative |             |
-|      Entry |  times [ms] |  times [ms] |  times [ms] |   res. norm |       iters |
-+------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.823 |       2.941 |       1.652 |    1.53e-07 |          10 |
-+------------+-------------+-------------+-------------+-------------+-------------+
++--------+-------------+-------------+-------------+------------+------------+--------+
+|        |    LS build |       setup |       solve |    initial |   relative |        |
+|  Entry |  times [ms] |  times [ms] |  times [ms] |  res. norm |  res. norm |  iters |
++--------+-------------+-------------+-------------+------------+------------+--------+
+|      0 |       1.394 |       3.566 |       1.759 |   1.00e+00 |   1.53e-07 |     10 |
++--------+-------------+-------------+-------------+------------+------------+--------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
 ${HYPREDRIVE_PATH}/hypredrive done!

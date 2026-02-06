@@ -16,6 +16,7 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 #include "HYPREDRV_config.h"
+#include "HYPRE_config.h"
 #ifdef HYPRE_USING_OPENMP
 #include <omp.h>
 #endif
@@ -204,8 +205,8 @@ PrintSystemInfoLegacy(MPI_Comm comm)
 
    if (!myid)
    {
-      printf("================================ System Information "
-             "================================\n\n");
+      printf("================================== System Information "
+             "=================================\n\n");
 
       // 1. CPU cores and model
       int  numPhysicalCPUs = 0;
@@ -712,8 +713,8 @@ PrintSystemInfoLegacy(MPI_Comm comm)
       dl_iterate_phdr(dlpi_callback, NULL);
 #endif
 
-      printf("\n================================ System Information "
-             "================================\n\n");
+      printf("\n================================== System Information "
+             "=================================\n\n");
       printf("Running on %d MPI rank%s\n", nprocs, nprocs > 1 ? "s" : "");
 
       /* Number of OpenMP threads per rank used in hypre */

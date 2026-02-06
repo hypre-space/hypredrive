@@ -41,10 +41,10 @@ def parse_statistics_summary(filename, exclude, source_label=None):
     nonzeros = []
 
     # Regular expressions to extract statistics and auxiliary data
-    start_pattern = re.compile(r"\+\-+\+\-+\+\-+\+\-+\+\-+\+\-+\+")
-    end_pattern   = re.compile(r"\+\-+\+\-+\+\-+\+\-+\+\-+\+\-+\+")
+    start_pattern = re.compile(r"\+\-+(?:\+\-+)+\+")
+    end_pattern   = re.compile(r"\+\-+(?:\+\-+)+\+")
     data_pattern  = re.compile(
-        r"\|\s+(\d+)\s+\|\s+(\d+\.\d+)?\s*\|\s+(\d+\.\d+)\s+\|\s+(\d+\.\d+)\s+\|\s+(\d+\.\d+e[+-]\d+)\s+\|\s+(\d+)\s+\|"
+        r"\|\s+(\d+)\s+\|\s+(\d+\.\d+)?\s*\|\s+(\d+\.\d+)\s+\|\s+(\d+\.\d+)\s+\|\s+(\d+\.\d+e[+-]\d+)\s+\|\s+(\d+\.\d+e[+-]\d+)\s+\|\s+(\d+)\s+\|"
     )
     rows_and_nonzeros_pattern = re.compile(
         r"Solving linear system #\d+ with (\d+) rows and (\d+) nonzeros..."
@@ -108,8 +108,9 @@ def parse_statistics_summary(filename, exclude, source_label=None):
             'setup': float(row[2]),
             'solve': float(row[3]),
             'total': float(row[2]) + float(row[3]),
-            'resnorm': float(row[4]),
-            'iters': int(row[5])
+            'r0norm': float(row[4]),
+            'resnorm': float(row[5]),
+            'iters': int(row[6])
         }
         series = pd.Series(entry_data, name=f'log_{filename}_entry_{row[0]}')
         series_list.append(series)
@@ -795,6 +796,7 @@ def main():
         'setup':    'float',
         'solve':    'float',
         'total':    'float',
+        'r0norm':   'float',
         'resnorm':  'float',
         'iters':    'int'
     }
@@ -821,6 +823,7 @@ def main():
                 'setup': 'sum',
                 'solve': 'sum',
                 'total': 'sum',
+                'r0norm': 'mean',
                 'resnorm': 'mean',
                 'iters': 'sum',
             }

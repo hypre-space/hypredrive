@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "stats.h"
+#include <math.h>
 #include <mpi.h>
 #include <stdarg.h>
 #include <string.h>
@@ -59,6 +60,8 @@ EnsureCapacity(void)
       ReallocateArray((void **)&active_stats->solve, sizeof(double), old_capacity,
                       new_capacity);
       ReallocateArray((void **)&active_stats->rrnorms, sizeof(double), old_capacity,
+                      new_capacity);
+      ReallocateArray((void **)&active_stats->r0norms, sizeof(double), old_capacity,
                       new_capacity);
       ReallocateArray((void **)&active_stats->iters, sizeof(int), old_capacity,
                       new_capacity);
@@ -288,15 +291,31 @@ HandleAnnotationEnd(const char *name)
  * Helper: Print table divisor line
  *--------------------------------------------------------------------------*/
 
+enum
+{
+   STATS_ENTRY_WIDTH = 6,
+   STATS_TIME_WIDTH  = 11,
+   STATS_RES_WIDTH   = 10,
+   STATS_ITERS_WIDTH = 6
+};
+
 static void
 PrintDivisor(void)
 {
-   printf("+------------");
-   for (int i = 0; i < 4; i++)
+   const int widths[] = {STATS_ENTRY_WIDTH, STATS_TIME_WIDTH, STATS_TIME_WIDTH,
+                         STATS_TIME_WIDTH,  STATS_RES_WIDTH,  STATS_RES_WIDTH,
+                         STATS_ITERS_WIDTH};
+   const int count    = (int)(sizeof(widths) / sizeof(widths[0]));
+
+   for (int i = 0; i < count; i++)
    {
-      printf("+-------------");
+      putchar('+');
+      for (int j = 0; j < widths[i] + 2; j++)
+      {
+         putchar('-');
+      }
    }
-   printf("+-------------+\n");
+   printf("+\n");
 }
 
 /*--------------------------------------------------------------------------
@@ -306,23 +325,28 @@ PrintDivisor(void)
 static void
 PrintHeader(const char *scale)
 {
-   const char *top[]    = {"", "LS build", "setup", "solve", "relative", ""};
-   const char *bottom[] = {"Entry", "times", "times", "times", "res. norm", "iters"};
+   const char *top[]    = {"", "LS build", "setup", "solve", "initial", "relative", ""};
+   const char *bottom[] = {"Entry",     "times",     "times", "times",
+                           "res. norm", "res. norm", "iters"};
+   char        time_label[32];
 
-   printf("|%11s ", top[0]);
-   for (int i = 1; i < 6; i++)
-   {
-      printf("|%12s ", top[i]);
-   }
-   printf("|\n");
+   snprintf(time_label, sizeof(time_label), "times %s", scale);
 
-   printf("|%11s ", bottom[0]);
-   printf("|%*s %*s ", 11 - (int)strlen(scale), bottom[1], (int)strlen(scale), scale);
-   printf("|%*s %*s ", 11 - (int)strlen(scale), bottom[2], (int)strlen(scale), scale);
-   printf("|%*s %*s ", 11 - (int)strlen(scale), bottom[3], (int)strlen(scale), scale);
-   printf("|%12s ", bottom[4]);
-   printf("|%12s ", bottom[5]);
-   printf("|\n");
+   printf("| %*s ", STATS_ENTRY_WIDTH, top[0]);
+   printf("| %*s ", STATS_TIME_WIDTH, top[1]);
+   printf("| %*s ", STATS_TIME_WIDTH, top[2]);
+   printf("| %*s ", STATS_TIME_WIDTH, top[3]);
+   printf("| %*s ", STATS_RES_WIDTH, top[4]);
+   printf("| %*s ", STATS_RES_WIDTH, top[5]);
+   printf("| %*s |\n", STATS_ITERS_WIDTH, top[6]);
+
+   printf("| %*s ", STATS_ENTRY_WIDTH, bottom[0]);
+   printf("| %*s ", STATS_TIME_WIDTH, time_label);
+   printf("| %*s ", STATS_TIME_WIDTH, time_label);
+   printf("| %*s ", STATS_TIME_WIDTH, time_label);
+   printf("| %*s ", STATS_RES_WIDTH, bottom[4]);
+   printf("| %*s ", STATS_RES_WIDTH, bottom[5]);
+   printf("| %*s |\n", STATS_ITERS_WIDTH, bottom[6]);
 }
 
 /*--------------------------------------------------------------------------
@@ -339,17 +363,25 @@ PrintEntryWithIndex(int entry_index, int display_index)
 
    if (show_build)
    {
-      printf("| %10d | %11.3f | %11.3f | %11.3f | %11.2e |  %10d |\n", display_index,
-             build_time, active_stats->time_factor * active_stats->prec[entry_index],
+      printf("| %*d | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
+             display_index, STATS_TIME_WIDTH, 3, build_time, STATS_TIME_WIDTH, 3,
+             active_stats->time_factor * active_stats->prec[entry_index],
+             STATS_TIME_WIDTH, 3,
              active_stats->time_factor * active_stats->solve[entry_index],
-             active_stats->rrnorms[entry_index], active_stats->iters[entry_index]);
+             STATS_RES_WIDTH, 2, active_stats->r0norms[entry_index], STATS_RES_WIDTH, 2,
+             active_stats->rrnorms[entry_index], STATS_ITERS_WIDTH,
+             active_stats->iters[entry_index]);
    }
    else
    {
-      printf("| %10d |             | %11.3f | %11.3f | %11.2e |  %10d |\n", display_index,
+      printf("| %*d | %*s | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
+             display_index, STATS_TIME_WIDTH, "", STATS_TIME_WIDTH, 3,
              active_stats->time_factor * active_stats->prec[entry_index],
+             STATS_TIME_WIDTH, 3,
              active_stats->time_factor * active_stats->solve[entry_index],
-             active_stats->rrnorms[entry_index], active_stats->iters[entry_index]);
+             STATS_RES_WIDTH, 2, active_stats->r0norms[entry_index], STATS_RES_WIDTH, 2,
+             active_stats->rrnorms[entry_index], STATS_ITERS_WIDTH,
+             active_stats->iters[entry_index]);
    }
 }
 
@@ -385,6 +417,7 @@ StatsCreate(void)
    stats->prec        = (double *)calloc((size_t)capacity, sizeof(double));
    stats->solve       = (double *)calloc((size_t)capacity, sizeof(double));
    stats->rrnorms     = (double *)calloc((size_t)capacity, sizeof(double));
+   stats->r0norms     = (double *)calloc((size_t)capacity, sizeof(double));
    stats->entry_ls_id = (int *)calloc((size_t)capacity, sizeof(int));
 
    /* Initialize level stack */
@@ -457,6 +490,7 @@ StatsDestroy(Stats **stats_ptr)
    free(stats->prec);
    free(stats->solve);
    free(stats->rrnorms);
+   free(stats->r0norms);
    free(stats->entry_ls_id);
 
    /* Free level entry arrays */
@@ -723,6 +757,20 @@ StatsIterSet(int num_iters)
 }
 
 /*--------------------------------------------------------------------------
+ * StatsInitialResNormSet
+ *--------------------------------------------------------------------------*/
+
+void
+StatsInitialResNormSet(double r0norm)
+{
+   if (!active_stats)
+   {
+      return;
+   }
+   active_stats->r0norms[active_stats->counter] = r0norm;
+}
+
+/*--------------------------------------------------------------------------
  * StatsRelativeResNormSet
  *--------------------------------------------------------------------------*/
 
@@ -750,7 +798,7 @@ StatsPrint(int print_level)
 
    const char *scale = ((int)active_stats->use_millisec) ? "[ms]" : "[s]";
 
-   PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
+   PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH);
    printf("\n\nSTATISTICS SUMMARY:\n\n");
 
    PrintDivisor();
@@ -773,6 +821,97 @@ StatsPrint(int print_level)
    }
 
    PrintDivisor();
+
+   /* Print aggregate timing summary table */
+   if (display_idx > 1 && print_level > 1)
+   {
+      double min_build = HUGE_VAL, max_build = 0.0, sum_build = 0.0, ssq_build = 0.0;
+      double min_setup = HUGE_VAL, max_setup = 0.0, sum_setup = 0.0, ssq_setup = 0.0;
+      double min_solve = HUGE_VAL, max_solve = 0.0, sum_solve = 0.0, ssq_solve = 0.0;
+      int    min_iters = INT_MAX, max_iters = 0, sum_iters = 0;
+      double ssq_iters = 0.0;
+
+      for (int i = 0; i <= max_entry; i++)
+      {
+         if (active_stats->iters[i] <= 0 && active_stats->solve[i] <= 0.0)
+         {
+            continue;
+         }
+
+         double b =
+            active_stats->time_factor *
+            (active_stats->dofmap[i] + active_stats->matrix[i] + active_stats->rhs[i]);
+         double s  = active_stats->time_factor * active_stats->prec[i];
+         double v  = active_stats->time_factor * active_stats->solve[i];
+         int    it = active_stats->iters[i];
+
+         if (b < min_build) min_build = b;
+         if (b > max_build) max_build = b;
+         sum_build += b;
+         ssq_build += b * b;
+
+         if (s < min_setup) min_setup = s;
+         if (s > max_setup) max_setup = s;
+         sum_setup += s;
+         ssq_setup += s * s;
+
+         if (v < min_solve) min_solve = v;
+         if (v > max_solve) max_solve = v;
+         sum_solve += v;
+         ssq_solve += v * v;
+
+         if (it < min_iters) min_iters = it;
+         if (it > max_iters) max_iters = it;
+         sum_iters += it;
+         ssq_iters += (double)it * it;
+      }
+
+      int    n         = display_idx;
+      double avg_build = sum_build / n;
+      double avg_setup = sum_setup / n;
+      double avg_solve = sum_solve / n;
+      double avg_iters = (double)sum_iters / n;
+
+      double std_build =
+         (n > 1) ? sqrt((ssq_build - (n * avg_build * avg_build)) / (n - 1)) : 0.0;
+      double std_setup =
+         (n > 1) ? sqrt((ssq_setup - (n * avg_setup * avg_setup)) / (n - 1)) : 0.0;
+      double std_solve =
+         (n > 1) ? sqrt((ssq_solve - (n * avg_solve * avg_solve)) / (n - 1)) : 0.0;
+      double std_iters =
+         (n > 1) ? sqrt((ssq_iters - (n * avg_iters * avg_iters)) / (n - 1)) : 0.0;
+
+      enum
+      {
+         W_LABEL = 10,
+         W_COL   = 11
+      };
+
+      printf("\n  Aggregate (%d entries):\n\n", n);
+      printf("  %-*s | %*s | %*s | %*s | %*s | %*s\n", W_LABEL, "", W_COL, "min", W_COL,
+             "max", W_COL, "avg", W_COL, "std", W_COL, "total");
+      printf("  ");
+      for (int j = 0; j < W_LABEL + (5 * (W_COL + 3)); j++) putchar('-');
+      putchar('\n');
+      char label_build[16], label_setup[16], label_solve[16];
+      snprintf(label_build, sizeof(label_build), "build %s", scale);
+      snprintf(label_setup, sizeof(label_setup), "setup %s", scale);
+      snprintf(label_solve, sizeof(label_solve), "solve %s", scale);
+
+      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n", W_LABEL, label_build,
+             W_COL, min_build, W_COL, max_build, W_COL, avg_build, W_COL, std_build,
+             W_COL, sum_build);
+      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n", W_LABEL, label_setup,
+             W_COL, min_setup, W_COL, max_setup, W_COL, avg_setup, W_COL, std_setup,
+             W_COL, sum_setup);
+      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n", W_LABEL, label_solve,
+             W_COL, min_solve, W_COL, max_solve, W_COL, avg_solve, W_COL, std_solve,
+             W_COL, sum_solve);
+      printf("  %-*s | %*d | %*d | %*.1f | %*.1f | %*d\n", W_LABEL, "iters", W_COL,
+             min_iters, W_COL, max_iters, W_COL, avg_iters, W_COL, std_iters, W_COL,
+             sum_iters);
+   }
+
    printf("\n");
 }
 

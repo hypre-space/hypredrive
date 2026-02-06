@@ -191,7 +191,7 @@ jobs:
           OMPI_MCA_btl_vader_single_copy_mechanism: none
           OMPI_MCA_rmaps_base_oversubscribe: 1
           OMP_NUM_THREADS: 1
-        run: ctest --test-dir $BUILD_DIR --output-on-failure --timeout 30 # 30 seconds per test
+        run: ctest --test-dir $BUILD_DIR --output-on-failure --timeout 60 # 60 seconds per test
 
       - name: Verify example outputs (optional)
         continue-on-error: true

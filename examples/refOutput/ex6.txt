@@ -1,7 +1,6 @@
 Date and time: YYYY-MM-DD HH:MM:SS
 
 Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
-Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
 
 Running on 1 MPI rank
 ------------------------------------------------------------------------------------
@@ -37,12 +36,12 @@ Solving linear system #0 with 5625 rows and 77475 nonzeros...
 
 STATISTICS SUMMARY:
 
-+------------+-------------+-------------+-------------+-------------+-------------+
-|            |    LS build |       setup |       solve |    relative |             |
-|      Entry |   times [s] |   times [s] |   times [s] |   res. norm |       iters |
-+------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.002 |       0.003 |       0.002 |    1.74e-07 |           8 |
-+------------+-------------+-------------+-------------+-------------+-------------+
++--------+-------------+-------------+-------------+------------+------------+--------+
+|        |    LS build |       setup |       solve |    initial |   relative |        |
+|  Entry |   times [s] |   times [s] |   times [s] |  res. norm |  res. norm |  iters |
++--------+-------------+-------------+-------------+------------+------------+--------+
+|      0 |       0.002 |       0.003 |       0.002 |   1.00e+00 |   1.74e-07 |      8 |
++--------+-------------+-------------+-------------+------------+------------+--------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
 ${HYPREDRIVE_PATH}/hypredrive done!

@@ -123,6 +123,7 @@ typedef struct Stats_struct
    double *prec;        /* Preconditioner setup time */
    double *solve;       /* Linear solver time */
    double *rrnorms;     /* Relative residual norms */
+   double *r0norms;     /* Initial residual norms (absolute) */
    int    *iters;       /* Iteration counts */
    int    *entry_ls_id; /* Linear system id per entry (for build-time printing) */
 
@@ -167,6 +168,7 @@ void StatsTimerSetSeconds(void);
 
 /* Statistics setters */
 void StatsIterSet(int);
+void StatsInitialResNormSet(double);
 void StatsRelativeResNormSet(double);
 void StatsSetNumReps(int);
 void StatsSetNumLinearSystems(int);

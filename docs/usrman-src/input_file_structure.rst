@@ -32,9 +32,17 @@ The ``general`` section contains global settings that apply to the entire execut
   ensure more accurate timing measurements. If `no`, no warmup is performed. The default
   value for this parameter is `yes`.
 
-- ``statistics`` - If set to `yes`, `hypredrive` will display a statistics summary
-  at the end of the run reporting execution times. If `no`, no statistics reporting is
-  performed. The default value for this parameter is `yes`.
+- ``statistics`` - Controls the verbosity of statistics reporting. Accepts integer values
+  or boolean strings (`yes`/`no`, `on`/`off`, `true`/`false`). The default value is `1`
+  (or `yes`). Available levels:
+
+  - ``0`` (or `no`/`off`/`false`) - No statistics reporting.
+  - ``1`` (or `yes`/`on`/`true`) - Display the basic statistics summary table with
+    execution times, residual norms, and iteration counts for each solve entry.
+  - ``2`` - Display the basic statistics summary table plus an aggregate summary table
+    showing min, max, average, standard deviation, and total values for build, setup,
+    and solve times, as well as iteration counts. The aggregate table is only shown when
+    there are multiple entries (e.g., when using ``num_repetitions > 1``).
 
 - ``use_milisec`` - Show timings on the statistics summary table in milliseconds. The
   default value is `no`, which uses seconds instead.
