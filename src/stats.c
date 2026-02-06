@@ -828,7 +828,7 @@ StatsPrint(int print_level)
       double min_build = HUGE_VAL, max_build = 0.0, sum_build = 0.0, ssq_build = 0.0;
       double min_setup = HUGE_VAL, max_setup = 0.0, sum_setup = 0.0, ssq_setup = 0.0;
       double min_solve = HUGE_VAL, max_solve = 0.0, sum_solve = 0.0, ssq_solve = 0.0;
-      int    min_iters = INT_MAX,  max_iters = 0,   sum_iters = 0;
+      int    min_iters = INT_MAX, max_iters = 0, sum_iters = 0;
       double ssq_iters = 0.0;
 
       for (int i = 0; i <= max_entry; i++)
@@ -838,11 +838,11 @@ StatsPrint(int print_level)
             continue;
          }
 
-         double b = active_stats->time_factor *
-                    (active_stats->dofmap[i] + active_stats->matrix[i] +
-                     active_stats->rhs[i]);
-         double s = active_stats->time_factor * active_stats->prec[i];
-         double v = active_stats->time_factor * active_stats->solve[i];
+         double b =
+            active_stats->time_factor *
+            (active_stats->dofmap[i] + active_stats->matrix[i] + active_stats->rhs[i]);
+         double s  = active_stats->time_factor * active_stats->prec[i];
+         double v  = active_stats->time_factor * active_stats->solve[i];
          int    it = active_stats->iters[i];
 
          if (b < min_build) min_build = b;
@@ -872,16 +872,24 @@ StatsPrint(int print_level)
       double avg_solve = sum_solve / n;
       double avg_iters = (double)sum_iters / n;
 
-      double std_build = (n > 1) ? sqrt((ssq_build - (n * avg_build * avg_build)) / (n - 1)) : 0.0;
-      double std_setup = (n > 1) ? sqrt((ssq_setup - (n * avg_setup * avg_setup)) / (n - 1)) : 0.0;
-      double std_solve = (n > 1) ? sqrt((ssq_solve - (n * avg_solve * avg_solve)) / (n - 1)) : 0.0;
-      double std_iters = (n > 1) ? sqrt((ssq_iters - (n * avg_iters * avg_iters)) / (n - 1)) : 0.0;
+      double std_build =
+         (n > 1) ? sqrt((ssq_build - (n * avg_build * avg_build)) / (n - 1)) : 0.0;
+      double std_setup =
+         (n > 1) ? sqrt((ssq_setup - (n * avg_setup * avg_setup)) / (n - 1)) : 0.0;
+      double std_solve =
+         (n > 1) ? sqrt((ssq_solve - (n * avg_solve * avg_solve)) / (n - 1)) : 0.0;
+      double std_iters =
+         (n > 1) ? sqrt((ssq_iters - (n * avg_iters * avg_iters)) / (n - 1)) : 0.0;
 
-      enum { W_LABEL = 10, W_COL = 11 };
+      enum
+      {
+         W_LABEL = 10,
+         W_COL   = 11
+      };
 
       printf("\n  Aggregate (%d entries):\n\n", n);
-      printf("  %-*s | %*s | %*s | %*s | %*s | %*s\n",
-             W_LABEL, "", W_COL, "min", W_COL, "max", W_COL, "avg", W_COL, "std", W_COL, "total");
+      printf("  %-*s | %*s | %*s | %*s | %*s | %*s\n", W_LABEL, "", W_COL, "min", W_COL,
+             "max", W_COL, "avg", W_COL, "std", W_COL, "total");
       printf("  ");
       for (int j = 0; j < W_LABEL + (5 * (W_COL + 3)); j++) putchar('-');
       putchar('\n');
@@ -890,18 +898,18 @@ StatsPrint(int print_level)
       snprintf(label_setup, sizeof(label_setup), "setup %s", scale);
       snprintf(label_solve, sizeof(label_solve), "solve %s", scale);
 
-      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n",
-             W_LABEL, label_build, W_COL, min_build, W_COL, max_build,
-             W_COL, avg_build, W_COL, std_build, W_COL, sum_build);
-      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n",
-             W_LABEL, label_setup, W_COL, min_setup, W_COL, max_setup,
-             W_COL, avg_setup, W_COL, std_setup, W_COL, sum_setup);
-      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n",
-             W_LABEL, label_solve, W_COL, min_solve, W_COL, max_solve,
-             W_COL, avg_solve, W_COL, std_solve, W_COL, sum_solve);
-      printf("  %-*s | %*d | %*d | %*.1f | %*.1f | %*d\n",
-             W_LABEL, "iters", W_COL, min_iters, W_COL, max_iters,
-             W_COL, avg_iters, W_COL, std_iters, W_COL, sum_iters);
+      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n", W_LABEL, label_build,
+             W_COL, min_build, W_COL, max_build, W_COL, avg_build, W_COL, std_build,
+             W_COL, sum_build);
+      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n", W_LABEL, label_setup,
+             W_COL, min_setup, W_COL, max_setup, W_COL, avg_setup, W_COL, std_setup,
+             W_COL, sum_setup);
+      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n", W_LABEL, label_solve,
+             W_COL, min_solve, W_COL, max_solve, W_COL, avg_solve, W_COL, std_solve,
+             W_COL, sum_solve);
+      printf("  %-*s | %*d | %*d | %*.1f | %*.1f | %*d\n", W_LABEL, "iters", W_COL,
+             min_iters, W_COL, max_iters, W_COL, avg_iters, W_COL, std_iters, W_COL,
+             sum_iters);
    }
 
    printf("\n");
