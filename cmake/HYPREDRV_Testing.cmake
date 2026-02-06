@@ -280,11 +280,11 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     # Regression: CLI override of num_repetitions should produce contiguous stats entries.
     set(_cli_reps5_require_contains
         "num_repetitions: 5"
-        "|          0 |"
-        "|          1 |"
-        "|          2 |"
-        "|          3 |"
-        "|          4 |"
+        "|      0 |"
+        "|      1 |"
+        "|      2 |"
+        "|      3 |"
+        "|      4 |"
     )
 
     # Regression: exercise CLI overrides for ex7 (multiple linear systems + repetitions).

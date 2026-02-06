@@ -1198,14 +1198,14 @@ YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
       return;
    }
 
-   PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH)
+   PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH);
    child = tree->root->children;
    while (child != NULL)
    {
       YAMLnodePrint(child, print_mode);
       child = child->next;
    }
-   PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH)
+   PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH);
 }
 
 /*-----------------------------------------------------------------------------

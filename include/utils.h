@@ -51,21 +51,21 @@ bool  IsYAMLFilename(const char *);
 enum
 {
    GB_TO_BYTES        = (1 << 30),
-   MAX_DIVISOR_LENGTH = 90
+   MAX_DIVISOR_LENGTH = 87
 };
 
-#define PRINT_DASHED_LINE(_l)        \
-   for (size_t i = 0; i < (_l); i++) \
-   {                                 \
-      printf("-");                   \
-   }                                 \
-   printf("\n");
-#define PRINT_EQUAL_LINE(_l)         \
-   for (size_t i = 0; i < (_l); i++) \
-   {                                 \
-      printf("=");                   \
-   }                                 \
-   printf("\n");
+static inline void
+PrintLine(char ch, size_t len)
+{
+   for (size_t i = 0; i < len; i++)
+   {
+      putchar(ch);
+   }
+   putchar('\n');
+}
+
+#define PRINT_DASHED_LINE(_l) PrintLine('-', (_l))
+#define PRINT_EQUAL_LINE(_l) PrintLine('=', (_l))
 
 #define HAVE_COLORS 0 // TODO: add a runtime option for this parameter
 

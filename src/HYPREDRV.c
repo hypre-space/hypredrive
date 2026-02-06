@@ -753,7 +753,7 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
    long long int num_nonzeros = LinearSystemMatrixGetNumNonzeros(hypredrv->mat_A);
    if (!hypredrv->mypid)
    {
-      PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
+      PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH);
       printf("Solving linear system #%d ", StatsGetLinearSystemID() + 1);
       printf("with %lld rows and %lld nonzeros...\n", num_rows, num_nonzeros);
    }

@@ -301,16 +301,10 @@ enum
 static void
 PrintDivisor(void)
 {
-   const int widths[] = {
-      STATS_ENTRY_WIDTH,
-      STATS_TIME_WIDTH,
-      STATS_TIME_WIDTH,
-      STATS_TIME_WIDTH,
-      STATS_RES_WIDTH,
-      STATS_RES_WIDTH,
-      STATS_ITERS_WIDTH
-   };
-   const int count = (int)(sizeof(widths) / sizeof(widths[0]));
+   const int widths[] = {STATS_ENTRY_WIDTH, STATS_TIME_WIDTH, STATS_TIME_WIDTH,
+                         STATS_TIME_WIDTH,  STATS_RES_WIDTH,  STATS_RES_WIDTH,
+                         STATS_ITERS_WIDTH};
+   const int count    = (int)(sizeof(widths) / sizeof(widths[0]));
 
    for (int i = 0; i < count; i++)
    {
@@ -331,7 +325,8 @@ static void
 PrintHeader(const char *scale)
 {
    const char *top[]    = {"", "LS build", "setup", "solve", "initial", "relative", ""};
-   const char *bottom[] = {"Entry", "times", "times", "times", "res. norm", "res. norm", "iters"};
+   const char *bottom[] = {"Entry",     "times",     "times", "times",
+                           "res. norm", "res. norm", "iters"};
    char        time_label[32];
 
    snprintf(time_label, sizeof(time_label), "times %s", scale);
@@ -367,25 +362,25 @@ PrintEntryWithIndex(int entry_index, int display_index)
 
    if (show_build)
    {
-      printf("| %*d | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n",
-             STATS_ENTRY_WIDTH, display_index,
-             STATS_TIME_WIDTH, 3, build_time,
-             STATS_TIME_WIDTH, 3, active_stats->time_factor * active_stats->prec[entry_index],
-             STATS_TIME_WIDTH, 3, active_stats->time_factor * active_stats->solve[entry_index],
-             STATS_RES_WIDTH, 2, active_stats->r0norms[entry_index],
-             STATS_RES_WIDTH, 2, active_stats->rrnorms[entry_index],
-             STATS_ITERS_WIDTH, active_stats->iters[entry_index]);
+      printf("| %*d | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
+             display_index, STATS_TIME_WIDTH, 3, build_time, STATS_TIME_WIDTH, 3,
+             active_stats->time_factor * active_stats->prec[entry_index],
+             STATS_TIME_WIDTH, 3,
+             active_stats->time_factor * active_stats->solve[entry_index],
+             STATS_RES_WIDTH, 2, active_stats->r0norms[entry_index], STATS_RES_WIDTH, 2,
+             active_stats->rrnorms[entry_index], STATS_ITERS_WIDTH,
+             active_stats->iters[entry_index]);
    }
    else
    {
-      printf("| %*d | %*s | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n",
-             STATS_ENTRY_WIDTH, display_index,
-             STATS_TIME_WIDTH, "",
-             STATS_TIME_WIDTH, 3, active_stats->time_factor * active_stats->prec[entry_index],
-             STATS_TIME_WIDTH, 3, active_stats->time_factor * active_stats->solve[entry_index],
-             STATS_RES_WIDTH, 2, active_stats->r0norms[entry_index],
-             STATS_RES_WIDTH, 2, active_stats->rrnorms[entry_index],
-             STATS_ITERS_WIDTH, active_stats->iters[entry_index]);
+      printf("| %*d | %*s | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
+             display_index, STATS_TIME_WIDTH, "", STATS_TIME_WIDTH, 3,
+             active_stats->time_factor * active_stats->prec[entry_index],
+             STATS_TIME_WIDTH, 3,
+             active_stats->time_factor * active_stats->solve[entry_index],
+             STATS_RES_WIDTH, 2, active_stats->r0norms[entry_index], STATS_RES_WIDTH, 2,
+             active_stats->rrnorms[entry_index], STATS_ITERS_WIDTH,
+             active_stats->iters[entry_index]);
    }
 }
 
@@ -802,7 +797,7 @@ StatsPrint(int print_level)
 
    const char *scale = ((int)active_stats->use_millisec) ? "[ms]" : "[s]";
 
-   PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH)
+   PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH);
    printf("\n\nSTATISTICS SUMMARY:\n\n");
 
    PrintDivisor();
