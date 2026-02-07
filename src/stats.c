@@ -147,6 +147,7 @@ HandleAnnotationBegin(const char *name)
        */
       active_stats->reps = 0;
       active_stats->counter++;
+      active_stats->matrix_counter = active_stats->counter;
       EnsureCapacity();
       StartVectorTimer(active_stats->matrix, active_stats->counter);
    }
@@ -198,8 +199,11 @@ HandleAnnotationBegin(const char *name)
    else if (!strcmp(name, "solve"))
    {
       /* Increment linear system counter only on the first solve for a new system.
-       * (reset_x0 has already set reps=1 for the first repetition) */
-      if (active_stats->reps == 1)
+       * (reset_x0 has already set reps=1 for the first repetition)
+       * Only increment if this is the first solve after the last "matrix" annotation.
+       * We track this by comparing counter to matrix_counter. */
+      if (active_stats->reps == 1 &&
+          active_stats->counter == active_stats->matrix_counter)
       {
          active_stats->ls_counter++;
       }
@@ -400,14 +404,15 @@ StatsCreate(void)
    stats->capacity = capacity;
    /* First solve entry should start at index 0, but we increment at the start of
     * a new build ("matrix"/"system"), so initialize to -1. */
-   stats->counter      = -1;
-   stats->reps         = 0;
-   stats->num_reps     = 1;
-   stats->num_systems  = -1; /* Unknown by default */
-   stats->ls_counter   = 0;
-   stats->level_depth  = 0;
-   stats->use_millisec = false;
-   stats->time_factor  = 1.0;
+   stats->counter        = -1;
+   stats->reps           = 0;
+   stats->num_reps       = 1;
+   stats->num_systems    = -1; /* Unknown by default */
+   stats->ls_counter     = 0;
+   stats->matrix_counter = -1;
+   stats->level_depth    = 0;
+   stats->use_millisec   = false;
+   stats->time_factor    = 1.0;
 
    /* Allocate timing arrays */
    stats->dofmap      = (double *)calloc((size_t)capacity, sizeof(double));

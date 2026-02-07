@@ -70,6 +70,19 @@ void      IntArrayParRead(MPI_Comm, const char *, IntArray **);
 void      IntArrayWriteAsciiByRank(MPI_Comm, const IntArray *, const char *);
 
 /*--------------------------------------------------------------------------
+ * DoubleArray struct
+ *--------------------------------------------------------------------------*/
+
+typedef struct DoubleArray_struct
+{
+   double *data;
+   size_t  size;
+} DoubleArray;
+
+DoubleArray *DoubleArrayCreate(size_t);
+void         DoubleArrayDestroy(DoubleArray **);
+
+/*--------------------------------------------------------------------------
  * StrArray struct
  *--------------------------------------------------------------------------*/
 
@@ -87,6 +100,7 @@ typedef struct StrArray_struct
 
 bool StrArrayEntryExists(StrArray, const char *);
 void StrToIntArray(const char *, IntArray **);
+void StrToDoubleArray(const char *, DoubleArray **);
 void StrToStackIntArray(const char *, StackIntArray *);
 
 /*--------------------------------------------------------------------------

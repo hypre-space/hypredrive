@@ -11,6 +11,7 @@
 #include "field.h"
 #include "gen_macros.h"
 #include "presets.h"
+#include "scaling.h"
 #include "stats.h"
 #include "utils.h"
 #include "yaml.h"
@@ -96,6 +97,9 @@ InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
    iargs->solver_method = SOLVER_PCG;
    iargs->precon_method = PRECON_BOOMERAMG;
 
+   /* Set default scaling */
+   ScalingSetDefaultArgs(&iargs->scaling);
+
    /* Initialize preconditioner variants (default: single variant) */
    iargs->num_precon_variants   = 1;
    iargs->active_precon_variant = 0;
@@ -134,6 +138,10 @@ InputArgsDestroy(input_args **iargs_ptr)
       {
          free(iargs->precon_variants);
          iargs->precon_variants = NULL;
+      }
+      if (iargs->scaling.custom_values)
+      {
+         DoubleArrayDestroy(&iargs->scaling.custom_values);
       }
       free(*iargs_ptr);
       *iargs_ptr = NULL;
@@ -197,7 +205,8 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
 void
 InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode *parent = NULL;
+   YAMLnode *parent       = NULL;
+   YAMLnode *scaling_node = NULL;
 
    parent = YAMLnodeFindByKey(tree->root, "solver");
    if (!parent)
@@ -208,6 +217,33 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
       return;
    }
    YAML_NODE_SET_VALID(parent);
+
+   /* Extract scaling node before parsing solver to avoid schema conflicts */
+   if (parent->children)
+   {
+      YAMLnode *child = parent->children;
+      YAMLnode *prev  = NULL;
+      while (child)
+      {
+         if (!strcmp(child->key, "scaling"))
+         {
+            /* Detach scaling node from parent's children list */
+            if (prev)
+            {
+               prev->next = child->next;
+            }
+            else
+            {
+               parent->children = child->next;
+            }
+            scaling_node       = child;
+            scaling_node->next = NULL;
+            break;
+         }
+         prev  = child;
+         child = child->next;
+      }
+   }
 
    /* Check if the solver type was set with a single (key, val) pair */
    if (!strcmp(parent->val, ""))
@@ -259,6 +295,17 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
          default:
             break;
       }
+   }
+
+   /* Parse scaling if present */
+   if (scaling_node)
+   {
+      ScalingSetArgsFromYAML(&iargs->scaling, scaling_node);
+      /* Mark scaling node as valid to avoid validation errors */
+      YAML_NODE_SET_VALID(scaling_node);
+      /* Reattach to parent for tree validation (but after parsing) */
+      scaling_node->next = parent->children;
+      parent->children   = scaling_node;
    }
 }
 

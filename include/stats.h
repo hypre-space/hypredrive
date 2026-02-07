@@ -106,11 +106,12 @@ typedef struct Stats_struct
 {
    /* Capacity and counters */
    int capacity;
-   int counter;     /* Current entry index */
-   int reps;        /* Current repetition counter */
-   int ls_counter;  /* Linear system counter (increments on "matrix" annotation) */
-   int num_reps;    /* Number of repetitions per linear system */
-   int num_systems; /* Number of linear systems (-1 if unknown) */
+   int counter;        /* Current entry index */
+   int reps;           /* Current repetition counter */
+   int ls_counter;     /* Linear system counter (increments on "matrix" annotation) */
+   int matrix_counter; /* Counter value when last "matrix" annotation was called */
+   int num_reps;       /* Number of repetitions per linear system */
+   int num_systems;    /* Number of linear systems (-1 if unknown) */
 
    /* Hierarchical annotation stack */
    AnnotationContext level_stack[STATS_MAX_LEVELS];
