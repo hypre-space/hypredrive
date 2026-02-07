@@ -109,6 +109,8 @@ section is required.
   system left hand side vector. This parameter does not have a default value and it is
   required when the ``init_guess_mode`` is set to ``file``.
 
+.. _linear_system_dofmap:
+
 - ``dofmap_filename`` - (Possibly required) The filename of the degrees of freedom maping
   array (`dofmap`) for the linear system. This parameter does not have a default value and it is
   required when the ``mgr`` preconditioner is used.
@@ -188,7 +190,7 @@ available options for the Krylov solver type are:
 The solver type must be entered as a key in a new indentation level under ``solver``.
 
 Scaling
-^^^^^^
+^^^^^^^
 
 The ``scaling`` subsection under ``solver`` enables optional diagonal scaling of the linear system before preconditioner setup and Krylov solve. When enabled, the system is transformed as :math:`B = M A M`, :math:`c = M b`, solved as :math:`B y = c`, and the solution is recovered as :math:`x = M y`.
 
