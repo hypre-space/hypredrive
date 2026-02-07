@@ -111,6 +111,9 @@ section is required.
 
 .. _linear_system_dofmap:
 
+Degrees of Freedom Map
+~~~~~~~~~~~~~~~~~~~~~~
+
 - ``dofmap_filename`` - (Possibly required) The filename of the degrees of freedom maping
   array (`dofmap`) for the linear system. This parameter does not have a default value and it is
   required when the ``mgr`` preconditioner is used.

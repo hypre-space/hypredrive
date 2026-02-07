@@ -423,6 +423,7 @@ static void
 ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
                   HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
 {
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
    void              *obj_A = NULL, *obj_M = NULL, *obj_b = NULL, *obj_x = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
@@ -458,6 +459,15 @@ ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    /* Solution vector starts as zero, no need to scale */
 
    ctx->is_applied = 1;
+#else
+   (void)ctx;
+   (void)mat_A;
+   (void)mat_M;
+   (void)vec_b;
+   (void)vec_x;
+   ErrorCodeSet(ERROR_UNKNOWN);
+   ErrorMsgAdd("ScalingApplyRHSL2: requires Hypre >= v3.0.0");
+#endif
 }
 
 /*-----------------------------------------------------------------------------
@@ -579,6 +589,7 @@ static void
 ScalingUndoRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
                  HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
 {
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
    void              *obj_A = NULL, *obj_M = NULL, *obj_b = NULL, *obj_x = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
    hypre_ParVector   *par_b = NULL, *par_x = NULL;
@@ -620,6 +631,15 @@ ScalingUndoRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_
    }
 
    ctx->is_applied = 0;
+#else
+   (void)ctx;
+   (void)mat_A;
+   (void)mat_M;
+   (void)vec_b;
+   (void)vec_x;
+   ErrorCodeSet(ERROR_UNKNOWN);
+   ErrorMsgAdd("ScalingUndoRHSL2: requires Hypre >= v3.0.0");
+#endif
 }
 
 /*-----------------------------------------------------------------------------
