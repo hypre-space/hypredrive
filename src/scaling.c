@@ -14,6 +14,7 @@
 #include "field.h"
 #include "gen_macros.h"
 #include "linsys.h"
+#include "utils.h"
 
 #define Scaling_FIELDS(_prefix)                              \
    ADD_FIELD_OFFSET_ENTRY(_prefix, enabled, FieldTypeIntSet) \
@@ -93,7 +94,7 @@ ScalingContextDestroy(Scaling_context **ctx_ptr)
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    if (ctx->scaling_ijvec)
    {
-      HYPRE_IJVectorDestroy(ctx->scaling_ijvec);
+      HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
       ctx->scaling_ijvec = NULL;
    }
    /* scaling_vector is owned by scaling_ijvec, so no need to destroy separately */
@@ -197,9 +198,9 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    }
 
    /* Create IJVector wrapper for scaling vector */
-   HYPRE_IJVectorCreate(comm, ilower, iupper, &ctx->scaling_ijvec);
-   HYPRE_IJVectorSetObjectType(ctx->scaling_ijvec, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize(ctx->scaling_ijvec);
+   HYPRE_SAFE_CALL(HYPRE_IJVectorCreate(comm, ilower, iupper, &ctx->scaling_ijvec));
+   HYPRE_SAFE_CALL(HYPRE_IJVectorSetObjectType(ctx->scaling_ijvec, HYPRE_PARCSR));
+   HYPRE_SAFE_CALL(HYPRE_IJVectorInitialize(ctx->scaling_ijvec));
 
    /* Get ParVector from IJVector */
    void *obj_scaling = NULL;
@@ -209,8 +210,8 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    /* Compute scaling using Hypre's tagged API */
    /* Use scaling_type = 1 by default */
    HYPRE_ParVector scaling_parvec = NULL;
-   HYPRE_Int       ierr           = HYPRE_ParCSRMatrixComputeScalingTagged(
-      par_A, 1, HYPRE_MEMORY_HOST, num_tags, tags, &scaling_parvec);
+   HYPRE_SAFE_CALL(HYPRE_ParCSRMatrixComputeScalingTagged(
+      par_A, 1, HYPRE_MEMORY_HOST, num_tags, tags, &scaling_parvec));
 
    /* Copy the computed scaling data into scaling_ijvec */
    void           *obj_scaling_vec = NULL;
@@ -219,21 +220,15 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    par_scaling_vec = (HYPRE_ParVector)obj_scaling_vec;
 
    /* Copy data from scaling_parvec into scaling_ijvec's ParVector */
-   HYPRE_ParVectorCopy(scaling_parvec, par_scaling_vec);
+   HYPRE_SAFE_CALL(HYPRE_ParVectorCopy(scaling_parvec, par_scaling_vec));
 
    /* Destroy the temporary vector returned by HYPRE_ParCSRMatrixComputeScalingTagged */
-   HYPRE_ParVectorDestroy(scaling_parvec);
+   HYPRE_SAFE_CALL(HYPRE_ParVectorDestroy(scaling_parvec));
 
    /* Update scaling_vector to point to the vector wrapped by scaling_ijvec */
    ctx->scaling_vector = par_scaling_vec;
 
    free(tags);
-
-   if (ierr)
-   {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("HYPRE_ParCSRMatrixComputeScalingTagged failed");
-   }
 #else
    (void)comm;
    (void)args;
@@ -328,9 +323,9 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    }
 
    /* Create IJVector wrapper for scaling vector */
-   HYPRE_IJVectorCreate(comm, ilower, iupper, &ctx->scaling_ijvec);
-   HYPRE_IJVectorSetObjectType(ctx->scaling_ijvec, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize(ctx->scaling_ijvec);
+   HYPRE_SAFE_CALL(HYPRE_IJVectorCreate(comm, ilower, iupper, &ctx->scaling_ijvec));
+   HYPRE_SAFE_CALL(HYPRE_IJVectorSetObjectType(ctx->scaling_ijvec, HYPRE_PARCSR));
+   HYPRE_SAFE_CALL(HYPRE_IJVectorInitialize(ctx->scaling_ijvec));
 
    /* Get ParVector from IJVector */
    void *obj_scaling = NULL;
@@ -356,7 +351,7 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    }
 
    /* Assemble the vector */
-   HYPRE_IJVectorAssemble(ctx->scaling_ijvec);
+   HYPRE_SAFE_CALL(HYPRE_IJVectorAssemble(ctx->scaling_ijvec));
 #else
    (void)comm;
    (void)args;
