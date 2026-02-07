@@ -12,6 +12,7 @@
 #include "containers.h"
 #include "info.h"
 #include "linsys.h"
+#include "scaling.h"
 #include "stats.h"
 #ifdef HYPREDRV_ENABLE_CALIPER
 #include <caliper/cali.h>
@@ -74,6 +75,8 @@ typedef struct hypredrv_struct
 
    HYPRE_Precon precon;
    HYPRE_Solver solver;
+
+   Scaling_context *scaling_ctx;
 
    Stats *stats;
 } hypredrv_t;
@@ -180,9 +183,10 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->vec_s    = NULL;
    hypredrv->dofmap   = NULL;
 
-   hypredrv->precon = NULL;
-   hypredrv->solver = NULL;
-   hypredrv->stats  = NULL;
+   hypredrv->precon      = NULL;
+   hypredrv->solver      = NULL;
+   hypredrv->scaling_ctx = NULL;
+   hypredrv->stats       = NULL;
 
    /* Disable library mode by default */
    hypredrv->lib_mode = false;
@@ -228,6 +232,12 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
       }
    }
 
+   /* Destroy scaling context */
+   if (hypredrv->scaling_ctx)
+   {
+      ScalingContextDestroy(&hypredrv->scaling_ctx);
+   }
+
    if (hypredrv->mat_A != hypredrv->mat_M)
    {
       HYPRE_IJMatrixDestroy(hypredrv->mat_M);
@@ -258,6 +268,12 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
 
    IntArrayDestroy(&hypredrv->dofmap);
    InputArgsDestroy(&hypredrv->iargs);
+
+   /* Destroy scaling context */
+   if (hypredrv->scaling_ctx)
+   {
+      ScalingContextDestroy(&hypredrv->scaling_ctx);
+   }
 
    /* Destroy statistics object */
    StatsDestroy(&hypredrv->stats);
@@ -749,6 +765,12 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
 
+   /* Reset scaling state for new system */
+   if (hypredrv->scaling_ctx)
+   {
+      hypredrv->scaling_ctx->is_applied = 0;
+   }
+
    long long int num_rows     = LinearSystemMatrixGetNumRows(hypredrv->mat_A);
    long long int num_nonzeros = LinearSystemMatrixGetNumNonzeros(hypredrv->mat_A);
    if (!hypredrv->mypid)
@@ -1165,8 +1187,36 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    int ls_id = StatsGetLinearSystemID();
    int reuse = hypredrv->iargs->ls.precon_reuse;
 
+   /* Create scaling context if needed and not already created */
+   if (hypredrv->iargs->scaling.enabled && !hypredrv->scaling_ctx)
+   {
+      ScalingContextCreate(&hypredrv->scaling_ctx);
+   }
+
+   /* Compute scaling if enabled (recompute for each system if needed) */
+   if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
+   {
+      ScalingCompute(hypredrv->comm, &hypredrv->iargs->scaling, hypredrv->scaling_ctx,
+                     hypredrv->mat_A, hypredrv->vec_b, hypredrv->dofmap);
+      if (ErrorCodeGet())
+      {
+         return ErrorCodeGet();
+      }
+   }
+
    if (!((ls_id + 1) % (reuse + 1)))
    {
+      /* Apply scaling before setup if enabled */
+      if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
+      {
+         ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->mat_M,
+                              hypredrv->vec_b, hypredrv->vec_x);
+         if (ErrorCodeGet())
+         {
+            return ErrorCodeGet();
+         }
+      }
+
       SolverSetup(hypredrv->iargs->precon_method, hypredrv->iargs->solver_method,
                   hypredrv->precon, hypredrv->solver, hypredrv->mat_M, hypredrv->vec_b,
                   hypredrv->vec_x);
@@ -1192,10 +1242,70 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       return ErrorCodeGet();
    }
 
-   double e_norm = 0.0, x_norm = 0.0, xref_norm = 0.0;
+   double    e_norm = 0.0, x_norm = 0.0, xref_norm = 0.0;
+   double    b_norm = 0.0, r_norm = 0.0, r0_norm = 0.0;
+   HYPRE_Int iters = 0;
 
-   SolverApply(hypredrv->iargs->solver_method, hypredrv->solver, hypredrv->mat_A,
-               hypredrv->vec_b, hypredrv->vec_x);
+   /* Apply scaling if enabled but not yet applied (e.g., when preconditioner is reused)
+    */
+   if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled &&
+       !hypredrv->scaling_ctx->is_applied)
+   {
+      ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->mat_M,
+                           hypredrv->vec_b, hypredrv->vec_x);
+      if (ErrorCodeGet())
+      {
+         return ErrorCodeGet();
+      }
+   }
+
+   /* Perform solve */
+   if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled &&
+       hypredrv->scaling_ctx->is_applied)
+   {
+      /* Compute initial residual norm before solve (on current system state) */
+      LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x,
+                                      "L2", &r0_norm);
+
+      StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
+      StatsInitialResNormSet(r0_norm);
+
+      /* Solve on scaled system */
+      iters = SolverSolveOnly(hypredrv->iargs->solver_method, hypredrv->solver,
+                              hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x);
+      if (iters < 0)
+      {
+         StatsIterSet(0);
+         StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
+         return ErrorCodeGet();
+      }
+
+      StatsIterSet((int)iters);
+      StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
+
+      /* Undo scaling on solution and restore original system */
+      ScalingUndoOnSystem(hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->mat_M,
+                          hypredrv->vec_b, hypredrv->vec_x);
+      if (ErrorCodeGet())
+      {
+         return ErrorCodeGet();
+      }
+
+      /* Compute residual norms on original (now restored) system */
+      LinearSystemComputeVectorNorm(hypredrv->vec_b, "L2", &b_norm);
+      LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x,
+                                      "L2", &r_norm);
+      b_norm = (b_norm > 0.0) ? b_norm : 1.0;
+      StatsRelativeResNormSet(r_norm / b_norm);
+   }
+   else
+   {
+      /* No scaling - use standard SolverApply which handles everything including stats */
+      SolverApply(hypredrv->iargs->solver_method, hypredrv->solver, hypredrv->mat_A,
+                  hypredrv->vec_b, hypredrv->vec_x);
+      /* SolverApply already computed and set all stats */
+   }
+
    HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
 
    if (hypredrv->vec_xref)

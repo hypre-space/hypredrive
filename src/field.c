@@ -72,3 +72,17 @@ FieldTypeStringSet(void *field, const YAMLnode *node)
 {
    snprintf((char *)field, MAX_FILENAME_LENGTH, "%s", node->mapped_val);
 }
+
+/*-----------------------------------------------------------------------------
+ * FieldTypeDoubleArraySet
+ *-----------------------------------------------------------------------------*/
+
+void
+FieldTypeDoubleArraySet(void *field, const YAMLnode *node)
+{
+   DoubleArray *double_array = NULL;
+
+   StrToDoubleArray(node->mapped_val, &double_array);
+
+   *((void **)field) = double_array;
+}

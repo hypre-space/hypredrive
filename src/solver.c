@@ -294,32 +294,31 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
 }
 
 /*-----------------------------------------------------------------------------
- * SolverApply
+ * SolverSolveOnly
  *-----------------------------------------------------------------------------*/
 
-void
-SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
-            HYPRE_IJVector b, HYPRE_IJVector x)
+HYPRE_Int
+SolverSolveOnly(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
+                HYPRE_IJVector b, HYPRE_IJVector x)
 {
    if (!solver)
    {
       ErrorCodeSet(ERROR_INVALID_SOLVER);
-      ErrorMsgAdd("SolverApply: solver is NULL");
-      return;
+      ErrorMsgAdd("SolverSolveOnly: solver is NULL");
+      return -1;
    }
 
    if (!A || !b || !x)
    {
       ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("SolverApply: matrix or vector is NULL");
-      return;
+      ErrorMsgAdd("SolverSolveOnly: matrix or vector is NULL");
+      return -1;
    }
 
    void              *vA = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
-   HYPRE_Int          iters  = 0;
-   HYPRE_Complex      b_norm = NAN, r_norm = NAN, r0_norm = NAN;
+   HYPRE_Int          iters = 0;
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;
@@ -327,12 +326,6 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
    par_b = (HYPRE_ParVector)vb;
    HYPRE_IJVectorGetObject(x, &vx);
    par_x = (HYPRE_ParVector)vx;
-
-   /* Compute initial residual norm (absolute L2) before timing the solve */
-   LinearSystemComputeResidualNorm(A, b, x, "L2", &r0_norm);
-
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
-   StatsInitialResNormSet(r0_norm);
 
    switch (solver_method)
    {
@@ -357,13 +350,54 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
          break;
 
       default:
-         StatsIterSet((int)iters);
-         StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
-         return;
+         return -1;
    }
 
    /* Clear pending error codes from hypre */
    HYPRE_ClearAllErrors();
+
+   return iters;
+}
+
+/*-----------------------------------------------------------------------------
+ * SolverApply
+ *-----------------------------------------------------------------------------*/
+
+void
+SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
+            HYPRE_IJVector b, HYPRE_IJVector x)
+{
+   if (!solver)
+   {
+      ErrorCodeSet(ERROR_INVALID_SOLVER);
+      ErrorMsgAdd("SolverApply: solver is NULL");
+      return;
+   }
+
+   if (!A || !b || !x)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("SolverApply: matrix or vector is NULL");
+      return;
+   }
+
+   HYPRE_Int     iters  = 0;
+   HYPRE_Complex b_norm = NAN, r_norm = NAN, r0_norm = NAN;
+
+   /* Compute initial residual norm (absolute L2) before timing the solve */
+   LinearSystemComputeResidualNorm(A, b, x, "L2", &r0_norm);
+
+   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
+   StatsInitialResNormSet(r0_norm);
+
+   iters = SolverSolveOnly(solver_method, solver, A, b, x);
+
+   if (iters < 0)
+   {
+      StatsIterSet(0);
+      StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
+      return;
+   }
 
    StatsIterSet((int)iters);
    StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");

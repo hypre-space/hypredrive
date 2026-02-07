@@ -157,6 +157,82 @@ StrToIntArray(const char *string, IntArray **int_array_ptr)
    *int_array_ptr = int_array;
 }
 
+/*--------------------------------------------------------------------------
+ * DoubleArrayCreate
+ *--------------------------------------------------------------------------*/
+
+DoubleArray *
+DoubleArrayCreate(size_t size)
+{
+   DoubleArray *double_array = NULL;
+
+   double_array       = malloc(sizeof(DoubleArray));
+   double_array->data = malloc(size * sizeof(double));
+   double_array->size = size;
+
+   return double_array;
+}
+
+/*--------------------------------------------------------------------------
+ * DoubleArrayDestroy
+ *--------------------------------------------------------------------------*/
+
+void
+DoubleArrayDestroy(DoubleArray **double_array_ptr)
+{
+   DoubleArray *this = *double_array_ptr;
+
+   if (this)
+   {
+      free(this->data);
+      free(this);
+      *double_array_ptr = NULL;
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * StrToDoubleArray
+ *-----------------------------------------------------------------------------*/
+
+void
+StrToDoubleArray(const char *string, DoubleArray **double_array_ptr)
+{
+   char        *buffer       = NULL;
+   const char  *token        = NULL;
+   char        *saveptr      = NULL;
+   int          count        = 0;
+   DoubleArray *double_array = NULL;
+
+   /* Find number of elements in array */
+   buffer = strdup(string);
+   token  = strtok_r(buffer, "[], ", &saveptr);
+   count  = 0;
+   while (token)
+   {
+      count++;
+      token = strtok_r(NULL, "[], ", &saveptr);
+   }
+   free(buffer);
+
+   /* Create DoubleArray */
+   double_array = DoubleArrayCreate((size_t)count);
+
+   /* Build array */
+   buffer = strdup(string);
+   token  = strtok_r(buffer, "[], ", &saveptr);
+   count  = 0;
+   while (token)
+   {
+      sscanf(token, "%lf", &double_array->data[count]);
+      count++;
+      token = strtok_r(NULL, "[], ", &saveptr);
+   }
+   free(buffer);
+
+   /* Set output pointer */
+   *double_array_ptr = double_array;
+}
+
 /*-----------------------------------------------------------------------------
  * StrToStackIntArray
  *-----------------------------------------------------------------------------*/
