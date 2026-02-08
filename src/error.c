@@ -512,6 +512,11 @@ ErrorCodeDescribe(uint32_t code)
    {
       ErrorMsgAdd("HYPREDRV is not initialized!!");
    }
+
+   if (code & ERROR_HYPRE_INTERNAL)
+   {
+      ErrorMsgAddCodeWithCount(ERROR_HYPRE_INTERNAL, "HYPRE internal error");
+   }
 }
 
 /*-----------------------------------------------------------------------------

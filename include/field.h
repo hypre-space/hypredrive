@@ -38,6 +38,7 @@ void FieldTypeIntSet(void *, const YAMLnode *);
 void FieldTypeIntArraySet(void *, const YAMLnode *);
 void FieldTypeStackIntArraySet(void *, const YAMLnode *);
 void FieldTypeDoubleSet(void *, const YAMLnode *);
+void FieldTypeDoubleArraySet(void *, const YAMLnode *);
 void FieldTypeCharSet(void *, const YAMLnode *);
 void FieldTypeStringSet(void *, const YAMLnode *);
 

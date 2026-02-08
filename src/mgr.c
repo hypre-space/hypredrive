@@ -970,5 +970,8 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    {
       free(dofmap_data);
    }
+
+   /* Silence any hypre errors. TODO: improve error handling */
+   HYPRE_ClearAllErrors();
 #endif
 }

@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include "linsys.h"
 #include "precon.h"
+#include "scaling.h"
 #include "solver.h"
 #include "utils.h"
 
@@ -41,6 +42,8 @@ typedef struct input_args_struct
 
    solver_args solver;
    solver_t    solver_method;
+
+   Scaling_args scaling;
 
    precon_args precon;
    precon_t    precon_method;

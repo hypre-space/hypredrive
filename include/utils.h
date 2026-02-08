@@ -16,6 +16,31 @@
 #include "error.h"
 
 /*-----------------------------------------------------------------------------
+ * HYPRE_SAFE_CALL macro
+ *-----------------------------------------------------------------------------*/
+
+// Macro for safely calling HYPRE functions.
+// Sets HYPREDRV error codes and returns early from the calling function.
+// This macro does NOT abort - it allows error propagation through HYPREDRV's error
+// system.
+#ifndef HYPRE_SAFE_CALL
+#define HYPRE_SAFE_CALL(call)                                                      \
+   do                                                                              \
+   {                                                                               \
+      HYPRE_Int hypre_ierr = (call);                                               \
+      if (hypre_ierr != 0)                                                         \
+      {                                                                            \
+         ErrorCodeSet(ERROR_HYPRE_INTERNAL);                                       \
+         char hypre_err_msg[HYPRE_MAX_MSG_LEN];                                    \
+         HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                           \
+         ErrorMsgAdd("HYPRE call failed at %s:%d in %s(): %s", __FILE__, __LINE__, \
+                     __func__, hypre_err_msg);                                     \
+         return;                                                                   \
+      }                                                                            \
+   } while (0)
+#endif
+
+/*-----------------------------------------------------------------------------
  * Public prototypes
  *-----------------------------------------------------------------------------*/
 

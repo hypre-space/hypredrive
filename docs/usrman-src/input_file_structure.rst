@@ -109,6 +109,11 @@ section is required.
   system left hand side vector. This parameter does not have a default value and it is
   required when the ``init_guess_mode`` is set to ``file``.
 
+.. _linear_system_dofmap:
+
+Degrees of Freedom Map
+~~~~~~~~~~~~~~~~~~~~~~
+
 - ``dofmap_filename`` - (Possibly required) The filename of the degrees of freedom maping
   array (`dofmap`) for the linear system. This parameter does not have a default value and it is
   required when the ``mgr`` preconditioner is used.
@@ -187,10 +192,76 @@ available options for the Krylov solver type are:
 
 The solver type must be entered as a key in a new indentation level under ``solver``.
 
-.. _PCG:
+Scaling
+~~~~~~~
+
+The ``scaling`` subsection under ``solver`` enables optional diagonal scaling of the linear system before preconditioner setup and Krylov solve. When enabled, the system is transformed as :math:`B = M A M`, :math:`c = M b`, solved as :math:`B y = c`, and the solution is recovered as :math:`x = M y`.
+
+Available keywords:
+
+- ``enabled`` - Turn on/off scaling. Available values are ``yes`` or ``no``. Default value is ``no``.
+
+- ``type`` - Scaling strategy. Available values are:
+
+  - ``rhs_l2`` - Scalar scaling based on the L2 norm of the RHS vector :math:`b`. Computes :math:`s = 1/\sqrt{\|b\|_2}` and applies uniform scaling :math:`M = s I`.
+
+  - ``dofmap_mag`` - Vector scaling computed using Hypre's tagged scaling API. Requires a dofmap to be provided (see :ref:`linear_system_dofmap`). Uses ``HYPRE_ParCSRMatrixComputeScalingTagged`` with scaling type 1 to compute per-DOF-type scaling weights based on matrix magnitude.
+
+  - ``dofmap_custom`` - Vector scaling using user-provided custom scaling values. Requires a dofmap to be provided (see :ref:`linear_system_dofmap`). The number of custom values must match the number of unique DOF types in the dofmap. Each DOF type is scaled by the corresponding value in the ``custom_values`` array.
+
+- ``custom_values`` - (Required for ``dofmap_custom``) Array of scaling values, one per unique DOF type in the dofmap. Must be provided as a YAML sequence. The number of entries must match the number of unique tags in the dofmap (e.g., if dofmap has tags 0, 1, 2, then ``custom_values`` must have 3 entries).
+
+**Note:** Scaling requires Hypre version >= 3.0.0. If scaling is enabled on older Hypre versions, YAML parsing will succeed but scaling will be silently disabled at runtime.
+
+Example configuration with RHS L2 scaling:
+
+.. code-block:: yaml
+
+   solver:
+     pcg:
+       max_iter: 100
+       relative_tol: 1.0e-6
+     scaling:
+       enabled: yes
+       type: rhs_l2
+
+Example configuration with dofmap_mag scaling:
+
+.. code-block:: yaml
+
+   solver:
+     gmres:
+       max_iter: 300
+       relative_tol: 1.0e-6
+     scaling:
+       enabled: yes
+       type: dofmap_mag
+   linear_system:
+     dofmap_filename: dofmap.dat
+
+Example configuration with dofmap_custom scaling:
+
+.. code-block:: yaml
+
+   solver:
+     gmres:
+       max_iter: 300
+       relative_tol: 1.0e-6
+     scaling:
+       enabled: yes
+       type: dofmap_custom
+       custom_values:
+         - 1.0e5
+         - 1.0e8
+         - 1.0e4
+   linear_system:
+     dofmap_filename: dofmap.dat
+
+
+.. _pcg:
 
 PCG
-^^^
+~~~
 
 The available keywords to further configure the preconditioned conjugate gradient solver
 (``pcg``) are all optional and given below:
@@ -242,7 +313,7 @@ given below:
         conv_fac_tol: 0.0
 
 BiCGSTAB
-^^^^^^^^
+~~~~~~~~
 
 The available keywords to further configure the bi-conjugate gradient stabilized solver
 (``bicgstab``) are all optional and given below:
@@ -250,7 +321,7 @@ The available keywords to further configure the bi-conjugate gradient stabilized
 - ``min_iter`` - Minimum number of iterations. Available values are any positive integer.
 
 - ``max_iter``, ``print_level``, ``relative_tol``, ``absolute_tol``, ``residual_tol``, and
-  ``conv_fac_tol`` - See :ref:`PCG` for a description of these variables.
+  ``conv_fac_tol`` - See :ref:`pcg` for a description of these variables.
 
 The code block representing the default parameter values for the ``solver:bicgstab`` section is
 given below:
@@ -267,10 +338,10 @@ given below:
         residual_tol: 0.0
         conv_fac_tol: 0.0
 
-.. _GMRES:
+.. _gmres:
 
 GMRES
-^^^^^
+~~~~~
 
 The available keywords to further configure the generalized minimal residual solver
 (``gmres``) are all optional and given below:
@@ -282,7 +353,7 @@ The available keywords to further configure the generalized minimal residual sol
   integer. Default value is `30`.
 
 - ``min_iter``, ``max_iter``, ``print_level``, ``rel_change``, ``relative_tol``,
-  ``absolute_tol``, and ``conv_fac_tol`` - See :ref:`PCG` for a description of these
+  ``absolute_tol``, and ``conv_fac_tol`` - See :ref:`pcg` for a description of these
   variables.
 
 The code block representing the default parameter values for the ``solver:gmres`` section is
@@ -303,13 +374,13 @@ given below:
         conv_fac_tol: 0.0
 
 FGMRES
-^^^^^^
+~~~~~~
 
 The available keywords to further configure the flexible generalized minimal residual
 solver (``fgmres``) are all optional and given below:
 
 - ``min_iter``, ``max_iter``, ``krylov_dim``, ``print_level``, ``relative_tol``,
-  ``absolute_tol`` - See :ref:`GMRES` for a description of these variables.
+  ``absolute_tol`` - See :ref:`gmres` for a description of these variables.
 
 The code block representing the default parameter values for the ``solver:fgmres`` section is
 given below:
@@ -340,7 +411,7 @@ The preconditioner type must be entered as a key in a new indentation level unde
 ``preconditioner``.
 
 Preconditioner presets
-^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~
 
 Presets are named default configurations that select a preconditioner and apply
 a small set of tuned settings. They are useful when you want a reasonable
@@ -359,10 +430,10 @@ Available presets:
 
 Preset names are case-insensitive.
 
-.. _AMG:
+.. _amg:
 
 AMG
-^^^
+~~~
 
 The algebraic multigrid (BoomerAMG) preconditioner can be further configured by the
 following optional keywords:
@@ -676,15 +747,15 @@ code block below:
           num_levels: 0
           num_sweeps: 1
 
-.. _ILU:
+.. _ilu:
 
 ILU
-^^^
+~~~
 
 The incomplete LU factorization (ILU) preconditioner can be further configured by the
 following optional keywords:
 
-- ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`AMG` for a description of
+- ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`amg` for a description of
   these variables.
 
 - ``type`` - ILU type. For available
@@ -749,15 +820,15 @@ code block below:
         droptol: 1.0e-2
         nsh_droptol: 1.0e-2
 
-.. _FSAI:
+.. _fsai:
 
 FSAI
-^^^^
+~~~~
 
 The factorized sparse approximate inverse (FSAI) preconditioner can be further configured by the
 following optional keywords:
 
-- ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`AMG` for a description of
+- ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`amg` for a description of
   these variables.
 
 - ``type`` - algorithm type used for building FSAI. For available
@@ -811,13 +882,15 @@ the code block below:
         threshold: 1.0e-3
         kap_tolerance: 1.0e-3
 
+.. _mgr:
+
 MGR
-^^^
+~~~
 
 The multigrid reduction (MGR) preconditioner can be further configured by the following
 optional keywords:
 
-- ``max_iter`` and ``tolerance`` - See :ref:`AMG` for a description of these variables.
+- ``max_iter`` and ``tolerance`` - See :ref:`amg` for a description of these variables.
 
 - ``print_level`` - verbosity level for the preconditioner. For available
   options, see `HYPRE_MGRSetPrintLevel
