@@ -28,6 +28,13 @@
 #endif
 #endif
 
+/* Feature gate: hypre v3.0.0+ APIs used by tagged GMRES residual/error support. */
+#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 30000
+#define HYPREDRV_HAVE_HYPRE_30000 1
+#else
+#define HYPREDRV_HAVE_HYPRE_30000 0
+#endif
+
 /* Older hypre releases don't provide memory location APIs. */
 #if HYPREDRV_HYPRE_RELEASE_NUMBER < 21900
 typedef int HYPRE_MemoryLocation;

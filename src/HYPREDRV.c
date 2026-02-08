@@ -265,6 +265,10 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    {
       HYPRE_IJVectorDestroy(hypredrv->vec_nn);
    }
+   if (hypredrv->vec_xref && hypredrv->vec_xref != hypredrv->vec_b)
+   {
+      HYPRE_IJVectorDestroy(hypredrv->vec_xref);
+   }
 
    IntArrayDestroy(&hypredrv->dofmap);
    InputArgsDestroy(&hypredrv->iargs);
@@ -758,10 +762,16 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv));
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetReferenceSolution(hypredrv));
+   /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
+   /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv));
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadDofmap(hypredrv));
+   /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
+   /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetVectorTags(hypredrv));
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
 
@@ -877,6 +887,24 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemSetReferenceSolution
+ *
+ * TODO: add vector as input parameter
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   LinearSystemSetReferenceSolution(hypredrv->comm, &hypredrv->iargs->ls,
+                                    &hypredrv->vec_xref);
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_LinearSystemResetInitialGuess
  *-----------------------------------------------------------------------------*/
 
@@ -893,6 +921,29 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv)
    }
 
    LinearSystemResetInitialGuess(hypredrv->vec_x0, hypredrv->vec_x);
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemSetVectorTags
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t hypredrv)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!hypredrv->dofmap || !hypredrv->dofmap->data || hypredrv->dofmap->size == 0)
+   {
+      return ErrorCodeGet();
+   }
+
+   LinearSystemSetVectorTags(hypredrv->vec_b, hypredrv->dofmap);
+   LinearSystemSetVectorTags(hypredrv->vec_x, hypredrv->dofmap);
+   LinearSystemSetVectorTags(hypredrv->vec_x0, hypredrv->dofmap);
+   LinearSystemSetVectorTags(hypredrv->vec_xref, hypredrv->dofmap);
 
    return ErrorCodeGet();
 }
@@ -1174,6 +1225,30 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
    return ErrorCodeGet();
 }
 
+static void
+HYPREDRV_GMRESSetRefSolution(HYPREDRV_t hypredrv)
+{
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   if (!hypredrv || hypredrv->iargs->solver_method != SOLVER_GMRES)
+   {
+      return;
+   }
+
+   void           *obj_ref = NULL;
+   HYPRE_ParVector par_ref = NULL;
+
+   if (hypredrv->vec_xref)
+   {
+      HYPRE_IJVectorGetObject(hypredrv->vec_xref, &obj_ref);
+      par_ref = (HYPRE_ParVector)obj_ref;
+   }
+
+   HYPRE_ParCSRGMRESSetRefSolution(hypredrv->solver, par_ref);
+#else
+   (void)hypredrv;
+#endif
+}
+
 /*-----------------------------------------------------------------------------
  * HYPREDRV_LinearSolverSetup
  *-----------------------------------------------------------------------------*/
@@ -1217,6 +1292,8 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
          }
       }
 
+      HYPREDRV_GMRESSetRefSolution(hypredrv);
+
       SolverSetup(hypredrv->iargs->precon_method, hypredrv->iargs->solver_method,
                   hypredrv->precon, hypredrv->solver, hypredrv->mat_M, hypredrv->vec_b,
                   hypredrv->vec_x);
@@ -1244,6 +1321,10 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 
    double e_norm = 0.0, x_norm = 0.0, xref_norm = 0.0;
    double b_norm = 0.0, r_norm = 0.0, r0_norm = 0.0;
+
+   /* Ensure GMRES always sees the current reference solution, including on reused
+    * preconditioner cycles where SolverSetup may be skipped. */
+   HYPREDRV_GMRESSetRefSolution(hypredrv);
 
    /* Apply scaling if enabled but not yet applied (e.g., when preconditioner is reused)
     */

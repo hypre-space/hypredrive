@@ -427,7 +427,7 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
    if (g_nparts < nprocs)
    {
       ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      ErrorMsgAdd("Invalid number of parts!");
+      ErrorMsgAdd("Invalid dofmap filename \"%s\" or invalid number of parts!", prefix);
       return;
    }
 

@@ -32,6 +32,8 @@ typedef struct LS_args_struct
    char      rhs_basename[MAX_FILENAME_LENGTH];
    char      x0_filename[MAX_FILENAME_LENGTH];
    char      sol_filename[MAX_FILENAME_LENGTH];
+   char      xref_filename[MAX_FILENAME_LENGTH];
+   char      xref_basename[MAX_FILENAME_LENGTH];
    char      dofmap_filename[MAX_FILENAME_LENGTH];
    char      dofmap_basename[MAX_FILENAME_LENGTH];
    HYPRE_Int digits_suffix;
@@ -66,7 +68,9 @@ void LinearSystemSetRHS(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJVector *,
                         HYPRE_IJVector *);
 void LinearSystemSetInitialGuess(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJVector,
                                  HYPRE_IJVector *, HYPRE_IJVector *);
+void LinearSystemSetReferenceSolution(MPI_Comm, LS_args *, HYPRE_IJVector *);
 void LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector);
+void LinearSystemSetVectorTags(HYPRE_IJVector, IntArray *);
 void LinearSystemSetPrecMatrix(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJMatrix *);
 void LinearSystemReadDofmap(MPI_Comm, LS_args *, IntArray **);
 void LinearSystemGetSolutionValues(HYPRE_IJVector, HYPRE_Complex **);

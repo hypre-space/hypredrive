@@ -200,6 +200,11 @@ endif()
 add_executable(hypredrive src/main.c)
 target_link_libraries(hypredrive PRIVATE HYPREDRV::HYPREDRV)
 
+# Ensure dataset-driven examples/tests have data available before running hypredrive.
+if(HYPREDRV_ENABLE_DATA AND TARGET data)
+    add_dependencies(hypredrive data)
+endif()
+
 # Add Caliper include directories if Caliper is enabled
 if(HYPREDRV_ENABLE_CALIPER AND CALIPER_FOUND)
     if(TARGET caliper)
