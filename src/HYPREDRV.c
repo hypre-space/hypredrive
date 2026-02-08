@@ -1321,6 +1321,7 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 
    double e_norm = 0.0, x_norm = 0.0, xref_norm = 0.0;
    double b_norm = 0.0, r_norm = 0.0, r0_norm = 0.0;
+   int    xref_scaled = 0;
 
    /* Ensure GMRES always sees the current reference solution, including on reused
     * preconditioner cycles where SolverSetup may be skipped. */
@@ -1347,6 +1348,17 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x,
                                       "L2", &r0_norm);
 
+      if (hypredrv->vec_xref)
+      {
+         ScalingApplyToVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
+                              SCALING_VECTOR_UNKNOWN);
+         if (ErrorCodeGet())
+         {
+            return ErrorCodeGet();
+         }
+         xref_scaled = 1;
+      }
+
       StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
       StatsInitialResNormSet(r0_norm);
 
@@ -1356,6 +1368,11 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
                          hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x);
       if (iters < 0)
       {
+         if (xref_scaled)
+         {
+            ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
+                                SCALING_VECTOR_UNKNOWN);
+         }
          StatsIterSet(0);
          StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
          return ErrorCodeGet();
@@ -1369,7 +1386,22 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
                           hypredrv->vec_b, hypredrv->vec_x);
       if (ErrorCodeGet())
       {
+         if (xref_scaled)
+         {
+            ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
+                                SCALING_VECTOR_UNKNOWN);
+         }
          return ErrorCodeGet();
+      }
+
+      if (xref_scaled)
+      {
+         ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
+                             SCALING_VECTOR_UNKNOWN);
+         if (ErrorCodeGet())
+         {
+            return ErrorCodeGet();
+         }
       }
 
       /* Compute residual norms on original (now restored) system */

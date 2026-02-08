@@ -416,6 +416,141 @@ ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
 }
 
 /*-----------------------------------------------------------------------------
+ * Vector scaling helpers
+ *-----------------------------------------------------------------------------*/
+
+static void
+ScalingTransformVectorRHSL2(Scaling_context *ctx, HYPRE_IJVector vec,
+                            scaling_vector_kind_t kind, int apply)
+{
+   if (!vec)
+   {
+      return;
+   }
+
+   HYPRE_Complex s = ctx->scalar_factor;
+   if (s == 0.0)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("ScalingTransformVectorRHSL2: invalid scaling factor");
+      return;
+   }
+
+   HYPRE_Complex factor = 1.0;
+   if (kind == SCALING_VECTOR_RHS)
+   {
+      factor = apply ? s : (1.0 / s);
+   }
+   else
+   {
+      factor = apply ? (1.0 / s) : s;
+   }
+
+   void            *obj_vec = NULL;
+   hypre_ParVector *par_vec = NULL;
+   HYPRE_IJVectorGetObject(vec, &obj_vec);
+   par_vec = (hypre_ParVector *)obj_vec;
+   hypre_ParVectorScale(factor, par_vec);
+}
+
+static void
+ScalingTransformVectorDofmap(Scaling_context *ctx, HYPRE_IJVector vec,
+                             scaling_vector_kind_t kind, int apply)
+{
+   if (!vec)
+   {
+      return;
+   }
+
+   if (!ctx->scaling_ijvec)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("ScalingTransformVectorDofmap: scaling vector not computed");
+      return;
+   }
+
+   void            *obj_vec     = NULL;
+   hypre_ParVector *par_vec     = NULL;
+   void            *obj_scaling = NULL;
+   hypre_ParVector *par_scaling = NULL;
+
+   HYPRE_IJVectorGetObject(vec, &obj_vec);
+   par_vec = (hypre_ParVector *)obj_vec;
+   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
+   par_scaling = (hypre_ParVector *)obj_scaling;
+
+   if ((kind == SCALING_VECTOR_RHS && apply) ||
+       (kind == SCALING_VECTOR_UNKNOWN && !apply))
+   {
+      hypre_ParVectorPointwiseProduct(par_scaling, par_vec, &par_vec);
+   }
+   else
+   {
+      hypre_ParVectorPointwiseDivision(par_scaling, par_vec, &par_vec);
+   }
+}
+
+void
+ScalingApplyToVector(Scaling_context *ctx, HYPRE_IJVector vec, scaling_vector_kind_t kind)
+{
+   if (!ctx || !ctx->enabled || !vec)
+   {
+      return;
+   }
+
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   switch (ctx->type)
+   {
+      case SCALING_RHS_L2:
+         ScalingTransformVectorRHSL2(ctx, vec, kind, 1);
+         break;
+
+      case SCALING_DOFMAP_MAG:
+      case SCALING_DOFMAP_CUSTOM:
+         ScalingTransformVectorDofmap(ctx, vec, kind, 1);
+         break;
+
+      default:
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("ScalingApplyToVector: unknown scaling type");
+         break;
+   }
+#else
+   (void)kind;
+#endif
+}
+
+void
+ScalingUndoOnVector(Scaling_context *ctx, HYPRE_IJVector vec, scaling_vector_kind_t kind)
+{
+   if (!ctx || !ctx->enabled || !vec)
+   {
+      return;
+   }
+
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   switch (ctx->type)
+   {
+      case SCALING_RHS_L2:
+         ScalingTransformVectorRHSL2(ctx, vec, kind, 0);
+         break;
+
+      case SCALING_DOFMAP_MAG:
+      case SCALING_DOFMAP_CUSTOM:
+         ScalingTransformVectorDofmap(ctx, vec, kind, 0);
+         break;
+
+      default:
+         ErrorCodeSet(ERROR_UNKNOWN);
+         ErrorMsgAdd("ScalingUndoOnVector: unknown scaling type");
+         break;
+   }
+#else
+   (void)kind;
+#endif
+}
+
+/*-----------------------------------------------------------------------------
  * ScalingApplyToSystem (rhs_l2 strategy)
  *-----------------------------------------------------------------------------*/
 
@@ -424,11 +559,10 @@ ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
                   HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   void              *obj_A = NULL, *obj_M = NULL, *obj_b = NULL;
+   void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
-   HYPRE_ParVector    par_b = NULL;
-   HYPRE_Complex      s     = ctx->scalar_factor;
-   HYPRE_Complex      s2    = s * s;
+   HYPRE_Complex      s  = ctx->scalar_factor;
+   HYPRE_Complex      s2 = s * s;
 
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
    par_A = (HYPRE_ParCSRMatrix)obj_A;
@@ -443,9 +577,6 @@ ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
       par_M = par_A;
    }
 
-   HYPRE_IJVectorGetObject(vec_b, &obj_b);
-   par_b = (hypre_ParVector *)obj_b;
-
    /* Scale matrix: A = s^2 * A, M = s^2 * M */
    hypre_ParCSRMatrixScale(par_A, s2);
    if (par_M != par_A)
@@ -453,10 +584,16 @@ ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
       hypre_ParCSRMatrixScale(par_M, s2);
    }
 
-   /* Scale RHS: b = s * b */
-   hypre_ParVectorScale(s, par_b);
-
-   /* Solution vector starts as zero, no need to scale */
+   ScalingApplyToVector(ctx, vec_b, SCALING_VECTOR_RHS);
+   if (ErrorCodeGet())
+   {
+      return;
+   }
+   ScalingApplyToVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN);
+   if (ErrorCodeGet())
+   {
+      return;
+   }
 
    ctx->is_applied = 1;
 #else
@@ -479,9 +616,8 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
                    HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   void              *obj_A = NULL, *obj_M = NULL, *obj_b = NULL;
+   void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
-   hypre_ParVector   *par_b = NULL;
 
    if (!ctx->scaling_vector)
    {
@@ -503,9 +639,6 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
       par_M = par_A;
    }
 
-   HYPRE_IJVectorGetObject(vec_b, &obj_b);
-   par_b = (hypre_ParVector *)obj_b;
-
    /* Apply diagonal scaling: A = diag(M) * A * diag(M), M = diag(M) * M * diag(M) */
    void            *obj_scaling_vec = NULL;
    hypre_ParVector *par_scaling_vec = NULL;
@@ -517,15 +650,16 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
       hypre_ParCSRMatrixDiagScale(par_M, par_scaling_vec, par_scaling_vec);
    }
 
-   /* Scale RHS: b = M .* b (pointwise product) */
-   void            *obj_scaling = NULL;
-   hypre_ParVector *par_scaling = NULL;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
-   par_scaling = (hypre_ParVector *)obj_scaling;
-
-   hypre_ParVectorPointwiseProduct(par_scaling, par_b, &par_b);
-
-   /* Solution vector starts as zero, no need to scale */
+   ScalingApplyToVector(ctx, vec_b, SCALING_VECTOR_RHS);
+   if (ErrorCodeGet())
+   {
+      return;
+   }
+   ScalingApplyToVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN);
+   if (ErrorCodeGet())
+   {
+      return;
+   }
 
    ctx->is_applied = 1;
 #else
@@ -590,12 +724,10 @@ ScalingUndoRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_
                  HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   void              *obj_A = NULL, *obj_M = NULL, *obj_b = NULL, *obj_x = NULL;
+   void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
-   hypre_ParVector   *par_b = NULL, *par_x = NULL;
    HYPRE_Complex      s      = ctx->scalar_factor;
    HYPRE_Complex      s2     = s * s;
-   HYPRE_Complex      inv_s  = 1.0 / s;
    HYPRE_Complex      inv_s2 = 1.0 / s2;
 
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
@@ -611,17 +743,16 @@ ScalingUndoRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_
       par_M = par_A;
    }
 
-   HYPRE_IJVectorGetObject(vec_b, &obj_b);
-   par_b = (hypre_ParVector *)obj_b;
-
-   HYPRE_IJVectorGetObject(vec_x, &obj_x);
-   par_x = (hypre_ParVector *)obj_x;
-
-   /* Unscale solution: x = s * x (since we solved for y, and x = M*y = s*y) */
-   hypre_ParVectorScale(inv_s, par_x);
-
-   /* Unscale RHS: b = (1/s) * b */
-   hypre_ParVectorScale(inv_s, par_b);
+   ScalingUndoOnVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN);
+   if (ErrorCodeGet())
+   {
+      return;
+   }
+   ScalingUndoOnVector(ctx, vec_b, SCALING_VECTOR_RHS);
+   if (ErrorCodeGet())
+   {
+      return;
+   }
 
    /* Unscale matrices: A = (1/s^2) * A, M = (1/s^2) * M */
    hypre_ParCSRMatrixScale(par_A, inv_s2);
@@ -651,9 +782,8 @@ ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
                   HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   void              *obj_A = NULL, *obj_M = NULL, *obj_b = NULL, *obj_x = NULL;
+   void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
-   HYPRE_ParVector    par_b = NULL, par_x = NULL;
 
    if (!ctx->scaling_vector)
    {
@@ -675,25 +805,24 @@ ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
       par_M = par_A;
    }
 
-   HYPRE_IJVectorGetObject(vec_b, &obj_b);
-   par_b = (hypre_ParVector *)obj_b;
+   ScalingUndoOnVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN);
+   if (ErrorCodeGet())
+   {
+      return;
+   }
+   ScalingUndoOnVector(ctx, vec_b, SCALING_VECTOR_RHS);
+   if (ErrorCodeGet())
+   {
+      return;
+   }
 
-   HYPRE_IJVectorGetObject(vec_x, &obj_x);
-   par_x = (HYPRE_ParVector)obj_x;
-
-   /* Unscale solution: x = M .* x (pointwise product) */
+   /* Unscale matrices: A = diag(1/M) * A * diag(1/M), M = diag(1/M) * M * diag(1/M) */
+   /* Create inverse scaling vector */
    void            *obj_scaling = NULL;
    hypre_ParVector *par_scaling = NULL;
    HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
    par_scaling = (hypre_ParVector *)obj_scaling;
 
-   hypre_ParVectorPointwiseProduct(par_scaling, par_x, &par_x);
-
-   /* Unscale RHS: b = (1/M) .* b (pointwise division) */
-   hypre_ParVectorPointwiseDivision(par_scaling, par_b, &par_b);
-
-   /* Unscale matrices: A = diag(1/M) * A * diag(1/M), M = diag(1/M) * M * diag(1/M) */
-   /* Create inverse scaling vector */
    hypre_ParVector *inv_scaling = NULL;
    hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
 
