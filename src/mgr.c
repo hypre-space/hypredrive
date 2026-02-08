@@ -25,20 +25,23 @@ DEFINE_TYPED_SETTER(MGRfrlxAMGSetArgs, MGRfrlx_args, amg, 2, AMGSetArgs)
 DEFINE_TYPED_SETTER(MGRfrlxILUSetArgs, MGRfrlx_args, ilu, 32, ILUSetArgs)
 DEFINE_TYPED_SETTER(MGRgrlxAMGSetArgs, MGRgrlx_args, amg, 20, AMGSetArgs)
 DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, ILUSetArgs)
+static void MGRclsTypeSet(void *, const YAMLnode *);
+static void MGRfrlxTypeSet(void *, const YAMLnode *);
+static void MGRgrlxTypeSet(void *, const YAMLnode *);
 
 #define MGRcls_FIELDS(_prefix)                            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRclsTypeSet)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRclsILUSetArgs)
 
 #define MGRfrlx_FIELDS(_prefix)                                 \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRfrlxTypeSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)
 
 #define MGRgrlx_FIELDS(_prefix)                                 \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRgrlxTypeSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)
@@ -127,6 +130,34 @@ MGRGetOrCreateNestedKrylov(NestedKrylov_args **ptr)
 
    return *ptr;
 }
+
+/*-----------------------------------------------------------------------------
+ * Type setters for union-backed solver args.
+ *-----------------------------------------------------------------------------*/
+
+#define DEFINE_MGR_TYPE_SETTER(_func, _parent, _amg_type, _ilu_type)               \
+   static void _func(void *field, const YAMLnode *node)                            \
+   {                                                                                \
+      HYPRE_Int old_type = *((HYPRE_Int *)field);                                   \
+      FieldTypeIntSet(field, node);                                                \
+      _parent *args = (_parent *)((char *)field - offsetof(_parent, type));         \
+      if (args->type == old_type)                                                   \
+      {                                                                             \
+         return;                                                                    \
+      }                                                                             \
+      if (args->type == (_amg_type))                                                \
+      {                                                                             \
+         AMGSetDefaultArgs(&args->amg);                                             \
+      }                                                                             \
+      else if (args->type == (_ilu_type))                                           \
+      {                                                                             \
+         ILUSetDefaultArgs(&args->ilu);                                             \
+      }                                                                             \
+   }
+
+DEFINE_MGR_TYPE_SETTER(MGRclsTypeSet, MGRcls_args, 0, 32)
+DEFINE_MGR_TYPE_SETTER(MGRfrlxTypeSet, MGRfrlx_args, 2, 32)
+DEFINE_MGR_TYPE_SETTER(MGRgrlxTypeSet, MGRgrlx_args, 20, 16)
 
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/

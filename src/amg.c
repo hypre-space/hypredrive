@@ -197,6 +197,8 @@ AMGsmtSetDefaultArgs(AMGsmt_args *args)
    args->type       = 5;
    args->num_levels = 0;
    args->num_sweeps = 1;
+   FSAISetDefaultArgs(&args->fsai);
+   ILUSetDefaultArgs(&args->ilu);
 }
 
 /*-----------------------------------------------------------------------------
