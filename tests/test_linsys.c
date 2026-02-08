@@ -595,6 +595,50 @@ test_LinearSystemSetRHS_mode_branches(void)
 }
 
 static void
+test_LinearSystemSetReferenceSolution_keeps_randsol_reference(void)
+{
+   TEST_HYPRE_INIT();
+
+   LS_args args;
+   LinearSystemSetDefaultArgs(&args);
+   args.rhs_mode = 4; /* randsol */
+
+   HYPRE_IJMatrix mat = NULL;
+   HYPRE_IJVector rhs = NULL, xref = NULL;
+
+   /* Build a minimal 1x1 matrix so SetRHS can form b = A * xref. */
+   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat);
+   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
+   HYPRE_IJMatrixInitialize(mat);
+   HYPRE_Int    nrows     = 1;
+   HYPRE_Int    ncols[1]  = {1};
+   HYPRE_BigInt rows[1]   = {0};
+   HYPRE_BigInt cols[1]   = {0};
+   double       values[1] = {1.0};
+   HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, values);
+   HYPRE_IJMatrixAssemble(mat);
+
+   ErrorCodeResetAll();
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &xref, &rhs);
+   ASSERT_NOT_NULL(rhs);
+   ASSERT_NOT_NULL(xref);
+
+   HYPRE_IJVector xref_before = xref;
+
+   /* No xref file is provided, so existing randsol reference must be preserved. */
+   ErrorCodeResetAll();
+   LinearSystemSetReferenceSolution(MPI_COMM_SELF, &args, &xref);
+   ASSERT_NOT_NULL(xref);
+   ASSERT_TRUE(xref == xref_before);
+
+   HYPRE_IJVectorDestroy(rhs);
+   HYPRE_IJVectorDestroy(xref);
+   HYPRE_IJMatrixDestroy(mat);
+
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_LinearSystemPrintData_series_dir_and_null_objects(void)
 {
    TEST_HYPRE_INIT();
@@ -1116,6 +1160,7 @@ main(int argc, char **argv)
 #endif
 
    RUN_TEST(test_LinearSystemSetRHS_mode_branches);
+   RUN_TEST(test_LinearSystemSetReferenceSolution_keeps_randsol_reference);
 
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_LinearSystemReadMatrix_mtx_success);

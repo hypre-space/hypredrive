@@ -48,6 +48,8 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_basename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_basename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, xref_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, xref_basename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, x0_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, sol_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FieldTypeStringSet),
@@ -143,6 +145,8 @@ LinearSystemSetDefaultArgs(LS_args *args)
    args->rhs_filename[0]     = '\0';
    args->rhs_basename[0]     = '\0';
    args->x0_filename[0]      = '\0';
+   args->xref_filename[0]    = '\0';
+   args->xref_basename[0]    = '\0';
    args->sol_filename[0]     = '\0';
    args->dofmap_filename[0]  = '\0';
    args->dofmap_basename[0]  = '\0';
@@ -444,11 +448,11 @@ LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
 
 void
 LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
-                   HYPRE_IJVector *refsol_ptr, HYPRE_IJVector *rhs_ptr)
+                   HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr)
 {
    HYPRE_BigInt         ilower = 0, iupper = 0;
    HYPRE_BigInt         jlower = 0, jupper = 0;
-   HYPRE_IJVector       refsol = NULL;
+   HYPRE_IJVector       xref   = NULL;
    int                  ls_id  = StatsGetLinearSystemID() + 1;
    HYPRE_MemoryLocation memory_location =
       (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
@@ -456,9 +460,9 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "rhs");
 
    /* Destroy vectors */
-   if (*refsol_ptr)
+   if (*xref_ptr)
    {
-      HYPRE_IJVectorDestroy(*refsol_ptr);
+      HYPRE_IJVectorDestroy(*xref_ptr);
    }
    if (*rhs_ptr)
    {
@@ -494,13 +498,13 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 
          case 4:
             /* Solution has random values */
-            HYPRE_IJVectorCreate(comm, ilower, iupper, &refsol);
-            HYPRE_IJVectorSetObjectType(refsol, HYPRE_PARCSR);
-            HYPREDRV_IJVectorInitialize(refsol, memory_location);
+            HYPRE_IJVectorCreate(comm, ilower, iupper, &xref);
+            HYPRE_IJVectorSetObjectType(xref, HYPRE_PARCSR);
+            HYPREDRV_IJVectorInitialize(xref, memory_location);
 
             /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
             HYPRE_ParVector par_x = NULL;
-            HYPRE_IJVectorGetObject(refsol, &obj);
+            HYPRE_IJVectorGetObject(xref, &obj);
             par_x = (HYPRE_ParVector)obj;
             HYPRE_ParVectorSetRandomValues(par_x, 2023);
 
@@ -798,7 +802,7 @@ LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    }
 
    /* Set reference solution vector */
-   *refsol_ptr = refsol;
+   *xref_ptr = xref;
 
    StatsAnnotate(HYPREDRV_ANNOTATE_END, "rhs");
 }
@@ -824,19 +828,22 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       *x_ptr = NULL;
    }
 
-   /* Create solution vector
-      TODO: implement HYPRE_IJVectorClone in hypre */
-   HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
-   HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
-   HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
-   HYPREDRV_IJVectorInitialize(*x_ptr, memloc);
-
    /* Destroy initial solution vector */
    if (*x0_ptr)
    {
       HYPRE_IJVectorDestroy(*x0_ptr);
       *x0_ptr = NULL;
    }
+
+   /* Destroy initial solution vector */
+   if (*x_ptr) HYPRE_IJVectorDestroy(*x_ptr);
+
+   /* Create solution vector
+      TODO: implement HYPRE_IJVectorClone in hypre */
+   HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
+   HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
+   HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
+   HYPREDRV_IJVectorInitialize(*x_ptr, memloc);
 
    if (args->x0_filename[0] == '\0')
    {
@@ -910,6 +917,104 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 }
 
 /*-----------------------------------------------------------------------------
+ * LinearSystemSetReferenceSolution
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemSetReferenceSolution(MPI_Comm comm, LS_args *args, HYPRE_IJVector *xref_ptr)
+{
+   char                 xref_filename[MAX_FILENAME_LENGTH] = {0};
+   int                  ls_id  = StatsGetLinearSystemID() + 1;
+   int                  nprocs = 0, nparts = 0;
+   HYPRE_MemoryLocation memory_location = (args->exec_policy) ?
+                                          HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+
+   /* Keep the existing reference solution (e.g., rhs_mode = randsol) unless a file is
+    * explicitly requested. */
+   if (args->xref_filename[0] == '\0' && args->xref_basename[0] == '\0')
+   {
+      return;
+   }
+
+   if (*xref_ptr)
+   {
+      HYPRE_IJVectorDestroy(*xref_ptr);
+      *xref_ptr = NULL;
+   }
+
+   /* Set reference solution filename */
+   if (args->dirname[0] != '\0')
+   {
+      snprintf(xref_filename,
+               sizeof(xref_filename),
+               "%.*s_%0*d/%.*s",
+               (int) strlen(args->dirname),
+               args->dirname,
+               (int) args->digits_suffix,
+               (int) args->init_suffix + ls_id,
+               (int) strlen(args->xref_filename),
+               args->xref_filename);
+   }
+   else if (args->xref_filename[0] != '\0')
+   {
+      strcpy(xref_filename, args->xref_filename);
+   }
+   else if (args->xref_basename[0] != '\0')
+   {
+      snprintf(xref_filename,
+               sizeof(xref_filename),
+               "%.*s_%0*d",
+               (int) strlen(args->xref_basename),
+               args->xref_basename,
+               (int) args->digits_suffix,
+               (int) args->init_suffix + ls_id);
+   }
+
+   /* Read vector from file (Binary or ASCII) */
+   if (CheckBinaryDataExists(xref_filename))
+   {
+      MPI_Comm_size(comm, &nprocs);
+      nparts = CountNumberOfPartitions(xref_filename);
+      if (nparts >= nprocs)
+      {
+         IJVectorReadMultipartBinary(xref_filename, comm, (uint64_t)nparts,
+                                     memory_location, xref_ptr);
+      }
+      else
+      {
+         HYPRE_IJVectorReadBinary(xref_filename, comm, HYPRE_PARCSR, xref_ptr);
+      }
+   }
+   else
+   {
+      HYPRE_IJVectorRead(xref_filename, comm, HYPRE_PARCSR, xref_ptr);
+   }
+
+   /* Check if hypre had problems reading the input file */
+   if (HYPRE_GetError())
+   {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAddInvalidFilename(xref_filename);
+      *xref_ptr = NULL;
+   }
+   else
+   {
+      /* Migrate the vector if needed */
+      if (args->exec_policy && *xref_ptr)
+      {
+         HYPRE_ParVector   par_xref;
+         void             *obj;
+
+         HYPRE_IJVectorGetObject(*xref_ptr, &obj);
+         par_xref = (HYPRE_ParVector) obj;
+
+#if HYPREDRV_HAVE_MEMORY_APIS
+         hypre_ParVectorMigrate(par_xref, HYPRE_MEMORY_DEVICE);
+#endif
+      }
+   }
+}
+/*-----------------------------------------------------------------------------
  * LinearSystemResetInitialGuess
  *-----------------------------------------------------------------------------*/
 
@@ -937,6 +1042,40 @@ LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr)
    HYPRE_ParVectorCopy(par_x0, par_x);
 
    StatsAnnotate(HYPREDRV_ANNOTATE_END, "reset_x0");
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemSetVectorTags
+ *-----------------------------------------------------------------------------*/
+
+void
+LinearSystemSetVectorTags(HYPRE_IJVector  vec,
+                          IntArray       *dofmap)
+{
+   if (!vec || !dofmap || !dofmap->data || dofmap->size == 0)
+   {
+      return;
+   }
+
+   HYPRE_Int num_tags = 1;
+   if (dofmap->g_unique_data && dofmap->g_unique_size > 0)
+   {
+      int max_tag = dofmap->g_unique_data[dofmap->g_unique_size - 1];
+      if (max_tag >= 0)
+      {
+         num_tags = (HYPRE_Int)max_tag + 1;
+      }
+   }
+   else if (dofmap->unique_data && dofmap->unique_size > 0)
+   {
+      int max_tag = dofmap->unique_data[dofmap->unique_size - 1];
+      if (max_tag >= 0)
+      {
+         num_tags = (HYPRE_Int)max_tag + 1;
+      }
+   }
+
+   HYPRE_IJVectorSetTags(vec, 0, num_tags, dofmap->data);
 }
 
 /*-----------------------------------------------------------------------------

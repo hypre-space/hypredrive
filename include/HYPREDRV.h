@@ -701,6 +701,18 @@ extern "C"
    HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv);
 
    /**
+    * @brief Set or refresh the reference solution vector for GMRES tagged residual/error
+    * reporting.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv);
+
+   /**
+    * @brief Apply dofmap tags to active linear-system vectors.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t hypredrv);
+
+   /**
     * @brief Reset the initial guess of the solution vector for a HYPREDRV object to its
     * original state as computed with \e HYPREDRV_LinearSystemSetInitialGuess
     *
