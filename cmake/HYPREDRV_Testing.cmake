@@ -315,15 +315,14 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         add_hypredrive_test(ex2_4proc     4 ex2.yml)
         if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
             add_hypredrive_test(ex3_1proc     1 ex3.yml)
-
-            if (HYPREDRV_HAVE_HYPRE_30100_DEV5)
-                add_hypredrive_test(ex3_nested_1  1 ex3-mgr_Frelax_gmres.yml)
-                add_hypredrive_test(ex3_nested_2  1 ex3-mgr_coarse_gmres_amg.yml)
-            endif()
-
+        endif()
+        if (HYPREDRV_HAVE_HYPRE_30100_DEV5)
+            add_hypredrive_test(ex3_nested_1  1 ex3-mgr_Frelax_gmres.yml)
+            add_hypredrive_test(ex3_nested_2  1 ex3-mgr_coarse_gmres_amg.yml)
             add_hypredrive_test(ex4_4proc     4 ex4.yml)
             add_hypredrive_cli_test(ex4_cli_mgr_g_ilu 1 ex4.yml
                 OVERRIDES
+                    --preconditioner:mgr:print_level 1
                     --preconditioner:mgr:level:1:g_relaxation none
                     --preconditioner:mgr:level:0:g_relaxation ilu
                 REQUIRE_CONTAINS
@@ -332,14 +331,16 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             )
             add_hypredrive_cli_test(ex4_cli_mgr_g_amg 1 ex4.yml
                 OVERRIDES
+                    --preconditioner:mgr:print_level 1
                     --preconditioner:mgr:level:1:g_relaxation none
                     --preconditioner:mgr:level:0:g_relaxation amg
                 REQUIRE_CONTAINS
                     "g_relaxation: amg"
-                    "[0, 1]     Unknown         Jacobi"
+                    "[0, 1]    User AMG         Jacobi"
             )
             add_hypredrive_cli_test(ex4_cli_mgr_f_ilu 1 ex4.yml
                 OVERRIDES
+                    --preconditioner:mgr:print_level 1
                     --preconditioner:mgr:level:1:g_relaxation none
                     --preconditioner:mgr:level:0:f_relaxation ilu
                 REQUIRE_CONTAINS
@@ -348,6 +349,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             )
             add_hypredrive_cli_test(ex4_cli_mgr_f_amg 1 ex4.yml
                 OVERRIDES
+                    --preconditioner:mgr:print_level 1
                     --preconditioner:mgr:level:1:g_relaxation none
                     --preconditioner:mgr:level:0:f_relaxation amg
                 REQUIRE_CONTAINS
@@ -356,10 +358,12 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     "Strength Threshold = 0.250000"
                     "Coarsening type = HMIS"
             )
+        endif()
+        if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
             add_hypredrive_test(ex5_1proc     1 ex5.yml)
         endif()
         if (HYPREDRV_ENABLE_EIGSPEC)
-            add_hypredrive_test(ex6_1proc 1 ex6.yml)
+            add_hypredrive_test(ex6_1proc     1 ex6.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
             add_hypredrive_test(ex7_1proc     1 ex7.yml)

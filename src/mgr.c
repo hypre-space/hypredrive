@@ -135,24 +135,24 @@ MGRGetOrCreateNestedKrylov(NestedKrylov_args **ptr)
  * Type setters for union-backed solver args.
  *-----------------------------------------------------------------------------*/
 
-#define DEFINE_MGR_TYPE_SETTER(_func, _parent, _amg_type, _ilu_type)               \
-   static void _func(void *field, const YAMLnode *node)                            \
-   {                                                                                \
-      HYPRE_Int old_type = *((HYPRE_Int *)field);                                   \
-      FieldTypeIntSet(field, node);                                                \
-      _parent *args = (_parent *)((char *)field - offsetof(_parent, type));         \
-      if (args->type == old_type)                                                   \
-      {                                                                             \
-         return;                                                                    \
-      }                                                                             \
-      if (args->type == (_amg_type))                                                \
-      {                                                                             \
-         AMGSetDefaultArgs(&args->amg);                                             \
-      }                                                                             \
-      else if (args->type == (_ilu_type))                                           \
-      {                                                                             \
-         ILUSetDefaultArgs(&args->ilu);                                             \
-      }                                                                             \
+#define DEFINE_MGR_TYPE_SETTER(_func, _parent, _amg_type, _ilu_type)        \
+   static void _func(void *field, const YAMLnode *node)                     \
+   {                                                                        \
+      HYPRE_Int old_type = *((HYPRE_Int *)field);                           \
+      FieldTypeIntSet(field, node);                                         \
+      _parent *args = (_parent *)((char *)field - offsetof(_parent, type)); \
+      if (args->type == old_type)                                           \
+      {                                                                     \
+         return;                                                            \
+      }                                                                     \
+      if (args->type == (_amg_type))                                        \
+      {                                                                     \
+         AMGSetDefaultArgs(&args->amg);                                     \
+      }                                                                     \
+      else if (args->type == (_ilu_type))                                   \
+      {                                                                     \
+         ILUSetDefaultArgs(&args->ilu);                                     \
+      }                                                                     \
    }
 
 DEFINE_MGR_TYPE_SETTER(MGRclsTypeSet, MGRcls_args, 0, 32)
