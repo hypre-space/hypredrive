@@ -479,6 +479,7 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
    par_scaling = (hypre_ParVector *)obj_scaling;
 
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
    if ((kind == SCALING_VECTOR_RHS && apply) ||
        (kind == SCALING_VECTOR_UNKNOWN && !apply))
    {
@@ -488,6 +489,12 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    {
       hypre_ParVectorPointwiseDivision(par_scaling, par_vec, &par_vec);
    }
+#else
+   (void)kind;
+   (void)apply;
+   ErrorCodeSet(ERROR_UNKNOWN);
+   ErrorMsgAdd("ScalingTransformVectorDofmap: requires Hypre >= v3.0.0");
+#endif
 }
 
 void
