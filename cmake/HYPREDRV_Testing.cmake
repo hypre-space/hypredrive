@@ -322,6 +322,40 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             endif()
 
             add_hypredrive_test(ex4_4proc     4 ex4.yml)
+            add_hypredrive_cli_test(ex4_cli_mgr_g_ilu 1 ex4.yml
+                OVERRIDES
+                    --preconditioner:mgr:level:1:g_relaxation none
+                    --preconditioner:mgr:level:0:g_relaxation ilu
+                REQUIRE_CONTAINS
+                    "g_relaxation: ilu"
+                    "[0, 1]     BJ-ILU0         Jacobi"
+            )
+            add_hypredrive_cli_test(ex4_cli_mgr_g_amg 1 ex4.yml
+                OVERRIDES
+                    --preconditioner:mgr:level:1:g_relaxation none
+                    --preconditioner:mgr:level:0:g_relaxation amg
+                REQUIRE_CONTAINS
+                    "g_relaxation: amg"
+                    "[0, 1]     Unknown         Jacobi"
+            )
+            add_hypredrive_cli_test(ex4_cli_mgr_f_ilu 1 ex4.yml
+                OVERRIDES
+                    --preconditioner:mgr:level:1:g_relaxation none
+                    --preconditioner:mgr:level:0:f_relaxation ilu
+                REQUIRE_CONTAINS
+                    "f_relaxation: ilu"
+                    "[0, 1]          --        BJ-ILU0"
+            )
+            add_hypredrive_cli_test(ex4_cli_mgr_f_amg 1 ex4.yml
+                OVERRIDES
+                    --preconditioner:mgr:level:1:g_relaxation none
+                    --preconditioner:mgr:level:0:f_relaxation amg
+                REQUIRE_CONTAINS
+                    "f_relaxation: amg"
+                    "User AMG"
+                    "Strength Threshold = 0.250000"
+                    "Coarsening type = HMIS"
+            )
             add_hypredrive_test(ex5_1proc     1 ex5.yml)
         endif()
         if (HYPREDRV_ENABLE_EIGSPEC)
