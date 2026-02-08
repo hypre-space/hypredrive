@@ -500,6 +500,7 @@ test_LinearSystemReadRHS_file_patterns(void)
 
    /* Test dirname pattern for RHS */
    args.type = 1; // IJ type
+   args.rhs_mode = 2; // file mode
    strncpy(args.dirname, "test_dir", sizeof(args.dirname) - 1);
    strncpy(args.rhs_filename, "rhs.b", sizeof(args.rhs_filename) - 1);
    args.digits_suffix = 5;
@@ -526,6 +527,45 @@ test_LinearSystemReadRHS_file_patterns(void)
    {
       HYPRE_IJVectorDestroy(refsol);
    }
+   HYPRE_IJMatrixDestroy(mat);
+
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_LinearSystemSetRHS_mode_precedence_over_filename(void)
+{
+   TEST_HYPRE_INIT();
+
+   LS_args args;
+   LinearSystemSetDefaultArgs(&args);
+   args.rhs_mode = 4; /* randsol */
+   strncpy(args.rhs_filename, "/tmp/this_rhs_file_should_be_ignored",
+           sizeof(args.rhs_filename) - 1);
+   args.rhs_filename[sizeof(args.rhs_filename) - 1] = '\0';
+
+   HYPRE_IJMatrix mat = NULL;
+   HYPRE_IJVector rhs = NULL, refsol = NULL;
+   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat);
+   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
+   HYPRE_IJMatrixInitialize(mat);
+
+   HYPRE_Int    nrows = 1;
+   HYPRE_Int    ncols[1] = {1};
+   HYPRE_BigInt rows[1] = {0};
+   HYPRE_BigInt cols[1] = {0};
+   double       vals[1] = {1.0};
+   HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, vals);
+   HYPRE_IJMatrixAssemble(mat);
+
+   ErrorCodeResetAll();
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs);
+   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_NOT_NULL(rhs);
+   ASSERT_NOT_NULL(refsol);
+
+   HYPRE_IJVectorDestroy(rhs);
+   HYPRE_IJVectorDestroy(refsol);
    HYPRE_IJMatrixDestroy(mat);
 
    TEST_HYPRE_FINALIZE();
@@ -1160,6 +1200,7 @@ main(int argc, char **argv)
 #endif
 
    RUN_TEST(test_LinearSystemSetRHS_mode_branches);
+   RUN_TEST(test_LinearSystemSetRHS_mode_precedence_over_filename);
    RUN_TEST(test_LinearSystemSetReferenceSolution_keeps_randsol_reference);
 
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)

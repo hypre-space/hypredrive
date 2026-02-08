@@ -703,14 +703,20 @@ extern "C"
    /**
     * @brief Set or refresh the reference solution vector for GMRES tagged residual/error
     * reporting.
+    *
+    * @note On hypre versions older than v3.0.0, this is a no-op for GMRES tagged
+    * residual/error internals.
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv);
 
    /**
     * @brief Apply dofmap tags to active linear-system vectors.
+    *
+    * @note On hypre versions older than v3.0.0, this is a no-op.
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t hypredrv);
 
    /**
     * @brief Reset the initial guess of the solution vector for a HYPREDRV object to its

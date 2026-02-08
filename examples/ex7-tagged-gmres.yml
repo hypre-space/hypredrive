@@ -3,9 +3,12 @@ general:
 linear_system:
   type: ij
   matrix_filename: data/poromech2k/np1/ls_00000/IJ.out.A
-  rhs_filename: data/poromech2k/np1/ls_00000/IJ.out.b
+  #rhs_filename: data/poromech2k/np1/ls_00000/IJ.out.b
   dofmap_filename: data/poromech2k/np1/ls_00000/dofmap.out
-solver: gmres
+  rhs_mode: randsol
+solver:
+  gmres:
+    print_level: 0
 preconditioner:
-  amg:
+  ilu:
     print_level: 0

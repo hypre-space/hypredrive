@@ -315,6 +315,8 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         add_hypredrive_test(ex2_4proc     4 ex2.yml)
         if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
             add_hypredrive_test(ex3_1proc     1 ex3.yml)
+        endif()
+        if (HYPREDRV_HAVE_HYPRE_30000_DEV0)
             add_hypredrive_cli_test(ex7_cli_gmres_tagged_residuals 1 ex7-tagged-gmres.yml
                 OVERRIDES
                     --solver:gmres:print_level 4
@@ -324,12 +326,12 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             )
             add_hypredrive_cli_test(ex7_cli_gmres_tagged_error_randsol 1 ex7-tagged-gmres.yml
                 OVERRIDES
-                    --solver:gmres:print_level 6
+                    --solver:gmres:print_level 8
                     --linear_system:rhs_mode randsol
                 REQUIRE_CONTAINS
                     "rhs_mode: randsol"
-                    "Initial L2 norm of r0"
-                    "Final L2 norm of r0"
+                    "Initial L2 norm of e0"
+                    "Final L2 norm of e0"
             )
         endif()
         if (HYPREDRV_HAVE_HYPRE_30100_DEV5)

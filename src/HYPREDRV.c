@@ -1224,6 +1224,7 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
 static void
 HYPREDRV_GMRESSetRefSolution(HYPREDRV_t hypredrv)
 {
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
    if (!hypredrv || hypredrv->iargs->solver_method != SOLVER_GMRES)
    {
       return;
@@ -1239,6 +1240,9 @@ HYPREDRV_GMRESSetRefSolution(HYPREDRV_t hypredrv)
    }
 
    HYPRE_ParCSRGMRESSetRefSolution(hypredrv->solver, par_ref);
+#else
+   (void)hypredrv;
+#endif
 }
 
 /*-----------------------------------------------------------------------------
