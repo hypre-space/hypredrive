@@ -333,6 +333,18 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     "Initial L2 norm of e0"
                     "Final L2 norm of e0"
             )
+            add_hypredrive_cli_test(ex7_cli_gmres_tagged_error_randsol_scaling 1 ex7-tagged-gmres.yml
+                OVERRIDES
+                    --solver:gmres:print_level 8
+                    --linear_system:rhs_mode randsol
+                    --solver:scaling:enabled true
+                    --solver:scaling:type dofmap_mag
+                REQUIRE_CONTAINS
+                    "rhs_mode: randsol"
+                    "type: dofmap_mag"
+                    "Initial L2 norm of e0"
+                    "Final L2 norm of e0"
+            )
         endif()
         if (HYPREDRV_HAVE_HYPRE_30100_DEV5)
             add_hypredrive_test(ex3_nested_1  1 ex3-mgr_Frelax_gmres.yml)
