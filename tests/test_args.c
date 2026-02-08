@@ -228,6 +228,57 @@ test_InputArgsParsePrecon_variants(void)
 }
 
 static void
+test_InputArgsParsePrecon_mgr_flat_g_relaxation_amg_defaults(void)
+{
+   const char yaml_text[] = "solver:\n"
+                            "  gmres:\n"
+                            "    max_iter: 10\n"
+                            "preconditioner:\n"
+                            "  mgr:\n"
+                            "    level:\n"
+                            "      0:\n"
+                            "        f_dofs: [2]\n"
+                            "        g_relaxation: amg\n"
+                            "    coarsest_level: amg\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon_method, PRECON_MGR);
+   ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.type, 20);
+   ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.amg.max_iter, 1);
+   ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.amg.interpolation.prolongation_type, 6);
+   ASSERT_TRUE(args->precon.mgr.level[0].g_relaxation.amg.coarsening.type == 8 ||
+               args->precon.mgr.level[0].g_relaxation.amg.coarsening.type == 10);
+
+   InputArgsDestroy(&args);
+}
+
+static void
+test_InputArgsParsePrecon_mgr_flat_g_relaxation_ilu_defaults(void)
+{
+   const char yaml_text[] = "solver:\n"
+                            "  gmres:\n"
+                            "    max_iter: 10\n"
+                            "preconditioner:\n"
+                            "  mgr:\n"
+                            "    level:\n"
+                            "      0:\n"
+                            "        f_dofs: [2]\n"
+                            "        g_relaxation: ilu\n"
+                            "    coarsest_level: amg\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon_method, PRECON_MGR);
+   ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.type, 16);
+   ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.ilu.max_iter, 1);
+   ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.ilu.type, 0);
+   ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.ilu.fill_level, 0);
+
+   InputArgsDestroy(&args);
+}
+
+static void
 test_YAMLtreeBuild_inconsistent_indent(void)
 {
    const char yaml_text[] = "root:\n"
@@ -376,6 +427,8 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParsePrecon_preset_explicit_key);
    RUN_TEST(test_InputArgsParsePrecon_missing);
    RUN_TEST(test_InputArgsParsePrecon_variants);
+   RUN_TEST(test_InputArgsParsePrecon_mgr_flat_g_relaxation_amg_defaults);
+   RUN_TEST(test_InputArgsParsePrecon_mgr_flat_g_relaxation_ilu_defaults);
    RUN_TEST(test_YAMLtreeBuild_inconsistent_indent);
    RUN_TEST(test_YAMLtextRead_missing_file);
    RUN_TEST(test_YAMLtreeUpdate_overrides_solver_and_precon);
