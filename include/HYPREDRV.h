@@ -701,19 +701,54 @@ extern "C"
    HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv);
 
    /**
-    * @brief Set or refresh the reference solution vector for GMRES tagged residual/error
-    * reporting.
+    * @brief Set or refresh the reference solution vector used by GMRES tagged
+    * residual/error reporting.
     *
-    * @note On hypre versions older than v3.0.0, this is a no-op for GMRES tagged
+    * This function updates the internal reference solution vector associated with the
+    * current linear system. The reference solution is consumed by GMRES tagged output
+    * modes (for example, when printing tagged residual or tagged error histories).
+    *
+    * @param hypredrv The HYPREDRV_t object for which the reference solution vector is to
+    * be set or refreshed.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note On hypre versions older than v3.0.0, this function is a no-op for GMRES tagged
     * residual/error internals.
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t *hypredrv;
+    *    // ... (hypredrv is created, and its components are initialized) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetReferenceSolution(hypredrv));
+    * @endcode
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv);
 
    /**
-    * @brief Apply dofmap tags to active linear-system vectors.
+    * @brief Apply DOF-map tags to active linear-system vectors.
     *
-    * @note On hypre versions older than v3.0.0, this is a no-op.
+    * This function propagates the currently loaded dofmap to vectors involved in the
+    * linear solve (for example RHS, initial guess, solution, and reference solution) so
+    * GMRES tagged output can report per-tag quantities consistently.
+    *
+    * @param hypredrv The HYPREDRV_t object for which vector tags are to be updated.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note On hypre versions older than v3.0.0, this function is a no-op.
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_t *hypredrv;
+    *    // ... (hypredrv is created, dofmap is loaded) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetVectorTags(hypredrv));
+    * @endcode
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t hypredrv);
