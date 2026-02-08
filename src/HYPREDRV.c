@@ -265,6 +265,10 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    {
       HYPRE_IJVectorDestroy(hypredrv->vec_nn);
    }
+   if (hypredrv->vec_xref && hypredrv->vec_xref != hypredrv->vec_b)
+   {
+      HYPRE_IJVectorDestroy(hypredrv->vec_xref);
+   }
 
    IntArrayDestroy(&hypredrv->dofmap);
    InputArgsDestroy(&hypredrv->iargs);
