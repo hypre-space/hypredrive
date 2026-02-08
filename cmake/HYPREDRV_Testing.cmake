@@ -317,14 +317,14 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             add_hypredrive_test(ex3_1proc     1 ex3.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_30000_DEV0)
-            add_hypredrive_cli_test(ex7_cli_gmres_tagged_residuals 1 ex7-tagged-gmres.yml
+            add_hypredrive_cli_test(ex7_cli_tagres 1 ex7-tagged-gmres.yml
                 OVERRIDES
                     --solver:gmres:print_level 4
                 REQUIRE_CONTAINS
                     "Initial L2 norm of r0"
                     "Initial L2 norm of r1"
             )
-            add_hypredrive_cli_test(ex7_cli_gmres_tagged_error_randsol 1 ex7-tagged-gmres.yml
+            add_hypredrive_cli_test(ex7_cli_tagerr_randsol 1 ex7-tagged-gmres.yml
                 OVERRIDES
                     --solver:gmres:print_level 8
                     --linear_system:rhs_mode randsol
@@ -333,7 +333,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     "Initial L2 norm of e0"
                     "Final L2 norm of e0"
             )
-            add_hypredrive_cli_test(ex7_cli_gmres_tagged_error_randsol_scaling 1 ex7-tagged-gmres.yml
+            add_hypredrive_cli_test(ex7_cli_tagerr_scale 1 ex7-tagged-gmres.yml
                 OVERRIDES
                     --solver:gmres:print_level 8
                     --linear_system:rhs_mode randsol
@@ -344,6 +344,19 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     "type: dofmap_mag"
                     "Initial L2 norm of e0"
                     "Final L2 norm of e0"
+            )
+            add_hypredrive_cli_test(ex7_cli_stats2 1 ex7.yml
+                OVERRIDES
+                    --general:statistics 2
+                    --linear_system:last_suffix 4
+                REQUIRE_CONTAINS
+                    "statistics: 2"
+                    "STATISTICS SUMMARY:"
+                    "|   Min. |"
+                    "|   Max. |"
+                    "|   Avg. |"
+                    "|   Std. |"
+                    "|  Total |"
             )
         endif()
         if (HYPREDRV_HAVE_HYPRE_30100_DEV5)

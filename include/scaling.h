@@ -70,8 +70,8 @@ void ScalingContextDestroy(Scaling_context **);
 
 void ScalingCompute(MPI_Comm, Scaling_args *, Scaling_context *, HYPRE_IJMatrix,
                     HYPRE_IJVector, IntArray *);
-void ScalingApplyToVector(Scaling_context *, HYPRE_IJVector, scaling_vector_kind_t);
-void ScalingUndoOnVector(Scaling_context *, HYPRE_IJVector, scaling_vector_kind_t);
+void ScalingApplyToVector(const Scaling_context *, HYPRE_IJVector, scaling_vector_kind_t);
+void ScalingUndoOnVector(const Scaling_context *, HYPRE_IJVector, scaling_vector_kind_t);
 void ScalingApplyToSystem(Scaling_context *, HYPRE_IJMatrix, HYPRE_IJMatrix,
                           HYPRE_IJVector, HYPRE_IJVector);
 void ScalingUndoOnSystem(Scaling_context *, HYPRE_IJMatrix, HYPRE_IJMatrix,

@@ -1321,7 +1321,6 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 
    double e_norm = 0.0, x_norm = 0.0, xref_norm = 0.0;
    double b_norm = 0.0, r_norm = 0.0, r0_norm = 0.0;
-   int    xref_scaled = 0;
 
    /* Ensure GMRES always sees the current reference solution, including on reused
     * preconditioner cycles where SolverSetup may be skipped. */
@@ -1344,6 +1343,8 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
    if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled &&
        hypredrv->scaling_ctx->is_applied)
    {
+      int xref_scaled = 0;
+
       /* Compute initial residual norm before solve (on current system state) */
       LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x,
                                       "L2", &r0_norm);

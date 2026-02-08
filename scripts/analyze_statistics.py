@@ -34,18 +34,13 @@ def parse_statistics_summary(filename, exclude, source_label=None):
         source_label: Optional label to use for this source (defaults to filename)
     """
     logger.info(f"Parsing statistics from {filename = }")
-    # Initialize an empty string to hold the current section being processed
-    target_section = ""
     data = []
     rows = []
     nonzeros = []
 
     # Regular expressions to extract statistics and auxiliary data
-    start_pattern = re.compile(r"\+\-+(?:\+\-+)+\+")
-    end_pattern   = re.compile(r"\+\-+(?:\+\-+)+\+")
-    data_pattern  = re.compile(
-        r"\|\s+(\d+)\s+\|\s+(\d+\.\d+)?\s*\|\s+(\d+\.\d+)\s+\|\s+(\d+\.\d+)\s+\|\s+(\d+\.\d+e[+-]\d+)\s+\|\s+(\d+\.\d+e[+-]\d+)\s+\|\s+(\d+)\s+\|"
-    )
+    summary_pattern = re.compile(r"^\s*STATISTICS SUMMARY:\s*$")
+    table_divider_pattern = re.compile(r"^\+-+(?:\+-+)+\+\s*$")
     rows_and_nonzeros_pattern = re.compile(
         r"Solving linear system #\d+ with (\d+) rows and (\d+) nonzeros..."
     )
@@ -53,6 +48,7 @@ def parse_statistics_summary(filename, exclude, source_label=None):
     time_unit_pattern = re.compile(r"\s*use_millisec:\s*(\S+)")
 
     statistics_found = False
+    in_summary_table = False
     time_unit = "[s]"
     nranks = 1
     with open(filename, 'r') as fn:
@@ -73,16 +69,36 @@ def parse_statistics_summary(filename, exclude, source_label=None):
                 nonzeros.append(int(rows_nonzeros_match.group(2)))
                 continue
 
-            if start_pattern.match(line):
+            if summary_pattern.match(line):
                 statistics_found = True
-                target_section = line
+                in_summary_table = False
                 continue
 
-            elif target_section and end_pattern.match(line):
-                break  # End of the statistics summary table
+            if statistics_found and table_divider_pattern.match(line):
+                in_summary_table = True
+                continue
 
-            elif target_section:
-                data.extend(data_pattern.findall(line))
+            if in_summary_table and line.lstrip().startswith("|"):
+                parts = [p.strip() for p in line.split("|")]
+                if len(parts) < 9:
+                    continue
+
+                # Keep only per-entry rows; skip headers and aggregate rows
+                # such as Min./Max./Avg./Std./Total.
+                if not parts[1].isdigit():
+                    continue
+
+                # parts layout for data rows:
+                # ['', entry, build, setup, solve, r0, rr, iters, '']
+                data.append((
+                    parts[1],
+                    parts[2],
+                    parts[3],
+                    parts[4],
+                    parts[5],
+                    parts[6],
+                    parts[7],
+                ))
 
     if not data:
         raise ValueError(f"Data info not found in {filename = } ")

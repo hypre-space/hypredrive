@@ -420,7 +420,7 @@ ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
  *-----------------------------------------------------------------------------*/
 
 static void
-ScalingTransformVectorRHSL2(Scaling_context *ctx, HYPRE_IJVector vec,
+ScalingTransformVectorRHSL2(const Scaling_context *ctx, HYPRE_IJVector vec,
                             scaling_vector_kind_t kind, int apply)
 {
    if (!vec)
@@ -454,7 +454,7 @@ ScalingTransformVectorRHSL2(Scaling_context *ctx, HYPRE_IJVector vec,
 }
 
 static void
-ScalingTransformVectorDofmap(Scaling_context *ctx, HYPRE_IJVector vec,
+ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
                              scaling_vector_kind_t kind, int apply)
 {
    if (!vec)
@@ -491,7 +491,8 @@ ScalingTransformVectorDofmap(Scaling_context *ctx, HYPRE_IJVector vec,
 }
 
 void
-ScalingApplyToVector(Scaling_context *ctx, HYPRE_IJVector vec, scaling_vector_kind_t kind)
+ScalingApplyToVector(const Scaling_context *ctx, HYPRE_IJVector vec,
+                     scaling_vector_kind_t kind)
 {
    if (!ctx || !ctx->enabled || !vec)
    {
@@ -521,7 +522,8 @@ ScalingApplyToVector(Scaling_context *ctx, HYPRE_IJVector vec, scaling_vector_ki
 }
 
 void
-ScalingUndoOnVector(Scaling_context *ctx, HYPRE_IJVector vec, scaling_vector_kind_t kind)
+ScalingUndoOnVector(const Scaling_context *ctx, HYPRE_IJVector vec,
+                    scaling_vector_kind_t kind)
 {
    if (!ctx || !ctx->enabled || !vec)
    {

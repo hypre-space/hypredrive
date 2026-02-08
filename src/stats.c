@@ -825,14 +825,14 @@ StatsPrint(int print_level)
       }
    }
 
-   PrintDivisor();
-
-   /* Print aggregate timing summary table */
+   /* Print aggregate rows inside the same table for print level > 1 */
    if (display_idx > 1 && print_level > 1)
    {
       double min_build = HUGE_VAL, max_build = 0.0, sum_build = 0.0, ssq_build = 0.0;
       double min_setup = HUGE_VAL, max_setup = 0.0, sum_setup = 0.0, ssq_setup = 0.0;
       double min_solve = HUGE_VAL, max_solve = 0.0, sum_solve = 0.0, ssq_solve = 0.0;
+      double min_r0 = HUGE_VAL, max_r0 = 0.0, sum_r0 = 0.0, ssq_r0 = 0.0;
+      double min_rr = HUGE_VAL, max_rr = 0.0, sum_rr = 0.0, ssq_rr = 0.0;
       int    min_iters = INT_MAX, max_iters = 0, sum_iters = 0;
       double ssq_iters = 0.0;
 
@@ -848,6 +848,8 @@ StatsPrint(int print_level)
             (active_stats->dofmap[i] + active_stats->matrix[i] + active_stats->rhs[i]);
          double s  = active_stats->time_factor * active_stats->prec[i];
          double v  = active_stats->time_factor * active_stats->solve[i];
+         double r0 = active_stats->r0norms[i];
+         double rr = active_stats->rrnorms[i];
          int    it = active_stats->iters[i];
 
          if (b < min_build) min_build = b;
@@ -865,6 +867,16 @@ StatsPrint(int print_level)
          sum_solve += v;
          ssq_solve += v * v;
 
+         if (r0 < min_r0) min_r0 = r0;
+         if (r0 > max_r0) max_r0 = r0;
+         sum_r0 += r0;
+         ssq_r0 += r0 * r0;
+
+         if (rr < min_rr) min_rr = rr;
+         if (rr > max_rr) max_rr = rr;
+         sum_rr += rr;
+         ssq_rr += rr * rr;
+
          if (it < min_iters) min_iters = it;
          if (it > max_iters) max_iters = it;
          sum_iters += it;
@@ -875,44 +887,41 @@ StatsPrint(int print_level)
       double avg_build = sum_build / n;
       double avg_setup = sum_setup / n;
       double avg_solve = sum_solve / n;
+      double avg_r0    = sum_r0 / n;
+      double avg_rr    = sum_rr / n;
       double avg_iters = (double)sum_iters / n;
 
       double std_build = sqrt((ssq_build - (n * avg_build * avg_build)) / (n - 1));
       double std_setup = sqrt((ssq_setup - (n * avg_setup * avg_setup)) / (n - 1));
       double std_solve = sqrt((ssq_solve - (n * avg_solve * avg_solve)) / (n - 1));
+      double std_r0    = sqrt((ssq_r0 - (n * avg_r0 * avg_r0)) / (n - 1));
+      double std_rr    = sqrt((ssq_rr - (n * avg_rr * avg_rr)) / (n - 1));
       double std_iters = sqrt((ssq_iters - (n * avg_iters * avg_iters)) / (n - 1));
 
-      enum
-      {
-         W_LABEL = 10,
-         W_COL   = 11
-      };
-
-      printf("\n  Aggregate (%d entries):\n\n", n);
-      printf("  %-*s | %*s | %*s | %*s | %*s | %*s\n", W_LABEL, "", W_COL, "min", W_COL,
-             "max", W_COL, "avg", W_COL, "std", W_COL, "total");
-      printf("  ");
-      for (int j = 0; j < W_LABEL + (5 * (W_COL + 3)); j++) putchar('-');
-      putchar('\n');
-      char label_build[16], label_setup[16], label_solve[16];
-      snprintf(label_build, sizeof(label_build), "build %s", scale);
-      snprintf(label_setup, sizeof(label_setup), "setup %s", scale);
-      snprintf(label_solve, sizeof(label_solve), "solve %s", scale);
-
-      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n", W_LABEL, label_build,
-             W_COL, min_build, W_COL, max_build, W_COL, avg_build, W_COL, std_build,
-             W_COL, sum_build);
-      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n", W_LABEL, label_setup,
-             W_COL, min_setup, W_COL, max_setup, W_COL, avg_setup, W_COL, std_setup,
-             W_COL, sum_setup);
-      printf("  %-*s | %*.3f | %*.3f | %*.3f | %*.3f | %*.3f\n", W_LABEL, label_solve,
-             W_COL, min_solve, W_COL, max_solve, W_COL, avg_solve, W_COL, std_solve,
-             W_COL, sum_solve);
-      printf("  %-*s | %*d | %*d | %*.1f | %*.1f | %*d\n", W_LABEL, "iters", W_COL,
-             min_iters, W_COL, max_iters, W_COL, avg_iters, W_COL, std_iters, W_COL,
-             sum_iters);
+      PrintDivisor();
+      printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
+             "Min.", STATS_TIME_WIDTH, 3, min_build, STATS_TIME_WIDTH, 3, min_setup,
+             STATS_TIME_WIDTH, 3, min_solve, STATS_RES_WIDTH, 2, min_r0, STATS_RES_WIDTH,
+             2, min_rr, STATS_ITERS_WIDTH, min_iters);
+      printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
+             "Max.", STATS_TIME_WIDTH, 3, max_build, STATS_TIME_WIDTH, 3, max_setup,
+             STATS_TIME_WIDTH, 3, max_solve, STATS_RES_WIDTH, 2, max_r0, STATS_RES_WIDTH,
+             2, max_rr, STATS_ITERS_WIDTH, max_iters);
+      printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*.1f |\n",
+             STATS_ENTRY_WIDTH, "Avg.", STATS_TIME_WIDTH, 3, avg_build, STATS_TIME_WIDTH,
+             3, avg_setup, STATS_TIME_WIDTH, 3, avg_solve, STATS_RES_WIDTH, 2, avg_r0,
+             STATS_RES_WIDTH, 2, avg_rr, STATS_ITERS_WIDTH, avg_iters);
+      printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*.1f |\n",
+             STATS_ENTRY_WIDTH, "Std.", STATS_TIME_WIDTH, 3, std_build, STATS_TIME_WIDTH,
+             3, std_setup, STATS_TIME_WIDTH, 3, std_solve, STATS_RES_WIDTH, 2, std_r0,
+             STATS_RES_WIDTH, 2, std_rr, STATS_ITERS_WIDTH, std_iters);
+      printf("| %*s | %*.*f | %*.*f | %*.*f | %*s | %*s | %*d |\n", STATS_ENTRY_WIDTH,
+             "Total", STATS_TIME_WIDTH, 3, sum_build, STATS_TIME_WIDTH, 3, sum_setup,
+             STATS_TIME_WIDTH, 3, sum_solve, STATS_RES_WIDTH, "", STATS_RES_WIDTH, "",
+             STATS_ITERS_WIDTH, sum_iters);
    }
 
+   PrintDivisor();
    printf("\n");
 }
 
