@@ -1242,9 +1242,8 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       return ErrorCodeGet();
    }
 
-   double    e_norm = 0.0, x_norm = 0.0, xref_norm = 0.0;
-   double    b_norm = 0.0, r_norm = 0.0, r0_norm = 0.0;
-   HYPRE_Int iters = 0;
+   double e_norm = 0.0, x_norm = 0.0, xref_norm = 0.0;
+   double b_norm = 0.0, r_norm = 0.0, r0_norm = 0.0;
 
    /* Apply scaling if enabled but not yet applied (e.g., when preconditioner is reused)
     */
@@ -1271,8 +1270,9 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       StatsInitialResNormSet(r0_norm);
 
       /* Solve on scaled system */
-      iters = SolverSolveOnly(hypredrv->iargs->solver_method, hypredrv->solver,
-                              hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x);
+      HYPRE_Int iters =
+         SolverSolveOnly(hypredrv->iargs->solver_method, hypredrv->solver,
+                         hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x);
       if (iters < 0)
       {
          StatsIterSet(0);

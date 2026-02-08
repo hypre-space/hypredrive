@@ -877,14 +877,10 @@ StatsPrint(int print_level)
       double avg_solve = sum_solve / n;
       double avg_iters = (double)sum_iters / n;
 
-      double std_build =
-         (n > 1) ? sqrt((ssq_build - (n * avg_build * avg_build)) / (n - 1)) : 0.0;
-      double std_setup =
-         (n > 1) ? sqrt((ssq_setup - (n * avg_setup * avg_setup)) / (n - 1)) : 0.0;
-      double std_solve =
-         (n > 1) ? sqrt((ssq_solve - (n * avg_solve * avg_solve)) / (n - 1)) : 0.0;
-      double std_iters =
-         (n > 1) ? sqrt((ssq_iters - (n * avg_iters * avg_iters)) / (n - 1)) : 0.0;
+      double std_build = sqrt((ssq_build - (n * avg_build * avg_build)) / (n - 1));
+      double std_setup = sqrt((ssq_setup - (n * avg_setup * avg_setup)) / (n - 1));
+      double std_solve = sqrt((ssq_solve - (n * avg_solve * avg_solve)) / (n - 1));
+      double std_iters = sqrt((ssq_iters - (n * avg_iters * avg_iters)) / (n - 1));
 
       enum
       {

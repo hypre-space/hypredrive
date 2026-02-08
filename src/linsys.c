@@ -1104,12 +1104,6 @@ LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double 
    }
 
    par_vec = (HYPRE_ParVector)obj;
-   if (!par_vec)
-   {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      *norm = -1.0;
-      return;
-   }
 
    seq_vec = hypre_ParVectorLocalVector(par_vec);
    if (!seq_vec)

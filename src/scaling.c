@@ -424,11 +424,11 @@ ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
                   HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   void              *obj_A = NULL, *obj_M = NULL, *obj_b = NULL, *obj_x = NULL;
+   void              *obj_A = NULL, *obj_M = NULL, *obj_b = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
-   HYPRE_ParVector    par_b = NULL, par_x = NULL;
-   HYPRE_Complex      s  = ctx->scalar_factor;
-   HYPRE_Complex      s2 = s * s;
+   HYPRE_ParVector    par_b = NULL;
+   HYPRE_Complex      s     = ctx->scalar_factor;
+   HYPRE_Complex      s2    = s * s;
 
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
    par_A = (HYPRE_ParCSRMatrix)obj_A;

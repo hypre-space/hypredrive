@@ -47,11 +47,17 @@ GENERATE_PREFIXED_COMPONENTS(General) // LCOV_EXCL_LINE
 StrIntMapArray
 GeneralGetValidValues(const char *key)
 {
-   if (!strcmp(key, "warmup") ||
-       !strcmp(key, "print_config_params") ||
+   if (!strcmp(key, "warmup") || !strcmp(key, "print_config_params") ||
        !strcmp(key, "use_millisec"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
+   }
+   if (!strcmp(key, "statistics"))
+   {
+      static StrIntMap map[] = {{"off", 0},  {"no", 0}, {"false", 0},
+                                {"0", 0},    {"on", 1}, {"yes", 1},
+                                {"true", 1}, {"1", 1},  {"2", 2}};
+      return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "exec_policy"))
    {
