@@ -558,6 +558,9 @@ AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetFSAIKapTolerance(precon, args->smoother.fsai.kap_tolerance);
 #endif
    HYPRE_BoomerAMGSetNumFunctions(precon, args->coarsening.num_functions);
+#if HYPRE_CHECK_MIN_VERSION(23200, 0)
+   HYPRE_BoomerAMGSetFilterFunctions(precon, args->coarsening.filter_functions);
+#endif
    HYPRE_BoomerAMGSetAggNumLevels(precon, args->aggressive.num_levels);
    HYPRE_BoomerAMGSetAggInterpType(precon, args->aggressive.prolongation_type);
    HYPRE_BoomerAMGSetAggTruncFactor(precon, args->aggressive.trunc_factor);
