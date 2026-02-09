@@ -204,19 +204,30 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
             return next(iter(legend_names.values()))
         return "data"
 
+    has_nl_iters = 'nl_iters_10x' in df.columns
+
     if multiple_sources:
         for src in sources:
             grp = df[df['source'] == src].sort_values(by=xtype)
             y = grp['iters'].cumsum() if cumulative else grp['iters']
             ls = resolve_ls(linestyle, '-')
             legend_name = get_legend_name(src, legend_names or {})
-            plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=legend_name)
+            linear_label = f"Linear Iters. ({legend_name})" if has_nl_iters else legend_name
+            plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=linear_label)
+            if has_nl_iters:
+                nl = grp['nl_iters_10x'].cumsum() if cumulative else grp['nl_iters_10x']
+                plt.plot(grp[xtype], nl, marker='s', linestyle=resolve_ls(linestyle, ':'), markersize=ms,
+                         label=f"Non-linear iters. (10x) ({legend_name})")
     else:
         grp = df.sort_values(by=xtype)
         y = grp['iters'].cumsum() if cumulative else grp['iters']
         ls = resolve_ls(linestyle, '-')
-        legend_name = resolve_single_legend()
+        legend_name = "Linear Iters." if has_nl_iters else resolve_single_legend()
         plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=legend_name)
+        if has_nl_iters:
+            nl = grp['nl_iters_10x'].cumsum() if cumulative else grp['nl_iters_10x']
+            plt.plot(grp[xtype], nl, marker='s', linestyle=resolve_ls(linestyle, ':'), markersize=ms,
+                     label="Non-linear iters. (10x)")
 
     plt.legend(loc="best", fontsize=lgfs)
     if title:
@@ -428,6 +439,7 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
 
     # Resolve marker size
     ms = markersize if markersize is not None else plt.rcParams['lines.markersize']
+    has_nl_iters = 'nl_iters_10x' in df.columns
 
     def resolve_ls(user_ls, default_ls='-'):
         if user_ls == 'auto':
@@ -443,16 +455,25 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
             setup_data = grp['setup'].cumsum() if cumulative else grp['setup']
             solve_data = grp['solve'].cumsum() if cumulative else grp['solve']
             iters_data = grp['iters'].cumsum() if cumulative else grp['iters']
+            nl_iters_data = grp['nl_iters_10x'].cumsum() if (has_nl_iters and cumulative) else grp.get('nl_iters_10x')
             ls_main = resolve_ls(linestyle, '-')
             ls_iter = resolve_ls(linestyle, '--')
             legend_name = get_legend_name(src, legend_names or {})
             l1, = ax1.plot(grp[xtype], setup_data, marker='o', linestyle=ls_main, markersize=ms, label=f"Setup ({legend_name})")
             l2, = ax1.plot(grp[xtype], solve_data, marker='o', linestyle=ls_main, markersize=ms, alpha=0.7, label=f"Solve ({legend_name})")
-            l3, = ax2.plot(grp[xtype], iters_data, marker='o', linestyle=ls_iter, markersize=ms, label=f"Iterations ({legend_name})")
+            linear_label = f"Linear Iters. ({legend_name})" if has_nl_iters else f"Iterations ({legend_name})"
+            l3, = ax2.plot(grp[xtype], iters_data, marker='o', linestyle=ls_iter, markersize=ms, label=linear_label)
 
             lines.extend([l1, l2, l3])
             labels.extend([l.get_label() for l in (l1, l2, l3)])
             max_iters = max(max_iters, max(iters_data) if len(iters_data) else 0)
+            if has_nl_iters and nl_iters_data is not None:
+                l4, = ax2.plot(grp[xtype], nl_iters_data, marker='s', linestyle=resolve_ls(linestyle, ':'), markersize=ms,
+                               label=f"Non-linear iters. (10x) ({legend_name})")
+                lines.append(l4)
+                labels.append(l4.get_label())
+                if len(nl_iters_data):
+                    max_iters = max(max_iters, max(nl_iters_data))
 
         ax2.set_ylim(bottom=0, top=max_iters * 2.0 if max_iters > 0 else 1)
     else:
@@ -460,16 +481,26 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
         setup_data = grp['setup'].cumsum() if cumulative else grp['setup']
         solve_data = grp['solve'].cumsum() if cumulative else grp['solve']
         iters_data = grp['iters'].cumsum() if cumulative else grp['iters']
+        nl_iters_data = grp['nl_iters_10x'].cumsum() if (has_nl_iters and cumulative) else grp.get('nl_iters_10x')
 
         ls_main = resolve_ls(linestyle, '-')
         ls_iter = resolve_ls(linestyle, '--')
         l1, = ax1.plot(grp[xtype], setup_data, marker='o', linestyle=ls_main, markersize=ms, color='#E69F00', label="Setup")
         l2, = ax1.plot(grp[xtype], solve_data, marker='o', linestyle=ls_main, markersize=ms, color='#009E73', label="Solve", alpha=0.5)
-        l3, = ax2.plot(grp[xtype], iters_data, marker='o', linestyle=ls_iter, markersize=ms, color='#0072B2', label="Iterations")
+        linear_label = "Linear Iters." if has_nl_iters else "Iterations"
+        l3, = ax2.plot(grp[xtype], iters_data, marker='o', linestyle=ls_iter, markersize=ms, color='#0072B2', label=linear_label)
 
         lines  = [l1, l2, l3]
         labels = [line.get_label() for line in lines]
-        ax2.set_ylim(bottom=0, top=max(iters_data)*2.0 if len(iters_data) else 1)
+        max_iters = max(iters_data) if len(iters_data) else 0
+        if has_nl_iters and nl_iters_data is not None:
+            l4, = ax2.plot(grp[xtype], nl_iters_data, marker='s', linestyle=resolve_ls(linestyle, ':'), markersize=ms,
+                           color='#D55E00', label="Non-linear iters. (10x)")
+            lines.append(l4)
+            labels.append(l4.get_label())
+            if len(nl_iters_data):
+                max_iters = max(max_iters, max(nl_iters_data))
+        ax2.set_ylim(bottom=0, top=max_iters * 2.0 if max_iters > 0 else 1)
 
     if title:
         plt.title(title, fontsize=tfs, fontweight='bold')
@@ -693,6 +724,15 @@ def map_entry_to_timestep_offset(entries, entry):
     local_index = entry - start
     return tstep + (local_index / count)
 
+def infer_nonlinear_iters_per_timestep(entries, max_entry):
+    """Infer nonlinear iteration count per timestep from timestep start indices."""
+    counts = {}
+    starts = [s for _, s in entries]
+    for i, (tstep, start) in enumerate(entries):
+        next_start = starts[i + 1] if i + 1 < len(starts) else (max_entry + 1)
+        counts[tstep] = max(1, next_start - start)
+    return counts
+
 def main():
     # List of pre-defined labels
     labels = {'rows': "Number of rows",
@@ -827,6 +867,8 @@ def main():
         if args.xtype == 'entry':
             args.xtype = 'timestep_offset'
         if args.tsteps_aggregate:
+            max_entry = int(df['entry'].max())
+            nl_iters_per_tstep = infer_nonlinear_iters_per_timestep(tsteps, max_entry)
             group_cols = ['timestep']
             if 'source' in df.columns:
                 group_cols = ['source', 'timestep']
@@ -844,6 +886,7 @@ def main():
                 'iters': 'sum',
             }
             df = df.groupby(group_cols, as_index=False).agg(agg_map)
+            df['nl_iters_10x'] = (10 * df['timestep'].map(lambda t: nl_iters_per_tstep.get(int(t), 0))).astype(int)
             if args.xtype in ('entry', 'timestep_offset'):
                 args.xtype = 'timestep'
     elif args.tsteps_aggregate:
