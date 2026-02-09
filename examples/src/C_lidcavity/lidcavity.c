@@ -674,7 +674,8 @@ ExchangeVectorGhosts(DistMesh2D *mesh, double *vec, GhostData *g)
 
    if (reqc > 0)
    {
-      MPI_Waitall(reqc, g->reqs, MPI_STATUSES_IGNORE);
+      MPI_Status statuses[16];
+      MPI_Waitall(reqc, g->reqs, statuses);
    }
    return 0;
 }

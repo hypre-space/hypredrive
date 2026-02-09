@@ -1194,7 +1194,11 @@ ExchangeScalarGhosts(DistMesh *mesh, double *vec, GhostData3D *g)
 
 #undef IDX
 
-   if (reqc > 0) MPI_Waitall(reqc, g->reqs, MPI_STATUSES_IGNORE);
+   if (reqc > 0)
+   {
+      MPI_Status statuses[52];
+      MPI_Waitall(reqc, g->reqs, statuses);
+   }
    return 0;
 }
 
