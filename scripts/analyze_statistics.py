@@ -196,7 +196,7 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
         if user_ls == 'none':
             return 'None'
         return user_ls
- 
+
     def resolve_single_legend():
         if sources:
             return get_legend_name(sources[0], legend_names or {})
@@ -229,7 +229,7 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
             plt.plot(grp[xtype], nl, marker='s', linestyle=resolve_ls(linestyle, ':'), markersize=ms,
                      label="Non-linear iters. (10x)")
 
-    plt.legend(loc="best", fontsize=lgfs)
+    plt.legend(loc="upper left", fontsize=lgfs)
     if title:
         plt.title(title, fontsize=tfs, fontweight='bold')
     elif use_title:
@@ -508,7 +508,7 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
         prefix = 'Cumulative ' if cumulative else ''
         plt.title(f'{prefix}Linear solver data vs {xlabel}', fontsize=tfs, fontweight='bold')
 
-    lg = ax2.legend(lines, labels, loc="best", fontsize=lgfs)
+    lg = ax2.legend(lines, labels, loc="upper left", fontsize=lgfs)
     lg.set_zorder(100)
 
     fig.tight_layout()
