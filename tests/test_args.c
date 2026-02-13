@@ -34,9 +34,10 @@ parse_config(const char *yaml_text)
 }
 
 static input_args *
-parse_config_with_overrides(const char *yaml_text, int override_argc, char **override_argv)
+parse_config_with_overrides(const char *yaml_text, int override_argc,
+                            char **override_argv)
 {
-   input_args *args = NULL;
+   input_args *args  = NULL;
    char       *argv0 = strdup(yaml_text);
 
    char **argv = (char **)calloc((size_t)override_argc + 1, sizeof(char *));
@@ -103,7 +104,8 @@ test_InputArgsParseGeneral_use_millisec_sets_timer(void)
 
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
-   /* Verify parsed value; Stats initialization now happens in HYPREDRV_SetGlobalOptions */
+   /* Verify parsed value; Stats initialization now happens in HYPREDRV_SetGlobalOptions
+    */
    ASSERT_TRUE(args->general.use_millisec);
 
    InputArgsDestroy(&args);
@@ -246,7 +248,8 @@ test_InputArgsParsePrecon_mgr_flat_g_relaxation_amg_defaults(void)
    ASSERT_EQ(args->precon_method, PRECON_MGR);
    ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.type, 20);
    ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.amg.max_iter, 1);
-   ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.amg.interpolation.prolongation_type, 6);
+   ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.amg.interpolation.prolongation_type,
+             6);
    ASSERT_TRUE(args->precon.mgr.level[0].g_relaxation.amg.coarsening.type == 8 ||
                args->precon.mgr.level[0].g_relaxation.amg.coarsening.type == 10);
 
@@ -274,6 +277,56 @@ test_InputArgsParsePrecon_mgr_flat_g_relaxation_ilu_defaults(void)
    ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.ilu.max_iter, 1);
    ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.ilu.type, 0);
    ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.ilu.fill_level, 0);
+
+   InputArgsDestroy(&args);
+}
+
+static void
+test_InputArgsParsePrecon_root_sequence_variants(void)
+{
+   const char yaml_text[] = "solver:\n"
+                            "  pcg:\n"
+                            "    max_iter: 10\n"
+                            "preconditioner:\n"
+                            "  - amg:\n"
+                            "      print_level: 2\n"
+                            "  - fsai:\n"
+                            "      print_level: 3\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->num_precon_variants, 2);
+   ASSERT_EQ(args->active_precon_variant, 0);
+   ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
+   ASSERT_EQ(args->precon_methods[0], PRECON_BOOMERAMG);
+   ASSERT_EQ(args->precon_methods[1], PRECON_FSAI);
+   ASSERT_EQ(args->precon_variants[0].amg.print_level, 2);
+   ASSERT_EQ(args->precon_variants[1].fsai.print_level, 3);
+   ASSERT_EQ(args->precon.amg.print_level, 2);
+
+   InputArgsDestroy(&args);
+}
+
+static void
+test_InputArgsParsePrecon_root_sequence_with_preset(void)
+{
+   const char yaml_text[] = "solver:\n"
+                            "  pcg:\n"
+                            "    max_iter: 10\n"
+                            "preconditioner:\n"
+                            "  - preset: elasticity-2D\n"
+                            "  - fsai:\n"
+                            "      print_level: 4\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->num_precon_variants, 2);
+   ASSERT_EQ(args->active_precon_variant, 0);
+   ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
+   ASSERT_EQ(args->precon_methods[0], PRECON_BOOMERAMG);
+   ASSERT_EQ(args->precon_variants[0].amg.coarsening.num_functions, 2);
+   ASSERT_EQ(args->precon_methods[1], PRECON_FSAI);
+   ASSERT_EQ(args->precon_variants[1].fsai.print_level, 4);
 
    InputArgsDestroy(&args);
 }
@@ -314,12 +367,8 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
                             "    print_level: 0\n";
 
    char *overrides[] = {
-      "--solver:pcg:max_iter",
-      "50",
-      "--preconditioner:amg:print_level",
-      "2",
-      "--general:statistics",
-      "off",
+      "--solver:pcg:max_iter", "50",  "--preconditioner:amg:print_level", "2",
+      "--general:statistics",  "off",
    };
 
    input_args *args = parse_config_with_overrides(yaml_text, 6, overrides);
@@ -337,7 +386,7 @@ static void
 test_InputArgsParse_driver_mode_with_config_file(void)
 {
    /* Test the branch where config file is found anywhere in argv (driver mode) */
-   input_args *args = NULL;
+   input_args *args        = NULL;
    char        yaml_file[] = "/tmp/test_config.yml";
    FILE       *fp          = fopen(yaml_file, "w");
    ASSERT_NOT_NULL(fp);
@@ -362,7 +411,7 @@ static void
 test_InputArgsParse_null_argv0_error(void)
 {
    /* Test the branch where argv[0] is NULL (error path) */
-   input_args *args = NULL;
+   input_args *args   = NULL;
    char       *argv[] = {NULL};
 
    ErrorCodeResetAll();
@@ -377,7 +426,7 @@ static void
 test_InputArgsParse_file_not_found_error(void)
 {
    /* Test the branch where file doesn't exist */
-   input_args *args = NULL;
+   input_args *args   = NULL;
    char       *argv[] = {"nonexistent.yml"};
 
    ErrorCodeResetAll();
@@ -392,7 +441,7 @@ static void
 test_InputArgsParse_legacy_mode_with_overrides(void)
 {
    /* Test legacy mode: argv[0] is YAML filename, argv[1..] are override pairs */
-   input_args *args = NULL;
+   input_args *args        = NULL;
    char        yaml_file[] = "/tmp/test_config2.yml";
    FILE       *fp          = fopen(yaml_file, "w");
    ASSERT_NOT_NULL(fp);
@@ -429,6 +478,8 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParsePrecon_variants);
    RUN_TEST(test_InputArgsParsePrecon_mgr_flat_g_relaxation_amg_defaults);
    RUN_TEST(test_InputArgsParsePrecon_mgr_flat_g_relaxation_ilu_defaults);
+   RUN_TEST(test_InputArgsParsePrecon_root_sequence_variants);
+   RUN_TEST(test_InputArgsParsePrecon_root_sequence_with_preset);
    RUN_TEST(test_YAMLtreeBuild_inconsistent_indent);
    RUN_TEST(test_YAMLtextRead_missing_file);
    RUN_TEST(test_YAMLtreeUpdate_overrides_solver_and_precon);

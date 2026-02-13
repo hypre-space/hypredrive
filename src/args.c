@@ -425,6 +425,332 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
    return;
 }
 
+typedef enum
+{
+   PRECON_PARSE_NOT_HANDLED = 0,
+   PRECON_PARSE_SUCCESS     = 1,
+   PRECON_PARSE_ERROR       = -1
+} PreconParseResult;
+
+typedef struct
+{
+   precon_t    *methods;
+   precon_args *variants;
+   YAMLnode   **precon_items;
+   YAMLnode   **seq_items;
+   int          num_variants;
+   int          parsed_variants;
+} PreconParseContext;
+
+static void
+PreconParseContextCleanup(PreconParseContext *ctx)
+{
+   if (!ctx)
+   {
+      return;
+   }
+
+   if (ctx->methods && ctx->variants)
+   {
+      int n = ctx->parsed_variants;
+      if (n > ctx->num_variants)
+      {
+         n = ctx->num_variants;
+      }
+
+      for (int i = 0; i < n; i++)
+      {
+         if (ctx->methods[i] == PRECON_MGR)
+         {
+            MGRDestroyNestedKrylovArgs(&ctx->variants[i].mgr);
+         }
+      }
+   }
+
+   free(ctx->precon_items);
+   free(ctx->seq_items);
+   free(ctx->methods);
+   free(ctx->variants);
+
+   ctx->methods         = NULL;
+   ctx->variants        = NULL;
+   ctx->precon_items    = NULL;
+   ctx->seq_items       = NULL;
+   ctx->num_variants    = 0;
+   ctx->parsed_variants = 0;
+}
+
+static int
+PreconParseContextAllocVariants(PreconParseContext *ctx, int num_variants,
+                                const char *error_msg)
+{
+   if (!ctx || num_variants <= 0)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Invalid preconditioner parse allocation request");
+      return 0;
+   }
+
+   ctx->methods  = (precon_t *)malloc(sizeof(precon_t) * (size_t)num_variants);
+   ctx->variants = (precon_args *)malloc(sizeof(precon_args) * (size_t)num_variants);
+
+   if (!ctx->methods || !ctx->variants)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      ErrorMsgAdd("%s", error_msg);
+      return 0;
+   }
+
+   ctx->num_variants    = num_variants;
+   ctx->parsed_variants = 0;
+   for (int i = 0; i < num_variants; i++)
+   {
+      ctx->methods[i] = PRECON_NONE;
+   }
+
+   return 1;
+}
+
+static void
+InputArgsPreconVariant0Activate(input_args *iargs, PreconParseContext *ctx,
+                                int num_variants)
+{
+   iargs->num_precon_variants   = num_variants;
+   iargs->precon_methods        = ctx->methods;
+   iargs->precon_variants       = ctx->variants;
+   iargs->active_precon_variant = 0;
+   iargs->precon_method         = ctx->methods[0];
+   iargs->precon                = ctx->variants[0];
+
+   ctx->methods         = NULL;
+   ctx->variants        = NULL;
+   ctx->num_variants    = 0;
+   ctx->parsed_variants = 0;
+}
+
+static int
+PreconParseMethodResolve(const char *name, int error_code, precon_t *method_out)
+{
+   if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), name))
+   {
+      ErrorCodeSet(error_code);
+      ErrorMsgAdd("Unknown preconditioner type: '%s'", name);
+      return 0;
+   }
+
+   *method_out = (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), name);
+   return 1;
+}
+
+static int
+PreconParsePresetNode(const YAMLnode *preset_node, precon_t *method_out,
+                      precon_args *args_out)
+{
+   if (!strcmp(preset_node->val, ""))
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Preconditioner preset name is missing");
+      return 0;
+   }
+
+   char *preset_name = strdup(preset_node->val);
+   if (!preset_name)
+   {
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate preset name");
+      return 0;
+   }
+
+   PreconPresetBuildArgs(preset_name, method_out, args_out);
+   free(preset_name);
+
+   return !ErrorCodeGet();
+}
+
+static PreconParseResult
+InputArgsParsePreconValueOnly(input_args *iargs, YAMLnode *parent,
+                              PreconParseContext *ctx)
+{
+   if (!strcmp(parent->val, ""))
+   {
+      return PRECON_PARSE_NOT_HANDLED;
+   }
+
+   precon_t method = PRECON_NONE;
+   if (!PreconParseMethodResolve(parent->val, ERROR_INVALID_VAL, &method))
+   {
+      return PRECON_PARSE_ERROR;
+   }
+
+   if (!PreconParseContextAllocVariants(ctx, 1, "Failed to allocate preconditioner args"))
+   {
+      return PRECON_PARSE_ERROR;
+   }
+
+   ctx->methods[0] = method;
+   PreconArgsSetDefaultsForMethod(method, &ctx->variants[0]);
+   ctx->parsed_variants = 1;
+
+   InputArgsPreconVariant0Activate(iargs, ctx, 1);
+   YAML_NODE_SET_VALID(parent);
+   return PRECON_PARSE_SUCCESS;
+}
+
+static PreconParseResult
+InputArgsParsePreconRootSequence(input_args *iargs, YAMLnode *parent,
+                                 PreconParseContext *ctx)
+{
+   int num_variants = YAMLnodeCollectSequenceItems(parent, &ctx->precon_items);
+   if (num_variants <= 0)
+   {
+      return PRECON_PARSE_NOT_HANDLED;
+   }
+
+   if (!PreconParseContextAllocVariants(ctx, num_variants,
+                                        "Failed to allocate preconditioner variants"))
+   {
+      return PRECON_PARSE_ERROR;
+   }
+
+   for (int vi = 0; vi < num_variants; vi++)
+   {
+      YAMLnode *item = ctx->precon_items[vi];
+      if (!item->children || item->children->next)
+      {
+         ErrorCodeSet(ERROR_INVALID_KEY);
+         ErrorMsgAdd("Each preconditioner variant must contain exactly one type key");
+         return PRECON_PARSE_ERROR;
+      }
+
+      YAMLnode *type   = item->children;
+      precon_t  method = PRECON_NONE;
+
+      if (!strcmp(type->key, "preset"))
+      {
+         if (!PreconParsePresetNode(type, &method, &ctx->variants[vi]))
+         {
+            return PRECON_PARSE_ERROR;
+         }
+      }
+      else
+      {
+         if (!PreconParseMethodResolve(type->key, ERROR_INVALID_KEY, &method))
+         {
+            return PRECON_PARSE_ERROR;
+         }
+
+         ctx->methods[vi]     = method;
+         ctx->parsed_variants = vi + 1;
+         PreconParseVariantWrapped(&ctx->variants[vi], method, parent, type->key,
+                                   type->level, type->children);
+         if (ErrorCodeGet())
+         {
+            return PRECON_PARSE_ERROR;
+         }
+      }
+
+      ctx->methods[vi]     = method;
+      ctx->parsed_variants = vi + 1;
+      YAML_NODE_SET_VALID(item);
+      YAML_NODE_SET_VALID(type);
+   }
+
+   InputArgsPreconVariant0Activate(iargs, ctx, num_variants);
+   return PRECON_PARSE_SUCCESS;
+}
+
+static PreconParseResult
+InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
+                               PreconParseContext *ctx)
+{
+   if (!parent->children)
+   {
+      ErrorCodeSet(ERROR_MISSING_PRECON);
+      return PRECON_PARSE_ERROR;
+   }
+   if (parent->children->next)
+   {
+      ErrorCodeSet(ERROR_EXTRA_KEY);
+      ErrorMsgAddExtraKey(parent->children->next->key);
+      return PRECON_PARSE_ERROR;
+   }
+
+   YAMLnode *type_node = parent->children;
+   if (!strcmp(type_node->key, "preset"))
+   {
+      precon_t method = PRECON_NONE;
+      if (!PreconParseContextAllocVariants(ctx, 1,
+                                           "Failed to allocate preconditioner args"))
+      {
+         return PRECON_PARSE_ERROR;
+      }
+      if (!PreconParsePresetNode(type_node, &method, &ctx->variants[0]))
+      {
+         return PRECON_PARSE_ERROR;
+      }
+
+      ctx->methods[0]      = method;
+      ctx->parsed_variants = 1;
+
+      InputArgsPreconVariant0Activate(iargs, ctx, 1);
+      YAML_NODE_SET_VALID(parent);
+      YAML_NODE_SET_VALID(type_node);
+      return PRECON_PARSE_SUCCESS;
+   }
+
+   precon_t method = PRECON_NONE;
+   if (!PreconParseMethodResolve(type_node->key, ERROR_INVALID_KEY, &method))
+   {
+      return PRECON_PARSE_ERROR;
+   }
+
+   YAML_NODE_SET_VALID(type_node);
+   int num_variants = YAMLnodeCollectSequenceItems(type_node, &ctx->seq_items);
+   if (num_variants > 0)
+   {
+      if (!PreconParseContextAllocVariants(ctx, num_variants,
+                                           "Failed to allocate preconditioner variants"))
+      {
+         return PRECON_PARSE_ERROR;
+      }
+
+      for (int vi = 0; vi < num_variants; vi++)
+      {
+         YAMLnode *seq_item   = ctx->seq_items[vi];
+         ctx->methods[vi]     = method;
+         ctx->parsed_variants = vi + 1;
+         PreconParseVariantWrapped(&ctx->variants[vi], method, parent, type_node->key,
+                                   type_node->level, seq_item->children);
+         if (ErrorCodeGet())
+         {
+            return PRECON_PARSE_ERROR;
+         }
+         YAML_NODE_SET_VALID(seq_item);
+      }
+
+      InputArgsPreconVariant0Activate(iargs, ctx, num_variants);
+      YAML_NODE_SET_VALID(type_node);
+      return PRECON_PARSE_SUCCESS;
+   }
+
+   if (!PreconParseContextAllocVariants(ctx, 1, "Failed to allocate preconditioner args"))
+   {
+      return PRECON_PARSE_ERROR;
+   }
+
+   ctx->methods[0] = method;
+   PreconArgsSetDefaultsForMethod(method, &ctx->variants[0]);
+   ctx->parsed_variants = 1;
+   PreconSetArgsFromYAML(&ctx->variants[0], parent);
+   if (ErrorCodeGet())
+   {
+      return PRECON_PARSE_ERROR;
+   }
+
+   InputArgsPreconVariant0Activate(iargs, ctx, 1);
+   return PRECON_PARSE_SUCCESS;
+}
+
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
@@ -439,276 +765,25 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
       return;
    }
    YAML_NODE_SET_VALID(parent);
+   PreconParseContext ctx = {0};
+   PreconParseResult  result;
 
-   precon_t    *methods      = NULL;
-   precon_args *variants     = NULL;
-   YAMLnode   **precon_items = NULL;
-   YAMLnode   **seq_items    = NULL;
-
-   int num_variants = 0;
-
-   /* Case 1: value-only preconditioner (e.g., `preconditioner: amg`) */
-   if (strcmp(parent->val, "") != 0)
+   result = InputArgsParsePreconValueOnly(iargs, parent, &ctx);
+   if (result != PRECON_PARSE_NOT_HANDLED)
    {
-      if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), parent->val))
-      {
-         ErrorCodeSet(ERROR_INVALID_VAL);
-         ErrorMsgAdd("Unknown preconditioner type: '%s'", parent->val);
-         goto cleanup;
-      }
-
-      precon_t method =
-         (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), parent->val);
-
-      methods  = (precon_t *)malloc(sizeof(precon_t));
-      variants = (precon_args *)malloc(sizeof(precon_args));
-      if (!methods || !variants)
-      {
-         ErrorCodeSet(ERROR_UNKNOWN);
-         ErrorMsgAdd("Failed to allocate preconditioner args");
-         goto cleanup;
-      }
-
-      methods[0] = method;
-      PreconArgsSetDefaultsForMethod(method, &variants[0]);
-
-      iargs->num_precon_variants   = 1;
-      iargs->precon_methods        = methods;
-      iargs->precon_variants       = variants;
-      iargs->active_precon_variant = 0;
-      iargs->precon_method         = methods[0];
-      iargs->precon                = variants[0];
-      YAML_NODE_SET_VALID(parent);
+      PreconParseContextCleanup(&ctx);
       return;
    }
 
-   /* Case 2: sequence of variants at the preconditioner level:
-    * preconditioner:
-    *   - amg: ...
-    *   - ilu: ...
-    */
-   num_variants = YAMLnodeCollectSequenceItems(parent, &precon_items);
-   if (num_variants > 0)
+   result = InputArgsParsePreconRootSequence(iargs, parent, &ctx);
+   if (result != PRECON_PARSE_NOT_HANDLED)
    {
-      methods  = (precon_t *)malloc((size_t)num_variants * sizeof(precon_t));
-      variants = (precon_args *)malloc((size_t)num_variants * sizeof(precon_args));
-      if (!methods || !variants)
-      {
-         ErrorCodeSet(ERROR_UNKNOWN);
-         ErrorMsgAdd("Failed to allocate preconditioner variants");
-         goto cleanup;
-      }
-      for (int vi = 0; vi < num_variants; vi++)
-      {
-         methods[vi] = PRECON_NONE;
-      }
-
-      for (int vi = 0; vi < num_variants; vi++)
-      {
-         YAMLnode *item = precon_items[vi];
-         if (!item->children || item->children->next)
-         {
-            ErrorCodeSet(ERROR_INVALID_KEY);
-            ErrorMsgAdd("Each preconditioner variant must contain exactly one type key");
-            goto cleanup;
-         }
-
-         YAMLnode *type = item->children;
-         if (!strcmp(type->key, "preset"))
-         {
-            if (!strcmp(type->val, ""))
-            {
-               ErrorCodeSet(ERROR_INVALID_VAL);
-               ErrorMsgAdd("Preconditioner preset name is missing");
-               goto cleanup;
-            }
-            char *preset_name = strdup(type->val);
-            if (!preset_name)
-            {
-               ErrorCodeSet(ERROR_ALLOCATION);
-               ErrorMsgAdd("Failed to allocate preset name");
-               goto cleanup;
-            }
-            PreconPresetBuildArgs(preset_name, &methods[vi], &variants[vi]);
-            if (ErrorCodeGet())
-            {
-               free(preset_name);
-               goto cleanup;
-            }
-            free(preset_name);
-            YAML_NODE_SET_VALID(item);
-            YAML_NODE_SET_VALID(type);
-            continue;
-         }
-
-         if (!type || type->next)
-         {
-            ErrorCodeSet(ERROR_INVALID_KEY);
-            ErrorMsgAdd("Each preconditioner variant must contain exactly one type key");
-            goto cleanup;
-         }
-         if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), type->key))
-         {
-            ErrorCodeSet(ERROR_INVALID_KEY);
-            ErrorMsgAdd("Unknown preconditioner type: '%s'", type->key);
-            goto cleanup;
-         }
-         precon_t method =
-            (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type->key);
-         methods[vi] = method;
-
-         PreconParseVariantWrapped(&variants[vi], method, parent, type->key, type->level,
-                                   type->children);
-      }
-
-      iargs->num_precon_variants   = num_variants;
-      iargs->precon_methods        = methods;
-      iargs->precon_variants       = variants;
-      iargs->active_precon_variant = 0;
-      iargs->precon_method         = methods[0];
-      iargs->precon                = variants[0];
-      free(precon_items);
-      precon_items = NULL;
+      PreconParseContextCleanup(&ctx);
       return;
    }
 
-   /* Case 3: single preconditioner type block, with optional sequence variants inside:
-    * preconditioner:
-    *   amg:
-    *     - ...
-    *     - ...
-    */
-   if (!parent->children)
-   {
-      ErrorCodeSet(ERROR_MISSING_PRECON);
-      goto cleanup;
-   }
-   if (parent->children->next)
-   {
-      ErrorCodeSet(ERROR_EXTRA_KEY);
-      ErrorMsgAddExtraKey(parent->children->next->key);
-      goto cleanup;
-   }
-
-   YAMLnode *type_node = parent->children;
-   if (!strcmp(type_node->key, "preset"))
-   {
-      if (!strcmp(type_node->val, ""))
-      {
-         ErrorCodeSet(ERROR_INVALID_VAL);
-         ErrorMsgAdd("Preconditioner preset name is missing");
-         goto cleanup;
-      }
-      char *preset_name = strdup(type_node->val);
-      if (!preset_name)
-      {
-         ErrorCodeSet(ERROR_ALLOCATION);
-         ErrorMsgAdd("Failed to allocate preset name");
-         goto cleanup;
-      }
-      methods  = (precon_t *)malloc(sizeof(precon_t));
-      variants = (precon_args *)malloc(sizeof(precon_args));
-      if (!methods || !variants)
-      {
-         ErrorCodeSet(ERROR_UNKNOWN);
-         ErrorMsgAdd("Failed to allocate preconditioner args");
-         goto cleanup;
-      }
-
-      precon_t    method = PRECON_NONE;
-      precon_args args;
-      PreconPresetBuildArgs(preset_name, &method, &args);
-      if (ErrorCodeGet())
-      {
-         free(preset_name);
-         goto cleanup;
-      }
-      free(preset_name);
-
-      methods[0]  = method;
-      variants[0] = args;
-
-      iargs->num_precon_variants   = 1;
-      iargs->precon_methods        = methods;
-      iargs->precon_variants       = variants;
-      iargs->active_precon_variant = 0;
-      iargs->precon_method         = methods[0];
-      iargs->precon                = variants[0];
-      YAML_NODE_SET_VALID(parent);
-      YAML_NODE_SET_VALID(type_node);
-      return;
-   }
-   if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), type_node->key))
-   {
-      ErrorCodeSet(ERROR_INVALID_KEY);
-      ErrorMsgAdd("Unknown preconditioner type: '%s'", type_node->key);
-      goto cleanup;
-   }
-   precon_t method =
-      (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type_node->key);
-
-   YAML_NODE_SET_VALID(type_node);
-   num_variants = YAMLnodeCollectSequenceItems(type_node, &seq_items);
-
-   if (num_variants > 0)
-   {
-      methods  = (precon_t *)malloc((size_t)num_variants * sizeof(precon_t));
-      variants = (precon_args *)malloc((size_t)num_variants * sizeof(precon_args));
-      if (!methods || !variants)
-      {
-         ErrorCodeSet(ERROR_UNKNOWN);
-         ErrorMsgAdd("Failed to allocate preconditioner variants");
-         goto cleanup;
-      }
-
-      for (int vi = 0; vi < num_variants; vi++)
-      {
-         methods[vi]        = method;
-         YAMLnode *seq_item = seq_items[vi];
-         PreconParseVariantWrapped(&variants[vi], method, parent, type_node->key,
-                                   type_node->level, seq_item->children);
-         YAML_NODE_SET_VALID(seq_item);
-      }
-
-      iargs->num_precon_variants   = num_variants;
-      iargs->precon_methods        = methods;
-      iargs->precon_variants       = variants;
-      iargs->active_precon_variant = 0;
-      iargs->precon_method         = methods[0];
-      iargs->precon                = variants[0];
-      YAML_NODE_SET_VALID(type_node);
-      free(seq_items);
-      seq_items = NULL;
-      return;
-   }
-
-   /* Single variant (type node is a mapping) */
-   methods  = (precon_t *)malloc(sizeof(precon_t));
-   variants = (precon_args *)malloc(sizeof(precon_args));
-   if (!methods || !variants)
-   {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("Failed to allocate preconditioner args");
-      goto cleanup;
-   }
-
-   methods[0] = method;
-   PreconArgsSetDefaultsForMethod(method, &variants[0]);
-   PreconSetArgsFromYAML(&variants[0], parent);
-
-   iargs->num_precon_variants   = 1;
-   iargs->precon_methods        = methods;
-   iargs->precon_variants       = variants;
-   iargs->active_precon_variant = 0;
-   iargs->precon_method         = methods[0];
-   iargs->precon                = variants[0];
-   return;
-
-cleanup:
-   free(precon_items);
-   free(seq_items);
-   free(methods);
-   free(variants);
+   InputArgsParsePreconTypedBlock(iargs, parent, &ctx);
+   PreconParseContextCleanup(&ctx);
 }
 
 /*-----------------------------------------------------------------------------
