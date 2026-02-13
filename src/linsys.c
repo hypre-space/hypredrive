@@ -257,6 +257,172 @@ LinearSystemSetNumSystems(LS_args *args)
    args->num_systems = args->last_suffix - args->init_suffix + 1;
 }
 
+static HYPRE_MemoryLocation
+LinearSystemMemoryLocationGet(const LS_args *args)
+{
+   return (args && args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+}
+
+static int
+LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *filename,
+                                const char *basename, char *resolved,
+                                size_t resolved_size)
+{
+   if (!args || !resolved || resolved_size == 0)
+   {
+      return 0;
+   }
+
+   resolved[0] = '\0';
+   if (args->dirname[0] != '\0')
+   {
+      snprintf(resolved, resolved_size, "%.*s_%0*d/%.*s", (int)strlen(args->dirname),
+               args->dirname, (int)args->digits_suffix, (int)args->init_suffix + ls_id,
+               (int)strlen(filename), filename);
+      return 1;
+   }
+   if (filename[0] != '\0')
+   {
+      snprintf(resolved, resolved_size, "%s", filename);
+      return 1;
+   }
+   if (basename[0] != '\0')
+   {
+      snprintf(resolved, resolved_size, "%.*s_%0*d", (int)strlen(basename), basename,
+               (int)args->digits_suffix, (int)args->init_suffix + ls_id);
+      return 1;
+   }
+
+   return 0;
+}
+
+static int
+LinearSystemMultipartCanRead(MPI_Comm comm, const char *prefixname)
+{
+   int nprocs = 0;
+   int nparts = 0;
+
+   MPI_Comm_size(comm, &nprocs);
+   nparts = CountNumberOfPartitions(prefixname);
+   return (nparts >= nprocs) != 0;
+}
+
+static void
+LinearSystemIJVectorReadFromFile(MPI_Comm comm, const char *filename,
+                                 HYPRE_MemoryLocation memory_location,
+                                 HYPRE_IJVector      *vector_ptr)
+{
+   if (CheckBinaryDataExists(filename))
+   {
+      if (LinearSystemMultipartCanRead(comm, filename))
+      {
+         int nparts = CountNumberOfPartitions(filename);
+         IJVectorReadMultipartBinary(filename, comm, (uint64_t)nparts, memory_location,
+                                     vector_ptr);
+      }
+      else
+      {
+#if HYPRE_CHECK_MIN_VERSION(23000, 0)
+         HYPRE_IJVectorReadBinary(filename, comm, HYPRE_PARCSR, vector_ptr);
+#else
+         HYPRE_IJVectorRead(filename, comm, HYPRE_PARCSR, vector_ptr);
+#endif
+      }
+   }
+   else
+   {
+      HYPRE_IJVectorRead(filename, comm, HYPRE_PARCSR, vector_ptr);
+   }
+}
+
+static void
+LinearSystemIJMatrixMigrate(const LS_args *args, HYPRE_IJMatrix matrix)
+{
+   if (!args || !args->exec_policy || !matrix)
+   {
+      return;
+   }
+
+   void *obj = NULL;
+   HYPRE_IJMatrixGetObject(matrix, &obj);
+   HYPRE_ParCSRMatrix par_A = (HYPRE_ParCSRMatrix)obj;
+
+#if HYPREDRV_HAVE_MEMORY_APIS
+   hypre_ParCSRMatrixMigrate(par_A, HYPRE_MEMORY_DEVICE);
+#endif
+}
+
+static void
+LinearSystemIJVectorMigrate(const LS_args *args, HYPRE_IJVector vec)
+{
+   if (!args || !args->exec_policy || !vec)
+   {
+      return;
+   }
+
+   void           *obj = NULL;
+   HYPRE_ParVector par = NULL;
+   HYPRE_IJVectorGetObject(vec, &obj);
+   par = (HYPRE_ParVector)obj;
+
+#if HYPREDRV_HAVE_MEMORY_APIS
+   hypre_ParVectorMigrate(par, HYPRE_MEMORY_DEVICE);
+#endif
+}
+
+static int
+LinearSystemIJMatrixReadFromFile(MPI_Comm comm, LS_args *args,
+                                 const char *matrix_filename, HYPRE_IJMatrix *matrix_ptr)
+{
+   int                  file_not_found  = 0;
+   HYPRE_MemoryLocation memory_location = LinearSystemMemoryLocationGet(args);
+
+   if (args->type == 1)
+   {
+      if (CheckBinaryDataExists(matrix_filename))
+      {
+         if (LinearSystemMultipartCanRead(comm, matrix_filename))
+         {
+            int nparts = CountNumberOfPartitions(matrix_filename);
+            IJMatrixReadMultipartBinary(matrix_filename, comm, (uint64_t)nparts,
+                                        memory_location, matrix_ptr);
+         }
+         else
+         {
+            ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+            ErrorMsgAddInvalidFilename(matrix_filename);
+            return 0;
+         }
+      }
+      else if (CheckASCIIDataExists(matrix_filename))
+      {
+         HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+      }
+      else
+      {
+         file_not_found = 1;
+      }
+   }
+   else if (args->type == 3)
+   {
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+      HYPRE_IJMatrixReadMM(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+#else
+      HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+#endif
+   }
+
+   if (HYPRE_GetError() || file_not_found)
+   {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAddInvalidFilename(matrix_filename);
+      return 0;
+   }
+
+   LinearSystemIJMatrixMigrate(args, *matrix_ptr);
+   return 1;
+}
+
 /*-----------------------------------------------------------------------------
  * LinearSystemSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
@@ -281,12 +447,8 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 {
    StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "matrix");
 
-   char                 matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int                  ls_id          = StatsGetLinearSystemID() + 1;
-   int                  file_not_found = 0;
-   void                *obj            = NULL;
-   HYPRE_MemoryLocation memory_location =
-      (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+   char matrix_filename[MAX_FILENAME_LENGTH] = {0};
+   int  ls_id                                = StatsGetLinearSystemID() + 1;
 
    /* Destroy matrix if it already exists */
    if (*matrix_ptr)
@@ -294,25 +456,9 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       HYPRE_IJMatrixDestroy(*matrix_ptr);
    }
 
-   /* Set matrix filename */
-   if (args->dirname[0] != '\0')
-   {
-      snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d/%.*s",
-               (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
-               (int)args->init_suffix + ls_id, (int)strlen(args->matrix_filename),
-               args->matrix_filename);
-   }
-   else if (args->matrix_filename[0] != '\0')
-   {
-      snprintf(matrix_filename, sizeof(matrix_filename), "%s", args->matrix_filename);
-   }
-   else if (args->matrix_basename[0] != '\0')
-   {
-      snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d",
-               (int)strlen(args->matrix_basename), args->matrix_basename,
-               (int)args->digits_suffix, (int)args->init_suffix + ls_id);
-   }
-   else
+   if (!LinearSystemDataFilenameResolve(args, ls_id, args->matrix_filename,
+                                        args->matrix_basename, matrix_filename,
+                                        sizeof(matrix_filename)))
    {
       ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       ErrorMsgAddInvalidFilename("");
@@ -320,64 +466,10 @@ LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
       return;
    }
 
-   /* Read matrix */
-   if (args->type == 1)
+   if (!LinearSystemIJMatrixReadFromFile(comm, args, matrix_filename, matrix_ptr))
    {
-      if (CheckBinaryDataExists(matrix_filename))
-      {
-         int nprocs = 0, nparts = 0;
-
-         MPI_Comm_size(comm, &nprocs);
-         nparts = CountNumberOfPartitions(matrix_filename);
-         if (nparts >= nprocs)
-         {
-            IJMatrixReadMultipartBinary(matrix_filename, comm, (uint64_t)nparts,
-                                        memory_location, matrix_ptr);
-         }
-         else
-         {
-            ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-            ErrorMsgAddInvalidFilename(matrix_filename);
-            StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
-            return;
-         }
-      }
-      else if (CheckASCIIDataExists(matrix_filename))
-      {
-         HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
-      }
-      else
-      {
-         file_not_found = 1;
-      }
-   }
-   else if (args->type == 3)
-   {
-#if HYPRE_CHECK_MIN_VERSION(22600, 0)
-      HYPRE_IJMatrixReadMM(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
-#else
-      HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
-#endif
-   }
-
-   /* Check if hypre had problems reading the input file */
-   if (HYPRE_GetError() || file_not_found)
-   {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAddInvalidFilename(matrix_filename);
       StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
       return;
-   }
-
-   /* Migrate the matrix? TODO: use IJMatrixMigrate */
-   if (args->exec_policy)
-   {
-      HYPRE_IJMatrixGetObject(*matrix_ptr, &obj);
-      HYPRE_ParCSRMatrix par_A = (HYPRE_ParCSRMatrix)obj;
-
-#if HYPREDRV_HAVE_MEMORY_APIS
-      hypre_ParCSRMatrixMigrate(par_A, HYPRE_MEMORY_DEVICE);
-#endif
    }
 
    StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
@@ -446,369 +538,298 @@ LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
 #define HYPRE_BIG_INT_SSCANF "%d"
 #endif
 
+static int
+LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
+                                const char *rhs_filename, HYPRE_IJVector *rhs_ptr)
+{
+   int                  myid      = 0;
+   int                  num_procs = 0;
+   FILE                *file      = NULL;
+   char                 line[1024];
+   HYPRE_BigInt         M = 0;
+   HYPRE_BigInt         N;
+   HYPRE_Complex       *all_values      = NULL;
+   HYPRE_Complex       *local_values    = NULL;
+   HYPRE_BigInt         global_num_rows = 0, global_num_cols = 0;
+   HYPRE_ParCSRMatrix   par_A  = NULL;
+   void                *obj    = NULL;
+   int                 *counts = NULL;
+   int                 *displs = NULL;
+   HYPRE_BigInt         ilower = 0, iupper = 0;
+   HYPRE_BigInt         jlower = 0, jupper = 0;
+   HYPRE_MemoryLocation memory_location = LinearSystemMemoryLocationGet(args);
+
+   MPI_Comm_rank(comm, &myid);
+   MPI_Comm_size(comm, &num_procs);
+
+   HYPRE_IJMatrixGetObject(mat, &obj);
+   par_A = (HYPRE_ParCSRMatrix)obj;
+   HYPRE_ParCSRMatrixGetDims(par_A, &global_num_rows, &global_num_cols);
+
+   if (myid == 0)
+   {
+      file = fopen(rhs_filename, "r");
+      if (file == NULL)
+      {
+         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         ErrorMsgAdd("Cannot open file %s", rhs_filename);
+         M = -1;
+      }
+      else
+      {
+         do
+         {
+            if (fgets(line, sizeof(line), file) == NULL)
+            {
+               ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+               ErrorMsgAdd("Unexpected end of file or error reading %s", rhs_filename);
+               M = -1;
+               break;
+            }
+         } while (line[0] == '%');
+
+         if (M != -1)
+         {
+#ifdef HYPRE_BIG_INT
+            long long   tmpM     = strtoll(line, NULL, 10);
+            const char *line_ptr = strchr(line, ' ');
+            long long   tmpN = (line_ptr != NULL) ? strtoll(line_ptr + 1, NULL, 10) : 0;
+            int         read_ok = (tmpM != 0 && tmpN != 0);
+#else
+            int         tmpM     = (int)strtol(line, NULL, 10);
+            const char *line_ptr = strchr(line, ' ');
+            int tmpN    = (line_ptr != NULL) ? (int)strtol(line_ptr + 1, NULL, 10) : 0;
+            int read_ok = (tmpM != 0 && tmpN != 0);
+#endif
+
+            if (read_ok)
+            {
+               M = (HYPRE_BigInt)tmpM;
+               N = (HYPRE_BigInt)tmpN;
+            }
+            else
+            {
+               ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+               ErrorMsgAdd("Failed to read vector dimensions from %s", rhs_filename);
+               M = -1;
+               N = 0;
+            }
+
+            if (N != 1)
+            {
+               ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+               ErrorMsgAdd("File %s is not a vector (N=" HYPRE_BIG_INT_SSCANF ")",
+                           rhs_filename, N);
+               M = -1;
+            }
+            else if (M != global_num_rows)
+            {
+               ErrorCodeSet(ERROR_UNKNOWN);
+               ErrorMsgAdd("RHS vector size " HYPRE_BIG_INT_SSCANF
+                           " does not match matrix size " HYPRE_BIG_INT_SSCANF,
+                           M, global_num_rows);
+               M = -1;
+            }
+            else
+            {
+               all_values = hypre_TAlloc(HYPRE_Complex, M, HYPRE_MEMORY_HOST);
+               for (HYPRE_BigInt i = 0; i < M; i++)
+               {
+                  char *endptr = NULL;
+                  if (fgets(line, sizeof(line), file) == NULL)
+                  {
+                     ErrorCodeSet(ERROR_UNKNOWN);
+                     ErrorMsgAdd("Error reading value for index " HYPRE_BIG_INT_SSCANF
+                                 " from %s",
+                                 i, rhs_filename);
+                     M = -1;
+                     break;
+                  }
+                  double tmp_val = strtod(line, &endptr);
+                  if (endptr == line || (*endptr != '\0' && *endptr != '\n'))
+                  {
+                     ErrorCodeSet(ERROR_UNKNOWN);
+                     ErrorMsgAdd("Error converting value for index " HYPRE_BIG_INT_SSCANF
+                                 " from %s",
+                                 i, rhs_filename);
+                     M = -1;
+                     break;
+                  }
+                  all_values[i] = (HYPRE_Complex)tmp_val;
+               }
+            }
+         }
+         fclose(file);
+      }
+   }
+
+   MPI_Bcast(&M, 1, HYPRE_MPI_BIG_INT, 0, comm);
+   if (M == -1)
+   {
+      if (myid == 0 && all_values)
+      {
+         hypre_TFree(all_values, HYPRE_MEMORY_HOST);
+      }
+      return 0;
+   }
+
+   HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
+   HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
+   HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
+   HYPREDRV_IJVectorInitialize(*rhs_ptr, memory_location);
+
+   HYPRE_BigInt local_size    = iupper - ilower + 1;
+   int          my_local_size = local_size;
+   if (myid == 0)
+   {
+      counts = hypre_TAlloc(int, num_procs, HYPRE_MEMORY_HOST);
+      displs = hypre_TAlloc(int, num_procs, HYPRE_MEMORY_HOST);
+   }
+   MPI_Gather(&my_local_size, 1, MPI_INT, counts, 1, MPI_INT, 0, comm);
+
+   if (myid == 0)
+   {
+      displs[0] = 0;
+      for (int i = 1; i < num_procs; i++)
+      {
+         displs[i] = displs[i - 1] + counts[i - 1];
+      }
+   }
+
+   local_values = hypre_TAlloc(HYPRE_Complex, local_size, HYPRE_MEMORY_HOST);
+   MPI_Scatterv(all_values, counts, displs, MPI_DOUBLE, local_values, local_size,
+                MPI_DOUBLE, 0, comm);
+
+   HYPRE_IJVectorSetValues(*rhs_ptr, local_size, NULL, local_values);
+   HYPRE_IJVectorAssemble(*rhs_ptr);
+
+   hypre_TFree(local_values, HYPRE_MEMORY_HOST);
+   if (myid == 0)
+   {
+      hypre_TFree(all_values, HYPRE_MEMORY_HOST);
+      hypre_TFree(counts, HYPRE_MEMORY_HOST);
+      hypre_TFree(displs, HYPRE_MEMORY_HOST);
+   }
+
+   return 1;
+}
+
+static void
+LinearSystemRHSGeneratedSet(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
+                            HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr)
+{
+   HYPRE_BigInt         ilower = 0, iupper = 0;
+   HYPRE_BigInt         jlower = 0, jupper = 0;
+   HYPRE_MemoryLocation memory_location = LinearSystemMemoryLocationGet(args);
+
+   HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
+   HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
+   HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
+   HYPREDRV_IJVectorInitialize(*rhs_ptr, memory_location);
+
+   void           *obj   = NULL;
+   HYPRE_ParVector par_b = NULL;
+   HYPRE_IJVectorGetObject(*rhs_ptr, &obj);
+   par_b = (HYPRE_ParVector)obj;
+
+   switch (args->rhs_mode)
+   {
+      case 0:
+         HYPRE_ParVectorSetConstantValues(par_b, 0);
+         break;
+      case 1:
+      default:
+         HYPRE_ParVectorSetConstantValues(par_b, 1);
+         break;
+      case 3:
+         HYPRE_ParVectorSetRandomValues(par_b, 2023);
+         break;
+      case 4:
+      {
+         HYPRE_IJVector xref = NULL;
+         HYPRE_IJVectorCreate(comm, ilower, iupper, &xref);
+         HYPRE_IJVectorSetObjectType(xref, HYPRE_PARCSR);
+         HYPREDRV_IJVectorInitialize(xref, memory_location);
+
+         HYPRE_ParVector par_x = NULL;
+         HYPRE_IJVectorGetObject(xref, &obj);
+         par_x = (HYPRE_ParVector)obj;
+         HYPRE_ParVectorSetRandomValues(par_x, 2023);
+
+         void              *obj_A = NULL;
+         HYPRE_ParCSRMatrix par_A = NULL;
+         HYPRE_IJMatrixGetObject(mat, &obj_A);
+         par_A = (HYPRE_ParCSRMatrix)obj_A;
+         HYPRE_ParCSRMatrixMatvec(1.0, par_A, par_x, 0.0, par_b);
+         *xref_ptr = xref;
+         break;
+      }
+   }
+}
+
+static int
+LinearSystemRHSReadFromFile(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
+                            const char *rhs_filename, HYPRE_IJVector *rhs_ptr)
+{
+   int ok = 1;
+   if (args->type == 3)
+   {
+      ok = LinearSystemRHSMatrixMarketRead(comm, args, mat, rhs_filename, rhs_ptr);
+   }
+   else
+   {
+      LinearSystemIJVectorReadFromFile(comm, rhs_filename,
+                                       LinearSystemMemoryLocationGet(args), rhs_ptr);
+   }
+
+   if (HYPRE_GetError())
+   {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAddInvalidFilename(rhs_filename);
+      return 0;
+   }
+
+   if (ok)
+   {
+      LinearSystemIJVectorMigrate(args, *rhs_ptr);
+   }
+   return ok;
+}
+
 void
 LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                    HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr)
 {
-   HYPRE_BigInt         ilower = 0, iupper = 0;
-   HYPRE_BigInt         jlower = 0, jupper = 0;
-   HYPRE_IJVector       xref  = NULL;
-   int                  ls_id = StatsGetLinearSystemID() + 1;
-   HYPRE_MemoryLocation memory_location =
-      (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+   int ls_id = StatsGetLinearSystemID() + 1;
 
    StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "rhs");
 
-   /* Destroy vectors */
    if (*xref_ptr)
    {
       HYPRE_IJVectorDestroy(*xref_ptr);
+      *xref_ptr = NULL;
    }
    if (*rhs_ptr)
    {
       HYPRE_IJVectorDestroy(*rhs_ptr);
+      *rhs_ptr = NULL;
    }
 
-   /* Read right-hand-side vector.
-    * rhs_mode is authoritative: only file mode reads rhs_filename/rhs_basename. */
    if (args->rhs_mode != 2)
    {
-      HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
-      HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
-      HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
-      HYPREDRV_IJVectorInitialize(*rhs_ptr, memory_location);
-
-      /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
-      void           *obj   = NULL;
-      HYPRE_ParVector par_b = NULL;
-      HYPRE_IJVectorGetObject(*rhs_ptr, &obj);
-      par_b = (HYPRE_ParVector)obj;
-
-      switch (args->rhs_mode)
-      {
-         case 0:
-            /* Vector of zeros */
-            HYPRE_ParVectorSetConstantValues(par_b, 0);
-            break;
-
-         case 1:
-         default:
-            /* Vector of ones */
-            HYPRE_ParVectorSetConstantValues(par_b, 1);
-            break;
-
-         case 3:
-            /* Vector of random values */
-            HYPRE_ParVectorSetRandomValues(par_b, 2023);
-            break;
-
-         case 4:
-            /* Solution has random values */
-            HYPRE_IJVectorCreate(comm, ilower, iupper, &xref);
-            HYPRE_IJVectorSetObjectType(xref, HYPRE_PARCSR);
-            HYPREDRV_IJVectorInitialize(xref, memory_location);
-
-            /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
-            HYPRE_ParVector par_x = NULL;
-            HYPRE_IJVectorGetObject(xref, &obj);
-            par_x = (HYPRE_ParVector)obj;
-            HYPRE_ParVectorSetRandomValues(par_x, 2023);
-
-            /* TODO (hypre): add IJMatrixMatvec interface */
-            void              *obj_A = NULL;
-            HYPRE_ParCSRMatrix par_A = NULL;
-            HYPRE_IJMatrixGetObject(mat, &obj_A);
-            par_A = (HYPRE_ParCSRMatrix)obj_A;
-            HYPRE_ParCSRMatrixMatvec(1.0, par_A, par_x, 0.0, par_b);
-
-            // hypre_ParVectorPrintIJ(par_b, 0, "test");
-            break;
-      }
+      LinearSystemRHSGeneratedSet(comm, args, mat, xref_ptr, rhs_ptr);
    }
    else
    {
       char rhs_filename[MAX_FILENAME_LENGTH] = {0};
-
-      /* Set RHS filename */
-      if (args->dirname[0] != '\0')
+      LinearSystemDataFilenameResolve(args, ls_id, args->rhs_filename, args->rhs_basename,
+                                      rhs_filename, sizeof(rhs_filename));
+      if (!LinearSystemRHSReadFromFile(comm, args, mat, rhs_filename, rhs_ptr))
       {
-         snprintf(rhs_filename, sizeof(rhs_filename), "%.*s_%0*d/%.*s",
-                  (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
-                  (int)args->init_suffix + ls_id, (int)strlen(args->rhs_filename),
-                  args->rhs_filename);
-      }
-      else if (args->rhs_filename[0] != '\0')
-      {
-         snprintf(rhs_filename, sizeof(rhs_filename), "%s", args->rhs_filename);
-      }
-      else if (args->rhs_basename[0] != '\0')
-      {
-         snprintf(rhs_filename, sizeof(rhs_filename), "%.*s_%0*d",
-                  (int)strlen(args->rhs_basename), args->rhs_basename,
-                  (int)args->digits_suffix, (int)args->init_suffix + ls_id);
-      }
-
-      if (args->type == 1 && CheckBinaryDataExists(rhs_filename))
-      {
-         int nparts = 0, nprocs = 0;
-
-         MPI_Comm_size(comm, &nprocs);
-         nparts = CountNumberOfPartitions(rhs_filename);
-         if (nparts >= nprocs)
-         {
-            IJVectorReadMultipartBinary(rhs_filename, comm, (uint64_t)nparts,
-                                        memory_location, rhs_ptr);
-         }
-         else
-         {
-#if HYPRE_CHECK_MIN_VERSION(23000, 0)
-            HYPRE_IJVectorReadBinary(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
-#else
-            HYPRE_IJVectorRead(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
-#endif
-         }
-      }
-      else if (args->type == 3)
-      {
-         int                myid      = 0;
-         int                num_procs = 0;
-         FILE              *file      = NULL;
-         char               line[1024];
-         HYPRE_BigInt       M = 0;
-         HYPRE_BigInt       N;
-         HYPRE_Complex     *all_values      = NULL;
-         HYPRE_Complex     *local_values    = NULL;
-         HYPRE_BigInt       global_num_rows = 0, global_num_cols = 0;
-         HYPRE_ParCSRMatrix par_A  = NULL;
-         void              *obj    = NULL;
-         int               *counts = NULL;
-         int               *displs = NULL;
-
-         MPI_Comm_rank(comm, &myid);
-         MPI_Comm_size(comm, &num_procs);
-
-         /* Get matrix dimensions to check against vector dimensions */
-         HYPRE_IJMatrixGetObject(mat, &obj);
-         par_A = (HYPRE_ParCSRMatrix)obj;
-         HYPRE_ParCSRMatrixGetDims(par_A, &global_num_rows, &global_num_cols);
-
-         if (myid == 0)
-         {
-            file = fopen(rhs_filename, "r");
-            if (file == NULL)
-            {
-               ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-               ErrorMsgAdd("Cannot open file %s", rhs_filename);
-               M = -1; /* Signal error */
-            }
-            else
-            {
-               /* Skip comments */
-               do
-               {
-                  if (fgets(line, sizeof(line), file) == NULL)
-                  {
-                     ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-                     ErrorMsgAdd("Unexpected end of file or error reading %s",
-                                 rhs_filename);
-                     M = -1; /* Signal error */
-                     break;
-                  }
-               } while (line[0] == '%');
-
-               /* Read dimensions with type-safe temps to satisfy both int and long long
-                * builds */
-               if (M != -1)
-               {
-#ifdef HYPRE_BIG_INT
-                  long long   tmpM     = strtoll(line, NULL, 10);
-                  const char *line_ptr = strchr(line, ' ');
-                  long long   tmpN =
-                     (line_ptr != NULL) ? strtoll(line_ptr + 1, NULL, 10) : 0;
-                  int read_ok = (tmpM != 0 && tmpN != 0);
-#else
-                  int         tmpM     = (int)strtol(line, NULL, 10);
-                  const char *line_ptr = strchr(line, ' ');
-                  int tmpN = (line_ptr != NULL) ? (int)strtol(line_ptr + 1, NULL, 10) : 0;
-                  int read_ok = (tmpM != 0 && tmpN != 0);
-#endif
-
-                  if (read_ok)
-                  {
-                     M = (HYPRE_BigInt)tmpM;
-                     N = (HYPRE_BigInt)tmpN;
-                  }
-                  else
-                  {
-                     ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-                     ErrorMsgAdd("Failed to read vector dimensions from %s",
-                                 rhs_filename);
-                     M = -1; /* Signal error */
-                     N = 0;
-                  }
-
-                  if (N != 1)
-                  {
-                     ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-                     ErrorMsgAdd("File %s is not a vector (N=" HYPRE_BIG_INT_SSCANF ")",
-                                 rhs_filename, N);
-                     M = -1; /* Signal error */
-                  }
-                  else if (M != global_num_rows)
-                  {
-                     ErrorCodeSet(ERROR_UNKNOWN);
-                     ErrorMsgAdd("RHS vector size " HYPRE_BIG_INT_SSCANF
-                                 " does not match matrix size " HYPRE_BIG_INT_SSCANF,
-                                 M, global_num_rows);
-                     M = -1; /* Signal error */
-                  }
-                  else
-                  {
-                     all_values = hypre_TAlloc(HYPRE_Complex, M, HYPRE_MEMORY_HOST);
-                     for (HYPRE_BigInt i = 0; i < M; i++)
-                     {
-                        char *endptr = NULL;
-                        if (fgets(line, sizeof(line), file) == NULL)
-                        {
-                           ErrorCodeSet(ERROR_UNKNOWN);
-                           ErrorMsgAdd(
-                              "Error reading value for index " HYPRE_BIG_INT_SSCANF
-                              " from %s",
-                              i, rhs_filename);
-                           M = -1;
-                           break;
-                        }
-                        double tmp_val = strtod(line, &endptr);
-                        if (endptr == line || (*endptr != '\0' && *endptr != '\n'))
-                        {
-                           ErrorCodeSet(ERROR_UNKNOWN);
-                           ErrorMsgAdd(
-                              "Error converting value for index " HYPRE_BIG_INT_SSCANF
-                              " from %s",
-                              i, rhs_filename);
-                           M = -1;
-                           break;
-                        }
-                        all_values[i] = (HYPRE_Complex)tmp_val;
-                     }
-                  }
-               }
-               fclose(file);
-            }
-         }
-
-         /* Broadcast M to all processes to check for errors */
-         MPI_Bcast(&M, 1, HYPRE_MPI_BIG_INT, 0, comm);
-
-         if (M == -1)
-         {
-            /* Error occurred on rank 0, abort */
-            if (myid == 0 && all_values)
-            {
-               hypre_TFree(all_values, HYPRE_MEMORY_HOST);
-            }
-            StatsAnnotate(HYPREDRV_ANNOTATE_END, "rhs");
-            return;
-         }
-
-         /* Create the vector object */
-         HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
-         HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
-         HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
-         HYPREDRV_IJVectorInitialize(*rhs_ptr, memory_location);
-
-         HYPRE_BigInt local_size    = iupper - ilower + 1;
-         int          my_local_size = local_size;
-
-         /* Gather local sizes to calculate displacements for Scatterv */
-         if (myid == 0)
-         {
-            counts = hypre_TAlloc(int, num_procs, HYPRE_MEMORY_HOST);
-            displs = hypre_TAlloc(int, num_procs, HYPRE_MEMORY_HOST);
-         }
-         MPI_Gather(&my_local_size, 1, MPI_INT, counts, 1, MPI_INT, 0, comm);
-
-         if (myid == 0)
-         {
-            displs[0] = 0;
-            for (int i = 1; i < num_procs; i++)
-            {
-               displs[i] = displs[i - 1] + counts[i - 1];
-            }
-         }
-
-         local_values = hypre_TAlloc(HYPRE_Complex, local_size, HYPRE_MEMORY_HOST);
-
-         /* Scatter values from root to all processes */
-         MPI_Scatterv(all_values, counts, displs, MPI_DOUBLE, local_values, local_size,
-                      MPI_DOUBLE, 0, comm);
-
-         /* Set values in the IJVector */
-         HYPRE_IJVectorSetValues(*rhs_ptr, local_size, NULL, local_values);
-         HYPRE_IJVectorAssemble(*rhs_ptr);
-
-         /* Clean up */
-         hypre_TFree(local_values, HYPRE_MEMORY_HOST);
-         if (myid == 0)
-         {
-            hypre_TFree(all_values, HYPRE_MEMORY_HOST);
-            hypre_TFree(counts, HYPRE_MEMORY_HOST);
-            hypre_TFree(displs, HYPRE_MEMORY_HOST);
-         }
-      }
-      else
-      {
-         /* Read vector from file (Binary or ASCII) */
-         if (CheckBinaryDataExists(rhs_filename))
-         {
-            int nparts = 0, nprocs = 0;
-
-            MPI_Comm_size(comm, &nprocs);
-            nparts = CountNumberOfPartitions(rhs_filename);
-            if (nparts >= nprocs)
-            {
-               IJVectorReadMultipartBinary(rhs_filename, comm, (uint64_t)nparts,
-                                           memory_location, rhs_ptr);
-            }
-            else
-            {
-#if HYPRE_CHECK_MIN_VERSION(23000, 0)
-               HYPRE_IJVectorReadBinary(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
-#else
-               HYPRE_IJVectorRead(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
-#endif
-            }
-         }
-         else
-         {
-            HYPRE_IJVectorRead(rhs_filename, comm, HYPRE_PARCSR, rhs_ptr);
-         }
-      }
-
-      /* Check if hypre had problems reading the input file */
-      if (HYPRE_GetError())
-      {
-         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         ErrorMsgAddInvalidFilename(rhs_filename);
-      }
-
-      /* Migrate the vector? TODO: use IJVectorMigrate */
-      if (args->exec_policy)
-      {
-         HYPRE_ParVector par_rhs = NULL;
-         void           *obj     = NULL;
-
-         HYPRE_IJVectorGetObject(*rhs_ptr, &obj);
-         par_rhs = (HYPRE_ParVector)obj;
-
-#if HYPREDRV_HAVE_MEMORY_APIS
-         hypre_ParVectorMigrate(par_rhs, HYPRE_MEMORY_DEVICE);
-#endif
+         StatsAnnotate(HYPREDRV_ANNOTATE_END, "rhs");
+         return;
       }
    }
-
-   /* Set reference solution vector */
-   *xref_ptr = xref;
 
    StatsAnnotate(HYPREDRV_ANNOTATE_END, "rhs");
 }
@@ -893,32 +914,8 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    }
    else
    {
-      if (CheckBinaryDataExists(args->x0_filename))
-      {
-#if HYPRE_CHECK_MIN_VERSION(23000, 0)
-         HYPRE_IJVectorReadBinary(args->x0_filename, comm, HYPRE_PARCSR, x0_ptr);
-#else
-         HYPRE_IJVectorRead(args->x0_filename, comm, HYPRE_PARCSR, x0_ptr);
-#endif
-      }
-      else
-      {
-         HYPRE_IJVectorRead(args->x0_filename, comm, HYPRE_PARCSR, x0_ptr);
-      }
-
-      /* Migrate the vector? TODO: use IJVectorMigrate */
-      if (args->exec_policy)
-      {
-         HYPRE_ParVector par_x0 = NULL;
-         void           *obj    = NULL;
-
-         HYPRE_IJVectorGetObject(*x0_ptr, &obj);
-         par_x0 = (HYPRE_ParVector)obj;
-
-#if HYPREDRV_HAVE_MEMORY_APIS
-         hypre_ParVectorMigrate(par_x0, HYPRE_MEMORY_DEVICE);
-#endif
-      }
+      LinearSystemIJVectorReadFromFile(comm, args->x0_filename, memloc, x0_ptr);
+      LinearSystemIJVectorMigrate(args, *x0_ptr);
    }
 }
 
@@ -929,10 +926,8 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 void
 LinearSystemSetReferenceSolution(MPI_Comm comm, LS_args *args, HYPRE_IJVector *xref_ptr)
 {
-   char                 xref_filename[MAX_FILENAME_LENGTH] = {0};
-   int                  ls_id                              = StatsGetLinearSystemID() + 1;
-   HYPRE_MemoryLocation memory_location =
-      (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+   char xref_filename[MAX_FILENAME_LENGTH] = {0};
+   int  ls_id                              = StatsGetLinearSystemID() + 1;
 
    /* Keep the existing reference solution (e.g., rhs_mode = randsol) unless a file is
     * explicitly requested. */
@@ -947,50 +942,10 @@ LinearSystemSetReferenceSolution(MPI_Comm comm, LS_args *args, HYPRE_IJVector *x
       *xref_ptr = NULL;
    }
 
-   /* Set reference solution filename */
-   if (args->dirname[0] != '\0')
-   {
-      snprintf(xref_filename, sizeof(xref_filename), "%.*s_%0*d/%.*s",
-               (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
-               (int)args->init_suffix + ls_id, (int)strlen(args->xref_filename),
-               args->xref_filename);
-   }
-   else if (args->xref_filename[0] != '\0')
-   {
-      strcpy(xref_filename, args->xref_filename);
-   }
-   else if (args->xref_basename[0] != '\0')
-   {
-      snprintf(xref_filename, sizeof(xref_filename), "%.*s_%0*d",
-               (int)strlen(args->xref_basename), args->xref_basename,
-               (int)args->digits_suffix, (int)args->init_suffix + ls_id);
-   }
-
-   /* Read vector from file (Binary or ASCII) */
-   if (CheckBinaryDataExists(xref_filename))
-   {
-      int nprocs = 0;
-      int nparts = 0;
-      MPI_Comm_size(comm, &nprocs);
-      nparts = CountNumberOfPartitions(xref_filename);
-      if (nparts >= nprocs)
-      {
-         IJVectorReadMultipartBinary(xref_filename, comm, (uint64_t)nparts,
-                                     memory_location, xref_ptr);
-      }
-      else
-      {
-#if HYPRE_CHECK_MIN_VERSION(23000, 0)
-         HYPRE_IJVectorReadBinary(xref_filename, comm, HYPRE_PARCSR, xref_ptr);
-#else
-         HYPRE_IJVectorRead(xref_filename, comm, HYPRE_PARCSR, xref_ptr);
-#endif
-      }
-   }
-   else
-   {
-      HYPRE_IJVectorRead(xref_filename, comm, HYPRE_PARCSR, xref_ptr);
-   }
+   LinearSystemDataFilenameResolve(args, ls_id, args->xref_filename, args->xref_basename,
+                                   xref_filename, sizeof(xref_filename));
+   LinearSystemIJVectorReadFromFile(comm, xref_filename,
+                                    LinearSystemMemoryLocationGet(args), xref_ptr);
 
    /* Check if hypre had problems reading the input file */
    if (HYPRE_GetError())
@@ -1001,19 +956,7 @@ LinearSystemSetReferenceSolution(MPI_Comm comm, LS_args *args, HYPRE_IJVector *x
    }
    else
    {
-      /* Migrate the vector if needed */
-      if (args->exec_policy && *xref_ptr)
-      {
-         HYPRE_ParVector par_xref;
-         void           *obj;
-
-         HYPRE_IJVectorGetObject(*xref_ptr, &obj);
-         par_xref = (HYPRE_ParVector)obj;
-
-#if HYPREDRV_HAVE_MEMORY_APIS
-         hypre_ParVectorMigrate(par_xref, HYPRE_MEMORY_DEVICE);
-#endif
-      }
+      LinearSystemIJVectorMigrate(args, *xref_ptr);
    }
 }
 /*-----------------------------------------------------------------------------
