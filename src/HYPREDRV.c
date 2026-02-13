@@ -273,12 +273,6 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    IntArrayDestroy(&hypredrv->dofmap);
    InputArgsDestroy(&hypredrv->iargs);
 
-   /* Destroy scaling context */
-   if (hypredrv->scaling_ctx)
-   {
-      ScalingContextDestroy(&hypredrv->scaling_ctx);
-   }
-
    /* Destroy statistics object */
    StatsDestroy(&hypredrv->stats);
 
@@ -995,7 +989,7 @@ HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv, HYPRE_Complex **rhs_data)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   LinearSystemGetRHSValues(hypredrv->vec_x, rhs_data);
+   LinearSystemGetRHSValues(hypredrv->vec_b, rhs_data);
 
    return ErrorCodeGet();
 }
