@@ -4,6 +4,100 @@
 # SPDX-License-Identifier: MIT
 
 ############################################################
+# Internal helpers (single-file structure, lower duplication)
+############################################################
+
+function(_hypredrv_set_common_output_directories)
+    # Keep all generated artifacts in predictable top-level output paths.
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib CACHE PATH
+        "Single output directory for all libraries" FORCE)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib CACHE PATH
+        "Single output directory for all static libraries" FORCE)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR} CACHE PATH
+        "Single output directory for all executables" FORCE)
+endfunction()
+
+function(_hypredrv_link_mpi_interface target_name)
+    if(TARGET MPI::MPI_C)
+        target_link_libraries(${target_name} INTERFACE MPI::MPI_C)
+    else()
+        if(MPI_C_LIBRARIES)
+            target_link_libraries(${target_name} INTERFACE ${MPI_C_LIBRARIES})
+        endif()
+        if(MPI_C_INCLUDE_DIRS)
+            target_include_directories(${target_name} INTERFACE ${MPI_C_INCLUDE_DIRS})
+        endif()
+    endif()
+endfunction()
+
+function(_hypredrv_set_using_caliper enabled)
+    if(enabled)
+        set(HYPREDRV_USING_CALIPER 1 PARENT_SCOPE)
+        set(HYPREDRV_USING_CALIPER 1 CACHE INTERNAL "Using Caliper")
+    else()
+        set(HYPREDRV_USING_CALIPER 0 PARENT_SCOPE)
+        set(HYPREDRV_USING_CALIPER 0 CACHE INTERNAL "Not using Caliper")
+    endif()
+endfunction()
+
+function(_hypredrv_matches_pattern var_name pattern_list_var result_var)
+    set(_matched FALSE)
+    foreach(pattern IN LISTS ${pattern_list_var})
+        if(var_name MATCHES "${pattern}")
+            set(_matched TRUE)
+            break()
+        endif()
+    endforeach()
+    set(${result_var} ${_matched} PARENT_SCOPE)
+endfunction()
+
+function(_hypredrv_forward_hypre_cache_vars forwarded_count_var)
+    # Variables to exclude from inheritance (project-specific)
+    set(_exclude_patterns
+        "^HYPREDRV_"               # Our project variables
+        "^CMAKE_TOOLCHAIN_FILE$"   # Toolchain files shouldn't be inherited
+        "^CMAKE_GENERATOR$"        # Generator is already set
+        "^CMAKE_SOURCE_DIR$"       # Source directories
+        "^CMAKE_BINARY_DIR$"       # Binary directories
+        "^CMAKE_PROJECT_NAME$"     # Project name
+        "^CMAKE_CURRENT_LIST_DIR$" # Current list directory
+        "^CMAKE_CURRENT_SOURCE_DIR$"
+        "^CMAKE_CURRENT_BINARY_DIR$"
+    )
+
+    # Patterns for variables to include
+    set(_include_patterns
+        "^HYPRE_ENABLE"        # HYPRE enable options (HYPRE_ENABLE_*, etc.)
+        "^TPL_"                # TPL variables (TPL_CALIPER_*, etc.)
+        "^.*_ROOT$"            # TPL root variables (MAGMA_ROOT, CUDA_ROOT, etc.)
+        "^.*_DIR$"             # TPL directory variables
+        "^CMAKE_"              # CMake configuration variables
+        "^BUILD_SHARED_LIBS$"  # Library type
+    )
+
+    get_cmake_property(_cache_vars CACHE_VARIABLES)
+    set(_forwarded_count 0)
+    foreach(_var IN LISTS _cache_vars)
+        _hypredrv_matches_pattern("${_var}" _exclude_patterns _should_exclude)
+        if(_should_exclude)
+            continue()
+        endif()
+
+        _hypredrv_matches_pattern("${_var}" _include_patterns _should_include)
+        if(NOT _should_include)
+            continue()
+        endif()
+
+        get_property(_var_type CACHE "${_var}" PROPERTY TYPE)
+        get_property(_var_value CACHE "${_var}" PROPERTY VALUE)
+        set("${_var}" "${_var_value}" CACHE "${_var_type}" "" FORCE)
+        math(EXPR _forwarded_count "${_forwarded_count} + 1")
+    endforeach()
+
+    set(${forwarded_count_var} ${_forwarded_count} PARENT_SCOPE)
+endfunction()
+
+############################################################
 # Sync Caliper options between HYPREDRV and HYPRE
 ############################################################
 
@@ -84,9 +178,7 @@ if(HYPREDRV_ENABLE_CALIPER)
         set(WITH_TOOLS OFF CACHE BOOL "Build Caliper tools" FORCE)
 
         # Configure Caliper to output libraries and headers in the same directories as main project
-        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib CACHE PATH "Single output directory for all libraries" FORCE)
-        set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib CACHE PATH "Single output directory for all static libraries" FORCE)
-        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR} CACHE PATH "Single output directory for all executables" FORCE)
+        _hypredrv_set_common_output_directories()
 
         # Explicitly propagate BUILD_SHARED_LIBS to Caliper build
         # FetchContent subdirectories need cache variables to inherit values
@@ -183,17 +275,14 @@ if(HYPREDRV_ENABLE_CALIPER)
     endif()
 
     if(CALIPER_FOUND)
-        set(HYPREDRV_USING_CALIPER 1)
-        set(HYPREDRV_USING_CALIPER 1 CACHE INTERNAL "Using Caliper")
+        _hypredrv_set_using_caliper(TRUE)
     else()
-        set(HYPREDRV_USING_CALIPER 0)
-        set(HYPREDRV_USING_CALIPER 0 CACHE INTERNAL "Not using Caliper")
+        _hypredrv_set_using_caliper(FALSE)
     endif()
 else()
     message(STATUS "Caliper support disabled (HYPREDRV_ENABLE_CALIPER=OFF)")
     set(CALIPER_FOUND FALSE)
-    set(HYPREDRV_USING_CALIPER 0)
-    set(HYPREDRV_USING_CALIPER 0 CACHE INTERNAL "Not using Caliper")
+    _hypredrv_set_using_caliper(FALSE)
 endif()
 
 ############################################################
@@ -382,16 +471,7 @@ if(NOT HYPRE_FOUND)
             INTERFACE_INCLUDE_DIRECTORIES "${HYPRE_INCLUDE_DIRS}"
             INTERFACE_LINK_LIBRARIES "${HYPRE_LIBRARIES}"
         )
-        if(TARGET MPI::MPI_C)
-            target_link_libraries(HYPRE::HYPRE INTERFACE MPI::MPI_C)
-        else()
-            if(MPI_C_LIBRARIES)
-                target_link_libraries(HYPRE::HYPRE INTERFACE ${MPI_C_LIBRARIES})
-            endif()
-            if(MPI_C_INCLUDE_DIRS)
-                target_include_directories(HYPRE::HYPRE INTERFACE ${MPI_C_INCLUDE_DIRS})
-            endif()
-        endif()
+        _hypredrv_link_mpi_interface(HYPRE::HYPRE)
         add_dependencies(HYPRE::HYPRE hypre_autotools)
 
         set(HYPREDRV_HYPRE_USER_PROVIDED TRUE)
@@ -410,64 +490,8 @@ if(NOT HYPRE_FOUND)
     # Forward all relevant cache variables to HYPRE build, including TPLs (MAGMA, CUDA, etc.)
     message(STATUS "Inheriting CMake arguments to HYPRE build...")
 
-    # Get all cache variables
-    get_cmake_property(_cache_vars CACHE_VARIABLES)
-
-    # Variables to exclude from inheritance (project-specific)
-    set(_exclude_patterns
-        "^HYPREDRV_"               # Our project variables
-        "^CMAKE_TOOLCHAIN_FILE$"   # Toolchain files shouldn't be inherited
-        "^CMAKE_GENERATOR$"        # Generator is already set
-        "^CMAKE_SOURCE_DIR$"       # Source directories
-        "^CMAKE_BINARY_DIR$"       # Binary directories
-        "^CMAKE_PROJECT_NAME$"     # Project name
-        "^CMAKE_CURRENT_LIST_DIR$" # Current list directory
-        "^CMAKE_CURRENT_SOURCE_DIR$"
-        "^CMAKE_CURRENT_BINARY_DIR$"
-    )
-
-    # Patterns for variables to include
-    set(_include_patterns
-        "^HYPRE_ENABLE"        # HYPRE enable options (HYPRE_ENABLE_*, etc.)
-        "^TPL_"                # TPL variables (TPL_CALIPER_*, etc.)
-        "^.*_ROOT$"            # TPL root variables (MAGMA_ROOT, CUDA_ROOT, etc.)
-        "^.*_DIR$"             # TPL directory variables
-        "^CMAKE_"              # CMake configuration variables
-        "^BUILD_SHARED_LIBS$"  # Library type
-    )
-
-    # Function to check if a variable matches any pattern
-    function(_matches_pattern var_name patterns result)
-        set(${result} FALSE PARENT_SCOPE)
-        foreach(pattern IN LISTS patterns)
-            if(var_name MATCHES "${pattern}")
-                set(${result} TRUE PARENT_SCOPE)
-                break()
-            endif()
-        endforeach()
-    endfunction()
-
-    # Forward relevant cache variables
-    set(_forwarded_count 0)
-    foreach(_var IN LISTS _cache_vars)
-        # Skip if matches exclude patterns
-        _matches_pattern("${_var}" "${_exclude_patterns}" _should_exclude)
-        if(_should_exclude)
-            continue()
-        endif()
-
-        # Check if matches include patterns
-        _matches_pattern("${_var}" "${_include_patterns}" _should_include)
-        if(_should_include)
-            # Get variable type and value
-            get_property(_var_type CACHE "${_var}" PROPERTY TYPE)
-            get_property(_var_value CACHE "${_var}" PROPERTY VALUE)
-
-            # Forward the variable
-            set("${_var}" "${_var_value}" CACHE "${_var_type}" "" FORCE)
-            math(EXPR _forwarded_count "${_forwarded_count} + 1")
-        endif()
-    endforeach()
+    # Forward relevant cache variables for hypre sub-builds.
+    _hypredrv_forward_hypre_cache_vars(_forwarded_count)
 
     # Ensure MPI compiler is used if CMAKE_C_COMPILER not explicitly set in cache
     get_property(_c_compiler_set CACHE CMAKE_C_COMPILER PROPERTY VALUE SET)
@@ -481,9 +505,7 @@ if(NOT HYPRE_FOUND)
 
     # Configure HYPRE to output libraries and headers in the same directories as main project
     # This ensures all libraries are in the same lib/ folder and headers in the same include/ folder
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib CACHE PATH "Single output directory for all libraries" FORCE)
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib CACHE PATH "Single output directory for all static libraries" FORCE)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR} CACHE PATH "Single output directory for all executables" FORCE)
+    _hypredrv_set_common_output_directories()
 
     if(_forwarded_count GREATER 0)
         message(STATUS "Forwarded ${_forwarded_count} CMake variables to HYPRE build")
@@ -682,16 +704,7 @@ if(TARGET HYPRE::HYPRE)
                 if(NOT _hypre_seq)
                     message(STATUS "  HYPRE built with MPI support; checking MPI...")
                     find_package(MPI REQUIRED COMPONENTS C)
-                    if(TARGET MPI::MPI_C)
-                        target_link_libraries(HYPRE::HYPRE INTERFACE MPI::MPI_C)
-                    else()
-                        if(MPI_C_LIBRARIES)
-                            target_link_libraries(HYPRE::HYPRE INTERFACE ${MPI_C_LIBRARIES})
-                        endif()
-                        if(MPI_C_INCLUDE_DIRS)
-                            target_include_directories(HYPRE::HYPRE INTERFACE ${MPI_C_INCLUDE_DIRS})
-                        endif()
-                    endif()
+                    _hypredrv_link_mpi_interface(HYPRE::HYPRE)
                 else()
                     message(STATUS "  HYPRE built in sequential mode; MPI not required")
                 endif()
