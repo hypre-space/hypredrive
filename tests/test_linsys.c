@@ -30,6 +30,26 @@ add_child(YAMLnode *parent, const char *key, const char *val, int level)
    return child;
 }
 
+static HYPRE_IJMatrix create_test_ijmatrix_1x1(MPI_Comm comm, double diag);
+
+static int
+get_matrix_local_num_entries(HYPRE_IJMatrix mat)
+{
+   HYPRE_BigInt ilower = 0, iupper = 0, jlower = 0, jupper = 0;
+   HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
+   return (int)(jupper - jlower + 1);
+}
+
+static HYPRE_IJMatrix
+create_nearnullspace_test_matrix(int *num_entries)
+{
+   HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(MPI_COMM_SELF, 1.0);
+   ASSERT_NOT_NULL(mat);
+   ASSERT_NOT_NULL(num_entries);
+   *num_entries = get_matrix_local_num_entries(mat);
+   return mat;
+}
+
 static void
 test_LinearSystemGetValidValues_type(void)
 {
@@ -128,25 +148,8 @@ test_LinearSystemSetNearNullSpace_mismatch_error(void)
 {
    TEST_HYPRE_INIT();
 
-   /* Create a minimal 1x1 matrix */
-   HYPRE_IJMatrix mat = NULL;
-   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat);
-   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(mat);
-
-   /* Set a single entry - need to use proper indices */
-   HYPRE_Int nrows = 1;
-   HYPRE_Int ncols[1] = {1};
-   HYPRE_BigInt rows[1] = {0};
-   HYPRE_BigInt cols[1] = {0};
-   double       vals[1] = {1.0};
-   HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, vals);
-   HYPRE_IJMatrixAssemble(mat);
-
-   /* Get actual local size */
-   HYPRE_BigInt ilower = 0, iupper = 0, jlower = 0, jupper = 0;
-   HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
-   int num_entries = (int)(jupper - jlower + 1);
+   int           num_entries = 0;
+   HYPRE_IJMatrix mat        = create_nearnullspace_test_matrix(&num_entries);
 
    LS_args args;
    LinearSystemSetDefaultArgs(&args);
@@ -169,25 +172,8 @@ test_LinearSystemSetNearNullSpace_success(void)
 {
    TEST_HYPRE_INIT();
 
-   /* Create a minimal 1x1 matrix */
-   HYPRE_IJMatrix mat = NULL;
-   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat);
-   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(mat);
-
-   /* Set a single entry - need to use proper indices */
-   HYPRE_Int nrows = 1;
-   HYPRE_Int ncols[1] = {1};
-   HYPRE_BigInt rows[1] = {0};
-   HYPRE_BigInt cols[1] = {0};
-   double       vals[1] = {1.0};
-   HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, vals);
-   HYPRE_IJMatrixAssemble(mat);
-
-   /* Get actual local size */
-   HYPRE_BigInt ilower = 0, iupper = 0, jlower = 0, jupper = 0;
-   HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
-   int num_entries = (int)(jupper - jlower + 1);
+   int           num_entries = 0;
+   HYPRE_IJMatrix mat        = create_nearnullspace_test_matrix(&num_entries);
 
    LS_args args;
    LinearSystemSetDefaultArgs(&args);
@@ -213,25 +199,8 @@ test_LinearSystemSetNearNullSpace_destroy_previous(void)
 {
    TEST_HYPRE_INIT();
 
-   /* Create a minimal 1x1 matrix */
-   HYPRE_IJMatrix mat = NULL;
-   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat);
-   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(mat);
-
-   /* Set a single entry - need to use proper indices */
-   HYPRE_Int nrows = 1;
-   HYPRE_Int ncols[1] = {1};
-   HYPRE_BigInt rows[1] = {0};
-   HYPRE_BigInt cols[1] = {0};
-   double       vals[1] = {1.0};
-   HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, vals);
-   HYPRE_IJMatrixAssemble(mat);
-
-   /* Get actual local size */
-   HYPRE_BigInt ilower = 0, iupper = 0, jlower = 0, jupper = 0;
-   HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
-   int num_entries = (int)(jupper - jlower + 1);
+   int           num_entries = 0;
+   HYPRE_IJMatrix mat        = create_nearnullspace_test_matrix(&num_entries);
 
    LS_args args;
    LinearSystemSetDefaultArgs(&args);
@@ -1173,12 +1142,9 @@ test_LinearSystemSetPrecMatrix_branchy_paths(void)
    TEST_HYPRE_FINALIZE();
 }
 
-int
-main(int argc, char **argv)
+static void
+run_linsys_args_and_validation_tests(void)
 {
-   MPI_Init(&argc, &argv);
-   TEST_HYPRE_INIT();
-
    RUN_TEST(test_LinearSystemGetValidValues_type);
    RUN_TEST(test_LinearSystemGetValidValues_rhs_mode);
    RUN_TEST(test_LinearSystemGetValidValues_init_guess_mode);
@@ -1189,7 +1155,11 @@ main(int argc, char **argv)
    RUN_TEST(test_LinearSystemSetNearNullSpace_success);
    RUN_TEST(test_LinearSystemSetNearNullSpace_destroy_previous);
    RUN_TEST(test_LinearSystemGetValidValues_all_branches);
+}
 
+static void
+run_linsys_matrix_and_rhs_io_tests(void)
+{
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_LinearSystemReadMatrix_filename_patterns);
    RUN_TEST(test_LinearSystemReadMatrix_no_filename_error);
@@ -1208,17 +1178,32 @@ main(int argc, char **argv)
    RUN_TEST(test_LinearSystemSetRHS_mtx_file_success);
    RUN_TEST(test_LinearSystemSetRHS_mtx_dim_mismatch_errors);
 #endif
+}
 
+static void
+run_linsys_misc_and_numeric_tests(void)
+{
    RUN_TEST(test_LinearSystemPrintData_series_dir_and_null_objects);
    RUN_TEST(test_LinearSystemMatrixGetNumRows_GetNumNonzeros_error_cases);
-   #if HYPRE_CHECK_MIN_VERSION(22600, 0)
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_LinearSystemReadRHS_error_cases);
-   #endif
+#endif
    RUN_TEST(test_LinearSystemComputeVectorNorm_all_modes);
-   #if HYPRE_CHECK_MIN_VERSION(22600, 0)
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_LinearSystemSetInitialGuess_x0_filename_branches);
-   #endif
+#endif
    RUN_TEST(test_LinearSystemSetPrecMatrix_branchy_paths);
+}
+
+int
+main(int argc, char **argv)
+{
+   MPI_Init(&argc, &argv);
+   TEST_HYPRE_INIT();
+
+   run_linsys_args_and_validation_tests();
+   run_linsys_matrix_and_rhs_io_tests();
+   run_linsys_misc_and_numeric_tests();
 
    TEST_HYPRE_FINALIZE();
    MPI_Finalize();
