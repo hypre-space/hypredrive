@@ -408,244 +408,422 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
  * YAMLtreeBuild
  *-----------------------------------------------------------------------------*/
 
-void
-YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
+typedef struct YAMLtoken_struct
 {
-   YAMLnode *node   = NULL;
-   YAMLnode *parent = NULL;
-   YAMLtree *tree   = NULL;
+   char *key;
+   char *val;
+   char *inline_key;
+   char *inline_val;
+   int   level;
+   int   indent;
+   bool  divisor_is_ok;
+   bool  is_sequence_item;
+} YAMLtoken;
 
+typedef struct YAMLtokenArray_struct
+{
+   YAMLtoken *data;
+   int        size;
+   int        capacity;
+} YAMLtokenArray;
+
+static void
+YAMLtokenDestroy(YAMLtoken *token)
+{
+   if (!token)
+   {
+      return;
+   }
+
+   free(token->key);
+   free(token->val);
+   free(token->inline_key);
+   free(token->inline_val);
+   memset(token, 0, sizeof(*token));
+}
+
+static void
+YAMLtokenArrayDestroy(YAMLtokenArray *arr)
+{
+   if (!arr)
+   {
+      return;
+   }
+
+   for (int i = 0; i < arr->size; i++)
+   {
+      YAMLtokenDestroy(&arr->data[i]);
+   }
+   free(arr->data);
+   arr->data     = NULL;
+   arr->size     = 0;
+   arr->capacity = 0;
+}
+
+static bool
+YAMLtokenArrayReserve(YAMLtokenArray *arr, int min_capacity)
+{
+   if (arr->capacity >= min_capacity)
+   {
+      return true;
+   }
+
+   int        new_capacity = (arr->capacity == 0) ? 32 : (arr->capacity * 2);
+   YAMLtoken *new_data     = NULL;
+   while (new_capacity < min_capacity)
+   {
+      new_capacity *= 2;
+   }
+
+   new_data = (YAMLtoken *)realloc(arr->data, (size_t)new_capacity * sizeof(YAMLtoken));
+   if (!new_data)
+   {
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate YAML token buffer");
+      return false;
+   }
+
+   arr->data     = new_data;
+   arr->capacity = new_capacity;
+   return true;
+}
+
+static bool
+YAMLtokenArrayPush(YAMLtokenArray *arr, YAMLtoken *token)
+{
+   if (!arr || !token)
+   {
+      return false;
+   }
+
+   if (!YAMLtokenArrayReserve(arr, arr->size + 1))
+   {
+      return false;
+   }
+
+   arr->data[arr->size++] = *token;
+   memset(token, 0, sizeof(*token));
+   return true;
+}
+
+static bool
+YAMLlineIsBlank(const char *line)
+{
+   if (!line)
+   {
+      return true;
+   }
+
+   while (*line)
+   {
+      if (*line != ' ' && *line != '\n' && *line != '\r' && *line != '\t')
+      {
+         return false;
+      }
+      line++;
+   }
+
+   return true;
+}
+
+static int
+YAMLlineParseIndent(const char *line, int *indent_out)
+{
+   int count  = 0;
+   int pos    = 0;
+   int indent = 0;
+
+   while (line[count] == ' ' || line[count] == '\t')
+   {
+      if (line[count] == ' ')
+      {
+         indent++;
+         pos++;
+      }
+      else
+      {
+         indent += (8 - (pos % 8));
+         pos += (8 - (pos % 8));
+      }
+      count++;
+   }
+
+   *indent_out = indent;
+   return count;
+}
+
+static bool
+YAMLtokenSetString(char **dst, const char *src)
+{
+   char *copy = strdup(src ? src : "");
+   if (!copy)
+   {
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate YAML token string");
+      return false;
+   }
+   *dst = copy;
+   return true;
+}
+
+static int
+YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
+{
+   char *line_ptr = NULL;
+   int   indent   = 0;
+   int   count    = 0;
+   char *content  = NULL;
+
+   if (!line || !token_out)
+   {
+      return 0;
+   }
+
+   memset(token_out, 0, sizeof(*token_out));
+
+   line[strcspn(line, "\n")] = '\0';
+   if ((line_ptr = strchr(line, '#')) != NULL)
+   {
+      *line_ptr = '\0';
+   }
+
+   if (YAMLlineIsBlank(line))
+   {
+      return 0;
+   }
+
+   count   = YAMLlineParseIndent(line, &indent);
+   content = line + count;
+   if (*content == '\0')
+   {
+      return 0;
+   }
+
+   token_out->indent = indent;
+   token_out->level  = (base_indent > 0) ? (indent / base_indent) : (indent / 2);
+
+   /* Sequence item */
+   if (content[0] == '-' && (content[1] == ' ' || content[1] == '\0'))
+   {
+      const char *inline_content  = NULL;
+      token_out->is_sequence_item = true;
+      token_out->divisor_is_ok    = true;
+
+      if (!YAMLtokenSetString(&token_out->key, "-") ||
+          !YAMLtokenSetString(&token_out->val, ""))
+      {
+         return -1;
+      }
+
+      if (content[1] != ' ' || strlen(content) <= 2)
+      {
+         return 1;
+      }
+
+      inline_content = content + 2;
+      while (*inline_content == ' ')
+      {
+         inline_content++;
+      }
+      if (*inline_content == '\0')
+      {
+         return 1;
+      }
+
+      if (!strchr(inline_content, ':'))
+      {
+         free(token_out->val);
+         token_out->val = NULL;
+         if (!YAMLtokenSetString(&token_out->val, inline_content))
+         {
+            return -1;
+         }
+         return 1;
+      }
+
+      {
+         char *inline_copy = strdup(inline_content);
+         char *inline_sep  = NULL;
+         char *inline_key  = NULL;
+         char *inline_val  = NULL;
+         if (!inline_copy)
+         {
+            ErrorCodeSet(ERROR_ALLOCATION);
+            ErrorMsgAdd("Failed to allocate YAML inline mapping copy");
+            return -1;
+         }
+
+         inline_sep = strchr(inline_copy, ':');
+         if (inline_sep)
+         {
+            *inline_sep = '\0';
+            inline_key  = inline_copy;
+            inline_val  = inline_sep + 1;
+            while (*inline_key == ' ')
+            {
+               inline_key++;
+            }
+            while (*inline_val == ' ')
+            {
+               inline_val++;
+            }
+
+            if (!YAMLtokenSetString(&token_out->inline_key, inline_key) ||
+                !YAMLtokenSetString(&token_out->inline_val, inline_val))
+            {
+               free(inline_copy);
+               return -1;
+            }
+         }
+         free(inline_copy);
+      }
+
+      return 1;
+   }
+
+   /* Key/value mapping or malformed line */
+   {
+      char *sep = strchr(content, ':');
+      char *key = content;
+      char *val = NULL;
+
+      if (sep)
+      {
+         *sep                     = '\0';
+         val                      = sep + 1;
+         token_out->divisor_is_ok = true;
+      }
+      else
+      {
+         val                      = content + strlen(content);
+         token_out->divisor_is_ok = false;
+      }
+
+      while (*key == ' ')
+      {
+         key++;
+      }
+      while (*val == ' ')
+      {
+         val++;
+      }
+
+      if (!YAMLtokenSetString(&token_out->key, key) ||
+          !YAMLtokenSetString(&token_out->val, val))
+      {
+         return -1;
+      }
+   }
+
+   return 1;
+}
+
+static bool
+YAMLtokenizeText(const char *text, int base_indent, YAMLtokenArray *tokens)
+{
+   char *text_copy = NULL;
    char *remaining = NULL;
-   char *line_ptr  = NULL;
-   char *sep       = NULL;
-   char *key = NULL, *val = NULL;
-   char *line  = NULL;
-   int   level = 0;
-   int   count = 0, pos = 0, indent = 0;
-   int   nlines           = 0;
-   int   next             = 0;
-   bool  divisor_is_ok    = false;
-   bool  is_sequence_item = false;
+   char *line      = NULL;
 
-   tree      = YAMLtreeCreate(base_indent);
-   remaining = text;
-   nlines    = 0;
-   parent    = tree->root;
+   if (!tokens)
+   {
+      return false;
+   }
+
+   text_copy = strdup(text ? text : "");
+   if (!text_copy)
+   {
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate YAML text copy for tokenization");
+      return false;
+   }
+
+   remaining = text_copy;
    while ((line = strtok_r(remaining, "\n", &remaining)))
    {
-      /* Increase line counter */
-      nlines++;
-
-      /* Remove trailing newline character */
-      line[strcspn(line, "\n")] = '\0';
-
-      /* Ignore empty lines and comments */
-      if (line[0] == '\0' || line[0] == '#')
+      YAMLtoken token;
+      int       status = YAMLtokenParseLine(line, base_indent, &token);
+      if (status < 0)
+      {
+         free(text_copy);
+         return false;
+      }
+      if (status == 0)
       {
          continue;
       }
-
-      /* Search for comment at the end of the line and remove it */
-      if ((line_ptr = strchr(line, '#')) != NULL)
+      if (!YAMLtokenArrayPush(tokens, &token))
       {
-         *line_ptr = '\0';
+         YAMLtokenDestroy(&token);
+         free(text_copy);
+         return false;
       }
+   }
 
-      /* Skip line if it contains blank spaces only */
-      line_ptr = line;
-      next     = 1;
-      while (*line_ptr)
-      {
-         if (*line_ptr != ' ' && *line_ptr != '\n' && *line_ptr != '\r')
-         {
-            next = 0;
-            break;
-         }
-         line_ptr++;
-      }
-      if (next)
-      {
-         continue;
-      }
+   free(text_copy);
+   return true;
+}
 
-      /* Compute indendation */
-      pos = count = indent = 0;
-      while (line[count] == ' ' || line[indent] == '\t')
-      {
-         if (line[count] == ' ')
-         {
-            indent++;
-            pos++;
-         }
-         else
-         {
-            indent += (8 - (pos % 8));
-            pos += (8 - (pos % 8));
-         }
-         count++;
-      }
+static void
+YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
+                        YAMLtree **tree_ptr)
+{
+   YAMLtree *tree   = YAMLtreeCreate(base_indent);
+   YAMLnode *parent = tree->root;
 
-      /* Calculate node level using base_indent */
-      if (base_indent > 0)
-      {
-         level = indent / base_indent;
-      }
-      else
-      {
-         level = indent / 2; /* Fallback for old behavior */
-      }
+   for (int i = 0; i < tokens->size; i++)
+   {
+      const YAMLtoken *token = &tokens->data[i];
+      YAMLnode        *node  = YAMLnodeCreate(token->key, token->val, token->level);
+      YAMLnode        *validation_node = node;
 
-      /* Check for sequence item marker (-) */
-      is_sequence_item        = false;
-      char *line_after_indent = line + indent;
-      if (line_after_indent[0] == '-' &&
-          (line_after_indent[1] == ' ' || line_after_indent[1] == '\0'))
-      {
-         is_sequence_item = true;
-         /* For sequence items, the key is "-". Value is either:
-          * - empty (sequence item is a mapping; parsed as children)
-          * - inline scalar (e.g., "- ex8-amg-1.yml") stored in val
-          */
-         key           = "-";
-         val           = "";
-         divisor_is_ok = true; /* Sequence items are valid even without colon */
-
-         /* Note: In YAML, "- key: value" on one line means the sequence item
-          * contains a mapping. However, our line-by-line parser will process
-          * the content after "- " as a separate line on the next iteration.
-          * The content should appear with indentation greater than the sequence
-          * item's indent level to become a child. For example:
-          *   - print_level: 1    <- sequence item at indent 4
-          *     coarsening:       <- child at indent 6
-          * The parser correctly handles this via YAMLnodeAppend based on levels.
-          */
-
-         if (line_after_indent[1] == ' ' && strlen(line_after_indent) > 2)
-         {
-            char *inline_content = line_after_indent + 2; /* Skip "- " */
-            while (*inline_content == ' ')
-            {
-               inline_content++;
-            }
-            if (*inline_content != '\0')
-            {
-               /* If there is no ':' then this is an inline scalar list item */
-               if (!strchr(inline_content, ':'))
-               {
-                  val = inline_content;
-               }
-            }
-         }
-      }
-      else
-      {
-         /* Check for divisor character */
-         divisor_is_ok = ((sep = strchr(line, ':')) != NULL);
-
-         /* Extract (key, val) pair */
-         if (divisor_is_ok)
-         {
-            *sep = '\0';
-            key  = line + indent;
-            val  = sep + 1;
-         }
-         else
-         {
-            key = line + indent;
-            val = line + strlen(line);
-         }
-
-         /* Trim leading spaces */
-         while (*key == ' ')
-         {
-            key++;
-         }
-         while (*val == ' ')
-         {
-            val++;
-         }
-      }
-
-      /* Create node entry */
-      node = YAMLnodeCreate(key, val, level);
-
-      /* Append entry to tree */
       YAMLnodeAppend(node, &parent);
 
-      /* Special handling for sequence items with inline content */
-      /* If we just created a sequence item ("-") and there's content after "- " on the
-       * same line, we need to parse it as a child. For example, "- print_level: 1" should
-       * create:
-       *   - sequence item node with key="-"
-       *     - child node with key="print_level", val="1"
-       */
-      if (is_sequence_item && line_after_indent[1] == ' ' &&
-          strlen(line_after_indent) > 2)
+      /* "- key: value" inline mapping under sequence item */
+      if (token->is_sequence_item && token->inline_key && token->inline_val)
       {
-         char *inline_content = line_after_indent + 2; /* Skip "- " */
-         while (*inline_content == ' ')
-         {
-            inline_content++; /* Skip any extra spaces */
-         }
-
-         if (*inline_content != '\0')
-         {
-            /* Parse the inline content as a key:value pair */
-            /* Make a copy to avoid modifying the original line */
-            char *inline_copy = strdup(inline_content);
-            char *inline_sep  = strchr(inline_copy, ':');
-            if (inline_sep)
-            {
-               *inline_sep      = '\0';
-               char *inline_key = inline_copy;
-               char *inline_val = inline_sep + 1;
-
-               /* Trim spaces */
-               while (*inline_key == ' ')
-               {
-                  inline_key++;
-               }
-               while (*inline_val == ' ')
-               {
-                  inline_val++;
-               }
-
-               /* Create child node for the inline content */
-               YAMLnode *inline_node = YAMLnodeCreate(inline_key, inline_val, level + 1);
-               YAMLnodeAddChild(node, inline_node);
-               /* Treat inline child as the most recent node so deeper indentation nests
-                * under it */
-               node   = inline_node;
-               parent = inline_node; /* update traversal cursor */
-            }
-            free(inline_copy);
-         }
+         YAMLnode *inline_node =
+            YAMLnodeCreate(token->inline_key, token->inline_val, token->level + 1);
+         YAMLnodeAddChild(node, inline_node);
+         parent          = inline_node;
+         validation_node = inline_node;
       }
 
-      /* Set error code if indentation is incorrect */
       if (base_indent > 0)
       {
-         if (indent % base_indent != 0)
+         if ((token->indent % base_indent) != 0)
          {
-            YAML_NODE_SET_INVALID_INDENT(node);
+            YAML_NODE_SET_INVALID_INDENT(validation_node);
          }
       }
-      else
+      else if ((token->indent % 2) != 0)
       {
-         if (indent % 2 != 0)
-         {
-            YAML_NODE_SET_INVALID_INDENT(node);
-         }
+         YAML_NODE_SET_INVALID_INDENT(validation_node);
       }
 
-      /* Set error code if divisor character is incorrect (skip for sequence items) */
-      if (!divisor_is_ok && !is_sequence_item)
+      if (!token->divisor_is_ok && !token->is_sequence_item)
       {
-         YAML_NODE_SET_INVALID_DIVISOR(node);
+         YAML_NODE_SET_INVALID_DIVISOR(validation_node);
       }
    }
 
    *tree_ptr = tree;
+}
+
+void
+YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
+{
+   YAMLtokenArray tokens;
+
+   memset(&tokens, 0, sizeof(tokens));
+   if (!YAMLtokenizeText(text, base_indent, &tokens))
+   {
+      YAMLtokenArrayDestroy(&tokens);
+      return;
+   }
+
+   YAMLtreeBuildFromTokens(base_indent, &tokens, tree_ptr);
+   YAMLtokenArrayDestroy(&tokens);
 }
 
 /*-----------------------------------------------------------------------------
