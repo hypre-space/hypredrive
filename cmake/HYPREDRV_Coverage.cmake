@@ -158,6 +158,8 @@ if(HYPREDRV_ENABLE_COVERAGE)
             --html-details coverage.html
             --print-summary
         )
+        # Restrict discovery to the active build tree.
+        list(APPEND _gcovr_args ${CMAKE_BINARY_DIR})
         if(GCOV_EXECUTABLE)
             list(APPEND _gcovr_args --gcov-executable ${GCOV_EXECUTABLE})
         endif()

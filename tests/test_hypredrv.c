@@ -9,6 +9,7 @@
 #include "args.h"
 #include "containers.h"
 #include "error.h"
+#include "linsys.h"
 #include "stats.h"
 #include "test_helpers.h"
 
@@ -300,10 +301,15 @@ test_create_parse_and_destroy(void)
 
    HYPRE_Complex *sol_data = NULL;
    HYPRE_Complex *rhs_data = NULL;
+   HYPRE_Complex *rhs_expected = NULL;
    ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &sol_data), ERROR_NONE);
    ASSERT_NOT_NULL(sol_data);
    ASSERT_EQ(HYPREDRV_LinearSystemGetRHSValues(obj, &rhs_data), ERROR_NONE);
    ASSERT_NOT_NULL(rhs_data);
+   LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
+   ASSERT_NOT_NULL(rhs_expected);
+   ASSERT_EQ(rhs_data, rhs_expected);
+   ASSERT_TRUE(rhs_data != sol_data);
 
    /* Ensure we have a dofmap to work with */
    if (!state->dofmap || state->dofmap->size == 0)

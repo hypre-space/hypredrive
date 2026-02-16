@@ -2147,6 +2147,7 @@ main(int argc, char *argv[])
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(hypredrv));
+         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetVectorTags(hypredrv));
 
          if (params.verbose & 0x4)
          {
