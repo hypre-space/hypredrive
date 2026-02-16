@@ -32,8 +32,11 @@
 #include <sys/sysctl.h>
 #else
 #include <dirent.h>
+#include <elf.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <link.h>
+#include <sys/stat.h>
 #include <sys/sysinfo.h>
 #endif
 
@@ -48,12 +51,26 @@
 #define HYPRE_MAX_GPU_BINDING 512
 
 #ifndef __APPLE__
+struct DynamicLibList;
+struct DependencyGraph;
+
 static int ReadLineFromFile(const char *path, char *buffer, size_t len);
 static int ReadIntFromFile(const char *path, int *value);
 static int ReadUllFromProcMeminfo(const char *field, unsigned long long *value);
 static int ExtractBracketedToken(const char *line, char *token, size_t len);
 static int CollectDynamicLibsCallback(struct dl_phdr_info *info, size_t size, void *data);
-static int PrintDynamicLibrariesTree(void);
+static void FreeDynamicLibList(struct DynamicLibList *list);
+static int  ReadElfNeededEntries(const char *path, char ***needed, int *needed_count);
+static const char *ResolveNeededPath(const struct DynamicLibList *loaded,
+                                     const char                  *needed);
+static int  FindOrAddDependencyNode(struct DependencyGraph *graph, const char *path);
+static int  LoadDependencyNode(struct DependencyGraph *graph, int node_index);
+static int  NodeIsInStack(const int *stack, int depth, int node_index);
+static void PrintDependencySubtree(struct DependencyGraph      *graph,
+                                   const struct DynamicLibList *loaded, int node_index,
+                                   const char *prefix, int *stack, int depth);
+static void FreeDependencyGraph(struct DependencyGraph *graph);
+static int  PrintDynamicLibrariesTree(void);
 static void PrintLinuxNumaInformation(double bytes_to_gib);
 static void PrintNetworkInformation(void);
 static void PrintAcceleratorRuntimeInformation(void);
@@ -129,6 +146,83 @@ struct DynamicLibList
    int    failed;
 };
 
+struct DependencyNode
+{
+   char  *path;
+   char **needed;
+   int    needed_count;
+   int    parsed;
+   int    parse_ok;
+};
+
+struct DependencyGraph
+{
+   struct DependencyNode *nodes;
+   int                    count;
+   int                    capacity;
+   int                    failed;
+};
+
+static const char *
+PathBasename(const char *path)
+{
+   if (!path)
+   {
+      return "";
+   }
+
+   const char *base = strrchr(path, '/');
+   return base ? base + 1 : path;
+}
+
+static int
+AppendUniqueString(char ***items, int *count, int *capacity, const char *value)
+{
+   if (!items || !count || !capacity || !value)
+   {
+      return 0;
+   }
+
+   for (int i = 0; i < *count; i++)
+   {
+      if (strcmp((*items)[i], value) == 0)
+      {
+         return 1;
+      }
+   }
+
+   if (*count == *capacity)
+   {
+      int    new_capacity = *capacity ? *capacity * 2 : 16;
+      char **new_items = (char **)realloc(*items, (size_t)new_capacity * sizeof(char *));
+      if (!new_items)
+      {
+         return 0;
+      }
+      *items    = new_items;
+      *capacity = new_capacity;
+   }
+
+   (*items)[*count] = strdup(value);
+   if (!(*items)[*count])
+   {
+      return 0;
+   }
+
+   (*count)++;
+   return 1;
+}
+
+static void
+FreeStringArray(char **items, int count)
+{
+   for (int i = 0; i < count; i++)
+   {
+      free(items[i]);
+   }
+   free(items);
+}
+
 static int
 CollectDynamicLibsCallback(struct dl_phdr_info *info, size_t size, void *data)
 {
@@ -144,76 +238,489 @@ CollectDynamicLibsCallback(struct dl_phdr_info *info, size_t size, void *data)
       return 0;
    }
 
-   for (int i = 0; i < list->count; i++)
-   {
-      if (strcmp(list->paths[i], info->dlpi_name) == 0)
-      {
-         return 0;
-      }
-   }
-
-   if (list->count == list->capacity)
-   {
-      int    new_capacity = list->capacity ? list->capacity * 2 : 32;
-      char **new_paths =
-         (char **)realloc(list->paths, (size_t)new_capacity * sizeof(char *));
-      if (!new_paths)
-      {
-         list->failed = 1;
-         return 0;
-      }
-      list->paths    = new_paths;
-      list->capacity = new_capacity;
-   }
-
-   list->paths[list->count] = strdup(info->dlpi_name);
-   if (!list->paths[list->count])
+   if (!AppendUniqueString(&list->paths, &list->count, &list->capacity, info->dlpi_name))
    {
       list->failed = 1;
+   }
+
+   return 0;
+}
+
+static void
+FreeDynamicLibList(struct DynamicLibList *list)
+{
+   if (!list)
+   {
+      return;
+   }
+
+   FreeStringArray(list->paths, list->count);
+   list->paths    = NULL;
+   list->count    = 0;
+   list->capacity = 0;
+   list->failed   = 0;
+}
+
+static int
+RangeInBuffer(size_t offset, size_t length, size_t total)
+{
+   return offset <= total && length <= total - offset;
+}
+
+static int
+ReadFileBytes(const char *path, unsigned char **data, size_t *size)
+{
+   if (!path || !data || !size)
+   {
       return 0;
    }
 
-   list->count++;
+   int fd = open(path, O_RDONLY);
+   if (fd < 0)
+   {
+      return 0;
+   }
+
+   struct stat st;
+   if (fstat(fd, &st) != 0 || st.st_size <= 0)
+   {
+      close(fd);
+      return 0;
+   }
+
+   size_t         fsize = (size_t)st.st_size;
+   unsigned char *buf   = (unsigned char *)malloc(fsize);
+   if (!buf)
+   {
+      close(fd);
+      return 0;
+   }
+
+   size_t total = 0;
+   while (total < fsize)
+   {
+      ssize_t nread = read(fd, buf + total, fsize - total);
+      if (nread <= 0)
+      {
+         free(buf);
+         close(fd);
+         return 0;
+      }
+      total += (size_t)nread;
+   }
+
+   close(fd);
+   *data = buf;
+   *size = fsize;
+   return 1;
+}
+
+static int
+ReadElfNeededEntries(const char *path, char ***needed, int *needed_count)
+{
+   if (!needed || !needed_count)
+   {
+      return 0;
+   }
+
+   *needed       = NULL;
+   *needed_count = 0;
+
+   unsigned char *file = NULL;
+   size_t         size = 0;
+   if (!ReadFileBytes(path, &file, &size))
+   {
+      return 0;
+   }
+
+   char **entries  = NULL;
+   int    count    = 0;
+   int    capacity = 0;
+   int    ok       = 0;
+
+   if (size < EI_NIDENT || memcmp(file, ELFMAG, SELFMAG) != 0)
+   {
+      goto cleanup;
+   }
+
+   if (file[EI_CLASS] == ELFCLASS64)
+   {
+      if (size < sizeof(Elf64_Ehdr))
+      {
+         goto cleanup;
+      }
+
+      const Elf64_Ehdr *ehdr = (const Elf64_Ehdr *)file;
+      if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0 ||
+          ehdr->e_shentsize < sizeof(Elf64_Shdr))
+      {
+         goto cleanup;
+      }
+
+      size_t shoff  = (size_t)ehdr->e_shoff;
+      size_t shtlen = (size_t)ehdr->e_shnum * (size_t)ehdr->e_shentsize;
+      if (!RangeInBuffer(shoff, shtlen, size))
+      {
+         goto cleanup;
+      }
+
+      const unsigned char *shbase = file + shoff;
+      for (int i = 0; i < (int)ehdr->e_shnum; i++)
+      {
+         const Elf64_Shdr *sh =
+            (const Elf64_Shdr *)(shbase + (size_t)i * (size_t)ehdr->e_shentsize);
+         if (sh->sh_type != SHT_DYNAMIC)
+         {
+            continue;
+         }
+
+         if (!RangeInBuffer((size_t)sh->sh_offset, (size_t)sh->sh_size, size))
+         {
+            continue;
+         }
+         if (sh->sh_link >= ehdr->e_shnum)
+         {
+            continue;
+         }
+
+         const Elf64_Shdr *str_sh =
+            (const Elf64_Shdr *)(shbase +
+                                 (size_t)sh->sh_link * (size_t)ehdr->e_shentsize);
+         if (!RangeInBuffer((size_t)str_sh->sh_offset, (size_t)str_sh->sh_size, size))
+         {
+            continue;
+         }
+
+         size_t dyn_entsize = sh->sh_entsize ? (size_t)sh->sh_entsize : sizeof(Elf64_Dyn);
+         if (dyn_entsize < sizeof(Elf64_Dyn))
+         {
+            continue;
+         }
+
+         const unsigned char *dyn_base = file + (size_t)sh->sh_offset;
+         const char          *dynstr   = (const char *)(file + (size_t)str_sh->sh_offset);
+         size_t               dyn_count = (size_t)sh->sh_size / dyn_entsize;
+         size_t               dynstr_sz = (size_t)str_sh->sh_size;
+
+         for (size_t j = 0; j < dyn_count; j++)
+         {
+            const Elf64_Dyn *dyn = (const Elf64_Dyn *)(dyn_base + j * dyn_entsize);
+            if (dyn->d_tag != DT_NEEDED)
+            {
+               continue;
+            }
+            size_t off = (size_t)dyn->d_un.d_val;
+            if (off >= dynstr_sz)
+            {
+               continue;
+            }
+            if (!AppendUniqueString(&entries, &count, &capacity, dynstr + off))
+            {
+               goto cleanup;
+            }
+         }
+      }
+   }
+   else if (file[EI_CLASS] == ELFCLASS32)
+   {
+      if (size < sizeof(Elf32_Ehdr))
+      {
+         goto cleanup;
+      }
+
+      const Elf32_Ehdr *ehdr = (const Elf32_Ehdr *)file;
+      if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0 ||
+          ehdr->e_shentsize < sizeof(Elf32_Shdr))
+      {
+         goto cleanup;
+      }
+
+      size_t shoff  = (size_t)ehdr->e_shoff;
+      size_t shtlen = (size_t)ehdr->e_shnum * (size_t)ehdr->e_shentsize;
+      if (!RangeInBuffer(shoff, shtlen, size))
+      {
+         goto cleanup;
+      }
+
+      const unsigned char *shbase = file + shoff;
+      for (int i = 0; i < (int)ehdr->e_shnum; i++)
+      {
+         const Elf32_Shdr *sh =
+            (const Elf32_Shdr *)(shbase + (size_t)i * (size_t)ehdr->e_shentsize);
+         if (sh->sh_type != SHT_DYNAMIC)
+         {
+            continue;
+         }
+
+         if (!RangeInBuffer((size_t)sh->sh_offset, (size_t)sh->sh_size, size))
+         {
+            continue;
+         }
+         if (sh->sh_link >= ehdr->e_shnum)
+         {
+            continue;
+         }
+
+         const Elf32_Shdr *str_sh =
+            (const Elf32_Shdr *)(shbase +
+                                 (size_t)sh->sh_link * (size_t)ehdr->e_shentsize);
+         if (!RangeInBuffer((size_t)str_sh->sh_offset, (size_t)str_sh->sh_size, size))
+         {
+            continue;
+         }
+
+         size_t dyn_entsize = sh->sh_entsize ? (size_t)sh->sh_entsize : sizeof(Elf32_Dyn);
+         if (dyn_entsize < sizeof(Elf32_Dyn))
+         {
+            continue;
+         }
+
+         const unsigned char *dyn_base = file + (size_t)sh->sh_offset;
+         const char          *dynstr   = (const char *)(file + (size_t)str_sh->sh_offset);
+         size_t               dyn_count = (size_t)sh->sh_size / dyn_entsize;
+         size_t               dynstr_sz = (size_t)str_sh->sh_size;
+
+         for (size_t j = 0; j < dyn_count; j++)
+         {
+            const Elf32_Dyn *dyn = (const Elf32_Dyn *)(dyn_base + j * dyn_entsize);
+            if (dyn->d_tag != DT_NEEDED)
+            {
+               continue;
+            }
+            size_t off = (size_t)dyn->d_un.d_val;
+            if (off >= dynstr_sz)
+            {
+               continue;
+            }
+            if (!AppendUniqueString(&entries, &count, &capacity, dynstr + off))
+            {
+               goto cleanup;
+            }
+         }
+      }
+   }
+   else
+   {
+      goto cleanup;
+   }
+
+   *needed       = entries;
+   *needed_count = count;
+   entries       = NULL;
+   count         = 0;
+   ok            = 1;
+
+cleanup:
+   free(file);
+   FreeStringArray(entries, count);
+   return ok;
+}
+
+static const char *
+ResolveNeededPath(const struct DynamicLibList *loaded, const char *needed)
+{
+   if (!loaded || !needed || !needed[0])
+   {
+      return NULL;
+   }
+
+   if (strchr(needed, '/'))
+   {
+      return access(needed, R_OK) == 0 ? needed : NULL;
+   }
+
+   for (int i = 0; i < loaded->count; i++)
+   {
+      if (strcmp(PathBasename(loaded->paths[i]), needed) == 0)
+      {
+         return loaded->paths[i];
+      }
+   }
+
+   return NULL;
+}
+
+static int
+FindOrAddDependencyNode(struct DependencyGraph *graph, const char *path)
+{
+   if (!graph || !path || !path[0])
+   {
+      return -1;
+   }
+
+   for (int i = 0; i < graph->count; i++)
+   {
+      if (strcmp(graph->nodes[i].path, path) == 0)
+      {
+         return i;
+      }
+   }
+
+   if (graph->count == graph->capacity)
+   {
+      int                    new_capacity = graph->capacity ? graph->capacity * 2 : 16;
+      struct DependencyNode *new_nodes    = (struct DependencyNode *)realloc(
+         graph->nodes, (size_t)new_capacity * sizeof(struct DependencyNode));
+      if (!new_nodes)
+      {
+         graph->failed = 1;
+         return -1;
+      }
+      graph->nodes    = new_nodes;
+      graph->capacity = new_capacity;
+   }
+
+   struct DependencyNode *node = &graph->nodes[graph->count];
+   memset(node, 0, sizeof(*node));
+   node->path = strdup(path);
+   if (!node->path)
+   {
+      graph->failed = 1;
+      return -1;
+   }
+
+   graph->count++;
+   return graph->count - 1;
+}
+
+static int
+LoadDependencyNode(struct DependencyGraph *graph, int node_index)
+{
+   if (!graph || node_index < 0 || node_index >= graph->count)
+   {
+      return 0;
+   }
+
+   struct DependencyNode *node = &graph->nodes[node_index];
+   if (node->parsed)
+   {
+      return node->parse_ok;
+   }
+
+   node->parsed   = 1;
+   node->parse_ok = ReadElfNeededEntries(node->path, &node->needed, &node->needed_count);
+   return node->parse_ok;
+}
+
+static int
+NodeIsInStack(const int *stack, int depth, int node_index)
+{
+   for (int i = 0; i < depth; i++)
+   {
+      if (stack[i] == node_index)
+      {
+         return 1;
+      }
+   }
    return 0;
+}
+
+static void
+PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibList *loaded,
+                       int node_index, const char *prefix, int *stack, int depth)
+{
+   if (!graph || !loaded || !prefix || !stack || depth <= 0 || depth >= 256)
+   {
+      return;
+   }
+
+   if (!LoadDependencyNode(graph, node_index))
+   {
+      return;
+   }
+
+   struct DependencyNode *node = &graph->nodes[node_index];
+   for (int i = 0; i < node->needed_count; i++)
+   {
+      const char *needed   = node->needed[i];
+      const char *resolved = ResolveNeededPath(loaded, needed);
+      int         is_last  = (i + 1 == node->needed_count);
+
+      if (resolved)
+      {
+         printf("%s%s %s\n", prefix, is_last ? "`--" : "|--", resolved);
+      }
+      else
+      {
+         printf("%s%s %s [unresolved]\n", prefix, is_last ? "`--" : "|--", needed);
+         continue;
+      }
+
+      int child_index = FindOrAddDependencyNode(graph, resolved);
+      if (child_index < 0 || NodeIsInStack(stack, depth, child_index))
+      {
+         continue;
+      }
+
+      char next_prefix[4096];
+      int  written = snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix,
+                             is_last ? "    " : "|   ");
+      if (written < 0 || (size_t)written >= sizeof(next_prefix))
+      {
+         continue;
+      }
+
+      stack[depth] = child_index;
+      PrintDependencySubtree(graph, loaded, child_index, next_prefix, stack, depth + 1);
+   }
+}
+
+static void
+FreeDependencyGraph(struct DependencyGraph *graph)
+{
+   if (!graph)
+   {
+      return;
+   }
+
+   for (int i = 0; i < graph->count; i++)
+   {
+      struct DependencyNode *node = &graph->nodes[i];
+      free(node->path);
+      FreeStringArray(node->needed, node->needed_count);
+   }
+   free(graph->nodes);
+   graph->nodes    = NULL;
+   graph->count    = 0;
+   graph->capacity = 0;
+   graph->failed   = 0;
 }
 
 static int
 PrintDynamicLibrariesTree(void)
 {
-   struct DynamicLibList list = {0};
-
-   dl_iterate_phdr(CollectDynamicLibsCallback, &list);
-   if (list.failed)
+   struct DynamicLibList loaded = {0};
+   dl_iterate_phdr(CollectDynamicLibsCallback, &loaded);
+   if (loaded.failed)
    {
-      for (int i = 0; i < list.count; i++)
-      {
-         free(list.paths[i]);
-      }
-      free(list.paths);
-      return 0;
-   }
-
-   if (list.count == 0)
-   {
-      free(list.paths);
+      FreeDynamicLibList(&loaded);
       return 0;
    }
 
    char    exe[PATH_MAX] = "<main executable>";
    ssize_t nread         = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
-   if (nread > 0)
+   if (nread <= 0)
    {
-      exe[nread] = '\0';
+      FreeDynamicLibList(&loaded);
+      return 0;
+   }
+   exe[nread] = '\0';
+
+   struct DependencyGraph graph = {0};
+   int                    root  = FindOrAddDependencyNode(&graph, exe);
+   if (root < 0 || !LoadDependencyNode(&graph, root))
+   {
+      FreeDependencyGraph(&graph);
+      FreeDynamicLibList(&loaded);
+      return 0;
    }
 
    printf("%s\n", exe);
-   for (int i = 0; i < list.count; i++)
-   {
-      printf("%s %s\n", i + 1 < list.count ? "|--" : "`--", list.paths[i]);
-      free(list.paths[i]);
-   }
+   int stack[256] = {root};
+   PrintDependencySubtree(&graph, &loaded, root, "", stack, 1);
 
-   free(list.paths);
+   FreeDependencyGraph(&graph);
+   FreeDynamicLibList(&loaded);
    return 1;
 }
 
