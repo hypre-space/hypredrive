@@ -285,40 +285,58 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
         # XML output file
         set(CPPCHECK_XML_OUTPUT ${CMAKE_BINARY_DIR}/cppcheck-report.xml)
         set(CPPCHECK_HTML_DIR ${CMAKE_BINARY_DIR}/cppcheck-html)
-        set(CPPCHECK_CHECKERS_REPORT ${CMAKE_BINARY_DIR}/cppcheck-checkers.txt)
-
-        # Get HYPRE include directories
-        # First try the target property (works for pre-installed HYPRE)
-        get_target_property(HYPRE_INCLUDE_DIRS HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+        # Build a robust include path set for cppcheck.
         set(CPPCHECK_HYPRE_INCLUDES "")
-        if(HYPRE_INCLUDE_DIRS)
-            foreach(INCDIR ${HYPRE_INCLUDE_DIRS})
-                # Skip generator expressions (start with $<) - they can't be used with cppcheck
-                if(NOT INCDIR MATCHES "^\\$<")
-                    list(APPEND CPPCHECK_HYPRE_INCLUDES "-I${INCDIR}")
-                endif()
-            endforeach()
-        endif()
+        set(_cppcheck_hypre_include_candidates
+            "${CMAKE_INSTALL_PREFIX}/include"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/utilities"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/struct_mv"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/struct_ls"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/sstruct_mv"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/sstruct_ls"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/multivector"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/krylov"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/parcsr_mv"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/parcsr_ls"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/seq_mv"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/seq_block_mv"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/parcsr_block_mv"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/IJ_mv"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/matrix_matrix"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/distributed_matrix"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/distributed_ls"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/blas"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/lapack"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-build"
+        )
 
-        # If no includes found (FetchContent case), try to find HYPRE source directories
-        if(NOT CPPCHECK_HYPRE_INCLUDES)
-            # Check for FetchContent source directory
-            if(EXISTS "${CMAKE_BINARY_DIR}/_deps/hypre-src/src")
-                set(_hypre_src "${CMAKE_BINARY_DIR}/_deps/hypre-src/src")
-                # Add main src directory (for HYPRE.h)
-                list(APPEND CPPCHECK_HYPRE_INCLUDES "-I${_hypre_src}")
-                # Add all HYPRE subdirectories that contain headers
-                foreach(_subdir utilities parcsr_mv parcsr_ls seq_mv IJ_mv krylov struct_mv sstruct_mv distributed_matrix distributed_ls multivector)
-                    if(EXISTS "${_hypre_src}/${_subdir}")
-                        list(APPEND CPPCHECK_HYPRE_INCLUDES "-I${_hypre_src}/${_subdir}")
-                    endif()
-                endforeach()
-                # Add build directory for HYPRE_config.h (it's at the root of hypre-build, not in src)
-                if(EXISTS "${CMAKE_BINARY_DIR}/_deps/hypre-build")
-                    list(APPEND CPPCHECK_HYPRE_INCLUDES "-I${CMAKE_BINARY_DIR}/_deps/hypre-build")
-                endif()
+        # Include dirs from imported target (if available).
+        if(TARGET HYPRE::HYPRE)
+            get_target_property(_hypre_target_includes HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+            if(_hypre_target_includes)
+                list(APPEND _cppcheck_hypre_include_candidates ${_hypre_target_includes})
             endif()
         endif()
+
+        # Include dirs from find_package variables.
+        if(HYPRE_INCLUDE_DIRS)
+            list(APPEND _cppcheck_hypre_include_candidates ${HYPRE_INCLUDE_DIRS})
+        endif()
+        if(MPI_C_INCLUDE_DIRS)
+            list(APPEND _cppcheck_hypre_include_candidates ${MPI_C_INCLUDE_DIRS})
+        endif()
+        if(OpenMP_C_INCLUDE_DIRS)
+            list(APPEND _cppcheck_hypre_include_candidates ${OpenMP_C_INCLUDE_DIRS})
+        endif()
+
+        foreach(INCDIR IN LISTS _cppcheck_hypre_include_candidates)
+            if(INCDIR AND NOT INCDIR MATCHES "^\\$<")
+                list(APPEND CPPCHECK_HYPRE_INCLUDES "-I${INCDIR}")
+            endif()
+        endforeach()
+
+        list(REMOVE_DUPLICATES CPPCHECK_HYPRE_INCLUDES)
 
         # Determine parallelism for cppcheck
         if(CMAKE_BUILD_PARALLEL_LEVEL)
@@ -333,22 +351,41 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
             endif()
         endif()
 
-        # Create suppressions file for HYPRE_MIXED_PRECISION headers (conditional includes)
-        # These headers are only included when HYPRE_MIXED_PRECISION is defined
-        # Also suppress all warnings from specific HYPRE header files
-        # Format: [error id]:[filename]:[line] (use * for wildcards)
+        # Create suppressions file for known false positives in external headers.
+        # Format: [error id]:[filename]
         set(CPPCHECK_SUPPRESSIONS_FILE ${CMAKE_BINARY_DIR}/cppcheck-suppressions.txt)
         file(WRITE ${CPPCHECK_SUPPRESSIONS_FILE}
-            "missingInclude:*HYPRE*.h\n"
-            "missingInclude:*_hypre*.h\n"
-            "*:*_hypre_IJ_mv.h\n"
-            "*:*_hypre_utilities.h\n"
-            "unreachableCode:src/error.c:*\n"
+            "unreachableCode:src/error.c\n"
+            "*:*HYPRE*.h\n"
+            "*:*_hypre*.h\n"
+            "*:*/hypre*/include/*\n"
+            "constParameterPointer:*_hypre_utilities.h\n"
+            "constVariablePointer:*_hypre_utilities.h\n"
+            "missingInclude:*_hypre_utilities.h\n"
         )
 
         # Simple cppcheck target - analyze only src/ directory
         # Runs cppcheck, generates HTML report, then fails if errors were found
         find_program(CPPCHECK_HTMLREPORT_EXECUTABLE NAMES cppcheck-htmlreport)
+
+        # Fast defaults keep cppcheck practical for local iteration.
+        # Turn this OFF when you need a deep, slower scan.
+        option(HYPREDRV_CPPCHECK_DEEP "Run exhaustive cppcheck analysis" OFF)
+
+        set(_cppcheck_depth_flags "")
+        if(HYPREDRV_CPPCHECK_DEEP)
+            list(APPEND _cppcheck_depth_flags
+                --inconclusive
+                --force
+                --check-level=exhaustive
+            )
+            message(STATUS "cppcheck depth: deep (exhaustive)")
+        else()
+            list(APPEND _cppcheck_depth_flags
+                --check-level=normal
+            )
+            message(STATUS "cppcheck depth: fast (normal)")
+        endif()
 
         # Build the command list - always generate XML first
         set(_cppcheck_commands
@@ -357,18 +394,24 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
                 --std=c99
                 --suppress=unusedFunction
                 --suppress=missingIncludeSystem
+                --suppress=checkersReport
+                --suppress=toomanyconfigs
+                --suppress=unmatchedSuppression
                 --suppressions-list=${CPPCHECK_SUPPRESSIONS_FILE}
                 --inline-suppr
-                --inconclusive
-                --force
-                --check-level=exhaustive
+                ${_cppcheck_depth_flags}
+                -UPETSC_AVAILABLE
+                -UISIS_AVAILABLE
+                -UHYPRE_USING_OPENMP
+                -UHYPRE_USING_UMPIRE
                 --xml
                 --xml-version=2
-                --checkers-report=${CPPCHECK_CHECKERS_REPORT}
                 -I${CMAKE_SOURCE_DIR}/include
                 -I${CMAKE_BINARY_DIR}
                 ${CPPCHECK_JOBS_FLAG}
                 ${CPPCHECK_HYPRE_INCLUDES}
+                -i${CMAKE_INSTALL_PREFIX}/include
+                -i${CMAKE_BINARY_DIR}/_deps/hypre-src/src
                 -i${CMAKE_SOURCE_DIR}/src/info.c
                 ${CMAKE_SOURCE_DIR}/src
                 2> ${CPPCHECK_XML_OUTPUT}

@@ -68,75 +68,50 @@ function(add_unit_test test_name target_name)
     endif()
 endfunction()
 
-# Test utilities functions
-setup_test_executable(test_utils test_utils.c)
-add_unit_test(unit_test_utils test_utils)
+function(register_unit_test_case target_name source_file)
+    cmake_parse_arguments(UNIT_CASE "RUN_SERIAL" "" "" ${ARGN})
 
-# Test container functions
-setup_test_executable(test_containers test_containers.c)
-add_unit_test(unit_test_containers test_containers)
+    setup_test_executable(${target_name} ${source_file})
 
-# Test YAML parsing functions
-setup_test_executable(test_yaml test_yaml.c)
-add_unit_test(unit_test_yaml test_yaml)
+    string(REGEX REPLACE "^test_" "" _unit_suffix "${target_name}")
+    set(_unit_test_name "unit_test_${_unit_suffix}")
+    add_unit_test(${_unit_test_name} ${target_name})
 
-# Test error handling functions
-setup_test_executable(test_error test_error.c)
-add_unit_test(unit_test_error test_error)
+    if(UNIT_CASE_RUN_SERIAL)
+        set_tests_properties(${_unit_test_name} PROPERTIES RUN_SERIAL TRUE)
+    endif()
+endfunction()
 
-# Field parsing helpers
-setup_test_executable(test_field test_field.c)
-add_unit_test(unit_test_field test_field)
+# Table-driven unit-test registration:
+#   target|source|run_serial
+set(_hypredrv_unit_test_cases
+    "test_utils|test_utils.c|FALSE"
+    "test_containers|test_containers.c|FALSE"
+    "test_yaml|test_yaml.c|FALSE"
+    "test_error|test_error.c|FALSE"
+    "test_field|test_field.c|FALSE"
+    "test_args|test_args.c|FALSE"
+    "test_precon|test_precon.c|TRUE"
+    "test_parser|test_parser.c|TRUE"
+    "test_mgr_nested_yaml|test_mgr_nested_yaml.c|TRUE"
+    "test_solver|test_solver.c|TRUE"
+    "test_hypredrv|test_hypredrv.c|TRUE"
+    "test_matrix|test_matrix.c|TRUE"
+    "test_vector|test_vector.c|TRUE"
+    "test_eigspec|test_eigspec.c|FALSE"
+    "test_linsys|test_linsys.c|TRUE"
+    "test_stats|test_stats.c|TRUE"
+)
 
-# Argument parsing and YAML validation tests
-setup_test_executable(test_args test_args.c)
-add_unit_test(unit_test_args test_args)
+foreach(_case IN LISTS _hypredrv_unit_test_cases)
+    string(REPLACE "|" ";" _parts "${_case}")
+    list(GET _parts 0 _target)
+    list(GET _parts 1 _source)
+    list(GET _parts 2 _run_serial)
 
-# Preconditioner configuration helpers (includes AMG argument tests)
-setup_test_executable(test_precon test_precon.c)
-add_unit_test(unit_test_precon test_precon)
-set_tests_properties(unit_test_precon PROPERTIES RUN_SERIAL TRUE)
-
-# Parser coverage tests
-setup_test_executable(test_parser test_parser.c)
-add_unit_test(unit_test_parser test_parser)
-set_tests_properties(unit_test_parser PROPERTIES RUN_SERIAL TRUE)
-
-# Nested MGR YAML regression
-setup_test_executable(test_mgr_nested_yaml test_mgr_nested_yaml.c)
-add_unit_test(unit_test_mgr_nested_yaml test_mgr_nested_yaml)
-set_tests_properties(unit_test_mgr_nested_yaml PROPERTIES RUN_SERIAL TRUE)
-
-# Solver argument helpers, dispatch, and integration tests (all merged)
-setup_test_executable(test_solver test_solver.c)
-add_unit_test(unit_test_solver test_solver)
-set_tests_properties(unit_test_solver PROPERTIES RUN_SERIAL TRUE)
-
-# HYPREDRV API smoke tests
-setup_test_executable(test_hypredrv test_hypredrv.c)
-add_unit_test(unit_test_hypredrv test_hypredrv)
-set_tests_properties(unit_test_hypredrv PROPERTIES RUN_SERIAL TRUE)
-
-# Matrix IO helpers
-setup_test_executable(test_matrix test_matrix.c)
-add_unit_test(unit_test_matrix test_matrix)
-set_tests_properties(unit_test_matrix PROPERTIES RUN_SERIAL TRUE)
-
-# Vector IO and MPI-aware containers utilities
-setup_test_executable(test_vector test_vector.c)
-add_unit_test(unit_test_vector test_vector)
-set_tests_properties(unit_test_vector PROPERTIES RUN_SERIAL TRUE)
-
-# EigSpec configuration helpers
-setup_test_executable(test_eigspec test_eigspec.c)
-add_unit_test(unit_test_eigspec test_eigspec)
-
-# Linear system helpers
-setup_test_executable(test_linsys test_linsys.c)
-add_unit_test(unit_test_linsys test_linsys)
-set_tests_properties(unit_test_linsys PROPERTIES RUN_SERIAL TRUE)
-
-# Stats helpers
-setup_test_executable(test_stats test_stats.c)
-add_unit_test(unit_test_stats test_stats)
-set_tests_properties(unit_test_stats PROPERTIES RUN_SERIAL TRUE)
+    if(_run_serial STREQUAL "TRUE")
+        register_unit_test_case(${_target} ${_source} RUN_SERIAL)
+    else()
+        register_unit_test_case(${_target} ${_source})
+    endif()
+endforeach()

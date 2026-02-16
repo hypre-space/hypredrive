@@ -107,7 +107,7 @@ void YAMLtextRead(const char *, const char *, int, int *, size_t *, char **);
 
 YAMLtree *YAMLtreeCreate(int);
 void      YAMLtreeDestroy(YAMLtree **);
-void      YAMLtreeBuild(int, char *, YAMLtree **);
+void      YAMLtreeBuild(int, const char *, YAMLtree **);
 void      YAMLtreeUpdate(int, char **, YAMLtree *);
 void      YAMLtreePrint(YAMLtree *, YAMLprintMode);
 void      YAMLtreeValidate(YAMLtree *);

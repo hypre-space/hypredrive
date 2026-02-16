@@ -811,7 +811,7 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
 }
 
 void
-YAMLtreeBuild(int base_indent, char *text, YAMLtree **tree_ptr)
+YAMLtreeBuild(int base_indent, const char *text, YAMLtree **tree_ptr)
 {
    YAMLtokenArray tokens;
 

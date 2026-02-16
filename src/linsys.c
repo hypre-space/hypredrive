@@ -371,7 +371,7 @@ LinearSystemIJVectorMigrate(const LS_args *args, HYPRE_IJVector vec)
 }
 
 static int
-LinearSystemIJMatrixReadFromFile(MPI_Comm comm, LS_args *args,
+LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
                                  const char *matrix_filename, HYPRE_IJMatrix *matrix_ptr)
 {
    int                  file_not_found  = 0;
@@ -443,7 +443,7 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemReadMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix *matrix_ptr)
+LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix *matrix_ptr)
 {
    StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "matrix");
 
@@ -797,7 +797,7 @@ LinearSystemRHSReadFromFile(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
 }
 
 void
-LinearSystemSetRHS(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
+LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
                    HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr)
 {
    int ls_id = StatsGetLinearSystemID() + 1;
@@ -924,7 +924,8 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetReferenceSolution(MPI_Comm comm, LS_args *args, HYPRE_IJVector *xref_ptr)
+LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
+                                 HYPRE_IJVector *xref_ptr)
 {
    char xref_filename[MAX_FILENAME_LENGTH] = {0};
    int  ls_id                              = StatsGetLinearSystemID() + 1;
