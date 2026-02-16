@@ -48,10 +48,12 @@
 #define HYPRE_MAX_GPU_BINDING 512
 
 #ifndef __APPLE__
-static int  ReadLineFromFile(const char *path, char *buffer, size_t len);
-static int  ReadIntFromFile(const char *path, int *value);
-static int  ReadUllFromProcMeminfo(const char *field, unsigned long long *value);
-static int  ExtractBracketedToken(const char *line, char *token, size_t len);
+static int ReadLineFromFile(const char *path, char *buffer, size_t len);
+static int ReadIntFromFile(const char *path, int *value);
+static int ReadUllFromProcMeminfo(const char *field, unsigned long long *value);
+static int ExtractBracketedToken(const char *line, char *token, size_t len);
+static int CollectDynamicLibsCallback(struct dl_phdr_info *info, size_t size, void *data);
+static int PrintDynamicLibrariesTree(void);
 static void PrintLinuxNumaInformation(double bytes_to_gib);
 static void PrintNetworkInformation(void);
 static void PrintAcceleratorRuntimeInformation(void);
@@ -117,6 +119,102 @@ dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
       printf("   %s => %s (0x%lx)\n", filename, info->dlpi_name, info->dlpi_addr);
    }
    return 0;
+}
+
+struct DynamicLibList
+{
+   char **paths;
+   int    count;
+   int    capacity;
+   int    failed;
+};
+
+static int
+CollectDynamicLibsCallback(struct dl_phdr_info *info, size_t size, void *data)
+{
+   (void)size;
+   if (!data)
+   {
+      return 0;
+   }
+
+   struct DynamicLibList *list = (struct DynamicLibList *)data;
+   if (list->failed || !info->dlpi_name || !info->dlpi_name[0])
+   {
+      return 0;
+   }
+
+   for (int i = 0; i < list->count; i++)
+   {
+      if (strcmp(list->paths[i], info->dlpi_name) == 0)
+      {
+         return 0;
+      }
+   }
+
+   if (list->count == list->capacity)
+   {
+      int    new_capacity = list->capacity ? list->capacity * 2 : 32;
+      char **new_paths =
+         (char **)realloc(list->paths, (size_t)new_capacity * sizeof(char *));
+      if (!new_paths)
+      {
+         list->failed = 1;
+         return 0;
+      }
+      list->paths    = new_paths;
+      list->capacity = new_capacity;
+   }
+
+   list->paths[list->count] = strdup(info->dlpi_name);
+   if (!list->paths[list->count])
+   {
+      list->failed = 1;
+      return 0;
+   }
+
+   list->count++;
+   return 0;
+}
+
+static int
+PrintDynamicLibrariesTree(void)
+{
+   struct DynamicLibList list = {0};
+
+   dl_iterate_phdr(CollectDynamicLibsCallback, &list);
+   if (list.failed)
+   {
+      for (int i = 0; i < list.count; i++)
+      {
+         free(list.paths[i]);
+      }
+      free(list.paths);
+      return 0;
+   }
+
+   if (list.count == 0)
+   {
+      free(list.paths);
+      return 0;
+   }
+
+   char    exe[PATH_MAX] = "<main executable>";
+   ssize_t nread         = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+   if (nread > 0)
+   {
+      exe[nread] = '\0';
+   }
+
+   printf("%s\n", exe);
+   for (int i = 0; i < list.count; i++)
+   {
+      printf("%s %s\n", i + 1 < list.count ? "|--" : "`--", list.paths[i]);
+      free(list.paths[i]);
+   }
+
+   free(list.paths);
+   return 1;
 }
 
 #endif
@@ -715,7 +813,10 @@ PrintSystemInfoLegacy(MPI_Comm comm)
          printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
       }
 #else
-      dl_iterate_phdr(dlpi_callback, NULL);
+      if (!PrintDynamicLibrariesTree())
+      {
+         dl_iterate_phdr(dlpi_callback, NULL);
+      }
 #endif
 
       PrintMpiRuntimeInformation(comm);
@@ -2096,7 +2197,10 @@ PrintDynamicLibraries(void)
       printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
    }
 #else
-   dl_iterate_phdr(dlpi_callback, NULL);
+   if (!PrintDynamicLibrariesTree())
+   {
+      dl_iterate_phdr(dlpi_callback, NULL);
+   }
 #endif
    printf("\n");
 }
