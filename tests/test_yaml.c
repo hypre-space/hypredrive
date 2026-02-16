@@ -129,7 +129,7 @@ test_YAMLtreeBuild_simple(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   /* YAMLtreeBuild creates its own tree and modifies text in place */
+   /* YAMLtreeBuild creates a tree from the input YAML text */
    YAMLtreeBuild(0, text, &tree);
 
    ASSERT_NOT_NULL(tree);
@@ -148,6 +148,31 @@ test_YAMLtreeBuild_simple(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * Test YAMLtreeBuild does not mutate the caller-provided text buffer
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeBuild_preserves_input_text(void)
+{
+   const char *yaml_text = "solver:\n  gmres:\n    max_iter: 10\n";
+   char       *text      = strdup(yaml_text);
+   char       *text_copy = strdup(yaml_text);
+   YAMLtree   *tree      = NULL;
+
+   ASSERT_NOT_NULL(text);
+   ASSERT_NOT_NULL(text_copy);
+
+   YAMLtreeBuild(2, text, &tree);
+
+   ASSERT_NOT_NULL(tree);
+   ASSERT_STREQ(text, text_copy);
+
+   YAMLtreeDestroy(&tree);
+   free(text);
+   free(text_copy);
+}
+
+/*-----------------------------------------------------------------------------
  * Test YAML tree building with nested structure
  *-----------------------------------------------------------------------------*/
 
@@ -160,7 +185,7 @@ test_YAMLtreeBuild_nested(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   /* YAMLtreeBuild creates its own tree and modifies text in place */
+   /* YAMLtreeBuild creates a tree from the input YAML text */
    YAMLtreeBuild(0, text, &tree);
 
    ASSERT_NOT_NULL(tree);
@@ -195,7 +220,7 @@ test_YAMLtreeBuild_invalid_indent(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   /* YAMLtreeBuild creates its own tree and modifies text in place */
+   /* YAMLtreeBuild creates a tree from the input YAML text */
    YAMLtreeBuild(0, text, &tree);
 
    /* Tree should be created, but validation should catch errors */
@@ -449,8 +474,8 @@ test_YAMLtreeBuild_mgr_coarsest_level_pattern(void)
    /* Find ilu - this is where the bug was: code was checking val instead of key */
    YAMLnode *ilu = YAMLnodeFindChildByKey(coarsest, "ilu");
    ASSERT_NOT_NULL(ilu);
-   ASSERT_STREQ(ilu->key, "ilu");    /* KEY is "ilu" */
-   ASSERT_STREQ(ilu->val, "");       /* VAL is empty because ilu has children! */
+   ASSERT_STREQ(ilu->key, "ilu"); /* KEY is "ilu" */
+   ASSERT_STREQ(ilu->val, "");    /* VAL is empty because ilu has children! */
    ASSERT_NOT_NULL(ilu->children);
 
    /* Verify ilu's children */
@@ -598,7 +623,8 @@ static void
 test_YAMLtreeExpandIncludes_list_under_type(void)
 {
    const char *tmpdir = "/tmp/hypredrv_test_includes";
-   int ret = system("rm -rf /tmp/hypredrv_test_includes && mkdir -p /tmp/hypredrv_test_includes");
+   int         ret    = system(
+      "rm -rf /tmp/hypredrv_test_includes && mkdir -p /tmp/hypredrv_test_includes");
    (void)ret;
 
    FILE *f = fopen("/tmp/hypredrv_test_includes/v1.yml", "w");
@@ -652,7 +678,8 @@ static void
 test_YAMLtreeExpandIncludes_list_under_preconditioner(void)
 {
    const char *tmpdir = "/tmp/hypredrv_test_includes2";
-   int ret = system("rm -rf /tmp/hypredrv_test_includes2 && mkdir -p /tmp/hypredrv_test_includes2");
+   int         ret    = system(
+      "rm -rf /tmp/hypredrv_test_includes2 && mkdir -p /tmp/hypredrv_test_includes2");
    (void)ret;
 
    FILE *f = fopen("/tmp/hypredrv_test_includes2/amg.yml", "w");
@@ -688,8 +715,10 @@ test_YAMLtreeExpandIncludes_list_under_preconditioner(void)
 
    ASSERT_NOT_NULL(items[0]->children);
    ASSERT_NOT_NULL(items[1]->children);
-   ASSERT_TRUE(!strcmp(items[0]->children->key, "amg") || !strcmp(items[1]->children->key, "amg"));
-   ASSERT_TRUE(!strcmp(items[0]->children->key, "ilu") || !strcmp(items[1]->children->key, "ilu"));
+   ASSERT_TRUE(!strcmp(items[0]->children->key, "amg") ||
+               !strcmp(items[1]->children->key, "amg"));
+   ASSERT_TRUE(!strcmp(items[0]->children->key, "ilu") ||
+               !strcmp(items[1]->children->key, "ilu"));
 
    free(items);
    free(text);
@@ -812,6 +841,7 @@ main(void)
    RUN_TEST(test_YAMLnodeFindChildValueByKey_basic);
 
    RUN_TEST(test_YAMLtreeBuild_simple);
+   RUN_TEST(test_YAMLtreeBuild_preserves_input_text);
    RUN_TEST(test_YAMLtreeBuild_nested);
    RUN_TEST(test_YAMLtreeBuild_deeply_nested);
    RUN_TEST(test_YAMLtreeBuild_siblings);
