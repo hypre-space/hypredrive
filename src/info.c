@@ -97,25 +97,27 @@ typedef struct
 } GpuInfo;
 
 static hwloc_topology_t topology = NULL;
-static int              InitHwlocTopology(void);
-static void             CleanupHwlocTopology(void);
-static void             PrintSystemInfoHwloc(MPI_Comm comm);
-static void             PrintCpuTopologyInfo(MPI_Comm comm);
-static void             PrintCacheHierarchy(void);
-static void             PrintGpuInfo(GpuInfo *gpus, int gpu_count);
-static int              DiscoverGpus(GpuInfo **gpus, int *count);
-static void             PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count);
-static void             PrintNetworkInfoHwloc(void);
-static void             PrintProcessBinding(void);
-static void             PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
-static void             PrintTopologyTree(void);
-static void             PrintTopologyTreeRecursive(hwloc_obj_t obj, int depth);
-static void             PrintMemoryInformation(double bytes_to_gib, double mib_to_gib);
-static void             PrintOperatingSystemInfo(void);
-static void             PrintCompilationInfo(void);
-static void             PrintWorkingDirectory(void);
-static void             PrintDynamicLibraries(void);
-static void             PrintRunningInfo(MPI_Comm comm);
+
+// Prototypes
+static int  InitHwlocTopology(void);
+static void CleanupHwlocTopology(void);
+static void PrintSystemInfoHwloc(MPI_Comm comm);
+static void PrintCpuTopologyInfo(MPI_Comm comm);
+static void PrintCacheHierarchy(void);
+static void PrintGpuInfo(GpuInfo *gpus, int gpu_count);
+static int  DiscoverGpus(GpuInfo **gpus, int *count);
+static void PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count);
+static void PrintNetworkInfoHwloc(void);
+static void PrintProcessBinding(void);
+static void PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
+static void PrintTopologyTree(void);
+static void PrintTopologyTreeRecursive(hwloc_obj_t obj, int depth);
+static void PrintMemoryInformation(double bytes_to_gib, double mib_to_gib);
+static void PrintOperatingSystemInfo(void);
+static void PrintCompilationInfo(void);
+static void PrintWorkingDirectory(void);
+static void PrintDynamicLibraries(void);
+static void PrintRunningInfo(MPI_Comm comm);
 #endif
 void PrintSystemInfoLegacy(MPI_Comm comm);
 
