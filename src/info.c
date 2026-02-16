@@ -53,6 +53,7 @@
 #ifndef __APPLE__
 struct DynamicLibList;
 struct DependencyGraph;
+struct PrintedNodeSet;
 
 static int ReadLineFromFile(const char *path, char *buffer, size_t len);
 static int ReadIntFromFile(const char *path, int *value);
@@ -66,9 +67,11 @@ static const char *ResolveNeededPath(const struct DynamicLibList *loaded,
 static int  FindOrAddDependencyNode(struct DependencyGraph *graph, const char *path);
 static int  LoadDependencyNode(struct DependencyGraph *graph, int node_index);
 static int  NodeIsInStack(const int *stack, int depth, int node_index);
+static int  EnsurePrintedNodeCapacity(struct PrintedNodeSet *set, int required);
 static void PrintDependencySubtree(struct DependencyGraph      *graph,
                                    const struct DynamicLibList *loaded, int node_index,
-                                   const char *prefix, int *stack, int depth);
+                                   const char *prefix, int *stack, int depth,
+                                   struct PrintedNodeSet *printed);
 static void FreeDependencyGraph(struct DependencyGraph *graph);
 static int  PrintDynamicLibrariesTree(void);
 static void PrintLinuxNumaInformation(double bytes_to_gib);
@@ -161,6 +164,12 @@ struct DependencyGraph
    int                    count;
    int                    capacity;
    int                    failed;
+};
+
+struct PrintedNodeSet
+{
+   int *flags;
+   int  capacity;
 };
 
 static const char *
@@ -616,10 +625,60 @@ NodeIsInStack(const int *stack, int depth, int node_index)
 }
 
 static void
-PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibList *loaded,
-                       int node_index, const char *prefix, int *stack, int depth)
+FreePrintedNodeSet(struct PrintedNodeSet *set)
 {
-   if (!graph || !loaded || !prefix || !stack || depth <= 0 || depth >= 256)
+   if (!set)
+   {
+      return;
+   }
+   free(set->flags);
+   set->flags    = NULL;
+   set->capacity = 0;
+}
+
+static int
+EnsurePrintedNodeCapacity(struct PrintedNodeSet *set, int required)
+{
+   if (!set || required <= 0)
+   {
+      return 0;
+   }
+
+   if (set->capacity >= required)
+   {
+      return 1;
+   }
+
+   int new_capacity = set->capacity ? set->capacity : 32;
+   while (new_capacity < required)
+   {
+      if (new_capacity > INT_MAX / 2)
+      {
+         return 0;
+      }
+      new_capacity *= 2;
+   }
+
+   int *new_flags =
+      (int *)realloc(set->flags, (size_t)new_capacity * sizeof(*set->flags));
+   if (!new_flags)
+   {
+      return 0;
+   }
+
+   memset(new_flags + set->capacity, 0,
+          (size_t)(new_capacity - set->capacity) * sizeof(*new_flags));
+   set->flags    = new_flags;
+   set->capacity = new_capacity;
+   return 1;
+}
+
+static void
+PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibList *loaded,
+                       int node_index, const char *prefix, int *stack, int depth,
+                       struct PrintedNodeSet *printed)
+{
+   if (!graph || !loaded || !prefix || !stack || !printed || depth <= 0 || depth >= 256)
    {
       return;
    }
@@ -630,19 +689,31 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
    }
 
    struct DependencyNode *node = &graph->nodes[node_index];
+   if (node->needed_count <= 0)
+   {
+      return;
+   }
+
+   const char **line_names =
+      (const char **)malloc((size_t)node->needed_count * sizeof(char *));
+   int *child_ids = (int *)malloc((size_t)node->needed_count * sizeof(int));
+   if (!line_names || !child_ids)
+   {
+      free(line_names);
+      free(child_ids);
+      return;
+   }
+
+   int line_count = 0;
    for (int i = 0; i < node->needed_count; i++)
    {
       const char *needed   = node->needed[i];
       const char *resolved = ResolveNeededPath(loaded, needed);
-      int         is_last  = (i + 1 == node->needed_count);
-
-      if (resolved)
+      if (!resolved)
       {
-         printf("%s%s %s\n", prefix, is_last ? "`--" : "|--", resolved);
-      }
-      else
-      {
-         printf("%s%s %s [unresolved]\n", prefix, is_last ? "`--" : "|--", needed);
+         line_names[line_count] = needed;
+         child_ids[line_count]  = -1;
+         line_count++;
          continue;
       }
 
@@ -651,6 +722,52 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
       {
          continue;
       }
+      if (!EnsurePrintedNodeCapacity(printed, child_index + 1))
+      {
+         continue;
+      }
+      if (printed->flags[child_index])
+      {
+         continue;
+      }
+
+      line_names[line_count] = resolved;
+      child_ids[line_count]  = child_index;
+      line_count++;
+   }
+
+   for (int i = 0; i < line_count; i++)
+   {
+      if (child_ids[i] >= 0 && printed->flags[child_ids[i]])
+      {
+         continue;
+      }
+
+      int is_last = 1;
+      for (int j = i + 1; j < line_count; j++)
+      {
+         if (child_ids[j] < 0 || !printed->flags[child_ids[j]])
+         {
+            is_last = 0;
+            break;
+         }
+      }
+
+      if (child_ids[i] >= 0)
+      {
+         printf("%s%s %s\n", prefix, is_last ? "`--" : "|--", line_names[i]);
+      }
+      else
+      {
+         printf("%s%s %s [unresolved]\n", prefix, is_last ? "`--" : "|--", line_names[i]);
+      }
+
+      if (child_ids[i] < 0)
+      {
+         continue;
+      }
+
+      printed->flags[child_ids[i]] = 1;
 
       char next_prefix[4096];
       int  written = snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix,
@@ -660,9 +777,13 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
          continue;
       }
 
-      stack[depth] = child_index;
-      PrintDependencySubtree(graph, loaded, child_index, next_prefix, stack, depth + 1);
+      stack[depth] = child_ids[i];
+      PrintDependencySubtree(graph, loaded, child_ids[i], next_prefix, stack, depth + 1,
+                             printed);
    }
+
+   free(line_names);
+   free(child_ids);
 }
 
 static void
@@ -715,10 +836,20 @@ PrintDynamicLibrariesTree(void)
       return 0;
    }
 
-   printf("%s\n", exe);
-   int stack[256] = {root};
-   PrintDependencySubtree(&graph, &loaded, root, "", stack, 1);
+   struct PrintedNodeSet printed = {0};
+   if (!EnsurePrintedNodeCapacity(&printed, root + 1))
+   {
+      FreeDependencyGraph(&graph);
+      FreeDynamicLibList(&loaded);
+      return 0;
+   }
 
+   printf("%s\n", exe);
+   printed.flags[root] = 1;
+   int stack[256]      = {root};
+   PrintDependencySubtree(&graph, &loaded, root, "", stack, 1, &printed);
+
+   FreePrintedNodeSet(&printed);
    FreeDependencyGraph(&graph);
    FreeDynamicLibList(&loaded);
    return 1;
