@@ -350,6 +350,12 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
                   {
                      HYPRE_BoomerAMGDestroy(args->mgr.frelax[i]);
                   }
+#if defined(HYPRE_USING_DSUPERLU)
+                  else if (args->mgr.level[i].f_relaxation.type == 29)
+                  {
+                     HYPRE_MGRDirectSolverDestroy(args->mgr.frelax[i]);
+                  }
+#endif
 #if HYPRE_CHECK_MIN_VERSION(23200, 14)
                   else if (args->mgr.level[i].f_relaxation.type == 32)
                   {

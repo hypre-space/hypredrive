@@ -952,6 +952,12 @@ HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
+   if (!sol_data || !hypredrv->vec_x)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      return ErrorCodeGet();
+   }
+
    LinearSystemGetSolutionValues(hypredrv->vec_x, sol_data);
 
    return ErrorCodeGet();
@@ -988,6 +994,12 @@ HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv, HYPRE_Complex **rhs_data)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+
+   if (!rhs_data || !hypredrv->vec_b)
+   {
+      ErrorCodeSet(ERROR_UNKNOWN);
+      return ErrorCodeGet();
+   }
 
    LinearSystemGetRHSValues(hypredrv->vec_b, rhs_data);
 

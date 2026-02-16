@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include "HYPREDRV_config.h"
 #include "HYPRE_config.h"
+#include "utils.h"
 #ifdef HYPRE_USING_OPENMP
 #include <omp.h>
 #endif
@@ -31,8 +32,11 @@
 #include <sys/sysctl.h>
 #else
 #include <dirent.h>
+#include <elf.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <link.h>
+#include <sys/stat.h>
 #include <sys/sysinfo.h>
 #endif
 
@@ -47,13 +51,37 @@
 #define HYPRE_MAX_GPU_BINDING 512
 
 #ifndef __APPLE__
-static int  ReadLineFromFile(const char *path, char *buffer, size_t len);
-static int  ReadIntFromFile(const char *path, int *value);
+struct DynamicLibList;
+struct DependencyGraph;
+struct PrintedNodeSet;
+
+static int ReadLineFromFile(const char *path, char *buffer, size_t len);
+static int ReadIntFromFile(const char *path, int *value);
+static int ReadUllFromProcMeminfo(const char *field, unsigned long long *value);
+static int ExtractBracketedToken(const char *line, char *token, size_t len);
+static int CollectDynamicLibsCallback(struct dl_phdr_info *info, size_t size, void *data);
+static void FreeDynamicLibList(struct DynamicLibList *list);
+static int  ReadElfNeededEntries(const char *path, char ***needed, int *needed_count);
+static const char *ResolveNeededPath(const struct DynamicLibList *loaded,
+                                     const char                  *needed);
+static int  FindOrAddDependencyNode(struct DependencyGraph *graph, const char *path);
+static int  LoadDependencyNode(struct DependencyGraph *graph, int node_index);
+static int  NodeIsInStack(const int *stack, int depth, int node_index);
+static int  EnsurePrintedNodeCapacity(struct PrintedNodeSet *set, int required);
+static void PrintDependencySubtree(struct DependencyGraph      *graph,
+                                   const struct DynamicLibList *loaded, int node_index,
+                                   const char *prefix, int *stack, int depth,
+                                   struct PrintedNodeSet *printed);
+static void FreeDependencyGraph(struct DependencyGraph *graph);
+static int  PrintDynamicLibrariesTree(void);
 static void PrintLinuxNumaInformation(double bytes_to_gib);
 static void PrintNetworkInformation(void);
 static void PrintAcceleratorRuntimeInformation(void);
+static void PrintLinuxKernelTuningInformation(void);
 #endif
 static void BuildGpuBindingString(char *buffer, size_t len);
+static void PrintMpiRuntimeInformation(MPI_Comm comm);
+static void PrintThreadingEnvironmentInformation(void);
 
 #ifdef HAVE_HWLOC
 typedef struct
@@ -69,26 +97,27 @@ typedef struct
 } GpuInfo;
 
 static hwloc_topology_t topology = NULL;
-static int              InitHwlocTopology(void);
-static void             CleanupHwlocTopology(void);
-static void             PrintSystemInfoHwloc(MPI_Comm comm);
-static void             PrintCpuTopologyInfo(MPI_Comm comm);
-static void             PrintCacheHierarchy(void);
-static void             PrintGpuInfo(GpuInfo *gpus, int gpu_count);
-static int              DiscoverGpus(GpuInfo **gpus, int *count);
-static void             PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count);
-static void             PrintNetworkInfoHwloc(void);
-static void             PrintProcessBinding(void);
-static void             PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
-static void             PrintGpuAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
-static void             PrintTopologyTree(void);
-static void             PrintTopologyTreeRecursive(hwloc_obj_t obj, int depth);
-static void             PrintMemoryInformation(double bytes_to_gib, double mib_to_gib);
-static void             PrintOperatingSystemInfo(void);
-static void             PrintCompilationInfo(void);
-static void             PrintWorkingDirectory(void);
-static void             PrintDynamicLibraries(void);
-static void             PrintRunningInfo(MPI_Comm comm);
+
+// Prototypes
+static int  InitHwlocTopology(void);
+static void CleanupHwlocTopology(void);
+static void PrintSystemInfoHwloc(MPI_Comm comm);
+static void PrintCpuTopologyInfo(MPI_Comm comm);
+static void PrintCacheHierarchy(void);
+static void PrintGpuInfo(GpuInfo *gpus, int gpu_count);
+static int  DiscoverGpus(GpuInfo **gpus, int *count);
+static void PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count);
+static void PrintNetworkInfoHwloc(void);
+static void PrintProcessBinding(void);
+static void PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
+static void PrintTopologyTree(void);
+static void PrintTopologyTreeRecursive(hwloc_obj_t obj, int depth);
+static void PrintMemoryInformation(double bytes_to_gib, double mib_to_gib);
+static void PrintOperatingSystemInfo(void);
+static void PrintCompilationInfo(void);
+static void PrintWorkingDirectory(void);
+static void PrintDynamicLibraries(void);
+static void PrintRunningInfo(MPI_Comm comm);
 #endif
 void PrintSystemInfoLegacy(MPI_Comm comm);
 
@@ -112,6 +141,720 @@ dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
       printf("   %s => %s (0x%lx)\n", filename, info->dlpi_name, info->dlpi_addr);
    }
    return 0;
+}
+
+struct DynamicLibList
+{
+   char **paths;
+   int    count;
+   int    capacity;
+   int    failed;
+};
+
+struct DependencyNode
+{
+   char  *path;
+   char **needed;
+   int    needed_count;
+   int    parsed;
+   int    parse_ok;
+};
+
+struct DependencyGraph
+{
+   struct DependencyNode *nodes;
+   int                    count;
+   int                    capacity;
+   int                    failed;
+};
+
+struct PrintedNodeSet
+{
+   int *flags;
+   int  capacity;
+};
+
+static const char *
+PathBasename(const char *path)
+{
+   if (!path)
+   {
+      return "";
+   }
+
+   const char *base = strrchr(path, '/');
+   return base ? base + 1 : path;
+}
+
+static int
+AppendUniqueString(char ***items, int *count, int *capacity, const char *value)
+{
+   if (!items || !count || !capacity || !value)
+   {
+      return 0;
+   }
+
+   for (int i = 0; i < *count; i++)
+   {
+      if (strcmp((*items)[i], value) == 0)
+      {
+         return 1;
+      }
+   }
+
+   if (*count == *capacity)
+   {
+      int    new_capacity = *capacity ? *capacity * 2 : 16;
+      char **new_items = (char **)realloc(*items, (size_t)new_capacity * sizeof(char *));
+      if (!new_items)
+      {
+         return 0;
+      }
+      *items    = new_items;
+      *capacity = new_capacity;
+   }
+
+   (*items)[*count] = strdup(value);
+   if (!(*items)[*count])
+   {
+      return 0;
+   }
+
+   (*count)++;
+   return 1;
+}
+
+static void
+FreeStringArray(char **items, int count)
+{
+   for (int i = 0; i < count; i++)
+   {
+      free(items[i]);
+   }
+   free(items);
+}
+
+static int
+CollectDynamicLibsCallback(struct dl_phdr_info *info, size_t size, void *data)
+{
+   (void)size;
+   if (!data)
+   {
+      return 0;
+   }
+
+   struct DynamicLibList *list = (struct DynamicLibList *)data;
+   if (list->failed || !info->dlpi_name || !info->dlpi_name[0])
+   {
+      return 0;
+   }
+
+   if (!AppendUniqueString(&list->paths, &list->count, &list->capacity, info->dlpi_name))
+   {
+      list->failed = 1;
+   }
+
+   return 0;
+}
+
+static void
+FreeDynamicLibList(struct DynamicLibList *list)
+{
+   if (!list)
+   {
+      return;
+   }
+
+   FreeStringArray(list->paths, list->count);
+   list->paths    = NULL;
+   list->count    = 0;
+   list->capacity = 0;
+   list->failed   = 0;
+}
+
+static int
+RangeInBuffer(size_t offset, size_t length, size_t total)
+{
+   return offset <= total && length <= total - offset;
+}
+
+static int
+ReadFileBytes(const char *path, unsigned char **data, size_t *size)
+{
+   if (!path || !data || !size)
+   {
+      return 0;
+   }
+
+   int fd = open(path, O_RDONLY);
+   if (fd < 0)
+   {
+      return 0;
+   }
+
+   struct stat st;
+   if (fstat(fd, &st) != 0 || st.st_size <= 0)
+   {
+      close(fd);
+      return 0;
+   }
+
+   size_t         fsize = (size_t)st.st_size;
+   unsigned char *buf   = (unsigned char *)malloc(fsize);
+   if (!buf)
+   {
+      close(fd);
+      return 0;
+   }
+
+   size_t total = 0;
+   while (total < fsize)
+   {
+      ssize_t nread = read(fd, buf + total, fsize - total);
+      if (nread <= 0)
+      {
+         free(buf);
+         close(fd);
+         return 0;
+      }
+      total += (size_t)nread;
+   }
+
+   close(fd);
+   *data = buf;
+   *size = fsize;
+   return 1;
+}
+
+static int
+ReadElfNeededEntries(const char *path, char ***needed, int *needed_count)
+{
+   if (!needed || !needed_count)
+   {
+      return 0;
+   }
+
+   *needed       = NULL;
+   *needed_count = 0;
+
+   unsigned char *file = NULL;
+   size_t         size = 0;
+   if (!ReadFileBytes(path, &file, &size))
+   {
+      return 0;
+   }
+
+   char **entries  = NULL;
+   int    count    = 0;
+   int    capacity = 0;
+   int    ok       = 0;
+
+   if (size < EI_NIDENT || memcmp(file, ELFMAG, SELFMAG) != 0)
+   {
+      goto cleanup;
+   }
+
+   if (file[EI_CLASS] == ELFCLASS64)
+   {
+      if (size < sizeof(Elf64_Ehdr))
+      {
+         goto cleanup;
+      }
+
+      const Elf64_Ehdr *ehdr = (const Elf64_Ehdr *)file;
+      if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0 ||
+          ehdr->e_shentsize < sizeof(Elf64_Shdr))
+      {
+         goto cleanup;
+      }
+
+      size_t shoff  = (size_t)ehdr->e_shoff;
+      size_t shtlen = (size_t)ehdr->e_shnum * (size_t)ehdr->e_shentsize;
+      if (!RangeInBuffer(shoff, shtlen, size))
+      {
+         goto cleanup;
+      }
+
+      const unsigned char *shbase = file + shoff;
+      for (int i = 0; i < (int)ehdr->e_shnum; i++)
+      {
+         const Elf64_Shdr *sh =
+            (const Elf64_Shdr *)(shbase + (size_t)i * (size_t)ehdr->e_shentsize);
+         if (sh->sh_type != SHT_DYNAMIC)
+         {
+            continue;
+         }
+
+         if (!RangeInBuffer((size_t)sh->sh_offset, (size_t)sh->sh_size, size))
+         {
+            continue;
+         }
+         if (sh->sh_link >= ehdr->e_shnum)
+         {
+            continue;
+         }
+
+         const Elf64_Shdr *str_sh =
+            (const Elf64_Shdr *)(shbase +
+                                 (size_t)sh->sh_link * (size_t)ehdr->e_shentsize);
+         if (!RangeInBuffer((size_t)str_sh->sh_offset, (size_t)str_sh->sh_size, size))
+         {
+            continue;
+         }
+
+         size_t dyn_entsize = sh->sh_entsize ? (size_t)sh->sh_entsize : sizeof(Elf64_Dyn);
+         if (dyn_entsize < sizeof(Elf64_Dyn))
+         {
+            continue;
+         }
+
+         const unsigned char *dyn_base = file + (size_t)sh->sh_offset;
+         const char          *dynstr   = (const char *)(file + (size_t)str_sh->sh_offset);
+         size_t               dyn_count = (size_t)sh->sh_size / dyn_entsize;
+         size_t               dynstr_sz = (size_t)str_sh->sh_size;
+
+         for (size_t j = 0; j < dyn_count; j++)
+         {
+            const Elf64_Dyn *dyn = (const Elf64_Dyn *)(dyn_base + j * dyn_entsize);
+            if (dyn->d_tag != DT_NEEDED)
+            {
+               continue;
+            }
+            size_t off = (size_t)dyn->d_un.d_val;
+            if (off >= dynstr_sz)
+            {
+               continue;
+            }
+            if (!AppendUniqueString(&entries, &count, &capacity, dynstr + off))
+            {
+               goto cleanup;
+            }
+         }
+      }
+   }
+   else if (file[EI_CLASS] == ELFCLASS32)
+   {
+      if (size < sizeof(Elf32_Ehdr))
+      {
+         goto cleanup;
+      }
+
+      const Elf32_Ehdr *ehdr = (const Elf32_Ehdr *)file;
+      if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0 ||
+          ehdr->e_shentsize < sizeof(Elf32_Shdr))
+      {
+         goto cleanup;
+      }
+
+      size_t shoff  = (size_t)ehdr->e_shoff;
+      size_t shtlen = (size_t)ehdr->e_shnum * (size_t)ehdr->e_shentsize;
+      if (!RangeInBuffer(shoff, shtlen, size))
+      {
+         goto cleanup;
+      }
+
+      const unsigned char *shbase = file + shoff;
+      for (int i = 0; i < (int)ehdr->e_shnum; i++)
+      {
+         const Elf32_Shdr *sh =
+            (const Elf32_Shdr *)(shbase + (size_t)i * (size_t)ehdr->e_shentsize);
+         if (sh->sh_type != SHT_DYNAMIC)
+         {
+            continue;
+         }
+
+         if (!RangeInBuffer((size_t)sh->sh_offset, (size_t)sh->sh_size, size))
+         {
+            continue;
+         }
+         if (sh->sh_link >= ehdr->e_shnum)
+         {
+            continue;
+         }
+
+         const Elf32_Shdr *str_sh =
+            (const Elf32_Shdr *)(shbase +
+                                 (size_t)sh->sh_link * (size_t)ehdr->e_shentsize);
+         if (!RangeInBuffer((size_t)str_sh->sh_offset, (size_t)str_sh->sh_size, size))
+         {
+            continue;
+         }
+
+         size_t dyn_entsize = sh->sh_entsize ? (size_t)sh->sh_entsize : sizeof(Elf32_Dyn);
+         if (dyn_entsize < sizeof(Elf32_Dyn))
+         {
+            continue;
+         }
+
+         const unsigned char *dyn_base = file + (size_t)sh->sh_offset;
+         const char          *dynstr   = (const char *)(file + (size_t)str_sh->sh_offset);
+         size_t               dyn_count = (size_t)sh->sh_size / dyn_entsize;
+         size_t               dynstr_sz = (size_t)str_sh->sh_size;
+
+         for (size_t j = 0; j < dyn_count; j++)
+         {
+            const Elf32_Dyn *dyn = (const Elf32_Dyn *)(dyn_base + j * dyn_entsize);
+            if (dyn->d_tag != DT_NEEDED)
+            {
+               continue;
+            }
+            size_t off = (size_t)dyn->d_un.d_val;
+            if (off >= dynstr_sz)
+            {
+               continue;
+            }
+            if (!AppendUniqueString(&entries, &count, &capacity, dynstr + off))
+            {
+               goto cleanup;
+            }
+         }
+      }
+   }
+   else
+   {
+      goto cleanup;
+   }
+
+   *needed       = entries;
+   *needed_count = count;
+   entries       = NULL;
+   count         = 0;
+   ok            = 1;
+
+cleanup:
+   free(file);
+   FreeStringArray(entries, count);
+   return ok;
+}
+
+static const char *
+ResolveNeededPath(const struct DynamicLibList *loaded, const char *needed)
+{
+   if (!loaded || !needed || !needed[0])
+   {
+      return NULL;
+   }
+
+   if (strchr(needed, '/'))
+   {
+      return access(needed, R_OK) == 0 ? needed : NULL;
+   }
+
+   for (int i = 0; i < loaded->count; i++)
+   {
+      if (strcmp(PathBasename(loaded->paths[i]), needed) == 0)
+      {
+         return loaded->paths[i];
+      }
+   }
+
+   return NULL;
+}
+
+static int
+FindOrAddDependencyNode(struct DependencyGraph *graph, const char *path)
+{
+   if (!graph || !path || !path[0])
+   {
+      return -1;
+   }
+
+   for (int i = 0; i < graph->count; i++)
+   {
+      if (strcmp(graph->nodes[i].path, path) == 0)
+      {
+         return i;
+      }
+   }
+
+   if (graph->count == graph->capacity)
+   {
+      int                    new_capacity = graph->capacity ? graph->capacity * 2 : 16;
+      struct DependencyNode *new_nodes    = (struct DependencyNode *)realloc(
+         graph->nodes, (size_t)new_capacity * sizeof(struct DependencyNode));
+      if (!new_nodes)
+      {
+         graph->failed = 1;
+         return -1;
+      }
+      graph->nodes    = new_nodes;
+      graph->capacity = new_capacity;
+   }
+
+   struct DependencyNode *node = &graph->nodes[graph->count];
+   memset(node, 0, sizeof(*node));
+   node->path = strdup(path);
+   if (!node->path)
+   {
+      graph->failed = 1;
+      return -1;
+   }
+
+   graph->count++;
+   return graph->count - 1;
+}
+
+static int
+LoadDependencyNode(struct DependencyGraph *graph, int node_index)
+{
+   if (!graph || node_index < 0 || node_index >= graph->count)
+   {
+      return 0;
+   }
+
+   struct DependencyNode *node = &graph->nodes[node_index];
+   if (node->parsed)
+   {
+      return node->parse_ok;
+   }
+
+   node->parsed   = 1;
+   node->parse_ok = ReadElfNeededEntries(node->path, &node->needed, &node->needed_count);
+   return node->parse_ok;
+}
+
+static int
+NodeIsInStack(const int *stack, int depth, int node_index)
+{
+   for (int i = 0; i < depth; i++)
+   {
+      if (stack[i] == node_index)
+      {
+         return 1;
+      }
+   }
+   return 0;
+}
+
+static void
+FreePrintedNodeSet(struct PrintedNodeSet *set)
+{
+   if (!set)
+   {
+      return;
+   }
+   free(set->flags);
+   set->flags    = NULL;
+   set->capacity = 0;
+}
+
+static int
+EnsurePrintedNodeCapacity(struct PrintedNodeSet *set, int required)
+{
+   if (!set || required <= 0)
+   {
+      return 0;
+   }
+
+   if (set->capacity >= required)
+   {
+      return 1;
+   }
+
+   int new_capacity = set->capacity ? set->capacity : 32;
+   while (new_capacity < required)
+   {
+      if (new_capacity > INT_MAX / 2)
+      {
+         return 0;
+      }
+      new_capacity *= 2;
+   }
+
+   int *new_flags =
+      (int *)realloc(set->flags, (size_t)new_capacity * sizeof(*set->flags));
+   if (!new_flags)
+   {
+      return 0;
+   }
+
+   memset(new_flags + set->capacity, 0,
+          (size_t)(new_capacity - set->capacity) * sizeof(*new_flags));
+   set->flags    = new_flags;
+   set->capacity = new_capacity;
+   return 1;
+}
+
+static void
+PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibList *loaded,
+                       int node_index, const char *prefix, int *stack, int depth,
+                       struct PrintedNodeSet *printed)
+{
+   if (!graph || !loaded || !prefix || !stack || !printed || depth <= 0 || depth >= 256)
+   {
+      return;
+   }
+
+   if (!LoadDependencyNode(graph, node_index))
+   {
+      return;
+   }
+
+   struct DependencyNode *node = &graph->nodes[node_index];
+   if (node->needed_count <= 0)
+   {
+      return;
+   }
+
+   const char **line_names =
+      (const char **)malloc((size_t)node->needed_count * sizeof(char *));
+   int *child_ids = (int *)malloc((size_t)node->needed_count * sizeof(int));
+   if (!line_names || !child_ids)
+   {
+      free(line_names);
+      free(child_ids);
+      return;
+   }
+
+   int line_count = 0;
+   for (int i = 0; i < node->needed_count; i++)
+   {
+      const char *needed   = node->needed[i];
+      const char *resolved = ResolveNeededPath(loaded, needed);
+      if (!resolved)
+      {
+         line_names[line_count] = needed;
+         child_ids[line_count]  = -1;
+         line_count++;
+         continue;
+      }
+
+      int child_index = FindOrAddDependencyNode(graph, resolved);
+      if (child_index < 0 || NodeIsInStack(stack, depth, child_index))
+      {
+         continue;
+      }
+      if (!EnsurePrintedNodeCapacity(printed, child_index + 1))
+      {
+         continue;
+      }
+      if (printed->flags[child_index])
+      {
+         continue;
+      }
+
+      line_names[line_count] = resolved;
+      child_ids[line_count]  = child_index;
+      line_count++;
+   }
+
+   for (int i = 0; i < line_count; i++)
+   {
+      if (child_ids[i] >= 0 && printed->flags[child_ids[i]])
+      {
+         continue;
+      }
+
+      int is_last = 1;
+      for (int j = i + 1; j < line_count; j++)
+      {
+         if (child_ids[j] < 0 || !printed->flags[child_ids[j]])
+         {
+            is_last = 0;
+            break;
+         }
+      }
+
+      if (child_ids[i] >= 0)
+      {
+         printf("%s%s %s\n", prefix, is_last ? "`--" : "|--", line_names[i]);
+      }
+      else
+      {
+         printf("%s%s %s [unresolved]\n", prefix, is_last ? "`--" : "|--", line_names[i]);
+      }
+
+      if (child_ids[i] < 0)
+      {
+         continue;
+      }
+
+      printed->flags[child_ids[i]] = 1;
+
+      char next_prefix[4096];
+      int  written = snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix,
+                             is_last ? "    " : "|   ");
+      if (written < 0 || (size_t)written >= sizeof(next_prefix))
+      {
+         continue;
+      }
+
+      stack[depth] = child_ids[i];
+      PrintDependencySubtree(graph, loaded, child_ids[i], next_prefix, stack, depth + 1,
+                             printed);
+   }
+
+   free(line_names);
+   free(child_ids);
+}
+
+static void
+FreeDependencyGraph(struct DependencyGraph *graph)
+{
+   if (!graph)
+   {
+      return;
+   }
+
+   for (int i = 0; i < graph->count; i++)
+   {
+      struct DependencyNode *node = &graph->nodes[i];
+      free(node->path);
+      FreeStringArray(node->needed, node->needed_count);
+   }
+   free(graph->nodes);
+   graph->nodes    = NULL;
+   graph->count    = 0;
+   graph->capacity = 0;
+   graph->failed   = 0;
+}
+
+static int
+PrintDynamicLibrariesTree(void)
+{
+   struct DynamicLibList loaded = {0};
+   dl_iterate_phdr(CollectDynamicLibsCallback, &loaded);
+   if (loaded.failed)
+   {
+      FreeDynamicLibList(&loaded);
+      return 0;
+   }
+
+   char    exe[PATH_MAX] = "<main executable>";
+   ssize_t nread         = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+   if (nread <= 0)
+   {
+      FreeDynamicLibList(&loaded);
+      return 0;
+   }
+   exe[nread] = '\0';
+
+   struct DependencyGraph graph = {0};
+   int                    root  = FindOrAddDependencyNode(&graph, exe);
+   if (root < 0 || !LoadDependencyNode(&graph, root))
+   {
+      FreeDependencyGraph(&graph);
+      FreeDynamicLibList(&loaded);
+      return 0;
+   }
+
+   struct PrintedNodeSet printed = {0};
+   if (!EnsurePrintedNodeCapacity(&printed, root + 1))
+   {
+      FreeDependencyGraph(&graph);
+      FreeDynamicLibList(&loaded);
+      return 0;
+   }
+
+   printf("%s\n", exe);
+   printed.flags[root] = 1;
+   int stack[256]      = {root};
+   PrintDependencySubtree(&graph, &loaded, root, "", stack, 1, &printed);
+
+   FreePrintedNodeSet(&printed);
+   FreeDependencyGraph(&graph);
+   FreeDynamicLibList(&loaded);
+   return 1;
 }
 
 #endif
@@ -710,7 +1453,16 @@ PrintSystemInfoLegacy(MPI_Comm comm)
          printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
       }
 #else
-      dl_iterate_phdr(dlpi_callback, NULL);
+      if (!PrintDynamicLibrariesTree())
+      {
+         dl_iterate_phdr(dlpi_callback, NULL);
+      }
+#endif
+
+      PrintMpiRuntimeInformation(comm);
+      PrintThreadingEnvironmentInformation();
+#ifndef __APPLE__
+      PrintLinuxKernelTuningInformation();
 #endif
 
       printf("\n================================== System Information "
@@ -780,6 +1532,106 @@ BuildGpuBindingString(char *buffer, size_t len)
       strncpy(buffer, "unset", len - 1);
       buffer[len - 1] = '\0';
    }
+}
+
+static void
+PrintMpiRuntimeInformation(MPI_Comm comm)
+{
+   int myid = 0;
+   MPI_Comm_rank(comm, &myid);
+   if (myid)
+   {
+      return;
+   }
+
+   printf("MPI Runtime Information\n");
+   printf("------------------------\n");
+
+   int mpi_major = 0;
+   int mpi_minor = 0;
+   if (MPI_Get_version(&mpi_major, &mpi_minor) == MPI_SUCCESS)
+   {
+      printf("MPI Standard          : %d.%d\n", mpi_major, mpi_minor);
+   }
+
+   char lib_version[MPI_MAX_LIBRARY_VERSION_STRING + 1];
+   int  lib_len = 0;
+   if (MPI_Get_library_version(lib_version, &lib_len) == MPI_SUCCESS)
+   {
+      if (lib_len < 0)
+      {
+         lib_len = 0;
+      }
+      if ((size_t)lib_len >= sizeof(lib_version))
+      {
+         lib_len = (int)(sizeof(lib_version) - 1);
+      }
+      lib_version[lib_len]                      = '\0';
+      lib_version[strcspn(lib_version, "\r\n")] = '\0';
+      NormalizeWhitespace(lib_version);
+      if (lib_version[0])
+      {
+         printf("MPI Implementation    : %s\n", lib_version);
+      }
+   }
+
+   char processor[MPI_MAX_PROCESSOR_NAME + 1];
+   int  processor_len = 0;
+   if (MPI_Get_processor_name(processor, &processor_len) == MPI_SUCCESS)
+   {
+      if (processor_len < 0)
+      {
+         processor_len = 0;
+      }
+      if ((size_t)processor_len >= sizeof(processor))
+      {
+         processor_len = (int)(sizeof(processor) - 1);
+      }
+      processor[processor_len] = '\0';
+      printf("Rank 0 Processor Name : %s\n", processor);
+   }
+   printf("\n");
+}
+
+static void
+PrintThreadingEnvironmentInformation(void)
+{
+   struct ThreadEnvVar
+   {
+      const char *label;
+      const char *name;
+   };
+
+   static const struct ThreadEnvVar vars[] = {
+      {"OMP_NUM_THREADS", "OMP_NUM_THREADS"}, {"OMP_PROC_BIND", "OMP_PROC_BIND"},
+      {"OMP_PLACES", "OMP_PLACES"},           {"OMP_SCHEDULE", "OMP_SCHEDULE"},
+      {"KMP_AFFINITY", "KMP_AFFINITY"},       {"GOMP_CPU_AFFINITY", "GOMP_CPU_AFFINITY"},
+   };
+
+   printf("Threading Environment\n");
+   printf("----------------------\n");
+#if defined(HYPRE_USING_OPENMP) && defined(_OPENMP)
+   printf("OpenMP max threads    : %d\n", omp_get_max_threads());
+#else
+   printf("OpenMP max threads    : not available (OpenMP disabled)\n");
+#endif
+
+   int printed_env = 0;
+   for (size_t i = 0; i < sizeof(vars) / sizeof(vars[0]); i++)
+   {
+      const char *value = getenv(vars[i].name);
+      if (value && value[0])
+      {
+         printf("%-22s : %s\n", vars[i].label, value);
+         printed_env = 1;
+      }
+   }
+
+   if (!printed_env)
+   {
+      printf("OpenMP environment    : unset\n");
+   }
+   printf("\n");
 }
 
 #ifdef HAVE_HWLOC
@@ -991,7 +1843,7 @@ PrintCpuTopologyInfo(MPI_Comm comm)
       printf("CPU Topology\n");
       printf("------------\n");
       printf("Number of Nodes       : %d\n", numNodes);
-      printf("Packages (sockets)   : %d\n", packages);
+      printf("Packages (sockets)    : %d\n", packages);
       printf("Cores                : %d\n", cores);
       printf("Processing Units     : %d\n", pus);
       printf("NUMA domains         : %d\n", numas);
@@ -1020,17 +1872,29 @@ PrintCpuTopologyInfo(MPI_Comm comm)
             const char *cpumodel  = hwloc_obj_get_info_by_name(package, "CPUModel");
             if (cpuvendor || cpumodel)
             {
-               if (packages > 1)
+               char cpu_desc[256] = "";
+               if (cpuvendor && cpumodel)
                {
-                  printf("CPU Model #%d         : ", i);
+                  snprintf(cpu_desc, sizeof(cpu_desc), "%s %s", cpuvendor, cpumodel);
+               }
+               else if (cpuvendor)
+               {
+                  snprintf(cpu_desc, sizeof(cpu_desc), "%s", cpuvendor);
                }
                else
                {
-                  printf("CPU Model             : ");
+                  snprintf(cpu_desc, sizeof(cpu_desc), "%s", cpumodel);
                }
-               if (cpuvendor) printf("%s ", cpuvendor);
-               if (cpumodel) printf("%s", cpumodel);
-               printf("\n");
+               TrimTrailingWhitespace(cpu_desc);
+
+               if (packages > 1)
+               {
+                  printf("CPU Model #%d         : %s\n", i, cpu_desc);
+               }
+               else
+               {
+                  printf("CPU Model             : %s\n", cpu_desc);
+               }
             }
          }
       }
@@ -1441,11 +2305,11 @@ PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count)
    int num_numas = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_NUMANODE);
    if (num_numas <= 0)
    {
-      printf("\nNUMA Information       : Not available\n");
+      printf("NUMA Information       : Not available\n\n");
       return;
    }
 
-   printf("\nNUMA Information\n");
+   printf("NUMA Information\n");
    printf("-----------------\n");
 
    hwloc_obj_t numa = NULL;
@@ -1457,7 +2321,7 @@ PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count)
       unsigned long long total_mem = numa->attr->numanode.local_memory;
       int                pu_count  = hwloc_bitmap_weight(numa->cpuset);
 
-      printf("NUMA node %-3d\n", numa->os_index);
+      printf("NUMA node %d\n", numa->os_index);
       printf("  CPUs                 : %s (%d PUs)\n", cpuset_str, pu_count);
       printf("  Memory (GiB)         : %.2f\n", total_mem / bytes_to_gib);
 
@@ -1485,15 +2349,19 @@ PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count)
                if (gpus[i].ancestor &&
                    hwloc_bitmap_isset(gpus[i].ancestor->nodeset, numa->os_index))
                {
-                  if (!first) printf(",");
-                  printf(" %s", gpus[i].pci_busid);
+                  printf("%s%s", first ? " (" : ", ", gpus[i].pci_busid);
                   first = false;
                }
+            }
+            if (!first)
+            {
+               printf(")");
             }
          }
          printf("\n");
       }
    }
+   printf("\n");
 }
 
 static void
@@ -1504,7 +2372,7 @@ PrintNetworkInfoHwloc(void)
       return;
    }
 
-   printf("\nNetwork / Interconnect\n");
+   printf("Network / Interconnect\n");
    printf("----------------------\n");
 
    int         found_ib  = 0;
@@ -1549,7 +2417,7 @@ PrintNetworkInfoHwloc(void)
       else if (obj->attr->osdev.type == HWLOC_OBJ_OSDEV_NETWORK)
       {
          found_net = 1;
-         printf("Interface %-10s\n", obj->name);
+         printf("Interface %-11s : detected\n", obj->name);
       }
    }
 
@@ -1574,7 +2442,7 @@ PrintProcessBinding(void)
       return;
    }
 
-   printf("\nProcess Binding\n");
+   printf("Process Binding\n");
    printf("-----------------\n");
 
    hwloc_bitmap_t cpuset = hwloc_bitmap_alloc();
@@ -1662,54 +2530,6 @@ PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count)
       printf("\n");
    }
 #endif
-}
-
-static void
-PrintGpuAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count)
-{
-   int myid = 0, nprocs = 0;
-   MPI_Comm_rank(comm, &myid);
-   MPI_Comm_size(comm, &nprocs);
-
-   if (gpu_count == 0)
-   {
-      return;
-   }
-
-   // Gather GPU visibility per rank
-   int *gpu_counts = NULL;
-   if (!myid)
-   {
-      gpu_counts = (int *)malloc(nprocs * sizeof(int));
-   }
-   MPI_Gather(&gpu_count, 1, MPI_INT, gpu_counts, 1, MPI_INT, 0, comm);
-
-   if (!myid)
-   {
-      printf("GPU Affinity (per rank)\n");
-      printf("------------------------\n");
-
-      for (int r = 0; r < nprocs; r++)
-      {
-         printf("Rank %-3d: %d GPU%s visible", r, gpu_counts[r],
-                gpu_counts[r] != 1 ? "s" : "");
-
-         // Show which GPUs are visible (based on environment variables)
-         char gpuBindingLocal[HYPRE_MAX_GPU_BINDING];
-         if (r == 0)
-         {
-            BuildGpuBindingString(gpuBindingLocal, sizeof(gpuBindingLocal));
-            if (strcmp(gpuBindingLocal, "unset") != 0)
-            {
-               printf(" (%s)", gpuBindingLocal);
-            }
-         }
-         printf("\n");
-      }
-      printf("\n");
-
-      free(gpu_counts);
-   }
 }
 
 static void
@@ -2017,7 +2837,10 @@ PrintDynamicLibraries(void)
       printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
    }
 #else
-   dl_iterate_phdr(dlpi_callback, NULL);
+   if (!PrintDynamicLibrariesTree())
+   {
+      dl_iterate_phdr(dlpi_callback, NULL);
+   }
 #endif
    printf("\n");
 }
@@ -2109,28 +2932,36 @@ PrintSystemInfoHwloc(MPI_Comm comm)
       // 9. Process Binding
       PrintProcessBinding();
 
-      // 9a. GPU Affinity (per rank)
-      PrintGpuAffinity(comm, gpus, gpu_count);
-
-      // 9b. Thread Affinity (if OpenMP is enabled)
+      // 10. Thread Affinity (if OpenMP is enabled)
       PrintThreadAffinity(comm, gpus, gpu_count);
 
-      // 10. Topology Tree
+      // 11. Topology Tree
       PrintTopologyTree();
 
-      // 11. Operating System
+      // 12. Operating System
       PrintOperatingSystemInfo();
 
-      // 12. Compilation Information
+      // 13. Compilation Information
       PrintCompilationInfo();
 
-      // 13. Current Working Directory
+      // 14. MPI Runtime Information
+      PrintMpiRuntimeInformation(comm);
+
+      // 15. Threading Environment
+      PrintThreadingEnvironmentInformation();
+
+#ifndef __APPLE__
+      // 16. Linux Kernel Tuning
+      PrintLinuxKernelTuningInformation();
+#endif
+
+      // 17. Current Working Directory
       PrintWorkingDirectory();
 
-      // 14. Dynamic Libraries
+      // 18. Dynamic Libraries
       PrintDynamicLibraries();
 
-      // 15. hwloc Information
+      // 19. hwloc Information
       printf("hwloc Information\n");
       printf("-----------------\n");
       unsigned version = hwloc_get_api_version();
@@ -2138,7 +2969,7 @@ PrintSystemInfoHwloc(MPI_Comm comm)
              (version >> 8) & 0xff, version & 0xff);
       printf("\n");
 
-      // 16. Running Information
+      // 20. Running Information
       PrintRunningInfo(comm);
 
       if (gpuBindingAll)
@@ -2201,6 +3032,172 @@ ReadIntFromFile(const char *path, int *value)
 
    *value = atoi(line);
    return 1;
+}
+
+static int
+ReadUllFromProcMeminfo(const char *field, unsigned long long *value)
+{
+   if (!field || !value)
+   {
+      return 0;
+   }
+
+   FILE *fp = fopen("/proc/meminfo", "r");
+   if (!fp)
+   {
+      return 0;
+   }
+
+   int  found = 0;
+   char line[256];
+   while (fgets(line, sizeof(line), fp))
+   {
+      char               key[128];
+      unsigned long long parsed = 0;
+      if (sscanf(line, "%127[^:]: %llu", key, &parsed) == 2 && strcmp(key, field) == 0)
+      {
+         *value = parsed;
+         found  = 1;
+         break;
+      }
+   }
+
+   fclose(fp);
+   return found;
+}
+
+static int
+ExtractBracketedToken(const char *line, char *token, size_t len)
+{
+   if (!line || !token || len == 0)
+   {
+      return 0;
+   }
+
+   const char *start = strchr(line, '[');
+   if (!start)
+   {
+      return 0;
+   }
+   start++;
+
+   const char *end = strchr(start, ']');
+   if (!end || end <= start)
+   {
+      return 0;
+   }
+
+   size_t n = (size_t)(end - start);
+   if (n >= len)
+   {
+      n = len - 1;
+   }
+   memcpy(token, start, n);
+   token[n] = '\0';
+   return 1;
+}
+
+static void
+PrintLinuxKernelTuningInformation(void)
+{
+   printf("Linux Kernel Tuning\n");
+   printf("--------------------\n");
+
+   struct sysinfo info;
+   if (sysinfo(&info) == 0)
+   {
+      long uptime = info.uptime;
+      long days   = uptime / 86400;
+      uptime      = uptime % 86400;
+      long hours  = uptime / 3600;
+      uptime      = uptime % 3600;
+      long mins   = uptime / 60;
+
+      printf("System uptime         : %ldd %02ldh %02ldm\n", days, hours, mins);
+      printf("Load average (1/5/15) : %.2f / %.2f / %.2f\n", info.loads[0] / 65536.0,
+             info.loads[1] / 65536.0, info.loads[2] / 65536.0);
+   }
+
+   char line[256];
+   char token[64];
+
+   if (ReadLineFromFile("/sys/kernel/mm/transparent_hugepage/enabled", line,
+                        sizeof(line)))
+   {
+      if (ExtractBracketedToken(line, token, sizeof(token)))
+      {
+         printf("THP policy            : %s\n", token);
+      }
+      else
+      {
+         printf("THP policy            : %s\n", line);
+      }
+   }
+
+   if (ReadLineFromFile("/sys/kernel/mm/transparent_hugepage/defrag", line, sizeof(line)))
+   {
+      if (ExtractBracketedToken(line, token, sizeof(token)))
+      {
+         printf("THP defrag policy     : %s\n", token);
+      }
+      else
+      {
+         printf("THP defrag policy     : %s\n", line);
+      }
+   }
+
+   int numa_balancing = -1;
+   if (ReadIntFromFile("/proc/sys/kernel/numa_balancing", &numa_balancing))
+   {
+      printf("NUMA balancing        : %s\n", numa_balancing ? "enabled" : "disabled");
+   }
+
+   int overcommit = -1;
+   if (ReadIntFromFile("/proc/sys/vm/overcommit_memory", &overcommit))
+   {
+      const char *mode = "unknown";
+      if (overcommit == 0)
+      {
+         mode = "heuristic";
+      }
+      else if (overcommit == 1)
+      {
+         mode = "always";
+      }
+      else if (overcommit == 2)
+      {
+         mode = "never";
+      }
+      printf("Overcommit policy     : %d (%s)\n", overcommit, mode);
+   }
+
+   int zone_reclaim = -1;
+   if (ReadIntFromFile("/proc/sys/vm/zone_reclaim_mode", &zone_reclaim))
+   {
+      printf("Zone reclaim mode     : %d\n", zone_reclaim);
+   }
+
+   unsigned long long hugepages_total = 0;
+   unsigned long long hugepages_free  = 0;
+   unsigned long long hugepage_size   = 0;
+   if (ReadUllFromProcMeminfo("HugePages_Total", &hugepages_total))
+   {
+      printf("HugePages total/free  : %llu / ", hugepages_total);
+      if (ReadUllFromProcMeminfo("HugePages_Free", &hugepages_free))
+      {
+         printf("%llu\n", hugepages_free);
+      }
+      else
+      {
+         printf("unknown\n");
+      }
+   }
+   if (ReadUllFromProcMeminfo("Hugepagesize", &hugepage_size))
+   {
+      printf("HugePage size         : %llu kB\n", hugepage_size);
+   }
+
+   printf("\n");
 }
 
 static void
