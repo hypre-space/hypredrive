@@ -59,6 +59,8 @@ static void PrintLinuxKernelTuningInformation(void);
 static void BuildGpuBindingString(char *buffer, size_t len);
 static void PrintMpiRuntimeInformation(MPI_Comm comm);
 static void PrintThreadingEnvironmentInformation(void);
+static void TrimTrailingWhitespace(char *s);
+static void NormalizeWhitespace(char *s);
 
 #ifdef HAVE_HWLOC
 typedef struct
@@ -827,6 +829,7 @@ PrintMpiRuntimeInformation(MPI_Comm comm)
       }
       lib_version[lib_len]                      = '\0';
       lib_version[strcspn(lib_version, "\r\n")] = '\0';
+      NormalizeWhitespace(lib_version);
       if (lib_version[0])
       {
          printf("MPI Implementation    : %s\n", lib_version);
@@ -849,6 +852,52 @@ PrintMpiRuntimeInformation(MPI_Comm comm)
       printf("Rank 0 Processor Name : %s\n", processor);
    }
    printf("\n");
+}
+
+static void
+TrimTrailingWhitespace(char *s)
+{
+   if (!s)
+   {
+      return;
+   }
+
+   size_t len = strlen(s);
+   while (len > 0 && isspace((unsigned char)s[len - 1]))
+   {
+      s[--len] = '\0';
+   }
+}
+
+static void
+NormalizeWhitespace(char *s)
+{
+   if (!s)
+   {
+      return;
+   }
+
+   char *src       = s;
+   char *dst       = s;
+   int   saw_space = 0;
+
+   while (*src)
+   {
+      unsigned char c = (unsigned char)*src++;
+      if (isspace(c))
+      {
+         saw_space = 1;
+         continue;
+      }
+
+      if (saw_space && dst != s)
+      {
+         *dst++ = ' ';
+      }
+      *dst++    = (char)c;
+      saw_space = 0;
+   }
+   *dst = '\0';
 }
 
 static void
@@ -1101,7 +1150,7 @@ PrintCpuTopologyInfo(MPI_Comm comm)
       printf("CPU Topology\n");
       printf("------------\n");
       printf("Number of Nodes       : %d\n", numNodes);
-      printf("Packages (sockets)   : %d\n", packages);
+      printf("Packages (sockets)    : %d\n", packages);
       printf("Cores                : %d\n", cores);
       printf("Processing Units     : %d\n", pus);
       printf("NUMA domains         : %d\n", numas);
@@ -1130,17 +1179,29 @@ PrintCpuTopologyInfo(MPI_Comm comm)
             const char *cpumodel  = hwloc_obj_get_info_by_name(package, "CPUModel");
             if (cpuvendor || cpumodel)
             {
-               if (packages > 1)
+               char cpu_desc[256] = "";
+               if (cpuvendor && cpumodel)
                {
-                  printf("CPU Model #%d         : ", i);
+                  snprintf(cpu_desc, sizeof(cpu_desc), "%s %s", cpuvendor, cpumodel);
+               }
+               else if (cpuvendor)
+               {
+                  snprintf(cpu_desc, sizeof(cpu_desc), "%s", cpuvendor);
                }
                else
                {
-                  printf("CPU Model             : ");
+                  snprintf(cpu_desc, sizeof(cpu_desc), "%s", cpumodel);
                }
-               if (cpuvendor) printf("%s ", cpuvendor);
-               if (cpumodel) printf("%s", cpumodel);
-               printf("\n");
+               TrimTrailingWhitespace(cpu_desc);
+
+               if (packages > 1)
+               {
+                  printf("CPU Model #%d         : %s\n", i, cpu_desc);
+               }
+               else
+               {
+                  printf("CPU Model             : %s\n", cpu_desc);
+               }
             }
          }
       }
@@ -1551,11 +1612,11 @@ PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count)
    int num_numas = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_NUMANODE);
    if (num_numas <= 0)
    {
-      printf("\nNUMA Information       : Not available\n");
+      printf("NUMA Information       : Not available\n\n");
       return;
    }
 
-   printf("\nNUMA Information\n");
+   printf("NUMA Information\n");
    printf("-----------------\n");
 
    hwloc_obj_t numa = NULL;
@@ -1567,7 +1628,7 @@ PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count)
       unsigned long long total_mem = numa->attr->numanode.local_memory;
       int                pu_count  = hwloc_bitmap_weight(numa->cpuset);
 
-      printf("NUMA node %-3d\n", numa->os_index);
+      printf("NUMA node %d\n", numa->os_index);
       printf("  CPUs                 : %s (%d PUs)\n", cpuset_str, pu_count);
       printf("  Memory (GiB)         : %.2f\n", total_mem / bytes_to_gib);
 
@@ -1595,15 +1656,19 @@ PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count)
                if (gpus[i].ancestor &&
                    hwloc_bitmap_isset(gpus[i].ancestor->nodeset, numa->os_index))
                {
-                  if (!first) printf(",");
-                  printf(" %s", gpus[i].pci_busid);
+                  printf("%s%s", first ? " (" : ", ", gpus[i].pci_busid);
                   first = false;
                }
+            }
+            if (!first)
+            {
+               printf(")");
             }
          }
          printf("\n");
       }
    }
+   printf("\n");
 }
 
 static void
@@ -1614,7 +1679,7 @@ PrintNetworkInfoHwloc(void)
       return;
    }
 
-   printf("\nNetwork / Interconnect\n");
+   printf("Network / Interconnect\n");
    printf("----------------------\n");
 
    int         found_ib  = 0;
@@ -1659,7 +1724,7 @@ PrintNetworkInfoHwloc(void)
       else if (obj->attr->osdev.type == HWLOC_OBJ_OSDEV_NETWORK)
       {
          found_net = 1;
-         printf("Interface %-10s\n", obj->name);
+         printf("Interface %-11s : detected\n", obj->name);
       }
    }
 
@@ -1684,7 +1749,7 @@ PrintProcessBinding(void)
       return;
    }
 
-   printf("\nProcess Binding\n");
+   printf("Process Binding\n");
    printf("-----------------\n");
 
    hwloc_bitmap_t cpuset = hwloc_bitmap_alloc();
@@ -1801,7 +1866,7 @@ PrintGpuAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count)
 
       for (int r = 0; r < nprocs; r++)
       {
-         printf("Rank %-3d: %d GPU%s visible", r, gpu_counts[r],
+         printf("Rank %-3d              : %d GPU%s visible", r, gpu_counts[r],
                 gpu_counts[r] != 1 ? "s" : "");
 
          // Show which GPUs are visible (based on environment variables)
