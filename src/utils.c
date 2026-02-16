@@ -44,6 +44,60 @@ StrTrim(char *str)
 }
 
 /*-----------------------------------------------------------------------------
+ * TrimTrailingWhitespace
+ *-----------------------------------------------------------------------------*/
+
+void
+TrimTrailingWhitespace(char *str)
+{
+   if (!str)
+   {
+      return;
+   }
+
+   size_t len = strlen(str);
+   while (len > 0 && isspace((unsigned char)str[len - 1]))
+   {
+      str[--len] = '\0';
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * NormalizeWhitespace
+ *-----------------------------------------------------------------------------*/
+
+void
+NormalizeWhitespace(char *str)
+{
+   if (!str)
+   {
+      return;
+   }
+
+   char *src       = str;
+   char *dst       = str;
+   int   saw_space = 0;
+
+   while (*src)
+   {
+      unsigned char c = (unsigned char)*src++;
+      if (isspace(c))
+      {
+         saw_space = 1;
+         continue;
+      }
+
+      if (saw_space && dst != str)
+      {
+         *dst++ = ' ';
+      }
+      *dst++    = (char)c;
+      saw_space = 0;
+   }
+   *dst = '\0';
+}
+
+/*-----------------------------------------------------------------------------
  * CheckBinaryDataExists
  *-----------------------------------------------------------------------------*/
 

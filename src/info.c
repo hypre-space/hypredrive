@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include "HYPREDRV_config.h"
 #include "HYPRE_config.h"
+#include "utils.h"
 #ifdef HYPRE_USING_OPENMP
 #include <omp.h>
 #endif
@@ -59,8 +60,6 @@ static void PrintLinuxKernelTuningInformation(void);
 static void BuildGpuBindingString(char *buffer, size_t len);
 static void PrintMpiRuntimeInformation(MPI_Comm comm);
 static void PrintThreadingEnvironmentInformation(void);
-static void TrimTrailingWhitespace(char *s);
-static void NormalizeWhitespace(char *s);
 
 #ifdef HAVE_HWLOC
 typedef struct
@@ -87,7 +86,6 @@ static void             PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gp
 static void             PrintNetworkInfoHwloc(void);
 static void             PrintProcessBinding(void);
 static void             PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
-static void             PrintGpuAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
 static void             PrintTopologyTree(void);
 static void             PrintTopologyTreeRecursive(hwloc_obj_t obj, int depth);
 static void             PrintMemoryInformation(double bytes_to_gib, double mib_to_gib);
@@ -852,52 +850,6 @@ PrintMpiRuntimeInformation(MPI_Comm comm)
       printf("Rank 0 Processor Name : %s\n", processor);
    }
    printf("\n");
-}
-
-static void
-TrimTrailingWhitespace(char *s)
-{
-   if (!s)
-   {
-      return;
-   }
-
-   size_t len = strlen(s);
-   while (len > 0 && isspace((unsigned char)s[len - 1]))
-   {
-      s[--len] = '\0';
-   }
-}
-
-static void
-NormalizeWhitespace(char *s)
-{
-   if (!s)
-   {
-      return;
-   }
-
-   char *src       = s;
-   char *dst       = s;
-   int   saw_space = 0;
-
-   while (*src)
-   {
-      unsigned char c = (unsigned char)*src++;
-      if (isspace(c))
-      {
-         saw_space = 1;
-         continue;
-      }
-
-      if (saw_space && dst != s)
-      {
-         *dst++ = ' ';
-      }
-      *dst++    = (char)c;
-      saw_space = 0;
-   }
-   *dst = '\0';
 }
 
 static void
@@ -1840,54 +1792,6 @@ PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count)
 }
 
 static void
-PrintGpuAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count)
-{
-   int myid = 0, nprocs = 0;
-   MPI_Comm_rank(comm, &myid);
-   MPI_Comm_size(comm, &nprocs);
-
-   if (gpu_count == 0)
-   {
-      return;
-   }
-
-   // Gather GPU visibility per rank
-   int *gpu_counts = NULL;
-   if (!myid)
-   {
-      gpu_counts = (int *)malloc(nprocs * sizeof(int));
-   }
-   MPI_Gather(&gpu_count, 1, MPI_INT, gpu_counts, 1, MPI_INT, 0, comm);
-
-   if (!myid)
-   {
-      printf("GPU Affinity (per rank)\n");
-      printf("------------------------\n");
-
-      for (int r = 0; r < nprocs; r++)
-      {
-         printf("Rank %-3d              : %d GPU%s visible", r, gpu_counts[r],
-                gpu_counts[r] != 1 ? "s" : "");
-
-         // Show which GPUs are visible (based on environment variables)
-         char gpuBindingLocal[HYPRE_MAX_GPU_BINDING];
-         if (r == 0)
-         {
-            BuildGpuBindingString(gpuBindingLocal, sizeof(gpuBindingLocal));
-            if (strcmp(gpuBindingLocal, "unset") != 0)
-            {
-               printf(" (%s)", gpuBindingLocal);
-            }
-         }
-         printf("\n");
-      }
-      printf("\n");
-
-      free(gpu_counts);
-   }
-}
-
-static void
 CountChildrenRecursive(hwloc_obj_t obj, hwloc_obj_type_t type, int *count, int *first_idx,
                        int *last_idx)
 {
@@ -2284,39 +2188,36 @@ PrintSystemInfoHwloc(MPI_Comm comm)
       // 9. Process Binding
       PrintProcessBinding();
 
-      // 9a. GPU Affinity (per rank)
-      PrintGpuAffinity(comm, gpus, gpu_count);
-
-      // 9b. Thread Affinity (if OpenMP is enabled)
+      // 10. Thread Affinity (if OpenMP is enabled)
       PrintThreadAffinity(comm, gpus, gpu_count);
 
-      // 10. Topology Tree
+      // 11. Topology Tree
       PrintTopologyTree();
 
-      // 11. Operating System
+      // 12. Operating System
       PrintOperatingSystemInfo();
 
-      // 12. Compilation Information
+      // 13. Compilation Information
       PrintCompilationInfo();
 
-      // 13. MPI Runtime Information
+      // 14. MPI Runtime Information
       PrintMpiRuntimeInformation(comm);
 
-      // 14. Threading Environment
+      // 15. Threading Environment
       PrintThreadingEnvironmentInformation();
 
 #ifndef __APPLE__
-      // 15. Linux Kernel Tuning
+      // 16. Linux Kernel Tuning
       PrintLinuxKernelTuningInformation();
 #endif
 
-      // 16. Current Working Directory
+      // 17. Current Working Directory
       PrintWorkingDirectory();
 
-      // 17. Dynamic Libraries
+      // 18. Dynamic Libraries
       PrintDynamicLibraries();
 
-      // 18. hwloc Information
+      // 19. hwloc Information
       printf("hwloc Information\n");
       printf("-----------------\n");
       unsigned version = hwloc_get_api_version();
@@ -2324,7 +2225,7 @@ PrintSystemInfoHwloc(MPI_Comm comm)
              (version >> 8) & 0xff, version & 0xff);
       printf("\n");
 
-      // 19. Running Information
+      // 20. Running Information
       PrintRunningInfo(comm);
 
       if (gpuBindingAll)

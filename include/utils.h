@@ -46,6 +46,8 @@
 
 char *StrToLowerCase(char *);
 char *StrTrim(char *);
+void  TrimTrailingWhitespace(char *);
+void  NormalizeWhitespace(char *);
 int   CheckBinaryDataExists(const char *);
 int   CheckASCIIDataExists(const char *);
 int   CountNumberOfPartitions(const char *);
