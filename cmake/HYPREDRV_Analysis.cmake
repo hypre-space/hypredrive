@@ -365,6 +365,25 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
         # Runs cppcheck, generates HTML report, then fails if errors were found
         find_program(CPPCHECK_HTMLREPORT_EXECUTABLE NAMES cppcheck-htmlreport)
 
+        # Fast defaults keep cppcheck practical for local iteration.
+        # Turn this OFF when you need a deep, slower scan.
+        option(HYPREDRV_CPPCHECK_DEEP "Run exhaustive cppcheck analysis" OFF)
+
+        set(_cppcheck_depth_flags "")
+        if(HYPREDRV_CPPCHECK_DEEP)
+            list(APPEND _cppcheck_depth_flags
+                --inconclusive
+                --force
+                --check-level=exhaustive
+            )
+            message(STATUS "cppcheck depth: deep (exhaustive)")
+        else()
+            list(APPEND _cppcheck_depth_flags
+                --check-level=normal
+            )
+            message(STATUS "cppcheck depth: fast (normal)")
+        endif()
+
         # Build the command list - always generate XML first
         set(_cppcheck_commands
             COMMAND ${CPPCHECK_EXECUTABLE}
@@ -373,15 +392,15 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
                 --suppress=unusedFunction
                 --suppress=missingIncludeSystem
                 --suppress=checkersReport
+                --suppress=toomanyconfigs
+                --suppress=unmatchedSuppression
                 --suppressions-list=${CPPCHECK_SUPPRESSIONS_FILE}
                 --inline-suppr
-                --inconclusive
-                --force
+                ${_cppcheck_depth_flags}
                 -UPETSC_AVAILABLE
                 -UISIS_AVAILABLE
                 -UHYPRE_USING_OPENMP
                 -UHYPRE_USING_UMPIRE
-                --check-level=exhaustive
                 --xml
                 --xml-version=2
                 -I${CMAKE_SOURCE_DIR}/include
