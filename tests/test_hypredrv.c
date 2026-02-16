@@ -46,6 +46,8 @@ struct hypredrv_struct
    HYPRE_Precon precon;
    HYPRE_Solver solver;
 
+   void *scaling_ctx;
+
    Stats *stats;
 };
 
@@ -1109,6 +1111,7 @@ test_HYPREDRV_misc_0hit_branches(void)
    ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
 
    /* Exercise solution/RHS getters and a successful solution norm path */
    HYPRE_Complex *sol_data = NULL;
@@ -1118,6 +1121,28 @@ test_HYPREDRV_misc_0hit_branches(void)
    HYPRE_Complex *rhs_data = NULL;
    ASSERT_EQ(HYPREDRV_LinearSystemGetRHSValues(obj, &rhs_data), ERROR_NONE);
    ASSERT_NOT_NULL(rhs_data);
+   HYPRE_Complex *rhs_expected = NULL;
+   LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
+   ASSERT_NOT_NULL(rhs_expected);
+   ASSERT_EQ(rhs_data, rhs_expected);
+   ASSERT_TRUE(rhs_data != sol_data);
+
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetSolutionValues(obj, NULL) & ERROR_UNKNOWN);
+   ErrorCodeResetAll();
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetRHSValues(obj, NULL) & ERROR_UNKNOWN);
+   ErrorCodeResetAll();
+
+   HYPRE_IJVector saved_b = state->vec_b;
+   state->vec_b           = NULL;
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetRHSValues(obj, &rhs_data) & ERROR_UNKNOWN);
+   ErrorCodeResetAll();
+   state->vec_b = saved_b;
+
+   HYPRE_IJVector saved_x = state->vec_x;
+   state->vec_x           = NULL;
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetSolutionValues(obj, &sol_data) & ERROR_UNKNOWN);
+   ErrorCodeResetAll();
+   state->vec_x = saved_x;
 
    double ok_norm = 0.0;
    ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionNorm(obj, "L2", &ok_norm), ERROR_NONE);
