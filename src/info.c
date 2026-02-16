@@ -49,11 +49,16 @@
 #ifndef __APPLE__
 static int  ReadLineFromFile(const char *path, char *buffer, size_t len);
 static int  ReadIntFromFile(const char *path, int *value);
+static int  ReadUllFromProcMeminfo(const char *field, unsigned long long *value);
+static int  ExtractBracketedToken(const char *line, char *token, size_t len);
 static void PrintLinuxNumaInformation(double bytes_to_gib);
 static void PrintNetworkInformation(void);
 static void PrintAcceleratorRuntimeInformation(void);
+static void PrintLinuxKernelTuningInformation(void);
 #endif
 static void BuildGpuBindingString(char *buffer, size_t len);
+static void PrintMpiRuntimeInformation(MPI_Comm comm);
+static void PrintThreadingEnvironmentInformation(void);
 
 #ifdef HAVE_HWLOC
 typedef struct
@@ -713,6 +718,12 @@ PrintSystemInfoLegacy(MPI_Comm comm)
       dl_iterate_phdr(dlpi_callback, NULL);
 #endif
 
+      PrintMpiRuntimeInformation(comm);
+      PrintThreadingEnvironmentInformation();
+#ifndef __APPLE__
+      PrintLinuxKernelTuningInformation();
+#endif
+
       printf("\n================================== System Information "
              "=================================\n\n");
       printf("Running on %d MPI rank%s\n", nprocs, nprocs > 1 ? "s" : "");
@@ -780,6 +791,105 @@ BuildGpuBindingString(char *buffer, size_t len)
       strncpy(buffer, "unset", len - 1);
       buffer[len - 1] = '\0';
    }
+}
+
+static void
+PrintMpiRuntimeInformation(MPI_Comm comm)
+{
+   int myid = 0;
+   MPI_Comm_rank(comm, &myid);
+   if (myid)
+   {
+      return;
+   }
+
+   printf("MPI Runtime Information\n");
+   printf("------------------------\n");
+
+   int mpi_major = 0;
+   int mpi_minor = 0;
+   if (MPI_Get_version(&mpi_major, &mpi_minor) == MPI_SUCCESS)
+   {
+      printf("MPI Standard          : %d.%d\n", mpi_major, mpi_minor);
+   }
+
+   char lib_version[MPI_MAX_LIBRARY_VERSION_STRING + 1];
+   int  lib_len = 0;
+   if (MPI_Get_library_version(lib_version, &lib_len) == MPI_SUCCESS)
+   {
+      if (lib_len < 0)
+      {
+         lib_len = 0;
+      }
+      if ((size_t)lib_len >= sizeof(lib_version))
+      {
+         lib_len = (int)(sizeof(lib_version) - 1);
+      }
+      lib_version[lib_len]                      = '\0';
+      lib_version[strcspn(lib_version, "\r\n")] = '\0';
+      if (lib_version[0])
+      {
+         printf("MPI Implementation    : %s\n", lib_version);
+      }
+   }
+
+   char processor[MPI_MAX_PROCESSOR_NAME + 1];
+   int  processor_len = 0;
+   if (MPI_Get_processor_name(processor, &processor_len) == MPI_SUCCESS)
+   {
+      if (processor_len < 0)
+      {
+         processor_len = 0;
+      }
+      if ((size_t)processor_len >= sizeof(processor))
+      {
+         processor_len = (int)(sizeof(processor) - 1);
+      }
+      processor[processor_len] = '\0';
+      printf("Rank 0 Processor Name : %s\n", processor);
+   }
+   printf("\n");
+}
+
+static void
+PrintThreadingEnvironmentInformation(void)
+{
+   struct ThreadEnvVar
+   {
+      const char *label;
+      const char *name;
+   };
+
+   static const struct ThreadEnvVar vars[] = {
+      {"OMP_NUM_THREADS", "OMP_NUM_THREADS"}, {"OMP_PROC_BIND", "OMP_PROC_BIND"},
+      {"OMP_PLACES", "OMP_PLACES"},           {"OMP_SCHEDULE", "OMP_SCHEDULE"},
+      {"KMP_AFFINITY", "KMP_AFFINITY"},       {"GOMP_CPU_AFFINITY", "GOMP_CPU_AFFINITY"},
+   };
+
+   printf("Threading Environment\n");
+   printf("----------------------\n");
+#if defined(HYPRE_USING_OPENMP) && defined(_OPENMP)
+   printf("OpenMP max threads    : %d\n", omp_get_max_threads());
+#else
+   printf("OpenMP max threads    : not available (OpenMP disabled)\n");
+#endif
+
+   int printed_env = 0;
+   for (size_t i = 0; i < sizeof(vars) / sizeof(vars[0]); i++)
+   {
+      const char *value = getenv(vars[i].name);
+      if (value && value[0])
+      {
+         printf("%-22s : %s\n", vars[i].label, value);
+         printed_env = 1;
+      }
+   }
+
+   if (!printed_env)
+   {
+      printf("OpenMP environment    : unset\n");
+   }
+   printf("\n");
 }
 
 #ifdef HAVE_HWLOC
@@ -2124,13 +2234,24 @@ PrintSystemInfoHwloc(MPI_Comm comm)
       // 12. Compilation Information
       PrintCompilationInfo();
 
-      // 13. Current Working Directory
+      // 13. MPI Runtime Information
+      PrintMpiRuntimeInformation(comm);
+
+      // 14. Threading Environment
+      PrintThreadingEnvironmentInformation();
+
+#ifndef __APPLE__
+      // 15. Linux Kernel Tuning
+      PrintLinuxKernelTuningInformation();
+#endif
+
+      // 16. Current Working Directory
       PrintWorkingDirectory();
 
-      // 14. Dynamic Libraries
+      // 17. Dynamic Libraries
       PrintDynamicLibraries();
 
-      // 15. hwloc Information
+      // 18. hwloc Information
       printf("hwloc Information\n");
       printf("-----------------\n");
       unsigned version = hwloc_get_api_version();
@@ -2138,7 +2259,7 @@ PrintSystemInfoHwloc(MPI_Comm comm)
              (version >> 8) & 0xff, version & 0xff);
       printf("\n");
 
-      // 16. Running Information
+      // 19. Running Information
       PrintRunningInfo(comm);
 
       if (gpuBindingAll)
@@ -2201,6 +2322,172 @@ ReadIntFromFile(const char *path, int *value)
 
    *value = atoi(line);
    return 1;
+}
+
+static int
+ReadUllFromProcMeminfo(const char *field, unsigned long long *value)
+{
+   if (!field || !value)
+   {
+      return 0;
+   }
+
+   FILE *fp = fopen("/proc/meminfo", "r");
+   if (!fp)
+   {
+      return 0;
+   }
+
+   int  found = 0;
+   char line[256];
+   while (fgets(line, sizeof(line), fp))
+   {
+      char               key[128];
+      unsigned long long parsed = 0;
+      if (sscanf(line, "%127[^:]: %llu", key, &parsed) == 2 && strcmp(key, field) == 0)
+      {
+         *value = parsed;
+         found  = 1;
+         break;
+      }
+   }
+
+   fclose(fp);
+   return found;
+}
+
+static int
+ExtractBracketedToken(const char *line, char *token, size_t len)
+{
+   if (!line || !token || len == 0)
+   {
+      return 0;
+   }
+
+   const char *start = strchr(line, '[');
+   if (!start)
+   {
+      return 0;
+   }
+   start++;
+
+   const char *end = strchr(start, ']');
+   if (!end || end <= start)
+   {
+      return 0;
+   }
+
+   size_t n = (size_t)(end - start);
+   if (n >= len)
+   {
+      n = len - 1;
+   }
+   memcpy(token, start, n);
+   token[n] = '\0';
+   return 1;
+}
+
+static void
+PrintLinuxKernelTuningInformation(void)
+{
+   printf("Linux Kernel Tuning\n");
+   printf("--------------------\n");
+
+   struct sysinfo info;
+   if (sysinfo(&info) == 0)
+   {
+      long uptime = info.uptime;
+      long days   = uptime / 86400;
+      uptime      = uptime % 86400;
+      long hours  = uptime / 3600;
+      uptime      = uptime % 3600;
+      long mins   = uptime / 60;
+
+      printf("System uptime         : %ldd %02ldh %02ldm\n", days, hours, mins);
+      printf("Load average (1/5/15) : %.2f / %.2f / %.2f\n", info.loads[0] / 65536.0,
+             info.loads[1] / 65536.0, info.loads[2] / 65536.0);
+   }
+
+   char line[256];
+   char token[64];
+
+   if (ReadLineFromFile("/sys/kernel/mm/transparent_hugepage/enabled", line,
+                        sizeof(line)))
+   {
+      if (ExtractBracketedToken(line, token, sizeof(token)))
+      {
+         printf("THP policy            : %s\n", token);
+      }
+      else
+      {
+         printf("THP policy            : %s\n", line);
+      }
+   }
+
+   if (ReadLineFromFile("/sys/kernel/mm/transparent_hugepage/defrag", line, sizeof(line)))
+   {
+      if (ExtractBracketedToken(line, token, sizeof(token)))
+      {
+         printf("THP defrag policy     : %s\n", token);
+      }
+      else
+      {
+         printf("THP defrag policy     : %s\n", line);
+      }
+   }
+
+   int numa_balancing = -1;
+   if (ReadIntFromFile("/proc/sys/kernel/numa_balancing", &numa_balancing))
+   {
+      printf("NUMA balancing        : %s\n", numa_balancing ? "enabled" : "disabled");
+   }
+
+   int overcommit = -1;
+   if (ReadIntFromFile("/proc/sys/vm/overcommit_memory", &overcommit))
+   {
+      const char *mode = "unknown";
+      if (overcommit == 0)
+      {
+         mode = "heuristic";
+      }
+      else if (overcommit == 1)
+      {
+         mode = "always";
+      }
+      else if (overcommit == 2)
+      {
+         mode = "never";
+      }
+      printf("Overcommit policy     : %d (%s)\n", overcommit, mode);
+   }
+
+   int zone_reclaim = -1;
+   if (ReadIntFromFile("/proc/sys/vm/zone_reclaim_mode", &zone_reclaim))
+   {
+      printf("Zone reclaim mode     : %d\n", zone_reclaim);
+   }
+
+   unsigned long long hugepages_total = 0;
+   unsigned long long hugepages_free  = 0;
+   unsigned long long hugepage_size   = 0;
+   if (ReadUllFromProcMeminfo("HugePages_Total", &hugepages_total))
+   {
+      printf("HugePages total/free  : %llu / ", hugepages_total);
+      if (ReadUllFromProcMeminfo("HugePages_Free", &hugepages_free))
+      {
+         printf("%llu\n", hugepages_free);
+      }
+      else
+      {
+         printf("unknown\n");
+      }
+   }
+   if (ReadUllFromProcMeminfo("Hugepagesize", &hugepage_size))
+   {
+      printf("HugePage size         : %llu kB\n", hugepage_size);
+   }
+
+   printf("\n");
 }
 
 static void
