@@ -297,24 +297,35 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
 
     if (HYPREDRV_HAVE_HYPRE_21900_DEV0)
         # Add tests (ex1_1proc shows full system info, others use -q for faster runs)
-        add_hypredrive_test(ex1_1proc  1 ex1.yml NO_QUIET)
+        add_hypredrive_test(ex1_1proc 1 ex1.yml NO_QUIET)
+        set(_hypredrv_base_examples
+            "ex1a_1proc|1|ex1a.yml"
+            "ex1_preset|1|ex1-preset.yml"
+            "ex2_4proc|4|ex2.yml"
+        )
+        foreach(_case IN LISTS _hypredrv_base_examples)
+            string(REPLACE "|" ";" _parts "${_case}")
+            list(GET _parts 0 _name)
+            list(GET _parts 1 _nprocs)
+            list(GET _parts 2 _config)
+            add_hypredrive_test(${_name} ${_nprocs} ${_config})
+        endforeach()
+        unset(_hypredrv_base_examples)
+
         add_hypredrive_cli_test(ex1_cli 1 ex1.yml)
         add_hypredrive_cli_test(ex1_cli_reps5 1 ex1.yml
             EXTRA_ARGS --general:num_repetitions 5
             REQUIRE_CONTAINS ${_cli_reps5_require_contains}
         )
-        add_hypredrive_test(ex1a_1proc    1 ex1a.yml)
         if (HYPREDRV_HAVE_HYPRE_23000_DEV0)
-            add_hypredrive_test(ex1b_1proc    1 ex1b.yml)
+            add_hypredrive_test(ex1b_1proc 1 ex1b.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_22500_DEV0)
-            add_hypredrive_test(ex1c_1proc    1 ex1c.yml)
-            add_hypredrive_test(ex1d_1proc    1 ex1d.yml)
+            add_hypredrive_test(ex1c_1proc 1 ex1c.yml)
+            add_hypredrive_test(ex1d_1proc 1 ex1d.yml)
         endif()
-        add_hypredrive_test(ex1_preset    1 ex1-preset.yml)
-        add_hypredrive_test(ex2_4proc     4 ex2.yml)
         if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
-            add_hypredrive_test(ex3_1proc     1 ex3.yml)
+            add_hypredrive_test(ex3_1proc 1 ex3.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_30000_DEV0)
             add_hypredrive_cli_test(ex7_cli_tagres 1 ex7-tagged-gmres.yml
@@ -360,9 +371,19 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             )
         endif()
         if (HYPREDRV_HAVE_HYPRE_30100_DEV5)
-            add_hypredrive_test(ex3_nested_1  1 ex3-mgr_Frelax_gmres.yml)
-            add_hypredrive_test(ex3_nested_2  1 ex3-mgr_coarse_gmres_amg.yml)
-            add_hypredrive_test(ex4_4proc     4 ex4.yml)
+            set(_hypredrv_mgr_examples
+                "ex3_nested_1|1|ex3-mgr_Frelax_gmres.yml"
+                "ex3_nested_2|1|ex3-mgr_coarse_gmres_amg.yml"
+                "ex4_4proc|4|ex4.yml"
+            )
+            foreach(_case IN LISTS _hypredrv_mgr_examples)
+                string(REPLACE "|" ";" _parts "${_case}")
+                list(GET _parts 0 _name)
+                list(GET _parts 1 _nprocs)
+                list(GET _parts 2 _config)
+                add_hypredrive_test(${_name} ${_nprocs} ${_config})
+            endforeach()
+            unset(_hypredrv_mgr_examples)
             add_hypredrive_cli_test(ex4_cli_mgr_g_ilu 1 ex4.yml
                 OVERRIDES
                     --preconditioner:mgr:print_level 1
@@ -403,13 +424,13 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             )
         endif()
         if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
-            add_hypredrive_test(ex5_1proc     1 ex5.yml)
+            add_hypredrive_test(ex5_1proc 1 ex5.yml)
         endif()
         if (HYPREDRV_ENABLE_EIGSPEC)
-            add_hypredrive_test(ex6_1proc     1 ex6.yml)
+            add_hypredrive_test(ex6_1proc 1 ex6.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
-            add_hypredrive_test(ex7_1proc     1 ex7.yml)
+            add_hypredrive_test(ex7_1proc 1 ex7.yml)
             add_hypredrive_cli_test(ex7_cli_reps4_ls4 1 ex7.yml
                 OVERRIDES --general:num_repetitions 4 --linear_system:last_suffix 4
                 REQUIRE_CONTAINS ${_cli_ex7_reps4_ls4_require_contains}
@@ -423,9 +444,19 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             add_hypredrive_test(ex7_custom_scaling 1 ex7-custom-scaling.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_23000_DEV0)
-            add_hypredrive_test(ex8_1proc     1 ex8.yml)
-            add_hypredrive_test(ex8a_4proc    4 ex8-multi-1.yml)
-            add_hypredrive_test(ex8b_4proc    4 ex8-multi-2.yml)
+            set(_hypredrv_ex8_examples
+                "ex8_1proc|1|ex8.yml"
+                "ex8a_4proc|4|ex8-multi-1.yml"
+                "ex8b_4proc|4|ex8-multi-2.yml"
+            )
+            foreach(_case IN LISTS _hypredrv_ex8_examples)
+                string(REPLACE "|" ";" _parts "${_case}")
+                list(GET _parts 0 _name)
+                list(GET _parts 1 _nprocs)
+                list(GET _parts 2 _config)
+                add_hypredrive_test(${_name} ${_nprocs} ${_config})
+            endforeach()
+            unset(_hypredrv_ex8_examples)
         endif()
 
         # Test main.c help/usage/error branches

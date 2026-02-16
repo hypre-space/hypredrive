@@ -63,12 +63,12 @@ void LinearSystemSetNearNullSpace(MPI_Comm, const LS_args *, HYPRE_IJMatrix, int
                                   const HYPRE_Complex *, HYPRE_IJVector *);
 void LinearSystemSetNumSystems(LS_args *);
 void LinearSystemSetArgsFromYAML(LS_args *, YAMLnode *);
-void LinearSystemReadMatrix(MPI_Comm, LS_args *, HYPRE_IJMatrix *);
-void LinearSystemSetRHS(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJVector *,
+void LinearSystemReadMatrix(MPI_Comm, const LS_args *, HYPRE_IJMatrix *);
+void LinearSystemSetRHS(MPI_Comm, const LS_args *, HYPRE_IJMatrix, HYPRE_IJVector *,
                         HYPRE_IJVector *);
 void LinearSystemSetInitialGuess(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJVector,
                                  HYPRE_IJVector *, HYPRE_IJVector *);
-void LinearSystemSetReferenceSolution(MPI_Comm, LS_args *, HYPRE_IJVector *);
+void LinearSystemSetReferenceSolution(MPI_Comm, const LS_args *, HYPRE_IJVector *);
 void LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector);
 void LinearSystemSetVectorTags(HYPRE_IJVector, IntArray *);
 void LinearSystemSetPrecMatrix(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJMatrix *);
