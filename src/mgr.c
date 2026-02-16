@@ -877,6 +877,34 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 #endif
          args->frelax[i] = frelax;
       }
+#if defined(HYPRE_USING_DSUPERLU)
+      else if (args->level[i].f_relaxation.type == 29)
+      {
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+         HYPRE_MGRDirectSolverCreate(&frelax);
+         if (!frelax)
+         {
+            ErrorCodeSet(ERROR_INVALID_PRECON);
+            ErrorMsgAdd(
+               "MGR F-relaxation 'spdirect' unavailable: direct solver creation failed");
+            return;
+         }
+         HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
+         args->frelax[i] = frelax;
+#else
+         ErrorCodeSet(ERROR_INVALID_PRECON);
+         ErrorMsgAdd("MGR F-relaxation 'spdirect' requires hypre >= 2.31.0");
+         return;
+#endif
+      }
+#else
+      else if (args->level[i].f_relaxation.type == 29)
+      {
+         ErrorCodeSet(ERROR_INVALID_PRECON);
+         ErrorMsgAdd("MGR F-relaxation 'spdirect' requires hypre built with DSUPERLU");
+         return;
+      }
+#endif
 #if HYPRE_CHECK_MIN_VERSION(23200, 14)
       else if (args->level[i].f_relaxation.type == 32)
       {
@@ -977,9 +1005,24 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       else if (args->coarsest_level.type == 29)
       {
          HYPRE_MGRDirectSolverCreate(&args->csolver);
+         if (!args->csolver)
+         {
+            ErrorCodeSet(ERROR_INVALID_PRECON);
+            ErrorMsgAdd(
+               "MGR coarsest_level 'spdirect' unavailable: direct solver creation "
+               "failed");
+            return;
+         }
          args->csolver_type = 29;
          HYPRE_MGRSetCoarseSolver(precon, HYPRE_MGRDirectSolverSolve,
                                   HYPRE_MGRDirectSolverSetup, args->csolver);
+      }
+#else
+      else if (args->coarsest_level.type == 29)
+      {
+         ErrorCodeSet(ERROR_INVALID_PRECON);
+         ErrorMsgAdd("MGR coarsest_level 'spdirect' requires hypre built with DSUPERLU");
+         return;
       }
 #endif
    }
