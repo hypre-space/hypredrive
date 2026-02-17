@@ -534,12 +534,13 @@ test_HYPREDRV_stats_level_apis(void)
    ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
 
    /* Drive Stats using internal timer keys ("prec"/"solve") */
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "prec");
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "prec");
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
+   StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
+   StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_END, "prec");
+   StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
+   StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_END, "solve");
 
    /* HYPREDRV_GetLastStat branches */
    int    iter = -1;

@@ -281,7 +281,7 @@ test_LinearSystemReadMatrix_filename_patterns(void)
    args.init_suffix = 0;
 
    ErrorCodeResetAll();
-   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat);
+   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
    /* Should fail with file not found, but branch was exercised */
    ASSERT_TRUE(ErrorCodeActive() || mat == NULL);
 
@@ -293,7 +293,7 @@ test_LinearSystemReadMatrix_filename_patterns(void)
    args.init_suffix = 0;
 
    ErrorCodeResetAll();
-   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat);
+   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
    /* Should fail with file not found, but branch was exercised */
    ASSERT_TRUE(ErrorCodeActive() || mat == NULL);
 
@@ -303,7 +303,7 @@ test_LinearSystemReadMatrix_filename_patterns(void)
            sizeof(args.matrix_filename) - 1);
 
    ErrorCodeResetAll();
-   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat);
+   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
    /* May succeed if file exists, or fail - both paths exercise branches */
 
    if (mat)
@@ -327,7 +327,7 @@ test_LinearSystemReadMatrix_no_filename_error(void)
    HYPRE_IJMatrix mat = NULL;
 
    ErrorCodeResetAll();
-   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat);
+   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
 
    ASSERT_TRUE(ErrorCodeActive());
    ASSERT_NULL(mat);
@@ -351,7 +351,7 @@ test_LinearSystemReadMatrix_type_branches(void)
    /* Test type 1 (IJ) branch */
    args.type = 1;
    ErrorCodeResetAll();
-   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat);
+   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
    /* May succeed or fail depending on file existence */
 
    if (mat)
@@ -363,7 +363,7 @@ test_LinearSystemReadMatrix_type_branches(void)
    /* Test type 3 (MTX) branch - will fail but exercises the branch */
    args.type = 3;
    ErrorCodeResetAll();
-   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat);
+   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
    /* Should fail but branch was exercised */
 
    TEST_HYPRE_FINALIZE();
@@ -385,7 +385,7 @@ test_LinearSystemReadMatrix_exec_policy_branches(void)
            sizeof(args.matrix_filename) - 1);
 
    ErrorCodeResetAll();
-   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat);
+   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
    /* May succeed or fail depending on device availability */
 
    if (mat)
@@ -398,7 +398,7 @@ test_LinearSystemReadMatrix_exec_policy_branches(void)
    /* Test exec_policy = 0 (host) */
    args.exec_policy = 0;
    ErrorCodeResetAll();
-   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat);
+   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
    /* May succeed or fail depending on file availability */
 
    if (mat)
@@ -436,7 +436,7 @@ test_LinearSystemReadMatrix_partition_count_errors(void)
       strncpy(args.matrix_filename, fake_file, sizeof(args.matrix_filename) - 1);
 
       ErrorCodeResetAll();
-      LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat);
+      LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
 
       /* Should fail with file not found due to partition count mismatch */
       ASSERT_TRUE(ErrorCodeActive() || mat == NULL);
@@ -476,7 +476,7 @@ test_LinearSystemReadRHS_file_patterns(void)
    args.init_suffix = 0;
 
    ErrorCodeResetAll();
-   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs);
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    /* Should fail with file not found, but branch was exercised */
 
    /* Test basename pattern for RHS */
@@ -485,7 +485,7 @@ test_LinearSystemReadRHS_file_patterns(void)
    strncpy(args.rhs_basename, "rhs", sizeof(args.rhs_basename) - 1);
 
    ErrorCodeResetAll();
-   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs);
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    /* Should fail with file not found, but branch was exercised */
 
    if (rhs)
@@ -528,7 +528,7 @@ test_LinearSystemSetRHS_mode_precedence_over_filename(void)
    HYPRE_IJMatrixAssemble(mat);
 
    ErrorCodeResetAll();
-   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs);
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_FALSE(ErrorCodeActive());
    ASSERT_NOT_NULL(rhs);
    ASSERT_NOT_NULL(refsol);
@@ -561,7 +561,7 @@ test_LinearSystemSetRHS_mode_branches(void)
    args.rhs_basename[0] = '\0';
 
    ErrorCodeResetAll();
-   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs);
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    /* Should succeed */
 
    if (rhs)
@@ -574,7 +574,7 @@ test_LinearSystemSetRHS_mode_branches(void)
    args.rhs_mode = 3;
 
    ErrorCodeResetAll();
-   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs);
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    /* Should succeed */
 
    if (rhs)
@@ -587,7 +587,7 @@ test_LinearSystemSetRHS_mode_branches(void)
    args.rhs_mode = 4;
 
    ErrorCodeResetAll();
-   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs);
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    /* Should succeed and create both rhs and refsol */
 
    if (rhs)
@@ -628,7 +628,7 @@ test_LinearSystemSetReferenceSolution_keeps_randsol_reference(void)
    HYPRE_IJMatrixAssemble(mat);
 
    ErrorCodeResetAll();
-   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &xref, &rhs);
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &xref, &rhs, NULL);
    ASSERT_NOT_NULL(rhs);
    ASSERT_NOT_NULL(xref);
 
@@ -636,7 +636,7 @@ test_LinearSystemSetReferenceSolution_keeps_randsol_reference(void)
 
    /* No xref file is provided, so existing randsol reference must be preserved. */
    ErrorCodeResetAll();
-   LinearSystemSetReferenceSolution(MPI_COMM_SELF, &args, &xref);
+   LinearSystemSetReferenceSolution(MPI_COMM_SELF, &args, &xref, NULL);
    ASSERT_NOT_NULL(xref);
    ASSERT_TRUE(xref == xref_before);
 
@@ -759,7 +759,7 @@ test_LinearSystemReadRHS_error_cases(void)
 
    /* Test with NULL matrix */
    ErrorCodeResetAll();
-   LinearSystemSetRHS(MPI_COMM_SELF, &args, NULL, &refsol, &rhs);
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, NULL, &refsol, &rhs, NULL);
    /* Expect no crash; implementation may or may not allocate rhs/refsol here. */
    if (rhs)
    {
@@ -778,7 +778,7 @@ test_LinearSystemReadRHS_error_cases(void)
    args.rhs_basename[0] = '\0';
 
    ErrorCodeResetAll();
-   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs);
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    /* Should use default case (ones) */
 
    if (rhs)
@@ -818,7 +818,7 @@ test_LinearSystemReadMatrix_mtx_success(void)
 
    HYPRE_IJMatrix mat = NULL;
    ErrorCodeResetAll();
-   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat);
+   LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
    /* The goal here is to execute the MatrixMarket matrix-read branch. Whether
     * HYPRE_IJMatrixReadMM succeeds depends on the hypre build/config and parser
     * expectations, so tolerate failure. */
@@ -866,7 +866,7 @@ test_LinearSystemSetRHS_mtx_file_success(void)
 
    HYPRE_IJVector refsol = NULL, rhs = NULL;
    ErrorCodeResetAll();
-   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs);
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    /* This path is mainly to exercise the MM vector-reader logic. Depending on the
     * hypre build/config, the underlying IJVector calls may report errors; tolerate
     * that as long as we don't crash/leak. */
@@ -921,7 +921,7 @@ test_LinearSystemSetRHS_mtx_dim_mismatch_errors(void)
 
    HYPRE_IJVector refsol = NULL, rhs = NULL;
    ErrorCodeResetAll();
-   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs);
+   LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_TRUE(ErrorCodeActive());
    ASSERT_NULL(rhs);
 
@@ -1019,7 +1019,7 @@ test_LinearSystemSetInitialGuess_x0_filename_branches(void)
    args.x0_filename[sizeof(args.x0_filename) - 1] = '\0';
    args.exec_policy                               = 0;
    ErrorCodeResetAll();
-   LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x);
+   LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x, NULL);
    /* Might set hypre errors depending on build; just ensure no crash and cleanup */
    if (x) HYPRE_IJVectorDestroy(x);
    if (x0) HYPRE_IJVectorDestroy(x0);
@@ -1030,7 +1030,7 @@ test_LinearSystemSetInitialGuess_x0_filename_branches(void)
    args.exec_policy = 1;
    ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x);
+   LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x, NULL);
    if (x) HYPRE_IJVectorDestroy(x);
    if (x0) HYPRE_IJVectorDestroy(x0);
    x = x0 = NULL;
@@ -1043,7 +1043,7 @@ test_LinearSystemSetInitialGuess_x0_filename_branches(void)
    write_text_file("tmp_x0.00000.bin", ""); /* dummy file - read may fail but should not crash */
    ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x);
+   LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x, NULL);
    if (x) HYPRE_IJVectorDestroy(x);
    if (x0) HYPRE_IJVectorDestroy(x0);
    unlink("tmp_x0.00000.bin");
@@ -1092,7 +1092,7 @@ test_LinearSystemSetPrecMatrix_branchy_paths(void)
 
    ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M);
+   LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
    ErrorCodeResetAll(); /* tolerate read errors */
 
    /* If the internal read failed, LinearSystemSetPrecMatrix may have destroyed the
@@ -1112,7 +1112,7 @@ test_LinearSystemSetPrecMatrix_branchy_paths(void)
    mat_M                                                      = create_test_ijmatrix_1x1(MPI_COMM_SELF, 3.0);
    ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M);
+   LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
    ErrorCodeResetAll();
    if (HYPRE_GetError() == 0 && mat_M && mat_M != mat_A)
    {
@@ -1130,7 +1130,7 @@ test_LinearSystemSetPrecMatrix_branchy_paths(void)
    mat_M                                                      = create_test_ijmatrix_1x1(MPI_COMM_SELF, 4.0);
    ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M);
+   LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
    ErrorCodeResetAll();
    if (HYPRE_GetError() == 0 && mat_M && mat_M != mat_A)
    {

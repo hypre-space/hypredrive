@@ -443,12 +443,13 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix *matrix_ptr)
+LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix *matrix_ptr,
+                       Stats *stats)
 {
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "matrix");
+   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "matrix");
 
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int  ls_id                                = StatsGetLinearSystemID() + 1;
+   int  ls_id                                = StatsGetLinearSystemID(stats) + 1;
 
    /* Destroy matrix if it already exists */
    if (*matrix_ptr)
@@ -462,17 +463,17 @@ LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix *matri
    {
       ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       ErrorMsgAddInvalidFilename("");
-      StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
+      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
       return;
    }
 
    if (!LinearSystemIJMatrixReadFromFile(comm, args, matrix_filename, matrix_ptr))
    {
-      StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
+      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
       return;
    }
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
+   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
 }
 
 /*-----------------------------------------------------------------------------
@@ -798,11 +799,11 @@ LinearSystemRHSReadFromFile(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
 
 void
 LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
-                   HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr)
+                   HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr, Stats *stats)
 {
-   int ls_id = StatsGetLinearSystemID() + 1;
+   int ls_id = StatsGetLinearSystemID(stats) + 1;
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "rhs");
+   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "rhs");
 
    if (*xref_ptr)
    {
@@ -826,12 +827,12 @@ LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
                                       rhs_filename, sizeof(rhs_filename));
       if (!LinearSystemRHSReadFromFile(comm, args, mat, rhs_filename, rhs_ptr))
       {
-         StatsAnnotate(HYPREDRV_ANNOTATE_END, "rhs");
+         StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
          return;
       }
    }
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "rhs");
+   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
 }
 
 /*-----------------------------------------------------------------------------
@@ -841,9 +842,10 @@ LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
 void
 LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                             HYPRE_IJVector rhs, HYPRE_IJVector *x0_ptr,
-                            HYPRE_IJVector *x_ptr)
+                            HYPRE_IJVector *x_ptr, Stats *stats)
 {
    (void)mat;
+   (void)stats;
    HYPRE_BigInt         jlower = 0, jupper = 0;
    HYPRE_MemoryLocation memloc =
       (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
@@ -925,10 +927,10 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 
 void
 LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
-                                 HYPRE_IJVector *xref_ptr)
+                                 HYPRE_IJVector *xref_ptr, Stats *stats)
 {
    char xref_filename[MAX_FILENAME_LENGTH] = {0};
-   int  ls_id                              = StatsGetLinearSystemID() + 1;
+   int  ls_id                              = StatsGetLinearSystemID(stats) + 1;
 
    /* Keep the existing reference solution (e.g., rhs_mode = randsol) unless a file is
     * explicitly requested. */
@@ -965,17 +967,17 @@ LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr)
+LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr, Stats *stats)
 {
    HYPRE_ParVector par_x0 = NULL, par_x = NULL;
    void           *obj_x0 = NULL, *obj_x = NULL;
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
+   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
 
    if (!x0_ptr || !x_ptr)
    {
       ErrorCodeSet(ERROR_UNKNOWN);
-      StatsAnnotate(HYPREDRV_ANNOTATE_END, "reset_x0");
+      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
       return;
    }
 
@@ -987,7 +989,7 @@ LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr)
 
    HYPRE_ParVectorCopy(par_x0, par_x);
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "reset_x0");
+   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
 }
 
 /*-----------------------------------------------------------------------------
@@ -1034,14 +1036,14 @@ LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
 
 void
 LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
-                          HYPRE_IJMatrix *precmat_ptr)
+                          HYPRE_IJMatrix *precmat_ptr, Stats *stats)
 {
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
 
    /* Set matrix filename */
    if (args->dirname[0] != '\0' && args->precmat_filename[0] != '\0')
    {
-      int ls_id = StatsGetLinearSystemID() + 1;
+      int ls_id = StatsGetLinearSystemID(stats) + 1;
       snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d/%.*s",
                (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
                (int)args->init_suffix + ls_id, (int)strlen(args->precmat_filename),
@@ -1053,7 +1055,7 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
    }
    else if (args->precmat_basename[0] != '\0')
    {
-      int ls_id = StatsGetLinearSystemID() + 1;
+      int ls_id = StatsGetLinearSystemID(stats) + 1;
       snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d",
                (int)strlen(args->precmat_basename), args->precmat_basename,
                (int)args->digits_suffix, (int)args->init_suffix + ls_id);
@@ -1080,9 +1082,9 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
+LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr, Stats *stats)
 {
-   int ls_id = StatsGetLinearSystemID() + 1;
+   int ls_id = StatsGetLinearSystemID(stats) + 1;
 
    /* Destroy pre-existing dofmap */
    if (*dofmap_ptr)
@@ -1120,9 +1122,9 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr)
       /* Destroy previous dofmap array */
       IntArrayDestroy(dofmap_ptr);
 
-      StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "dofmap");
+      StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
       IntArrayParRead(comm, dofmap_filename, dofmap_ptr);
-      StatsAnnotate(HYPREDRV_ANNOTATE_END, "dofmap");
+      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
    }
 
    /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks

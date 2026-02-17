@@ -63,16 +63,18 @@ void LinearSystemSetNearNullSpace(MPI_Comm, const LS_args *, HYPRE_IJMatrix, int
                                   const HYPRE_Complex *, HYPRE_IJVector *);
 void LinearSystemSetNumSystems(LS_args *);
 void LinearSystemSetArgsFromYAML(LS_args *, YAMLnode *);
-void LinearSystemReadMatrix(MPI_Comm, const LS_args *, HYPRE_IJMatrix *);
+void LinearSystemReadMatrix(MPI_Comm, const LS_args *, HYPRE_IJMatrix *, Stats *);
 void LinearSystemSetRHS(MPI_Comm, const LS_args *, HYPRE_IJMatrix, HYPRE_IJVector *,
-                        HYPRE_IJVector *);
+                        HYPRE_IJVector *, Stats *);
 void LinearSystemSetInitialGuess(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJVector,
-                                 HYPRE_IJVector *, HYPRE_IJVector *);
-void LinearSystemSetReferenceSolution(MPI_Comm, const LS_args *, HYPRE_IJVector *);
-void LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector);
+                                 HYPRE_IJVector *, HYPRE_IJVector *, Stats *);
+void LinearSystemSetReferenceSolution(MPI_Comm, const LS_args *, HYPRE_IJVector *,
+                                      Stats *);
+void LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector, Stats *);
 void LinearSystemSetVectorTags(HYPRE_IJVector, IntArray *);
-void LinearSystemSetPrecMatrix(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJMatrix *);
-void LinearSystemReadDofmap(MPI_Comm, LS_args *, IntArray **);
+void LinearSystemSetPrecMatrix(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJMatrix *,
+                               Stats *);
+void LinearSystemReadDofmap(MPI_Comm, LS_args *, IntArray **, Stats *);
 void LinearSystemGetSolutionValues(HYPRE_IJVector, HYPRE_Complex **);
 void LinearSystemGetRHSValues(HYPRE_IJVector, HYPRE_Complex **);
 void LinearSystemComputeVectorNorm(HYPRE_IJVector, const char *, double *);

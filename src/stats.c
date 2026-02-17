@@ -11,66 +11,79 @@
 #include <stdarg.h>
 #include <string.h>
 
-/* Active stats context (pointer to stats owned by a hypredrv_t object) */
-static Stats *active_stats =
-   NULL; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-
 /* Reallocation expansion factor */
-#define REALLOC_EXPAND_FACTOR 16
+enum
+{
+   REALLOC_EXPAND_FACTOR = 16
+};
 
 /*--------------------------------------------------------------------------
  * Helper: Reallocate array with expansion
  *--------------------------------------------------------------------------*/
 
-static void
+static int
 ReallocateArray(void **ptr, size_t elem_size, int old_capacity, int new_capacity)
 {
    void *new_ptr = realloc(*ptr, (size_t)new_capacity * elem_size);
-   if (new_ptr)
+   if (!new_ptr)
    {
-      /* Zero out the newly allocated portion */
-      memset((char *)new_ptr + ((size_t)old_capacity * elem_size), 0,
-             REALLOC_EXPAND_FACTOR * elem_size);
-      *ptr = new_ptr;
+      return 0;
    }
+
+   /* Zero out the newly allocated portion */
+   memset((char *)new_ptr + ((size_t)old_capacity * elem_size), 0,
+          REALLOC_EXPAND_FACTOR * elem_size);
+   *ptr = new_ptr;
+   return 1;
 }
 
 /*--------------------------------------------------------------------------
  * Helper: Ensure capacity for current counter
  *--------------------------------------------------------------------------*/
 
-static void
-EnsureCapacity(void)
+static int
+EnsureCapacity(Stats *stats)
 {
    /* Need capacity > counter to have space for counter index */
-   if (active_stats->counter + 1 >= active_stats->capacity)
+   if (stats->counter + 1 >= stats->capacity)
    {
-      int old_capacity = active_stats->capacity;
+      int old_capacity = stats->capacity;
       int new_capacity = old_capacity + REALLOC_EXPAND_FACTOR;
+      int failed       = 0;
 
       /* Reallocate all arrays with the same new capacity */
-      ReallocateArray((void **)&active_stats->matrix, sizeof(double), old_capacity,
-                      new_capacity);
-      ReallocateArray((void **)&active_stats->rhs, sizeof(double), old_capacity,
-                      new_capacity);
-      ReallocateArray((void **)&active_stats->dofmap, sizeof(double), old_capacity,
-                      new_capacity);
-      ReallocateArray((void **)&active_stats->prec, sizeof(double), old_capacity,
-                      new_capacity);
-      ReallocateArray((void **)&active_stats->solve, sizeof(double), old_capacity,
-                      new_capacity);
-      ReallocateArray((void **)&active_stats->rrnorms, sizeof(double), old_capacity,
-                      new_capacity);
-      ReallocateArray((void **)&active_stats->r0norms, sizeof(double), old_capacity,
-                      new_capacity);
-      ReallocateArray((void **)&active_stats->iters, sizeof(int), old_capacity,
-                      new_capacity);
-      ReallocateArray((void **)&active_stats->entry_ls_id, sizeof(int), old_capacity,
-                      new_capacity);
+      failed |= !ReallocateArray((void **)&stats->matrix, sizeof(double), old_capacity,
+                                 new_capacity);
+      failed |= !ReallocateArray((void **)&stats->rhs, sizeof(double), old_capacity,
+                                 new_capacity);
+      failed |= !ReallocateArray((void **)&stats->dofmap, sizeof(double), old_capacity,
+                                 new_capacity);
+      failed |= !ReallocateArray((void **)&stats->prec, sizeof(double), old_capacity,
+                                 new_capacity);
+      failed |= !ReallocateArray((void **)&stats->solve, sizeof(double), old_capacity,
+                                 new_capacity);
+      failed |= !ReallocateArray((void **)&stats->rrnorms, sizeof(double), old_capacity,
+                                 new_capacity);
+      failed |= !ReallocateArray((void **)&stats->r0norms, sizeof(double), old_capacity,
+                                 new_capacity);
+      failed |= !ReallocateArray((void **)&stats->iters, sizeof(int), old_capacity,
+                                 new_capacity);
+      failed |= !ReallocateArray((void **)&stats->entry_ls_id, sizeof(int), old_capacity,
+                                 new_capacity);
+
+      if (failed)
+      {
+         ErrorCodeSet(ERROR_ALLOCATION);
+         ErrorMsgAdd("Stats capacity growth failed (%d -> %d)", old_capacity,
+                     new_capacity);
+         return 0;
+      }
 
       /* Update capacity after all reallocations */
-      active_stats->capacity = new_capacity;
+      stats->capacity = new_capacity;
    }
+
+   return 1;
 }
 
 /*--------------------------------------------------------------------------
@@ -78,9 +91,9 @@ EnsureCapacity(void)
  *--------------------------------------------------------------------------*/
 
 static void
-StartVectorTimer(double *timer_array, int index)
+StartVectorTimer(const Stats *stats, double *timer_array, int index)
 {
-   if (timer_array && index >= 0 && index < active_stats->capacity)
+   if (timer_array && index >= 0 && index < stats->capacity)
    {
       timer_array[index] -= MPI_Wtime();
    }
@@ -91,9 +104,9 @@ StartVectorTimer(double *timer_array, int index)
  *--------------------------------------------------------------------------*/
 
 static void
-StopVectorTimer(double *timer_array, int index)
+StopVectorTimer(const Stats *stats, double *timer_array, int index)
 {
-   if (timer_array && index >= 0 && index < active_stats->capacity)
+   if (timer_array && index >= 0 && index < stats->capacity)
    {
       timer_array[index] += MPI_Wtime();
    }
@@ -130,7 +143,7 @@ StopScalarTimer(double *timer)
  *--------------------------------------------------------------------------*/
 
 static void
-HandleAnnotationBegin(const char *name)
+HandleAnnotationBegin(Stats *stats, const char *name)
 {
    /* Ignore "Run" annotation */
    if (strncmp(name, "Run", 3) == 0)
@@ -145,11 +158,14 @@ HandleAnnotationBegin(const char *name)
        * - reset repetition counter
        * - reserve the next stats entry so build timers attach to the upcoming solve entry
        */
-      active_stats->reps = 0;
-      active_stats->counter++;
-      active_stats->matrix_counter = active_stats->counter;
-      EnsureCapacity();
-      StartVectorTimer(active_stats->matrix, active_stats->counter);
+      stats->reps = 0;
+      stats->counter++;
+      stats->matrix_counter = stats->counter;
+      if (!EnsureCapacity(stats))
+      {
+         return;
+      }
+      StartVectorTimer(stats, stats->matrix, stats->counter);
    }
    else if (!strcmp(name, "reset_x0"))
    {
@@ -157,44 +173,56 @@ HandleAnnotationBegin(const char *name)
        * - advance entry index for all but the first repetition after a build
        * - keep indices contiguous: 0,1,2,... across repetitions and variants
        */
-      if (active_stats->counter < 0)
+      if (stats->counter < 0)
       {
-         active_stats->counter = 0;
+         stats->counter = 0;
       }
-      else if (active_stats->reps > 0)
+      else if (stats->reps > 0)
       {
-         active_stats->counter++;
+         stats->counter++;
       }
-      active_stats->reps++;
-      EnsureCapacity();
-      StartScalarTimer(&active_stats->reset_x0);
+      stats->reps++;
+      if (!EnsureCapacity(stats))
+      {
+         return;
+      }
+      StartScalarTimer(&stats->reset_x0);
    }
    else if (!strcmp(name, "rhs"))
    {
-      if (active_stats->counter < 0)
+      if (stats->counter < 0)
       {
-         active_stats->counter = 0;
+         stats->counter = 0;
       }
-      EnsureCapacity();
-      StartVectorTimer(active_stats->rhs, active_stats->counter);
+      if (!EnsureCapacity(stats))
+      {
+         return;
+      }
+      StartVectorTimer(stats, stats->rhs, stats->counter);
    }
    else if (!strcmp(name, "dofmap"))
    {
-      if (active_stats->counter < 0)
+      if (stats->counter < 0)
       {
-         active_stats->counter = 0;
+         stats->counter = 0;
       }
-      EnsureCapacity();
-      StartVectorTimer(active_stats->dofmap, active_stats->counter);
+      if (!EnsureCapacity(stats))
+      {
+         return;
+      }
+      StartVectorTimer(stats, stats->dofmap, stats->counter);
    }
    else if (!strcmp(name, "prec"))
    {
-      if (active_stats->counter < 0)
+      if (stats->counter < 0)
       {
-         active_stats->counter = 0;
+         stats->counter = 0;
       }
-      EnsureCapacity();
-      StartVectorTimer(active_stats->prec, active_stats->counter);
+      if (!EnsureCapacity(stats))
+      {
+         return;
+      }
+      StartVectorTimer(stats, stats->prec, stats->counter);
    }
    else if (!strcmp(name, "solve"))
    {
@@ -202,32 +230,40 @@ HandleAnnotationBegin(const char *name)
        * (reset_x0 has already set reps=1 for the first repetition)
        * Only increment if this is the first solve after the last "matrix" annotation.
        * We track this by comparing counter to matrix_counter. */
-      if (active_stats->reps == 1 &&
-          active_stats->counter == active_stats->matrix_counter)
+      if (stats->reps == 1 && stats->counter == stats->matrix_counter)
       {
-         active_stats->ls_counter++;
+         stats->ls_counter++;
       }
-      if (active_stats->counter < 0)
+      if (stats->counter < 0)
       {
-         active_stats->counter = 0;
+         stats->counter = 0;
       }
-      EnsureCapacity();
-      StartVectorTimer(active_stats->solve, active_stats->counter);
+      if (!EnsureCapacity(stats))
+      {
+         return;
+      }
+      StartVectorTimer(stats, stats->solve, stats->counter);
       /* Tag this entry with its linear system id */
-      if (active_stats->entry_ls_id && active_stats->counter < active_stats->capacity)
+      if (stats->entry_ls_id && stats->counter < stats->capacity)
       {
-         active_stats->entry_ls_id[active_stats->counter] = active_stats->ls_counter - 1;
+         stats->entry_ls_id[stats->counter] = stats->ls_counter - 1;
       }
    }
    else if (!strcmp(name, "initialize"))
    {
-      EnsureCapacity();
-      StartScalarTimer(&active_stats->initialize);
+      if (!EnsureCapacity(stats))
+      {
+         return;
+      }
+      StartScalarTimer(&stats->initialize);
    }
    else if (!strcmp(name, "finalize"))
    {
-      EnsureCapacity();
-      StartScalarTimer(&active_stats->finalize);
+      if (!EnsureCapacity(stats))
+      {
+         return;
+      }
+      StartScalarTimer(&stats->finalize);
    }
    else
    {
@@ -242,7 +278,7 @@ HandleAnnotationBegin(const char *name)
  *--------------------------------------------------------------------------*/
 
 static void
-HandleAnnotationEnd(const char *name)
+HandleAnnotationEnd(Stats *stats, const char *name)
 {
    /* Ignore "Run" annotation */
    if (strncmp(name, "Run", 3) == 0)
@@ -253,35 +289,35 @@ HandleAnnotationEnd(const char *name)
    /* Stop timers based on annotation name */
    if (!strcmp(name, "matrix") || !strcmp(name, "system"))
    {
-      StopVectorTimer(active_stats->matrix, active_stats->counter);
+      StopVectorTimer(stats, stats->matrix, stats->counter);
    }
    else if (!strcmp(name, "rhs"))
    {
-      StopVectorTimer(active_stats->rhs, active_stats->counter);
+      StopVectorTimer(stats, stats->rhs, stats->counter);
    }
    else if (!strcmp(name, "dofmap"))
    {
-      StopVectorTimer(active_stats->dofmap, active_stats->counter);
+      StopVectorTimer(stats, stats->dofmap, stats->counter);
    }
    else if (!strcmp(name, "prec"))
    {
-      StopVectorTimer(active_stats->prec, active_stats->counter);
+      StopVectorTimer(stats, stats->prec, stats->counter);
    }
    else if (!strcmp(name, "solve"))
    {
-      StopVectorTimer(active_stats->solve, active_stats->counter);
+      StopVectorTimer(stats, stats->solve, stats->counter);
    }
    else if (!strcmp(name, "reset_x0"))
    {
-      StopScalarTimer(&active_stats->reset_x0);
+      StopScalarTimer(&stats->reset_x0);
    }
    else if (!strcmp(name, "initialize"))
    {
-      StopScalarTimer(&active_stats->initialize);
+      StopScalarTimer(&stats->initialize);
    }
    else if (!strcmp(name, "finalize"))
    {
-      StopScalarTimer(&active_stats->finalize);
+      StopScalarTimer(&stats->finalize);
    }
    else
    {
@@ -358,34 +394,30 @@ PrintHeader(const char *scale)
  *--------------------------------------------------------------------------*/
 
 static void
-PrintEntryWithIndex(int entry_index, int display_index)
+PrintEntryWithIndex(const Stats *stats, int entry_index, int display_index)
 {
-   double build_time = active_stats->time_factor * (active_stats->dofmap[entry_index] +
-                                                    active_stats->matrix[entry_index] +
-                                                    active_stats->rhs[entry_index]);
-   bool   show_build = (build_time > 0.0);
+   double build_time =
+      stats->time_factor *
+      (stats->dofmap[entry_index] + stats->matrix[entry_index] + stats->rhs[entry_index]);
+   bool show_build = (build_time > 0.0);
 
    if (show_build)
    {
       printf("| %*d | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
              display_index, STATS_TIME_WIDTH, 3, build_time, STATS_TIME_WIDTH, 3,
-             active_stats->time_factor * active_stats->prec[entry_index],
-             STATS_TIME_WIDTH, 3,
-             active_stats->time_factor * active_stats->solve[entry_index],
-             STATS_RES_WIDTH, 2, active_stats->r0norms[entry_index], STATS_RES_WIDTH, 2,
-             active_stats->rrnorms[entry_index], STATS_ITERS_WIDTH,
-             active_stats->iters[entry_index]);
+             stats->time_factor * stats->prec[entry_index], STATS_TIME_WIDTH, 3,
+             stats->time_factor * stats->solve[entry_index], STATS_RES_WIDTH, 2,
+             stats->r0norms[entry_index], STATS_RES_WIDTH, 2, stats->rrnorms[entry_index],
+             STATS_ITERS_WIDTH, stats->iters[entry_index]);
    }
    else
    {
       printf("| %*d | %*s | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
              display_index, STATS_TIME_WIDTH, "", STATS_TIME_WIDTH, 3,
-             active_stats->time_factor * active_stats->prec[entry_index],
-             STATS_TIME_WIDTH, 3,
-             active_stats->time_factor * active_stats->solve[entry_index],
-             STATS_RES_WIDTH, 2, active_stats->r0norms[entry_index], STATS_RES_WIDTH, 2,
-             active_stats->rrnorms[entry_index], STATS_ITERS_WIDTH,
-             active_stats->iters[entry_index]);
+             stats->time_factor * stats->prec[entry_index], STATS_TIME_WIDTH, 3,
+             stats->time_factor * stats->solve[entry_index], STATS_RES_WIDTH, 2,
+             stats->r0norms[entry_index], STATS_RES_WIDTH, 2, stats->rrnorms[entry_index],
+             STATS_ITERS_WIDTH, stats->iters[entry_index]);
    }
 }
 
@@ -448,26 +480,6 @@ StatsCreate(void)
 }
 
 /*--------------------------------------------------------------------------
- * StatsSetContext - sets the active stats context for internal use
- *--------------------------------------------------------------------------*/
-
-void
-StatsSetContext(Stats *stats)
-{
-   active_stats = stats;
-}
-
-/*--------------------------------------------------------------------------
- * StatsGetContext - returns the active stats context
- *--------------------------------------------------------------------------*/
-
-Stats *
-StatsGetContext(void)
-{
-   return active_stats;
-}
-
-/*--------------------------------------------------------------------------
  * StatsDestroy - destroys a Stats object and sets pointer to NULL
  *--------------------------------------------------------------------------*/
 
@@ -480,12 +492,6 @@ StatsDestroy(Stats **stats_ptr)
    }
 
    Stats *stats = *stats_ptr;
-
-   /* Clear active context if this is the active stats */
-   if (active_stats == stats)
-   {
-      active_stats = NULL;
-   }
 
    /* Free timing arrays */
    free(stats->dofmap);
@@ -514,9 +520,10 @@ StatsDestroy(Stats **stats_ptr)
  *--------------------------------------------------------------------------*/
 
 void
-StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args)
+StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char *name,
+               va_list args)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return;
    }
@@ -540,11 +547,11 @@ StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args)
    if (action == HYPREDRV_ANNOTATE_BEGIN)
    {
       HYPREDRV_ANNOTATE_REGION_BEGIN("HYPREDRV_%.1014s", formatted_name)
-      HandleAnnotationBegin(formatted_name);
+      HandleAnnotationBegin(stats, formatted_name);
    }
    else if (action == HYPREDRV_ANNOTATE_END)
    {
-      HandleAnnotationEnd(formatted_name);
+      HandleAnnotationEnd(stats, formatted_name);
       HYPREDRV_ANNOTATE_REGION_END("HYPREDRV_%.1014s", formatted_name)
    }
 }
@@ -554,9 +561,9 @@ StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args)
  *--------------------------------------------------------------------------*/
 
 void
-StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name)
+StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char *name)
 {
-   StatsAnnotateV(action, name, NULL);
+   StatsAnnotateV(stats, action, name, NULL);
 }
 
 /*--------------------------------------------------------------------------
@@ -564,9 +571,9 @@ StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name)
  *--------------------------------------------------------------------------*/
 
 void
-StatsAnnotateLevelBegin(int level, const char *name)
+StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return;
    }
@@ -582,32 +589,32 @@ StatsAnnotateLevelBegin(int level, const char *name)
    const char *formatted_name = name;
 
    /* Check if level is already active */
-   if (active_stats->level_stack[level].name != NULL)
+   if (stats->level_stack[level].name != NULL)
    {
       ErrorCodeSet(ERROR_INVALID_VAL);
       ErrorMsgAdd("Level %d already has active annotation '%s'", level,
-                  active_stats->level_stack[level].name);
+                  stats->level_stack[level].name);
       return;
    }
 
    /* Push onto level stack - allocate memory for name */
-   size_t name_len                       = strlen(formatted_name) + 1;
-   active_stats->level_stack[level].name = (const char *)malloc(name_len);
-   if (active_stats->level_stack[level].name)
+   size_t name_len                = strlen(formatted_name) + 1;
+   stats->level_stack[level].name = (const char *)malloc(name_len);
+   if (stats->level_stack[level].name)
    {
-      memcpy((void *)active_stats->level_stack[level].name, formatted_name, name_len);
+      memcpy((void *)stats->level_stack[level].name, formatted_name, name_len);
    }
-   active_stats->level_stack[level].level      = level;
-   active_stats->level_stack[level].start_time = MPI_Wtime();
-   if (level >= active_stats->level_depth)
+   stats->level_stack[level].level      = level;
+   stats->level_stack[level].start_time = MPI_Wtime();
+   if (level >= stats->level_depth)
    {
-      active_stats->level_depth = level + 1;
+      stats->level_depth = level + 1;
    }
 
    /* Record solve index at start for this level */
-   active_stats->level_active |= (1 << level);
-   active_stats->level_current_id[level]++;
-   active_stats->level_solve_start[level] = active_stats->ls_counter;
+   stats->level_active |= (1 << level);
+   stats->level_current_id[level]++;
+   stats->level_solve_start[level] = stats->ls_counter;
 
    /* Commenting out for now to avoid multiple caliper regions for each solve call */
 }
@@ -621,10 +628,10 @@ StatsAnnotateLevelBegin(int level, const char *name)
  *--------------------------------------------------------------------------*/
 
 static void
-EnsureLevelCapacity(int level)
+EnsureLevelCapacity(Stats *stats, int level)
 {
    /* Simple approach: reallocate if count reaches capacity */
-   int count    = active_stats->level_count[level];
+   int count    = stats->level_count[level];
    int capacity = STATS_TIMESTEP_CAPACITY;
 
    /* Check if we need more space (count is power-of-2 threshold) */
@@ -638,10 +645,10 @@ EnsureLevelCapacity(int level)
       /* count is a power of 2 and >= initial capacity, time to grow */
       int         new_capacity = count * 2;
       LevelEntry *new_ptr      = (LevelEntry *)realloc(
-         active_stats->level_entries[level], (size_t)new_capacity * sizeof(LevelEntry));
+         stats->level_entries[level], (size_t)new_capacity * sizeof(LevelEntry));
       if (new_ptr)
       {
-         active_stats->level_entries[level] = new_ptr;
+         stats->level_entries[level] = new_ptr;
       }
    }
 }
@@ -651,9 +658,9 @@ EnsureLevelCapacity(int level)
  *--------------------------------------------------------------------------*/
 
 void
-StatsAnnotateLevelEnd(int level, const char *name)
+StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return;
    }
@@ -669,50 +676,48 @@ StatsAnnotateLevelEnd(int level, const char *name)
    const char *formatted_name = name;
 
    /* Check if level matches */
-   if (active_stats->level_stack[level].name == NULL ||
-       strcmp(active_stats->level_stack[level].name, formatted_name) != 0)
+   if (stats->level_stack[level].name == NULL ||
+       strcmp(stats->level_stack[level].name, formatted_name) != 0)
    {
       ErrorCodeSet(ERROR_INVALID_VAL);
       ErrorMsgAdd("Level %d annotation mismatch: expected '%s', got '%s'", level,
-                  active_stats->level_stack[level].name
-                     ? active_stats->level_stack[level].name
-                     : "NULL",
+                  stats->level_stack[level].name ? stats->level_stack[level].name
+                                                 : "NULL",
                   formatted_name);
       return;
    }
 
    /* Save level entry if this level is active */
-   if (active_stats->level_active & (1 << level))
+   if (stats->level_active & (1 << level))
    {
-      EnsureLevelCapacity(level);
+      EnsureLevelCapacity(stats, level);
 
-      int idx                                    = active_stats->level_count[level];
-      active_stats->level_entries[level][idx].id = active_stats->level_current_id[level];
-      active_stats->level_entries[level][idx].solve_start =
-         active_stats->level_solve_start[level];
-      active_stats->level_entries[level][idx].solve_end = active_stats->ls_counter;
+      int idx                                      = stats->level_count[level];
+      stats->level_entries[level][idx].id          = stats->level_current_id[level];
+      stats->level_entries[level][idx].solve_start = stats->level_solve_start[level];
+      stats->level_entries[level][idx].solve_end   = stats->ls_counter;
 
-      active_stats->level_count[level]++;
-      active_stats->level_active &= ~(1 << level);
+      stats->level_count[level]++;
+      stats->level_active &= ~(1 << level);
    }
 
    /* Commenting out for now to avoid multiple caliper regions for each solve call */
 
    /* Pop from level stack - free allocated memory */
-   if (active_stats->level_stack[level].name)
+   if (stats->level_stack[level].name)
    {
-      free((void *)active_stats->level_stack[level].name);
-      active_stats->level_stack[level].name = NULL;
+      free((void *)stats->level_stack[level].name);
+      stats->level_stack[level].name = NULL;
    }
-   active_stats->level_stack[level].level = -1;
+   stats->level_stack[level].level = -1;
 
    /* Update depth if needed */
-   if (level == active_stats->level_depth - 1)
+   if (level == stats->level_depth - 1)
    {
-      while (active_stats->level_depth > 0 &&
-             active_stats->level_stack[active_stats->level_depth - 1].name == NULL)
+      while (stats->level_depth > 0 &&
+             stats->level_stack[stats->level_depth - 1].name == NULL)
       {
-         active_stats->level_depth--;
+         stats->level_depth--;
       }
    }
 }
@@ -722,14 +727,14 @@ StatsAnnotateLevelEnd(int level, const char *name)
  *--------------------------------------------------------------------------*/
 
 void
-StatsTimerSetMilliseconds(void)
+StatsTimerSetMilliseconds(Stats *stats)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return;
    }
-   active_stats->use_millisec = true;
-   active_stats->time_factor  = 1000.0;
+   stats->use_millisec = true;
+   stats->time_factor  = 1000.0;
 }
 
 /*--------------------------------------------------------------------------
@@ -737,14 +742,14 @@ StatsTimerSetMilliseconds(void)
  *--------------------------------------------------------------------------*/
 
 void
-StatsTimerSetSeconds(void)
+StatsTimerSetSeconds(Stats *stats)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return;
    }
-   active_stats->use_millisec = false;
-   active_stats->time_factor  = 1.0;
+   stats->use_millisec = false;
+   stats->time_factor  = 1.0;
 }
 
 /*--------------------------------------------------------------------------
@@ -752,13 +757,13 @@ StatsTimerSetSeconds(void)
  *--------------------------------------------------------------------------*/
 
 void
-StatsIterSet(int num_iters)
+StatsIterSet(Stats *stats, int num_iters)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return;
    }
-   active_stats->iters[active_stats->counter] = num_iters;
+   stats->iters[stats->counter] = num_iters;
 }
 
 /*--------------------------------------------------------------------------
@@ -766,13 +771,13 @@ StatsIterSet(int num_iters)
  *--------------------------------------------------------------------------*/
 
 void
-StatsInitialResNormSet(double r0norm)
+StatsInitialResNormSet(Stats *stats, double r0norm)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return;
    }
-   active_stats->r0norms[active_stats->counter] = r0norm;
+   stats->r0norms[stats->counter] = r0norm;
 }
 
 /*--------------------------------------------------------------------------
@@ -780,13 +785,13 @@ StatsInitialResNormSet(double r0norm)
  *--------------------------------------------------------------------------*/
 
 void
-StatsRelativeResNormSet(double rrnorm)
+StatsRelativeResNormSet(Stats *stats, double rrnorm)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return;
    }
-   active_stats->rrnorms[active_stats->counter] = rrnorm;
+   stats->rrnorms[stats->counter] = rrnorm;
 }
 
 /*--------------------------------------------------------------------------
@@ -794,14 +799,14 @@ StatsRelativeResNormSet(double rrnorm)
  *--------------------------------------------------------------------------*/
 
 void
-StatsPrint(int print_level)
+StatsPrint(const Stats *stats, int print_level)
 {
-   if (!active_stats || print_level < 1)
+   if (!stats || print_level < 1)
    {
       return;
    }
 
-   const char *scale = ((int)active_stats->use_millisec) ? "[ms]" : "[s]";
+   const char *scale = ((int)stats->use_millisec) ? "[ms]" : "[s]";
 
    PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH);
    printf("\n\nSTATISTICS SUMMARY:\n\n");
@@ -813,14 +818,14 @@ StatsPrint(int print_level)
    /* Print statistics for each entry that had a solve */
    /* This filters out Newton iterations that broke before solving */
    /* Use a display index to avoid gaps in the entry column */
-   int max_entry   = active_stats->counter;
+   int max_entry   = stats->counter;
    int display_idx = 0;
    for (int i = 0; i <= max_entry; i++)
    {
       /* Only print entries that had a solve (iterations > 0 or solve time > 0) */
-      if (active_stats->iters[i] > 0 || active_stats->solve[i] > 0.0)
+      if (stats->iters[i] > 0 || stats->solve[i] > 0.0)
       {
-         PrintEntryWithIndex(i, display_idx);
+         PrintEntryWithIndex(stats, i, display_idx);
          display_idx++;
       }
    }
@@ -838,19 +843,18 @@ StatsPrint(int print_level)
 
       for (int i = 0; i <= max_entry; i++)
       {
-         if (active_stats->iters[i] <= 0 && active_stats->solve[i] <= 0.0)
+         if (stats->iters[i] <= 0 && stats->solve[i] <= 0.0)
          {
             continue;
          }
 
          double b =
-            active_stats->time_factor *
-            (active_stats->dofmap[i] + active_stats->matrix[i] + active_stats->rhs[i]);
-         double s  = active_stats->time_factor * active_stats->prec[i];
-         double v  = active_stats->time_factor * active_stats->solve[i];
-         double r0 = active_stats->r0norms[i];
-         double rr = active_stats->rrnorms[i];
-         int    it = active_stats->iters[i];
+            stats->time_factor * (stats->dofmap[i] + stats->matrix[i] + stats->rhs[i]);
+         double s  = stats->time_factor * stats->prec[i];
+         double v  = stats->time_factor * stats->solve[i];
+         double r0 = stats->r0norms[i];
+         double rr = stats->rrnorms[i];
+         int    it = stats->iters[i];
 
          if (b < min_build) min_build = b;
          if (b > max_build) max_build = b;
@@ -930,14 +934,14 @@ StatsPrint(int print_level)
  *--------------------------------------------------------------------------*/
 
 int
-StatsGetLinearSystemID(void)
+StatsGetLinearSystemID(const Stats *stats)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return -1;
    }
    /* Return 0-based linear system ID */
-   return active_stats->ls_counter - 1;
+   return stats->ls_counter - 1;
 }
 
 /*--------------------------------------------------------------------------
@@ -945,13 +949,13 @@ StatsGetLinearSystemID(void)
  *--------------------------------------------------------------------------*/
 
 void
-StatsSetNumReps(int num_reps)
+StatsSetNumReps(Stats *stats, int num_reps)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return;
    }
-   active_stats->num_reps = num_reps;
+   stats->num_reps = num_reps;
 }
 
 /*--------------------------------------------------------------------------
@@ -959,13 +963,13 @@ StatsSetNumReps(int num_reps)
  *--------------------------------------------------------------------------*/
 
 void
-StatsSetNumLinearSystems(int num_systems)
+StatsSetNumLinearSystems(Stats *stats, int num_systems)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return;
    }
-   active_stats->num_systems = num_systems;
+   stats->num_systems = num_systems;
 }
 
 /*--------------------------------------------------------------------------
@@ -973,13 +977,13 @@ StatsSetNumLinearSystems(int num_systems)
  *--------------------------------------------------------------------------*/
 
 int
-StatsGetLastIter(void)
+StatsGetLastIter(const Stats *stats)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return -1;
    }
-   return active_stats->iters[active_stats->counter];
+   return stats->iters[stats->counter];
 }
 
 /*--------------------------------------------------------------------------
@@ -987,13 +991,13 @@ StatsGetLastIter(void)
  *--------------------------------------------------------------------------*/
 
 double
-StatsGetLastSetupTime(void)
+StatsGetLastSetupTime(const Stats *stats)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return 0.0;
    }
-   return active_stats->prec[active_stats->counter] * active_stats->time_factor;
+   return stats->prec[stats->counter] * stats->time_factor;
 }
 
 /*--------------------------------------------------------------------------
@@ -1001,13 +1005,13 @@ StatsGetLastSetupTime(void)
  *--------------------------------------------------------------------------*/
 
 double
-StatsGetLastSolveTime(void)
+StatsGetLastSolveTime(const Stats *stats)
 {
-   if (!active_stats)
+   if (!stats)
    {
       return 0.0;
    }
-   return active_stats->solve[active_stats->counter] * active_stats->time_factor;
+   return stats->solve[stats->counter] * stats->time_factor;
 }
 
 /*--------------------------------------------------------------------------
@@ -1015,13 +1019,13 @@ StatsGetLastSolveTime(void)
  *--------------------------------------------------------------------------*/
 
 int
-StatsLevelGetCount(int level)
+StatsLevelGetCount(const Stats *stats, int level)
 {
-   if (!active_stats || level < 0 || level >= STATS_MAX_LEVELS)
+   if (!stats || level < 0 || level >= STATS_MAX_LEVELS)
    {
       return 0;
    }
-   return active_stats->level_count[level];
+   return stats->level_count[level];
 }
 
 /*--------------------------------------------------------------------------
@@ -1029,19 +1033,19 @@ StatsLevelGetCount(int level)
  *--------------------------------------------------------------------------*/
 
 int
-StatsLevelGetEntry(int level, int index, LevelEntry *entry)
+StatsLevelGetEntry(const Stats *stats, int level, int index, LevelEntry *entry)
 {
-   if (!active_stats || !entry || level < 0 || level >= STATS_MAX_LEVELS)
+   if (!stats || !entry || level < 0 || level >= STATS_MAX_LEVELS)
    {
       return -1;
    }
 
-   if (index < 0 || index >= active_stats->level_count[level])
+   if (index < 0 || index >= stats->level_count[level])
    {
       return -1;
    }
 
-   *entry = active_stats->level_entries[level][index];
+   *entry = stats->level_entries[level][index];
    return 0;
 }
 
@@ -1050,8 +1054,8 @@ StatsLevelGetEntry(int level, int index, LevelEntry *entry)
  *--------------------------------------------------------------------------*/
 
 static void
-ComputeLevelStats(const LevelEntry *entry, int *num_solves, int *linear_iters,
-                  double *setup_time, double *solve_time)
+ComputeLevelStats(const Stats *stats, const LevelEntry *entry, int *num_solves,
+                  int *linear_iters, double *setup_time, double *solve_time)
 {
    int    n_solves = 0;
    int    l_iters  = 0;
@@ -1060,9 +1064,9 @@ ComputeLevelStats(const LevelEntry *entry, int *num_solves, int *linear_iters,
 
    for (int i = entry->solve_start; i < entry->solve_end; i++)
    {
-      l_iters += active_stats->iters[i];
-      p_time += active_stats->prec[i];
-      s_time += active_stats->solve[i];
+      l_iters += stats->iters[i];
+      p_time += stats->prec[i];
+      s_time += stats->solve[i];
    }
    n_solves = entry->solve_end - entry->solve_start;
 
@@ -1077,14 +1081,14 @@ ComputeLevelStats(const LevelEntry *entry, int *num_solves, int *linear_iters,
  *--------------------------------------------------------------------------*/
 
 void
-StatsLevelPrint(int level)
+StatsLevelPrint(const Stats *stats, int level)
 {
-   if (!active_stats || level < 0 || level >= STATS_MAX_LEVELS)
+   if (!stats || level < 0 || level >= STATS_MAX_LEVELS)
    {
       return;
    }
 
-   int count = active_stats->level_count[level];
+   int count = stats->level_count[level];
    if (count == 0)
    {
       return;
@@ -1098,11 +1102,12 @@ StatsLevelPrint(int level)
 
    for (int i = 0; i < count; i++)
    {
-      const LevelEntry *entry      = &active_stats->level_entries[level][i];
+      const LevelEntry *entry      = &stats->level_entries[level][i];
       int               num_solves = 0, linear_iters = 0;
       double            setup_time = 0.0, solve_time = 0.0;
 
-      ComputeLevelStats(entry, &num_solves, &linear_iters, &setup_time, &solve_time);
+      ComputeLevelStats(stats, entry, &num_solves, &linear_iters, &setup_time,
+                        &solve_time);
 
       total_solves += num_solves;
       total_linear += linear_iters;

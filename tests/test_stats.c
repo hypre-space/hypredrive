@@ -2,28 +2,56 @@
 #include <stdio.h>
 
 #include "HYPREDRV.h"
+#include "args.h"
 #include "error.h"
+#include "linsys.h"
 #include "stats.h"
 #include "test_helpers.h"
+
+struct hypredrv_struct
+{
+   MPI_Comm comm;
+   int      mypid;
+   int      nprocs;
+   int      nstates;
+   int     *states;
+   bool     lib_mode;
+
+   input_args *iargs;
+
+   IntArray *dofmap;
+
+   HYPRE_IJMatrix mat_A;
+   HYPRE_IJMatrix mat_M;
+   HYPRE_IJVector vec_b;
+   HYPRE_IJVector vec_x;
+   HYPRE_IJVector vec_x0;
+   HYPRE_IJVector vec_xref;
+   HYPRE_IJVector vec_nn;
+   HYPRE_IJVector *vec_s;
+
+   HYPRE_Precon precon;
+   HYPRE_Solver solver;
+
+   void *scaling_ctx;
+
+   Stats *stats;
+};
 
 static void
 test_Stats_basic_lifecycle_and_timers(void)
 {
    Stats *s = StatsCreate();
    ASSERT_NOT_NULL(s);
-   StatsSetContext(s);
-   ASSERT_TRUE(StatsGetContext() == s);
 
-   StatsTimerSetMilliseconds();
-   StatsTimerSetSeconds();
+   StatsTimerSetMilliseconds(s);
+   StatsTimerSetSeconds(s);
 
-   StatsSetNumReps(2);
-   StatsSetNumLinearSystems(1);
+   StatsSetNumReps(s, 2);
+   StatsSetNumLinearSystems(s, 1);
 
    StatsDestroy(&s);
    ASSERT_NULL(s);
-   StatsSetContext(NULL);
-   ASSERT_NULL(StatsGetContext());
 }
 
 static void
@@ -31,57 +59,55 @@ test_Stats_annotations_and_levels(void)
 {
    Stats *s = StatsCreate();
    ASSERT_NOT_NULL(s);
-   StatsSetContext(s);
 
    /* Basic annotate begin/end pairs */
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "matrix");
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "matrix");
+   StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "matrix");
+   StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "matrix");
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "rhs");
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "rhs");
+   StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "rhs");
+   StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "rhs");
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "dofmap");
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "dofmap");
+   StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
+   StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "dofmap");
 
    /* Simulate a preconditioner+solve phase with iter/norm */
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "prec");
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "prec");
-   StatsIterSet(7);
-   StatsRelativeResNormSet(1.0e-6);
+   StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "prec");
+   StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "prec");
+   StatsIterSet(s, 7);
+   StatsRelativeResNormSet(s, 1.0e-6);
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
+   StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "solve");
+   StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "solve");
 
    /* Level annotations (nested) */
-   StatsAnnotateLevelBegin(0, "L0");
-   StatsAnnotateLevelBegin(1, "L1");
-   StatsAnnotateLevelEnd(1, "L1");
-   StatsAnnotateLevelEnd(0, "L0");
+   StatsAnnotateLevelBegin(s, 0, "L0");
+   StatsAnnotateLevelBegin(s, 1, "L1");
+   StatsAnnotateLevelEnd(s, 1, "L1");
+   StatsAnnotateLevelEnd(s, 0, "L0");
 
    /* Mismatched end (exercise defensive branches) */
    ErrorCodeResetAll();
-   StatsAnnotateLevelEnd(2, "bad");
+   StatsAnnotateLevelEnd(s, 2, "bad");
    ErrorCodeResetAll();
 
    /* Query last stats */
-   (void)StatsGetLinearSystemID();
-   (void)StatsGetLastIter();
-   (void)StatsGetLastSetupTime();
-   (void)StatsGetLastSolveTime();
+   (void)StatsGetLinearSystemID(s);
+   (void)StatsGetLastIter(s);
+   (void)StatsGetLastSetupTime(s);
+   (void)StatsGetLastSolveTime(s);
 
    /* Level APIs */
-   int c0 = StatsLevelGetCount(0);
+   int c0 = StatsLevelGetCount(s, 0);
    ASSERT_TRUE(c0 >= 0);
    LevelEntry entry;
-   (void)StatsLevelGetEntry(0, 0, &entry);
-   (void)StatsLevelGetEntry(0, -1, &entry); /* invalid index */
-   StatsLevelPrint(0);
+   (void)StatsLevelGetEntry(s, 0, 0, &entry);
+   (void)StatsLevelGetEntry(s, 0, -1, &entry); /* invalid index */
+   StatsLevelPrint(s, 0);
 
    /* Print (smoke) */
-   StatsPrint(0);
+   StatsPrint(s, 0);
 
    StatsDestroy(&s);
-   StatsSetContext(NULL);
 }
 
 static void
@@ -89,9 +115,15 @@ test_HYPREDRV_StatsLevelGetEntry_wrapper_branches(void)
 {
    /* This test targets the wrapper logic in src/HYPREDRV.c (aggregate computation),
     * without requiring a full HYPREDRV object. */
-   Stats *s = StatsCreate();
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+   ASSERT_NOT_NULL(obj);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   Stats                  *s     = state->stats;
    ASSERT_NOT_NULL(s);
-   StatsSetContext(s);
 
    /* Build one synthetic level entry spanning 2 solves */
    s->level_count[0]              = 1;
@@ -127,14 +159,8 @@ test_HYPREDRV_StatsLevelGetEntry_wrapper_branches(void)
                                      &setup_time, &solve_time);
    ASSERT_NE(ret, 0);
 
-   /* When Stats context is NULL, StatsLevelGetEntry returns -1 (defensive). */
-   StatsSetContext(NULL);
-   ret = HYPREDRV_StatsLevelGetEntry(0, 0, &entry_id, &num_solves, &linear_iters,
-                                     &setup_time, &solve_time);
-   ASSERT_NE(ret, 0);
-
-   StatsDestroy(&s);
-   StatsSetContext(NULL);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
 int
@@ -149,4 +175,3 @@ main(int argc, char **argv)
    MPI_Finalize();
    return 0;
 }
-
