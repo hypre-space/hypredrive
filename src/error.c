@@ -357,41 +357,61 @@ enum
    ERROR_CODE_NUM_ENTRIES = 32
 };
 
-/* Struct for storing an error message in a linked list */
-typedef struct ErrorMsgNode
-{
-   char                *message;
-   struct ErrorMsgNode *next;
-} ErrorMsgNode;
-
-/* The head of the linked list of error messages */
-static ErrorMsgNode *global_error_msg_head = NULL;
-
-/* Global error code variable */
-static uint32_t global_error_code;
-static uint32_t global_error_count[ERROR_CODE_NUM_ENTRIES] = {0};
-
 /*-----------------------------------------------------------------------------
- * ErrorCodeCountIncrement
+ * Error state container and helpers
  *-----------------------------------------------------------------------------*/
 
-void
-ErrorCodeCountIncrement(ErrorCode code)
+typedef struct ErrorMsgNode
+{
+   struct ErrorMsgNode *next;
+   char                 message[];
+} ErrorMsgNode;
+
+typedef struct ErrorState
+{
+   uint32_t      code;
+   uint32_t      code_count[ERROR_CODE_NUM_ENTRIES];
+   ErrorMsgNode *msg_head;
+   uint32_t      dropped_msg_count;
+} ErrorState;
+
+static ErrorState global_error_state = {0};
+
+static ErrorState *
+ErrorStateGet(void)
+{
+   return &global_error_state;
+}
+
+static int
+ErrorCodeToIndex(ErrorCode code)
 {
    int index = 0;
 
    if (code == ERROR_NONE)
    {
-      return;
+      return -1;
    }
 
    while (code >>= 1)
    {
       index++;
    }
-   if (index < ERROR_CODE_NUM_ENTRIES)
+
+   return (index < ERROR_CODE_NUM_ENTRIES) ? index : -1;
+}
+
+/*-----------------------------------------------------------------------------
+ * ErrorCodeCountIncrement
+ *-----------------------------------------------------------------------------*/
+
+static void
+ErrorCodeCountIncrement(ErrorState *state, ErrorCode code)
+{
+   int index = ErrorCodeToIndex(code);
+   if (index >= 0)
    {
-      global_error_count[index]++;
+      state->code_count[index]++;
    }
 }
 
@@ -399,21 +419,24 @@ ErrorCodeCountIncrement(ErrorCode code)
  * ErrorCodeCountGet
  *-----------------------------------------------------------------------------*/
 
-uint32_t
-ErrorCodeCountGet(ErrorCode code)
+static uint32_t
+ErrorCodeCountGet(const ErrorState *state, ErrorCode code)
 {
-   int index = 0;
+   int index = ErrorCodeToIndex(code);
+   return (index >= 0) ? state->code_count[index] : 0;
+}
 
-   if (code == ERROR_NONE)
+static void
+ErrorStateRecordMessageDrop(ErrorState *state)
+{
+   if (!state)
    {
-      return 0;
+      return;
    }
 
-   while (code >>= 1)
-   {
-      index++;
-   }
-   return (index < ERROR_CODE_NUM_ENTRIES) ? global_error_count[index] : 0;
+   state->code |= (uint32_t)ERROR_ALLOCATION;
+   ErrorCodeCountIncrement(state, ERROR_ALLOCATION);
+   state->dropped_msg_count++;
 }
 
 /*-----------------------------------------------------------------------------
@@ -423,8 +446,10 @@ ErrorCodeCountGet(ErrorCode code)
 void
 ErrorCodeSet(ErrorCode code)
 {
-   global_error_code |= (uint32_t)code;
-   ErrorCodeCountIncrement(code);
+   ErrorState *state = ErrorStateGet();
+
+   state->code |= (uint32_t)code;
+   ErrorCodeCountIncrement(state, code);
 }
 
 /*-----------------------------------------------------------------------------
@@ -434,7 +459,7 @@ ErrorCodeSet(ErrorCode code)
 uint32_t
 ErrorCodeGet(void)
 {
-   return global_error_code;
+   return ErrorStateGet()->code;
 }
 
 /*-----------------------------------------------------------------------------
@@ -444,7 +469,7 @@ ErrorCodeGet(void)
 bool
 ErrorCodeActive(void)
 {
-   return (global_error_code != ERROR_NONE);
+   return (ErrorStateGet()->code != ERROR_NONE);
 }
 
 /*-----------------------------------------------------------------------------
@@ -455,8 +480,9 @@ bool
 DistributedErrorCodeActive(MPI_Comm comm)
 {
    uint32_t flag = 0;
+   uint32_t code = ErrorStateGet()->code;
 
-   MPI_Allreduce(&global_error_code, &flag, 1, MPI_UINT32_T, MPI_BOR, comm);
+   MPI_Allreduce(&code, &flag, 1, MPI_UINT32_T, MPI_BOR, comm);
 
    return (flag != ERROR_NONE);
 }
@@ -526,14 +552,16 @@ ErrorCodeDescribe(uint32_t code)
 void
 ErrorCodeReset(uint32_t code)
 {
+   ErrorState *state = ErrorStateGet();
+
    for (uint32_t i = 0; i < ERROR_CODE_NUM_ENTRIES; i++)
    {
       uint32_t bit = 1u << i;
 
       if ((bit & code) != 0)
       {
-         global_error_code &= ~bit; /* Set n-th bit to zero */
-         global_error_count[i] = 0; /* Reset counter */
+         state->code &= ~bit; /* Set n-th bit to zero */
+         state->code_count[i] = 0;
       }
    }
 }
@@ -550,37 +578,92 @@ ErrorCodeResetAll(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * ErrorStateReset
+ *-----------------------------------------------------------------------------*/
+
+void
+ErrorStateReset(void)
+{
+   ErrorMsgClear();
+   ErrorCodeResetAll();
+}
+
+/*-----------------------------------------------------------------------------
  * ErrorMsgAdd
  *-----------------------------------------------------------------------------*/
 
 void
 ErrorMsgAdd(const char *format, ...)
 {
-   ErrorMsgNode *new = (ErrorMsgNode *)malloc(sizeof(ErrorMsgNode));
-   va_list     args;
-   int         length = 0;
-   const char *fmt    = format;
+   ErrorState   *state        = ErrorStateGet();
+   ErrorMsgNode *node         = NULL;
+   const char   *fmt          = format ? format : "(null format)";
+   const char   *fallback_msg = "(error formatting message)";
+   va_list       args;
+   va_list       args_copy;
+   int           length     = 0;
+   int           written    = 0;
+   size_t        alloc_size = 0;
 
-   /* Ensure format is not NULL */
-   if (fmt == NULL)
+   va_start(args, format);
+   va_copy(args_copy, args);
+   length = vsnprintf(NULL, 0, fmt, args_copy);
+   va_end(args_copy);
+
+   if (length < 0)
    {
-      fmt = "(null format)";
+      va_end(args);
+      length = (int)strlen(fallback_msg);
+
+      node = (ErrorMsgNode *)malloc(sizeof(ErrorMsgNode) + (size_t)length + 1);
+      if (!node)
+      {
+         ErrorStateRecordMessageDrop(state);
+         return;
+      }
+
+      memcpy(node->message, fallback_msg, (size_t)length + 1);
+      node->next      = state->msg_head;
+      state->msg_head = node;
+      return;
    }
 
-   /* Determine the length of the formatted message */
-   va_start(args, format);
-   length = vsnprintf(NULL, 0, fmt, args);
+   alloc_size = sizeof(ErrorMsgNode) + (size_t)length + 1;
+   node       = (ErrorMsgNode *)malloc(alloc_size);
+   if (!node)
+   {
+      va_end(args);
+      ErrorStateRecordMessageDrop(state);
+      return;
+   }
+
+   written = vsnprintf(node->message, (size_t)length + 1, fmt, args);
    va_end(args);
 
-   /* Format the message */
-   new->message = (char *)malloc((size_t)length + 1);
-   va_start(args, format);
-   vsnprintf(new->message, (size_t)length + 1, fmt, args);
-   va_end(args);
+   if (written < 0)
+   {
+      snprintf(node->message, (size_t)length + 1, "%s", fallback_msg);
+   }
 
-   /* Insert the new node at the head of the list */
-   new->next             = global_error_msg_head;
-   global_error_msg_head = new;
+   node->next      = state->msg_head;
+   state->msg_head = node;
+}
+
+static void
+ErrorMsgAddBoundedPieces(const char *prefix, const char *value, const char *suffix)
+{
+   char        msg[1024];
+   const char *safe_prefix = prefix ? prefix : "";
+   const char *safe_value  = value ? value : "(null)";
+   const char *safe_suffix = suffix ? suffix : "";
+
+   if (snprintf(msg, sizeof(msg), "%s%s%s", safe_prefix, safe_value, safe_suffix) < 0)
+   {
+      ErrorMsgAdd("%s", "(failed to format error message)");
+      return;
+   }
+
+   ErrorMsgAdd("%s", msg);
 }
 
 /*-----------------------------------------------------------------------------
@@ -590,15 +673,11 @@ ErrorMsgAdd(const char *format, ...)
 void
 ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
 {
-   char       *msg    = NULL;
-   uint32_t    count  = ErrorCodeCountGet(code);
-   const char *plural = (count > 1) ? "s" : "";
-   int         length = (int)strlen(suffix) + 24;
+   uint32_t    count       = ErrorCodeCountGet(ErrorStateGet(), code);
+   const char *safe_suffix = suffix ? suffix : "(null)";
+   const char *plural      = (count > 1) ? "s" : "";
 
-   msg = (char *)malloc((size_t)length);
-   snprintf(msg, (size_t)length, "Found %d %s%s!", (int)count, suffix, plural);
-   ErrorMsgAdd(msg);
-   free(msg);
+   ErrorMsgAdd("Found %d %s%s!", (int)count, safe_suffix, plural);
 }
 
 /*-----------------------------------------------------------------------------
@@ -608,13 +687,7 @@ ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
 void
 ErrorMsgAddMissingKey(const char *key)
 {
-   char *msg    = NULL;
-   int   length = (int)strlen(key) + 16;
-
-   msg = (char *)malloc((size_t)length);
-   snprintf(msg, (size_t)length, "Missing key: %s", key);
-   ErrorMsgAdd(msg);
-   free(msg);
+   ErrorMsgAddBoundedPieces("Missing key: ", key, "");
 }
 
 /*-----------------------------------------------------------------------------
@@ -624,13 +697,7 @@ ErrorMsgAddMissingKey(const char *key)
 void
 ErrorMsgAddExtraKey(const char *key)
 {
-   char *msg    = NULL;
-   int   length = (int)strlen(key) + 24;
-
-   msg = (char *)malloc((size_t)length);
-   snprintf(msg, (size_t)length, "Extra (unused) key: %s", key);
-   ErrorMsgAdd(msg);
-   free(msg);
+   ErrorMsgAddBoundedPieces("Extra (unused) key: ", key, "");
 }
 
 /*-----------------------------------------------------------------------------
@@ -640,13 +707,7 @@ ErrorMsgAddExtraKey(const char *key)
 void
 ErrorMsgAddUnexpectedVal(const char *key)
 {
-   char *msg    = NULL;
-   int   length = (int)strlen(key) + 40;
-
-   msg = (char *)malloc((size_t)length);
-   snprintf(msg, (size_t)length, "Unexpected value associated with %s key", key);
-   ErrorMsgAdd(msg);
-   free(msg);
+   ErrorMsgAddBoundedPieces("Unexpected value associated with ", key, " key");
 }
 
 /*-----------------------------------------------------------------------------
@@ -656,10 +717,7 @@ ErrorMsgAddUnexpectedVal(const char *key)
 void
 ErrorMsgAddInvalidFilename(const char *string)
 {
-   char msg[1024];
-
-   snprintf(msg, sizeof(msg), "Invalid filename: %s", string);
-   ErrorMsgAdd(msg);
+   ErrorMsgAddBoundedPieces("Invalid filename: ", string, "");
 }
 
 /*-----------------------------------------------------------------------------
@@ -669,7 +727,8 @@ ErrorMsgAddInvalidFilename(const char *string)
 void
 ErrorMsgPrint(void)
 {
-   ErrorMsgNode *current = global_error_msg_head;
+   ErrorState   *state   = ErrorStateGet();
+   ErrorMsgNode *current = state->msg_head;
 
    fprintf(stderr, "====================================================================="
                    "===============\n");
@@ -677,9 +736,17 @@ ErrorMsgPrint(void)
    fprintf(stderr, "====================================================================="
                    "===============\n");
 
-   if (current)
+   if (current || state->dropped_msg_count > 0)
    {
       fprintf(stderr, "\nError details:\n");
+
+      if (state->dropped_msg_count > 0)
+      {
+         const char *plural = (state->dropped_msg_count > 1) ? "s" : "";
+         fprintf(stderr, "  --> Dropped %u error message%s due to allocation failure.\n",
+                 state->dropped_msg_count, plural);
+      }
+
       while (current)
       {
          fprintf(stderr, "  --> %s\n", current->message);
@@ -698,14 +765,15 @@ ErrorMsgPrint(void)
 void
 ErrorMsgClear(void)
 {
-   ErrorMsgNode *current = global_error_msg_head;
+   ErrorState   *state   = ErrorStateGet();
+   ErrorMsgNode *current = state->msg_head;
 
    while (current)
    {
       ErrorMsgNode *temp = current;
       current            = current->next;
-      free(temp->message);
       free(temp);
    }
-   global_error_msg_head = NULL;
+   state->msg_head          = NULL;
+   state->dropped_msg_count = 0;
 }

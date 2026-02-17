@@ -57,6 +57,7 @@ bool     ErrorCodeActive(void);
 void     ErrorCodeDescribe(uint32_t);
 void     ErrorCodeReset(uint32_t);
 void     ErrorCodeResetAll(void);
+void     ErrorStateReset(void);
 bool     DistributedErrorCodeActive(MPI_Comm);
 
 /*******************************************************************************
