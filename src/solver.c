@@ -204,7 +204,8 @@ SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args,
 
 void
 SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
-            HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x)
+            HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x,
+            Stats *stats)
 {
    if (!solver)
    {
@@ -227,7 +228,7 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
       return;
    }
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "prec");
+   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
 
    void                   *vM = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix      par_M = NULL;
@@ -283,14 +284,14 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
          break;
 
       default:
-         StatsAnnotate(HYPREDRV_ANNOTATE_END, "prec");
+         StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
          return;
    }
 
    /* Clear pending error codes from hypre */
    HYPRE_ClearAllErrors();
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "prec");
+   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
 }
 
 /*-----------------------------------------------------------------------------
@@ -365,7 +366,7 @@ SolverSolveOnly(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
 
 void
 SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
-            HYPRE_IJVector b, HYPRE_IJVector x)
+            HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats)
 {
    if (!solver)
    {
@@ -387,27 +388,27 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
    /* Compute initial residual norm (absolute L2) before timing the solve */
    LinearSystemComputeResidualNorm(A, b, x, "L2", &r0_norm);
 
-   StatsAnnotate(HYPREDRV_ANNOTATE_BEGIN, "solve");
-   StatsInitialResNormSet(r0_norm);
+   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
+   StatsInitialResNormSet(stats, r0_norm);
 
    iters = SolverSolveOnly(solver_method, solver, A, b, x);
 
    if (iters < 0)
    {
-      StatsIterSet(0);
-      StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
+      StatsIterSet(stats, 0);
+      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
       return;
    }
 
-   StatsIterSet((int)iters);
-   StatsAnnotate(HYPREDRV_ANNOTATE_END, "solve");
+   StatsIterSet(stats, (int)iters);
+   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
 
    /* Compute the real relative residual norm. Note this is not timed */
    LinearSystemComputeVectorNorm(b, "L2", &b_norm);
    LinearSystemComputeResidualNorm(A, b, x, "L2", &r_norm);
    b_norm = (b_norm > 0.0) ? b_norm : 1.0;
 
-   StatsRelativeResNormSet(r_norm / b_norm);
+   StatsRelativeResNormSet(stats, r_norm / b_norm);
 }
 
 /*-----------------------------------------------------------------------------

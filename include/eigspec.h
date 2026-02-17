@@ -8,6 +8,7 @@
 
 #include "containers.h"
 #include "field.h"
+#include "stats.h"
 #include "yaml.h"
 
 /*--------------------------------------------------------------------------
@@ -34,7 +35,7 @@ void EigSpecSetArgs(void *, const YAMLnode *);
 #ifdef HYPREDRV_ENABLE_EIGSPEC
 typedef void (*hypredrv_PreconApplyFn)(void *ctx, void *b, void *x);
 uint32_t hypredrv_EigSpecCompute(const EigSpec_args *, void *, void *,
-                                 hypredrv_PreconApplyFn);
+                                 hypredrv_PreconApplyFn, Stats *);
 #endif
 
 #endif /* EIGSPEC_HEADER */

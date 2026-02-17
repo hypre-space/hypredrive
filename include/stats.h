@@ -154,38 +154,37 @@ typedef struct Stats_struct
 /* Stats object lifecycle */
 Stats *StatsCreate(void);
 void   StatsDestroy(Stats **stats_ptr);
-void   StatsSetContext(Stats *stats);
-Stats *StatsGetContext(void);
 
 /* Annotation functions */
-void StatsAnnotate(HYPREDRV_AnnotateAction action, const char *name);
-void StatsAnnotateV(HYPREDRV_AnnotateAction action, const char *name, va_list args);
-void StatsAnnotateLevelBegin(int level, const char *name);
-void StatsAnnotateLevelEnd(int level, const char *name);
+void StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char *name);
+void StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char *name,
+                    va_list args);
+void StatsAnnotateLevelBegin(Stats *stats, int level, const char *name);
+void StatsAnnotateLevelEnd(Stats *stats, int level, const char *name);
 
 /* Timer configuration */
-void StatsTimerSetMilliseconds(void);
-void StatsTimerSetSeconds(void);
+void StatsTimerSetMilliseconds(Stats *stats);
+void StatsTimerSetSeconds(Stats *stats);
 
 /* Statistics setters */
-void StatsIterSet(int);
-void StatsInitialResNormSet(double);
-void StatsRelativeResNormSet(double);
-void StatsSetNumReps(int);
-void StatsSetNumLinearSystems(int);
+void StatsIterSet(Stats *stats, int);
+void StatsInitialResNormSet(Stats *stats, double);
+void StatsRelativeResNormSet(Stats *stats, double);
+void StatsSetNumReps(Stats *stats, int);
+void StatsSetNumLinearSystems(Stats *stats, int);
 
 /* Statistics getters */
-int    StatsGetLinearSystemID(void);
-int    StatsGetLastIter(void);
-double StatsGetLastSetupTime(void);
-double StatsGetLastSolveTime(void);
+int    StatsGetLinearSystemID(const Stats *stats);
+int    StatsGetLastIter(const Stats *stats);
+double StatsGetLastSetupTime(const Stats *stats);
+double StatsGetLastSolveTime(const Stats *stats);
 
 /* Level statistics (populated automatically from level annotations) */
-int  StatsLevelGetCount(int level);
-int  StatsLevelGetEntry(int level, int index, LevelEntry *entry);
-void StatsLevelPrint(int level);
+int  StatsLevelGetCount(const Stats *stats, int level);
+int  StatsLevelGetEntry(const Stats *stats, int level, int index, LevelEntry *entry);
+void StatsLevelPrint(const Stats *stats, int level);
 
 /* Output */
-void StatsPrint(int);
+void StatsPrint(const Stats *stats, int);
 
 #endif /* STATS_HEADER */

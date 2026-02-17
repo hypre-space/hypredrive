@@ -622,7 +622,7 @@ test_SolverSetup_default_case(void)
 
    /* Test default case with invalid solver enum */
    ErrorCodeResetAll();
-   SolverSetup(PRECON_NONE, (solver_t)999, precon, solver, M, b, x);
+   SolverSetup(PRECON_NONE, (solver_t)999, precon, solver, M, b, x, NULL);
    /* Should return early without error */
 
    SolverDestroy(SOLVER_PCG, &solver);
@@ -664,7 +664,7 @@ test_SolverApply_default_case(void)
 
    /* Test default case with invalid solver enum */
    ErrorCodeResetAll();
-   SolverApply((solver_t)999, solver, A, b, x);
+   SolverApply((solver_t)999, solver, A, b, x, NULL);
    /* Should return early without error */
 
    SolverDestroy(SOLVER_PCG, &solver);
@@ -703,21 +703,21 @@ test_SolverApply_error_cases(void)
 
    /* Test with NULL solver */
    ErrorCodeResetAll();
-   SolverApply(SOLVER_PCG, NULL, A, b, x);
+   SolverApply(SOLVER_PCG, NULL, A, b, x, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    /* Test with NULL matrix */
    ErrorCodeResetAll();
-   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, NULL, b, x);
+   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, NULL, b, x, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    /* Test with NULL vectors */
    ErrorCodeResetAll();
-   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, A, NULL, x);
+   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, A, NULL, x, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    ErrorCodeResetAll();
-   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, A, b, NULL);
+   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, A, b, NULL, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    TEST_HYPRE_FINALIZE();
@@ -733,12 +733,12 @@ test_SolverSetup_error_cases(void)
 
    /* Test with NULL solver */
    ErrorCodeResetAll();
-   SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, NULL, A, b, x);
+   SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, NULL, A, b, x, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    /* Test with NULL matrix */
    ErrorCodeResetAll();
-   SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, (HYPRE_Solver)1, NULL, b, x);
+   SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, (HYPRE_Solver)1, NULL, b, x, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    TEST_HYPRE_FINALIZE();
