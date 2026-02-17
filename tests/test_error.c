@@ -13,6 +13,9 @@
 #include "error.h"
 #include "test_helpers.h"
 
+static void
+capture_error_output(void (*print_fn)(void), char *buffer, size_t buf_len);
+
 /*-----------------------------------------------------------------------------
  * Test ErrorCode operations
  *-----------------------------------------------------------------------------*/
@@ -84,6 +87,55 @@ test_ErrorMsgClear(void)
    ErrorMsgClear();
 
    /* Clear should not crash */
+}
+
+static void
+test_ErrorStateReset(void)
+{
+   ErrorCodeResetAll();
+   ErrorMsgClear();
+
+   ErrorCodeSet(ERROR_INVALID_KEY);
+   ErrorMsgAdd("Message before state reset");
+
+   ErrorStateReset();
+
+   ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
+   ASSERT_FALSE(ErrorCodeActive());
+
+   char buffer[512];
+   capture_error_output(ErrorMsgPrint, buffer, sizeof(buffer));
+   ASSERT_NULL(strstr(buffer, "Message before state reset"));
+}
+
+static void
+test_ErrorMsgAdd_null_format(void)
+{
+   ErrorMsgClear();
+   ErrorMsgAdd(NULL);
+
+   char buffer[512];
+   capture_error_output(ErrorMsgPrint, buffer, sizeof(buffer));
+   ASSERT_NOT_NULL(strstr(buffer, "(null format)"));
+
+   ErrorMsgClear();
+}
+
+static void
+test_ErrorMsgHelpers_accept_null_inputs(void)
+{
+   ErrorMsgClear();
+
+   ErrorMsgAddMissingKey(NULL);
+   ErrorMsgAddExtraKey(NULL);
+   ErrorMsgAddUnexpectedVal(NULL);
+   ErrorMsgAddInvalidFilename(NULL);
+
+   char buffer[1024];
+   capture_error_output(ErrorMsgPrint, buffer, sizeof(buffer));
+   ASSERT_NOT_NULL(strstr(buffer, "(null)"));
+
+   ErrorMsgClear();
 }
 
 static void
@@ -370,6 +422,9 @@ main(int argc, char **argv)
 
    RUN_TEST(test_ErrorMsgAdd);
    RUN_TEST(test_ErrorMsgClear);
+   RUN_TEST(test_ErrorStateReset);
+   RUN_TEST(test_ErrorMsgAdd_null_format);
+   RUN_TEST(test_ErrorMsgHelpers_accept_null_inputs);
    RUN_TEST(test_ErrorMsgAddMissingKey);
    RUN_TEST(test_ErrorMsgAddExtraKey);
    RUN_TEST(test_ErrorMsgAddUnexpectedVal);

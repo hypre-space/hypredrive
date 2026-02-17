@@ -92,6 +92,9 @@ HYPREDRV_Initialize()
 {
    if (!hypredrv_is_initialized)
    {
+      /* A fresh runtime initialization owns a fresh error-state view. */
+      ErrorStateReset();
+
       /* Initialize hypre */
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
       HYPRE_Initialize();
@@ -130,6 +133,9 @@ HYPREDRV_Finalize()
 #endif
       hypredrv_is_initialized = false;
    }
+
+   /* Do not leak message buffers across independent initialize/finalize cycles. */
+   ErrorStateReset();
 
 #ifdef HYPREDRV_ENABLE_CALIPER
    /* Flush Caliper data before MPI_Finalize to avoid mpireport warning */
