@@ -497,15 +497,21 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
       return ErrorCodeGet();
    }
 
-   /* Destroy existing solver/preconditioner objects to avoid stale configuration */
-   if (hypredrv->solver)
+   int current_variant = hypredrv->iargs->active_precon_variant;
+   int variant_changed = (variant_idx != current_variant);
+
+   /* Only rebuild solver/preconditioner when switching variants. */
+   if (variant_changed)
    {
-      SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
-   }
-   if (hypredrv->precon)
-   {
-      PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                    &hypredrv->precon);
+      if (hypredrv->solver)
+      {
+         SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+      }
+      if (hypredrv->precon)
+      {
+         PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                       &hypredrv->precon);
+      }
    }
 
    /* Set active variant */
@@ -1177,7 +1183,7 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
     *   Example: reuse=2 means create on ls_id=0, 3, 6, 9, ...
     */
    bool should_create =
-      ((hypredrv->precon == NULL) || (reuse == 0) || (ls_id < 0 || ls_id == 0) ||
+      ((hypredrv->precon == NULL) || (reuse == 0) || (ls_id < 0) ||
        (((ls_id + 1) % (reuse + 1)) == 0)) != 0;
 
    if (should_create)
