@@ -84,169 +84,6 @@ typedef struct hypredrv_struct
    Stats *stats;
 } hypredrv_t;
 
-static int
-HYPREDRV_IntArrayContains(const IntArray *arr, int value)
-{
-   if (!arr || !arr->data)
-   {
-      return 0;
-   }
-
-   for (size_t i = 0; i < arr->size; i++)
-   {
-      if (arr->data[i] == value)
-      {
-         return 1;
-      }
-   }
-   return 0;
-}
-
-static int
-HYPREDRV_PreconReuseFindTimestepIndex(const IntArray *starts, int ls_id)
-{
-   if (!starts || !starts->data)
-   {
-      return -1;
-   }
-
-   for (size_t i = 0; i < starts->size; i++)
-   {
-      if (starts->data[i] == ls_id)
-      {
-         return (int)i;
-      }
-   }
-
-   return -1;
-}
-
-static void
-HYPREDRV_PreconReuseTimestepsClear(HYPREDRV_t hypredrv)
-{
-   if (!hypredrv)
-   {
-      return;
-   }
-   IntArrayDestroy(&hypredrv->precon_reuse_timestep_starts);
-}
-
-static void
-HYPREDRV_PreconReuseTimestepsLoad(HYPREDRV_t hypredrv)
-{
-   if (!hypredrv || !hypredrv->iargs)
-   {
-      return;
-   }
-
-   HYPREDRV_PreconReuseTimestepsClear(hypredrv);
-
-   const PreconReuse_args *reuse = &hypredrv->iargs->precon_reuse;
-   if (!reuse->enabled || !reuse->per_timestep)
-   {
-      return;
-   }
-
-   const char *filename = hypredrv->iargs->ls.timestep_filename;
-   if (!filename || filename[0] == '\0')
-   {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("preconditioner.reuse.per_timestep requires linear_system.timestep_filename");
-      return;
-   }
-
-   FILE *fp = fopen(filename, "r");
-   if (!fp)
-   {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAdd("Could not open timestep file: '%s'", filename);
-      return;
-   }
-
-   int total = 0;
-   if (fscanf(fp, "%d", &total) != 1 || total <= 0)
-   {
-      fclose(fp);
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Invalid timestep file header in '%s'", filename);
-      return;
-   }
-
-   IntArray *starts = IntArrayCreate((size_t)total);
-   if (!starts)
-   {
-      fclose(fp);
-      ErrorCodeSet(ERROR_ALLOCATION);
-      ErrorMsgAdd("Failed to allocate timestep starts array");
-      return;
-   }
-
-   for (int i = 0; i < total; i++)
-   {
-      int timestep = 0;
-      int ls_start = 0;
-      if (fscanf(fp, "%d %d", &timestep, &ls_start) != 2 || ls_start < 0)
-      {
-         fclose(fp);
-         IntArrayDestroy(&starts);
-         ErrorCodeSet(ERROR_INVALID_VAL);
-         ErrorMsgAdd("Invalid timestep entry in '%s' at line %d", filename, i + 2);
-         return;
-      }
-      starts->data[i] = ls_start;
-      (void)timestep;
-   }
-
-   fclose(fp);
-   hypredrv->precon_reuse_timestep_starts = starts;
-}
-
-static int
-HYPREDRV_PreconReuseShouldRecompute(HYPREDRV_t hypredrv, int next_ls_id)
-{
-   if (!hypredrv || !hypredrv->iargs)
-   {
-      return 1;
-   }
-
-   if (next_ls_id < 0)
-   {
-      next_ls_id = 0;
-   }
-
-   const PreconReuse_args *reuse = &hypredrv->iargs->precon_reuse;
-   int                     freq  = reuse->frequency;
-
-   if (!reuse->enabled)
-   {
-      freq = 0;
-   }
-   if (freq < 0)
-   {
-      freq = 0;
-   }
-
-   if (reuse->enabled && reuse->linear_solver_ids && reuse->linear_solver_ids->size > 0)
-   {
-      return HYPREDRV_IntArrayContains(reuse->linear_solver_ids, next_ls_id);
-   }
-
-   if (reuse->enabled && reuse->per_timestep)
-   {
-      int timestep_idx = HYPREDRV_PreconReuseFindTimestepIndex(
-         hypredrv->precon_reuse_timestep_starts, next_ls_id);
-
-      if (timestep_idx < 0)
-      {
-         return 0;
-      }
-
-      return (timestep_idx % (freq + 1)) == 0;
-   }
-
-   return (next_ls_id % (freq + 1)) == 0;
-}
-
 /*-----------------------------------------------------------------------------
  * HYPREDRV_Initialize
  *-----------------------------------------------------------------------------*/
@@ -447,7 +284,7 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    }
 
    IntArrayDestroy(&hypredrv->dofmap);
-   HYPREDRV_PreconReuseTimestepsClear(hypredrv);
+   PreconReuseTimestepsClear(&hypredrv->precon_reuse_timestep_starts);
    InputArgsDestroy(&hypredrv->iargs);
 
    /* Destroy statistics object */
@@ -595,7 +432,9 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
 #endif
    }
 
-   HYPREDRV_PreconReuseTimestepsLoad(hypredrv);
+   PreconReuseTimestepsLoad(&hypredrv->iargs->precon_reuse,
+                            hypredrv->iargs->ls.timestep_filename,
+                            &hypredrv->precon_reuse_timestep_starts);
 
    return ErrorCodeGet();
 }
@@ -1342,7 +1181,9 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
    int  next_ls_id   = StatsGetLinearSystemID(hypredrv->stats) + 1;
    bool should_create =
       ((hypredrv->precon == NULL) ||
-       HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id)) != 0;
+       PreconReuseShouldRecompute(&hypredrv->iargs->precon_reuse,
+                                  hypredrv->precon_reuse_timestep_starts,
+                                  next_ls_id)) != 0;
 
    if (should_create)
    {
@@ -1443,7 +1284,9 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_OBJ();
 
    int next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
-   int recompute  = HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id);
+   int recompute  = PreconReuseShouldRecompute(&hypredrv->iargs->precon_reuse,
+                                               hypredrv->precon_reuse_timestep_starts,
+                                               next_ls_id);
 
    /* Create scaling context if needed and not already created */
    if (hypredrv->iargs->scaling.enabled && !hypredrv->scaling_ctx)
@@ -1648,7 +1491,10 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_OBJ();
 
    int  next_ls_id     = StatsGetLinearSystemID(hypredrv->stats) + 1;
-   bool should_destroy = HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id) != 0;
+   bool should_destroy =
+      PreconReuseShouldRecompute(&hypredrv->iargs->precon_reuse,
+                                 hypredrv->precon_reuse_timestep_starts,
+                                 next_ls_id) != 0;
 
    if (should_destroy)
    {

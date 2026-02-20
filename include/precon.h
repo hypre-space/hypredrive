@@ -14,6 +14,7 @@
 #include "ilu.h"
 #include "mgr.h"
 #include "yaml.h"
+#include <stdint.h>
 
 /*--------------------------------------------------------------------------
  * Preconditioner types enum
@@ -77,6 +78,11 @@ void           PreconArgsSetDefaultsForMethod(precon_t, precon_args *);
 void           PreconReuseSetDefaultArgs(PreconReuse_args *);
 void           PreconReuseDestroyArgs(PreconReuse_args *);
 void           PreconReuseSetArgsFromYAML(PreconReuse_args *, YAMLnode *);
+void           PreconReuseTimestepsClear(IntArray **);
+uint32_t       PreconReuseTimestepsLoad(const PreconReuse_args *, const char *,
+                                        IntArray **);
+int            PreconReuseShouldRecompute(const PreconReuse_args *, const IntArray *,
+                                          int);
 
 void PreconSetArgsFromYAML(precon_args *, YAMLnode *); /* TODO: change to PreconSetArgs */
 void PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector, HYPRE_Precon *);

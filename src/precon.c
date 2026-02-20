@@ -9,6 +9,7 @@
 #include "HYPRE_parcsr_mv.h"
 #include "gen_macros.h"
 #include "nested_krylov.h"
+#include <stdio.h>
 #include <strings.h>
 
 #define Precon_FIELDS(_prefix)                        \
@@ -117,6 +118,163 @@ PreconReuseParseOnOff(const char *value, int *out)
    }
 
    return 0;
+}
+
+static int
+PreconReuseIntArrayContains(const IntArray *arr, int value)
+{
+   if (!arr || !arr->data)
+   {
+      return 0;
+   }
+
+   for (size_t i = 0; i < arr->size; i++)
+   {
+      if (arr->data[i] == value)
+      {
+         return 1;
+      }
+   }
+
+   return 0;
+}
+
+static int
+PreconReuseFindTimestepIndex(const IntArray *starts, int ls_id)
+{
+   if (!starts || !starts->data)
+   {
+      return -1;
+   }
+
+   for (size_t i = 0; i < starts->size; i++)
+   {
+      if (starts->data[i] == ls_id)
+      {
+         return (int)i;
+      }
+   }
+
+   return -1;
+}
+
+void
+PreconReuseTimestepsClear(IntArray **timestep_starts)
+{
+   if (!timestep_starts)
+   {
+      return;
+   }
+
+   IntArrayDestroy(timestep_starts);
+}
+
+uint32_t
+PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *filename,
+                         IntArray **timestep_starts)
+{
+   if (!args || !timestep_starts)
+   {
+      return ErrorCodeGet();
+   }
+
+   PreconReuseTimestepsClear(timestep_starts);
+
+   if (!args->enabled || !args->per_timestep)
+   {
+      return ErrorCodeGet();
+   }
+
+   if (!filename || filename[0] == '\0')
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("preconditioner.reuse.per_timestep requires linear_system.timestep_filename");
+      return ErrorCodeGet();
+   }
+
+   FILE *fp = fopen(filename, "r");
+   if (!fp)
+   {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAdd("Could not open timestep file: '%s'", filename);
+      return ErrorCodeGet();
+   }
+
+   int total = 0;
+   if (fscanf(fp, "%d", &total) != 1 || total <= 0)
+   {
+      fclose(fp);
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Invalid timestep file header in '%s'", filename);
+      return ErrorCodeGet();
+   }
+
+   IntArray *starts = IntArrayCreate((size_t)total);
+   if (!starts)
+   {
+      fclose(fp);
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate timestep starts array");
+      return ErrorCodeGet();
+   }
+
+   for (int i = 0; i < total; i++)
+   {
+      int timestep = 0;
+      int ls_start = 0;
+      if (fscanf(fp, "%d %d", &timestep, &ls_start) != 2 || ls_start < 0)
+      {
+         fclose(fp);
+         IntArrayDestroy(&starts);
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Invalid timestep entry in '%s' at line %d", filename, i + 2);
+         return ErrorCodeGet();
+      }
+      starts->data[i] = ls_start;
+      (void)timestep;
+   }
+
+   fclose(fp);
+   *timestep_starts = starts;
+   return ErrorCodeGet();
+}
+
+int
+PreconReuseShouldRecompute(const PreconReuse_args *args, const IntArray *timestep_starts,
+                           int next_ls_id)
+{
+   if (!args)
+   {
+      return 1;
+   }
+
+   if (next_ls_id < 0)
+   {
+      next_ls_id = 0;
+   }
+
+   int freq = args->frequency;
+   if (!args->enabled || freq < 0)
+   {
+      freq = 0;
+   }
+
+   if (args->enabled && args->linear_solver_ids && args->linear_solver_ids->size > 0)
+   {
+      return PreconReuseIntArrayContains(args->linear_solver_ids, next_ls_id);
+   }
+
+   if (args->enabled && args->per_timestep)
+   {
+      int timestep_idx = PreconReuseFindTimestepIndex(timestep_starts, next_ls_id);
+      if (timestep_idx < 0)
+      {
+         return 0;
+      }
+      return (timestep_idx % (freq + 1)) == 0;
+   }
+
+   return (next_ls_id % (freq + 1)) == 0;
 }
 
 void
