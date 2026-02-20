@@ -12,13 +12,13 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define PCG_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, two_norm, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, recompute_res, FieldTypeIntSet) \
+#define PCG_FIELDS(_prefix)                                          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, two_norm, FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, recompute_res, FieldTypeIntSet)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, residual_tol, FieldTypeDoubleSet) \
@@ -27,26 +27,24 @@
 /* Define num_fields macro */
 #define PCG_NUM_FIELDS (sizeof(PCG_field_offset_map) / sizeof(PCG_field_offset_map[0]))
 
-/* Generate the various function declarations/definitions and the field_offset_map object */
-GENERATE_PREFIXED_COMPONENTS(PCG)
+/* Generate the various function declarations/definitions and the field_offset_map object
+ */
+GENERATE_PREFIXED_COMPONENTS(PCG) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * PCGGetValidValues
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-PCGGetValidValues(const char* key)
+PCGGetValidValues(const char *key)
 {
-   if (!strcmp(key, "two_norm") ||
-       !strcmp(key, "stop_crit") ||
+   if (!strcmp(key, "two_norm") || !strcmp(key, "stop_crit") ||
        !strcmp(key, "rel_change"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }
-   else
-   {
-      return STR_INT_MAP_ARRAY_VOID();
-   }
+
+   return STR_INT_MAP_ARRAY_VOID();
 }
 
 /*-----------------------------------------------------------------------------
@@ -73,9 +71,9 @@ PCGSetDefaultArgs(PCG_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-PCGCreate(MPI_Comm comm, PCG_args *args, HYPRE_Solver *solver_ptr)
+PCGCreate(MPI_Comm comm, const PCG_args *args, HYPRE_Solver *solver_ptr)
 {
-   HYPRE_Solver solver;
+   HYPRE_Solver solver = NULL;
 
    HYPRE_ParCSRPCGCreate(comm, &solver);
    HYPRE_PCGSetMaxIter(solver, args->max_iter);

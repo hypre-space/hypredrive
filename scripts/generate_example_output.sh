@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #/******************************************************************************
 #* Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
 #* HYPRE Project Developers. See the top-level COPYRIGHT file for details.
@@ -14,7 +14,7 @@ generate_output() {
     local EXAMPLE_ID=$1
 
     case ${EXAMPLE_ID} in
-        1|3|5)
+        1|3|5|6|7|8)
             NP=1
             ;;
         2|4)
@@ -45,8 +45,10 @@ generate_output() {
     # Postprocess the output file
     sed -r '
         s/(Date and time: ).*/\1YYYY-MM-DD HH:MM:SS/g
+        s/(Using HYPREDRV_DEVELOP_STRING: ).*/\1HYPREDRV_VERSION_GOES_HERE/g
         s/(Using HYPRE_DEVELOP_STRING: ).*/\1HYPRE_VERSION_GOES_HERE/g
         s|(.*/hypredrive)( done!)|\${HYPREDRIVE_PATH}/hypredrive\2|g
+        /^=+ System Information =+$/,/^=+ System Information =+$/d
     ' "hypredrive.temp.out" > "${REFERENCE_OUTPUT_FILE}"
 
     rm -rf hypredrive.temp.out
@@ -71,7 +73,7 @@ fi
 
 if [[ "$1" == "all" || "$1" == "a" ]]; then
     # Loop through all example IDs and generate output
-    EXAMPLE_IDS=(1 2 3 4 5)
+    EXAMPLE_IDS=({1..8})
 
     for ID in "${EXAMPLE_IDS[@]}"; do
         generate_output "$ID"

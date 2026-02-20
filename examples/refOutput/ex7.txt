@@ -1,0 +1,151 @@
+Date and time: YYYY-MM-DD HH:MM:SS
+
+Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
+
+Running on 1 MPI rank
+------------------------------------------------------------------------------------
+general: 
+  use_millisec: on
+linear_system: 
+  dirname: data/poromech2k/np1/ls
+  init_suffix: 0
+  last_suffix: 24
+  rhs_filename: IJ.out.b
+  matrix_filename: IJ.out.A
+  dofmap_filename: dofmap.out
+solver: 
+  fgmres: 
+    max_iter: 100
+    krylov_dim: 30
+    print_level: 1
+    relative_tol: 1.0e-6
+preconditioner: 
+  mgr: 
+    max_iter: 1
+    tolerance: 0.0
+    print_level: 0
+    coarse_th: 1e-20
+    level: 
+      0: 
+        f_dofs: [0, 1, 2]
+        f_relaxation: amg
+          amg: 
+            coarsening: 
+              type: pmis
+              strong_th: 0.5
+              num_functions: 3
+              filter_functions: on
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: blk-jacobi
+        coarse_level_type: non-galerkin
+      1: 
+        f_dofs: [5]
+        f_relaxation: jacobi
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: rap
+      2: 
+        f_dofs: [4]
+        f_relaxation: single
+        g_relaxation: ilu
+        restriction_type: columped
+        prolongation_type: injection
+        coarse_level_type: rap
+    coarsest_level: 
+      amg: 
+        max_iter: 1
+        tolerance: 0.0
+        relaxation: 
+          down_type: l1-jacobi
+          up_type: l1-jacobi
+------------------------------------------------------------------------------------
+====================================================================================
+Solving linear system #0 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #1 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #2 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #3 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #4 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #5 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #6 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #7 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #8 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #9 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #10 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #11 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #12 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #13 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #14 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #15 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #16 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #17 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #18 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #19 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #20 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #21 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #22 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #23 with 2187 rows and 127161 nonzeros...
+====================================================================================
+Solving linear system #24 with 2187 rows and 127161 nonzeros...
+====================================================================================
+
+
+STATISTICS SUMMARY:
+
++--------+-------------+-------------+-------------+------------+------------+--------+
+|        |    LS build |       setup |       solve |    initial |   relative |        |
+|  Entry |  times [ms] |  times [ms] |  times [ms] |  res. norm |  res. norm |  iters |
++--------+-------------+-------------+-------------+------------+------------+--------+
+|      0 |       4.619 |       5.162 |       3.972 |   1.00e+00 |   9.70e-07 |     13 |
+|      1 |       2.982 |       4.362 |       6.815 |   1.00e+00 |   4.51e-07 |     18 |
+|      2 |       3.246 |       3.858 |       3.941 |   1.00e+00 |   8.86e-07 |     12 |
+|      3 |       3.811 |       4.797 |       4.058 |   1.00e+00 |   3.94e-07 |     12 |
+|      4 |       4.116 |       4.418 |       4.899 |   1.00e+00 |   6.55e-07 |     16 |
+|      5 |       3.404 |       4.324 |       5.112 |   1.00e+00 |   4.88e-07 |     16 |
+|      6 |       3.745 |       3.802 |       4.443 |   1.00e+00 |   9.06e-07 |     14 |
+|      7 |       3.453 |       3.742 |       4.423 |   1.00e+00 |   5.48e-07 |     14 |
+|      8 |       3.603 |       4.061 |       4.661 |   1.00e+00 |   8.11e-07 |     14 |
+|      9 |       3.649 |       4.059 |       4.377 |   1.00e+00 |   4.39e-07 |     14 |
+|     10 |       3.703 |       3.886 |       3.999 |   1.00e+00 |   5.96e-07 |     13 |
+|     11 |       3.348 |       3.990 |       4.111 |   1.00e+00 |   4.05e-07 |     13 |
+|     12 |       3.401 |       4.149 |       4.889 |   1.00e+00 |   4.65e-07 |     14 |
+|     13 |       3.691 |       3.793 |       4.939 |   1.00e+00 |   6.07e-07 |     14 |
+|     14 |       3.653 |       4.079 |       4.527 |   1.00e+00 |   5.01e-07 |     13 |
+|     15 |       4.059 |       4.146 |       4.037 |   1.00e+00 |   4.86e-07 |     13 |
+|     16 |       3.365 |       3.826 |       2.549 |   1.00e+00 |   5.62e-07 |      8 |
+|     17 |       3.506 |       3.798 |       4.429 |   1.00e+00 |   7.91e-07 |     14 |
+|     18 |       4.249 |       3.895 |       4.213 |   1.00e+00 |   5.40e-07 |     14 |
+|     19 |       3.567 |       3.618 |       4.772 |   1.00e+00 |   6.37e-07 |     16 |
+|     20 |       3.407 |       3.669 |       4.271 |   1.00e+00 |   4.64e-07 |     12 |
+|     21 |       4.167 |       4.479 |       4.899 |   1.00e+00 |   3.67e-07 |     15 |
+|     22 |       3.853 |       4.606 |       5.302 |   1.00e+00 |   8.41e-07 |     16 |
+|     23 |       4.375 |       4.233 |       4.316 |   1.00e+00 |   9.49e-07 |     12 |
+|     24 |       3.606 |       4.721 |       4.167 |   1.00e+00 |   8.28e-07 |     13 |
++--------+-------------+-------------+-------------+------------+------------+--------+
+
+Date and time: YYYY-MM-DD HH:MM:SS
+${HYPREDRIVE_PATH}/hypredrive done!

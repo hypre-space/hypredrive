@@ -1,9 +1,11 @@
 Date and time: YYYY-MM-DD HH:MM:SS
 
-Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
+Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
 
 Running on 1 MPI rank
 ------------------------------------------------------------------------------------
+general: 
+  use_millisec: on
 linear_system: 
   rhs_filename: data/compflow6k/np1/IJ.out.b
   matrix_filename: data/compflow6k/np1/IJ.out.A
@@ -39,7 +41,7 @@ preconditioner:
         g_relaxation: ilu
         restriction_type: columped
         prolongation_type: injection
-        coarse_level_type: rai
+        coarse_level_type: rap
     coarsest_level: 
       amg: 
         tolerance: 0.0
@@ -92,32 +94,31 @@ L2 norm of b: 1.000000e+00
 Initial L2 norm of residual: 1.000000e+00
 =============================================
 
-Iters     resid.norm     conv.rate  rel.res.norm
------    ------------    ---------- ------------
-    1    2.968475e-01    0.296847   2.968475e-01
-    2    4.747230e-02    0.159922   4.747230e-02
-    3    5.826923e-03    0.122744   5.826923e-03
-    4    8.014255e-04    0.137538   8.014255e-04
-    5    1.058942e-04    0.132132   1.058942e-04
-    6    9.817816e-06    0.092713   9.817816e-06
-    7    7.880464e-07    0.080267   7.880464e-07
+Iters      resid.norm     conv.rate   rel.res.norm
+-----    ------------    ----------   ------------
+    1    3.351387e-01      0.335139   3.351387e-01
+    2    1.465206e-01      0.437194   1.465206e-01
+    3    2.534289e-02      0.172965   2.534289e-02
+    4    2.963971e-03      0.116955   2.963971e-03
+    5    3.916325e-04      0.132131   3.916325e-04
+    6    4.467956e-05      0.114085   4.467956e-05
+    7    3.966829e-06      0.088784   3.966829e-06
+    8    3.735284e-07      0.094163   3.735284e-07
 
 
-Final L2 norm of residual: 7.880464e-07
-
-
+Final L2 norm of residual: 3.735284e-07
 
 ====================================================================================
 
 
 STATISTICS SUMMARY:
 
-+------------+-------------+-------------+-------------+-------------+-------------+
-|            |    LS build |       setup |       solve |    relative |             |
-|      Entry |       times |       times |       times |   res. norm |       iters |
-+------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.004 |       0.007 |       0.003 |    7.88e-07 |           7 |
-+------------+-------------+-------------+-------------+-------------+-------------+
++--------+-------------+-------------+-------------+------------+------------+--------+
+|        |    LS build |       setup |       solve |    initial |   relative |        |
+|  Entry |  times [ms] |  times [ms] |  times [ms] |  res. norm |  res. norm |  iters |
++--------+-------------+-------------+-------------+------------+------------+--------+
+|      0 |       2.872 |       3.462 |       3.358 |   1.00e+00 |   3.74e-07 |      8 |
++--------+-------------+-------------+-------------+------------+------------+--------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
 ${HYPREDRIVE_PATH}/hypredrive done!

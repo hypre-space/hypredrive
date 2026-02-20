@@ -7,17 +7,18 @@
 
 #include "utils.h"
 #include <ctype.h>
+#include <string.h>
 
 /*-----------------------------------------------------------------------------
  * StrToLowerCase
  *-----------------------------------------------------------------------------*/
 
-char*
-StrToLowerCase(char* str)
+char *
+StrToLowerCase(char *str)
 {
    for (int i = 0; str[i]; i++)
    {
-      str[i] = tolower((unsigned char) str[i]);
+      str[i] = (char)tolower((unsigned char)str[i]);
    }
    return str;
 }
@@ -26,15 +27,15 @@ StrToLowerCase(char* str)
  * StrTrim
  *-----------------------------------------------------------------------------*/
 
-char*
-StrTrim(char* str)
+char *
+StrTrim(char *str)
 {
    if (!str)
    {
       return NULL;
    }
 
-   for (int i = strlen(str) - 1; i >= 0 && str[i] == ' '; i--)
+   for (int i = (int)strlen(str) - 1; i >= 0 && str[i] == ' '; i--)
    {
       str[i] = '\0';
    }
@@ -43,22 +44,103 @@ StrTrim(char* str)
 }
 
 /*-----------------------------------------------------------------------------
+ * TrimTrailingWhitespace
+ *-----------------------------------------------------------------------------*/
+
+void
+TrimTrailingWhitespace(char *str)
+{
+   if (!str)
+   {
+      return;
+   }
+
+   size_t len = strlen(str);
+   while (len > 0 && isspace((unsigned char)str[len - 1]))
+   {
+      str[--len] = '\0';
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * NormalizeWhitespace
+ *-----------------------------------------------------------------------------*/
+
+void
+NormalizeWhitespace(char *str)
+{
+   if (!str)
+   {
+      return;
+   }
+
+   char *src       = str;
+   char *dst       = str;
+   int   saw_space = 0;
+
+   while (*src)
+   {
+      unsigned char c = (unsigned char)*src++;
+      if (isspace(c))
+      {
+         saw_space = 1;
+         continue;
+      }
+
+      if (saw_space && dst != str)
+      {
+         *dst++ = ' ';
+      }
+      *dst++    = (char)c;
+      saw_space = 0;
+   }
+   *dst = '\0';
+}
+
+/*-----------------------------------------------------------------------------
  * CheckBinaryDataExists
  *-----------------------------------------------------------------------------*/
 
 int
-CheckBinaryDataExists(const char* prefix)
+CheckBinaryDataExists(const char *prefix)
 {
-   char   filename[MAX_FILENAME_LENGTH];
-   int    is_binary;
-   FILE  *fp;
+   char filename[MAX_FILENAME_LENGTH] = {0};
+
+   int   file_exists = 0;
+   FILE *fp          = NULL;
 
    /* Check if binary data exist */
-   sprintf(filename, "%*s.00000.bin", (int) strlen(prefix), prefix);
-   is_binary = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-   if (fp) fclose(fp);
+   snprintf(filename, sizeof(filename), "%*s.00000.bin", (int)strlen(prefix), prefix);
+   file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
+   if (fp)
+   {
+      fclose(fp);
+   }
 
-   return is_binary;
+   return file_exists;
+}
+
+/*-----------------------------------------------------------------------------
+ * CheckASCIIDataExists
+ *-----------------------------------------------------------------------------*/
+
+int
+CheckASCIIDataExists(const char *prefix)
+{
+   char filename[MAX_FILENAME_LENGTH] = {0};
+
+   int   file_exists = 0;
+   FILE *fp          = NULL;
+
+   /* Check if ASCII data exist */
+   snprintf(filename, sizeof(filename), "%*s.00000", (int)strlen(prefix), prefix);
+   file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
+   if (fp)
+   {
+      fclose(fp);
+   }
+
+   return file_exists;
 }
 
 /*-----------------------------------------------------------------------------
@@ -66,29 +148,50 @@ CheckBinaryDataExists(const char* prefix)
  *-----------------------------------------------------------------------------*/
 
 int
-CountNumberOfPartitions(const char* prefix)
+CountNumberOfPartitions(const char *prefix)
 {
-   char   filename[MAX_FILENAME_LENGTH];
-   int    file_exists = 1;
-   int    num_files = 0;
-   FILE  *fp;
+   char filename[MAX_FILENAME_LENGTH];
+   int  num_files = 0;
 
-   while (file_exists)
+   if (prefix == NULL)
    {
-      sprintf(filename, "%*s.%05d.bin", (int) strlen(prefix), prefix, num_files);
-      file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-      if (fp) fclose(fp);
+      return 0;
+   }
+
+   while (1)
+   {
+      FILE *fp = NULL;
+      int   file_exists;
+
+      snprintf(filename, sizeof(filename), "%*s.%05d.bin", (int)strlen(prefix), prefix,
+               num_files);
+      fp          = fopen(filename, "r");
+      file_exists = (fp == NULL) ? 0 : 1;
+      if (fp)
+      {
+         fclose(fp);
+      }
       if (!file_exists)
       {
-         sprintf(filename, "%*s.%05d", (int) strlen(prefix), prefix, num_files);
-         file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-         if (fp) fclose(fp);
+         snprintf(filename, sizeof(filename), "%*s.%05d", (int)strlen(prefix), prefix,
+                  num_files);
+         fp          = fopen(filename, "r");
+         file_exists = (fp == NULL) ? 0 : 1;
+         if (fp)
+         {
+            fclose(fp);
+         }
+      }
+
+      if (!file_exists)
+      {
+         break;
       }
 
       num_files++;
    }
 
-   return --num_files;
+   return num_files;
 }
 
 /*-----------------------------------------------------------------------------
@@ -117,20 +220,26 @@ void
 SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
 {
    const char *last_slash = strrchr(filename, '/');
-   char       *dirname;
-   char       *basename;
+   char       *dirname    = NULL;
+   char       *basename   = NULL;
 
    if (last_slash != NULL)
    {
       /* Allocate memory and copy dirname */
-      int dirname_length = last_slash - filename;
+      int dirname_length = (int)(last_slash - filename);
 
-      dirname = (char*) malloc(dirname_length + 1);
-      strncpy(dirname, filename, dirname_length);
-      dirname[dirname_length] = '\0';
+      dirname = (char *)malloc((size_t)dirname_length + 1);
+      if (dirname)
+      {
+         snprintf(dirname, (size_t)dirname_length + 1, "%.*s", dirname_length, filename);
+      }
 
       /* Allocate memory and copy basename */
-      basename = strdup(last_slash + 1);
+      basename = (char *)malloc(strlen(last_slash + 1) + 1);
+      if (basename)
+      {
+         snprintf(basename, strlen(last_slash + 1) + 1, "%s", last_slash + 1);
+      }
    }
    else
    {
@@ -151,29 +260,61 @@ SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
 void
 CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
 {
-   size_t   length;
-   char    *filename;
+   size_t length   = 0;
+   char  *filename = NULL;
 
    /* Compute filename length. +2 for the slash and null terminator */
    length = strlen(dirname) + strlen(basename) + 2;
 
    /* Allocate space for the filename */
-   filename = (char *) malloc(length);
+   filename = (char *)malloc(length);
 
    /* Combine dirname and basename */
    if (filename != NULL)
    {
-      strcpy(filename, dirname);
+      snprintf(filename, length, "%s", dirname);
 
       /* Add a slash only if dirname is not empty and does not already end in a slash */
       if (dirname[0] != '\0' && dirname[strlen(dirname) - 1] != '/')
       {
-         strcat(filename, "/");
+         strncat(filename, "/", length - strlen(filename) - 1);
       }
 
-      strcat(filename, basename);
+      strncat(filename, basename, length - strlen(filename) - 1);
    }
 
    /* Set output pointer */
    *filename_ptr = filename;
+}
+
+/*-----------------------------------------------------------------------------
+ * IsYAMLFilename
+ *
+ * Returns true if string is a filename (no spaces) with a YAML extension
+ * (.yaml or .yml)
+ *-----------------------------------------------------------------------------*/
+
+bool
+IsYAMLFilename(const char *str)
+{
+   if (!str || *str == '\0')
+   {
+      return false;
+   }
+
+   /* Check for spaces - filenames should not contain spaces */
+   if (strchr(str, ' ') != NULL)
+   {
+      return false;
+   }
+
+   const char *dot = strrchr(str, '.');
+   if (!dot || dot == str)
+   {
+      return false;
+   }
+
+   /* Check for .yaml or .yml extension */
+   const char *ext = dot + 1;
+   return (strcmp(ext, "yaml") == 0 || strcmp(ext, "yml") == 0) != 0;
 }

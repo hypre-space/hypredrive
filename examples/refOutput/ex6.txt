@@ -1,0 +1,47 @@
+Date and time: YYYY-MM-DD HH:MM:SS
+
+Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
+
+Running on 1 MPI rank
+------------------------------------------------------------------------------------
+general: 
+  use_millisec: off
+linear_system: 
+  rhs_filename: data/compflow6k/np1/IJ.out.b
+  matrix_filename: data/compflow6k/np1/IJ.out.A
+  dofmap_filename: data/compflow6k/np1/dofmap.out
+  eigspec: 
+    enable: yes
+    vectors: no
+    hermitian: no
+    preconditioned: yes
+    output_prefix: data/compflow6k/np1/eig
+solver: gmres
+preconditioner: 
+  mgr: 
+    level: 
+      0: 
+        f_dofs: [2]
+        prolongation_type: jacobi
+      1: 
+        f_dofs: [1]
+        g_relaxation: l1-hsgs
+        restriction_type: columped
+    coarsest_level: amg
+------------------------------------------------------------------------------------
+====================================================================================
+Solving linear system #0 with 5625 rows and 77475 nonzeros...
+====================================================================================
+
+
+STATISTICS SUMMARY:
+
++--------+-------------+-------------+-------------+------------+------------+--------+
+|        |    LS build |       setup |       solve |    initial |   relative |        |
+|  Entry |   times [s] |   times [s] |   times [s] |  res. norm |  res. norm |  iters |
++--------+-------------+-------------+-------------+------------+------------+--------+
+|      0 |       0.002 |       0.003 |       0.002 |   1.00e+00 |   1.74e-07 |      8 |
++--------+-------------+-------------+-------------+------------+------------+--------+
+
+Date and time: YYYY-MM-DD HH:MM:SS
+${HYPREDRIVE_PATH}/hypredrive done!

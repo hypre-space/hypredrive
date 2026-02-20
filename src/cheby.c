@@ -12,19 +12,21 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define Cheby_FIELDS(_prefix) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, order, FieldTypeIntSet) \
+#define Cheby_FIELDS(_prefix)                                \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, order, FieldTypeIntSet)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, eig_est, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, variant, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, scale, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, scale, FieldTypeIntSet)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, fraction, FieldTypeDoubleSet)
 
 /* Define num_fields macro */
-#define Cheby_NUM_FIELDS (sizeof(Cheby_field_offset_map) / sizeof(Cheby_field_offset_map[0]))
+#define Cheby_NUM_FIELDS \
+   (sizeof(Cheby_field_offset_map) / sizeof(Cheby_field_offset_map[0]))
 
-/* Generate the various function declarations/definitions and the field_offset_map object */
-GENERATE_PREFIXED_COMPONENTS(Cheby)
-DEFINE_VOID_GET_VALID_VALUES_FUNC(Cheby)
+/* Generate the various function declarations/definitions and the field_offset_map object
+ */
+GENERATE_PREFIXED_COMPONENTS(Cheby)      // LCOV_EXCL_LINE
+DEFINE_VOID_GET_VALID_VALUES_FUNC(Cheby) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * ChebySetDefaultArgs

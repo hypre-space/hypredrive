@@ -1,0 +1,100 @@
+Date and time: YYYY-MM-DD HH:MM:SS
+
+Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
+
+Running on 1 MPI rank
+------------------------------------------------------------------------------------
+general: 
+  warmup: false
+  num_repetitions: 1
+  use_millisec: on
+linear_system: 
+  type: ij
+  rhs_filename: data/ps3d10pt7/np4/IJ.out.b
+  matrix_filename: data/ps3d10pt7/np4/IJ.out.A
+solver: 
+  pcg: 
+    relative_tol: 1.0e-9
+    max_iter: 500
+    print_level: 0
+preconditioner: 
+  amg: 
+    - coarsening: 
+        type: hmis
+        strong_th: 0.25
+      interpolation: 
+        prolongation_type: mm-ext+i
+      relaxation: 
+        down_type: 16
+        down_sweeps: 1
+        up_type: 16
+        up_sweeps: 1
+    - coarsening: 
+        type: hmis
+        strong_th: 0.5
+      interpolation: 
+        prolongation_type: mm-ext+i
+      relaxation: 
+        down_type: 16
+        down_sweeps: 1
+        up_type: 16
+        up_sweeps: 1
+        chebyshev: 
+          order: 4
+          fraction: 0.1
+    - coarsening: 
+        type: hmis
+        strong_th: 0.8
+      interpolation: 
+        prolongation_type: mm-ext+i
+      relaxation: 
+        down_type: l1sym-hgs
+        down_sweeps: 1
+        up_type: l1sym-hgs
+        up_sweeps: 1
+    - coarsening: 
+        type: hmis
+        strong_th: 0.9
+      interpolation: 
+        prolongation_type: mm-ext+i
+      relaxation: 
+        down_type: 16
+        down_sweeps: 1
+        up_type: 16
+        up_sweeps: 1
+      smoother: 
+        type: ilu
+        num_levels: 1
+        ilu: 
+          type: bj-iluk
+    - coarsening: 
+        type: pmis
+        strong_th: 0.5
+      interpolation: 
+        prolongation_type: standard
+      relaxation: 
+        down_type: 8
+        down_sweeps: 2
+        up_type: 8
+        up_sweeps: 2
+------------------------------------------------------------------------------------
+====================================================================================
+Solving linear system #0 with 1000 rows and 6400 nonzeros...
+====================================================================================
+
+
+STATISTICS SUMMARY:
+
++--------+-------------+-------------+-------------+------------+------------+--------+
+|        |    LS build |       setup |       solve |    initial |   relative |        |
+|  Entry |  times [ms] |  times [ms] |  times [ms] |  res. norm |  res. norm |  iters |
++--------+-------------+-------------+-------------+------------+------------+--------+
+|      0 |       0.340 |       1.407 |       0.382 |   1.58e+01 |   4.11e-10 |      7 |
+|      1 |             |       1.136 |       0.529 |   1.58e+01 |   1.67e-11 |      6 |
+|      2 |             |       0.876 |       0.565 |   1.58e+01 |   9.03e-10 |      6 |
+|      3 |             |       0.939 |       0.495 |   1.58e+01 |   3.00e-11 |      7 |
+|      4 |             |       1.258 |       0.617 |   1.58e+01 |   1.69e-11 |      6 |
++--------+-------------+-------------+-------------+------------+------------+--------+
+
+Date and time: YYYY-MM-DD HH:MM:SS
+${HYPREDRIVE_PATH}/hypredrive done!

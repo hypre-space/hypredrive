@@ -1,0 +1,36 @@
+name: Format
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - 'include/**'
+      - 'src/**'
+      - 'examples/src/**'
+      - '.clang-format'
+  push:
+    branches: [ master ]
+    paths:
+      - 'include/**'
+      - 'src/**'
+      - 'examples/src/**'
+      - '.clang-format'
+  workflow_dispatch:    # Allow manual triggering
+
+jobs:
+  format:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: clang-format check
+        run: |
+          set -euxo pipefail
+          find include src examples/src -type f \( -name "*.c" -o -name "*.h" \) | \
+            xargs clang-format -n --Werror

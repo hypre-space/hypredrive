@@ -15,6 +15,21 @@ Prerequisites
 
 Before installing `hypredrive`, ensure you have the following prerequisites installed:
 
+- `CMake <https://cmake.org/>`_: Cross-platform build system. Minimum version: `3.23`.
+- `hypre <https://github.com/hypre-space/hypre>`_: high-performance preconditioners
+  library. Minimum version: `2.31.0`.
+
+.. note::
+   CMake is the **preferred** and recommended build system for `hypredrive`. It provides
+   better integration with modern development tools and more straightforward dependency
+   management.
+
+For Autotools Build (Alternative)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you prefer using Autotools (``autoconf``, ``automake``), the following additional
+prerequisites are required:
+
 - `m4 <https://www.gnu.org/software/m4/>`_: GNU package for expanding and processing
   macros. Minimum version: `1.4.6`.
 - `Autoconf <https://www.gnu.org/software/autoconf/>`_: GNU package for generating
@@ -23,8 +38,6 @@ Before installing `hypredrive`, ensure you have the following prerequisites inst
   portable Makefiles. Minimum version: `1.11.3`.
 - `libtool <https://www.gnu.org/software/libtool/>`_: GNU package for creating portable
   compiled libraries. Minimum version: `2.4.2`.
-- `hypre <https://github.com/hypre-space/hypre>`_: high-performance preconditioners
-  library. Minimum version: `2.31.0`.
 
 .. note::
    The GNU packages (``m4``, ``autoconf``, ``automake``, and ``libtool``) are generally
@@ -42,7 +55,11 @@ Before installing `hypredrive`, ensure you have the following prerequisites inst
 Installing `hypredrive`
 -----------------------
 
-Users can install `hypredrive` by compiling from source, according to the steps bellow:
+Users can install `hypredrive` by compiling from source. **CMake is the preferred build
+system** and is recommended for all users.
+
+Using CMake (Recommended)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 1. Download `hypredrive`'s source code. This can be accomplished via ``git``:
 
@@ -58,6 +75,118 @@ Users can install `hypredrive` by compiling from source, according to the steps 
         $ unzip master.zip
         $ rm master.zip
         $ mv hypredrive-master hypredrive
+
+2. Create a build directory and configure:
+
+   **Option A: Automatic HYPRE Build (Recommended)**
+
+   *hypredrive* can automatically download and build HYPRE from source if it's not found:
+
+   .. code-block:: bash
+
+       $ cd hypredrive
+       $ cmake -DCMAKE_BUILD_TYPE=Release \
+               -DCMAKE_INSTALL_PREFIX=${HYPREDRIVE_INSTALL_DIR} \
+               -B build -S .
+
+   Replace ``${HYPREDRIVE_INSTALL_DIR}`` with your desired installation path for `hypredrive`.
+
+   By default, this will fetch the ``master`` branch of HYPRE. To use a specific version or tag:
+
+   .. code-block:: bash
+
+       $ cmake -DCMAKE_BUILD_TYPE=Release \
+               -DHYPRE_VERSION=v2.32.0 \
+               -DCMAKE_INSTALL_PREFIX=${HYPREDRIVE_INSTALL_DIR} \
+               -B build -S .
+
+   **Option B: Using Pre-built HYPRE**
+
+   If you have HYPRE already installed, specify its location:
+
+   .. code-block:: bash
+
+       $ cd hypredrive
+       $ cmake -DCMAKE_BUILD_TYPE=Release \
+               -DCMAKE_INSTALL_PREFIX=${HYPREDRIVE_INSTALL_DIR} \
+               -DHYPRE_ROOT=${HYPRE_INSTALL_DIR} \
+               -B build -S .
+
+   Replace ``${HYPREDRIVE_INSTALL_DIR}`` with your desired installation path for `hypredrive`,
+   and ``${HYPRE_INSTALL_DIR}`` with the path to your installation of `hypre`.
+
+   **HYPRE Options:**
+
+   - ``-DHYPRE_ROOT=<path>``: Path to the HYPRE installation directory. If not specified,
+     HYPRE will be automatically fetched and built from source.
+   - ``-DHYPRE_VERSION=<version>``: HYPRE version/branch/tag to fetch when using automatic
+     build (e.g., ``master``, ``v2.32.0``). Default: ``master``.
+
+   **Common Options:**
+
+   - ``-DCMAKE_BUILD_TYPE=<type>``: Set the build type. Options: ``Release`` (default),
+     ``Debug``, ``RelWithDebInfo``, ``MinSizeRel``.
+   - ``-DCMAKE_INSTALL_PREFIX=<path>``: Installation directory prefix (default: system
+     directories).
+
+   **Optional Features:**
+
+   - ``-DHYPREDRV_ENABLE_EIGSPEC=ON``: Enable full eigenspectrum computation support
+     (requires LAPACK). Default: ``OFF``.
+   - ``-DHYPREDRV_ENABLE_HWLOC=ON``: Enable hwloc support for detailed system topology
+     information (CPU, GPU, NUMA, cache hierarchy, etc.). Requires the hwloc library to be
+     installed. If hwloc is not available, hypredrive will fall back to basic system
+     information. Default: ``OFF``.
+   - ``-DHYPREDRV_ENABLE_CALIPER=ON``: Enable Caliper instrumentation support for performance
+     profiling. When enabled, hypredrive will automatically fetch and build Caliper from source
+     if it's not found. Caliper provides runtime performance measurement and profiling
+     capabilities. To use a pre-built Caliper installation, set ``CALIPER_DIR`` or ``CALIPER_ROOT``
+     environment variables, or use ``find_package(caliper)``. Default: ``OFF``.
+   - ``-DHYPREDRV_BUILD_EXAMPLES=OFF``: Disable building example programs. Default: ``ON``.
+   - ``-DHYPREDRV_ENABLE_TESTING=OFF``: Disable testing support and ``check`` target.
+     Default: ``ON``.
+   - ``-DHYPREDRV_ENABLE_DATA=OFF``: Disable the ``data`` target for downloading
+     example datasets. Default: ``ON``.
+   - ``-DBUILD_SHARED_LIBS=ON``: Build shared libraries instead of static libraries.
+     Default: ``OFF``.
+
+   **Building HYPRE with Third-Party Libraries (TPLs):**
+
+   When using automatic HYPRE build, you can configure HYPRE to use TPLs by passing
+   the appropriate CMake variables. These are automatically forwarded to the HYPRE build:
+
+   .. code-block:: bash
+
+       $ cmake -DCMAKE_BUILD_TYPE=Release \
+               -DHYPRE_ENABLE_CUDA=ON \
+               -B build -S .
+
+   Common TPL variables that are automatically forwarded include:
+   - Variables starting with ``HYPRE_ENABLE`` (e.g., ``HYPRE_ENABLE_CUDA``, ``HYPRE_ENABLE_MAGMA``)
+   - Variables ending with ``_ROOT`` or ``_DIR`` (e.g., ``MAGMA_ROOT``, ``CUDA_DIR``)
+   - All standard ``CMAKE_*`` variables (build type, compilers, etc.)
+
+3. Build and install:
+
+    .. code-block:: bash
+
+        $ cmake --build build --parallel
+        $ cmake --install build
+
+4. (Optional) Download example datasets:
+
+    .. code-block:: bash
+
+        $ cmake --build build --target data
+
+   This downloads datasets from Zenodo needed for examples. See :ref:`DriverExamples` for details.
+
+Using Autotools (Alternative)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you prefer using Autotools, follow these steps:
+
+1. Download `hypredrive`'s source code (same as CMake step 1 above).
 
 2. Navigate to the cloned directory and run ``autoreconf -i``:
 
@@ -89,7 +218,15 @@ Users can install `hypredrive` by compiling from source, according to the steps 
 Verifying the Installation
 --------------------------
 
-After installation, you can verify that `hypredrive` is installed correctly by running:
+After installation, you can verify that `hypredrive` is installed correctly:
+
+**For CMake builds:**
+
+.. code-block:: bash
+
+    $ cmake --build build --target check
+
+**For Autotools builds:**
 
 .. code-block:: bash
 
@@ -99,13 +236,23 @@ You should see the output below:
 
 .. code-block:: bash
 
-    "Running with 1 MPI process... passed!"
-    "Running with 4 MPI processes... passed!"
+    Running tests (equivalent to autotools make check)
+    Test project /path/to/hypredrive/build
+        Start 1: test_ex1_1proc
+    1/2 Test #1: test_ex1_1proc ....................   Passed
+        Start 2: test_ex2_4proc
+    2/2 Test #2: test_ex2_4proc ....................   Passed
+
+    100% tests passed, 2 tests passed out of 2
 
 
 Troubleshooting
 ---------------
 
 If you encounter any issues during the installation of `hypredrive`, please open a
-`GitHub issue <https://github.com/hypre-space/hypredrive/issues>`_ and include a copy of the
-``config.log`` file, which is generated after running the ``configure`` script.
+`GitHub issue <https://github.com/hypre-space/hypredrive/issues>`_.
+
+For **CMake builds**, include the output from ``cmake`` and ``cmake --build``.
+
+For **Autotools builds**, include a copy of the ``config.log`` file, which is generated after
+running the ``configure`` script.

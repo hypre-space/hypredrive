@@ -9,41 +9,61 @@
 #define ARGS_HEADER
 
 #include <HYPRE_utilities.h>
-#include "precon.h"
-#include "solver.h"
+#include <stdint.h>
 #include "linsys.h"
+#include "precon.h"
+#include "scaling.h"
+#include "solver.h"
 #include "utils.h"
 
 /*--------------------------------------------------------------------------
  * Input arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct input_args_struct {
-   /* TODO: move the following block to a separate "general_args" struct */
-   int           warmup;
-   int           statistics;
-   int           num_repetitions;
-   double        dev_pool_size;
-   double        uvm_pool_size;
-   double        host_pool_size;
-   double        pinned_pool_size;
+typedef struct General_args_struct
+{
+   int    warmup;
+   int    statistics;
+   int    print_config_params;
+   int    use_millisec;
+   int    exec_policy;
+   int    num_repetitions;
+   double dev_pool_size;
+   double uvm_pool_size;
+   double host_pool_size;
+   double pinned_pool_size;
+} General_args;
 
-   LS_args       ls;
+typedef struct input_args_struct
+{
+   General_args general;
 
-   solver_args   solver;
-   solver_t      solver_method;
+   LS_args ls;
 
-   precon_args   precon;
-   precon_t      precon_method;
+   solver_args solver;
+   solver_t    solver_method;
+
+   Scaling_args scaling;
+
+   precon_args      precon;
+   precon_t         precon_method;
+   PreconReuse_args precon_reuse;
+
+   /* Preconditioner variants support */
+   int          num_precon_variants;
+   int          active_precon_variant;
+   precon_t    *precon_methods;  /* Array of size num_precon_variants */
+   precon_args *precon_variants; /* Array of size num_precon_variants */
 } input_args;
 
 /*-----------------------------------------------------------------------------
  * Public prototypes
  *-----------------------------------------------------------------------------*/
 
-void InputArgsCreate(input_args**);
-void InputArgsDestroy(input_args**);
-void InputArgsRead(MPI_Comm, char*, char**);
-void InputArgsParse(MPI_Comm, int, char**, input_args**);
+void InputArgsCreate(bool, input_args **);
+void InputArgsDestroy(input_args **);
+void InputArgsRead(MPI_Comm, char *, int *, char **);
+void InputArgsParse(MPI_Comm, bool, int, char **, input_args **);
+void InputArgsApplyPreconPreset(input_args *, const char *, int);
 
 #endif /* ARGS_HEADER */

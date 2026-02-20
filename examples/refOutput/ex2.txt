@@ -1,9 +1,11 @@
 Date and time: YYYY-MM-DD HH:MM:SS
 
-Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
+Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
 
 Running on 4 MPI ranks
 ------------------------------------------------------------------------------------
+general: 
+  use_millisec: on
 linear_system: 
   rhs_filename: data/ps3d10pt7/np4/IJ.out.b
   matrix_filename: data/ps3d10pt7/np4/IJ.out.A
@@ -60,11 +62,37 @@ preconditioner:
       outer_weight: 1.0
     smoother: 
       type: fsai
-      num_levels: 0
+      num_levels: 1
       num_sweeps: 1
+      fsai: 
+        max_iter: 1
+        print_level: 0
+        algo_type: 1
+        max_steps: 5
+        max_step_size: 1
+        eig_max_iters: 4
+        kap_tolerance: 1e-2
 ------------------------------------------------------------------------------------
 ====================================================================================
 Solving linear system #0 with 1000 rows and 6400 nonzeros...
+*************************
+* HYPRE FSAI Setup Info *
+*************************
+
++---------------------------+
+| No. MPI tasks:          4 |
+| No. threads:            1 |
+| Algorithm type:         1 |
+| Local solve type:       1 |
+| Max no. steps:          5 |
+| Max step size:          1 |
+| Kap grad tol:     1.0e-02 |
+| Prec. density:      0.702 |
+| Eig max iters:          4 |
+| Omega factor:       0.938 |
++---------------------------+
+
+
 
 
  Num MPI tasks = 4
@@ -134,12 +162,11 @@ BoomerAMG SOLVER PARAMETERS:
 
 Iters       ||r||_2     conv.rate  ||r||_2/||b||_2
 -----    ------------   ---------  ------------ 
-    1    1.031617e+01    0.326226    3.262259e-01
-    2    7.264313e-01    0.070417    2.297177e-02
-    3    5.272798e-02    0.072585    1.667405e-03
-    4    3.367303e-03    0.063862    1.064835e-04
-    5    2.302010e-04    0.068364    7.279595e-06
-    6    1.657756e-05    0.072013    5.242284e-07
+    1    6.013527e+00    0.190164    1.901644e-01
+    2    3.023977e-01    0.050286    9.562655e-03
+    3    1.497186e-02    0.049510    4.734517e-04
+    4    7.279855e-04    0.048624    2.302092e-05
+    5    2.985711e-05    0.041013    9.441648e-07
 
 
 ====================================================================================
@@ -147,12 +174,12 @@ Iters       ||r||_2     conv.rate  ||r||_2/||b||_2
 
 STATISTICS SUMMARY:
 
-+------------+-------------+-------------+-------------+-------------+-------------+
-|            |    LS build |       setup |       solve |    relative |             |
-|      Entry |       times |       times |       times |   res. norm |       iters |
-+------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.000 |       0.003 |       0.001 |    5.24e-07 |           6 |
-+------------+-------------+-------------+-------------+-------------+-------------+
++--------+-------------+-------------+-------------+------------+------------+--------+
+|        |    LS build |       setup |       solve |    initial |   relative |        |
+|  Entry |  times [ms] |  times [ms] |  times [ms] |  res. norm |  res. norm |  iters |
++--------+-------------+-------------+-------------+------------+------------+--------+
+|      0 |       0.228 |       2.175 |       0.591 |   3.16e+01 |   9.44e-07 |      5 |
++--------+-------------+-------------+-------------+------------+------------+--------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
 ${HYPREDRIVE_PATH}/hypredrive done!

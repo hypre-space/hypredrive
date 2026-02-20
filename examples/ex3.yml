@@ -1,3 +1,6 @@
+general:
+  use_millisec: on # Turn this off for reporting times in [s]
+
 linear_system:
   rhs_filename: data/compflow6k/np1/IJ.out.b
   matrix_filename: data/compflow6k/np1/IJ.out.A
@@ -10,8 +13,11 @@ preconditioner:
     level:
       0:
         f_dofs: [2]
+        prolongation_type: jacobi
 
       1:
         f_dofs: [1]
+        g_relaxation: l1-hsgs
+        restriction_type: columped
 
     coarsest_level: amg

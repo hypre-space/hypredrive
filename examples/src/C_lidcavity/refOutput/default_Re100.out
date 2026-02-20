@@ -1,0 +1,272 @@
+
+=====================================================
+          Lid-Driven Cavity Problem Setup
+=====================================================
+Physical dimensions:     1 x 1
+Grid dimensions (nodes): 32 x 32
+Processor topology:      1 x 1
+Reynolds number:         1.0e+02
+Initial time step:       1.0e+00
+Adaptive time stepping:  false
+Regularized lid BC:      false
+Final time:              5.0e+01
+Visualization:           disabled
+Verbosity level:         0x3
+=====================================================
+
+Date and time: 2026-02-06 00:30:13
+
+Using HYPREDRV_DEVELOP_STRING: v0.1.0-60-g5785f920e (master)
+================================ System Information ================================
+
+Processing Units
+-----------------
+Number of Nodes       : 1
+Number of Processors  : 1
+Number of CPU threads : 32
+Tot. # of Processors  : 1
+Tot. # of CPU threads : 32
+CPU Model #0          : AMD Ryzen 9 9950X 16-Core Processor
+
+GPU Model #0          : NVIDIA Corporation GB206 [GeForce RTX 5060 Ti] (rev a1)
+GPU Model #1          : Advanced Micro Devices, Inc. [AMD/ATI] Navi 31 [Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M] (rev cc)
+GPU Model #2          : Advanced Micro Devices, Inc. [AMD/ATI] Granite Ridge [Radeon Graphics] (rev c1)
+
+Memory Information (Used/Total)
+--------------------------------
+CPU RAM               : 182.66 / 186.36  (98.02 %) GiB
+GPU RAM #0            :   0.01 /  15.93  ( 0.09 %) GiB
+GPU RAM #1            :   0.03 /  19.98  ( 0.13 %) GiB
+GPU RAM #2            :   1.76 /   2.00  (88.13 %) GiB
+
+NUMA Information
+-----------------
+NUMA node 0           : memory data unavailable
+
+Network / Interconnect
+----------------------
+InfiniBand            : Not detected
+Interface eno2        : 1000 Mbps (up)
+Interface virbr0      : unknown speed (down)
+Interface wlp11s0     : unknown speed (down)
+Interface docker0     : unknown speed (down)
+Interface eno1        : unknown speed (down)
+
+Accelerator Runtime Information
+--------------------------------
+NVIDIA driver         : 580.105.08
+CUDA comp. capability : 12.0
+AMD driver            : ROCm 7.2.0
+
+Accelerator Binding (per rank)
+-------------------------------
+Rank 0                : unset
+
+Operating System
+-----------------
+System Name           : Linux
+Node Name             : z5tux
+Release               : 6.14.0-37-generic
+Version               : #37~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC Thu Nov 20 10:25:38 UTC 2
+Machine Architecture  : x86_64
+
+Compilation Information
+------------------------
+Date                  : Feb  5 2026 at 23:54:30
+Optimization          : Enabled
+Debugging             : Disabled
+Compiler              : GCC 14.2.0
+OpenMP                : Not used
+MPI library           : MPICH (Version: 4.2.2)
+Target architecture   : x86_64
+Endianness            : Little-endian
+
+Current Working Directory
+--------------------------
+/home/victor/projects/hypredrive-master
+
+Dynamic Libraries Loaded
+------------------------
+   linux-vdso.so.1 => linux-vdso.so.1 (0x7dc206c34000)
+   libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x7dc206b21000)
+   libmpi.so.12 => /home/victor/projects/mpich-4.2.2/install/release/lib/libmpi.so.12 (0x7dc203200000)
+   libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x7dc202e00000)
+   ld-linux-x86-64.so.2 => /lib64/ld-linux-x86-64.so.2 (0x7dc206c36000)
+
+================================ System Information ================================
+
+Running on 1 MPI rank
+------------------------------------------------------------------------------------
+solver: 
+  fgmres: 
+    krylov_dim: 100
+    max_iter: 300
+    print_level: 0
+    relative_tol: 1.0e-6
+preconditioner: 
+  amg: 
+    print_level: 0
+    coarsening: 
+      strong_th: 0.6
+      num_functions: 3
+    smoother: 
+      type: ilu
+      num_levels: 5
+      num_sweeps: 1
+      ilu: 
+        type: bj-ilut
+        fill_level: 0
+        droptol: 1e-2
+------------------------------------------------------------------------------------
+Time step:   1 | Time: 1.0000e+00 [s] | CFL:    31.00 | NL:  1 | Lin:   2 | L2(u)=5.48e+00  L2(v)=0.00e+00  L2(p)=0.00e+00
+Time step:   1 | Time: 1.0000e+00 [s] | CFL:    31.00 | NL:  2 | Lin:   3 | L2(u)=9.15e-03  L2(v)=3.41e-03  L2(p)=1.37e-02
+Time step:   1 | Time: 1.0000e+00 [s] | CFL:    31.00 | NL:  3 | Lin:   3 | L2(u)=4.65e-04  L2(v)=3.74e-04  L2(p)=1.07e-03
+Time step:   1 | Time: 1.0000e+00 [s] | CFL:    31.00 | NL:  4 | Lin:   2 | L2(u)=4.46e-05  L2(v)=3.36e-05  L2(p)=1.25e-04
+Time step:   1 | Time: 1.0000e+00 [s] | CFL:    31.00 | NL:  5 | Lin:   3 | L2(u)=3.85e-06  L2(v)=5.05e-06  L2(p)=1.29e-05
+Time step:   1 | Time: 1.0000e+00 [s] | CFL:    31.00 | NL:  6 | Lin:   3 | L2(u)=5.01e-07  L2(v)=8.04e-07  L2(p)=2.08e-06
+
+Time step:   2 | Time: 2.0000e+00 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=4.29e-03  L2(v)=2.35e-03  L2(p)=5.11e-04
+Time step:   2 | Time: 2.0000e+00 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=6.00e-04  L2(v)=5.65e-04  L2(p)=1.01e-03
+Time step:   2 | Time: 2.0000e+00 [s] | CFL:    31.00 | NL:  3 | Lin:   3 | L2(u)=3.30e-05  L2(v)=3.70e-05  L2(p)=1.08e-04
+Time step:   2 | Time: 2.0000e+00 [s] | CFL:    31.00 | NL:  4 | Lin:   3 | L2(u)=3.64e-06  L2(v)=5.79e-06  L2(p)=1.28e-05
+Time step:   2 | Time: 2.0000e+00 [s] | CFL:    31.00 | NL:  5 | Lin:   3 | L2(u)=5.88e-07  L2(v)=1.02e-06  L2(p)=2.46e-06
+
+Time step:   3 | Time: 3.0000e+00 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=1.17e-03  L2(v)=9.62e-04  L2(p)=5.91e-05
+Time step:   3 | Time: 3.0000e+00 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=1.60e-04  L2(v)=1.81e-04  L2(p)=3.90e-04
+Time step:   3 | Time: 3.0000e+00 [s] | CFL:    31.00 | NL:  3 | Lin:   3 | L2(u)=8.71e-06  L2(v)=9.82e-06  L2(p)=3.21e-05
+Time step:   3 | Time: 3.0000e+00 [s] | CFL:    31.00 | NL:  4 | Lin:   3 | L2(u)=8.75e-07  L2(v)=1.32e-06  L2(p)=3.04e-06
+
+Time step:   4 | Time: 4.0000e+00 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=5.97e-04  L2(v)=5.24e-04  L2(p)=2.77e-05
+Time step:   4 | Time: 4.0000e+00 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=5.85e-05  L2(v)=7.18e-05  L2(p)=1.93e-04
+Time step:   4 | Time: 4.0000e+00 [s] | CFL:    31.00 | NL:  3 | Lin:   3 | L2(u)=3.37e-06  L2(v)=3.53e-06  L2(p)=1.40e-05
+Time step:   4 | Time: 4.0000e+00 [s] | CFL:    31.00 | NL:  4 | Lin:   3 | L2(u)=3.04e-07  L2(v)=3.92e-07  L2(p)=1.14e-06
+
+Time step:   5 | Time: 5.0000e+00 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=3.60e-04  L2(v)=3.16e-04  L2(p)=1.58e-05
+Time step:   5 | Time: 5.0000e+00 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=2.61e-05  L2(v)=3.26e-05  L2(p)=1.07e-04
+Time step:   5 | Time: 5.0000e+00 [s] | CFL:    31.00 | NL:  3 | Lin:   3 | L2(u)=1.66e-06  L2(v)=1.66e-06  L2(p)=7.34e-06
+
+Time step:   6 | Time: 6.0000e+00 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=2.28e-04  L2(v)=2.01e-04  L2(p)=9.63e-06
+Time step:   6 | Time: 6.0000e+00 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=1.36e-05  L2(v)=1.64e-05  L2(p)=6.32e-05
+Time step:   6 | Time: 6.0000e+00 [s] | CFL:    31.00 | NL:  3 | Lin:   3 | L2(u)=9.53e-07  L2(v)=9.10e-07  L2(p)=4.20e-06
+
+Time step:   7 | Time: 7.0000e+00 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=1.48e-04  L2(v)=1.31e-04  L2(p)=6.00e-06
+Time step:   7 | Time: 7.0000e+00 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=7.92e-06  L2(v)=9.02e-06  L2(p)=3.88e-05
+Time step:   7 | Time: 7.0000e+00 [s] | CFL:    31.00 | NL:  3 | Lin:   3 | L2(u)=5.94e-07  L2(v)=5.41e-07  L2(p)=2.52e-06
+
+Time step:   8 | Time: 8.0000e+00 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=9.63e-05  L2(v)=8.60e-05  L2(p)=3.81e-06
+Time step:   8 | Time: 8.0000e+00 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=4.94e-06  L2(v)=5.26e-06  L2(p)=2.44e-05
+Time step:   8 | Time: 8.0000e+00 [s] | CFL:    31.00 | NL:  3 | Lin:   3 | L2(u)=3.84e-07  L2(v)=3.34e-07  L2(p)=1.56e-06
+
+Time step:   9 | Time: 9.0000e+00 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=6.29e-05  L2(v)=5.67e-05  L2(p)=2.44e-06
+Time step:   9 | Time: 9.0000e+00 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=3.17e-06  L2(v)=3.20e-06  L2(p)=1.55e-05
+Time step:   9 | Time: 9.0000e+00 [s] | CFL:    31.00 | NL:  3 | Lin:   3 | L2(u)=2.51e-07  L2(v)=2.11e-07  L2(p)=9.81e-07
+
+Time step:  10 | Time: 1.0000e+01 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=4.10e-05  L2(v)=3.73e-05  L2(p)=1.57e-06
+Time step:  10 | Time: 1.0000e+01 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=2.06e-06  L2(v)=1.99e-06  L2(p)=9.94e-06
+
+Time step:  11 | Time: 1.1000e+01 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=2.68e-05  L2(v)=2.45e-05  L2(p)=1.32e-06
+Time step:  11 | Time: 1.1000e+01 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=1.34e-06  L2(v)=1.27e-06  L2(p)=6.41e-06
+
+Time step:  12 | Time: 1.2000e+01 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=1.74e-05  L2(v)=1.60e-05  L2(p)=8.37e-07
+Time step:  12 | Time: 1.2000e+01 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=8.77e-07  L2(v)=8.10e-07  L2(p)=4.14e-06
+
+Time step:  13 | Time: 1.3000e+01 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=1.14e-05  L2(v)=1.05e-05  L2(p)=5.42e-07
+Time step:  13 | Time: 1.3000e+01 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=5.72e-07  L2(v)=5.21e-07  L2(p)=2.68e-06
+
+Time step:  14 | Time: 1.4000e+01 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=7.39e-06  L2(v)=6.83e-06  L2(p)=3.51e-07
+Time step:  14 | Time: 1.4000e+01 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=3.72e-07  L2(v)=3.37e-07  L2(p)=1.74e-06
+
+Time step:  15 | Time: 1.5000e+01 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=4.81e-06  L2(v)=4.45e-06  L2(p)=2.28e-07
+Time step:  15 | Time: 1.5000e+01 [s] | CFL:    31.00 | NL:  2 | Lin:   4 | L2(u)=2.42e-07  L2(v)=2.18e-07  L2(p)=1.13e-06
+
+Time step:  16 | Time: 1.6000e+01 [s] | CFL:    31.00 | NL:  1 | Lin:   4 | L2(u)=3.13e-06  L2(v)=2.89e-06  L2(p)=1.48e-07
+Time step:  17 | Time: 1.8000e+01 [s] | CFL:    62.00 | NL:  1 | Lin:   3 | L2(u)=6.17e-06  L2(v)=7.66e-06  L2(p)=3.78e-05
+Time step:  17 | Time: 1.8000e+01 [s] | CFL:    62.00 | NL:  2 | Lin:   3 | L2(u)=1.97e-06  L2(v)=1.44e-06  L2(p)=6.10e-06
+
+Time step:  18 | Time: 2.0000e+01 [s] | CFL:    62.00 | NL:  1 | Lin:   4 | L2(u)=1.18e-06  L2(v)=9.41e-07  L2(p)=5.80e-07
+Time step:  19 | Time: 2.4000e+01 [s] | CFL:   124.00 | NL:  1 | Lin:   3 | L2(u)=1.54e-06  L2(v)=1.89e-06  L2(p)=9.52e-06
+Time step:  19 | Time: 2.4000e+01 [s] | CFL:   124.00 | NL:  2 | Lin:   3 | L2(u)=4.98e-07  L2(v)=3.63e-07  L2(p)=1.54e-06
+
+Time step:  20 | Time: 2.8000e+01 [s] | CFL:   124.00 | NL:  1 | Lin:   4 | L2(u)=1.64e-07  L2(v)=1.38e-07  L2(p)=1.65e-07
+Time step:  21 | Time: 3.6000e+01 [s] | CFL:   248.00 | NL:  1 | Lin:   4 | L2(u)=3.70e-07  L2(v)=4.63e-07  L2(p)=2.38e-06
+Time step:  22 | Time: 5.0000e+01 [s] | CFL:   434.00 | NL:  1 | Lin:   3 | L2(u)=1.64e-07  L2(v)=1.27e-07  L2(p)=7.51e-07
+
+Aggregate Summary:
+--------------------------------------------------------------
+Total number of Non-linear iterations: 55
+Total number of linear iterations:     148
+Avg. LS iterations:                    2.69
+Avg. LS times: (setup, solve, total):  0.0283, 0.0017, 0.0300
+Total LS times: (setup, solve, total): 1.5564, 0.0921, 1.6485
+Avg. LS iterations per timestep:       6.73
+Avg. LS times per timestep: (s, s, t): 0.0707, 0.0042, 0.0749
+--------------------------------------------------------------
+
+====================================================================================
+
+
+STATISTICS SUMMARY:
+
++---------+-------------+-------------+-------------+------------+------------+---------+
+|         |    LS build |       setup |       solve |    initial |   relative |         |
+|   Entry |   times [s] |   times [s] |   times [s] |  res. norm |  res. norm |   iters |
++---------+-------------+-------------+-------------+------------+------------+---------+
+|       0 |       0.001 |       0.023 |       0.001 |   5.48e+00 |   4.79e-08 |       2 |
+|       1 |       0.001 |       0.032 |       0.002 |   1.68e-02 |   4.20e-07 |       3 |
+|       2 |       0.001 |       0.033 |       0.002 |   1.22e-03 |   4.06e-07 |       3 |
+|       3 |       0.001 |       0.033 |       0.001 |   1.37e-04 |   8.82e-07 |       2 |
+|       4 |       0.001 |       0.032 |       0.002 |   1.44e-05 |   1.72e-07 |       3 |
+|       5 |       0.001 |       0.032 |       0.002 |   2.28e-06 |   1.16e-07 |       3 |
+|       6 |       0.001 |       0.032 |       0.002 |   4.92e-03 |   6.96e-09 |       4 |
+|       7 |       0.001 |       0.035 |       0.003 |   1.31e-03 |   3.99e-09 |       4 |
+|       8 |       0.001 |       0.035 |       0.002 |   1.19e-04 |   4.51e-07 |       3 |
+|       9 |       0.001 |       0.035 |       0.002 |   1.45e-05 |   4.68e-07 |       3 |
+|      10 |       0.001 |       0.035 |       0.002 |   2.72e-06 |   2.30e-07 |       3 |
+|      11 |       0.001 |       0.035 |       0.002 |   1.51e-03 |   3.40e-08 |       4 |
+|      12 |       0.001 |       0.036 |       0.002 |   4.59e-04 |   8.06e-09 |       4 |
+|      13 |       0.001 |       0.037 |       0.002 |   3.47e-05 |   6.58e-07 |       3 |
+|      14 |       0.001 |       0.037 |       0.002 |   3.43e-06 |   3.01e-07 |       3 |
+|      15 |       0.001 |       0.037 |       0.003 |   7.95e-04 |   5.41e-08 |       4 |
+|      16 |       0.001 |       0.037 |       0.002 |   2.14e-04 |   8.17e-09 |       4 |
+|      17 |       0.001 |       0.037 |       0.002 |   1.48e-05 |   2.13e-07 |       3 |
+|      18 |       0.001 |       0.037 |       0.002 |   1.24e-06 |   3.11e-07 |       3 |
+|      19 |       0.001 |       0.037 |       0.003 |   4.79e-04 |   2.89e-08 |       4 |
+|      20 |       0.001 |       0.038 |       0.002 |   1.15e-04 |   1.31e-08 |       4 |
+|      21 |       0.001 |       0.038 |       0.002 |   7.71e-06 |   7.82e-07 |       3 |
+|      22 |       0.001 |       0.038 |       0.002 |   3.04e-04 |   6.71e-08 |       4 |
+|      23 |       0.001 |       0.038 |       0.003 |   6.67e-05 |   1.55e-08 |       4 |
+|      24 |       0.001 |       0.038 |       0.002 |   4.40e-06 |   9.63e-07 |       3 |
+|      25 |       0.001 |       0.039 |       0.002 |   1.97e-04 |   7.07e-08 |       4 |
+|      26 |       0.001 |       0.040 |       0.003 |   4.06e-05 |   1.57e-08 |       4 |
+|      27 |       0.001 |       0.039 |       0.002 |   2.65e-06 |   9.02e-07 |       3 |
+|      28 |       0.001 |       0.040 |       0.002 |   1.29e-04 |   6.57e-08 |       4 |
+|      29 |       0.001 |       0.040 |       0.002 |   2.54e-05 |   1.86e-08 |       4 |
+|      30 |       0.001 |       0.040 |       0.002 |   1.64e-06 |   9.80e-07 |       3 |
+|      31 |       0.001 |       0.040 |       0.003 |   8.47e-05 |   6.07e-08 |       4 |
+|      32 |       0.001 |       0.040 |       0.003 |   1.62e-05 |   1.84e-08 |       4 |
+|      33 |       0.002 |       0.040 |       0.002 |   1.03e-06 |   9.32e-07 |       3 |
+|      34 |       0.001 |       0.041 |       0.003 |   5.55e-05 |   4.87e-08 |       4 |
+|      35 |       0.001 |       0.040 |       0.003 |   1.03e-05 |   1.15e-08 |       4 |
+|      36 |       0.001 |       0.040 |       0.002 |   3.63e-05 |   3.63e-08 |       4 |
+|      37 |       0.001 |       0.041 |       0.003 |   6.67e-06 |   1.15e-08 |       4 |
+|      38 |       0.001 |       0.042 |       0.003 |   2.37e-05 |   3.36e-08 |       4 |
+|      39 |       0.001 |       0.039 |       0.003 |   4.31e-06 |   1.34e-08 |       4 |
+|      40 |       0.001 |       0.039 |       0.002 |   1.55e-05 |   3.99e-08 |       4 |
+|      41 |       0.001 |       0.039 |       0.003 |   2.79e-06 |   2.07e-08 |       4 |
+|      42 |       0.001 |       0.039 |       0.002 |   1.01e-05 |   6.34e-08 |       4 |
+|      43 |       0.001 |       0.038 |       0.003 |   1.81e-06 |   2.05e-08 |       4 |
+|      44 |       0.001 |       0.039 |       0.002 |   6.56e-06 |   6.87e-08 |       4 |
+|      45 |       0.001 |       0.039 |       0.002 |   1.17e-06 |   1.90e-08 |       4 |
+|      46 |       0.001 |       0.039 |       0.002 |   4.27e-06 |   6.26e-08 |       4 |
+|      47 |       0.001 |       0.041 |       0.002 |   3.91e-05 |   7.94e-07 |       3 |
+|      48 |       0.002 |       0.041 |       0.002 |   6.57e-06 |   4.59e-07 |       3 |
+|      49 |       0.001 |       0.040 |       0.003 |   1.62e-06 |   2.94e-07 |       4 |
+|      50 |       0.001 |       0.043 |       0.002 |   9.83e-06 |   9.81e-07 |       3 |
+|      51 |       0.001 |       0.041 |       0.002 |   1.66e-06 |   7.67e-07 |       3 |
+|      52 |       0.001 |       0.042 |       0.002 |   2.71e-07 |   9.65e-07 |       4 |
+|      53 |       0.001 |       0.043 |       0.002 |   2.45e-06 |   9.37e-08 |       4 |
+|      54 |       0.001 |       0.044 |       0.002 |   7.79e-07 |   9.92e-07 |       3 |
++---------+-------------+-------------+-------------+------------+------------+---------+
+
+Date and time: 2026-02-06 00:30:16
+/home/victor/projects/hypredrive-master/build-v3.0.0/lidcavity done!

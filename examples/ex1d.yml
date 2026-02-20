@@ -1,0 +1,13 @@
+general:
+  use_millisec: on # Turn this off for reporting times in [s]
+  exec_policy: host
+
+linear_system:
+  matrix_filename: data/ps3d10pt7/np1/IJ.out.A
+  init_guess_mode: random
+  rhs_mode: ones
+  type: ij
+
+solver: bicgstab
+
+preconditioner: fsai

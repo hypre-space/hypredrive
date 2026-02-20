@@ -1,3 +1,6 @@
+general:
+  use_millisec: on # Turn this off for reporting times in [s]
+
 linear_system:
   rhs_filename: data/ps3d10pt7/np4/IJ.out.b
   matrix_filename: data/ps3d10pt7/np4/IJ.out.A
@@ -56,5 +59,13 @@ preconditioner:
       outer_weight: 1.0
     smoother:
       type: fsai
-      num_levels: 0
+      num_levels: 1
       num_sweeps: 1
+      fsai:
+        max_iter: 1
+        print_level: 0
+        algo_type: 1
+        max_steps: 5
+        max_step_size: 1
+        eig_max_iters: 4
+        kap_tolerance: 1e-2

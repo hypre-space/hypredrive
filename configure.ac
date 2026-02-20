@@ -6,6 +6,30 @@ AC_INIT([hypredrive],
         [https://github.com/hypre-space/hypredrive])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 
+dnl Capture git version info (if available)
+AC_PATH_PROG([GIT], [git])
+AS_IF([test "x$GIT" != "x" && test -d "$srcdir/.git"], [
+  develop_string=`$GIT -C "$srcdir" describe --match v* --long --abbrev=9 --always 2>/dev/null`
+  develop_branch=`$GIT -C "$srcdir" rev-parse --abbrev-ref HEAD 2>/dev/null`
+  git_sha=`$GIT -C "$srcdir" rev-parse --short=9 HEAD 2>/dev/null`
+
+  AS_IF([test "x$develop_string" != "x"], [
+    AC_DEFINE_UNQUOTED([HYPREDRV_DEVELOP_STRING], ["$develop_string"],
+                       [Develop string])
+  ])
+  AS_IF([test "x$develop_branch" != "x"], [
+    AC_DEFINE_UNQUOTED([HYPREDRV_BRANCH_NAME], ["$develop_branch"],
+                       [Branch name])
+  ])
+  AS_IF([test "x$git_sha" != "x"], [
+    AC_DEFINE_UNQUOTED([HYPREDRV_GIT_SHA], ["$git_sha"],
+                       [Git SHA])
+  ])
+])
+
+AC_DEFINE_UNQUOTED([HYPREDRV_RELEASE_VERSION], ["$PACKAGE_VERSION"],
+                   [Release version])
+
 dnl Include m4 macros
 m4_include([m4/ax_prog_doxygen.m4])
 

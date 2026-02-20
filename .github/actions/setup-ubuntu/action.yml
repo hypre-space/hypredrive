@@ -1,0 +1,53 @@
+name: 'Setup Ubuntu Environment'
+description: 'Install dependencies and setup compiler environment for Ubuntu'
+inputs:
+  compiler:
+    description: 'Compiler to use (gcc or clang)'
+    required: false
+    default: 'gcc'
+  extra_packages:
+    description: 'Additional packages to install (space-separated)'
+    required: false
+    default: ''
+outputs:
+  ompi_cc:
+    description: 'OMPI_CC environment variable value'
+    value: ${{ steps.setup.outputs.ompi_cc }}
+  ompi_cxx:
+    description: 'OMPI_CXX environment variable value'
+    value: ${{ steps.setup.outputs.ompi_cxx }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        # Defaulting to OpenMPI for CI stability
+        PACKAGES="cmake ninja-build libopenmpi-dev openmpi-bin"
+        if [ "${{ inputs.compiler }}" = "gcc" ]; then
+          PACKAGES="$PACKAGES gcc g++"
+        else
+          PACKAGES="$PACKAGES clang"
+        fi
+        if [ -n "${{ inputs.extra_packages }}" ]; then
+          PACKAGES="$PACKAGES ${{ inputs.extra_packages }}"
+        fi
+        sudo apt-get install -y $PACKAGES
+
+    - name: Setup compiler environment
+      id: setup
+      shell: bash
+      run: |
+        if [ "${{ inputs.compiler }}" = "clang" ]; then
+          echo "ompi_cc=clang" >> $GITHUB_OUTPUT
+          echo "ompi_cxx=clang++" >> $GITHUB_OUTPUT
+          echo "OMPI_CC=clang" >> $GITHUB_ENV
+          echo "OMPI_CXX=clang++" >> $GITHUB_ENV
+        else
+          echo "ompi_cc=gcc" >> $GITHUB_OUTPUT
+          echo "ompi_cxx=g++" >> $GITHUB_OUTPUT
+          echo "OMPI_CC=gcc" >> $GITHUB_ENV
+          echo "OMPI_CXX=g++" >> $GITHUB_ENV
+        fi
+

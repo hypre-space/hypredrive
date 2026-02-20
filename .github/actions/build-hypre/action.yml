@@ -1,0 +1,114 @@
+name: 'Build HYPRE'
+description: 'Build and install HYPRE library with caching'
+inputs:
+  hypre_version:
+    description: 'HYPRE version/branch to build'
+    required: true
+    default: 'master'
+  compiler:
+    description: 'Compiler to use (gcc or clang)'
+    required: true
+    default: 'gcc'
+  build_type:
+    description: 'CMake build type'
+    required: true
+    default: 'Debug'
+  hypre_shared_libs:
+    description: 'Build shared libraries (ON or OFF)'
+    required: false
+    default: 'ON'
+  hypre_mixedint:
+    description: 'Enable mixed int mode (ON or OFF)'
+    required: false
+    default: 'OFF'
+  os:
+    description: 'Operating system (ubuntu-latest or macos-latest)'
+    required: false
+    default: 'ubuntu-latest'
+  mpi_flavor:
+    description: 'MPI flavor to use on Linux (openmpi or mpich)'
+    required: false
+    default: 'openmpi'
+outputs:
+  hypre_prefix:
+    description: 'Path to HYPRE installation'
+    value: ${{ steps.build.outputs.hypre_prefix }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Set cache key suffix
+      id: cache-key
+      shell: bash
+      run: |
+        if [ "${{ inputs.hypre_shared_libs }}" = "ON" ]; then
+          echo "libtype=shared" >> $GITHUB_OUTPUT
+        else
+          echo "libtype=static" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Cache HYPRE install
+      uses: actions/cache@v5
+      id: hypre-cache
+      with:
+        path: ${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}
+        key: hypre-${{ inputs.hypre_version }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}-mixedint-${{ inputs.hypre_mixedint }}-${{ inputs.mpi_flavor }}
+
+    - name: Build & install HYPRE
+      id: build
+      shell: bash
+      run: |
+        set -euxo pipefail
+        PREFIX="${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}"
+        if [ ! -f "$PREFIX/lib/cmake/HYPRE/HYPREConfig.cmake" ]; then
+          git clone --depth 1 --branch ${{ inputs.hypre_version }} https://github.com/hypre-space/hypre.git
+          HYPRE_TAG="${{ inputs.hypre_version }}"
+          USE_AUTOTOOLS=0
+          if [[ "$HYPRE_TAG" =~ ^v ]]; then
+            if printf "%s\n" "v2.32.0" "$HYPRE_TAG" | sort -V | head -n1 | grep -q "^$HYPRE_TAG$"; then
+              USE_AUTOTOOLS=1
+            fi
+          fi
+
+          if [ "$USE_AUTOTOOLS" -eq 1 ]; then
+            pushd hypre/src
+            SHARED_FLAG="--disable-shared"
+            if [ "${{ inputs.hypre_shared_libs }}" = "ON" ]; then
+              SHARED_FLAG="--enable-shared"
+            fi
+            MIXEDINT_FLAG="--disable-mixedint"
+            if [ "${{ inputs.hypre_mixedint }}" = "ON" ]; then
+              MIXEDINT_FLAG="--enable-mixedint"
+            fi
+            AR="ar -rc" \
+            CC=mpicc \
+            ./configure --prefix="$PREFIX" --disable-fortran $SHARED_FLAG $MIXEDINT_FLAG
+            make -j
+            make install
+            popd
+          else
+            CMAKE_ARGS=(
+              -S hypre/src
+              -B hypre/build
+              -G Ninja
+              -DCMAKE_BUILD_TYPE=${{ inputs.build_type }}
+              -DBUILD_SHARED_LIBS=${{ inputs.hypre_shared_libs }}
+              -DHYPRE_MIXEDINT=${{ inputs.hypre_mixedint }}
+              -DHYPRE_BUILD_TESTS=OFF
+              -DHYPRE_BUILD_EXAMPLES=OFF
+              -DCMAKE_INSTALL_PREFIX="$PREFIX"
+              -DCMAKE_C_COMPILER=mpicc
+            )
+            if [ "${{ inputs.os }}" = "ubuntu-latest" ]; then
+              if [ "${{ inputs.mpi_flavor }}" = "openmpi" ]; then
+                CMAKE_ARGS+=(-DMPI_INCLUDE_DIR=/usr/lib/x86_64-linux-gnu/openmpi/include)
+              else
+                CMAKE_ARGS+=(-DMPI_INCLUDE_DIR=/usr/include/x86_64-linux-gnu/mpich)
+              fi
+            fi
+            cmake "${CMAKE_ARGS[@]}"
+            cmake --build hypre/build --parallel
+            cmake --install hypre/build
+          fi
+        fi
+        echo "hypre_prefix=$PREFIX" >> $GITHUB_OUTPUT
+        echo "HYPRE_PREFIX=$PREFIX" >> $GITHUB_ENV

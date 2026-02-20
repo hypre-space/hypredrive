@@ -32,9 +32,17 @@ The ``general`` section contains global settings that apply to the entire execut
   ensure more accurate timing measurements. If `no`, no warmup is performed. The default
   value for this parameter is `yes`.
 
-- ``statistics`` - If set to `yes`, `hypredrive` will display a statistics summary
-  at the end of the run reporting execution times. If `no`, no statistics reporting is
-  performed. The default value for this parameter is `yes`.
+- ``statistics`` - Controls the verbosity of statistics reporting. Accepts integer values
+  or boolean strings (`yes`/`no`, `on`/`off`, `true`/`false`). The default value is `1`
+  (or `yes`). Available levels:
+
+  - ``0`` (or `no`/`off`/`false`) - No statistics reporting.
+  - ``1`` (or `yes`/`on`/`true`) - Display the basic statistics summary table with
+    execution times, residual norms, and iteration counts for each solve entry.
+  - ``2`` - Display the basic statistics summary table plus an aggregate summary table
+    showing min, max, average, standard deviation, and total values for build, setup,
+    and solve times, as well as iteration counts. The aggregate table is only shown when
+    there are multiple entries (e.g., when using ``num_repetitions > 1``).
 
 - ``use_milisec`` - Show timings on the statistics summary table in milliseconds. The
   default value is `no`, which uses seconds instead.
@@ -101,6 +109,11 @@ section is required.
   system left hand side vector. This parameter does not have a default value and it is
   required when the ``init_guess_mode`` is set to ``file``.
 
+.. _linear_system_dofmap:
+
+Degrees of Freedom Map
+~~~~~~~~~~~~~~~~~~~~~~
+
 - ``dofmap_filename`` - (Possibly required) The filename of the degrees of freedom maping
   array (`dofmap`) for the linear system. This parameter does not have a default value and it is
   required when the ``mgr`` preconditioner is used.
@@ -125,6 +138,11 @@ section is required.
   system matrices. It can be used to solve multiple matrices stored in a shared
   directory. This parameter does not have a default value.
 
+- ``precmat_basename`` - (Possibly required) Common prefix used for the filenames of
+  linear system matrices employed in the compuration of preconditioner. If not specified,
+  the matrices used for preconditioning purposes are set to the original linear system
+  matrices formed with `matrix_basename`.
+
 - ``rhs_basename`` - (Possibly required) Common prefix used for the filenames of linear
   system right hand sides. It can be used to solve multiple RHS stored in a shared
   directory. This parameter does not have a default value.
@@ -133,17 +151,19 @@ section is required.
   `dofmap` arrays. This parameter does not have a default value.
 
 - ``init_suffix`` - (Possibly required) Suffix number of the first linear system of a
-  sequence of systems to be solved.
+  sequence of systems to be solved. Cannot be used together with ``set_suffix``.
 
 - ``last_suffix`` - (Possibly required) Suffix number of the last linear system of a
-  sequence of systems to be solved.
+  sequence of systems to be solved. Cannot be used together with ``set_suffix``.
+
+- ``set_suffix`` - (Optional) A list of suffix numbers for each linear system in the
+  sequence (e.g. ``set_suffix: [0, 2, 5]``). Use this when the sequence of systems does
+  not use consecutive suffixes. Cannot be used together with ``init_suffix`` or
+  ``last_suffix``; if ``set_suffix`` is set, the number of systems is the length of the
+  list.
 
 - ``digits_suffix`` - (Optional) Number of digits used to build complete filenames when
   using the ``basename`` or ``dirname`` options. This parameter has a default value of 5.
-
-- ``precon_reuse`` - (Optional) Frequency for reusing the preconditioner when solving multiple
-  linear systems. This parameter has a default value of 0 meaning that the preconditioner
-  is rebuilt for every linear system in a sequence.
 
 
 An example code block for the ``linear_system`` section is given below:
@@ -174,10 +194,76 @@ available options for the Krylov solver type are:
 
 The solver type must be entered as a key in a new indentation level under ``solver``.
 
-.. _PCG:
+Scaling
+~~~~~~~
+
+The ``scaling`` subsection under ``solver`` enables optional diagonal scaling of the linear system before preconditioner setup and Krylov solve. When enabled, the system is transformed as :math:`B = M A M`, :math:`c = M b`, solved as :math:`B y = c`, and the solution is recovered as :math:`x = M y`.
+
+Available keywords:
+
+- ``enabled`` - Turn on/off scaling. Available values are ``yes`` or ``no``. Default value is ``no``.
+
+- ``type`` - Scaling strategy. Available values are:
+
+  - ``rhs_l2`` - Scalar scaling based on the L2 norm of the RHS vector :math:`b`. Computes :math:`s = 1/\sqrt{\|b\|_2}` and applies uniform scaling :math:`M = s I`.
+
+  - ``dofmap_mag`` - Vector scaling computed using Hypre's tagged scaling API. Requires a dofmap to be provided (see :ref:`linear_system_dofmap`). Uses ``HYPRE_ParCSRMatrixComputeScalingTagged`` with scaling type 1 to compute per-DOF-type scaling weights based on matrix magnitude.
+
+  - ``dofmap_custom`` - Vector scaling using user-provided custom scaling values. Requires a dofmap to be provided (see :ref:`linear_system_dofmap`). The number of custom values must match the number of unique DOF types in the dofmap. Each DOF type is scaled by the corresponding value in the ``custom_values`` array.
+
+- ``custom_values`` - (Required for ``dofmap_custom``) Array of scaling values, one per unique DOF type in the dofmap. Must be provided as a YAML sequence. The number of entries must match the number of unique tags in the dofmap (e.g., if dofmap has tags 0, 1, 2, then ``custom_values`` must have 3 entries).
+
+**Note:** Scaling requires Hypre version >= 3.0.0. If scaling is enabled on older Hypre versions, YAML parsing will succeed but scaling will be silently disabled at runtime.
+
+Example configuration with RHS L2 scaling:
+
+.. code-block:: yaml
+
+   solver:
+     pcg:
+       max_iter: 100
+       relative_tol: 1.0e-6
+     scaling:
+       enabled: yes
+       type: rhs_l2
+
+Example configuration with dofmap_mag scaling:
+
+.. code-block:: yaml
+
+   solver:
+     gmres:
+       max_iter: 300
+       relative_tol: 1.0e-6
+     scaling:
+       enabled: yes
+       type: dofmap_mag
+   linear_system:
+     dofmap_filename: dofmap.dat
+
+Example configuration with dofmap_custom scaling:
+
+.. code-block:: yaml
+
+   solver:
+     gmres:
+       max_iter: 300
+       relative_tol: 1.0e-6
+     scaling:
+       enabled: yes
+       type: dofmap_custom
+       custom_values:
+         - 1.0e5
+         - 1.0e8
+         - 1.0e4
+   linear_system:
+     dofmap_filename: dofmap.dat
+
+
+.. _pcg:
 
 PCG
-^^^
+~~~
 
 The available keywords to further configure the preconditioned conjugate gradient solver
 (``pcg``) are all optional and given below:
@@ -229,7 +315,7 @@ given below:
         conv_fac_tol: 0.0
 
 BiCGSTAB
-^^^^^^^^
+~~~~~~~~
 
 The available keywords to further configure the bi-conjugate gradient stabilized solver
 (``bicgstab``) are all optional and given below:
@@ -237,7 +323,7 @@ The available keywords to further configure the bi-conjugate gradient stabilized
 - ``min_iter`` - Minimum number of iterations. Available values are any positive integer.
 
 - ``max_iter``, ``print_level``, ``relative_tol``, ``absolute_tol``, ``residual_tol``, and
-  ``conv_fac_tol`` - See :ref:`PCG` for a description of these variables.
+  ``conv_fac_tol`` - See :ref:`pcg` for a description of these variables.
 
 The code block representing the default parameter values for the ``solver:bicgstab`` section is
 given below:
@@ -254,10 +340,10 @@ given below:
         residual_tol: 0.0
         conv_fac_tol: 0.0
 
-.. _GMRES:
+.. _gmres:
 
 GMRES
-^^^^^
+~~~~~
 
 The available keywords to further configure the generalized minimal residual solver
 (``gmres``) are all optional and given below:
@@ -269,7 +355,7 @@ The available keywords to further configure the generalized minimal residual sol
   integer. Default value is `30`.
 
 - ``min_iter``, ``max_iter``, ``print_level``, ``rel_change``, ``relative_tol``,
-  ``absolute_tol``, and ``conv_fac_tol`` - See :ref:`PCG` for a description of these
+  ``absolute_tol``, and ``conv_fac_tol`` - See :ref:`pcg` for a description of these
   variables.
 
 The code block representing the default parameter values for the ``solver:gmres`` section is
@@ -290,13 +376,13 @@ given below:
         conv_fac_tol: 0.0
 
 FGMRES
-^^^^^^
+~~~~~~
 
 The available keywords to further configure the flexible generalized minimal residual
 solver (``fgmres``) are all optional and given below:
 
 - ``min_iter``, ``max_iter``, ``krylov_dim``, ``print_level``, ``relative_tol``,
-  ``absolute_tol`` - See :ref:`GMRES` for a description of these variables.
+  ``absolute_tol`` - See :ref:`gmres` for a description of these variables.
 
 The code block representing the default parameter values for the ``solver:fgmres`` section is
 given below:
@@ -326,10 +412,30 @@ configuration. Available options for the preconditioner type are:
 The preconditioner type must be entered as a key in a new indentation level under
 ``preconditioner``.
 
-.. _AMG:
+Preconditioner presets
+~~~~~~~~~~~~~~~~~~~~~~
+
+Presets are named default configurations that select a preconditioner and apply
+a small set of tuned settings. They are useful when you want a reasonable
+default without enumerating all options.
+
+.. code-block:: yaml
+
+    preconditioner:
+      preset: elasticity-2D
+
+Available presets:
+
+- ``poisson``: BoomerAMG defaults (same as ``preconditioner: amg`` with defaults).
+- ``elasticity-2D``: BoomerAMG defaults with
+  ``coarsening.num_functions = 2`` and ``coarsening.strong_th = 0.8``.
+
+Preset names are case-insensitive.
+
+.. _amg:
 
 AMG
-^^^
+~~~
 
 The algebraic multigrid (BoomerAMG) preconditioner can be further configured by the
 following optional keywords:
@@ -426,6 +532,12 @@ following optional keywords:
 
   - ``num_functions`` - size of the system of PDEs, when using the systems
     version. Available values are any positive integer. Default value is `1`.
+
+  - ``filter_functions`` - turn on/off filtering based on inter-variable couplings for
+    systems of equations. For more information, see
+    `HYPRE_BoomerAMGSetFilterFunctions
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv433HYPRE_BoomerAMGSetFilterFunctions12HYPRE_Solver9HYPRE_Int>`_.
+    Default value is `off`.
 
   - ``rap2`` - whether or not to use two matrix products to compute coarse
     level matrices. Available values are any non-negative integer. Default value is `0`.
@@ -608,6 +720,7 @@ code block below:
           min_coarse_size: 0
           max_levels: 25
           num_functions: 1
+          filter_functions: off
           rap2: off
           mod_rap2: off # on for GPU runs
           keep_transpose: off # on for GPU runs
@@ -636,15 +749,15 @@ code block below:
           num_levels: 0
           num_sweeps: 1
 
-.. _ILU:
+.. _ilu:
 
 ILU
-^^^
+~~~
 
 The incomplete LU factorization (ILU) preconditioner can be further configured by the
 following optional keywords:
 
-- ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`AMG` for a description of
+- ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`amg` for a description of
   these variables.
 
 - ``type`` - ILU type. For available
@@ -709,15 +822,15 @@ code block below:
         droptol: 1.0e-2
         nsh_droptol: 1.0e-2
 
-.. _FSAI:
+.. _fsai:
 
 FSAI
-^^^^
+~~~~
 
 The factorized sparse approximate inverse (FSAI) preconditioner can be further configured by the
 following optional keywords:
 
-- ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`AMG` for a description of
+- ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`amg` for a description of
   these variables.
 
 - ``type`` - algorithm type used for building FSAI. For available
@@ -771,13 +884,15 @@ the code block below:
         threshold: 1.0e-3
         kap_tolerance: 1.0e-3
 
+.. _mgr:
+
 MGR
-^^^
+~~~
 
 The multigrid reduction (MGR) preconditioner can be further configured by the following
 optional keywords:
 
-- ``max_iter`` and ``tolerance`` - See :ref:`AMG` for a description of these variables.
+- ``max_iter`` and ``tolerance`` - See :ref:`amg` for a description of these variables.
 
 - ``print_level`` - verbosity level for the preconditioner. For available
   options, see `HYPRE_MGRSetPrintLevel
@@ -807,6 +922,24 @@ optional keywords:
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv428HYPRE_MGRSetGlobalSmoothType12HYPRE_Solver9HYPRE_Int>`_. Default
     value is `2` (Jacobi). Use ``none`` to deactivate global relaxation.
 
+  - ``f_relaxation`` and ``g_relaxation`` also accept a nested Krylov solver block with an
+    optional nested preconditioner. Supported Krylov solvers are ``pcg``, ``gmres``,
+    ``fgmres``, and ``bicgstab``. Supported nested preconditioners are ``amg``, ``ilu``,
+    and ``fsai``. Nested ``preconditioner: mgr`` is not supported.
+
+    Example:
+
+    .. code-block:: yaml
+
+        f_relaxation:
+          gmres:
+            max_iter: 2
+            preconditioner:
+              amg:
+                max_iter: 1
+                coarsening:
+                  num_levels: 1
+
   - ``restriction_type`` - algorithm for computing the restriction operator. For available
     options, see `HYPRE_MGRSetRestrictType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv424HYPRE_MGRSetRestrictType12HYPRE_Solver9HYPRE_Int>`_. Default
@@ -824,6 +957,8 @@ optional keywords:
 
 - ``coarsest_level`` - special keyword for defining specific parameters for MGR's coarsest
   level.
+
+  ``coarsest_level`` also supports the same nested Krylov solver block described above.
 
 The default parameter values for the ``preconditioner:mgr`` section are represented in the
 code block below:
@@ -859,6 +994,9 @@ code block below:
           amg: # AMG parameters can be specified with a new indentation level
 
 .. warning::
+
+   Nested Krylov-in-MGR requires the vendored Hypre build in the ``hypre/`` folder. Make
+   sure to build Hypre with ``hypre/build-hypre.sh`` before building HypreDrive.
 
    MGR cannot be fully defined by the ``mgr`` keyword only. Instead, it is also necessary
    to specify which types of degrees of freedom are treated as F points in each MGR level,

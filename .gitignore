@@ -5,23 +5,39 @@
 *.lo
 *.btr
 *.csv
+.clang-tidy
 .deps
 .dirstamp
 *.~HEAD~*
 old-*
 *bkp*
-build.sh
 *.tar.gz
+*.pvd
+*.vtr
 .gdbinit
+__pycache__/
 .libs/
 install*/
+.vscode/
+.deps
+.dirstamp
+build.sh
+_build/
+perf-out/
 
-############
-# Executable
-############
+#############
+# Executables
+#############
 hypredrive*
-lossless_comp
-mat2ijbin
+laplacian
+elasticity
+lidcavity
+
+#############
+# Examples
+#############
+data/*
+!data/README.md
 
 ###########
 # Autotools
@@ -45,8 +61,10 @@ Makefile.in
 missing
 stamp-*
 HYPREDRV_config.h
-HYPREDRV_config.h.in
-HYPREDRV_config.h.in~
+/HYPREDRV_config.h.in
+/HYPREDRV_config.h.in~
+/build*/
+/install*/
 
 ###########
 # Libtools
@@ -77,3 +95,6 @@ docs/hypredrive.ps
 docs/hypredrive.tag
 docs/usrman-hypredrive.pdf
 docs/devman-hypredrive.pdf
+plan.md
+checklist.md
+CI.md

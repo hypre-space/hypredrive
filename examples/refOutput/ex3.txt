@@ -1,9 +1,11 @@
 Date and time: YYYY-MM-DD HH:MM:SS
 
-Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
+Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
 
 Running on 1 MPI rank
 ------------------------------------------------------------------------------------
+general: 
+  use_millisec: on
 linear_system: 
   rhs_filename: data/compflow6k/np1/IJ.out.b
   matrix_filename: data/compflow6k/np1/IJ.out.A
@@ -14,8 +16,11 @@ preconditioner:
     level: 
       0: 
         f_dofs: [2]
+        prolongation_type: jacobi
       1: 
         f_dofs: [1]
+        g_relaxation: l1-hsgs
+        restriction_type: columped
     coarsest_level: amg
 ------------------------------------------------------------------------------------
 ====================================================================================
@@ -25,12 +30,12 @@ Solving linear system #0 with 5625 rows and 77475 nonzeros...
 
 STATISTICS SUMMARY:
 
-+------------+-------------+-------------+-------------+-------------+-------------+
-|            |    LS build |       setup |       solve |    relative |             |
-|      Entry |       times |       times |       times |   res. norm |       iters |
-+------------+-------------+-------------+-------------+-------------+-------------+
-|          0 |       0.003 |       0.012 |       0.008 |    8.86e-07 |          20 |
-+------------+-------------+-------------+-------------+-------------+-------------+
++--------+-------------+-------------+-------------+------------+------------+--------+
+|        |    LS build |       setup |       solve |    initial |   relative |        |
+|  Entry |  times [ms] |  times [ms] |  times [ms] |  res. norm |  res. norm |  iters |
++--------+-------------+-------------+-------------+------------+------------+--------+
+|      0 |       2.559 |       3.091 |       2.533 |   1.00e+00 |   1.74e-07 |      8 |
++--------+-------------+-------------+-------------+------------+------------+--------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
 ${HYPREDRIVE_PATH}/hypredrive done!

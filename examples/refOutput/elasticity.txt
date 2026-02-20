@@ -1,0 +1,44 @@
+Date and time: YYYY-MM-DD HH:MM:SS
+
+Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
+
+Running on 1 MPI rank
+
+=====================================================
+          Linear Elasticity Problem Setup
+=====================================================
+Physical dimensions:     3 x 1 x 1
+Grid dimensions (nodes): 30 x 10 x 10
+Processor topology:      1 x 1 x 1
+Material:                E=1.0e+05, nu=0.300
+Body force:              rho=1.0e+00, g=(0.0, -9.8, 0.0)
+Top traction:            t=(0.0e+00, -1.0e+02, 0.0e+00)
+Visualization:           false
+Verbosity level:         0x3
+Number of solves:        5
+=====================================================
+
+Assembling linear system... Done!
+Solve 1/5...
+Solve 2/5...
+Solve 3/5...
+Solve 4/5...
+Solve 5/5...
+====================================================================================
+
+
+STATISTICS SUMMARY:
+
++--------+-------------+-------------+-------------+------------+------------+--------+
+|        |    LS build |       setup |       solve |    initial |   relative |        |
+|  Entry |   times [s] |   times [s] |   times [s] |  res. norm |  res. norm |  iters |
++--------+-------------+-------------+-------------+------------+------------+--------+
+|      0 |       0.018 |       0.017 |       0.041 |   1.79e+01 |   2.66e-07 |     21 |
+|      1 |             |       0.016 |       0.043 |   1.79e+01 |   2.66e-07 |     21 |
+|      2 |             |       0.017 |       0.044 |   1.79e+01 |   2.66e-07 |     21 |
+|      3 |             |       0.017 |       0.043 |   1.79e+01 |   2.66e-07 |     21 |
+|      4 |             |       0.016 |       0.042 |   1.79e+01 |   2.66e-07 |     21 |
++--------+-------------+-------------+-------------+------------+------------+--------+
+
+Date and time: YYYY-MM-DD HH:MM:SS
+/home/victor/projects/hypredrive-master/build-v3.0.0/elasticity done!
