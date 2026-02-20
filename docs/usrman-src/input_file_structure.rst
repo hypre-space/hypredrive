@@ -165,10 +165,6 @@ Degrees of Freedom Map
 - ``digits_suffix`` - (Optional) Number of digits used to build complete filenames when
   using the ``basename`` or ``dirname`` options. This parameter has a default value of 5.
 
-- ``precon_reuse`` - (Optional) Frequency for reusing the preconditioner when solving multiple
-  linear systems. This parameter has a default value of 0 meaning that the preconditioner
-  is rebuilt for every linear system in a sequence.
-
 
 An example code block for the ``linear_system`` section is given below:
 

@@ -77,7 +77,6 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, precon_reuse, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, EigSpecSetArgs)};
 
 #define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
@@ -175,7 +174,6 @@ LinearSystemSetDefaultArgs(LS_args *args)
    args->init_guess_mode      = 0;
    args->rhs_mode             = 2;
    args->type                 = 1;
-   args->precon_reuse         = 0;
    args->num_systems          = 1;
 #ifdef HYPRE_USING_GPU
    args->exec_policy = 1;

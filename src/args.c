@@ -817,13 +817,6 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
       }
    }
 
-   /* Legacy alias: linear_system.precon_reuse -> preconditioner.reuse.frequency */
-   if (!reuse_node)
-   {
-      iargs->precon_reuse.enabled   = 1;
-      iargs->precon_reuse.frequency = iargs->ls.precon_reuse;
-   }
-
    PreconParseContext ctx = {0};
    PreconParseResult  result;
 
