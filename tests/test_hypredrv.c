@@ -47,6 +47,7 @@ struct hypredrv_struct
    HYPRE_Precon precon;
    HYPRE_Solver solver;
 
+   IntArray *precon_reuse_timestep_starts;
    void *scaling_ctx;
 
    Stats *stats;
@@ -336,7 +337,7 @@ test_create_parse_and_destroy(void)
    ASSERT_NOT_NULL(rhs_data);
    LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
    ASSERT_NOT_NULL(rhs_expected);
-   ASSERT_EQ(rhs_data, rhs_expected);
+   ASSERT_PTR_EQ(rhs_data, rhs_expected);
    ASSERT_TRUE(rhs_data != sol_data);
 
    /* Ensure we have a dofmap to work with */
@@ -422,11 +423,12 @@ test_HYPREDRV_PreconCreate_reuse_logic(void)
             "linear_system:\n"
             "  matrix_filename: %s\n"
             "  rhs_filename: %s\n"
-            "  precon_reuse: 1\n"
             "solver:\n"
             "  pcg:\n"
             "    max_iter: 5\n"
             "preconditioner:\n"
+            "  reuse:\n"
+            "    frequency: 1\n"
             "  amg:\n"
             "    print_level: 0\n",
             matrix_path, rhs_path);
@@ -734,11 +736,12 @@ test_HYPREDRV_PreconCreate_reuse_logic_variations(void)
             "linear_system:\n"
             "  matrix_filename: %s\n"
             "  rhs_filename: %s\n"
-            "  precon_reuse: 0\n"
             "solver:\n"
             "  pcg:\n"
             "    max_iter: 5\n"
             "preconditioner:\n"
+            "  reuse:\n"
+            "    frequency: 0\n"
             "  amg:\n"
             "    print_level: 0\n",
             matrix_path, rhs_path);
@@ -783,11 +786,12 @@ test_HYPREDRV_LinearSolverCreate_reuse_logic(void)
             "linear_system:\n"
             "  matrix_filename: %s\n"
             "  rhs_filename: %s\n"
-            "  precon_reuse: 2\n"
             "solver:\n"
             "  pcg:\n"
             "    max_iter: 5\n"
             "preconditioner:\n"
+            "  reuse:\n"
+            "    frequency: 2\n"
             "  amg:\n"
             "    print_level: 0\n",
             matrix_path, rhs_path);
@@ -833,11 +837,12 @@ test_HYPREDRV_PreconDestroy_reuse_logic(void)
             "linear_system:\n"
             "  matrix_filename: %s\n"
             "  rhs_filename: %s\n"
-            "  precon_reuse: 1\n"
             "solver:\n"
             "  pcg:\n"
             "    max_iter: 5\n"
             "preconditioner:\n"
+            "  reuse:\n"
+            "    frequency: 1\n"
             "  amg:\n"
             "    print_level: 0\n",
             matrix_path, rhs_path);
@@ -881,11 +886,12 @@ test_HYPREDRV_LinearSolverDestroy_reuse_logic(void)
             "linear_system:\n"
             "  matrix_filename: %s\n"
             "  rhs_filename: %s\n"
-            "  precon_reuse: 2\n"
             "solver:\n"
             "  pcg:\n"
             "    max_iter: 5\n"
             "preconditioner:\n"
+            "  reuse:\n"
+            "    frequency: 2\n"
             "  amg:\n"
             "    print_level: 0\n",
             matrix_path, rhs_path);
@@ -917,6 +923,190 @@ test_HYPREDRV_LinearSolverDestroy_reuse_logic(void)
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_PreconDestroy_reuse_linear_system_ids(void)
+{
+   reset_state();
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   if (!setup_ps3d10pt7_paths(matrix_path, rhs_path))
+   {
+      return;
+   }
+
+   HYPREDRV_t obj = create_initialized_obj();
+
+   char yaml_config[2 * PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "linear_system:\n"
+            "  matrix_filename: %s\n"
+            "  rhs_filename: %s\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  reuse:\n"
+            "    linear_system_ids: [0, 2]\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            matrix_path, rhs_path);
+
+   parse_yaml_into_obj(obj, yaml_config);
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   /* Next solve id = 1, not in [0,2], so object should be kept. */
+   state->stats->ls_counter = 1;
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   /* Next solve id = 2, in [0,2], so object should be dropped now. */
+   state->stats->ls_counter = 2;
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+   ASSERT_NULL(state->precon);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_PreconDestroy_reuse_per_timestep(void)
+{
+   reset_state();
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   if (!setup_ps3d10pt7_paths(matrix_path, rhs_path))
+   {
+      return;
+   }
+
+   char *tmp_ts = CREATE_TEMP_FILE("tmp_timesteps_reuse.txt");
+   ASSERT_NOT_NULL(tmp_ts);
+   FILE *tf = fopen(tmp_ts, "w");
+   ASSERT_NOT_NULL(tf);
+   fprintf(tf, "2\n");
+   fprintf(tf, "0 0\n");
+   fprintf(tf, "1 3\n");
+   fclose(tf);
+
+   HYPREDRV_t obj = create_initialized_obj();
+
+   char yaml_config[2 * PATH_MAX + 640];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "linear_system:\n"
+            "  matrix_filename: %s\n"
+            "  rhs_filename: %s\n"
+            "  timestep_filename: %s\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  reuse:\n"
+            "    per_timestep: on\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            matrix_path, rhs_path, tmp_ts);
+
+   parse_yaml_into_obj(obj, yaml_config);
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   /* Next solve id = 1, not a timestep start, so keep object. */
+   state->stats->ls_counter = 1;
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   /* Next solve id = 3, timestep start, so destroy for recompute. */
+   state->stats->ls_counter = 3;
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+   ASSERT_NULL(state->precon);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   free(tmp_ts);
+}
+
+static void
+test_HYPREDRV_PreconDestroy_reuse_per_timestep_frequency(void)
+{
+   reset_state();
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   if (!setup_ps3d10pt7_paths(matrix_path, rhs_path))
+   {
+      return;
+   }
+
+   char *tmp_ts = CREATE_TEMP_FILE("tmp_timesteps_reuse_freq.txt");
+   ASSERT_NOT_NULL(tmp_ts);
+   FILE *tf = fopen(tmp_ts, "w");
+   ASSERT_NOT_NULL(tf);
+   fprintf(tf, "4\n");
+   fprintf(tf, "0 0\n");
+   fprintf(tf, "1 3\n");
+   fprintf(tf, "2 6\n");
+   fprintf(tf, "3 9\n");
+   fclose(tf);
+
+   HYPREDRV_t obj = create_initialized_obj();
+
+   char yaml_config[2 * PATH_MAX + 700];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "linear_system:\n"
+            "  matrix_filename: %s\n"
+            "  rhs_filename: %s\n"
+            "  timestep_filename: %s\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  reuse:\n"
+            "    per_timestep: on\n"
+            "    frequency: 1\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            matrix_path, rhs_path, tmp_ts);
+
+   parse_yaml_into_obj(obj, yaml_config);
+   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   /* ls id 3 is timestep index 1, so with frequency=1 keep object. */
+   state->stats->ls_counter = 3;
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   /* ls id 6 is timestep index 2, so with frequency=1 destroy object. */
+   state->stats->ls_counter = 6;
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+   ASSERT_NULL(state->precon);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   free(tmp_ts);
 }
 
 static void
@@ -1093,7 +1283,7 @@ test_HYPREDRV_misc_0hit_branches(void)
    HYPRE_Complex *rhs_expected = NULL;
    LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
    ASSERT_NOT_NULL(rhs_expected);
-   ASSERT_EQ(rhs_data, rhs_expected);
+   ASSERT_PTR_EQ(rhs_data, rhs_expected);
    ASSERT_TRUE(rhs_data != sol_data);
 
    ASSERT_TRUE(HYPREDRV_LinearSystemGetSolutionValues(obj, NULL) & ERROR_UNKNOWN);
@@ -1344,6 +1534,9 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_LinearSolverCreate_reuse_logic);
    RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_logic);
    RUN_TEST(test_HYPREDRV_LinearSolverDestroy_reuse_logic);
+   RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_linear_system_ids);
+   RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_per_timestep);
+   RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_per_timestep_frequency);
    RUN_TEST(test_HYPREDRV_LinearSolverApply_error_cases);
 }
 

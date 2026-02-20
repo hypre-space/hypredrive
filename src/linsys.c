@@ -23,6 +23,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include "containers.h"
+#include "error.h"
 #include "linsys.h"
 
 static void
@@ -40,6 +42,19 @@ HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_loca
 
 /* TODO: implement IJVectorClone/Copy and IJVectorMigrate/IJMatrix in hypre*/
 
+static void
+LinearSystemSetSuffixSet(void *field, const YAMLnode *node)
+{
+   IntArray  **ptr = (IntArray **)field;
+   const char *val = node->mapped_val ? node->mapped_val : node->val;
+
+   IntArrayDestroy(ptr);
+   if (val && strlen(val) > 0)
+   {
+      StrToIntArray(val, ptr);
+   }
+}
+
 static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, dirname, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FieldTypeStringSet),
@@ -53,14 +68,15 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, x0_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, sol_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, timestep_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_basename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, digits_suffix, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, init_suffix, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, last_suffix, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, set_suffix, LinearSystemSetSuffixSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, precon_reuse, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, EigSpecSetArgs)};
 
 #define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
@@ -137,27 +153,28 @@ LinearSystemGetValidValues(const char *key)
 void
 LinearSystemSetDefaultArgs(LS_args *args)
 {
-   args->dirname[0]          = '\0';
-   args->matrix_filename[0]  = '\0';
-   args->matrix_basename[0]  = '\0';
-   args->precmat_filename[0] = '\0';
-   args->precmat_basename[0] = '\0';
-   args->rhs_filename[0]     = '\0';
-   args->rhs_basename[0]     = '\0';
-   args->x0_filename[0]      = '\0';
-   args->xref_filename[0]    = '\0';
-   args->xref_basename[0]    = '\0';
-   args->sol_filename[0]     = '\0';
-   args->dofmap_filename[0]  = '\0';
-   args->dofmap_basename[0]  = '\0';
-   args->digits_suffix       = 5;
-   args->init_suffix         = -1;
-   args->last_suffix         = -1;
-   args->init_guess_mode     = 0;
-   args->rhs_mode            = 2;
-   args->type                = 1;
-   args->precon_reuse        = 0;
-   args->num_systems         = 1;
+   args->dirname[0]           = '\0';
+   args->matrix_filename[0]   = '\0';
+   args->matrix_basename[0]   = '\0';
+   args->precmat_filename[0]  = '\0';
+   args->precmat_basename[0]  = '\0';
+   args->rhs_filename[0]      = '\0';
+   args->rhs_basename[0]      = '\0';
+   args->x0_filename[0]       = '\0';
+   args->xref_filename[0]     = '\0';
+   args->xref_basename[0]     = '\0';
+   args->timestep_filename[0] = '\0';
+   args->sol_filename[0]      = '\0';
+   args->dofmap_filename[0]   = '\0';
+   args->dofmap_basename[0]   = '\0';
+   args->digits_suffix        = 5;
+   args->init_suffix          = -1;
+   args->last_suffix          = -1;
+   args->set_suffix           = NULL;
+   args->init_guess_mode      = 0;
+   args->rhs_mode             = 2;
+   args->type                 = 1;
+   args->num_systems          = 1;
 #ifdef HYPRE_USING_GPU
    args->exec_policy = 1;
 #else
@@ -254,7 +271,33 @@ LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix 
 void
 LinearSystemSetNumSystems(LS_args *args)
 {
-   args->num_systems = args->last_suffix - args->init_suffix + 1;
+   if (args->set_suffix != NULL && args->set_suffix->size > 0)
+   {
+      args->num_systems = (HYPRE_Int)args->set_suffix->size;
+   }
+   else
+   {
+      args->num_systems = args->last_suffix - args->init_suffix + 1;
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * LinearSystemGetSuffix
+ *-----------------------------------------------------------------------------*/
+
+int
+LinearSystemGetSuffix(const LS_args *args, int ls_id)
+{
+   if (!args)
+   {
+      return ls_id;
+   }
+   if (args->set_suffix != NULL && ls_id >= 1 &&
+       (size_t)(ls_id - 1) < args->set_suffix->size)
+   {
+      return args->set_suffix->data[ls_id - 1];
+   }
+   return (int)args->init_suffix + ls_id;
 }
 
 static HYPRE_MemoryLocation
@@ -276,9 +319,10 @@ LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *file
    resolved[0] = '\0';
    if (args->dirname[0] != '\0')
    {
+      int suffix = LinearSystemGetSuffix(args, ls_id);
       snprintf(resolved, resolved_size, "%.*s_%0*d/%.*s", (int)strlen(args->dirname),
-               args->dirname, (int)args->digits_suffix, (int)args->init_suffix + ls_id,
-               (int)strlen(filename), filename);
+               args->dirname, (int)args->digits_suffix, suffix, (int)strlen(filename),
+               filename);
       return 1;
    }
    if (filename[0] != '\0')
@@ -288,8 +332,9 @@ LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *file
    }
    if (basename[0] != '\0')
    {
+      int suffix = LinearSystemGetSuffix(args, ls_id);
       snprintf(resolved, resolved_size, "%.*s_%0*d", (int)strlen(basename), basename,
-               (int)args->digits_suffix, (int)args->init_suffix + ls_id);
+               (int)args->digits_suffix, suffix);
       return 1;
    }
 
@@ -435,6 +480,15 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
       YAML_NODE_VALIDATE(child, LinearSystemGetValidKeys, LinearSystemGetValidValues);
 
       YAML_NODE_SET_FIELD(child, args, LinearSystemSetFieldByName);
+   }
+
+   /* set_suffix and init_suffix/last_suffix are mutually exclusive */
+   if (args->set_suffix != NULL && args->set_suffix->size > 0 &&
+       (args->init_suffix >= 0 || args->last_suffix >= 0))
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd(
+         "linear_system: set_suffix cannot be used with init_suffix or last_suffix");
    }
 }
 
@@ -1046,7 +1100,7 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       int ls_id = StatsGetLinearSystemID(stats) + 1;
       snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d/%.*s",
                (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
-               (int)args->init_suffix + ls_id, (int)strlen(args->precmat_filename),
+               LinearSystemGetSuffix(args, ls_id), (int)strlen(args->precmat_filename),
                args->precmat_filename);
    }
    else if (args->precmat_filename[0] != '\0')
@@ -1058,7 +1112,7 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
       int ls_id = StatsGetLinearSystemID(stats) + 1;
       snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d",
                (int)strlen(args->precmat_basename), args->precmat_basename,
-               (int)args->digits_suffix, (int)args->init_suffix + ls_id);
+               (int)args->digits_suffix, LinearSystemGetSuffix(args, ls_id));
    }
 
    if (matrix_filename[0] == '\0' || !strcmp(matrix_filename, args->matrix_filename))
@@ -1105,7 +1159,7 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr, Stat
       {
          snprintf(dofmap_filename, sizeof(dofmap_filename), "%.*s_%0*d/%.*s",
                   (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
-                  (int)args->init_suffix + ls_id, (int)strlen(args->dofmap_filename),
+                  LinearSystemGetSuffix(args, ls_id), (int)strlen(args->dofmap_filename),
                   args->dofmap_filename);
       }
       else if (args->dofmap_filename[0] != '\0')
@@ -1116,7 +1170,7 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr, Stat
       {
          snprintf(dofmap_filename, sizeof(dofmap_filename), "%.*s_%0*d",
                   (int)strlen(args->dofmap_basename), args->dofmap_basename,
-                  (int)args->digits_suffix, (int)args->init_suffix + ls_id);
+                  (int)args->digits_suffix, LinearSystemGetSuffix(args, ls_id));
       }
 
       /* Destroy previous dofmap array */

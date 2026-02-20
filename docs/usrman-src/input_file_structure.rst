@@ -151,17 +151,19 @@ Degrees of Freedom Map
   `dofmap` arrays. This parameter does not have a default value.
 
 - ``init_suffix`` - (Possibly required) Suffix number of the first linear system of a
-  sequence of systems to be solved.
+  sequence of systems to be solved. Cannot be used together with ``set_suffix``.
 
 - ``last_suffix`` - (Possibly required) Suffix number of the last linear system of a
-  sequence of systems to be solved.
+  sequence of systems to be solved. Cannot be used together with ``set_suffix``.
+
+- ``set_suffix`` - (Optional) A list of suffix numbers for each linear system in the
+  sequence (e.g. ``set_suffix: [0, 2, 5]``). Use this when the sequence of systems does
+  not use consecutive suffixes. Cannot be used together with ``init_suffix`` or
+  ``last_suffix``; if ``set_suffix`` is set, the number of systems is the length of the
+  list.
 
 - ``digits_suffix`` - (Optional) Number of digits used to build complete filenames when
   using the ``basename`` or ``dirname`` options. This parameter has a default value of 5.
-
-- ``precon_reuse`` - (Optional) Frequency for reusing the preconditioner when solving multiple
-  linear systems. This parameter has a default value of 0 meaning that the preconditioner
-  is rebuilt for every linear system in a sequence.
 
 
 An example code block for the ``linear_system`` section is given below:

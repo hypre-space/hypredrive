@@ -6,6 +6,8 @@
  ******************************************************************************/
 
 #include "precon.h"
+#include <stdio.h>
+#include <strings.h>
 #include "HYPRE_parcsr_mv.h"
 #include "gen_macros.h"
 #include "nested_krylov.h"
@@ -60,6 +62,349 @@ void
 PreconSetDefaultArgs(precon_args *args)
 {
    args->reuse = 0;
+}
+
+void
+PreconReuseSetDefaultArgs(PreconReuse_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   args->enabled           = 0;
+   args->frequency         = 0;
+   args->linear_system_ids = NULL;
+   args->per_timestep      = 0;
+}
+
+void
+PreconReuseDestroyArgs(PreconReuse_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   if (args->linear_system_ids)
+   {
+      IntArrayDestroy(&args->linear_system_ids);
+   }
+
+   args->frequency    = 0;
+   args->per_timestep = 0;
+   args->enabled      = 0;
+}
+
+static int
+PreconReuseParseOnOff(const char *value, int *out)
+{
+   if (!value || !out)
+   {
+      return 0;
+   }
+
+   if (!strcasecmp(value, "on") || !strcasecmp(value, "yes") ||
+       !strcasecmp(value, "true") || !strcmp(value, "1"))
+   {
+      *out = 1;
+      return 1;
+   }
+   if (!strcasecmp(value, "off") || !strcasecmp(value, "no") ||
+       !strcasecmp(value, "false") || !strcmp(value, "0"))
+   {
+      *out = 0;
+      return 1;
+   }
+
+   return 0;
+}
+
+static int
+PreconReuseIntArrayContains(const IntArray *arr, int value)
+{
+   if (!arr || !arr->data)
+   {
+      return 0;
+   }
+
+   for (size_t i = 0; i < arr->size; i++)
+   {
+      if (arr->data[i] == value)
+      {
+         return 1;
+      }
+   }
+
+   return 0;
+}
+
+static int
+PreconReuseFindTimestepIndex(const IntArray *starts, int ls_id)
+{
+   if (!starts || !starts->data)
+   {
+      return -1;
+   }
+
+   for (size_t i = 0; i < starts->size; i++)
+   {
+      if (starts->data[i] == ls_id)
+      {
+         return (int)i;
+      }
+   }
+
+   return -1;
+}
+
+void
+PreconReuseTimestepsClear(IntArray **timestep_starts)
+{
+   if (!timestep_starts)
+   {
+      return;
+   }
+
+   IntArrayDestroy(timestep_starts);
+}
+
+uint32_t
+PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *filename,
+                         IntArray **timestep_starts)
+{
+   if (!args || !timestep_starts)
+   {
+      return ErrorCodeGet();
+   }
+
+   PreconReuseTimestepsClear(timestep_starts);
+
+   if (!args->enabled || !args->per_timestep)
+   {
+      return ErrorCodeGet();
+   }
+
+   if (!filename || filename[0] == '\0')
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd(
+         "preconditioner.reuse.per_timestep requires linear_system.timestep_filename");
+      return ErrorCodeGet();
+   }
+
+   FILE *fp = fopen(filename, "r");
+   if (!fp)
+   {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAdd("Could not open timestep file: '%s'", filename);
+      return ErrorCodeGet();
+   }
+
+   int total = 0;
+   if (fscanf(fp, "%d", &total) != 1 || total <= 0)
+   {
+      fclose(fp);
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Invalid timestep file header in '%s'", filename);
+      return ErrorCodeGet();
+   }
+
+   IntArray *starts = IntArrayCreate((size_t)total);
+   if (!starts)
+   {
+      fclose(fp);
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate timestep starts array");
+      return ErrorCodeGet();
+   }
+
+   for (int i = 0; i < total; i++)
+   {
+      int timestep = 0;
+      int ls_start = 0;
+      if (fscanf(fp, "%d %d", &timestep, &ls_start) != 2 || ls_start < 0)
+      {
+         fclose(fp);
+         IntArrayDestroy(&starts);
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Invalid timestep entry in '%s' at line %d", filename, i + 2);
+         return ErrorCodeGet();
+      }
+      starts->data[i] = ls_start;
+      (void)timestep;
+   }
+
+   fclose(fp);
+   *timestep_starts = starts;
+   return ErrorCodeGet();
+}
+
+int
+PreconReuseShouldRecompute(const PreconReuse_args *args, const IntArray *timestep_starts,
+                           int next_ls_id)
+{
+   if (!args)
+   {
+      return 1;
+   }
+
+   if (next_ls_id < 0)
+   {
+      next_ls_id = 0;
+   }
+
+   int freq = args->frequency;
+   if (!args->enabled || freq < 0)
+   {
+      freq = 0;
+   }
+
+   if (args->enabled && args->linear_system_ids && args->linear_system_ids->size > 0)
+   {
+      return PreconReuseIntArrayContains(args->linear_system_ids, next_ls_id);
+   }
+
+   if (args->enabled && args->per_timestep)
+   {
+      int timestep_idx = PreconReuseFindTimestepIndex(timestep_starts, next_ls_id);
+      if (timestep_idx < 0)
+      {
+         return 0;
+      }
+      return (timestep_idx % (freq + 1)) == 0;
+   }
+
+   return (next_ls_id % (freq + 1)) == 0;
+}
+
+void
+PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
+{
+   if (!args || !parent)
+   {
+      return;
+   }
+
+   /* Shorthand: reuse: <int> */
+   if (!parent->children && parent->val && strcmp(parent->val, ""))
+   {
+      if (sscanf(parent->val, "%d", &args->frequency) != 1)
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Invalid preconditioner reuse frequency: '%s'", parent->val);
+         YAML_NODE_SET_INVALID_VAL(parent);
+         return;
+      }
+      args->enabled = 1;
+      YAML_NODE_SET_VALID(parent);
+      return;
+   }
+
+   int seen_enabled           = 0;
+   int seen_frequency         = 0;
+   int seen_linear_system_ids = 0;
+   int seen_per_timestep      = 0;
+   YAML_NODE_ITERATE(parent, child)
+   {
+      if (!strcmp(child->key, "enabled"))
+      {
+         const char *value = child->mapped_val ? child->mapped_val : child->val;
+         if (!PreconReuseParseOnOff(value, &args->enabled))
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Invalid value for preconditioner.reuse.enabled: '%s'",
+                        value ? value : "");
+            YAML_NODE_SET_INVALID_VAL(child);
+            return;
+         }
+         seen_enabled = 1;
+         YAML_NODE_SET_VALID(child);
+      }
+      else if (!strcmp(child->key, "frequency"))
+      {
+         const char *value = child->mapped_val ? child->mapped_val : child->val;
+         if (!value || sscanf(value, "%d", &args->frequency) != 1 || args->frequency < 0)
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Invalid value for preconditioner.reuse.frequency: '%s'",
+                        value ? value : "");
+            YAML_NODE_SET_INVALID_VAL(child);
+            return;
+         }
+         seen_frequency = 1;
+         YAML_NODE_SET_VALID(child);
+      }
+      else if (!strcmp(child->key, "linear_system_ids") ||
+               !strcmp(child->key, "linear_solver_ids"))
+      {
+         const char *value = child->mapped_val ? child->mapped_val : child->val;
+         if (!value)
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Invalid value for preconditioner.reuse.linear_system_ids");
+            YAML_NODE_SET_INVALID_VAL(child);
+            return;
+         }
+
+         IntArray *ids = NULL;
+         StrToIntArray(value, &ids);
+         if (!ids)
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Failed to parse preconditioner.reuse.linear_system_ids");
+            YAML_NODE_SET_INVALID_VAL(child);
+            return;
+         }
+
+         IntArrayDestroy(&args->linear_system_ids);
+         args->linear_system_ids = ids;
+         seen_linear_system_ids  = 1;
+         YAML_NODE_SET_VALID(child);
+      }
+      else if (!strcmp(child->key, "per_timestep"))
+      {
+         const char *value = child->mapped_val ? child->mapped_val : child->val;
+         if (!PreconReuseParseOnOff(value, &args->per_timestep))
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Invalid value for preconditioner.reuse.per_timestep: '%s'",
+                        value ? value : "");
+            YAML_NODE_SET_INVALID_VAL(child);
+            return;
+         }
+         seen_per_timestep = args->per_timestep ? 1 : 0;
+         YAML_NODE_SET_VALID(child);
+      }
+      else
+      {
+         ErrorCodeSet(ERROR_INVALID_KEY);
+         ErrorMsgAdd("Unknown key under preconditioner.reuse: '%s'", child->key);
+         YAML_NODE_SET_INVALID_KEY(child);
+         return;
+      }
+   }
+
+   if (!seen_enabled)
+   {
+      args->enabled = 1;
+   }
+
+   if (seen_linear_system_ids && (seen_frequency || seen_per_timestep))
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("preconditioner.reuse.linear_system_ids cannot be combined with "
+                  "frequency or per_timestep");
+      YAML_NODE_SET_INVALID_VAL(parent);
+      return;
+   }
+
+   if (!args->enabled)
+   {
+      IntArrayDestroy(&args->linear_system_ids);
+      args->frequency    = 0;
+      args->per_timestep = 0;
+   }
 }
 
 void

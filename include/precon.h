@@ -8,6 +8,7 @@
 #ifndef PRECON_HEADER
 #define PRECON_HEADER
 
+#include <stdint.h>
 #include "amg.h"
 #include "field.h"
 #include "fsai.h"
@@ -46,6 +47,14 @@ typedef struct precon_args_struct
 
 typedef precon_args Precon_args;
 
+typedef struct PreconReuse_args_struct
+{
+   int       enabled;
+   int       frequency;
+   IntArray *linear_system_ids;
+   int       per_timestep;
+} PreconReuse_args;
+
 /*--------------------------------------------------------------------------
  * Generic preconditioner struct
  *--------------------------------------------------------------------------*/
@@ -66,6 +75,12 @@ StrIntMapArray PreconGetValidValues(const char *);
 StrIntMapArray PreconGetValidTypeIntMap(void);
 void           PreconSetDefaultArgs(precon_args *);
 void           PreconArgsSetDefaultsForMethod(precon_t, precon_args *);
+void           PreconReuseSetDefaultArgs(PreconReuse_args *);
+void           PreconReuseDestroyArgs(PreconReuse_args *);
+void           PreconReuseSetArgsFromYAML(PreconReuse_args *, YAMLnode *);
+void           PreconReuseTimestepsClear(IntArray **);
+uint32_t PreconReuseTimestepsLoad(const PreconReuse_args *, const char *, IntArray **);
+int      PreconReuseShouldRecompute(const PreconReuse_args *, const IntArray *, int);
 
 void PreconSetArgsFromYAML(precon_args *, YAMLnode *); /* TODO: change to PreconSetArgs */
 void PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector, HYPRE_Precon *);

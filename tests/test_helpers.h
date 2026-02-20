@@ -72,6 +72,15 @@
       } \
    } while (0)
 
+#define ASSERT_PTR_EQ(a, b) \
+   do { \
+      if ((a) != (b)) { \
+         fprintf(stderr, "FAIL: %s:%d: %s (%p) != %s (%p)\n", \
+                __FILE__, __LINE__, #a, (void *)(a), #b, (void *)(b)); \
+         exit(1); \
+      } \
+   } while (0)
+
 #define ASSERT_STREQ(a, b) \
    do { \
       if (strcmp((a), (b)) != 0) { \

@@ -79,6 +79,7 @@ typedef struct hypredrv_struct
    HYPRE_Solver solver;
 
    Scaling_context *scaling_ctx;
+   IntArray        *precon_reuse_timestep_starts;
 
    Stats *stats;
 } hypredrv_t;
@@ -191,10 +192,11 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->vec_s    = NULL;
    hypredrv->dofmap   = NULL;
 
-   hypredrv->precon      = NULL;
-   hypredrv->solver      = NULL;
-   hypredrv->scaling_ctx = NULL;
-   hypredrv->stats       = NULL;
+   hypredrv->precon                       = NULL;
+   hypredrv->solver                       = NULL;
+   hypredrv->scaling_ctx                  = NULL;
+   hypredrv->precon_reuse_timestep_starts = NULL;
+   hypredrv->stats                        = NULL;
 
    /* Disable library mode by default */
    hypredrv->lib_mode = false;
@@ -282,6 +284,7 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    }
 
    IntArrayDestroy(&hypredrv->dofmap);
+   PreconReuseTimestepsClear(&hypredrv->precon_reuse_timestep_starts);
    InputArgsDestroy(&hypredrv->iargs);
 
    /* Destroy statistics object */
@@ -429,6 +432,10 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
 #endif
    }
 
+   PreconReuseTimestepsLoad(&hypredrv->iargs->precon_reuse,
+                            hypredrv->iargs->ls.timestep_filename,
+                            &hypredrv->precon_reuse_timestep_starts);
+
    return ErrorCodeGet();
 }
 
@@ -497,15 +504,21 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
       return ErrorCodeGet();
    }
 
-   /* Destroy existing solver/preconditioner objects to avoid stale configuration */
-   if (hypredrv->solver)
+   int current_variant = hypredrv->iargs->active_precon_variant;
+   int variant_changed = (variant_idx != current_variant);
+
+   /* Only rebuild solver/preconditioner when switching variants. */
+   if (variant_changed)
    {
-      SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
-   }
-   if (hypredrv->precon)
-   {
-      PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                    &hypredrv->precon);
+      if (hypredrv->solver)
+      {
+         SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+      }
+      if (hypredrv->precon)
+      {
+         PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                       &hypredrv->precon);
+      }
    }
 
    /* Set active variant */
@@ -1165,20 +1178,12 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int ls_id = StatsGetLinearSystemID(hypredrv->stats);
-   int reuse = hypredrv->iargs->ls.precon_reuse;
-
-   /* Preconditioner creation logic:
-    * - Always create if preconditioner doesn't exist (precon is NULL)
-    * - If reuse == 0: always create (no reuse)
-    * - Always create on first system (ls_id < 0 or ls_id == 0)
-    * - If reuse > 0: create every (reuse + 1) systems
-    *   This means: create when (ls_id + 1) % (reuse + 1) == 0
-    *   Example: reuse=2 means create on ls_id=0, 3, 6, 9, ...
-    */
+   int  next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
    bool should_create =
-      ((hypredrv->precon == NULL) || (reuse == 0) || (ls_id < 0 || ls_id == 0) ||
-       (((ls_id + 1) % (reuse + 1)) == 0)) != 0;
+      ((hypredrv->precon == NULL) ||
+       PreconReuseShouldRecompute(&hypredrv->iargs->precon_reuse,
+                                  hypredrv->precon_reuse_timestep_starts, next_ls_id)) !=
+      0;
 
    if (should_create)
    {
@@ -1205,9 +1210,6 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int ls_id = StatsGetLinearSystemID(hypredrv->stats);
-   int reuse = hypredrv->iargs->ls.precon_reuse;
-
    /* First, create the preconditioner if we need */
    if (!hypredrv->precon)
    {
@@ -1218,17 +1220,15 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
       }
    }
 
-   /* Create the solver object (if not reusing) */
-   if (!((ls_id + 1) % (reuse + 1)))
+   /* Always recreate solver per linear system.
+    * Reuse policy applies to preconditioner lifecycle; solver internals should
+    * be rebuilt against the current system vectors/matrix each cycle. */
+   if (hypredrv->solver)
    {
-      /* If we're recreating, destroy the existing solver first to avoid leaks. */
-      if (hypredrv->solver)
-      {
-         SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
-      }
-      SolverCreate(hypredrv->comm, hypredrv->iargs->solver_method,
-                   &hypredrv->iargs->solver, &hypredrv->solver);
+      SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
    }
+   SolverCreate(hypredrv->comm, hypredrv->iargs->solver_method, &hypredrv->iargs->solver,
+                &hypredrv->solver);
 
    return ErrorCodeGet();
 }
@@ -1283,8 +1283,9 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int ls_id = StatsGetLinearSystemID(hypredrv->stats);
-   int reuse = hypredrv->iargs->ls.precon_reuse;
+   int next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
+   int recompute  = PreconReuseShouldRecompute(
+      &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timestep_starts, next_ls_id);
 
    /* Create scaling context if needed and not already created */
    if (hypredrv->iargs->scaling.enabled && !hypredrv->scaling_ctx)
@@ -1303,25 +1304,24 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
       }
    }
 
-   if (!((ls_id + 1) % (reuse + 1)))
+   /* Apply scaling before setup if enabled */
+   if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
    {
-      /* Apply scaling before setup if enabled */
-      if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
+      ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->mat_M,
+                           hypredrv->vec_b, hypredrv->vec_x);
+      if (ErrorCodeGet())
       {
-         ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->mat_M,
-                              hypredrv->vec_b, hypredrv->vec_x);
-         if (ErrorCodeGet())
-         {
-            return ErrorCodeGet();
-         }
+         return ErrorCodeGet();
       }
-
-      HYPREDRV_GMRESSetRefSolution(hypredrv);
-
-      SolverSetup(hypredrv->iargs->precon_method, hypredrv->iargs->solver_method,
-                  hypredrv->precon, hypredrv->solver, hypredrv->mat_M, hypredrv->vec_b,
-                  hypredrv->vec_x, hypredrv->stats);
    }
+
+   HYPREDRV_GMRESSetRefSolution(hypredrv);
+
+   SolverSetupWithReuse(hypredrv->iargs->precon_method, hypredrv->iargs->solver_method,
+                        hypredrv->precon, hypredrv->solver, hypredrv->mat_M,
+                        hypredrv->vec_b, hypredrv->vec_x, hypredrv->stats,
+                        recompute ? 0 : 1);
+
    HYPRE_ClearAllErrors();
 
    return ErrorCodeGet();
@@ -1489,18 +1489,10 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int ls_id = StatsGetLinearSystemID(hypredrv->stats);
-   int reuse = hypredrv->iargs->ls.precon_reuse;
-
-   /* Preconditioner reuse logic:
-    * - If reuse == 0: always destroy (no reuse)
-    * - If reuse > 0: destroy every (reuse + 1) linear systems
-    *   This means: destroy when (ls_id + 1) % (reuse + 1) == 0, but not on first
-    * system Example: reuse=2 means reuse for 2 systems, destroy on 3rd (ls_id=2, 5, 8,
-    * ...)
-    */
+   int  next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
    bool should_destroy =
-      ((reuse == 0) || (ls_id > 0 && (((ls_id + 1) % (reuse + 1)) == 0))) != 0;
+      PreconReuseShouldRecompute(&hypredrv->iargs->precon_reuse,
+                                 hypredrv->precon_reuse_timestep_starts, next_ls_id) != 0;
 
    if (should_destroy)
    {
@@ -1521,9 +1513,6 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int ls_id = StatsGetLinearSystemID(hypredrv->stats);
-   int reuse = hypredrv->iargs->ls.precon_reuse;
-
    /* First, destroy the preconditioner if we need */
    if (hypredrv->precon)
    {
@@ -1534,11 +1523,7 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
       }
    }
 
-   /* Destroy the solver object (if not reusing) */
-   if (!((ls_id + 1) % (reuse + 1)))
-   {
-      SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
-   }
+   SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
 
    return ErrorCodeGet();
 }
