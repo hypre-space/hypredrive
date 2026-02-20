@@ -402,6 +402,31 @@ test_InputArgsParsePrecon_reuse_per_timestep(void)
 }
 
 static void
+test_InputArgsParsePrecon_reuse_per_timestep_with_frequency(void)
+{
+   const char yaml_text[] = "linear_system:\n"
+                            "  timestep_filename: timesteps.txt\n"
+                            "solver:\n"
+                            "  pcg:\n"
+                            "    max_iter: 10\n"
+                            "preconditioner:\n"
+                            "  reuse:\n"
+                            "    per_timestep: on\n"
+                            "    frequency: 2\n"
+                            "  amg:\n"
+                            "    print_level: 0\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon_reuse.enabled, 1);
+   ASSERT_EQ(args->precon_reuse.per_timestep, 1);
+   ASSERT_EQ(args->precon_reuse.frequency, 2);
+   ASSERT_STREQ(args->ls.timestep_filename, "timesteps.txt");
+
+   InputArgsDestroy(&args);
+}
+
+static void
 test_YAMLtreeBuild_inconsistent_indent(void)
 {
    const char yaml_text[] = "root:\n"
@@ -553,6 +578,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParsePrecon_reuse_frequency);
    RUN_TEST(test_InputArgsParsePrecon_reuse_linear_solver_ids);
    RUN_TEST(test_InputArgsParsePrecon_reuse_per_timestep);
+   RUN_TEST(test_InputArgsParsePrecon_reuse_per_timestep_with_frequency);
    RUN_TEST(test_YAMLtreeBuild_inconsistent_indent);
    RUN_TEST(test_YAMLtextRead_missing_file);
    RUN_TEST(test_YAMLtreeUpdate_overrides_solver_and_precon);

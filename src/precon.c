@@ -142,8 +142,10 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       return;
    }
 
-   int seen_enabled  = 0;
-   int policy_fields = 0;
+   int seen_enabled          = 0;
+   int seen_frequency        = 0;
+   int seen_linear_solver_ids = 0;
+   int seen_per_timestep     = 0;
    YAML_NODE_ITERATE(parent, child)
    {
       if (!strcmp(child->key, "enabled"))
@@ -171,7 +173,7 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
             YAML_NODE_SET_INVALID_VAL(child);
             return;
          }
-         policy_fields++;
+         seen_frequency = 1;
          YAML_NODE_SET_VALID(child);
       }
       else if (!strcmp(child->key, "linear_solver_ids"))
@@ -197,7 +199,7 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
 
          IntArrayDestroy(&args->linear_solver_ids);
          args->linear_solver_ids = ids;
-         policy_fields++;
+         seen_linear_solver_ids = 1;
          YAML_NODE_SET_VALID(child);
       }
       else if (!strcmp(child->key, "per_timestep"))
@@ -211,10 +213,7 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
             YAML_NODE_SET_INVALID_VAL(child);
             return;
          }
-         if (args->per_timestep)
-         {
-            policy_fields++;
-         }
+         seen_per_timestep = args->per_timestep ? 1 : 0;
          YAML_NODE_SET_VALID(child);
       }
       else
@@ -231,10 +230,11 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       args->enabled = 1;
    }
 
-   if (policy_fields > 1)
+   if (seen_linear_solver_ids && (seen_frequency || seen_per_timestep))
    {
       ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Only one preconditioner.reuse policy can be active at a time");
+      ErrorMsgAdd("preconditioner.reuse.linear_solver_ids cannot be combined with "
+                  "frequency or per_timestep");
       YAML_NODE_SET_INVALID_VAL(parent);
       return;
    }

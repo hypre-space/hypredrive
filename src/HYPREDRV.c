@@ -102,6 +102,25 @@ HYPREDRV_IntArrayContains(const IntArray *arr, int value)
    return 0;
 }
 
+static int
+HYPREDRV_PreconReuseFindTimestepIndex(const IntArray *starts, int ls_id)
+{
+   if (!starts || !starts->data)
+   {
+      return -1;
+   }
+
+   for (size_t i = 0; i < starts->size; i++)
+   {
+      if (starts->data[i] == ls_id)
+      {
+         return (int)i;
+      }
+   }
+
+   return -1;
+}
+
 static void
 HYPREDRV_PreconReuseTimestepsClear(HYPREDRV_t hypredrv)
 {
@@ -214,7 +233,15 @@ HYPREDRV_PreconReuseShouldRecompute(HYPREDRV_t hypredrv, int next_ls_id)
 
    if (reuse->enabled && reuse->per_timestep)
    {
-      return HYPREDRV_IntArrayContains(hypredrv->precon_reuse_timestep_starts, next_ls_id);
+      int timestep_idx = HYPREDRV_PreconReuseFindTimestepIndex(
+         hypredrv->precon_reuse_timestep_starts, next_ls_id);
+
+      if (timestep_idx < 0)
+      {
+         return 0;
+      }
+
+      return (timestep_idx % (freq + 1)) == 0;
    }
 
    return (next_ls_id % (freq + 1)) == 0;
@@ -1342,8 +1369,6 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
-
    /* First, create the preconditioner if we need */
    if (!hypredrv->precon)
    {
@@ -1354,17 +1379,15 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
       }
    }
 
-   if (!hypredrv->solver ||
-       HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id))
+   /* Always recreate solver per linear system.
+    * Reuse policy applies to preconditioner lifecycle; solver internals should
+    * be rebuilt against the current system vectors/matrix each cycle. */
+   if (hypredrv->solver)
    {
-      /* If we're recreating, destroy the existing solver first to avoid leaks. */
-      if (hypredrv->solver)
-      {
-         SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
-      }
-      SolverCreate(hypredrv->comm, hypredrv->iargs->solver_method,
-                   &hypredrv->iargs->solver, &hypredrv->solver);
+      SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
    }
+   SolverCreate(hypredrv->comm, hypredrv->iargs->solver_method,
+                &hypredrv->iargs->solver, &hypredrv->solver);
 
    return ErrorCodeGet();
 }
@@ -1420,6 +1443,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_OBJ();
 
    int next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
+   int recompute  = HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id);
 
    /* Create scaling context if needed and not already created */
    if (hypredrv->iargs->scaling.enabled && !hypredrv->scaling_ctx)
@@ -1438,25 +1462,24 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
       }
    }
 
-   if (HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id))
+   /* Apply scaling before setup if enabled */
+   if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
    {
-      /* Apply scaling before setup if enabled */
-      if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
+      ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->mat_M,
+                           hypredrv->vec_b, hypredrv->vec_x);
+      if (ErrorCodeGet())
       {
-         ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->mat_M,
-                              hypredrv->vec_b, hypredrv->vec_x);
-         if (ErrorCodeGet())
-         {
-            return ErrorCodeGet();
-         }
+         return ErrorCodeGet();
       }
-
-      HYPREDRV_GMRESSetRefSolution(hypredrv);
-
-      SolverSetup(hypredrv->iargs->precon_method, hypredrv->iargs->solver_method,
-                  hypredrv->precon, hypredrv->solver, hypredrv->mat_M, hypredrv->vec_b,
-                  hypredrv->vec_x, hypredrv->stats);
    }
+
+   HYPREDRV_GMRESSetRefSolution(hypredrv);
+
+   SolverSetupWithReuse(hypredrv->iargs->precon_method, hypredrv->iargs->solver_method,
+                        hypredrv->precon, hypredrv->solver, hypredrv->mat_M,
+                        hypredrv->vec_b, hypredrv->vec_x, hypredrv->stats,
+                        recompute ? 0 : 1);
+
    HYPRE_ClearAllErrors();
 
    return ErrorCodeGet();
@@ -1646,8 +1669,6 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
-
    /* First, destroy the preconditioner if we need */
    if (hypredrv->precon)
    {
@@ -1658,10 +1679,7 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
       }
    }
 
-   if (HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id))
-   {
-      SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
-   }
+   SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
 
    return ErrorCodeGet();
 }

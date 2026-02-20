@@ -70,6 +70,17 @@ HYPREDRV_ILUSolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector
 #define HYPREDRV_ILU_SOLVE HYPRE_ILUSolve
 #endif
 
+static HYPRE_Int
+HYPREDRV_PreconSetupNoop(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                         HYPRE_ParVector x)
+{
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 0;
+}
+
 #define Solver_FIELDS(_prefix)                            \
    ADD_FIELD_OFFSET_ENTRY(_prefix, pcg, PCGSetArgs)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, gmres, GMRESSetArgs)   \
@@ -203,9 +214,9 @@ SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args,
  *-----------------------------------------------------------------------------*/
 
 void
-SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
-            HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x,
-            Stats *stats)
+SolverSetupWithReuse(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
+                     HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b,
+                     HYPRE_IJVector x, Stats *stats, int skip_precon_setup)
 {
    if (!solver)
    {
@@ -251,7 +262,9 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
          if (precon_method != PRECON_NONE)
          {
             HYPRE_ParCSRPCGSetPrecond(solver, solve_ptrs[precon_method],
-                                      setup_ptrs[precon_method], precon->main);
+                                      skip_precon_setup ? HYPREDRV_PreconSetupNoop
+                                                        : setup_ptrs[precon_method],
+                                      precon->main);
          }
          HYPRE_ParCSRPCGSetup(solver, par_M, par_b, par_x);
          break;
@@ -260,7 +273,9 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
          if (precon_method != PRECON_NONE)
          {
             HYPRE_ParCSRGMRESSetPrecond(solver, solve_ptrs[precon_method],
-                                        setup_ptrs[precon_method], precon->main);
+                                        skip_precon_setup ? HYPREDRV_PreconSetupNoop
+                                                          : setup_ptrs[precon_method],
+                                        precon->main);
          }
          HYPRE_ParCSRGMRESSetup(solver, par_M, par_b, par_x);
          break;
@@ -269,7 +284,9 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
          if (precon_method != PRECON_NONE)
          {
             HYPRE_ParCSRFlexGMRESSetPrecond(solver, solve_ptrs[precon_method],
-                                            setup_ptrs[precon_method], precon->main);
+                                            skip_precon_setup ? HYPREDRV_PreconSetupNoop
+                                                              : setup_ptrs[precon_method],
+                                            precon->main);
          }
          HYPRE_ParCSRFlexGMRESSetup(solver, par_M, par_b, par_x);
          break;
@@ -278,7 +295,9 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
          if (precon_method != PRECON_NONE)
          {
             HYPRE_ParCSRBiCGSTABSetPrecond(solver, solve_ptrs[precon_method],
-                                           setup_ptrs[precon_method], precon->main);
+                                           skip_precon_setup ? HYPREDRV_PreconSetupNoop
+                                                             : setup_ptrs[precon_method],
+                                           precon->main);
          }
          HYPRE_ParCSRBiCGSTABSetup(solver, par_M, par_b, par_x);
          break;
@@ -292,6 +311,14 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
    HYPRE_ClearAllErrors();
 
    StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
+}
+
+void
+SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
+            HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x,
+            Stats *stats)
+{
+   SolverSetupWithReuse(precon_method, solver_method, precon, solver, M, b, x, stats, 0);
 }
 
 /*-----------------------------------------------------------------------------
