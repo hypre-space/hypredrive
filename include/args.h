@@ -47,6 +47,7 @@ typedef struct input_args_struct
 
    precon_args precon;
    precon_t    precon_method;
+   PreconReuse_args precon_reuse;
 
    /* Preconditioner variants support */
    int          num_precon_variants;

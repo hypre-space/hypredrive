@@ -103,6 +103,7 @@ InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
    /* Set default preconditioner and solver */
    iargs->solver_method = SOLVER_PCG;
    iargs->precon_method = PRECON_BOOMERAMG;
+   PreconReuseSetDefaultArgs(&iargs->precon_reuse);
 
    /* Set default scaling */
    ScalingSetDefaultArgs(&iargs->scaling);
@@ -146,6 +147,7 @@ InputArgsDestroy(input_args **iargs_ptr)
          free(iargs->precon_variants);
          iargs->precon_variants = NULL;
       }
+      PreconReuseDestroyArgs(&iargs->precon_reuse);
       if (iargs->scaling.custom_values)
       {
          DoubleArrayDestroy(&iargs->scaling.custom_values);
@@ -676,6 +678,20 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
    }
 
    YAMLnode *type_node = parent->children;
+   if (!strcmp(type_node->key, "variants"))
+   {
+      YAML_NODE_SET_VALID(type_node);
+      PreconParseResult seq_result =
+         InputArgsParsePreconRootSequence(iargs, type_node, ctx);
+      if (seq_result == PRECON_PARSE_NOT_HANDLED)
+      {
+         ErrorCodeSet(ERROR_INVALID_KEY);
+         ErrorMsgAdd("preconditioner.variants must be a sequence of variants");
+         return PRECON_PARSE_ERROR;
+      }
+      return seq_result;
+   }
+
    if (!strcmp(type_node->key, "preset"))
    {
       precon_t method = PRECON_NONE;
@@ -765,6 +781,48 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
       return;
    }
    YAML_NODE_SET_VALID(parent);
+
+   /* Parse optional preconditioner.reuse block before parsing method variants. */
+   PreconReuseSetDefaultArgs(&iargs->precon_reuse);
+   YAMLnode *reuse_node = NULL;
+   YAMLnode *child      = parent->children;
+   YAMLnode *prev       = NULL;
+   while (child)
+   {
+      if (!strcmp(child->key, "reuse"))
+      {
+         reuse_node = child;
+         if (prev)
+         {
+            prev->next = child->next;
+         }
+         else
+         {
+            parent->children = child->next;
+         }
+         reuse_node->next = NULL;
+         break;
+      }
+      prev  = child;
+      child = child->next;
+   }
+
+   if (reuse_node)
+   {
+      PreconReuseSetArgsFromYAML(&iargs->precon_reuse, reuse_node);
+      if (!ErrorCodeGet())
+      {
+         YAML_NODE_SET_VALID(reuse_node);
+      }
+   }
+
+   /* Legacy alias: linear_system.precon_reuse -> preconditioner.reuse.frequency */
+   if (!reuse_node)
+   {
+      iargs->precon_reuse.enabled   = 1;
+      iargs->precon_reuse.frequency = iargs->ls.precon_reuse;
+   }
+
    PreconParseContext ctx = {0};
    PreconParseResult  result;
 
@@ -772,18 +830,25 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
    if (result != PRECON_PARSE_NOT_HANDLED)
    {
       PreconParseContextCleanup(&ctx);
-      return;
+      goto finalize_reuse;
    }
 
    result = InputArgsParsePreconRootSequence(iargs, parent, &ctx);
    if (result != PRECON_PARSE_NOT_HANDLED)
    {
       PreconParseContextCleanup(&ctx);
-      return;
+      goto finalize_reuse;
    }
 
    InputArgsParsePreconTypedBlock(iargs, parent, &ctx);
    PreconParseContextCleanup(&ctx);
+
+finalize_reuse:
+   if (reuse_node)
+   {
+      reuse_node->next = parent->children;
+      parent->children = reuse_node;
+   }
 }
 
 /*-----------------------------------------------------------------------------

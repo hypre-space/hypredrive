@@ -114,6 +114,7 @@ test_LinearSystemSetArgsFromYAML_valid_keys(void)
    add_child(parent, "rhs_mode", "1", 1);
    add_child(parent, "init_guess_mode", "2", 1);
    add_child(parent, "digits_suffix", "6", 1);
+   add_child(parent, "timestep_filename", "timesteps.txt", 1);
 
    ErrorCodeResetAll();
    LinearSystemSetArgsFromYAML(&args, parent);
@@ -122,6 +123,7 @@ test_LinearSystemSetArgsFromYAML_valid_keys(void)
    ASSERT_EQ(args.rhs_mode, 1);
    ASSERT_EQ(args.init_guess_mode, 2);
    ASSERT_EQ(args.digits_suffix, 6);
+   ASSERT_STREQ(args.timestep_filename, "timesteps.txt");
 
    YAMLnodeDestroy(parent);
 }

@@ -53,6 +53,7 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, x0_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, sol_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, timestep_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_basename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, digits_suffix, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, init_suffix, FieldTypeIntSet),
@@ -147,6 +148,7 @@ LinearSystemSetDefaultArgs(LS_args *args)
    args->x0_filename[0]      = '\0';
    args->xref_filename[0]    = '\0';
    args->xref_basename[0]    = '\0';
+   args->timestep_filename[0] = '\0';
    args->sol_filename[0]     = '\0';
    args->dofmap_filename[0]  = '\0';
    args->dofmap_basename[0]  = '\0';

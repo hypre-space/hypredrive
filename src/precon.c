@@ -9,6 +9,7 @@
 #include "HYPRE_parcsr_mv.h"
 #include "gen_macros.h"
 #include "nested_krylov.h"
+#include <strings.h>
 
 #define Precon_FIELDS(_prefix)                        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs)   \
@@ -60,6 +61,190 @@ void
 PreconSetDefaultArgs(precon_args *args)
 {
    args->reuse = 0;
+}
+
+void
+PreconReuseSetDefaultArgs(PreconReuse_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   args->enabled           = 0;
+   args->frequency         = 0;
+   args->linear_solver_ids = NULL;
+   args->per_timestep      = 0;
+}
+
+void
+PreconReuseDestroyArgs(PreconReuse_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   if (args->linear_solver_ids)
+   {
+      IntArrayDestroy(&args->linear_solver_ids);
+   }
+
+   args->frequency    = 0;
+   args->per_timestep = 0;
+   args->enabled      = 0;
+}
+
+static int
+PreconReuseParseOnOff(const char *value, int *out)
+{
+   if (!value || !out)
+   {
+      return 0;
+   }
+
+   if (!strcasecmp(value, "on") || !strcasecmp(value, "yes") ||
+       !strcasecmp(value, "true") || !strcmp(value, "1"))
+   {
+      *out = 1;
+      return 1;
+   }
+   if (!strcasecmp(value, "off") || !strcasecmp(value, "no") ||
+       !strcasecmp(value, "false") || !strcmp(value, "0"))
+   {
+      *out = 0;
+      return 1;
+   }
+
+   return 0;
+}
+
+void
+PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
+{
+   if (!args || !parent)
+   {
+      return;
+   }
+
+   /* Shorthand: reuse: <int> */
+   if (!parent->children && parent->val && strcmp(parent->val, ""))
+   {
+      if (sscanf(parent->val, "%d", &args->frequency) != 1)
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Invalid preconditioner reuse frequency: '%s'", parent->val);
+         YAML_NODE_SET_INVALID_VAL(parent);
+         return;
+      }
+      args->enabled = 1;
+      YAML_NODE_SET_VALID(parent);
+      return;
+   }
+
+   int seen_enabled  = 0;
+   int policy_fields = 0;
+   YAML_NODE_ITERATE(parent, child)
+   {
+      if (!strcmp(child->key, "enabled"))
+      {
+         const char *value = child->mapped_val ? child->mapped_val : child->val;
+         if (!PreconReuseParseOnOff(value, &args->enabled))
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Invalid value for preconditioner.reuse.enabled: '%s'",
+                        value ? value : "");
+            YAML_NODE_SET_INVALID_VAL(child);
+            return;
+         }
+         seen_enabled = 1;
+         YAML_NODE_SET_VALID(child);
+      }
+      else if (!strcmp(child->key, "frequency"))
+      {
+         const char *value = child->mapped_val ? child->mapped_val : child->val;
+         if (!value || sscanf(value, "%d", &args->frequency) != 1 || args->frequency < 0)
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Invalid value for preconditioner.reuse.frequency: '%s'",
+                        value ? value : "");
+            YAML_NODE_SET_INVALID_VAL(child);
+            return;
+         }
+         policy_fields++;
+         YAML_NODE_SET_VALID(child);
+      }
+      else if (!strcmp(child->key, "linear_solver_ids"))
+      {
+         const char *value = child->mapped_val ? child->mapped_val : child->val;
+         if (!value)
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Invalid value for preconditioner.reuse.linear_solver_ids");
+            YAML_NODE_SET_INVALID_VAL(child);
+            return;
+         }
+
+         IntArray *ids = NULL;
+         StrToIntArray(value, &ids);
+         if (!ids)
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Failed to parse preconditioner.reuse.linear_solver_ids");
+            YAML_NODE_SET_INVALID_VAL(child);
+            return;
+         }
+
+         IntArrayDestroy(&args->linear_solver_ids);
+         args->linear_solver_ids = ids;
+         policy_fields++;
+         YAML_NODE_SET_VALID(child);
+      }
+      else if (!strcmp(child->key, "per_timestep"))
+      {
+         const char *value = child->mapped_val ? child->mapped_val : child->val;
+         if (!PreconReuseParseOnOff(value, &args->per_timestep))
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Invalid value for preconditioner.reuse.per_timestep: '%s'",
+                        value ? value : "");
+            YAML_NODE_SET_INVALID_VAL(child);
+            return;
+         }
+         if (args->per_timestep)
+         {
+            policy_fields++;
+         }
+         YAML_NODE_SET_VALID(child);
+      }
+      else
+      {
+         ErrorCodeSet(ERROR_INVALID_KEY);
+         ErrorMsgAdd("Unknown key under preconditioner.reuse: '%s'", child->key);
+         YAML_NODE_SET_INVALID_KEY(child);
+         return;
+      }
+   }
+
+   if (!seen_enabled)
+   {
+      args->enabled = 1;
+   }
+
+   if (policy_fields > 1)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Only one preconditioner.reuse policy can be active at a time");
+      YAML_NODE_SET_INVALID_VAL(parent);
+      return;
+   }
+
+   if (!args->enabled)
+   {
+      IntArrayDestroy(&args->linear_solver_ids);
+      args->frequency    = 0;
+      args->per_timestep = 0;
+   }
 }
 
 void

@@ -34,6 +34,7 @@ typedef struct LS_args_struct
    char      sol_filename[MAX_FILENAME_LENGTH];
    char      xref_filename[MAX_FILENAME_LENGTH];
    char      xref_basename[MAX_FILENAME_LENGTH];
+   char      timestep_filename[MAX_FILENAME_LENGTH];
    char      dofmap_filename[MAX_FILENAME_LENGTH];
    char      dofmap_basename[MAX_FILENAME_LENGTH];
    HYPRE_Int digits_suffix;

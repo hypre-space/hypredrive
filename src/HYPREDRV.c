@@ -79,9 +79,146 @@ typedef struct hypredrv_struct
    HYPRE_Solver solver;
 
    Scaling_context *scaling_ctx;
+   IntArray        *precon_reuse_timestep_starts;
 
    Stats *stats;
 } hypredrv_t;
+
+static int
+HYPREDRV_IntArrayContains(const IntArray *arr, int value)
+{
+   if (!arr || !arr->data)
+   {
+      return 0;
+   }
+
+   for (size_t i = 0; i < arr->size; i++)
+   {
+      if (arr->data[i] == value)
+      {
+         return 1;
+      }
+   }
+   return 0;
+}
+
+static void
+HYPREDRV_PreconReuseTimestepsClear(HYPREDRV_t hypredrv)
+{
+   if (!hypredrv)
+   {
+      return;
+   }
+   IntArrayDestroy(&hypredrv->precon_reuse_timestep_starts);
+}
+
+static void
+HYPREDRV_PreconReuseTimestepsLoad(HYPREDRV_t hypredrv)
+{
+   if (!hypredrv || !hypredrv->iargs)
+   {
+      return;
+   }
+
+   HYPREDRV_PreconReuseTimestepsClear(hypredrv);
+
+   const PreconReuse_args *reuse = &hypredrv->iargs->precon_reuse;
+   if (!reuse->enabled || !reuse->per_timestep)
+   {
+      return;
+   }
+
+   const char *filename = hypredrv->iargs->ls.timestep_filename;
+   if (!filename || filename[0] == '\0')
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("preconditioner.reuse.per_timestep requires linear_system.timestep_filename");
+      return;
+   }
+
+   FILE *fp = fopen(filename, "r");
+   if (!fp)
+   {
+      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      ErrorMsgAdd("Could not open timestep file: '%s'", filename);
+      return;
+   }
+
+   int total = 0;
+   if (fscanf(fp, "%d", &total) != 1 || total <= 0)
+   {
+      fclose(fp);
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Invalid timestep file header in '%s'", filename);
+      return;
+   }
+
+   IntArray *starts = IntArrayCreate((size_t)total);
+   if (!starts)
+   {
+      fclose(fp);
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate timestep starts array");
+      return;
+   }
+
+   for (int i = 0; i < total; i++)
+   {
+      int timestep = 0;
+      int ls_start = 0;
+      if (fscanf(fp, "%d %d", &timestep, &ls_start) != 2 || ls_start < 0)
+      {
+         fclose(fp);
+         IntArrayDestroy(&starts);
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Invalid timestep entry in '%s' at line %d", filename, i + 2);
+         return;
+      }
+      starts->data[i] = ls_start;
+      (void)timestep;
+   }
+
+   fclose(fp);
+   hypredrv->precon_reuse_timestep_starts = starts;
+}
+
+static int
+HYPREDRV_PreconReuseShouldRecompute(HYPREDRV_t hypredrv, int next_ls_id)
+{
+   if (!hypredrv || !hypredrv->iargs)
+   {
+      return 1;
+   }
+
+   if (next_ls_id < 0)
+   {
+      next_ls_id = 0;
+   }
+
+   const PreconReuse_args *reuse = &hypredrv->iargs->precon_reuse;
+   int                     freq  = reuse->frequency;
+
+   if (!reuse->enabled)
+   {
+      freq = 0;
+   }
+   if (freq < 0)
+   {
+      freq = 0;
+   }
+
+   if (reuse->enabled && reuse->linear_solver_ids && reuse->linear_solver_ids->size > 0)
+   {
+      return HYPREDRV_IntArrayContains(reuse->linear_solver_ids, next_ls_id);
+   }
+
+   if (reuse->enabled && reuse->per_timestep)
+   {
+      return HYPREDRV_IntArrayContains(hypredrv->precon_reuse_timestep_starts, next_ls_id);
+   }
+
+   return (next_ls_id % (freq + 1)) == 0;
+}
 
 /*-----------------------------------------------------------------------------
  * HYPREDRV_Initialize
@@ -194,6 +331,7 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->precon      = NULL;
    hypredrv->solver      = NULL;
    hypredrv->scaling_ctx = NULL;
+   hypredrv->precon_reuse_timestep_starts = NULL;
    hypredrv->stats       = NULL;
 
    /* Disable library mode by default */
@@ -282,6 +420,7 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    }
 
    IntArrayDestroy(&hypredrv->dofmap);
+   HYPREDRV_PreconReuseTimestepsClear(hypredrv);
    InputArgsDestroy(&hypredrv->iargs);
 
    /* Destroy statistics object */
@@ -428,6 +567,8 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
       HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST);
 #endif
    }
+
+   HYPREDRV_PreconReuseTimestepsLoad(hypredrv);
 
    return ErrorCodeGet();
 }
@@ -1171,20 +1312,10 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int ls_id = StatsGetLinearSystemID(hypredrv->stats);
-   int reuse = hypredrv->iargs->ls.precon_reuse;
-
-   /* Preconditioner creation logic:
-    * - Always create if preconditioner doesn't exist (precon is NULL)
-    * - If reuse == 0: always create (no reuse)
-    * - Always create on first system (ls_id < 0 or ls_id == 0)
-    * - If reuse > 0: create every (reuse + 1) systems
-    *   This means: create when (ls_id + 1) % (reuse + 1) == 0
-    *   Example: reuse=2 means create on ls_id=0, 3, 6, 9, ...
-    */
+   int  next_ls_id   = StatsGetLinearSystemID(hypredrv->stats) + 1;
    bool should_create =
-      ((hypredrv->precon == NULL) || (reuse == 0) || (ls_id < 0) ||
-       (((ls_id + 1) % (reuse + 1)) == 0)) != 0;
+      ((hypredrv->precon == NULL) ||
+       HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id)) != 0;
 
    if (should_create)
    {
@@ -1211,8 +1342,7 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int ls_id = StatsGetLinearSystemID(hypredrv->stats);
-   int reuse = hypredrv->iargs->ls.precon_reuse;
+   int next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
 
    /* First, create the preconditioner if we need */
    if (!hypredrv->precon)
@@ -1224,8 +1354,8 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
       }
    }
 
-   /* Create the solver object (if not reusing) */
-   if (!((ls_id + 1) % (reuse + 1)))
+   if (!hypredrv->solver ||
+       HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id))
    {
       /* If we're recreating, destroy the existing solver first to avoid leaks. */
       if (hypredrv->solver)
@@ -1289,8 +1419,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int ls_id = StatsGetLinearSystemID(hypredrv->stats);
-   int reuse = hypredrv->iargs->ls.precon_reuse;
+   int next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
 
    /* Create scaling context if needed and not already created */
    if (hypredrv->iargs->scaling.enabled && !hypredrv->scaling_ctx)
@@ -1309,7 +1438,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
       }
    }
 
-   if (!((ls_id + 1) % (reuse + 1)))
+   if (HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id))
    {
       /* Apply scaling before setup if enabled */
       if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
@@ -1495,18 +1624,8 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int ls_id = StatsGetLinearSystemID(hypredrv->stats);
-   int reuse = hypredrv->iargs->ls.precon_reuse;
-
-   /* Preconditioner reuse logic:
-    * - If reuse == 0: always destroy (no reuse)
-    * - If reuse > 0: destroy every (reuse + 1) linear systems
-    *   This means: destroy when (ls_id + 1) % (reuse + 1) == 0, but not on first
-    * system Example: reuse=2 means reuse for 2 systems, destroy on 3rd (ls_id=2, 5, 8,
-    * ...)
-    */
-   bool should_destroy =
-      ((reuse == 0) || (ls_id > 0 && (((ls_id + 1) % (reuse + 1)) == 0))) != 0;
+   int  next_ls_id     = StatsGetLinearSystemID(hypredrv->stats) + 1;
+   bool should_destroy = HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id) != 0;
 
    if (should_destroy)
    {
@@ -1527,8 +1646,7 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int ls_id = StatsGetLinearSystemID(hypredrv->stats);
-   int reuse = hypredrv->iargs->ls.precon_reuse;
+   int next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
 
    /* First, destroy the preconditioner if we need */
    if (hypredrv->precon)
@@ -1540,8 +1658,7 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
       }
    }
 
-   /* Destroy the solver object (if not reusing) */
-   if (!((ls_id + 1) % (reuse + 1)))
+   if (HYPREDRV_PreconReuseShouldRecompute(hypredrv, next_ls_id))
    {
       SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
    }
