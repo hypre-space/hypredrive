@@ -152,6 +152,7 @@ InputArgsDestroy(input_args **iargs_ptr)
       {
          DoubleArrayDestroy(&iargs->scaling.custom_values);
       }
+      IntArrayDestroy(&iargs->ls.set_suffix);
       free(*iargs_ptr);
       *iargs_ptr = NULL;
    }

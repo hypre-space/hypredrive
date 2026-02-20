@@ -12,6 +12,7 @@
 #include "HYPRE_IJ_mv.h"
 #include "HYPRE_utilities.h"
 #include "compatibility.h"
+#include "containers.h"
 #include "eigspec.h"
 #include "field.h"
 #include "stats.h"
@@ -40,6 +41,7 @@ typedef struct LS_args_struct
    HYPRE_Int digits_suffix;
    HYPRE_Int init_suffix;
    HYPRE_Int last_suffix;
+   IntArray *set_suffix;
    HYPRE_Int init_guess_mode;
    HYPRE_Int rhs_mode;
    HYPRE_Int type;
@@ -63,6 +65,7 @@ void LinearSystemSetDefaultArgs(LS_args *);
 void LinearSystemSetNearNullSpace(MPI_Comm, const LS_args *, HYPRE_IJMatrix, int, int,
                                   const HYPRE_Complex *, HYPRE_IJVector *);
 void LinearSystemSetNumSystems(LS_args *);
+int  LinearSystemGetSuffix(const LS_args *, int ls_id);
 void LinearSystemSetArgsFromYAML(LS_args *, YAMLnode *);
 void LinearSystemReadMatrix(MPI_Comm, const LS_args *, HYPRE_IJMatrix *, Stats *);
 void LinearSystemSetRHS(MPI_Comm, const LS_args *, HYPRE_IJMatrix, HYPRE_IJVector *,

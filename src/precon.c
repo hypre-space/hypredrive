@@ -6,11 +6,11 @@
  ******************************************************************************/
 
 #include "precon.h"
+#include <stdio.h>
+#include <strings.h>
 #include "HYPRE_parcsr_mv.h"
 #include "gen_macros.h"
 #include "nested_krylov.h"
-#include <stdio.h>
-#include <strings.h>
 
 #define Precon_FIELDS(_prefix)                        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs)   \
@@ -74,7 +74,7 @@ PreconReuseSetDefaultArgs(PreconReuse_args *args)
 
    args->enabled           = 0;
    args->frequency         = 0;
-   args->linear_solver_ids = NULL;
+   args->linear_system_ids = NULL;
    args->per_timestep      = 0;
 }
 
@@ -86,9 +86,9 @@ PreconReuseDestroyArgs(PreconReuse_args *args)
       return;
    }
 
-   if (args->linear_solver_ids)
+   if (args->linear_system_ids)
    {
-      IntArrayDestroy(&args->linear_solver_ids);
+      IntArrayDestroy(&args->linear_system_ids);
    }
 
    args->frequency    = 0;
@@ -188,7 +188,8 @@ PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *filename,
    if (!filename || filename[0] == '\0')
    {
       ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("preconditioner.reuse.per_timestep requires linear_system.timestep_filename");
+      ErrorMsgAdd(
+         "preconditioner.reuse.per_timestep requires linear_system.timestep_filename");
       return ErrorCodeGet();
    }
 
@@ -259,9 +260,9 @@ PreconReuseShouldRecompute(const PreconReuse_args *args, const IntArray *timeste
       freq = 0;
    }
 
-   if (args->enabled && args->linear_solver_ids && args->linear_solver_ids->size > 0)
+   if (args->enabled && args->linear_system_ids && args->linear_system_ids->size > 0)
    {
-      return PreconReuseIntArrayContains(args->linear_solver_ids, next_ls_id);
+      return PreconReuseIntArrayContains(args->linear_system_ids, next_ls_id);
    }
 
    if (args->enabled && args->per_timestep)
@@ -300,10 +301,10 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       return;
    }
 
-   int seen_enabled          = 0;
-   int seen_frequency        = 0;
-   int seen_linear_solver_ids = 0;
-   int seen_per_timestep     = 0;
+   int seen_enabled           = 0;
+   int seen_frequency         = 0;
+   int seen_linear_system_ids = 0;
+   int seen_per_timestep      = 0;
    YAML_NODE_ITERATE(parent, child)
    {
       if (!strcmp(child->key, "enabled"))
@@ -334,13 +335,14 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          seen_frequency = 1;
          YAML_NODE_SET_VALID(child);
       }
-      else if (!strcmp(child->key, "linear_solver_ids"))
+      else if (!strcmp(child->key, "linear_system_ids") ||
+               !strcmp(child->key, "linear_solver_ids"))
       {
          const char *value = child->mapped_val ? child->mapped_val : child->val;
          if (!value)
          {
             ErrorCodeSet(ERROR_INVALID_VAL);
-            ErrorMsgAdd("Invalid value for preconditioner.reuse.linear_solver_ids");
+            ErrorMsgAdd("Invalid value for preconditioner.reuse.linear_system_ids");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
          }
@@ -350,14 +352,14 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          if (!ids)
          {
             ErrorCodeSet(ERROR_INVALID_VAL);
-            ErrorMsgAdd("Failed to parse preconditioner.reuse.linear_solver_ids");
+            ErrorMsgAdd("Failed to parse preconditioner.reuse.linear_system_ids");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
          }
 
-         IntArrayDestroy(&args->linear_solver_ids);
-         args->linear_solver_ids = ids;
-         seen_linear_solver_ids = 1;
+         IntArrayDestroy(&args->linear_system_ids);
+         args->linear_system_ids = ids;
+         seen_linear_system_ids  = 1;
          YAML_NODE_SET_VALID(child);
       }
       else if (!strcmp(child->key, "per_timestep"))
@@ -388,10 +390,10 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       args->enabled = 1;
    }
 
-   if (seen_linear_solver_ids && (seen_frequency || seen_per_timestep))
+   if (seen_linear_system_ids && (seen_frequency || seen_per_timestep))
    {
       ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("preconditioner.reuse.linear_solver_ids cannot be combined with "
+      ErrorMsgAdd("preconditioner.reuse.linear_system_ids cannot be combined with "
                   "frequency or per_timestep");
       YAML_NODE_SET_INVALID_VAL(parent);
       return;
@@ -399,7 +401,7 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
 
    if (!args->enabled)
    {
-      IntArrayDestroy(&args->linear_solver_ids);
+      IntArrayDestroy(&args->linear_system_ids);
       args->frequency    = 0;
       args->per_timestep = 0;
    }

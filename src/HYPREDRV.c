@@ -192,11 +192,11 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->vec_s    = NULL;
    hypredrv->dofmap   = NULL;
 
-   hypredrv->precon      = NULL;
-   hypredrv->solver      = NULL;
-   hypredrv->scaling_ctx = NULL;
+   hypredrv->precon                       = NULL;
+   hypredrv->solver                       = NULL;
+   hypredrv->scaling_ctx                  = NULL;
    hypredrv->precon_reuse_timestep_starts = NULL;
-   hypredrv->stats       = NULL;
+   hypredrv->stats                        = NULL;
 
    /* Disable library mode by default */
    hypredrv->lib_mode = false;
@@ -1178,12 +1178,12 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int  next_ls_id   = StatsGetLinearSystemID(hypredrv->stats) + 1;
+   int  next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
    bool should_create =
       ((hypredrv->precon == NULL) ||
        PreconReuseShouldRecompute(&hypredrv->iargs->precon_reuse,
-                                  hypredrv->precon_reuse_timestep_starts,
-                                  next_ls_id)) != 0;
+                                  hypredrv->precon_reuse_timestep_starts, next_ls_id)) !=
+      0;
 
    if (should_create)
    {
@@ -1227,8 +1227,8 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
    {
       SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
    }
-   SolverCreate(hypredrv->comm, hypredrv->iargs->solver_method,
-                &hypredrv->iargs->solver, &hypredrv->solver);
+   SolverCreate(hypredrv->comm, hypredrv->iargs->solver_method, &hypredrv->iargs->solver,
+                &hypredrv->solver);
 
    return ErrorCodeGet();
 }
@@ -1284,9 +1284,8 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_OBJ();
 
    int next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
-   int recompute  = PreconReuseShouldRecompute(&hypredrv->iargs->precon_reuse,
-                                               hypredrv->precon_reuse_timestep_starts,
-                                               next_ls_id);
+   int recompute  = PreconReuseShouldRecompute(
+      &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timestep_starts, next_ls_id);
 
    /* Create scaling context if needed and not already created */
    if (hypredrv->iargs->scaling.enabled && !hypredrv->scaling_ctx)
@@ -1490,11 +1489,10 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int  next_ls_id     = StatsGetLinearSystemID(hypredrv->stats) + 1;
+   int  next_ls_id = StatsGetLinearSystemID(hypredrv->stats) + 1;
    bool should_destroy =
       PreconReuseShouldRecompute(&hypredrv->iargs->precon_reuse,
-                                 hypredrv->precon_reuse_timestep_starts,
-                                 next_ls_id) != 0;
+                                 hypredrv->precon_reuse_timestep_starts, next_ls_id) != 0;
 
    if (should_destroy)
    {

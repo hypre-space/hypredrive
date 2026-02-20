@@ -348,31 +348,31 @@ test_InputArgsParsePrecon_reuse_frequency(void)
    ASSERT_EQ(args->precon_reuse.enabled, 1);
    ASSERT_EQ(args->precon_reuse.frequency, 2);
    ASSERT_EQ(args->precon_reuse.per_timestep, 0);
-   ASSERT_NULL(args->precon_reuse.linear_solver_ids);
+   ASSERT_NULL(args->precon_reuse.linear_system_ids);
 
    InputArgsDestroy(&args);
 }
 
 static void
-test_InputArgsParsePrecon_reuse_linear_solver_ids(void)
+test_InputArgsParsePrecon_reuse_linear_system_ids(void)
 {
    const char yaml_text[] = "solver:\n"
                             "  pcg:\n"
                             "    max_iter: 10\n"
                             "preconditioner:\n"
                             "  reuse:\n"
-                            "    linear_solver_ids: [0, 3, 5]\n"
+                            "    linear_system_ids: [0, 3, 5]\n"
                             "  amg:\n"
                             "    print_level: 0\n";
 
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->precon_reuse.enabled, 1);
-   ASSERT_NOT_NULL(args->precon_reuse.linear_solver_ids);
-   ASSERT_EQ((int)args->precon_reuse.linear_solver_ids->size, 3);
-   ASSERT_EQ(args->precon_reuse.linear_solver_ids->data[0], 0);
-   ASSERT_EQ(args->precon_reuse.linear_solver_ids->data[1], 3);
-   ASSERT_EQ(args->precon_reuse.linear_solver_ids->data[2], 5);
+   ASSERT_NOT_NULL(args->precon_reuse.linear_system_ids);
+   ASSERT_EQ((int)args->precon_reuse.linear_system_ids->size, 3);
+   ASSERT_EQ(args->precon_reuse.linear_system_ids->data[0], 0);
+   ASSERT_EQ(args->precon_reuse.linear_system_ids->data[1], 3);
+   ASSERT_EQ(args->precon_reuse.linear_system_ids->data[2], 5);
    ASSERT_EQ(args->precon_reuse.per_timestep, 0);
 
    InputArgsDestroy(&args);
@@ -576,7 +576,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParsePrecon_root_sequence_variants);
    RUN_TEST(test_InputArgsParsePrecon_root_sequence_with_preset);
    RUN_TEST(test_InputArgsParsePrecon_reuse_frequency);
-   RUN_TEST(test_InputArgsParsePrecon_reuse_linear_solver_ids);
+   RUN_TEST(test_InputArgsParsePrecon_reuse_linear_system_ids);
    RUN_TEST(test_InputArgsParsePrecon_reuse_per_timestep);
    RUN_TEST(test_InputArgsParsePrecon_reuse_per_timestep_with_frequency);
    RUN_TEST(test_YAMLtreeBuild_inconsistent_indent);

@@ -115,6 +115,13 @@ test_LinearSystemSetArgsFromYAML_valid_keys(void)
    add_child(parent, "init_guess_mode", "2", 1);
    add_child(parent, "digits_suffix", "6", 1);
    add_child(parent, "timestep_filename", "timesteps.txt", 1);
+   for (YAMLnode *c = parent->children; c; c = c->next)
+   {
+      if (c->val)
+      {
+         c->mapped_val = strdup(c->val);
+      }
+   }
 
    ErrorCodeResetAll();
    LinearSystemSetArgsFromYAML(&args, parent);
@@ -142,6 +149,58 @@ test_LinearSystemSetArgsFromYAML_unknown_key(void)
 
    ASSERT_EQ(unknown_node->valid, YAML_NODE_INVALID_KEY);
 
+   YAMLnodeDestroy(parent);
+}
+
+static void
+test_LinearSystemSetArgsFromYAML_set_suffix(void)
+{
+   LS_args args;
+   LinearSystemSetDefaultArgs(&args);
+
+   YAMLnode *parent = YAMLnodeCreate("linear_system", "", 0);
+   add_child(parent, "set_suffix", "[0, 2, 5]", 1);
+
+   ErrorCodeResetAll();
+   LinearSystemSetArgsFromYAML(&args, parent);
+   LinearSystemSetNumSystems(&args);
+
+   ASSERT_NOT_NULL(args.set_suffix);
+   ASSERT_EQ(args.set_suffix->size, 3);
+   ASSERT_EQ(args.set_suffix->data[0], 0);
+   ASSERT_EQ(args.set_suffix->data[1], 2);
+   ASSERT_EQ(args.set_suffix->data[2], 5);
+   ASSERT_EQ(args.num_systems, 3);
+   ASSERT_EQ(LinearSystemGetSuffix(&args, 1), 0);
+   ASSERT_EQ(LinearSystemGetSuffix(&args, 2), 2);
+   ASSERT_EQ(LinearSystemGetSuffix(&args, 3), 5);
+
+   IntArrayDestroy(&args.set_suffix);
+   YAMLnodeDestroy(parent);
+}
+
+static void
+test_LinearSystemSetArgsFromYAML_set_suffix_and_init_suffix_error(void)
+{
+   LS_args args;
+   LinearSystemSetDefaultArgs(&args);
+
+   YAMLnode *parent = YAMLnodeCreate("linear_system", "", 0);
+   add_child(parent, "set_suffix", "[0, 1]", 1);
+   add_child(parent, "init_suffix", "10", 1);
+   for (YAMLnode *c = parent->children; c; c = c->next)
+   {
+      if (c->val)
+      {
+         c->mapped_val = strdup(c->val);
+      }
+   }
+
+   ErrorCodeResetAll();
+   LinearSystemSetArgsFromYAML(&args, parent);
+
+   ASSERT_NE(ErrorCodeGet() & ERROR_INVALID_VAL, 0);
+   IntArrayDestroy(&args.set_suffix);
    YAMLnodeDestroy(parent);
 }
 
@@ -1153,6 +1212,8 @@ run_linsys_args_and_validation_tests(void)
    RUN_TEST(test_LinearSystemGetValidValues_unknown_key);
    RUN_TEST(test_LinearSystemSetArgsFromYAML_valid_keys);
    RUN_TEST(test_LinearSystemSetArgsFromYAML_unknown_key);
+   RUN_TEST(test_LinearSystemSetArgsFromYAML_set_suffix);
+   RUN_TEST(test_LinearSystemSetArgsFromYAML_set_suffix_and_init_suffix_error);
    RUN_TEST(test_LinearSystemSetNearNullSpace_mismatch_error);
    RUN_TEST(test_LinearSystemSetNearNullSpace_success);
    RUN_TEST(test_LinearSystemSetNearNullSpace_destroy_previous);

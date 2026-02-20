@@ -926,7 +926,7 @@ test_HYPREDRV_LinearSolverDestroy_reuse_logic(void)
 }
 
 static void
-test_HYPREDRV_PreconDestroy_reuse_linear_solver_ids(void)
+test_HYPREDRV_PreconDestroy_reuse_linear_system_ids(void)
 {
    reset_state();
 
@@ -951,7 +951,7 @@ test_HYPREDRV_PreconDestroy_reuse_linear_solver_ids(void)
             "    max_iter: 5\n"
             "preconditioner:\n"
             "  reuse:\n"
-            "    linear_solver_ids: [0, 2]\n"
+            "    linear_system_ids: [0, 2]\n"
             "  amg:\n"
             "    print_level: 0\n",
             matrix_path, rhs_path);
@@ -1534,7 +1534,7 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_LinearSolverCreate_reuse_logic);
    RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_logic);
    RUN_TEST(test_HYPREDRV_LinearSolverDestroy_reuse_logic);
-   RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_linear_solver_ids);
+   RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_linear_system_ids);
    RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_per_timestep);
    RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_per_timestep_frequency);
    RUN_TEST(test_HYPREDRV_LinearSolverApply_error_cases);
