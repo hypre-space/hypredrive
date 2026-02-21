@@ -45,8 +45,9 @@ typedef enum ErrorCode_enum
    ERROR_HYPREDRV_NOT_INITIALIZED = 0x00400000, // 23rd bit
    ERROR_UNKNOWN_TIMING           = 0x00800000, // 24th bit
    ERROR_HYPRE_INTERNAL           = 0x01000000, // 25th bit
-   ERROR_ALLOCATION               = 0x20000000, // 28st bit
-   ERROR_OUT_OF_BOUNDS            = 0x40000000, // 29st bit
+   ERROR_MISSING_LIB              = 0x02000000, // 26th bit
+   ERROR_ALLOCATION               = 0x20000000, // 28th bit
+   ERROR_OUT_OF_BOUNDS            = 0x40000000, // 29th bit
    ERROR_UNKNOWN                  = 0x80000000  // 30th bit
 } ErrorCode;
 
@@ -72,5 +73,20 @@ void ErrorMsgAddInvalidFilename(const char *);
 void ErrorMsgPrint(void);
 void ErrorMsgClear(void);
 void ErrorBacktracePrint(void);
+
+/*******************************************************************************
+ *******************************************************************************/
+
+#define HYPREDRV_MALLOC_AND_CHECK(ptr, size)       \
+   do                                              \
+   {                                               \
+      (ptr) = malloc(size);                        \
+      if ((ptr) == NULL)                           \
+      {                                            \
+         ErrorCodeSet(ERROR_ALLOCATION);           \
+         ErrorMsgAdd("Memory allocation failed!"); \
+         return;                                   \
+      }                                            \
+   } while (0)
 
 #endif /* ERROR_H */

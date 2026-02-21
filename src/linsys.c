@@ -26,6 +26,7 @@
 #include "containers.h"
 #include "error.h"
 #include "linsys.h"
+#include "lsseq.h"
 
 static void
 HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
@@ -57,6 +58,7 @@ LinearSystemSetSuffixSet(void *field, const YAMLnode *node)
 
 static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, dirname, FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, sequence_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_basename, FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_filename, FieldTypeStringSet),
@@ -154,6 +156,7 @@ void
 LinearSystemSetDefaultArgs(LS_args *args)
 {
    args->dirname[0]           = '\0';
+   args->sequence_filename[0] = '\0';
    args->matrix_filename[0]   = '\0';
    args->matrix_basename[0]   = '\0';
    args->precmat_filename[0]  = '\0';
@@ -271,6 +274,16 @@ LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix 
 void
 LinearSystemSetNumSystems(LS_args *args)
 {
+   if (args->sequence_filename[0] != '\0')
+   {
+      int num_systems = 0;
+      if (LSSeqReadSummary(args->sequence_filename, &num_systems, NULL, NULL, NULL))
+      {
+         args->num_systems = (HYPRE_Int)num_systems;
+      }
+      return;
+   }
+
    if (args->set_suffix != NULL && args->set_suffix->size > 0)
    {
       args->num_systems = (HYPRE_Int)args->set_suffix->size;
@@ -509,6 +522,19 @@ LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix *matri
    if (*matrix_ptr)
    {
       HYPRE_IJMatrixDestroy(*matrix_ptr);
+   }
+
+   if (args->sequence_filename[0] != '\0')
+   {
+      if (!LSSeqReadMatrix(comm, args->sequence_filename, ls_id,
+                           LinearSystemMemoryLocationGet(args), matrix_ptr))
+      {
+         StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+         return;
+      }
+
+      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+      return;
    }
 
    if (!LinearSystemDataFilenameResolve(args, ls_id, args->matrix_filename,
@@ -876,13 +902,26 @@ LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
    }
    else
    {
-      char rhs_filename[MAX_FILENAME_LENGTH] = {0};
-      LinearSystemDataFilenameResolve(args, ls_id, args->rhs_filename, args->rhs_basename,
-                                      rhs_filename, sizeof(rhs_filename));
-      if (!LinearSystemRHSReadFromFile(comm, args, mat, rhs_filename, rhs_ptr))
+      if (args->sequence_filename[0] != '\0')
       {
-         StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
-         return;
+         if (!LSSeqReadRHS(comm, args->sequence_filename, ls_id,
+                           LinearSystemMemoryLocationGet(args), rhs_ptr))
+         {
+            StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
+            return;
+         }
+      }
+      else
+      {
+         char rhs_filename[MAX_FILENAME_LENGTH] = {0};
+         LinearSystemDataFilenameResolve(args, ls_id, args->rhs_filename,
+                                         args->rhs_basename, rhs_filename,
+                                         sizeof(rhs_filename));
+         if (!LinearSystemRHSReadFromFile(comm, args, mat, rhs_filename, rhs_ptr))
+         {
+            StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
+            return;
+         }
       }
    }
 
@@ -1144,6 +1183,18 @@ LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr, Stat
    if (*dofmap_ptr)
    {
       IntArrayDestroy(dofmap_ptr);
+   }
+
+   if (args->sequence_filename[0] != '\0')
+   {
+      StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
+      if (!LSSeqReadDofmap(comm, args->sequence_filename, ls_id, dofmap_ptr))
+      {
+         StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
+         return;
+      }
+      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
+      return;
    }
 
    if (args->dofmap_filename[0] == '\0' && args->dofmap_basename[0] == '\0')

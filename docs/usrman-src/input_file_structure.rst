@@ -134,6 +134,11 @@ Degrees of Freedom Map
   system data. This option helps remove possible redundancies when informing filenames
   for the linear system data. This parameter does not have a default value.
 
+- ``sequence_filename`` - (Optional) Path to a lossless-compressed sequence container
+  produced by ``hypredrive-lsseq``. When set, matrix/RHS/(optional) dofmap are read
+  from the container instead of ``dirname``/``*_filename``/``*_basename`` fields. The
+  number of systems is inferred from the container metadata.
+
 - ``matrix_basename`` - (Possibly required) Common prefix used for the filenames of linear
   system matrices. It can be used to solve multiple matrices stored in a shared
   directory. This parameter does not have a default value.
@@ -149,6 +154,10 @@ Degrees of Freedom Map
 
 - ``dofmap_basename`` - (Possibly required) Common prefix used for the filenames of
   `dofmap` arrays. This parameter does not have a default value.
+
+- ``timestep_filename`` - (Optional) File that maps timesteps to linear-system ids for
+  preconditioner reuse-by-timestep. When using ``sequence_filename``, this can be omitted
+  if timestep metadata is embedded in the compressed container.
 
 - ``init_suffix`` - (Possibly required) Suffix number of the first linear system of a
   sequence of systems to be solved. Cannot be used together with ``set_suffix``.
@@ -180,6 +189,67 @@ An example code block for the ``linear_system`` section is given below:
       rhs_mode: file
       init_guess_mode: file
       exec_policy: device
+
+Compressed sequence containers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``hypredrive-lsseq`` utility can convert a directory-based sequence into a
+single lossless container. The output filename extension identifies the low-level
+backend (for example ``.zst.bin`` or ``.zlib.bin``).
+
+Example packing command:
+
+.. code-block:: bash
+
+    # Minimal form: auto-detect suffix range + filenames from the first ls_XXXXX directory
+    hypredrive-lsseq \
+      --dirname data/poromech2k/np1 \
+      --output poromech2k_np1_lsseq
+
+    # Explicit form (overrides auto-detection)
+    hypredrive-lsseq \
+      --dirname data/poromech2k/np1/ls \
+      --matrix-filename IJ.out.A \
+      --rhs-filename IJ.out.b \
+      --dofmap-filename dofmap.out \
+      --init-suffix 0 \
+      --last-suffix 24 \
+      --algo zstd \
+      --output poromech2k_np1_lsseq
+
+Inspect metadata from an existing packed sequence:
+
+.. code-block:: bash
+
+    hypredrive-lsseq metadata \
+      --input poromech2k_np1_lsseq.zst.bin
+
+Unpack back to directory layout:
+
+.. code-block:: bash
+
+    hypredrive-lsseq unpack \
+      --input poromech2k_np1_lsseq.zst.bin \
+      --output-dir poromech2k_np1_unpacked
+
+Example use in YAML:
+
+.. code-block:: yaml
+
+    linear_system:
+      sequence_filename: poromech2k_np1_lsseq.zst.bin
+      rhs_mode: file
+
+When ``sequence_filename`` is present, hypredrive reads matrix/RHS/(optional) dofmap from
+the container. If timestep metadata is embedded in the container, preconditioner reuse by
+timestep can use it when ``timestep_filename`` is omitted.
+
+Packed sequence files use batched compression per part (one compressed blob per part for
+values, RHS, and dofmap across all systems), which yields good compression ratios. They
+embed a mandatory small manifest block (uncompressed) with provenance/debug information
+(resolved suffix range, input paths, codec, build metadata). This does not affect runtime
+reconstruction, but is useful when inspecting packed artifacts. See :ref:`utilities` for
+the internal container structure.
 
 Solver
 ------

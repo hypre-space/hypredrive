@@ -12,6 +12,7 @@
 #include "containers.h"
 #include "info.h"
 #include "linsys.h"
+#include "lsseq.h"
 #include "scaling.h"
 #include "stats.h"
 #ifdef HYPREDRV_ENABLE_CALIPER
@@ -432,9 +433,20 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
 #endif
    }
 
-   PreconReuseTimestepsLoad(&hypredrv->iargs->precon_reuse,
-                            hypredrv->iargs->ls.timestep_filename,
-                            &hypredrv->precon_reuse_timestep_starts);
+   if (hypredrv->iargs->ls.timestep_filename[0] != '\0')
+   {
+      PreconReuseTimestepsLoad(&hypredrv->iargs->precon_reuse,
+                               hypredrv->iargs->ls.timestep_filename,
+                               &hypredrv->precon_reuse_timestep_starts);
+   }
+   else if (hypredrv->iargs->ls.sequence_filename[0] != '\0' &&
+            hypredrv->iargs->precon_reuse.enabled &&
+            hypredrv->iargs->precon_reuse.per_timestep)
+   {
+      /* Embedded timesteps are optional in compressed-sequence containers. */
+      LSSeqReadTimesteps(hypredrv->iargs->ls.sequence_filename,
+                         &hypredrv->precon_reuse_timestep_starts);
+   }
 
    return ErrorCodeGet();
 }

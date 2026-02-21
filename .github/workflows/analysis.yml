@@ -122,7 +122,6 @@ jobs:
 
       - name: Run clang-tidy
         run: cmake --build $BUILD_DIR --target clang-tidy
-        continue-on-error: true
 
       - name: Upload clang-tidy report
         if: always()

@@ -36,6 +36,7 @@ option(HYPREDRV_ENABLE_DOCS     "Enable documentation generation" OFF)
 option(HYPREDRV_ENABLE_EXAMPLES "Enable the HYPREDRV examples" OFF)
 option(HYPREDRV_ENABLE_HWLOC    "Enable hwloc support for detailed system topology information" OFF)
 option(HYPREDRV_ENABLE_CALIPER  "Enable Caliper instrumentation support" OFF)
+option(HYPREDRV_ENABLE_COMPRESSION "Enable optional lossless compression backends" OFF)
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -65,6 +66,21 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 # Find and configure dependencies
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Deps.cmake)
+
+# Mirror detected optional compression backends as compile definitions so all targets
+# consistently see the same feature gates.
+if(HYPREDRV_USING_ZLIB)
+    add_compile_definitions(HYPREDRV_USING_ZLIB)
+endif()
+if(HYPREDRV_USING_ZSTD)
+    add_compile_definitions(HYPREDRV_USING_ZSTD)
+endif()
+if(HYPREDRV_USING_LZ4)
+    add_compile_definitions(HYPREDRV_USING_LZ4)
+endif()
+if(HYPREDRV_USING_BLOSC)
+    add_compile_definitions(HYPREDRV_USING_BLOSC)
+endif()
 
 # Check for headers, functions, and libraries
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Checks.cmake)
@@ -126,6 +142,15 @@ target_link_libraries(HYPREDRV PRIVATE m)
 if(HWLOC_FOUND)
     target_include_directories(HYPREDRV PRIVATE ${HWLOC_INCLUDE_DIR})
     target_link_libraries(HYPREDRV PRIVATE ${HWLOC_LIBRARY})
+endif()
+
+if(HYPREDRV_ENABLE_COMPRESSION)
+    if(HYPREDRV_COMPRESSION_INCLUDE_DIRS)
+        target_include_directories(HYPREDRV PRIVATE ${HYPREDRV_COMPRESSION_INCLUDE_DIRS})
+    endif()
+    if(HYPREDRV_COMPRESSION_LIBRARIES)
+        target_link_libraries(HYPREDRV PRIVATE ${HYPREDRV_COMPRESSION_LIBRARIES})
+    endif()
 endif()
 
 if(CALIPER_FOUND)
@@ -199,6 +224,11 @@ endif()
 # Define the main executable (hypredrive)
 add_executable(hypredrive src/main.c)
 target_link_libraries(hypredrive PRIVATE HYPREDRV::HYPREDRV)
+
+if(HYPREDRV_ENABLE_COMPRESSION)
+    add_executable(hypredrive-lsseq utils/lsseq_driver.c)
+    target_link_libraries(hypredrive-lsseq PRIVATE HYPREDRV::HYPREDRV)
+endif()
 
 # Ensure dataset-driven examples/tests have data available before running hypredrive.
 if(HYPREDRV_ENABLE_DATA AND TARGET data)
