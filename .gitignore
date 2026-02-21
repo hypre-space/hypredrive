@@ -57,6 +57,7 @@ configure.scan
 compile
 depcomp
 install-sh
+Makefile
 Makefile.in
 missing
 stamp-*
