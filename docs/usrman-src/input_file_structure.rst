@@ -244,9 +244,12 @@ When ``sequence_filename`` is present, hypredrive reads matrix/RHS/(optional) do
 the container. If timestep metadata is embedded in the container, preconditioner reuse by
 timestep can use it when ``timestep_filename`` is omitted.
 
-Packed sequence files embed a mandatory small manifest block (uncompressed) with
-provenance/debug information (resolved suffix range, input paths, codec, build metadata).
-This does not affect runtime reconstruction, but is useful when inspecting packed artifacts.
+Packed sequence files use batched compression per part (one compressed blob per part for
+values, RHS, and dofmap across all systems), which yields good compression ratios. They
+embed a mandatory small manifest block (uncompressed) with provenance/debug information
+(resolved suffix range, input paths, codec, build metadata). This does not affect runtime
+reconstruction, but is useful when inspecting packed artifacts. See :ref:`utilities` for
+the internal container structure.
 
 Solver
 ------

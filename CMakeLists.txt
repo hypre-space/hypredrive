@@ -226,7 +226,7 @@ add_executable(hypredrive src/main.c)
 target_link_libraries(hypredrive PRIVATE HYPREDRV::HYPREDRV)
 
 if(HYPREDRV_ENABLE_COMPRESSION)
-    add_executable(hypredrive-lsseq utils/lsseq_pack.c)
+    add_executable(hypredrive-lsseq utils/lsseq_driver.c)
     target_link_libraries(hypredrive-lsseq PRIVATE HYPREDRV::HYPREDRV)
 endif()
 

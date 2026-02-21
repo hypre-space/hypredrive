@@ -52,11 +52,15 @@ The container is designed around five principles:
    - This minimizes behavioral drift between directory mode and sequence-container mode.
 
 
-Internal Container Structure (v1)
----------------------------------
+Internal Container Structure
+----------------------------
 
 The format is a chunked binary container with an uncompressed metadata front matter and
-compressed payload blobs.
+compressed payload blobs. Values, RHS, and dofmap are stored as *batched* blobs: one
+compressed blob per part for all systems’ values, one per part for RHS, one per part for
+dofmap. This yields better compression than per-system-part blobs. The part blob table
+gives file offsets and sizes for each part’s batched blobs; ``LSSeqSystemPartMeta`` stores
+*decompressed* byte offset and size within that part’s blob for each system.
 
 High-level sections:
 
@@ -65,13 +69,12 @@ High-level sections:
 - ``LSSeqPartMeta[]`` (one entry per global part)
 - ``LSSeqPatternMeta[]`` (one entry per unique sparsity pattern)
 - ``LSSeqSystemPartMeta[]`` (one entry per ``(system, part)`` pair)
+- Part blob table: ``6 * num_parts`` ``uint64_t`` (offset and size for values, RHS, dof per part)
 - optional ``LSSeqTimestepEntry[]``
 - blob area (compressed payloads)
 
 Compact Offset Map
 ~~~~~~~~~~~~~~~~~~
-
-The file is laid out in this order (all offsets are byte offsets from file start):
 
 .. code-block:: text
 
@@ -87,12 +90,12 @@ The file is laid out in this order (all offsets are byte offsets from file start
    | LSSeqPatternMeta[num_patterns]|
    +------------------------------+  <- offset_sys_part_meta
    | LSSeqSystemPartMeta[systems*parts] |
+   +------------------------------+  <- offset_part_blob_table
+   | Part blob table [6*num_parts] |
    +------------------------------+  <- offset_timestep_meta (optional section)
    | LSSeqTimestepEntry[num_timesteps]   |
    +------------------------------+  <- offset_blob_data
-   | Blob #0 (compressed)         |
-   | Blob #1 (compressed)         |
-   | ...                          |
+   | Pattern blobs, then part batched blobs (vals/rhs/dof per part) |
    +------------------------------+  EOF
 
 Field-By-Field Reference
@@ -112,7 +115,7 @@ Field-By-Field Reference
      - File signature. Must equal ``LSSEQ_MAGIC``.
    * - ``version``
      - ``uint32_t``
-     - Format version. Current value is ``1``.
+     - Format version. Current value is ``1`` (batched per-part blobs).
    * - ``flags``
      - ``uint32_t``
      - Bitmask for optional sections (dofmap, timesteps, info/manifest).
@@ -146,6 +149,9 @@ Field-By-Field Reference
    * - ``offset_blob_data``
      - ``uint64_t``
      - Start of compressed blob payload region.
+   * - ``offset_part_blob_table``
+     - ``uint64_t``
+     - Start of part blob table (``6*num_parts`` ``uint64_t``).
 
 ``LSSeqInfoHeader`` (mandatory)
 
@@ -275,22 +281,22 @@ Programmatic access:
      - Number of value entries expected for matrix chunk.
    * - ``values_blob_offset``
      - ``uint64_t``
-     - Offset to compressed matrix values chunk.
+     - Decompressed byte offset within this part’s batched values blob.
    * - ``values_blob_size``
      - ``uint64_t``
-     - Compressed byte size for matrix values.
+     - Decompressed byte size (length of slice) for matrix values.
    * - ``rhs_blob_offset``
      - ``uint64_t``
-     - Offset to compressed RHS values chunk.
+     - Decompressed offset within this part’s batched RHS blob.
    * - ``rhs_blob_size``
      - ``uint64_t``
-     - Compressed byte size for RHS values.
+     - Decompressed byte size for RHS slice.
    * - ``dof_blob_offset``
      - ``uint64_t``
-     - Offset to compressed dofmap chunk (optional).
+     - Decompressed offset within this part’s batched dofmap blob.
    * - ``dof_blob_size``
      - ``uint64_t``
-     - Compressed byte size for dofmap chunk.
+     - Decompressed byte size for dofmap slice (or 0 if no dofmap).
    * - ``dof_num_entries``
      - ``uint64_t``
      - Number of dofmap entries expected after decompression.

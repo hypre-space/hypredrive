@@ -6,7 +6,7 @@ hypredrive_LDADD = libHYPREDRV.la
 laplacian_SOURCES = examples/src/C_laplacian/laplacian.c
 laplacian_LDADD = libHYPREDRV.la
 
-hypredrive_lsseq_SOURCES = utils/lsseq_pack.c
+hypredrive_lsseq_SOURCES = utils/lsseq_driver.c
 hypredrive_lsseq_LDADD = libHYPREDRV.la
 
 lib_LTLIBRARIES = libHYPREDRV.la

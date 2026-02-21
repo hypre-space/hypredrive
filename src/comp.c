@@ -135,7 +135,7 @@ hypredrv_compression_from_filename(const char *filename)
 
 void
 hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osize_ptr,
-                  void **output_ptr)
+                  void **output_ptr, int compression_level)
 {
    const size_t header_size = sizeof(uint64_t);
    size_t       comp_size   = 0;
@@ -205,8 +205,19 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
 
          *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
-         comp_size = ZSTD_compress((unsigned char *)(*output_ptr) + header_size,
-                                  comp_size, input, isize, 5);
+         {
+            int level = (compression_level < 0) ? 5 : compression_level;
+            if (level < 1)
+            {
+               level = 1;
+            }
+            if (level > 22)
+            {
+               level = 22;
+            }
+            comp_size = ZSTD_compress((unsigned char *)(*output_ptr) + header_size,
+                                      comp_size, input, isize, level);
+         }
          if (ZSTD_isError(comp_size))
          {
             ErrorCodeSet(ERROR_UNKNOWN);

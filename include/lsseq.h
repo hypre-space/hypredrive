@@ -18,7 +18,7 @@
 #include "containers.h"
 
 #define LSSEQ_MAGIC UINT64_C(0x3151534c56445248) /* "HDRVLSQ1" */
-#define LSSEQ_VERSION UINT32_C(1)
+#define LSSEQ_VERSION UINT32_C(1) /* batched blobs per part (values/rhs/dof) */
 
 enum
 {
@@ -42,7 +42,13 @@ typedef struct LSSeqHeader_struct
    uint64_t offset_sys_part_meta;
    uint64_t offset_timestep_meta;
    uint64_t offset_blob_data;
+   uint64_t offset_part_blob_table; /* v2 only: table of (offset,size)^3 per part for
+                                       values/rhs/dof */
 } LSSeqHeader;
+
+/* Part blob table (v2): 6*uint64_t per part = values_offset, values_size, rhs_offset,
+ * rhs_size, dof_offset, dof_size (relative to offset_blob_data) */
+#define LSSEQ_PART_BLOB_ENTRIES 6
 
 /* Mandatory info/manifest block written immediately after LSSeqHeader.
  * For LSSEQ_VERSION=1, LSSEQ_FLAG_HAS_INFO must be set and this header/payload

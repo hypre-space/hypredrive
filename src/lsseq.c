@@ -26,6 +26,7 @@ typedef struct LSSeqData_struct
    LSSeqPartMeta       *parts;
    LSSeqPatternMeta    *patterns;
    LSSeqSystemPartMeta *sys_parts;
+   uint64_t            *part_blob_table; /* 6*num_parts entries */
    LSSeqTimestepEntry  *timesteps;
 } LSSeqData;
 
@@ -149,6 +150,14 @@ LSSeqValidateHeader(const LSSeqHeader *header, const char *filename)
                   filename ? filename : "");
       return 0;
    }
+   if (header->offset_part_blob_table == 0)
+   {
+      ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      ErrorMsgAdd(
+         "LSSeq format requires part blob table (offset_part_blob_table) in '%s'",
+         filename ? filename : "");
+      return 0;
+   }
    if (header->num_systems == 0 || header->num_parts == 0)
    {
       ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -178,6 +187,7 @@ LSSeqDataDestroy(LSSeqData *seq)
    free(seq->parts);
    free(seq->patterns);
    free(seq->sys_parts);
+   free(seq->part_blob_table);
    free(seq->timesteps);
    memset(seq, 0, sizeof(*seq));
 }
@@ -397,6 +407,20 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
       fclose(fp);
       LSSeqDataDestroy(seq);
       return 0;
+   }
+
+   {
+      size_t pt_size = (size_t)LSSEQ_PART_BLOB_ENTRIES * (size_t)seq->header.num_parts *
+                       sizeof(uint64_t);
+      seq->part_blob_table = (uint64_t *)malloc(pt_size);
+      if (!seq->part_blob_table ||
+          !LSSeqReadAt(fp, seq->header.offset_part_blob_table, seq->part_blob_table,
+                       pt_size, "part blob table"))
+      {
+         fclose(fp);
+         LSSeqDataDestroy(seq);
+         return 0;
+      }
    }
 
    if (seq->timesteps &&
@@ -668,6 +692,61 @@ LSSeqReadBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size,
 
    *output      = decoded;
    *output_size = decoded_size;
+   return 1;
+}
+
+/* v2 only: read a slice from a part's batched blob (slot: 0=values, 1=rhs, 2=dof) */
+static int
+LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
+                       const uint64_t *part_blob_table, uint32_t part_id, int slot,
+                       uint64_t decomp_offset, uint64_t decomp_size, void **output,
+                       size_t *output_size)
+{
+   uint64_t c_off, c_size;
+   void    *decoded      = NULL;
+   size_t   decoded_size = 0;
+   void    *slice        = NULL;
+
+   if (!fp || !part_blob_table || !output || !output_size || slot < 0 || slot > 2)
+   {
+      return 0;
+   }
+   *output      = NULL;
+   *output_size = 0;
+   c_off =
+      part_blob_table[(size_t)part_id * LSSEQ_PART_BLOB_ENTRIES + (size_t)(slot * 2)];
+   c_size =
+      part_blob_table[(size_t)part_id * LSSEQ_PART_BLOB_ENTRIES + (size_t)(slot * 2) + 1];
+   if (c_size == 0)
+   {
+      if (decomp_size != 0)
+      {
+         return 0;
+      }
+      return 1;
+   }
+   if (!LSSeqReadBlob(fp, codec, blob_base + c_off, c_size, 0, &decoded, &decoded_size))
+   {
+      return 0;
+   }
+   if (decomp_offset + decomp_size > (uint64_t)decoded_size)
+   {
+      free(decoded);
+      return 0;
+   }
+   slice = malloc((size_t)decomp_size);
+   if (!slice)
+   {
+      free(decoded);
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate slice buffer (%llu bytes)",
+                  (unsigned long long)decomp_size);
+      return 0;
+   }
+   memcpy(slice, (const char *)decoded + (size_t)decomp_offset, (size_t)decomp_size);
+   free(decoded);
+   *output      = slice;
+   *output_size = (size_t)decomp_size;
    return 1;
 }
 
@@ -950,8 +1029,10 @@ LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
       }
 
       expected_size = (size_t)sys->nnz * (size_t)part->value_size;
-      if (!LSSeqReadBlob(fp, (comp_alg_t)seq.header.codec, sys->values_blob_offset,
-                         sys->values_blob_size, expected_size, &vals, &vals_size))
+      if (!LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq.header.codec,
+                                  seq.header.offset_blob_data, seq.part_blob_table,
+                                  part_id, 0, sys->values_blob_offset,
+                                  sys->values_blob_size, &vals, &vals_size))
       {
          free(rows);
          free(cols);
@@ -1062,8 +1143,10 @@ LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
       size_t vals_size     = 0;
       size_t expected_size = (size_t)part->nrows * (size_t)part->value_size;
 
-      if (!LSSeqReadBlob(fp, (comp_alg_t)seq.header.codec, sys->rhs_blob_offset,
-                         sys->rhs_blob_size, expected_size, &vals, &vals_size))
+      if (!LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq.header.codec,
+                                  seq.header.offset_blob_data, seq.part_blob_table,
+                                  part_id, 1, sys->rhs_blob_offset, sys->rhs_blob_size,
+                                  &vals, &vals_size))
       {
          free(vals);
          goto cleanup;
@@ -1195,12 +1278,13 @@ LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id, IntArray **dofma
          goto cleanup;
       }
 
-      if (sys->dof_blob_size > 0 && sys->dof_num_entries > 0)
+      if (sys->dof_num_entries > 0)
       {
          size_t expected_size = (size_t)sys->dof_num_entries * sizeof(int32_t);
-         if (!LSSeqReadBlob(fp, (comp_alg_t)seq.header.codec, sys->dof_blob_offset,
-                            sys->dof_blob_size, expected_size, (void **)&dof_data,
-                            &dof_size))
+         if (!LSSeqReadPartBlobSlice(
+                fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
+                seq.part_blob_table, part_id, 2, sys->dof_blob_offset,
+                (uint64_t)expected_size, (void **)&dof_data, &dof_size))
          {
             fclose(out);
             free(dof_data);

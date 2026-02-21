@@ -164,6 +164,7 @@ write_test_container_with_info(const char *filename)
    int32_t             dof0[2]  = {0, 1};
    int32_t             dof1[2]  = {1, 1};
    uint64_t            blob_offset;
+   uint64_t            part_blob_table[LSSEQ_PART_BLOB_ENTRIES];
    FILE               *fp = fopen(filename, "wb");
 
    ASSERT_NOT_NULL(fp);
@@ -186,10 +187,12 @@ write_test_container_with_info(const char *filename)
 
    header.offset_part_meta =
       sizeof(LSSeqHeader) + sizeof(LSSeqInfoHeader) + (uint64_t)(sizeof(payload) - 1u);
-   header.offset_pattern_meta  = header.offset_part_meta + sizeof(part_meta);
-   header.offset_sys_part_meta = header.offset_pattern_meta + sizeof(pattern_meta);
-   header.offset_timestep_meta = header.offset_sys_part_meta + sizeof(sys_meta);
-   header.offset_blob_data     = header.offset_timestep_meta + sizeof(timesteps);
+   header.offset_pattern_meta     = header.offset_part_meta + sizeof(part_meta);
+   header.offset_sys_part_meta    = header.offset_pattern_meta + sizeof(pattern_meta);
+   header.offset_part_blob_table = header.offset_sys_part_meta + sizeof(sys_meta);
+   header.offset_timestep_meta    = header.offset_part_blob_table +
+                                 (uint64_t)(1 * LSSEQ_PART_BLOB_ENTRIES * sizeof(uint64_t));
+   header.offset_blob_data = header.offset_timestep_meta + sizeof(timesteps);
 
    info.magic               = LSSEQ_INFO_MAGIC;
    info.version             = LSSEQ_INFO_VERSION;
@@ -207,8 +210,8 @@ write_test_container_with_info(const char *filename)
 
    blob_offset = header.offset_blob_data;
 
-   pattern_meta[0].part_id         = 0;
-   pattern_meta[0].nnz             = 2;
+   pattern_meta[0].part_id          = 0;
+   pattern_meta[0].nnz              = 2;
    pattern_meta[0].rows_blob_offset = blob_offset;
    pattern_meta[0].rows_blob_size   = sizeof(rows0);
    blob_offset += sizeof(rows0);
@@ -216,8 +219,8 @@ write_test_container_with_info(const char *filename)
    pattern_meta[0].cols_blob_size   = sizeof(cols0);
    blob_offset += sizeof(cols0);
 
-   pattern_meta[1].part_id         = 0;
-   pattern_meta[1].nnz             = 3;
+   pattern_meta[1].part_id          = 0;
+   pattern_meta[1].nnz              = 3;
    pattern_meta[1].rows_blob_offset = blob_offset;
    pattern_meta[1].rows_blob_size   = sizeof(rows1);
    blob_offset += sizeof(rows1);
@@ -225,31 +228,38 @@ write_test_container_with_info(const char *filename)
    pattern_meta[1].cols_blob_size   = sizeof(cols1);
    blob_offset += sizeof(cols1);
 
-   sys_meta[0].pattern_id         = 0;
-   sys_meta[0].nnz                = 2;
-   sys_meta[0].values_blob_offset = blob_offset;
-   sys_meta[0].values_blob_size   = sizeof(vals0);
-   blob_offset += sizeof(vals0);
-   sys_meta[0].rhs_blob_offset    = blob_offset;
-   sys_meta[0].rhs_blob_size      = sizeof(rhs0);
-   blob_offset += sizeof(rhs0);
-   sys_meta[0].dof_blob_offset    = blob_offset;
-   sys_meta[0].dof_blob_size      = sizeof(dof0);
-   sys_meta[0].dof_num_entries    = 2;
-   blob_offset += sizeof(dof0);
+   {
+      uint64_t pattern_size = blob_offset - header.offset_blob_data;
+      part_blob_table[0] = pattern_size;
+      part_blob_table[1] = sizeof(vals0) + sizeof(vals1);
+      part_blob_table[2] = pattern_size + part_blob_table[1];
+      part_blob_table[3] = sizeof(rhs0) + sizeof(rhs1);
+      part_blob_table[4] = part_blob_table[2] + part_blob_table[3];
+      part_blob_table[5] = sizeof(dof0) + sizeof(dof1);
 
-   sys_meta[1].pattern_id         = 1;
-   sys_meta[1].nnz                = 3;
-   sys_meta[1].values_blob_offset = blob_offset;
-   sys_meta[1].values_blob_size   = sizeof(vals1);
-   blob_offset += sizeof(vals1);
-   sys_meta[1].rhs_blob_offset    = blob_offset;
-   sys_meta[1].rhs_blob_size      = sizeof(rhs1);
-   blob_offset += sizeof(rhs1);
-   sys_meta[1].dof_blob_offset    = blob_offset;
-   sys_meta[1].dof_blob_size      = sizeof(dof1);
-   sys_meta[1].dof_num_entries    = 2;
-   blob_offset += sizeof(dof1);
+      sys_meta[0].pattern_id         = 0;
+      sys_meta[0].nnz                = 2;
+      sys_meta[0].values_blob_offset = 0;
+      sys_meta[0].values_blob_size   = sizeof(vals0);
+      sys_meta[0].rhs_blob_offset    = 0;
+      sys_meta[0].rhs_blob_size     = sizeof(rhs0);
+      sys_meta[0].dof_blob_offset   = 0;
+      sys_meta[0].dof_blob_size     = sizeof(dof0);
+      sys_meta[0].dof_num_entries   = 2;
+
+      sys_meta[1].pattern_id         = 1;
+      sys_meta[1].nnz                = 3;
+      sys_meta[1].values_blob_offset = sizeof(vals0);
+      sys_meta[1].values_blob_size  = sizeof(vals1);
+      sys_meta[1].rhs_blob_offset   = sizeof(rhs0);
+      sys_meta[1].rhs_blob_size     = sizeof(rhs1);
+      sys_meta[1].dof_blob_offset   = sizeof(dof0);
+      sys_meta[1].dof_blob_size     = sizeof(dof1);
+      sys_meta[1].dof_num_entries   = 2;
+
+      blob_offset = header.offset_blob_data + pattern_size + part_blob_table[1] +
+                    part_blob_table[3] + part_blob_table[5];
+   }
 
    timesteps[0].timestep = 0;
    timesteps[0].ls_start = 0;
@@ -264,17 +274,19 @@ write_test_container_with_info(const char *filename)
    ASSERT_EQ(fwrite(part_meta, sizeof(part_meta), 1, fp), 1);
    ASSERT_EQ(fwrite(pattern_meta, sizeof(pattern_meta), 1, fp), 1);
    ASSERT_EQ(fwrite(sys_meta, sizeof(sys_meta), 1, fp), 1);
+   ASSERT_EQ(fwrite(part_blob_table, sizeof(part_blob_table), 1, fp), 1);
    ASSERT_EQ(fwrite(timesteps, sizeof(timesteps), 1, fp), 1);
 
+   /* Blobs: pattern then batched part 0 (vals, rhs, dof) */
    ASSERT_EQ(fwrite(rows0, sizeof(rows0), 1, fp), 1);
    ASSERT_EQ(fwrite(cols0, sizeof(cols0), 1, fp), 1);
    ASSERT_EQ(fwrite(rows1, sizeof(rows1), 1, fp), 1);
    ASSERT_EQ(fwrite(cols1, sizeof(cols1), 1, fp), 1);
    ASSERT_EQ(fwrite(vals0, sizeof(vals0), 1, fp), 1);
-   ASSERT_EQ(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
-   ASSERT_EQ(fwrite(dof0, sizeof(dof0), 1, fp), 1);
    ASSERT_EQ(fwrite(vals1, sizeof(vals1), 1, fp), 1);
+   ASSERT_EQ(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
    ASSERT_EQ(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
+   ASSERT_EQ(fwrite(dof0, sizeof(dof0), 1, fp), 1);
    ASSERT_EQ(fwrite(dof1, sizeof(dof1), 1, fp), 1);
 
    fclose(fp);

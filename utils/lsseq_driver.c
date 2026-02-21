@@ -68,6 +68,7 @@ typedef struct PackArgs_struct
    HYPRE_Int last_suffix;
    HYPRE_Int digits_suffix;
    comp_alg_t algo;
+   int       compression_level; /* -1 = default (e.g. ZSTD 5) */
    int       init_suffix_set;
    int       last_suffix_set;
    int       digits_suffix_set;
@@ -86,10 +87,11 @@ PackArgsSetDefaults(PackArgs *args)
       return;
    }
    memset(args, 0, sizeof(*args));
-   args->init_suffix  = 0;
-   args->last_suffix  = -1;
-   args->digits_suffix = 5;
-   args->algo         = COMP_ZSTD;
+   args->init_suffix       = 0;
+   args->last_suffix      = -1;
+   args->digits_suffix    = 5;
+   args->algo             = COMP_ZSTD;
+   args->compression_level = -1;
 }
 
 static int
@@ -224,6 +226,10 @@ ParseArgs(int argc, char **argv, PackArgs *args)
          }
          args->algo_set = 1;
       }
+      else if (!strcmp(argv[i], "--compression-level"))
+      {
+         args->compression_level = (int)strtol(argv[++i], NULL, 10);
+      }
       else
       {
          fprintf(stderr, "Unknown option '%s'\n", argv[i]);
@@ -270,6 +276,7 @@ PrintUsage(const char *prog)
            "  --digits-suffix <n>        Digits in ls_XXXXX directory suffix (default: 5)\n"
            "  --algo <codec>             Compression codec:\n"
            "                               none|zlib|zstd|lz4|lz4hc|blosc (default: zstd)\n"
+           "  --compression-level <n>   Level 1-22 for zstd; -1 = default (5)\n"
            "\n"
            "Examples:\n"
            "  %s --dirname hypre-data_lidcavity_Re100_16x16_4x4 --output lidcavity_lsseq\n"
@@ -1268,8 +1275,8 @@ PatternHash(const MatrixPartRaw *raw, uint32_t part_id)
 }
 
 static int
-PackWriteBlob(FILE *blob_fp, comp_alg_t algo, const void *data, size_t size,
-              uint64_t *cursor, uint64_t *offset, uint64_t *blob_size)
+PackWriteBlob(FILE *blob_fp, comp_alg_t algo, int compression_level, const void *data,
+              size_t size, uint64_t *cursor, uint64_t *offset, uint64_t *blob_size)
 {
    void  *comp_data = NULL;
    size_t comp_size = 0;
@@ -1288,7 +1295,7 @@ PackWriteBlob(FILE *blob_fp, comp_alg_t algo, const void *data, size_t size,
 
    ErrorCodeResetAll();
    ErrorMsgClear();
-   hypredrv_compress(algo, size, data, &comp_size, &comp_data);
+   hypredrv_compress(algo, size, data, &comp_size, &comp_data, compression_level);
    if (ErrorCodeActive() || !comp_data)
    {
       if (ErrorCodeActive())
@@ -1308,6 +1315,31 @@ PackWriteBlob(FILE *blob_fp, comp_alg_t algo, const void *data, size_t size,
    *cursor += (uint64_t)comp_size;
    free(comp_data);
    return 1;
+}
+
+static void
+FormatBytesHuman(unsigned long long bytes, char *buf, size_t buf_size)
+{
+   if (!buf || buf_size == 0)
+   {
+      return;
+   }
+   if (bytes >= 1024ULL * 1024ULL * 1024ULL)
+   {
+      snprintf(buf, buf_size, "%.2f GB", (double)bytes / (1024.0 * 1024.0 * 1024.0));
+   }
+   else if (bytes >= 1024ULL * 1024ULL)
+   {
+      snprintf(buf, buf_size, "%.2f MB", (double)bytes / (1024.0 * 1024.0));
+   }
+   else if (bytes >= 1024ULL)
+   {
+      snprintf(buf, buf_size, "%.2f KB", (double)bytes / 1024.0);
+   }
+   else
+   {
+      snprintf(buf, buf_size, "%llu B", (unsigned long long)bytes);
+   }
 }
 
 static int
@@ -1414,6 +1446,51 @@ ComputePartRange(int num_parts, int nprocs, int rank, int *start_part, int *num_
    {
       *num_local_parts = count;
    }
+}
+
+/* Append raw bytes to a growable buffer (for v2 batched part buffers). */
+static int
+BufAppendRaw(void **buf_ptr, size_t *len_ptr, size_t *cap_ptr, const void *data, size_t data_len)
+{
+   void  *buf = NULL;
+   size_t len = 0, cap = 0;
+   size_t need = 0;
+
+   if (!buf_ptr || !len_ptr || !cap_ptr || !data_len)
+   {
+      return (data_len == 0) ? 1 : 0;
+   }
+   buf = *buf_ptr;
+   len = *len_ptr;
+   cap = *cap_ptr;
+   need = len + data_len;
+   if (need > cap || !buf)
+   {
+      size_t new_cap = (cap > 0 && cap <= SIZE_MAX / 2) ? (2u * cap) : 4096u;
+      while (new_cap < need && new_cap <= SIZE_MAX / 2)
+      {
+         new_cap *= 2u;
+      }
+      if (new_cap < need)
+      {
+         new_cap = need;
+      }
+      {
+         void *tmp = realloc(buf, new_cap);
+         if (!tmp)
+         {
+            return 0;
+         }
+         buf = tmp;
+         cap = new_cap;
+      }
+   }
+   memcpy((char *)buf + len, data, data_len);
+   len += data_len;
+   *buf_ptr = buf;
+   *len_ptr = len;
+   *cap_ptr = cap;
+   return 1;
 }
 
 static int
@@ -2860,6 +2937,32 @@ main(int argc, char **argv)
    char dof_prefix[MAX_FILENAME_LENGTH];
    int  want_dofmap = (args.dofmap_filename[0] != '\0');
 
+   /* v2 batched: one buffer per (local part, type) for values/rhs/dof */
+   typedef struct
+   {
+      void  *ptr;
+      size_t len;
+      size_t cap;
+   } PartBuf;
+   PartBuf  *part_vals = NULL;
+   PartBuf  *part_rhs  = NULL;
+   PartBuf  *part_dof  = NULL;
+   uint64_t *local_part_blob_sizes = NULL; /* 3*local_nparts: vals, rhs, dof per part */
+   uint64_t  local_pattern_blob_ull = 0;  /* cursor after pattern blobs only */
+
+   if (local_nparts > 0)
+   {
+      part_vals = (PartBuf *)calloc((size_t)local_nparts, sizeof(*part_vals));
+      part_rhs  = (PartBuf *)calloc((size_t)local_nparts, sizeof(*part_rhs));
+      part_dof  = (PartBuf *)calloc((size_t)local_nparts, sizeof(*part_dof));
+      local_part_blob_sizes = (uint64_t *)calloc((size_t)local_nparts * 3u, sizeof(uint64_t));
+      if (!part_vals || !part_rhs || !part_dof || !local_part_blob_sizes)
+      {
+         fprintf(stderr, "[lsseq][pack][rank %d] Allocation failure for v2 part buffers\n", myid);
+         MPI_Abort(comm, 1);
+      }
+   }
+
    for (int s = 0; s < num_systems; s++)
    {
       int suffix = (int)args.init_suffix + s;
@@ -2963,10 +3066,10 @@ main(int argc, char **argv)
             entry.hash         = phash;
             entry.meta.part_id = (uint32_t)global_p;
             entry.meta.nnz     = Araw.nnz;
-            if (!PackWriteBlob(blob_fp, args.algo, Araw.rows,
+            if (!PackWriteBlob(blob_fp, args.algo, args.compression_level, Araw.rows,
                                (size_t)Araw.nnz * (size_t)Araw.row_index_size, &blob_cursor,
                                &entry.meta.rows_blob_offset, &entry.meta.rows_blob_size) ||
-                !PackWriteBlob(blob_fp, args.algo, Araw.cols,
+                !PackWriteBlob(blob_fp, args.algo, args.compression_level, Araw.cols,
                                (size_t)Araw.nnz * (size_t)Araw.row_index_size, &blob_cursor,
                                &entry.meta.cols_blob_offset, &entry.meta.cols_blob_size))
             {
@@ -3008,41 +3111,48 @@ main(int argc, char **argv)
 
          sp->pattern_id = (uint32_t)pattern_id;
          sp->nnz        = Araw.nnz;
-         if (!PackWriteBlob(blob_fp, args.algo, Araw.vals,
-                            (size_t)Araw.nnz * (size_t)Araw.value_size, &blob_cursor,
-                            &sp->values_blob_offset, &sp->values_blob_size) ||
-             !PackWriteBlob(blob_fp, args.algo, braw.vals,
-                            (size_t)braw.nrows * (size_t)braw.value_size, &blob_cursor,
-                            &sp->rhs_blob_offset, &sp->rhs_blob_size))
-         {
-            fprintf(stderr,
-                    "[lsseq][pack][rank %d] Failed to write compressed matrix/RHS value blob\n",
-                    myid);
-            MatrixPartRawDestroy(&Araw);
-            RHSPartRawDestroy(&braw);
-            DofPartRawDestroy(&draw);
-            MPI_Abort(comm, 1);
-         }
-         local_raw_blob_ull +=
-            (unsigned long long)((size_t)Araw.nnz * (size_t)Araw.value_size);
-         local_raw_blob_ull +=
-            (unsigned long long)((size_t)braw.nrows * (size_t)braw.value_size);
 
-         sp->dof_num_entries = draw.num_entries;
-         if (draw.num_entries > 0)
+         /* v2 batched: append to per-part buffers; store decompressed offset/size in sys_meta */
          {
-            if (!PackWriteBlob(blob_fp, args.algo, draw.vals,
-                               (size_t)draw.num_entries * sizeof(int32_t), &blob_cursor,
-                               &sp->dof_blob_offset, &sp->dof_blob_size))
+            size_t vsz = (size_t)Araw.nnz * (size_t)Araw.value_size;
+            size_t rsz = (size_t)braw.nrows * (size_t)braw.value_size;
+            size_t dsz = (size_t)draw.num_entries * sizeof(int32_t);
+            sp->values_blob_offset = (uint64_t)part_vals[lp].len;
+            sp->values_blob_size   = (uint64_t)vsz;
+            sp->rhs_blob_offset   = (uint64_t)part_rhs[lp].len;
+            sp->rhs_blob_size     = (uint64_t)rsz;
+            sp->dof_num_entries  = draw.num_entries;
+            if (dsz > 0)
             {
-               fprintf(stderr, "[lsseq][pack][rank %d] Failed to write compressed dofmap blob\n",
-                       myid);
+               sp->dof_blob_offset = (uint64_t)part_dof[lp].len;
+               sp->dof_blob_size   = (uint64_t)dsz;
+            }
+            if (!BufAppendRaw(&part_vals[lp].ptr, &part_vals[lp].len, &part_vals[lp].cap,
+                             Araw.vals, vsz) ||
+                !BufAppendRaw(&part_rhs[lp].ptr, &part_rhs[lp].len, &part_rhs[lp].cap,
+                             braw.vals, rsz))
+            {
                MatrixPartRawDestroy(&Araw);
                RHSPartRawDestroy(&braw);
                DofPartRawDestroy(&draw);
+               fprintf(stderr, "[lsseq][pack][rank %d] Failed to append to part buffers\n", myid);
                MPI_Abort(comm, 1);
             }
-            local_raw_blob_ull += (unsigned long long)((size_t)draw.num_entries * sizeof(int32_t));
+            if (dsz > 0 &&
+                !BufAppendRaw(&part_dof[lp].ptr, &part_dof[lp].len, &part_dof[lp].cap,
+                             draw.vals, dsz))
+            {
+               MatrixPartRawDestroy(&Araw);
+               RHSPartRawDestroy(&braw);
+               DofPartRawDestroy(&draw);
+               fprintf(stderr, "[lsseq][pack][rank %d] Failed to append dof to part buffer\n", myid);
+               MPI_Abort(comm, 1);
+            }
+            local_raw_blob_ull += (unsigned long long)vsz + (unsigned long long)rsz;
+            if (dsz > 0)
+            {
+               local_raw_blob_ull += (unsigned long long)dsz;
+            }
          }
 
          MatrixPartRawDestroy(&Araw);
@@ -3050,6 +3160,50 @@ main(int argc, char **argv)
          DofPartRawDestroy(&draw);
       }
    }
+
+   local_pattern_blob_ull = (unsigned long long)blob_cursor;
+
+   /* v2: write batched part blobs (one compressed blob per part per type) */
+   for (int lp = 0; lp < local_nparts; lp++)
+   {
+      uint64_t voff = 0, vsz = 0, roff = 0, rsz = 0, doff = 0, dsz = 0;
+      if (part_vals[lp].len > 0 &&
+          !PackWriteBlob(blob_fp, args.algo, args.compression_level, part_vals[lp].ptr,
+                         part_vals[lp].len, &blob_cursor, &voff, &vsz))
+      {
+         fprintf(stderr, "[lsseq][pack][rank %d] Failed to write batched values blob for part %d\n",
+                 myid, local_start + lp);
+         MPI_Abort(comm, 1);
+      }
+      local_part_blob_sizes[(size_t)lp * 3u + 0u] = vsz;
+      if (part_rhs[lp].len > 0 &&
+          !PackWriteBlob(blob_fp, args.algo, args.compression_level, part_rhs[lp].ptr,
+                         part_rhs[lp].len, &blob_cursor, &roff, &rsz))
+      {
+         fprintf(stderr, "[lsseq][pack][rank %d] Failed to write batched RHS blob for part %d\n",
+                 myid, local_start + lp);
+         MPI_Abort(comm, 1);
+      }
+      local_part_blob_sizes[(size_t)lp * 3u + 1u] = rsz;
+      if (part_dof[lp].len > 0 &&
+          !PackWriteBlob(blob_fp, args.algo, args.compression_level, part_dof[lp].ptr,
+                         part_dof[lp].len, &blob_cursor, &doff, &dsz))
+      {
+         fprintf(stderr, "[lsseq][pack][rank %d] Failed to write batched dofmap blob for part %d\n",
+                 myid, local_start + lp);
+         MPI_Abort(comm, 1);
+      }
+      local_part_blob_sizes[(size_t)lp * 3u + 2u] = dsz;
+   }
+   for (int lp = 0; lp < local_nparts; lp++)
+   {
+      free(part_vals[lp].ptr);
+      free(part_rhs[lp].ptr);
+      free(part_dof[lp].ptr);
+   }
+   free(part_vals);
+   free(part_rhs);
+   free(part_dof);
 
    /* Compute global pattern and blob offsets in rank order. */
    unsigned int local_patterns_u = (unsigned int)num_patterns_local;
@@ -3090,18 +3244,7 @@ main(int argc, char **argv)
    {
       LSSeqSystemPartMeta *meta = &sys_meta_local[i];
       meta->pattern_id += (uint32_t)pattern_base;
-      if (meta->values_blob_size > 0)
-      {
-         meta->values_blob_offset += (uint64_t)blob_base_ull;
-      }
-      if (meta->rhs_blob_size > 0)
-      {
-         meta->rhs_blob_offset += (uint64_t)blob_base_ull;
-      }
-      if (meta->dof_blob_size > 0)
-      {
-         meta->dof_blob_offset += (uint64_t)blob_base_ull;
-      }
+      /* v2: values/rhs/dof offsets are decompressed offsets within part blobs; do not add blob_base */
    }
 
    printf("[lsseq][pack][rank %d] local patterns=%u local blob bytes=%llu\n", myid, local_patterns_u,
@@ -3269,6 +3412,102 @@ main(int argc, char **argv)
                   MPI_BYTE, NULL, NULL, NULL, MPI_BYTE, 0, comm);
    }
 
+   /* Gather part blob sizes (v2) so root can build part_blob_table. */
+   uint64_t *part_blob_table = NULL;
+   {
+      int      sendcount = 1 + 3 * local_nparts;
+      uint64_t *sendbuf_sizes =
+         (uint64_t *)malloc((size_t)(sendcount > 0 ? sendcount : 1) * sizeof(uint64_t));
+      if (!sendbuf_sizes)
+      {
+         fprintf(stderr, "[lsseq][pack][rank %d] Allocation failure for size gather buffer\n", myid);
+         MPI_Abort(comm, 1);
+      }
+      sendbuf_sizes[0] = local_pattern_blob_ull;
+      if (local_nparts > 0)
+      {
+         memcpy(sendbuf_sizes + 1, local_part_blob_sizes,
+                (size_t)(3 * local_nparts) * sizeof(uint64_t));
+      }
+      if (!myid)
+      {
+         int *recvcounts_sz = (int *)calloc((size_t)nprocs, sizeof(int));
+         int *displs_sz     = (int *)calloc((size_t)nprocs, sizeof(int));
+         if (!recvcounts_sz || !displs_sz)
+         {
+            free(sendbuf_sizes);
+            fprintf(stderr, "Allocation failure for part blob size gather\n");
+            MPI_Abort(comm, 1);
+         }
+         int total_recv = 0;
+         for (int r = 0; r < nprocs; r++)
+         {
+            int start_r = 0, count_r = 0;
+            ComputePartRange(num_parts, nprocs, r, &start_r, &count_r);
+            recvcounts_sz[r] = 1 + 3 * count_r;
+            displs_sz[r]    = total_recv;
+            total_recv += recvcounts_sz[r];
+         }
+         uint64_t *recvbuf_sz =
+            (uint64_t *)malloc((size_t)(total_recv > 0 ? total_recv : 1) * sizeof(uint64_t));
+         if (!recvbuf_sz)
+         {
+            free(recvcounts_sz);
+            free(displs_sz);
+            free(sendbuf_sizes);
+            fprintf(stderr, "Allocation failure for part blob size recv buffer\n");
+            MPI_Abort(comm, 1);
+         }
+         MPI_Gatherv(sendbuf_sizes, sendcount, MPI_UNSIGNED_LONG_LONG, recvbuf_sz, recvcounts_sz,
+                     displs_sz, MPI_UNSIGNED_LONG_LONG, 0, comm);
+         part_blob_table =
+            (uint64_t *)calloc((size_t)num_parts * (size_t)LSSEQ_PART_BLOB_ENTRIES,
+                               sizeof(uint64_t));
+         if (!part_blob_table)
+         {
+            free(recvbuf_sz);
+            free(recvcounts_sz);
+            free(displs_sz);
+            free(sendbuf_sizes);
+            fprintf(stderr, "Allocation failure for part blob table\n");
+            MPI_Abort(comm, 1);
+         }
+         {
+            uint64_t cursor = 0;
+            for (int r = 0; r < nprocs; r++)
+            {
+               int start_r = 0, count_r = 0;
+               ComputePartRange(num_parts, nprocs, r, &start_r, &count_r);
+               cursor += recvbuf_sz[displs_sz[r]]; /* skip this rank's pattern blobs */
+               for (int local_p = 0; local_p < count_r; local_p++)
+               {
+                  int p   = start_r + local_p;
+                  int idx = displs_sz[r] + 1 + local_p * 3;
+                  part_blob_table[(size_t)p * LSSEQ_PART_BLOB_ENTRIES + 0] = cursor;
+                  part_blob_table[(size_t)p * LSSEQ_PART_BLOB_ENTRIES + 1] = recvbuf_sz[idx];
+                  cursor += recvbuf_sz[idx];
+                  part_blob_table[(size_t)p * LSSEQ_PART_BLOB_ENTRIES + 2] = cursor;
+                  part_blob_table[(size_t)p * LSSEQ_PART_BLOB_ENTRIES + 3] = recvbuf_sz[idx + 1];
+                  cursor += recvbuf_sz[idx + 1];
+                  part_blob_table[(size_t)p * LSSEQ_PART_BLOB_ENTRIES + 4] = cursor;
+                  part_blob_table[(size_t)p * LSSEQ_PART_BLOB_ENTRIES + 5] = recvbuf_sz[idx + 2];
+                  cursor += recvbuf_sz[idx + 2];
+               }
+            }
+         }
+         free(recvbuf_sz);
+         free(recvcounts_sz);
+         free(displs_sz);
+      }
+      else
+      {
+         MPI_Gatherv(sendbuf_sizes, sendcount, MPI_UNSIGNED_LONG_LONG, NULL, NULL, NULL,
+                     MPI_UNSIGNED_LONG_LONG, 0, comm);
+      }
+      free(sendbuf_sizes);
+   }
+   free(local_part_blob_sizes);
+
    /* Root writes the final output file and receives blob payloads from other ranks. */
    if (!myid)
    {
@@ -3344,17 +3583,23 @@ main(int argc, char **argv)
       off_info    = sizeof(LSSeqHeader);
       off_part    = off_info + (uint64_t)sizeof(LSSeqInfoHeader) + (uint64_t)info_payload_size;
       off_pattern = off_part + (uint64_t)num_parts * (uint64_t)sizeof(LSSeqPartMeta);
-      off_sys =
-         off_pattern + (uint64_t)global_patterns_u * (uint64_t)sizeof(LSSeqPatternMeta);
-      off_time = off_sys + (uint64_t)num_systems * (uint64_t)num_parts *
-                            (uint64_t)sizeof(LSSeqSystemPartMeta);
-      off_blob = off_time + (uint64_t)num_timesteps * (uint64_t)sizeof(LSSeqTimestepEntry);
+      off_sys     = off_pattern +
+                (uint64_t)global_patterns_u * (uint64_t)sizeof(LSSeqPatternMeta);
+      {
+         uint64_t off_part_blob_table =
+            off_sys + (uint64_t)num_systems * (uint64_t)num_parts *
+                         (uint64_t)sizeof(LSSeqSystemPartMeta);
+         off_time = off_part_blob_table +
+                    (uint64_t)num_parts * (uint64_t)LSSEQ_PART_BLOB_ENTRIES * sizeof(uint64_t);
+         off_blob = off_time + (uint64_t)num_timesteps * (uint64_t)sizeof(LSSeqTimestepEntry);
 
-      header.offset_part_meta     = off_part;
-      header.offset_pattern_meta  = off_pattern;
-      header.offset_sys_part_meta = off_sys;
-      header.offset_timestep_meta = off_time;
-      header.offset_blob_data     = off_blob;
+         header.offset_part_meta      = off_part;
+         header.offset_pattern_meta  = off_pattern;
+         header.offset_sys_part_meta  = off_sys;
+         header.offset_part_blob_table = off_part_blob_table;
+         header.offset_timestep_meta  = off_time;
+         header.offset_blob_data      = off_blob;
+      }
 
       if (fwrite(&header, sizeof(header), 1, out) != 1 ||
           fwrite(&info_header, sizeof(info_header), 1, out) != 1 ||
@@ -3388,24 +3633,23 @@ main(int argc, char **argv)
       for (int i = 0; i < num_systems * num_parts; i++)
       {
          LSSeqSystemPartMeta meta = sys_meta_global[i];
-         if (meta.values_blob_size > 0)
-         {
-            meta.values_blob_offset += off_blob;
-         }
-         if (meta.rhs_blob_size > 0)
-         {
-            meta.rhs_blob_offset += off_blob;
-         }
-         if (meta.dof_blob_size > 0)
-         {
-            meta.dof_blob_offset += off_blob;
-         }
+         /* v2: values/rhs/dof are decompressed offsets; do not add off_blob */
          if (fwrite(&meta, sizeof(meta), 1, out) != 1)
          {
             fprintf(stderr, "Could not write output system-part metadata\n");
             MPI_Abort(comm, 1);
          }
       }
+
+      if (fwrite(part_blob_table,
+                 sizeof(uint64_t),
+                 (size_t)num_parts * (size_t)LSSEQ_PART_BLOB_ENTRIES,
+                 out) != (size_t)num_parts * (size_t)LSSEQ_PART_BLOB_ENTRIES)
+      {
+         fprintf(stderr, "Could not write part blob table\n");
+         MPI_Abort(comm, 1);
+      }
+      free(part_blob_table);
 
       if (num_timesteps > 0 &&
           fwrite(timesteps, sizeof(LSSeqTimestepEntry), num_timesteps, out) != num_timesteps)
@@ -3464,13 +3708,23 @@ main(int argc, char **argv)
       free(timesteps);
       free(info_payload);
 
-      printf("Wrote sequence file: %s\n", output_filename);
-      printf("  systems: %d\n", num_systems);
-      printf("  parts: %d\n", num_parts);
-      printf("  unique patterns: %u\n", global_patterns_u);
-      printf("  codec: %s\n", hypredrv_compression_get_name(args.algo));
-      printf("  blob bytes: %llu\n", global_blob_ull);
-      printf("  raw blob bytes: %llu\n", global_raw_blob_ull);
+      {
+         char hbuf[32];
+         printf("Wrote sequence file: %s\n", output_filename);
+         printf("  systems: %d\n", num_systems);
+         printf("  parts: %d\n", num_parts);
+         printf("  unique patterns: %u\n", global_patterns_u);
+         printf("  codec: %s\n", hypredrv_compression_get_name(args.algo));
+         if (args.algo == COMP_ZSTD)
+         {
+            int level = args.compression_level < 0 ? 5 : args.compression_level;
+            printf("  compression level: %d\n", level);
+         }
+         FormatBytesHuman(global_blob_ull, hbuf, sizeof(hbuf));
+         printf("  blob bytes: %llu (%s)\n", global_blob_ull, hbuf);
+         FormatBytesHuman(global_raw_blob_ull, hbuf, sizeof(hbuf));
+         printf("  raw blob bytes: %llu (%s)\n", global_raw_blob_ull, hbuf);
+      }
       if (global_blob_ull > 0)
       {
          double ratio = (double)global_raw_blob_ull / (double)global_blob_ull;

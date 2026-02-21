@@ -24,8 +24,9 @@ const char *hypredrv_compression_get_name(comp_alg_t algo);
 const char *hypredrv_compression_get_extension(comp_alg_t algo);
 comp_alg_t  hypredrv_compression_from_filename(const char *filename);
 
+/* compression_level: algorithm-dependent; use -1 for default. ZSTD: 1-22, -1=5. */
 void hypredrv_compress(comp_alg_t algo, size_t isize, const void *input,
-                       size_t *osize_ptr, void **output_ptr);
+                       size_t *osize_ptr, void **output_ptr, int compression_level);
 void hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input,
                          size_t *osize_ptr, void **output_ptr);
 

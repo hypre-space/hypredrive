@@ -23,7 +23,7 @@ run_roundtrip(comp_alg_t algo)
 
    ErrorCodeResetAll();
    ErrorMsgClear();
-   hypredrv_compress(algo, nbytes, input, &compressed_size, &compressed);
+   hypredrv_compress(algo, nbytes, input, &compressed_size, &compressed, -1);
    if (ErrorCodeGet() & ERROR_MISSING_LIB)
    {
       ErrorCodeResetAll();
