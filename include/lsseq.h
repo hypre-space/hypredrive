@@ -48,7 +48,10 @@ typedef struct LSSeqHeader_struct
 
 /* Part blob table (v2): 6*uint64_t per part = values_offset, values_size, rhs_offset,
  * rhs_size, dof_offset, dof_size (relative to offset_blob_data) */
-#define LSSEQ_PART_BLOB_ENTRIES 6
+enum
+{
+   LSSEQ_PART_BLOB_ENTRIES = 6
+};
 
 /* Mandatory info/manifest block written immediately after LSSeqHeader.
  * For LSSEQ_VERSION=1, LSSEQ_FLAG_HAS_INFO must be set and this header/payload

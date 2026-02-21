@@ -137,6 +137,7 @@ void
 hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osize_ptr,
                   void **output_ptr, int compression_level)
 {
+   (void)compression_level; /* used only for ZSTD and optionally other codecs */
    const size_t header_size = sizeof(uint64_t);
    size_t       comp_size   = 0;
 
