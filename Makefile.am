@@ -1,4 +1,4 @@
-bin_PROGRAMS = hypredrive laplacian
+bin_PROGRAMS = hypredrive laplacian hypredrive-lsseq
 hypredrive_SOURCES = src/main.c
 hypredrive_LDADD = libHYPREDRV.la
 
@@ -6,12 +6,15 @@ hypredrive_LDADD = libHYPREDRV.la
 laplacian_SOURCES = examples/src/C_laplacian/laplacian.c
 laplacian_LDADD = libHYPREDRV.la
 
+hypredrive_lsseq_SOURCES = utils/lsseq_pack.c
+hypredrive_lsseq_LDADD = libHYPREDRV.la
+
 lib_LTLIBRARIES = libHYPREDRV.la
 libHYPREDRV_la_SOURCES = src/error.c src/eigspec.c src/info.c src/stats.c src/utils.c src/containers.c src/yaml.c\
                          src/field.c src/vector.c src/matrix.c src/linsys.c src/cheby.c src/amg.c\
                          src/fsai.c src/ilu.c src/mgr.c src/precon.c src/presets.c src/nested_krylov.c\
 			 src/pcg.c src/gmres.c src/fgmres.c src/bicgstab.c src/solver.c src/args.c \
-                         src/scaling.c src/HYPREDRV.c
+                         src/comp.c src/lsseq.c src/scaling.c src/HYPREDRV.c
 libHYPREDRV_la_CFLAGS = $(AM_CPPFLAGS) -fvisibility=hidden
 libHYPREDRV_la_LDFLAGS = -version-info 0:1:0
 
@@ -19,7 +22,7 @@ include_HEADERS = include/HYPREDRV.h
 ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS = -I$(top_srcdir)/include
 
-EXTRA_DIST = autogen.sh docs/Makefile docs/README.md docs/usrman-src docs/usrman-hypredrive.pdf docs/devman-hypredrive.pdf data examples
+EXTRA_DIST = autogen.sh docs/Makefile docs/README.md docs/usrman-src docs/usrman-hypredrive.pdf docs/devman-hypredrive.pdf data examples utils
 MOSTLYCLEANFILES =
 
 @DX_RULES@

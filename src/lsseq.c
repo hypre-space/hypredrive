@@ -42,8 +42,8 @@ LSSeqBuildPartOrder(const LSSeqData *seq, uint32_t **order_ptr)
       return 0;
    }
    *order_ptr = NULL;
-   n = seq->header.num_parts;
-   order = (uint32_t *)malloc((size_t)n * sizeof(*order));
+   n          = seq->header.num_parts;
+   order      = (uint32_t *)malloc((size_t)n * sizeof(*order));
    if (!order)
    {
       ErrorCodeSet(ERROR_ALLOCATION);
@@ -59,13 +59,13 @@ LSSeqBuildPartOrder(const LSSeqData *seq, uint32_t **order_ptr)
    /* Stable insertion sort by row_lower then row_upper. */
    for (uint32_t i = 1; i < n; i++)
    {
-      uint32_t key = order[i];
+      uint32_t key    = order[i];
       uint64_t key_lo = seq->parts[key].row_lower;
       uint64_t key_hi = seq->parts[key].row_upper;
-      int      j = (int)i - 1;
+      int      j      = (int)i - 1;
       while (j >= 0)
       {
-         uint32_t cur = order[(size_t)j];
+         uint32_t cur    = order[(size_t)j];
          uint64_t cur_lo = seq->parts[cur].row_lower;
          uint64_t cur_hi = seq->parts[cur].row_upper;
          if (cur_lo < key_lo || (cur_lo == key_lo && cur_hi <= key_hi))
@@ -858,10 +858,10 @@ LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
                 HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr)
 {
    LSSeqData seq;
-   FILE     *fp      = NULL;
-   int      *partids = NULL;
+   FILE     *fp         = NULL;
+   int      *partids    = NULL;
    uint32_t *part_order = NULL;
-   int       nparts  = 0;
+   int       nparts     = 0;
    char      prefix[MAX_FILENAME_LENGTH];
    char      part_filename[MAX_FILENAME_LENGTH];
    int       ok = 0;
@@ -913,10 +913,10 @@ LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    for (int i = 0; i < nparts; i++)
    {
       uint32_t                   tmp_part_id = (uint32_t)partids[i];
-      uint32_t                   part_id = part_order[tmp_part_id];
-      const LSSeqPartMeta       *part    = &seq.parts[part_id];
+      uint32_t                   part_id     = part_order[tmp_part_id];
+      const LSSeqPartMeta       *part        = &seq.parts[part_id];
       const LSSeqSystemPartMeta *sys =
-         &seq.sys_parts[(size_t)ls_id * (size_t)seq.header.num_parts + (size_t)part_id];
+         &seq.sys_parts[((size_t)ls_id * (size_t)seq.header.num_parts) + (size_t)part_id];
       void                   *rows = NULL, *cols = NULL, *vals = NULL;
       size_t                  rows_size = 0, cols_size = 0, vals_size = 0;
       const LSSeqPatternMeta *pattern       = NULL;
@@ -999,10 +999,10 @@ LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
              HYPRE_MemoryLocation memory_location, HYPRE_IJVector *rhs_ptr)
 {
    LSSeqData seq;
-   FILE     *fp      = NULL;
-   int      *partids = NULL;
+   FILE     *fp         = NULL;
+   int      *partids    = NULL;
    uint32_t *part_order = NULL;
-   int       nparts  = 0;
+   int       nparts     = 0;
    char      prefix[MAX_FILENAME_LENGTH];
    char      part_filename[MAX_FILENAME_LENGTH];
    int       ok = 0;
@@ -1054,10 +1054,10 @@ LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
    for (int i = 0; i < nparts; i++)
    {
       uint32_t                   tmp_part_id = (uint32_t)partids[i];
-      uint32_t                   part_id = part_order[tmp_part_id];
-      const LSSeqPartMeta       *part    = &seq.parts[part_id];
+      uint32_t                   part_id     = part_order[tmp_part_id];
+      const LSSeqPartMeta       *part        = &seq.parts[part_id];
       const LSSeqSystemPartMeta *sys =
-         &seq.sys_parts[(size_t)ls_id * (size_t)seq.header.num_parts + (size_t)part_id];
+         &seq.sys_parts[((size_t)ls_id * (size_t)seq.header.num_parts) + (size_t)part_id];
       void  *vals          = NULL;
       size_t vals_size     = 0;
       size_t expected_size = (size_t)part->nrows * (size_t)part->value_size;
@@ -1103,10 +1103,10 @@ int
 LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id, IntArray **dofmap_ptr)
 {
    LSSeqData seq;
-   FILE     *fp      = NULL;
-   int      *partids = NULL;
-    uint32_t *part_order = NULL;
-   int       nparts  = 0;
+   FILE     *fp         = NULL;
+   int      *partids    = NULL;
+   uint32_t *part_order = NULL;
+   int       nparts     = 0;
    char      prefix[MAX_FILENAME_LENGTH];
    char      part_filename[MAX_FILENAME_LENGTH];
    int       myid = 0, root_pid = 0;
@@ -1179,9 +1179,9 @@ LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id, IntArray **dofma
    for (int i = 0; i < nparts; i++)
    {
       uint32_t                   tmp_part_id = (uint32_t)partids[i];
-      uint32_t                   part_id = part_order[tmp_part_id];
+      uint32_t                   part_id     = part_order[tmp_part_id];
       const LSSeqSystemPartMeta *sys =
-         &seq.sys_parts[(size_t)ls_id * (size_t)seq.header.num_parts + (size_t)part_id];
+         &seq.sys_parts[((size_t)ls_id * (size_t)seq.header.num_parts) + (size_t)part_id];
       int32_t *dof_data = NULL;
       size_t   dof_size = 0;
       FILE    *out      = NULL;

@@ -206,7 +206,7 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
          *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
          comp_size = ZSTD_compress((unsigned char *)(*output_ptr) + header_size,
-                                   comp_size, input, isize, 1);
+                                  comp_size, input, isize, 5);
          if (ZSTD_isError(comp_size))
          {
             ErrorCodeSet(ERROR_UNKNOWN);

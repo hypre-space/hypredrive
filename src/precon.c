@@ -287,7 +287,7 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    }
 
    /* Shorthand: reuse: <int> */
-   if (!parent->children && parent->val && strcmp(parent->val, ""))
+   if (!parent->children && parent->val && strcmp(parent->val, "") != 0)
    {
       if (sscanf(parent->val, "%d", &args->frequency) != 1)
       {
