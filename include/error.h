@@ -77,15 +77,16 @@ void ErrorBacktracePrint(void);
 /*******************************************************************************
  *******************************************************************************/
 
-#define HYPREDRV_MALLOC_AND_CHECK(ptr, size)            \
-    do {                                                \
-        (ptr) = malloc(size);                           \
-        if ((ptr) == NULL)                              \
-        {                                               \
-            ErrorCodeSet(ERROR_ALLOCATION);             \
-            ErrorMsgAdd("Memory allocation failed!");   \
-            return;                                     \
-        }                                               \
-    } while (0)
+#define HYPREDRV_MALLOC_AND_CHECK(ptr, size)       \
+   do                                              \
+   {                                               \
+      (ptr) = malloc(size);                        \
+      if ((ptr) == NULL)                           \
+      {                                            \
+         ErrorCodeSet(ERROR_ALLOCATION);           \
+         ErrorMsgAdd("Memory allocation failed!"); \
+         return;                                   \
+      }                                            \
+   } while (0)
 
 #endif /* ERROR_H */

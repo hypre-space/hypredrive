@@ -5,35 +5,28 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "error.h"
+#ifndef COMP_HEADER
+#define COMP_HEADER
 
-#ifdef HYPREDRV_USING_ZLIB
-#include <zlib.h>
-#endif
+#include <stddef.h>
 
-#ifdef HYPREDRV_USING_ZSTD
-#include <zstd.h>
-#endif
-
-#ifdef HYPREDRV_USING_LZ4
-#include <lz4.h>
-#include <lz4hc.h>
-#endif
-
-#ifdef HYPREDRV_USING_BLOSC
-#include <blosc.h>
-#endif
-
-/* Enum to identify the compression algorithm */
 typedef enum
 {
-   COMP_NONE,
-   COMP_ZLIB,
-   COMP_ZSTD,
-   COMP_LZ4,
-   COMP_LZ4HC,
-   COMP_BLOSC
+   COMP_NONE  = 0,
+   COMP_ZLIB  = 1,
+   COMP_ZSTD  = 2,
+   COMP_LZ4   = 3,
+   COMP_LZ4HC = 4,
+   COMP_BLOSC = 5
 } comp_alg_t;
+
+const char *hypredrv_compression_get_name(comp_alg_t algo);
+const char *hypredrv_compression_get_extension(comp_alg_t algo);
+comp_alg_t  hypredrv_compression_from_filename(const char *filename);
+
+void hypredrv_compress(comp_alg_t algo, size_t isize, const void *input,
+                       size_t *osize_ptr, void **output_ptr);
+void hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input,
+                         size_t *osize_ptr, void **output_ptr);
+
+#endif /* COMP_HEADER */

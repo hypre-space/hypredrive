@@ -87,6 +87,18 @@
 /* Define to 1 if Caliper instrumentation is enabled. */
 #cmakedefine HYPREDRV_USING_CALIPER
 
+/* Define to 1 if zlib compression support is enabled. */
+#cmakedefine HYPREDRV_USING_ZLIB
+
+/* Define to 1 if zstd compression support is enabled. */
+#cmakedefine HYPREDRV_USING_ZSTD
+
+/* Define to 1 if lz4 compression support is enabled. */
+#cmakedefine HYPREDRV_USING_LZ4
+
+/* Define to 1 if blosc compression support is enabled. */
+#cmakedefine HYPREDRV_USING_BLOSC
+
 /* Name of package */
 #cmakedefine PACKAGE "@PACKAGE_NAME@"
 

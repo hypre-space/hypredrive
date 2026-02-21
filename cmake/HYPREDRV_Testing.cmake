@@ -317,6 +317,30 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             EXTRA_ARGS --general:num_repetitions 5
             REQUIRE_CONTAINS ${_cli_reps5_require_contains}
         )
+        if(HYPREDRV_ENABLE_COMPRESSION AND TARGET hypredrive-lsseq-pack AND HYPREDRV_HAVE_HYPRE_30000_DEV0)
+            add_test(NAME hypredrive_test_ex7_sequence_pack
+                COMMAND ${CMAKE_COMMAND}
+                        -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+                        -DTARGET_BIN=$<TARGET_FILE:hypredrive>
+                        -DPACKER_BIN=$<TARGET_FILE:hypredrive-lsseq-pack>
+                        -DSEQ_OUTPUT=${CMAKE_BINARY_DIR}/poromech2k_lsseq_test.bin
+                        -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+                        -DMPI_NUMPROCS=1
+                        -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+                        -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+                        -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+                        -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7.yml
+                        "-DREQUIRE_CONTAINS:STRING=Solving linear system #2"
+                        -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_PackAndRunScript.cmake
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            )
+            set_tests_properties(hypredrive_test_ex7_sequence_pack
+                PROPERTIES
+                FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
+                SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+                LABELS "integration;hypredrive"
+            )
+        endif()
         if (HYPREDRV_HAVE_HYPRE_23000_DEV0)
             add_hypredrive_test(ex1b_1proc 1 ex1b.yml)
         endif()

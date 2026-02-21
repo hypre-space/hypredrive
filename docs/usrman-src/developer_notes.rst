@@ -13,6 +13,16 @@ It explains how the CI is structured, how to reproduce checks locally, and what
 options and targets are available in CMake to enable these workflows. New
 contributors should read this once before opening their first PR.
 
+Utilities
+---------
+
+The utility-specific documentation is maintained in a dedicated chapter:
+
+.. toctree::
+   :maxdepth: 2
+
+   utilities
+
 
 CI Overview
 -----------
