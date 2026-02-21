@@ -79,24 +79,24 @@ Compact Offset Map
 .. code-block:: text
 
    0
-   +------------------------------+
-   | LSSeqHeader                  |
-   +------------------------------+
-   | LSSeqInfoHeader (mandatory)  |
-   | + manifest payload (mandatory)|
-   +------------------------------+  <- offset_part_meta
-   | LSSeqPartMeta[num_parts]     |
-   +------------------------------+  <- offset_pattern_meta
-   | LSSeqPatternMeta[num_patterns]|
-   +------------------------------+  <- offset_sys_part_meta
+   +------------------------------------+
+   | LSSeqHeader                        |
+   +------------------------------------+
+   | LSSeqInfoHeader + manifest payload |
+   +------------------------------------+  <- offset_part_meta
+   | LSSeqPartMeta[num_parts]           |
+   +------------------------------------+  <- offset_pattern_meta
+   | LSSeqPatternMeta[num_patterns]     |
+   +------------------------------------+  <- offset_sys_part_meta
    | LSSeqSystemPartMeta[systems*parts] |
-   +------------------------------+  <- offset_part_blob_table
-   | Part blob table [6*num_parts] |
-   +------------------------------+  <- offset_timestep_meta (optional section)
-   | LSSeqTimestepEntry[num_timesteps]   |
-   +------------------------------+  <- offset_blob_data
-   | Pattern blobs, then part batched blobs (vals/rhs/dof per part) |
-   +------------------------------+  EOF
+   +------------------------------------+  <- offset_part_blob_table
+   | Part blob table [6*num_parts]      |
+   +------------------------------------+  <- offset_timestep_meta (optional)
+   | LSSeqTimestepEntry[num_timesteps]  |
+   +------------------------------------+  <- offset_blob_data
+   | Pattern blobs,                     |
+   | part batched blobs (vals/rhs/dof)  |
+   +------------------------------------+  EOF
 
 Field-By-Field Reference
 ~~~~~~~~~~~~~~~~~~~~~~~~
