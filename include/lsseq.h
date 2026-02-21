@@ -44,8 +44,9 @@ typedef struct LSSeqHeader_struct
    uint64_t offset_blob_data;
 } LSSeqHeader;
 
-/* Optional info/manifest block written immediately after LSSeqHeader when
- * LSSEQ_FLAG_HAS_INFO is set.
+/* Mandatory info/manifest block written immediately after LSSeqHeader.
+ * For LSSEQ_VERSION=1, LSSEQ_FLAG_HAS_INFO must be set and this header/payload
+ * must be present.
  *
  * The payload is stored as UTF-8 key/value lines (one "key=value" per line).
  * This block is intended for provenance/debuggability, not for runtime parsing. */

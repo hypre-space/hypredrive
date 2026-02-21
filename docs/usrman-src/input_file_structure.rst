@@ -135,7 +135,7 @@ Degrees of Freedom Map
   for the linear system data. This parameter does not have a default value.
 
 - ``sequence_filename`` - (Optional) Path to a lossless-compressed sequence container
-  produced by ``hypredrive-lsseq-pack``. When set, matrix/RHS/(optional) dofmap are read
+  produced by ``hypredrive-lsseq``. When set, matrix/RHS/(optional) dofmap are read
   from the container instead of ``dirname``/``*_filename``/``*_basename`` fields. The
   number of systems is inferred from the container metadata.
 
@@ -193,7 +193,7 @@ An example code block for the ``linear_system`` section is given below:
 Compressed sequence containers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The ``hypredrive-lsseq-pack`` utility can convert a directory-based sequence into a
+The ``hypredrive-lsseq`` utility can convert a directory-based sequence into a
 single lossless container. The output filename extension identifies the low-level
 backend (for example ``.zst.bin`` or ``.zlib.bin``).
 
@@ -202,12 +202,12 @@ Example packing command:
 .. code-block:: bash
 
     # Minimal form: auto-detect suffix range + filenames from the first ls_XXXXX directory
-    hypredrive-lsseq-pack \
+    hypredrive-lsseq \
       --dirname data/poromech2k/np1 \
       --output poromech2k_np1_lsseq
 
     # Explicit form (overrides auto-detection)
-    hypredrive-lsseq-pack \
+    hypredrive-lsseq \
       --dirname data/poromech2k/np1/ls \
       --matrix-filename IJ.out.A \
       --rhs-filename IJ.out.b \
@@ -216,6 +216,21 @@ Example packing command:
       --last-suffix 24 \
       --algo zstd \
       --output poromech2k_np1_lsseq
+
+Inspect metadata from an existing packed sequence:
+
+.. code-block:: bash
+
+    hypredrive-lsseq metadata \
+      --input poromech2k_np1_lsseq.zst.bin
+
+Unpack back to directory layout:
+
+.. code-block:: bash
+
+    hypredrive-lsseq unpack \
+      --input poromech2k_np1_lsseq.zst.bin \
+      --output-dir poromech2k_np1_unpacked
 
 Example use in YAML:
 
@@ -229,9 +244,9 @@ When ``sequence_filename`` is present, hypredrive reads matrix/RHS/(optional) do
 the container. If timestep metadata is embedded in the container, preconditioner reuse by
 timestep can use it when ``timestep_filename`` is omitted.
 
-Packed sequence files may also embed an optional small manifest block (uncompressed) with
+Packed sequence files embed a mandatory small manifest block (uncompressed) with
 provenance/debug information (resolved suffix range, input paths, codec, build metadata).
-This does not affect runtime reconstruction, but can be useful when inspecting packed artifacts.
+This does not affect runtime reconstruction, but is useful when inspecting packed artifacts.
 
 Solver
 ------

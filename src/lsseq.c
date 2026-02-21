@@ -29,6 +29,59 @@ typedef struct LSSeqData_struct
    LSSeqTimestepEntry  *timesteps;
 } LSSeqData;
 
+static int
+LSSeqBuildPartOrder(const LSSeqData *seq, uint32_t **order_ptr)
+{
+   uint32_t *order = NULL;
+   uint32_t  n     = 0;
+
+   if (!seq || !order_ptr)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Invalid arguments for LSSeqBuildPartOrder");
+      return 0;
+   }
+   *order_ptr = NULL;
+   n = seq->header.num_parts;
+   order = (uint32_t *)malloc((size_t)n * sizeof(*order));
+   if (!order)
+   {
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate LSSeq part order (%u entries)", n);
+      return 0;
+   }
+
+   for (uint32_t i = 0; i < n; i++)
+   {
+      order[i] = i;
+   }
+
+   /* Stable insertion sort by row_lower then row_upper. */
+   for (uint32_t i = 1; i < n; i++)
+   {
+      uint32_t key = order[i];
+      uint64_t key_lo = seq->parts[key].row_lower;
+      uint64_t key_hi = seq->parts[key].row_upper;
+      int      j = (int)i - 1;
+      while (j >= 0)
+      {
+         uint32_t cur = order[(size_t)j];
+         uint64_t cur_lo = seq->parts[cur].row_lower;
+         uint64_t cur_hi = seq->parts[cur].row_upper;
+         if (cur_lo < key_lo || (cur_lo == key_lo && cur_hi <= key_hi))
+         {
+            break;
+         }
+         order[(size_t)j + 1u] = cur;
+         j--;
+      }
+      order[(size_t)j + 1u] = key;
+   }
+
+   *order_ptr = order;
+   return 1;
+}
+
 static uint64_t
 LSSeqFNV1a64(const void *data, size_t nbytes, uint64_t hash)
 {
@@ -163,10 +216,17 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
       return 0;
    }
 
-   if (seq->header.flags & LSSEQ_FLAG_HAS_INFO)
    {
       uint64_t expected_min_part_offset = info_offset + (uint64_t)sizeof(LSSeqInfoHeader);
       uint64_t expected_payload_end     = 0;
+
+      if (!(seq->header.flags & LSSEQ_FLAG_HAS_INFO))
+      {
+         fclose(fp);
+         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         ErrorMsgAdd("Missing mandatory LSSeq info header in '%s'", filename);
+         return 0;
+      }
 
       if (seq->header.offset_part_meta < expected_min_part_offset)
       {
@@ -402,6 +462,8 @@ LSSeqReadInfo(const char *filename, char **payload_ptr, size_t *payload_size)
    if (!(header.flags & LSSEQ_FLAG_HAS_INFO))
    {
       fclose(fp);
+      ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      ErrorMsgAdd("Missing mandatory LSSeq info header in '%s'", filename);
       return 0;
    }
 
@@ -798,6 +860,7 @@ LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    LSSeqData seq;
    FILE     *fp      = NULL;
    int      *partids = NULL;
+   uint32_t *part_order = NULL;
    int       nparts  = 0;
    char      prefix[MAX_FILENAME_LENGTH];
    char      part_filename[MAX_FILENAME_LENGTH];
@@ -829,6 +892,12 @@ LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
       LSSeqDataDestroy(&seq);
       return 0;
    }
+   if (!LSSeqBuildPartOrder(&seq, &part_order))
+   {
+      free(partids);
+      LSSeqDataDestroy(&seq);
+      return 0;
+   }
 
    fp = fopen(filename, "rb");
    if (!fp)
@@ -843,7 +912,8 @@ LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    LSSeqTempPrefixBuild(comm, ls_id, "A", prefix, sizeof(prefix));
    for (int i = 0; i < nparts; i++)
    {
-      uint32_t                   part_id = (uint32_t)partids[i];
+      uint32_t                   tmp_part_id = (uint32_t)partids[i];
+      uint32_t                   part_id = part_order[tmp_part_id];
       const LSSeqPartMeta       *part    = &seq.parts[part_id];
       const LSSeqSystemPartMeta *sys =
          &seq.sys_parts[(size_t)ls_id * (size_t)seq.header.num_parts + (size_t)part_id];
@@ -889,7 +959,7 @@ LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
          goto cleanup;
       }
 
-      snprintf(part_filename, sizeof(part_filename), "%s.%05u.bin", prefix, part_id);
+      snprintf(part_filename, sizeof(part_filename), "%s.%05u.bin", prefix, tmp_part_id);
       if (!LSSeqWriteMatrixPartFile(part_filename, part, pattern, rows, cols, vals))
       {
          free(rows);
@@ -918,6 +988,7 @@ cleanup:
       fclose(fp);
    }
    LSSeqCleanupPartFiles(prefix, partids, nparts, ".bin");
+   free(part_order);
    free(partids);
    LSSeqDataDestroy(&seq);
    return ok;
@@ -930,6 +1001,7 @@ LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
    LSSeqData seq;
    FILE     *fp      = NULL;
    int      *partids = NULL;
+   uint32_t *part_order = NULL;
    int       nparts  = 0;
    char      prefix[MAX_FILENAME_LENGTH];
    char      part_filename[MAX_FILENAME_LENGTH];
@@ -961,6 +1033,12 @@ LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
       LSSeqDataDestroy(&seq);
       return 0;
    }
+   if (!LSSeqBuildPartOrder(&seq, &part_order))
+   {
+      free(partids);
+      LSSeqDataDestroy(&seq);
+      return 0;
+   }
 
    fp = fopen(filename, "rb");
    if (!fp)
@@ -975,7 +1053,8 @@ LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
    LSSeqTempPrefixBuild(comm, ls_id, "b", prefix, sizeof(prefix));
    for (int i = 0; i < nparts; i++)
    {
-      uint32_t                   part_id = (uint32_t)partids[i];
+      uint32_t                   tmp_part_id = (uint32_t)partids[i];
+      uint32_t                   part_id = part_order[tmp_part_id];
       const LSSeqPartMeta       *part    = &seq.parts[part_id];
       const LSSeqSystemPartMeta *sys =
          &seq.sys_parts[(size_t)ls_id * (size_t)seq.header.num_parts + (size_t)part_id];
@@ -990,7 +1069,7 @@ LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
          goto cleanup;
       }
 
-      snprintf(part_filename, sizeof(part_filename), "%s.%05u.bin", prefix, part_id);
+      snprintf(part_filename, sizeof(part_filename), "%s.%05u.bin", prefix, tmp_part_id);
       if (!LSSeqWriteRHSPartFile(part_filename, part, vals))
       {
          free(vals);
@@ -1014,6 +1093,7 @@ cleanup:
       fclose(fp);
    }
    LSSeqCleanupPartFiles(prefix, partids, nparts, ".bin");
+   free(part_order);
    free(partids);
    LSSeqDataDestroy(&seq);
    return ok;
@@ -1025,9 +1105,11 @@ LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id, IntArray **dofma
    LSSeqData seq;
    FILE     *fp      = NULL;
    int      *partids = NULL;
+    uint32_t *part_order = NULL;
    int       nparts  = 0;
    char      prefix[MAX_FILENAME_LENGTH];
    char      part_filename[MAX_FILENAME_LENGTH];
+   int       myid = 0, root_pid = 0;
    int       ok = 0;
 
    if (!dofmap_ptr)
@@ -1068,6 +1150,12 @@ LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id, IntArray **dofma
       LSSeqDataDestroy(&seq);
       return 0;
    }
+   if (!LSSeqBuildPartOrder(&seq, &part_order))
+   {
+      free(partids);
+      LSSeqDataDestroy(&seq);
+      return 0;
+   }
 
    fp = fopen(filename, "rb");
    if (!fp)
@@ -1079,17 +1167,26 @@ LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id, IntArray **dofma
       return 0;
    }
 
-   LSSeqTempPrefixBuild(comm, ls_id, "dof", prefix, sizeof(prefix));
+   prefix[0] = '\0';
+   MPI_Comm_rank(comm, &myid);
+   if (!myid)
+   {
+      root_pid = (int)getpid();
+   }
+   MPI_Bcast(&root_pid, 1, MPI_INT, 0, comm);
+   snprintf(prefix, sizeof(prefix), "/tmp/hypredrv_lsseq_dof_%d_%d", root_pid, ls_id);
+
    for (int i = 0; i < nparts; i++)
    {
-      uint32_t                   part_id = (uint32_t)partids[i];
+      uint32_t                   tmp_part_id = (uint32_t)partids[i];
+      uint32_t                   part_id = part_order[tmp_part_id];
       const LSSeqSystemPartMeta *sys =
          &seq.sys_parts[(size_t)ls_id * (size_t)seq.header.num_parts + (size_t)part_id];
       int32_t *dof_data = NULL;
       size_t   dof_size = 0;
       FILE    *out      = NULL;
 
-      snprintf(part_filename, sizeof(part_filename), "%s.%05u", prefix, part_id);
+      snprintf(part_filename, sizeof(part_filename), "%s.%05u", prefix, tmp_part_id);
       out = fopen(part_filename, "w");
       if (!out)
       {
@@ -1121,6 +1218,8 @@ LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id, IntArray **dofma
       free(dof_data);
    }
 
+   /* Ensure all rank-local dof files are visible before parallel read. */
+   MPI_Barrier(comm);
    IntArrayParRead(comm, prefix, dofmap_ptr);
    if (ErrorCodeActive() || !*dofmap_ptr)
    {
@@ -1130,11 +1229,19 @@ LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id, IntArray **dofma
    ok = 1;
 
 cleanup:
+   if (ok)
+   {
+      MPI_Barrier(comm);
+   }
    if (fp)
    {
       fclose(fp);
    }
-   LSSeqCleanupPartFiles(prefix, partids, nparts, "");
+   if (prefix[0] != '\0')
+   {
+      LSSeqCleanupPartFiles(prefix, partids, nparts, "");
+   }
+   free(part_order);
    free(partids);
    LSSeqDataDestroy(&seq);
    return ok;

@@ -317,12 +317,12 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             EXTRA_ARGS --general:num_repetitions 5
             REQUIRE_CONTAINS ${_cli_reps5_require_contains}
         )
-        if(HYPREDRV_ENABLE_COMPRESSION AND TARGET hypredrive-lsseq-pack AND HYPREDRV_HAVE_HYPRE_30000_DEV0)
+        if(HYPREDRV_ENABLE_COMPRESSION AND TARGET hypredrive-lsseq AND HYPREDRV_HAVE_HYPRE_30000_DEV0)
             add_test(NAME hypredrive_test_ex7_sequence_pack
                 COMMAND ${CMAKE_COMMAND}
                         -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
                         -DTARGET_BIN=$<TARGET_FILE:hypredrive>
-                        -DPACKER_BIN=$<TARGET_FILE:hypredrive-lsseq-pack>
+                        -DPACKER_BIN=$<TARGET_FILE:hypredrive-lsseq>
                         -DSEQ_OUTPUT=${CMAKE_BINARY_DIR}/poromech2k_lsseq_test.bin
                         -DMPIEXEC=${MPIEXEC_EXECUTABLE}
                         -DMPI_NUMPROCS=1

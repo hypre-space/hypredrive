@@ -226,8 +226,8 @@ add_executable(hypredrive src/main.c)
 target_link_libraries(hypredrive PRIVATE HYPREDRV::HYPREDRV)
 
 if(HYPREDRV_ENABLE_COMPRESSION)
-    add_executable(hypredrive-lsseq-pack utils/lsseq_pack.c)
-    target_link_libraries(hypredrive-lsseq-pack PRIVATE HYPREDRV::HYPREDRV)
+    add_executable(hypredrive-lsseq utils/lsseq_pack.c)
+    target_link_libraries(hypredrive-lsseq PRIVATE HYPREDRV::HYPREDRV)
 endif()
 
 # Ensure dataset-driven examples/tests have data available before running hypredrive.

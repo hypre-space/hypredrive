@@ -16,7 +16,7 @@ Overview
 
 The sequence-compression workflow has two components:
 
-- ``hypredrive-lsseq-pack`` (offline utility):
+- ``hypredrive-lsseq`` (offline utility):
   - Reads a sequence of IJ multipart files from a directory-based layout.
   - Packs the sequence into one lossless binary container.
 - Runtime decompressor (inside hypredrive):
@@ -61,7 +61,7 @@ compressed payload blobs.
 High-level sections:
 
 - ``LSSeqHeader`` (fixed-size)
-- optional ``LSSeqInfoHeader`` + UTF-8 manifest payload (provenance/debug block)
+- mandatory ``LSSeqInfoHeader`` + UTF-8 manifest payload (provenance/debug block)
 - ``LSSeqPartMeta[]`` (one entry per global part)
 - ``LSSeqPatternMeta[]`` (one entry per unique sparsity pattern)
 - ``LSSeqSystemPartMeta[]`` (one entry per ``(system, part)`` pair)
@@ -79,8 +79,8 @@ The file is laid out in this order (all offsets are byte offsets from file start
    +------------------------------+
    | LSSeqHeader                  |
    +------------------------------+
-   | LSSeqInfoHeader (optional)   |
-   | + manifest payload (optional)|
+   | LSSeqInfoHeader (mandatory)  |
+   | + manifest payload (mandatory)|
    +------------------------------+  <- offset_part_meta
    | LSSeqPartMeta[num_parts]     |
    +------------------------------+  <- offset_pattern_meta
@@ -147,12 +147,12 @@ Field-By-Field Reference
      - ``uint64_t``
      - Start of compressed blob payload region.
 
-``LSSeqInfoHeader`` (optional)
+``LSSeqInfoHeader`` (mandatory)
 
-When ``LSSEQ_FLAG_HAS_INFO`` is set in ``LSSeqHeader.flags``, the file stores an
-``LSSeqInfoHeader`` immediately after ``LSSeqHeader``. It is followed by a small, uncompressed
-UTF-8 manifest payload that records provenance/debug information (resolved input paths, suffix
-range, codec, build metadata, etc).
+For ``LSSEQ_VERSION=1``, ``LSSEQ_FLAG_HAS_INFO`` must be set in ``LSSeqHeader.flags`` and the
+file must store an ``LSSeqInfoHeader`` immediately after ``LSSeqHeader``. It is followed by a
+small, uncompressed UTF-8 manifest payload that records provenance/debug information (resolved
+input paths, suffix range, codec, build metadata, etc).
 
 The manifest payload format is a sequence of ``key=value`` lines (one per line).
 
@@ -387,7 +387,7 @@ Build with compression enabled:
 
    cmake -S . -B build \
      -DHYPREDRV_ENABLE_COMPRESSION=ON
-   cmake --build build --target hypredrive-lsseq-pack --parallel
+   cmake --build build --target hypredrive-lsseq --parallel
 
 Pack a sequence:
 
@@ -399,12 +399,12 @@ Pack a sequence:
    #   - last_suffix=largest available
    #   - matrix/rhs prefixes from the first ls_XXXXX directory
    #   - optional dofmap + timesteps when present
-   build/hypredrive-lsseq-pack \
+   build/hypredrive-lsseq \
      --dirname data/poromech2k/np1 \
      --output build/poromech2k_np1_lsseq
 
    # Explicit form (equivalent, but overrides auto-detection):
-   build/hypredrive-lsseq-pack \
+   build/hypredrive-lsseq \
      --dirname data/poromech2k/np1/ls \
      --matrix-filename IJ.out.A \
      --rhs-filename IJ.out.b \
@@ -417,9 +417,24 @@ Pack a sequence:
 
    # MPI: split work across parts (one rank can handle one or more part ids).
    # Only rank 0 writes the output file; other ranks send their payloads for assembly.
-   mpiexec -n 4 build/hypredrive-lsseq-pack \
+   mpiexec -n 4 build/hypredrive-lsseq \
      --dirname data/poromech2k/np1 \
      --output build/poromech2k_np1_lsseq_mpi
+
+Inspect packed metadata:
+
+.. code-block:: bash
+
+   build/hypredrive-lsseq metadata \
+     --input build/poromech2k_np1_lsseq.zst.bin
+
+Unpack a sequence back to directory layout:
+
+.. code-block:: bash
+
+   build/hypredrive-lsseq unpack \
+     --input build/poromech2k_np1_lsseq.zst.bin \
+     --output-dir build/poromech2k_np1_unpacked
 
 Use in YAML:
 
@@ -433,6 +448,7 @@ Notes:
 
 - ``rhs_mode`` remains authoritative. Container RHS is used only when ``rhs_mode: file``.
 - If ``timestep_filename`` is omitted, embedded timesteps are used when available.
+- ``LSSeqInfoHeader`` + manifest payload are mandatory for ``LSSEQ_VERSION=1`` files.
 - Extensions map to codec: ``.bin`` (none), ``.zlib.bin``, ``.zst.bin``, ``.lz4.bin``,
   ``.lz4hc.bin``, ``.blosc.bin``.
 

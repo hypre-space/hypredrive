@@ -1533,7 +1533,8 @@ FormatUTCTimeISO8601(char *dst, size_t dst_size)
 static char *
 BuildLSSeqInfoPayload(const PackArgs *args, const char *output_filename, int nprocs, int num_systems,
                       int num_parts, unsigned int num_patterns, uint32_t num_timesteps,
-                      unsigned long long blob_bytes, size_t *payload_size_out)
+                      unsigned long long blob_bytes, unsigned long long raw_blob_bytes,
+                      size_t *payload_size_out)
 {
    char   *buf = NULL;
    size_t  len = 0, cap = 0;
@@ -1573,6 +1574,7 @@ BuildLSSeqInfoPayload(const PackArgs *args, const char *output_filename, int npr
        !BufAppendf(&buf, &len, &cap, "num_patterns=%u\n", num_patterns) ||
        !BufAppendf(&buf, &len, &cap, "num_timesteps=%u\n", (unsigned int)num_timesteps) ||
        !BufAppendf(&buf, &len, &cap, "blob_bytes=%llu\n", blob_bytes) ||
+       !BufAppendf(&buf, &len, &cap, "raw_blob_bytes=%llu\n", raw_blob_bytes) ||
        !BufAppendf(&buf, &len, &cap, "endian_tag=0x01020304\n") ||
        !BufAppendf(&buf, &len, &cap, "sizeof_LSSeqHeader=%zu\n", sizeof(LSSeqHeader)) ||
        !BufAppendf(&buf, &len, &cap, "sizeof_LSSeqInfoHeader=%zu\n", sizeof(LSSeqInfoHeader)))
@@ -1607,12 +1609,946 @@ BuildLSSeqInfoPayload(const PackArgs *args, const char *output_filename, int npr
    return buf;
 }
 
+typedef enum ToolMode_enum
+{
+   TOOL_MODE_PACK = 0,
+   TOOL_MODE_UNPACK,
+   TOOL_MODE_METADATA
+} ToolMode;
+
+typedef struct UnpackArgs_struct
+{
+   char input_filename[MAX_FILENAME_LENGTH];
+   char output_dir[MAX_FILENAME_LENGTH];
+   char prefix[64];
+   int  digits_suffix;
+   int  digits_suffix_set;
+} UnpackArgs;
+
+typedef struct MetadataArgs_struct
+{
+   char input_filename[MAX_FILENAME_LENGTH];
+   int  show_manifest;
+} MetadataArgs;
+
+typedef struct SeqPackedData_struct
+{
+   LSSeqHeader          header;
+   LSSeqInfoHeader      info_header;
+   char                *info_payload;
+   size_t               info_payload_size;
+   LSSeqPartMeta       *parts;
+   LSSeqPatternMeta    *patterns;
+   LSSeqSystemPartMeta *sys_parts;
+   LSSeqTimestepEntry  *timesteps;
+} SeqPackedData;
+
+static void
+SeqPackedDataDestroy(SeqPackedData *seq)
+{
+   if (!seq)
+   {
+      return;
+   }
+   free(seq->info_payload);
+   free(seq->parts);
+   free(seq->patterns);
+   free(seq->sys_parts);
+   free(seq->timesteps);
+   memset(seq, 0, sizeof(*seq));
+}
+
+static int
+SeqReadAt(FILE *fp, uint64_t offset, void *buffer, size_t nbytes)
+{
+   if (!fp || !buffer)
+   {
+      return 0;
+   }
+   if (fseeko(fp, (off_t)offset, SEEK_SET) != 0)
+   {
+      return 0;
+   }
+   if (nbytes > 0 && fread(buffer, 1, nbytes, fp) != nbytes)
+   {
+      return 0;
+   }
+   return 1;
+}
+
+static int
+LoadPackedSequence(const char *filename, SeqPackedData *seq, int verify_blob_hash)
+{
+   FILE          *fp = NULL;
+   uint64_t       payload_off = (uint64_t)sizeof(LSSeqHeader) + (uint64_t)sizeof(LSSeqInfoHeader);
+   uint64_t       hash = UINT64_C(1469598103934665603);
+   uint64_t       blob_hash = UINT64_C(1469598103934665603);
+   uint8_t        io_buf[1 << 20];
+   size_t         n_sys_parts = 0;
+   struct stat    st;
+   unsigned long long expected_blob_bytes = 0;
+
+   if (!filename || !seq)
+   {
+      return 0;
+   }
+   memset(seq, 0, sizeof(*seq));
+
+   fp = fopen(filename, "rb");
+   if (!fp)
+   {
+      return 0;
+   }
+
+   if (!SeqReadAt(fp, 0, &seq->header, sizeof(seq->header)))
+   {
+      fclose(fp);
+      return 0;
+   }
+   if (seq->header.magic != LSSEQ_MAGIC || seq->header.version != LSSEQ_VERSION)
+   {
+      fclose(fp);
+      return 0;
+   }
+   if (!(seq->header.flags & LSSEQ_FLAG_HAS_INFO))
+   {
+      fclose(fp);
+      return 0;
+   }
+   if (!SeqReadAt(fp, (uint64_t)sizeof(LSSeqHeader), &seq->info_header, sizeof(seq->info_header)))
+   {
+      fclose(fp);
+      return 0;
+   }
+   if (seq->info_header.magic != LSSEQ_INFO_MAGIC ||
+       seq->info_header.version != LSSEQ_INFO_VERSION ||
+       seq->info_header.endian_tag != UINT32_C(0x01020304))
+   {
+      fclose(fp);
+      return 0;
+   }
+   if (seq->info_header.payload_size > (uint64_t)SIZE_MAX - 1u)
+   {
+      fclose(fp);
+      return 0;
+   }
+
+   seq->info_payload_size = (size_t)seq->info_header.payload_size;
+   seq->info_payload = (char *)malloc(seq->info_payload_size + 1u);
+   if (!seq->info_payload)
+   {
+      fclose(fp);
+      return 0;
+   }
+   if (seq->info_payload_size > 0 &&
+       !SeqReadAt(fp, payload_off, seq->info_payload, seq->info_payload_size))
+   {
+      fclose(fp);
+      SeqPackedDataDestroy(seq);
+      return 0;
+   }
+   seq->info_payload[seq->info_payload_size] = '\0';
+
+   hash = FNV1a64(seq->info_payload, seq->info_payload_size, hash);
+   if (hash != seq->info_header.payload_hash_fnv1a64)
+   {
+      fclose(fp);
+      SeqPackedDataDestroy(seq);
+      return 0;
+   }
+
+   seq->parts = (LSSeqPartMeta *)calloc((size_t)seq->header.num_parts, sizeof(LSSeqPartMeta));
+   seq->patterns =
+      (LSSeqPatternMeta *)calloc((size_t)seq->header.num_patterns, sizeof(LSSeqPatternMeta));
+   n_sys_parts = (size_t)seq->header.num_systems * (size_t)seq->header.num_parts;
+   seq->sys_parts = (LSSeqSystemPartMeta *)calloc(n_sys_parts, sizeof(LSSeqSystemPartMeta));
+   if (!seq->parts || !seq->patterns || !seq->sys_parts)
+   {
+      fclose(fp);
+      SeqPackedDataDestroy(seq);
+      return 0;
+   }
+
+   if (!SeqReadAt(fp, seq->header.offset_part_meta, seq->parts,
+                  (size_t)seq->header.num_parts * sizeof(LSSeqPartMeta)) ||
+       !SeqReadAt(fp, seq->header.offset_pattern_meta, seq->patterns,
+                  (size_t)seq->header.num_patterns * sizeof(LSSeqPatternMeta)) ||
+       !SeqReadAt(fp, seq->header.offset_sys_part_meta, seq->sys_parts,
+                  n_sys_parts * sizeof(LSSeqSystemPartMeta)))
+   {
+      fclose(fp);
+      SeqPackedDataDestroy(seq);
+      return 0;
+   }
+
+   if ((seq->header.flags & LSSEQ_FLAG_HAS_TIMESTEPS) && seq->header.num_timesteps > 0)
+   {
+      seq->timesteps = (LSSeqTimestepEntry *)calloc((size_t)seq->header.num_timesteps,
+                                                    sizeof(LSSeqTimestepEntry));
+      if (!seq->timesteps ||
+          !SeqReadAt(fp, seq->header.offset_timestep_meta, seq->timesteps,
+                     (size_t)seq->header.num_timesteps * sizeof(LSSeqTimestepEntry)))
+      {
+         fclose(fp);
+         SeqPackedDataDestroy(seq);
+         return 0;
+      }
+   }
+
+   if (stat(filename, &st) == 0 && st.st_size >= 0 &&
+       (uint64_t)st.st_size >= seq->header.offset_blob_data)
+   {
+      expected_blob_bytes = (unsigned long long)((uint64_t)st.st_size - seq->header.offset_blob_data);
+      if (seq->info_header.blob_bytes != (uint64_t)expected_blob_bytes)
+      {
+         fclose(fp);
+         SeqPackedDataDestroy(seq);
+         return 0;
+      }
+   }
+
+   if (verify_blob_hash)
+   {
+      uint64_t remaining = seq->info_header.blob_bytes;
+      if (fseeko(fp, (off_t)seq->header.offset_blob_data, SEEK_SET) != 0)
+      {
+         fclose(fp);
+         SeqPackedDataDestroy(seq);
+         return 0;
+      }
+      while (remaining > 0)
+      {
+         size_t chunk = remaining > (uint64_t)sizeof(io_buf) ? sizeof(io_buf) : (size_t)remaining;
+         if (fread(io_buf, 1, chunk, fp) != chunk)
+         {
+            fclose(fp);
+            SeqPackedDataDestroy(seq);
+            return 0;
+         }
+         blob_hash = FNV1a64(io_buf, chunk, blob_hash);
+         remaining -= (uint64_t)chunk;
+      }
+      if (blob_hash != seq->info_header.blob_hash_fnv1a64)
+      {
+         fclose(fp);
+         SeqPackedDataDestroy(seq);
+         return 0;
+      }
+   }
+
+   fclose(fp);
+   return 1;
+}
+
+static int
+DecodeBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size, size_t expected_size,
+           void **decoded_ptr, size_t *decoded_size_ptr)
+{
+   void  *blob = NULL;
+   void  *decoded = NULL;
+   size_t decoded_size = 0;
+
+   if (!fp || !decoded_ptr || !decoded_size_ptr)
+   {
+      return 0;
+   }
+   *decoded_ptr      = NULL;
+   *decoded_size_ptr = 0;
+
+   if (blob_size == 0)
+   {
+      if (expected_size == 0)
+      {
+         return 1;
+      }
+      return 0;
+   }
+   if (blob_size > (uint64_t)SIZE_MAX)
+   {
+      return 0;
+   }
+
+   blob = malloc((size_t)blob_size);
+   if (!blob)
+   {
+      return 0;
+   }
+   if (!SeqReadAt(fp, offset, blob, (size_t)blob_size))
+   {
+      free(blob);
+      return 0;
+   }
+
+   if (codec == COMP_NONE)
+   {
+      decoded = malloc((size_t)blob_size);
+      if (!decoded)
+      {
+         free(blob);
+         return 0;
+      }
+      memcpy(decoded, blob, (size_t)blob_size);
+      decoded_size = (size_t)blob_size;
+   }
+   else
+   {
+      ErrorCodeResetAll();
+      ErrorMsgClear();
+      hypredrv_decompress(codec, (size_t)blob_size, blob, &decoded_size, &decoded);
+      if (ErrorCodeActive() || !decoded)
+      {
+         free(blob);
+         return 0;
+      }
+   }
+   free(blob);
+
+   if (expected_size > 0 && decoded_size != expected_size)
+   {
+      free(decoded);
+      return 0;
+   }
+   *decoded_ptr      = decoded;
+   *decoded_size_ptr = decoded_size;
+   return 1;
+}
+
+static int
+WriteMatrixPartBinary(const char *filename, const LSSeqPartMeta *part, const LSSeqPatternMeta *pattern,
+                      const void *rows, const void *cols, const void *vals)
+{
+   FILE    *fp = NULL;
+   uint64_t header[11] = {0};
+   size_t   nnz = 0;
+
+   if (!filename || !part || !pattern)
+   {
+      return 0;
+   }
+
+   fp = fopen(filename, "wb");
+   if (!fp)
+   {
+      return 0;
+   }
+   header[1] = part->row_index_size;
+   header[2] = part->value_size;
+   header[5] = part->row_upper - part->row_lower + 1;
+   header[6] = pattern->nnz;
+   header[7] = part->row_lower;
+   header[8] = part->row_upper;
+   if (fwrite(header, sizeof(uint64_t), 11, fp) != 11)
+   {
+      fclose(fp);
+      return 0;
+   }
+
+   nnz = (size_t)pattern->nnz;
+   if (nnz > 0 &&
+       ((rows && fwrite(rows, (size_t)part->row_index_size, nnz, fp) != nnz) ||
+        (cols && fwrite(cols, (size_t)part->row_index_size, nnz, fp) != nnz) ||
+        (vals && fwrite(vals, (size_t)part->value_size, nnz, fp) != nnz)))
+   {
+      fclose(fp);
+      return 0;
+   }
+   fclose(fp);
+   return 1;
+}
+
+static int
+WriteRHSPartBinary(const char *filename, const LSSeqPartMeta *part, const void *vals)
+{
+   FILE    *fp = NULL;
+   uint64_t header[8] = {0};
+   size_t   nrows = 0;
+
+   if (!filename || !part)
+   {
+      return 0;
+   }
+
+   fp = fopen(filename, "wb");
+   if (!fp)
+   {
+      return 0;
+   }
+   header[1] = part->value_size;
+   header[5] = part->nrows;
+   if (fwrite(header, sizeof(uint64_t), 8, fp) != 8)
+   {
+      fclose(fp);
+      return 0;
+   }
+   nrows = (size_t)part->nrows;
+   if (nrows > 0 && vals && fwrite(vals, (size_t)part->value_size, nrows, fp) != nrows)
+   {
+      fclose(fp);
+      return 0;
+   }
+   fclose(fp);
+   return 1;
+}
+
+static int
+WriteDofPartASCII(const char *filename, const int32_t *vals, uint64_t nentries)
+{
+   FILE *fp = NULL;
+
+   if (!filename)
+   {
+      return 0;
+   }
+   fp = fopen(filename, "w");
+   if (!fp)
+   {
+      return 0;
+   }
+   fprintf(fp, "%llu\n", (unsigned long long)nentries);
+   for (uint64_t i = 0; i < nentries; i++)
+   {
+      fprintf(fp, "%d\n", vals ? (int)vals[i] : 0);
+   }
+   fclose(fp);
+   return 1;
+}
+
+static int
+ManifestFindValue(const char *payload, const char *key, char *value, size_t value_size)
+{
+   const char *cur = payload;
+   size_t      key_len = 0;
+   if (!payload || !key || !value || value_size == 0)
+   {
+      return 0;
+   }
+   key_len = strlen(key);
+   value[0] = '\0';
+
+   while (*cur)
+   {
+      const char *line_end = strchr(cur, '\n');
+      const char *eq       = strchr(cur, '=');
+      size_t      line_len = line_end ? (size_t)(line_end - cur) : strlen(cur);
+      if (eq && (size_t)(eq - cur) == key_len && strncmp(cur, key, key_len) == 0)
+      {
+         const char *val_start = eq + 1;
+         size_t      val_len   = line_len - (size_t)(val_start - cur);
+         if (val_len >= value_size)
+         {
+            val_len = value_size - 1u;
+         }
+         memcpy(value, val_start, val_len);
+         value[val_len] = '\0';
+         return 1;
+      }
+      if (!line_end)
+      {
+         break;
+      }
+      cur = line_end + 1;
+   }
+   return 0;
+}
+
+static int
+ManifestFindInt(const char *payload, const char *key, int *out)
+{
+   char buf[128];
+   char *end = NULL;
+   long  v = 0;
+   if (!out || !ManifestFindValue(payload, key, buf, sizeof(buf)))
+   {
+      return 0;
+   }
+   v = strtol(buf, &end, 10);
+   if (end == buf || *end != '\0')
+   {
+      return 0;
+   }
+   *out = (int)v;
+   return 1;
+}
+
+static void
+UnpackArgsSetDefaults(UnpackArgs *args)
+{
+   if (!args)
+   {
+      return;
+   }
+   memset(args, 0, sizeof(*args));
+   snprintf(args->prefix, sizeof(args->prefix), "ls");
+   args->digits_suffix = 5;
+}
+
+static int
+ParseUnpackArgs(int argc, char **argv, UnpackArgs *args)
+{
+   if (!args)
+   {
+      return 0;
+   }
+   UnpackArgsSetDefaults(args);
+   for (int i = 1; i < argc; i++)
+   {
+      if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
+      {
+         return 0;
+      }
+      if (!strcmp(argv[i], "--input"))
+      {
+         if (i + 1 >= argc)
+         {
+            return 0;
+         }
+         snprintf(args->input_filename, sizeof(args->input_filename), "%s", argv[++i]);
+      }
+      else if (!strcmp(argv[i], "--output-dir"))
+      {
+         if (i + 1 >= argc)
+         {
+            return 0;
+         }
+         snprintf(args->output_dir, sizeof(args->output_dir), "%s", argv[++i]);
+      }
+      else if (!strcmp(argv[i], "--prefix"))
+      {
+         if (i + 1 >= argc)
+         {
+            return 0;
+         }
+         snprintf(args->prefix, sizeof(args->prefix), "%s", argv[++i]);
+      }
+      else if (!strcmp(argv[i], "--digits-suffix"))
+      {
+         if (i + 1 >= argc)
+         {
+            return 0;
+         }
+         args->digits_suffix = (int)strtol(argv[++i], NULL, 10);
+         args->digits_suffix_set = 1;
+      }
+      else
+      {
+         return 0;
+      }
+   }
+   return args->input_filename[0] != '\0' && args->output_dir[0] != '\0' &&
+          args->digits_suffix > 0;
+}
+
+static int
+ParseMetadataArgs(int argc, char **argv, MetadataArgs *args)
+{
+   if (!args)
+   {
+      return 0;
+   }
+   memset(args, 0, sizeof(*args));
+   args->show_manifest = 1;
+
+   for (int i = 1; i < argc; i++)
+   {
+      if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
+      {
+         return 0;
+      }
+      if (!strcmp(argv[i], "--input"))
+      {
+         if (i + 1 >= argc)
+         {
+            return 0;
+         }
+         snprintf(args->input_filename, sizeof(args->input_filename), "%s", argv[++i]);
+      }
+      else if (!strcmp(argv[i], "--no-manifest"))
+      {
+         args->show_manifest = 0;
+      }
+      else
+      {
+         return 0;
+      }
+   }
+   return args->input_filename[0] != '\0';
+}
+
+static void
+PrintGeneralUsage(const char *prog)
+{
+   fprintf(stderr,
+           "Usage:\n"
+           "  %s [pack] --dirname <dir> --output <out> [pack-options]\n"
+           "  %s unpack --input <sequence.bin> --output-dir <dir> [unpack-options]\n"
+           "  %s metadata --input <sequence.bin> [--no-manifest]\n"
+           "\n"
+           "Modes:\n"
+           "  pack      Pack directory-based sequence into one LSSeq container (default mode).\n"
+           "  unpack    Recreate directory-based sequence files from a LSSeq container.\n"
+           "  metadata  Print container metadata and manifest summary.\n",
+           prog, prog, prog);
+}
+
+static int
+EnsureDirectoryExists(const char *path)
+{
+   char tmp[MAX_FILENAME_LENGTH];
+   size_t n = 0;
+
+   if (!path || path[0] == '\0')
+   {
+      return 0;
+   }
+   snprintf(tmp, sizeof(tmp), "%s", path);
+   n = strlen(tmp);
+   if (n == 0)
+   {
+      return 0;
+   }
+   if (tmp[n - 1] == '/')
+   {
+      tmp[n - 1] = '\0';
+   }
+
+   for (char *p = tmp + 1; *p; p++)
+   {
+      if (*p == '/')
+      {
+         *p = '\0';
+         if (mkdir(tmp, 0775) != 0 && errno != EEXIST)
+         {
+            return 0;
+         }
+         *p = '/';
+      }
+   }
+   if (mkdir(tmp, 0775) != 0 && errno != EEXIST)
+   {
+      return 0;
+   }
+   return 1;
+}
+
+static int
+WriteTimestepsFile(const char *filename, const LSSeqTimestepEntry *timesteps, uint32_t num_timesteps)
+{
+   FILE *fp = NULL;
+   if (!filename || !timesteps || num_timesteps == 0)
+   {
+      return 0;
+   }
+   fp = fopen(filename, "w");
+   if (!fp)
+   {
+      return 0;
+   }
+   fprintf(fp, "%u\n", (unsigned int)num_timesteps);
+   for (uint32_t i = 0; i < num_timesteps; i++)
+   {
+      fprintf(fp, "%d %d\n", timesteps[i].timestep, timesteps[i].ls_start);
+   }
+   fclose(fp);
+   return 1;
+}
+
+static int
+RunMetadataMode(MPI_Comm comm, int myid, const MetadataArgs *args)
+{
+   SeqPackedData seq;
+   char          codec_name[64];
+
+   (void)comm;
+   if (!args)
+   {
+      return EXIT_FAILURE;
+   }
+   if (!myid)
+   {
+      if (!LoadPackedSequence(args->input_filename, &seq, 1))
+      {
+         fprintf(stderr, "Could not load sequence file '%s'\n", args->input_filename);
+         return EXIT_FAILURE;
+      }
+
+      snprintf(codec_name, sizeof(codec_name), "%s",
+               hypredrv_compression_get_name((comp_alg_t)seq.header.codec));
+      printf("[lsseq] metadata summary\n");
+      printf("  file: %s\n", args->input_filename);
+      printf("  version: %u\n", seq.header.version);
+      printf("  flags: 0x%08x\n", seq.header.flags);
+      printf("  codec: %s (%u)\n", codec_name, seq.header.codec);
+      printf("  systems: %u\n", seq.header.num_systems);
+      printf("  parts: %u\n", seq.header.num_parts);
+      printf("  unique patterns: %u\n", seq.header.num_patterns);
+      printf("  timesteps: %u\n", seq.header.num_timesteps);
+      printf("  offsets: part=%llu pattern=%llu sys=%llu timestep=%llu blob=%llu\n",
+             (unsigned long long)seq.header.offset_part_meta,
+             (unsigned long long)seq.header.offset_pattern_meta,
+             (unsigned long long)seq.header.offset_sys_part_meta,
+             (unsigned long long)seq.header.offset_timestep_meta,
+             (unsigned long long)seq.header.offset_blob_data);
+      printf("  info: payload_bytes=%llu blob_bytes=%llu\n",
+             (unsigned long long)seq.info_header.payload_size,
+             (unsigned long long)seq.info_header.blob_bytes);
+      printf("  info hashes: payload=0x%016llx blob=0x%016llx\n",
+             (unsigned long long)seq.info_header.payload_hash_fnv1a64,
+             (unsigned long long)seq.info_header.blob_hash_fnv1a64);
+
+      if (args->show_manifest && seq.info_payload && seq.info_payload[0] != '\0')
+      {
+         printf("\n[lsseq] manifest\n%s", seq.info_payload);
+         if (seq.info_payload[seq.info_payload_size - 1] != '\n')
+         {
+            printf("\n");
+         }
+      }
+      fflush(stdout);
+      SeqPackedDataDestroy(&seq);
+   }
+   return EXIT_SUCCESS;
+}
+
+static int
+RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
+{
+   SeqPackedData seq;
+   FILE         *fp = NULL;
+   int           init_suffix = 0;
+   int           last_suffix = 0;
+   int           digits_suffix = 5;
+   char          matrix_filename[MAX_FILENAME_LENGTH];
+   char          rhs_filename[MAX_FILENAME_LENGTH];
+   char          dofmap_filename[MAX_FILENAME_LENGTH];
+   char          timesteps_name[MAX_FILENAME_LENGTH];
+   int           local_start = 0, local_nparts = 0;
+
+   if (!args)
+   {
+      return EXIT_FAILURE;
+   }
+   if (!LoadPackedSequence(args->input_filename, &seq, 1))
+   {
+      if (!myid)
+      {
+         fprintf(stderr, "Could not load sequence file '%s'\n", args->input_filename);
+      }
+      return EXIT_FAILURE;
+   }
+
+   if (!EnsureDirectoryExists(args->output_dir))
+   {
+      if (!myid)
+      {
+         fprintf(stderr, "Could not create output directory '%s'\n", args->output_dir);
+      }
+      SeqPackedDataDestroy(&seq);
+      return EXIT_FAILURE;
+   }
+
+   snprintf(matrix_filename, sizeof(matrix_filename), "IJ.out.A");
+   snprintf(rhs_filename, sizeof(rhs_filename), "IJ.out.b");
+   dofmap_filename[0] = '\0';
+   snprintf(timesteps_name, sizeof(timesteps_name), "timesteps.txt");
+
+   ManifestFindInt(seq.info_payload, "init_suffix", &init_suffix);
+   if (!ManifestFindInt(seq.info_payload, "last_suffix", &last_suffix))
+   {
+      last_suffix = init_suffix + (int)seq.header.num_systems - 1;
+   }
+   if (last_suffix < init_suffix ||
+       (uint32_t)(last_suffix - init_suffix + 1) != seq.header.num_systems)
+   {
+      last_suffix = init_suffix + (int)seq.header.num_systems - 1;
+   }
+   if (args->digits_suffix_set)
+   {
+      digits_suffix = args->digits_suffix;
+   }
+   else
+   {
+      ManifestFindInt(seq.info_payload, "digits_suffix", &digits_suffix);
+      if (digits_suffix <= 0)
+      {
+         digits_suffix = 5;
+      }
+   }
+   ManifestFindValue(seq.info_payload, "matrix_filename", matrix_filename, sizeof(matrix_filename));
+   ManifestFindValue(seq.info_payload, "rhs_filename", rhs_filename, sizeof(rhs_filename));
+   ManifestFindValue(seq.info_payload, "dofmap_filename", dofmap_filename, sizeof(dofmap_filename));
+   {
+      char tname[MAX_FILENAME_LENGTH];
+      if (ManifestFindValue(seq.info_payload, "timesteps", tname, sizeof(tname)) && tname[0] != '\0')
+      {
+         const char *b = strrchr(tname, '/');
+         snprintf(timesteps_name, sizeof(timesteps_name), "%s", b ? (b + 1) : tname);
+      }
+   }
+
+   if (!myid)
+   {
+      printf("[lsseq] unpack summary\n");
+      printf("  input: %s\n", args->input_filename);
+      printf("  output-dir: %s\n", args->output_dir);
+      printf("  prefix: %s\n", args->prefix);
+      printf("  suffix range: init=%d last=%d (digits=%d)\n", init_suffix, last_suffix, digits_suffix);
+      printf("  matrix-filename: %s\n", matrix_filename);
+      printf("  rhs-filename: %s\n", rhs_filename);
+      printf("  dofmap-filename: %s\n", dofmap_filename[0] ? dofmap_filename : "(none)");
+      fflush(stdout);
+   }
+
+   /* Root pre-creates all system directories and optional timesteps. */
+   if (!myid)
+   {
+      char dirpath[MAX_FILENAME_LENGTH];
+      for (uint32_t s = 0; s < seq.header.num_systems; s++)
+      {
+         int suffix = init_suffix + (int)s;
+         snprintf(dirpath, sizeof(dirpath), "%s/%s_%0*d", args->output_dir, args->prefix,
+                  digits_suffix, suffix);
+         if (!EnsureDirectoryExists(dirpath))
+         {
+            fprintf(stderr, "Could not create system directory '%s'\n", dirpath);
+            SeqPackedDataDestroy(&seq);
+            return EXIT_FAILURE;
+         }
+      }
+      if ((seq.header.flags & LSSEQ_FLAG_HAS_TIMESTEPS) && seq.header.num_timesteps > 0)
+      {
+         char tfile[MAX_FILENAME_LENGTH];
+         snprintf(tfile, sizeof(tfile), "%s/%s", args->output_dir, timesteps_name);
+         if (!WriteTimestepsFile(tfile, seq.timesteps, seq.header.num_timesteps))
+         {
+            fprintf(stderr, "Could not write timesteps file '%s'\n", tfile);
+            SeqPackedDataDestroy(&seq);
+            return EXIT_FAILURE;
+         }
+      }
+   }
+   MPI_Barrier(comm);
+
+   fp = fopen(args->input_filename, "rb");
+   if (!fp)
+   {
+      SeqPackedDataDestroy(&seq);
+      return EXIT_FAILURE;
+   }
+
+   ComputePartRange((int)seq.header.num_parts, nprocs, myid, &local_start, &local_nparts);
+   printf("[lsseq][unpack][rank %d/%d] parts: start=%d count=%d\n", myid, nprocs, local_start,
+          local_nparts);
+   fflush(stdout);
+
+   for (uint32_t s = 0; s < seq.header.num_systems; s++)
+   {
+      char system_dir[MAX_FILENAME_LENGTH];
+      int  suffix = init_suffix + (int)s;
+      snprintf(system_dir, sizeof(system_dir), "%s/%s_%0*d", args->output_dir, args->prefix,
+               digits_suffix, suffix);
+
+      for (int lp = 0; lp < local_nparts; lp++)
+      {
+         uint32_t part_id = (uint32_t)(local_start + lp);
+         const LSSeqPartMeta *part = &seq.parts[part_id];
+         const LSSeqSystemPartMeta *sp =
+            &seq.sys_parts[(size_t)s * (size_t)seq.header.num_parts + (size_t)part_id];
+         const LSSeqPatternMeta *pat = NULL;
+         void *rows = NULL, *cols = NULL, *vals = NULL, *rhs = NULL, *dof = NULL;
+         size_t rows_sz = 0, cols_sz = 0, vals_sz = 0, rhs_sz = 0, dof_sz = 0;
+         char mfile[MAX_FILENAME_LENGTH], rfile[MAX_FILENAME_LENGTH], dfile[MAX_FILENAME_LENGTH];
+
+         if (sp->pattern_id >= seq.header.num_patterns)
+         {
+            fclose(fp);
+            SeqPackedDataDestroy(&seq);
+            return EXIT_FAILURE;
+         }
+         pat = &seq.patterns[sp->pattern_id];
+         if (pat->part_id != part_id)
+         {
+            fclose(fp);
+            SeqPackedDataDestroy(&seq);
+            return EXIT_FAILURE;
+         }
+
+         if (!DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->rows_blob_offset, pat->rows_blob_size,
+                         (size_t)pat->nnz * (size_t)part->row_index_size, &rows, &rows_sz) ||
+             !DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->cols_blob_offset, pat->cols_blob_size,
+                         (size_t)pat->nnz * (size_t)part->row_index_size, &cols, &cols_sz) ||
+             !DecodeBlob(fp, (comp_alg_t)seq.header.codec, sp->values_blob_offset, sp->values_blob_size,
+                         (size_t)sp->nnz * (size_t)part->value_size, &vals, &vals_sz) ||
+             !DecodeBlob(fp, (comp_alg_t)seq.header.codec, sp->rhs_blob_offset, sp->rhs_blob_size,
+                         (size_t)part->nrows * (size_t)part->value_size, &rhs, &rhs_sz))
+         {
+            free(rows); free(cols); free(vals); free(rhs); free(dof);
+            fclose(fp);
+            SeqPackedDataDestroy(&seq);
+            return EXIT_FAILURE;
+         }
+
+         snprintf(mfile, sizeof(mfile), "%s/%s.%05u.bin", system_dir, matrix_filename, part_id);
+         snprintf(rfile, sizeof(rfile), "%s/%s.%05u.bin", system_dir, rhs_filename, part_id);
+         if (!WriteMatrixPartBinary(mfile, part, pat, rows, cols, vals) ||
+             !WriteRHSPartBinary(rfile, part, rhs))
+         {
+            free(rows); free(cols); free(vals); free(rhs); free(dof);
+            fclose(fp);
+            SeqPackedDataDestroy(&seq);
+            return EXIT_FAILURE;
+         }
+
+         if ((seq.header.flags & LSSEQ_FLAG_HAS_DOFMAP) && dofmap_filename[0] != '\0')
+         {
+            if (sp->dof_num_entries > 0 &&
+                !DecodeBlob(fp, (comp_alg_t)seq.header.codec, sp->dof_blob_offset, sp->dof_blob_size,
+                            (size_t)sp->dof_num_entries * sizeof(int32_t), &dof, &dof_sz))
+            {
+               free(rows); free(cols); free(vals); free(rhs); free(dof);
+               fclose(fp);
+               SeqPackedDataDestroy(&seq);
+               return EXIT_FAILURE;
+            }
+            snprintf(dfile, sizeof(dfile), "%s/%s.%05u", system_dir, dofmap_filename, part_id);
+            if (!WriteDofPartASCII(dfile, (const int32_t *)dof, sp->dof_num_entries))
+            {
+               free(rows); free(cols); free(vals); free(rhs); free(dof);
+               fclose(fp);
+               SeqPackedDataDestroy(&seq);
+               return EXIT_FAILURE;
+            }
+         }
+
+         free(rows);
+         free(cols);
+         free(vals);
+         free(rhs);
+         free(dof);
+      }
+   }
+
+   fclose(fp);
+   MPI_Barrier(comm);
+   if (!myid)
+   {
+      printf("[lsseq] unpack completed successfully\n");
+      fflush(stdout);
+   }
+   SeqPackedDataDestroy(&seq);
+   return EXIT_SUCCESS;
+}
+
 int
 main(int argc, char **argv)
 {
    MPI_Comm comm = MPI_COMM_WORLD;
    int      myid = 0, nprocs = 1;
    PackArgs args;
+   UnpackArgs unpack_args;
+   MetadataArgs metadata_args;
+   ToolMode mode = TOOL_MODE_PACK;
+   int      mode_arg_shift = 0;
+   int      invalid_mode = 0;
    int      parse_ok = 0;
    int      exit_code = EXIT_FAILURE;
 
@@ -1620,17 +2556,122 @@ main(int argc, char **argv)
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
 
+   if (argc > 1 && argv[1])
+   {
+      if (!strcmp(argv[1], "pack"))
+      {
+         mode = TOOL_MODE_PACK;
+         mode_arg_shift = 1;
+      }
+      else if (!strcmp(argv[1], "unpack"))
+      {
+         mode = TOOL_MODE_UNPACK;
+         mode_arg_shift = 1;
+      }
+      else if (!strcmp(argv[1], "metadata"))
+      {
+         mode = TOOL_MODE_METADATA;
+         mode_arg_shift = 1;
+      }
+      else if (argv[1][0] != '-')
+      {
+         invalid_mode = 1;
+      }
+   }
+
+   if (invalid_mode)
+   {
+      if (!myid)
+      {
+         PrintGeneralUsage(argv[0]);
+      }
+      MPI_Finalize();
+      return EXIT_FAILURE;
+   }
+
+   if (mode == TOOL_MODE_PACK && argc > 1 &&
+       (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")))
+   {
+      if (!myid)
+      {
+         PrintGeneralUsage(argv[0]);
+         printf("\n");
+         PrintUsage(argv[0]);
+      }
+      MPI_Finalize();
+      return EXIT_SUCCESS;
+   }
+
+   if (mode == TOOL_MODE_UNPACK)
+   {
+      UnpackArgsSetDefaults(&unpack_args);
+      if (!myid)
+      {
+         if (!ParseUnpackArgs(argc - mode_arg_shift, argv + mode_arg_shift, &unpack_args))
+         {
+            PrintGeneralUsage(argv[0]);
+            parse_ok = 0;
+            exit_code = EXIT_FAILURE;
+         }
+         else
+         {
+            parse_ok = 1;
+            exit_code = EXIT_SUCCESS;
+         }
+      }
+      MPI_Bcast(&parse_ok, 1, MPI_INT, 0, comm);
+      MPI_Bcast(&exit_code, 1, MPI_INT, 0, comm);
+      if (!parse_ok)
+      {
+         MPI_Finalize();
+         return exit_code;
+      }
+      MPI_Bcast(&unpack_args, (int)sizeof(unpack_args), MPI_BYTE, 0, comm);
+      exit_code = RunUnpackMode(comm, myid, nprocs, &unpack_args);
+      MPI_Finalize();
+      return exit_code;
+   }
+   else if (mode == TOOL_MODE_METADATA)
+   {
+      memset(&metadata_args, 0, sizeof(metadata_args));
+      if (!myid)
+      {
+         if (!ParseMetadataArgs(argc - mode_arg_shift, argv + mode_arg_shift, &metadata_args))
+         {
+            PrintGeneralUsage(argv[0]);
+            parse_ok = 0;
+            exit_code = EXIT_FAILURE;
+         }
+         else
+         {
+            parse_ok = 1;
+            exit_code = EXIT_SUCCESS;
+         }
+      }
+      MPI_Bcast(&parse_ok, 1, MPI_INT, 0, comm);
+      MPI_Bcast(&exit_code, 1, MPI_INT, 0, comm);
+      if (!parse_ok)
+      {
+         MPI_Finalize();
+         return exit_code;
+      }
+      MPI_Bcast(&metadata_args, (int)sizeof(metadata_args), MPI_BYTE, 0, comm);
+      exit_code = RunMetadataMode(comm, myid, &metadata_args);
+      MPI_Finalize();
+      return exit_code;
+   }
+
    PackArgsSetDefaults(&args);
 
    if (!myid)
    {
-      if (HelpRequested(argc, argv))
+      if (HelpRequested(argc - mode_arg_shift, argv + mode_arg_shift))
       {
          PrintUsage(argv[0]);
          parse_ok   = 0;
          exit_code  = EXIT_SUCCESS;
       }
-      else if (!ParseArgs(argc, argv, &args))
+      else if (!ParseArgs(argc - mode_arg_shift, argv + mode_arg_shift, &args))
       {
          PrintUsage(argv[0]);
          parse_ok  = 0;
@@ -1747,18 +2788,18 @@ main(int argc, char **argv)
          }
       }
 
-      printf("[lsseq-pack] MPI ranks: %d\n", nprocs);
-      printf("[lsseq-pack] dirname (input):   %s\n", args.input_dirname);
-      printf("[lsseq-pack] dirname (resolved): %s\n", args.dirname);
-      printf("[lsseq-pack] suffix range: init=%d last=%d (digits=%d)\n", (int)args.init_suffix,
+      printf("[lsseq] MPI ranks: %d\n", nprocs);
+      printf("[lsseq] dirname (input):   %s\n", args.input_dirname);
+      printf("[lsseq] dirname (resolved): %s\n", args.dirname);
+      printf("[lsseq] suffix range: init=%d last=%d (digits=%d)\n", (int)args.init_suffix,
              (int)args.last_suffix, (int)args.digits_suffix);
-      printf("[lsseq-pack] matrix-filename:    %s\n", args.matrix_filename);
-      printf("[lsseq-pack] rhs-filename:       %s\n", args.rhs_filename);
-      printf("[lsseq-pack] dofmap-filename:    %s\n",
+      printf("[lsseq] matrix-filename:    %s\n", args.matrix_filename);
+      printf("[lsseq] rhs-filename:       %s\n", args.rhs_filename);
+      printf("[lsseq] dofmap-filename:    %s\n",
              args.dofmap_filename[0] ? args.dofmap_filename : "(none)");
-      printf("[lsseq-pack] timesteps:          %s\n",
+      printf("[lsseq] timesteps:          %s\n",
              args.timesteps_filename[0] ? args.timesteps_filename : "(none)");
-      printf("[lsseq-pack] codec:              %s\n", hypredrv_compression_get_name(args.algo));
+      printf("[lsseq] codec:              %s\n", hypredrv_compression_get_name(args.algo));
       fflush(stdout);
    }
 
@@ -1782,7 +2823,7 @@ main(int argc, char **argv)
 
    int local_start = 0, local_nparts = 0;
    ComputePartRange(num_parts, nprocs, myid, &local_start, &local_nparts);
-   printf("[lsseq-pack][rank %d/%d] parts: start=%d count=%d (global num_parts=%d)\n", myid,
+   printf("[lsseq][pack][rank %d/%d] parts: start=%d count=%d (global num_parts=%d)\n", myid,
           nprocs, local_start, local_nparts, num_parts);
    fflush(stdout);
 
@@ -1793,6 +2834,7 @@ main(int argc, char **argv)
    size_t               cap_patterns_local = 0;
    FILE                *blob_fp = NULL;
    uint64_t              blob_cursor = 0;
+   unsigned long long    local_raw_blob_ull = 0;
 
    if (local_nparts > 0)
    {
@@ -1803,14 +2845,14 @@ main(int argc, char **argv)
    }
    if ((local_nparts > 0 && (!part_meta_local || !sys_meta_local)))
    {
-      fprintf(stderr, "[lsseq-pack][rank %d] Allocation failure for local metadata arrays\n", myid);
+      fprintf(stderr, "[lsseq][pack][rank %d] Allocation failure for local metadata arrays\n", myid);
       MPI_Abort(comm, 1);
    }
 
    blob_fp = tmpfile();
    if (!blob_fp)
    {
-      fprintf(stderr, "[lsseq-pack][rank %d] Could not create temporary blob file\n", myid);
+      fprintf(stderr, "[lsseq][pack][rank %d] Could not create temporary blob file\n", myid);
       MPI_Abort(comm, 1);
    }
 
@@ -1833,7 +2875,7 @@ main(int argc, char **argv)
 
       if (!myid && (s == 0 || (num_systems > 20 && (s % 10 == 0))))
       {
-         printf("[lsseq-pack] packing system %d/%d (suffix=%d)\n", s + 1, num_systems, suffix);
+         printf("[lsseq][pack] packing system %d/%d (suffix=%d)\n", s + 1, num_systems, suffix);
          fflush(stdout);
       }
 
@@ -1850,13 +2892,13 @@ main(int argc, char **argv)
 
          if (!ReadMatrixPart(matrix_prefix, global_p, &Araw))
          {
-            fprintf(stderr, "[lsseq-pack][rank %d] Could not read matrix part %d for suffix %d\n",
+            fprintf(stderr, "[lsseq][pack][rank %d] Could not read matrix part %d for suffix %d\n",
                     myid, global_p, suffix);
             MPI_Abort(comm, 1);
          }
          if (!ReadRHSPart(rhs_prefix, global_p, &braw))
          {
-            fprintf(stderr, "[lsseq-pack][rank %d] Could not read RHS part %d for suffix %d\n", myid,
+            fprintf(stderr, "[lsseq][pack][rank %d] Could not read RHS part %d for suffix %d\n", myid,
                     global_p, suffix);
             MatrixPartRawDestroy(&Araw);
             MPI_Abort(comm, 1);
@@ -1868,7 +2910,7 @@ main(int argc, char **argv)
             if (!ReadDofPart(dof_prefix, global_p, &draw))
             {
                fprintf(stderr,
-                       "[lsseq-pack][rank %d] Could not read dofmap part %d for suffix %d\n",
+                       "[lsseq][pack][rank %d] Could not read dofmap part %d for suffix %d\n",
                        myid, global_p, suffix);
                MatrixPartRawDestroy(&Araw);
                RHSPartRawDestroy(&braw);
@@ -1893,7 +2935,7 @@ main(int argc, char **argv)
                 part_meta_local[lp].value_size != Araw.value_size)
             {
                fprintf(stderr,
-                       "[lsseq-pack][rank %d] Part %d metadata changed across systems (not supported)\n",
+                       "[lsseq][pack][rank %d] Part %d metadata changed across systems (not supported)\n",
                        myid, global_p);
                MatrixPartRawDestroy(&Araw);
                RHSPartRawDestroy(&braw);
@@ -1928,13 +2970,17 @@ main(int argc, char **argv)
                                (size_t)Araw.nnz * (size_t)Araw.row_index_size, &blob_cursor,
                                &entry.meta.cols_blob_offset, &entry.meta.cols_blob_size))
             {
-               fprintf(stderr, "[lsseq-pack][rank %d] Failed to write compressed pattern blob\n",
+               fprintf(stderr, "[lsseq][pack][rank %d] Failed to write compressed pattern blob\n",
                        myid);
                MatrixPartRawDestroy(&Araw);
                RHSPartRawDestroy(&braw);
                DofPartRawDestroy(&draw);
                MPI_Abort(comm, 1);
             }
+            local_raw_blob_ull +=
+               (unsigned long long)((size_t)Araw.nnz * (size_t)Araw.row_index_size);
+            local_raw_blob_ull +=
+               (unsigned long long)((size_t)Araw.nnz * (size_t)Araw.row_index_size);
 
             if (num_patterns_local == cap_patterns_local)
             {
@@ -1944,7 +2990,7 @@ main(int argc, char **argv)
                if (!tmp)
                {
                   fprintf(stderr,
-                          "[lsseq-pack][rank %d] Allocation failure while extending pattern list\n",
+                          "[lsseq][pack][rank %d] Allocation failure while extending pattern list\n",
                           myid);
                   MatrixPartRawDestroy(&Araw);
                   RHSPartRawDestroy(&braw);
@@ -1970,13 +3016,17 @@ main(int argc, char **argv)
                             &sp->rhs_blob_offset, &sp->rhs_blob_size))
          {
             fprintf(stderr,
-                    "[lsseq-pack][rank %d] Failed to write compressed matrix/RHS value blob\n",
+                    "[lsseq][pack][rank %d] Failed to write compressed matrix/RHS value blob\n",
                     myid);
             MatrixPartRawDestroy(&Araw);
             RHSPartRawDestroy(&braw);
             DofPartRawDestroy(&draw);
             MPI_Abort(comm, 1);
          }
+         local_raw_blob_ull +=
+            (unsigned long long)((size_t)Araw.nnz * (size_t)Araw.value_size);
+         local_raw_blob_ull +=
+            (unsigned long long)((size_t)braw.nrows * (size_t)braw.value_size);
 
          sp->dof_num_entries = draw.num_entries;
          if (draw.num_entries > 0)
@@ -1985,13 +3035,14 @@ main(int argc, char **argv)
                                (size_t)draw.num_entries * sizeof(int32_t), &blob_cursor,
                                &sp->dof_blob_offset, &sp->dof_blob_size))
             {
-               fprintf(stderr, "[lsseq-pack][rank %d] Failed to write compressed dofmap blob\n",
+               fprintf(stderr, "[lsseq][pack][rank %d] Failed to write compressed dofmap blob\n",
                        myid);
                MatrixPartRawDestroy(&Araw);
                RHSPartRawDestroy(&braw);
                DofPartRawDestroy(&draw);
                MPI_Abort(comm, 1);
             }
+            local_raw_blob_ull += (unsigned long long)((size_t)draw.num_entries * sizeof(int32_t));
          }
 
          MatrixPartRawDestroy(&Araw);
@@ -2014,12 +3065,15 @@ main(int argc, char **argv)
    unsigned long long local_blob_ull = (unsigned long long)blob_cursor;
    unsigned long long blob_base_ull  = 0;
    unsigned long long global_blob_ull = 0;
+   unsigned long long global_raw_blob_ull = 0;
    MPI_Exscan(&local_blob_ull, &blob_base_ull, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, comm);
    if (!myid)
    {
       blob_base_ull = 0;
    }
    MPI_Allreduce(&local_blob_ull, &global_blob_ull, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, comm);
+   MPI_Allreduce(&local_raw_blob_ull, &global_raw_blob_ull, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,
+                 comm);
 
    for (size_t i = 0; i < num_patterns_local; i++)
    {
@@ -2050,7 +3104,7 @@ main(int argc, char **argv)
       }
    }
 
-   printf("[lsseq-pack][rank %d] local patterns=%u local blob bytes=%llu\n", myid, local_patterns_u,
+   printf("[lsseq][pack][rank %d] local patterns=%u local blob bytes=%llu\n", myid, local_patterns_u,
           local_blob_ull);
    fflush(stdout);
 
@@ -2269,7 +3323,7 @@ main(int argc, char **argv)
 
       info_payload = BuildLSSeqInfoPayload(&args, output_filename, nprocs, num_systems, num_parts,
                                            global_patterns_u, num_timesteps, global_blob_ull,
-                                           &info_payload_size);
+                                           global_raw_blob_ull, &info_payload_size);
       if (!info_payload)
       {
          fprintf(stderr, "Could not build LSSeq info payload\n");
@@ -2416,6 +3470,18 @@ main(int argc, char **argv)
       printf("  unique patterns: %u\n", global_patterns_u);
       printf("  codec: %s\n", hypredrv_compression_get_name(args.algo));
       printf("  blob bytes: %llu\n", global_blob_ull);
+      printf("  raw blob bytes: %llu\n", global_raw_blob_ull);
+      if (global_blob_ull > 0)
+      {
+         double ratio = (double)global_raw_blob_ull / (double)global_blob_ull;
+         double savings = 0.0;
+         if (global_raw_blob_ull > 0)
+         {
+            savings = 100.0 * (1.0 - ((double)global_blob_ull / (double)global_raw_blob_ull));
+         }
+         printf("  compression ratio (raw/packed): %.3fx\n", ratio);
+         printf("  space savings: %.2f%%\n", savings);
+      }
       fflush(stdout);
    }
    else
@@ -2433,7 +3499,7 @@ main(int argc, char **argv)
          size_t got  = fread(buf, 1, want, blob_fp);
          if (got != want)
          {
-            fprintf(stderr, "[lsseq-pack][rank %d] Failed to read local blob for send\n", myid);
+            fprintf(stderr, "[lsseq][pack][rank %d] Failed to read local blob for send\n", myid);
             MPI_Abort(comm, 1);
          }
          MPI_Send(buf, (int)got, MPI_BYTE, 0, 1002, comm);

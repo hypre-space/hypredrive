@@ -287,7 +287,7 @@ test_lsseq_summary_and_timesteps(void)
    int         num_systems = 0, num_patterns = 0, has_dofmap = 0, has_timesteps = 0;
    IntArray   *starts = NULL;
 
-   write_test_container(filename);
+   write_test_container_with_info(filename);
    add_temp_file(filename);
 
    ErrorCodeResetAll();
@@ -340,7 +340,7 @@ test_lsseq_matrix_rhs_dofmap(void)
    HYPRE_IJVector  rhs = NULL;
    IntArray       *dofmap = NULL;
 
-   write_test_container(filename);
+   write_test_container_with_info(filename);
    add_temp_file(filename);
 
    ErrorCodeResetAll();
@@ -380,6 +380,23 @@ test_lsseq_matrix_rhs_dofmap(void)
    IntArrayDestroy(&dofmap);
 }
 
+static void
+test_lsseq_requires_info_header(void)
+{
+   const char *filename = "test_lsseq_missing_info.bin";
+   HYPRE_IJMatrix mat   = NULL;
+   IntArray      *starts = NULL;
+
+   write_test_container(filename);
+   add_temp_file(filename);
+
+   ErrorCodeResetAll();
+   ASSERT_FALSE(LSSeqReadMatrix(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &mat));
+
+   ErrorCodeResetAll();
+   ASSERT_FALSE(LSSeqReadTimesteps(filename, &starts));
+}
+
 int
 main(int argc, char **argv)
 {
@@ -389,6 +406,7 @@ main(int argc, char **argv)
    RUN_TEST(test_lsseq_summary_and_timesteps);
    RUN_TEST(test_lsseq_info_block);
    RUN_TEST(test_lsseq_matrix_rhs_dofmap);
+   RUN_TEST(test_lsseq_requires_info_header);
 
    cleanup_temp_files();
 
