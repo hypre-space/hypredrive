@@ -1111,7 +1111,7 @@ MGRConvertArgInt(MGR_args *args, const char *name)
       for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)
       {
          HYPRE_Int type = args->level[i].f_relaxation.type;
-         buf[i]         = (type == MGR_FRLX_TYPE_NESTED_MGR) ? 2 : type;
+         buf[i]         = (type == MGR_FRLX_TYPE_NESTED_MGR) ? 7 : type;
       }
       return buf;
    }
