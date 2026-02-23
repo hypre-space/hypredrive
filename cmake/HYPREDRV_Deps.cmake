@@ -335,11 +335,20 @@ if(NOT HYPRE_FOUND)
         endif()
     endif()
 
+    set(_hypre_git_shallow TRUE)
+    if(NOT HYPRE_VERSION MATCHES "^v?([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
+        # HYPRE's CMake computes HYPRE_DEVELOP_NUMBER from git tag distance. A shallow
+        # clone on moving refs (master/main/develop or arbitrary branches/commits) may
+        # not have enough history/tags for `git describe`, which drops DEVELOP_NUMBER
+        # from generated HYPRE_config.h and breaks hypredrive feature/version probes.
+        set(_hypre_git_shallow FALSE)
+    endif()
+
     FetchContent_Declare(
         hypre
         GIT_REPOSITORY https://github.com/hypre-space/hypre.git
         GIT_TAG        ${HYPRE_VERSION}
-        GIT_SHALLOW    TRUE
+        GIT_SHALLOW    ${_hypre_git_shallow}
         GIT_PROGRESS   TRUE
         # SOURCE_SUBDIR removed - we'll add it manually after patching
     )
