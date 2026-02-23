@@ -58,6 +58,7 @@ jobs:
           echo "::notice::Building with ${{ matrix.compiler }} version $VERSION"
 
       - name: Install dependencies (Ubuntu)
+        timeout-minutes: 3
         if: startsWith(runner.os, 'Linux')
         run: |
           sudo apt-get update
@@ -100,6 +101,7 @@ jobs:
             ${{ runner.os }}-
 
       - name: Install dependencies (macOS)
+        timeout-minutes: 3
         if: startsWith(runner.os, 'macOS')
         run: |
           brew update
@@ -245,6 +247,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install dependencies (Ubuntu)
+        timeout-minutes: 3
         run: |
           sudo apt-get update
           sudo apt-get install -y autoconf automake libtool m4 make \
@@ -290,6 +293,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install dependencies
+        timeout-minutes: 3
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake libopenmpi-dev openmpi-bin ccache gcc g++ make
@@ -385,6 +389,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Install dependencies (Ubuntu)
+        timeout-minutes: 3
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin ccache gcc g++ clang-format
