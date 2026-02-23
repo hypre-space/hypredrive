@@ -250,15 +250,7 @@ jobs:
           sudo apt-get install -y autoconf automake libtool m4 make \
             libopenmpi-dev openmpi-bin gcc g++
 
-      - name: Restore HYPRE cache
-        id: hypre-cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}
-          key: hypre-${{ env.HYPRE_VERSION }}-${{ env.HYPRE_OS }}-${{ env.HYPRE_COMPILER }}-${{ env.HYPRE_BUILD_TYPE }}-${{ env.HYPRE_LIBTYPE }}-mixedint-${{ env.HYPRE_MIXEDINT }}-${{ env.HYPRE_MPI_FLAVOR }}
-
-      - name: Build HYPRE (cache miss)
-        if: steps.hypre-cache.outputs.cache-hit != 'true'
+      - name: Build HYPRE
         id: build-hypre
         uses: ./.github/actions/build-hypre
         with:
@@ -273,7 +265,7 @@ jobs:
       - name: Build and test (autotools)
         run: |
           set -euxo pipefail
-          HYPRE_DIR="${{ runner.tool_cache }}/hypre/${{ env.HYPRE_VERSION }}"
+          HYPRE_DIR="${{ steps.build-hypre.outputs.hypre_prefix }}"
           autoreconf -iv
           ./configure --with-hypre-dir="${HYPRE_DIR}" \
                       --prefix="$(pwd)/install-autotools"
