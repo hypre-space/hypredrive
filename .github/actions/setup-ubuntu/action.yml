@@ -20,6 +20,7 @@ runs:
   using: 'composite'
   steps:
     - name: Install dependencies
+      timeout-minutes: 3
       shell: bash
       run: |
         sudo apt-get update
