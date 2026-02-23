@@ -14,6 +14,83 @@
 #include "_hypre_utilities.h" // for hypre_Solver
 #endif
 
+typedef struct HYPREDRV_MGRFRelaxWrapper_struct
+{
+   HYPRE_Int (*setup)(void *, void *, void *, void *);
+   HYPRE_Int (*solve)(void *, void *, void *, void *);
+   HYPRE_Int (*destroy)(void *);
+   HYPRE_Solver inner_mgr;
+} HYPREDRV_MGRFRelaxWrapper;
+
+static HYPRE_Int
+HYPREDRV_MGRFRelaxWrapperSetup(void *wrapper_v, void *A, void *b, void *x)
+{
+   HYPREDRV_MGRFRelaxWrapper *wrapper = (HYPREDRV_MGRFRelaxWrapper *)wrapper_v;
+   if (!wrapper || !wrapper->inner_mgr)
+   {
+      return 1;
+   }
+   return HYPRE_MGRSetup((HYPRE_Solver)wrapper->inner_mgr, (HYPRE_ParCSRMatrix)A,
+                         (HYPRE_ParVector)b, (HYPRE_ParVector)x);
+}
+
+static HYPRE_Int
+HYPREDRV_MGRFRelaxWrapperSolve(void *wrapper_v, void *A, void *b, void *x)
+{
+   HYPREDRV_MGRFRelaxWrapper *wrapper = (HYPREDRV_MGRFRelaxWrapper *)wrapper_v;
+   if (!wrapper || !wrapper->inner_mgr)
+   {
+      return 1;
+   }
+   return HYPRE_MGRSolve((HYPRE_Solver)wrapper->inner_mgr, (HYPRE_ParCSRMatrix)A,
+                         (HYPRE_ParVector)b, (HYPRE_ParVector)x);
+}
+
+static HYPRE_Int
+HYPREDRV_MGRFRelaxWrapperDestroy(void *wrapper_v)
+{
+   HYPREDRV_MGRFRelaxWrapper *wrapper = (HYPREDRV_MGRFRelaxWrapper *)wrapper_v;
+   free(wrapper);
+   return 0;
+}
+
+static HYPRE_Solver
+MGRNestedFRelaxWrapperCreate(HYPRE_Solver inner_mgr)
+{
+   HYPREDRV_MGRFRelaxWrapper *wrapper =
+      (HYPREDRV_MGRFRelaxWrapper *)calloc(1, sizeof(*wrapper));
+   if (!wrapper)
+   {
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate nested MGR F-relaxation wrapper");
+      return NULL;
+   }
+
+   wrapper->setup     = HYPREDRV_MGRFRelaxWrapperSetup;
+   wrapper->solve     = HYPREDRV_MGRFRelaxWrapperSolve;
+   wrapper->destroy   = HYPREDRV_MGRFRelaxWrapperDestroy;
+   wrapper->inner_mgr = inner_mgr;
+   return (HYPRE_Solver)wrapper;
+}
+
+HYPRE_Solver
+MGRNestedFRelaxWrapperGetInner(HYPRE_Solver wrapper_solver)
+{
+   HYPREDRV_MGRFRelaxWrapper *wrapper = (HYPREDRV_MGRFRelaxWrapper *)wrapper_solver;
+   return wrapper ? wrapper->inner_mgr : NULL;
+}
+
+void
+MGRNestedFRelaxWrapperFree(HYPRE_Solver *wrapper_ptr)
+{
+   if (!wrapper_ptr || !*wrapper_ptr)
+   {
+      return;
+   }
+   HYPREDRV_MGRFRelaxWrapperDestroy((void *)(*wrapper_ptr));
+   *wrapper_ptr = NULL;
+}
+
 /*-----------------------------------------------------------------------------
  * Field definitions using the type-setting wrappers
  *-----------------------------------------------------------------------------*/
@@ -28,6 +105,8 @@ DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, ILUSetArgs)
 static void MGRclsTypeSet(void *, const YAMLnode *);
 static void MGRfrlxTypeSet(void *, const YAMLnode *);
 static void MGRgrlxTypeSet(void *, const YAMLnode *);
+static void MGRfrlxMGRSetArgs(void *, const YAMLnode *);
+void        MGRSetArgsFromYAML(void *, YAMLnode *);
 
 #define MGRcls_FIELDS(_prefix)                            \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRclsTypeSet)   \
@@ -37,6 +116,7 @@ static void MGRgrlxTypeSet(void *, const YAMLnode *);
 #define MGRfrlx_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRfrlxTypeSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRfrlxMGRSetArgs)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)
 
@@ -132,6 +212,354 @@ MGRGetOrCreateNestedKrylov(NestedKrylov_args **ptr)
 }
 
 /*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+static MGR_args *
+MGRGetOrCreateNestedMGR(MGR_args **ptr)
+{
+   if (!ptr)
+   {
+      return NULL;
+   }
+
+   if (!*ptr)
+   {
+      *ptr = (MGR_args *)malloc(sizeof(MGR_args));
+      if (*ptr)
+      {
+         MGRSetDefaultArgs(*ptr);
+      }
+   }
+
+   return *ptr;
+}
+
+/*-----------------------------------------------------------------------------
+ * Build a dense label-space mask for labels present in an IntArray dofmap.
+ *
+ * The dof labels carried in IntArray may be sparse (e.g., nested MGR projected
+ * F-blocks preserving parent labels). This helper derives the label-space size
+ * as `max_label + 1` and a presence mask over that space.
+ *-----------------------------------------------------------------------------*/
+
+static int
+MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_out,
+                             size_t     *num_present_labels_out,
+                             HYPRE_Int **label_present_out)
+{
+   const int *labels             = NULL;
+   size_t     num_labels         = 0;
+   HYPRE_Int *label_mask         = NULL;
+   int        max_label          = -1;
+   size_t     present_cnt        = 0;
+   int        use_dense_fallback = 0;
+
+   if (!dofmap || !label_space_size_out || !label_present_out)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Invalid arguments while building MGR dof label presence mask");
+      return 0;
+   }
+
+   *label_space_size_out = 0;
+   *label_present_out    = NULL;
+   if (num_present_labels_out)
+   {
+      *num_present_labels_out = 0;
+   }
+
+   if (dofmap->g_unique_data && dofmap->g_unique_size > 0)
+   {
+      labels     = dofmap->g_unique_data;
+      num_labels = dofmap->g_unique_size;
+      for (size_t i = 1; i < num_labels; i++)
+      {
+         if (labels[i] <= labels[i - 1])
+         {
+            use_dense_fallback = 1;
+            break;
+         }
+      }
+      if (use_dense_fallback)
+      {
+         labels = NULL;
+      }
+   }
+   if (!labels && dofmap->g_unique_size > 0)
+   {
+      /* Compatibility fallback for distributed dofmaps: some IntArray sources
+       * only reliably provide the global count, while label ids are expected
+       * to be dense [0, ..., g_unique_size-1]. */
+      *label_space_size_out = dofmap->g_unique_size;
+      label_mask = (HYPRE_Int *)calloc(*label_space_size_out, sizeof(HYPRE_Int));
+      if (!label_mask)
+      {
+         ErrorCodeSet(ERROR_ALLOCATION);
+         ErrorMsgAdd("Failed to allocate MGR dof label presence mask");
+         return 0;
+      }
+      for (size_t i = 0; i < *label_space_size_out; i++)
+      {
+         label_mask[i] = 1;
+      }
+      *label_present_out = label_mask;
+      if (num_present_labels_out)
+      {
+         *num_present_labels_out = dofmap->g_unique_size;
+      }
+      return 1;
+   }
+   else if (dofmap->unique_data && dofmap->unique_size > 0)
+   {
+      labels     = dofmap->unique_data;
+      num_labels = dofmap->unique_size;
+   }
+   else if (dofmap->data && dofmap->size > 0)
+   {
+      labels     = dofmap->data;
+      num_labels = dofmap->size;
+   }
+   else
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("MGR requires a non-empty dofmap");
+      return 0;
+   }
+
+   for (size_t i = 0; i < num_labels; i++)
+   {
+      if (labels[i] < 0)
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Invalid negative dof label %d in dofmap", labels[i]);
+         return 0;
+      }
+      if (labels[i] > max_label)
+      {
+         max_label = labels[i];
+      }
+   }
+
+   *label_space_size_out = (size_t)max_label + 1;
+   label_mask            = (HYPRE_Int *)calloc(*label_space_size_out, sizeof(HYPRE_Int));
+   if (!label_mask)
+   {
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate MGR dof label presence mask");
+      return 0;
+   }
+
+   for (size_t i = 0; i < num_labels; i++)
+   {
+      int label = labels[i];
+      if (!label_mask[label])
+      {
+         label_mask[label] = 1;
+         present_cnt++;
+      }
+   }
+
+   *label_present_out = label_mask;
+   if (num_present_labels_out)
+   {
+      *num_present_labels_out = present_cnt;
+   }
+   return 1;
+}
+
+/*-----------------------------------------------------------------------------
+ * Build a projected dofmap for nested MGR F-relaxation.
+ *
+ * Nested MGR acts on the outer level's F-block. Preserve the parent's original
+ * labels when filtering to the selected F-point rows so nested `f_dofs` continue to
+ * refer to the same label values as the parent MGR.
+ *-----------------------------------------------------------------------------*/
+
+static IntArray *
+MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
+                              const StackIntArray *parent_f_dofs)
+{
+   if (!parent_dofmap || !parent_f_dofs)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Nested MGR requires a valid parent dofmap and parent f_dofs");
+      return NULL;
+   }
+
+   if (parent_f_dofs->size == 0)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Nested MGR requires non-empty parent f_dofs");
+      return NULL;
+   }
+
+   size_t     parent_label_space = 0;
+   size_t     nested_num_labels  = parent_f_dofs->size;
+   HYPRE_Int *parent_present     = NULL;
+   HYPRE_Int *keep_label         = NULL;
+   HYPRE_Int *seen_label         = NULL;
+   int       *filtered           = NULL;
+   IntArray  *nested_dofmap      = NULL;
+   size_t     present_cnt        = 0;
+
+   if (!MGRBuildDofLabelPresenceMask(parent_dofmap, &parent_label_space, NULL,
+                                     &parent_present))
+   {
+      return NULL;
+   }
+
+   keep_label = (HYPRE_Int *)calloc(parent_label_space, sizeof(HYPRE_Int));
+   if (!keep_label)
+   {
+      free(parent_present);
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate nested MGR dof label selection mask");
+      return NULL;
+   }
+
+   for (size_t i = 0; i < nested_num_labels; i++)
+   {
+      int label = parent_f_dofs->data[i];
+      if (label < 0 || (size_t)label >= parent_label_space)
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd(
+            "Invalid parent MGR f_dofs label %d for nested MGR (valid range: [0,%d])",
+            label, (int)parent_label_space - 1);
+         free(keep_label);
+         free(parent_present);
+         return NULL;
+      }
+      if (!parent_present[label])
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Parent MGR f_dofs label %d is not present in parent dofmap", label);
+         free(keep_label);
+         free(parent_present);
+         return NULL;
+      }
+      if (keep_label[label])
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Duplicate parent MGR f_dofs label %d for nested MGR", label);
+         free(keep_label);
+         free(parent_present);
+         return NULL;
+      }
+      keep_label[label] = 1;
+   }
+
+   size_t nested_size = 0;
+   for (size_t i = 0; i < parent_dofmap->size; i++)
+   {
+      int label = parent_dofmap->data[i];
+      if (label < 0 || (size_t)label >= parent_label_space)
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("Invalid dofmap entry %d while building nested MGR dofmap", label);
+         free(keep_label);
+         free(parent_present);
+         return NULL;
+      }
+      if (keep_label[label])
+      {
+         nested_size++;
+      }
+   }
+
+   nested_dofmap = IntArrayCreate(nested_size);
+   filtered      = nested_dofmap ? nested_dofmap->data : NULL;
+   if (!nested_dofmap || (nested_size > 0 && !filtered))
+   {
+      IntArrayDestroy(&nested_dofmap);
+      free(keep_label);
+      free(parent_present);
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate nested MGR projected dofmap");
+      return NULL;
+   }
+
+   for (size_t i = 0, j = 0; i < parent_dofmap->size; i++)
+   {
+      int label = parent_dofmap->data[i];
+      if (keep_label[label])
+      {
+         filtered[j++] = label;
+      }
+   }
+
+   seen_label = (HYPRE_Int *)calloc(parent_label_space, sizeof(HYPRE_Int));
+   if (!seen_label)
+   {
+      IntArrayDestroy(&nested_dofmap);
+      free(keep_label);
+      free(parent_present);
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate nested MGR label uniqueness workspace");
+      return NULL;
+   }
+
+   nested_dofmap->unique_size = 0;
+   for (size_t i = 0; i < nested_size; i++)
+   {
+      int label = nested_dofmap->data[i];
+      if (!seen_label[label])
+      {
+         seen_label[label] = 1;
+         nested_dofmap->unique_size++;
+      }
+   }
+
+   if (nested_dofmap->unique_size > 0)
+   {
+      nested_dofmap->unique_data =
+         (int *)malloc(nested_dofmap->unique_size * sizeof(int));
+      if (!nested_dofmap->unique_data)
+      {
+         free(seen_label);
+         IntArrayDestroy(&nested_dofmap);
+         free(keep_label);
+         free(parent_present);
+         ErrorCodeSet(ERROR_ALLOCATION);
+         ErrorMsgAdd("Failed to allocate nested MGR unique dof labels");
+         return NULL;
+      }
+      for (size_t i = 0, j = 0; i < parent_label_space; i++)
+      {
+         if (seen_label[i])
+         {
+            nested_dofmap->unique_data[j++] = (int)i;
+         }
+      }
+   }
+
+   nested_dofmap->g_unique_size = nested_num_labels;
+   nested_dofmap->g_unique_data = (int *)malloc(nested_num_labels * sizeof(int));
+   if (!nested_dofmap->g_unique_data)
+   {
+      free(seen_label);
+      IntArrayDestroy(&nested_dofmap);
+      free(keep_label);
+      free(parent_present);
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate nested MGR global dof labels");
+      return NULL;
+   }
+   for (size_t i = 0; i < parent_label_space; i++)
+   {
+      if (keep_label[i])
+      {
+         nested_dofmap->g_unique_data[present_cnt++] = (int)i;
+      }
+   }
+
+   free(seen_label);
+   free(keep_label);
+   free(parent_present);
+   return nested_dofmap;
+}
+
+/*-----------------------------------------------------------------------------
  * Type setters for union-backed solver args.
  *-----------------------------------------------------------------------------*/
 
@@ -223,6 +651,7 @@ MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
    args->num_sweeps = 1;
    args->use_krylov = 0;
    args->krylov     = NULL;
+   args->mgr        = NULL;
    /* Solver-specific args live in a union. We only (re)initialize them if/when a
     * specific solver type is selected during YAML parsing. */
 }
@@ -269,6 +698,7 @@ MGRlvlSetDefaultArgs(MGRlvl_args *args)
 void
 MGRSetDefaultArgs(MGR_args *args)
 {
+   args->dofmap           = NULL;
    args->max_iter         = 1;
    args->num_levels       = 0;
    args->print_level      = 0;
@@ -289,6 +719,27 @@ MGRSetDefaultArgs(MGR_args *args)
    args->csolver      = NULL;
    args->csolver_type = -1;
    args->vec_nn       = NULL;
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+static void
+MGRfrlxMGRSetArgs(void *field, const YAMLnode *node)
+{
+   MGRfrlx_args *parent = (MGRfrlx_args *)((char *)field - offsetof(MGRfrlx_args, mgr));
+   MGR_args    **nested_ptr = (MGR_args **)field;
+   MGR_args     *nested_mgr = MGRGetOrCreateNestedMGR(nested_ptr);
+
+   if (!nested_mgr)
+   {
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate nested MGR arguments for MGR f_relaxation");
+      return;
+   }
+
+   parent->type = MGR_FRLX_TYPE_NESTED_MGR;
+   MGRSetArgsFromYAML(nested_mgr, (YAMLnode *)node);
 }
 
 /*-----------------------------------------------------------------------------
@@ -471,10 +922,19 @@ MGRfrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"", -1},          {"none", -1},   {"single", 7},
-                                {"jacobi", 7},     {"v(1,0)", 1},  {"amg", 2},
-                                {"chebyshev", 16}, {"ilu", 32},    {"ge", 9},
-                                {"spdirect", 29},  {"ge-piv", 99}, {"ge-inv", 199}};
+      static StrIntMap map[] = {{"", -1},
+                                {"none", -1},
+                                {"single", 7},
+                                {"jacobi", 7},
+                                {"v(1,0)", 1},
+                                {"amg", 2},
+                                {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
+                                {"chebyshev", 16},
+                                {"ilu", 32},
+                                {"ge", 9},
+                                {"spdirect", 29},
+                                {"ge-piv", 99},
+                                {"ge-inv", 199}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -626,7 +1086,9 @@ MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
                   if ((!strcmp(great_grandchild->key, "f_relaxation") ||
                        !strcmp(great_grandchild->key, "g_relaxation")) &&
                       great_grandchild->children &&
-                      MGRIsNestedKrylovKey(great_grandchild->children->key))
+                      (MGRIsNestedKrylovKey(great_grandchild->children->key) ||
+                       (!strcmp(great_grandchild->key, "f_relaxation") &&
+                        !strcmp(great_grandchild->children->key, "mgr"))))
                   {
                      YAML_NODE_SET_VALID(great_grandchild);
                      YAML_NODE_SET_FIELD(great_grandchild, &args->level[lvl],
@@ -679,11 +1141,37 @@ MGRConvertArgInt(MGR_args *args, const char *name)
       return NULL;
    }
 
-   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, f_relaxation.type)
+   /* hypre MGR SetLevel* setters copy arrays up to their internal
+    * max_num_coarse_levels. Always clear the full buffer so unused entries do
+    * not retain stale values from previous conversions. */
+   for (size_t i = 0; i < (size_t)(MAX_MGR_LEVELS - 1); i++)
+   {
+      buf[i] = 0;
+   }
+
+   if (!strcmp(name, "f_relaxation:type"))
+   {
+      for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)
+      {
+         HYPRE_Int type = args->level[i].f_relaxation.type;
+         buf[i]         = (type == MGR_FRLX_TYPE_NESTED_MGR) ? 2 : type;
+      }
+      return buf;
+   }
+
+   if (!strcmp(name, "prolongation_type"))
+   {
+      for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)
+      {
+         HYPRE_Int type = args->level[i].prolongation_type;
+         buf[i]         = type;
+      }
+      return buf;
+   }
+
    HANDLE_MGR_LEVEL_ATTRIBUTE(buf, f_relaxation.num_sweeps)
    HANDLE_MGR_LEVEL_ATTRIBUTE(buf, g_relaxation.type)
    HANDLE_MGR_LEVEL_ATTRIBUTE(buf, g_relaxation.num_sweeps)
-   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, prolongation_type)
    HANDLE_MGR_LEVEL_ATTRIBUTE(buf, restriction_type)
    HANDLE_MGR_LEVEL_ATTRIBUTE(buf, coarse_level_type)
 
@@ -717,6 +1205,13 @@ MGRDestroyNestedKrylovArgs(MGR_args *args)
 
    for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
    {
+      if (args->level[i].f_relaxation.mgr)
+      {
+         MGRDestroyNestedKrylovArgs(args->level[i].f_relaxation.mgr);
+         free(args->level[i].f_relaxation.mgr);
+         args->level[i].f_relaxation.mgr = NULL;
+      }
+
       if (args->level[i].f_relaxation.krylov)
       {
          NestedKrylovDestroy(args->level[i].f_relaxation.krylov);
@@ -757,14 +1252,16 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    *precon_ptr = NULL;
    return;
 #else
-   HYPRE_Solver precon        = NULL;
-   HYPRE_Solver frelax        = NULL;
-   HYPRE_Solver grelax        = NULL;
-   HYPRE_Int   *dofmap_data   = NULL;
-   IntArray    *dofmap        = NULL;
-   HYPRE_Int    num_dofs      = 0;
-   HYPRE_Int    num_dofs_last = 0;
-   HYPRE_Int    num_levels    = 0;
+   HYPRE_Solver precon          = NULL;
+   HYPRE_Solver frelax          = NULL;
+   HYPRE_Solver grelax          = NULL;
+   HYPRE_Int   *dofmap_data     = NULL;
+   IntArray    *dofmap          = NULL;
+   HYPRE_Int   *label_present   = NULL;
+   HYPRE_Int    num_dofs        = 0;
+   HYPRE_Int    num_active_dofs = 0;
+   HYPRE_Int    num_dofs_last   = 0;
+   HYPRE_Int    num_levels      = 0;
    HYPRE_Int    num_c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *inactive_dofs = NULL;
@@ -780,12 +1277,36 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
    /* Initialize variables */
    dofmap     = args->dofmap;
-   num_dofs   = (HYPRE_Int)dofmap->g_unique_size;
    num_levels = args->num_levels;
+   {
+      size_t label_space_size = 0;
+      size_t present_labels   = 0;
+      if (!MGRBuildDofLabelPresenceMask(dofmap, &label_space_size, &present_labels,
+                                        &label_present))
+      {
+         return;
+      }
+      num_dofs        = (HYPRE_Int)label_space_size;
+      num_active_dofs = (HYPRE_Int)present_labels;
+   }
 
    /* Compute num_c_dofs and c_dofs */
-   num_dofs_last = num_dofs;
+   num_dofs_last = num_active_dofs;
    inactive_dofs = (HYPRE_Int *)calloc((size_t)num_dofs, sizeof(HYPRE_Int));
+   if (!inactive_dofs)
+   {
+      free(label_present);
+      ErrorCodeSet(ERROR_ALLOCATION);
+      ErrorMsgAdd("Failed to allocate MGR inactive dof label mask");
+      return;
+   }
+   for (i = 0; i < num_dofs; i++)
+   {
+      if (!label_present[i])
+      {
+         inactive_dofs[i] = 1;
+      }
+   }
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
       c_dofs[lvl]     = (HYPRE_Int *)malloc((size_t)num_dofs * sizeof(HYPRE_Int));
@@ -793,18 +1314,60 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
       for (i = 0; i < (int)args->level[lvl].f_dofs.size; i++)
       {
-         inactive_dofs[args->level[lvl].f_dofs.data[i]] = 1;
+         HYPRE_Int dof_label = args->level[lvl].f_dofs.data[i];
+         if (dof_label < 0 || dof_label >= num_dofs)
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Invalid MGR level %d f_dofs label %d (valid range: [0,%d])",
+                        (int)lvl, (int)dof_label, (int)num_dofs - 1);
+            free(label_present);
+            free(inactive_dofs);
+            for (HYPRE_Int k = 0; k <= lvl; k++)
+            {
+               free(c_dofs[k]);
+            }
+            return;
+         }
+         if (!label_present[dof_label])
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("MGR level %d f_dofs label %d is not present in dofmap", (int)lvl,
+                        (int)dof_label);
+            free(label_present);
+            free(inactive_dofs);
+            for (HYPRE_Int k = 0; k <= lvl; k++)
+            {
+               free(c_dofs[k]);
+            }
+            return;
+         }
+         if (inactive_dofs[dof_label])
+         {
+            ErrorCodeSet(ERROR_INVALID_VAL);
+            ErrorMsgAdd("Duplicate/previously eliminated MGR f_dofs label %d at level %d",
+                        (int)dof_label, (int)lvl);
+            free(label_present);
+            free(inactive_dofs);
+            for (HYPRE_Int k = 0; k <= lvl; k++)
+            {
+               free(c_dofs[k]);
+            }
+            return;
+         }
+         inactive_dofs[dof_label] = 1;
          --num_dofs_last;
       }
 
       for (i = 0, j = 0; i < num_dofs; i++)
       {
-         if (!inactive_dofs[i])
+         if (label_present[i] && !inactive_dofs[i])
          {
             c_dofs[lvl][j++] = i;
          }
       }
    }
+   free(label_present);
+   label_present = NULL;
 
    /* Set dofmap_data */
    if (TYPES_MATCH(HYPRE_Int, int))
@@ -876,6 +1439,68 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          (void)i;
 #endif
          args->frelax[i] = frelax;
+      }
+      else if (args->level[i].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
+      {
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
+         MGR_args      *nested_args    = args->level[i].f_relaxation.mgr;
+         HYPRE_Solver   frelax_wrapper = NULL;
+         IntArray      *nested_dofmap  = NULL;
+         IntArray      *saved_dofmap   = NULL;
+         HYPRE_IJVector saved_vec_nn   = NULL;
+
+         if (!nested_args)
+         {
+            ErrorCodeSet(ERROR_INVALID_PRECON);
+            ErrorMsgAdd("MGR F-relaxation type 'mgr' requires a nested 'mgr:' block");
+            return;
+         }
+
+         nested_dofmap =
+            MGRBuildProjectedFRelaxDofmap(args->dofmap, &args->level[i].f_dofs);
+         if (ErrorCodeActive() || !nested_dofmap)
+         {
+            IntArrayDestroy(&nested_dofmap);
+            return;
+         }
+
+         saved_dofmap        = nested_args->dofmap;
+         saved_vec_nn        = nested_args->vec_nn;
+         nested_args->dofmap = nested_dofmap;
+         nested_args->vec_nn = NULL;
+         MGRCreate(nested_args, &frelax);
+         nested_args->dofmap = saved_dofmap;
+         nested_args->vec_nn = saved_vec_nn;
+         IntArrayDestroy(&nested_dofmap);
+         if (ErrorCodeActive())
+         {
+            return;
+         }
+
+         if (i == 0)
+         {
+            frelax_wrapper = MGRNestedFRelaxWrapperCreate(frelax);
+            if (ErrorCodeActive() || !frelax_wrapper)
+            {
+               HYPRE_MGRDestroy(frelax);
+               return;
+            }
+            HYPRE_MGRSetFSolverAtLevel(precon, frelax_wrapper, i);
+         }
+         else
+         {
+            ErrorCodeSet(ERROR_INVALID_PRECON);
+            ErrorMsgAdd(
+               "Nested MGR F-relaxation is only supported at MGR level 0 by hypre");
+            HYPRE_MGRDestroy(frelax);
+            return;
+         }
+         args->frelax[i] = frelax_wrapper;
+#else
+         ErrorCodeSet(ERROR_INVALID_PRECON);
+         ErrorMsgAdd("Nested MGR F-relaxation requires hypre >= 3.1.0 (develop >= 5)");
+         return;
+#endif
       }
 #if defined(HYPRE_USING_DSUPERLU)
       else if (args->level[i].f_relaxation.type == 29)

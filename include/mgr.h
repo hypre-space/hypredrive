@@ -13,10 +13,12 @@
 #include "utils.h"
 
 struct NestedKrylov_args_struct;
+typedef struct MGR_args_struct MGR_args;
 
 enum
 {
-   MAX_MGR_LEVELS = 32
+   MAX_MGR_LEVELS           = 32,
+   MGR_FRLX_TYPE_NESTED_MGR = 202
 };
 
 /*--------------------------------------------------------------------------
@@ -50,6 +52,7 @@ typedef struct MGRfrlx_args_struct
 
    int                              use_krylov;
    struct NestedKrylov_args_struct *krylov;
+   MGR_args                        *mgr;
 
    /* Only one fine-relaxation solver is active at a time. */
    union
@@ -99,7 +102,7 @@ typedef struct MGRlvl_args_struct
  * MGR preconditioner arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct MGR_args_struct
+struct MGR_args_struct
 {
    IntArray      *dofmap;
    HYPRE_IJVector vec_nn;
@@ -121,18 +124,20 @@ typedef struct MGR_args_struct
    HYPRE_Int    csolver_type;
    HYPRE_Solver frelax[MAX_MGR_LEVELS - 1];
    HYPRE_Solver grelax[MAX_MGR_LEVELS - 1];
-} MGR_args;
+};
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void MGRSetDefaultArgs(MGR_args *);
-void MGRSetArgs(void *, const YAMLnode *);
-void MGRSetDofmap(MGR_args *, IntArray *);
-void MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
-void MGRCreate(MGR_args *, HYPRE_Solver *);
-void MGRDestroyNestedKrylovArgs(MGR_args *);
+void         MGRSetDefaultArgs(MGR_args *);
+void         MGRSetArgs(void *, const YAMLnode *);
+void         MGRSetDofmap(MGR_args *, IntArray *);
+void         MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
+void         MGRCreate(MGR_args *, HYPRE_Solver *);
+void         MGRDestroyNestedKrylovArgs(MGR_args *);
+HYPRE_Solver MGRNestedFRelaxWrapperGetInner(HYPRE_Solver);
+void         MGRNestedFRelaxWrapperFree(HYPRE_Solver *);
 
 /*--------------------------------------------------------------------------
  * Macros

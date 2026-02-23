@@ -100,6 +100,55 @@ LSSeqFNV1a64(const void *data, size_t nbytes, uint64_t hash)
 }
 
 static int
+LSSeqFormatPartFilename(char *filename, size_t filename_size, const char *prefix,
+                        uint32_t part_id, const char *suffix)
+{
+   char   id_buf[16];
+   int    id_len     = 0;
+   size_t prefix_len = 0;
+   size_t suffix_len = 0;
+   size_t total_len  = 0;
+
+   if (!filename || filename_size == 0 || !prefix)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Invalid arguments for LSSeqFormatPartFilename");
+      return 0;
+   }
+   if (!suffix)
+   {
+      suffix = "";
+   }
+
+   id_len = snprintf(id_buf, sizeof(id_buf), "%05u", part_id);
+   if (id_len < 0 || (size_t)id_len >= sizeof(id_buf))
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("Could not format LSSeq part id %u", part_id);
+      return 0;
+   }
+
+   prefix_len = strlen(prefix);
+   suffix_len = strlen(suffix);
+   total_len  = prefix_len + 1u + (size_t)id_len + suffix_len;
+   if (total_len + 1u > filename_size)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("LSSeq temporary part filename is too long for buffer (%zu bytes)",
+                  filename_size);
+      return 0;
+   }
+
+   memcpy(filename, prefix, prefix_len);
+   filename[prefix_len] = '.';
+   memcpy(filename + prefix_len + 1u, id_buf, (size_t)id_len);
+   memcpy(filename + prefix_len + 1u + (size_t)id_len, suffix, suffix_len);
+   filename[total_len] = '\0';
+
+   return 1;
+}
+
+static int
 LSSeqReadAt(FILE *fp, uint64_t offset, void *buffer, size_t nbytes, const char *what)
 {
    if (!fp || !buffer)
@@ -714,9 +763,9 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
    *output      = NULL;
    *output_size = 0;
    c_off =
-      part_blob_table[(size_t)part_id * LSSEQ_PART_BLOB_ENTRIES + (size_t)(slot * 2)];
-   c_size =
-      part_blob_table[(size_t)part_id * LSSEQ_PART_BLOB_ENTRIES + (size_t)(slot * 2) + 1];
+      part_blob_table[((size_t)part_id * LSSEQ_PART_BLOB_ENTRIES) + (size_t)(slot * 2)];
+   c_size = part_blob_table[((size_t)part_id * LSSEQ_PART_BLOB_ENTRIES) +
+                            (size_t)(slot * 2) + 1];
    if (c_size == 0)
    {
       if (decomp_size != 0)
@@ -1028,7 +1077,6 @@ LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
          goto cleanup;
       }
 
-      expected_size = (size_t)sys->nnz * (size_t)part->value_size;
       if (!LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq.header.codec,
                                   seq.header.offset_blob_data, seq.part_blob_table,
                                   part_id, 0, sys->values_blob_offset,
@@ -1040,7 +1088,14 @@ LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
          goto cleanup;
       }
 
-      snprintf(part_filename, sizeof(part_filename), "%s.%05u.bin", prefix, tmp_part_id);
+      if (!LSSeqFormatPartFilename(part_filename, sizeof(part_filename), prefix,
+                                   tmp_part_id, ".bin"))
+      {
+         free(rows);
+         free(cols);
+         free(vals);
+         goto cleanup;
+      }
       if (!LSSeqWriteMatrixPartFile(part_filename, part, pattern, rows, cols, vals))
       {
          free(rows);
@@ -1139,9 +1194,8 @@ LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
       const LSSeqPartMeta       *part        = &seq.parts[part_id];
       const LSSeqSystemPartMeta *sys =
          &seq.sys_parts[((size_t)ls_id * (size_t)seq.header.num_parts) + (size_t)part_id];
-      void  *vals          = NULL;
-      size_t vals_size     = 0;
-      size_t expected_size = (size_t)part->nrows * (size_t)part->value_size;
+      void  *vals      = NULL;
+      size_t vals_size = 0;
 
       if (!LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq.header.codec,
                                   seq.header.offset_blob_data, seq.part_blob_table,
@@ -1152,7 +1206,12 @@ LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
          goto cleanup;
       }
 
-      snprintf(part_filename, sizeof(part_filename), "%s.%05u.bin", prefix, tmp_part_id);
+      if (!LSSeqFormatPartFilename(part_filename, sizeof(part_filename), prefix,
+                                   tmp_part_id, ".bin"))
+      {
+         free(vals);
+         goto cleanup;
+      }
       if (!LSSeqWriteRHSPartFile(part_filename, part, vals))
       {
          free(vals);
@@ -1269,7 +1328,11 @@ LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id, IntArray **dofma
       size_t   dof_size = 0;
       FILE    *out      = NULL;
 
-      snprintf(part_filename, sizeof(part_filename), "%s.%05u", prefix, tmp_part_id);
+      if (!LSSeqFormatPartFilename(part_filename, sizeof(part_filename), prefix,
+                                   tmp_part_id, NULL))
+      {
+         goto cleanup;
+      }
       out = fopen(part_filename, "w");
       if (!out)
       {

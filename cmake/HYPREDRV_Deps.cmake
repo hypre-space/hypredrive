@@ -590,6 +590,9 @@ if(TARGET HYPRE::HYPRE)
         get_target_property(HYPRE_LIBRARY_FILE HYPRE::HYPRE IMPORTED_LOCATION_RELEASE)
     endif()
     if(NOT HYPRE_LIBRARY_FILE)
+        get_target_property(HYPRE_LIBRARY_FILE HYPRE::HYPRE IMPORTED_LOCATION_RELWITHDEBINFO)
+    endif()
+    if(NOT HYPRE_LIBRARY_FILE)
         get_target_property(HYPRE_LIBRARY_FILE HYPRE::HYPRE IMPORTED_LOCATION_DEBUG)
     endif()
     if(NOT HYPRE_LIBRARY_FILE)
@@ -643,6 +646,113 @@ if(TARGET HYPRE::HYPRE)
     message(STATUS "Found HYPRE:")
     message(STATUS "  include directories: ${HYPRE_INCLUDE_DIRS}")
     message(STATUS "  libraries: ${HYPRE_LIBRARY_FILE}")
+
+    # Build a runtime library search path for CTest so executables can launch
+    # when HYPRE's transitive shared-library dependencies (e.g., Caliper) are
+    # not resolved through executable RUNPATH.
+    set(_hypredrv_test_runtime_lib_dirs "")
+
+    function(_hypredrv_collect_lib_dirs_from_items out_var)
+        set(_dirs "")
+        foreach(_item IN LISTS ARGN)
+            if(NOT _item)
+                continue()
+            endif()
+
+            if(TARGET "${_item}")
+                get_target_property(_item_lib "${_item}" IMPORTED_LOCATION)
+                if(NOT _item_lib)
+                    get_target_property(_item_lib "${_item}" IMPORTED_LOCATION_RELEASE)
+                endif()
+                if(NOT _item_lib)
+                    get_target_property(_item_lib "${_item}" IMPORTED_LOCATION_RELWITHDEBINFO)
+                endif()
+                if(NOT _item_lib)
+                    get_target_property(_item_lib "${_item}" IMPORTED_LOCATION_DEBUG)
+                endif()
+                if(_item_lib AND EXISTS "${_item_lib}")
+                    get_filename_component(_item_dir "${_item_lib}" DIRECTORY)
+                    list(APPEND _dirs "${_item_dir}")
+                endif()
+                continue()
+            endif()
+
+            # Ignore generator expressions and plain library names.
+            if(_item MATCHES "^\\$<" OR _item MATCHES "^[A-Za-z0-9_:+.-]+$")
+                continue()
+            endif()
+
+            # Extract -L<dir> entries from interface link options/libraries.
+            if(_item MATCHES "^-L(.+)$")
+                set(_candidate_dir "${CMAKE_MATCH_1}")
+                if(IS_DIRECTORY "${_candidate_dir}")
+                    list(APPEND _dirs "${_candidate_dir}")
+                endif()
+                continue()
+            endif()
+
+            if(IS_ABSOLUTE "${_item}" AND EXISTS "${_item}")
+                get_filename_component(_item_dir "${_item}" DIRECTORY)
+                list(APPEND _dirs "${_item_dir}")
+            endif()
+        endforeach()
+        list(REMOVE_DUPLICATES _dirs)
+        set(${out_var} "${_dirs}" PARENT_SCOPE)
+    endfunction()
+
+    list(APPEND _hypredrv_test_runtime_lib_dirs "${CMAKE_BINARY_DIR}/lib")
+    _hypredrv_collect_lib_dirs_from_items(_hypredrv_hypre_lib_dirs ${HYPRE_LIBRARY_FILE})
+    list(APPEND _hypredrv_test_runtime_lib_dirs ${_hypredrv_hypre_lib_dirs})
+
+    get_target_property(_hypredrv_hypre_link_libs HYPRE::HYPRE INTERFACE_LINK_LIBRARIES)
+    if(_hypredrv_hypre_link_libs)
+        _hypredrv_collect_lib_dirs_from_items(_hypredrv_hypre_link_dirs ${_hypredrv_hypre_link_libs})
+        list(APPEND _hypredrv_test_runtime_lib_dirs ${_hypredrv_hypre_link_dirs})
+    endif()
+
+    # HYPREConfig.cmake exports dependency roots (and sometimes lib dirs). When
+    # pkg-config synthesized interface targets hide full library paths (e.g.,
+    # "caliper"), use these hints to recover <prefix>/lib.
+    if(DEFINED HYPRE_DEPENDENCY_DIRS AND HYPRE_DEPENDENCY_DIRS)
+        foreach(_dep_dir IN LISTS HYPRE_DEPENDENCY_DIRS)
+            if(NOT IS_DIRECTORY "${_dep_dir}")
+                continue()
+            endif()
+            if(_dep_dir MATCHES "(/|^)lib64?$")
+                list(APPEND _hypredrv_test_runtime_lib_dirs "${_dep_dir}")
+            endif()
+            if(IS_DIRECTORY "${_dep_dir}/lib")
+                list(APPEND _hypredrv_test_runtime_lib_dirs "${_dep_dir}/lib")
+            endif()
+            if(IS_DIRECTORY "${_dep_dir}/lib64")
+                list(APPEND _hypredrv_test_runtime_lib_dirs "${_dep_dir}/lib64")
+            endif()
+        endforeach()
+    endif()
+
+    if(DEFINED MPI_C_LIBRARIES AND MPI_C_LIBRARIES)
+        _hypredrv_collect_lib_dirs_from_items(_hypredrv_mpi_link_dirs ${MPI_C_LIBRARIES})
+        list(APPEND _hypredrv_test_runtime_lib_dirs ${_hypredrv_mpi_link_dirs})
+    endif()
+
+    list(REMOVE_DUPLICATES _hypredrv_test_runtime_lib_dirs)
+
+    if(UNIX AND NOT APPLE AND _hypredrv_test_runtime_lib_dirs)
+        string(JOIN ":" _hypredrv_ld_path ${_hypredrv_test_runtime_lib_dirs})
+        set(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT
+            "LD_LIBRARY_PATH=${_hypredrv_ld_path}:$ENV{LD_LIBRARY_PATH}"
+            CACHE INTERNAL "CTest runtime library path environment assignment")
+        message(STATUS "  test runtime env: ${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
+    elseif(APPLE AND _hypredrv_test_runtime_lib_dirs)
+        string(JOIN ":" _hypredrv_dyld_path ${_hypredrv_test_runtime_lib_dirs})
+        set(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT
+            "DYLD_LIBRARY_PATH=${_hypredrv_dyld_path}:$ENV{DYLD_LIBRARY_PATH}"
+            CACHE INTERNAL "CTest runtime library path environment assignment")
+        message(STATUS "  test runtime env: ${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
+    else()
+        set(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT "" CACHE INTERNAL
+            "CTest runtime library path environment assignment")
+    endif()
 
     # For autotools/custom HYPRE, read HYPRE_config.h to derive version info and MPI mode.
     if(HYPREDRV_HYPRE_USER_PROVIDED AND HYPRE_INCLUDE_DIRS AND NOT HYPREDRV_HYPRE_AUTOTOOLS)
