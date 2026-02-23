@@ -80,6 +80,22 @@ MGRNestedFRelaxWrapperGetInner(HYPRE_Solver wrapper_solver)
    return wrapper ? wrapper->inner_mgr : NULL;
 }
 
+HYPRE_Solver
+MGRNestedFRelaxWrapperDetachInner(HYPRE_Solver wrapper_solver)
+{
+   HYPREDRV_MGRFRelaxWrapper *wrapper = (HYPREDRV_MGRFRelaxWrapper *)wrapper_solver;
+   HYPRE_Solver               inner   = NULL;
+
+   if (!wrapper)
+   {
+      return NULL;
+   }
+
+   inner              = wrapper->inner_mgr;
+   wrapper->inner_mgr = NULL;
+   return inner;
+}
+
 void
 MGRNestedFRelaxWrapperFree(HYPRE_Solver *wrapper_ptr)
 {
@@ -269,21 +285,15 @@ MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_ou
 
    if (dofmap->g_unique_data && dofmap->g_unique_size > 0)
    {
-      int use_dense_fallback = 0;
-
       labels     = dofmap->g_unique_data;
       num_labels = dofmap->g_unique_size;
       for (size_t i = 1; i < num_labels; i++)
       {
          if (labels[i] <= labels[i - 1])
          {
-            use_dense_fallback = 1;
+            labels = NULL;
             break;
          }
-      }
-      if (use_dense_fallback)
-      {
-         labels = NULL;
       }
    }
    if (!labels && dofmap->g_unique_size > 0)
@@ -399,7 +409,6 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
    size_t     nested_size        = 0;
    HYPRE_Int *parent_present     = NULL;
    HYPRE_Int *keep_label         = NULL;
-   HYPRE_Int *seen_label         = NULL;
    IntArray  *nested_dofmap      = NULL;
    int        ok                 = 0;
 
@@ -443,16 +452,11 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
       keep_label[label] = 1;
    }
 
+   /* Count filtered entries. Labels in parent_dofmap are bounded by parent_label_space
+    * (guaranteed by MGRBuildDofLabelPresenceMask), so no range check is needed here. */
    for (size_t i = 0; i < parent_dofmap->size; i++)
    {
-      int label = parent_dofmap->data[i];
-      if (label < 0 || (size_t)label >= parent_label_space)
-      {
-         ErrorCodeSet(ERROR_INVALID_VAL);
-         ErrorMsgAdd("Invalid dofmap entry %d while building nested MGR dofmap", label);
-         goto cleanup;
-      }
-      if (keep_label[label])
+      if (keep_label[parent_dofmap->data[i]])
       {
          nested_size++;
       }
@@ -475,59 +479,27 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
       }
    }
 
-   seen_label = (HYPRE_Int *)calloc(parent_label_space, sizeof(HYPRE_Int));
-   if (!seen_label)
+   /* unique_data and g_unique_data are both the sorted set of kept labels
+    * (keep_label[i] == 1 iff label i is an F-dof that appears in nested_dofmap). */
+   nested_dofmap->unique_size   = nested_num_labels;
+   nested_dofmap->g_unique_size = nested_num_labels;
+   if (nested_num_labels > 0)
    {
-      ErrorCodeSet(ERROR_ALLOCATION);
-      ErrorMsgAdd("Failed to allocate nested MGR label uniqueness workspace");
-      goto cleanup;
-   }
-
-   nested_dofmap->unique_size = 0;
-   for (size_t i = 0; i < nested_size; i++)
-   {
-      int label = nested_dofmap->data[i];
-      if (!seen_label[label])
-      {
-         seen_label[label] = 1;
-         nested_dofmap->unique_size++;
-      }
-   }
-
-   if (nested_dofmap->unique_size > 0)
-   {
-      nested_dofmap->unique_data =
-         (int *)malloc(nested_dofmap->unique_size * sizeof(int));
-      if (!nested_dofmap->unique_data)
+      nested_dofmap->unique_data   = (int *)malloc(nested_num_labels * sizeof(int));
+      nested_dofmap->g_unique_data = (int *)malloc(nested_num_labels * sizeof(int));
+      if (!nested_dofmap->unique_data || !nested_dofmap->g_unique_data)
       {
          ErrorCodeSet(ERROR_ALLOCATION);
-         ErrorMsgAdd("Failed to allocate nested MGR unique dof labels");
+         ErrorMsgAdd("Failed to allocate nested MGR dof label arrays");
          goto cleanup;
       }
       for (size_t i = 0, j = 0; i < parent_label_space; i++)
       {
-         if (seen_label[i])
-         {
-            nested_dofmap->unique_data[j++] = (int)i;
-         }
-      }
-   }
-
-   nested_dofmap->g_unique_size = nested_num_labels;
-   nested_dofmap->g_unique_data = (int *)malloc(nested_num_labels * sizeof(int));
-   if (!nested_dofmap->g_unique_data)
-   {
-      ErrorCodeSet(ERROR_ALLOCATION);
-      ErrorMsgAdd("Failed to allocate nested MGR global dof labels");
-      goto cleanup;
-   }
-   {
-      size_t present_cnt = 0;
-      for (size_t i = 0; i < parent_label_space; i++)
-      {
          if (keep_label[i])
          {
-            nested_dofmap->g_unique_data[present_cnt++] = (int)i;
+            nested_dofmap->unique_data[j]   = (int)i;
+            nested_dofmap->g_unique_data[j] = (int)i;
+            j++;
          }
       }
    }
@@ -535,7 +507,6 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
    ok = 1;
 
 cleanup:
-   free(seen_label);
    free(keep_label);
    free(parent_present);
    if (!ok)
@@ -1145,16 +1116,7 @@ MGRConvertArgInt(MGR_args *args, const char *name)
       return buf;
    }
 
-   if (!strcmp(name, "prolongation_type"))
-   {
-      for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)
-      {
-         HYPRE_Int type = args->level[i].prolongation_type;
-         buf[i]         = type;
-      }
-      return buf;
-   }
-
+   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, prolongation_type)
    HANDLE_MGR_LEVEL_ATTRIBUTE(buf, f_relaxation.num_sweeps)
    HANDLE_MGR_LEVEL_ATTRIBUTE(buf, g_relaxation.type)
    HANDLE_MGR_LEVEL_ATTRIBUTE(buf, g_relaxation.num_sweeps)
@@ -1429,6 +1391,14 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       else if (args->level[i].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
       {
 #if HYPRE_CHECK_MIN_VERSION(30100, 5)
+         if (i != 0)
+         {
+            ErrorCodeSet(ERROR_INVALID_PRECON);
+            ErrorMsgAdd(
+               "Nested MGR F-relaxation is only supported at MGR level 0 by hypre");
+            return;
+         }
+
          MGR_args      *nested_args    = args->level[i].f_relaxation.mgr;
          HYPRE_Solver   frelax_wrapper = NULL;
          IntArray      *nested_dofmap  = NULL;
@@ -1463,24 +1433,13 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
             return;
          }
 
-         if (i == 0)
+         frelax_wrapper = MGRNestedFRelaxWrapperCreate(frelax);
+         if (ErrorCodeActive() || !frelax_wrapper)
          {
-            frelax_wrapper = MGRNestedFRelaxWrapperCreate(frelax);
-            if (ErrorCodeActive() || !frelax_wrapper)
-            {
-               HYPRE_MGRDestroy(frelax);
-               return;
-            }
-            HYPRE_MGRSetFSolverAtLevel(precon, frelax_wrapper, i);
-         }
-         else
-         {
-            ErrorCodeSet(ERROR_INVALID_PRECON);
-            ErrorMsgAdd(
-               "Nested MGR F-relaxation is only supported at MGR level 0 by hypre");
             HYPRE_MGRDestroy(frelax);
             return;
          }
+         HYPRE_MGRSetFSolverAtLevel(precon, frelax_wrapper, i);
          args->frelax[i] = frelax_wrapper;
 #else
          ErrorCodeSet(ERROR_INVALID_PRECON);

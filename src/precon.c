@@ -629,19 +629,31 @@ PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
 static void PreconDestroyMGRSolver(MGR_args *, HYPRE_Solver *);
 
 static void
+DestroyNestedMGRFRelaxInnerSolver(MGR_args *mgr, int i,
+                                  HYPRE_Solver *nested_mgr_solver_ptr)
+{
+   if (!nested_mgr_solver_ptr || !*nested_mgr_solver_ptr)
+   {
+      return;
+   }
+
+   if (mgr->level[i].f_relaxation.mgr)
+   {
+      PreconDestroyMGRSolver(mgr->level[i].f_relaxation.mgr, nested_mgr_solver_ptr);
+   }
+   else
+   {
+      HYPRE_MGRDestroy(*nested_mgr_solver_ptr);
+      *nested_mgr_solver_ptr = NULL;
+   }
+}
+
+static void
 DestroyNestedMGRFRelaxAtLevel(MGR_args *mgr, int i)
 {
    HYPRE_Solver nested_mgr_solver = MGRNestedFRelaxWrapperGetInner(mgr->frelax[i]);
    MGRNestedFRelaxWrapperFree(&mgr->frelax[i]);
-
-   if (mgr->level[i].f_relaxation.mgr)
-   {
-      PreconDestroyMGRSolver(mgr->level[i].f_relaxation.mgr, &nested_mgr_solver);
-   }
-   else if (nested_mgr_solver)
-   {
-      HYPRE_MGRDestroy(nested_mgr_solver);
-   }
+   DestroyNestedMGRFRelaxInnerSolver(mgr, i, &nested_mgr_solver);
 }
 #endif
 
@@ -659,8 +671,26 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
       return;
    }
 
+#if HYPRE_CHECK_MIN_VERSION(30100, 11)
+   HYPRE_Solver detached_nested_lvl0_frelax = NULL;
+   if (mgr->num_levels > 1 && mgr->frelax[0] &&
+       mgr->level[0].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
+   {
+      detached_nested_lvl0_frelax = MGRNestedFRelaxWrapperDetachInner(mgr->frelax[0]);
+      /* hypre destroys the wrapper object inside HYPRE_MGRDestroy() on these versions. */
+      mgr->frelax[0] = NULL;
+   }
+#endif
+
    HYPRE_MGRDestroy(*solver_ptr);
    *solver_ptr = NULL;
+
+#if HYPRE_CHECK_MIN_VERSION(30100, 11)
+   if (detached_nested_lvl0_frelax)
+   {
+      DestroyNestedMGRFRelaxInnerSolver(mgr, 0, &detached_nested_lvl0_frelax);
+   }
+#endif
 
    /* TODO: should MGR free these internally? */
    if (mgr->coarsest_level.use_krylov && mgr->coarsest_level.krylov)
@@ -701,14 +731,7 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
 #if HYPRE_CHECK_MIN_VERSION(30100, 11)
          /* hypre-master (>= 3.1.0 develop 11 observed) destroys user-provided
           * level-0 F-relax solvers inside HYPRE_MGRDestroy(). Avoid double free. */
-         if (mgr->level[i].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
-         {
-            DestroyNestedMGRFRelaxAtLevel(mgr, i);
-         }
-         else
-         {
-            mgr->frelax[i] = NULL;
-         }
+         mgr->frelax[i] = NULL;
 #else
          /* MGR does not destroy user-provided F-relaxation solvers at level 0. */
          if (mgr->level[i].f_relaxation.type == 2)
