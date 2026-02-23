@@ -13,7 +13,7 @@ if(HYPREDRV_ENABLE_COVERAGE)
 
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         # Apply coverage flags to existing primary targets
-        foreach(tgt IN ITEMS HYPREDRV hypredrive)
+        foreach(tgt IN ITEMS HYPREDRV hypredrive hypredrive-lsseq)
             if(TARGET ${tgt})
                 target_compile_options(${tgt} PRIVATE -O0 -g --coverage)
                 target_link_options(${tgt} PRIVATE --coverage)
