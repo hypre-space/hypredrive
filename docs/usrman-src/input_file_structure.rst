@@ -1010,6 +1010,26 @@ optional keywords:
                 coarsening:
                   num_levels: 1
 
+  - ``f_relaxation`` also supports a nested ``mgr`` block (MGR-inside-MGR). When using
+    nested MGR (requires Hypre ``>= 3.1.0`` with develop number ``>= 5``), the nested
+    ``f_dofs`` labels are not re-labeled: nested levels continue to use the same
+    DOF labels as the parent MGR dofmap (restricted to the parent level's F-block).
+
+    Example:
+
+    .. code-block:: yaml
+
+        level:
+          0:
+            f_dofs: [0, 2]
+            f_relaxation: mgr
+              mgr:
+                level:
+                  0:
+                    f_dofs: [2] # refers to the same parent label 2 (no relabeling)
+                coarsest_level:
+                  amg:
+
   - ``restriction_type`` - algorithm for computing the restriction operator. For available
     options, see `HYPRE_MGRSetRestrictType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv424HYPRE_MGRSetRestrictType12HYPRE_Solver9HYPRE_Int>`_. Default

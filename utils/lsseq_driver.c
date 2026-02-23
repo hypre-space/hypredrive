@@ -23,6 +23,21 @@
 #include "lsseq.h"
 #include "utils.h"
 
+/* Temp buffer for path concatenation (two MAX_FILENAME_LENGTH paths + suffix) to satisfy -Wformat-truncation. */
+#define PATH_TMP_SIZE (2 * MAX_FILENAME_LENGTH + 64)
+
+static void
+path_copy(char *dest, size_t dest_size, const char *src)
+{
+   size_t len = strlen(src);
+   if (len >= dest_size)
+   {
+      len = dest_size - 1;
+   }
+   memcpy(dest, src, len + 1);
+   dest[len] = '\0';
+}
+
 typedef struct MatrixPartRaw_struct
 {
    uint64_t row_index_size;
@@ -540,7 +555,11 @@ ResolveDirPrefixAndSuffixRange(PackArgs *args, char *parent_dir, size_t parent_d
             continue;
          }
 
-         snprintf(fullpath, sizeof(fullpath), "%s/%s", args->input_dirname, name);
+         {
+            char path_tmp[PATH_TMP_SIZE];
+            snprintf(path_tmp, sizeof(path_tmp), "%s/%s", args->input_dirname, name);
+            path_copy(fullpath, sizeof(fullpath), path_tmp);
+         }
          if (!PathIsDirectory(fullpath))
          {
             continue;
@@ -623,8 +642,12 @@ ResolveDirPrefixAndSuffixRange(PackArgs *args, char *parent_dir, size_t parent_d
          return 0;
       }
 
-      snprintf(args->dirname, sizeof(args->dirname), "%s/%s", args->input_dirname,
-               bases[(size_t)chosen].base);
+      {
+         char path_tmp[PATH_TMP_SIZE];
+         snprintf(path_tmp, sizeof(path_tmp), "%s/%s", args->input_dirname,
+                  bases[(size_t)chosen].base);
+         path_copy(args->dirname, sizeof(args->dirname), path_tmp);
+      }
       StripTrailingSlashes(args->dirname);
       if (parent_dir && parent_dir_size > 0)
       {
@@ -2482,8 +2505,12 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
       for (uint32_t s = 0; s < seq.header.num_systems; s++)
       {
          int suffix = init_suffix + (int)s;
-         snprintf(dirpath, sizeof(dirpath), "%s/%s_%0*d", args->output_dir, args->prefix,
-                  digits_suffix, suffix);
+         {
+            char path_tmp[PATH_TMP_SIZE];
+            snprintf(path_tmp, sizeof(path_tmp), "%s/%s_%0*d", args->output_dir, args->prefix,
+                     digits_suffix, suffix);
+            path_copy(dirpath, sizeof(dirpath), path_tmp);
+         }
          if (!EnsureDirectoryExists(dirpath))
          {
             fprintf(stderr, "Could not create system directory '%s'\n", dirpath);
@@ -2494,7 +2521,11 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
       if ((seq.header.flags & LSSEQ_FLAG_HAS_TIMESTEPS) && seq.header.num_timesteps > 0)
       {
          char tfile[MAX_FILENAME_LENGTH];
-         snprintf(tfile, sizeof(tfile), "%s/%s", args->output_dir, timesteps_name);
+         {
+            char path_tmp[PATH_TMP_SIZE];
+            snprintf(path_tmp, sizeof(path_tmp), "%s/%s", args->output_dir, timesteps_name);
+            path_copy(tfile, sizeof(tfile), path_tmp);
+         }
          if (!WriteTimestepsFile(tfile, seq.timesteps, seq.header.num_timesteps))
          {
             fprintf(stderr, "Could not write timesteps file '%s'\n", tfile);
@@ -2521,8 +2552,12 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
    {
       char system_dir[MAX_FILENAME_LENGTH];
       int  suffix = init_suffix + (int)s;
-      snprintf(system_dir, sizeof(system_dir), "%s/%s_%0*d", args->output_dir, args->prefix,
-               digits_suffix, suffix);
+      {
+         char path_tmp[PATH_TMP_SIZE];
+         snprintf(path_tmp, sizeof(path_tmp), "%s/%s_%0*d", args->output_dir, args->prefix,
+                  digits_suffix, suffix);
+         path_copy(system_dir, sizeof(system_dir), path_tmp);
+      }
 
       for (int lp = 0; lp < local_nparts; lp++)
       {
@@ -2564,8 +2599,15 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
             return EXIT_FAILURE;
          }
 
-         snprintf(mfile, sizeof(mfile), "%s/%s.%05u.bin", system_dir, matrix_filename, part_id);
-         snprintf(rfile, sizeof(rfile), "%s/%s.%05u.bin", system_dir, rhs_filename, part_id);
+         {
+            char path_tmp[PATH_TMP_SIZE];
+            snprintf(path_tmp, sizeof(path_tmp), "%s/%s.%05u.bin", system_dir, matrix_filename,
+                    part_id);
+            path_copy(mfile, sizeof(mfile), path_tmp);
+            snprintf(path_tmp, sizeof(path_tmp), "%s/%s.%05u.bin", system_dir, rhs_filename,
+                    part_id);
+            path_copy(rfile, sizeof(rfile), path_tmp);
+         }
          if (!WriteMatrixPartBinary(mfile, part, pat, rows, cols, vals) ||
              !WriteRHSPartBinary(rfile, part, rhs))
          {
@@ -2586,7 +2628,12 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                SeqPackedDataDestroy(&seq);
                return EXIT_FAILURE;
             }
-            snprintf(dfile, sizeof(dfile), "%s/%s.%05u", system_dir, dofmap_filename, part_id);
+            {
+               char path_tmp[PATH_TMP_SIZE];
+               snprintf(path_tmp, sizeof(path_tmp), "%s/%s.%05u", system_dir, dofmap_filename,
+                       part_id);
+               path_copy(dfile, sizeof(dfile), path_tmp);
+            }
             if (!WriteDofPartASCII(dfile, (const int32_t *)dof, sp->dof_num_entries))
             {
                free(rows); free(cols); free(vals); free(rhs); free(dof);
@@ -2846,21 +2893,22 @@ main(int argc, char **argv)
 
       if (!args.timesteps_filename_set && args.timesteps_filename[0] == '\0')
       {
-         snprintf(timesteps_candidate, sizeof(timesteps_candidate), "%s/timesteps.txt",
+         char path_tmp[PATH_TMP_SIZE];
+         snprintf(path_tmp, sizeof(path_tmp), "%s/timesteps.txt",
                   parent_dir[0] != '\0' ? parent_dir : ".");
+         path_copy(timesteps_candidate, sizeof(timesteps_candidate), path_tmp);
          if (PathIsRegularFile(timesteps_candidate))
          {
-            snprintf(args.timesteps_filename, sizeof(args.timesteps_filename), "%s",
-                     timesteps_candidate);
+            path_copy(args.timesteps_filename, sizeof(args.timesteps_filename), timesteps_candidate);
          }
          else
          {
-            snprintf(timesteps_candidate, sizeof(timesteps_candidate), "%s/timesteps.txt",
-                     system_dir);
+            snprintf(path_tmp, sizeof(path_tmp), "%s/timesteps.txt", system_dir);
+            path_copy(timesteps_candidate, sizeof(timesteps_candidate), path_tmp);
             if (PathIsRegularFile(timesteps_candidate))
             {
-               snprintf(args.timesteps_filename, sizeof(args.timesteps_filename), "%s",
-                        timesteps_candidate);
+               path_copy(args.timesteps_filename, sizeof(args.timesteps_filename),
+                         timesteps_candidate);
             }
          }
       }

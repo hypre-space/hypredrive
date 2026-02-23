@@ -133,7 +133,7 @@ InputArgsDestroy(input_args **iargs_ptr)
          {
             if (iargs->precon_methods[i] == PRECON_MGR)
             {
-               MGRDestroyNestedKrylovArgs(&iargs->precon_variants[i].mgr);
+               MGRDestroyNestedSolverArgs(&iargs->precon_variants[i].mgr);
             }
          }
       }
@@ -465,7 +465,7 @@ PreconParseContextCleanup(PreconParseContext *ctx)
       {
          if (ctx->methods[i] == PRECON_MGR)
          {
-            MGRDestroyNestedKrylovArgs(&ctx->variants[i].mgr);
+            MGRDestroyNestedSolverArgs(&ctx->variants[i].mgr);
          }
       }
    }

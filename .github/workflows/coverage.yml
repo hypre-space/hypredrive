@@ -40,6 +40,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Ubuntu environment
+        timeout-minutes: 3
         uses: ./.github/actions/setup-ubuntu
         with:
           compiler: 'gcc'
@@ -74,6 +75,7 @@ jobs:
             -DHYPREDRV_ENABLE_TESTING=ON \
             -DHYPREDRV_ENABLE_EXAMPLES=ON \
             -DHYPREDRV_ENABLE_COVERAGE=ON \
+            -DHYPREDRV_ENABLE_COMPRESSION=ON \
             -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_C_COMPILER=mpicc \
             -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}

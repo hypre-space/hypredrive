@@ -67,20 +67,8 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 # Find and configure dependencies
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Deps.cmake)
 
-# Mirror detected optional compression backends as compile definitions so all targets
-# consistently see the same feature gates.
-if(HYPREDRV_USING_ZLIB)
-    add_compile_definitions(HYPREDRV_USING_ZLIB)
-endif()
-if(HYPREDRV_USING_ZSTD)
-    add_compile_definitions(HYPREDRV_USING_ZSTD)
-endif()
-if(HYPREDRV_USING_LZ4)
-    add_compile_definitions(HYPREDRV_USING_LZ4)
-endif()
-if(HYPREDRV_USING_BLOSC)
-    add_compile_definitions(HYPREDRV_USING_BLOSC)
-endif()
+# Optional compression backend feature gates are emitted in HYPREDRV_config.h.
+# Avoid duplicating them as command-line definitions (causes macro redefinition warnings).
 
 # Check for headers, functions, and libraries
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Checks.cmake)

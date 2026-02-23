@@ -463,7 +463,7 @@ test_exhaustive_mgr_parser(void)
    ASSERT_NULL(MGRConvertArgInt(&args, "unknown:name"));
 
    YAMLnodeDestroy(mgr);
-   MGRDestroyNestedKrylovArgs(&args);
+   MGRDestroyNestedSolverArgs(&args);
 }
 
 static void
@@ -489,7 +489,7 @@ test_mgr_nested_krylov_rejects_mgr_precon(void)
 
    ErrorCodeResetAll();
    YAMLnodeDestroy(mgr);
-   MGRDestroyNestedKrylovArgs(&args);
+   MGRDestroyNestedSolverArgs(&args);
 }
 
 int

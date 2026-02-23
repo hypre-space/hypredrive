@@ -622,6 +622,152 @@ PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
 }
 
 /*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------
+ */
+
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+static void PreconDestroyMGRSolver(MGR_args *, HYPRE_Solver *);
+
+static void
+DestroyNestedMGRFRelaxInnerSolver(MGR_args *mgr, int i,
+                                  HYPRE_Solver *nested_mgr_solver_ptr)
+{
+   if (!nested_mgr_solver_ptr || !*nested_mgr_solver_ptr)
+   {
+      return;
+   }
+
+   if (mgr->level[i].f_relaxation.mgr)
+   {
+      PreconDestroyMGRSolver(mgr->level[i].f_relaxation.mgr, nested_mgr_solver_ptr);
+   }
+   else
+   {
+      HYPRE_MGRDestroy(*nested_mgr_solver_ptr);
+      *nested_mgr_solver_ptr = NULL;
+   }
+}
+
+static void
+DestroyNestedMGRFRelaxAtLevel(MGR_args *mgr, int i)
+{
+   HYPRE_Solver nested_mgr_solver = MGRNestedFRelaxWrapperGetInner(mgr->frelax[i]);
+   MGRNestedFRelaxWrapperFree(&mgr->frelax[i]);
+   DestroyNestedMGRFRelaxInnerSolver(mgr, i, &nested_mgr_solver);
+}
+#endif
+
+static void
+PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
+{
+#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+   (void)mgr;
+   (void)solver_ptr;
+   ErrorCodeSet(ERROR_INVALID_PRECON);
+   ErrorMsgAdd("MGR requires hypre >= 2.19.0");
+#else
+   if (!mgr || !solver_ptr || !*solver_ptr)
+   {
+      return;
+   }
+
+#if HYPRE_CHECK_MIN_VERSION(30100, 11)
+   HYPRE_Solver detached_nested_lvl0_frelax = NULL;
+   if (mgr->num_levels > 1 && mgr->frelax[0] &&
+       mgr->level[0].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
+   {
+      detached_nested_lvl0_frelax = MGRNestedFRelaxWrapperDetachInner(mgr->frelax[0]);
+      /* hypre destroys the wrapper object inside HYPRE_MGRDestroy() on these versions. */
+      mgr->frelax[0] = NULL;
+   }
+#endif
+
+   HYPRE_MGRDestroy(*solver_ptr);
+   *solver_ptr = NULL;
+
+#if HYPRE_CHECK_MIN_VERSION(30100, 11)
+   if (detached_nested_lvl0_frelax)
+   {
+      DestroyNestedMGRFRelaxInnerSolver(mgr, 0, &detached_nested_lvl0_frelax);
+   }
+#endif
+
+   /* TODO: should MGR free these internally? */
+   if (mgr->coarsest_level.use_krylov && mgr->coarsest_level.krylov)
+   {
+      NestedKrylovDestroy(mgr->coarsest_level.krylov);
+   }
+   else if (mgr->csolver)
+   {
+      /* MGR does not destroy user-provided coarse solvers. */
+      if (mgr->csolver_type == 0)
+      {
+         HYPRE_BoomerAMGDestroy(mgr->csolver);
+      }
+#if defined(HYPRE_USING_DSUPERLU)
+      else if (mgr->csolver_type == 29)
+      {
+         HYPRE_MGRDirectSolverDestroy(mgr->csolver);
+      }
+#endif
+      else if (mgr->csolver_type == 32)
+      {
+         HYPRE_ILUDestroy(mgr->csolver);
+      }
+   }
+   mgr->csolver      = NULL;
+   mgr->csolver_type = -1;
+
+   int max_levels = (mgr->num_levels > 0) ? (mgr->num_levels - 1) : 0;
+   for (int i = 0; i < max_levels; i++)
+   {
+      if (mgr->level[i].f_relaxation.use_krylov && mgr->level[i].f_relaxation.krylov)
+      {
+         mgr->level[i].f_relaxation.krylov->base_solver = NULL;
+         NestedKrylovDestroy(mgr->level[i].f_relaxation.krylov);
+      }
+      else if (i == 0 && mgr->frelax[i])
+      {
+#if HYPRE_CHECK_MIN_VERSION(30100, 11)
+         /* hypre-master (>= 3.1.0 develop 11 observed) destroys user-provided
+          * level-0 F-relax solvers inside HYPRE_MGRDestroy(). Avoid double free. */
+         mgr->frelax[i] = NULL;
+#else
+         /* MGR does not destroy user-provided F-relaxation solvers at level 0. */
+         if (mgr->level[i].f_relaxation.type == 2)
+         {
+            HYPRE_BoomerAMGDestroy(mgr->frelax[i]);
+         }
+         else if (mgr->level[i].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
+         {
+            DestroyNestedMGRFRelaxAtLevel(mgr, i);
+         }
+#if defined(HYPRE_USING_DSUPERLU)
+         else if (mgr->level[i].f_relaxation.type == 29)
+         {
+            HYPRE_MGRDirectSolverDestroy(mgr->frelax[i]);
+         }
+#endif
+#if HYPRE_CHECK_MIN_VERSION(23200, 14)
+         else if (mgr->level[i].f_relaxation.type == 32)
+         {
+            HYPRE_ILUDestroy(mgr->frelax[i]);
+         }
+#endif
+         mgr->frelax[i] = NULL;
+#endif
+      }
+
+      if (mgr->level[i].g_relaxation.use_krylov && mgr->level[i].g_relaxation.krylov)
+      {
+         mgr->level[i].g_relaxation.krylov->base_solver = NULL;
+         NestedKrylovDestroy(mgr->level[i].g_relaxation.krylov);
+      }
+   }
+#endif
+}
+
+/*-----------------------------------------------------------------------------
  * PreconDestroy
  *-----------------------------------------------------------------------------*/
 
@@ -649,80 +795,8 @@ PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_pt
             break;
 
          case PRECON_MGR:
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-            HYPRE_MGRDestroy(precon->main);
-
-            /* TODO: should MGR free these internally? */
-            if (args->mgr.coarsest_level.use_krylov && args->mgr.coarsest_level.krylov)
-            {
-               NestedKrylovDestroy(args->mgr.coarsest_level.krylov);
-            }
-            else if (args->mgr.csolver)
-            {
-               /* MGR does not destroy user-provided coarse solvers. */
-               if (args->mgr.csolver_type == 0)
-               {
-                  HYPRE_BoomerAMGDestroy(args->mgr.csolver);
-               }
-#if defined(HYPRE_USING_DSUPERLU)
-               else if (args->mgr.csolver_type == 29)
-               {
-                  HYPRE_MGRDirectSolverDestroy(args->mgr.csolver);
-               }
-#endif
-               else if (args->mgr.csolver_type == 32)
-               {
-                  HYPRE_ILUDestroy(args->mgr.csolver);
-               }
-            }
-            args->mgr.csolver      = NULL;
-            args->mgr.csolver_type = -1;
-
-            int max_levels = (args->mgr.num_levels > 0) ? (args->mgr.num_levels - 1) : 0;
-            for (int i = 0; i < max_levels; i++)
-            {
-               if (args->mgr.level[i].f_relaxation.use_krylov &&
-                   args->mgr.level[i].f_relaxation.krylov)
-               {
-                  args->mgr.level[i].f_relaxation.krylov->base_solver = NULL;
-                  NestedKrylovDestroy(args->mgr.level[i].f_relaxation.krylov);
-               }
-               else if (i == 0 && args->mgr.frelax[i])
-               {
-                  /* MGR does not destroy user-provided F-relaxation solvers at level 0.
-                   */
-                  if (args->mgr.level[i].f_relaxation.type == 2)
-                  {
-                     HYPRE_BoomerAMGDestroy(args->mgr.frelax[i]);
-                  }
-#if defined(HYPRE_USING_DSUPERLU)
-                  else if (args->mgr.level[i].f_relaxation.type == 29)
-                  {
-                     HYPRE_MGRDirectSolverDestroy(args->mgr.frelax[i]);
-                  }
-#endif
-#if HYPRE_CHECK_MIN_VERSION(23200, 14)
-                  else if (args->mgr.level[i].f_relaxation.type == 32)
-                  {
-                     HYPRE_ILUDestroy(args->mgr.frelax[i]);
-                  }
-#endif
-                  args->mgr.frelax[i] = NULL;
-               }
-
-               if (args->mgr.level[i].g_relaxation.use_krylov &&
-                   args->mgr.level[i].g_relaxation.krylov)
-               {
-                  args->mgr.level[i].g_relaxation.krylov->base_solver = NULL;
-                  NestedKrylovDestroy(args->mgr.level[i].g_relaxation.krylov);
-               }
-            }
+            PreconDestroyMGRSolver(&args->mgr, &precon->main);
             break;
-#else
-            ErrorCodeSet(ERROR_INVALID_PRECON);
-            ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-            break;
-#endif
 
          case PRECON_ILU:
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)

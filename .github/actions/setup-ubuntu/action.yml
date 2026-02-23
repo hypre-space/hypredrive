@@ -24,7 +24,7 @@ runs:
       run: |
         sudo apt-get update
         # Defaulting to OpenMPI for CI stability
-        PACKAGES="cmake ninja-build libopenmpi-dev openmpi-bin"
+        PACKAGES="cmake ninja-build libopenmpi-dev openmpi-bin zstd"
         if [ "${{ inputs.compiler }}" = "gcc" ]; then
           PACKAGES="$PACKAGES gcc g++"
         else
@@ -50,4 +50,3 @@ runs:
           echo "OMPI_CC=gcc" >> $GITHUB_ENV
           echo "OMPI_CXX=g++" >> $GITHUB_ENV
         fi
-

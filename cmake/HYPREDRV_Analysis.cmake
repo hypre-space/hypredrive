@@ -332,11 +332,23 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
 
         foreach(INCDIR IN LISTS _cppcheck_hypre_include_candidates)
             if(INCDIR AND NOT INCDIR MATCHES "^\\$<")
-                list(APPEND CPPCHECK_HYPRE_INCLUDES "-I${INCDIR}")
+                # Only add -I for paths that exist (e.g. skip _deps when HYPRE_ROOT is used)
+                if(EXISTS "${INCDIR}")
+                    list(APPEND CPPCHECK_HYPRE_INCLUDES "-I${INCDIR}")
+                endif()
             endif()
         endforeach()
 
         list(REMOVE_DUPLICATES CPPCHECK_HYPRE_INCLUDES)
+
+        # Paths to ignore (only add _deps when it exists, e.g. when HYPRE was fetched)
+        set(CPPCHECK_IGNORE_PATHS
+            -i${CMAKE_INSTALL_PREFIX}/include
+            -i${CMAKE_SOURCE_DIR}/src/info.c
+        )
+        if(EXISTS "${CMAKE_BINARY_DIR}/_deps/hypre-src/src")
+            list(APPEND CPPCHECK_IGNORE_PATHS -i${CMAKE_BINARY_DIR}/_deps/hypre-src/src)
+        endif()
 
         # Determine parallelism for cppcheck
         if(CMAKE_BUILD_PARALLEL_LEVEL)
@@ -410,9 +422,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
                 -I${CMAKE_BINARY_DIR}
                 ${CPPCHECK_JOBS_FLAG}
                 ${CPPCHECK_HYPRE_INCLUDES}
-                -i${CMAKE_INSTALL_PREFIX}/include
-                -i${CMAKE_BINARY_DIR}/_deps/hypre-src/src
-                -i${CMAKE_SOURCE_DIR}/src/info.c
+                ${CPPCHECK_IGNORE_PATHS}
                 ${CMAKE_SOURCE_DIR}/src
                 2> ${CPPCHECK_XML_OUTPUT}
         )

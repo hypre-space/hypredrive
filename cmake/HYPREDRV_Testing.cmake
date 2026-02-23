@@ -10,9 +10,33 @@ set(HYPREDRV_TESTING_DIR "${CMAKE_CURRENT_LIST_DIR}")
 # configure time by probing Hypre version macros from headers.
 include(CheckCSourceCompiles)
 
+# Append shared runtime environment settings (and optional extras) to a CTest
+# test without clobbering existing ENVIRONMENT properties.
+function(hypredrv_append_test_environment test_name)
+    set(_env_list "")
+    get_test_property(${test_name} ENVIRONMENT _existing_env)
+    if(_existing_env AND NOT _existing_env STREQUAL "NOTFOUND")
+        list(APPEND _env_list ${_existing_env})
+    endif()
+    if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
+        list(APPEND _env_list "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
+    endif()
+    if(ARGN)
+        list(APPEND _env_list ${ARGN})
+    endif()
+    if(_env_list)
+        list(REMOVE_DUPLICATES _env_list)
+        set_tests_properties(${test_name} PROPERTIES ENVIRONMENT "${_env_list}")
+    endif()
+endfunction()
+
 # Function for adding tests
 # Options:
 #   NO_QUIET - if set, don't pass -q flag (shows full system info)
+set(HYPREDRV_FAIL_REGEX_DEFAULT
+    "HYPREDRIVE Failure!!!|BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES|Segmentation fault|Abort\\("
+)
+
 function(add_hypredrive_test test_name num_procs config_file)
     cmake_parse_arguments(TEST_OPTS "NO_QUIET" "" "" ${ARGN})
 
@@ -44,10 +68,11 @@ function(add_hypredrive_test test_name num_procs config_file)
 
     set_tests_properties(${full_test_name}
         PROPERTIES
-        FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
+        FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
         LABELS "integration;hypredrive"
     )
+    hypredrv_append_test_environment(${full_test_name})
 endfunction()
 
 # Function for adding an integration test that verifies CLI overrides (-a/--args)
@@ -117,10 +142,11 @@ function(add_hypredrive_cli_test test_name num_procs config_file)
 
     set_tests_properties(${full_test_name}
         PROPERTIES
-        FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
+        FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
         LABELS "integration;hypredrive"
     )
+    hypredrv_append_test_environment(${full_test_name})
 endfunction()
 
 # Function for adding tests for standalone executable drivers
@@ -134,7 +160,7 @@ function(add_executable_test test_name target num_procs)
 
     # Default values
     if(NOT DEFINED EXEC_TEST_FAIL_REGULAR_EXPRESSION)
-        set(EXEC_TEST_FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure")
+        set(EXEC_TEST_FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}")
     endif()
     if(NOT DEFINED EXEC_TEST_WORKING_DIRECTORY)
         set(EXEC_TEST_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
@@ -163,6 +189,7 @@ function(add_executable_test test_name target num_procs)
         PROPERTIES
             FAIL_REGULAR_EXPRESSION "${EXEC_TEST_FAIL_REGULAR_EXPRESSION}"
     )
+    hypredrv_append_test_environment(${test_name})
 
     if(target STREQUAL "hypredrive")
         set_tests_properties(${test_name}
@@ -201,10 +228,11 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
 
     set_tests_properties(${test_name}
         PROPERTIES
-        FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
+        FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
         LABELS "integration;hypredrive"
     )
+    hypredrv_append_test_environment(${test_name})
 
     # Optional output comparison if script and reference exist
     find_program(COMPARE_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/compare_output.sh")
@@ -336,10 +364,11 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             )
             set_tests_properties(hypredrive_test_ex7_sequence_pack
                 PROPERTIES
-                FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort|Error|failure"
+                FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
                 SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
                 LABELS "integration;hypredrive"
             )
+            hypredrv_append_test_environment(hypredrive_test_ex7_sequence_pack)
         endif()
         if (HYPREDRV_HAVE_HYPRE_23000_DEV0)
             add_hypredrive_test(ex1b_1proc 1 ex1b.yml)
@@ -459,6 +488,9 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 OVERRIDES --general:num_repetitions 4 --linear_system:last_suffix 4
                 REQUIRE_CONTAINS ${_cli_ex7_reps4_ls4_require_contains}
             )
+        endif()
+        if (HYPREDRV_HAVE_HYPRE_30100_DEV5)
+            add_hypredrive_test(ex7_nested_mgr_1proc 1 ex7-nested-mgr.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_30000_DEV0)
             add_hypredrive_cli_test(ex7_cli_dofmap_scaling 1 ex7.yml

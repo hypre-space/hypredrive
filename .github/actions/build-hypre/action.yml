@@ -46,20 +46,35 @@ runs:
           echo "libtype=static" >> $GITHUB_OUTPUT
         fi
 
+    - name: Resolve HYPRE commit SHA
+      id: resolve-sha
+      shell: bash
+      run: |
+        SHA=$(git ls-remote https://github.com/hypre-space/hypre.git "${{ inputs.hypre_version }}" | awk 'NR==1{print $1}')
+        if [ -z "$SHA" ]; then
+          SHA="${{ inputs.hypre_version }}"
+        fi
+        SHORT="${SHA:0:7}"
+        echo "sha_short=$SHORT" >> $GITHUB_OUTPUT
+        echo "install_suffix=${{ inputs.hypre_version }}-${SHORT}" >> $GITHUB_OUTPUT
+
     - name: Cache HYPRE install
       uses: actions/cache@v5
       id: hypre-cache
       with:
-        path: ${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}
-        key: hypre-${{ inputs.hypre_version }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}-mixedint-${{ inputs.hypre_mixedint }}-${{ inputs.mpi_flavor }}
+        path: ${{ runner.tool_cache }}/hypre/${{ steps.resolve-sha.outputs.install_suffix }}
+        key: hypre-${{ steps.resolve-sha.outputs.install_suffix }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}-mixedint-${{ inputs.hypre_mixedint }}-${{ inputs.mpi_flavor }}
 
     - name: Build & install HYPRE
       id: build
       shell: bash
       run: |
         set -euxo pipefail
-        PREFIX="${{ runner.tool_cache }}/hypre/${{ inputs.hypre_version }}"
-        if [ ! -f "$PREFIX/lib/cmake/HYPRE/HYPREConfig.cmake" ]; then
+        PREFIX="${{ runner.tool_cache }}/hypre/${{ steps.resolve-sha.outputs.install_suffix }}"
+        if [ ! -f "$PREFIX/lib/cmake/HYPRE/HYPREConfig.cmake" ] && \
+           [ ! -f "$PREFIX/lib/libHYPRE.so" ] && \
+           [ ! -f "$PREFIX/lib/libHYPRE.dylib" ] && \
+           [ ! -f "$PREFIX/lib/libHYPRE.a" ]; then
           git clone --depth 1 --branch ${{ inputs.hypre_version }} https://github.com/hypre-space/hypre.git
           HYPRE_TAG="${{ inputs.hypre_version }}"
           USE_AUTOTOOLS=0
