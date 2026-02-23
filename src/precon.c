@@ -625,6 +625,26 @@ PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
  *-----------------------------------------------------------------------------
  */
 
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+static void PreconDestroyMGRSolver(MGR_args *, HYPRE_Solver *);
+
+static void
+DestroyNestedMGRFRelaxAtLevel(MGR_args *mgr, int i)
+{
+   HYPRE_Solver nested_mgr_solver = MGRNestedFRelaxWrapperGetInner(mgr->frelax[i]);
+   MGRNestedFRelaxWrapperFree(&mgr->frelax[i]);
+
+   if (mgr->level[i].f_relaxation.mgr)
+   {
+      PreconDestroyMGRSolver(mgr->level[i].f_relaxation.mgr, &nested_mgr_solver);
+   }
+   else if (nested_mgr_solver)
+   {
+      HYPRE_MGRDestroy(nested_mgr_solver);
+   }
+}
+#endif
+
 static void
 PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
 {
@@ -683,19 +703,7 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
           * level-0 F-relax solvers inside HYPRE_MGRDestroy(). Avoid double free. */
          if (mgr->level[i].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
          {
-            HYPRE_Solver nested_mgr_solver =
-               MGRNestedFRelaxWrapperGetInner(mgr->frelax[i]);
-            MGRNestedFRelaxWrapperFree(&mgr->frelax[i]);
-
-            if (mgr->level[i].f_relaxation.mgr)
-            {
-               PreconDestroyMGRSolver(mgr->level[i].f_relaxation.mgr, &nested_mgr_solver);
-            }
-            else if (nested_mgr_solver)
-            {
-               HYPRE_MGRDestroy(nested_mgr_solver);
-               nested_mgr_solver = NULL;
-            }
+            DestroyNestedMGRFRelaxAtLevel(mgr, i);
          }
          else
          {
@@ -709,19 +717,7 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
          }
          else if (mgr->level[i].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
          {
-            HYPRE_Solver nested_mgr_solver =
-               MGRNestedFRelaxWrapperGetInner(mgr->frelax[i]);
-            MGRNestedFRelaxWrapperFree(&mgr->frelax[i]);
-
-            if (mgr->level[i].f_relaxation.mgr)
-            {
-               PreconDestroyMGRSolver(mgr->level[i].f_relaxation.mgr, &nested_mgr_solver);
-            }
-            else if (nested_mgr_solver)
-            {
-               HYPRE_MGRDestroy(nested_mgr_solver);
-               nested_mgr_solver = NULL;
-            }
+            DestroyNestedMGRFRelaxAtLevel(mgr, i);
          }
 #if defined(HYPRE_USING_DSUPERLU)
          else if (mgr->level[i].f_relaxation.type == 29)

@@ -248,15 +248,18 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
 
          *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
-         comp_size = (size_t)LZ4_compress_default(
-            input, (char *)(*output_ptr) + header_size, (int)isize, (int)comp_size);
-         if (comp_size <= 0)
          {
-            ErrorCodeSet(ERROR_UNKNOWN);
-            ErrorMsgAdd("LZ4 compression failed!");
-            free(*output_ptr);
-            *output_ptr = NULL;
-            return;
+            int lz4_ret = LZ4_compress_default(input, (char *)(*output_ptr) + header_size,
+                                               (int)isize, (int)comp_size);
+            if (lz4_ret <= 0)
+            {
+               ErrorCodeSet(ERROR_UNKNOWN);
+               ErrorMsgAdd("LZ4 compression failed!");
+               free(*output_ptr);
+               *output_ptr = NULL;
+               return;
+            }
+            comp_size = (size_t)lz4_ret;
          }
 #else
          ErrorCodeSet(ERROR_MISSING_LIB);
@@ -279,16 +282,19 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
 
          *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
-         comp_size = (size_t)LZ4_compress_HC(
-            (const char *)input, (char *)(*output_ptr) + header_size, (int)isize,
-            (int)comp_size, LZ4HC_CLEVEL_DEFAULT);
-         if (comp_size <= 0)
          {
-            ErrorCodeSet(ERROR_UNKNOWN);
-            ErrorMsgAdd("LZ4HC compression failed!");
-            free(*output_ptr);
-            *output_ptr = NULL;
-            return;
+            int lz4hc_ret =
+               LZ4_compress_HC((const char *)input, (char *)(*output_ptr) + header_size,
+                               (int)isize, (int)comp_size, LZ4HC_CLEVEL_DEFAULT);
+            if (lz4hc_ret <= 0)
+            {
+               ErrorCodeSet(ERROR_UNKNOWN);
+               ErrorMsgAdd("LZ4HC compression failed!");
+               free(*output_ptr);
+               *output_ptr = NULL;
+               return;
+            }
+            comp_size = (size_t)lz4hc_ret;
          }
 #else
          ErrorCodeSet(ERROR_MISSING_LIB);
@@ -308,17 +314,20 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
 
          *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
-         comp_size =
-            blosc_compress(9, 1, 1, isize, input,
-                           (unsigned char *)(*output_ptr) + header_size, comp_size);
-         blosc_destroy();
-         if (comp_size <= 0)
          {
-            ErrorCodeSet(ERROR_UNKNOWN);
-            ErrorMsgAdd("Blosc compression failed!");
-            free(*output_ptr);
-            *output_ptr = NULL;
-            return;
+            int blosc_ret =
+               blosc_compress(9, 1, 1, isize, input,
+                              (unsigned char *)(*output_ptr) + header_size, comp_size);
+            blosc_destroy();
+            if (blosc_ret <= 0)
+            {
+               ErrorCodeSet(ERROR_UNKNOWN);
+               ErrorMsgAdd("Blosc compression failed!");
+               free(*output_ptr);
+               *output_ptr = NULL;
+               return;
+            }
+            comp_size = (size_t)blosc_ret;
          }
 #else
          ErrorCodeSet(ERROR_MISSING_LIB);

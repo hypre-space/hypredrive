@@ -247,12 +247,11 @@ MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_ou
                              size_t     *num_present_labels_out,
                              HYPRE_Int **label_present_out)
 {
-   const int *labels             = NULL;
-   size_t     num_labels         = 0;
-   HYPRE_Int *label_mask         = NULL;
-   int        max_label          = -1;
-   size_t     present_cnt        = 0;
-   int        use_dense_fallback = 0;
+   const int *labels      = NULL;
+   size_t     num_labels  = 0;
+   HYPRE_Int *label_mask  = NULL;
+   int        max_label   = -1;
+   size_t     present_cnt = 0;
 
    if (!dofmap || !label_space_size_out || !label_present_out)
    {
@@ -270,6 +269,8 @@ MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_ou
 
    if (dofmap->g_unique_data && dofmap->g_unique_size > 0)
    {
+      int use_dense_fallback = 0;
+
       labels     = dofmap->g_unique_data;
       num_labels = dofmap->g_unique_size;
       for (size_t i = 1; i < num_labels; i++)
@@ -395,26 +396,25 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
 
    size_t     parent_label_space = 0;
    size_t     nested_num_labels  = parent_f_dofs->size;
+   size_t     nested_size        = 0;
    HYPRE_Int *parent_present     = NULL;
    HYPRE_Int *keep_label         = NULL;
    HYPRE_Int *seen_label         = NULL;
-   int       *filtered           = NULL;
    IntArray  *nested_dofmap      = NULL;
-   size_t     present_cnt        = 0;
+   int        ok                 = 0;
 
    if (!MGRBuildDofLabelPresenceMask(parent_dofmap, &parent_label_space, NULL,
                                      &parent_present))
    {
-      return NULL;
+      goto cleanup;
    }
 
    keep_label = (HYPRE_Int *)calloc(parent_label_space, sizeof(HYPRE_Int));
    if (!keep_label)
    {
-      free(parent_present);
       ErrorCodeSet(ERROR_ALLOCATION);
       ErrorMsgAdd("Failed to allocate nested MGR dof label selection mask");
-      return NULL;
+      goto cleanup;
    }
 
    for (size_t i = 0; i < nested_num_labels; i++)
@@ -426,30 +426,23 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
          ErrorMsgAdd(
             "Invalid parent MGR f_dofs label %d for nested MGR (valid range: [0,%d])",
             label, (int)parent_label_space - 1);
-         free(keep_label);
-         free(parent_present);
-         return NULL;
+         goto cleanup;
       }
       if (!parent_present[label])
       {
          ErrorCodeSet(ERROR_INVALID_VAL);
          ErrorMsgAdd("Parent MGR f_dofs label %d is not present in parent dofmap", label);
-         free(keep_label);
-         free(parent_present);
-         return NULL;
+         goto cleanup;
       }
       if (keep_label[label])
       {
          ErrorCodeSet(ERROR_INVALID_VAL);
          ErrorMsgAdd("Duplicate parent MGR f_dofs label %d for nested MGR", label);
-         free(keep_label);
-         free(parent_present);
-         return NULL;
+         goto cleanup;
       }
       keep_label[label] = 1;
    }
 
-   size_t nested_size = 0;
    for (size_t i = 0; i < parent_dofmap->size; i++)
    {
       int label = parent_dofmap->data[i];
@@ -457,9 +450,7 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
       {
          ErrorCodeSet(ERROR_INVALID_VAL);
          ErrorMsgAdd("Invalid dofmap entry %d while building nested MGR dofmap", label);
-         free(keep_label);
-         free(parent_present);
-         return NULL;
+         goto cleanup;
       }
       if (keep_label[label])
       {
@@ -468,15 +459,11 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
    }
 
    nested_dofmap = IntArrayCreate(nested_size);
-   filtered      = nested_dofmap ? nested_dofmap->data : NULL;
-   if (!nested_dofmap || (nested_size > 0 && !filtered))
+   if (!nested_dofmap || (nested_size > 0 && !nested_dofmap->data))
    {
-      IntArrayDestroy(&nested_dofmap);
-      free(keep_label);
-      free(parent_present);
       ErrorCodeSet(ERROR_ALLOCATION);
       ErrorMsgAdd("Failed to allocate nested MGR projected dofmap");
-      return NULL;
+      goto cleanup;
    }
 
    for (size_t i = 0, j = 0; i < parent_dofmap->size; i++)
@@ -484,19 +471,16 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
       int label = parent_dofmap->data[i];
       if (keep_label[label])
       {
-         filtered[j++] = label;
+         nested_dofmap->data[j++] = label;
       }
    }
 
    seen_label = (HYPRE_Int *)calloc(parent_label_space, sizeof(HYPRE_Int));
    if (!seen_label)
    {
-      IntArrayDestroy(&nested_dofmap);
-      free(keep_label);
-      free(parent_present);
       ErrorCodeSet(ERROR_ALLOCATION);
       ErrorMsgAdd("Failed to allocate nested MGR label uniqueness workspace");
-      return NULL;
+      goto cleanup;
    }
 
    nested_dofmap->unique_size = 0;
@@ -516,13 +500,9 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
          (int *)malloc(nested_dofmap->unique_size * sizeof(int));
       if (!nested_dofmap->unique_data)
       {
-         free(seen_label);
-         IntArrayDestroy(&nested_dofmap);
-         free(keep_label);
-         free(parent_present);
          ErrorCodeSet(ERROR_ALLOCATION);
          ErrorMsgAdd("Failed to allocate nested MGR unique dof labels");
-         return NULL;
+         goto cleanup;
       }
       for (size_t i = 0, j = 0; i < parent_label_space; i++)
       {
@@ -537,26 +517,32 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
    nested_dofmap->g_unique_data = (int *)malloc(nested_num_labels * sizeof(int));
    if (!nested_dofmap->g_unique_data)
    {
-      free(seen_label);
-      IntArrayDestroy(&nested_dofmap);
-      free(keep_label);
-      free(parent_present);
       ErrorCodeSet(ERROR_ALLOCATION);
       ErrorMsgAdd("Failed to allocate nested MGR global dof labels");
-      return NULL;
+      goto cleanup;
    }
-   for (size_t i = 0; i < parent_label_space; i++)
    {
-      if (keep_label[i])
+      size_t present_cnt = 0;
+      for (size_t i = 0; i < parent_label_space; i++)
       {
-         nested_dofmap->g_unique_data[present_cnt++] = (int)i;
+         if (keep_label[i])
+         {
+            nested_dofmap->g_unique_data[present_cnt++] = (int)i;
+         }
       }
    }
 
+   ok = 1;
+
+cleanup:
    free(seen_label);
    free(keep_label);
    free(parent_present);
-   return nested_dofmap;
+   if (!ok)
+   {
+      IntArrayDestroy(&nested_dofmap);
+   }
+   return ok ? nested_dofmap : NULL;
 }
 
 /*-----------------------------------------------------------------------------
@@ -1196,7 +1182,7 @@ MGRSetNearNullSpace(MGR_args *args, HYPRE_IJVector vec_nn)
 }
 
 void
-MGRDestroyNestedKrylovArgs(MGR_args *args)
+MGRDestroyNestedSolverArgs(MGR_args *args)
 {
    if (!args)
    {
@@ -1207,7 +1193,7 @@ MGRDestroyNestedKrylovArgs(MGR_args *args)
    {
       if (args->level[i].f_relaxation.mgr)
       {
-         MGRDestroyNestedKrylovArgs(args->level[i].f_relaxation.mgr);
+         MGRDestroyNestedSolverArgs(args->level[i].f_relaxation.mgr);
          free(args->level[i].f_relaxation.mgr);
          args->level[i].f_relaxation.mgr = NULL;
       }

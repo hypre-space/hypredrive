@@ -410,7 +410,7 @@ test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
    PreconDestroy(PRECON_MGR, &args, &precon);
    ASSERT_NULL(precon);
 
-   MGRDestroyNestedKrylovArgs(&args.mgr);
+   MGRDestroyNestedSolverArgs(&args.mgr);
    IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
 }
@@ -478,7 +478,7 @@ test_PreconSetup_mgr_frelax_nested_mgr_dof_labels(void)
 
    HYPRE_IJMatrixDestroy(mat);
    IntArrayDestroy(&dofmap);
-   MGRDestroyNestedKrylovArgs(&args.mgr);
+   MGRDestroyNestedSolverArgs(&args.mgr);
    TEST_HYPRE_FINALIZE();
 }
 

@@ -1020,7 +1020,7 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 
 void
 LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
-                                 HYPRE_IJVector *xref_ptr, Stats *stats)
+                                 HYPRE_IJVector *xref_ptr, const Stats *stats)
 {
    char xref_filename[MAX_FILENAME_LENGTH] = {0};
    int  ls_id                              = StatsGetLinearSystemID(stats) + 1;
@@ -1128,8 +1128,8 @@ LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
-                          HYPRE_IJMatrix *precmat_ptr, Stats *stats)
+LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
+                          HYPRE_IJMatrix *precmat_ptr, const Stats *stats)
 {
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
 
@@ -1175,7 +1175,8 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemReadDofmap(MPI_Comm comm, LS_args *args, IntArray **dofmap_ptr, Stats *stats)
+LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **dofmap_ptr,
+                       Stats *stats)
 {
    int ls_id = StatsGetLinearSystemID(stats) + 1;
 

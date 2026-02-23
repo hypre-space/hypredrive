@@ -135,7 +135,7 @@ void         MGRSetArgs(void *, const YAMLnode *);
 void         MGRSetDofmap(MGR_args *, IntArray *);
 void         MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
 void         MGRCreate(MGR_args *, HYPRE_Solver *);
-void         MGRDestroyNestedKrylovArgs(MGR_args *);
+void         MGRDestroyNestedSolverArgs(MGR_args *);
 HYPRE_Solver MGRNestedFRelaxWrapperGetInner(HYPRE_Solver);
 void         MGRNestedFRelaxWrapperFree(HYPRE_Solver *);
 
