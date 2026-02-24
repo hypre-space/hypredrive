@@ -676,6 +676,7 @@ MGRSetDefaultArgs(MGR_args *args)
    args->csolver      = NULL;
    args->csolver_type = -1;
    args->vec_nn       = NULL;
+   args->point_marker_data = NULL;
 }
 
 /*-----------------------------------------------------------------------------
@@ -1184,6 +1185,7 @@ MGRDestroyNestedSolverArgs(MGR_args *args)
       args->coarsest_level.krylov     = NULL;
       args->coarsest_level.use_krylov = 0;
    }
+
 }
 
 /*-----------------------------------------------------------------------------
@@ -1204,9 +1206,12 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_Solver frelax          = NULL;
    HYPRE_Solver grelax          = NULL;
    HYPRE_Int   *dofmap_data     = NULL;
+   HYPRE_Int   *dofmap_data_owned = NULL;
    IntArray    *dofmap          = NULL;
    HYPRE_Int   *label_present   = NULL;
+   HYPRE_Int   *label_to_dense  = NULL;
    HYPRE_Int    num_dofs        = 0;
+   HYPRE_Int    num_dofs_hypre  = 0;
    HYPRE_Int    num_active_dofs = 0;
    HYPRE_Int    num_dofs_last   = 0;
    HYPRE_Int    num_levels      = 0;
@@ -1235,6 +1240,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          return;
       }
       num_dofs        = (HYPRE_Int)label_space_size;
+      num_dofs_hypre  = num_dofs;
       num_active_dofs = (HYPRE_Int)present_labels;
    }
 
@@ -1314,27 +1320,116 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          }
       }
    }
+
+   if (num_active_dofs > 0 && num_active_dofs < num_dofs)
+   {
+      label_to_dense = (HYPRE_Int *)malloc((size_t)num_dofs * sizeof(HYPRE_Int));
+      if (!label_to_dense)
+      {
+         free(label_present);
+         free(inactive_dofs);
+         for (HYPRE_Int k = 0; k < num_levels - 1; k++)
+         {
+            free(c_dofs[k]);
+         }
+         ErrorCodeSet(ERROR_ALLOCATION);
+         ErrorMsgAdd("Failed to allocate MGR dense label remap");
+         return;
+      }
+
+      for (i = 0; i < num_dofs; i++)
+      {
+         label_to_dense[i] = -1;
+      }
+      for (i = 0, j = 0; i < num_dofs; i++)
+      {
+         if (label_present[i])
+         {
+            label_to_dense[i] = j++;
+         }
+      }
+      num_dofs_hypre = num_active_dofs;
+
+      for (lvl = 0; lvl < num_levels - 1; lvl++)
+      {
+         for (i = 0; i < num_c_dofs[lvl]; i++)
+         {
+            HYPRE_Int raw = c_dofs[lvl][i];
+            if (raw < 0 || raw >= num_dofs || label_to_dense[raw] < 0)
+            {
+               free(label_to_dense);
+               free(label_present);
+               free(inactive_dofs);
+               for (HYPRE_Int k = 0; k < num_levels - 1; k++)
+               {
+                  free(c_dofs[k]);
+               }
+               ErrorCodeSet(ERROR_INVALID_VAL);
+               ErrorMsgAdd("Invalid MGR C-point label %d during dense remap", (int)raw);
+               return;
+            }
+            c_dofs[lvl][i] = label_to_dense[raw];
+         }
+      }
+   }
    free(label_present);
    label_present = NULL;
 
    /* Set dofmap_data */
-   if (TYPES_MATCH(HYPRE_Int, int))
+   if (!label_to_dense && TYPES_MATCH(HYPRE_Int, int))
    {
       dofmap_data = (HYPRE_Int *)dofmap->data;
    }
    else
    {
       dofmap_data = (HYPRE_Int *)malloc(dofmap->size * sizeof(HYPRE_Int));
+      if (!dofmap_data)
+      {
+         free(inactive_dofs);
+         for (lvl = 0; lvl < num_levels - 1; lvl++)
+         {
+            free(c_dofs[lvl]);
+         }
+         free(label_to_dense);
+         ErrorCodeSet(ERROR_ALLOCATION);
+         ErrorMsgAdd("Failed to allocate MGR point-marker array");
+         return;
+      }
+      dofmap_data_owned = dofmap_data;
       for (i = 0; i < (int)dofmap->size; i++)
       {
-         dofmap_data[i] = (HYPRE_Int)dofmap->data[i];
+         HYPRE_Int raw = (HYPRE_Int)dofmap->data[i];
+         if (label_to_dense)
+         {
+            if (raw < 0 || raw >= num_dofs || label_to_dense[raw] < 0)
+            {
+               free(inactive_dofs);
+               for (lvl = 0; lvl < num_levels - 1; lvl++)
+               {
+                  free(c_dofs[lvl]);
+               }
+               free(label_to_dense);
+               free(dofmap_data_owned);
+               dofmap_data_owned = NULL;
+               ErrorCodeSet(ERROR_INVALID_VAL);
+               ErrorMsgAdd("Invalid dof label %d during MGR dense remap", (int)raw);
+               return;
+            }
+            dofmap_data[i] = label_to_dense[raw];
+         }
+         else
+         {
+            dofmap_data[i] = raw;
+         }
       }
    }
+   free(label_to_dense);
+   label_to_dense = NULL;
 
    /* Config preconditioner */
    HYPRE_MGRCreate(&precon);
-   HYPRE_MGRSetCpointsByPointMarkerArray(precon, num_dofs, num_levels - 1, num_c_dofs,
-                                         c_dofs, dofmap_data);
+   HYPRE_MGRSetCpointsByPointMarkerArray(precon, num_dofs_hypre, num_levels - 1,
+                                         num_c_dofs, c_dofs, dofmap_data);
    HYPRE_MGRSetNonCpointsToFpoints(precon, args->non_c_to_f);
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
    HYPRE_MGRSetTol(precon, args->tolerance);
@@ -1610,9 +1705,15 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    {
       free(c_dofs[lvl]);
    }
-   if ((void *)dofmap_data != (void *)dofmap->data)
+   if (dofmap_data_owned)
    {
-      free(dofmap_data);
+      /* hypre uses the point-marker array during MGRSetup, so keep the owned copy
+       * alive until PreconDestroyMGRSolver() destroys the MGR object. */
+      if (args->point_marker_data)
+      {
+         free(args->point_marker_data);
+      }
+      args->point_marker_data = dofmap_data_owned;
    }
 
    /* Silence any hypre errors. TODO: improve error handling */

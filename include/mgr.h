@@ -124,6 +124,7 @@ struct MGR_args_struct
    HYPRE_Int    csolver_type;
    HYPRE_Solver frelax[MAX_MGR_LEVELS - 1];
    HYPRE_Solver grelax[MAX_MGR_LEVELS - 1];
+   HYPRE_Int   *point_marker_data;
 };
 
 /*--------------------------------------------------------------------------
