@@ -666,8 +666,18 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    ErrorCodeSet(ERROR_INVALID_PRECON);
    ErrorMsgAdd("MGR requires hypre >= 2.19.0");
 #else
-   if (!mgr || !solver_ptr || !*solver_ptr)
+   if (!mgr)
    {
+      return;
+   }
+
+   if (!solver_ptr || !*solver_ptr)
+   {
+      if (mgr->point_marker_data)
+      {
+         free(mgr->point_marker_data);
+         mgr->point_marker_data = NULL;
+      }
       return;
    }
 
@@ -691,6 +701,12 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
       DestroyNestedMGRFRelaxInnerSolver(mgr, 0, &detached_nested_lvl0_frelax);
    }
 #endif
+
+   if (mgr->point_marker_data)
+   {
+      free(mgr->point_marker_data);
+      mgr->point_marker_data = NULL;
+   }
 
    /* TODO: should MGR free these internally? */
    if (mgr->coarsest_level.use_krylov && mgr->coarsest_level.krylov)
