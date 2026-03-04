@@ -31,12 +31,12 @@ def read_text_coordinate_matrix(parts: List[str], threshold: float = 0.0) -> Tup
         rows_part = []
         cols_part = []
         vals_part = []
-        
+
         with open(p, 'r') as f:
             # Check if first line is header (matrix dimensions)
             first_line = f.readline().strip()
             first_values = first_line.split()
-            
+
             # If first line has exactly 4 numbers, it might be a header (nrows_start nrows_end ncols_start ncols_end)
             # Otherwise, treat it as a data line
             header_read = False
@@ -51,11 +51,11 @@ def read_text_coordinate_matrix(parts: List[str], threshold: float = 0.0) -> Tup
                         logging.debug(f"  detected header: rows={nrows_part}, cols={ncols_part}")
                 except ValueError:
                     header_read = False
-            
+
             if not header_read:
                 # First line is data, rewind
                 f.seek(0)
-            
+
             # Read coordinate entries
             for line in f:
                 line = line.strip()
@@ -72,15 +72,15 @@ def read_text_coordinate_matrix(parts: List[str], threshold: float = 0.0) -> Tup
                         vals_part.append(v)
                     except (ValueError, IndexError):
                         continue
-        
+
         if not rows_part:
             logging.debug(f"  empty part file, skipping")
             continue
-        
+
         r = np.array(rows_part, dtype=np.int64)
         c = np.array(cols_part, dtype=np.int64)
         v = np.array(vals_part, dtype=np.float64)
-        
+
         # Determine global dimensions from max indices
         if nrows_glob < 0:
             nrows_glob = int(r.max()) + 1 if r.size > 0 else 0
@@ -88,10 +88,10 @@ def read_text_coordinate_matrix(parts: List[str], threshold: float = 0.0) -> Tup
         else:
             nrows_glob = max(nrows_glob, int(r.max()) + 1 if r.size > 0 else 0)
             ncols_glob = max(ncols_glob, int(c.max()) + 1 if c.size > 0 else 0)
-        
+
         loc_nnz = r.size
         logging.debug(f"  local nnz before threshold: {loc_nnz}")
-        
+
         if threshold > 0.0:
             mask = np.abs(v) > threshold
             kept = int(mask.sum())
@@ -104,14 +104,14 @@ def read_text_coordinate_matrix(parts: List[str], threshold: float = 0.0) -> Tup
         else:
             tot_before += loc_nnz
             tot_after += loc_nnz
-        
+
         rows_all.append(r)
         cols_all.append(c)
         vals_all.append(v)
-    
+
     if nrows_glob < 0:
         raise RuntimeError("No part files found or empty matrix")
-    
+
     if rows_all:
         rows = np.concatenate(rows_all)
         cols = np.concatenate(cols_all)
@@ -120,10 +120,10 @@ def read_text_coordinate_matrix(parts: List[str], threshold: float = 0.0) -> Tup
         rows = np.zeros(0, dtype=np.int64)
         cols = np.zeros(0, dtype=np.int64)
         vals = np.zeros(0, dtype=np.float64)
-    
+
     if threshold > 0.0:
         logging.info(f"Threshold {threshold}: kept {tot_after}/{tot_before} ({100.0 * tot_after / tot_before:.1f}%) entries across all parts")
-    
+
     return rows, cols, vals, (nrows_glob, ncols_glob)
 
 
@@ -232,6 +232,7 @@ def main():
     parser.add_argument('--cbfs', type=int, default=16, help='Colorbar title font size')
     parser.add_argument('--ms', type=float, default=2.5, help='Marker size (pixels)')
     parser.add_argument('--colorscale', type=str, default='Jet', help='Plotly colorscale name (default: Jet)')
+    parser.add_argument('--clim', type=float, nargs=2, default=None, help='Colorbar limits (min max). If --log is used, these are powers of 10.')
     parser.add_argument('--no_grid', action='store_true', help='Disable grid lines')
     parser.add_argument('-s', '--save', type=str, default=None, help='Save HTML to this path instead of opening a browser')
     parser.add_argument('-v', '--verbose', action='count', default=0, help='Increase verbosity (-v for INFO, -vv for DEBUG)')
@@ -278,7 +279,6 @@ def main():
         cmaxs = [float(cv.max())] if cv.size else []
         cmin = min(cmins) if cmins else 0.0
         cmax = max(cmaxs) if cmaxs else 1.0
-        logging.info(f"Global color scale: cmin={cmin:.3g} cmax={cmax:.3g}")
     else:
         logging.info(f"Scanning directory={args.directory!r} pattern={args.pattern!r}")
         subdirs = sorted([d for d in glob.glob(os.path.join(args.directory, args.pattern)) if os.path.isdir(d)])
@@ -357,7 +357,11 @@ def main():
                 cmaxs.append(float(cv.max()))
         cmin = min(cmins) if cmins else 0.0
         cmax = max(cmaxs) if cmaxs else 1.0
-        logging.info(f"Global color scale: cmin={cmin:.3g} cmax={cmax:.3g}")
+
+    if args.clim:
+        cmin, cmax = args.clim
+
+    logging.info(f"Global color scale: cmin={cmin:.3g} cmax={cmax:.3g}")
 
     # Build one trace per matrix and toggle visibility via slider (more robust than frames)
     if not mats:
@@ -373,7 +377,7 @@ def main():
             x=c, y=r, mode='markers', visible=(idx == 0),
             marker=dict(size=args.ms, color=cv, colorscale=args.colorscale, cmin=cmin, cmax=cmax, showscale=True,
                         colorbar=dict(title='log10(|A_ij|)' if args.log else 'A_ij',
-                                      titlefont=dict(size=args.cbfs), tickfont=dict(size=args.tickfs))),
+                                      tickfont=dict(size=args.tickfs))),
             name=f"ls {ls_ids[idx]}",
             **trace_kwargs
         ))
@@ -388,10 +392,10 @@ def main():
         margin=dict(l=80, r=100, t=90, b=80),
         title=dict(text=f"Sparsity pattern plot of {labels[0]}", font=dict(size=args.tfs), x=0.5, xanchor='center'),
         font=dict(size=args.tickfs),
-        xaxis=dict(title='col', titlefont=dict(size=args.alfs), tickfont=dict(size=args.tickfs),
+        xaxis=dict(title='col', tickfont=dict(size=args.tickfs),
                    range=[0, shape0[1]], showgrid=showgrid, gridcolor='#dddddd', zeroline=False,
                    linewidth=1, linecolor='#333', mirror=True),
-        yaxis=dict(title='row', titlefont=dict(size=args.alfs), tickfont=dict(size=args.tickfs),
+        yaxis=dict(title='row', tickfont=dict(size=args.tickfs),
                    autorange=False, range=[shape0[0], 0], scaleanchor='x', scaleratio=1,
                    showgrid=showgrid, gridcolor='#dddddd', zeroline=False,
                    linewidth=1, linecolor='#333', mirror=True)
