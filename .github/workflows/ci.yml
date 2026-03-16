@@ -386,7 +386,7 @@ jobs:
       HYPRE_VERSION: master
       BUILD_DIR: build-mixedint
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install dependencies (Ubuntu)
         timeout-minutes: 3
