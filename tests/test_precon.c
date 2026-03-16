@@ -117,6 +117,7 @@ test_PreconSetArgsFromYAML_mgr_coarsest_level_spdirect_flat(void)
 {
    precon_args args;
    PreconSetDefaultArgs(&args);
+   MGRSetDefaultArgs(&args.mgr);
 
    YAMLnode *parent   = YAMLnodeCreate("preconditioner", "", 0);
    YAMLnode *mgr_node = add_child(parent, "mgr", "", 1);
@@ -136,6 +137,7 @@ test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_flat_sets_type(void)
 {
    precon_args args;
    PreconSetDefaultArgs(&args);
+   MGRSetDefaultArgs(&args.mgr);
 
    YAMLnode *parent   = YAMLnodeCreate("preconditioner", "", 0);
    YAMLnode *mgr_node = add_child(parent, "mgr", "", 1);
@@ -155,6 +157,7 @@ test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_nested_sets_type_and_args(void
 {
    precon_args args;
    PreconSetDefaultArgs(&args);
+   MGRSetDefaultArgs(&args.mgr);
 
    YAMLnode *parent   = YAMLnodeCreate("preconditioner", "", 0);
    YAMLnode *mgr_node = add_child(parent, "mgr", "", 1);
@@ -489,6 +492,7 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
 
    precon_args args;
    PreconSetDefaultArgs(&args);
+   MGRSetDefaultArgs(&args.mgr);
 
    /* Minimal dofmap required by MGR */
    IntArray *dofmap = NULL;
