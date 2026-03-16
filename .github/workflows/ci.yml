@@ -93,7 +93,7 @@ jobs:
 
       - name: Setup ccache (Ubuntu)
         if: startsWith(runner.os, 'Linux')
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
           restore-keys: |
@@ -209,11 +209,11 @@ jobs:
 
       - name: Cache ccache (Ubuntu)
         if: startsWith(runner.os, 'Linux')
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@v1.2
 
       - name: Upload logs on failure
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: logs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}-${{ matrix.hypre_version }}
           path: |
@@ -223,7 +223,7 @@ jobs:
 
       - name: Upload example outputs (optional)
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: example-outputs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}-${{ matrix.hypre_version }}
           path: |
@@ -306,7 +306,7 @@ jobs:
           echo "OMPI_CXX=g++" >> $GITHUB_ENV
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ runner.os }}-caliper-${{ github.sha }}
           restore-keys: |
@@ -365,11 +365,11 @@ jobs:
           # Caliper runtime-report outputs to stdout, so it should be visible in the logs
 
       - name: Cache ccache
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@v1.2
 
       - name: Upload logs on failure
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: logs-caliper
           path: |
@@ -386,7 +386,7 @@ jobs:
       HYPRE_VERSION: master
       BUILD_DIR: build-mixedint
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install dependencies (Ubuntu)
         timeout-minutes: 3
@@ -402,7 +402,7 @@ jobs:
           echo "OMPI_CXX=g++" >> $GITHUB_ENV
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ runner.os }}-mixedint-${{ github.sha }}
           restore-keys: |

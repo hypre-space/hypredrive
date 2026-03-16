@@ -1,4 +1,4 @@
-name: Format
+name: Code Style
 
 on:
   pull_request:
