@@ -102,10 +102,12 @@ DEFINE_GET_VALID_KEYS_FUNC(SolverGetValidKeys, Solver_NUM_FIELDS, Solver_field_o
 StrIntMapArray
 SolverGetValidTypeIntMap(void)
 {
-   static StrIntMap map[] = {{"pcg", (int)SOLVER_PCG},
-                             {"gmres", (int)SOLVER_GMRES},
-                             {"fgmres", (int)SOLVER_FGMRES},
-                             {"bicgstab", (int)SOLVER_BICGSTAB}};
+   static StrIntMap map[] = {
+      {"pcg", (int)SOLVER_PCG},
+      {"gmres", (int)SOLVER_GMRES},
+      {"fgmres", (int)SOLVER_FGMRES},
+      {"bicgstab", (int)SOLVER_BICGSTAB},
+   };
 
    return STR_INT_MAP_ARRAY_CREATE(map);
 }
@@ -244,10 +246,18 @@ SolverSetupWithReuse(precon_t precon_method, solver_t solver_method, HYPRE_Preco
    void                   *vM = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix      par_M = NULL;
    HYPRE_ParVector         par_b = NULL, par_x = NULL;
-   HYPRE_PtrToParSolverFcn setup_ptrs[] = {HYPRE_BoomerAMGSetup, HYPRE_MGRSetup,
-                                           HYPREDRV_ILU_SETUP, HYPREDRV_FSAI_SETUP};
-   HYPRE_PtrToParSolverFcn solve_ptrs[] = {HYPRE_BoomerAMGSolve, HYPRE_MGRSolve,
-                                           HYPREDRV_ILU_SOLVE, HYPREDRV_FSAI_SOLVE};
+   HYPRE_PtrToParSolverFcn setup_ptrs[] = {
+      HYPRE_BoomerAMGSetup,
+      HYPRE_MGRSetup,
+      HYPREDRV_ILU_SETUP,
+      HYPREDRV_FSAI_SETUP,
+   };
+   HYPRE_PtrToParSolverFcn solve_ptrs[] = {
+      HYPRE_BoomerAMGSolve,
+      HYPRE_MGRSolve,
+      HYPREDRV_ILU_SOLVE,
+      HYPREDRV_FSAI_SOLVE,
+   };
 
    HYPRE_IJMatrixGetObject(M, &vM);
    par_M = (HYPRE_ParCSRMatrix)vM;

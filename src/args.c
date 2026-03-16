@@ -54,9 +54,10 @@ GeneralGetValidValues(const char *key)
    }
    if (!strcmp(key, "statistics"))
    {
-      static StrIntMap map[] = {{"off", 0},  {"no", 0}, {"false", 0},
-                                {"0", 0},    {"on", 1}, {"yes", 1},
-                                {"true", 1}, {"1", 1},  {"2", 2}};
+      static StrIntMap map[] = {
+         {"off", 0}, {"no", 0},   {"false", 0}, {"0", 0}, {"on", 1},
+         {"yes", 1}, {"true", 1}, {"1", 1},     {"2", 2},
+      };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "exec_policy"))
@@ -432,7 +433,7 @@ typedef enum
 {
    PRECON_PARSE_NOT_HANDLED = 0,
    PRECON_PARSE_SUCCESS     = 1,
-   PRECON_PARSE_ERROR       = -1
+   PRECON_PARSE_ERROR       = -1,
 } PreconParseResult;
 
 typedef struct

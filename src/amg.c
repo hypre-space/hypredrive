@@ -255,7 +255,7 @@ AMGintGetValidValues(const char *key)
                                 {"mm_extended+e",        18},
                                 {"mm-ext+e",             18},
                                 {"blk_direct",           24},
-                                {"one_point",           100}};
+                                {"one_point",           100},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -267,7 +267,7 @@ AMGintGetValidValues(const char *key)
                                 {"neumann_air_0",  3},
                                 {"neumann_air_1",  4},
                                 {"neumann_air_2",  5},
-                                {"air_1.5",       15}};
+                                {"air_1.5",       15},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -291,7 +291,7 @@ AMGcsnGetValidValues(const char *key)
                                 {"rs3",     3},
                                 {"falgout", 6},
                                 {"pmis",    8},
-                                {"hmis",   10}};
+                                {"hmis",   10},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -324,7 +324,7 @@ AMGaggGetValidValues(const char *key)
                                 {"multipass",          4},
                                 {"mm_extended",        5},
                                 {"mm_extended+i",      6},
-                                {"mm_extended+e",      7}};
+                                {"mm_extended+e",      7},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -355,7 +355,7 @@ AMGrlxGetValidValues(const char *key)
                                 {"cg",            15},
                                 {"chebyshev",     16},
                                 {"l1-jacobi",     18},
-                                {"l1sym-hgs",     89}};
+                                {"l1sym-hgs",     89},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -373,7 +373,7 @@ AMGrlxGetValidValues(const char *key)
                                 {"cg",             15},
                                 {"chebyshev",      16},
                                 {"l1-jacobi",      18},
-                                {"l1sym-hgs",      89}};
+                                {"l1sym-hgs",      89},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -393,7 +393,7 @@ AMGrlxGetValidValues(const char *key)
                                 {"l1-jacobi",      18},
                                 {"l1sym-hgs",      89},
                                 {"lu_piv",         99},
-                                {"lu_inv",        199}};
+                                {"lu_inv",        199},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -417,7 +417,7 @@ AMGsmtGetValidValues(const char *key)
                                 {"schwarz",   6},
                                 {"pilut",     7},
                                 {"parasails", 8},
-                                {"euclid",    9}};
+                                {"euclid",    9},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }

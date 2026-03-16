@@ -14,7 +14,7 @@
 /* Reallocation expansion factor */
 enum
 {
-   REALLOC_EXPAND_FACTOR = 16
+   REALLOC_EXPAND_FACTOR = 16,
 };
 
 /*--------------------------------------------------------------------------
@@ -336,16 +336,17 @@ enum
    STATS_ENTRY_WIDTH = 6,
    STATS_TIME_WIDTH  = 11,
    STATS_RES_WIDTH   = 10,
-   STATS_ITERS_WIDTH = 6
+   STATS_ITERS_WIDTH = 6,
 };
 
 static void
 PrintDivisor(void)
 {
-   const int widths[] = {STATS_ENTRY_WIDTH, STATS_TIME_WIDTH, STATS_TIME_WIDTH,
-                         STATS_TIME_WIDTH,  STATS_RES_WIDTH,  STATS_RES_WIDTH,
-                         STATS_ITERS_WIDTH};
-   const int count    = (int)(sizeof(widths) / sizeof(widths[0]));
+   const int widths[] = {
+      STATS_ENTRY_WIDTH, STATS_TIME_WIDTH, STATS_TIME_WIDTH,  STATS_TIME_WIDTH,
+      STATS_RES_WIDTH,   STATS_RES_WIDTH,  STATS_ITERS_WIDTH,
+   };
+   const int count = (int)(sizeof(widths) / sizeof(widths[0]));
 
    for (int i = 0; i < count; i++)
    {
@@ -366,9 +367,10 @@ static void
 PrintHeader(const char *scale)
 {
    const char *top[]    = {"", "LS build", "setup", "solve", "initial", "relative", ""};
-   const char *bottom[] = {"Entry",     "times",     "times", "times",
-                           "res. norm", "res. norm", "iters"};
-   char        time_label[32];
+   const char *bottom[] = {
+      "Entry", "times", "times", "times", "res. norm", "res. norm", "iters",
+   };
+   char time_label[32];
 
    snprintf(time_label, sizeof(time_label), "times %s", scale);
 

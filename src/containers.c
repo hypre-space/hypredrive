@@ -604,8 +604,15 @@ IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types,
 const StrIntMapArray OnOffMapArray = {
    .data =
       (const StrIntMap[]){
-         {"on", 1}, {"yes", 1}, {"true", 1}, {"off", 0}, {"no", 0}, {"false", 0}},
-   .size = 6};
+         {"on", 1},
+         {"yes", 1},
+         {"true", 1},
+         {"off", 0},
+         {"no", 0},
+         {"false", 0},
+      },
+   .size = 6,
+};
 
 /*--------------------------------------------------------------------------
  * StrArrayEntryExists

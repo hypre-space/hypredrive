@@ -354,7 +354,7 @@ ErrorBacktracePrint(void)
 
 enum
 {
-   ERROR_CODE_NUM_ENTRIES = 32
+   ERROR_CODE_NUM_ENTRIES = 32,
 };
 
 /*-----------------------------------------------------------------------------

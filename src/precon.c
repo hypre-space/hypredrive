@@ -46,10 +46,12 @@ PreconGetValidValues(const char *key)
 StrIntMapArray
 PreconGetValidTypeIntMap(void)
 {
-   static StrIntMap map[] = {{"amg", (int)PRECON_BOOMERAMG},
-                             {"mgr", (int)PRECON_MGR},
-                             {"ilu", (int)PRECON_ILU},
-                             {"fsai", (int)PRECON_FSAI}};
+   static StrIntMap map[] = {
+      {"amg", (int)PRECON_BOOMERAMG},
+      {"mgr", (int)PRECON_MGR},
+      {"ilu", (int)PRECON_ILU},
+      {"fsai", (int)PRECON_FSAI},
+   };
 
    return STR_INT_MAP_ARRAY_CREATE(map);
 }

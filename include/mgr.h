@@ -18,7 +18,7 @@ typedef struct MGR_args_struct MGR_args;
 enum
 {
    MAX_MGR_LEVELS           = 32,
-   MGR_FRLX_TYPE_NESTED_MGR = 202
+   MGR_FRLX_TYPE_NESTED_MGR = 202,
 };
 
 /*--------------------------------------------------------------------------

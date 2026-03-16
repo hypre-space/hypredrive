@@ -673,9 +673,9 @@ MGRSetDefaultArgs(MGR_args *args)
       args->grelax[i] = NULL;
    }
    MGRclsSetDefaultArgs(&args->coarsest_level);
-   args->csolver      = NULL;
-   args->csolver_type = -1;
-   args->vec_nn       = NULL;
+   args->csolver           = NULL;
+   args->csolver_type      = -1;
+   args->vec_nn            = NULL;
    args->point_marker_data = NULL;
 }
 
@@ -880,19 +880,21 @@ MGRfrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"", -1},
-                                {"none", -1},
-                                {"single", 7},
-                                {"jacobi", 7},
-                                {"v(1,0)", 1},
-                                {"amg", 2},
-                                {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
-                                {"chebyshev", 16},
-                                {"ilu", 32},
-                                {"ge", 9},
-                                {"spdirect", 29},
-                                {"ge-piv", 99},
-                                {"ge-inv", 199}};
+      static StrIntMap map[] = {
+         {"", -1},
+         {"none", -1},
+         {"single", 7},
+         {"jacobi", 7},
+         {"v(1,0)", 1},
+         {"amg", 2},
+         {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
+         {"chebyshev", 16},
+         {"ilu", 32},
+         {"ge", 9},
+         {"spdirect", 29},
+         {"ge-piv", 99},
+         {"ge-inv", 199},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -911,12 +913,13 @@ MGRgrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"", -1},         {"none", -1},    {"blk-jacobi", 0},
-                                {"blk-gs", 1},    {"mixed-gs", 2}, {"amg", 20},
-                                {"h-fgs", 3},     {"h-bgs", 4},    {"ch-gs", 5},
-                                {"h-ssor", 6},    {"euclid", 8},   {"2stg-fgs", 11},
-                                {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},
-                                {"ilu", 16},      {"l1-hsgs", 88}};
+      static StrIntMap map[] = {
+         {"", -1},         {"none", -1},    {"blk-jacobi", 0}, {"blk-gs", 1},
+         {"mixed-gs", 2},  {"amg", 20},     {"h-fgs", 3},      {"h-bgs", 4},
+         {"ch-gs", 5},     {"h-ssor", 6},   {"euclid", 8},     {"2stg-fgs", 11},
+         {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},   {"ilu", 16},
+         {"l1-hsgs", 88},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -938,26 +941,27 @@ MGRlvlGetValidValues(const char *key)
       static StrIntMap map[] = {
          {"injection", 0},     {"l1-jacobi", 1},   {"jacobi", 2},
          {"classical-mod", 3}, {"approx-inv", 4},  {"blk-jacobi", 12},
-         {"blk-rowlump", 13},  {"blk-rowsum", 13}, {"blk-absrowsum", 14}};
+         {"blk-rowlump", 13},  {"blk-rowsum", 13}, {"blk-absrowsum", 14},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "restriction_type"))
    {
-      static StrIntMap map[] = {{"injection", 0},   {"jacobi", 2},    {"approx-inv", 3},
-                                {"blk-jacobi", 12}, {"cpr-like", 13}, {"columped", 14}};
+      static StrIntMap map[] = {
+         {"injection", 0},   {"jacobi", 2},    {"approx-inv", 3},
+         {"blk-jacobi", 12}, {"cpr-like", 13}, {"columped", 14},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "coarse_level_type"))
    {
-      static StrIntMap map[] = {{"rap", 0},
-                                {"galerkin", 0},
-                                {"non-galerkin", 1},
-                                {"cpr-like-diag", 2},
-                                {"cpr-like-bdiag", 3},
-                                {"approx-inv", 4},
-                                {"acc", 5}};
+      static StrIntMap map[] = {
+         {"rap", 0},           {"galerkin", 0},       {"non-galerkin", 1},
+         {"cpr-like-diag", 2}, {"cpr-like-bdiag", 3}, {"approx-inv", 4},
+         {"acc", 5},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -984,10 +988,11 @@ MGRGetValidValues(const char *key)
 {
    if (!strcmp(key, "relax_type"))
    {
-      static StrIntMap map[] = {{"jacobi", 7},    {"h-fgs", 3},   {"h-bgs", 4},
-                                {"ch-gs", 5},     {"h-ssor", 6},  {"hl1-ssor", 8},
-                                {"l1-fgs", 13},   {"l1-bgs", 14}, {"chebyshev", 16},
-                                {"l1-jacobi", 18}};
+      static StrIntMap map[] = {
+         {"jacobi", 7},     {"h-fgs", 3},      {"h-bgs", 4},   {"ch-gs", 5},
+         {"h-ssor", 6},     {"hl1-ssor", 8},   {"l1-fgs", 13}, {"l1-bgs", 14},
+         {"chebyshev", 16}, {"l1-jacobi", 18},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1185,7 +1190,6 @@ MGRDestroyNestedSolverArgs(MGR_args *args)
       args->coarsest_level.krylov     = NULL;
       args->coarsest_level.use_krylov = 0;
    }
-
 }
 
 /*-----------------------------------------------------------------------------
@@ -1202,19 +1206,19 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    *precon_ptr = NULL;
    return;
 #else
-   HYPRE_Solver precon          = NULL;
-   HYPRE_Solver frelax          = NULL;
-   HYPRE_Solver grelax          = NULL;
-   HYPRE_Int   *dofmap_data     = NULL;
+   HYPRE_Solver precon            = NULL;
+   HYPRE_Solver frelax            = NULL;
+   HYPRE_Solver grelax            = NULL;
+   HYPRE_Int   *dofmap_data       = NULL;
    HYPRE_Int   *dofmap_data_owned = NULL;
-   IntArray    *dofmap          = NULL;
-   HYPRE_Int   *label_present   = NULL;
-   HYPRE_Int   *label_to_dense  = NULL;
-   HYPRE_Int    num_dofs        = 0;
-   HYPRE_Int    num_dofs_hypre  = 0;
-   HYPRE_Int    num_active_dofs = 0;
-   HYPRE_Int    num_dofs_last   = 0;
-   HYPRE_Int    num_levels      = 0;
+   IntArray    *dofmap            = NULL;
+   HYPRE_Int   *label_present     = NULL;
+   HYPRE_Int   *label_to_dense    = NULL;
+   HYPRE_Int    num_dofs          = 0;
+   HYPRE_Int    num_dofs_hypre    = 0;
+   HYPRE_Int    num_active_dofs   = 0;
+   HYPRE_Int    num_dofs_last     = 0;
+   HYPRE_Int    num_levels        = 0;
    HYPRE_Int    num_c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *inactive_dofs = NULL;
@@ -1263,7 +1267,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    }
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
-      c_dofs[lvl]     = (HYPRE_Int *)malloc((size_t)num_dofs * sizeof(HYPRE_Int));
+      c_dofs[lvl]     = (HYPRE_Int *)calloc((size_t)num_dofs, sizeof(HYPRE_Int));
       num_c_dofs[lvl] = (HYPRE_Int)((size_t)num_dofs_last - args->level[lvl].f_dofs.size);
 
       for (i = 0; i < (int)args->level[lvl].f_dofs.size; i++)

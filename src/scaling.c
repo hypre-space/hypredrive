@@ -40,9 +40,11 @@ ScalingGetValidValues(const char *key)
    }
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"rhs_l2", (int)SCALING_RHS_L2},
-                                {"dofmap_mag", (int)SCALING_DOFMAP_MAG},
-                                {"dofmap_custom", (int)SCALING_DOFMAP_CUSTOM}};
+      static StrIntMap map[] = {
+         {"rhs_l2", (int)SCALING_RHS_L2},
+         {"dofmap_mag", (int)SCALING_DOFMAP_MAG},
+         {"dofmap_custom", (int)SCALING_DOFMAP_CUSTOM},
+      };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    return STR_INT_MAP_ARRAY_VOID();

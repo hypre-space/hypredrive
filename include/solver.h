@@ -26,7 +26,7 @@ typedef enum solver_type_enum
    SOLVER_PCG,
    SOLVER_GMRES,
    SOLVER_FGMRES,
-   SOLVER_BICGSTAB
+   SOLVER_BICGSTAB,
 } solver_t;
 
 /*--------------------------------------------------------------------------

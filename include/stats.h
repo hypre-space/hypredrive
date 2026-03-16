@@ -28,14 +28,14 @@
 enum StatsConstants
 {
    STATS_MAX_LEVELS        = 4,
-   STATS_TIMESTEP_CAPACITY = 64
+   STATS_TIMESTEP_CAPACITY = 64,
 };
 
 /* HYPREDRV_AnnotateAction enum - internal use only (not in public API) */
 typedef enum
 {
    HYPREDRV_ANNOTATE_BEGIN = 0,
-   HYPREDRV_ANNOTATE_END   = 1
+   HYPREDRV_ANNOTATE_END   = 1,
 } HYPREDRV_AnnotateAction;
 
 /*--------------------------------------------------------------------------
