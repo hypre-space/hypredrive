@@ -29,7 +29,7 @@
 enum
 {
    MAX_FILENAME_LENGTH    = 2048,
-   MAX_STACK_ARRAY_LENGTH = 128
+   MAX_STACK_ARRAY_LENGTH = 128,
 };
 
 /*--------------------------------------------------------------------------

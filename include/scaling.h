@@ -22,13 +22,13 @@ typedef enum scaling_type_enum
 {
    SCALING_RHS_L2,
    SCALING_DOFMAP_MAG,
-   SCALING_DOFMAP_CUSTOM
+   SCALING_DOFMAP_CUSTOM,
 } scaling_type_t;
 
 typedef enum scaling_vector_kind_enum
 {
    SCALING_VECTOR_RHS,
-   SCALING_VECTOR_UNKNOWN
+   SCALING_VECTOR_UNKNOWN,
 } scaling_vector_kind_t;
 
 /*--------------------------------------------------------------------------

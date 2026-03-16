@@ -48,7 +48,7 @@ typedef enum ErrorCode_enum
    ERROR_MISSING_LIB              = 0x02000000, // 26th bit
    ERROR_ALLOCATION               = 0x20000000, // 28th bit
    ERROR_OUT_OF_BOUNDS            = 0x40000000, // 29th bit
-   ERROR_UNKNOWN                  = 0x80000000  // 30th bit
+   ERROR_UNKNOWN                  = 0x80000000, // 30th bit
 } ErrorCode;
 
 // TODO: consider using hypredrv_ for function names

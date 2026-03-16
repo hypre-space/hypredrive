@@ -17,7 +17,7 @@ typedef enum
    COMP_ZSTD  = 2,
    COMP_LZ4   = 3,
    COMP_LZ4HC = 4,
-   COMP_BLOSC = 5
+   COMP_BLOSC = 5,
 } comp_alg_t;
 
 const char *hypredrv_compression_get_name(comp_alg_t algo);

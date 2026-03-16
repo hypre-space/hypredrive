@@ -24,7 +24,7 @@ enum
 {
    LSSEQ_FLAG_HAS_DOFMAP    = 1u << 0,
    LSSEQ_FLAG_HAS_TIMESTEPS = 1u << 1,
-   LSSEQ_FLAG_HAS_INFO      = 1u << 2
+   LSSEQ_FLAG_HAS_INFO      = 1u << 2,
 };
 
 typedef struct LSSeqHeader_struct
@@ -50,7 +50,7 @@ typedef struct LSSeqHeader_struct
  * rhs_size, dof_offset, dof_size (relative to offset_blob_data) */
 enum
 {
-   LSSEQ_PART_BLOB_ENTRIES = 6
+   LSSEQ_PART_BLOB_ENTRIES = 6,
 };
 
 /* Mandatory info/manifest block written immediately after LSSeqHeader.
@@ -64,7 +64,7 @@ enum
 
 enum
 {
-   LSSEQ_INFO_FLAG_PAYLOAD_KV = 1u << 0
+   LSSEQ_INFO_FLAG_PAYLOAD_KV = 1u << 0,
 };
 
 typedef struct LSSeqInfoHeader_struct

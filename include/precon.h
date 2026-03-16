@@ -26,7 +26,7 @@ typedef enum precon_type_enum
    PRECON_MGR,
    PRECON_ILU,
    PRECON_FSAI,
-   PRECON_NONE
+   PRECON_NONE,
 } precon_t;
 
 /*--------------------------------------------------------------------------

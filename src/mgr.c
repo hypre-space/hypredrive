@@ -673,9 +673,10 @@ MGRSetDefaultArgs(MGR_args *args)
       args->grelax[i] = NULL;
    }
    MGRclsSetDefaultArgs(&args->coarsest_level);
-   args->csolver      = NULL;
-   args->csolver_type = -1;
-   args->vec_nn       = NULL;
+   args->csolver           = NULL;
+   args->csolver_type      = -1;
+   args->vec_nn            = NULL;
+   args->point_marker_data = NULL;
 }
 
 /*-----------------------------------------------------------------------------
@@ -879,19 +880,21 @@ MGRfrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"", -1},
-                                {"none", -1},
-                                {"single", 7},
-                                {"jacobi", 7},
-                                {"v(1,0)", 1},
-                                {"amg", 2},
-                                {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
-                                {"chebyshev", 16},
-                                {"ilu", 32},
-                                {"ge", 9},
-                                {"spdirect", 29},
-                                {"ge-piv", 99},
-                                {"ge-inv", 199}};
+      static StrIntMap map[] = {
+         {"", -1},
+         {"none", -1},
+         {"single", 7},
+         {"jacobi", 7},
+         {"v(1,0)", 1},
+         {"amg", 2},
+         {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
+         {"chebyshev", 16},
+         {"ilu", 32},
+         {"ge", 9},
+         {"spdirect", 29},
+         {"ge-piv", 99},
+         {"ge-inv", 199},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -910,12 +913,13 @@ MGRgrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"", -1},         {"none", -1},    {"blk-jacobi", 0},
-                                {"blk-gs", 1},    {"mixed-gs", 2}, {"amg", 20},
-                                {"h-fgs", 3},     {"h-bgs", 4},    {"ch-gs", 5},
-                                {"h-ssor", 6},    {"euclid", 8},   {"2stg-fgs", 11},
-                                {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},
-                                {"ilu", 16},      {"l1-hsgs", 88}};
+      static StrIntMap map[] = {
+         {"", -1},         {"none", -1},    {"blk-jacobi", 0}, {"blk-gs", 1},
+         {"mixed-gs", 2},  {"amg", 20},     {"h-fgs", 3},      {"h-bgs", 4},
+         {"ch-gs", 5},     {"h-ssor", 6},   {"euclid", 8},     {"2stg-fgs", 11},
+         {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},   {"ilu", 16},
+         {"l1-hsgs", 88},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -937,26 +941,27 @@ MGRlvlGetValidValues(const char *key)
       static StrIntMap map[] = {
          {"injection", 0},     {"l1-jacobi", 1},   {"jacobi", 2},
          {"classical-mod", 3}, {"approx-inv", 4},  {"blk-jacobi", 12},
-         {"blk-rowlump", 13},  {"blk-rowsum", 13}, {"blk-absrowsum", 14}};
+         {"blk-rowlump", 13},  {"blk-rowsum", 13}, {"blk-absrowsum", 14},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "restriction_type"))
    {
-      static StrIntMap map[] = {{"injection", 0},   {"jacobi", 2},    {"approx-inv", 3},
-                                {"blk-jacobi", 12}, {"cpr-like", 13}, {"columped", 14}};
+      static StrIntMap map[] = {
+         {"injection", 0},   {"jacobi", 2},    {"approx-inv", 3},
+         {"blk-jacobi", 12}, {"cpr-like", 13}, {"columped", 14},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "coarse_level_type"))
    {
-      static StrIntMap map[] = {{"rap", 0},
-                                {"galerkin", 0},
-                                {"non-galerkin", 1},
-                                {"cpr-like-diag", 2},
-                                {"cpr-like-bdiag", 3},
-                                {"approx-inv", 4},
-                                {"acc", 5}};
+      static StrIntMap map[] = {
+         {"rap", 0},           {"galerkin", 0},       {"non-galerkin", 1},
+         {"cpr-like-diag", 2}, {"cpr-like-bdiag", 3}, {"approx-inv", 4},
+         {"acc", 5},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -983,10 +988,11 @@ MGRGetValidValues(const char *key)
 {
    if (!strcmp(key, "relax_type"))
    {
-      static StrIntMap map[] = {{"jacobi", 7},    {"h-fgs", 3},   {"h-bgs", 4},
-                                {"ch-gs", 5},     {"h-ssor", 6},  {"hl1-ssor", 8},
-                                {"l1-fgs", 13},   {"l1-bgs", 14}, {"chebyshev", 16},
-                                {"l1-jacobi", 18}};
+      static StrIntMap map[] = {
+         {"jacobi", 7},     {"h-fgs", 3},      {"h-bgs", 4},   {"ch-gs", 5},
+         {"h-ssor", 6},     {"hl1-ssor", 8},   {"l1-fgs", 13}, {"l1-bgs", 14},
+         {"chebyshev", 16}, {"l1-jacobi", 18},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1111,7 +1117,7 @@ MGRConvertArgInt(MGR_args *args, const char *name)
       for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)
       {
          HYPRE_Int type = args->level[i].f_relaxation.type;
-         buf[i]         = (type == MGR_FRLX_TYPE_NESTED_MGR) ? 2 : type;
+         buf[i]         = (type == MGR_FRLX_TYPE_NESTED_MGR) ? 7 : type;
       }
       return buf;
    }
@@ -1200,16 +1206,19 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    *precon_ptr = NULL;
    return;
 #else
-   HYPRE_Solver precon          = NULL;
-   HYPRE_Solver frelax          = NULL;
-   HYPRE_Solver grelax          = NULL;
-   HYPRE_Int   *dofmap_data     = NULL;
-   IntArray    *dofmap          = NULL;
-   HYPRE_Int   *label_present   = NULL;
-   HYPRE_Int    num_dofs        = 0;
-   HYPRE_Int    num_active_dofs = 0;
-   HYPRE_Int    num_dofs_last   = 0;
-   HYPRE_Int    num_levels      = 0;
+   HYPRE_Solver precon            = NULL;
+   HYPRE_Solver frelax            = NULL;
+   HYPRE_Solver grelax            = NULL;
+   HYPRE_Int   *dofmap_data       = NULL;
+   HYPRE_Int   *dofmap_data_owned = NULL;
+   IntArray    *dofmap            = NULL;
+   HYPRE_Int   *label_present     = NULL;
+   HYPRE_Int   *label_to_dense    = NULL;
+   HYPRE_Int    num_dofs          = 0;
+   HYPRE_Int    num_dofs_hypre    = 0;
+   HYPRE_Int    num_active_dofs   = 0;
+   HYPRE_Int    num_dofs_last     = 0;
+   HYPRE_Int    num_levels        = 0;
    HYPRE_Int    num_c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *inactive_dofs = NULL;
@@ -1235,6 +1244,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          return;
       }
       num_dofs        = (HYPRE_Int)label_space_size;
+      num_dofs_hypre  = num_dofs;
       num_active_dofs = (HYPRE_Int)present_labels;
    }
 
@@ -1257,7 +1267,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    }
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
-      c_dofs[lvl]     = (HYPRE_Int *)malloc((size_t)num_dofs * sizeof(HYPRE_Int));
+      c_dofs[lvl]     = (HYPRE_Int *)calloc((size_t)num_dofs, sizeof(HYPRE_Int));
       num_c_dofs[lvl] = (HYPRE_Int)((size_t)num_dofs_last - args->level[lvl].f_dofs.size);
 
       for (i = 0; i < (int)args->level[lvl].f_dofs.size; i++)
@@ -1314,27 +1324,116 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          }
       }
    }
+
+   if (num_active_dofs > 0 && num_active_dofs < num_dofs)
+   {
+      label_to_dense = (HYPRE_Int *)malloc((size_t)num_dofs * sizeof(HYPRE_Int));
+      if (!label_to_dense)
+      {
+         free(label_present);
+         free(inactive_dofs);
+         for (HYPRE_Int k = 0; k < num_levels - 1; k++)
+         {
+            free(c_dofs[k]);
+         }
+         ErrorCodeSet(ERROR_ALLOCATION);
+         ErrorMsgAdd("Failed to allocate MGR dense label remap");
+         return;
+      }
+
+      for (i = 0; i < num_dofs; i++)
+      {
+         label_to_dense[i] = -1;
+      }
+      for (i = 0, j = 0; i < num_dofs; i++)
+      {
+         if (label_present[i])
+         {
+            label_to_dense[i] = j++;
+         }
+      }
+      num_dofs_hypre = num_active_dofs;
+
+      for (lvl = 0; lvl < num_levels - 1; lvl++)
+      {
+         for (i = 0; i < num_c_dofs[lvl]; i++)
+         {
+            HYPRE_Int raw = c_dofs[lvl][i];
+            if (raw < 0 || raw >= num_dofs || label_to_dense[raw] < 0)
+            {
+               free(label_to_dense);
+               free(label_present);
+               free(inactive_dofs);
+               for (HYPRE_Int k = 0; k < num_levels - 1; k++)
+               {
+                  free(c_dofs[k]);
+               }
+               ErrorCodeSet(ERROR_INVALID_VAL);
+               ErrorMsgAdd("Invalid MGR C-point label %d during dense remap", (int)raw);
+               return;
+            }
+            c_dofs[lvl][i] = label_to_dense[raw];
+         }
+      }
+   }
    free(label_present);
    label_present = NULL;
 
    /* Set dofmap_data */
-   if (TYPES_MATCH(HYPRE_Int, int))
+   if (!label_to_dense && TYPES_MATCH(HYPRE_Int, int))
    {
       dofmap_data = (HYPRE_Int *)dofmap->data;
    }
    else
    {
       dofmap_data = (HYPRE_Int *)malloc(dofmap->size * sizeof(HYPRE_Int));
+      if (!dofmap_data)
+      {
+         free(inactive_dofs);
+         for (lvl = 0; lvl < num_levels - 1; lvl++)
+         {
+            free(c_dofs[lvl]);
+         }
+         free(label_to_dense);
+         ErrorCodeSet(ERROR_ALLOCATION);
+         ErrorMsgAdd("Failed to allocate MGR point-marker array");
+         return;
+      }
+      dofmap_data_owned = dofmap_data;
       for (i = 0; i < (int)dofmap->size; i++)
       {
-         dofmap_data[i] = (HYPRE_Int)dofmap->data[i];
+         HYPRE_Int raw = (HYPRE_Int)dofmap->data[i];
+         if (label_to_dense)
+         {
+            if (raw < 0 || raw >= num_dofs || label_to_dense[raw] < 0)
+            {
+               free(inactive_dofs);
+               for (lvl = 0; lvl < num_levels - 1; lvl++)
+               {
+                  free(c_dofs[lvl]);
+               }
+               free(label_to_dense);
+               free(dofmap_data_owned);
+               dofmap_data_owned = NULL;
+               ErrorCodeSet(ERROR_INVALID_VAL);
+               ErrorMsgAdd("Invalid dof label %d during MGR dense remap", (int)raw);
+               return;
+            }
+            dofmap_data[i] = label_to_dense[raw];
+         }
+         else
+         {
+            dofmap_data[i] = raw;
+         }
       }
    }
+   free(label_to_dense);
+   label_to_dense = NULL;
 
    /* Config preconditioner */
    HYPRE_MGRCreate(&precon);
-   HYPRE_MGRSetCpointsByPointMarkerArray(precon, num_dofs, num_levels - 1, num_c_dofs,
-                                         c_dofs, dofmap_data);
+   HYPRE_MGRSetCpointsByPointMarkerArray(precon, num_dofs_hypre, num_levels - 1,
+                                         num_c_dofs, c_dofs, dofmap_data);
    HYPRE_MGRSetNonCpointsToFpoints(precon, args->non_c_to_f);
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
    HYPRE_MGRSetTol(precon, args->tolerance);
@@ -1610,9 +1709,15 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    {
       free(c_dofs[lvl]);
    }
-   if ((void *)dofmap_data != (void *)dofmap->data)
+   if (dofmap_data_owned)
    {
-      free(dofmap_data);
+      /* hypre uses the point-marker array during MGRSetup, so keep the owned copy
+       * alive until PreconDestroyMGRSolver() destroys the MGR object. */
+      if (args->point_marker_data)
+      {
+         free(args->point_marker_data);
+      }
+      args->point_marker_data = dofmap_data_owned;
    }
 
    /* Silence any hypre errors. TODO: improve error handling */

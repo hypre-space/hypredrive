@@ -228,10 +228,18 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
       return;
    }
 
-   HYPRE_PtrToParSolverFcn setup_ptrs[] = {HYPRE_BoomerAMGSetup, HYPRE_MGRSetup,
-                                           HYPREDRV_ILU_SETUP, HYPREDRV_FSAI_SETUP};
-   HYPRE_PtrToParSolverFcn solve_ptrs[] = {HYPRE_BoomerAMGSolve, HYPRE_MGRSolve,
-                                           HYPREDRV_ILU_SOLVE, HYPREDRV_FSAI_SOLVE};
+   HYPRE_PtrToParSolverFcn setup_ptrs[] = {
+      HYPRE_BoomerAMGSetup,
+      HYPRE_MGRSetup,
+      HYPREDRV_ILU_SETUP,
+      HYPREDRV_FSAI_SETUP,
+   };
+   HYPRE_PtrToParSolverFcn solve_ptrs[] = {
+      HYPRE_BoomerAMGSolve,
+      HYPRE_MGRSolve,
+      HYPREDRV_ILU_SOLVE,
+      HYPREDRV_FSAI_SOLVE,
+   };
 
    switch (solver_method)
    {

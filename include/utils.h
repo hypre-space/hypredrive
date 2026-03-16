@@ -78,7 +78,7 @@ bool  IsYAMLFilename(const char *);
 enum
 {
    GB_TO_BYTES        = (1 << 30),
-   MAX_DIVISOR_LENGTH = 87
+   MAX_DIVISOR_LENGTH = 87,
 };
 
 static inline void

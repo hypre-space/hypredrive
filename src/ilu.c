@@ -44,10 +44,11 @@ ILUGetValidValues(const char *key)
    if (!strcmp(key, "type"))
    {
       static StrIntMap map[] = {
-         {"bj-iluk", 0},          {"bj-ilut", 1},      {"gmres-iluk", 10},
-         {"gmres-ilut", 11},      {"nsh-iluk", 20},    {"nsh-ilut", 21},
-         {"ras-iluk", 30},        {"ras-ilut", 31},    {"ddpq-gmres-iluk", 40},
-         {"ddpq-gmres-ilut", 41}, {"rap-mod-ilu0", 50}};
+         {"bj-iluk", 0},          {"bj-ilut", 1},       {"gmres-iluk", 10},
+         {"gmres-ilut", 11},      {"nsh-iluk", 20},     {"nsh-ilut", 21},
+         {"ras-iluk", 30},        {"ras-ilut", 31},     {"ddpq-gmres-iluk", 40},
+         {"ddpq-gmres-ilut", 41}, {"rap-mod-ilu0", 50},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }

@@ -79,7 +79,8 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, EigSpecSetArgs)};
+   FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, EigSpecSetArgs),
+};
 
 #define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
 
@@ -133,13 +134,15 @@ LinearSystemGetValidValues(const char *key)
    if (!strcmp(key, "rhs_mode"))
    {
       static StrIntMap map[] = {
-         {"zeros", 0}, {"ones", 1}, {"file", 2}, {"random", 3}, {"randsol", 4}};
+         {"zeros", 0}, {"ones", 1}, {"file", 2}, {"random", 3}, {"randsol", 4},
+      };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "init_guess_mode"))
    {
       static StrIntMap map[] = {
-         {"zeros", 0}, {"ones", 1}, {"file", 2}, {"random", 3}, {"previous", 4}};
+         {"zeros", 0}, {"ones", 1}, {"file", 2}, {"random", 3}, {"previous", 4},
+      };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    else
