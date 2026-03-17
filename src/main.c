@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "HYPREDRV.h"
+#include "HYPREDRV_utils.h"
 
 static bool
 LooksLikeYAMLFilename(const char *str)

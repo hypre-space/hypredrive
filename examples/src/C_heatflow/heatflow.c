@@ -79,6 +79,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "HYPREDRV.h"
+#include "HYPREDRV_utils.h"
 #include "compatibility.h"
 
 #if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900
@@ -2793,7 +2794,7 @@ main(int argc, char *argv[])
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hypredrv));
 
          /* T = T + dT (correction applied to state vector 0) */
-         HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorApplyCorrection(hypredrv));
+         HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorApplyCorrection(hypredrv, 0));
 
          /* Report Newton iteration */
          if (params.verbose & 0x1)

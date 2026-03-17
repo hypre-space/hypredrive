@@ -13,6 +13,7 @@
 #include <omp.h>
 #endif
 #include "HYPREDRV.h"
+#include "HYPREDRV_utils.h"
 #include "compatibility.h"
 // #define VTK_USE_ASCII 0
 

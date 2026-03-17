@@ -13,6 +13,7 @@
 #include <omp.h>
 #endif
 #include "HYPREDRV.h"
+#include "HYPREDRV_utils.h"
 #include "compatibility.h"
 
 #if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900

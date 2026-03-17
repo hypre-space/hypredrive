@@ -29,6 +29,7 @@
 #undef PACKAGE_VERSION
 
 #include "HYPREDRV.h"
+#include "HYPREDRV_utils.h"
 
 // Flag to check if HYPREDRV is initialized
 static bool hypredrv_is_initialized = false;
@@ -77,6 +78,7 @@ typedef struct hypredrv_struct
    HYPRE_IJVector  vec_nn;
    HYPRE_IJVector *vec_s;
    bool            owns_mat_M;
+   bool            owns_vec_x;
    bool            owns_vec_x0;
    bool            owns_vec_xref;
 
@@ -235,6 +237,7 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->vec_s         = NULL;
    hypredrv->dofmap        = NULL;
    hypredrv->owns_mat_M    = false;
+   hypredrv->owns_vec_x    = false;
    hypredrv->owns_vec_x0   = false;
    hypredrv->owns_vec_xref = false;
 
@@ -268,6 +271,7 @@ uint32_t
 HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
 {
    HYPREDRV_CHECK_INIT();
+   hypredrv_ErrorCodeResetAll();
 
    HYPREDRV_t hypredrv = *hypredrv_ptr;
 
@@ -312,7 +316,7 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    }
 
    /* Always destroy these vectors since they are created by HYPREDRV. */
-   if (hypredrv->vec_x)
+   if (hypredrv->vec_x && hypredrv->owns_vec_x)
    {
       HYPRE_IJVectorDestroy(hypredrv->vec_x);
    }
@@ -828,13 +832,21 @@ HYPREDRV_StateVectorUpdateAll(HYPREDRV_t hypredrv)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv)
+HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
+   if (state_idx < 0 || state_idx >= hypredrv->nstates)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("state_idx %d out of range [0, %d)", state_idx,
+                           hypredrv->nstates);
+      return hypredrv_ErrorCodeGet();
+   }
+
    void *obj_s = NULL, *obj_delta = NULL;
-   int   current = hypredrv->states[0];
+   int   current = hypredrv->states[state_idx];
 
    HYPRE_IJVectorGetObject(hypredrv->vec_x, &obj_delta);
    HYPRE_IJVectorGetObject(hypredrv->vec_s[current], &obj_s);
@@ -1003,6 +1015,7 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv, HYPRE_Vector vec)
          hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A, hypredrv->vec_b,
          &hypredrv->vec_x0, &hypredrv->vec_x, hypredrv->stats);
       hypredrv->owns_vec_x0 = (hypredrv->vec_x0 != NULL);
+      hypredrv->owns_vec_x  = (hypredrv->vec_x != NULL);
    }
    else
    {
@@ -1013,6 +1026,48 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv, HYPRE_Vector vec)
                 hypredrv->vec_x0 != hypredrv->vec_b);
       hypredrv_LinearSystemCreateWorkingSolution(hypredrv->comm, &hypredrv->iargs->ls,
                                                  hypredrv->vec_b, &hypredrv->vec_x);
+      hypredrv->owns_vec_x = (hypredrv->vec_x != NULL);
+   }
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemSetSolution
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!vec)
+   {
+      /* Discard any borrowed reference before recreating. */
+      if (!hypredrv->owns_vec_x)
+      {
+         hypredrv->vec_x = NULL;
+      }
+      if (!hypredrv->vec_b)
+      {
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("SetSolution(NULL): RHS vector must be set first");
+         return hypredrv_ErrorCodeGet();
+      }
+      hypredrv_LinearSystemCreateWorkingSolution(hypredrv->comm, &hypredrv->iargs->ls,
+                                                 hypredrv->vec_b, &hypredrv->vec_x);
+      hypredrv->owns_vec_x = (hypredrv->vec_x != NULL);
+   }
+   else
+   {
+      /* Destroy existing owned solution before replacing. */
+      if (hypredrv->vec_x && hypredrv->owns_vec_x)
+      {
+         HYPRE_IJVectorDestroy(hypredrv->vec_x);
+      }
+      hypredrv->vec_x      = (HYPRE_IJVector)vec;
+      hypredrv->owns_vec_x = false; /* always borrow: caller manages lifetime */
    }
 
    return hypredrv_ErrorCodeGet();
@@ -1143,6 +1198,27 @@ HYPREDRV_LinearSystemGetSolutionNorm(HYPREDRV_t hypredrv, const char *norm_type,
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemGetSolution
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemGetSolution(HYPREDRV_t hypredrv, HYPRE_Vector *vec)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!vec || !hypredrv->vec_x)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   *vec = (HYPRE_Vector)hypredrv->vec_x;
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_LinearSystemGetRHSValues
  *-----------------------------------------------------------------------------*/
 
@@ -1159,6 +1235,48 @@ HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv, HYPRE_Complex **rhs_data)
    }
 
    hypredrv_LinearSystemGetRHSValues(hypredrv->vec_b, rhs_data);
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemGetRHS
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemGetRHS(HYPREDRV_t hypredrv, HYPRE_Vector *vec)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!vec || !hypredrv->vec_b)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   *vec = (HYPRE_Vector)hypredrv->vec_b;
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSystemGetMatrix
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemGetMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix *mat)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!mat || !hypredrv->mat_A)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   *mat = (HYPRE_Matrix)hypredrv->mat_A;
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1872,6 +1990,72 @@ HYPREDRV_GetLastStat(HYPREDRV_t hypredrv, const char *name, void *value)
 }
 
 /*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSolverGetNumIter
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSolverGetNumIter(HYPREDRV_t hypredrv, int *iters)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!iters)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("iters pointer cannot be NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   *iters = hypredrv_StatsGetLastIter(hypredrv->stats);
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSolverGetSetupTime
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSolverGetSetupTime(HYPREDRV_t hypredrv, double *seconds)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!seconds)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("seconds pointer cannot be NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   *seconds = hypredrv_StatsGetLastSetupTime(hypredrv->stats);
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_LinearSolverGetSolveTime
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSolverGetSolveTime(HYPREDRV_t hypredrv, double *seconds)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   if (!seconds)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("seconds pointer cannot be NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   *seconds = hypredrv_StatsGetLastSolveTime(hypredrv->stats);
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * HYPREDRV_StatsLevelGetCount
  *-----------------------------------------------------------------------------*/
 
@@ -1885,41 +2069,47 @@ HYPREDRV_StatsLevelGetCount(int level)
  * HYPREDRV_StatsLevelGetEntry
  *-----------------------------------------------------------------------------*/
 
-int
+uint32_t
 HYPREDRV_StatsLevelGetEntry(int level, int index, int *entry_id, int *num_solves,
                             int *linear_iters, double *setup_time, double *solve_time)
 {
+   hypredrv_ErrorCodeResetAll();
    LevelEntry entry;
    int ret = hypredrv_StatsLevelGetEntry(hypredrv_default_stats, level, index, &entry);
 
-   if (ret == 0)
+   if (ret != 0)
    {
-      if (entry_id) *entry_id = entry.id;
-
-      /* Compute aggregates from solve index range */
-      int    n_solves = entry.solve_end - entry.solve_start;
-      int    l_iters  = 0;
-      double s_time   = 0.0;
-      double p_time   = 0.0;
-
-      Stats *stats = hypredrv_default_stats;
-      if (stats)
-      {
-         for (int i = entry.solve_start; i < entry.solve_end; i++)
-         {
-            l_iters += stats->iters[i];
-            p_time += stats->prec[i];
-            s_time += stats->solve[i];
-         }
-      }
-
-      if (num_solves) *num_solves = n_solves;
-      if (linear_iters) *linear_iters = l_iters;
-      if (setup_time) *setup_time = p_time;
-      if (solve_time) *solve_time = s_time;
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("StatsLevelGetEntry: invalid level %d or index %d", level,
+                           index);
+      return hypredrv_ErrorCodeGet();
    }
 
-   return ret;
+   if (entry_id) *entry_id = entry.id;
+
+   /* Compute aggregates from solve index range */
+   int    n_solves = entry.solve_end - entry.solve_start;
+   int    l_iters  = 0;
+   double s_time   = 0.0;
+   double p_time   = 0.0;
+
+   Stats *stats = hypredrv_default_stats;
+   if (stats)
+   {
+      for (int i = entry.solve_start; i < entry.solve_end; i++)
+      {
+         l_iters += stats->iters[i];
+         p_time += stats->prec[i];
+         s_time += stats->solve[i];
+      }
+   }
+
+   if (num_solves) *num_solves = n_solves;
+   if (linear_iters) *linear_iters = l_iters;
+   if (setup_time) *setup_time = p_time;
+   if (solve_time) *solve_time = s_time;
+
+   return hypredrv_ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
