@@ -34,12 +34,12 @@ typedef struct FieldOffsetMap_struct
  * Prototypes
  *-----------------------------------------------------------------------------*/
 
-void FieldTypeIntSet(void *, const YAMLnode *);
-void FieldTypeIntArraySet(void *, const YAMLnode *);
-void FieldTypeStackIntArraySet(void *, const YAMLnode *);
-void FieldTypeDoubleSet(void *, const YAMLnode *);
-void FieldTypeDoubleArraySet(void *, const YAMLnode *);
-void FieldTypeCharSet(void *, const YAMLnode *);
-void FieldTypeStringSet(void *, const YAMLnode *);
+void hypredrv_FieldTypeIntSet(void *, const YAMLnode *);
+void hypredrv_FieldTypeIntArraySet(void *, const YAMLnode *);
+void hypredrv_FieldTypeStackIntArraySet(void *, const YAMLnode *);
+void hypredrv_FieldTypeDoubleSet(void *, const YAMLnode *);
+void hypredrv_FieldTypeDoubleArraySet(void *, const YAMLnode *);
+void hypredrv_FieldTypeCharSet(void *, const YAMLnode *);
+void hypredrv_FieldTypeStringSet(void *, const YAMLnode *);
 
 #endif /* FIELD_HEADER */

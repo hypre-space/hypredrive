@@ -30,10 +30,10 @@
       HYPRE_Int hypre_ierr = (call);                                               \
       if (hypre_ierr != 0)                                                         \
       {                                                                            \
-         ErrorCodeSet(ERROR_HYPRE_INTERNAL);                                       \
+         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                                       \
          char hypre_err_msg[HYPRE_MAX_MSG_LEN];                                    \
          HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                           \
-         ErrorMsgAdd("HYPRE call failed at %s:%d in %s(): %s", __FILE__, __LINE__, \
+         hypredrv_ErrorMsgAdd("HYPRE call failed at %s:%d in %s(): %s", __FILE__, __LINE__, \
                      __func__, hypre_err_msg);                                     \
          return;                                                                   \
       }                                                                            \
@@ -44,17 +44,17 @@
  * Public prototypes
  *-----------------------------------------------------------------------------*/
 
-char *StrToLowerCase(char *);
-char *StrTrim(char *);
-void  TrimTrailingWhitespace(char *);
-void  NormalizeWhitespace(char *);
-int   CheckBinaryDataExists(const char *);
-int   CheckASCIIDataExists(const char *);
-int   CountNumberOfPartitions(const char *);
-int   ComputeNumberOfDigits(int);
-void  SplitFilename(const char *, char **, char **);
-void  CombineFilename(const char *, const char *, char **);
-bool  IsYAMLFilename(const char *);
+char *hypredrv_StrToLowerCase(char *);
+char *hypredrv_StrTrim(char *);
+void  hypredrv_TrimTrailingWhitespace(char *);
+void  hypredrv_NormalizeWhitespace(char *);
+int   hypredrv_CheckBinaryDataExists(const char *);
+int   hypredrv_CheckASCIIDataExists(const char *);
+int   hypredrv_CountNumberOfPartitions(const char *);
+int   hypredrv_ComputeNumberOfDigits(int);
+void  hypredrv_SplitFilename(const char *, char **, char **);
+void  hypredrv_CombineFilename(const char *, const char *, char **);
+bool  hypredrv_IsYAMLFilename(const char *);
 
 /*******************************************************************************
  *******************************************************************************/

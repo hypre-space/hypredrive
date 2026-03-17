@@ -65,16 +65,16 @@ StrIntMapArray hypredrv_ScalingGetValidValues(const char *);
 void hypredrv_ScalingSetDefaultArgs(Scaling_args *);
 void hypredrv_ScalingSetArgsFromYAML(void *, YAMLnode *);
 
-void ScalingContextCreate(Scaling_context **);
-void ScalingContextDestroy(Scaling_context **);
+void hypredrv_ScalingContextCreate(Scaling_context **);
+void hypredrv_ScalingContextDestroy(Scaling_context **);
 
-void ScalingCompute(MPI_Comm, Scaling_args *, Scaling_context *, HYPRE_IJMatrix,
+void hypredrv_ScalingCompute(MPI_Comm, Scaling_args *, Scaling_context *, HYPRE_IJMatrix,
                     HYPRE_IJVector, IntArray *);
-void ScalingApplyToVector(const Scaling_context *, HYPRE_IJVector, scaling_vector_kind_t);
-void ScalingUndoOnVector(const Scaling_context *, HYPRE_IJVector, scaling_vector_kind_t);
-void ScalingApplyToSystem(Scaling_context *, HYPRE_IJMatrix, HYPRE_IJMatrix,
+void hypredrv_ScalingApplyToVector(const Scaling_context *, HYPRE_IJVector, scaling_vector_kind_t);
+void hypredrv_ScalingUndoOnVector(const Scaling_context *, HYPRE_IJVector, scaling_vector_kind_t);
+void hypredrv_ScalingApplyToSystem(Scaling_context *, HYPRE_IJMatrix, HYPRE_IJMatrix,
                           HYPRE_IJVector, HYPRE_IJVector);
-void ScalingUndoOnSystem(Scaling_context *, HYPRE_IJMatrix, HYPRE_IJMatrix,
+void hypredrv_ScalingUndoOnSystem(Scaling_context *, HYPRE_IJMatrix, HYPRE_IJMatrix,
                          HYPRE_IJVector, HYPRE_IJVector);
 
 #endif /* SCALING_HEADER */

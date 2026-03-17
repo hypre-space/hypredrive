@@ -13,17 +13,17 @@
  *-----------------------------------------------------------------------------*/
 
 #define GMRES_FIELDS(_prefix)                                            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, FieldTypeIntSet)            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, FieldTypeIntSet)           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, skip_real_res_check, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, FieldTypeIntSet)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, FieldTypeDoubleSet)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, hypredrv_FieldTypeIntSet)            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, skip_real_res_check, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, hypredrv_FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, hypredrv_FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, hypredrv_FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, hypredrv_FieldTypeDoubleSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, hypredrv_FieldTypeDoubleSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, hypredrv_FieldTypeDoubleSet)
 
 /* Define num_fields macro */
 #define GMRES_NUM_FIELDS \

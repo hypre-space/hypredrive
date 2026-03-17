@@ -180,8 +180,8 @@ hypredrv_SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args,
 {
    if (!solver_ptr)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("SolverCreate: solver_ptr is NULL");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("SolverCreate: solver_ptr is NULL");
       return;
    }
 
@@ -205,15 +205,15 @@ hypredrv_SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args,
 
       default:
          *solver_ptr = NULL;
-         ErrorCodeSet(ERROR_INVALID_SOLVER);
-         ErrorMsgAdd("SolverCreate: invalid solver method");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+         hypredrv_ErrorMsgAdd("SolverCreate: invalid solver method");
    }
 }
 
 /*-----------------------------------------------------------------------------
  * SolverSetup
  *
- * TODO: split this function into PreconSetup and SolverSetup
+ * TODO: split this function into hypredrv_PreconSetup and SolverSetup
  *-----------------------------------------------------------------------------*/
 
 void
@@ -224,26 +224,26 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
 {
    if (!solver)
    {
-      ErrorCodeSet(ERROR_INVALID_SOLVER);
-      ErrorMsgAdd("SolverSetup: solver is NULL");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+      hypredrv_ErrorMsgAdd("SolverSetup: solver is NULL");
       return;
    }
 
    if (!M || !b || !x)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("SolverSetup: matrix or vector is NULL");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("SolverSetup: matrix or vector is NULL");
       return;
    }
 
    if (precon_method != PRECON_NONE && !precon)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("SolverSetup: precon is NULL but precon_method is not PRECON_NONE");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("SolverSetup: precon is NULL but precon_method is not PRECON_NONE");
       return;
    }
 
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
 
    void                   *vM = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix      par_M = NULL;
@@ -315,14 +315,14 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
          break;
 
       default:
-         StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
+         hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
          return;
    }
 
    /* Clear pending error codes from hypre */
    HYPRE_ClearAllErrors();
 
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
 }
 
 void
@@ -344,15 +344,15 @@ hypredrv_SolverSolveOnly(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMa
 {
    if (!solver)
    {
-      ErrorCodeSet(ERROR_INVALID_SOLVER);
-      ErrorMsgAdd("SolverSolveOnly: solver is NULL");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+      hypredrv_ErrorMsgAdd("SolverSolveOnly: solver is NULL");
       return -1;
    }
 
    if (!A || !b || !x)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("SolverSolveOnly: matrix or vector is NULL");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("SolverSolveOnly: matrix or vector is NULL");
       return -1;
    }
 
@@ -410,15 +410,15 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
 {
    if (!solver)
    {
-      ErrorCodeSet(ERROR_INVALID_SOLVER);
-      ErrorMsgAdd("SolverApply: solver is NULL");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+      hypredrv_ErrorMsgAdd("SolverApply: solver is NULL");
       return;
    }
 
    if (!A || !b || !x)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("SolverApply: matrix or vector is NULL");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("SolverApply: matrix or vector is NULL");
       return;
    }
 
@@ -428,27 +428,27 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
    /* Compute initial residual norm (absolute L2) before timing the solve */
    hypredrv_LinearSystemComputeResidualNorm(A, b, x, "L2", &r0_norm);
 
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
-   StatsInitialResNormSet(stats, r0_norm);
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
+   hypredrv_StatsInitialResNormSet(stats, r0_norm);
 
    iters = hypredrv_SolverSolveOnly(solver_method, solver, A, b, x);
 
    if (iters < 0)
    {
-      StatsIterSet(stats, 0);
-      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
+      hypredrv_StatsIterSet(stats, 0);
+      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
       return;
    }
 
-   StatsIterSet(stats, (int)iters);
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
+   hypredrv_StatsIterSet(stats, (int)iters);
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
 
    /* Compute the real relative residual norm. Note this is not timed */
    hypredrv_LinearSystemComputeVectorNorm(b, "L2", &b_norm);
    hypredrv_LinearSystemComputeResidualNorm(A, b, x, "L2", &r_norm);
    b_norm = (b_norm > 0.0) ? b_norm : 1.0;
 
-   StatsRelativeResNormSet(stats, r_norm / b_norm);
+   hypredrv_StatsRelativeResNormSet(stats, r_norm / b_norm);
 }
 
 /*-----------------------------------------------------------------------------

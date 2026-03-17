@@ -69,13 +69,13 @@ void           hypredrv_MGRSetDefaultArgs(MGR_args *);
 void           hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
 StrIntMapArray hypredrv_MGRGetValidValues(const char *);
 StrIntMapArray hypredrv_MGRlvlGetValidValues(const char *);
-HYPRE_Int     *MGRConvertArgInt(MGR_args *, const char *);
+HYPRE_Int     *hypredrv_MGRConvertArgInt(MGR_args *, const char *);
 
 static YAMLnode *
 add_child(YAMLnode *parent, const char *key, const char *val, int level)
 {
-   YAMLnode *child = YAMLnodeCreate(key, val, level);
-   YAMLnodeAddChild(parent, child);
+   YAMLnode *child = hypredrv_YAMLnodeCreate(key, val, level);
+   hypredrv_YAMLnodeAddChild(parent, child);
    return child;
 }
 
@@ -272,7 +272,7 @@ populate_amg(YAMLnode *parent, int level)
 static YAMLnode *
 build_scalar_children(StrArray keys, StrIntMapArray (*get_vals)(const char *), int level)
 {
-   YAMLnode *parent = YAMLnodeCreate("root", "", level - 1);
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("root", "", level - 1);
    for (size_t i = 0; i < keys.size; i++)
    {
       const char    *key = keys.data[i];
@@ -288,10 +288,10 @@ exercise_solver_component(void (*set_args)(void *, YAMLnode *), StrArray (*get_k
                           StrIntMapArray (*get_vals)(const char *), void *args)
 {
    YAMLnode *parent = build_scalar_children(get_keys(), get_vals, 1);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    set_args(args, parent);
-   ASSERT_FALSE(ErrorCodeActive());
-   YAMLnodeDestroy(parent);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   hypredrv_YAMLnodeDestroy(parent);
 }
 
 static void
@@ -300,10 +300,10 @@ exercise_component_flat(void (*set_args)(void *, YAMLnode *), void *args, const 
 {
    /* Intentionally build a *flat* YAML node (no children) to hit the
     * flat-value parsing branch in macro-generated SetArgsFromYAML helpers. */
-   YAMLnode *parent = YAMLnodeCreate(key, val, 0);
-   ErrorCodeResetAll();
+   YAMLnode *parent = hypredrv_YAMLnodeCreate(key, val, 0);
+   hypredrv_ErrorCodeResetAll();
    set_args(args, parent);
-   YAMLnodeDestroy(parent);
+   hypredrv_YAMLnodeDestroy(parent);
 }
 
 static void
@@ -348,16 +348,16 @@ test_exhaustive_ilu_fsai_parsers(void)
    hypredrv_FSAISetDefaultArgs(&fsai);
 
    YAMLnode *ilu_parent = build_scalar_children(hypredrv_ILUGetValidKeys(), hypredrv_ILUGetValidValues, 1);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_ILUSetArgsFromYAML(&ilu, ilu_parent);
-   ASSERT_FALSE(ErrorCodeActive());
-   YAMLnodeDestroy(ilu_parent);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   hypredrv_YAMLnodeDestroy(ilu_parent);
 
    YAMLnode *fsai_parent = build_scalar_children(hypredrv_FSAIGetValidKeys(), hypredrv_FSAIGetValidValues, 1);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_FSAISetArgsFromYAML(&fsai, fsai_parent);
-   ASSERT_FALSE(ErrorCodeActive());
-   YAMLnodeDestroy(fsai_parent);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   hypredrv_YAMLnodeDestroy(fsai_parent);
 
    exercise_component_flat(hypredrv_ILUSetArgsFromYAML, &ilu, "ilu", "ilu");
    exercise_component_flat(hypredrv_FSAISetArgsFromYAML, &fsai, "fsai", "fsai");
@@ -369,14 +369,14 @@ test_exhaustive_amg_parser(void)
    AMG_args args;
    hypredrv_AMGSetDefaultArgs(&args);
 
-   YAMLnode *root = YAMLnodeCreate("amg", "", 0);
+   YAMLnode *root = hypredrv_YAMLnodeCreate("amg", "", 0);
    populate_amg(root, 1);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_AMGSetArgsFromYAML(&args, root);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   YAMLnodeDestroy(root);
+   hypredrv_YAMLnodeDestroy(root);
 
    /* Flat-value branch (no children) */
    exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_AMGSetArgsFromYAML, &args, "amg", "amg");
@@ -388,7 +388,7 @@ test_exhaustive_mgr_parser(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
 
    /* Scalars (exercise YAML_NODE_VALIDATE path using MGRGetValidKeys/Values) */
    add_child(mgr, "max_iter", "2", 1);
@@ -434,9 +434,9 @@ test_exhaustive_mgr_parser(void)
    YAMLnode *cls_ilu = add_child(cls, "ilu", "", 2);
    add_child(cls_ilu, "type", "bj-iluk", 3);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_MGRSetArgsFromYAML(&args, mgr);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    ASSERT_TRUE(args.level[0].f_relaxation.use_krylov);
    ASSERT_NOT_NULL(args.level[0].f_relaxation.krylov);
@@ -452,18 +452,18 @@ test_exhaustive_mgr_parser(void)
 
    ASSERT_EQ(lvl_bad->valid, YAML_NODE_INVALID_KEY);
 
-   /* Exercise MGRConvertArgInt table conversion paths (HANDLE_MGR_LEVEL_ATTRIBUTE macro) */
-   ASSERT_NOT_NULL(MGRConvertArgInt(&args, "f_relaxation:type"));
-   ASSERT_NOT_NULL(MGRConvertArgInt(&args, "f_relaxation:num_sweeps"));
-   ASSERT_NOT_NULL(MGRConvertArgInt(&args, "g_relaxation:type"));
-   ASSERT_NOT_NULL(MGRConvertArgInt(&args, "g_relaxation:num_sweeps"));
-   ASSERT_NOT_NULL(MGRConvertArgInt(&args, "prolongation_type"));
-   ASSERT_NOT_NULL(MGRConvertArgInt(&args, "restriction_type"));
-   ASSERT_NOT_NULL(MGRConvertArgInt(&args, "coarse_level_type"));
-   ASSERT_NULL(MGRConvertArgInt(&args, "unknown:name"));
+   /* Exercise hypredrv_MGRConvertArgInt table conversion paths (HANDLE_MGR_LEVEL_ATTRIBUTE macro) */
+   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "f_relaxation:type"));
+   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "f_relaxation:num_sweeps"));
+   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "g_relaxation:type"));
+   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "g_relaxation:num_sweeps"));
+   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "prolongation_type"));
+   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "restriction_type"));
+   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "coarse_level_type"));
+   ASSERT_NULL(hypredrv_MGRConvertArgInt(&args, "unknown:name"));
 
-   YAMLnodeDestroy(mgr);
-   MGRDestroyNestedSolverArgs(&args);
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
 }
 
 static void
@@ -472,7 +472,7 @@ test_mgr_nested_krylov_rejects_mgr_precon(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
    YAMLnode *lvl0 = add_child(levels, "0", "", 2);
    add_child(lvl0, "f_dofs", "[0]", 3);
@@ -482,14 +482,14 @@ test_mgr_nested_krylov_rejects_mgr_precon(void)
    YAMLnode *prec = add_child(gmres, "preconditioner", "", 5);
    YAMLnode *mgr_prec = add_child(prec, "mgr", "", 6);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_MGRSetArgsFromYAML(&args, mgr);
-   ASSERT_TRUE(ErrorCodeActive());
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_EQ(mgr_prec->valid, YAML_NODE_INVALID_VAL);
 
-   ErrorCodeResetAll();
-   YAMLnodeDestroy(mgr);
-   MGRDestroyNestedSolverArgs(&args);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
 }
 
 int

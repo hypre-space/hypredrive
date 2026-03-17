@@ -28,12 +28,12 @@ FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
 }
 
 #define General_FIELDS(_prefix)                                               \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, warmup, FieldTypeIntSet)                   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, FieldTypeIntSet)               \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, FieldTypeIntSet)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, FieldTypeIntSet)              \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_repetitions, FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, warmup, hypredrv_FieldTypeIntSet)                   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, hypredrv_FieldTypeIntSet)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, hypredrv_FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, hypredrv_FieldTypeIntSet)              \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_repetitions, hypredrv_FieldTypeIntSet)          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, dev_pool_size, FieldTypePoolGBToBytesSet)  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, uvm_pool_size, FieldTypePoolGBToBytesSet)  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, host_pool_size, FieldTypePoolGBToBytesSet) \
@@ -89,7 +89,7 @@ hypredrv_GeneralSetDefaultArgs(General_args *args)
 }
 
 void
-InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
+hypredrv_InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
 {
    input_args *iargs = (input_args *)malloc(sizeof(input_args));
 
@@ -104,7 +104,7 @@ InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
    /* Set default preconditioner and solver */
    iargs->solver_method = SOLVER_PCG;
    iargs->precon_method = PRECON_BOOMERAMG;
-   PreconReuseSetDefaultArgs(&iargs->precon_reuse);
+   hypredrv_PreconReuseSetDefaultArgs(&iargs->precon_reuse);
 
    /* Set default scaling */
    hypredrv_ScalingSetDefaultArgs(&iargs->scaling);
@@ -119,11 +119,11 @@ InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * InputArgsDestroy
+ * hypredrv_InputArgsDestroy
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsDestroy(input_args **iargs_ptr)
+hypredrv_InputArgsDestroy(input_args **iargs_ptr)
 {
    if (*iargs_ptr)
    {
@@ -134,7 +134,7 @@ InputArgsDestroy(input_args **iargs_ptr)
          {
             if (iargs->precon_methods[i] == PRECON_MGR)
             {
-               MGRDestroyNestedSolverArgs(&iargs->precon_variants[i].mgr);
+               hypredrv_MGRDestroyNestedSolverArgs(&iargs->precon_variants[i].mgr);
             }
          }
       }
@@ -148,25 +148,25 @@ InputArgsDestroy(input_args **iargs_ptr)
          free(iargs->precon_variants);
          iargs->precon_variants = NULL;
       }
-      PreconReuseDestroyArgs(&iargs->precon_reuse);
+      hypredrv_PreconReuseDestroyArgs(&iargs->precon_reuse);
       if (iargs->scaling.custom_values)
       {
-         DoubleArrayDestroy(&iargs->scaling.custom_values);
+         hypredrv_DoubleArrayDestroy(&iargs->scaling.custom_values);
       }
-      IntArrayDestroy(&iargs->ls.set_suffix);
+      hypredrv_IntArrayDestroy(&iargs->ls.set_suffix);
       free(*iargs_ptr);
       *iargs_ptr = NULL;
    }
 }
 
 /*-----------------------------------------------------------------------------
- * InputArgsParseGeneral
+ * hypredrv_InputArgsParseGeneral
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode *parent = YAMLnodeFindByKey(tree->root, "general");
+   YAMLnode *parent = hypredrv_YAMLnodeFindByKey(tree->root, "general");
    if (!parent)
    {
       /* The \"general\" key is optional */
@@ -182,27 +182,27 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
 }
 
 /*-----------------------------------------------------------------------------
- * InputArgsParseLinearSystem
+ * hypredrv_InputArgsParseLinearSystem
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
 {
    const char key[]  = {"linear_system"};
-   YAMLnode  *parent = YAMLnodeFindByKey(tree->root, key);
+   YAMLnode  *parent = hypredrv_YAMLnodeFindByKey(tree->root, key);
 
    if (!parent)
    {
       // TODO: Add "library" mode to skip the following checks
-      // ErrorCodeSet(ERROR_MISSING_KEY);
-      // ErrorMsgAddMissingKey(key);
+      // hypredrv_ErrorCodeSet(ERROR_MISSING_KEY);
+      // hypredrv_ErrorMsgAddMissingKey(key);
       return;
    }
    YAML_NODE_SET_VALID_IF_NO_VAL(parent);
 
    if (YAML_NODE_GET_VALIDITY(parent) == YAML_NODE_UNEXPECTED_VAL)
    {
-      ErrorMsgAddUnexpectedVal(key);
+      hypredrv_ErrorMsgAddUnexpectedVal(key);
    }
 
    hypredrv_LinearSystemSetArgsFromYAML(&iargs->ls, parent);
@@ -210,21 +210,21 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
 }
 
 /*-----------------------------------------------------------------------------
- * InputArgsParseSolver
+ * hypredrv_InputArgsParseSolver
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
 {
    YAMLnode *parent       = NULL;
    YAMLnode *scaling_node = NULL;
 
-   parent = YAMLnodeFindByKey(tree->root, "solver");
+   parent = hypredrv_YAMLnodeFindByKey(tree->root, "solver");
    if (!parent)
    {
       // TODO: Add "library" mode to skip the following checks
-      // ErrorCodeSet(ERROR_MISSING_KEY);
-      // ErrorMsgAddMissingKey("solver");
+      // hypredrv_ErrorCodeSet(ERROR_MISSING_KEY);
+      // hypredrv_ErrorMsgAddMissingKey("solver");
       return;
    }
    YAML_NODE_SET_VALID(parent);
@@ -262,26 +262,26 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
       /* Check if a solver type was set */
       if (!parent->children)
       {
-         ErrorCodeSet(ERROR_MISSING_SOLVER);
+         hypredrv_ErrorCodeSet(ERROR_MISSING_SOLVER);
          return;
       }
 
       /* Check if more than one solver type was set (this is not supported!) */
       if (parent->children->next)
       {
-         ErrorCodeSet(ERROR_EXTRA_KEY);
-         ErrorMsgAddExtraKey(parent->children->next->key);
+         hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
+         hypredrv_ErrorMsgAddExtraKey(parent->children->next->key);
          return;
       }
 
-      iargs->solver_method = (solver_t)StrIntMapArrayGetImage(
+      iargs->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
          hypredrv_SolverGetValidTypeIntMap(), parent->children->key);
 
       hypredrv_SolverSetArgsFromYAML(&iargs->solver, parent);
    }
    else
    {
-      iargs->solver_method = (solver_t)StrIntMapArrayGetImage(
+      iargs->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
          hypredrv_SolverGetValidTypeIntMap(), parent->val);
 
       /* Value-only form (e.g., `solver: gmres`): use per-method defaults. */
@@ -328,10 +328,10 @@ PreconParseVariantWrapped(precon_args *dst, precon_t method,
                           const YAMLnode *precon_parent, const char *type_key,
                           int type_level, YAMLnode *type_children)
 {
-   PreconArgsSetDefaultsForMethod(method, dst);
+   hypredrv_PreconArgsSetDefaultsForMethod(method, dst);
 
    YAMLnode fake_type = {0};
-   /* IMPORTANT: YAMLSetArgsGeneric may free/replace parent->key for flat-value nodes.
+   /* IMPORTANT: hypredrv_YAMLSetArgsGeneric may free/replace parent->key for flat-value nodes.
     * Never point into another YAML tree's storage here. */
    fake_type.key      = strdup(type_key ? type_key : "");
    fake_type.val      = strdup("");
@@ -348,7 +348,7 @@ PreconParseVariantWrapped(precon_args *dst, precon_t method,
    fake_parent.children = &fake_type;
    fake_parent.next     = NULL;
 
-   PreconSetArgsFromYAML(dst, &fake_parent);
+   hypredrv_PreconSetArgsFromYAML(dst, &fake_parent);
 
    /* Clean up mapped_val allocated during validation on fake nodes */
    free(fake_type.mapped_val);
@@ -370,20 +370,20 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
 {
    if (!method_out || !args_out)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Preset output arguments must be non-NULL");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Preset output arguments must be non-NULL");
       return;
    }
 
    const hypredrv_Preset *preset = hypredrv_PresetFind(preset_name);
    if (!preset)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Unknown preconditioner preset: '%s'", preset_name ? preset_name : "");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Unknown preconditioner preset: '%s'", preset_name ? preset_name : "");
       char *help = hypredrv_PresetHelp();
       if (help)
       {
-         ErrorMsgAdd("%s", help);
+         hypredrv_ErrorMsgAdd("%s", help);
          free(help);
       }
       return;
@@ -392,40 +392,40 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
    char *text = strdup(preset->text);
    if (!text)
    {
-      ErrorCodeSet(ERROR_ALLOCATION);
-      ErrorMsgAdd("Failed to allocate preset YAML text");
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate preset YAML text");
       return;
    }
 
    YAMLtree *preset_tree = NULL;
-   YAMLtreeBuild(2, text, &preset_tree);
+   hypredrv_YAMLtreeBuild(2, text, &preset_tree);
    free(text);
 
    if (!preset_tree || !preset_tree->root || !preset_tree->root->children ||
        preset_tree->root->children->next)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Preset '%s' must expand to a single preconditioner type",
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Preset '%s' must expand to a single preconditioner type",
                   preset->name);
-      YAMLtreeDestroy(&preset_tree);
+      hypredrv_YAMLtreeDestroy(&preset_tree);
       return;
    }
 
    YAMLnode *type_node = preset_tree->root->children;
-   if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), type_node->key))
+   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(), type_node->key))
    {
-      ErrorCodeSet(ERROR_INVALID_KEY);
-      ErrorMsgAdd("Unknown preconditioner type: '%s'", type_node->key);
-      YAMLtreeDestroy(&preset_tree);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+      hypredrv_ErrorMsgAdd("Unknown preconditioner type: '%s'", type_node->key);
+      hypredrv_YAMLtreeDestroy(&preset_tree);
       return;
    }
 
    *method_out =
-      (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type_node->key);
+      (precon_t)hypredrv_StrIntMapArrayGetImage(hypredrv_PreconGetValidTypeIntMap(), type_node->key);
    PreconParseVariantWrapped(args_out, *method_out, preset_tree->root, type_node->key,
                              type_node->level, type_node->children);
 
-   YAMLtreeDestroy(&preset_tree);
+   hypredrv_YAMLtreeDestroy(&preset_tree);
    return;
 }
 
@@ -466,7 +466,7 @@ PreconParseContextCleanup(PreconParseContext *ctx)
       {
          if (ctx->methods[i] == PRECON_MGR)
          {
-            MGRDestroyNestedSolverArgs(&ctx->variants[i].mgr);
+            hypredrv_MGRDestroyNestedSolverArgs(&ctx->variants[i].mgr);
          }
       }
    }
@@ -490,8 +490,8 @@ PreconParseContextAllocVariants(PreconParseContext *ctx, int num_variants,
 {
    if (!ctx || num_variants <= 0)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Invalid preconditioner parse allocation request");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid preconditioner parse allocation request");
       return 0;
    }
 
@@ -500,8 +500,8 @@ PreconParseContextAllocVariants(PreconParseContext *ctx, int num_variants,
 
    if (!ctx->methods || !ctx->variants)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("%s", error_msg);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("%s", error_msg);
       return 0;
    }
 
@@ -535,14 +535,14 @@ InputArgsPreconVariant0Activate(input_args *iargs, PreconParseContext *ctx,
 static int
 PreconParseMethodResolve(const char *name, int error_code, precon_t *method_out)
 {
-   if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), name))
+   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(), name))
    {
-      ErrorCodeSet(error_code);
-      ErrorMsgAdd("Unknown preconditioner type: '%s'", name);
+      hypredrv_ErrorCodeSet(error_code);
+      hypredrv_ErrorMsgAdd("Unknown preconditioner type: '%s'", name);
       return 0;
    }
 
-   *method_out = (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), name);
+   *method_out = (precon_t)hypredrv_StrIntMapArrayGetImage(hypredrv_PreconGetValidTypeIntMap(), name);
    return 1;
 }
 
@@ -552,23 +552,23 @@ PreconParsePresetNode(const YAMLnode *preset_node, precon_t *method_out,
 {
    if (!strcmp(preset_node->val, ""))
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Preconditioner preset name is missing");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Preconditioner preset name is missing");
       return 0;
    }
 
    char *preset_name = strdup(preset_node->val);
    if (!preset_name)
    {
-      ErrorCodeSet(ERROR_ALLOCATION);
-      ErrorMsgAdd("Failed to allocate preset name");
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate preset name");
       return 0;
    }
 
    PreconPresetBuildArgs(preset_name, method_out, args_out);
    free(preset_name);
 
-   return !ErrorCodeGet();
+   return !hypredrv_ErrorCodeGet();
 }
 
 static PreconParseResult
@@ -592,7 +592,7 @@ InputArgsParsePreconValueOnly(input_args *iargs, YAMLnode *parent,
    }
 
    ctx->methods[0] = method;
-   PreconArgsSetDefaultsForMethod(method, &ctx->variants[0]);
+   hypredrv_PreconArgsSetDefaultsForMethod(method, &ctx->variants[0]);
    ctx->parsed_variants = 1;
 
    InputArgsPreconVariant0Activate(iargs, ctx, 1);
@@ -604,7 +604,7 @@ static PreconParseResult
 InputArgsParsePreconRootSequence(input_args *iargs, YAMLnode *parent,
                                  PreconParseContext *ctx)
 {
-   int num_variants = YAMLnodeCollectSequenceItems(parent, &ctx->precon_items);
+   int num_variants = hypredrv_YAMLnodeCollectSequenceItems(parent, &ctx->precon_items);
    if (num_variants <= 0)
    {
       return PRECON_PARSE_NOT_HANDLED;
@@ -621,8 +621,8 @@ InputArgsParsePreconRootSequence(input_args *iargs, YAMLnode *parent,
       YAMLnode *item = ctx->precon_items[vi];
       if (!item->children || item->children->next)
       {
-         ErrorCodeSet(ERROR_INVALID_KEY);
-         ErrorMsgAdd("Each preconditioner variant must contain exactly one type key");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+         hypredrv_ErrorMsgAdd("Each preconditioner variant must contain exactly one type key");
          return PRECON_PARSE_ERROR;
       }
 
@@ -647,7 +647,7 @@ InputArgsParsePreconRootSequence(input_args *iargs, YAMLnode *parent,
          ctx->parsed_variants = vi + 1;
          PreconParseVariantWrapped(&ctx->variants[vi], method, parent, type->key,
                                    type->level, type->children);
-         if (ErrorCodeGet())
+         if (hypredrv_ErrorCodeGet())
          {
             return PRECON_PARSE_ERROR;
          }
@@ -669,13 +669,13 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
 {
    if (!parent->children)
    {
-      ErrorCodeSet(ERROR_MISSING_PRECON);
+      hypredrv_ErrorCodeSet(ERROR_MISSING_PRECON);
       return PRECON_PARSE_ERROR;
    }
    if (parent->children->next)
    {
-      ErrorCodeSet(ERROR_EXTRA_KEY);
-      ErrorMsgAddExtraKey(parent->children->next->key);
+      hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
+      hypredrv_ErrorMsgAddExtraKey(parent->children->next->key);
       return PRECON_PARSE_ERROR;
    }
 
@@ -687,8 +687,8 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
          InputArgsParsePreconRootSequence(iargs, type_node, ctx);
       if (seq_result == PRECON_PARSE_NOT_HANDLED)
       {
-         ErrorCodeSet(ERROR_INVALID_KEY);
-         ErrorMsgAdd("preconditioner.variants must be a sequence of variants");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+         hypredrv_ErrorMsgAdd("preconditioner.variants must be a sequence of variants");
          return PRECON_PARSE_ERROR;
       }
       return seq_result;
@@ -723,7 +723,7 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
    }
 
    YAML_NODE_SET_VALID(type_node);
-   int num_variants = YAMLnodeCollectSequenceItems(type_node, &ctx->seq_items);
+   int num_variants = hypredrv_YAMLnodeCollectSequenceItems(type_node, &ctx->seq_items);
    if (num_variants > 0)
    {
       if (!PreconParseContextAllocVariants(ctx, num_variants,
@@ -739,7 +739,7 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
          ctx->parsed_variants = vi + 1;
          PreconParseVariantWrapped(&ctx->variants[vi], method, parent, type_node->key,
                                    type_node->level, seq_item->children);
-         if (ErrorCodeGet())
+         if (hypredrv_ErrorCodeGet())
          {
             return PRECON_PARSE_ERROR;
          }
@@ -757,10 +757,10 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
    }
 
    ctx->methods[0] = method;
-   PreconArgsSetDefaultsForMethod(method, &ctx->variants[0]);
+   hypredrv_PreconArgsSetDefaultsForMethod(method, &ctx->variants[0]);
    ctx->parsed_variants = 1;
-   PreconSetArgsFromYAML(&ctx->variants[0], parent);
-   if (ErrorCodeGet())
+   hypredrv_PreconSetArgsFromYAML(&ctx->variants[0], parent);
+   if (hypredrv_ErrorCodeGet())
    {
       return PRECON_PARSE_ERROR;
    }
@@ -773,19 +773,19 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
 {
-   YAMLnode *parent = YAMLnodeFindByKey(tree->root, "preconditioner");
+   YAMLnode *parent = hypredrv_YAMLnodeFindByKey(tree->root, "preconditioner");
    if (!parent)
    {
-      ErrorCodeSet(ERROR_MISSING_KEY);
-      ErrorMsgAddMissingKey("preconditioner");
+      hypredrv_ErrorCodeSet(ERROR_MISSING_KEY);
+      hypredrv_ErrorMsgAddMissingKey("preconditioner");
       return;
    }
    YAML_NODE_SET_VALID(parent);
 
    /* Parse optional preconditioner.reuse block before parsing method variants. */
-   PreconReuseSetDefaultArgs(&iargs->precon_reuse);
+   hypredrv_PreconReuseSetDefaultArgs(&iargs->precon_reuse);
    YAMLnode *reuse_node = NULL;
    YAMLnode *child      = parent->children;
    YAMLnode *prev       = NULL;
@@ -811,8 +811,8 @@ InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
 
    if (reuse_node)
    {
-      PreconReuseSetArgsFromYAML(&iargs->precon_reuse, reuse_node);
-      if (!ErrorCodeGet())
+      hypredrv_PreconReuseSetArgsFromYAML(&iargs->precon_reuse, reuse_node);
+      if (!hypredrv_ErrorCodeGet())
       {
          YAML_NODE_SET_VALID(reuse_node);
       }
@@ -847,26 +847,26 @@ finalize_reuse:
 }
 
 /*-----------------------------------------------------------------------------
- * InputArgsApplyPreconPreset
+ * hypredrv_InputArgsApplyPreconPreset
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsApplyPreconPreset(input_args *iargs, const char *preset, int variant_idx)
+hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset, int variant_idx)
 {
    precon_t    method = PRECON_NONE;
    precon_args args;
 
    if (!iargs || !preset)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Input args and preset name must be non-NULL");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Input args and preset name must be non-NULL");
       return;
    }
 
    if (variant_idx < 0 || variant_idx >= iargs->num_precon_variants)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Invalid preconditioner variant index: %d (valid range: 0-%d)",
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid preconditioner variant index: %d (valid range: 0-%d)",
                   variant_idx, iargs->num_precon_variants - 1);
       return;
    }
@@ -879,8 +879,8 @@ InputArgsApplyPreconPreset(input_args *iargs, const char *preset, int variant_id
          (precon_args *)malloc(sizeof(precon_args) * (size_t)iargs->num_precon_variants);
       if (!iargs->precon_methods || !iargs->precon_variants)
       {
-         ErrorCodeSet(ERROR_UNKNOWN);
-         ErrorMsgAdd("Failed to allocate preconditioner variants");
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("Failed to allocate preconditioner variants");
          return;
       }
    }
@@ -896,11 +896,11 @@ InputArgsApplyPreconPreset(input_args *iargs, const char *preset, int variant_id
 }
 
 /*-----------------------------------------------------------------------------
- * InputArgsRead
+ * hypredrv_InputArgsRead
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_ptr)
+hypredrv_InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_ptr)
 {
    size_t text_size   = 0;
    int    base_indent = -1;
@@ -916,15 +916,15 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    {
       if (filename == NULL)
       {
-         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         ErrorMsgAdd("Configuration filename is NULL");
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAdd("Configuration filename is NULL");
          return;
       }
       FILE *fp = fopen(filename, "r");
       if (!fp)
       {
-         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         ErrorMsgAdd("Configuration file not found: '%s'", filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAdd("Configuration file not found: '%s'", filename);
       }
       else
       {
@@ -933,20 +933,20 @@ InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_p
    }
 
    /* All ranks return if there was an error on rank 0 */
-   if (DistributedErrorCodeActive(comm))
+   if (hypredrv_DistributedErrorCodeActive(comm))
    {
       return;
    }
 
    /* Split filename into dirname and basename */
-   SplitFilename(filename, &dirname, &basename);
+   hypredrv_SplitFilename(filename, &dirname, &basename);
 
    /* Rank 0: Expand text from base file */
    if (!myid)
    {
-      YAMLtextRead(dirname, basename, 0, &base_indent, &text_size, &text);
+      hypredrv_YAMLtextRead(dirname, basename, 0, &base_indent, &text_size, &text);
    }
-   if (DistributedErrorCodeActive(comm))
+   if (hypredrv_DistributedErrorCodeActive(comm))
    {
       /* Free allocated memory before returning on error */
       free(dirname);
@@ -988,7 +988,7 @@ FindConfigIndex(int argc, char **argv)
 {
    for (int i = 0; i < argc; i++)
    {
-      if (argv[i] && IsYAMLFilename(argv[i]))
+      if (argv[i] && hypredrv_IsYAMLFilename(argv[i]))
       {
          return i;
       }
@@ -1002,26 +1002,26 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
 {
    char *config_base = NULL;
 
-   if (argc > 0 && IsYAMLFilename(argv[0]))
+   if (argc > 0 && hypredrv_IsYAMLFilename(argv[0]))
    {
-      InputArgsRead(comm, argv[0], base_indent_ptr, text_ptr);
-      if (ErrorCodeActive())
+      hypredrv_InputArgsRead(comm, argv[0], base_indent_ptr, text_ptr);
+      if (hypredrv_ErrorCodeActive())
       {
          return false;
       }
-      SplitFilename(argv[0], config_dir_ptr, &config_base);
+      hypredrv_SplitFilename(argv[0], config_dir_ptr, &config_base);
       free(config_base);
       return true;
    }
 
    if (config_idx >= 0)
    {
-      InputArgsRead(comm, argv[config_idx], base_indent_ptr, text_ptr);
-      if (ErrorCodeActive())
+      hypredrv_InputArgsRead(comm, argv[config_idx], base_indent_ptr, text_ptr);
+      if (hypredrv_ErrorCodeActive())
       {
          return false;
       }
-      SplitFilename(argv[config_idx], config_dir_ptr, &config_base);
+      hypredrv_SplitFilename(argv[config_idx], config_dir_ptr, &config_base);
       free(config_base);
       return true;
    }
@@ -1029,8 +1029,8 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
    /* Direct YAML string input */
    if (argv[0] == NULL)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("YAML string input is NULL");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("YAML string input is NULL");
       return false;
    }
 
@@ -1046,29 +1046,29 @@ ApplyCLIOverrides(int argc, char **argv, int config_idx, YAMLtree *tree)
       return;
    }
 
-   if (IsYAMLFilename(argv[0]))
+   if (hypredrv_IsYAMLFilename(argv[0]))
    {
       /* Legacy: overrides are in argv[1..] */
-      YAMLtreeUpdate(argc - 1, argv + 1, tree);
+      hypredrv_YAMLtreeUpdate(argc - 1, argv + 1, tree);
    }
    else if (config_idx >= 0)
    {
-      /* Driver: allow YAMLtreeUpdate to parse -a/--args inside full argv */
-      YAMLtreeUpdate(argc, argv, tree);
+      /* Driver: allow hypredrv_YAMLtreeUpdate to parse -a/--args inside full argv */
+      hypredrv_YAMLtreeUpdate(argc, argv, tree);
    }
    else
    {
       /* YAML string input: overrides are in argv[1..] */
-      YAMLtreeUpdate(argc - 1, argv + 1, tree);
+      hypredrv_YAMLtreeUpdate(argc - 1, argv + 1, tree);
    }
 }
 
 /*-----------------------------------------------------------------------------
- * InputArgsParse
+ * hypredrv_InputArgsParse
  *-----------------------------------------------------------------------------*/
 
 void
-InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args **args_ptr)
+hypredrv_InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args **args_ptr)
 {
    input_args *iargs       = NULL;
    char       *text        = NULL;
@@ -1098,10 +1098,10 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    // printf("%*s", (int) strlen(text), text);
 
    /* Build YAML tree */
-   YAMLtreeBuild(base_indent, text, &tree);
+   hypredrv_YAMLtreeBuild(base_indent, text, &tree);
 
    /* Expand nested include files (post-build to keep parser simple) */
-   YAMLtreeExpandIncludes(tree, config_dir ? config_dir : ".");
+   hypredrv_YAMLtreeExpandIncludes(tree, config_dir ? config_dir : ".");
 
    /* Check if any config option has been passed in via CLI.
       If so, overwrite the data stored in the YAMLtree object
@@ -1109,12 +1109,12 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
    ApplyCLIOverrides(argc, argv, config_idx, tree);
 
    /* Return earlier if YAML tree was not built properly */
-   if (!myid && ErrorCodeActive())
+   if (!myid && hypredrv_ErrorCodeActive())
    {
-      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
-      ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      hypredrv_YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+      hypredrv_ErrorCodeSet(ERROR_YAML_TREE_INVALID);
       free(text);
-      YAMLtreeDestroy(&tree);
+      hypredrv_YAMLtreeDestroy(&tree);
       return;
    }
    MPI_Barrier(comm);
@@ -1127,34 +1127,34 @@ InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args *
     * Parse file sections
     *-------------------------------------------*/
 
-   InputArgsCreate(lib_mode, &iargs);
-   InputArgsParseGeneral(iargs, tree);
-   InputArgsParseLinearSystem(iargs, tree);
-   InputArgsParseSolver(iargs, tree);
-   InputArgsParsePrecon(iargs, tree);
+   hypredrv_InputArgsCreate(lib_mode, &iargs);
+   hypredrv_InputArgsParseGeneral(iargs, tree);
+   hypredrv_InputArgsParseLinearSystem(iargs, tree);
+   hypredrv_InputArgsParseSolver(iargs, tree);
+   hypredrv_InputArgsParsePrecon(iargs, tree);
 
    /* Validate the YAML tree (Has to occur after input args parsing) */
-   YAMLtreeValidate(tree);
+   hypredrv_YAMLtreeValidate(tree);
 
    /* Return earlier if YAML tree is invalid */
-   if (!myid && ErrorCodeActive())
+   if (!myid && hypredrv_ErrorCodeActive())
    {
-      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
-      ErrorCodeSet(ERROR_YAML_TREE_INVALID);
-      InputArgsDestroy(&iargs);
-      YAMLtreeDestroy(&tree);
+      hypredrv_YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+      hypredrv_ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      hypredrv_InputArgsDestroy(&iargs);
+      hypredrv_YAMLtreeDestroy(&tree);
       return;
    }
 
    /* Rank 0: Print tree to stdout */
    if (!myid && iargs->general.print_config_params)
    {
-      YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+      hypredrv_YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
    }
    MPI_Barrier(comm);
 
    /* Free memory */
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 
    /* Set output pointer */
    *args_ptr = iargs;

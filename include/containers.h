@@ -42,7 +42,7 @@ typedef struct StackIntArray_struct
    size_t size;
 } StackIntArray;
 
-void StackIntArrayRead(StackIntArray *);
+void hypredrv_StackIntArrayRead(StackIntArray *);
 #define STACK_INTARRAY_CREATE() ((StackIntArray){.data = {0}, .size = 0})
 
 /*--------------------------------------------------------------------------
@@ -61,13 +61,13 @@ typedef struct IntArray_struct
    size_t g_unique_size;
 } IntArray;
 
-IntArray *IntArrayCreate(size_t);
-void      IntArrayDestroy(IntArray **);
-void      IntArrayBuild(MPI_Comm, int, const int *, IntArray **);
-void      IntArrayBuildInterleaved(MPI_Comm, int, int, IntArray **);
-void      IntArrayBuildContiguous(MPI_Comm, int, int, IntArray **);
-void      IntArrayParRead(MPI_Comm, const char *, IntArray **);
-void      IntArrayWriteAsciiByRank(MPI_Comm, const IntArray *, const char *);
+IntArray *hypredrv_IntArrayCreate(size_t);
+void      hypredrv_IntArrayDestroy(IntArray **);
+void      hypredrv_IntArrayBuild(MPI_Comm, int, const int *, IntArray **);
+void      hypredrv_IntArrayBuildInterleaved(MPI_Comm, int, int, IntArray **);
+void      hypredrv_IntArrayBuildContiguous(MPI_Comm, int, int, IntArray **);
+void      hypredrv_IntArrayParRead(MPI_Comm, const char *, IntArray **);
+void      hypredrv_IntArrayWriteAsciiByRank(MPI_Comm, const IntArray *, const char *);
 
 /*--------------------------------------------------------------------------
  * DoubleArray struct
@@ -79,8 +79,8 @@ typedef struct DoubleArray_struct
    size_t  size;
 } DoubleArray;
 
-DoubleArray *DoubleArrayCreate(size_t);
-void         DoubleArrayDestroy(DoubleArray **);
+DoubleArray *hypredrv_DoubleArrayCreate(size_t);
+void         hypredrv_DoubleArrayDestroy(DoubleArray **);
 
 /*--------------------------------------------------------------------------
  * StrArray struct
@@ -98,10 +98,10 @@ typedef struct StrArray_struct
       .data = _str, .size = sizeof(_str) / sizeof(_str[0]) \
    }
 
-bool StrArrayEntryExists(StrArray, const char *);
-void StrToIntArray(const char *, IntArray **);
-void StrToDoubleArray(const char *, DoubleArray **);
-void StrToStackIntArray(const char *, StackIntArray *);
+bool hypredrv_StrArrayEntryExists(StrArray, const char *);
+void hypredrv_StrToIntArray(const char *, IntArray **);
+void hypredrv_StrToDoubleArray(const char *, DoubleArray **);
+void hypredrv_StrToStackIntArray(const char *, StackIntArray *);
 
 /*--------------------------------------------------------------------------
  * StrIntMap struct (str <-> num)
@@ -131,8 +131,8 @@ typedef struct StrIntMapArray_struct
 
 extern const StrIntMapArray OnOffMapArray;
 
-int  StrIntMapArrayGetImage(StrIntMapArray, const char *);
-bool StrIntMapArrayDomainEntryExists(StrIntMapArray, const char *);
+int  hypredrv_StrIntMapArrayGetImage(StrIntMapArray, const char *);
+bool hypredrv_StrIntMapArrayDomainEntryExists(StrIntMapArray, const char *);
 
 /*--------------------------------------------------------------------------
  * StrStrIntMap struct (strA,strB <-> num)

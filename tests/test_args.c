@@ -15,7 +15,7 @@ build_tree(const char *text)
 {
    char     *buffer = strdup(text);
    YAMLtree *tree   = NULL;
-   YAMLtreeBuild(2, buffer, &tree);
+   hypredrv_YAMLtreeBuild(2, buffer, &tree);
    free(buffer);
    return tree;
 }
@@ -27,8 +27,8 @@ parse_config(const char *yaml_text)
    char       *argv0   = strdup(yaml_text);
    char       *argv[1] = {argv0};
 
-   ErrorCodeResetAll();
-   InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
    free(argv0);
    return args;
 }
@@ -47,8 +47,8 @@ parse_config_with_overrides(const char *yaml_text, int override_argc,
       argv[i + 1] = override_argv[i];
    }
 
-   ErrorCodeResetAll();
-   InputArgsParse(MPI_COMM_SELF, false, override_argc + 1, argv, &args);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, false, override_argc + 1, argv, &args);
 
    free(argv);
    free(argv0);
@@ -87,7 +87,7 @@ test_InputArgsParseGeneral_flags(void)
    ASSERT_TRUE(args->general.pinned_pool_size > 0);
    ASSERT_EQ(args->solver_method, SOLVER_PCG);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -108,7 +108,7 @@ test_InputArgsParseGeneral_use_millisec_sets_timer(void)
     */
    ASSERT_TRUE(args->general.use_millisec);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -124,7 +124,7 @@ test_InputArgsParseSolver_value_only(void)
    ASSERT_EQ(args->solver_method, SOLVER_BICGSTAB);
    ASSERT_EQ(args->solver.bicgstab.print_level, 0);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -140,7 +140,7 @@ test_InputArgsParsePrecon_value_only(void)
    ASSERT_EQ(args->precon_method, PRECON_FSAI);
    ASSERT_EQ(args->precon.fsai.print_level, 0);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -153,7 +153,7 @@ test_InputArgsParsePrecon_preset_value_only(void)
 
    input_args *args = parse_config(yaml_text);
    /* Value-only presets are not supported. */
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
    ASSERT_NULL(args);
 }
 
@@ -173,7 +173,7 @@ test_InputArgsParsePrecon_preset_explicit_key(void)
    ASSERT_TRUE(args->precon.amg.coarsening.strong_th > 0.79 &&
                args->precon.amg.coarsening.strong_th < 0.81);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -184,7 +184,7 @@ test_InputArgsParsePrecon_missing(void)
                             "    max_iter: 40\n";
 
    input_args *args = parse_config(yaml_text);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_MISSING_KEY);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_MISSING_KEY);
    ASSERT_NULL(args);
 }
 
@@ -226,7 +226,7 @@ test_InputArgsParsePrecon_variants(void)
    ASSERT_EQ(args->active_precon_variant, 0);
    ASSERT_EQ(args->precon.amg.print_level, 1);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -253,7 +253,7 @@ test_InputArgsParsePrecon_mgr_flat_g_relaxation_amg_defaults(void)
    ASSERT_TRUE(args->precon.mgr.level[0].g_relaxation.amg.coarsening.type == 8 ||
                args->precon.mgr.level[0].g_relaxation.amg.coarsening.type == 10);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -278,7 +278,7 @@ test_InputArgsParsePrecon_mgr_flat_g_relaxation_ilu_defaults(void)
    ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.ilu.type, 0);
    ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.ilu.fill_level, 0);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -304,7 +304,7 @@ test_InputArgsParsePrecon_root_sequence_variants(void)
    ASSERT_EQ(args->precon_variants[1].fsai.print_level, 3);
    ASSERT_EQ(args->precon.amg.print_level, 2);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -328,7 +328,7 @@ test_InputArgsParsePrecon_root_sequence_with_preset(void)
    ASSERT_EQ(args->precon_methods[1], PRECON_FSAI);
    ASSERT_EQ(args->precon_variants[1].fsai.print_level, 4);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -350,7 +350,7 @@ test_InputArgsParsePrecon_reuse_frequency(void)
    ASSERT_EQ(args->precon_reuse.per_timestep, 0);
    ASSERT_NULL(args->precon_reuse.linear_system_ids);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -375,7 +375,7 @@ test_InputArgsParsePrecon_reuse_linear_system_ids(void)
    ASSERT_EQ(args->precon_reuse.linear_system_ids->data[2], 5);
    ASSERT_EQ(args->precon_reuse.per_timestep, 0);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -398,7 +398,7 @@ test_InputArgsParsePrecon_reuse_per_timestep(void)
    ASSERT_EQ(args->precon_reuse.per_timestep, 1);
    ASSERT_STREQ(args->ls.timestep_filename, "timesteps.txt");
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -423,7 +423,7 @@ test_InputArgsParsePrecon_reuse_per_timestep_with_frequency(void)
    ASSERT_EQ(args->precon_reuse.frequency, 2);
    ASSERT_STREQ(args->ls.timestep_filename, "timesteps.txt");
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -434,11 +434,11 @@ test_YAMLtreeBuild_inconsistent_indent(void)
 
    YAMLtree *tree = build_tree(yaml_text);
 
-   ErrorCodeResetAll();
-   YAMLtreeValidate(tree);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_YAML_INVALID_INDENT);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeValidate(tree);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_YAML_INVALID_INDENT);
 
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 static void
@@ -448,9 +448,9 @@ test_YAMLtextRead_missing_file(void)
    size_t length      = 0;
    char  *text        = NULL;
 
-   ErrorCodeResetAll();
-   YAMLtextRead("nonexistent_dir", "missing.yml", 0, &base_indent, &length, &text);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtextRead("nonexistent_dir", "missing.yml", 0, &base_indent, &length, &text);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
 }
 
 static void
@@ -474,7 +474,7 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
    ASSERT_EQ(args->precon.amg.print_level, 2);
    ASSERT_EQ(args->general.statistics, 0);
 
-   InputArgsDestroy(&args);
+   hypredrv_InputArgsDestroy(&args);
 }
 
 static void
@@ -489,14 +489,14 @@ test_InputArgsParse_driver_mode_with_config_file(void)
    fclose(fp);
 
    char *argv[] = {"hypredrive", "-q", yaml_file};
-   ErrorCodeResetAll();
-   InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
 
-   if (!ErrorCodeActive())
+   if (!hypredrv_ErrorCodeActive())
    {
       ASSERT_NOT_NULL(args);
       ASSERT_EQ(args->solver_method, SOLVER_PCG);
-      InputArgsDestroy(&args);
+      hypredrv_InputArgsDestroy(&args);
    }
 
    unlink(yaml_file);
@@ -509,12 +509,12 @@ test_InputArgsParse_null_argv0_error(void)
    input_args *args   = NULL;
    char       *argv[] = {NULL};
 
-   ErrorCodeResetAll();
-   InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
 
-   ASSERT_TRUE(ErrorCodeActive());
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(args);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_UNKNOWN);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_UNKNOWN);
 }
 
 static void
@@ -524,12 +524,12 @@ test_InputArgsParse_file_not_found_error(void)
    input_args *args   = NULL;
    char       *argv[] = {"nonexistent.yml"};
 
-   ErrorCodeResetAll();
-   InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
 
-   ASSERT_TRUE(ErrorCodeActive());
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(args);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
 }
 
 static void
@@ -544,15 +544,15 @@ test_InputArgsParse_legacy_mode_with_overrides(void)
    fclose(fp);
 
    char *argv[] = {yaml_file, "--solver:pcg:max_iter", "100"};
-   ErrorCodeResetAll();
-   InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
 
-   if (!ErrorCodeActive())
+   if (!hypredrv_ErrorCodeActive())
    {
       ASSERT_NOT_NULL(args);
       ASSERT_EQ(args->solver_method, SOLVER_PCG);
       ASSERT_EQ(args->solver.pcg.max_iter, 100);
-      InputArgsDestroy(&args);
+      hypredrv_InputArgsDestroy(&args);
    }
 
    unlink(yaml_file);

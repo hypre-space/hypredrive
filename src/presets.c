@@ -73,8 +73,8 @@ hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *hel
 {
    if (!name || !*name || !yaml_text || !*yaml_text)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd(
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
          "hypredrv_PresetRegister: name and yaml_text must be non-NULL and non-empty");
       return -1;
    }
@@ -82,7 +82,7 @@ hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *hel
    char *norm = strdup(name);
    if (!norm)
    {
-      ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       return -1;
    }
    normalize_preset_name(norm);
@@ -92,8 +92,8 @@ hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *hel
    {
       if (!strcmp(norm, g_presets[i].name))
       {
-         ErrorCodeSet(ERROR_INVALID_VAL);
-         ErrorMsgAdd(
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
             "hypredrv_PresetRegister: preset '%s' conflicts with built-in preset", norm);
          free(norm);
          return -1;
@@ -105,8 +105,8 @@ hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *hel
    {
       if (!strcmp(norm, g_user_presets[i].name))
       {
-         ErrorCodeSet(ERROR_INVALID_VAL);
-         ErrorMsgAdd("hypredrv_PresetRegister: preset '%s' already registered", norm);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("hypredrv_PresetRegister: preset '%s' already registered", norm);
          free(norm);
          return -1;
       }
@@ -120,7 +120,7 @@ hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *hel
          (hypredrv_Preset *)realloc(g_user_presets, new_cap * sizeof(hypredrv_Preset));
       if (!tmp)
       {
-         ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
          free(norm);
          return -1;
       }
@@ -135,7 +135,7 @@ hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *hel
       free(norm);
       free(dup_text);
       free(dup_help);
-      ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       return -1;
    }
 

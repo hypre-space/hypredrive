@@ -57,11 +57,11 @@ test_hypredrv_IJVectorReadMultipartBinary_success(void)
    create_temp_binary(prefix, 0, 3, values);
 
    HYPRE_IJVector vec = NULL;
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
 
    ASSERT_NOT_NULL(vec);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    HYPRE_IJVectorDestroy(vec);
    cleanup_temp_files();
@@ -72,11 +72,11 @@ test_hypredrv_IJVectorReadMultipartBinary_missing_file(void)
 {
    HYPRE_IJVector vec = NULL;
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJVectorReadMultipartBinary("missing_vector", MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST,
                                &vec);
    ASSERT_NULL(vec);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
 }
 
 static void
@@ -94,10 +94,10 @@ test_hypredrv_IJVectorReadMultipartBinary_bad_header(void)
    add_temp_file(filename);
 
    HYPRE_IJVector vec = NULL;
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
    ASSERT_NULL(vec);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
    cleanup_temp_files();
 }
@@ -111,11 +111,11 @@ test_hypredrv_IJVectorReadMultipartBinary_float_coefficients(void)
    create_temp_binary_float(prefix, 0, 4, values);
 
    HYPRE_IJVector vec = NULL;
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
 
    ASSERT_NOT_NULL(vec);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    HYPRE_IJVectorDestroy(vec);
    cleanup_temp_files();
@@ -136,8 +136,8 @@ test_IntArrayParRead_ascii(void)
    add_temp_file(filename);
 
    IntArray *array = NULL;
-   ErrorCodeResetAll();
-   IntArrayParRead(MPI_COMM_SELF, prefix, &array);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IntArrayParRead(MPI_COMM_SELF, prefix, &array);
    ASSERT_NOT_NULL(array);
    ASSERT_EQ(array->size, 3);
    ASSERT_EQ(array->data[0], 7);
@@ -145,7 +145,7 @@ test_IntArrayParRead_ascii(void)
    ASSERT_EQ(array->unique_size, 3);
    ASSERT_EQ(array->g_unique_size, 3);
 
-   IntArrayDestroy(&array);
+   hypredrv_IntArrayDestroy(&array);
    cleanup_temp_files();
 }
 

@@ -485,7 +485,7 @@ ResolveDirPrefixAndSuffixRange(PackArgs *args, char *parent_dir, size_t parent_d
    }
 
    /* Case 1: --dirname is already the prefix (parent contains <base>_00000 dirs). */
-   SplitFilename(args->input_dirname, &cand_parent, &cand_base);
+   hypredrv_SplitFilename(args->input_dirname, &cand_parent, &cand_base);
    if (cand_parent && cand_base)
    {
       int tmp_min = 0, tmp_max = 0, tmp_count = 0;
@@ -1316,14 +1316,14 @@ PackWriteBlob(FILE *blob_fp, comp_alg_t algo, int compression_level, const void 
       return 1;
    }
 
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    hypredrv_compress(algo, size, data, &comp_size, &comp_data, compression_level);
-   if (ErrorCodeActive() || !comp_data)
+   if (hypredrv_ErrorCodeActive() || !comp_data)
    {
-      if (ErrorCodeActive())
+      if (hypredrv_ErrorCodeActive())
       {
-         ErrorMsgPrint();
+         hypredrv_ErrorMsgPrint();
       }
       return 0;
    }
@@ -1992,10 +1992,10 @@ DecodeBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size, size
    }
    else
    {
-      ErrorCodeResetAll();
-      ErrorMsgClear();
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_ErrorMsgClear();
       hypredrv_decompress(codec, (size_t)blob_size, blob, &decoded_size, &decoded);
-      if (ErrorCodeActive() || !decoded)
+      if (hypredrv_ErrorCodeActive() || !decoded)
       {
          free(blob);
          return 0;
@@ -2936,7 +2936,7 @@ main(int argc, char **argv)
    BuildPrefix(matrix_prefix, sizeof(matrix_prefix), args.dirname, (int)args.digits_suffix,
                (int)args.init_suffix, args.matrix_filename);
 
-   int num_parts = CountNumberOfPartitions(matrix_prefix);
+   int num_parts = hypredrv_CountNumberOfPartitions(matrix_prefix);
    if (num_parts <= 0)
    {
       if (!myid)

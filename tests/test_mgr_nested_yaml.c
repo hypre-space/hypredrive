@@ -27,16 +27,16 @@ test_mgr_nested_yaml_parse(void)
    char *argv[] = {yaml_path};
    int   argc   = 1;
 
-   ErrorCodeResetAll();
-   InputArgsParse(MPI_COMM_SELF, true, argc, argv, &iargs);
-   ASSERT_FALSE(ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, true, argc, argv, &iargs);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(iargs);
    ASSERT_EQ(iargs->precon_method, PRECON_MGR);
    ASSERT_TRUE(iargs->precon.mgr.level[1].f_relaxation.use_krylov);
    ASSERT_NOT_NULL(iargs->precon.mgr.level[1].f_relaxation.krylov);
    ASSERT_EQ(iargs->precon.mgr.level[1].f_relaxation.krylov->solver_method, SOLVER_GMRES);
 
-   InputArgsDestroy(&iargs);
+   hypredrv_InputArgsDestroy(&iargs);
 }
 
 static void
@@ -51,9 +51,9 @@ test_mgr_nested_mgr_yaml_parse(void)
    char *argv[] = {yaml_path};
    int   argc   = 1;
 
-   ErrorCodeResetAll();
-   InputArgsParse(MPI_COMM_SELF, true, argc, argv, &iargs);
-   ASSERT_FALSE(ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, true, argc, argv, &iargs);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(iargs);
    ASSERT_EQ(iargs->precon_method, PRECON_MGR);
 
@@ -65,7 +65,7 @@ test_mgr_nested_mgr_yaml_parse(void)
    ASSERT_EQ(iargs->precon.mgr.level[0].f_relaxation.mgr->level[1].f_dofs.size, 1);
    ASSERT_EQ(iargs->precon.mgr.level[0].f_relaxation.mgr->level[1].f_dofs.data[0], 1);
 
-   InputArgsDestroy(&iargs);
+   hypredrv_InputArgsDestroy(&iargs);
 }
 
 int

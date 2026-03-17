@@ -21,35 +21,35 @@ run_roundtrip(comp_alg_t algo)
       input[i] = (unsigned char)(i % 251);
    }
 
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    hypredrv_compress(algo, nbytes, input, &compressed_size, &compressed, -1);
-   if (ErrorCodeGet() & ERROR_MISSING_LIB)
+   if (hypredrv_ErrorCodeGet() & ERROR_MISSING_LIB)
    {
-      ErrorCodeResetAll();
-      ErrorMsgClear();
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_ErrorMsgClear();
       free(input);
       free(compressed);
       free(decompressed);
       return;
    }
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(compressed);
    ASSERT_TRUE(compressed_size > 0);
 
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    hypredrv_decompress(algo, compressed_size, compressed, &decompressed_size, &decompressed);
-   if (ErrorCodeGet() & ERROR_MISSING_LIB)
+   if (hypredrv_ErrorCodeGet() & ERROR_MISSING_LIB)
    {
-      ErrorCodeResetAll();
-      ErrorMsgClear();
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_ErrorMsgClear();
       free(input);
       free(compressed);
       free(decompressed);
       return;
    }
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(decompressed);
    ASSERT_EQ((int)decompressed_size, (int)nbytes);
    ASSERT_TRUE(memcmp(input, decompressed, nbytes) == 0);

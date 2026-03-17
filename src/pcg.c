@@ -13,16 +13,16 @@
  *-----------------------------------------------------------------------------*/
 
 #define PCG_FIELDS(_prefix)                                          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, two_norm, FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, recompute_res, FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, residual_tol, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, FieldTypeDoubleSet)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, two_norm, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, recompute_res, hypredrv_FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, residual_tol, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, hypredrv_FieldTypeDoubleSet)
 
 /* Define num_fields macro */
 #define PCG_NUM_FIELDS (sizeof(PCG_field_offset_map) / sizeof(PCG_field_offset_map[0]))

@@ -133,13 +133,13 @@ struct MGR_args_struct
 
 void         hypredrv_MGRSetDefaultArgs(MGR_args *);
 void         hypredrv_MGRSetArgs(void *, const YAMLnode *);
-void         MGRSetDofmap(MGR_args *, IntArray *);
-void         MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
-void         MGRCreate(MGR_args *, HYPRE_Solver *);
-void         MGRDestroyNestedSolverArgs(MGR_args *);
-HYPRE_Solver MGRNestedFRelaxWrapperGetInner(HYPRE_Solver);
-HYPRE_Solver MGRNestedFRelaxWrapperDetachInner(HYPRE_Solver);
-void         MGRNestedFRelaxWrapperFree(HYPRE_Solver *);
+void         hypredrv_MGRSetDofmap(MGR_args *, IntArray *);
+void         hypredrv_MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
+void         hypredrv_MGRCreate(MGR_args *, HYPRE_Solver *);
+void         hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);
+HYPRE_Solver hypredrv_MGRNestedFRelaxWrapperGetInner(HYPRE_Solver);
+HYPRE_Solver hypredrv_MGRNestedFRelaxWrapperDetachInner(HYPRE_Solver);
+void         hypredrv_MGRNestedFRelaxWrapperFree(HYPRE_Solver *);
 
 /*--------------------------------------------------------------------------
  * Macros

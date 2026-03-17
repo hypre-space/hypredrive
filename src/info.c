@@ -124,13 +124,13 @@ void hypredrv_PrintSystemInfoLegacy(MPI_Comm comm);
 #ifndef __APPLE__
 
 /*--------------------------------------------------------------------------
- * dlpi_callback
+ * hypredrv_dlpi_callback
  *
  * Linux: Use dl_iterate_phdr to list dynamic libraries
  *--------------------------------------------------------------------------*/
 
 int
-dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
+hypredrv_dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
 {
    (void)size;
    (void)data;
@@ -1455,7 +1455,7 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
 #else
       if (!PrintDynamicLibrariesTree())
       {
-         dl_iterate_phdr(dlpi_callback, NULL);
+         dl_iterate_phdr(hypredrv_dlpi_callback, NULL);
       }
 #endif
 
@@ -1568,7 +1568,7 @@ PrintMpiRuntimeInformation(MPI_Comm comm)
       }
       lib_version[lib_len]                      = '\0';
       lib_version[strcspn(lib_version, "\r\n")] = '\0';
-      NormalizeWhitespace(lib_version);
+      hypredrv_NormalizeWhitespace(lib_version);
       if (lib_version[0])
       {
          printf("MPI Implementation    : %s\n", lib_version);
@@ -1885,7 +1885,7 @@ PrintCpuTopologyInfo(MPI_Comm comm)
                {
                   snprintf(cpu_desc, sizeof(cpu_desc), "%s", cpumodel);
                }
-               TrimTrailingWhitespace(cpu_desc);
+               hypredrv_TrimTrailingWhitespace(cpu_desc);
 
                if (packages > 1)
                {
@@ -2839,7 +2839,7 @@ PrintDynamicLibraries(void)
 #else
    if (!PrintDynamicLibrariesTree())
    {
-      dl_iterate_phdr(dlpi_callback, NULL);
+      dl_iterate_phdr(hypredrv_dlpi_callback, NULL);
    }
 #endif
    printf("\n");

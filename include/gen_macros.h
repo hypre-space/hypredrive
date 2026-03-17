@@ -78,7 +78,7 @@
  *
  * @param _prefix Prefix used in the naming of the declared function.
  */
-#define DEFINE_VOID_GET_VALID_VALUES_FUNC(_prefix)         \
+#define hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(_prefix)         \
    StrIntMapArray _prefix##GetValidValues(const char *key) \
    {                                                       \
       (void)key;                                           \
@@ -134,7 +134,7 @@
    void _fnPrefix##SetArgsFromYAML(void *vargs, YAMLnode *parent)               \
    {                                                                            \
       _prefix##_args *args = (_prefix##_args *)vargs;                           \
-      YAMLSetArgsGeneric((void *)args, parent, _fnPrefix##GetValidKeys,         \
+      hypredrv_YAMLSetArgsGeneric((void *)args, parent, _fnPrefix##GetValidKeys,         \
                          _fnPrefix##GetValidValues, _fnPrefix##SetFieldByName); \
    }
 
@@ -234,7 +234,7 @@
 /**
  * @brief Like GENERATE_PREFIXED_COMPONENTS, but uses a custom prefixSetArgsFromYAML.
  */
-#define GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(prefix)                            \
+#define hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(prefix)                            \
    DEFINE_FIELD_OFFSET_MAP(prefix);                                                 \
    DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,  \
                                  prefix##_field_offset_map, prefix##_NUM_FIELDS);   \

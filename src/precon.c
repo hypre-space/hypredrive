@@ -17,7 +17,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, hypredrv_MGRSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, hypredrv_ILUSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, hypredrv_FSAISetArgs) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, reuse, FieldTypeIntSet)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, reuse, hypredrv_FieldTypeIntSet)
 
 DEFINE_FIELD_OFFSET_MAP(Precon)
 #define Precon_NUM_FIELDS \
@@ -25,14 +25,14 @@ DEFINE_FIELD_OFFSET_MAP(Precon)
 
 DEFINE_SET_FIELD_BY_NAME_FUNC(PreconSetFieldByName, Precon_args, Precon_field_offset_map,
                               Precon_NUM_FIELDS)
-DEFINE_GET_VALID_KEYS_FUNC(PreconGetValidKeys, Precon_NUM_FIELDS, Precon_field_offset_map)
+DEFINE_GET_VALID_KEYS_FUNC(hypredrv_PreconGetValidKeys, Precon_NUM_FIELDS, Precon_field_offset_map)
 
 /*-----------------------------------------------------------------------------
- * PreconGetValidValues
+ * hypredrv_PreconGetValidValues
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-PreconGetValidValues(const char *key)
+hypredrv_PreconGetValidValues(const char *key)
 {
    (void)key;
    /* The "preconditioner" entry does not hold values, so we create a void map */
@@ -40,11 +40,11 @@ PreconGetValidValues(const char *key)
 }
 
 /*-----------------------------------------------------------------------------
- * PreconGetValidTypeIntMap
+ * hypredrv_PreconGetValidTypeIntMap
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-PreconGetValidTypeIntMap(void)
+hypredrv_PreconGetValidTypeIntMap(void)
 {
    static StrIntMap map[] = {
       {"amg", (int)PRECON_BOOMERAMG},
@@ -57,17 +57,17 @@ PreconGetValidTypeIntMap(void)
 }
 
 /*-----------------------------------------------------------------------------
- * PreconSetDefaultArgs
+ * hypredrv_PreconSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
 void
-PreconSetDefaultArgs(precon_args *args)
+hypredrv_PreconSetDefaultArgs(precon_args *args)
 {
    args->reuse = 0;
 }
 
 void
-PreconReuseSetDefaultArgs(PreconReuse_args *args)
+hypredrv_PreconReuseSetDefaultArgs(PreconReuse_args *args)
 {
    if (!args)
    {
@@ -81,7 +81,7 @@ PreconReuseSetDefaultArgs(PreconReuse_args *args)
 }
 
 void
-PreconReuseDestroyArgs(PreconReuse_args *args)
+hypredrv_PreconReuseDestroyArgs(PreconReuse_args *args)
 {
    if (!args)
    {
@@ -90,7 +90,7 @@ PreconReuseDestroyArgs(PreconReuse_args *args)
 
    if (args->linear_system_ids)
    {
-      IntArrayDestroy(&args->linear_system_ids);
+      hypredrv_IntArrayDestroy(&args->linear_system_ids);
    }
 
    args->frequency    = 0;
@@ -161,64 +161,64 @@ PreconReuseFindTimestepIndex(const IntArray *starts, int ls_id)
 }
 
 void
-PreconReuseTimestepsClear(IntArray **timestep_starts)
+hypredrv_PreconReuseTimestepsClear(IntArray **timestep_starts)
 {
    if (!timestep_starts)
    {
       return;
    }
 
-   IntArrayDestroy(timestep_starts);
+   hypredrv_IntArrayDestroy(timestep_starts);
 }
 
 uint32_t
-PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *filename,
+hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *filename,
                          IntArray **timestep_starts)
 {
    if (!args || !timestep_starts)
    {
-      return ErrorCodeGet();
+      return hypredrv_ErrorCodeGet();
    }
 
-   PreconReuseTimestepsClear(timestep_starts);
+   hypredrv_PreconReuseTimestepsClear(timestep_starts);
 
    if (!args->enabled || !args->per_timestep)
    {
-      return ErrorCodeGet();
+      return hypredrv_ErrorCodeGet();
    }
 
    if (!filename || filename[0] == '\0')
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd(
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
          "preconditioner.reuse.per_timestep requires linear_system.timestep_filename");
-      return ErrorCodeGet();
+      return hypredrv_ErrorCodeGet();
    }
 
    FILE *fp = fopen(filename, "r");
    if (!fp)
    {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAdd("Could not open timestep file: '%s'", filename);
-      return ErrorCodeGet();
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Could not open timestep file: '%s'", filename);
+      return hypredrv_ErrorCodeGet();
    }
 
    int total = 0;
    if (fscanf(fp, "%d", &total) != 1 || total <= 0)
    {
       fclose(fp);
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Invalid timestep file header in '%s'", filename);
-      return ErrorCodeGet();
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid timestep file header in '%s'", filename);
+      return hypredrv_ErrorCodeGet();
    }
 
-   IntArray *starts = IntArrayCreate((size_t)total);
+   IntArray *starts = hypredrv_IntArrayCreate((size_t)total);
    if (!starts)
    {
       fclose(fp);
-      ErrorCodeSet(ERROR_ALLOCATION);
-      ErrorMsgAdd("Failed to allocate timestep starts array");
-      return ErrorCodeGet();
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate timestep starts array");
+      return hypredrv_ErrorCodeGet();
    }
 
    for (int i = 0; i < total; i++)
@@ -228,10 +228,10 @@ PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *filename,
       if (fscanf(fp, "%d %d", &timestep, &ls_start) != 2 || ls_start < 0)
       {
          fclose(fp);
-         IntArrayDestroy(&starts);
-         ErrorCodeSet(ERROR_INVALID_VAL);
-         ErrorMsgAdd("Invalid timestep entry in '%s' at line %d", filename, i + 2);
-         return ErrorCodeGet();
+         hypredrv_IntArrayDestroy(&starts);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Invalid timestep entry in '%s' at line %d", filename, i + 2);
+         return hypredrv_ErrorCodeGet();
       }
       starts->data[i] = ls_start;
       (void)timestep;
@@ -239,11 +239,11 @@ PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *filename,
 
    fclose(fp);
    *timestep_starts = starts;
-   return ErrorCodeGet();
+   return hypredrv_ErrorCodeGet();
 }
 
 int
-PreconReuseShouldRecompute(const PreconReuse_args *args, const IntArray *timestep_starts,
+hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *args, const IntArray *timestep_starts,
                            int next_ls_id)
 {
    if (!args)
@@ -281,7 +281,7 @@ PreconReuseShouldRecompute(const PreconReuse_args *args, const IntArray *timeste
 }
 
 void
-PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
+hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
 {
    if (!args || !parent)
    {
@@ -293,8 +293,8 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    {
       if (sscanf(parent->val, "%d", &args->frequency) != 1)
       {
-         ErrorCodeSet(ERROR_INVALID_VAL);
-         ErrorMsgAdd("Invalid preconditioner reuse frequency: '%s'", parent->val);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Invalid preconditioner reuse frequency: '%s'", parent->val);
          YAML_NODE_SET_INVALID_VAL(parent);
          return;
       }
@@ -314,8 +314,8 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          const char *value = child->mapped_val ? child->mapped_val : child->val;
          if (!PreconReuseParseOnOff(value, &args->enabled))
          {
-            ErrorCodeSet(ERROR_INVALID_VAL);
-            ErrorMsgAdd("Invalid value for preconditioner.reuse.enabled: '%s'",
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("Invalid value for preconditioner.reuse.enabled: '%s'",
                         value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
@@ -328,8 +328,8 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          const char *value = child->mapped_val ? child->mapped_val : child->val;
          if (!value || sscanf(value, "%d", &args->frequency) != 1 || args->frequency < 0)
          {
-            ErrorCodeSet(ERROR_INVALID_VAL);
-            ErrorMsgAdd("Invalid value for preconditioner.reuse.frequency: '%s'",
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("Invalid value for preconditioner.reuse.frequency: '%s'",
                         value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
@@ -343,23 +343,23 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          const char *value = child->mapped_val ? child->mapped_val : child->val;
          if (!value)
          {
-            ErrorCodeSet(ERROR_INVALID_VAL);
-            ErrorMsgAdd("Invalid value for preconditioner.reuse.linear_system_ids");
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("Invalid value for preconditioner.reuse.linear_system_ids");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
          }
 
          IntArray *ids = NULL;
-         StrToIntArray(value, &ids);
+         hypredrv_StrToIntArray(value, &ids);
          if (!ids)
          {
-            ErrorCodeSet(ERROR_INVALID_VAL);
-            ErrorMsgAdd("Failed to parse preconditioner.reuse.linear_system_ids");
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("Failed to parse preconditioner.reuse.linear_system_ids");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
          }
 
-         IntArrayDestroy(&args->linear_system_ids);
+         hypredrv_IntArrayDestroy(&args->linear_system_ids);
          args->linear_system_ids = ids;
          seen_linear_system_ids  = 1;
          YAML_NODE_SET_VALID(child);
@@ -369,8 +369,8 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          const char *value = child->mapped_val ? child->mapped_val : child->val;
          if (!PreconReuseParseOnOff(value, &args->per_timestep))
          {
-            ErrorCodeSet(ERROR_INVALID_VAL);
-            ErrorMsgAdd("Invalid value for preconditioner.reuse.per_timestep: '%s'",
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("Invalid value for preconditioner.reuse.per_timestep: '%s'",
                         value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
@@ -380,8 +380,8 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       }
       else
       {
-         ErrorCodeSet(ERROR_INVALID_KEY);
-         ErrorMsgAdd("Unknown key under preconditioner.reuse: '%s'", child->key);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+         hypredrv_ErrorMsgAdd("Unknown key under preconditioner.reuse: '%s'", child->key);
          YAML_NODE_SET_INVALID_KEY(child);
          return;
       }
@@ -394,8 +394,8 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
 
    if (seen_linear_system_ids && (seen_frequency || seen_per_timestep))
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("preconditioner.reuse.linear_system_ids cannot be combined with "
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("preconditioner.reuse.linear_system_ids cannot be combined with "
                   "frequency or per_timestep");
       YAML_NODE_SET_INVALID_VAL(parent);
       return;
@@ -403,21 +403,21 @@ PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
 
    if (!args->enabled)
    {
-      IntArrayDestroy(&args->linear_system_ids);
+      hypredrv_IntArrayDestroy(&args->linear_system_ids);
       args->frequency    = 0;
       args->per_timestep = 0;
    }
 }
 
 void
-PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
+hypredrv_PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
 {
    if (!args)
    {
       return;
    }
 
-   PreconSetDefaultArgs(args);
+   hypredrv_PreconSetDefaultArgs(args);
 
    switch (method)
    {
@@ -440,27 +440,27 @@ PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
 }
 
 /*-----------------------------------------------------------------------------
- * PreconSetArgsFromYAML
+ * hypredrv_PreconSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
 void
-PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
+hypredrv_PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 {
    if (!parent || !parent->children)
    {
       return;
    }
 
-   YAMLSetArgsGeneric((void *)args, parent, PreconGetValidKeys, PreconGetValidValues,
+   hypredrv_YAMLSetArgsGeneric((void *)args, parent, hypredrv_PreconGetValidKeys, hypredrv_PreconGetValidValues,
                       PreconSetFieldByName);
 }
 
 /*-----------------------------------------------------------------------------
- * PreconCreate
+ * hypredrv_PreconCreate
  *-----------------------------------------------------------------------------*/
 
 void
-PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
+hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
              HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr)
 {
    HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
@@ -473,24 +473,24 @@ PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
          break;
 
       case PRECON_MGR:
-         MGRSetDofmap(&args->mgr, dofmap);
-         MGRSetNearNullSpace(&args->mgr, vec_nn);
-         MGRCreate(&args->mgr, &precon->main);
+         hypredrv_MGRSetDofmap(&args->mgr, dofmap);
+         hypredrv_MGRSetNearNullSpace(&args->mgr, vec_nn);
+         hypredrv_MGRCreate(&args->mgr, &precon->main);
          break;
 
       case PRECON_ILU:
-         ILUCreate(&args->ilu, &precon->main);
+         hypredrv_ILUCreate(&args->ilu, &precon->main);
          break;
 
       case PRECON_FSAI:
-         FSAICreate(&args->fsai, &precon->main);
+         hypredrv_FSAICreate(&args->fsai, &precon->main);
          break;
 
       case PRECON_NONE:
          break;
 
       default:
-         ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          free(precon);
          *precon_ptr = NULL;
          return;
@@ -500,11 +500,11 @@ PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
 }
 
 /*-----------------------------------------------------------------------------
- * PreconSetup
+ * hypredrv_PreconSetup
  *-----------------------------------------------------------------------------*/
 
 void
-PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A)
+hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A)
 {
    void              *vA    = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
@@ -524,8 +524,8 @@ PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A)
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_MGRSetup(prec, par_A, par_b, par_x);
 #else
-         ErrorCodeSet(ERROR_INVALID_PRECON);
-         ErrorMsgAdd("MGR requires hypre >= 2.19.0");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
 #endif
          break;
 
@@ -533,8 +533,8 @@ PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A)
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_ILUSetup(prec, par_A, par_b, par_x);
 #else
-         ErrorCodeSet(ERROR_INVALID_PRECON);
-         ErrorMsgAdd("ILU requires hypre >= 2.19.0");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
 #endif
          break;
 
@@ -542,8 +542,8 @@ PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A)
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
          HYPRE_FSAISetup(prec, par_A, par_b, par_x);
 #else
-         ErrorCodeSet(ERROR_INVALID_PRECON);
-         ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
 #endif
          break;
 
@@ -551,7 +551,7 @@ PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A)
          break;
 
       default:
-         ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          break;
    }
 
@@ -560,11 +560,11 @@ PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A)
 }
 
 /*-----------------------------------------------------------------------------
- * PreconApply
+ * hypredrv_PreconApply
  *-----------------------------------------------------------------------------*/
 
 void
-PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
+hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
             HYPRE_IJVector b, HYPRE_IJVector x)
 {
    void              *vA = NULL, *vb = NULL, *vx = NULL;
@@ -589,8 +589,8 @@ PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_MGRSolve(prec, par_A, par_b, par_x);
 #else
-         ErrorCodeSet(ERROR_INVALID_PRECON);
-         ErrorMsgAdd("MGR requires hypre >= 2.19.0");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
 #endif
          break;
 
@@ -598,8 +598,8 @@ PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_ILUSolve(prec, par_A, par_b, par_x);
 #else
-         ErrorCodeSet(ERROR_INVALID_PRECON);
-         ErrorMsgAdd("ILU requires hypre >= 2.19.0");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
 #endif
          break;
 
@@ -607,8 +607,8 @@ PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
          HYPRE_FSAISolve(prec, par_A, par_b, par_x);
 #else
-         ErrorCodeSet(ERROR_INVALID_PRECON);
-         ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
 #endif
          break;
 
@@ -616,7 +616,7 @@ PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
          break;
 
       default:
-         ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          break;
    }
 
@@ -653,8 +653,8 @@ DestroyNestedMGRFRelaxInnerSolver(MGR_args *mgr, int i,
 static void
 DestroyNestedMGRFRelaxAtLevel(MGR_args *mgr, int i)
 {
-   HYPRE_Solver nested_mgr_solver = MGRNestedFRelaxWrapperGetInner(mgr->frelax[i]);
-   MGRNestedFRelaxWrapperFree(&mgr->frelax[i]);
+   HYPRE_Solver nested_mgr_solver = hypredrv_MGRNestedFRelaxWrapperGetInner(mgr->frelax[i]);
+   hypredrv_MGRNestedFRelaxWrapperFree(&mgr->frelax[i]);
    DestroyNestedMGRFRelaxInnerSolver(mgr, i, &nested_mgr_solver);
 }
 #endif
@@ -665,8 +665,8 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
 #if !HYPRE_CHECK_MIN_VERSION(21900, 0)
    (void)mgr;
    (void)solver_ptr;
-   ErrorCodeSet(ERROR_INVALID_PRECON);
-   ErrorMsgAdd("MGR requires hypre >= 2.19.0");
+   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+   hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
 #else
    if (!mgr)
    {
@@ -688,7 +688,7 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    if (mgr->num_levels > 1 && mgr->frelax[0] &&
        mgr->level[0].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
    {
-      detached_nested_lvl0_frelax = MGRNestedFRelaxWrapperDetachInner(mgr->frelax[0]);
+      detached_nested_lvl0_frelax = hypredrv_MGRNestedFRelaxWrapperDetachInner(mgr->frelax[0]);
       /* hypre destroys the wrapper object inside HYPRE_MGRDestroy() on these versions. */
       mgr->frelax[0] = NULL;
    }
@@ -713,7 +713,7 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    /* TODO: should MGR free these internally? */
    if (mgr->coarsest_level.use_krylov && mgr->coarsest_level.krylov)
    {
-      NestedKrylovDestroy(mgr->coarsest_level.krylov);
+      hypredrv_NestedKrylovDestroy(mgr->coarsest_level.krylov);
    }
    else if (mgr->csolver)
    {
@@ -742,7 +742,7 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
       if (mgr->level[i].f_relaxation.use_krylov && mgr->level[i].f_relaxation.krylov)
       {
          mgr->level[i].f_relaxation.krylov->base_solver = NULL;
-         NestedKrylovDestroy(mgr->level[i].f_relaxation.krylov);
+         hypredrv_NestedKrylovDestroy(mgr->level[i].f_relaxation.krylov);
       }
       else if (i == 0 && mgr->frelax[i])
       {
@@ -779,18 +779,18 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
       if (mgr->level[i].g_relaxation.use_krylov && mgr->level[i].g_relaxation.krylov)
       {
          mgr->level[i].g_relaxation.krylov->base_solver = NULL;
-         NestedKrylovDestroy(mgr->level[i].g_relaxation.krylov);
+         hypredrv_NestedKrylovDestroy(mgr->level[i].g_relaxation.krylov);
       }
    }
 #endif
 }
 
 /*-----------------------------------------------------------------------------
- * PreconDestroy
+ * hypredrv_PreconDestroy
  *-----------------------------------------------------------------------------*/
 
 void
-PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_ptr)
+hypredrv_PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_ptr)
 {
    HYPRE_Precon precon = *precon_ptr;
 

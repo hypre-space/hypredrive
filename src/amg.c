@@ -17,64 +17,64 @@
 
 /* AMG's interpolation fields */
 #define AMGint_FIELDS(_prefix)                                         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, FieldTypeDoubleSet)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, hypredrv_FieldTypeIntSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, hypredrv_FieldTypeDoubleSet)
 
 /* AMG's coarsening fields */
 #define AMGcsn_FIELDS(_prefix)                                        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, rap2, FieldTypeIntSet)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, mod_rap2, FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, keep_transpose, FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_functions, FieldTypeIntSet)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, filter_functions, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, nodal, FieldTypeIntSet)            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, seq_amg_th, FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, min_coarse_size, FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_coarse_size, FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_levels, FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_sum, FieldTypeDoubleSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, strong_th, FieldTypeDoubleSet)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rap2, hypredrv_FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, mod_rap2, hypredrv_FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, keep_transpose, hypredrv_FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_functions, hypredrv_FieldTypeIntSet)    \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, filter_functions, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, nodal, hypredrv_FieldTypeIntSet)            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, seq_amg_th, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, min_coarse_size, hypredrv_FieldTypeIntSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_coarse_size, hypredrv_FieldTypeIntSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_levels, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_sum, hypredrv_FieldTypeDoubleSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, strong_th, hypredrv_FieldTypeDoubleSet)
 
 /* AMG's aggressive coarsening fields */
 #define AMGagg_FIELDS(_prefix)                                           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_paths, FieldTypeIntSet)           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, FieldTypeDoubleSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, P12_max_elements, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, P12_trunc_factor, FieldTypeDoubleSet)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, hypredrv_FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_paths, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, hypredrv_FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, hypredrv_FieldTypeDoubleSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, P12_max_elements, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, P12_trunc_factor, hypredrv_FieldTypeDoubleSet)
 
 /* AMG's relaxation fields */
 #define AMGrlx_FIELDS(_prefix)                                       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, down_type, FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, up_type, FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_type, FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, down_sweeps, FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, up_sweeps, FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_sweeps, FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, order, FieldTypeIntSet)           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, weight, FieldTypeDoubleSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, outer_weight, FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, down_type, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, up_type, hypredrv_FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_type, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, down_sweeps, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, up_sweeps, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_sweeps, hypredrv_FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, order, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, weight, hypredrv_FieldTypeDoubleSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, outer_weight, hypredrv_FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, chebyshev, hypredrv_ChebySetArgs)
 
 /* AMG's complex smoother fields */
 #define AMGsmt_FIELDS(_prefix)                                  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, hypredrv_FSAISetArgs)  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, hypredrv_ILUSetArgs)
 
 /* AMG */
 #define AMG_FIELDS(_prefix)                                               \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, hypredrv_FieldTypeDoubleSet)         \
    ADD_FIELD_OFFSET_ENTRY(_prefix, interpolation, hypredrv_AMGintSetArgs) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, aggressive, hypredrv_AMGaggSetArgs)    \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarsening, hypredrv_AMGcsnSetArgs)    \
@@ -103,7 +103,7 @@
 /* Iterates over each prefix in the list and
    generates the various function declarations/definitions and field_offset_map object */
 GENERATE_PREFIXED_LIST_AMG                      // LCOV_EXCL_LINE
-DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_AMG) // LCOV_EXCL_LINE
+hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_AMG) // LCOV_EXCL_LINE
 
    /*-----------------------------------------------------------------------------
     * hypredrv_AMGintSetDefaultArgs
@@ -445,8 +445,8 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    {
       if (args->coarsening.nodal)
       {
-         ErrorCodeSet(ERROR_UNKNOWN);
-         ErrorMsgAdd("Near null space vectors (RBMs) required"
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("Near null space vectors (RBMs) required"
                      " for nodal coarsening, but not set");
       }
       return;

@@ -49,36 +49,36 @@ LinearSystemSetSuffixSet(void *field, const YAMLnode *node)
    IntArray  **ptr = (IntArray **)field;
    const char *val = node->mapped_val ? node->mapped_val : node->val;
 
-   IntArrayDestroy(ptr);
+   hypredrv_IntArrayDestroy(ptr);
    if (val && strlen(val) > 0)
    {
-      StrToIntArray(val, ptr);
+      hypredrv_StrToIntArray(val, ptr);
    }
 }
 
 static const FieldOffsetMap ls_field_offset_map[] = {
-   FIELD_OFFSET_MAP_ENTRY(LS_args, dirname, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, sequence_filename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_basename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_filename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_basename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_filename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_basename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, xref_filename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, xref_basename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, x0_filename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, sol_filename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, timestep_filename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_basename, FieldTypeStringSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, digits_suffix, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, init_suffix, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, last_suffix, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, dirname, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, sequence_filename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_basename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_filename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_basename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_filename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_basename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, xref_filename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, xref_basename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, x0_filename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, sol_filename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_filename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, timestep_filename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, dofmap_basename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, digits_suffix, hypredrv_FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, init_suffix, hypredrv_FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, last_suffix, hypredrv_FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, set_suffix, LinearSystemSetSuffixSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, hypredrv_FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, hypredrv_FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, type, hypredrv_FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, hypredrv_EigSpecSetArgs),
 };
 
@@ -217,8 +217,8 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
    /* Sanity: check if the number of entries matches the expected local size */
    if (loc_expected != num_entries)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("Number of entries (%d) does not match the expected local size (%d)",
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("Number of entries (%d) does not match the expected local size (%d)",
                   num_entries, loc_expected);
       return;
    }
@@ -366,7 +366,7 @@ LinearSystemMultipartCanRead(MPI_Comm comm, const char *prefixname)
    int nparts = 0;
 
    MPI_Comm_size(comm, &nprocs);
-   nparts = CountNumberOfPartitions(prefixname);
+   nparts = hypredrv_CountNumberOfPartitions(prefixname);
    return (nparts >= nprocs) != 0;
 }
 
@@ -375,11 +375,11 @@ LinearSystemIJVectorReadFromFile(MPI_Comm comm, const char *filename,
                                  HYPRE_MemoryLocation memory_location,
                                  HYPRE_IJVector      *vector_ptr)
 {
-   if (CheckBinaryDataExists(filename))
+   if (hypredrv_CheckBinaryDataExists(filename))
    {
       if (LinearSystemMultipartCanRead(comm, filename))
       {
-         int nparts = CountNumberOfPartitions(filename);
+         int nparts = hypredrv_CountNumberOfPartitions(filename);
          hypredrv_IJVectorReadMultipartBinary(filename, comm, (uint64_t)nparts,
                                               memory_location, vector_ptr);
       }
@@ -442,22 +442,22 @@ LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
 
    if (args->type == 1)
    {
-      if (CheckBinaryDataExists(matrix_filename))
+      if (hypredrv_CheckBinaryDataExists(matrix_filename))
       {
          if (LinearSystemMultipartCanRead(comm, matrix_filename))
          {
-            int nparts = CountNumberOfPartitions(matrix_filename);
+            int nparts = hypredrv_CountNumberOfPartitions(matrix_filename);
             hypredrv_IJMatrixReadMultipartBinary(matrix_filename, comm, (uint64_t)nparts,
                                                  memory_location, matrix_ptr);
          }
          else
          {
-            ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-            ErrorMsgAddInvalidFilename(matrix_filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+            hypredrv_ErrorMsgAddInvalidFilename(matrix_filename);
             return 0;
          }
       }
-      else if (CheckASCIIDataExists(matrix_filename))
+      else if (hypredrv_CheckASCIIDataExists(matrix_filename))
       {
          HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
       }
@@ -477,8 +477,8 @@ LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
 
    if (HYPRE_GetError() || file_not_found)
    {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAddInvalidFilename(matrix_filename);
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename(matrix_filename);
       return 0;
    }
 
@@ -505,8 +505,8 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
    if (args->set_suffix != NULL && args->set_suffix->size > 0 &&
        (args->init_suffix >= 0 || args->last_suffix >= 0))
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd(
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
          "linear_system: set_suffix cannot be used with init_suffix or last_suffix");
    }
 }
@@ -519,10 +519,10 @@ void
 hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
                                 HYPRE_IJMatrix *matrix_ptr, Stats *stats)
 {
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "matrix");
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "matrix");
 
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int  ls_id                                = StatsGetLinearSystemID(stats) + 1;
+   int  ls_id                                = hypredrv_StatsGetLinearSystemID(stats) + 1;
 
    /* Destroy matrix if it already exists */
    if (*matrix_ptr)
@@ -535,11 +535,11 @@ hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
       if (!hypredrv_LSSeqReadMatrix(comm, args->sequence_filename, ls_id,
                                     LinearSystemMemoryLocationGet(args), matrix_ptr))
       {
-         StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+         hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
          return;
       }
 
-      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
       return;
    }
 
@@ -547,19 +547,19 @@ hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
                                         args->matrix_basename, matrix_filename,
                                         sizeof(matrix_filename)))
    {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAddInvalidFilename("");
-      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename("");
+      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
       return;
    }
 
    if (!LinearSystemIJMatrixReadFromFile(comm, args, matrix_filename, matrix_ptr))
    {
-      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
       return;
    }
 
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
 }
 
 /*-----------------------------------------------------------------------------
@@ -658,8 +658,8 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
       file = fopen(rhs_filename, "r");
       if (file == NULL)
       {
-         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         ErrorMsgAdd("Cannot open file %s", rhs_filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAdd("Cannot open file %s", rhs_filename);
          M = -1;
       }
       else
@@ -668,8 +668,8 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
          {
             if (fgets(line, sizeof(line), file) == NULL)
             {
-               ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-               ErrorMsgAdd("Unexpected end of file or error reading %s", rhs_filename);
+               hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+               hypredrv_ErrorMsgAdd("Unexpected end of file or error reading %s", rhs_filename);
                M = -1;
                break;
             }
@@ -696,23 +696,23 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
             }
             else
             {
-               ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-               ErrorMsgAdd("Failed to read vector dimensions from %s", rhs_filename);
+               hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+               hypredrv_ErrorMsgAdd("Failed to read vector dimensions from %s", rhs_filename);
                M = -1;
                N = 0;
             }
 
             if (N != 1)
             {
-               ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-               ErrorMsgAdd("File %s is not a vector (N=" HYPRE_BIG_INT_SSCANF ")",
+               hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+               hypredrv_ErrorMsgAdd("File %s is not a vector (N=" HYPRE_BIG_INT_SSCANF ")",
                            rhs_filename, N);
                M = -1;
             }
             else if (M != global_num_rows)
             {
-               ErrorCodeSet(ERROR_UNKNOWN);
-               ErrorMsgAdd("RHS vector size " HYPRE_BIG_INT_SSCANF
+               hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+               hypredrv_ErrorMsgAdd("RHS vector size " HYPRE_BIG_INT_SSCANF
                            " does not match matrix size " HYPRE_BIG_INT_SSCANF,
                            M, global_num_rows);
                M = -1;
@@ -725,8 +725,8 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
                   char *endptr = NULL;
                   if (fgets(line, sizeof(line), file) == NULL)
                   {
-                     ErrorCodeSet(ERROR_UNKNOWN);
-                     ErrorMsgAdd("Error reading value for index " HYPRE_BIG_INT_SSCANF
+                     hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+                     hypredrv_ErrorMsgAdd("Error reading value for index " HYPRE_BIG_INT_SSCANF
                                  " from %s",
                                  i, rhs_filename);
                      M = -1;
@@ -735,8 +735,8 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
                   double tmp_val = strtod(line, &endptr);
                   if (endptr == line || (*endptr != '\0' && *endptr != '\n'))
                   {
-                     ErrorCodeSet(ERROR_UNKNOWN);
-                     ErrorMsgAdd("Error converting value for index " HYPRE_BIG_INT_SSCANF
+                     hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+                     hypredrv_ErrorMsgAdd("Error converting value for index " HYPRE_BIG_INT_SSCANF
                                  " from %s",
                                  i, rhs_filename);
                      M = -1;
@@ -871,8 +871,8 @@ LinearSystemRHSReadFromFile(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
 
    if (HYPRE_GetError())
    {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAddInvalidFilename(rhs_filename);
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename(rhs_filename);
       return 0;
    }
 
@@ -888,9 +888,9 @@ hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
                             HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr,
                             Stats *stats)
 {
-   int ls_id = StatsGetLinearSystemID(stats) + 1;
+   int ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
 
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "rhs");
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "rhs");
 
    if (*xref_ptr)
    {
@@ -914,7 +914,7 @@ hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
          if (!hypredrv_LSSeqReadRHS(comm, args->sequence_filename, ls_id,
                                     LinearSystemMemoryLocationGet(args), rhs_ptr))
          {
-            StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
+            hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
             return;
          }
       }
@@ -926,13 +926,13 @@ hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
                                          sizeof(rhs_filename));
          if (!LinearSystemRHSReadFromFile(comm, args, mat, rhs_filename, rhs_ptr))
          {
-            StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
+            hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
             return;
          }
       }
    }
 
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
 }
 
 /*-----------------------------------------------------------------------------
@@ -1030,7 +1030,7 @@ hypredrv_LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
                                           HYPRE_IJVector *xref_ptr, const Stats *stats)
 {
    char xref_filename[MAX_FILENAME_LENGTH] = {0};
-   int  ls_id                              = StatsGetLinearSystemID(stats) + 1;
+   int  ls_id                              = hypredrv_StatsGetLinearSystemID(stats) + 1;
 
    /* Keep the existing reference solution (e.g., rhs_mode = randsol) unless a file is
     * explicitly requested. */
@@ -1053,8 +1053,8 @@ hypredrv_LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
    /* Check if hypre had problems reading the input file */
    if (HYPRE_GetError())
    {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAddInvalidFilename(xref_filename);
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename(xref_filename);
       *xref_ptr = NULL;
    }
    else
@@ -1073,12 +1073,12 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
    HYPRE_ParVector par_x0 = NULL, par_x = NULL;
    void           *obj_x0 = NULL, *obj_x = NULL;
 
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
 
    if (!x0_ptr || !x_ptr)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
       return;
    }
 
@@ -1090,7 +1090,7 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
 
    HYPRE_ParVectorCopy(par_x0, par_x);
 
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
 }
 
 /*-----------------------------------------------------------------------------
@@ -1144,7 +1144,7 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
    /* Set matrix filename */
    if (args->dirname[0] != '\0' && args->precmat_filename[0] != '\0')
    {
-      int ls_id = StatsGetLinearSystemID(stats) + 1;
+      int ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
       snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d/%.*s",
                (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
                hypredrv_LinearSystemGetSuffix(args, ls_id),
@@ -1156,7 +1156,7 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
    }
    else if (args->precmat_basename[0] != '\0')
    {
-      int ls_id = StatsGetLinearSystemID(stats) + 1;
+      int ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
       snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d",
                (int)strlen(args->precmat_basename), args->precmat_basename,
                (int)args->digits_suffix, hypredrv_LinearSystemGetSuffix(args, ls_id));
@@ -1186,29 +1186,29 @@ void
 hypredrv_LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **dofmap_ptr,
                                 Stats *stats)
 {
-   int ls_id = StatsGetLinearSystemID(stats) + 1;
+   int ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
 
    /* Destroy pre-existing dofmap */
    if (*dofmap_ptr)
    {
-      IntArrayDestroy(dofmap_ptr);
+      hypredrv_IntArrayDestroy(dofmap_ptr);
    }
 
    if (args->sequence_filename[0] != '\0')
    {
-      StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
+      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
       if (!hypredrv_LSSeqReadDofmap(comm, args->sequence_filename, ls_id, dofmap_ptr))
       {
-         StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
+         hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
          return;
       }
-      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
+      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
       return;
    }
 
    if (args->dofmap_filename[0] == '\0' && args->dofmap_basename[0] == '\0')
    {
-      *dofmap_ptr = IntArrayCreate(0);
+      *dofmap_ptr = hypredrv_IntArrayCreate(0);
    }
    else
    {
@@ -1234,11 +1234,11 @@ hypredrv_LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **d
       }
 
       /* Destroy previous dofmap array */
-      IntArrayDestroy(dofmap_ptr);
+      hypredrv_IntArrayDestroy(dofmap_ptr);
 
-      StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
-      IntArrayParRead(comm, dofmap_filename, dofmap_ptr);
-      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
+      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
+      hypredrv_IntArrayParRead(comm, dofmap_filename, dofmap_ptr);
+      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
    }
 
    /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks
@@ -1297,14 +1297,14 @@ hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type
 
    if (!vec || !norm)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       return;
    }
 
    HYPRE_IJVectorGetObject(vec, &obj);
    if (!obj)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       *norm = -1.0;
       return;
    }
@@ -1314,7 +1314,7 @@ hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type
    seq_vec = hypre_ParVectorLocalVector(par_vec);
    if (!seq_vec)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       *norm = -1.0;
       return;
    }
@@ -1322,7 +1322,7 @@ hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type
    data = hypre_VectorData(seq_vec);
    if (!data)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       *norm = -1.0;
       return;
    }
@@ -1330,7 +1330,7 @@ hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type
    size = hypre_VectorSize(seq_vec);
    if (size < 0)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       *norm = -1.0;
       return;
    }
@@ -1574,8 +1574,8 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
    }
    else
    {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAdd("Matrix not set; skipping matrix print.");
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Matrix not set; skipping matrix print.");
    }
 
    if (vec_b)
@@ -1584,12 +1584,12 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
    }
    else
    {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAdd("RHS not set; skipping vector print.");
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("RHS not set; skipping vector print.");
    }
 
    if (dofmap && dofmap->data)
    {
-      IntArrayWriteAsciiByRank(comm, dofmap, d_path);
+      hypredrv_IntArrayWriteAsciiByRank(comm, dofmap, d_path);
    }
 }

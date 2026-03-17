@@ -14,9 +14,9 @@
 static void
 YAMLnodeValidateMap(YAMLnode *node, StrIntMapArray map_array)
 {
-   if (StrIntMapArrayDomainEntryExists(map_array, node->val))
+   if (hypredrv_StrIntMapArrayDomainEntryExists(map_array, node->val))
    {
-      int mapped = StrIntMapArrayGetImage(map_array, node->val);
+      int mapped = hypredrv_StrIntMapArrayGetImage(map_array, node->val);
       int length = snprintf(NULL, 0, "%d", mapped) + 1;
 
       if (!node->mapped_val)
@@ -39,7 +39,7 @@ YAMLnodeValidateMap(YAMLnode *node, StrIntMapArray map_array)
 }
 
 void
-YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
+hypredrv_YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
                        YAMLGetValidValuesFunc get_vals)
 {
    if (!node)
@@ -61,7 +61,7 @@ YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
    }
 
    StrArray keys = get_keys();
-   if (StrArrayEntryExists(keys, node->key))
+   if (hypredrv_StrArrayEntryExists(keys, node->key))
    {
       StrIntMapArray map_array_key = get_vals(node->key);
       if (map_array_key.size > 0)
@@ -90,7 +90,7 @@ YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
 }
 
 void
-YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc get_keys,
+hypredrv_YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc get_keys,
                    YAMLGetValidValuesFunc get_vals, YAMLSetFieldByNameFunc set_field)
 {
    if (!parent)
@@ -103,7 +103,7 @@ YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc get_keys,
       /* Case 1: Nested structure - iterate over children */
       for (YAMLnode *child = parent->children; child != NULL; child = child->next)
       {
-         YAMLnodeValidateSchema(child, get_keys, get_vals);
+         hypredrv_YAMLnodeValidateSchema(child, get_keys, get_vals);
          if (child->valid == YAML_NODE_VALID)
          {
             set_field(args, child);
@@ -118,7 +118,7 @@ YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc get_keys,
       parent->key = (char *)malloc(5 * sizeof(char));
       snprintf(parent->key, 5, "type");
 
-      YAMLnodeValidateSchema(parent, get_keys, get_vals);
+      hypredrv_YAMLnodeValidateSchema(parent, get_keys, get_vals);
       if (parent->valid == YAML_NODE_VALID)
       {
          set_field(args, parent);
@@ -132,16 +132,16 @@ YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc get_keys,
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLtreeCreate
+ * hypredrv_YAMLtreeCreate
  *-----------------------------------------------------------------------------*/
 
 YAMLtree *
-YAMLtreeCreate(int base_indent)
+hypredrv_YAMLtreeCreate(int base_indent)
 {
    YAMLtree *tree = NULL;
 
    tree               = malloc(sizeof(YAMLtree));
-   tree->root         = YAMLnodeCreate("", "", -1);
+   tree->root         = hypredrv_YAMLnodeCreate("", "", -1);
    tree->base_indent  = base_indent;
    tree->is_validated = false; // Initialize validation flag
 
@@ -149,28 +149,28 @@ YAMLtreeCreate(int base_indent)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLtreeDestroy
+ * hypredrv_YAMLtreeDestroy
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLtreeDestroy(YAMLtree **tree_ptr)
+hypredrv_YAMLtreeDestroy(YAMLtree **tree_ptr)
 {
    YAMLtree *tree = *tree_ptr;
 
    if (tree)
    {
-      YAMLnodeDestroy(tree->root);
+      hypredrv_YAMLnodeDestroy(tree->root);
       free(tree);
       *tree_ptr = NULL;
    }
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLtextRead
+ * hypredrv_YAMLtextRead
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLtextRead(const char *dirname, const char *basename, int level, int *base_indent_ptr,
+hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level, int *base_indent_ptr,
              size_t *length_ptr, char **text_ptr)
 {
    FILE  *fp  = NULL;
@@ -187,14 +187,14 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
    bool   first_indented_line = true;
 
    /* Construct the whole filename */
-   CombineFilename(dirname, basename, &filename);
+   hypredrv_CombineFilename(dirname, basename, &filename);
 
    /* Open file */
    fp = fopen(filename, "r");
    if (!fp)
    {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAddInvalidFilename(filename);
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename(filename);
       free(filename);
       return;
    }
@@ -234,8 +234,8 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
       {
          if (line[pos] == '\t')
          {
-            ErrorCodeSet(ERROR_YAML_MIXED_INDENT);
-            ErrorMsgAdd("Tab characters are not allowed in YAML input!");
+            hypredrv_ErrorCodeSet(ERROR_YAML_MIXED_INDENT);
+            hypredrv_ErrorMsgAdd("Tab characters are not allowed in YAML input!");
             fclose(fp);
             /* Free any allocated text before returning */
             if (*text_ptr)
@@ -265,8 +265,8 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
          *base_indent_ptr = base_indent = pos;
          if (base_indent < 2)
          {
-            ErrorCodeSet(ERROR_YAML_INVALID_BASE_INDENT);
-            ErrorMsgAdd("Base indentation in YAML input must be at least 2 spaces");
+            hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_BASE_INDENT);
+            hypredrv_ErrorMsgAdd("Base indentation in YAML input must be at least 2 spaces");
             fclose(fp);
             /* Free any allocated text before returning */
             if (*text_ptr)
@@ -284,8 +284,8 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
       {
          if (base_indent > 0 && pos % base_indent != 0)
          {
-            ErrorCodeSet(ERROR_YAML_INCONSISTENT_INDENT);
-            ErrorMsgAdd("Inconsistent indentation detected in YAML input!");
+            hypredrv_ErrorCodeSet(ERROR_YAML_INCONSISTENT_INDENT);
+            hypredrv_ErrorMsgAdd("Inconsistent indentation detected in YAML input!");
             fclose(fp);
             /* Free any allocated text before returning */
             if (*text_ptr)
@@ -310,8 +310,8 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
             /* Be tolerant to avoid false positives with deeper nesting */
             if (jump > max_allowed * 2)
             {
-               ErrorCodeSet(ERROR_YAML_INVALID_INDENT_JUMP);
-               ErrorMsgAdd("Invalid indentation jump detected in YAML input!");
+               hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_INDENT_JUMP);
+               hypredrv_ErrorMsgAdd("Invalid indentation jump detected in YAML input!");
                fclose(fp);
                /* Free any allocated text before returning */
                if (*text_ptr)
@@ -363,7 +363,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
          inner_level = pos / (base_indent > 0 ? base_indent : 1);
 
          /* Recursively read the content of the included file */
-         YAMLtextRead(dirname, val, inner_level, base_indent_ptr, length_ptr, text_ptr);
+         hypredrv_YAMLtextRead(dirname, val, inner_level, base_indent_ptr, length_ptr, text_ptr);
       }
       else
       {
@@ -405,7 +405,7 @@ YAMLtextRead(const char *dirname, const char *basename, int level, int *base_ind
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLtreeBuild
+ * hypredrv_YAMLtreeBuild
  *-----------------------------------------------------------------------------*/
 
 typedef struct YAMLtoken_struct
@@ -478,8 +478,8 @@ YAMLtokenArrayReserve(YAMLtokenArray *arr, int min_capacity)
    new_data = (YAMLtoken *)realloc(arr->data, (size_t)new_capacity * sizeof(YAMLtoken));
    if (!new_data)
    {
-      ErrorCodeSet(ERROR_ALLOCATION);
-      ErrorMsgAdd("Failed to allocate YAML token buffer");
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate YAML token buffer");
       return false;
    }
 
@@ -558,8 +558,8 @@ YAMLtokenSetString(char **dst, const char *src)
    char *copy = strdup(src ? src : "");
    if (!copy)
    {
-      ErrorCodeSet(ERROR_ALLOCATION);
-      ErrorMsgAdd("Failed to allocate YAML token string");
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate YAML token string");
       return false;
    }
    *dst = copy;
@@ -648,8 +648,8 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
          char *inline_val  = NULL;
          if (!inline_copy)
          {
-            ErrorCodeSet(ERROR_ALLOCATION);
-            ErrorMsgAdd("Failed to allocate YAML inline mapping copy");
+            hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+            hypredrv_ErrorMsgAdd("Failed to allocate YAML inline mapping copy");
             return -1;
          }
 
@@ -733,8 +733,8 @@ YAMLtokenizeText(const char *text, int base_indent, YAMLtokenArray *tokens)
    text_copy = strdup(text ? text : "");
    if (!text_copy)
    {
-      ErrorCodeSet(ERROR_ALLOCATION);
-      ErrorMsgAdd("Failed to allocate YAML text copy for tokenization");
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate YAML text copy for tokenization");
       return false;
    }
 
@@ -768,23 +768,23 @@ static void
 YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
                         YAMLtree **tree_ptr)
 {
-   YAMLtree *tree   = YAMLtreeCreate(base_indent);
+   YAMLtree *tree   = hypredrv_YAMLtreeCreate(base_indent);
    YAMLnode *parent = tree->root;
 
    for (int i = 0; i < tokens->size; i++)
    {
       const YAMLtoken *token = &tokens->data[i];
-      YAMLnode        *node  = YAMLnodeCreate(token->key, token->val, token->level);
+      YAMLnode        *node  = hypredrv_YAMLnodeCreate(token->key, token->val, token->level);
       YAMLnode        *validation_node = node;
 
-      YAMLnodeAppend(node, &parent);
+      hypredrv_YAMLnodeAppend(node, &parent);
 
       /* "- key: value" inline mapping under sequence item */
       if (token->is_sequence_item && token->inline_key && token->inline_val)
       {
          YAMLnode *inline_node =
-            YAMLnodeCreate(token->inline_key, token->inline_val, token->level + 1);
-         YAMLnodeAddChild(node, inline_node);
+            hypredrv_YAMLnodeCreate(token->inline_key, token->inline_val, token->level + 1);
+         hypredrv_YAMLnodeAddChild(node, inline_node);
          parent          = inline_node;
          validation_node = inline_node;
       }
@@ -811,7 +811,7 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
 }
 
 void
-YAMLtreeBuild(int base_indent, const char *text, YAMLtree **tree_ptr)
+hypredrv_YAMLtreeBuild(int base_indent, const char *text, YAMLtree **tree_ptr)
 {
    YAMLtokenArray tokens;
 
@@ -827,12 +827,12 @@ YAMLtreeBuild(int base_indent, const char *text, YAMLtree **tree_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLtreeUpdate
+ * hypredrv_YAMLtreeUpdate
  *
  * Update a YAML tree with information passed via command line
  *-----------------------------------------------------------------------------*/
 
-/* Helpers for YAMLtreeUpdate */
+/* Helpers for hypredrv_YAMLtreeUpdate */
 static void
 YAMLnodeDestroyChildren(YAMLnode *node)
 {
@@ -845,7 +845,7 @@ YAMLnodeDestroyChildren(YAMLnode *node)
    while (child)
    {
       YAMLnode *next = child->next;
-      YAMLnodeDestroy(child);
+      hypredrv_YAMLnodeDestroy(child);
       child = next;
    }
    node->children = NULL;
@@ -872,10 +872,10 @@ YAMLnodeSetScalarValue(YAMLnode *node, const char *val)
    YAMLnodeClearMappedVal(node);
 
    free(node->val);
-   node->val = StrTrim(strdup(val ? val : ""));
+   node->val = hypredrv_StrTrim(strdup(val ? val : ""));
    if (!strstr(node->key, "name"))
    {
-      StrToLowerCase(node->val);
+      hypredrv_StrToLowerCase(node->val);
    }
    node->valid = YAML_NODE_UNKNOWN;
 }
@@ -901,11 +901,11 @@ YAMLnodeEnsureMapping(YAMLnode *node)
 static YAMLnode *
 YAMLnodeGetOrCreateChild(YAMLnode *parent, const char *key)
 {
-   YAMLnode *child = YAMLnodeFindChildByKey(parent, key);
+   YAMLnode *child = hypredrv_YAMLnodeFindChildByKey(parent, key);
    if (!child)
    {
-      child = YAMLnodeCreate(key, "", parent->level + 1);
-      YAMLnodeAddChild(parent, child);
+      child = hypredrv_YAMLnodeCreate(key, "", parent->level + 1);
+      hypredrv_YAMLnodeAddChild(parent, child);
    }
    return child;
 }
@@ -968,7 +968,7 @@ YAMLnodeCloneDeep(const YAMLnode *src, int level_offset)
    {
       return NULL;
    }
-   YAMLnode *clone = YAMLnodeCreate(src->key, src->val, src->level + level_offset);
+   YAMLnode *clone = hypredrv_YAMLnodeCreate(src->key, src->val, src->level + level_offset);
    clone->valid    = src->valid;
    if (src->mapped_val)
    {
@@ -977,7 +977,7 @@ YAMLnodeCloneDeep(const YAMLnode *src, int level_offset)
    YAML_NODE_ITERATE(src, child_src)
    {
       YAMLnode *child_clone = YAMLnodeCloneDeep(child_src, level_offset);
-      YAMLnodeAddChild(clone, child_clone);
+      hypredrv_YAMLnodeAddChild(clone, child_clone);
    }
    return clone;
 }
@@ -1022,8 +1022,8 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
                      free(paths[j]);
                   }
                   free(paths);
-                  ErrorCodeSet(ERROR_ALLOCATION);
-                  ErrorMsgAdd("Failed to allocate memory for include paths");
+                  hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+                  hypredrv_ErrorMsgAdd("Failed to allocate memory for include paths");
                   return;
                }
                paths            = new_paths;
@@ -1034,13 +1034,13 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
          /* Remove the include node before inserting new nodes */
          YAMLnodeRemoveChild(node, child);
          /* Free removed subtree (include node + its list items) to avoid leaks */
-         YAMLnodeDestroy(child);
+         hypredrv_YAMLnodeDestroy(child);
 
          for (int i = 0; i < n_paths; i++)
          {
             char *inc_dir  = NULL;
             char *inc_base = NULL;
-            SplitFilename(paths[i], &inc_dir, &inc_base);
+            hypredrv_SplitFilename(paths[i], &inc_dir, &inc_base);
 
             int    inc_base_indent = base_indent;
             size_t inc_len         = 0;
@@ -1049,24 +1049,24 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
             const char *use_dir = (!inc_dir || !strlen(inc_dir) || !strcmp(inc_dir, "."))
                                      ? base_dir
                                      : inc_dir;
-            YAMLtextRead(use_dir, inc_base ? inc_base : paths[i], 0, &inc_base_indent,
+            hypredrv_YAMLtextRead(use_dir, inc_base ? inc_base : paths[i], 0, &inc_base_indent,
                          &inc_len, &inc_text);
             if (inc_text)
             {
                YAMLtree *inc_tree = NULL;
-               YAMLtreeBuild(inc_base_indent, inc_text, &inc_tree);
+               hypredrv_YAMLtreeBuild(inc_base_indent, inc_text, &inc_tree);
 
                /* Wrap included content as a sequence item */
-               YAMLnode *seq_node = YAMLnodeCreate("-", "", include_level);
+               YAMLnode *seq_node = hypredrv_YAMLnodeCreate("-", "", include_level);
                YAML_NODE_ITERATE(inc_tree->root, inc_child)
                {
                   YAMLnode *clone =
                      YAMLnodeCloneDeep(inc_child, include_level - inc_child->level + 1);
-                  YAMLnodeAddChild(seq_node, clone);
+                  hypredrv_YAMLnodeAddChild(seq_node, clone);
                }
-               YAMLnodeAddChild(node, seq_node);
+               hypredrv_YAMLnodeAddChild(node, seq_node);
 
-               YAMLtreeDestroy(&inc_tree);
+               hypredrv_YAMLtreeDestroy(&inc_tree);
                free(inc_text);
             }
 
@@ -1106,7 +1106,7 @@ YAMLargsFindConfigFileIndex(int argc, char **argv)
 {
    for (int i = 0; i < argc; i++)
    {
-      if (argv[i] && IsYAMLFilename(argv[i]))
+      if (argv[i] && hypredrv_IsYAMLFilename(argv[i]))
       {
          return i;
       }
@@ -1115,7 +1115,7 @@ YAMLargsFindConfigFileIndex(int argc, char **argv)
 }
 
 /*-----------------------------------------------------------------------------
- * Helpers for YAMLtreeUpdate (must be file-scope for Clang; no nested functions)
+ * Helpers for hypredrv_YAMLtreeUpdate (must be file-scope for Clang; no nested functions)
  *-----------------------------------------------------------------------------*/
 
 typedef struct YAMLOverridePathCtx_struct
@@ -1170,11 +1170,11 @@ YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int star
             {
                if (!strcmp(seq_item->key, "-"))
                {
-                  YAMLnode *item_leaf = YAMLnodeFindChildByKey(seq_item, seg_const);
+                  YAMLnode *item_leaf = hypredrv_YAMLnodeFindChildByKey(seq_item, seg_const);
                   if (!item_leaf)
                   {
-                     item_leaf = YAMLnodeCreate(seg_const, value, seq_item->level + 1);
-                     YAMLnodeAddChild(seq_item, item_leaf);
+                     item_leaf = hypredrv_YAMLnodeCreate(seg_const, value, seq_item->level + 1);
+                     hypredrv_YAMLnodeAddChild(seq_item, item_leaf);
                   }
                   else
                   {
@@ -1186,11 +1186,11 @@ YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int star
             return; /* Done */
          }
 
-         YAMLnode *leaf = YAMLnodeFindChildByKey(cur, seg_const);
+         YAMLnode *leaf = hypredrv_YAMLnodeFindChildByKey(cur, seg_const);
          if (!leaf)
          {
-            leaf = YAMLnodeCreate(seg_const, value, cur->level + 1);
-            YAMLnodeAddChild(cur, leaf);
+            leaf = hypredrv_YAMLnodeCreate(seg_const, value, cur->level + 1);
+            hypredrv_YAMLnodeAddChild(cur, leaf);
          }
          else
          {
@@ -1202,12 +1202,12 @@ YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int star
 }
 
 void
-YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
+hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 {
    if (!tree || !tree->root)
    {
-      ErrorCodeSet(ERROR_YAML_TREE_NULL);
-      ErrorMsgAdd("Cannot update a void YAML tree!");
+      hypredrv_ErrorCodeSet(ERROR_YAML_TREE_NULL);
+      hypredrv_ErrorMsgAdd("Cannot update a void YAML tree!");
       return;
    }
 
@@ -1272,8 +1272,8 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
    /* In full-argv mode, enforce pairs after -a. In pair-list mode, enforce pairs too. */
    if ((n_override_tokens % 2) != 0)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Invalid CLI overrides: expected pairs of '--path:to:key value'");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid CLI overrides: expected pairs of '--path:to:key value'");
       return;
    }
 
@@ -1291,8 +1291,8 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
           * anyway), but keep strictness in pair-list mode. */
          if (!full_argv_mode)
          {
-            ErrorCodeSet(ERROR_INVALID_KEY);
-            ErrorMsgAdd("Invalid override key '%s' (expected --path:to:key)", k);
+            hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+            hypredrv_ErrorMsgAdd("Invalid override key '%s' (expected --path:to:key)", k);
             return;
          }
          continue;
@@ -1300,16 +1300,16 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 
       if (i + 1 >= argc)
       {
-         ErrorCodeSet(ERROR_INVALID_VAL);
-         ErrorMsgAdd("Missing value for override '%s'", k);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Missing value for override '%s'", k);
          return;
       }
 
       const char *v = argv[i + 1];
       if (!v || (strncmp(v, "--", 2) == 0))
       {
-         ErrorCodeSet(ERROR_INVALID_VAL);
-         ErrorMsgAdd("Missing value for override '%s'", k);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Missing value for override '%s'", k);
          return;
       }
 
@@ -1336,8 +1336,8 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 
          if (num_segments == 0)
          {
-            ErrorCodeSet(ERROR_INVALID_KEY);
-            ErrorMsgAdd("Invalid override path: '%s'", k);
+            hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+            hypredrv_ErrorMsgAdd("Invalid override path: '%s'", k);
             free(path);
             return;
          }
@@ -1359,20 +1359,20 @@ YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLtreePrint
+ * hypredrv_YAMLtreePrint
  *
  * Prints all nodes in a tree
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
+hypredrv_YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
 {
    YAMLnode *child = NULL;
 
    if (!tree)
    {
-      ErrorCodeSet(ERROR_YAML_TREE_NULL);
-      ErrorMsgAdd("Cannot print a void YAML tree!");
+      hypredrv_ErrorCodeSet(ERROR_YAML_TREE_NULL);
+      hypredrv_ErrorMsgAdd("Cannot print a void YAML tree!");
       return;
    }
 
@@ -1380,32 +1380,32 @@ YAMLtreePrint(YAMLtree *tree, YAMLprintMode print_mode)
    child = tree->root->children;
    while (child != NULL)
    {
-      YAMLnodePrint(child, print_mode);
+      hypredrv_YAMLnodePrint(child, print_mode);
       child = child->next;
    }
    PRINT_DASHED_LINE(MAX_DIVISOR_LENGTH);
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLtreeValidate
+ * hypredrv_YAMLtreeValidate
  *
  * Validates all nodes in a tree and sets appropriate error codes
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLtreeValidate(YAMLtree *tree)
+hypredrv_YAMLtreeValidate(YAMLtree *tree)
 {
    if (!tree)
    {
-      ErrorCodeSet(ERROR_YAML_TREE_NULL);
-      ErrorMsgAdd("Cannot validate a void YAML tree!");
+      hypredrv_ErrorCodeSet(ERROR_YAML_TREE_NULL);
+      hypredrv_ErrorMsgAdd("Cannot validate a void YAML tree!");
       return;
    }
 
    YAMLnode *child = tree->root->children;
    while (child != NULL)
    {
-      YAMLnodeValidate(child);
+      hypredrv_YAMLnodeValidate(child);
       child = child->next;
    }
 
@@ -1413,7 +1413,7 @@ YAMLtreeValidate(YAMLtree *tree)
 }
 
 void
-YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
+hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
 {
    if (!tree || !tree->root)
    {
@@ -1428,17 +1428,17 @@ YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
  *******************************************************************************/
 
 /*-----------------------------------------------------------------------------
- * YAMLnodeCreate
+ * hypredrv_YAMLnodeCreate
  *-----------------------------------------------------------------------------*/
 
 YAMLnode *
-YAMLnodeCreate(const char *key, const char *val, int level)
+hypredrv_YAMLnodeCreate(const char *key, const char *val, int level)
 {
    YAMLnode *node = NULL;
 
    node             = (YAMLnode *)malloc(sizeof(YAMLnode));
    node->level      = level;
-   node->key        = StrTrim(strdup((char *)key));
+   node->key        = hypredrv_StrTrim(strdup((char *)key));
    node->mapped_val = NULL;
    node->valid      = YAML_NODE_UNKNOWN;
    node->parent     = NULL;
@@ -1449,11 +1449,11 @@ YAMLnodeCreate(const char *key, const char *val, int level)
       Otherwise, "node->val" will be set as "val" with all lowercase letters */
    if (strstr(key, "name"))
    {
-      node->val = StrTrim(strdup((char *)val));
+      node->val = hypredrv_StrTrim(strdup((char *)val));
    }
    else
    {
-      node->val = StrToLowerCase(StrTrim(strdup((char *)val)));
+      node->val = hypredrv_StrToLowerCase(hypredrv_StrTrim(strdup((char *)val)));
       /* Strip surrounding double quotes if present */
       size_t len = strlen(node->val);
       if (len >= 2 && node->val[0] == '\"' && node->val[len - 1] == '\"')
@@ -1467,13 +1467,13 @@ YAMLnodeCreate(const char *key, const char *val, int level)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLnodeDestroy
+ * hypredrv_YAMLnodeDestroy
  *
  * Destroys a node via depth-first search (DFS)
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLnodeDestroy(YAMLnode *node)
+hypredrv_YAMLnodeDestroy(YAMLnode *node)
 {
    YAMLnode *child = NULL;
    YAMLnode *next  = NULL;
@@ -1487,7 +1487,7 @@ YAMLnodeDestroy(YAMLnode *node)
    while (child != NULL)
    {
       next = child->next;
-      YAMLnodeDestroy(child);
+      hypredrv_YAMLnodeDestroy(child);
       child = next;
    }
    free(node->key);
@@ -1497,13 +1497,13 @@ YAMLnodeDestroy(YAMLnode *node)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLnodeAddChild
+ * hypredrv_YAMLnodeAddChild
  *
  * Adds a "child" node as the first child of the "parent" node.
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLnodeAddChild(YAMLnode *parent, YAMLnode *child)
+hypredrv_YAMLnodeAddChild(YAMLnode *parent, YAMLnode *child)
 {
    YAMLnode *node = NULL;
 
@@ -1524,13 +1524,13 @@ YAMLnodeAddChild(YAMLnode *parent, YAMLnode *child)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLnodeAppend
+ * hypredrv_YAMLnodeAppend
  *
  * Appends a node to the tree
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLnodeAppend(YAMLnode *node, YAMLnode **previous_ptr)
+hypredrv_YAMLnodeAppend(YAMLnode *node, YAMLnode **previous_ptr)
 {
    YAMLnode *previous       = *previous_ptr;
    int       previous_level = previous->level;
@@ -1538,12 +1538,12 @@ YAMLnodeAppend(YAMLnode *node, YAMLnode **previous_ptr)
    if (node->level > previous_level)
    {
       /* Add child to current parent */
-      YAMLnodeAddChild(previous, node);
+      hypredrv_YAMLnodeAddChild(previous, node);
    }
    else if (node->level == previous_level)
    {
       /* Add sibling to children's list and keep the current parent */
-      YAMLnodeAddChild(previous->parent, node);
+      hypredrv_YAMLnodeAddChild(previous->parent, node);
    }
    else
    {
@@ -1554,7 +1554,7 @@ YAMLnodeAppend(YAMLnode *node, YAMLnode **previous_ptr)
       }
 
       /* Add ancestor */
-      YAMLnodeAddChild(previous->parent, node);
+      hypredrv_YAMLnodeAddChild(previous->parent, node);
    }
 
    /* Update pointer to previous node */
@@ -1576,11 +1576,11 @@ YAMLnodePrintHelper(const YAMLnode *node, const char *cKey, const char *cVal,
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLnodeValidate
+ * hypredrv_YAMLnodeValidate
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLnodeValidate(YAMLnode *node)
+hypredrv_YAMLnodeValidate(YAMLnode *node)
 {
    if (!node)
    {
@@ -1597,24 +1597,24 @@ YAMLnodeValidate(YAMLnode *node)
    switch (node->valid)
    {
       case YAML_NODE_INVALID_INDENT:
-         ErrorCodeSet(ERROR_YAML_INVALID_INDENT);
+         hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_INDENT);
          break;
 
       case YAML_NODE_INVALID_DIVISOR:
-         ErrorCodeSet(ERROR_YAML_INVALID_DIVISOR);
+         hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_DIVISOR);
          break;
 
       case YAML_NODE_INVALID_KEY:
-         ErrorCodeSet(ERROR_INVALID_KEY);
-         ErrorCodeSet(ERROR_MAYBE_INVALID_VAL);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+         hypredrv_ErrorCodeSet(ERROR_MAYBE_INVALID_VAL);
          break;
 
       case YAML_NODE_INVALID_VAL:
-         ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          break;
 
       case YAML_NODE_UNEXPECTED_VAL:
-         ErrorCodeSet(ERROR_UNEXPECTED_VAL);
+         hypredrv_ErrorCodeSet(ERROR_UNEXPECTED_VAL);
          break;
 
       default:
@@ -1625,17 +1625,17 @@ YAMLnodeValidate(YAMLnode *node)
    YAMLnode *child = node->children;
    while (child != NULL)
    {
-      YAMLnodeValidate(child);
+      hypredrv_YAMLnodeValidate(child);
       child = child->next;
    }
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLnodePrint
+ * hypredrv_YAMLnodePrint
  *-----------------------------------------------------------------------------*/
 
 void
-YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
+hypredrv_YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
 {
    if (!node)
    {
@@ -1745,14 +1745,14 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
       YAMLnode *gc = inline_child->children;
       while (gc)
       {
-         YAMLnodePrint(gc, print_mode);
+         hypredrv_YAMLnodePrint(gc, print_mode);
          gc = gc->next;
       }
 
       YAMLnode *sib = inline_child->next;
       while (sib)
       {
-         YAMLnodePrint(sib, print_mode);
+         hypredrv_YAMLnodePrint(sib, print_mode);
          sib = sib->next;
       }
    }
@@ -1761,20 +1761,20 @@ YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
       YAMLnode *child_iter = node->children;
       while (child_iter != NULL)
       {
-         YAMLnodePrint(child_iter, print_mode);
+         hypredrv_YAMLnodePrint(child_iter, print_mode);
          child_iter = child_iter->next;
       }
    }
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLnodeFindByKey
+ * hypredrv_YAMLnodeFindByKey
  *
  * Finds a node by key starting from the input "node" via DFS.
  *-----------------------------------------------------------------------------*/
 
 YAMLnode *
-YAMLnodeFindByKey(YAMLnode *node, const char *key)
+hypredrv_YAMLnodeFindByKey(YAMLnode *node, const char *key)
 {
    YAMLnode *child = NULL;
 
@@ -1788,7 +1788,7 @@ YAMLnodeFindByKey(YAMLnode *node, const char *key)
       child = node->children;
       while (child)
       {
-         YAMLnode *found = YAMLnodeFindByKey(child, key);
+         YAMLnode *found = hypredrv_YAMLnodeFindByKey(child, key);
          if (found)
          {
             return found;
@@ -1801,13 +1801,13 @@ YAMLnodeFindByKey(YAMLnode *node, const char *key)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLnodeFindChildByKey
+ * hypredrv_YAMLnodeFindChildByKey
  *
  * Finds a node by key in the parent's children list.
  *-----------------------------------------------------------------------------*/
 
 YAMLnode *
-YAMLnodeFindChildByKey(YAMLnode *parent, const char *key)
+hypredrv_YAMLnodeFindChildByKey(YAMLnode *parent, const char *key)
 {
    YAMLnode *child = NULL;
 
@@ -1828,13 +1828,13 @@ YAMLnodeFindChildByKey(YAMLnode *parent, const char *key)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLnodeFindChildValueByKey
+ * hypredrv_YAMLnodeFindChildValueByKey
  *
  * Finds a value by key in the parent's children list.
  *-----------------------------------------------------------------------------*/
 
 char *
-YAMLnodeFindChildValueByKey(YAMLnode *parent, const char *key)
+hypredrv_YAMLnodeFindChildValueByKey(YAMLnode *parent, const char *key)
 {
    YAMLnode *child = NULL;
 
@@ -1855,7 +1855,7 @@ YAMLnodeFindChildValueByKey(YAMLnode *parent, const char *key)
 }
 
 /*-----------------------------------------------------------------------------
- * YAMLnodeCollectSequenceItems
+ * hypredrv_YAMLnodeCollectSequenceItems
  *
  * Collect direct children with key == "-" into a newly allocated array.
  * Caller owns the array (but NOT the nodes) and must free it.
@@ -1863,7 +1863,7 @@ YAMLnodeFindChildValueByKey(YAMLnode *parent, const char *key)
  *-----------------------------------------------------------------------------*/
 
 int
-YAMLnodeCollectSequenceItems(YAMLnode *parent, YAMLnode ***items_out)
+hypredrv_YAMLnodeCollectSequenceItems(YAMLnode *parent, YAMLnode ***items_out)
 {
    if (!parent || !items_out)
    {

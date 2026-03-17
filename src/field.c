@@ -8,81 +8,81 @@
 #include "field.h"
 
 /*-----------------------------------------------------------------------------
- * FieldTypeIntSet
+ * hypredrv_FieldTypeIntSet
  *-----------------------------------------------------------------------------*/
 
 void
-FieldTypeIntSet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeIntSet(void *field, const YAMLnode *node)
 {
    sscanf(node->mapped_val, "%d", (int *)field);
 }
 
 /*-----------------------------------------------------------------------------
- * FieldTypeIntArraySet
+ * hypredrv_FieldTypeIntArraySet
  *-----------------------------------------------------------------------------*/
 
 void
-FieldTypeIntArraySet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeIntArraySet(void *field, const YAMLnode *node)
 {
    IntArray *int_array = NULL;
 
-   StrToIntArray(node->mapped_val, &int_array);
+   hypredrv_StrToIntArray(node->mapped_val, &int_array);
 
    *((void **)field) = int_array;
 }
 
 /*-----------------------------------------------------------------------------
- * FieldTypeStackIntArraySet
+ * hypredrv_FieldTypeStackIntArraySet
  *-----------------------------------------------------------------------------*/
 
 void
-FieldTypeStackIntArraySet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeStackIntArraySet(void *field, const YAMLnode *node)
 {
    StackIntArray *int_array = ((StackIntArray *)field);
 
-   StrToStackIntArray(node->mapped_val, int_array);
+   hypredrv_StrToStackIntArray(node->mapped_val, int_array);
 }
 
 /*-----------------------------------------------------------------------------
- * FieldTypeDoubleSet
+ * hypredrv_FieldTypeDoubleSet
  *-----------------------------------------------------------------------------*/
 
 void
-FieldTypeDoubleSet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeDoubleSet(void *field, const YAMLnode *node)
 {
    sscanf(node->mapped_val, "%lf", (double *)field);
 }
 
 /*-----------------------------------------------------------------------------
- * FieldTypeCharSet
+ * hypredrv_FieldTypeCharSet
  *-----------------------------------------------------------------------------*/
 
 void
-FieldTypeCharSet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeCharSet(void *field, const YAMLnode *node)
 {
    sscanf(node->mapped_val, "%c", (char *)field);
 }
 
 /*-----------------------------------------------------------------------------
- * FieldTypeStringSet
+ * hypredrv_FieldTypeStringSet
  *-----------------------------------------------------------------------------*/
 
 void
-FieldTypeStringSet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeStringSet(void *field, const YAMLnode *node)
 {
    snprintf((char *)field, MAX_FILENAME_LENGTH, "%s", node->mapped_val);
 }
 
 /*-----------------------------------------------------------------------------
- * FieldTypeDoubleArraySet
+ * hypredrv_FieldTypeDoubleArraySet
  *-----------------------------------------------------------------------------*/
 
 void
-FieldTypeDoubleArraySet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeDoubleArraySet(void *field, const YAMLnode *node)
 {
    DoubleArray *double_array = NULL;
 
-   StrToDoubleArray(node->mapped_val, &double_array);
+   hypredrv_StrToDoubleArray(node->mapped_val, &double_array);
 
    *((void **)field) = double_array;
 }

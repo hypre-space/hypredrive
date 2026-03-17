@@ -13,13 +13,13 @@
  *-----------------------------------------------------------------------------*/
 
 #define FGMRES_FIELDS(_prefix)                                       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, hypredrv_FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, hypredrv_FieldTypeDoubleSet)
 
 /* Define num_fields macro */
 #define FGMRES_NUM_FIELDS \
@@ -28,7 +28,7 @@
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
 GENERATE_PREFIXED_COMPONENTS(FGMRES)               // LCOV_EXCL_LINE
-DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_FGMRES) // LCOV_EXCL_LINE
+hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_FGMRES) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * FGMRESSetDefaultArgs

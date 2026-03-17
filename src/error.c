@@ -199,11 +199,11 @@ ErrorBacktraceSymbolsPrint(void)
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorBacktracePrint
+ * hypredrv_ErrorBacktracePrint
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorBacktracePrint(void)
+hypredrv_ErrorBacktracePrint(void)
 {
    const char *HYPREDRV_NO_BACKTRACE = getenv("HYPREDRV_NO_BACKTRACE");
    if (HYPREDRV_NO_BACKTRACE)
@@ -341,11 +341,11 @@ ErrorBacktracePrint(void)
 #else
 
 /*-----------------------------------------------------------------------------
- * ErrorBacktracePrint
+ * hypredrv_ErrorBacktracePrint
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorBacktracePrint(void)
+hypredrv_ErrorBacktracePrint(void)
 {
    /* Backtrace not supported on this platform */
 }
@@ -440,11 +440,11 @@ ErrorStateRecordMessageDrop(ErrorState *state)
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorCodeSet
+ * hypredrv_ErrorCodeSet
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorCodeSet(ErrorCode code)
+hypredrv_ErrorCodeSet(ErrorCode code)
 {
    ErrorState *state = ErrorStateGet();
 
@@ -453,31 +453,31 @@ ErrorCodeSet(ErrorCode code)
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorCodeGet
+ * hypredrv_ErrorCodeGet
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-ErrorCodeGet(void)
+hypredrv_ErrorCodeGet(void)
 {
    return ErrorStateGet()->code;
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorCodeActive
+ * hypredrv_ErrorCodeActive
  *-----------------------------------------------------------------------------*/
 
 bool
-ErrorCodeActive(void)
+hypredrv_ErrorCodeActive(void)
 {
    return (ErrorStateGet()->code != ERROR_NONE);
 }
 
 /*-----------------------------------------------------------------------------
- * DistributedErrorCodeActive
+ * hypredrv_DistributedErrorCodeActive
  *-----------------------------------------------------------------------------*/
 
 bool
-DistributedErrorCodeActive(MPI_Comm comm)
+hypredrv_DistributedErrorCodeActive(MPI_Comm comm)
 {
    uint32_t flag = 0;
    uint32_t code = ErrorStateGet()->code;
@@ -488,69 +488,69 @@ DistributedErrorCodeActive(MPI_Comm comm)
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorCodeDescribe
+ * hypredrv_ErrorCodeDescribe
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorCodeDescribe(uint32_t code)
+hypredrv_ErrorCodeDescribe(uint32_t code)
 {
    if (code & ERROR_YAML_INVALID_INDENT)
    {
-      ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_INDENT, "invalid indendation");
+      hypredrv_ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_INDENT, "invalid indendation");
    }
 
    if (code & ERROR_YAML_INVALID_DIVISOR)
    {
-      ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_DIVISOR, "invalid divisor");
+      hypredrv_ErrorMsgAddCodeWithCount(ERROR_YAML_INVALID_DIVISOR, "invalid divisor");
    }
 
    if (code & ERROR_INVALID_KEY)
    {
-      ErrorMsgAddCodeWithCount(ERROR_INVALID_KEY, "invalid key");
+      hypredrv_ErrorMsgAddCodeWithCount(ERROR_INVALID_KEY, "invalid key");
    }
 
    if (code & ERROR_INVALID_VAL)
    {
-      ErrorMsgAddCodeWithCount(ERROR_INVALID_VAL, "invalid value");
+      hypredrv_ErrorMsgAddCodeWithCount(ERROR_INVALID_VAL, "invalid value");
    }
 
    if (code & ERROR_UNEXPECTED_VAL)
    {
-      ErrorMsgAddCodeWithCount(ERROR_UNEXPECTED_VAL, "unexpected value");
+      hypredrv_ErrorMsgAddCodeWithCount(ERROR_UNEXPECTED_VAL, "unexpected value");
    }
 
    if (code & ERROR_MAYBE_INVALID_VAL)
    {
-      ErrorMsgAddCodeWithCount(ERROR_MAYBE_INVALID_VAL, "possibly invalid value");
+      hypredrv_ErrorMsgAddCodeWithCount(ERROR_MAYBE_INVALID_VAL, "possibly invalid value");
    }
 
    if (code & ERROR_MISSING_DOFMAP)
    {
-      ErrorMsgAdd("Missing dofmap info needed by MGR!");
+      hypredrv_ErrorMsgAdd("Missing dofmap info needed by MGR!");
    }
 
    if (code & ERROR_UNKNOWN_HYPREDRV_OBJ)
    {
-      ErrorMsgAdd("HYPREDRV object is not set properly!!");
+      hypredrv_ErrorMsgAdd("HYPREDRV object is not set properly!!");
    }
 
    if (code & ERROR_HYPREDRV_NOT_INITIALIZED)
    {
-      ErrorMsgAdd("HYPREDRV is not initialized!!");
+      hypredrv_ErrorMsgAdd("HYPREDRV is not initialized!!");
    }
 
    if (code & ERROR_HYPRE_INTERNAL)
    {
-      ErrorMsgAddCodeWithCount(ERROR_HYPRE_INTERNAL, "HYPRE internal error");
+      hypredrv_ErrorMsgAddCodeWithCount(ERROR_HYPRE_INTERNAL, "HYPRE internal error");
    }
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorCodeReset
+ * hypredrv_ErrorCodeReset
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorCodeReset(uint32_t code)
+hypredrv_ErrorCodeReset(uint32_t code)
 {
    ErrorState *state = ErrorStateGet();
 
@@ -567,33 +567,33 @@ ErrorCodeReset(uint32_t code)
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorCodeResetAll
+ * hypredrv_ErrorCodeResetAll
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorCodeResetAll(void)
+hypredrv_ErrorCodeResetAll(void)
 {
    /* Clear *all* bits, including ERROR_UNKNOWN (0x80000000). */
-   ErrorCodeReset(0xFFFFFFFFu);
+   hypredrv_ErrorCodeReset(0xFFFFFFFFu);
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorStateReset
+ * hypredrv_ErrorStateReset
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorStateReset(void)
+hypredrv_ErrorStateReset(void)
 {
-   ErrorMsgClear();
-   ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorMsgAdd
+ * hypredrv_ErrorMsgAdd
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAdd(const char *format, ...)
+hypredrv_ErrorMsgAdd(const char *format, ...)
 {
    ErrorState   *state        = ErrorStateGet();
    ErrorMsgNode *node         = NULL;
@@ -659,73 +659,73 @@ ErrorMsgAddBoundedPieces(const char *prefix, const char *value, const char *suff
 
    if (snprintf(msg, sizeof(msg), "%s%s%s", safe_prefix, safe_value, safe_suffix) < 0)
    {
-      ErrorMsgAdd("%s", "(failed to format error message)");
+      hypredrv_ErrorMsgAdd("%s", "(failed to format error message)");
       return;
    }
 
-   ErrorMsgAdd("%s", msg);
+   hypredrv_ErrorMsgAdd("%s", msg);
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorMsgAddCodeWithCount
+ * hypredrv_ErrorMsgAddCodeWithCount
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
+hypredrv_ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
 {
    uint32_t    count       = ErrorCodeCountGet(ErrorStateGet(), code);
    const char *safe_suffix = suffix ? suffix : "(null)";
    const char *plural      = (count > 1) ? "s" : "";
 
-   ErrorMsgAdd("Found %d %s%s!", (int)count, safe_suffix, plural);
+   hypredrv_ErrorMsgAdd("Found %d %s%s!", (int)count, safe_suffix, plural);
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorMsgAddMissingKey
+ * hypredrv_ErrorMsgAddMissingKey
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAddMissingKey(const char *key)
+hypredrv_ErrorMsgAddMissingKey(const char *key)
 {
    ErrorMsgAddBoundedPieces("Missing key: ", key, "");
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorMsgAddExtraKey
+ * hypredrv_ErrorMsgAddExtraKey
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAddExtraKey(const char *key)
+hypredrv_ErrorMsgAddExtraKey(const char *key)
 {
    ErrorMsgAddBoundedPieces("Extra (unused) key: ", key, "");
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorMsgAddUnexpectedVal
+ * hypredrv_ErrorMsgAddUnexpectedVal
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAddUnexpectedVal(const char *key)
+hypredrv_ErrorMsgAddUnexpectedVal(const char *key)
 {
    ErrorMsgAddBoundedPieces("Unexpected value associated with ", key, " key");
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorMsgAddInvalidFilename
+ * hypredrv_ErrorMsgAddInvalidFilename
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgAddInvalidFilename(const char *string)
+hypredrv_ErrorMsgAddInvalidFilename(const char *string)
 {
    ErrorMsgAddBoundedPieces("Invalid filename: ", string, "");
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorMsgPrint
+ * hypredrv_ErrorMsgPrint
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgPrint(void)
+hypredrv_ErrorMsgPrint(void)
 {
    ErrorState   *state   = ErrorStateGet();
    ErrorMsgNode *current = state->msg_head;
@@ -759,11 +759,11 @@ ErrorMsgPrint(void)
 }
 
 /*-----------------------------------------------------------------------------
- * ErrorMsgClear
+ * hypredrv_ErrorMsgClear
  *-----------------------------------------------------------------------------*/
 
 void
-ErrorMsgClear(void)
+hypredrv_ErrorMsgClear(void)
 {
    ErrorState   *state   = ErrorStateGet();
    ErrorMsgNode *current = state->msg_head;

@@ -61,11 +61,11 @@ test_hypredrv_IJMatrixReadMultipartBinary_success(void)
 
    create_matrix_part(prefix, 0, 0, 0, 1, rows, cols, vals);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    HYPRE_IJMatrixGetObject(mat, &obj);
    ASSERT_NOT_NULL(obj);
@@ -79,11 +79,11 @@ test_hypredrv_IJMatrixReadMultipartBinary_missing_file(void)
 {
    HYPRE_IJMatrix mat = NULL;
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary("missing_matrix", MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST,
                                &mat);
    ASSERT_NULL(mat);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
 }
 
 static void
@@ -102,10 +102,10 @@ test_hypredrv_IJMatrixReadMultipartBinary_short_header(void)
 
    HYPRE_IJMatrix mat = NULL;
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
    ASSERT_NULL(mat);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
    cleanup_temp_files();
 }
@@ -126,10 +126,10 @@ test_hypredrv_IJMatrixReadMultipartBinary_short_header_device_path(void)
    add_temp_file(filename);
 
    HYPRE_IJMatrix mat = NULL;
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
    ASSERT_NULL(mat);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
    cleanup_temp_files();
 }
@@ -159,10 +159,10 @@ test_hypredrv_IJMatrixReadMultipartBinary_uint32_truncated_rows_device_path(void
    add_temp_file(filename);
 
    HYPRE_IJMatrix mat = NULL;
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
    ASSERT_NULL(mat);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
    cleanup_temp_files();
 }
@@ -194,10 +194,10 @@ test_hypredrv_IJMatrixReadMultipartBinary_uint32_truncated_cols_device_path(void
    add_temp_file(filename);
 
    HYPRE_IJMatrix mat = NULL;
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
    ASSERT_NULL(mat);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
    cleanup_temp_files();
 }
@@ -223,10 +223,10 @@ test_hypredrv_IJMatrixReadMultipartBinary_invalid_dtype(void)
 
    HYPRE_IJMatrix mat = NULL;
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
    ASSERT_NULL(mat);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
    cleanup_temp_files();
 }
@@ -244,11 +244,11 @@ test_hypredrv_IJMatrixReadMultipartBinary_uint32_indices(void)
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows32, sizeof(uint32_t), cols32,
                             sizeof(uint32_t), vals, sizeof(double));
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    HYPRE_IJMatrixGetObject(mat, &obj);
    ASSERT_NOT_NULL(obj);
@@ -269,11 +269,11 @@ test_hypredrv_IJMatrixReadMultipartBinary_float_coefficients(void)
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows, sizeof(HYPRE_BigInt), cols,
                             sizeof(HYPRE_BigInt), vals, sizeof(float));
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    HYPRE_IJMatrixDestroy(mat);
    cleanup_temp_files();
@@ -292,11 +292,11 @@ test_hypredrv_IJMatrixReadMultipartBinary_uint32_indices_float_coeffs(void)
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows32, sizeof(uint32_t), cols32,
                             sizeof(uint32_t), vals, sizeof(float));
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    HYPRE_IJMatrixGetObject(mat, &obj);
    ASSERT_NOT_NULL(obj);
@@ -318,11 +318,11 @@ test_hypredrv_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs(void)
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows64, sizeof(uint64_t), cols64,
                             sizeof(uint64_t), vals, sizeof(double));
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    HYPRE_IJMatrixGetObject(mat, &obj);
    ASSERT_NOT_NULL(obj);
@@ -344,11 +344,11 @@ test_hypredrv_IJMatrixReadMultipartBinary_uint64_indices_float_coeffs(void)
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows64, sizeof(uint64_t), cols64,
                             sizeof(uint64_t), vals, sizeof(float));
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    HYPRE_IJMatrixGetObject(mat, &obj);
    ASSERT_NOT_NULL(obj);
@@ -369,10 +369,10 @@ test_hypredrv_IJMatrixReadMultipartBinary_invalid_value_type(void)
    create_matrix_part_typed(prefix, 0, 0, 0, 1, rows, sizeof(HYPRE_BigInt), cols,
                             sizeof(HYPRE_BigInt), vals, 3 /* invalid */);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
    ASSERT_NULL(mat);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
    cleanup_temp_files();
 }
