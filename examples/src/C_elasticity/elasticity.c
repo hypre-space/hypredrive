@@ -94,6 +94,7 @@ typedef struct
    HYPRE_Int  traction_top;      /* Apply traction on y = Ly */
    HYPRE_Real traction[3];       /* Traction vector on top surface */
    char      *yaml_file;         /* YAML configuration file */
+   char      *solver_preset;     /* Example solver preset selector */
 } ElasticParams;
 
 /*--------------------------------------------------------------------------
@@ -122,15 +123,17 @@ static inline HYPRE_BigInt grid2idx(const HYPRE_BigInt gcoords[3],
                                     const HYPRE_Int bcoords[3], const HYPRE_Int gdims[3],
                                     HYPRE_BigInt **pstarts);
 
-int PrintUsage(void);
-int CreateDistMesh(MPI_Comm, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int,
-                   HYPRE_Int, DistMesh **);
-int DestroyDistMesh(DistMesh **);
-int ParseArguments(int, char **, ElasticParams *, int, int);
-int BuildElasticitySystem_Q1Hex(DistMesh *, ElasticParams *, HYPRE_IJMatrix *,
-                                HYPRE_IJVector *, MPI_Comm);
-int WriteVTKsolutionVector(DistMesh *, ElasticParams *, HYPRE_Real *);
-int ComputeRigidBodyModes(DistMesh *, ElasticParams *, HYPRE_Real **);
+int      PrintUsage(void);
+int      CreateDistMesh(MPI_Comm, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int, HYPRE_Int,
+                        HYPRE_Int, DistMesh **);
+int      DestroyDistMesh(DistMesh **);
+int      ParseArguments(int, char **, ElasticParams *, int, int);
+int      BuildElasticitySystem_Q1Hex(DistMesh *, ElasticParams *, HYPRE_IJMatrix *,
+                                     HYPRE_IJVector *, MPI_Comm);
+int      WriteVTKsolutionVector(DistMesh *, ElasticParams *, HYPRE_Real *);
+int      ComputeRigidBodyModes(DistMesh *, ElasticParams *, HYPRE_Real **);
+uint32_t RegisterExamplePreconPresets(void);
+int      ValidateSolverPreset(const char *, int);
 
 /*--------------------------------------------------------------------------
  * Print usage info
@@ -152,6 +155,9 @@ PrintUsage(void)
    printf("  -E <val>          : Young's modulus E (1.0e5)\n");
    printf("  -nu <val>         : Poisson ratio nu (0.3)\n");
    printf("  -rho <val>        : Density rho (1.0)\n");
+   printf("  --solver-preset <name>\n");
+   printf("                    : Solver preset selector (elasticity_3D | ");
+   printf("elasticity_sdc_3D | elasticity_nodal_3D)\n");
    printf("  -ns|--nsolve <n>  : Number of solves (5)\n");
    printf("  -vis <m>          : Visualization mode (0)\n");
    printf("                         0: none\n");
@@ -197,12 +203,22 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
    params->traction[1]       = -100.0;
    params->traction[2]       = 0.0;
    params->yaml_file         = NULL;
+   params->solver_preset     = "elasticity_3D";
 
    for (int i = 1; i < argc; i++)
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
          if (++i < argc) params->yaml_file = argv[i];
+      }
+      else if (!strcmp(argv[i], "--solver-preset"))
+      {
+         if (++i >= argc)
+         {
+            if (!myid) printf("Error: --solver-preset requires one value\n");
+            return 1;
+         }
+         params->solver_preset = argv[i];
       }
       else if (!strcmp(argv[i], "-n"))
       {
@@ -336,7 +352,67 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
       return 1;
    }
 
+   if (ValidateSolverPreset(params->solver_preset, myid))
+   {
+      return 1;
+   }
+
    return 0;
+}
+
+/*--------------------------------------------------------------------------
+ * Register application-local preconditioner presets
+ *--------------------------------------------------------------------------*/
+uint32_t
+RegisterExamplePreconPresets(void)
+{
+   static const char sdc_preset_yaml[]   = "amg:\n"
+                                           "  coarsening:\n"
+                                           "    num_functions: 3\n"
+                                           "    strong_th: 0.8\n"
+                                           "    filter_functions: on";
+   static const char nodal_preset_yaml[] = "amg:\n"
+                                           "  coarsening:\n"
+                                           "    num_functions: 3\n"
+                                           "    strong_th: 0.8\n"
+                                           "    nodal: 1";
+
+   uint32_t err = HYPREDRV_PreconPresetRegister(
+      "elasticity_sdc_3D", sdc_preset_yaml, "Elasticity 3D AMG with function filtering");
+   if (err)
+   {
+      return err;
+   }
+
+   return HYPREDRV_PreconPresetRegister("elasticity_nodal_3D", nodal_preset_yaml,
+                                        "Elasticity 3D AMG with nodal coarsening");
+}
+
+/*--------------------------------------------------------------------------
+ * Validate supported solver preset aliases for this example
+ *--------------------------------------------------------------------------*/
+int
+ValidateSolverPreset(const char *preset, int myid)
+{
+   if (!preset)
+   {
+      if (!myid) printf("Error: --solver-preset cannot be empty\n");
+      return 1;
+   }
+
+   if (!strcmp(preset, "elasticity_3D") || !strcmp(preset, "elasticity_sdc_3D") ||
+       !strcmp(preset, "elasticity_nodal_3D"))
+   {
+      return 0;
+   }
+
+   if (!myid)
+   {
+      printf("Error: Unknown --solver-preset '%s'\n", preset);
+      printf(
+         "       Valid options: elasticity_3D, elasticity_sdc_3D, elasticity_nodal_3D\n");
+   }
+   return 1;
 }
 
 /*--------------------------------------------------------------------------
@@ -1586,6 +1662,7 @@ main(int argc, char *argv[])
 
    /* Initialize hypredrive */
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+   HYPREDRV_SAFE_CALL(RegisterExamplePreconPresets());
 
    /* Print library info if requested */
    if (params.verbose & 0x1)
@@ -1612,8 +1689,8 @@ main(int argc, char *argv[])
    else
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, "pcg"));
-      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "elasticity_3D"));
    }
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, params.solver_preset));
 
    /* Set HYPREDRV global options */
    HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
@@ -1633,6 +1710,7 @@ main(int argc, char *argv[])
       printf("Material:                E=%.1e, nu=%.3f\n", params.E, params.nu);
       printf("Body force:              rho=%.1e, g=(%.1f, %.1f, %.1f)\n", params.rho,
              params.g[0], params.g[1], params.g[2]);
+      printf("Solver preset:           %s\n", params.solver_preset);
       if (params.traction_top)
          printf("Top traction:            t=(%.1e, %.1e, %.1e)\n", params.traction[0],
                 params.traction[1], params.traction[2]);

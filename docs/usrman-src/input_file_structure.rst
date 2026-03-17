@@ -515,8 +515,12 @@ Available presets:
 - ``poisson``: BoomerAMG defaults (same as ``preconditioner: amg`` with defaults).
 - ``elasticity-2D``: BoomerAMG defaults with
   ``coarsening.num_functions = 2`` and ``coarsening.strong_th = 0.8``.
+- ``elasticity-3D``: BoomerAMG defaults with
+  ``coarsening.num_functions = 3`` and ``coarsening.strong_th = 0.8``.
 
 Preset names are case-insensitive.
+Applications can also register additional preset names at runtime with
+``HYPREDRV_PreconPresetRegister()`` before parsing or selecting inputs.
 
 .. _amg:
 
