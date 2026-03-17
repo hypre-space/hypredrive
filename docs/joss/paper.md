@@ -86,7 +86,7 @@ preconditioner: amg
 while `hypredrive` can be executed via
 
 ```bash
-$ mpirun -np 1 ./hypredrive input.yml
+$ mpirun -np 1 ./hypredrive-cli input.yml
 ```
 
 yielding an output that looks like:
@@ -119,7 +119,7 @@ STATISTICS SUMMARY:
 +--------+-------------+-------------+-------------+------------+------------+--------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
-${HYPREDRIVE_PATH}/hypredrive done!
+${HYPREDRIVE_PATH}/hypredrive-cli done!
 ```
 
 This example shows the minimal set of options in `hypredrive`'s input file needed for

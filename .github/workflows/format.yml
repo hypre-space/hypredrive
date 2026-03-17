@@ -38,5 +38,12 @@ jobs:
           find include src examples/src -type f \( -name "*.c" -o -name "*.h" \) | \
             xargs clang-format -n --Werror
 
+  private-prefix:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: private prefix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
       - name: private prefix check
         run: bash scripts/check_private_prefix.sh

@@ -1,6 +1,6 @@
-bin_PROGRAMS = hypredrive laplacian hypredrive-lsseq
-hypredrive_SOURCES = src/main.c
-hypredrive_LDADD = libHYPREDRV.la
+bin_PROGRAMS = hypredrive-cli laplacian hypredrive-lsseq
+hypredrive_cli_SOURCES = src/main.c
+hypredrive_cli_LDADD = libHYPREDRV.la
 
 # Install the laplacian example binary
 laplacian_SOURCES = examples/src/C_laplacian/laplacian.c
@@ -35,14 +35,14 @@ docs: doxygen-doc
 	@echo "Built user's manual documentation (Sphinx)"
 
 check:
-	@mpirun -np 1 ./hypredrive examples/ex1.yml > /dev/null 2>&1
+	@mpirun -np 1 ./hypredrive-cli examples/ex1.yml > /dev/null 2>&1
 	@if test $$? -eq 0 ; then \
 		echo "Running ex1 with 1 MPI process... passed!"; \
 	else \
 		echo "Running ex1 with 1 MPI process... failed!"; \
 		exit 1; \
 	fi
-	@mpirun -np 4 ./hypredrive examples/ex2.yml > /dev/null 2>&1
+	@mpirun -np 4 ./hypredrive-cli examples/ex2.yml > /dev/null 2>&1
 	@if test $$? -eq 0 ; then \
 		echo "Running ex2 with 4 MPI processes... passed!"; \
 	else \

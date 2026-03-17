@@ -13,7 +13,7 @@ if(APPLE)
     
     # Add lib directory to rpath for executables (since libraries are in lib/)
     set(LIB_OUTPUT_DIR "${CMAKE_BINARY_DIR}/lib")
-    target_link_options(hypredrive PRIVATE "-Wl,-rpath,${LIB_OUTPUT_DIR}")
+    target_link_options(hypredrive-cli PRIVATE "-Wl,-rpath,${LIB_OUTPUT_DIR}")
     
     # Check if HYPRE library is shared
     get_property(HYPRE_LIB_TYPE TARGET HYPRE::HYPRE PROPERTY TYPE)
@@ -29,7 +29,7 @@ if(APPLE)
         if(HYPRE_LIBRARY_FILE_NEW)
             get_filename_component(HYPRE_LIBRARY_DIR "${HYPRE_LIBRARY_FILE_NEW}" DIRECTORY)
             set(CMAKE_INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
-            set_target_properties(hypredrive PROPERTIES INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
+            set_target_properties(hypredrive-cli PROPERTIES INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
             set_target_properties(HYPREDRV PROPERTIES INSTALL_RPATH "${HYPRE_LIBRARY_DIR}")
         endif()
     endif()

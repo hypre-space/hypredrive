@@ -47,7 +47,7 @@ generate_output() {
         s/(Date and time: ).*/\1YYYY-MM-DD HH:MM:SS/g
         s/(Using HYPREDRV_DEVELOP_STRING: ).*/\1HYPREDRV_VERSION_GOES_HERE/g
         s/(Using HYPRE_DEVELOP_STRING: ).*/\1HYPRE_VERSION_GOES_HERE/g
-        s|(.*/hypredrive)( done!)|\${HYPREDRIVE_PATH}/hypredrive\2|g
+        s|(.*/hypredrive-cli)( done!)|\${HYPREDRIVE_PATH}/hypredrive-cli\2|g
         /^=+ System Information =+$/,/^=+ System Information =+$/d
     ' "hypredrive.temp.out" > "${REFERENCE_OUTPUT_FILE}"
 
@@ -64,10 +64,10 @@ CWD="$(pwd)"
 HYPREDRIVE_SCRIPT_DIR="$(realpath "$(dirname "$0")")"
 HYPREDRIVE_DIR="$(dirname "$HYPREDRIVE_SCRIPT_DIR")"
 HYPREDRIVE_EXAMPLES_DIR="${HYPREDRIVE_DIR}/examples"
-DRIVER="${HYPREDRIVE_DIR}/hypredrive"
+DRIVER="${HYPREDRIVE_DIR}/hypredrive-cli"
 
 if [ ! -f ${DRIVER} ]; then
-    echo "The hypredrive executable does not exist: ${DRIVER}"
+    echo "The hypredrive-cli executable does not exist: ${DRIVER}"
     exit 1
 fi
 

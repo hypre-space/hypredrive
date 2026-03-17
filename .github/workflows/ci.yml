@@ -201,7 +201,7 @@ jobs:
           set -euxo pipefail
           if [ -f "scripts/compare_output.sh" ] && [ -f "examples/refOutput/ex1.txt" ]; then
             # Capture output for example 1
-            ${{ env.BUILD_DIR }}/hypredrive examples/ex1.yml > ${{ env.BUILD_DIR }}/test_ex1_output.txt 2>&1 || true
+            ${{ env.BUILD_DIR }}/hypredrive-cli examples/ex1.yml > ${{ env.BUILD_DIR }}/test_ex1_output.txt 2>&1 || true
             if [ -f "${{ env.BUILD_DIR }}/test_ex1_output.txt" ]; then
               bash scripts/compare_output.sh ${{ env.BUILD_DIR }}/test_ex1_output.txt examples/refOutput/ex1.txt || true
             fi
