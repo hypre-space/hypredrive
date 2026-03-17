@@ -42,14 +42,14 @@ trap "rm -f '$ACTUAL_NORM' '$REFERENCE_NORM'" EXIT
 sed -E \
     -e 's/[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}/YYYY-MM-DD HH:MM:SS/g' \
     -e 's/HYPRE_[A-Z_]*: [^[:space:]]*/HYPRE_VERSION_GOES_HERE/g' \
-    -e 's|[/a-zA-Z0-9_.-]+/hypredrive|\${HYPREDRIVE_PATH}/hypredrive|g' \
+    -e 's|[/a-zA-Z0-9_.-]+/hypredrive-cli|\${HYPREDRIVE_PATH}/hypredrive-cli|g' \
     -e 's|Date and time: YYYY-MM-DD HH:MM:SS|Date and time: YYYY-MM-DD HH:MM:SS|g' \
     "$ACTUAL" > "$ACTUAL_NORM"
 
 sed -E \
     -e 's/[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}/YYYY-MM-DD HH:MM:SS/g' \
     -e 's/HYPRE_[A-Z_]*: [^[:space:]]*/HYPRE_VERSION_GOES_HERE/g' \
-    -e 's|[/a-zA-Z0-9_.-]+/hypredrive|\${HYPREDRIVE_PATH}/hypredrive|g' \
+    -e 's|[/a-zA-Z0-9_.-]+/hypredrive-cli|\${HYPREDRIVE_PATH}/hypredrive-cli|g' \
     -e 's|Date and time: YYYY-MM-DD HH:MM:SS|Date and time: YYYY-MM-DD HH:MM:SS|g' \
     "$REFERENCE" > "$REFERENCE_NORM"
 

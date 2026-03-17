@@ -6,7 +6,10 @@
 
 # hypredrive
 
-High-level interface to [hypre](https://github.com/hypre-space/hypre) for solving linear systems. Use it as a **standalone driver** with YAML input files, or as a **C library** via [`include/HYPREDRV.h`](include/HYPREDRV.h).
+High-level interface to [hypre](https://github.com/hypre-space/hypre) for solving linear systems. It can be used as:
+
+- **Driver**: standalone executable with YAML input files, for example [`examples/ex1.yml`](examples/ex1.yml)
+- **Library**: C API via [`include/HYPREDRV.h`](include/HYPREDRV.h), with examples under [`examples/src/`](examples/src/)
 
 ## Build
 
@@ -18,15 +21,13 @@ hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use a
 
 ## Examples
 
-Use `hypredrive` either as a driver or as a library.
-
-**Driver** -- solve a system from a YAML file (see [`examples/`](examples/) and start with [`examples/ex1.yml`](examples/ex1.yml)):
+**Driver** -- solve a system from a YAML file (see [`examples/`](examples/)):
 
 ```bash
-mpirun -np 1 ./build/hypredrive examples/ex1.yml
+mpirun -np 1 ./build/hypredrive-cli examples/ex1.yml
 ```
 
-**Library** -- call the API from your own code (see [`examples/src/`](examples/src/)):
+**Library** -- call the API from your own code:
 
 - [laplacian.c](examples/src/C_laplacian/laplacian.c) -- builds and solves a 3D Laplacian
 - [heatflow.c](examples/src/C_heatflow/heatflow.c) -- transient heat equation

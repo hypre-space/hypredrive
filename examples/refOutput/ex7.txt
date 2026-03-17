@@ -148,4 +148,4 @@ STATISTICS SUMMARY:
 +--------+-------------+-------------+-------------+------------+------------+--------+
 
 Date and time: YYYY-MM-DD HH:MM:SS
-${HYPREDRIVE_PATH}/hypredrive done!
+${HYPREDRIVE_PATH}/hypredrive-cli done!

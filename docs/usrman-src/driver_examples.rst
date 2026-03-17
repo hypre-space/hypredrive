@@ -50,12 +50,12 @@ Examples (based on ``examples/ex1.yml``):
 .. code-block:: bash
 
    # Override solver parameters (keep solver as PCG, but change max_iter)
-   $ mpirun -np 1 ./hypredrive examples/ex1.yml -q -a --solver:pcg:max_iter 50
+   $ mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver:pcg:max_iter 50
 
 .. code-block:: bash
 
    # Switch solver type and set a nested option (changes solver from PCG to GMRES)
-   $ mpirun -np 1 ./hypredrive examples/ex1.yml -q -a --solver gmres --solver:gmres:max_iter 30
+   $ mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver gmres --solver:gmres:max_iter 30
 
 .. note::
 
@@ -93,7 +93,7 @@ single MPI rank. Therefore, this example must be executed on a single process.
 
 .. code-block:: bash
 
-    $ mpirun -np 1 ./hypredrive examples/ex1.yml
+    $ mpirun -np 1 ./hypredrive-cli examples/ex1.yml
 
 4. Your output should look like:
 
@@ -129,7 +129,7 @@ configuration file.
 
 .. code-block:: bash
 
-    $ mpirun -np 4 ./hypredrive examples/ex2.yml
+    $ mpirun -np 4 ./hypredrive-cli examples/ex2.yml
 
 4. Your output should look like:
 
@@ -162,7 +162,7 @@ the multigrid reduction preconditioner for this particular kind of linear system
 
 .. code-block:: bash
 
-    $ mpirun -np 1 ./hypredrive examples/ex3.yml
+    $ mpirun -np 1 ./hypredrive-cli examples/ex3.yml
 
 4. Your output should look like:
 
@@ -190,7 +190,7 @@ processes. Here, we showcase a more advanced setup of `MGR` involving multiple o
 
 .. code-block:: bash
 
-    $ mpirun -np 4 ./hypredrive examples/ex4.yml
+    $ mpirun -np 4 ./hypredrive-cli examples/ex4.yml
 
 4. Your output should look like:
 
@@ -229,7 +229,7 @@ separate files, which are included in the main input file via the ``include`` ke
 
 .. code-block:: bash
 
-    $ mpirun -np 1 ./hypredrive examples/ex5.yml
+    $ mpirun -np 1 ./hypredrive-cli examples/ex5.yml
 
 6. Your output should look like:
 
@@ -262,7 +262,7 @@ small matrices and single-rank runs.
 
 .. code-block:: bash
 
-   $ mpirun -np 1 ./hypredrive examples/ex6.yml
+   $ mpirun -np 1 ./hypredrive-cli examples/ex6.yml
 
 3. Your output should look like:
 
@@ -298,7 +298,7 @@ See ``data/poromech2k/README.md`` for more details about the problem in GEOS.
 
 .. code-block:: bash
 
-   $ mpirun -np 1 ./hypredrive examples/ex7.yml
+   $ mpirun -np 1 ./hypredrive-cli examples/ex7.yml
 
 3. Your output should look like (truncated):
 
@@ -333,7 +333,7 @@ variant and report a separate stats entry per variant while reusing the same lin
 
 .. code-block:: bash
 
-   $ mpirun -np 1 ./hypredrive examples/ex8.yml -q
+   $ mpirun -np 1 ./hypredrive-cli examples/ex8.yml -q
 
 3. Your output should look like:
 

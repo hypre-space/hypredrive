@@ -224,18 +224,18 @@ if(HYPREDRV_ENABLE_EIGSPEC)
     target_link_libraries(HYPREDRV PRIVATE LAPACK::LAPACK)
 endif()
 
-# Define the main executable (hypredrive)
-add_executable(hypredrive src/main.c)
-target_link_libraries(hypredrive PRIVATE HYPREDRV::HYPREDRV)
+# Define the main executable (hypredrive-cli)
+add_executable(hypredrive-cli src/main.c)
+target_link_libraries(hypredrive-cli PRIVATE HYPREDRV::HYPREDRV)
 
 if(HYPREDRV_ENABLE_COMPRESSION)
     add_executable(hypredrive-lsseq utils/lsseq_driver.c)
     target_link_libraries(hypredrive-lsseq PRIVATE HYPREDRV::HYPREDRV)
 endif()
 
-# Ensure dataset-driven examples/tests have data available before running hypredrive.
+# Ensure dataset-driven examples/tests have data available before running hypredrive-cli.
 if(HYPREDRV_ENABLE_DATA AND TARGET data)
-    add_dependencies(hypredrive data)
+    add_dependencies(hypredrive-cli data)
 endif()
 
 # Add Caliper include directories if Caliper is enabled
@@ -244,14 +244,14 @@ if(HYPREDRV_ENABLE_CALIPER AND CALIPER_FOUND)
         # Caliper was built via FetchContent - get include dir from cache
         get_property(CALIPER_INCLUDE_DIR_FOR_HYPRE CACHE CALIPER_INCLUDE_DIR_FOR_HYPRE PROPERTY VALUE)
         if(CALIPER_INCLUDE_DIR_FOR_HYPRE)
-            target_include_directories(hypredrive PRIVATE $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIR_FOR_HYPRE}>)
+            target_include_directories(hypredrive-cli PRIVATE $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIR_FOR_HYPRE}>)
         endif()
     elseif(TARGET caliper::caliper)
         # Caliper was found via find_package
-        target_include_directories(hypredrive PRIVATE caliper::caliper)
+        target_include_directories(hypredrive-cli PRIVATE caliper::caliper)
     elseif(CALIPER_INCLUDE_DIR)
         # Caliper was found via find_path
-        target_include_directories(hypredrive PRIVATE ${CALIPER_INCLUDE_DIR})
+        target_include_directories(hypredrive-cli PRIVATE ${CALIPER_INCLUDE_DIR})
     endif()
 endif()
 
@@ -260,31 +260,31 @@ if(HYPREDRV_ENABLE_CALIPER)
     enable_language(CXX OPTIONAL)
     if(CMAKE_CXX_COMPILER)
         if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-            target_link_options(hypredrive PRIVATE "-lstdc++")
+            target_link_options(hypredrive-cli PRIVATE "-lstdc++")
         elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
             # Clang can use either libstdc++ or libc++
             # Default to stdc++ on Linux
             if(UNIX AND NOT APPLE)
-                target_link_options(hypredrive PRIVATE "-lstdc++")
+                target_link_options(hypredrive-cli PRIVATE "-lstdc++")
             else()
-                target_link_options(hypredrive PRIVATE "-lc++")
+                target_link_options(hypredrive-cli PRIVATE "-lc++")
             endif()
         endif()
     endif()
 endif()
 
-# Ensure Caliper is built before hypredrive if Caliper is enabled
+# Ensure Caliper is built before hypredrive-cli if Caliper is enabled
 # This is critical because HYPRE may create file dependencies on libcaliper.a
 if(CALIPER_FOUND)
     # Find the actual caliper target (not the imported one)
     if(TARGET caliper)
-        add_dependencies(hypredrive caliper)
+        add_dependencies(hypredrive-cli caliper)
         # Also add to HYPREDRV to ensure it's available when linking
         add_dependencies(HYPREDRV caliper)
     endif()
     # Ensure HYPRE is built (which transitively ensures Caliper is built)
     if(TARGET HYPRE::HYPRE)
-        add_dependencies(hypredrive HYPRE::HYPRE)
+        add_dependencies(hypredrive-cli HYPRE::HYPRE)
     endif()
 endif()
 
@@ -322,9 +322,9 @@ endif()
 add_custom_target(check
   COMMAND ${CMAKE_COMMAND}
           -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
-          -DTARGET_BIN=$<TARGET_FILE:hypredrive>
+          -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
           -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_SmokeCheck.cmake
-  DEPENDS hypredrive
+  DEPENDS hypredrive-cli
   COMMENT "Running smoke test (ex1.yml)"
   VERBATIM
 )

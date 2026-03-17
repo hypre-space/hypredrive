@@ -71,7 +71,7 @@ if(HYPREDRV_ENABLE_ANALYSIS)
         # endif()
 
         # Apply sanitizer flags to existing primary targets
-        foreach(tgt IN ITEMS HYPREDRV hypredrive)
+        foreach(tgt IN ITEMS HYPREDRV hypredrive-cli)
             if(TARGET ${tgt})
                 target_compile_options(${tgt} PRIVATE ${_sanitizer_flags})
                 target_link_options(${tgt} PRIVATE ${_sanitizer_link_flags})

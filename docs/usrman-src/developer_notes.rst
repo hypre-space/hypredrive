@@ -271,7 +271,7 @@ To collect performance data, set the ``CALI_CONFIG`` environment variable when r
 
 .. code-block:: bash
 
-   CALI_CONFIG=runtime-report mpirun -np 1 ./build/hypredrive examples/ex1.yml
+   CALI_CONFIG=runtime-report mpirun -np 1 ./build/hypredrive-cli examples/ex1.yml
 
 Common Caliper configurations:
 

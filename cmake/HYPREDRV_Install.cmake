@@ -26,7 +26,7 @@ if(TARGET HYPRE::HYPRE)
     endif()
 endif()
 
-install(TARGETS hypredrive HYPREDRV ${_hypre_targets_to_install}
+install(TARGETS hypredrive-cli HYPREDRV ${_hypre_targets_to_install}
         EXPORT HYPREDRVTargets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

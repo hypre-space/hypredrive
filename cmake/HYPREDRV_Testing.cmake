@@ -46,7 +46,7 @@ function(add_hypredrive_test test_name num_procs config_file)
     # Build command arguments
     set(_cmd_args
         -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
-        -DTARGET_BIN=$<TARGET_FILE:hypredrive>
+        -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
         -DMPIEXEC=${MPIEXEC_EXECUTABLE}
         -DMPI_NUMPROCS=${num_procs}
         -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
@@ -127,7 +127,7 @@ function(add_hypredrive_cli_test test_name num_procs config_file)
     add_test(NAME ${full_test_name}
         COMMAND ${CMAKE_COMMAND}
                 -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
-                -DTARGET_BIN=$<TARGET_FILE:hypredrive>
+                -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
                 -DMPIEXEC=${MPIEXEC_EXECUTABLE}
                 -DMPI_NUMPROCS=${num_procs}
                 -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
@@ -191,7 +191,7 @@ function(add_executable_test test_name target num_procs)
     )
     hypredrv_append_test_environment(${test_name})
 
-    if(target STREQUAL "hypredrive")
+    if(target STREQUAL "hypredrive-cli")
         set_tests_properties(${test_name}
             PROPERTIES
                 LABELS "hypredrive"
@@ -215,7 +215,7 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
     add_test(NAME ${test_name}
         COMMAND ${CMAKE_COMMAND}
                 -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
-                -DTARGET_BIN=$<TARGET_FILE:hypredrive>
+                -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
                 -DMPIEXEC=${MPIEXEC_EXECUTABLE}
                 -DMPI_NUMPROCS=${num_procs}
                 -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
@@ -349,7 +349,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             add_test(NAME hypredrive_test_ex7_sequence_pack
                 COMMAND ${CMAKE_COMMAND}
                         -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
-                        -DTARGET_BIN=$<TARGET_FILE:hypredrive>
+                        -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
                         -DPACKER_BIN=$<TARGET_FILE:hypredrive-lsseq>
                         -DSEQ_OUTPUT=${CMAKE_BINARY_DIR}/poromech2k_lsseq_test.bin
                         -DMPIEXEC=${MPIEXEC_EXECUTABLE}
@@ -517,19 +517,19 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
 
         # Test main.c help/usage/error branches
         # Note: --help exits with 0, so we need to allow that
-        add_executable_test(hypredrive_help hypredrive 1 ARGS "--help" FAIL_REGULAR_EXPRESSION "^$")
-        add_executable_test(hypredrive_help_short hypredrive 1 ARGS "-h" FAIL_REGULAR_EXPRESSION "^$")
-        add_executable_test(hypredrive_no_args hypredrive 1 ARGS "" FAIL_REGULAR_EXPRESSION "^$")
+        add_executable_test(hypredrive_help hypredrive-cli 1 ARGS "--help" FAIL_REGULAR_EXPRESSION "^$")
+        add_executable_test(hypredrive_help_short hypredrive-cli 1 ARGS "-h" FAIL_REGULAR_EXPRESSION "^$")
+        add_executable_test(hypredrive_no_args hypredrive-cli 1 ARGS "" FAIL_REGULAR_EXPRESSION "^$")
         set_tests_properties(hypredrive_no_args PROPERTIES WILL_FAIL TRUE)
 
         # Exercise the long-form quiet flag parsing ("--quiet")
-        add_executable_test(hypredrive_quiet_longflag hypredrive 1
+        add_executable_test(hypredrive_quiet_longflag hypredrive-cli 1
             ARGS "--quiet" "examples/ex1.yml"
             FAIL_REGULAR_EXPRESSION "^$"
         )
 
         # Exercise config-file detection when override args are present
-        add_executable_test(hypredrive_cli_extra hypredrive 1
+        add_executable_test(hypredrive_cli_extra hypredrive-cli 1
             ARGS "examples/ex1.yml" "--args" "--solver:pcg:max_iter" "5"
             FAIL_REGULAR_EXPRESSION "^$"
         )
