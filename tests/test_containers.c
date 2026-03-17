@@ -62,11 +62,11 @@ test_StrArrayEntryExists(void)
    const char *strs[] = {"one", "two", "three"};
    StrArray    arr    = STR_ARRAY_CREATE(strs);
 
-   ASSERT_TRUE(StrArrayEntryExists(arr, "one"));
-   ASSERT_TRUE(StrArrayEntryExists(arr, "two"));
-   ASSERT_TRUE(StrArrayEntryExists(arr, "three"));
-   ASSERT_FALSE(StrArrayEntryExists(arr, "four"));
-   ASSERT_FALSE(StrArrayEntryExists(arr, ""));
+   ASSERT_TRUE(hypredrv_StrArrayEntryExists(arr, "one"));
+   ASSERT_TRUE(hypredrv_StrArrayEntryExists(arr, "two"));
+   ASSERT_TRUE(hypredrv_StrArrayEntryExists(arr, "three"));
+   ASSERT_FALSE(hypredrv_StrArrayEntryExists(arr, "four"));
+   ASSERT_FALSE(hypredrv_StrArrayEntryExists(arr, ""));
 }
 
 /*-----------------------------------------------------------------------------
@@ -77,10 +77,10 @@ static void
 test_StrIntMapArray_basic(void)
 {
    /* Test OnOffMapArray */
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "on"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "off"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "on"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "off"));
    ASSERT_FALSE(
-      StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "invalid"));
+      hypredrv_StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "invalid"));
 }
 
 static void
@@ -88,25 +88,25 @@ test_StrIntMapArrayGetImage(void)
 {
    int img;
 
-   img = StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "on");
+   img = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "on");
    ASSERT_TRUE(img >= 0);
 
-   img = StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "off");
+   img = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "off");
    ASSERT_TRUE(img >= 0);
 
-   img = StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "invalid");
+   img = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "invalid");
    ASSERT_EQ(img, INT_MIN); /* Implementation returns INT_MIN for invalid keys */
 }
 
 /*-----------------------------------------------------------------------------
- * Test StrToIntArray and StrToStackIntArray
+ * Test hypredrv_StrToIntArray and hypredrv_StrToStackIntArray
  *-----------------------------------------------------------------------------*/
 
 static void
 test_StrToStackIntArray_basic(void)
 {
    StackIntArray arr = STACK_INTARRAY_CREATE();
-   StrToStackIntArray("1,2,3", &arr);
+   hypredrv_StrToStackIntArray("1,2,3", &arr);
    ASSERT_EQ(arr.size, 3);
    ASSERT_EQ(arr.data[0], 1);
    ASSERT_EQ(arr.data[1], 2);
@@ -117,7 +117,7 @@ static void
 test_StrToStackIntArray_single(void)
 {
    StackIntArray arr = STACK_INTARRAY_CREATE();
-   StrToStackIntArray("42", &arr);
+   hypredrv_StrToStackIntArray("42", &arr);
    ASSERT_EQ(arr.size, 1);
    ASSERT_EQ(arr.data[0], 42);
 }
@@ -126,7 +126,7 @@ static void
 test_StrToStackIntArray_empty(void)
 {
    StackIntArray arr = STACK_INTARRAY_CREATE();
-   StrToStackIntArray("", &arr);
+   hypredrv_StrToStackIntArray("", &arr);
    ASSERT_EQ(arr.size, 0);
 }
 
@@ -137,21 +137,21 @@ test_StrToStackIntArray_empty(void)
 static void
 test_IntArray_create_destroy(void)
 {
-   IntArray *arr = IntArrayCreate(10);
+   IntArray *arr = hypredrv_IntArrayCreate(10);
    ASSERT_NOT_NULL(arr);
    ASSERT_EQ(arr->size, 10);
 
-   IntArrayDestroy(&arr);
+   hypredrv_IntArrayDestroy(&arr);
    ASSERT_NULL(arr);
 }
 
 static void
 test_IntArray_zero_size(void)
 {
-   IntArray *arr = IntArrayCreate(0);
+   IntArray *arr = hypredrv_IntArrayCreate(0);
    ASSERT_NOT_NULL(arr);
    ASSERT_EQ(arr->size, 0);
-   IntArrayDestroy(&arr);
+   hypredrv_IntArrayDestroy(&arr);
 }
 
 /*-----------------------------------------------------------------------------

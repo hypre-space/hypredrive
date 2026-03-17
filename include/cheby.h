@@ -29,7 +29,7 @@ typedef struct Cheby_args_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void ChebySetDefaultArgs(Cheby_args *);
-void ChebySetArgs(void *, const YAMLnode *);
+void hypredrv_ChebySetDefaultArgs(Cheby_args *);
+void hypredrv_ChebySetArgs(void *, const YAMLnode *);
 
 #endif /* CHEBY_HEADER */

@@ -59,12 +59,12 @@ reset_state(void)
    /* Ensure we start each test with clean global error/message and hypre error state.
     * Note: hypre error flags can be sticky across calls; some code paths inspect
     * HYPRE_GetError() and will misdiagnose unrelated operations otherwise. */
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
    HYPREDRV_Finalize();
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
 }
 
@@ -98,7 +98,7 @@ parse_yaml_into_obj(HYPREDRV_t obj, char *yaml_config)
 {
    char *argv[] = {yaml_config};
    ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
-   ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
 }
 
 #define ASSERT_HAS_FLAG(code, flag) ASSERT_TRUE(((code) & (flag)) != 0)
@@ -257,7 +257,7 @@ test_HYPREDRV_all_api_obj_guard(void)
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
 
    /* Reset the global error state before finalizing */
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
@@ -272,11 +272,11 @@ test_requires_initialization_guard(void)
    code = HYPREDRV_Create(MPI_COMM_SELF, &obj);
    ASSERT_TRUE(code & ERROR_HYPREDRV_NOT_INITIALIZED);
    ASSERT_NULL(obj);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
    code = HYPREDRV_SetLibraryMode(obj);
    ASSERT_TRUE(code & ERROR_HYPREDRV_NOT_INITIALIZED);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 static void
@@ -335,7 +335,7 @@ test_create_parse_and_destroy(void)
    ASSERT_NOT_NULL(sol_data);
    ASSERT_EQ(HYPREDRV_LinearSystemGetRHSValues(obj, &rhs_data), ERROR_NONE);
    ASSERT_NOT_NULL(rhs_data);
-   LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
+   hypredrv_LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
    ASSERT_NOT_NULL(rhs_expected);
    ASSERT_PTR_EQ(rhs_data, rhs_expected);
    ASSERT_TRUE(rhs_data != sol_data);
@@ -390,14 +390,14 @@ test_create_parse_and_destroy(void)
       HYPREDRV_PreconApply(obj, (HYPRE_Vector)state->vec_b, (HYPRE_Vector)state->vec_x),
       ERROR_NONE);
 
-   ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_NULL(obj);
 
    /* Destroy again to exercise unknown-object branch */
    uint32_t code = HYPREDRV_Destroy(&obj);
    ASSERT_TRUE(code & ERROR_UNKNOWN_HYPREDRV_OBJ);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
@@ -539,10 +539,10 @@ test_HYPREDRV_stats_level_apis(void)
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
 
    /* Drive Stats using internal timer keys ("prec"/"solve") */
-   StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
-   StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_END, "prec");
-   StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
-   StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_END, "solve");
+   hypredrv_StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
+   hypredrv_StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_END, "prec");
+   hypredrv_StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
+   hypredrv_StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_END, "solve");
 
    /* HYPREDRV_GetLastStat branches */
    int    iter = -1;
@@ -551,9 +551,9 @@ test_HYPREDRV_stats_level_apis(void)
    ASSERT_EQ(HYPREDRV_GetLastStat(obj, "setup", &t), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_GetLastStat(obj, "solve", &t), ERROR_NONE);
    ASSERT_TRUE(HYPREDRV_GetLastStat(obj, "unknown", &t) & ERROR_UNKNOWN);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
@@ -600,21 +600,21 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
    ASSERT_EQ(HYPREDRV_LinearSystemSetContiguousDofmap(obj, 1, 2), ERROR_NONE);
 
    ASSERT_TRUE(HYPREDRV_LinearSystemPrintDofmap(obj, NULL) & ERROR_UNKNOWN);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    /* Temporarily hide the dofmap to exercise the ERROR_MISSING_DOFMAP branch,
     * but restore it so the object can cleanly destroy owned state. */
    IntArray *saved_dofmap = state->dofmap;
    state->dofmap          = NULL;
    char *tmp_dof          = CREATE_TEMP_FILE("tmp_dofmap.txt");
    ASSERT_TRUE(HYPREDRV_LinearSystemPrintDofmap(obj, tmp_dof) & ERROR_MISSING_DOFMAP);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    free(tmp_dof);
    state->dofmap = saved_dofmap;
 
    uint32_t print_code = HYPREDRV_LinearSystemPrint(obj);
    ASSERT_TRUE(print_code == ERROR_NONE ||
                (print_code & (ERROR_MISSING_DOFMAP | ERROR_UNKNOWN)));
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
    /* Create two state vectors with the same range as vec_x */
    HYPRE_BigInt ilower = 0, iupper = 0;
@@ -630,8 +630,8 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
       ASSERT_EQ(HYPRE_IJVectorAssemble(vecs[i]), 0);
    }
 
-   ErrorCodeResetAll();
-   ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_StateVectorSet(obj, 2, vecs), ERROR_NONE);
 
    HYPRE_Complex *data = NULL;
@@ -657,16 +657,16 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
    /* Eigenspectrum API entrypoint (exercises CHECK_INIT/CHECK_OBJ) */
    uint32_t eig = HYPREDRV_LinearSystemComputeEigenspectrum(obj);
    ASSERT_TRUE(eig == ERROR_NONE || (eig & ERROR_UNKNOWN));
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
    /* Force error branches in GetValues/Copy by nulling an internal vec_s entry */
    HYPRE_IJVector saved_state0 = state->vec_s[state->states[0]];
    state->vec_s[state->states[0]] = NULL;
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    ASSERT_TRUE(HYPREDRV_StateVectorGetValues(obj, 0, &data) & ERROR_UNKNOWN);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    ASSERT_TRUE(HYPREDRV_StateVectorCopy(obj, 0, 1) & ERROR_UNKNOWN);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    state->vec_s[state->states[0]] = saved_state0;
 
    /* vecs[] are now owned by hypredrv (Destroy() will destroy hypredrv->vec_s[i]). */
@@ -1127,8 +1127,8 @@ test_HYPREDRV_LinearSolverApply_error_cases(void)
    ASSERT_TRUE(result & ERROR_INVALID_SOLVER);
 
    /* Clear sticky error state before cleanup assertions */
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
@@ -1154,8 +1154,8 @@ test_HYPREDRV_Annotate_functions(void)
 
    /* These wrappers intentionally tolerate unknown annotation keys, but they can set
     * sticky error flags; clear before cleanup assertions. */
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
@@ -1195,8 +1195,8 @@ test_HYPREDRV_LinearSystemResetInitialGuess_error_cases(void)
    /* Test with NULL object */
    uint32_t result = HYPREDRV_LinearSystemResetInitialGuess(NULL);
    ASSERT_TRUE(result & ERROR_UNKNOWN_HYPREDRV_OBJ);
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
 
    /* Test with NULL x vector */
@@ -1205,8 +1205,8 @@ test_HYPREDRV_LinearSystemResetInitialGuess_error_cases(void)
    result = HYPREDRV_LinearSystemResetInitialGuess(obj);
    ASSERT_TRUE(result & ERROR_UNKNOWN);
 
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
@@ -1226,8 +1226,8 @@ test_HYPREDRV_LinearSystemBuild_error_cases(void)
    uint32_t result = HYPREDRV_LinearSystemBuild(NULL);
    ASSERT_TRUE(result & ERROR_UNKNOWN_HYPREDRV_OBJ);
 
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
@@ -1281,26 +1281,26 @@ test_HYPREDRV_misc_0hit_branches(void)
    ASSERT_EQ(HYPREDRV_LinearSystemGetRHSValues(obj, &rhs_data), ERROR_NONE);
    ASSERT_NOT_NULL(rhs_data);
    HYPRE_Complex *rhs_expected = NULL;
-   LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
+   hypredrv_LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
    ASSERT_NOT_NULL(rhs_expected);
    ASSERT_PTR_EQ(rhs_data, rhs_expected);
    ASSERT_TRUE(rhs_data != sol_data);
 
    ASSERT_TRUE(HYPREDRV_LinearSystemGetSolutionValues(obj, NULL) & ERROR_UNKNOWN);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    ASSERT_TRUE(HYPREDRV_LinearSystemGetRHSValues(obj, NULL) & ERROR_UNKNOWN);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
    HYPRE_IJVector saved_b = state->vec_b;
    state->vec_b           = NULL;
    ASSERT_TRUE(HYPREDRV_LinearSystemGetRHSValues(obj, &rhs_data) & ERROR_UNKNOWN);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    state->vec_b = saved_b;
 
    HYPRE_IJVector saved_x = state->vec_x;
    state->vec_x           = NULL;
    ASSERT_TRUE(HYPREDRV_LinearSystemGetSolutionValues(obj, &sol_data) & ERROR_UNKNOWN);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    state->vec_x = saved_x;
 
    double ok_norm = 0.0;
@@ -1323,9 +1323,9 @@ test_HYPREDRV_misc_0hit_branches(void)
    /* Cover GetSolutionNorm error branches */
    double norm = 0.0;
    ASSERT_TRUE(HYPREDRV_LinearSystemGetSolutionNorm(obj, NULL, &norm) & ERROR_UNKNOWN);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    ASSERT_TRUE(HYPREDRV_LinearSystemGetSolutionNorm(obj, "L2", NULL) & ERROR_UNKNOWN);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
    /* Cover AnnotateLevelBegin/End paths */
    ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(0, "lvl", 1), ERROR_NONE);
@@ -1338,10 +1338,10 @@ test_HYPREDRV_misc_0hit_branches(void)
    ASSERT_EQ(HYPREDRV_GetLastStat(obj, "setup", &t), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_GetLastStat(obj, "solve", &t), ERROR_NONE);
    ASSERT_TRUE(HYPREDRV_GetLastStat(obj, "unknown", &t) & ERROR_UNKNOWN);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
@@ -1433,7 +1433,7 @@ test_HYPREDRV_preconditioner_variants(void)
       ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
    }
 
-   ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_NULL(obj);
 
@@ -1497,14 +1497,14 @@ test_HYPREDRV_preconditioner_preset_invalid(void)
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
    ASSERT_NOT_NULL(obj);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    ASSERT_HAS_FLAG(HYPREDRV_InputArgsSetPreconPreset(obj, "not-a-preset"),
                    ERROR_INVALID_VAL);
-   ASSERT_HAS_FLAG(ErrorCodeGet(), ERROR_INVALID_VAL);
+   ASSERT_HAS_FLAG(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
 
    /* Clear error state so Destroy() isn't masked by the expected preset failure. */
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);

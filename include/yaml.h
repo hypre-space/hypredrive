@@ -95,34 +95,35 @@ typedef StrArray (*YAMLGetValidKeysFunc)(void);
 typedef StrIntMapArray (*YAMLGetValidValuesFunc)(const char *);
 typedef void (*YAMLSetFieldByNameFunc)(void *, const YAMLnode *);
 
-void YAMLnodeValidateSchema(YAMLnode *, YAMLGetValidKeysFunc, YAMLGetValidValuesFunc);
-void YAMLSetArgsGeneric(void *, YAMLnode *, YAMLGetValidKeysFunc, YAMLGetValidValuesFunc,
-                        YAMLSetFieldByNameFunc);
+void hypredrv_YAMLnodeValidateSchema(YAMLnode *, YAMLGetValidKeysFunc,
+                                     YAMLGetValidValuesFunc);
+void hypredrv_YAMLSetArgsGeneric(void *, YAMLnode *, YAMLGetValidKeysFunc,
+                                 YAMLGetValidValuesFunc, YAMLSetFieldByNameFunc);
 
 /*-----------------------------------------------------------------------------
  * Public prototypes
  *-----------------------------------------------------------------------------*/
 
-void YAMLtextRead(const char *, const char *, int, int *, size_t *, char **);
+void hypredrv_YAMLtextRead(const char *, const char *, int, int *, size_t *, char **);
 
-YAMLtree *YAMLtreeCreate(int);
-void      YAMLtreeDestroy(YAMLtree **);
-void      YAMLtreeBuild(int, const char *, YAMLtree **);
-void      YAMLtreeUpdate(int, char **, YAMLtree *);
-void      YAMLtreePrint(YAMLtree *, YAMLprintMode);
-void      YAMLtreeValidate(YAMLtree *);
+YAMLtree *hypredrv_YAMLtreeCreate(int);
+void      hypredrv_YAMLtreeDestroy(YAMLtree **);
+void      hypredrv_YAMLtreeBuild(int, const char *, YAMLtree **);
+void      hypredrv_YAMLtreeUpdate(int, char **, YAMLtree *);
+void      hypredrv_YAMLtreePrint(YAMLtree *, YAMLprintMode);
+void      hypredrv_YAMLtreeValidate(YAMLtree *);
 
-YAMLnode *YAMLnodeCreate(const char *, const char *, int);
-void      YAMLnodeDestroy(YAMLnode *);
-void      YAMLnodeAddChild(YAMLnode *, YAMLnode *);
-void      YAMLnodeAppend(YAMLnode *, YAMLnode **);
-void      YAMLnodeValidate(YAMLnode *);
-void      YAMLnodePrint(YAMLnode *, YAMLprintMode);
-YAMLnode *YAMLnodeFindByKey(YAMLnode *, const char *);
-YAMLnode *YAMLnodeFindChildByKey(YAMLnode *, const char *);
-char     *YAMLnodeFindChildValueByKey(YAMLnode *, const char *);
-int       YAMLnodeCollectSequenceItems(YAMLnode *, YAMLnode ***);
-void      YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir);
+YAMLnode *hypredrv_YAMLnodeCreate(const char *, const char *, int);
+void      hypredrv_YAMLnodeDestroy(YAMLnode *);
+void      hypredrv_YAMLnodeAddChild(YAMLnode *, YAMLnode *);
+void      hypredrv_YAMLnodeAppend(YAMLnode *, YAMLnode **);
+void      hypredrv_YAMLnodeValidate(YAMLnode *);
+void      hypredrv_YAMLnodePrint(YAMLnode *, YAMLprintMode);
+YAMLnode *hypredrv_YAMLnodeFindByKey(YAMLnode *, const char *);
+YAMLnode *hypredrv_YAMLnodeFindChildByKey(YAMLnode *, const char *);
+char     *hypredrv_YAMLnodeFindChildValueByKey(YAMLnode *, const char *);
+int       hypredrv_YAMLnodeCollectSequenceItems(YAMLnode *, YAMLnode ***);
+void      hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir);
 
 /*-----------------------------------------------------------------------------
  * Public macros
@@ -131,9 +132,9 @@ void      YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir);
 #define YAML_NODE_VALIDATE_HELPER(_node, _map_array)                               \
    do                                                                              \
    {                                                                               \
-      if (StrIntMapArrayDomainEntryExists(_map_array, _node->val))                 \
+      if (hypredrv_StrIntMapArrayDomainEntryExists(_map_array, _node->val))        \
       {                                                                            \
-         int _mapped = StrIntMapArrayGetImage(_map_array, _node->val);             \
+         int _mapped = hypredrv_StrIntMapArrayGetImage(_map_array, _node->val);    \
          int _length = snprintf(NULL, 0, "%d", _mapped) + 1;                       \
          if (!_node->mapped_val)                                                   \
          {                                                                         \
@@ -153,10 +154,10 @@ void      YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir);
       }                                                                            \
    } while (0);
 
-#define YAML_NODE_VALIDATE(_node, _callA, _callB)          \
-   do                                                      \
-   {                                                       \
-      YAMLnodeValidateSchema((_node), (_callA), (_callB)); \
+#define YAML_NODE_VALIDATE(_node, _callA, _callB)                   \
+   do                                                               \
+   {                                                                \
+      hypredrv_YAMLnodeValidateSchema((_node), (_callA), (_callB)); \
    } while (0)
 
 #define YAML_NODE_SET_FIELD(_node, _args, _call) \

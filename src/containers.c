@@ -7,11 +7,11 @@
 
 #include "containers.h"
 /*-----------------------------------------------------------------------------
- * IntArrayWriteAsciiByRank
+ * hypredrv_IntArrayWriteAsciiByRank
  *-----------------------------------------------------------------------------*/
 
 void
-IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char *filename)
+hypredrv_IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char *filename)
 {
    int   myid = 0, nprocs = 0;
    FILE *fp = NULL;
@@ -26,8 +26,8 @@ IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char *filename
    fp = fopen(fname, "w");
    if (!fp)
    {
-      ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      ErrorMsgAddInvalidFilename(fname);
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename(fname);
       return;
    }
 
@@ -40,11 +40,11 @@ IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char *filename
 }
 
 /*--------------------------------------------------------------------------
- * IntArrayCreate
+ * hypredrv_IntArrayCreate
  *--------------------------------------------------------------------------*/
 
 IntArray *
-IntArrayCreate(size_t size)
+hypredrv_IntArrayCreate(size_t size)
 {
    IntArray *int_array = NULL;
 
@@ -62,15 +62,15 @@ IntArrayCreate(size_t size)
 }
 
 /*--------------------------------------------------------------------------
- * IntArrayClone
+ * hypredrv_IntArrayClone
  *--------------------------------------------------------------------------*/
 
 IntArray *
-IntArrayClone(const IntArray *other)
+hypredrv_IntArrayClone(const IntArray *other)
 {
    IntArray *this = NULL;
 
-   this = IntArrayCreate(other->size);
+   this = hypredrv_IntArrayCreate(other->size);
    memcpy(this->data, other->data, other->size * sizeof(int));
 
    if (this->unique_data)
@@ -90,11 +90,11 @@ IntArrayClone(const IntArray *other)
 }
 
 /*--------------------------------------------------------------------------
- * IntArrayDestroy
+ * hypredrv_IntArrayDestroy
  *--------------------------------------------------------------------------*/
 
 void
-IntArrayDestroy(IntArray **int_array_ptr)
+hypredrv_IntArrayDestroy(IntArray **int_array_ptr)
 {
    IntArray *this = *int_array_ptr;
 
@@ -115,11 +115,11 @@ IntArrayDestroy(IntArray **int_array_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * StrToIntArray
+ * hypredrv_StrToIntArray
  *-----------------------------------------------------------------------------*/
 
 void
-StrToIntArray(const char *string, IntArray **int_array_ptr)
+hypredrv_StrToIntArray(const char *string, IntArray **int_array_ptr)
 {
    char       *buffer    = NULL;
    const char *token     = NULL;
@@ -139,7 +139,7 @@ StrToIntArray(const char *string, IntArray **int_array_ptr)
    free(buffer);
 
    /* Create IntArray */
-   int_array = IntArrayCreate((size_t)count);
+   int_array = hypredrv_IntArrayCreate((size_t)count);
 
    /* Build array */
    buffer = strdup(string);
@@ -158,11 +158,11 @@ StrToIntArray(const char *string, IntArray **int_array_ptr)
 }
 
 /*--------------------------------------------------------------------------
- * DoubleArrayCreate
+ * hypredrv_DoubleArrayCreate
  *--------------------------------------------------------------------------*/
 
 DoubleArray *
-DoubleArrayCreate(size_t size)
+hypredrv_DoubleArrayCreate(size_t size)
 {
    DoubleArray *double_array = NULL;
 
@@ -174,11 +174,11 @@ DoubleArrayCreate(size_t size)
 }
 
 /*--------------------------------------------------------------------------
- * DoubleArrayDestroy
+ * hypredrv_DoubleArrayDestroy
  *--------------------------------------------------------------------------*/
 
 void
-DoubleArrayDestroy(DoubleArray **double_array_ptr)
+hypredrv_DoubleArrayDestroy(DoubleArray **double_array_ptr)
 {
    DoubleArray *this = *double_array_ptr;
 
@@ -191,11 +191,11 @@ DoubleArrayDestroy(DoubleArray **double_array_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * StrToDoubleArray
+ * hypredrv_StrToDoubleArray
  *-----------------------------------------------------------------------------*/
 
 void
-StrToDoubleArray(const char *string, DoubleArray **double_array_ptr)
+hypredrv_StrToDoubleArray(const char *string, DoubleArray **double_array_ptr)
 {
    char        *buffer       = NULL;
    const char  *token        = NULL;
@@ -215,7 +215,7 @@ StrToDoubleArray(const char *string, DoubleArray **double_array_ptr)
    free(buffer);
 
    /* Create DoubleArray */
-   double_array = DoubleArrayCreate((size_t)count);
+   double_array = hypredrv_DoubleArrayCreate((size_t)count);
 
    /* Build array */
    buffer = strdup(string);
@@ -234,11 +234,11 @@ StrToDoubleArray(const char *string, DoubleArray **double_array_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * StrToStackIntArray
+ * hypredrv_StrToStackIntArray
  *-----------------------------------------------------------------------------*/
 
 void
-StrToStackIntArray(const char *string, StackIntArray *int_array)
+hypredrv_StrToStackIntArray(const char *string, StackIntArray *int_array)
 {
    char       *buffer = NULL;
    const char *token  = NULL;
@@ -276,31 +276,31 @@ StrToStackIntArray(const char *string, StackIntArray *int_array)
 }
 
 /*-----------------------------------------------------------------------------
- * IntArrayCompare
+ * hypredrv_IntArrayCompare
  *-----------------------------------------------------------------------------*/
 
 int
-IntArrayCompare(const void *a, const void *b)
+hypredrv_IntArrayCompare(const void *a, const void *b)
 {
    return (*(int *)a - *(int *)b);
 }
 
 /*-----------------------------------------------------------------------------
- * IntArraySort
+ * hypredrv_IntArraySort
  *-----------------------------------------------------------------------------*/
 
 void
-IntArraySort(IntArray *int_array)
+hypredrv_IntArraySort(IntArray *int_array)
 {
-   qsort(int_array->data, int_array->size, sizeof(int), IntArrayCompare);
+   qsort(int_array->data, int_array->size, sizeof(int), hypredrv_IntArrayCompare);
 }
 
 /*-----------------------------------------------------------------------------
- * IntArrayUnique
+ * hypredrv_IntArrayUnique
  *-----------------------------------------------------------------------------*/
 
 void
-IntArrayUnique(MPI_Comm comm, IntArray *int_array)
+hypredrv_IntArrayUnique(MPI_Comm comm, IntArray *int_array)
 {
    IntArray *tmp_array         = NULL;
    int       num_entries_int   = 0;
@@ -314,8 +314,8 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
    MPI_Comm_size(comm, &nprocs);
 
    /* Sort input array */
-   tmp_array = IntArrayClone((const IntArray *)int_array);
-   IntArraySort(tmp_array);
+   tmp_array = hypredrv_IntArrayClone((const IntArray *)int_array);
+   hypredrv_IntArraySort(tmp_array);
 
    /* Find number of unique entries locally */
    int_array->unique_size = 1;
@@ -337,7 +337,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
          int_array->unique_data[++k] = tmp_array->data[i];
       }
    }
-   IntArrayDestroy(&tmp_array);
+   hypredrv_IntArrayDestroy(&tmp_array);
 
    /* Gather sizes of local unique arrays */
    if (!myid)
@@ -366,7 +366,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
    if (!myid)
    {
       /* Sort input array */
-      qsort(all_data, (size_t)total_num_entries, sizeof(int), IntArrayCompare);
+      qsort(all_data, (size_t)total_num_entries, sizeof(int), hypredrv_IntArrayCompare);
 
       /* Find number of unique entries */
       int_array->g_unique_size = 1;
@@ -400,11 +400,11 @@ IntArrayUnique(MPI_Comm comm, IntArray *int_array)
 }
 
 /*-----------------------------------------------------------------------------
- * IntArrayParRead
+ * hypredrv_IntArrayParRead
  *-----------------------------------------------------------------------------*/
 
 void
-IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
+hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
 {
    char      filename[MAX_FILENAME_LENGTH];
    char      suffix[5], code[3];
@@ -421,13 +421,14 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);
    MPI_Comm_rank(comm, &myid);
-   g_nparts = CountNumberOfPartitions(prefix);
+   g_nparts = hypredrv_CountNumberOfPartitions(prefix);
    nparts   = g_nparts / nprocs;
    nparts += (myid < (g_nparts % nprocs)) ? 1 : 0;
    if (g_nparts < nprocs)
    {
-      ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      ErrorMsgAdd("Invalid dofmap filename \"%s\" or invalid number of parts!", prefix);
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid dofmap filename \"%s\" or invalid number of parts!",
+                           prefix);
       return;
    }
 
@@ -441,7 +442,7 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
    }
 
    /* Set file suffix */
-   if (CheckBinaryDataExists(prefix))
+   if (hypredrv_CheckBinaryDataExists(prefix))
    {
       is_binary = true;
       strcpy(suffix, ".bin");
@@ -461,8 +462,8 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
       snprintf(filename, sizeof(filename), "%s.%05d%s", prefix, partids[part], suffix);
       if ((fp = fopen(filename, code)) == NULL)
       {
-         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         ErrorMsgAddInvalidFilename(filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAddInvalidFilename(filename);
          return;
       }
 
@@ -470,14 +471,14 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
                                : (size_t)fscanf(fp, "%zu", &num_entries);
       if (count != 1)
       {
-         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         ErrorMsgAdd("Invalid number of header entries!");
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid number of header entries!");
          return;
       }
       fclose(fp);
       num_entries_all += num_entries;
    }
-   int_array = IntArrayCreate(num_entries_all);
+   int_array = hypredrv_IntArrayCreate(num_entries_all);
 
    /* Fill entries */
    for (size_t part = 0, idx = 0; part < (size_t)nparts; part++)
@@ -485,8 +486,8 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
       snprintf(filename, sizeof(filename), "%s.%05d%s", prefix, partids[part], suffix);
       if ((fp = fopen(filename, code)) == NULL)
       {
-         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         ErrorMsgAddInvalidFilename(filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAddInvalidFilename(filename);
          return;
       }
 
@@ -494,8 +495,8 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
                                : (size_t)fscanf(fp, "%zu", &num_entries);
       if (count != 1)
       {
-         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         ErrorMsgAdd("Invalid number of header entries!");
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid number of header entries!");
          return;
       }
 
@@ -517,8 +518,9 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
       }
       if (count != num_entries)
       {
-         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         ErrorMsgAdd("Expected %d, but found %ld coefficients!", num_entries, count);
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Expected %d, but found %ld coefficients!", num_entries,
+                              count);
          return;
       }
 
@@ -528,39 +530,40 @@ IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
    free(partids);
 
    /* Compute unique varibales */
-   IntArrayUnique(comm, int_array);
+   hypredrv_IntArrayUnique(comm, int_array);
 
    *int_array_ptr = int_array;
 }
 
 /*-----------------------------------------------------------------------------
- * IntArrayBuild
+ * hypredrv_IntArrayBuild
  *-----------------------------------------------------------------------------*/
 
 void
-IntArrayBuild(MPI_Comm comm, int size, const int *dofmap, IntArray **int_array_ptr)
+hypredrv_IntArrayBuild(MPI_Comm comm, int size, const int *dofmap,
+                       IntArray **int_array_ptr)
 {
    IntArray *int_array = NULL;
 
-   int_array = IntArrayCreate((size_t)size);
+   int_array = hypredrv_IntArrayCreate((size_t)size);
    memcpy(int_array->data, dofmap, (size_t)size * sizeof(int));
-   IntArrayUnique(comm, int_array);
+   hypredrv_IntArrayUnique(comm, int_array);
 
    *int_array_ptr = int_array;
 }
 
 /*-----------------------------------------------------------------------------
- * IntArrayBuildInterleaved
+ * hypredrv_IntArrayBuildInterleaved
  *-----------------------------------------------------------------------------*/
 
 void
-IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types,
-                         IntArray **int_array_ptr)
+hypredrv_IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types,
+                                  IntArray **int_array_ptr)
 {
    IntArray *int_array = NULL;
    int       size      = num_dof_types * num_local_blocks; // TODO: check overflow
 
-   int_array = IntArrayCreate((size_t)size);
+   int_array = hypredrv_IntArrayCreate((size_t)size);
    for (int i = 0; i < num_local_blocks; i++)
    {
       for (int j = 0; j < num_dof_types; j++)
@@ -568,23 +571,23 @@ IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types,
          int_array->data[(i * num_dof_types) + j] = j;
       }
    }
-   IntArrayUnique(comm, int_array);
+   hypredrv_IntArrayUnique(comm, int_array);
 
    *int_array_ptr = int_array;
 }
 
 /*-----------------------------------------------------------------------------
- * IntArrayBuildContiguous
+ * hypredrv_IntArrayBuildContiguous
  *-----------------------------------------------------------------------------*/
 
 void
-IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types,
-                        IntArray **int_array_ptr)
+hypredrv_IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types,
+                                 IntArray **int_array_ptr)
 {
    IntArray *int_array = NULL;
    int       size      = num_dof_types * num_local_blocks; // TODO: check overflow
 
-   int_array = IntArrayCreate((size_t)size);
+   int_array = hypredrv_IntArrayCreate((size_t)size);
    for (int i = 0; i < num_dof_types; i++)
    {
       for (int j = 0; j < num_local_blocks; j++)
@@ -592,7 +595,7 @@ IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types,
          int_array->data[(i * num_local_blocks) + j] = j;
       }
    }
-   IntArrayUnique(comm, int_array);
+   hypredrv_IntArrayUnique(comm, int_array);
 
    *int_array_ptr = int_array;
 }
@@ -615,11 +618,11 @@ const StrIntMapArray OnOffMapArray = {
 };
 
 /*--------------------------------------------------------------------------
- * StrArrayEntryExists
+ * hypredrv_StrArrayEntryExists
  *--------------------------------------------------------------------------*/
 
 bool
-StrArrayEntryExists(const StrArray valid, const char *string)
+hypredrv_StrArrayEntryExists(const StrArray valid, const char *string)
 {
    size_t i = 0;
 
@@ -635,11 +638,11 @@ StrArrayEntryExists(const StrArray valid, const char *string)
 }
 
 /*--------------------------------------------------------------------------
- * StrIntMapArrayGetImage
+ * hypredrv_StrIntMapArrayGetImage
  *--------------------------------------------------------------------------*/
 
 int
-StrIntMapArrayGetImage(const StrIntMapArray valid, const char *string)
+hypredrv_StrIntMapArrayGetImage(const StrIntMapArray valid, const char *string)
 {
    char    *end_ptr    = NULL;
    long int string_num = strtol(string, &end_ptr, 10);
@@ -672,11 +675,11 @@ StrIntMapArrayGetImage(const StrIntMapArray valid, const char *string)
 }
 
 /*--------------------------------------------------------------------------
- * StrIntMapArrayDomainEntryExists
+ * hypredrv_StrIntMapArrayDomainEntryExists
  *--------------------------------------------------------------------------*/
 
 bool
-StrIntMapArrayDomainEntryExists(const StrIntMapArray valid, const char *string)
+hypredrv_StrIntMapArrayDomainEntryExists(const StrIntMapArray valid, const char *string)
 {
-   return (StrIntMapArrayGetImage(valid, string) > INT_MIN) != 0;
+   return (hypredrv_StrIntMapArrayGetImage(valid, string) > INT_MIN) != 0;
 }

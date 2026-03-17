@@ -12,12 +12,12 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define Cheby_FIELDS(_prefix)                                \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, order, FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, eig_est, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, variant, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, scale, FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fraction, FieldTypeDoubleSet)
+#define Cheby_FIELDS(_prefix)                                         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, order, hypredrv_FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, eig_est, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, variant, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, scale, hypredrv_FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fraction, hypredrv_FieldTypeDoubleSet)
 
 /* Define num_fields macro */
 #define Cheby_NUM_FIELDS \
@@ -25,15 +25,14 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(Cheby)      // LCOV_EXCL_LINE
-DEFINE_VOID_GET_VALID_VALUES_FUNC(Cheby) // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS(Cheby)                        // LCOV_EXCL_LINE
+hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_Cheby) // LCOV_EXCL_LINE
 
-/*-----------------------------------------------------------------------------
- * ChebySetDefaultArgs
- *-----------------------------------------------------------------------------*/
+   /*-----------------------------------------------------------------------------
+    * ChebySetDefaultArgs
+    *-----------------------------------------------------------------------------*/
 
-void
-ChebySetDefaultArgs(Cheby_args *args)
+   void hypredrv_ChebySetDefaultArgs(Cheby_args *args)
 {
    args->order    = 2;
    args->eig_est  = 10;

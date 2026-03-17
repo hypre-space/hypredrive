@@ -28,8 +28,10 @@ HYPREDRV_IJMatrixInitialize(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_loca
 }
 
 void
-IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_nparts,
-                            HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *mat_ptr)
+hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
+                                     uint64_t             g_nparts,
+                                     HYPRE_MemoryLocation memory_location,
+                                     HYPRE_IJMatrix      *mat_ptr)
 {
    int      nprocs = 0, myid = 0;
    uint32_t nparts = 0;
@@ -68,8 +70,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    if (g_nparts < (size_t)nprocs)
    {
       *mat_ptr = NULL;
-      ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      ErrorMsgAdd("Invalid number of parts!");
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid number of parts!");
       return;
    }
 
@@ -91,16 +93,16 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       fp = fopen(filename, "rb");
       if (!fp)
       {
-         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         ErrorMsgAddInvalidFilename(filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAddInvalidFilename(filename);
          goto cleanup;
       }
 
       /* Read header contents */
       if (fread(header, sizeof(uint64_t), 11, fp) != 11)
       {
-         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         ErrorMsgAdd("Could not read header from %s", filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
          fclose(fp);
          goto cleanup;
       }
@@ -143,8 +145,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          fp = fopen(filename, "rb");
          if (!fp || fread(header, sizeof(uint64_t), 11, fp) != 11)
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read header from %s", filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
             if (fp) fclose(fp);
             free(dsizes);
             free(osizes);
@@ -157,8 +159,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          {
             if (fread(h_rows, sizeof(HYPRE_BigInt), header[6], fp) != header[6])
             {
-               ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-               ErrorMsgAdd("Could not read row indices from %s", filename);
+               hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+               hypredrv_ErrorMsgAdd("Could not read row indices from %s", filename);
                fclose(fp);
                free(dsizes);
                free(osizes);
@@ -167,8 +169,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
             if (fread(h_cols, sizeof(HYPRE_BigInt), header[6], fp) != header[6])
             {
-               ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-               ErrorMsgAdd("Could not read column indices from %s", filename);
+               hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+               hypredrv_ErrorMsgAdd("Could not read column indices from %s", filename);
                fclose(fp);
                free(dsizes);
                free(osizes);
@@ -187,8 +189,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
             if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
             {
-               ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-               ErrorMsgAdd("Could not read row indices from %s", filename);
+               hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+               hypredrv_ErrorMsgAdd("Could not read row indices from %s", filename);
                fclose(fp);
                free(buffer);
                free(dsizes);
@@ -203,8 +205,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
             if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
             {
-               ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-               ErrorMsgAdd("Could not read column indices from %s", filename);
+               hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+               hypredrv_ErrorMsgAdd("Could not read column indices from %s", filename);
                fclose(fp);
                free(buffer);
                free(dsizes);
@@ -225,8 +227,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
             if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
             {
-               ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-               ErrorMsgAdd("Could not read row indices from %s", filename);
+               hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+               hypredrv_ErrorMsgAdd("Could not read row indices from %s", filename);
                fclose(fp);
                free(buffer);
                free(dsizes);
@@ -241,8 +243,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
             if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
             {
-               ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-               ErrorMsgAdd("Could not read column indices from %s", filename);
+               hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+               hypredrv_ErrorMsgAdd("Could not read column indices from %s", filename);
                fclose(fp);
                free(buffer);
                free(dsizes);
@@ -261,8 +263,9 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
          /* GCOVR_EXCL_STOP */
          else
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Invalid row/col data type size %lld at %s", header[1], filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Invalid row/col data type size %lld at %s", header[1],
+                                 filename);
             fclose(fp);
             free(dsizes);
             free(osizes);
@@ -357,8 +360,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       fp = fopen(filename, "rb");
       if (!fp || fread(header, sizeof(uint64_t), 11, fp) != 11)
       {
-         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         ErrorMsgAdd("Could not read header from %s", filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
          if (fp) fclose(fp);
          goto cleanup;
       }
@@ -369,16 +372,16 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       {
          if (fread(h_rows, sizeof(HYPRE_BigInt), header[6], fp) != header[6])
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read row indices from %s", filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Could not read row indices from %s", filename);
             fclose(fp);
             goto cleanup;
          }
 
          if (fread(h_cols, sizeof(HYPRE_BigInt), header[6], fp) != header[6])
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read column indices from %s", filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Could not read column indices from %s", filename);
             fclose(fp);
             goto cleanup;
          }
@@ -391,8 +394,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
          if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read row indices from %s", filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Could not read row indices from %s", filename);
             fclose(fp);
             free(buffer);
             goto cleanup;
@@ -405,8 +408,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
          if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read column indices from %s", filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Could not read column indices from %s", filename);
             fclose(fp);
             free(buffer);
             goto cleanup;
@@ -425,8 +428,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
          if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read row indices from %s", filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Could not read row indices from %s", filename);
             fclose(fp);
             free(buffer);
             goto cleanup;
@@ -439,8 +442,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
          if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read column indices from %s", filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Could not read column indices from %s", filename);
             fclose(fp);
             free(buffer);
             goto cleanup;
@@ -457,8 +460,9 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       /* GCOVR_EXCL_STOP */
       else
       {
-         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         ErrorMsgAdd("Invalid row/col data type size %lld at %s", header[1], filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid row/col data type size %lld at %s", header[1],
+                              filename);
          fclose(fp);
          goto cleanup;
       }
@@ -487,8 +491,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
          if (!buffer || fread(buffer, sizeof(float), header[6], fp) != header[6])
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read coeficients from %s", filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
             fclose(fp);
             free(buffer);
             goto cleanup;
@@ -511,8 +515,8 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
          if (!buffer || fread(buffer, sizeof(double), header[6], fp) != header[6])
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read coeficients from %s", filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
             fclose(fp);
             free(buffer);
             goto cleanup;
@@ -527,9 +531,9 @@ IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       }
       else
       {
-         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[2],
-                     filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[2],
+                              filename);
          fclose(fp);
          goto cleanup;
       }
@@ -563,7 +567,7 @@ cleanup:
       hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
    }
 #endif
-   if (ErrorCodeActive())
+   if (hypredrv_ErrorCodeActive())
    {
       if (mat)
       {

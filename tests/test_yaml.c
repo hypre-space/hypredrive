@@ -18,12 +18,12 @@
 static void
 test_YAMLnodeCreate_basic(void)
 {
-   YAMLnode *node = YAMLnodeCreate("key", "value", 0);
+   YAMLnode *node = hypredrv_YAMLnodeCreate("key", "value", 0);
    ASSERT_NOT_NULL(node);
    ASSERT_STREQ(node->key, "key");
    ASSERT_STREQ(node->val, "value");
    /* Note: indent is not a direct field, it's stored in the struct differently */
-   YAMLnodeDestroy(node);
+   hypredrv_YAMLnodeDestroy(node);
 }
 
 /*-----------------------------------------------------------------------------
@@ -33,87 +33,87 @@ test_YAMLnodeCreate_basic(void)
 static void
 test_YAMLtreeCreate_basic(void)
 {
-   YAMLtree *tree = YAMLtreeCreate(10);
+   YAMLtree *tree = hypredrv_YAMLtreeCreate(10);
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
    ASSERT_NULL(tree);
 }
 
 /*-----------------------------------------------------------------------------
- * Test YAMLnodeFindByKey
+ * Test hypredrv_YAMLnodeFindByKey
  *-----------------------------------------------------------------------------*/
 
 static void
 test_YAMLnodeFindByKey_basic(void)
 {
-   YAMLtree *tree = YAMLtreeCreate(10);
+   YAMLtree *tree = hypredrv_YAMLtreeCreate(10);
    ASSERT_NOT_NULL(tree);
 
    YAMLnode *root  = tree->root;
-   YAMLnode *child = YAMLnodeCreate("child", "value", 1);
-   YAMLnodeAddChild(root, child);
+   YAMLnode *child = hypredrv_YAMLnodeCreate("child", "value", 1);
+   hypredrv_YAMLnodeAddChild(root, child);
 
-   YAMLnode *found = YAMLnodeFindByKey(root, "child");
+   YAMLnode *found = hypredrv_YAMLnodeFindByKey(root, "child");
    ASSERT_NOT_NULL(found);
    ASSERT_STREQ(found->key, "child");
 
-   YAMLnode *not_found = YAMLnodeFindByKey(root, "nonexistent");
+   YAMLnode *not_found = hypredrv_YAMLnodeFindByKey(root, "nonexistent");
    ASSERT_NULL(not_found);
 
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
- * Test YAMLnodeFindChildByKey
+ * Test hypredrv_YAMLnodeFindChildByKey
  *-----------------------------------------------------------------------------*/
 
 static void
 test_YAMLnodeFindChildByKey_basic(void)
 {
-   YAMLtree *tree = YAMLtreeCreate(10);
+   YAMLtree *tree = hypredrv_YAMLtreeCreate(10);
    YAMLnode *root = tree->root;
 
-   YAMLnode *child1 = YAMLnodeCreate("child1", "value1", 1);
-   YAMLnode *child2 = YAMLnodeCreate("child2", "value2", 1);
-   YAMLnodeAddChild(root, child1);
-   YAMLnodeAddChild(root, child2);
+   YAMLnode *child1 = hypredrv_YAMLnodeCreate("child1", "value1", 1);
+   YAMLnode *child2 = hypredrv_YAMLnodeCreate("child2", "value2", 1);
+   hypredrv_YAMLnodeAddChild(root, child1);
+   hypredrv_YAMLnodeAddChild(root, child2);
 
-   YAMLnode *found = YAMLnodeFindChildByKey(root, "child1");
+   YAMLnode *found = hypredrv_YAMLnodeFindChildByKey(root, "child1");
    ASSERT_NOT_NULL(found);
    ASSERT_STREQ(found->key, "child1");
 
-   found = YAMLnodeFindChildByKey(root, "child2");
+   found = hypredrv_YAMLnodeFindChildByKey(root, "child2");
    ASSERT_NOT_NULL(found);
    ASSERT_STREQ(found->key, "child2");
 
-   found = YAMLnodeFindChildByKey(root, "nonexistent");
+   found = hypredrv_YAMLnodeFindChildByKey(root, "nonexistent");
    ASSERT_NULL(found);
 
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
- * Test YAMLnodeFindChildValueByKey
+ * Test hypredrv_YAMLnodeFindChildValueByKey
  *-----------------------------------------------------------------------------*/
 
 static void
 test_YAMLnodeFindChildValueByKey_basic(void)
 {
-   YAMLtree *tree = YAMLtreeCreate(10);
+   YAMLtree *tree = hypredrv_YAMLtreeCreate(10);
    YAMLnode *root = tree->root;
 
-   YAMLnode *child = YAMLnodeCreate("key", "value", 1);
-   YAMLnodeAddChild(root, child);
+   YAMLnode *child = hypredrv_YAMLnodeCreate("key", "value", 1);
+   hypredrv_YAMLnodeAddChild(root, child);
 
-   char *value = YAMLnodeFindChildValueByKey(root, "key");
+   char *value = hypredrv_YAMLnodeFindChildValueByKey(root, "key");
    ASSERT_NOT_NULL(value);
    ASSERT_STREQ(value, "value");
 
-   value = YAMLnodeFindChildValueByKey(root, "nonexistent");
+   value = hypredrv_YAMLnodeFindChildValueByKey(root, "nonexistent");
    ASSERT_NULL(value);
 
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
@@ -129,13 +129,13 @@ test_YAMLtreeBuild_simple(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   /* YAMLtreeBuild creates a tree from the input YAML text */
-   YAMLtreeBuild(0, text, &tree);
+   /* hypredrv_YAMLtreeBuild creates a tree from the input YAML text */
+   hypredrv_YAMLtreeBuild(0, text, &tree);
 
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
 
-   char *value = YAMLnodeFindChildValueByKey(tree->root, "key");
+   char *value = hypredrv_YAMLnodeFindChildValueByKey(tree->root, "key");
    /* value may be NULL if parsing doesn't work as expected - check for basic tree
     * structure */
    if (value)
@@ -144,11 +144,11 @@ test_YAMLtreeBuild_simple(void)
    }
 
    free(text);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
- * Test YAMLtreeBuild does not mutate the caller-provided text buffer
+ * Test hypredrv_YAMLtreeBuild does not mutate the caller-provided text buffer
  *-----------------------------------------------------------------------------*/
 
 static void
@@ -162,12 +162,12 @@ test_YAMLtreeBuild_preserves_input_text(void)
    ASSERT_NOT_NULL(text);
    ASSERT_NOT_NULL(text_copy);
 
-   YAMLtreeBuild(2, text, &tree);
+   hypredrv_YAMLtreeBuild(2, text, &tree);
 
    ASSERT_NOT_NULL(tree);
    ASSERT_STREQ(text, text_copy);
 
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
    free(text);
    free(text_copy);
 }
@@ -185,17 +185,17 @@ test_YAMLtreeBuild_nested(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   /* YAMLtreeBuild creates a tree from the input YAML text */
-   YAMLtreeBuild(0, text, &tree);
+   /* hypredrv_YAMLtreeBuild creates a tree from the input YAML text */
+   hypredrv_YAMLtreeBuild(0, text, &tree);
 
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
 
-   YAMLnode *parent = YAMLnodeFindChildByKey(tree->root, "parent");
+   YAMLnode *parent = hypredrv_YAMLnodeFindChildByKey(tree->root, "parent");
    /* Basic test - parent may or may not exist depending on parsing */
    if (parent)
    {
-      char *value = YAMLnodeFindChildValueByKey(parent, "child");
+      char *value = hypredrv_YAMLnodeFindChildValueByKey(parent, "child");
       if (value)
       {
          ASSERT_STREQ(value, "value");
@@ -203,7 +203,7 @@ test_YAMLtreeBuild_nested(void)
    }
 
    free(text);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
@@ -220,65 +220,65 @@ test_YAMLtreeBuild_invalid_indent(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   /* YAMLtreeBuild creates a tree from the input YAML text */
-   YAMLtreeBuild(0, text, &tree);
+   /* hypredrv_YAMLtreeBuild creates a tree from the input YAML text */
+   hypredrv_YAMLtreeBuild(0, text, &tree);
 
    /* Tree should be created, but validation should catch errors */
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
 
    /* Validate the tree - should detect invalid indentation */
-   YAMLtreeValidate(tree);
+   hypredrv_YAMLtreeValidate(tree);
 
    free(text);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 static void
 test_YAMLnodeFindByKey_nonexistent(void)
 {
-   YAMLtree *tree = YAMLtreeCreate(10);
+   YAMLtree *tree = hypredrv_YAMLtreeCreate(10);
    YAMLnode *root = tree->root;
 
-   YAMLnode *child = YAMLnodeCreate("child", "value", 1);
-   YAMLnodeAddChild(root, child);
+   YAMLnode *child = hypredrv_YAMLnodeCreate("child", "value", 1);
+   hypredrv_YAMLnodeAddChild(root, child);
 
    /* Find existing key */
-   YAMLnode *found = YAMLnodeFindByKey(root, "child");
+   YAMLnode *found = hypredrv_YAMLnodeFindByKey(root, "child");
    ASSERT_NOT_NULL(found);
 
    /* Find nonexistent key */
-   YAMLnode *not_found = YAMLnodeFindByKey(root, "nonexistent");
+   YAMLnode *not_found = hypredrv_YAMLnodeFindByKey(root, "nonexistent");
    ASSERT_NULL(not_found);
 
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 static void
 test_YAMLnodeFindChildValueByKey_nonexistent(void)
 {
-   YAMLtree *tree = YAMLtreeCreate(10);
+   YAMLtree *tree = hypredrv_YAMLtreeCreate(10);
    YAMLnode *root = tree->root;
 
-   YAMLnode *child = YAMLnodeCreate("key", "value", 1);
-   YAMLnodeAddChild(root, child);
+   YAMLnode *child = hypredrv_YAMLnodeCreate("key", "value", 1);
+   hypredrv_YAMLnodeAddChild(root, child);
 
    /* Find existing value */
-   char *value = YAMLnodeFindChildValueByKey(root, "key");
+   char *value = hypredrv_YAMLnodeFindChildValueByKey(root, "key");
    ASSERT_NOT_NULL(value);
    ASSERT_STREQ(value, "value");
 
    /* Find nonexistent value */
-   value = YAMLnodeFindChildValueByKey(root, "nonexistent");
+   value = hypredrv_YAMLnodeFindChildValueByKey(root, "nonexistent");
    ASSERT_NULL(value);
 
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 static void
 test_YAMLtreeUpdate_fullargv_longflag_and_skip_nonoverride_tokens(void)
 {
-   YAMLtree *tree = YAMLtreeCreate(10);
+   YAMLtree *tree = hypredrv_YAMLtreeCreate(10);
    ASSERT_NOT_NULL(tree);
 
    /* Full argv mode: use the long flag (--args), include a non-override token after it
@@ -286,60 +286,60 @@ test_YAMLtreeUpdate_fullargv_longflag_and_skip_nonoverride_tokens(void)
    char *argv[] = {(char *)"--args", (char *)"not_an_override", (char *)"1",
                    (char *)"--foo:bar", (char *)"baz"};
 
-   ErrorCodeResetAll();
-   YAMLtreeUpdate(5, argv, tree);
-   ASSERT_FALSE(ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeUpdate(5, argv, tree);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   YAMLnode *foo = YAMLnodeFindChildByKey(tree->root, "foo");
+   YAMLnode *foo = hypredrv_YAMLnodeFindChildByKey(tree->root, "foo");
    ASSERT_NOT_NULL(foo);
-   YAMLnode *bar = YAMLnodeFindChildByKey(foo, "bar");
+   YAMLnode *bar = hypredrv_YAMLnodeFindChildByKey(foo, "bar");
    ASSERT_NOT_NULL(bar);
    ASSERT_STREQ(bar->val, "baz");
 
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 static void
 test_YAMLtreeUpdate_fullargv_shortflag(void)
 {
-   YAMLtree *tree = YAMLtreeCreate(10);
+   YAMLtree *tree = hypredrv_YAMLtreeCreate(10);
    ASSERT_NOT_NULL(tree);
 
    /* Full argv mode using the short flag (-a). */
    char *argv[] = {(char *)"-a", (char *)"--x:y", (char *)"1"};
 
-   ErrorCodeResetAll();
-   YAMLtreeUpdate(3, argv, tree);
-   ASSERT_FALSE(ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeUpdate(3, argv, tree);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   YAMLnode *x = YAMLnodeFindChildByKey(tree->root, "x");
+   YAMLnode *x = hypredrv_YAMLnodeFindChildByKey(tree->root, "x");
    ASSERT_NOT_NULL(x);
-   YAMLnode *y = YAMLnodeFindChildByKey(x, "y");
+   YAMLnode *y = hypredrv_YAMLnodeFindChildByKey(x, "y");
    ASSERT_NOT_NULL(y);
    ASSERT_STREQ(y->val, "1");
 
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 static void
 test_YAMLnodePrint_only_valid_mode(void)
 {
-   YAMLtree *tree = YAMLtreeCreate(10);
+   YAMLtree *tree = hypredrv_YAMLtreeCreate(10);
    ASSERT_NOT_NULL(tree);
 
    /* Ensure at least one node is YAML_NODE_VALID so YAML_PRINT_MODE_ONLY_VALID
     * executes its conditional printing branch. */
    tree->root->valid = YAML_NODE_VALID;
-   YAMLnode *a       = YAMLnodeCreate("a", "1", 1);
-   YAMLnode *b       = YAMLnodeCreate("b", "2", 1);
+   YAMLnode *a       = hypredrv_YAMLnodeCreate("a", "1", 1);
+   YAMLnode *b       = hypredrv_YAMLnodeCreate("b", "2", 1);
    a->valid          = YAML_NODE_VALID;
    b->valid          = YAML_NODE_INVALID_KEY;
-   YAMLnodeAddChild(tree->root, a);
-   YAMLnodeAddChild(tree->root, b);
+   hypredrv_YAMLnodeAddChild(tree->root, a);
+   hypredrv_YAMLnodeAddChild(tree->root, b);
 
-   YAMLnodePrint(tree->root, YAML_PRINT_MODE_ONLY_VALID);
+   hypredrv_YAMLnodePrint(tree->root, YAML_PRINT_MODE_ONLY_VALID);
 
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
@@ -360,31 +360,31 @@ test_YAMLtreeBuild_deeply_nested(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   YAMLtreeBuild(0, text, &tree);
+   hypredrv_YAMLtreeBuild(0, text, &tree);
 
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
 
    /* Find parent node */
-   YAMLnode *parent = YAMLnodeFindChildByKey(tree->root, "parent");
+   YAMLnode *parent = hypredrv_YAMLnodeFindChildByKey(tree->root, "parent");
    ASSERT_NOT_NULL(parent);
    ASSERT_STREQ(parent->key, "parent");
    ASSERT_STREQ(parent->val, ""); /* parent has children, so val is empty */
 
    /* Find middle node */
-   YAMLnode *middle = YAMLnodeFindChildByKey(parent, "middle");
+   YAMLnode *middle = hypredrv_YAMLnodeFindChildByKey(parent, "middle");
    ASSERT_NOT_NULL(middle);
    ASSERT_STREQ(middle->key, "middle");
    ASSERT_STREQ(middle->val, ""); /* middle has children, so val is empty */
 
    /* Find child node */
-   YAMLnode *child = YAMLnodeFindChildByKey(middle, "child");
+   YAMLnode *child = hypredrv_YAMLnodeFindChildByKey(middle, "child");
    ASSERT_NOT_NULL(child);
    ASSERT_STREQ(child->key, "child");
    ASSERT_STREQ(child->val, "value");
 
    free(text);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
@@ -402,17 +402,17 @@ test_YAMLnode_key_val_distinction(void)
    strcpy(text, yaml_flat);
 
    YAMLtree *tree_flat = NULL;
-   YAMLtreeBuild(0, text, &tree_flat);
+   hypredrv_YAMLtreeBuild(0, text, &tree_flat);
    ASSERT_NOT_NULL(tree_flat);
 
-   YAMLnode *solver_flat = YAMLnodeFindChildByKey(tree_flat->root, "solver");
+   YAMLnode *solver_flat = hypredrv_YAMLnodeFindChildByKey(tree_flat->root, "solver");
    ASSERT_NOT_NULL(solver_flat);
    ASSERT_STREQ(solver_flat->key, "solver");
    ASSERT_STREQ(solver_flat->val, "gmres");
    ASSERT_NULL(solver_flat->children); /* No children */
 
    free(text);
-   YAMLtreeDestroy(&tree_flat);
+   hypredrv_YAMLtreeDestroy(&tree_flat);
 
    /* When 'solver' has children, val should be empty */
    const char *yaml_nested = "solver:\n  type: gmres\n";
@@ -421,22 +421,22 @@ test_YAMLnode_key_val_distinction(void)
    strcpy(text, yaml_nested);
 
    YAMLtree *tree_nested = NULL;
-   YAMLtreeBuild(0, text, &tree_nested);
+   hypredrv_YAMLtreeBuild(0, text, &tree_nested);
    ASSERT_NOT_NULL(tree_nested);
 
-   YAMLnode *solver_nested = YAMLnodeFindChildByKey(tree_nested->root, "solver");
+   YAMLnode *solver_nested = hypredrv_YAMLnodeFindChildByKey(tree_nested->root, "solver");
    ASSERT_NOT_NULL(solver_nested);
    ASSERT_STREQ(solver_nested->key, "solver");
    ASSERT_STREQ(solver_nested->val, ""); /* Has children, so val is empty */
    ASSERT_NOT_NULL(solver_nested->children);
 
-   YAMLnode *type_node = YAMLnodeFindChildByKey(solver_nested, "type");
+   YAMLnode *type_node = hypredrv_YAMLnodeFindChildByKey(solver_nested, "type");
    ASSERT_NOT_NULL(type_node);
    ASSERT_STREQ(type_node->key, "type");
    ASSERT_STREQ(type_node->val, "gmres");
 
    free(text);
-   YAMLtreeDestroy(&tree_nested);
+   hypredrv_YAMLtreeDestroy(&tree_nested);
 }
 
 /*-----------------------------------------------------------------------------
@@ -459,38 +459,38 @@ test_YAMLtreeBuild_mgr_coarsest_level_pattern(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   YAMLtreeBuild(0, text, &tree);
+   hypredrv_YAMLtreeBuild(0, text, &tree);
 
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
 
    /* Find coarsest_level */
-   YAMLnode *coarsest = YAMLnodeFindChildByKey(tree->root, "coarsest_level");
+   YAMLnode *coarsest = hypredrv_YAMLnodeFindChildByKey(tree->root, "coarsest_level");
    ASSERT_NOT_NULL(coarsest);
    ASSERT_STREQ(coarsest->key, "coarsest_level");
    ASSERT_STREQ(coarsest->val, ""); /* Has children */
    ASSERT_NOT_NULL(coarsest->children);
 
    /* Find ilu - this is where the bug was: code was checking val instead of key */
-   YAMLnode *ilu = YAMLnodeFindChildByKey(coarsest, "ilu");
+   YAMLnode *ilu = hypredrv_YAMLnodeFindChildByKey(coarsest, "ilu");
    ASSERT_NOT_NULL(ilu);
    ASSERT_STREQ(ilu->key, "ilu"); /* KEY is "ilu" */
    ASSERT_STREQ(ilu->val, "");    /* VAL is empty because ilu has children! */
    ASSERT_NOT_NULL(ilu->children);
 
    /* Verify ilu's children */
-   YAMLnode *type_node = YAMLnodeFindChildByKey(ilu, "type");
+   YAMLnode *type_node = hypredrv_YAMLnodeFindChildByKey(ilu, "type");
    ASSERT_NOT_NULL(type_node);
    ASSERT_STREQ(type_node->key, "type");
    ASSERT_STREQ(type_node->val, "bj-ilut");
 
-   YAMLnode *droptol = YAMLnodeFindChildByKey(ilu, "droptol");
+   YAMLnode *droptol = hypredrv_YAMLnodeFindChildByKey(ilu, "droptol");
    ASSERT_NOT_NULL(droptol);
    ASSERT_STREQ(droptol->key, "droptol");
    ASSERT_STREQ(droptol->val, "1e-4");
 
    free(text);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
@@ -506,14 +506,14 @@ test_YAMLtreeBuild_siblings(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   YAMLtreeBuild(0, text, &tree);
+   hypredrv_YAMLtreeBuild(0, text, &tree);
 
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
 
-   YAMLnode *key1 = YAMLnodeFindChildByKey(tree->root, "key1");
-   YAMLnode *key2 = YAMLnodeFindChildByKey(tree->root, "key2");
-   YAMLnode *key3 = YAMLnodeFindChildByKey(tree->root, "key3");
+   YAMLnode *key1 = hypredrv_YAMLnodeFindChildByKey(tree->root, "key1");
+   YAMLnode *key2 = hypredrv_YAMLnodeFindChildByKey(tree->root, "key2");
+   YAMLnode *key3 = hypredrv_YAMLnodeFindChildByKey(tree->root, "key3");
 
    ASSERT_NOT_NULL(key1);
    ASSERT_NOT_NULL(key2);
@@ -529,7 +529,7 @@ test_YAMLtreeBuild_siblings(void)
    ASSERT_NULL(key3->next);
 
    free(text);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
@@ -552,15 +552,15 @@ test_YAMLtreeBuild_sequence_items(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   YAMLtreeBuild(2, text, &tree);
+   hypredrv_YAMLtreeBuild(2, text, &tree);
 
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
 
-   YAMLnode *precon = YAMLnodeFindChildByKey(tree->root, "preconditioner");
+   YAMLnode *precon = hypredrv_YAMLnodeFindChildByKey(tree->root, "preconditioner");
    ASSERT_NOT_NULL(precon);
 
-   YAMLnode *amg = YAMLnodeFindChildByKey(precon, "amg");
+   YAMLnode *amg = hypredrv_YAMLnodeFindChildByKey(precon, "amg");
    ASSERT_NOT_NULL(amg);
 
    /* Count sequence items */
@@ -586,13 +586,13 @@ test_YAMLtreeBuild_sequence_items(void)
    }
    ASSERT_NOT_NULL(first_item);
 
-   char *print_level = YAMLnodeFindChildValueByKey(first_item, "print_level");
+   char *print_level = hypredrv_YAMLnodeFindChildValueByKey(first_item, "print_level");
    ASSERT_NOT_NULL(print_level);
    ASSERT_STREQ(print_level, "1");
 
-   YAMLnode *coarsening = YAMLnodeFindChildByKey(first_item, "coarsening");
+   YAMLnode *coarsening = hypredrv_YAMLnodeFindChildByKey(first_item, "coarsening");
    ASSERT_NOT_NULL(coarsening);
-   char *type = YAMLnodeFindChildValueByKey(coarsening, "type");
+   char *type = hypredrv_YAMLnodeFindChildValueByKey(coarsening, "type");
    ASSERT_NOT_NULL(type);
    ASSERT_STREQ(type, "hmis");
 
@@ -601,18 +601,18 @@ test_YAMLtreeBuild_sequence_items(void)
    ASSERT_NOT_NULL(second_item);
    ASSERT_STREQ(second_item->key, "-");
 
-   print_level = YAMLnodeFindChildValueByKey(second_item, "print_level");
+   print_level = hypredrv_YAMLnodeFindChildValueByKey(second_item, "print_level");
    ASSERT_NOT_NULL(print_level);
    ASSERT_STREQ(print_level, "2");
 
-   coarsening = YAMLnodeFindChildByKey(second_item, "coarsening");
+   coarsening = hypredrv_YAMLnodeFindChildByKey(second_item, "coarsening");
    ASSERT_NOT_NULL(coarsening);
-   type = YAMLnodeFindChildValueByKey(coarsening, "type");
+   type = hypredrv_YAMLnodeFindChildValueByKey(coarsening, "type");
    ASSERT_NOT_NULL(type);
    ASSERT_STREQ(type, "pmis");
 
    free(text);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
@@ -647,31 +647,31 @@ test_YAMLtreeExpandIncludes_list_under_type(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   YAMLtreeBuild(2, text, &tree);
+   hypredrv_YAMLtreeBuild(2, text, &tree);
    ASSERT_NOT_NULL(tree);
 
-   YAMLtreeExpandIncludes(tree, tmpdir);
+   hypredrv_YAMLtreeExpandIncludes(tree, tmpdir);
 
-   YAMLnode *precon = YAMLnodeFindChildByKey(tree->root, "preconditioner");
+   YAMLnode *precon = hypredrv_YAMLnodeFindChildByKey(tree->root, "preconditioner");
    ASSERT_NOT_NULL(precon);
-   YAMLnode *amg = YAMLnodeFindChildByKey(precon, "amg");
+   YAMLnode *amg = hypredrv_YAMLnodeFindChildByKey(precon, "amg");
    ASSERT_NOT_NULL(amg);
 
    YAMLnode **items = NULL;
-   int        n     = YAMLnodeCollectSequenceItems(amg, &items);
+   int        n     = hypredrv_YAMLnodeCollectSequenceItems(amg, &items);
    ASSERT_EQ(n, 2);
 
-   YAMLnode *c0 = YAMLnodeFindChildByKey(items[0], "coarsening");
+   YAMLnode *c0 = hypredrv_YAMLnodeFindChildByKey(items[0], "coarsening");
    ASSERT_NOT_NULL(c0);
-   ASSERT_STREQ(YAMLnodeFindChildValueByKey(c0, "type"), "hmis");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(c0, "type"), "hmis");
 
-   YAMLnode *c1 = YAMLnodeFindChildByKey(items[1], "coarsening");
+   YAMLnode *c1 = hypredrv_YAMLnodeFindChildByKey(items[1], "coarsening");
    ASSERT_NOT_NULL(c1);
-   ASSERT_STREQ(YAMLnodeFindChildValueByKey(c1, "type"), "pmis");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(c1, "type"), "pmis");
 
    free(items);
    free(text);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 static void
@@ -701,16 +701,16 @@ test_YAMLtreeExpandIncludes_list_under_preconditioner(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   YAMLtreeBuild(2, text, &tree);
+   hypredrv_YAMLtreeBuild(2, text, &tree);
    ASSERT_NOT_NULL(tree);
 
-   YAMLtreeExpandIncludes(tree, tmpdir);
+   hypredrv_YAMLtreeExpandIncludes(tree, tmpdir);
 
-   YAMLnode *precon = YAMLnodeFindChildByKey(tree->root, "preconditioner");
+   YAMLnode *precon = hypredrv_YAMLnodeFindChildByKey(tree->root, "preconditioner");
    ASSERT_NOT_NULL(precon);
 
    YAMLnode **items = NULL;
-   int        n     = YAMLnodeCollectSequenceItems(precon, &items);
+   int        n     = hypredrv_YAMLnodeCollectSequenceItems(precon, &items);
    ASSERT_EQ(n, 2);
 
    ASSERT_NOT_NULL(items[0]->children);
@@ -722,7 +722,7 @@ test_YAMLtreeExpandIncludes_list_under_preconditioner(void)
 
    free(items);
    free(text);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
@@ -739,22 +739,22 @@ test_YAMLtreeBuild_indent_3_spaces(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   ErrorCodeResetAll();
-   YAMLtreeBuild(0, text, &tree);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeBuild(0, text, &tree);
 
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   YAMLnode *key = YAMLnodeFindChildByKey(tree->root, "key");
+   YAMLnode *key = hypredrv_YAMLnodeFindChildByKey(tree->root, "key");
    ASSERT_NOT_NULL(key);
 
-   YAMLnode *child = YAMLnodeFindChildByKey(key, "child");
+   YAMLnode *child = hypredrv_YAMLnodeFindChildByKey(key, "child");
    ASSERT_NOT_NULL(child);
    ASSERT_STREQ(child->val, "value");
 
    free(text);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
@@ -771,22 +771,22 @@ test_YAMLtreeBuild_indent_4_spaces(void)
    strcpy(text, yaml_text);
 
    YAMLtree *tree = NULL;
-   ErrorCodeResetAll();
-   YAMLtreeBuild(0, text, &tree);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeBuild(0, text, &tree);
 
    ASSERT_NOT_NULL(tree);
    ASSERT_NOT_NULL(tree->root);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   YAMLnode *key = YAMLnodeFindChildByKey(tree->root, "key");
+   YAMLnode *key = hypredrv_YAMLnodeFindChildByKey(tree->root, "key");
    ASSERT_NOT_NULL(key);
 
-   YAMLnode *child = YAMLnodeFindChildByKey(key, "child");
+   YAMLnode *child = hypredrv_YAMLnodeFindChildByKey(key, "child");
    ASSERT_NOT_NULL(child);
    ASSERT_STREQ(child->val, "value");
 
    free(text);
-   YAMLtreeDestroy(&tree);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 /*-----------------------------------------------------------------------------
@@ -803,17 +803,17 @@ test_YAMLtreeBuild_indent_with_tabs(void)
    fprintf(f, "key:\n\tchild: value\n");
    fclose(f);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
-   /* Use YAMLtextRead to trigger the tab detection */
+   /* Use hypredrv_YAMLtextRead to trigger the tab detection */
    int    base_indent = -1;
    size_t text_len    = 0;
    char  *yaml_text   = NULL;
-   YAMLtextRead("/tmp", "hypredrv_test_tabs.yml", 0, &base_indent, &text_len, &yaml_text);
+   hypredrv_YAMLtextRead("/tmp", "hypredrv_test_tabs.yml", 0, &base_indent, &text_len, &yaml_text);
 
    /* Should have detected the error */
-   ASSERT_TRUE(ErrorCodeActive());
-   ASSERT_EQ(ErrorCodeGet() & ERROR_YAML_MIXED_INDENT, ERROR_YAML_MIXED_INDENT);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(hypredrv_ErrorCodeGet() & ERROR_YAML_MIXED_INDENT, ERROR_YAML_MIXED_INDENT);
 
    if (yaml_text)
    {

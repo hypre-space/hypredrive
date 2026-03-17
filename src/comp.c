@@ -144,8 +144,8 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
 
    if (!osize_ptr || !output_ptr || (!input && isize > 0))
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Invalid arguments to hypredrv_compress");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid arguments to hypredrv_compress");
       return;
    }
 
@@ -165,8 +165,8 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
 
    if (isize > (size_t)UINT64_MAX)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Input too large to be encoded (%zu bytes)", isize);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Input too large to be encoded (%zu bytes)", isize);
       return;
    }
 
@@ -185,16 +185,16 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
                                 input, (uLong)isize);
          if (ierr != Z_OK)
          {
-            ErrorCodeSet(ERROR_UNKNOWN);
-            ErrorMsgAdd("ZLIB compression error: %d", ierr);
+            hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+            hypredrv_ErrorMsgAdd("ZLIB compression error: %d", ierr);
             free(*output_ptr);
             *output_ptr = NULL;
             return;
          }
          comp_size = (size_t)zcomp_size;
 #else
-         ErrorCodeSet(ERROR_MISSING_LIB);
-         ErrorMsgAdd("ZLIB compression not enabled during build time!");
+         hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+         hypredrv_ErrorMsgAdd("ZLIB compression not enabled during build time!");
          return;
 #endif
          break;
@@ -222,15 +222,16 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
          }
          if (ZSTD_isError(comp_size))
          {
-            ErrorCodeSet(ERROR_UNKNOWN);
-            ErrorMsgAdd("ZSTD compression error: %s", ZSTD_getErrorName(comp_size));
+            hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+            hypredrv_ErrorMsgAdd("ZSTD compression error: %s",
+                                 ZSTD_getErrorName(comp_size));
             free(*output_ptr);
             *output_ptr = NULL;
             return;
          }
 #else
-         ErrorCodeSet(ERROR_MISSING_LIB);
-         ErrorMsgAdd("ZSTD compression not enabled during build time!");
+         hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+         hypredrv_ErrorMsgAdd("ZSTD compression not enabled during build time!");
          return;
 #endif
          break;
@@ -240,8 +241,8 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
 #ifdef HYPREDRV_USING_LZ4
          if (isize > (size_t)INT_MAX)
          {
-            ErrorCodeSet(ERROR_INVALID_VAL);
-            ErrorMsgAdd("LZ4 input is too large (%zu bytes)", isize);
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("LZ4 input is too large (%zu bytes)", isize);
             return;
          }
          comp_size = (size_t)LZ4_compressBound((int)isize);
@@ -254,8 +255,8 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
                                                (int)isize, (int)comp_size);
             if (lz4_ret <= 0)
             {
-               ErrorCodeSet(ERROR_UNKNOWN);
-               ErrorMsgAdd("LZ4 compression failed!");
+               hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+               hypredrv_ErrorMsgAdd("LZ4 compression failed!");
                free(*output_ptr);
                *output_ptr = NULL;
                return;
@@ -263,8 +264,8 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
             comp_size = (size_t)lz4_ret;
          }
 #else
-         ErrorCodeSet(ERROR_MISSING_LIB);
-         ErrorMsgAdd("LZ4 compression not enabled during build time!");
+         hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+         hypredrv_ErrorMsgAdd("LZ4 compression not enabled during build time!");
          return;
 #endif
          break;
@@ -274,8 +275,8 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
 #ifdef HYPREDRV_USING_LZ4
          if (isize > (size_t)INT_MAX)
          {
-            ErrorCodeSet(ERROR_INVALID_VAL);
-            ErrorMsgAdd("LZ4HC input is too large (%zu bytes)", isize);
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("LZ4HC input is too large (%zu bytes)", isize);
             return;
          }
          comp_size = (size_t)LZ4_compressBound((int)isize);
@@ -289,8 +290,8 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
                                (int)isize, (int)comp_size, LZ4HC_CLEVEL_DEFAULT);
             if (lz4hc_ret <= 0)
             {
-               ErrorCodeSet(ERROR_UNKNOWN);
-               ErrorMsgAdd("LZ4HC compression failed!");
+               hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+               hypredrv_ErrorMsgAdd("LZ4HC compression failed!");
                free(*output_ptr);
                *output_ptr = NULL;
                return;
@@ -298,8 +299,8 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
             comp_size = (size_t)lz4hc_ret;
          }
 #else
-         ErrorCodeSet(ERROR_MISSING_LIB);
-         ErrorMsgAdd("LZ4 compression not enabled during build time!");
+         hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+         hypredrv_ErrorMsgAdd("LZ4 compression not enabled during build time!");
          return;
 #endif
          break;
@@ -322,8 +323,8 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
             blosc_destroy();
             if (blosc_ret <= 0)
             {
-               ErrorCodeSet(ERROR_UNKNOWN);
-               ErrorMsgAdd("Blosc compression failed!");
+               hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+               hypredrv_ErrorMsgAdd("Blosc compression failed!");
                free(*output_ptr);
                *output_ptr = NULL;
                return;
@@ -331,16 +332,16 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
             comp_size = (size_t)blosc_ret;
          }
 #else
-         ErrorCodeSet(ERROR_MISSING_LIB);
-         ErrorMsgAdd("BLOSC compression not enabled during build time!");
+         hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+         hypredrv_ErrorMsgAdd("BLOSC compression not enabled during build time!");
          return;
 #endif
          break;
       }
       default:
       {
-         ErrorCodeSet(ERROR_UNKNOWN);
-         ErrorMsgAdd("Unknown or unsupported compression algorithm: %d", algo);
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("Unknown or unsupported compression algorithm: %d", algo);
          return;
       }
    }
@@ -363,8 +364,8 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
 
    if (!osize_ptr || !output_ptr || (!input && isize > 0))
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Invalid arguments to hypredrv_decompress");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid arguments to hypredrv_decompress");
       return;
    }
 
@@ -384,8 +385,8 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
 
    if (isize < header_size)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Compressed buffer too small (%zu bytes)", isize);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Compressed buffer too small (%zu bytes)", isize);
       return;
    }
 
@@ -403,16 +404,16 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
                                         (uLong)(isize - header_size));
          if (ierr != Z_OK)
          {
-            ErrorCodeSet(ERROR_UNKNOWN);
-            ErrorMsgAdd("ZLIB decompression error: %d", ierr);
+            hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+            hypredrv_ErrorMsgAdd("ZLIB decompression error: %d", ierr);
             free(*output_ptr);
             *output_ptr = NULL;
             return;
          }
          orig_size = (size_t)zorig_size;
 #else
-         ErrorCodeSet(ERROR_MISSING_LIB);
-         ErrorMsgAdd("ZLIB decompression not enabled during build time!");
+         hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+         hypredrv_ErrorMsgAdd("ZLIB decompression not enabled during build time!");
          return;
 #endif
          break;
@@ -425,15 +426,16 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
                             (unsigned char *)input + header_size, isize - header_size);
          if (ZSTD_isError(result))
          {
-            ErrorCodeSet(ERROR_UNKNOWN);
-            ErrorMsgAdd("ZSTD decompression error: %s", ZSTD_getErrorName(result));
+            hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+            hypredrv_ErrorMsgAdd("ZSTD decompression error: %s",
+                                 ZSTD_getErrorName(result));
             free(*output_ptr);
             *output_ptr = NULL;
             return;
          }
 #else
-         ErrorCodeSet(ERROR_MISSING_LIB);
-         ErrorMsgAdd("ZSTD decompression not enabled during build time!");
+         hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+         hypredrv_ErrorMsgAdd("ZSTD decompression not enabled during build time!");
          return;
 #endif
          break;
@@ -444,8 +446,8 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
 #ifdef HYPREDRV_USING_LZ4
          if ((isize - header_size) > (size_t)INT_MAX || orig_size > (size_t)INT_MAX)
          {
-            ErrorCodeSet(ERROR_INVALID_VAL);
-            ErrorMsgAdd("LZ4 payload too large for API limits");
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("LZ4 payload too large for API limits");
             free(*output_ptr);
             *output_ptr = NULL;
             return;
@@ -455,15 +457,15 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
                                 (int)(isize - header_size), (int)orig_size);
          if (result < 0)
          {
-            ErrorCodeSet(ERROR_UNKNOWN);
-            ErrorMsgAdd("LZ4 decompression failed!");
+            hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+            hypredrv_ErrorMsgAdd("LZ4 decompression failed!");
             free(*output_ptr);
             *output_ptr = NULL;
             return;
          }
 #else
-         ErrorCodeSet(ERROR_MISSING_LIB);
-         ErrorMsgAdd("LZ4 decompression not enabled during build time!");
+         hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+         hypredrv_ErrorMsgAdd("LZ4 decompression not enabled during build time!");
          return;
 #endif
          break;
@@ -478,23 +480,23 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
          blosc_destroy();
          if (result <= 0)
          {
-            ErrorCodeSet(ERROR_UNKNOWN);
-            ErrorMsgAdd("Blosc decompression failed!");
+            hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+            hypredrv_ErrorMsgAdd("Blosc decompression failed!");
             free(*output_ptr);
             *output_ptr = NULL;
             return;
          }
 #else
-         ErrorCodeSet(ERROR_MISSING_LIB);
-         ErrorMsgAdd("BLOSC decompression not enabled during build time!");
+         hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+         hypredrv_ErrorMsgAdd("BLOSC decompression not enabled during build time!");
          return;
 #endif
          break;
       }
       default:
       {
-         ErrorCodeSet(ERROR_UNKNOWN);
-         ErrorMsgAdd("Unknown or unsupported decompression algorithm: %d", algo);
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("Unknown or unsupported decompression algorithm: %d", algo);
          free(*output_ptr);
          *output_ptr = NULL;
          return;

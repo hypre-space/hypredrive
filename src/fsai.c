@@ -12,19 +12,19 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define FSAI_FIELDS(_prefix)                                          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, algo_type, FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ls_type, FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_steps, FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_step_size, FieldTypeIntSet)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, eig_max_iters, FieldTypeIntSet)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, threshold, FieldTypeDoubleSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, kap_tolerance, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet)
+#define FSAI_FIELDS(_prefix)                                                   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, algo_type, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ls_type, hypredrv_FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_steps, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_step_size, hypredrv_FieldTypeIntSet)    \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, eig_max_iters, hypredrv_FieldTypeIntSet)    \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, threshold, hypredrv_FieldTypeDoubleSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, kap_tolerance, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, hypredrv_FieldTypeDoubleSet)
 
 /* Define num_fields macro */
 #define FSAI_NUM_FIELDS (sizeof(FSAI_field_offset_map) / sizeof(FSAI_field_offset_map[0]))
@@ -38,7 +38,7 @@ GENERATE_PREFIXED_COMPONENTS(FSAI) // LCOV_EXCL_LINE
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-FSAIGetValidValues(const char *key)
+hypredrv_FSAIGetValidValues(const char *key)
 {
    if (!strcmp(key, "algo_type"))
    {
@@ -57,7 +57,7 @@ FSAIGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-FSAISetDefaultArgs(FSAI_args *args)
+hypredrv_FSAISetDefaultArgs(FSAI_args *args)
 {
    args->max_iter      = 1;
    args->print_level   = 0;
@@ -74,16 +74,16 @@ FSAISetDefaultArgs(FSAI_args *args)
 }
 
 /*-----------------------------------------------------------------------------
- * FSAICreate
+ * hypredrv_FSAICreate
  *-----------------------------------------------------------------------------*/
 
 void
-FSAICreate(const FSAI_args *args, HYPRE_Solver *precon_ptr)
+hypredrv_FSAICreate(const FSAI_args *args, HYPRE_Solver *precon_ptr)
 {
 #if !HYPRE_CHECK_MIN_VERSION(22500, 0)
    (void)args;
-   ErrorCodeSet(ERROR_INVALID_PRECON);
-   ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
+   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+   hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
    *precon_ptr = NULL;
    return;
 #else

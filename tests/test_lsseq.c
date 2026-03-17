@@ -302,21 +302,21 @@ test_lsseq_summary_and_timesteps(void)
    write_test_container_with_info(filename);
    add_temp_file(filename);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
    ASSERT_TRUE(
-      LSSeqReadSummary(filename, &num_systems, &num_patterns, &has_dofmap, &has_timesteps));
+      hypredrv_LSSeqReadSummary(filename, &num_systems, &num_patterns, &has_dofmap, &has_timesteps));
    ASSERT_EQ(num_systems, 2);
    ASSERT_EQ(num_patterns, 2);
    ASSERT_TRUE(has_dofmap);
    ASSERT_TRUE(has_timesteps);
 
-   ErrorCodeResetAll();
-   ASSERT_TRUE(LSSeqReadTimesteps(filename, &starts));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_LSSeqReadTimesteps(filename, &starts));
    ASSERT_NOT_NULL(starts);
    ASSERT_EQ((int)starts->size, 2);
    ASSERT_EQ(starts->data[0], 0);
    ASSERT_EQ(starts->data[1], 1);
-   IntArrayDestroy(&starts);
+   hypredrv_IntArrayDestroy(&starts);
 }
 
 static void
@@ -330,15 +330,15 @@ test_lsseq_info_block(void)
    write_test_container_with_info(filename);
    add_temp_file(filename);
 
-   ErrorCodeResetAll();
-   ASSERT_TRUE(LSSeqReadInfo(filename, &payload, &nbytes));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_LSSeqReadInfo(filename, &payload, &nbytes));
    ASSERT_NOT_NULL(payload);
    ASSERT_TRUE(nbytes > 0);
    ASSERT_TRUE(strstr(payload, "foo=bar") != NULL);
    free(payload);
 
-   ErrorCodeResetAll();
-   ASSERT_TRUE(LSSeqReadMatrix(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &mat0));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_LSSeqReadMatrix(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &mat0));
    ASSERT_NOT_NULL(mat0);
    HYPRE_IJMatrixDestroy(mat0);
 }
@@ -355,41 +355,41 @@ test_lsseq_matrix_rhs_dofmap(void)
    write_test_container_with_info(filename);
    add_temp_file(filename);
 
-   ErrorCodeResetAll();
-   ASSERT_TRUE(LSSeqReadMatrix(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &mat0));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_LSSeqReadMatrix(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &mat0));
    ASSERT_NOT_NULL(mat0);
-   ASSERT_EQ((int)LinearSystemMatrixGetNumNonzeros(mat0), 2);
+   ASSERT_EQ((int)hypredrv_LinearSystemMatrixGetNumNonzeros(mat0), 2);
 
-   ErrorCodeResetAll();
-   ASSERT_TRUE(LSSeqReadRHS(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &rhs));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_LSSeqReadRHS(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &rhs));
    ASSERT_NOT_NULL(rhs);
 
-   ErrorCodeResetAll();
-   ASSERT_TRUE(LSSeqReadDofmap(MPI_COMM_SELF, filename, 0, &dofmap));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_LSSeqReadDofmap(MPI_COMM_SELF, filename, 0, &dofmap));
    ASSERT_NOT_NULL(dofmap);
    ASSERT_EQ((int)dofmap->size, 2);
    ASSERT_EQ(dofmap->data[0], 0);
    ASSERT_EQ(dofmap->data[1], 1);
 
-   IntArrayDestroy(&dofmap);
+   hypredrv_IntArrayDestroy(&dofmap);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat0);
    rhs = NULL;
    mat0 = NULL;
 
-   ErrorCodeResetAll();
-   ASSERT_TRUE(LSSeqReadMatrix(MPI_COMM_SELF, filename, 1, HYPRE_MEMORY_HOST, &mat1));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_LSSeqReadMatrix(MPI_COMM_SELF, filename, 1, HYPRE_MEMORY_HOST, &mat1));
    ASSERT_NOT_NULL(mat1);
-   ASSERT_EQ((int)LinearSystemMatrixGetNumNonzeros(mat1), 3);
+   ASSERT_EQ((int)hypredrv_LinearSystemMatrixGetNumNonzeros(mat1), 3);
    HYPRE_IJMatrixDestroy(mat1);
 
-   ErrorCodeResetAll();
-   ASSERT_TRUE(LSSeqReadDofmap(MPI_COMM_SELF, filename, 1, &dofmap));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_LSSeqReadDofmap(MPI_COMM_SELF, filename, 1, &dofmap));
    ASSERT_NOT_NULL(dofmap);
    ASSERT_EQ((int)dofmap->size, 2);
    ASSERT_EQ(dofmap->data[0], 1);
    ASSERT_EQ(dofmap->data[1], 1);
-   IntArrayDestroy(&dofmap);
+   hypredrv_IntArrayDestroy(&dofmap);
 }
 
 static void
@@ -402,11 +402,11 @@ test_lsseq_requires_info_header(void)
    write_test_container(filename);
    add_temp_file(filename);
 
-   ErrorCodeResetAll();
-   ASSERT_FALSE(LSSeqReadMatrix(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &mat));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_LSSeqReadMatrix(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &mat));
 
-   ErrorCodeResetAll();
-   ASSERT_FALSE(LSSeqReadTimesteps(filename, &starts));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_LSSeqReadTimesteps(filename, &starts));
 }
 
 int

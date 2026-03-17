@@ -120,15 +120,17 @@ typedef struct LSSeqTimestepEntry_struct
    int32_t ls_start;
 } LSSeqTimestepEntry;
 
-int LSSeqReadSummary(const char *filename, int *num_systems, int *num_patterns,
-                     int *has_dofmap, int *has_timesteps);
-int LSSeqReadInfo(const char *filename, char **payload_ptr, size_t *payload_size);
-int LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
-                    HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr);
-int LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
-                 HYPRE_MemoryLocation memory_location, HYPRE_IJVector *rhs_ptr);
-int LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
-                    IntArray **dofmap_ptr);
-int LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts);
+int hypredrv_LSSeqReadSummary(const char *filename, int *num_systems, int *num_patterns,
+                              int *has_dofmap, int *has_timesteps);
+int hypredrv_LSSeqReadInfo(const char *filename, char **payload_ptr,
+                           size_t *payload_size);
+int hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
+                             HYPRE_MemoryLocation memory_location,
+                             HYPRE_IJMatrix      *matrix_ptr);
+int hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
+                          HYPRE_MemoryLocation memory_location, HYPRE_IJVector *rhs_ptr);
+int hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
+                             IntArray **dofmap_ptr);
+int hypredrv_LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts);
 
 #endif /* LSSEQ_HEADER */

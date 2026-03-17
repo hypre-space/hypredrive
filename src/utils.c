@@ -10,11 +10,11 @@
 #include <string.h>
 
 /*-----------------------------------------------------------------------------
- * StrToLowerCase
+ * hypredrv_StrToLowerCase
  *-----------------------------------------------------------------------------*/
 
 char *
-StrToLowerCase(char *str)
+hypredrv_StrToLowerCase(char *str)
 {
    for (int i = 0; str[i]; i++)
    {
@@ -24,11 +24,11 @@ StrToLowerCase(char *str)
 }
 
 /*-----------------------------------------------------------------------------
- * StrTrim
+ * hypredrv_StrTrim
  *-----------------------------------------------------------------------------*/
 
 char *
-StrTrim(char *str)
+hypredrv_StrTrim(char *str)
 {
    if (!str)
    {
@@ -44,11 +44,11 @@ StrTrim(char *str)
 }
 
 /*-----------------------------------------------------------------------------
- * TrimTrailingWhitespace
+ * hypredrv_TrimTrailingWhitespace
  *-----------------------------------------------------------------------------*/
 
 void
-TrimTrailingWhitespace(char *str)
+hypredrv_TrimTrailingWhitespace(char *str)
 {
    if (!str)
    {
@@ -63,11 +63,11 @@ TrimTrailingWhitespace(char *str)
 }
 
 /*-----------------------------------------------------------------------------
- * NormalizeWhitespace
+ * hypredrv_NormalizeWhitespace
  *-----------------------------------------------------------------------------*/
 
 void
-NormalizeWhitespace(char *str)
+hypredrv_NormalizeWhitespace(char *str)
 {
    if (!str)
    {
@@ -98,11 +98,11 @@ NormalizeWhitespace(char *str)
 }
 
 /*-----------------------------------------------------------------------------
- * CheckBinaryDataExists
+ * hypredrv_CheckBinaryDataExists
  *-----------------------------------------------------------------------------*/
 
 int
-CheckBinaryDataExists(const char *prefix)
+hypredrv_CheckBinaryDataExists(const char *prefix)
 {
    char filename[MAX_FILENAME_LENGTH] = {0};
 
@@ -121,11 +121,11 @@ CheckBinaryDataExists(const char *prefix)
 }
 
 /*-----------------------------------------------------------------------------
- * CheckASCIIDataExists
+ * hypredrv_CheckASCIIDataExists
  *-----------------------------------------------------------------------------*/
 
 int
-CheckASCIIDataExists(const char *prefix)
+hypredrv_CheckASCIIDataExists(const char *prefix)
 {
    char filename[MAX_FILENAME_LENGTH] = {0};
 
@@ -144,11 +144,11 @@ CheckASCIIDataExists(const char *prefix)
 }
 
 /*-----------------------------------------------------------------------------
- * CountNumberOfPartitions
+ * hypredrv_CountNumberOfPartitions
  *-----------------------------------------------------------------------------*/
 
 int
-CountNumberOfPartitions(const char *prefix)
+hypredrv_CountNumberOfPartitions(const char *prefix)
 {
    char filename[MAX_FILENAME_LENGTH];
    int  num_files = 0;
@@ -195,11 +195,11 @@ CountNumberOfPartitions(const char *prefix)
 }
 
 /*-----------------------------------------------------------------------------
- * ComputeNumberOfDigits
+ * hypredrv_ComputeNumberOfDigits
  *-----------------------------------------------------------------------------*/
 
 int
-ComputeNumberOfDigits(int number)
+hypredrv_ComputeNumberOfDigits(int number)
 {
    int ndigits = 0;
 
@@ -213,11 +213,11 @@ ComputeNumberOfDigits(int number)
 }
 
 /*-----------------------------------------------------------------------------
- * SplitFilename
+ * hypredrv_SplitFilename
  *-----------------------------------------------------------------------------*/
 
 void
-SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
+hypredrv_SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
 {
    const char *last_slash = strrchr(filename, '/');
    char       *dirname    = NULL;
@@ -254,11 +254,11 @@ SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * CombineFilename
+ * hypredrv_CombineFilename
  *-----------------------------------------------------------------------------*/
 
 void
-CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
+hypredrv_CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
 {
    size_t length   = 0;
    char  *filename = NULL;
@@ -288,14 +288,14 @@ CombineFilename(const char *dirname, const char *basename, char **filename_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * IsYAMLFilename
+ * hypredrv_IsYAMLFilename
  *
  * Returns true if string is a filename (no spaces) with a YAML extension
  * (.yaml or .yml)
  *-----------------------------------------------------------------------------*/
 
 bool
-IsYAMLFilename(const char *str)
+hypredrv_IsYAMLFilename(const char *str)
 {
    if (!str || *str == '\0')
    {

@@ -14,22 +14,22 @@
 #include "utils.h"
 
 /*-----------------------------------------------------------------------------
- * Test StrToLowerCase
+ * Test hypredrv_StrToLowerCase
  *-----------------------------------------------------------------------------*/
 
 static void
 test_StrToLowerCase_basic(void)
 {
    char *str1 = strdup("HELLO WORLD");
-   ASSERT_STREQ(StrToLowerCase(str1), "hello world");
+   ASSERT_STREQ(hypredrv_StrToLowerCase(str1), "hello world");
    free(str1);
 
    char *str2 = strdup("MiXeD CaSe");
-   ASSERT_STREQ(StrToLowerCase(str2), "mixed case");
+   ASSERT_STREQ(hypredrv_StrToLowerCase(str2), "mixed case");
    free(str2);
 
    char *str3 = strdup("lowercase");
-   ASSERT_STREQ(StrToLowerCase(str3), "lowercase");
+   ASSERT_STREQ(hypredrv_StrToLowerCase(str3), "lowercase");
    free(str3);
 }
 
@@ -37,7 +37,7 @@ static void
 test_StrToLowerCase_empty(void)
 {
    char *str = strdup("");
-   ASSERT_STREQ(StrToLowerCase(str), "");
+   ASSERT_STREQ(hypredrv_StrToLowerCase(str), "");
    free(str);
 }
 
@@ -45,19 +45,19 @@ static void
 test_StrToLowerCase_special_chars(void)
 {
    char *str = strdup("HELLO123_WORLD!@#");
-   ASSERT_STREQ(StrToLowerCase(str), "hello123_world!@#");
+   ASSERT_STREQ(hypredrv_StrToLowerCase(str), "hello123_world!@#");
    free(str);
 }
 
 /*-----------------------------------------------------------------------------
- * Test StrTrim
+ * Test hypredrv_StrTrim
  *-----------------------------------------------------------------------------*/
 
 static void
 test_StrTrim_trailing(void)
 {
    char *str = strdup("  test  ");
-   StrTrim(str);
+   hypredrv_StrTrim(str);
    ASSERT_STREQ(str, "  test");
    free(str);
 }
@@ -66,7 +66,7 @@ static void
 test_StrTrim_leading(void)
 {
    char *str = strdup("  test");
-   StrTrim(str);
+   hypredrv_StrTrim(str);
    ASSERT_STREQ(str, "  test"); /* Only trims trailing */
    free(str);
 }
@@ -75,7 +75,7 @@ static void
 test_StrTrim_no_spaces(void)
 {
    char *str = strdup("no spaces");
-   StrTrim(str);
+   hypredrv_StrTrim(str);
    ASSERT_STREQ(str, "no spaces");
    free(str);
 }
@@ -84,7 +84,7 @@ static void
 test_StrTrim_empty(void)
 {
    char *str = strdup("");
-   StrTrim(str);
+   hypredrv_StrTrim(str);
    ASSERT_STREQ(str, "");
    free(str);
 }
@@ -93,7 +93,7 @@ static void
 test_StrTrim_only_spaces(void)
 {
    char *str = strdup("     ");
-   StrTrim(str);
+   hypredrv_StrTrim(str);
    ASSERT_STREQ(str, "");
    free(str);
 }
@@ -101,42 +101,42 @@ test_StrTrim_only_spaces(void)
 static void
 test_StrTrim_null(void)
 {
-   ASSERT_NULL(StrTrim(NULL));
+   ASSERT_NULL(hypredrv_StrTrim(NULL));
 }
 
 /*-----------------------------------------------------------------------------
- * Test ComputeNumberOfDigits
+ * Test hypredrv_ComputeNumberOfDigits
  *-----------------------------------------------------------------------------*/
 
 static void
 test_ComputeNumberOfDigits_basic(void)
 {
-   ASSERT_EQ(ComputeNumberOfDigits(0), 0); /* Implementation returns 0 for 0 */
-   ASSERT_EQ(ComputeNumberOfDigits(1), 1);
-   ASSERT_EQ(ComputeNumberOfDigits(9), 1);
-   ASSERT_EQ(ComputeNumberOfDigits(10), 2);
-   ASSERT_EQ(ComputeNumberOfDigits(99), 2);
-   ASSERT_EQ(ComputeNumberOfDigits(100), 3);
-   ASSERT_EQ(ComputeNumberOfDigits(999), 3);
-   ASSERT_EQ(ComputeNumberOfDigits(9999), 4);
+   ASSERT_EQ(hypredrv_ComputeNumberOfDigits(0), 0); /* Implementation returns 0 for 0 */
+   ASSERT_EQ(hypredrv_ComputeNumberOfDigits(1), 1);
+   ASSERT_EQ(hypredrv_ComputeNumberOfDigits(9), 1);
+   ASSERT_EQ(hypredrv_ComputeNumberOfDigits(10), 2);
+   ASSERT_EQ(hypredrv_ComputeNumberOfDigits(99), 2);
+   ASSERT_EQ(hypredrv_ComputeNumberOfDigits(100), 3);
+   ASSERT_EQ(hypredrv_ComputeNumberOfDigits(999), 3);
+   ASSERT_EQ(hypredrv_ComputeNumberOfDigits(9999), 4);
 }
 
 static void
 test_ComputeNumberOfDigits_large(void)
 {
-   ASSERT_EQ(ComputeNumberOfDigits(1000000), 7);
-   ASSERT_EQ(ComputeNumberOfDigits(9999999), 7);
+   ASSERT_EQ(hypredrv_ComputeNumberOfDigits(1000000), 7);
+   ASSERT_EQ(hypredrv_ComputeNumberOfDigits(9999999), 7);
 }
 
 /*-----------------------------------------------------------------------------
- * Test SplitFilename
+ * Test hypredrv_SplitFilename
  *-----------------------------------------------------------------------------*/
 
 static void
 test_SplitFilename_full_path(void)
 {
    char *dirname, *basename;
-   SplitFilename("/path/to/file.txt", &dirname, &basename);
+   hypredrv_SplitFilename("/path/to/file.txt", &dirname, &basename);
    ASSERT_STREQ(dirname, "/path/to");
    ASSERT_STREQ(basename, "file.txt");
    free(dirname);
@@ -147,7 +147,7 @@ static void
 test_SplitFilename_no_dir(void)
 {
    char *dirname, *basename;
-   SplitFilename("file.txt", &dirname, &basename);
+   hypredrv_SplitFilename("file.txt", &dirname, &basename);
    ASSERT_STREQ(dirname, ".");
    ASSERT_STREQ(basename, "file.txt");
    free(dirname);
@@ -158,7 +158,7 @@ static void
 test_SplitFilename_root_dir(void)
 {
    char *dirname, *basename;
-   SplitFilename("/file.txt", &dirname, &basename);
+   hypredrv_SplitFilename("/file.txt", &dirname, &basename);
    ASSERT_STREQ(dirname, "");
    ASSERT_STREQ(basename, "file.txt");
    free(dirname);
@@ -166,14 +166,14 @@ test_SplitFilename_root_dir(void)
 }
 
 /*-----------------------------------------------------------------------------
- * Test CombineFilename
+ * Test hypredrv_CombineFilename
  *-----------------------------------------------------------------------------*/
 
 static void
 test_CombineFilename_basic(void)
 {
    char *filename;
-   CombineFilename("/path/to", "file.txt", &filename);
+   hypredrv_CombineFilename("/path/to", "file.txt", &filename);
    ASSERT_STREQ(filename, "/path/to/file.txt");
    free(filename);
 }
@@ -182,7 +182,7 @@ static void
 test_CombineFilename_no_slash_needed(void)
 {
    char *filename;
-   CombineFilename("/path/to/", "file.txt", &filename);
+   hypredrv_CombineFilename("/path/to/", "file.txt", &filename);
    ASSERT_STREQ(filename, "/path/to/file.txt");
    free(filename);
 }
@@ -191,52 +191,52 @@ static void
 test_CombineFilename_empty_dir(void)
 {
    char *filename;
-   CombineFilename("", "file.txt", &filename);
+   hypredrv_CombineFilename("", "file.txt", &filename);
    /* Implementation doesn't add "/" when dirname is empty */
    ASSERT_STREQ(filename, "file.txt");
    free(filename);
 }
 
 /*-----------------------------------------------------------------------------
- * Test IsYAMLFilename
+ * Test hypredrv_IsYAMLFilename
  *-----------------------------------------------------------------------------*/
 
 static void
 test_IsYAMLFilename_valid(void)
 {
-   ASSERT_TRUE(IsYAMLFilename("file.yml"));         /* .yml extension */
-   ASSERT_TRUE(IsYAMLFilename("file.yaml"));        /* .yaml extension */
-   ASSERT_TRUE(IsYAMLFilename("path/to/file.yml"));  /* .yml with path */
-   ASSERT_TRUE(IsYAMLFilename("path/to/file.yaml")); /* .yaml with path */
-   ASSERT_FALSE(IsYAMLFilename("file.txt"));         /* wrong extension */
-   ASSERT_FALSE(IsYAMLFilename("file.c"));          /* wrong extension */
+   ASSERT_TRUE(hypredrv_IsYAMLFilename("file.yml"));         /* .yml extension */
+   ASSERT_TRUE(hypredrv_IsYAMLFilename("file.yaml"));        /* .yaml extension */
+   ASSERT_TRUE(hypredrv_IsYAMLFilename("path/to/file.yml"));  /* .yml with path */
+   ASSERT_TRUE(hypredrv_IsYAMLFilename("path/to/file.yaml")); /* .yaml with path */
+   ASSERT_FALSE(hypredrv_IsYAMLFilename("file.txt"));         /* wrong extension */
+   ASSERT_FALSE(hypredrv_IsYAMLFilename("file.c"));          /* wrong extension */
 }
 
 static void
 test_IsYAMLFilename_no_extension(void)
 {
-   ASSERT_FALSE(IsYAMLFilename("file"));
-   ASSERT_FALSE(IsYAMLFilename("path/to/file"));
-   ASSERT_FALSE(IsYAMLFilename(""));
+   ASSERT_FALSE(hypredrv_IsYAMLFilename("file"));
+   ASSERT_FALSE(hypredrv_IsYAMLFilename("path/to/file"));
+   ASSERT_FALSE(hypredrv_IsYAMLFilename(""));
 }
 
 static void
 test_IsYAMLFilename_leading_dot(void)
 {
-   ASSERT_FALSE(IsYAMLFilename(".hidden"));
-   ASSERT_FALSE(IsYAMLFilename(".gitignore"));
+   ASSERT_FALSE(hypredrv_IsYAMLFilename(".hidden"));
+   ASSERT_FALSE(hypredrv_IsYAMLFilename(".gitignore"));
 }
 
 static void
 test_IsYAMLFilename_with_spaces(void)
 {
-   ASSERT_FALSE(IsYAMLFilename("file name.yml"));    /* space in filename */
-   ASSERT_FALSE(IsYAMLFilename("file name.yaml"));   /* space in filename */
-   ASSERT_FALSE(IsYAMLFilename("path/to/file name.yml")); /* space in filename */
+   ASSERT_FALSE(hypredrv_IsYAMLFilename("file name.yml"));    /* space in filename */
+   ASSERT_FALSE(hypredrv_IsYAMLFilename("file name.yaml"));   /* space in filename */
+   ASSERT_FALSE(hypredrv_IsYAMLFilename("path/to/file name.yml")); /* space in filename */
 }
 
 /*-----------------------------------------------------------------------------
- * Test CheckBinaryDataExists and CheckASCIIDataExists
+ * Test hypredrv_CheckBinaryDataExists and hypredrv_CheckASCIIDataExists
  *-----------------------------------------------------------------------------*/
 
 static void
@@ -255,7 +255,7 @@ test_CheckDataExists_binary(void)
       add_temp_file(expected_file);
    }
 
-   ASSERT_EQ(CheckBinaryDataExists(prefix), 1);
+   ASSERT_EQ(hypredrv_CheckBinaryDataExists(prefix), 1);
 
    cleanup_temp_files();
 }
@@ -276,13 +276,13 @@ test_CheckDataExists_ascii(void)
       add_temp_file(expected_file);
    }
 
-   ASSERT_EQ(CheckASCIIDataExists(prefix), 1);
+   ASSERT_EQ(hypredrv_CheckASCIIDataExists(prefix), 1);
 
    cleanup_temp_files();
 }
 
 /*-----------------------------------------------------------------------------
- * Test CountNumberOfPartitions
+ * Test hypredrv_CountNumberOfPartitions
  *-----------------------------------------------------------------------------*/
 
 static void
@@ -302,7 +302,7 @@ test_CountNumberOfPartitions_binary(void)
    if (fp) fclose(fp);
    add_temp_file(filename);
 
-   ASSERT_EQ(CountNumberOfPartitions(prefix), 2);
+   ASSERT_EQ(hypredrv_CountNumberOfPartitions(prefix), 2);
 
    cleanup_temp_files();
 }
@@ -329,7 +329,7 @@ test_CountNumberOfPartitions_ascii(void)
    if (fp) fclose(fp);
    add_temp_file(filename);
 
-   ASSERT_EQ(CountNumberOfPartitions(prefix), 3);
+   ASSERT_EQ(hypredrv_CountNumberOfPartitions(prefix), 3);
 
    cleanup_temp_files();
 }
@@ -338,7 +338,7 @@ static void
 test_CountNumberOfPartitions_empty(void)
 {
    char prefix[] = "nonexistent";
-   ASSERT_EQ(CountNumberOfPartitions(prefix), 0);
+   ASSERT_EQ(hypredrv_CountNumberOfPartitions(prefix), 0);
 }
 
 /*-----------------------------------------------------------------------------

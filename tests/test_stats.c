@@ -42,73 +42,73 @@ struct hypredrv_struct
 static void
 test_Stats_basic_lifecycle_and_timers(void)
 {
-   Stats *s = StatsCreate();
+   Stats *s = hypredrv_StatsCreate();
    ASSERT_NOT_NULL(s);
 
-   StatsTimerSetMilliseconds(s);
-   StatsTimerSetSeconds(s);
+   hypredrv_StatsTimerSetMilliseconds(s);
+   hypredrv_StatsTimerSetSeconds(s);
 
-   StatsSetNumReps(s, 2);
-   StatsSetNumLinearSystems(s, 1);
+   hypredrv_StatsSetNumReps(s, 2);
+   hypredrv_StatsSetNumLinearSystems(s, 1);
 
-   StatsDestroy(&s);
+   hypredrv_StatsDestroy(&s);
    ASSERT_NULL(s);
 }
 
 static void
 test_Stats_annotations_and_levels(void)
 {
-   Stats *s = StatsCreate();
+   Stats *s = hypredrv_StatsCreate();
    ASSERT_NOT_NULL(s);
 
    /* Basic annotate begin/end pairs */
-   StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "matrix");
-   StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "matrix");
+   hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "matrix");
+   hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "matrix");
 
-   StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "rhs");
-   StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "rhs");
+   hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "rhs");
+   hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "rhs");
 
-   StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
-   StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "dofmap");
+   hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
+   hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "dofmap");
 
    /* Simulate a preconditioner+solve phase with iter/norm */
-   StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "prec");
-   StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "prec");
-   StatsIterSet(s, 7);
-   StatsRelativeResNormSet(s, 1.0e-6);
+   hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "prec");
+   hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "prec");
+   hypredrv_StatsIterSet(s, 7);
+   hypredrv_StatsRelativeResNormSet(s, 1.0e-6);
 
-   StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "solve");
-   StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "solve");
+   hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "solve");
+   hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "solve");
 
    /* Level annotations (nested) */
-   StatsAnnotateLevelBegin(s, 0, "L0");
-   StatsAnnotateLevelBegin(s, 1, "L1");
-   StatsAnnotateLevelEnd(s, 1, "L1");
-   StatsAnnotateLevelEnd(s, 0, "L0");
+   hypredrv_StatsAnnotateLevelBegin(s, 0, "L0");
+   hypredrv_StatsAnnotateLevelBegin(s, 1, "L1");
+   hypredrv_StatsAnnotateLevelEnd(s, 1, "L1");
+   hypredrv_StatsAnnotateLevelEnd(s, 0, "L0");
 
    /* Mismatched end (exercise defensive branches) */
-   ErrorCodeResetAll();
-   StatsAnnotateLevelEnd(s, 2, "bad");
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_StatsAnnotateLevelEnd(s, 2, "bad");
+   hypredrv_ErrorCodeResetAll();
 
    /* Query last stats */
-   (void)StatsGetLinearSystemID(s);
-   (void)StatsGetLastIter(s);
-   (void)StatsGetLastSetupTime(s);
-   (void)StatsGetLastSolveTime(s);
+   (void)hypredrv_StatsGetLinearSystemID(s);
+   (void)hypredrv_StatsGetLastIter(s);
+   (void)hypredrv_StatsGetLastSetupTime(s);
+   (void)hypredrv_StatsGetLastSolveTime(s);
 
    /* Level APIs */
-   int c0 = StatsLevelGetCount(s, 0);
+   int c0 = hypredrv_StatsLevelGetCount(s, 0);
    ASSERT_TRUE(c0 >= 0);
    LevelEntry entry;
-   (void)StatsLevelGetEntry(s, 0, 0, &entry);
-   (void)StatsLevelGetEntry(s, 0, -1, &entry); /* invalid index */
-   StatsLevelPrint(s, 0);
+   (void)hypredrv_StatsLevelGetEntry(s, 0, 0, &entry);
+   (void)hypredrv_StatsLevelGetEntry(s, 0, -1, &entry); /* invalid index */
+   hypredrv_StatsLevelPrint(s, 0);
 
    /* Print (smoke) */
-   StatsPrint(s, 0);
+   hypredrv_StatsPrint(s, 0);
 
-   StatsDestroy(&s);
+   hypredrv_StatsDestroy(&s);
 }
 
 static void

@@ -21,8 +21,10 @@ HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_loca
 }
 
 void
-IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_nparts,
-                            HYPRE_MemoryLocation memory_location, HYPRE_IJVector *vec_ptr)
+hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
+                                     uint64_t             g_nparts,
+                                     HYPRE_MemoryLocation memory_location,
+                                     HYPRE_IJVector      *vec_ptr)
 {
    int      nprocs = 0, myid = 0;
    uint32_t nparts = 0;
@@ -53,8 +55,8 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
    if (g_nparts < (size_t)nprocs)
    {
       *vec_ptr = NULL;
-      ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      ErrorMsgAdd("Invalid number of parts!");
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid number of parts!");
       return;
    }
 
@@ -76,16 +78,16 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       fp = fopen(filename, "rb");
       if (!fp)
       {
-         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         ErrorMsgAddInvalidFilename(filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAddInvalidFilename(filename);
          goto cleanup;
       }
 
       /* Read header contents */
       if (fread(header, sizeof(uint64_t), 8, fp) != 8)
       {
-         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         ErrorMsgAdd("Could not read header from %s", filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
          fclose(fp);
          fp = NULL;
          goto cleanup;
@@ -127,15 +129,15 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       fp = fopen(filename, "rb");
       if (!fp)
       {
-         ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         ErrorMsgAddInvalidFilename(filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAddInvalidFilename(filename);
          goto cleanup;
       }
 
       if (fread(header, sizeof(uint64_t), 8, fp) != 8)
       {
-         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         ErrorMsgAdd("Could not read header from %s", filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
          fclose(fp);
          fp = NULL;
          goto cleanup;
@@ -152,8 +154,8 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
          if (!buffer || fread(buffer, sizeof(float), header[5], fp) != header[5])
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read coeficients from %s", filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
             fclose(fp);
             fp = NULL;
             free(buffer);
@@ -177,8 +179,8 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
 
          if (!buffer || fread(buffer, sizeof(double), header[5], fp) != header[5])
          {
-            ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            ErrorMsgAdd("Could not read coeficients from %s", filename);
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
             fclose(fp);
             fp = NULL;
             free(buffer);
@@ -194,9 +196,9 @@ IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_np
       }
       else
       {
-         ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[1],
-                     filename);
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[1],
+                              filename);
          fclose(fp);
          fp = NULL;
          goto cleanup;
@@ -232,7 +234,7 @@ cleanup:
       hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
    }
 #endif
-   if (ErrorCodeActive())
+   if (hypredrv_ErrorCodeActive())
    {
       if (vec)
       {

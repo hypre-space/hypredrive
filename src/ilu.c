@@ -12,20 +12,20 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define ILU_FIELDS(_prefix)                                          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fill_level, FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, reordering, FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, tri_solve, FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, lower_jac_iters, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, upper_jac_iters, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_nnz, FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, schur_max_iter, FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, droptol, FieldTypeDoubleSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, nsh_droptol, FieldTypeDoubleSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet)
+#define ILU_FIELDS(_prefix)                                                   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fill_level, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, reordering, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tri_solve, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, lower_jac_iters, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, upper_jac_iters, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_nnz, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, schur_max_iter, hypredrv_FieldTypeIntSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, droptol, hypredrv_FieldTypeDoubleSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, nsh_droptol, hypredrv_FieldTypeDoubleSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, hypredrv_FieldTypeDoubleSet)
 
 /* Define num_fields macro */
 #define ILU_NUM_FIELDS (sizeof(ILU_field_offset_map) / sizeof(ILU_field_offset_map[0]))
@@ -39,7 +39,7 @@ GENERATE_PREFIXED_COMPONENTS(ILU) // LCOV_EXCL_LINE
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-ILUGetValidValues(const char *key)
+hypredrv_ILUGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
@@ -71,7 +71,7 @@ ILUGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-ILUSetDefaultArgs(ILU_args *args)
+hypredrv_ILUSetDefaultArgs(ILU_args *args)
 {
    args->max_iter        = 1;
    args->print_level     = 0;
@@ -89,16 +89,16 @@ ILUSetDefaultArgs(ILU_args *args)
 }
 
 /*-----------------------------------------------------------------------------
- * ILUCreate
+ * hypredrv_ILUCreate
  *-----------------------------------------------------------------------------*/
 
 void
-ILUCreate(const ILU_args *args, HYPRE_Solver *precon_ptr)
+hypredrv_ILUCreate(const ILU_args *args, HYPRE_Solver *precon_ptr)
 {
 #if !HYPRE_CHECK_MIN_VERSION(21900, 0)
    (void)args;
-   ErrorCodeSet(ERROR_INVALID_PRECON);
-   ErrorMsgAdd("ILU requires hypre >= 2.19.0");
+   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+   hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
    *precon_ptr = NULL;
    return;
 #else

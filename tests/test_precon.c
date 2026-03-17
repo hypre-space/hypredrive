@@ -9,46 +9,46 @@
 #include "fsai.h"
 #include "ilu.h"
 #include "mgr.h"
-#include "nested_krylov.h"
+#include "krylov.h"
 #include "precon.h"
 #include "test_helpers.h"
 #include "yaml.h"
 
 /* Forward declarations for internal AMG functions */
-void           AMGSetFieldByName(void *, const YAMLnode *);
-void           AMGintSetFieldByName(void *, const YAMLnode *);
-void           AMGintSetDefaultArgs(AMGint_args *);
-StrIntMapArray AMGintGetValidValues(const char *);
-void           AMGcsnSetFieldByName(void *, const YAMLnode *);
-void           AMGcsnSetDefaultArgs(AMGcsn_args *);
-StrIntMapArray AMGcsnGetValidValues(const char *);
-StrIntMapArray AMGaggGetValidValues(const char *);
-StrIntMapArray AMGrlxGetValidValues(const char *);
-StrIntMapArray AMGsmtGetValidValues(const char *);
+void           hypredrv_AMGSetFieldByName(void *, const YAMLnode *);
+void           hypredrv_AMGintSetFieldByName(void *, const YAMLnode *);
+void           hypredrv_AMGintSetDefaultArgs(AMGint_args *);
+StrIntMapArray hypredrv_AMGintGetValidValues(const char *);
+void           hypredrv_AMGcsnSetFieldByName(void *, const YAMLnode *);
+void           hypredrv_AMGcsnSetDefaultArgs(AMGcsn_args *);
+StrIntMapArray hypredrv_AMGcsnGetValidValues(const char *);
+StrIntMapArray hypredrv_AMGaggGetValidValues(const char *);
+StrIntMapArray hypredrv_AMGrlxGetValidValues(const char *);
+StrIntMapArray hypredrv_AMGsmtGetValidValues(const char *);
 
-void           ILUSetFieldByName(void *, const YAMLnode *);
-void           ILUSetDefaultArgs(ILU_args *);
-StrArray       ILUGetValidKeys(void);
-StrIntMapArray ILUGetValidValues(const char *);
-void           FSAISetFieldByName(void *, const YAMLnode *);
-void           FSAISetDefaultArgs(FSAI_args *);
-StrArray       FSAIGetValidKeys(void);
-StrIntMapArray FSAIGetValidValues(const char *);
+void           hypredrv_ILUSetFieldByName(void *, const YAMLnode *);
+void           hypredrv_ILUSetDefaultArgs(ILU_args *);
+StrArray       hypredrv_ILUGetValidKeys(void);
+StrIntMapArray hypredrv_ILUGetValidValues(const char *);
+void           hypredrv_FSAISetFieldByName(void *, const YAMLnode *);
+void           hypredrv_FSAISetDefaultArgs(FSAI_args *);
+StrArray       hypredrv_FSAIGetValidKeys(void);
+StrIntMapArray hypredrv_FSAIGetValidValues(const char *);
 
-void MGRSetDefaultArgs(MGR_args *);
+void hypredrv_MGRSetDefaultArgs(MGR_args *);
 
 static YAMLnode *
 add_child(YAMLnode *parent, const char *key, const char *val, int level)
 {
-   YAMLnode *child = YAMLnodeCreate(key, val, level);
-   YAMLnodeAddChild(parent, child);
+   YAMLnode *child = hypredrv_YAMLnodeCreate(key, val, level);
+   hypredrv_YAMLnodeAddChild(parent, child);
    return child;
 }
 
 static YAMLnode *
 make_scalar_node(const char *key, const char *value)
 {
-   YAMLnode *node   = YAMLnodeCreate(key, "", 0);
+   YAMLnode *node   = hypredrv_YAMLnodeCreate(key, "", 0);
    node->mapped_val = strdup(value);
    return node;
 }
@@ -56,25 +56,25 @@ make_scalar_node(const char *key, const char *value)
 static void
 test_PreconGetValidKeys_contains_expected(void)
 {
-   StrArray keys = PreconGetValidKeys();
+   StrArray keys = hypredrv_PreconGetValidKeys();
 
-   ASSERT_TRUE(StrArrayEntryExists(keys, "amg"));
-   ASSERT_TRUE(StrArrayEntryExists(keys, "mgr"));
-   ASSERT_TRUE(StrArrayEntryExists(keys, "ilu"));
-   ASSERT_TRUE(StrArrayEntryExists(keys, "fsai"));
-   ASSERT_TRUE(StrArrayEntryExists(keys, "reuse"));
+   ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "amg"));
+   ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "mgr"));
+   ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "ilu"));
+   ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "fsai"));
+   ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "reuse"));
 }
 
 static void
 test_PreconGetValidTypeIntMap_contains_known_types(void)
 {
-   StrIntMapArray map = PreconGetValidTypeIntMap();
+   StrIntMapArray map = hypredrv_PreconGetValidTypeIntMap();
 
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "amg"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "amg"), PRECON_BOOMERAMG);
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "amg"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "amg"), PRECON_BOOMERAMG);
 
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "mgr"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "mgr"), PRECON_MGR);
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mgr"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mgr"), PRECON_MGR);
 }
 
 static void
@@ -83,7 +83,7 @@ test_PreconSetDefaultArgs_resets_reuse(void)
    precon_args args;
    args.reuse = 42;
 
-   PreconSetDefaultArgs(&args);
+   hypredrv_PreconSetDefaultArgs(&args);
 
    ASSERT_EQ(args.reuse, 0);
 }
@@ -93,104 +93,104 @@ test_PreconSetArgsFromYAML_sets_fields(void)
 {
    precon_args args;
 
-   PreconSetDefaultArgs(&args);
+   hypredrv_PreconSetDefaultArgs(&args);
    args.amg.max_iter = 1; /* default */
 
-   YAMLnode *parent     = YAMLnodeCreate("preconditioner", "", 0);
+   YAMLnode *parent     = hypredrv_YAMLnodeCreate("preconditioner", "", 0);
    YAMLnode *reuse_node = add_child(parent, "reuse", "1", 1);
 
    YAMLnode *amg_node = add_child(parent, "amg", "", 1);
    add_child(amg_node, "max_iter", "5", 2);
 
-   ErrorCodeResetAll();
-   PreconSetArgsFromYAML(&args, parent);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetArgsFromYAML(&args, parent);
 
    ASSERT_EQ(reuse_node->valid, YAML_NODE_VALID);
    ASSERT_EQ(args.reuse, 1);
    ASSERT_EQ(args.amg.max_iter, 5);
 
-   YAMLnodeDestroy(parent);
+   hypredrv_YAMLnodeDestroy(parent);
 }
 
 static void
 test_PreconSetArgsFromYAML_mgr_coarsest_level_spdirect_flat(void)
 {
    precon_args args;
-   PreconSetDefaultArgs(&args);
-   MGRSetDefaultArgs(&args.mgr);
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
 
-   YAMLnode *parent   = YAMLnodeCreate("preconditioner", "", 0);
+   YAMLnode *parent   = hypredrv_YAMLnodeCreate("preconditioner", "", 0);
    YAMLnode *mgr_node = add_child(parent, "mgr", "", 1);
    add_child(mgr_node, "coarsest_level", "spdirect", 2);
 
-   ErrorCodeResetAll();
-   PreconSetArgsFromYAML(&args, parent);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetArgsFromYAML(&args, parent);
 
    /* Flat value must map to type=29 (spdirect) */
    ASSERT_EQ(args.mgr.coarsest_level.type, 29);
 
-   YAMLnodeDestroy(parent);
+   hypredrv_YAMLnodeDestroy(parent);
 }
 
 static void
 test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_flat_sets_type(void)
 {
    precon_args args;
-   PreconSetDefaultArgs(&args);
-   MGRSetDefaultArgs(&args.mgr);
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
 
-   YAMLnode *parent   = YAMLnodeCreate("preconditioner", "", 0);
+   YAMLnode *parent   = hypredrv_YAMLnodeCreate("preconditioner", "", 0);
    YAMLnode *mgr_node = add_child(parent, "mgr", "", 1);
    add_child(mgr_node, "coarsest_level", "ilu", 2);
 
-   ErrorCodeResetAll();
-   PreconSetArgsFromYAML(&args, parent);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetArgsFromYAML(&args, parent);
 
    /* Flat value must map to MGR coarsest ILU type=32 */
    ASSERT_EQ(args.mgr.coarsest_level.type, 32);
 
-   YAMLnodeDestroy(parent);
+   hypredrv_YAMLnodeDestroy(parent);
 }
 
 static void
 test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_nested_sets_type_and_args(void)
 {
    precon_args args;
-   PreconSetDefaultArgs(&args);
-   MGRSetDefaultArgs(&args.mgr);
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
 
-   YAMLnode *parent   = YAMLnodeCreate("preconditioner", "", 0);
+   YAMLnode *parent   = hypredrv_YAMLnodeCreate("preconditioner", "", 0);
    YAMLnode *mgr_node = add_child(parent, "mgr", "", 1);
    YAMLnode *cls_node = add_child(mgr_node, "coarsest_level", "", 2);
    YAMLnode *ilu_node = add_child(cls_node, "ilu", "", 3);
    add_child(ilu_node, "type", "bj-ilut", 4);
 
-   ErrorCodeResetAll();
-   PreconSetArgsFromYAML(&args, parent);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetArgsFromYAML(&args, parent);
 
    ASSERT_EQ(args.mgr.coarsest_level.type, 32);
    /* ILU type bj-ilut should map to 1 */
    ASSERT_EQ(args.mgr.coarsest_level.ilu.type, 1);
 
-   YAMLnodeDestroy(parent);
+   hypredrv_YAMLnodeDestroy(parent);
 }
 
 static void
 test_PreconSetArgsFromYAML_ignores_unknown_key(void)
 {
    precon_args args;
-   PreconSetDefaultArgs(&args);
+   hypredrv_PreconSetDefaultArgs(&args);
 
-   YAMLnode *parent       = YAMLnodeCreate("preconditioner", "", 0);
+   YAMLnode *parent       = hypredrv_YAMLnodeCreate("preconditioner", "", 0);
    YAMLnode *unknown_node = add_child(parent, "unknown", "value", 1);
 
-   ErrorCodeResetAll();
-   PreconSetArgsFromYAML(&args, parent);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetArgsFromYAML(&args, parent);
 
    ASSERT_EQ(unknown_node->valid, YAML_NODE_INVALID_KEY);
    ASSERT_EQ(args.reuse, 0); /* remains default */
 
-   YAMLnodeDestroy(parent);
+   hypredrv_YAMLnodeDestroy(parent);
 }
 
 static void
@@ -198,10 +198,10 @@ test_PreconDestroy_null_precon(void)
 {
    HYPRE_Precon precon = NULL;
    precon_args  args;
-   PreconSetDefaultArgs(&args);
+   hypredrv_PreconSetDefaultArgs(&args);
 
-   /* PreconDestroy with NULL should not crash */
-   PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
+   /* hypredrv_PreconDestroy with NULL should not crash */
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
    ASSERT_NULL(precon);
 }
 
@@ -213,10 +213,10 @@ test_PreconDestroy_null_main(void)
    precon->main = NULL;
 
    precon_args args;
-   PreconSetDefaultArgs(&args);
+   hypredrv_PreconSetDefaultArgs(&args);
 
-   /* PreconDestroy with null main should not crash */
-   PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
+   /* hypredrv_PreconDestroy with null main should not crash */
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
    ASSERT_NULL(precon);
 }
 
@@ -235,7 +235,7 @@ test_PreconSetup_default_case(void)
    HYPRE_IJMatrixInitialize(mat);
 
    /* Test default case in switch (invalid precon_method) */
-   PreconSetup(PRECON_NONE, precon, mat);
+   hypredrv_PreconSetup(PRECON_NONE, precon, mat);
 
    free(precon);
    HYPRE_IJMatrixDestroy(mat);
@@ -266,7 +266,7 @@ test_PreconApply_default_case(void)
    HYPRE_IJVectorInitialize(vec_x);
 
    /* Test default case in switch (invalid precon_method) */
-   PreconApply(PRECON_NONE, precon, mat, vec_b, vec_x);
+   hypredrv_PreconApply(PRECON_NONE, precon, mat, vec_b, vec_x);
 
    free(precon);
    HYPRE_IJVectorDestroy(vec_b);
@@ -281,29 +281,29 @@ test_MGRCreate_coarsest_level_branches(void)
    TEST_HYPRE_INIT();
 
    MGR_args mgr;
-   MGRSetDefaultArgs(&mgr);
+   hypredrv_MGRSetDefaultArgs(&mgr);
    mgr.num_levels = 1; /* minimal valid MGR setup (num_levels-1 == 0) */
 
    /* Minimal dofmap with global unique size set */
    IntArray *dofmap = NULL;
    const int map[1] = {0};
-   IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
    ASSERT_NOT_NULL(dofmap);
-   MGRSetDofmap(&mgr, dofmap);
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
 
 #if !HYPRE_CHECK_MIN_VERSION(22100, 0)
    fprintf(stderr, "SKIP: MGR tests require hypre >= 2.21.0\n");
-   IntArrayDestroy(&dofmap);
+   hypredrv_IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
    return;
 #endif
 
    /* 1) Explicit ILU coarsest solver type */
    mgr.coarsest_level.type = 32;
-   ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
+   hypredrv_ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
    HYPRE_Solver precon = NULL;
-   ErrorCodeResetAll();
-   MGRCreate(&mgr, &precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
    /* Clean up coarsest solver (explicit ILU) */
@@ -318,10 +318,10 @@ test_MGRCreate_coarsest_level_branches(void)
 
    /* 2) Infer AMG when type == -1 */
    mgr.coarsest_level.type = -1;
-   ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
+   hypredrv_ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
    precon                      = NULL;
-   ErrorCodeResetAll();
-   MGRCreate(&mgr, &precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
    /* Clean up coarsest solver (inferred as AMG) */
@@ -334,10 +334,10 @@ test_MGRCreate_coarsest_level_branches(void)
 
    /* 3) Explicit AMG coarsest solver type */
    mgr.coarsest_level.type = 0;
-   AMGSetDefaultArgs(&mgr.coarsest_level.amg);
+   hypredrv_AMGSetDefaultArgs(&mgr.coarsest_level.amg);
    precon = NULL;
-   ErrorCodeResetAll();
-   MGRCreate(&mgr, &precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
    /* Clean up coarsest solver (explicit AMG) */
@@ -350,10 +350,10 @@ test_MGRCreate_coarsest_level_branches(void)
 
    /* 4) Explicit ILU coarsest solver type (repeat to cover reuse) */
    mgr.coarsest_level.type = 32;
-   ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
+   hypredrv_ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
    precon = NULL;
-   ErrorCodeResetAll();
-   MGRCreate(&mgr, &precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
    if (mgr.csolver)
@@ -365,7 +365,7 @@ test_MGRCreate_coarsest_level_branches(void)
       mgr.csolver_type = -1;
    }
 
-   IntArrayDestroy(&dofmap);
+   hypredrv_IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -378,43 +378,43 @@ test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
    TEST_HYPRE_INIT();
 
    precon_args args;
-   PreconSetDefaultArgs(&args);
-   MGRSetDefaultArgs(&args.mgr);
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
 
    args.mgr.num_levels = 1; /* minimal valid MGR setup (num_levels-1 == 0) */
 
    /* Minimal dofmap required by MGR */
    IntArray *dofmap = NULL;
    const int map[1] = {0};
-   IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
    ASSERT_NOT_NULL(dofmap);
 
    args.mgr.coarsest_level.use_krylov = 1;
    args.mgr.coarsest_level.krylov =
       (NestedKrylov_args *)malloc(sizeof(NestedKrylov_args));
    ASSERT_NOT_NULL(args.mgr.coarsest_level.krylov);
-   NestedKrylovSetDefaultArgs(args.mgr.coarsest_level.krylov);
+   hypredrv_NestedKrylovSetDefaultArgs(args.mgr.coarsest_level.krylov);
    args.mgr.coarsest_level.krylov->is_set = 1;
    args.mgr.coarsest_level.krylov->solver_method = SOLVER_GMRES;
-   SolverArgsSetDefaultsForMethod(SOLVER_GMRES, &args.mgr.coarsest_level.krylov->solver);
+   hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_GMRES, &args.mgr.coarsest_level.krylov->solver);
    args.mgr.coarsest_level.krylov->solver.gmres.max_iter = 2;
    args.mgr.coarsest_level.krylov->has_precon = 1;
    args.mgr.coarsest_level.krylov->precon_method = PRECON_BOOMERAMG;
-   PreconArgsSetDefaultsForMethod(PRECON_BOOMERAMG,
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_BOOMERAMG,
                                   &args.mgr.coarsest_level.krylov->precon);
    args.mgr.coarsest_level.krylov->precon.amg.max_iter = 1;
 
    HYPRE_Precon precon = NULL;
-   ErrorCodeResetAll();
-   PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
    ASSERT_NOT_NULL(precon);
 
-   ErrorCodeResetAll();
-   PreconDestroy(PRECON_MGR, &args, &precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
    ASSERT_NULL(precon);
 
-   MGRDestroyNestedSolverArgs(&args.mgr);
-   IntArrayDestroy(&dofmap);
+   hypredrv_MGRDestroyNestedSolverArgs(&args.mgr);
+   hypredrv_IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -427,8 +427,8 @@ test_PreconSetup_mgr_frelax_nested_mgr_dof_labels(void)
    TEST_HYPRE_INIT();
 
    precon_args args;
-   PreconSetDefaultArgs(&args);
-   MGRSetDefaultArgs(&args.mgr);
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
 
    args.mgr.num_levels = 2; /* one MGR level + coarsest */
    args.mgr.level[0].f_dofs.size = 2;
@@ -437,7 +437,7 @@ test_PreconSetup_mgr_frelax_nested_mgr_dof_labels(void)
    args.mgr.level[0].f_relaxation.type = MGR_FRLX_TYPE_NESTED_MGR;
    args.mgr.level[0].f_relaxation.mgr = (MGR_args *)malloc(sizeof(MGR_args));
    ASSERT_NOT_NULL(args.mgr.level[0].f_relaxation.mgr);
-   MGRSetDefaultArgs(args.mgr.level[0].f_relaxation.mgr);
+   hypredrv_MGRSetDefaultArgs(args.mgr.level[0].f_relaxation.mgr);
 
    MGR_args *inner = args.mgr.level[0].f_relaxation.mgr;
    inner->num_levels = 2; /* one inner level + coarsest */
@@ -448,13 +448,13 @@ test_PreconSetup_mgr_frelax_nested_mgr_dof_labels(void)
 
    IntArray *dofmap = NULL;
    const int map[3] = {0, 1, 2};
-   IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
    ASSERT_NOT_NULL(dofmap);
 
    HYPRE_Precon precon = NULL;
-   ErrorCodeResetAll();
-   PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
-   ASSERT_FALSE(ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat = NULL;
@@ -471,17 +471,17 @@ test_PreconSetup_mgr_frelax_nested_mgr_dof_labels(void)
    }
    HYPRE_IJMatrixAssemble(mat);
 
-   ErrorCodeResetAll();
-   PreconSetup(PRECON_MGR, precon, mat);
-   ASSERT_FALSE(ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_MGR, precon, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   ErrorCodeResetAll();
-   PreconDestroy(PRECON_MGR, &args, &precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
    ASSERT_NULL(precon);
 
    HYPRE_IJMatrixDestroy(mat);
-   IntArrayDestroy(&dofmap);
-   MGRDestroyNestedSolverArgs(&args.mgr);
+   hypredrv_IntArrayDestroy(&dofmap);
+   hypredrv_MGRDestroyNestedSolverArgs(&args.mgr);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -491,49 +491,49 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
    TEST_HYPRE_INIT();
 
    precon_args args;
-   PreconSetDefaultArgs(&args);
-   MGRSetDefaultArgs(&args.mgr);
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
 
    /* Minimal dofmap required by MGR */
    IntArray *dofmap = NULL;
    const int map[1] = {0};
-   IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
    ASSERT_NOT_NULL(dofmap);
 
    args.mgr.num_levels = 1;
 
-   /* Coarsest level ILU -> expect PreconDestroy to hit HYPRE_ILUDestroy(args.mgr.csolver) */
+   /* Coarsest level ILU -> expect hypredrv_PreconDestroy to hit HYPRE_ILUDestroy(args.mgr.csolver) */
    args.mgr.coarsest_level.type = 32;
-   ILUSetDefaultArgs(&args.mgr.coarsest_level.ilu);
+   hypredrv_ILUSetDefaultArgs(&args.mgr.coarsest_level.ilu);
    args.mgr.coarsest_level.ilu.max_iter = 1;
 
    HYPRE_Precon precon = NULL;
-   ErrorCodeResetAll();
-   PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
    ASSERT_NOT_NULL(precon);
 
-   ErrorCodeResetAll();
-   PreconDestroy(PRECON_MGR, &args, &precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
    ASSERT_NULL(precon);
 
 #if defined(HYPRE_USING_DSUPERLU)
    /* Coarsest level direct solver -> cover HYPRE_MGRDirectSolverDestroy branch when available */
    args.mgr.coarsest_level.type = 29;
    precon                      = NULL;
-   ErrorCodeResetAll();
-   PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
    ASSERT_NOT_NULL(precon);
-   ErrorCodeResetAll();
-   PreconDestroy(PRECON_MGR, &args, &precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
    ASSERT_NULL(precon);
 #endif
 
-   IntArrayDestroy(&dofmap);
+   hypredrv_IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
 }
 
 static void
-test_ILUSetFieldByName_all_fields(void)
+test_hypredrv_ILUSetFieldByName_all_fields(void)
 {
    static const struct
    {
@@ -556,13 +556,13 @@ test_ILUSetFieldByName_all_fields(void)
    };
 
    ILU_args args;
-   ILUSetDefaultArgs(&args);
+   hypredrv_ILUSetDefaultArgs(&args);
 
    for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
    {
       YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
-      ILUSetFieldByName(&args, node);
-      YAMLnodeDestroy(node);
+      hypredrv_ILUSetFieldByName(&args, node);
+      hypredrv_YAMLnodeDestroy(node);
    }
 
    ASSERT_EQ(args.max_iter, 3);
@@ -581,44 +581,44 @@ test_ILUSetFieldByName_all_fields(void)
 }
 
 static void
-test_ILUSetFieldByName_unknown_key(void)
+test_hypredrv_ILUSetFieldByName_unknown_key(void)
 {
    ILU_args args;
-   ILUSetDefaultArgs(&args);
+   hypredrv_ILUSetDefaultArgs(&args);
    int original_max_iter = args.max_iter;
 
    YAMLnode *unknown_node = make_scalar_node("unknown_key", "value");
-   ErrorCodeResetAll();
-   ILUSetFieldByName(&args, unknown_node);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ILUSetFieldByName(&args, unknown_node);
 
    /* SetFieldByName doesn't validate - verify args weren't modified */
    ASSERT_EQ(args.max_iter, original_max_iter);
-   YAMLnodeDestroy(unknown_node);
+   hypredrv_YAMLnodeDestroy(unknown_node);
 }
 
 static void
-test_ILUGetValidValues_type(void)
+test_hypredrv_ILUGetValidValues_type(void)
 {
-   StrIntMapArray map = ILUGetValidValues("type");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "bj-iluk"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "bj-ilut"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "gmres-iluk"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "rap-mod-ilu0"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "bj-iluk"), 0);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "bj-ilut"), 1);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "gmres-iluk"), 10);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "rap-mod-ilu0"), 50);
+   StrIntMapArray map = hypredrv_ILUGetValidValues("type");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "bj-iluk"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "bj-ilut"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "gmres-iluk"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "rap-mod-ilu0"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "bj-iluk"), 0);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "bj-ilut"), 1);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "gmres-iluk"), 10);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "rap-mod-ilu0"), 50);
 }
 
 static void
-test_ILUGetValidValues_unknown_key(void)
+test_hypredrv_ILUGetValidValues_unknown_key(void)
 {
-   StrIntMapArray map = ILUGetValidValues("unknown_key");
+   StrIntMapArray map = hypredrv_ILUGetValidValues("unknown_key");
    ASSERT_EQ(map.size, 0);
 }
 
 static void
-test_FSAISetFieldByName_all_fields(void)
+test_hypredrv_FSAISetFieldByName_all_fields(void)
 {
    static const struct
    {
@@ -640,13 +640,13 @@ test_FSAISetFieldByName_all_fields(void)
    };
 
    FSAI_args args;
-   FSAISetDefaultArgs(&args);
+   hypredrv_FSAISetDefaultArgs(&args);
 
    for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
    {
       YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
-      FSAISetFieldByName(&args, node);
-      YAMLnodeDestroy(node);
+      hypredrv_FSAISetFieldByName(&args, node);
+      hypredrv_YAMLnodeDestroy(node);
    }
 
    ASSERT_EQ(args.max_iter, 2);
@@ -664,46 +664,46 @@ test_FSAISetFieldByName_all_fields(void)
 }
 
 static void
-test_FSAISetFieldByName_unknown_key(void)
+test_hypredrv_FSAISetFieldByName_unknown_key(void)
 {
    FSAI_args args;
-   FSAISetDefaultArgs(&args);
+   hypredrv_FSAISetDefaultArgs(&args);
    int original_max_iter = args.max_iter;
 
    YAMLnode *unknown_node = make_scalar_node("unknown_key", "value");
-   ErrorCodeResetAll();
-   FSAISetFieldByName(&args, unknown_node);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_FSAISetFieldByName(&args, unknown_node);
 
    /* SetFieldByName doesn't validate - verify args weren't modified */
    ASSERT_EQ(args.max_iter, original_max_iter);
-   YAMLnodeDestroy(unknown_node);
+   hypredrv_YAMLnodeDestroy(unknown_node);
 }
 
 static void
-test_FSAIGetValidValues_algo_type(void)
+test_hypredrv_FSAIGetValidValues_algo_type(void)
 {
-   StrIntMapArray map = FSAIGetValidValues("algo_type");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "bj-afsai"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "bj-afsai-omp"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "bj-sfsai"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "bj-afsai"), 1);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "bj-afsai-omp"), 2);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "bj-sfsai"), 3);
+   StrIntMapArray map = hypredrv_FSAIGetValidValues("algo_type");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "bj-afsai"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "bj-afsai-omp"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "bj-sfsai"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "bj-afsai"), 1);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "bj-afsai-omp"), 2);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "bj-sfsai"), 3);
 }
 
 static void
-test_FSAIGetValidValues_unknown_key(void)
+test_hypredrv_FSAIGetValidValues_unknown_key(void)
 {
-   StrIntMapArray map = FSAIGetValidValues("unknown_key");
+   StrIntMapArray map = hypredrv_FSAIGetValidValues("unknown_key");
    ASSERT_EQ(map.size, 0);
 }
 
 /* AMG argument tests (merged from test_amg_args.c) */
 static void
-test_AMGSetFieldByName_all_fields(void)
+test_hypredrv_AMGSetFieldByName_all_fields(void)
 {
    AMG_args args;
-   AMGSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args);
 
    static const struct
    {
@@ -718,8 +718,8 @@ test_AMGSetFieldByName_all_fields(void)
    for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
    {
       YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
-      AMGSetFieldByName(&args, node);
-      YAMLnodeDestroy(node);
+      hypredrv_AMGSetFieldByName(&args, node);
+      hypredrv_YAMLnodeDestroy(node);
    }
 
    ASSERT_EQ(args.max_iter, 5);
@@ -728,170 +728,170 @@ test_AMGSetFieldByName_all_fields(void)
 }
 
 static void
-test_AMGSetFieldByName_unknown_key(void)
+test_hypredrv_AMGSetFieldByName_unknown_key(void)
 {
    AMG_args args;
-   AMGSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args);
    int original_max_iter = args.max_iter;
 
    YAMLnode *unknown_node = make_scalar_node("unknown_key", "value");
-   ErrorCodeResetAll();
-   AMGSetFieldByName(&args, unknown_node);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetFieldByName(&args, unknown_node);
 
    /* SetFieldByName doesn't validate - it just doesn't match any field */
    /* Verify args weren't modified */
    ASSERT_EQ(args.max_iter, original_max_iter);
-   YAMLnodeDestroy(unknown_node);
+   hypredrv_YAMLnodeDestroy(unknown_node);
 }
 
 static void
-test_AMGintGetValidValues_prolongation_type(void)
+test_hypredrv_AMGintGetValidValues_prolongation_type(void)
 {
-   StrIntMapArray map = AMGintGetValidValues("prolongation_type");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "mod_classical"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "extended+i"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "one_point"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "mod_classical"), 0);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "extended+i"), 6);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "one_point"), 100);
+   StrIntMapArray map = hypredrv_AMGintGetValidValues("prolongation_type");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mod_classical"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "extended+i"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "one_point"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mod_classical"), 0);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "extended+i"), 6);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "one_point"), 100);
 }
 
 static void
-test_AMGintGetValidValues_restriction_type(void)
+test_hypredrv_AMGintGetValidValues_restriction_type(void)
 {
-   StrIntMapArray map = AMGintGetValidValues("restriction_type");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "p_transpose"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "air_1"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "air_1.5"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "p_transpose"), 0);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "air_1"), 1);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "air_1.5"), 15);
+   StrIntMapArray map = hypredrv_AMGintGetValidValues("restriction_type");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "p_transpose"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1.5"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "p_transpose"), 0);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "air_1"), 1);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "air_1.5"), 15);
 }
 
 static void
-test_AMGintGetValidValues_unknown_key(void)
+test_hypredrv_AMGintGetValidValues_unknown_key(void)
 {
-   StrIntMapArray map = AMGintGetValidValues("unknown_key");
+   StrIntMapArray map = hypredrv_AMGintGetValidValues("unknown_key");
    ASSERT_EQ(map.size, 0);
 }
 
 static void
-test_AMGcsnGetValidValues_type(void)
+test_hypredrv_AMGcsnGetValidValues_type(void)
 {
-   StrIntMapArray map = AMGcsnGetValidValues("type");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "cljp"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "falgout"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "hmis"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "cljp"), 0);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "falgout"), 6);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "hmis"), 10);
+   StrIntMapArray map = hypredrv_AMGcsnGetValidValues("type");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "cljp"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "falgout"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "hmis"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "cljp"), 0);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "falgout"), 6);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "hmis"), 10);
 }
 
 static void
-test_AMGcsnGetValidValues_on_off_keys(void)
+test_hypredrv_AMGcsnGetValidValues_on_off_keys(void)
 {
-   StrIntMapArray map1 = AMGcsnGetValidValues("filter_functions");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map1, "on"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map1, "off"));
+   StrIntMapArray map1 = hypredrv_AMGcsnGetValidValues("filter_functions");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map1, "on"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map1, "off"));
 
-   StrIntMapArray map2 = AMGcsnGetValidValues("nodal");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map2, "on"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map2, "off"));
+   StrIntMapArray map2 = hypredrv_AMGcsnGetValidValues("nodal");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map2, "on"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map2, "off"));
 
-   StrIntMapArray map3 = AMGcsnGetValidValues("rap2");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map3, "on"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map3, "off"));
+   StrIntMapArray map3 = hypredrv_AMGcsnGetValidValues("rap2");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map3, "on"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map3, "off"));
 }
 
 static void
-test_AMGcsnGetValidValues_unknown_key(void)
+test_hypredrv_AMGcsnGetValidValues_unknown_key(void)
 {
-   StrIntMapArray map = AMGcsnGetValidValues("unknown_key");
+   StrIntMapArray map = hypredrv_AMGcsnGetValidValues("unknown_key");
    ASSERT_EQ(map.size, 0);
 }
 
 static void
-test_AMGaggGetValidValues_prolongation_type(void)
+test_hypredrv_AMGaggGetValidValues_prolongation_type(void)
 {
-   StrIntMapArray map = AMGaggGetValidValues("prolongation_type");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "2_stage_extended+i"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "multipass"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "mm_extended+e"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "2_stage_extended+i"), 1);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "multipass"), 4);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "mm_extended+e"), 7);
+   StrIntMapArray map = hypredrv_AMGaggGetValidValues("prolongation_type");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "2_stage_extended+i"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "multipass"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm_extended+e"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "2_stage_extended+i"), 1);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "multipass"), 4);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mm_extended+e"), 7);
 }
 
 static void
-test_AMGaggGetValidValues_unknown_key(void)
+test_hypredrv_AMGaggGetValidValues_unknown_key(void)
 {
-   StrIntMapArray map = AMGaggGetValidValues("unknown_key");
+   StrIntMapArray map = hypredrv_AMGaggGetValidValues("unknown_key");
    ASSERT_EQ(map.size, 0);
 }
 
 static void
-test_AMGrlxGetValidValues_down_type(void)
+test_hypredrv_AMGrlxGetValidValues_down_type(void)
 {
-   StrIntMapArray map = AMGrlxGetValidValues("down_type");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "jacobi_non_mv"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "chebyshev"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "l1sym-hgs"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "jacobi_non_mv"), 0);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "chebyshev"), 16);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "l1sym-hgs"), 89);
+   StrIntMapArray map = hypredrv_AMGrlxGetValidValues("down_type");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "jacobi_non_mv"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "chebyshev"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "l1sym-hgs"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "jacobi_non_mv"), 0);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "chebyshev"), 16);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "l1sym-hgs"), 89);
 }
 
 static void
-test_AMGrlxGetValidValues_up_type(void)
+test_hypredrv_AMGrlxGetValidValues_up_type(void)
 {
-   StrIntMapArray map = AMGrlxGetValidValues("up_type");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "backward-hgs"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "cg"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "backward-hgs"), 4);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "cg"), 15);
+   StrIntMapArray map = hypredrv_AMGrlxGetValidValues("up_type");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "backward-hgs"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "cg"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "backward-hgs"), 4);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "cg"), 15);
 }
 
 static void
-test_AMGrlxGetValidValues_coarse_type(void)
+test_hypredrv_AMGrlxGetValidValues_coarse_type(void)
 {
-   StrIntMapArray map = AMGrlxGetValidValues("coarse_type");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "lu_piv"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "lu_inv"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "lu_piv"), 99);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "lu_inv"), 199);
+   StrIntMapArray map = hypredrv_AMGrlxGetValidValues("coarse_type");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "lu_piv"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "lu_inv"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "lu_piv"), 99);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "lu_inv"), 199);
 }
 
 static void
-test_AMGrlxGetValidValues_unknown_key(void)
+test_hypredrv_AMGrlxGetValidValues_unknown_key(void)
 {
-   StrIntMapArray map = AMGrlxGetValidValues("unknown_key");
+   StrIntMapArray map = hypredrv_AMGrlxGetValidValues("unknown_key");
    ASSERT_EQ(map.size, 0);
 }
 
 static void
-test_AMGsmtGetValidValues_type(void)
+test_hypredrv_AMGsmtGetValidValues_type(void)
 {
-   StrIntMapArray map = AMGsmtGetValidValues("type");
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "fsai"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "ilu"));
-   ASSERT_TRUE(StrIntMapArrayDomainEntryExists(map, "euclid"));
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "fsai"), 4);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "ilu"), 5);
-   ASSERT_EQ(StrIntMapArrayGetImage(map, "euclid"), 9);
+   StrIntMapArray map = hypredrv_AMGsmtGetValidValues("type");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "fsai"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "ilu"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "euclid"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "fsai"), 4);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "ilu"), 5);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "euclid"), 9);
 }
 
 static void
-test_AMGsmtGetValidValues_unknown_key(void)
+test_hypredrv_AMGsmtGetValidValues_unknown_key(void)
 {
-   StrIntMapArray map = AMGsmtGetValidValues("unknown_key");
+   StrIntMapArray map = hypredrv_AMGsmtGetValidValues("unknown_key");
    ASSERT_EQ(map.size, 0);
 }
 
 static void
-test_AMGintSetFieldByName_all_fields(void)
+test_hypredrv_AMGintSetFieldByName_all_fields(void)
 {
    AMGint_args args;
-   AMGintSetDefaultArgs(&args);
+   hypredrv_AMGintSetDefaultArgs(&args);
 
    static const struct
    {
@@ -907,8 +907,8 @@ test_AMGintSetFieldByName_all_fields(void)
    for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
    {
       YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
-      AMGintSetFieldByName(&args, node);
-      YAMLnodeDestroy(node);
+      hypredrv_AMGintSetFieldByName(&args, node);
+      hypredrv_YAMLnodeDestroy(node);
    }
 
    ASSERT_EQ(args.prolongation_type, 8);
@@ -918,10 +918,10 @@ test_AMGintSetFieldByName_all_fields(void)
 }
 
 static void
-test_AMGcsnSetFieldByName_all_fields(void)
+test_hypredrv_AMGcsnSetFieldByName_all_fields(void)
 {
    AMGcsn_args args;
-   AMGcsnSetDefaultArgs(&args);
+   hypredrv_AMGcsnSetDefaultArgs(&args);
 
    static const struct
    {
@@ -946,8 +946,8 @@ test_AMGcsnSetFieldByName_all_fields(void)
    for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
    {
       YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
-      AMGcsnSetFieldByName(&args, node);
-      YAMLnodeDestroy(node);
+      hypredrv_AMGcsnSetFieldByName(&args, node);
+      hypredrv_YAMLnodeDestroy(node);
    }
 
    ASSERT_EQ(args.type, 8);
@@ -992,32 +992,32 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconCreate_mgr_coarsest_level_krylov_nested);
    RUN_TEST(test_PreconSetup_mgr_frelax_nested_mgr_dof_labels);
    RUN_TEST(test_PreconDestroy_mgr_csolver_destroy_branches);
-   RUN_TEST(test_ILUSetFieldByName_all_fields);
-   RUN_TEST(test_ILUSetFieldByName_unknown_key);
-   RUN_TEST(test_ILUGetValidValues_type);
-   RUN_TEST(test_ILUGetValidValues_unknown_key);
-   RUN_TEST(test_FSAISetFieldByName_all_fields);
-   RUN_TEST(test_FSAISetFieldByName_unknown_key);
-   RUN_TEST(test_FSAIGetValidValues_algo_type);
-   RUN_TEST(test_FSAIGetValidValues_unknown_key);
-   RUN_TEST(test_AMGSetFieldByName_all_fields);
-   RUN_TEST(test_AMGSetFieldByName_unknown_key);
-   RUN_TEST(test_AMGintGetValidValues_prolongation_type);
-   RUN_TEST(test_AMGintGetValidValues_restriction_type);
-   RUN_TEST(test_AMGintGetValidValues_unknown_key);
-   RUN_TEST(test_AMGcsnGetValidValues_type);
-   RUN_TEST(test_AMGcsnGetValidValues_on_off_keys);
-   RUN_TEST(test_AMGcsnGetValidValues_unknown_key);
-   RUN_TEST(test_AMGaggGetValidValues_prolongation_type);
-   RUN_TEST(test_AMGaggGetValidValues_unknown_key);
-   RUN_TEST(test_AMGrlxGetValidValues_down_type);
-   RUN_TEST(test_AMGrlxGetValidValues_up_type);
-   RUN_TEST(test_AMGrlxGetValidValues_coarse_type);
-   RUN_TEST(test_AMGrlxGetValidValues_unknown_key);
-   RUN_TEST(test_AMGsmtGetValidValues_type);
-   RUN_TEST(test_AMGsmtGetValidValues_unknown_key);
-   RUN_TEST(test_AMGintSetFieldByName_all_fields);
-   RUN_TEST(test_AMGcsnSetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_ILUSetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_ILUSetFieldByName_unknown_key);
+   RUN_TEST(test_hypredrv_ILUGetValidValues_type);
+   RUN_TEST(test_hypredrv_ILUGetValidValues_unknown_key);
+   RUN_TEST(test_hypredrv_FSAISetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_FSAISetFieldByName_unknown_key);
+   RUN_TEST(test_hypredrv_FSAIGetValidValues_algo_type);
+   RUN_TEST(test_hypredrv_FSAIGetValidValues_unknown_key);
+   RUN_TEST(test_hypredrv_AMGSetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_AMGSetFieldByName_unknown_key);
+   RUN_TEST(test_hypredrv_AMGintGetValidValues_prolongation_type);
+   RUN_TEST(test_hypredrv_AMGintGetValidValues_restriction_type);
+   RUN_TEST(test_hypredrv_AMGintGetValidValues_unknown_key);
+   RUN_TEST(test_hypredrv_AMGcsnGetValidValues_type);
+   RUN_TEST(test_hypredrv_AMGcsnGetValidValues_on_off_keys);
+   RUN_TEST(test_hypredrv_AMGcsnGetValidValues_unknown_key);
+   RUN_TEST(test_hypredrv_AMGaggGetValidValues_prolongation_type);
+   RUN_TEST(test_hypredrv_AMGaggGetValidValues_unknown_key);
+   RUN_TEST(test_hypredrv_AMGrlxGetValidValues_down_type);
+   RUN_TEST(test_hypredrv_AMGrlxGetValidValues_up_type);
+   RUN_TEST(test_hypredrv_AMGrlxGetValidValues_coarse_type);
+   RUN_TEST(test_hypredrv_AMGrlxGetValidValues_unknown_key);
+   RUN_TEST(test_hypredrv_AMGsmtGetValidValues_type);
+   RUN_TEST(test_hypredrv_AMGsmtGetValidValues_unknown_key);
+   RUN_TEST(test_hypredrv_AMGintSetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_AMGcsnSetFieldByName_all_fields);
 
    MPI_Finalize();
    return 0;

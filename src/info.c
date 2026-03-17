@@ -101,7 +101,7 @@ static hwloc_topology_t topology = NULL;
 // Prototypes
 static int  InitHwlocTopology(void);
 static void CleanupHwlocTopology(void);
-static void PrintSystemInfoHwloc(MPI_Comm comm);
+static void hypredrv_PrintSystemInfoHwloc(MPI_Comm comm);
 static void PrintCpuTopologyInfo(MPI_Comm comm);
 static void PrintCacheHierarchy(void);
 static void PrintGpuInfo(GpuInfo *gpus, int gpu_count);
@@ -119,18 +119,18 @@ static void PrintWorkingDirectory(void);
 static void PrintDynamicLibraries(void);
 static void PrintRunningInfo(MPI_Comm comm);
 #endif
-void PrintSystemInfoLegacy(MPI_Comm comm);
+void hypredrv_PrintSystemInfoLegacy(MPI_Comm comm);
 
 #ifndef __APPLE__
 
 /*--------------------------------------------------------------------------
- * dlpi_callback
+ * hypredrv_dlpi_callback
  *
  * Linux: Use dl_iterate_phdr to list dynamic libraries
  *--------------------------------------------------------------------------*/
 
 int
-dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
+hypredrv_dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
 {
    (void)size;
    (void)data;
@@ -864,7 +864,7 @@ PrintDynamicLibrariesTree(void)
  *--------------------------------------------------------------------------*/
 
 void
-PrintSystemInfo(MPI_Comm comm)
+hypredrv_PrintSystemInfo(MPI_Comm comm)
 {
    int use_hwloc = 0;
 
@@ -878,12 +878,12 @@ PrintSystemInfo(MPI_Comm comm)
    if (use_hwloc)
    {
 #ifdef HAVE_HWLOC
-      PrintSystemInfoHwloc(comm);
+      hypredrv_PrintSystemInfoHwloc(comm);
 #endif
    }
    else
    {
-      PrintSystemInfoLegacy(comm);
+      hypredrv_PrintSystemInfoLegacy(comm);
    }
 
 #ifdef HAVE_HWLOC
@@ -899,7 +899,7 @@ PrintSystemInfo(MPI_Comm comm)
  *--------------------------------------------------------------------------*/
 
 void
-PrintSystemInfoLegacy(MPI_Comm comm)
+hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
 {
    int    myid = 0, nprocs = 0;
    char   hostname[HYPRE_MAX_HOSTNAME];
@@ -1455,7 +1455,7 @@ PrintSystemInfoLegacy(MPI_Comm comm)
 #else
       if (!PrintDynamicLibrariesTree())
       {
-         dl_iterate_phdr(dlpi_callback, NULL);
+         dl_iterate_phdr(hypredrv_dlpi_callback, NULL);
       }
 #endif
 
@@ -1568,7 +1568,7 @@ PrintMpiRuntimeInformation(MPI_Comm comm)
       }
       lib_version[lib_len]                      = '\0';
       lib_version[strcspn(lib_version, "\r\n")] = '\0';
-      NormalizeWhitespace(lib_version);
+      hypredrv_NormalizeWhitespace(lib_version);
       if (lib_version[0])
       {
          printf("MPI Implementation    : %s\n", lib_version);
@@ -1885,7 +1885,7 @@ PrintCpuTopologyInfo(MPI_Comm comm)
                {
                   snprintf(cpu_desc, sizeof(cpu_desc), "%s", cpumodel);
                }
-               TrimTrailingWhitespace(cpu_desc);
+               hypredrv_TrimTrailingWhitespace(cpu_desc);
 
                if (packages > 1)
                {
@@ -2839,7 +2839,7 @@ PrintDynamicLibraries(void)
 #else
    if (!PrintDynamicLibrariesTree())
    {
-      dl_iterate_phdr(dlpi_callback, NULL);
+      dl_iterate_phdr(hypredrv_dlpi_callback, NULL);
    }
 #endif
    printf("\n");
@@ -2866,7 +2866,7 @@ PrintRunningInfo(MPI_Comm comm)
 }
 
 static void
-PrintSystemInfoHwloc(MPI_Comm comm)
+hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
 {
    int myid = 0, nprocs = 0;
    MPI_Comm_rank(comm, &myid);
@@ -3480,7 +3480,7 @@ PrintAcceleratorRuntimeInformation(void)
  *--------------------------------------------------------------------------*/
 
 void
-PrintLibInfo(MPI_Comm comm, int print_datetime)
+hypredrv_PrintLibInfo(MPI_Comm comm, int print_datetime)
 {
    int myid = 0;
 
@@ -3530,7 +3530,7 @@ PrintLibInfo(MPI_Comm comm, int print_datetime)
  *--------------------------------------------------------------------------*/
 
 void
-PrintExitInfo(MPI_Comm comm, const char *argv0)
+hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
 {
    int myid = 0;
 

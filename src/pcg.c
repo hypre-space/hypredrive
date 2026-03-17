@@ -12,17 +12,17 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define PCG_FIELDS(_prefix)                                          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, two_norm, FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, recompute_res, FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, residual_tol, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, FieldTypeDoubleSet)
+#define PCG_FIELDS(_prefix)                                                   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, two_norm, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, recompute_res, hypredrv_FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, residual_tol, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, hypredrv_FieldTypeDoubleSet)
 
 /* Define num_fields macro */
 #define PCG_NUM_FIELDS (sizeof(PCG_field_offset_map) / sizeof(PCG_field_offset_map[0]))
@@ -36,7 +36,7 @@ GENERATE_PREFIXED_COMPONENTS(PCG) // LCOV_EXCL_LINE
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-PCGGetValidValues(const char *key)
+hypredrv_PCGGetValidValues(const char *key)
 {
    if (!strcmp(key, "two_norm") || !strcmp(key, "stop_crit") ||
        !strcmp(key, "rel_change"))
@@ -52,7 +52,7 @@ PCGGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-PCGSetDefaultArgs(PCG_args *args)
+hypredrv_PCGSetDefaultArgs(PCG_args *args)
 {
    args->max_iter      = 100;
    args->two_norm      = 1;
@@ -71,7 +71,7 @@ PCGSetDefaultArgs(PCG_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-PCGCreate(MPI_Comm comm, const PCG_args *args, HYPRE_Solver *solver_ptr)
+hypredrv_PCGCreate(MPI_Comm comm, const PCG_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver = NULL;
 

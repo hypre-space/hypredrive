@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "nested_krylov.h"
+#include "krylov.h"
 #include "bicgstab.h"
 #include "error.h"
 #include "fgmres.h"
@@ -155,65 +155,68 @@ NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
 
    if (strcmp(precon_node->val, "") != 0)
    {
-      if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), precon_node->val))
+      if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(),
+                                                    precon_node->val))
       {
-         ErrorCodeSet(ERROR_INVALID_VAL);
-         ErrorMsgAdd("Unknown nested preconditioner type: '%s'", precon_node->val);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Unknown nested preconditioner type: '%s'",
+                              precon_node->val);
          YAML_NODE_SET_INVALID_VAL(precon_node);
          return;
       }
-      args->precon_method =
-         (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), precon_node->val);
+      args->precon_method = (precon_t)hypredrv_StrIntMapArrayGetImage(
+         hypredrv_PreconGetValidTypeIntMap(), precon_node->val);
       if (args->precon_method == PRECON_MGR)
       {
-         ErrorCodeSet(ERROR_INVALID_PRECON);
-         ErrorMsgAdd("Nested preconditioner 'mgr' is not supported");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("Nested preconditioner 'mgr' is not supported");
          YAML_NODE_SET_INVALID_VAL(precon_node);
          return;
       }
       args->has_precon = 1;
-      PreconArgsSetDefaultsForMethod(args->precon_method, &args->precon);
+      hypredrv_PreconArgsSetDefaultsForMethod(args->precon_method, &args->precon);
       return;
    }
 
    if (!precon_node->children)
    {
-      ErrorCodeSet(ERROR_MISSING_PRECON);
-      ErrorMsgAdd("Nested preconditioner type is missing");
+      hypredrv_ErrorCodeSet(ERROR_MISSING_PRECON);
+      hypredrv_ErrorMsgAdd("Nested preconditioner type is missing");
       YAML_NODE_SET_INVALID_KEY(precon_node);
       return;
    }
 
    if (precon_node->children->next)
    {
-      ErrorCodeSet(ERROR_EXTRA_KEY);
-      ErrorMsgAddExtraKey(precon_node->children->next->key);
+      hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
+      hypredrv_ErrorMsgAddExtraKey(precon_node->children->next->key);
       YAML_NODE_SET_INVALID_KEY(precon_node->children->next);
       return;
    }
 
    YAMLnode *type_node = precon_node->children;
-   if (!StrIntMapArrayDomainEntryExists(PreconGetValidTypeIntMap(), type_node->key))
+   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(),
+                                                 type_node->key))
    {
-      ErrorCodeSet(ERROR_INVALID_KEY);
-      ErrorMsgAdd("Unknown nested preconditioner type: '%s'", type_node->key);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+      hypredrv_ErrorMsgAdd("Unknown nested preconditioner type: '%s'", type_node->key);
       YAML_NODE_SET_INVALID_KEY(type_node);
       return;
    }
 
-   args->precon_method =
-      (precon_t)StrIntMapArrayGetImage(PreconGetValidTypeIntMap(), type_node->key);
+   args->precon_method = (precon_t)hypredrv_StrIntMapArrayGetImage(
+      hypredrv_PreconGetValidTypeIntMap(), type_node->key);
    if (args->precon_method == PRECON_MGR)
    {
-      ErrorCodeSet(ERROR_INVALID_PRECON);
-      ErrorMsgAdd("Nested preconditioner 'mgr' is not supported");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Nested preconditioner 'mgr' is not supported");
       YAML_NODE_SET_INVALID_VAL(type_node);
       return;
    }
 
    args->has_precon = 1;
-   PreconArgsSetDefaultsForMethod(args->precon_method, &args->precon);
-   PreconSetArgsFromYAML(&args->precon, precon_node);
+   hypredrv_PreconArgsSetDefaultsForMethod(args->precon_method, &args->precon);
+   hypredrv_PreconSetArgsFromYAML(&args->precon, precon_node);
 }
 
 /*-----------------------------------------------------------------------------
@@ -260,8 +263,8 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
                                         setup_ptrs[precon_method], precon->main);
          break;
       default:
-         ErrorCodeSet(ERROR_INVALID_SOLVER);
-         ErrorMsgAdd("Nested Krylov solver method not supported");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+         hypredrv_ErrorMsgAdd("Nested Krylov solver method not supported");
          break;
    }
 }
@@ -270,7 +273,7 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
  *-----------------------------------------------------------------------------*/
 
 void
-NestedKrylovSetDefaultArgs(NestedKrylov_args *args)
+hypredrv_NestedKrylovSetDefaultArgs(NestedKrylov_args *args)
 {
    if (!args)
    {
@@ -289,25 +292,26 @@ NestedKrylovSetDefaultArgs(NestedKrylov_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_node)
+hypredrv_NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_node)
 {
    if (!args || !solver_node)
    {
       return;
    }
 
-   if (!StrIntMapArrayDomainEntryExists(SolverGetValidTypeIntMap(), solver_node->key))
+   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(),
+                                                 solver_node->key))
    {
-      ErrorCodeSet(ERROR_INVALID_KEY);
-      ErrorMsgAdd("Unknown nested solver type: '%s'", solver_node->key);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+      hypredrv_ErrorMsgAdd("Unknown nested solver type: '%s'", solver_node->key);
       YAML_NODE_SET_INVALID_KEY(solver_node);
       return;
    }
 
-   args->is_set = 1;
-   args->solver_method =
-      (solver_t)StrIntMapArrayGetImage(SolverGetValidTypeIntMap(), solver_node->key);
-   SolverArgsSetDefaultsForMethod(args->solver_method, &args->solver);
+   args->is_set        = 1;
+   args->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
+      hypredrv_SolverGetValidTypeIntMap(), solver_node->key);
+   hypredrv_SolverArgsSetDefaultsForMethod(args->solver_method, &args->solver);
 
    YAMLnode *precon_node = NULL;
    YAMLnode *precon_prev = NULL;
@@ -322,20 +326,20 @@ NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_node)
    switch (args->solver_method)
    {
       case SOLVER_PCG:
-         PCGSetArgs(&args->solver.pcg, solver_node);
+         hypredrv_PCGSetArgs(&args->solver.pcg, solver_node);
          break;
       case SOLVER_GMRES:
-         GMRESSetArgs(&args->solver.gmres, solver_node);
+         hypredrv_GMRESSetArgs(&args->solver.gmres, solver_node);
          break;
       case SOLVER_FGMRES:
-         FGMRESSetArgs(&args->solver.fgmres, solver_node);
+         hypredrv_FGMRESSetArgs(&args->solver.fgmres, solver_node);
          break;
       case SOLVER_BICGSTAB:
-         BiCGSTABSetArgs(&args->solver.bicgstab, solver_node);
+         hypredrv_BiCGSTABSetArgs(&args->solver.bicgstab, solver_node);
          break;
       default:
-         ErrorCodeSet(ERROR_INVALID_SOLVER);
-         ErrorMsgAdd("Nested Krylov solver method not supported");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+         hypredrv_ErrorMsgAdd("Nested Krylov solver method not supported");
          break;
    }
 
@@ -346,16 +350,16 @@ NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_node)
  *-----------------------------------------------------------------------------*/
 
 void
-NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *dofmap,
-                   HYPRE_IJVector vec_nn, HYPRE_Solver *solver_ptr)
+hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *dofmap,
+                            HYPRE_IJVector vec_nn, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver base_solver = NULL;
 
    /* Sanity check */
    if (!args || !solver_ptr)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("NestedKrylovCreateWrapped: invalid arguments");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("NestedKrylovCreateWrapped: invalid arguments");
       return;
    }
 
@@ -369,8 +373,9 @@ NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *dofmap,
    /* Create preconditioner object if needed */
    if (args->has_precon)
    {
-      PreconCreate(args->precon_method, &args->precon, dofmap, vec_nn, &args->precon_obj);
-      if (ErrorCodeActive())
+      hypredrv_PreconCreate(args->precon_method, &args->precon, dofmap, vec_nn,
+                            &args->precon_obj);
+      if (hypredrv_ErrorCodeActive())
       {
          return;
       }
@@ -380,24 +385,24 @@ NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *dofmap,
    switch (args->solver_method)
    {
       case SOLVER_PCG:
-         PCGCreate(comm, &args->solver.pcg, &base_solver);
+         hypredrv_PCGCreate(comm, &args->solver.pcg, &base_solver);
          break;
 
       case SOLVER_GMRES:
-         GMRESCreate(comm, &args->solver.gmres, &base_solver);
+         hypredrv_GMRESCreate(comm, &args->solver.gmres, &base_solver);
          break;
 
       case SOLVER_FGMRES:
-         FGMRESCreate(comm, &args->solver.fgmres, &base_solver);
+         hypredrv_FGMRESCreate(comm, &args->solver.fgmres, &base_solver);
          break;
 
       case SOLVER_BICGSTAB:
-         BiCGSTABCreate(comm, &args->solver.bicgstab, &base_solver);
+         hypredrv_BiCGSTABCreate(comm, &args->solver.bicgstab, &base_solver);
          break;
 
       default:
-         ErrorCodeSet(ERROR_INVALID_SOLVER);
-         ErrorMsgAdd("Nested Krylov solver method not supported");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+         hypredrv_ErrorMsgAdd("Nested Krylov solver method not supported");
          return;
    }
 
@@ -406,7 +411,7 @@ NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *dofmap,
    {
       NestedKrylovSetPrecond(args->solver_method, base_solver, args->precon_method,
                              args->precon_obj);
-      if (ErrorCodeActive())
+      if (hypredrv_ErrorCodeActive())
       {
          return;
       }
@@ -423,7 +428,7 @@ NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *dofmap,
  *-----------------------------------------------------------------------------*/
 
 void
-NestedKrylovDestroy(NestedKrylov_args *args)
+hypredrv_NestedKrylovDestroy(NestedKrylov_args *args)
 {
    if (!args)
    {
@@ -458,7 +463,7 @@ NestedKrylovDestroy(NestedKrylov_args *args)
 
    if (args->precon_obj)
    {
-      PreconDestroy(args->precon_method, &args->precon, &args->precon_obj);
+      hypredrv_PreconDestroy(args->precon_method, &args->precon, &args->precon_obj);
       args->precon_obj = NULL;
    }
 }

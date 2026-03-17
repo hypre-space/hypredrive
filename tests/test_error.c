@@ -24,45 +24,45 @@ static void
 test_ErrorCodeSet_get(void)
 {
    /* Reset first to ensure clean state */
-   ErrorCodeResetAll();
-   ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
-   ASSERT_FALSE(ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   ErrorCodeSet(ERROR_INVALID_KEY);
-   ASSERT_EQ(ErrorCodeGet(), ERROR_INVALID_KEY);
-   ASSERT_TRUE(ErrorCodeActive());
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_INVALID_KEY);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
-   ErrorCodeResetAll();
-   ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
-   ASSERT_FALSE(ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 }
 
 static void
 test_ErrorCodeReset(void)
 {
-   ErrorCodeSet(ERROR_INVALID_KEY);
-   ASSERT_TRUE(ErrorCodeActive());
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
-   ErrorCodeReset(ERROR_INVALID_KEY);
-   ASSERT_FALSE(ErrorCodeActive());
+   hypredrv_ErrorCodeReset(ERROR_INVALID_KEY);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   ErrorCodeResetAll();
-   ASSERT_FALSE(ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 }
 
 static void
 test_ErrorCodeMultiple(void)
 {
-   ErrorCodeSet(ERROR_INVALID_KEY);
-   ErrorCodeSet(ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
 
-   uint32_t codes = ErrorCodeGet();
+   uint32_t codes = hypredrv_ErrorCodeGet();
    ASSERT_TRUE(codes & ERROR_INVALID_KEY);
    ASSERT_TRUE(codes & ERROR_INVALID_VAL);
-   ASSERT_TRUE(ErrorCodeActive());
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
-   ErrorCodeResetAll();
-   ASSERT_FALSE(ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 }
 
 /*-----------------------------------------------------------------------------
@@ -72,9 +72,9 @@ test_ErrorCodeMultiple(void)
 static void
 test_ErrorMsgAdd(void)
 {
-   ErrorMsgClear();
-   ErrorMsgAdd("Test message %d", 42);
-   ErrorMsgAdd("Another message");
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorMsgAdd("Test message %d", 42);
+   hypredrv_ErrorMsgAdd("Another message");
 
    /* Messages should be stored - we can't easily verify without printing */
    /* But we can verify no crash */
@@ -83,8 +83,8 @@ test_ErrorMsgAdd(void)
 static void
 test_ErrorMsgClear(void)
 {
-   ErrorMsgAdd("Test message");
-   ErrorMsgClear();
+   hypredrv_ErrorMsgAdd("Test message");
+   hypredrv_ErrorMsgClear();
 
    /* Clear should not crash */
 }
@@ -92,119 +92,119 @@ test_ErrorMsgClear(void)
 static void
 test_ErrorStateReset(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
-   ErrorCodeSet(ERROR_INVALID_KEY);
-   ErrorMsgAdd("Message before state reset");
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorMsgAdd("Message before state reset");
 
-   ErrorStateReset();
+   hypredrv_ErrorStateReset();
 
-   ASSERT_EQ(ErrorCodeGet(), ERROR_NONE);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    char buffer[512];
-   capture_error_output(ErrorMsgPrint, buffer, sizeof(buffer));
+   capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
    ASSERT_NULL(strstr(buffer, "Message before state reset"));
 }
 
 static void
 test_ErrorMsgAdd_null_format(void)
 {
-   ErrorMsgClear();
-   ErrorMsgAdd(NULL);
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorMsgAdd(NULL);
 
    char buffer[512];
-   capture_error_output(ErrorMsgPrint, buffer, sizeof(buffer));
+   capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
    ASSERT_NOT_NULL(strstr(buffer, "(null format)"));
 
-   ErrorMsgClear();
+   hypredrv_ErrorMsgClear();
 }
 
 static void
 test_ErrorMsgHelpers_accept_null_inputs(void)
 {
-   ErrorMsgClear();
+   hypredrv_ErrorMsgClear();
 
-   ErrorMsgAddMissingKey(NULL);
-   ErrorMsgAddExtraKey(NULL);
-   ErrorMsgAddUnexpectedVal(NULL);
-   ErrorMsgAddInvalidFilename(NULL);
+   hypredrv_ErrorMsgAddMissingKey(NULL);
+   hypredrv_ErrorMsgAddExtraKey(NULL);
+   hypredrv_ErrorMsgAddUnexpectedVal(NULL);
+   hypredrv_ErrorMsgAddInvalidFilename(NULL);
 
    char buffer[1024];
-   capture_error_output(ErrorMsgPrint, buffer, sizeof(buffer));
+   capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
    ASSERT_NOT_NULL(strstr(buffer, "(null)"));
 
-   ErrorMsgClear();
+   hypredrv_ErrorMsgClear();
 }
 
 static void
 test_ErrorMsgAddMissingKey(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
-   ErrorMsgAddMissingKey("missing_key");
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorMsgAddMissingKey("missing_key");
 
-   /* ErrorMsgAddMissingKey only adds a message, doesn't set error code */
-   /* The error code must be set separately via ErrorCodeSet */
+   /* hypredrv_ErrorMsgAddMissingKey only adds a message, doesn't set error code */
+   /* The error code must be set separately via hypredrv_ErrorCodeSet */
    /* This test just verifies the function doesn't crash */
-   ErrorCodeSet(ERROR_MISSING_KEY);
-   uint32_t code = ErrorCodeGet();
+   hypredrv_ErrorCodeSet(ERROR_MISSING_KEY);
+   uint32_t code = hypredrv_ErrorCodeGet();
    ASSERT_TRUE(code & ERROR_MISSING_KEY);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 static void
 test_ErrorMsgAddExtraKey(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
-   ErrorMsgAddExtraKey("extra_key");
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorMsgAddExtraKey("extra_key");
 
-   /* ErrorMsgAddExtraKey only adds a message, doesn't set error code */
-   /* The error code must be set separately via ErrorCodeSet */
-   ErrorCodeSet(ERROR_EXTRA_KEY);
-   uint32_t code = ErrorCodeGet();
+   /* hypredrv_ErrorMsgAddExtraKey only adds a message, doesn't set error code */
+   /* The error code must be set separately via hypredrv_ErrorCodeSet */
+   hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
+   uint32_t code = hypredrv_ErrorCodeGet();
    ASSERT_TRUE(code & ERROR_EXTRA_KEY);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 static void
 test_ErrorMsgAddUnexpectedVal(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
-   ErrorMsgAddUnexpectedVal("unexpected_value");
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorMsgAddUnexpectedVal("unexpected_value");
 
-   /* ErrorMsgAddUnexpectedVal only adds a message, doesn't set error code */
-   /* The error code must be set separately via ErrorCodeSet */
-   ErrorCodeSet(ERROR_UNEXPECTED_VAL);
-   uint32_t code = ErrorCodeGet();
+   /* hypredrv_ErrorMsgAddUnexpectedVal only adds a message, doesn't set error code */
+   /* The error code must be set separately via hypredrv_ErrorCodeSet */
+   hypredrv_ErrorCodeSet(ERROR_UNEXPECTED_VAL);
+   uint32_t code = hypredrv_ErrorCodeGet();
    ASSERT_TRUE(code & ERROR_UNEXPECTED_VAL);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 static void
 test_ErrorMsgAddInvalidFilename(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
-   ErrorMsgAddInvalidFilename("invalid_file.txt");
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorMsgAddInvalidFilename("invalid_file.txt");
 
-   /* ErrorMsgAddInvalidFilename only adds a message, doesn't set error code */
-   /* The error code must be set separately via ErrorCodeSet */
-   ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-   uint32_t code = ErrorCodeGet();
+   /* hypredrv_ErrorMsgAddInvalidFilename only adds a message, doesn't set error code */
+   /* The error code must be set separately via hypredrv_ErrorCodeSet */
+   hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+   uint32_t code = hypredrv_ErrorCodeGet();
    ASSERT_TRUE(code & ERROR_FILE_NOT_FOUND);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 /*-----------------------------------------------------------------------------
- * Helpers to capture stderr from ErrorMsgPrint
+ * Helpers to capture stderr from hypredrv_ErrorMsgPrint
  *-----------------------------------------------------------------------------*/
 
 static void
@@ -249,67 +249,67 @@ capture_error_output(void (*print_fn)(void), char *buffer, size_t buf_len)
 static void
 test_ErrorCodeDescribe_prints_counts(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
-   ErrorCodeSet(ERROR_INVALID_KEY);
-   ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
 
-   ErrorCodeDescribe(ErrorCodeGet());
+   hypredrv_ErrorCodeDescribe(hypredrv_ErrorCodeGet());
 
    char buffer[512];
-   capture_error_output(ErrorMsgPrint, buffer, sizeof(buffer));
+   capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
    ASSERT_NOT_NULL(strstr(buffer, "Found 2 invalid keys"));
 
-   ErrorMsgClear();
-   ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
 }
 
 static void
 test_DistributedErrorCodeActive(void)
 {
-   ErrorCodeResetAll();
-   ASSERT_FALSE(DistributedErrorCodeActive(MPI_COMM_SELF));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_DistributedErrorCodeActive(MPI_COMM_SELF));
 
-   ErrorCodeSet(ERROR_INVALID_VAL);
-   ASSERT_TRUE(DistributedErrorCodeActive(MPI_COMM_SELF));
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   ASSERT_TRUE(hypredrv_DistributedErrorCodeActive(MPI_COMM_SELF));
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 static void
 test_ErrorMsgPrint_with_no_messages(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
-   /* ErrorMsgPrint with no messages should not crash */
+   /* hypredrv_ErrorMsgPrint with no messages should not crash */
    char buffer[512];
-   capture_error_output(ErrorMsgPrint, buffer, sizeof(buffer));
+   capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
    /* Should print header but no error details */
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 /*-----------------------------------------------------------------------------
  * Test backtrace symbolization
  *-----------------------------------------------------------------------------*/
 
-/* Helper to call ErrorBacktracePrint directly */
+/* Helper to call hypredrv_ErrorBacktracePrint directly */
 static void
 call_ErrorBacktracePrint(void)
 {
-   ErrorBacktracePrint();
+   hypredrv_ErrorBacktracePrint();
 }
 
 static void
 test_ErrorBacktracePrint_has_filenames_and_lines(void)
 {
 #ifdef __linux__
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
-   /* Capture output from ErrorBacktracePrint directly */
+   /* Capture output from hypredrv_ErrorBacktracePrint directly */
    char buffer[4096];
    capture_error_output(call_ErrorBacktracePrint, buffer, sizeof(buffer));
 
@@ -363,8 +363,8 @@ test_ErrorBacktracePrint_has_filenames_and_lines(void)
    {
       /* Older environments may not have addr2line/symbols available. */
       fprintf(stderr, "SKIP: Backtrace lacks file:line; addr2line likely unavailable.\n");
-      ErrorCodeResetAll();
-      ErrorMsgClear();
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_ErrorMsgClear();
       return;
    }
    
@@ -372,13 +372,13 @@ test_ErrorBacktracePrint_has_filenames_and_lines(void)
    if (!found_file_line)
    {
       fprintf(stderr, "SKIP: Backtrace lacks file:line information.\n");
-      ErrorCodeResetAll();
-      ErrorMsgClear();
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_ErrorMsgClear();
       return;
    }
 
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 #else
    /* Backtrace is only supported on Linux */
    fprintf(stderr, "SKIP: Backtrace test only runs on Linux\n");
@@ -389,8 +389,8 @@ static void
 test_ErrorBacktracePrint_respects_no_backtrace_env(void)
 {
 #ifdef __linux__
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
    /* Force early return */
    setenv("HYPREDRV_NO_BACKTRACE", "1", 1);
@@ -435,8 +435,8 @@ main(int argc, char **argv)
    RUN_TEST(test_ErrorBacktracePrint_has_filenames_and_lines);
    RUN_TEST(test_ErrorBacktracePrint_respects_no_backtrace_env);
 
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
    MPI_Finalize();
 

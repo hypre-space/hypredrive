@@ -22,12 +22,12 @@
 static void
 test_PresetRegister_success(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
    int ret = hypredrv_PresetRegister("my_custom", "amg:\n  max_iter: 1", "Custom AMG");
    ASSERT_EQ(ret, 0);
-   ASSERT_FALSE(ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    const hypredrv_Preset *p = hypredrv_PresetFind("my_custom");
    ASSERT_NOT_NULL(p);
@@ -36,7 +36,7 @@ test_PresetRegister_success(void)
    ASSERT_STREQ(p->help, "Custom AMG");
 
    hypredrv_PresetFreeUserPresets();
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 /*-----------------------------------------------------------------------------
@@ -46,16 +46,16 @@ test_PresetRegister_success(void)
 static void
 test_PresetRegister_duplicate_builtin(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
    int ret = hypredrv_PresetRegister("poisson", "amg", "duplicate of builtin");
    ASSERT_EQ(ret, -1);
-   ASSERT_TRUE(ErrorCodeActive());
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
 
    hypredrv_PresetFreeUserPresets();
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 /*-----------------------------------------------------------------------------
@@ -65,20 +65,20 @@ test_PresetRegister_duplicate_builtin(void)
 static void
 test_PresetRegister_duplicate_user(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
    int ret1 = hypredrv_PresetRegister("my_dup", "amg", "first registration");
    ASSERT_EQ(ret1, 0);
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
    int ret2 = hypredrv_PresetRegister("my_dup", "amg:\n  max_iter: 2", "second");
    ASSERT_EQ(ret2, -1);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
 
    hypredrv_PresetFreeUserPresets();
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 /*-----------------------------------------------------------------------------
@@ -88,25 +88,25 @@ test_PresetRegister_duplicate_user(void)
 static void
 test_PresetRegister_null_args(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
    /* NULL name */
    int ret = hypredrv_PresetRegister(NULL, "amg", "help");
    ASSERT_EQ(ret, -1);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_INVALID_VAL);
-   ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeResetAll();
 
    /* NULL yaml_text */
    ret = hypredrv_PresetRegister("my_null_text", NULL, "help");
    ASSERT_EQ(ret, -1);
-   ASSERT_TRUE(ErrorCodeGet() & ERROR_INVALID_VAL);
-   ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeResetAll();
 
    /* NULL help is allowed — treated as empty string */
    ret = hypredrv_PresetRegister("my_null_help", "amg", NULL);
    ASSERT_EQ(ret, 0);
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
    hypredrv_PresetFreeUserPresets();
 }
@@ -118,8 +118,8 @@ test_PresetRegister_null_args(void)
 static void
 test_PresetFind_user_preset_case_insensitive(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
    int ret = hypredrv_PresetRegister("my_case_test", "amg", "Case test preset");
    ASSERT_EQ(ret, 0);
@@ -137,7 +137,7 @@ test_PresetFind_user_preset_case_insensitive(void)
    ASSERT_NULL(hypredrv_PresetFind("no_such_preset"));
 
    hypredrv_PresetFreeUserPresets();
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 /*-----------------------------------------------------------------------------
@@ -147,8 +147,8 @@ test_PresetFind_user_preset_case_insensitive(void)
 static void
 test_PresetHelp_includes_user_preset(void)
 {
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
    int ret = hypredrv_PresetRegister("help_test_preset", "amg", "My help text");
    ASSERT_EQ(ret, 0);
@@ -162,7 +162,7 @@ test_PresetHelp_includes_user_preset(void)
 
    free(help);
    hypredrv_PresetFreeUserPresets();
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 /*-----------------------------------------------------------------------------
@@ -172,7 +172,7 @@ test_PresetHelp_includes_user_preset(void)
 static void
 test_PresetFreeUserPresets_idempotent(void)
 {
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 
    int ret = hypredrv_PresetRegister("idempotent_preset", "amg", "to be freed");
    ASSERT_EQ(ret, 0);
@@ -186,7 +186,7 @@ test_PresetFreeUserPresets_idempotent(void)
    /* After freeing, the preset should no longer be found */
    ASSERT_NULL(hypredrv_PresetFind("idempotent_preset"));
 
-   ErrorCodeResetAll();
+   hypredrv_ErrorCodeResetAll();
 }
 
 /*-----------------------------------------------------------------------------
@@ -236,8 +236,8 @@ main(int argc, char **argv)
    RUN_TEST(test_PresetFreeUserPresets_idempotent);
    RUN_TEST(test_HYPREDRV_PreconPresetRegister_public);
 
-   ErrorCodeResetAll();
-   ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
    MPI_Finalize();
 

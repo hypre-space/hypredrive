@@ -152,39 +152,41 @@ typedef struct Stats_struct
  *--------------------------------------------------------------------------*/
 
 /* Stats object lifecycle */
-Stats *StatsCreate(void);
-void   StatsDestroy(Stats **stats_ptr);
+Stats *hypredrv_StatsCreate(void);
+void   hypredrv_StatsDestroy(Stats **stats_ptr);
 
 /* Annotation functions */
-void StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char *name);
-void StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char *name,
-                    va_list args);
-void StatsAnnotateLevelBegin(Stats *stats, int level, const char *name);
-void StatsAnnotateLevelEnd(Stats *stats, int level, const char *name);
+void hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action,
+                            const char *name);
+void hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action,
+                             const char *name, va_list args);
+void hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name);
+void hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name);
 
 /* Timer configuration */
-void StatsTimerSetMilliseconds(Stats *stats);
-void StatsTimerSetSeconds(Stats *stats);
+void hypredrv_StatsTimerSetMilliseconds(Stats *stats);
+void hypredrv_StatsTimerSetSeconds(Stats *stats);
 
 /* Statistics setters */
-void StatsIterSet(Stats *stats, int);
-void StatsInitialResNormSet(Stats *stats, double);
-void StatsRelativeResNormSet(Stats *stats, double);
-void StatsSetNumReps(Stats *stats, int);
-void StatsSetNumLinearSystems(Stats *stats, int);
+void hypredrv_StatsIterSet(Stats *stats, int);
+void hypredrv_StatsInitialResNormSet(Stats *stats, double);
+void hypredrv_StatsRelativeResNormSet(Stats *stats, double);
+void hypredrv_StatsSetNumReps(Stats *stats, int);
+void hypredrv_StatsSetNumLinearSystems(Stats *stats, int);
 
 /* Statistics getters */
-int    StatsGetLinearSystemID(const Stats *stats);
-int    StatsGetLastIter(const Stats *stats);
-double StatsGetLastSetupTime(const Stats *stats);
-double StatsGetLastSolveTime(const Stats *stats);
+int    hypredrv_StatsGetLinearSystemID(const Stats *stats);
+int    hypredrv_StatsGetLastIter(const Stats *stats);
+double hypredrv_StatsGetLastSetupTime(const Stats *stats);
+double hypredrv_StatsGetLastSolveTime(const Stats *stats);
 
 /* Level statistics (populated automatically from level annotations) */
-int  StatsLevelGetCount(const Stats *stats, int level);
-int  StatsLevelGetEntry(const Stats *stats, int level, int index, LevelEntry *entry);
-void StatsLevelPrint(const Stats *stats, int level);
+int  hypredrv_StatsLevelGetCount(const Stats *stats, int level);
+int  hypredrv_StatsLevelGetEntry(const Stats *stats, int level, int index,
+                                 LevelEntry *entry);
+void hypredrv_StatsLevelPrint(const Stats *stats, int level);
 
 /* Output */
-void StatsPrint(const Stats *stats, int);
+void hypredrv_StatsPrint(const Stats *stats, int);
 
 #endif /* STATS_HEADER */

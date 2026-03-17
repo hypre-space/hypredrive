@@ -17,9 +17,9 @@
  * Prototypes
  *--------------------------------------------------------------------------*/
 
-void PrintUsage(const char *);
-void PrintLibInfo(MPI_Comm, int);
-void PrintSystemInfo(MPI_Comm);
-void PrintExitInfo(MPI_Comm, const char *);
+void hypredrv_PrintUsage(const char *);
+void hypredrv_PrintLibInfo(MPI_Comm, int);
+void hypredrv_PrintSystemInfo(MPI_Comm);
+void hypredrv_PrintExitInfo(MPI_Comm, const char *);
 
 #endif /* INFO_HEADER */

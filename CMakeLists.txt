@@ -64,6 +64,21 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 # Include directories
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
+# Sanity check: private APIs must use hypredrv_ prefix exactly once (never hypredrv_hypredrv)
+file(GLOB_RECURSE _hypredrv_src_files "${CMAKE_SOURCE_DIR}/src/*.c" "${CMAKE_SOURCE_DIR}/include/*.h"
+     "${CMAKE_SOURCE_DIR}/tests/*.c" "${CMAKE_SOURCE_DIR}/utils/*.c")
+set(_hypredrv_double_prefix_found "")
+foreach(_f IN LISTS _hypredrv_src_files)
+    file(READ "${_f}" _content)
+    if(_content MATCHES "hypredrv_hypredrv")
+        list(APPEND _hypredrv_double_prefix_found "${_f}")
+    endif()
+endforeach()
+if(_hypredrv_double_prefix_found)
+    list(JOIN _hypredrv_double_prefix_found "\n  " _files_list)
+    message(FATAL_ERROR "hypredrv_hypredrv (double prefix) must never occur. Fix to use hypredrv_ only.\n  Files: ${_files_list}")
+endif()
+
 # Find and configure dependencies
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Deps.cmake)
 

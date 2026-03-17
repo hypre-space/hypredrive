@@ -81,26 +81,27 @@ HYPREDRV_PreconSetupNoop(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVec
    return 0;
 }
 
-#define Solver_FIELDS(_prefix)                            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, pcg, PCGSetArgs)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, gmres, GMRESSetArgs)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fgmres, FGMRESSetArgs) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, bicgstab, BiCGSTABSetArgs)
+#define Solver_FIELDS(_prefix)                                     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, pcg, hypredrv_PCGSetArgs)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, gmres, hypredrv_GMRESSetArgs)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fgmres, hypredrv_FGMRESSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, bicgstab, hypredrv_BiCGSTABSetArgs)
 
 DEFINE_FIELD_OFFSET_MAP(Solver)
 #define Solver_NUM_FIELDS \
    (sizeof(Solver_field_offset_map) / sizeof(Solver_field_offset_map[0]))
 
-DEFINE_SET_FIELD_BY_NAME_FUNC(SolverSetFieldByName, Solver_args, Solver_field_offset_map,
-                              Solver_NUM_FIELDS)
-DEFINE_GET_VALID_KEYS_FUNC(SolverGetValidKeys, Solver_NUM_FIELDS, Solver_field_offset_map)
+DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_SolverSetFieldByName, Solver_args,
+                              Solver_field_offset_map, Solver_NUM_FIELDS)
+DEFINE_GET_VALID_KEYS_FUNC(hypredrv_SolverGetValidKeys, Solver_NUM_FIELDS,
+                           Solver_field_offset_map)
 
 /*-----------------------------------------------------------------------------
  * SolverGetValidTypeIntMap
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-SolverGetValidTypeIntMap(void)
+hypredrv_SolverGetValidTypeIntMap(void)
 {
    static StrIntMap map[] = {
       {"pcg", (int)SOLVER_PCG},
@@ -117,11 +118,11 @@ SolverGetValidTypeIntMap(void)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-SolverGetValidValues(const char *key)
+hypredrv_SolverGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      return SolverGetValidTypeIntMap();
+      return hypredrv_SolverGetValidTypeIntMap();
    }
    else
    {
@@ -137,7 +138,7 @@ SolverGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-SolverArgsSetDefaultsForMethod(solver_t method, solver_args *args)
+hypredrv_SolverArgsSetDefaultsForMethod(solver_t method, solver_args *args)
 {
    if (!args)
    {
@@ -147,16 +148,16 @@ SolverArgsSetDefaultsForMethod(solver_t method, solver_args *args)
    switch (method)
    {
       case SOLVER_PCG:
-         PCGSetDefaultArgs(&args->pcg);
+         hypredrv_PCGSetDefaultArgs(&args->pcg);
          break;
       case SOLVER_GMRES:
-         GMRESSetDefaultArgs(&args->gmres);
+         hypredrv_GMRESSetDefaultArgs(&args->gmres);
          break;
       case SOLVER_FGMRES:
-         FGMRESSetDefaultArgs(&args->fgmres);
+         hypredrv_FGMRESSetDefaultArgs(&args->fgmres);
          break;
       case SOLVER_BICGSTAB:
-         BiCGSTABSetDefaultArgs(&args->bicgstab);
+         hypredrv_BiCGSTABSetDefaultArgs(&args->bicgstab);
          break;
       default:
          break;
@@ -167,81 +168,83 @@ SolverArgsSetDefaultsForMethod(solver_t method, solver_args *args)
  * SolverSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-DEFINE_SET_ARGS_FROM_YAML_FUNC(Solver)
+DEFINE_SET_ARGS_FROM_YAML_FUNC(Solver, hypredrv_Solver)
 
 /*-----------------------------------------------------------------------------
  * SolverCreate
  *-----------------------------------------------------------------------------*/
 
 void
-SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args,
-             HYPRE_Solver *solver_ptr)
+hypredrv_SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args,
+                      HYPRE_Solver *solver_ptr)
 {
    if (!solver_ptr)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("SolverCreate: solver_ptr is NULL");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("SolverCreate: solver_ptr is NULL");
       return;
    }
 
    switch (solver_method)
    {
       case SOLVER_PCG:
-         PCGCreate(comm, &args->pcg, solver_ptr);
+         hypredrv_PCGCreate(comm, &args->pcg, solver_ptr);
          break;
 
       case SOLVER_GMRES:
-         GMRESCreate(comm, &args->gmres, solver_ptr);
+         hypredrv_GMRESCreate(comm, &args->gmres, solver_ptr);
          break;
 
       case SOLVER_FGMRES:
-         FGMRESCreate(comm, &args->fgmres, solver_ptr);
+         hypredrv_FGMRESCreate(comm, &args->fgmres, solver_ptr);
          break;
 
       case SOLVER_BICGSTAB:
-         BiCGSTABCreate(comm, &args->bicgstab, solver_ptr);
+         hypredrv_BiCGSTABCreate(comm, &args->bicgstab, solver_ptr);
          break;
 
       default:
          *solver_ptr = NULL;
-         ErrorCodeSet(ERROR_INVALID_SOLVER);
-         ErrorMsgAdd("SolverCreate: invalid solver method");
+         hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+         hypredrv_ErrorMsgAdd("SolverCreate: invalid solver method");
    }
 }
 
 /*-----------------------------------------------------------------------------
  * SolverSetup
  *
- * TODO: split this function into PreconSetup and SolverSetup
+ * TODO: split this function into hypredrv_PreconSetup and SolverSetup
  *-----------------------------------------------------------------------------*/
 
 void
-SolverSetupWithReuse(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
-                     HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b,
-                     HYPRE_IJVector x, Stats *stats, int skip_precon_setup)
+hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
+                              HYPRE_Precon precon, HYPRE_Solver solver, HYPRE_IJMatrix M,
+                              HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats,
+                              int skip_precon_setup)
 {
    if (!solver)
    {
-      ErrorCodeSet(ERROR_INVALID_SOLVER);
-      ErrorMsgAdd("SolverSetup: solver is NULL");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+      hypredrv_ErrorMsgAdd("SolverSetup: solver is NULL");
       return;
    }
 
    if (!M || !b || !x)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("SolverSetup: matrix or vector is NULL");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("SolverSetup: matrix or vector is NULL");
       return;
    }
 
    if (precon_method != PRECON_NONE && !precon)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("SolverSetup: precon is NULL but precon_method is not PRECON_NONE");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "SolverSetup: precon is NULL but precon_method is not PRECON_NONE");
       return;
    }
 
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
 
    void                   *vM = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix      par_M = NULL;
@@ -313,22 +316,23 @@ SolverSetupWithReuse(precon_t precon_method, solver_t solver_method, HYPRE_Preco
          break;
 
       default:
-         StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
+         hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
          return;
    }
 
    /* Clear pending error codes from hypre */
    HYPRE_ClearAllErrors();
 
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
 }
 
 void
-SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
-            HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b, HYPRE_IJVector x,
-            Stats *stats)
+hypredrv_SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
+                     HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b,
+                     HYPRE_IJVector x, Stats *stats)
 {
-   SolverSetupWithReuse(precon_method, solver_method, precon, solver, M, b, x, stats, 0);
+   hypredrv_SolverSetupWithReuse(precon_method, solver_method, precon, solver, M, b, x,
+                                 stats, 0);
 }
 
 /*-----------------------------------------------------------------------------
@@ -336,20 +340,20 @@ SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
  *-----------------------------------------------------------------------------*/
 
 HYPRE_Int
-SolverSolveOnly(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
-                HYPRE_IJVector b, HYPRE_IJVector x)
+hypredrv_SolverSolveOnly(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
+                         HYPRE_IJVector b, HYPRE_IJVector x)
 {
    if (!solver)
    {
-      ErrorCodeSet(ERROR_INVALID_SOLVER);
-      ErrorMsgAdd("SolverSolveOnly: solver is NULL");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+      hypredrv_ErrorMsgAdd("SolverSolveOnly: solver is NULL");
       return -1;
    }
 
    if (!A || !b || !x)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("SolverSolveOnly: matrix or vector is NULL");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("SolverSolveOnly: matrix or vector is NULL");
       return -1;
    }
 
@@ -402,20 +406,20 @@ SolverSolveOnly(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
  *-----------------------------------------------------------------------------*/
 
 void
-SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
-            HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats)
+hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
+                     HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats)
 {
    if (!solver)
    {
-      ErrorCodeSet(ERROR_INVALID_SOLVER);
-      ErrorMsgAdd("SolverApply: solver is NULL");
+      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+      hypredrv_ErrorMsgAdd("SolverApply: solver is NULL");
       return;
    }
 
    if (!A || !b || !x)
    {
-      ErrorCodeSet(ERROR_UNKNOWN);
-      ErrorMsgAdd("SolverApply: matrix or vector is NULL");
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("SolverApply: matrix or vector is NULL");
       return;
    }
 
@@ -423,29 +427,29 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
    HYPRE_Complex b_norm = NAN, r_norm = NAN, r0_norm = NAN;
 
    /* Compute initial residual norm (absolute L2) before timing the solve */
-   LinearSystemComputeResidualNorm(A, b, x, "L2", &r0_norm);
+   hypredrv_LinearSystemComputeResidualNorm(A, b, x, "L2", &r0_norm);
 
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
-   StatsInitialResNormSet(stats, r0_norm);
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
+   hypredrv_StatsInitialResNormSet(stats, r0_norm);
 
-   iters = SolverSolveOnly(solver_method, solver, A, b, x);
+   iters = hypredrv_SolverSolveOnly(solver_method, solver, A, b, x);
 
    if (iters < 0)
    {
-      StatsIterSet(stats, 0);
-      StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
+      hypredrv_StatsIterSet(stats, 0);
+      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
       return;
    }
 
-   StatsIterSet(stats, (int)iters);
-   StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
+   hypredrv_StatsIterSet(stats, (int)iters);
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
 
    /* Compute the real relative residual norm. Note this is not timed */
-   LinearSystemComputeVectorNorm(b, "L2", &b_norm);
-   LinearSystemComputeResidualNorm(A, b, x, "L2", &r_norm);
+   hypredrv_LinearSystemComputeVectorNorm(b, "L2", &b_norm);
+   hypredrv_LinearSystemComputeResidualNorm(A, b, x, "L2", &r_norm);
    b_norm = (b_norm > 0.0) ? b_norm : 1.0;
 
-   StatsRelativeResNormSet(stats, r_norm / b_norm);
+   hypredrv_StatsRelativeResNormSet(stats, r_norm / b_norm);
 }
 
 /*-----------------------------------------------------------------------------
@@ -453,7 +457,7 @@ SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
  *-----------------------------------------------------------------------------*/
 
 void
-SolverDestroy(solver_t solver_method, HYPRE_Solver *solver_ptr)
+hypredrv_SolverDestroy(solver_t solver_method, HYPRE_Solver *solver_ptr)
 {
    if (*solver_ptr)
    {

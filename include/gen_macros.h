@@ -78,29 +78,24 @@
  *
  * @param _prefix Prefix used in the naming of the declared function.
  */
-#define DEFINE_VOID_GET_VALID_VALUES_FUNC(_prefix)         \
-   StrIntMapArray _prefix##GetValidValues(const char *key) \
-   {                                                       \
-      (void)key;                                           \
-      return STR_INT_MAP_ARRAY_VOID();                     \
+#define hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(_prefix) \
+   StrIntMapArray _prefix##GetValidValues(const char *key)  \
+   {                                                        \
+      (void)key;                                            \
+      return STR_INT_MAP_ARRAY_VOID();                      \
    }
 
 /**
  * @brief Declares a function to set default arguments.
  *
- * @details This macro generates a forward declaration for a function
- * that sets default arguments for a structure named as `_prefix_args`.
- *
- * @param _prefix Prefix used in the naming of the declared function.
+ * @param _fnPrefix Function name prefix (e.g. hypredrv_AMG).
+ * @param _argsType Args struct type (e.g. AMG_args).
  */
-#define DECLARE_SET_DEFAULT_ARGS_FUNC(_prefix) \
-   void _prefix##SetDefaultArgs(_prefix##_args *);
+#define DECLARE_SET_DEFAULT_ARGS_FUNC(_fnPrefix, _argsType) \
+   void _fnPrefix##SetDefaultArgs(_argsType *);
 
 /**
  * @brief Declares a function to set arguments from a YAML input.
- *
- * @details This macro generates a forward declaration for a function
- * that sets arguments for a structure named as `_prefix_args`.
  *
  * @param _prefix Prefix used in the naming of the declared function.
  */
@@ -132,51 +127,29 @@
 /**
  * @brief Defines a function to set arguments from a YAML node.
  *
- * @details This macro generates a function that handles two YAML patterns:
- *
- * 1. Nested structure (parent has children):
- *    @code
- *    solver:
- *      type: pcg
- *      max_iter: 100
- *    @endcode
- *    In this case, iterate over children and set each field by name.
- *
- *    **Union support**: If a child's key (e.g., "ilu") exists in GetValidValues("type"),
- *    we also set args->type to the mapped value. This allows unions where the type
- *    determines which member is active.
- *
- * 2. Flat value (parent has no children, just a value):
- *    @code
- *    solver: pcg
- *    @endcode
- *    In this case, treat the value as the "type" field. We temporarily
- *    swap the key to "type" for validation and field setting.
- *
- * @param _prefix Prefix used in the naming of the generated function.
+ * @param _prefix Struct prefix for args type (e.g. AMG).
+ * @param _fnPrefix Function name prefix (e.g. hypredrv_AMG).
  */
-#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix)                             \
-   void _prefix##SetArgsFromYAML(void *vargs, YAMLnode *parent)             \
-   {                                                                        \
-      _prefix##_args *args = (_prefix##_args *)vargs;                       \
-      YAMLSetArgsGeneric((void *)args, parent, _prefix##GetValidKeys,       \
-                         _prefix##GetValidValues, _prefix##SetFieldByName); \
+#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix, _fnPrefix)                               \
+   void _fnPrefix##SetArgsFromYAML(void *vargs, YAMLnode *parent)                        \
+   {                                                                                     \
+      _prefix##_args *args = (_prefix##_args *)vargs;                                    \
+      hypredrv_YAMLSetArgsGeneric((void *)args, parent, _fnPrefix##GetValidKeys,         \
+                                  _fnPrefix##GetValidValues, _fnPrefix##SetFieldByName); \
    }
 
 /**
  * @brief Defines a function to set arguments of a generic struct.
  *
- * @details This macro generates a function that sets default arguments
- * and then sets arguments from a YAML node.
- *
- * @param _prefix Prefix used in the naming of the generated function.
+ * @param _prefix Struct prefix for args type.
+ * @param _fnPrefix Function name prefix for callables.
  */
-#define DEFINE_SET_ARGS_FUNC(_prefix)                                  \
-   void _prefix##SetArgs(void *vargs, const YAMLnode *parent)          \
-   {                                                                   \
-      _prefix##_args *args = (_prefix##_args *)vargs;                  \
-      CALL_SET_DEFAULT_ARGS_FUNC(_prefix, args);                       \
-      CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, args, (YAMLnode *)parent); \
+#define DEFINE_SET_ARGS_FUNC(_prefix, _fnPrefix)                    \
+   void _fnPrefix##SetArgs(void *vargs, const YAMLnode *parent)     \
+   {                                                                \
+      _prefix##_args *args = (_prefix##_args *)vargs;               \
+      _fnPrefix##SetDefaultArgs(args);                              \
+      _fnPrefix##SetArgsFromYAML((void *)args, (YAMLnode *)parent); \
    }
 
 /**
@@ -236,62 +209,40 @@
  * and initializations based on the provided prefix.
  *
  * @details This is an aggregate macro that generates several utility functions,
- * declarations and a field offset map, all prefixed by the passed parameter. It is
- * designed to reduce the amount of redundant code needed when creating multiple sets of
- * similar components. The generated components include:
- *
- * - A FieldOffsetMap object named after the given prefix.
- * - A function definition to set fields by name.
- * - A function definition to get valid keys.
- * - A function declaration for getting valid values.
- * - A function declaration for setting default arguments.
- * - A function to set arguments from YAML.
- * - A function to set arguments (from YAML + default).
- *
- * @param prefix The prefix to be appended to the names of the generated components.
- *
- * @note The prefix parameter should be a valid identifier and should correspond to the
- * intended naming convention for the generated components.
+ * declarations and a field offset map. Callable functions use the hypredrv_ prefix
+ * (e.g. hypredrv_AMGSetFieldByName); struct types use the bare prefix (e.g. AMG_args).
  *
  * Usage:
  * @code
  * GENERATE_PREFIXED_COMPONENTS(AMG)
  * @endcode
  *
- * In this example, the macro will generate a FieldOffsetMap object named
- * `AMG_field_offset_map`; function definitions like `AMGSetFieldByName`,
- * `AMGGetValidKeys`, etc.; and function declarations like `AMGGetValidValues(const
- * char*)`, `AMGSetDefaultArgs(void)`, and `AMGSetDefaultArgs(void, YAMLnode*)`.
+ * Generates hypredrv_AMGSetFieldByName, hypredrv_AMGGetValidKeys, hypredrv_AMGSetArgs,
+ * etc., with AMG_args and AMG_field_offset_map for types.
  */
-#define GENERATE_PREFIXED_COMPONENTS(prefix)                                      \
-   DEFINE_FIELD_OFFSET_MAP(prefix);                                               \
-   DEFINE_SET_FIELD_BY_NAME_FUNC(prefix##SetFieldByName, prefix##_args,           \
-                                 prefix##_field_offset_map, prefix##_NUM_FIELDS); \
-   DEFINE_GET_VALID_KEYS_FUNC(prefix##GetValidKeys, prefix##_NUM_FIELDS,          \
-                              prefix##_field_offset_map);                         \
-   DECLARE_GET_VALID_VALUES_FUNC(prefix);                                         \
-   DECLARE_SET_DEFAULT_ARGS_FUNC(prefix);                                         \
-   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix);                                        \
-   DEFINE_SET_ARGS_FUNC(prefix);
+#define GENERATE_PREFIXED_COMPONENTS(prefix)                                        \
+   DEFINE_FIELD_OFFSET_MAP(prefix);                                                 \
+   DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,  \
+                                 prefix##_field_offset_map, prefix##_NUM_FIELDS);   \
+   DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS, \
+                              prefix##_field_offset_map);                           \
+   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix);                                \
+   DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args);                 \
+   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix, hypredrv_##prefix);                       \
+   DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix);
 
 /**
  * @brief Like GENERATE_PREFIXED_COMPONENTS, but uses a custom prefixSetArgsFromYAML.
- *
- * @details Use this when you want all the standard boilerplate (field map,
- * SetFieldByName, GetValidKeys, and the top-level SetArgs wrapper), but the YAML parsing
- * for the prefix needs to be custom:
- *
- *   void prefixSetArgsFromYAML(void*, YAMLnode*);
  */
-#define GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(prefix)                          \
-   DEFINE_FIELD_OFFSET_MAP(prefix);                                               \
-   DEFINE_SET_FIELD_BY_NAME_FUNC(prefix##SetFieldByName, prefix##_args,           \
-                                 prefix##_field_offset_map, prefix##_NUM_FIELDS); \
-   DEFINE_GET_VALID_KEYS_FUNC(prefix##GetValidKeys, prefix##_NUM_FIELDS,          \
-                              prefix##_field_offset_map);                         \
-   DECLARE_GET_VALID_VALUES_FUNC(prefix);                                         \
-   DECLARE_SET_DEFAULT_ARGS_FUNC(prefix);                                         \
-   DECLARE_SET_ARGS_FROM_YAML_FUNC(prefix);                                       \
-   DEFINE_SET_ARGS_FUNC(prefix);
+#define hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(prefix)                   \
+   DEFINE_FIELD_OFFSET_MAP(prefix);                                                 \
+   DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,  \
+                                 prefix##_field_offset_map, prefix##_NUM_FIELDS);   \
+   DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS, \
+                              prefix##_field_offset_map);                           \
+   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix);                                \
+   DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args);                 \
+   DECLARE_SET_ARGS_FROM_YAML_FUNC(hypredrv_##prefix);                              \
+   DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix);
 
 #endif /* GEN_MACROS_HEADER */

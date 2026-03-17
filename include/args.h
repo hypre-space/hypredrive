@@ -60,10 +60,10 @@ typedef struct input_args_struct
  * Public prototypes
  *-----------------------------------------------------------------------------*/
 
-void InputArgsCreate(bool, input_args **);
-void InputArgsDestroy(input_args **);
-void InputArgsRead(MPI_Comm, char *, int *, char **);
-void InputArgsParse(MPI_Comm, bool, int, char **, input_args **);
-void InputArgsApplyPreconPreset(input_args *, const char *, int);
+void hypredrv_InputArgsCreate(bool, input_args **);
+void hypredrv_InputArgsDestroy(input_args **);
+void hypredrv_InputArgsRead(MPI_Comm, char *, int *, char **);
+void hypredrv_InputArgsParse(MPI_Comm, bool, int, char **, input_args **);
+void hypredrv_InputArgsApplyPreconPreset(input_args *, const char *, int);
 
 #endif /* ARGS_HEADER */

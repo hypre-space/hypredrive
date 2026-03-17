@@ -73,9 +73,9 @@ EnsureCapacity(Stats *stats)
 
       if (failed)
       {
-         ErrorCodeSet(ERROR_ALLOCATION);
-         ErrorMsgAdd("Stats capacity growth failed (%d -> %d)", old_capacity,
-                     new_capacity);
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Stats capacity growth failed (%d -> %d)", old_capacity,
+                              new_capacity);
          return 0;
       }
 
@@ -268,8 +268,8 @@ HandleAnnotationBegin(Stats *stats, const char *name)
    else
    {
       /* Unknown annotation - set error but don't fail */
-      ErrorCodeSet(ERROR_UNKNOWN_TIMING);
-      ErrorMsgAdd("Unknown timer key: '%s'", name);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN_TIMING);
+      hypredrv_ErrorMsgAdd("Unknown timer key: '%s'", name);
    }
 }
 
@@ -322,8 +322,8 @@ HandleAnnotationEnd(Stats *stats, const char *name)
    else
    {
       /* Unknown annotation - set error but don't fail */
-      ErrorCodeSet(ERROR_UNKNOWN_TIMING);
-      ErrorMsgAdd("Unknown timer key: '%s'", name);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN_TIMING);
+      hypredrv_ErrorMsgAdd("Unknown timer key: '%s'", name);
    }
 }
 
@@ -424,11 +424,11 @@ PrintEntryWithIndex(const Stats *stats, int entry_index, int display_index)
 }
 
 /*--------------------------------------------------------------------------
- * StatsCreate - creates and returns a new Stats object
+ * hypredrv_StatsCreate - creates and returns a new Stats object
  *--------------------------------------------------------------------------*/
 
 Stats *
-StatsCreate(void)
+hypredrv_StatsCreate(void)
 {
    int capacity = REALLOC_EXPAND_FACTOR;
 
@@ -482,11 +482,11 @@ StatsCreate(void)
 }
 
 /*--------------------------------------------------------------------------
- * StatsDestroy - destroys a Stats object and sets pointer to NULL
+ * hypredrv_StatsDestroy - destroys a Stats object and sets pointer to NULL
  *--------------------------------------------------------------------------*/
 
 void
-StatsDestroy(Stats **stats_ptr)
+hypredrv_StatsDestroy(Stats **stats_ptr)
 {
    if (!stats_ptr || !*stats_ptr)
    {
@@ -518,12 +518,12 @@ StatsDestroy(Stats **stats_ptr)
 }
 
 /*--------------------------------------------------------------------------
- * StatsAnnotateV
+ * hypredrv_StatsAnnotateV
  *--------------------------------------------------------------------------*/
 
 void
-StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char *name,
-               va_list args)
+hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char *name,
+                        va_list args)
 {
    if (!stats)
    {
@@ -559,21 +559,21 @@ StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char *name,
 }
 
 /*--------------------------------------------------------------------------
- * StatsAnnotate
+ * hypredrv_StatsAnnotate
  *--------------------------------------------------------------------------*/
 
 void
-StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char *name)
+hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char *name)
 {
-   StatsAnnotateV(stats, action, name, NULL);
+   hypredrv_StatsAnnotateV(stats, action, name, NULL);
 }
 
 /*--------------------------------------------------------------------------
- * StatsAnnotateLevelBegin - Hierarchical annotation with level
+ * hypredrv_StatsAnnotateLevelBegin - Hierarchical annotation with level
  *--------------------------------------------------------------------------*/
 
 void
-StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
+hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
 {
    if (!stats)
    {
@@ -582,8 +582,9 @@ StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
 
    if (level < 0 || level >= STATS_MAX_LEVELS)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Annotation level %d out of range [0, %d)", level, STATS_MAX_LEVELS);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Annotation level %d out of range [0, %d)", level,
+                           STATS_MAX_LEVELS);
       return;
    }
 
@@ -593,9 +594,9 @@ StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
    /* Check if level is already active */
    if (stats->level_stack[level].name != NULL)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Level %d already has active annotation '%s'", level,
-                  stats->level_stack[level].name);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Level %d already has active annotation '%s'", level,
+                           stats->level_stack[level].name);
       return;
    }
 
@@ -622,7 +623,7 @@ StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
 }
 
 /*--------------------------------------------------------------------------
- * StatsAnnotateLevelEnd - End hierarchical annotation
+ * hypredrv_StatsAnnotateLevelEnd - End hierarchical annotation
  *--------------------------------------------------------------------------*/
 
 /*--------------------------------------------------------------------------
@@ -656,11 +657,11 @@ EnsureLevelCapacity(Stats *stats, int level)
 }
 
 /*--------------------------------------------------------------------------
- * StatsAnnotateLevelEnd - End hierarchical annotation
+ * hypredrv_StatsAnnotateLevelEnd - End hierarchical annotation
  *--------------------------------------------------------------------------*/
 
 void
-StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
+hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
 {
    if (!stats)
    {
@@ -669,8 +670,9 @@ StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
 
    if (level < 0 || level >= STATS_MAX_LEVELS)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Annotation level %d out of range [0, %d)", level, STATS_MAX_LEVELS);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Annotation level %d out of range [0, %d)", level,
+                           STATS_MAX_LEVELS);
       return;
    }
 
@@ -681,11 +683,11 @@ StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
    if (stats->level_stack[level].name == NULL ||
        strcmp(stats->level_stack[level].name, formatted_name) != 0)
    {
-      ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("Level %d annotation mismatch: expected '%s', got '%s'", level,
-                  stats->level_stack[level].name ? stats->level_stack[level].name
-                                                 : "NULL",
-                  formatted_name);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Level %d annotation mismatch: expected '%s', got '%s'", level,
+                           stats->level_stack[level].name ? stats->level_stack[level].name
+                                                          : "NULL",
+                           formatted_name);
       return;
    }
 
@@ -725,11 +727,11 @@ StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
 }
 
 /*--------------------------------------------------------------------------
- * StatsTimerSetMilliseconds
+ * hypredrv_StatsTimerSetMilliseconds
  *--------------------------------------------------------------------------*/
 
 void
-StatsTimerSetMilliseconds(Stats *stats)
+hypredrv_StatsTimerSetMilliseconds(Stats *stats)
 {
    if (!stats)
    {
@@ -740,11 +742,11 @@ StatsTimerSetMilliseconds(Stats *stats)
 }
 
 /*--------------------------------------------------------------------------
- * StatsTimerSetSeconds
+ * hypredrv_StatsTimerSetSeconds
  *--------------------------------------------------------------------------*/
 
 void
-StatsTimerSetSeconds(Stats *stats)
+hypredrv_StatsTimerSetSeconds(Stats *stats)
 {
    if (!stats)
    {
@@ -755,11 +757,11 @@ StatsTimerSetSeconds(Stats *stats)
 }
 
 /*--------------------------------------------------------------------------
- * StatsIterSet
+ * hypredrv_StatsIterSet
  *--------------------------------------------------------------------------*/
 
 void
-StatsIterSet(Stats *stats, int num_iters)
+hypredrv_StatsIterSet(Stats *stats, int num_iters)
 {
    if (!stats)
    {
@@ -769,11 +771,11 @@ StatsIterSet(Stats *stats, int num_iters)
 }
 
 /*--------------------------------------------------------------------------
- * StatsInitialResNormSet
+ * hypredrv_StatsInitialResNormSet
  *--------------------------------------------------------------------------*/
 
 void
-StatsInitialResNormSet(Stats *stats, double r0norm)
+hypredrv_StatsInitialResNormSet(Stats *stats, double r0norm)
 {
    if (!stats)
    {
@@ -783,11 +785,11 @@ StatsInitialResNormSet(Stats *stats, double r0norm)
 }
 
 /*--------------------------------------------------------------------------
- * StatsRelativeResNormSet
+ * hypredrv_StatsRelativeResNormSet
  *--------------------------------------------------------------------------*/
 
 void
-StatsRelativeResNormSet(Stats *stats, double rrnorm)
+hypredrv_StatsRelativeResNormSet(Stats *stats, double rrnorm)
 {
    if (!stats)
    {
@@ -797,11 +799,11 @@ StatsRelativeResNormSet(Stats *stats, double rrnorm)
 }
 
 /*--------------------------------------------------------------------------
- * StatsPrint
+ * hypredrv_StatsPrint
  *--------------------------------------------------------------------------*/
 
 void
-StatsPrint(const Stats *stats, int print_level)
+hypredrv_StatsPrint(const Stats *stats, int print_level)
 {
    if (!stats || print_level < 1)
    {
@@ -932,11 +934,11 @@ StatsPrint(const Stats *stats, int print_level)
 }
 
 /*--------------------------------------------------------------------------
- * StatsGetLinearSystemID
+ * hypredrv_StatsGetLinearSystemID
  *--------------------------------------------------------------------------*/
 
 int
-StatsGetLinearSystemID(const Stats *stats)
+hypredrv_StatsGetLinearSystemID(const Stats *stats)
 {
    if (!stats)
    {
@@ -947,11 +949,11 @@ StatsGetLinearSystemID(const Stats *stats)
 }
 
 /*--------------------------------------------------------------------------
- * StatsSetNumReps
+ * hypredrv_StatsSetNumReps
  *--------------------------------------------------------------------------*/
 
 void
-StatsSetNumReps(Stats *stats, int num_reps)
+hypredrv_StatsSetNumReps(Stats *stats, int num_reps)
 {
    if (!stats)
    {
@@ -961,11 +963,11 @@ StatsSetNumReps(Stats *stats, int num_reps)
 }
 
 /*--------------------------------------------------------------------------
- * StatsSetNumLinearSystems
+ * hypredrv_StatsSetNumLinearSystems
  *--------------------------------------------------------------------------*/
 
 void
-StatsSetNumLinearSystems(Stats *stats, int num_systems)
+hypredrv_StatsSetNumLinearSystems(Stats *stats, int num_systems)
 {
    if (!stats)
    {
@@ -975,11 +977,11 @@ StatsSetNumLinearSystems(Stats *stats, int num_systems)
 }
 
 /*--------------------------------------------------------------------------
- * StatsGetLastIter
+ * hypredrv_StatsGetLastIter
  *--------------------------------------------------------------------------*/
 
 int
-StatsGetLastIter(const Stats *stats)
+hypredrv_StatsGetLastIter(const Stats *stats)
 {
    if (!stats)
    {
@@ -989,11 +991,11 @@ StatsGetLastIter(const Stats *stats)
 }
 
 /*--------------------------------------------------------------------------
- * StatsGetLastSetupTime
+ * hypredrv_StatsGetLastSetupTime
  *--------------------------------------------------------------------------*/
 
 double
-StatsGetLastSetupTime(const Stats *stats)
+hypredrv_StatsGetLastSetupTime(const Stats *stats)
 {
    if (!stats)
    {
@@ -1003,11 +1005,11 @@ StatsGetLastSetupTime(const Stats *stats)
 }
 
 /*--------------------------------------------------------------------------
- * StatsGetLastSolveTime
+ * hypredrv_StatsGetLastSolveTime
  *--------------------------------------------------------------------------*/
 
 double
-StatsGetLastSolveTime(const Stats *stats)
+hypredrv_StatsGetLastSolveTime(const Stats *stats)
 {
    if (!stats)
    {
@@ -1017,11 +1019,11 @@ StatsGetLastSolveTime(const Stats *stats)
 }
 
 /*--------------------------------------------------------------------------
- * StatsLevelGetCount - Get number of entries at a level
+ * hypredrv_StatsLevelGetCount - Get number of entries at a level
  *--------------------------------------------------------------------------*/
 
 int
-StatsLevelGetCount(const Stats *stats, int level)
+hypredrv_StatsLevelGetCount(const Stats *stats, int level)
 {
    if (!stats || level < 0 || level >= STATS_MAX_LEVELS)
    {
@@ -1031,11 +1033,11 @@ StatsLevelGetCount(const Stats *stats, int level)
 }
 
 /*--------------------------------------------------------------------------
- * StatsLevelGetEntry - Get level entry by index
+ * hypredrv_StatsLevelGetEntry - Get level entry by index
  *--------------------------------------------------------------------------*/
 
 int
-StatsLevelGetEntry(const Stats *stats, int level, int index, LevelEntry *entry)
+hypredrv_StatsLevelGetEntry(const Stats *stats, int level, int index, LevelEntry *entry)
 {
    if (!stats || !entry || level < 0 || level >= STATS_MAX_LEVELS)
    {
@@ -1079,11 +1081,11 @@ ComputeLevelStats(const Stats *stats, const LevelEntry *entry, int *num_solves,
 }
 
 /*--------------------------------------------------------------------------
- * StatsLevelPrint - Print statistics summary for a level
+ * hypredrv_StatsLevelPrint - Print statistics summary for a level
  *--------------------------------------------------------------------------*/
 
 void
-StatsLevelPrint(const Stats *stats, int level)
+hypredrv_StatsLevelPrint(const Stats *stats, int level)
 {
    if (!stats || level < 0 || level >= STATS_MAX_LEVELS)
    {
