@@ -521,7 +521,8 @@ hypredrv_ErrorCodeDescribe(uint32_t code)
 
    if (code & ERROR_MAYBE_INVALID_VAL)
    {
-      hypredrv_ErrorMsgAddCodeWithCount(ERROR_MAYBE_INVALID_VAL, "possibly invalid value");
+      hypredrv_ErrorMsgAddCodeWithCount(ERROR_MAYBE_INVALID_VAL,
+                                        "possibly invalid value");
    }
 
    if (code & ERROR_MISSING_DOFMAP)

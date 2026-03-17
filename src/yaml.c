@@ -40,7 +40,7 @@ YAMLnodeValidateMap(YAMLnode *node, StrIntMapArray map_array)
 
 void
 hypredrv_YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
-                       YAMLGetValidValuesFunc get_vals)
+                                YAMLGetValidValuesFunc get_vals)
 {
    if (!node)
    {
@@ -91,7 +91,8 @@ hypredrv_YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
 
 void
 hypredrv_YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc get_keys,
-                   YAMLGetValidValuesFunc get_vals, YAMLSetFieldByNameFunc set_field)
+                            YAMLGetValidValuesFunc get_vals,
+                            YAMLSetFieldByNameFunc set_field)
 {
    if (!parent)
    {
@@ -170,8 +171,8 @@ hypredrv_YAMLtreeDestroy(YAMLtree **tree_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level, int *base_indent_ptr,
-             size_t *length_ptr, char **text_ptr)
+hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
+                      int *base_indent_ptr, size_t *length_ptr, char **text_ptr)
 {
    FILE  *fp  = NULL;
    char  *key = NULL, *val = NULL, *sep = NULL;
@@ -266,7 +267,8 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level, int 
          if (base_indent < 2)
          {
             hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_BASE_INDENT);
-            hypredrv_ErrorMsgAdd("Base indentation in YAML input must be at least 2 spaces");
+            hypredrv_ErrorMsgAdd(
+               "Base indentation in YAML input must be at least 2 spaces");
             fclose(fp);
             /* Free any allocated text before returning */
             if (*text_ptr)
@@ -363,7 +365,8 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level, int 
          inner_level = pos / (base_indent > 0 ? base_indent : 1);
 
          /* Recursively read the content of the included file */
-         hypredrv_YAMLtextRead(dirname, val, inner_level, base_indent_ptr, length_ptr, text_ptr);
+         hypredrv_YAMLtextRead(dirname, val, inner_level, base_indent_ptr, length_ptr,
+                               text_ptr);
       }
       else
       {
@@ -774,16 +777,16 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
    for (int i = 0; i < tokens->size; i++)
    {
       const YAMLtoken *token = &tokens->data[i];
-      YAMLnode        *node  = hypredrv_YAMLnodeCreate(token->key, token->val, token->level);
-      YAMLnode        *validation_node = node;
+      YAMLnode *node = hypredrv_YAMLnodeCreate(token->key, token->val, token->level);
+      YAMLnode *validation_node = node;
 
       hypredrv_YAMLnodeAppend(node, &parent);
 
       /* "- key: value" inline mapping under sequence item */
       if (token->is_sequence_item && token->inline_key && token->inline_val)
       {
-         YAMLnode *inline_node =
-            hypredrv_YAMLnodeCreate(token->inline_key, token->inline_val, token->level + 1);
+         YAMLnode *inline_node = hypredrv_YAMLnodeCreate(
+            token->inline_key, token->inline_val, token->level + 1);
          hypredrv_YAMLnodeAddChild(node, inline_node);
          parent          = inline_node;
          validation_node = inline_node;
@@ -968,8 +971,9 @@ YAMLnodeCloneDeep(const YAMLnode *src, int level_offset)
    {
       return NULL;
    }
-   YAMLnode *clone = hypredrv_YAMLnodeCreate(src->key, src->val, src->level + level_offset);
-   clone->valid    = src->valid;
+   YAMLnode *clone =
+      hypredrv_YAMLnodeCreate(src->key, src->val, src->level + level_offset);
+   clone->valid = src->valid;
    if (src->mapped_val)
    {
       clone->mapped_val = strdup(src->mapped_val);
@@ -1049,8 +1053,8 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
             const char *use_dir = (!inc_dir || !strlen(inc_dir) || !strcmp(inc_dir, "."))
                                      ? base_dir
                                      : inc_dir;
-            hypredrv_YAMLtextRead(use_dir, inc_base ? inc_base : paths[i], 0, &inc_base_indent,
-                         &inc_len, &inc_text);
+            hypredrv_YAMLtextRead(use_dir, inc_base ? inc_base : paths[i], 0,
+                                  &inc_base_indent, &inc_len, &inc_text);
             if (inc_text)
             {
                YAMLtree *inc_tree = NULL;
@@ -1170,10 +1174,12 @@ YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int star
             {
                if (!strcmp(seq_item->key, "-"))
                {
-                  YAMLnode *item_leaf = hypredrv_YAMLnodeFindChildByKey(seq_item, seg_const);
+                  YAMLnode *item_leaf =
+                     hypredrv_YAMLnodeFindChildByKey(seq_item, seg_const);
                   if (!item_leaf)
                   {
-                     item_leaf = hypredrv_YAMLnodeCreate(seg_const, value, seq_item->level + 1);
+                     item_leaf =
+                        hypredrv_YAMLnodeCreate(seg_const, value, seq_item->level + 1);
                      hypredrv_YAMLnodeAddChild(seq_item, item_leaf);
                   }
                   else
@@ -1273,7 +1279,8 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
    if ((n_override_tokens % 2) != 0)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid CLI overrides: expected pairs of '--path:to:key value'");
+      hypredrv_ErrorMsgAdd(
+         "Invalid CLI overrides: expected pairs of '--path:to:key value'");
       return;
    }
 

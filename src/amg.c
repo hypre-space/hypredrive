@@ -16,14 +16,14 @@
  *-----------------------------------------------------------------------------*/
 
 /* AMG's interpolation fields */
-#define AMGint_FIELDS(_prefix)                                         \
+#define AMGint_FIELDS(_prefix)                                                  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, hypredrv_FieldTypeIntSet)  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, hypredrv_FieldTypeDoubleSet)
 
 /* AMG's coarsening fields */
-#define AMGcsn_FIELDS(_prefix)                                        \
+#define AMGcsn_FIELDS(_prefix)                                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)             \
    ADD_FIELD_OFFSET_ENTRY(_prefix, rap2, hypredrv_FieldTypeIntSet)             \
    ADD_FIELD_OFFSET_ENTRY(_prefix, mod_rap2, hypredrv_FieldTypeIntSet)         \
@@ -39,7 +39,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, strong_th, hypredrv_FieldTypeDoubleSet)
 
 /* AMG's aggressive coarsening fields */
-#define AMGagg_FIELDS(_prefix)                                           \
+#define AMGagg_FIELDS(_prefix)                                                    \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, hypredrv_FieldTypeIntSet)          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_paths, hypredrv_FieldTypeIntSet)           \
    ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet)   \
@@ -49,7 +49,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, P12_trunc_factor, hypredrv_FieldTypeDoubleSet)
 
 /* AMG's relaxation fields */
-#define AMGrlx_FIELDS(_prefix)                                       \
+#define AMGrlx_FIELDS(_prefix)                                                \
    ADD_FIELD_OFFSET_ENTRY(_prefix, down_type, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, up_type, hypredrv_FieldTypeIntSet)         \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_type, hypredrv_FieldTypeIntSet)     \
@@ -63,22 +63,22 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, chebyshev, hypredrv_ChebySetArgs)
 
 /* AMG's complex smoother fields */
-#define AMGsmt_FIELDS(_prefix)                                  \
+#define AMGsmt_FIELDS(_prefix)                                           \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, hypredrv_FSAISetArgs)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, hypredrv_FSAISetArgs)           \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, hypredrv_ILUSetArgs)
 
 /* AMG */
-#define AMG_FIELDS(_prefix)                                               \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, hypredrv_FieldTypeDoubleSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, interpolation, hypredrv_AMGintSetArgs) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, aggressive, hypredrv_AMGaggSetArgs)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsening, hypredrv_AMGcsnSetArgs)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relaxation, hypredrv_AMGrlxSetArgs)    \
+#define AMG_FIELDS(_prefix)                                                \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, interpolation, hypredrv_AMGintSetArgs)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, aggressive, hypredrv_AMGaggSetArgs)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsening, hypredrv_AMGcsnSetArgs)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relaxation, hypredrv_AMGrlxSetArgs)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, smoother, hypredrv_AMGsmtSetArgs)
 
 /* Define the prefix list */
@@ -102,7 +102,7 @@
 
 /* Iterates over each prefix in the list and
    generates the various function declarations/definitions and field_offset_map object */
-GENERATE_PREFIXED_LIST_AMG                      // LCOV_EXCL_LINE
+GENERATE_PREFIXED_LIST_AMG                               // LCOV_EXCL_LINE
 hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_AMG) // LCOV_EXCL_LINE
 
    /*-----------------------------------------------------------------------------
@@ -447,7 +447,7 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("Near null space vectors (RBMs) required"
-                     " for nodal coarsening, but not set");
+                              " for nodal coarsening, but not set");
       }
       return;
    }

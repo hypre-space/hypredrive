@@ -427,7 +427,8 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
    if (g_nparts < nprocs)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Invalid dofmap filename \"%s\" or invalid number of parts!", prefix);
+      hypredrv_ErrorMsgAdd("Invalid dofmap filename \"%s\" or invalid number of parts!",
+                           prefix);
       return;
    }
 
@@ -518,7 +519,8 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
       if (count != num_entries)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Expected %d, but found %ld coefficients!", num_entries, count);
+         hypredrv_ErrorMsgAdd("Expected %d, but found %ld coefficients!", num_entries,
+                              count);
          return;
       }
 
@@ -538,7 +540,8 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_IntArrayBuild(MPI_Comm comm, int size, const int *dofmap, IntArray **int_array_ptr)
+hypredrv_IntArrayBuild(MPI_Comm comm, int size, const int *dofmap,
+                       IntArray **int_array_ptr)
 {
    IntArray *int_array = NULL;
 
@@ -555,7 +558,7 @@ hypredrv_IntArrayBuild(MPI_Comm comm, int size, const int *dofmap, IntArray **in
 
 void
 hypredrv_IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types,
-                         IntArray **int_array_ptr)
+                                  IntArray **int_array_ptr)
 {
    IntArray *int_array = NULL;
    int       size      = num_dof_types * num_local_blocks; // TODO: check overflow
@@ -579,7 +582,7 @@ hypredrv_IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_d
 
 void
 hypredrv_IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types,
-                        IntArray **int_array_ptr)
+                                 IntArray **int_array_ptr)
 {
    IntArray *int_array = NULL;
    int       size      = num_dof_types * num_local_blocks; // TODO: check overflow

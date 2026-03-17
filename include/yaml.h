@@ -95,9 +95,10 @@ typedef StrArray (*YAMLGetValidKeysFunc)(void);
 typedef StrIntMapArray (*YAMLGetValidValuesFunc)(const char *);
 typedef void (*YAMLSetFieldByNameFunc)(void *, const YAMLnode *);
 
-void hypredrv_YAMLnodeValidateSchema(YAMLnode *, YAMLGetValidKeysFunc, YAMLGetValidValuesFunc);
-void hypredrv_YAMLSetArgsGeneric(void *, YAMLnode *, YAMLGetValidKeysFunc, YAMLGetValidValuesFunc,
-                        YAMLSetFieldByNameFunc);
+void hypredrv_YAMLnodeValidateSchema(YAMLnode *, YAMLGetValidKeysFunc,
+                                     YAMLGetValidValuesFunc);
+void hypredrv_YAMLSetArgsGeneric(void *, YAMLnode *, YAMLGetValidKeysFunc,
+                                 YAMLGetValidValuesFunc, YAMLSetFieldByNameFunc);
 
 /*-----------------------------------------------------------------------------
  * Public prototypes
@@ -131,9 +132,9 @@ void      hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir);
 #define YAML_NODE_VALIDATE_HELPER(_node, _map_array)                               \
    do                                                                              \
    {                                                                               \
-      if (hypredrv_StrIntMapArrayDomainEntryExists(_map_array, _node->val))                 \
+      if (hypredrv_StrIntMapArrayDomainEntryExists(_map_array, _node->val))        \
       {                                                                            \
-         int _mapped = hypredrv_StrIntMapArrayGetImage(_map_array, _node->val);             \
+         int _mapped = hypredrv_StrIntMapArrayGetImage(_map_array, _node->val);    \
          int _length = snprintf(NULL, 0, "%d", _mapped) + 1;                       \
          if (!_node->mapped_val)                                                   \
          {                                                                         \
@@ -153,9 +154,9 @@ void      hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir);
       }                                                                            \
    } while (0);
 
-#define YAML_NODE_VALIDATE(_node, _callA, _callB)          \
-   do                                                      \
-   {                                                       \
+#define YAML_NODE_VALIDATE(_node, _callA, _callB)                   \
+   do                                                               \
+   {                                                                \
       hypredrv_YAMLnodeValidateSchema((_node), (_callA), (_callB)); \
    } while (0)
 

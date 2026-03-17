@@ -16,7 +16,7 @@
 #include "linsys.h"
 #include "utils.h"
 
-#define Scaling_FIELDS(_prefix)                              \
+#define Scaling_FIELDS(_prefix)                                       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, enabled, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)    \
    ADD_FIELD_OFFSET_ENTRY(_prefix, custom_values, hypredrv_FieldTypeDoubleArraySet)
@@ -170,8 +170,8 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    if (dofmap->size != num_local_rows)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("dofmap size (%d) does not match local matrix rows (%d)", dofmap->size,
-                  num_local_rows);
+      hypredrv_ErrorMsgAdd("dofmap size (%d) does not match local matrix rows (%d)",
+                           dofmap->size, num_local_rows);
       return;
    }
 
@@ -286,8 +286,8 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    if (dofmap->size != num_local_rows)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("dofmap size (%d) does not match local matrix rows (%d)", dofmap->size,
-                  num_local_rows);
+      hypredrv_ErrorMsgAdd("dofmap size (%d) does not match local matrix rows (%d)",
+                           dofmap->size, num_local_rows);
       return;
    }
 
@@ -310,9 +310,10 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    if ((size_t)num_tags != args->custom_values->size)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("dofmap_custom: number of custom_values (%zu) does not match number of "
-                  "unique dofmap tags (%d)",
-                  args->custom_values->size, num_tags);
+      hypredrv_ErrorMsgAdd(
+         "dofmap_custom: number of custom_values (%zu) does not match number of "
+         "unique dofmap tags (%d)",
+         args->custom_values->size, num_tags);
       return;
    }
 
@@ -345,8 +346,9 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
       if (tag < 0 || tag >= (HYPRE_Int)args->custom_values->size)
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         hypredrv_ErrorMsgAdd("dofmap_custom: invalid tag %d at local row %d (expected 0-%zu)",
-                     tag, i, args->custom_values->size - 1);
+         hypredrv_ErrorMsgAdd(
+            "dofmap_custom: invalid tag %d at local row %d (expected 0-%zu)", tag, i,
+            args->custom_values->size - 1);
          return;
       }
       local_data[i] = (HYPRE_Real)args->custom_values->data[tag];
@@ -370,7 +372,7 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
 
 void
 hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
-               HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b, IntArray *dofmap)
+                        HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b, IntArray *dofmap)
 {
    if (!args || !ctx)
    {
@@ -501,7 +503,7 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
 
 void
 hypredrv_ScalingApplyToVector(const Scaling_context *ctx, HYPRE_IJVector vec,
-                     scaling_vector_kind_t kind)
+                              scaling_vector_kind_t kind)
 {
    if (!ctx || !ctx->enabled || !vec)
    {
@@ -532,7 +534,7 @@ hypredrv_ScalingApplyToVector(const Scaling_context *ctx, HYPRE_IJVector vec,
 
 void
 hypredrv_ScalingUndoOnVector(const Scaling_context *ctx, HYPRE_IJVector vec,
-                    scaling_vector_kind_t kind)
+                             scaling_vector_kind_t kind)
 {
    if (!ctx || !ctx->enabled || !vec)
    {
@@ -687,8 +689,9 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
-                     HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
+hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
+                              HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
+                              HYPRE_IJVector vec_x)
 {
    if (!ctx || !ctx->enabled)
    {
@@ -861,8 +864,9 @@ ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
-                    HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
+hypredrv_ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
+                             HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
+                             HYPRE_IJVector vec_x)
 {
    if (!ctx || !ctx->enabled || !ctx->is_applied)
    {

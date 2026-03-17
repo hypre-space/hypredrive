@@ -29,8 +29,8 @@ typedef struct NestedKrylov_args_struct
 
 void hypredrv_NestedKrylovSetDefaultArgs(NestedKrylov_args *);
 void hypredrv_NestedKrylovSetArgsFromYAML(NestedKrylov_args *, YAMLnode *);
-void hypredrv_NestedKrylovCreate(MPI_Comm, NestedKrylov_args *, IntArray *, HYPRE_IJVector,
-                        HYPRE_Solver *);
+void hypredrv_NestedKrylovCreate(MPI_Comm, NestedKrylov_args *, IntArray *,
+                                 HYPRE_IJVector, HYPRE_Solver *);
 void hypredrv_NestedKrylovDestroy(NestedKrylov_args *);
 
 #endif /* KRYLOV_HEADER */

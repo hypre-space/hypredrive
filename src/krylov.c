@@ -155,15 +155,17 @@ NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
 
    if (strcmp(precon_node->val, "") != 0)
    {
-      if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(), precon_node->val))
+      if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(),
+                                                    precon_node->val))
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("Unknown nested preconditioner type: '%s'", precon_node->val);
+         hypredrv_ErrorMsgAdd("Unknown nested preconditioner type: '%s'",
+                              precon_node->val);
          YAML_NODE_SET_INVALID_VAL(precon_node);
          return;
       }
-      args->precon_method =
-         (precon_t)hypredrv_StrIntMapArrayGetImage(hypredrv_PreconGetValidTypeIntMap(), precon_node->val);
+      args->precon_method = (precon_t)hypredrv_StrIntMapArrayGetImage(
+         hypredrv_PreconGetValidTypeIntMap(), precon_node->val);
       if (args->precon_method == PRECON_MGR)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
@@ -193,7 +195,8 @@ NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
    }
 
    YAMLnode *type_node = precon_node->children;
-   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(), type_node->key))
+   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(),
+                                                 type_node->key))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
       hypredrv_ErrorMsgAdd("Unknown nested preconditioner type: '%s'", type_node->key);
@@ -201,8 +204,8 @@ NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
       return;
    }
 
-   args->precon_method =
-      (precon_t)hypredrv_StrIntMapArrayGetImage(hypredrv_PreconGetValidTypeIntMap(), type_node->key);
+   args->precon_method = (precon_t)hypredrv_StrIntMapArrayGetImage(
+      hypredrv_PreconGetValidTypeIntMap(), type_node->key);
    if (args->precon_method == PRECON_MGR)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
@@ -297,7 +300,7 @@ hypredrv_NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_n
    }
 
    if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(),
-                                        solver_node->key))
+                                                 solver_node->key))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
       hypredrv_ErrorMsgAdd("Unknown nested solver type: '%s'", solver_node->key);
@@ -348,7 +351,7 @@ hypredrv_NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_n
 
 void
 hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *dofmap,
-                   HYPRE_IJVector vec_nn, HYPRE_Solver *solver_ptr)
+                            HYPRE_IJVector vec_nn, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver base_solver = NULL;
 
@@ -370,7 +373,8 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
    /* Create preconditioner object if needed */
    if (args->has_precon)
    {
-      hypredrv_PreconCreate(args->precon_method, &args->precon, dofmap, vec_nn, &args->precon_obj);
+      hypredrv_PreconCreate(args->precon_method, &args->precon, dofmap, vec_nn,
+                            &args->precon_obj);
       if (hypredrv_ErrorCodeActive())
       {
          return;

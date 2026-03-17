@@ -239,7 +239,8 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
    if (precon_method != PRECON_NONE && !precon)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("SolverSetup: precon is NULL but precon_method is not PRECON_NONE");
+      hypredrv_ErrorMsgAdd(
+         "SolverSetup: precon is NULL but precon_method is not PRECON_NONE");
       return;
    }
 

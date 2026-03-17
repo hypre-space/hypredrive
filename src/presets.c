@@ -106,7 +106,8 @@ hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *hel
       if (!strcmp(norm, g_user_presets[i].name))
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("hypredrv_PresetRegister: preset '%s' already registered", norm);
+         hypredrv_ErrorMsgAdd("hypredrv_PresetRegister: preset '%s' already registered",
+                              norm);
          free(norm);
          return -1;
       }

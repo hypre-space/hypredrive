@@ -264,7 +264,8 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          else
          {
             hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            hypredrv_ErrorMsgAdd("Invalid row/col data type size %lld at %s", header[1], filename);
+            hypredrv_ErrorMsgAdd("Invalid row/col data type size %lld at %s", header[1],
+                                 filename);
             fclose(fp);
             free(dsizes);
             free(osizes);
@@ -460,7 +461,8 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       else
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid row/col data type size %lld at %s", header[1], filename);
+         hypredrv_ErrorMsgAdd("Invalid row/col data type size %lld at %s", header[1],
+                              filename);
          fclose(fp);
          goto cleanup;
       }
@@ -531,7 +533,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[2],
-                     filename);
+                              filename);
          fclose(fp);
          goto cleanup;
       }

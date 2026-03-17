@@ -12,7 +12,7 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define BiCGSTAB_FIELDS(_prefix)                                     \
+#define BiCGSTAB_FIELDS(_prefix)                                              \
    ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, hypredrv_FieldTypeIntSet)       \
@@ -28,15 +28,14 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(BiCGSTAB)               // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS(BiCGSTAB)                        // LCOV_EXCL_LINE
 hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_BiCGSTAB) // LCOV_EXCL_LINE
 
-/*-----------------------------------------------------------------------------
- * BiCGSTABSetDefaultArgs
- *-----------------------------------------------------------------------------*/
+   /*-----------------------------------------------------------------------------
+    * BiCGSTABSetDefaultArgs
+    *-----------------------------------------------------------------------------*/
 
-void
-hypredrv_BiCGSTABSetDefaultArgs(BiCGSTAB_args *args)
+   void hypredrv_BiCGSTABSetDefaultArgs(BiCGSTAB_args *args)
 {
    args->min_iter     = 0;
    args->max_iter     = 100;

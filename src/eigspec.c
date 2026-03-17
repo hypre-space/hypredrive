@@ -85,7 +85,7 @@ HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_loca
  * Define Field/Offset/Setter mapping
  *--------------------------------------------------------------------------*/
 
-#define EigSpec_FIELDS(_prefix)                                     \
+#define EigSpec_FIELDS(_prefix)                                              \
    ADD_FIELD_OFFSET_ENTRY(_prefix, enable, hypredrv_FieldTypeIntSet)         \
    ADD_FIELD_OFFSET_ENTRY(_prefix, vectors, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, hermitian, hypredrv_FieldTypeIntSet)      \
@@ -161,7 +161,7 @@ hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
       hypredrv_ErrorMsgAdd("Eigenspectrum requires square matrix: got %lld x %lld",
-                  (long long)nrows, (long long)ncols);
+                           (long long)nrows, (long long)ncols);
       return hypredrv_ErrorCodeGet();
    }
    if (nrows <= 0)
@@ -183,7 +183,8 @@ hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
    if ((double)n > sqrt((double)(((size_t)-1) / sizeof(double))))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Requested dense allocation would overflow size_t for n=%d", n);
+      hypredrv_ErrorMsgAdd("Requested dense allocation would overflow size_t for n=%d",
+                           n);
       return hypredrv_ErrorCodeGet();
    }
    elems = (size_t)n * (size_t)n;
@@ -194,7 +195,7 @@ hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd("Failed to allocate %zu bytes for dense matrix",
-                  elems * sizeof(double));
+                           elems * sizeof(double));
       return hypredrv_ErrorCodeGet();
    }
 

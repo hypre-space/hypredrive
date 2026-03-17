@@ -77,16 +77,16 @@ void hypredrv_ErrorBacktracePrint(void);
 /*******************************************************************************
  *******************************************************************************/
 
-#define HYPREDRV_MALLOC_AND_CHECK(ptr, size)       \
-   do                                              \
-   {                                               \
-      (ptr) = malloc(size);                        \
-      if ((ptr) == NULL)                           \
-      {                                            \
+#define HYPREDRV_MALLOC_AND_CHECK(ptr, size)                \
+   do                                                       \
+   {                                                        \
+      (ptr) = malloc(size);                                 \
+      if ((ptr) == NULL)                                    \
+      {                                                     \
          hypredrv_ErrorCodeSet(ERROR_ALLOCATION);           \
          hypredrv_ErrorMsgAdd("Memory allocation failed!"); \
-         return;                                   \
-      }                                            \
+         return;                                            \
+      }                                                     \
    } while (0)
 
 #endif /* ERROR_H */

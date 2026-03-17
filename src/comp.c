@@ -223,7 +223,8 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
          if (ZSTD_isError(comp_size))
          {
             hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-            hypredrv_ErrorMsgAdd("ZSTD compression error: %s", ZSTD_getErrorName(comp_size));
+            hypredrv_ErrorMsgAdd("ZSTD compression error: %s",
+                                 ZSTD_getErrorName(comp_size));
             free(*output_ptr);
             *output_ptr = NULL;
             return;
@@ -426,7 +427,8 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
          if (ZSTD_isError(result))
          {
             hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-            hypredrv_ErrorMsgAdd("ZSTD decompression error: %s", ZSTD_getErrorName(result));
+            hypredrv_ErrorMsgAdd("ZSTD decompression error: %s",
+                                 ZSTD_getErrorName(result));
             free(*output_ptr);
             *output_ptr = NULL;
             return;

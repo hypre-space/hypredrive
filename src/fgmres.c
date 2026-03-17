@@ -12,7 +12,7 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define FGMRES_FIELDS(_prefix)                                       \
+#define FGMRES_FIELDS(_prefix)                                                \
    ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, hypredrv_FieldTypeIntSet)      \
@@ -27,15 +27,14 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(FGMRES)               // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS(FGMRES)                        // LCOV_EXCL_LINE
 hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_FGMRES) // LCOV_EXCL_LINE
 
-/*-----------------------------------------------------------------------------
- * FGMRESSetDefaultArgs
- *-----------------------------------------------------------------------------*/
+   /*-----------------------------------------------------------------------------
+    * FGMRESSetDefaultArgs
+    *-----------------------------------------------------------------------------*/
 
-void
-hypredrv_FGMRESSetDefaultArgs(FGMRES_args *args)
+   void hypredrv_FGMRESSetDefaultArgs(FGMRES_args *args)
 {
    args->min_iter     = 0;
    args->max_iter     = 300;

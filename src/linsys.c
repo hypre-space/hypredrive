@@ -218,8 +218,9 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
    if (loc_expected != num_entries)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("Number of entries (%d) does not match the expected local size (%d)",
-                  num_entries, loc_expected);
+      hypredrv_ErrorMsgAdd(
+         "Number of entries (%d) does not match the expected local size (%d)",
+         num_entries, loc_expected);
       return;
    }
 
@@ -669,7 +670,8 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
             if (fgets(line, sizeof(line), file) == NULL)
             {
                hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-               hypredrv_ErrorMsgAdd("Unexpected end of file or error reading %s", rhs_filename);
+               hypredrv_ErrorMsgAdd("Unexpected end of file or error reading %s",
+                                    rhs_filename);
                M = -1;
                break;
             }
@@ -697,7 +699,8 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
             else
             {
                hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-               hypredrv_ErrorMsgAdd("Failed to read vector dimensions from %s", rhs_filename);
+               hypredrv_ErrorMsgAdd("Failed to read vector dimensions from %s",
+                                    rhs_filename);
                M = -1;
                N = 0;
             }
@@ -705,16 +708,17 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
             if (N != 1)
             {
                hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-               hypredrv_ErrorMsgAdd("File %s is not a vector (N=" HYPRE_BIG_INT_SSCANF ")",
-                           rhs_filename, N);
+               hypredrv_ErrorMsgAdd("File %s is not a vector (N=" HYPRE_BIG_INT_SSCANF
+                                    ")",
+                                    rhs_filename, N);
                M = -1;
             }
             else if (M != global_num_rows)
             {
                hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
                hypredrv_ErrorMsgAdd("RHS vector size " HYPRE_BIG_INT_SSCANF
-                           " does not match matrix size " HYPRE_BIG_INT_SSCANF,
-                           M, global_num_rows);
+                                    " does not match matrix size " HYPRE_BIG_INT_SSCANF,
+                                    M, global_num_rows);
                M = -1;
             }
             else
@@ -726,9 +730,9 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
                   if (fgets(line, sizeof(line), file) == NULL)
                   {
                      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-                     hypredrv_ErrorMsgAdd("Error reading value for index " HYPRE_BIG_INT_SSCANF
-                                 " from %s",
-                                 i, rhs_filename);
+                     hypredrv_ErrorMsgAdd(
+                        "Error reading value for index " HYPRE_BIG_INT_SSCANF " from %s",
+                        i, rhs_filename);
                      M = -1;
                      break;
                   }
@@ -736,9 +740,10 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
                   if (endptr == line || (*endptr != '\0' && *endptr != '\n'))
                   {
                      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-                     hypredrv_ErrorMsgAdd("Error converting value for index " HYPRE_BIG_INT_SSCANF
-                                 " from %s",
-                                 i, rhs_filename);
+                     hypredrv_ErrorMsgAdd(
+                        "Error converting value for index " HYPRE_BIG_INT_SSCANF
+                        " from %s",
+                        i, rhs_filename);
                      M = -1;
                      break;
                   }

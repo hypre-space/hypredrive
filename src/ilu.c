@@ -12,7 +12,7 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define ILU_FIELDS(_prefix)                                          \
+#define ILU_FIELDS(_prefix)                                                   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)            \

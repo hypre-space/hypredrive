@@ -12,7 +12,7 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define PCG_FIELDS(_prefix)                                          \
+#define PCG_FIELDS(_prefix)                                                   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, two_norm, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, hypredrv_FieldTypeIntSet)       \

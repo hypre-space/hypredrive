@@ -79,13 +79,17 @@ void           hypredrv_PreconReuseSetDefaultArgs(PreconReuse_args *);
 void           hypredrv_PreconReuseDestroyArgs(PreconReuse_args *);
 void           hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *, YAMLnode *);
 void           hypredrv_PreconReuseTimestepsClear(IntArray **);
-uint32_t hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *, const char *, IntArray **);
-int      hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *, const IntArray *, int);
+uint32_t       hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *, const char *,
+                                                 IntArray **);
+int hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *, const IntArray *, int);
 
-void hypredrv_PreconSetArgsFromYAML(precon_args *, YAMLnode *); /* TODO: change to PreconSetArgs */
-void hypredrv_PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector, HYPRE_Precon *);
+void hypredrv_PreconSetArgsFromYAML(precon_args *,
+                                    YAMLnode *); /* TODO: change to PreconSetArgs */
+void hypredrv_PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector,
+                           HYPRE_Precon *);
 void hypredrv_PreconSetup(precon_t, HYPRE_Precon, HYPRE_IJMatrix);
-void hypredrv_PreconApply(precon_t, HYPRE_Precon, HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector);
+void hypredrv_PreconApply(precon_t, HYPRE_Precon, HYPRE_IJMatrix, HYPRE_IJVector,
+                          HYPRE_IJVector);
 void hypredrv_PreconDestroy(precon_t, precon_args *, HYPRE_Precon *);
 
 #endif /* PRECON_HEADER */

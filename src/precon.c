@@ -25,7 +25,8 @@ DEFINE_FIELD_OFFSET_MAP(Precon)
 
 DEFINE_SET_FIELD_BY_NAME_FUNC(PreconSetFieldByName, Precon_args, Precon_field_offset_map,
                               Precon_NUM_FIELDS)
-DEFINE_GET_VALID_KEYS_FUNC(hypredrv_PreconGetValidKeys, Precon_NUM_FIELDS, Precon_field_offset_map)
+DEFINE_GET_VALID_KEYS_FUNC(hypredrv_PreconGetValidKeys, Precon_NUM_FIELDS,
+                           Precon_field_offset_map)
 
 /*-----------------------------------------------------------------------------
  * hypredrv_PreconGetValidValues
@@ -173,7 +174,7 @@ hypredrv_PreconReuseTimestepsClear(IntArray **timestep_starts)
 
 uint32_t
 hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *filename,
-                         IntArray **timestep_starts)
+                                  IntArray **timestep_starts)
 {
    if (!args || !timestep_starts)
    {
@@ -230,7 +231,8 @@ hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *file
          fclose(fp);
          hypredrv_IntArrayDestroy(&starts);
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("Invalid timestep entry in '%s' at line %d", filename, i + 2);
+         hypredrv_ErrorMsgAdd("Invalid timestep entry in '%s' at line %d", filename,
+                              i + 2);
          return hypredrv_ErrorCodeGet();
       }
       starts->data[i] = ls_start;
@@ -243,8 +245,8 @@ hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *file
 }
 
 int
-hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *args, const IntArray *timestep_starts,
-                           int next_ls_id)
+hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *args,
+                                    const IntArray *timestep_starts, int next_ls_id)
 {
    if (!args)
    {
@@ -294,7 +296,8 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       if (sscanf(parent->val, "%d", &args->frequency) != 1)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("Invalid preconditioner reuse frequency: '%s'", parent->val);
+         hypredrv_ErrorMsgAdd("Invalid preconditioner reuse frequency: '%s'",
+                              parent->val);
          YAML_NODE_SET_INVALID_VAL(parent);
          return;
       }
@@ -316,7 +319,7 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
             hypredrv_ErrorMsgAdd("Invalid value for preconditioner.reuse.enabled: '%s'",
-                        value ? value : "");
+                                 value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
          }
@@ -330,7 +333,7 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
             hypredrv_ErrorMsgAdd("Invalid value for preconditioner.reuse.frequency: '%s'",
-                        value ? value : "");
+                                 value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
          }
@@ -344,7 +347,8 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          if (!value)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Invalid value for preconditioner.reuse.linear_system_ids");
+            hypredrv_ErrorMsgAdd(
+               "Invalid value for preconditioner.reuse.linear_system_ids");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
          }
@@ -354,7 +358,8 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          if (!ids)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Failed to parse preconditioner.reuse.linear_system_ids");
+            hypredrv_ErrorMsgAdd(
+               "Failed to parse preconditioner.reuse.linear_system_ids");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
          }
@@ -370,8 +375,9 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          if (!PreconReuseParseOnOff(value, &args->per_timestep))
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Invalid value for preconditioner.reuse.per_timestep: '%s'",
-                        value ? value : "");
+            hypredrv_ErrorMsgAdd(
+               "Invalid value for preconditioner.reuse.per_timestep: '%s'",
+               value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
          }
@@ -395,8 +401,9 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    if (seen_linear_system_ids && (seen_frequency || seen_per_timestep))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("preconditioner.reuse.linear_system_ids cannot be combined with "
-                  "frequency or per_timestep");
+      hypredrv_ErrorMsgAdd(
+         "preconditioner.reuse.linear_system_ids cannot be combined with "
+         "frequency or per_timestep");
       YAML_NODE_SET_INVALID_VAL(parent);
       return;
    }
@@ -451,8 +458,8 @@ hypredrv_PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
       return;
    }
 
-   hypredrv_YAMLSetArgsGeneric((void *)args, parent, hypredrv_PreconGetValidKeys, hypredrv_PreconGetValidValues,
-                      PreconSetFieldByName);
+   hypredrv_YAMLSetArgsGeneric((void *)args, parent, hypredrv_PreconGetValidKeys,
+                               hypredrv_PreconGetValidValues, PreconSetFieldByName);
 }
 
 /*-----------------------------------------------------------------------------
@@ -461,7 +468,7 @@ hypredrv_PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 
 void
 hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
-             HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr)
+                      HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr)
 {
    HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
 
@@ -565,7 +572,7 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 
 void
 hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix A,
-            HYPRE_IJVector b, HYPRE_IJVector x)
+                     HYPRE_IJVector b, HYPRE_IJVector x)
 {
    void              *vA = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
@@ -653,7 +660,8 @@ DestroyNestedMGRFRelaxInnerSolver(MGR_args *mgr, int i,
 static void
 DestroyNestedMGRFRelaxAtLevel(MGR_args *mgr, int i)
 {
-   HYPRE_Solver nested_mgr_solver = hypredrv_MGRNestedFRelaxWrapperGetInner(mgr->frelax[i]);
+   HYPRE_Solver nested_mgr_solver =
+      hypredrv_MGRNestedFRelaxWrapperGetInner(mgr->frelax[i]);
    hypredrv_MGRNestedFRelaxWrapperFree(&mgr->frelax[i]);
    DestroyNestedMGRFRelaxInnerSolver(mgr, i, &nested_mgr_solver);
 }
@@ -688,7 +696,8 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    if (mgr->num_levels > 1 && mgr->frelax[0] &&
        mgr->level[0].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
    {
-      detached_nested_lvl0_frelax = hypredrv_MGRNestedFRelaxWrapperDetachInner(mgr->frelax[0]);
+      detached_nested_lvl0_frelax =
+         hypredrv_MGRNestedFRelaxWrapperDetachInner(mgr->frelax[0]);
       /* hypre destroys the wrapper object inside HYPRE_MGRDestroy() on these versions. */
       mgr->frelax[0] = NULL;
    }
@@ -790,7 +799,8 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_PreconDestroy(precon_t precon_method, precon_args *args, HYPRE_Precon *precon_ptr)
+hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
+                       HYPRE_Precon *precon_ptr)
 {
    HYPRE_Precon precon = *precon_ptr;
 

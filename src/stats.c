@@ -75,7 +75,7 @@ EnsureCapacity(Stats *stats)
       {
          hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
          hypredrv_ErrorMsgAdd("Stats capacity growth failed (%d -> %d)", old_capacity,
-                     new_capacity);
+                              new_capacity);
          return 0;
       }
 
@@ -523,7 +523,7 @@ hypredrv_StatsDestroy(Stats **stats_ptr)
 
 void
 hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char *name,
-               va_list args)
+                        va_list args)
 {
    if (!stats)
    {
@@ -583,7 +583,8 @@ hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
    if (level < 0 || level >= STATS_MAX_LEVELS)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Annotation level %d out of range [0, %d)", level, STATS_MAX_LEVELS);
+      hypredrv_ErrorMsgAdd("Annotation level %d out of range [0, %d)", level,
+                           STATS_MAX_LEVELS);
       return;
    }
 
@@ -595,7 +596,7 @@ hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Level %d already has active annotation '%s'", level,
-                  stats->level_stack[level].name);
+                           stats->level_stack[level].name);
       return;
    }
 
@@ -670,7 +671,8 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
    if (level < 0 || level >= STATS_MAX_LEVELS)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Annotation level %d out of range [0, %d)", level, STATS_MAX_LEVELS);
+      hypredrv_ErrorMsgAdd("Annotation level %d out of range [0, %d)", level,
+                           STATS_MAX_LEVELS);
       return;
    }
 
@@ -683,9 +685,9 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Level %d annotation mismatch: expected '%s', got '%s'", level,
-                  stats->level_stack[level].name ? stats->level_stack[level].name
-                                                 : "NULL",
-                  formatted_name);
+                           stats->level_stack[level].name ? stats->level_stack[level].name
+                                                          : "NULL",
+                           formatted_name);
       return;
    }
 

@@ -156,9 +156,10 @@ Stats *hypredrv_StatsCreate(void);
 void   hypredrv_StatsDestroy(Stats **stats_ptr);
 
 /* Annotation functions */
-void hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char *name);
-void hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char *name,
-                    va_list args);
+void hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action,
+                            const char *name);
+void hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action,
+                             const char *name, va_list args);
 void hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name);
 void hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name);
 
@@ -181,7 +182,8 @@ double hypredrv_StatsGetLastSolveTime(const Stats *stats);
 
 /* Level statistics (populated automatically from level annotations) */
 int  hypredrv_StatsLevelGetCount(const Stats *stats, int level);
-int  hypredrv_StatsLevelGetEntry(const Stats *stats, int level, int index, LevelEntry *entry);
+int  hypredrv_StatsLevelGetEntry(const Stats *stats, int level, int index,
+                                 LevelEntry *entry);
 void hypredrv_StatsLevelPrint(const Stats *stats, int level);
 
 /* Output */

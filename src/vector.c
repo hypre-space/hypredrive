@@ -198,7 +198,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[1],
-                     filename);
+                              filename);
          fclose(fp);
          fp = NULL;
          goto cleanup;

@@ -129,28 +129,28 @@ void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRclsILUSetArgs)
 
-#define MGRfrlx_FIELDS(_prefix)                                 \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRfrlxTypeSet)        \
+#define MGRfrlx_FIELDS(_prefix)                                          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRfrlxTypeSet)                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRfrlxMGRSetArgs)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRfrlxMGRSetArgs)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)
 
-#define MGRgrlx_FIELDS(_prefix)                                 \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRgrlxTypeSet)        \
+#define MGRgrlx_FIELDS(_prefix)                                          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRgrlxTypeSet)                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)
 
-#define MGRlvl_FIELDS(_prefix)                                            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, hypredrv_FieldTypeStackIntArraySet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, hypredrv_FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_level_type, hypredrv_FieldTypeIntSet)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, f_relaxation, hypredrv_MGRfrlxSetArgs) \
+#define MGRlvl_FIELDS(_prefix)                                                  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, hypredrv_FieldTypeStackIntArraySet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, hypredrv_FieldTypeIntSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_level_type, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, f_relaxation, hypredrv_MGRfrlxSetArgs)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, g_relaxation, hypredrv_MGRgrlxSetArgs)
 
-#define MGR_FIELDS(_prefix)                                           \
+#define MGR_FIELDS(_prefix)                                                    \
    ADD_FIELD_OFFSET_ENTRY(_prefix, non_c_to_f, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, pmax, hypredrv_FieldTypeIntSet)             \
    ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)         \
@@ -173,14 +173,14 @@ void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
 #define MGR_NUM_FIELDS (sizeof(MGR_field_offset_map) / sizeof(MGR_field_offset_map[0]))
 
 /* Define the prefix list */
-#define GENERATE_PREFIXED_LIST_MGR                   \
-   hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRcls)  \
-   hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRfrlx) \
-   hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRgrlx) \
-   GENERATE_PREFIXED_COMPONENTS(MGRlvl)
+#define GENERATE_PREFIXED_LIST_MGR                                  \
+   hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRcls)        \
+      hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRfrlx)    \
+         hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRgrlx) \
+            GENERATE_PREFIXED_COMPONENTS(MGRlvl)
 
 /* Generate all boilerplate (field maps, setters, YAML parsing, etc.) */
-GENERATE_PREFIXED_LIST_MGR                    // LCOV_EXCL_LINE
+GENERATE_PREFIXED_LIST_MGR                             // LCOV_EXCL_LINE
 hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR) // LCOV_EXCL_LINE
 
    /*-----------------------------------------------------------------------------
@@ -273,7 +273,8 @@ MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_ou
    if (!dofmap || !label_space_size_out || !label_present_out)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid arguments while building MGR dof label presence mask");
+      hypredrv_ErrorMsgAdd(
+         "Invalid arguments while building MGR dof label presence mask");
       return 0;
    }
 
@@ -441,13 +442,15 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
       if (!parent_present[label])
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("Parent MGR f_dofs label %d is not present in parent dofmap", label);
+         hypredrv_ErrorMsgAdd(
+            "Parent MGR f_dofs label %d is not present in parent dofmap", label);
          goto cleanup;
       }
       if (keep_label[label])
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("Duplicate parent MGR f_dofs label %d for nested MGR", label);
+         hypredrv_ErrorMsgAdd("Duplicate parent MGR f_dofs label %d for nested MGR",
+                              label);
          goto cleanup;
       }
       keep_label[label] = 1;
@@ -525,7 +528,7 @@ cleanup:
    static void _func(void *field, const YAMLnode *node)                     \
    {                                                                        \
       HYPRE_Int old_type = *((HYPRE_Int *)field);                           \
-      hypredrv_FieldTypeIntSet(field, node);                                         \
+      hypredrv_FieldTypeIntSet(field, node);                                \
       _parent *args = (_parent *)((char *)field - offsetof(_parent, type)); \
       if (args->type == old_type)                                           \
       {                                                                     \
@@ -588,7 +591,8 @@ MGRBaseParSolverSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector
 void
 hypredrv_MGRclsSetDefaultArgs(MGRcls_args *args)
 {
-   /* Default coarsest solver: let hypredrv_MGRCreate interpret type < 0 as "default AMG". */
+   /* Default coarsest solver: let hypredrv_MGRCreate interpret type < 0 as "default AMG".
+    */
    args->type       = -1;
    args->use_krylov = 0;
    args->krylov     = NULL;
@@ -693,7 +697,8 @@ MGRfrlxMGRSetArgs(void *field, const YAMLnode *node)
    if (!nested_mgr)
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate nested MGR arguments for MGR f_relaxation");
+      hypredrv_ErrorMsgAdd(
+         "Failed to allocate nested MGR arguments for MGR f_relaxation");
       return;
    }
 
@@ -1283,8 +1288,9 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          if (dof_label < 0 || dof_label >= num_dofs)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Invalid MGR level %d f_dofs label %d (valid range: [0,%d])",
-                        (int)lvl, (int)dof_label, (int)num_dofs - 1);
+            hypredrv_ErrorMsgAdd(
+               "Invalid MGR level %d f_dofs label %d (valid range: [0,%d])", (int)lvl,
+               (int)dof_label, (int)num_dofs - 1);
             free(label_present);
             free(inactive_dofs);
             for (HYPRE_Int k = 0; k <= lvl; k++)
@@ -1296,8 +1302,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          if (!label_present[dof_label])
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("MGR level %d f_dofs label %d is not present in dofmap", (int)lvl,
-                        (int)dof_label);
+            hypredrv_ErrorMsgAdd("MGR level %d f_dofs label %d is not present in dofmap",
+                                 (int)lvl, (int)dof_label);
             free(label_present);
             free(inactive_dofs);
             for (HYPRE_Int k = 0; k <= lvl; k++)
@@ -1309,8 +1315,9 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          if (inactive_dofs[dof_label])
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Duplicate/previously eliminated MGR f_dofs label %d at level %d",
-                        (int)dof_label, (int)lvl);
+            hypredrv_ErrorMsgAdd(
+               "Duplicate/previously eliminated MGR f_dofs label %d at level %d",
+               (int)dof_label, (int)lvl);
             free(label_present);
             free(inactive_dofs);
             for (HYPRE_Int k = 0; k <= lvl; k++)
@@ -1376,7 +1383,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
                   free(c_dofs[k]);
                }
                hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-               hypredrv_ErrorMsgAdd("Invalid MGR C-point label %d during dense remap", (int)raw);
+               hypredrv_ErrorMsgAdd("Invalid MGR C-point label %d during dense remap",
+                                    (int)raw);
                return;
             }
             c_dofs[lvl][i] = label_to_dense[raw];
@@ -1423,7 +1431,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
                free(dofmap_data_owned);
                dofmap_data_owned = NULL;
                hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-               hypredrv_ErrorMsgAdd("Invalid dof label %d during MGR dense remap", (int)raw);
+               hypredrv_ErrorMsgAdd("Invalid dof label %d during MGR dense remap",
+                                    (int)raw);
                return;
             }
             dofmap_data[i] = label_to_dense[raw];
@@ -1452,15 +1461,20 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
    /* Set level parameters */
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
-   HYPRE_MGRSetLevelFRelaxType(precon, hypredrv_MGRConvertArgInt(args, "f_relaxation:type"));
-   HYPRE_MGRSetLevelNumRelaxSweeps(precon,
-                                   hypredrv_MGRConvertArgInt(args, "f_relaxation:num_sweeps"));
-   HYPRE_MGRSetLevelSmoothType(precon, hypredrv_MGRConvertArgInt(args, "g_relaxation:type"));
-   HYPRE_MGRSetLevelSmoothIters(precon,
-                                hypredrv_MGRConvertArgInt(args, "g_relaxation:num_sweeps"));
-   HYPRE_MGRSetLevelInterpType(precon, hypredrv_MGRConvertArgInt(args, "prolongation_type"));
-   HYPRE_MGRSetLevelRestrictType(precon, hypredrv_MGRConvertArgInt(args, "restriction_type"));
-   HYPRE_MGRSetCoarseGridMethod(precon, hypredrv_MGRConvertArgInt(args, "coarse_level_type"));
+   HYPRE_MGRSetLevelFRelaxType(precon,
+                               hypredrv_MGRConvertArgInt(args, "f_relaxation:type"));
+   HYPRE_MGRSetLevelNumRelaxSweeps(
+      precon, hypredrv_MGRConvertArgInt(args, "f_relaxation:num_sweeps"));
+   HYPRE_MGRSetLevelSmoothType(precon,
+                               hypredrv_MGRConvertArgInt(args, "g_relaxation:type"));
+   HYPRE_MGRSetLevelSmoothIters(
+      precon, hypredrv_MGRConvertArgInt(args, "g_relaxation:num_sweeps"));
+   HYPRE_MGRSetLevelInterpType(precon,
+                               hypredrv_MGRConvertArgInt(args, "prolongation_type"));
+   HYPRE_MGRSetLevelRestrictType(precon,
+                                 hypredrv_MGRConvertArgInt(args, "restriction_type"));
+   HYPRE_MGRSetCoarseGridMethod(precon,
+                                hypredrv_MGRConvertArgInt(args, "coarse_level_type"));
 #endif
 
    /* Config f-relaxation at each MGR level */
@@ -1470,7 +1484,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       {
          HYPRE_Solver wrapper = NULL;
          hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->level[i].f_relaxation.krylov,
-                            args->dofmap, args->vec_nn, &wrapper);
+                                     args->dofmap, args->vec_nn, &wrapper);
          if (hypredrv_ErrorCodeActive())
          {
             return;
@@ -1514,7 +1528,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          if (!nested_args)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd("MGR F-relaxation type 'mgr' requires a nested 'mgr:' block");
+            hypredrv_ErrorMsgAdd(
+               "MGR F-relaxation type 'mgr' requires a nested 'mgr:' block");
             return;
          }
 
@@ -1549,7 +1564,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          args->frelax[i] = frelax_wrapper;
 #else
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("Nested MGR F-relaxation requires hypre >= 3.1.0 (develop >= 5)");
+         hypredrv_ErrorMsgAdd(
+            "Nested MGR F-relaxation requires hypre >= 3.1.0 (develop >= 5)");
          return;
 #endif
       }
@@ -1577,7 +1593,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       else if (args->level[i].f_relaxation.type == 29)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("MGR F-relaxation 'spdirect' requires hypre built with DSUPERLU");
+         hypredrv_ErrorMsgAdd(
+            "MGR F-relaxation 'spdirect' requires hypre built with DSUPERLU");
          return;
       }
 #endif
@@ -1600,7 +1617,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       {
          HYPRE_Solver wrapper = NULL;
          hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->level[i].g_relaxation.krylov,
-                            args->dofmap, args->vec_nn, &wrapper);
+                                     args->dofmap, args->vec_nn, &wrapper);
          if (hypredrv_ErrorCodeActive())
          {
             return;
@@ -1625,8 +1642,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    if (args->coarsest_level.use_krylov && args->coarsest_level.krylov)
    {
       HYPRE_Solver wrapper = NULL;
-      hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->coarsest_level.krylov, args->dofmap,
-                         args->vec_nn, &wrapper);
+      hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->coarsest_level.krylov,
+                                  args->dofmap, args->vec_nn, &wrapper);
       if (hypredrv_ErrorCodeActive())
       {
          return;
@@ -1697,7 +1714,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       else if (args->coarsest_level.type == 29)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("MGR coarsest_level 'spdirect' requires hypre built with DSUPERLU");
+         hypredrv_ErrorMsgAdd(
+            "MGR coarsest_level 'spdirect' requires hypre built with DSUPERLU");
          return;
       }
 #endif

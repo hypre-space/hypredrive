@@ -27,16 +27,16 @@ FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
    *((double *)field) = gb * GB_TO_BYTES;
 }
 
-#define General_FIELDS(_prefix)                                               \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, warmup, hypredrv_FieldTypeIntSet)                   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, hypredrv_FieldTypeIntSet)               \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, hypredrv_FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, hypredrv_FieldTypeIntSet)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, hypredrv_FieldTypeIntSet)              \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_repetitions, hypredrv_FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, dev_pool_size, FieldTypePoolGBToBytesSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, uvm_pool_size, FieldTypePoolGBToBytesSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, host_pool_size, FieldTypePoolGBToBytesSet) \
+#define General_FIELDS(_prefix)                                                   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, warmup, hypredrv_FieldTypeIntSet)              \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, hypredrv_FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, hypredrv_FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_repetitions, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, dev_pool_size, FieldTypePoolGBToBytesSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, uvm_pool_size, FieldTypePoolGBToBytesSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, host_pool_size, FieldTypePoolGBToBytesSet)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, pinned_pool_size, FieldTypePoolGBToBytesSet)
 
 #define General_NUM_FIELDS \
@@ -331,8 +331,8 @@ PreconParseVariantWrapped(precon_args *dst, precon_t method,
    hypredrv_PreconArgsSetDefaultsForMethod(method, dst);
 
    YAMLnode fake_type = {0};
-   /* IMPORTANT: hypredrv_YAMLSetArgsGeneric may free/replace parent->key for flat-value nodes.
-    * Never point into another YAML tree's storage here. */
+   /* IMPORTANT: hypredrv_YAMLSetArgsGeneric may free/replace parent->key for flat-value
+    * nodes. Never point into another YAML tree's storage here. */
    fake_type.key      = strdup(type_key ? type_key : "");
    fake_type.val      = strdup("");
    fake_type.level    = type_level;
@@ -379,7 +379,8 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
    if (!preset)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Unknown preconditioner preset: '%s'", preset_name ? preset_name : "");
+      hypredrv_ErrorMsgAdd("Unknown preconditioner preset: '%s'",
+                           preset_name ? preset_name : "");
       char *help = hypredrv_PresetHelp();
       if (help)
       {
@@ -406,13 +407,14 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Preset '%s' must expand to a single preconditioner type",
-                  preset->name);
+                           preset->name);
       hypredrv_YAMLtreeDestroy(&preset_tree);
       return;
    }
 
    YAMLnode *type_node = preset_tree->root->children;
-   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(), type_node->key))
+   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(),
+                                                 type_node->key))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
       hypredrv_ErrorMsgAdd("Unknown preconditioner type: '%s'", type_node->key);
@@ -420,8 +422,8 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
       return;
    }
 
-   *method_out =
-      (precon_t)hypredrv_StrIntMapArrayGetImage(hypredrv_PreconGetValidTypeIntMap(), type_node->key);
+   *method_out = (precon_t)hypredrv_StrIntMapArrayGetImage(
+      hypredrv_PreconGetValidTypeIntMap(), type_node->key);
    PreconParseVariantWrapped(args_out, *method_out, preset_tree->root, type_node->key,
                              type_node->level, type_node->children);
 
@@ -535,14 +537,16 @@ InputArgsPreconVariant0Activate(input_args *iargs, PreconParseContext *ctx,
 static int
 PreconParseMethodResolve(const char *name, int error_code, precon_t *method_out)
 {
-   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(), name))
+   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(),
+                                                 name))
    {
       hypredrv_ErrorCodeSet(error_code);
       hypredrv_ErrorMsgAdd("Unknown preconditioner type: '%s'", name);
       return 0;
    }
 
-   *method_out = (precon_t)hypredrv_StrIntMapArrayGetImage(hypredrv_PreconGetValidTypeIntMap(), name);
+   *method_out = (precon_t)hypredrv_StrIntMapArrayGetImage(
+      hypredrv_PreconGetValidTypeIntMap(), name);
    return 1;
 }
 
@@ -622,7 +626,8 @@ InputArgsParsePreconRootSequence(input_args *iargs, YAMLnode *parent,
       if (!item->children || item->children->next)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-         hypredrv_ErrorMsgAdd("Each preconditioner variant must contain exactly one type key");
+         hypredrv_ErrorMsgAdd(
+            "Each preconditioner variant must contain exactly one type key");
          return PRECON_PARSE_ERROR;
       }
 
@@ -851,7 +856,8 @@ finalize_reuse:
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset, int variant_idx)
+hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset,
+                                    int variant_idx)
 {
    precon_t    method = PRECON_NONE;
    precon_args args;
@@ -867,7 +873,7 @@ hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset, int v
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid preconditioner variant index: %d (valid range: 0-%d)",
-                  variant_idx, iargs->num_precon_variants - 1);
+                           variant_idx, iargs->num_precon_variants - 1);
       return;
    }
 
@@ -900,7 +906,8 @@ hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset, int v
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr, char **text_ptr)
+hypredrv_InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr,
+                       char **text_ptr)
 {
    size_t text_size   = 0;
    int    base_indent = -1;
@@ -1068,7 +1075,8 @@ ApplyCLIOverrides(int argc, char **argv, int config_idx, YAMLtree *tree)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv, input_args **args_ptr)
+hypredrv_InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv,
+                        input_args **args_ptr)
 {
    input_args *iargs       = NULL;
    char       *text        = NULL;
