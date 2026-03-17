@@ -9,10 +9,7 @@
 #define HYPREDRV_HEADER
 
 #include <mpi.h>
-#include <signal.h> // For: raise
-#include <stdint.h> // For: uint
-#include <stdlib.h> // For: getenv
-#include <string.h> // For: strcmp
+#include <stdint.h> // For: uint32_t
 
 #include <HYPRE.h>
 #include <HYPRE_IJ_mv.h>
@@ -40,29 +37,8 @@ extern "C"
 // Visibility control macros
 #define HYPREDRV_EXPORT_SYMBOL __attribute__((visibility("default")))
 
-// Macro for safely calling HYPREDRV functions.
-// Always uses MPI_COMM_WORLD for MPI_Abort as a safe fallback.
-#ifndef HYPREDRV_SAFE_CALL
-#define HYPREDRV_SAFE_CALL(call)                                                     \
-   do                                                                                \
-   {                                                                                 \
-      uint32_t error_code = (call);                                                  \
-      if (error_code != 0)                                                           \
-      {                                                                              \
-         (void)fprintf(stderr, "At %s:%d in %s():\n", __FILE__, __LINE__, __func__); \
-         HYPREDRV_ErrorCodeDescribe(error_code);                                     \
-         const char *debug_env = getenv("HYPREDRV_DEBUG");                           \
-         if (debug_env && strcmp(debug_env, "1") == 0)                               \
-         {                                                                           \
-            raise(SIGTRAP); /* Breakpoint for gdb */                                 \
-         }                                                                           \
-         else                                                                        \
-         {                                                                           \
-            MPI_Abort(MPI_COMM_WORLD, (int)error_code);                              \
-         }                                                                           \
-      }                                                                              \
-   } while (0)
-#endif
+   // HYPREDRV_SAFE_CALL and HYPREDRV_SAFE_CALL_COMM are defined in HYPREDRV_utils.h.
+   // Include that header after this one when you need these macros.
 
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/
@@ -162,11 +138,10 @@ extern "C"
     *
     * @param error_code The error code to be processed (uint32_t)
     *
-    * @note This function will not return if error_code is non-zero, as it calls MPI_Abort
-    * @note For convenience, consider using the HYPREDRV_SAFE_CALL macro which
-    * automatically handles error checking and description for HYPREDRV function calls. In
-    * case a nonzero error occurs, the macro will also call the MPI program with the given
-    * error code
+    * @note This function prints the error description and returns normally — it does
+    * NOT call MPI_Abort. For an abort-on-error helper, use the HYPREDRV_SAFE_CALL
+    * macro (defined in HYPREDRV_utils.h), which calls this function and then calls
+    * MPI_Abort when the error code is non-zero.
     *
     * Example Usage:
     * @code
@@ -346,10 +321,25 @@ extern "C"
                                                            HYPREDRV_t hypredrv);
 
    /**
-    * @brief Set library mode to HYPREDRV, in which matrices and vectors are not
-    * assumed to be owned by the HYPREDRV_t object.
+    * @brief Enable library (borrowed-ownership) mode for a HYPREDRV object.
     *
-    * @param hypredrv The HYPREDRV_t object.
+    * When library mode is active, matrices and vectors passed via
+    * HYPREDRV_LinearSystemSetMatrix(), HYPREDRV_LinearSystemSetRHS(),
+    * HYPREDRV_LinearSystemSetInitialGuess(), etc. are treated as borrowed
+    * references: HYPREDRV will not destroy them when the object is destroyed or
+    * when new objects are set. The caller retains full ownership and must free
+    * these objects independently.
+    *
+    * When library mode is inactive (the default), ownership of non-NULL objects
+    * passed to those setters is transferred to HYPREDRV, which will destroy them
+    * at the appropriate time.
+    *
+    * @note This flag is a one-way latch: once set it cannot be unset for the
+    * lifetime of the HYPREDRV_t object. Create a new object if you need to
+    * switch back to owned mode.
+    *
+    * @param hypredrv The HYPREDRV_t object (passed by value — it is an opaque
+    *                 pointer, not a pointer-to-pointer).
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -357,8 +347,8 @@ extern "C"
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_t *hypredrv;
-    *    // ... (hypredrv is created, and its components are initialized) ...
+    *    HYPREDRV_t hypredrv;
+    *    // ... (hypredrv is created) ...
     *    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
     * @endcode
     */
@@ -668,8 +658,7 @@ extern "C"
                                                                   HYPRE_Matrix mat_A);
 
    /**
-    * @brief Set the linear system right-hand side (RHS) vector from file for a HYPREDRV
-    * object.
+    * @brief Set the linear system right-hand side (RHS) vector for a HYPREDRV object.
     *
     * @param hypredrv The HYPREDRV_t object for which the RHS vector of the linear system
     * is to be set.
@@ -732,6 +721,38 @@ extern "C"
 
    HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv, HYPRE_Vector vec);
+
+   /**
+    * @brief Set the solution vector of the linear system for a HYPREDRV object.
+    *
+    * Allows the caller to supply a pre-built HYPRE_Vector to use as the working
+    * solution buffer (the vector the linear solver writes its result into).
+    *
+    * @param hypredrv The HYPREDRV_t object.
+    * @param vec      The HYPRE_Vector to use as the solution buffer. If NULL, HYPREDRV
+    *                 allocates an internal buffer (vec_b must already be set). If
+    *                 non-NULL, the vector is borrowed — HYPREDRV will never destroy it.
+    *
+    * @return 0 on success; nonzero error code otherwise. Returns an error when @p vec
+    *         is NULL and the RHS vector has not been set yet.
+    *
+    * @note Typical use: provide your own HYPRE_ParVector allocation before calling
+    *       HYPREDRV_LinearSolverSolve() so the result is written directly into your
+    *       buffer. You can then retrieve the same pointer via
+    *       HYPREDRV_LinearSystemGetSolution().
+    *
+    * Example Usage:
+    * @code
+    *    HYPRE_IJVector my_x; // previously created, same size as b
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetSolution(hypredrv,
+    *                                                        (HYPRE_Vector)my_x));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSolve(hypredrv));
+    *    // my_x now contains the solution.
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetSolution(HYPREDRV_t   hypredrv,
+                                                                    HYPRE_Vector vec);
 
    /**
     * @brief Set or refresh the reference solution vector used by GMRES tagged
@@ -1112,6 +1133,33 @@ extern "C"
       HYPREDRV_t hypredrv, const char *norm_type, double *norm);
 
    /**
+    * @brief Retrieve the solution vector from a HYPREDRV object.
+    *
+    * Returns the HYPRE_Vector that the linear solver wrote its result into. This is
+    * useful for passing the solution directly to another HYPRE routine without copying
+    * the underlying data.
+    *
+    * @param hypredrv A valid HYPREDRV_t object with a solved linear system.
+    * @param vec      A pointer to a HYPRE_Vector, set to the internal solution vector
+    *                 on success. The returned pointer is owned by HYPREDRV (unless a
+    *                 user-supplied buffer was injected via
+    *                 HYPREDRV_LinearSystemSetSolution()); the caller must not free it.
+    *
+    * @return 0 on success; nonzero if @p hypredrv is invalid or the solution vector has
+    *         not been allocated yet (i.e., before the first solve or SetSolution call).
+    *
+    * Example Usage:
+    * @code
+    *    HYPRE_Vector x = NULL;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolution(hypredrv, &x));
+    *    // Pass x to another HYPRE routine; do not free it.
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemGetSolution(HYPREDRV_t hypredrv,
+                                                                    HYPRE_Vector *vec);
+
+   /**
     * @brief Retrieves the right-hand side values from the linear system of a HYPREDRV
     * object.
     *
@@ -1142,6 +1190,56 @@ extern "C"
 
    HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv, HYPRE_Complex **rhs_data);
+
+   /**
+    * @brief Retrieve the right-hand side vector from a HYPREDRV object.
+    *
+    * Returns the HYPRE_Vector for the RHS (vec_b). This is useful for passing the
+    * vector directly to another HYPRE routine without copying the underlying data.
+    *
+    * @param hypredrv A valid HYPREDRV_t object with the RHS set.
+    * @param vec      A pointer to a HYPRE_Vector, set to the internal RHS vector on
+    *                 success. The returned pointer is owned by HYPREDRV; the caller
+    *                 must not free it.
+    *
+    * @return 0 on success; nonzero if @p hypredrv is invalid or the RHS has not been
+    *         set yet.
+    *
+    * Example Usage:
+    * @code
+    *    HYPRE_Vector b = NULL;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetRHS(hypredrv, &b));
+    *    // Pass b to another HYPRE routine; do not free it.
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemGetRHS(HYPREDRV_t    hypredrv,
+                                                               HYPRE_Vector *vec);
+
+   /**
+    * @brief Retrieve the system matrix from a HYPREDRV object.
+    *
+    * This function provides access to the internal system matrix (mat_A) associated
+    * with the given HYPREDRV_t object. The returned pointer is owned by HYPREDRV;
+    * the caller must not free it.
+    *
+    * @param hypredrv A valid HYPREDRV_t object with the matrix set.
+    * @param mat      A pointer to a HYPRE_Matrix, which will be set to the internal
+    *                 system matrix. The user must not free or destroy this object.
+    *
+    * @return Returns an error code, with 0 indicating success. Returns a non-zero
+    * code if @p hypredrv is invalid or the matrix has not been set yet.
+    *
+    * Example Usage:
+    * @code
+    *    HYPRE_Matrix A = NULL;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetMatrix(hypredrv, &A));
+    *    // Use A for inspection but do not free it.
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemGetMatrix(HYPREDRV_t    hypredrv,
+                                                                  HYPRE_Matrix *mat);
 
    /**
     * @brief Set state vectors for time-stepping or multi-state applications.
@@ -1281,37 +1379,42 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StateVectorUpdateAll(HYPREDRV_t hypredrv);
 
    /**
-    * @brief Apply the linear solver correction to the current state vector.
+    * @brief Apply the linear solver correction to a state vector.
     *
     * This function adds the solution increment from the linear solver (stored in
-    * vec_x) to the current state vector (state at logical index 0). This implements
+    * vec_x) to the state vector at logical index @p state_idx. This implements
     * the Newton update: U^{k+1} = U^k + ΔU, where ΔU is the solution from the
     * linear system J ΔU = -R.
     *
-    * @param hypredrv The HYPREDRV_t object containing the state vectors and the
-    *                 linear solver solution (vec_x).
+    * Pass @p state_idx = 0 to apply the correction to the current (most recent)
+    * state, which is the typical usage after HYPREDRV_StateVectorUpdateAll() has
+    * cycled the indices so that index 0 refers to the new current state.
+    *
+    * @param hypredrv  The HYPREDRV_t object containing the state vectors and the
+    *                  linear solver solution (vec_x).
+    * @param state_idx Zero-based logical index of the state vector to update.
+    *                  Must be in [0, nstates).
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
     *
     * @note This function should be called after HYPREDRV_LinearSolverApply has
-    * completed successfully. The linear solver solution (vec_x) must be set via
-    * HYPREDRV_LinearSystemSetRHS or similar functions.
+    * completed successfully.
     *
-    * @note The operation performed is: state[0] = state[0] + vec_x (in-place update).
+    * @note The operation performed is: state[state_idx] += vec_x (in-place update).
     *
     * Example Usage:
     * @code
     *    HYPREDRV_t hypredrv;
     *    // ... (assemble linear system, solve) ...
     *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorApplyCorrection(hypredrv));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorApplyCorrection(hypredrv, 0));
     * @endcode
     */
 
    HYPREDRV_EXPORT_SYMBOL uint32_t
-   HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv);
+   HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx);
 
    /**
     * @brief Create a preconditioner for the HYPREDRV object based on the specified
@@ -1363,8 +1466,14 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv);
 
    /**
-    * @brief Set up the preconditioner for the HYPREDRV object based on the specified
-    * preconditioner methods.
+    * @brief Set up the preconditioner for the HYPREDRV object.
+    *
+    * Sets up only the preconditioner, without setting up the enclosing linear solver.
+    * Use this when applying the preconditioner standalone via HYPREDRV_PreconApply().
+    *
+    * @note HYPREDRV_LinearSolverSetup() sets up the preconditioner internally as part
+    * of the combined solver setup. A prior call to this function is **not required**
+    * before calling HYPREDRV_LinearSolverSetup().
     *
     * @param hypredrv The HYPREDRV_t object for which the preconditioner is to be set up.
     *
@@ -1372,24 +1481,28 @@ extern "C"
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
     *
-    * @note It's the caller's responsibility to ensure that the hypredrv parameter is a
-    * valid pointer to an initialized HYPREDRV_t object. Passing a NULL or uninitialized
-    * object will result in an error. The function assumes that the preconditioner method
-    * and the matrix are properly set in the input arguments.
-    *
     * Example Usage:
     * @code
-    *    HYPREDRV_t *hypredrv;
-    *    // ... (hypredrv is created, and its components are initialized) ...
+    *    HYPREDRV_t hypredrv;
+    *    // ... (hypredrv is created, matrix is set) ...
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconCreate(hypredrv));
     *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconSetup(hypredrv));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconApply(hypredrv, vec_b, vec_x));
     * @endcode
     */
 
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconSetup(HYPREDRV_t hypredrv);
 
    /**
-    * @brief Set up the linear solver for the HYPREDRV object based on the specified
-    * solver and preconditioner methods.
+    * @brief Set up the linear solver for the HYPREDRV object.
+    *
+    * Configures the linear solver using the current solver and preconditioner methods,
+    * matrix, RHS vector, and solution vector. This function sets up the preconditioner
+    * internally — a prior call to HYPREDRV_PreconSetup() is **not required** for the
+    * normal solver workflow.
+    *
+    * @note To use the preconditioner standalone (e.g., via HYPREDRV_PreconApply()),
+    * call HYPREDRV_PreconSetup() explicitly instead.
     *
     * @param hypredrv The HYPREDRV_t object for which the linear solver is to be set up.
     *
@@ -1397,15 +1510,9 @@ extern "C"
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
     *
-    * @note It's the caller's responsibility to ensure that the hypredrv parameter is a
-    * valid pointer to an initialized HYPREDRV_t object. Passing a NULL or uninitialized
-    * object will result in an error. The function assumes that the solver and
-    * preconditioner methods, as well as the matrix, RHS vector, and solution vector, are
-    * properly set in the input arguments.
-    *
     * Example Usage:
     * @code
-    *    HYPREDRV_t *hypredrv;
+    *    HYPREDRV_t hypredrv;
     *    // ... (hypredrv is created, and its components are initialized) ...
     *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(hypredrv));
     * @endcode
@@ -1563,6 +1670,13 @@ extern "C"
     * @note When Caliper is enabled (via HYPREDRV_ENABLE_CALIPER), this function also
     * creates Caliper regions that can be captured by Caliper profiling tools.
     *
+    * @note **Global stats context**: This function and its companions
+    * (HYPREDRV_AnnotateEnd, HYPREDRV_AnnotateLevelBegin/End,
+    * HYPREDRV_StatsLevelGetCount/GetEntry/Print) operate on the global stats
+    * context, which is the stats object of the **first HYPREDRV_t created** in the
+    * process. In applications with multiple HYPREDRV_t objects, only the first
+    * object's solves are reflected in the global context.
+    *
     * Example Usage:
     * @code
     *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system", -1));
@@ -1620,6 +1734,9 @@ extern "C"
     *       must be ended with HYPREDRV_AnnotateLevelEnd using the same level, name,
     *       and id.
     *
+    * @note Operates on the global stats context. See HYPREDRV_AnnotateBegin() for
+    * details.
+    *
     * Example Usage:
     * @code
     *    // Time step loop (level 0)
@@ -1668,10 +1785,15 @@ extern "C"
     *
     * @return Returns an error code with 0 indicating success
     *
-    * @note Compiled and available only when hypredrive is built with
-    * `-DHYPREDRV_ENABLE_EIGSPEC=ON`. This function operates on a single MPI rank
-    * and writes eigenvalues (and optionally eigenvectors) to files in the current
-    * directory as configured via the YAML input under `linear_system.eigspec`.
+    * @note When hypredrive is built **without** `-DHYPREDRV_ENABLE_EIGSPEC=ON`,
+    * this function returns a non-zero error code with a descriptive message
+    * ("Eigenspectrum feature disabled at build time …") — it is not a silent no-op.
+    * Check the return value or guard the call with `HYPREDRV_SAFE_CALL`.
+    *
+    * @note When built **with** `-DHYPREDRV_ENABLE_EIGSPEC=ON`, this function
+    * operates on a single MPI rank and writes eigenvalues (and optionally
+    * eigenvectors) to files in the current directory as configured via the YAML
+    * input under `linear_system.eigspec`.
     *
     * Example Usage:
     * @code
@@ -1686,6 +1808,11 @@ extern "C"
    /**
     * @brief Get a statistic from the last linear solve.
     *
+    * @deprecated Use the typed alternatives instead:
+    *   - HYPREDRV_LinearSolverGetNumIter()   for iteration count
+    *   - HYPREDRV_LinearSolverGetSetupTime() for preconditioner setup time
+    *   - HYPREDRV_LinearSolverGetSolveTime() for solver apply time
+    *
     * @param hypredrv The HYPREDRV_t object.
     * @param name Name of the statistic ("iter", "setup", "solve").
     * @param value Pointer to store the value. Type depends on name:
@@ -1699,6 +1826,57 @@ extern "C"
                                                         const char *name, void *value);
 
    /**
+    * @brief Get the iteration count from the last linear solve.
+    *
+    * @param hypredrv The HYPREDRV_t object.
+    * @param iters    Pointer to store the iteration count.
+    *
+    * @return Returns an error code with 0 indicating success.
+    *
+    * Example Usage:
+    * @code
+    *    int iters;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverGetNumIter(hypredrv, &iters));
+    * @endcode
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverGetNumIter(HYPREDRV_t hypredrv,
+                                                                   int       *iters);
+
+   /**
+    * @brief Get the preconditioner setup time from the last linear solve.
+    *
+    * @param hypredrv The HYPREDRV_t object.
+    * @param seconds  Pointer to store the setup time in seconds.
+    *
+    * @return Returns an error code with 0 indicating success.
+    *
+    * Example Usage:
+    * @code
+    *    double setup_time;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverGetSetupTime(hypredrv, &setup_time));
+    * @endcode
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverGetSetupTime(HYPREDRV_t hypredrv,
+                                                                     double    *seconds);
+
+   /**
+    * @brief Get the solver apply time from the last linear solve.
+    *
+    * @param hypredrv The HYPREDRV_t object.
+    * @param seconds  Pointer to store the solve time in seconds.
+    *
+    * @return Returns an error code with 0 indicating success.
+    *
+    * Example Usage:
+    * @code
+    *    double solve_time;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverGetSolveTime(hypredrv, &solve_time));
+    * @endcode
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverGetSolveTime(HYPREDRV_t hypredrv,
+                                                                     double    *seconds);
+
+   /**
     * @brief Get the number of entries recorded at a specific level.
     *
     * Returns the count of entries recorded via level annotations
@@ -1707,6 +1885,9 @@ extern "C"
     * @param level The annotation level (0 to STATS_MAX_LEVELS-1).
     *
     * @return The number of entries recorded, or 0 if no stats context is active.
+    *
+    * @note Operates on the global stats context. See HYPREDRV_AnnotateBegin() for
+    * details.
     */
    HYPREDRV_EXPORT_SYMBOL int HYPREDRV_StatsLevelGetCount(int level);
 
@@ -1724,11 +1905,15 @@ extern "C"
     * @param setup_time Pointer to store the total setup time (seconds).
     * @param solve_time Pointer to store the total solve time (seconds).
     *
-    * @return Returns 0 on success, -1 on error (invalid level/index or no stats).
+    * @return Returns an error code with 0 indicating success. Returns a non-zero
+    * error code if the level or index is invalid, or if no stats context is active.
     *
     * @note Any pointer parameter can be NULL to skip retrieving that value.
+    *
+    * @note This function operates on the global stats context. See
+    * HYPREDRV_AnnotateBegin() for details on the global stats design.
     */
-   HYPREDRV_EXPORT_SYMBOL int
+   HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_StatsLevelGetEntry(int level, int index, int *entry_id, int *num_solves,
                                int *linear_iters, double *setup_time, double *solve_time);
 
@@ -1742,6 +1927,9 @@ extern "C"
     * @param level The annotation level to print (0 to STATS_MAX_LEVELS-1).
     *
     * @return Returns an error code with 0 indicating success.
+    *
+    * @note Operates on the global stats context. See HYPREDRV_AnnotateBegin() for
+    * details.
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsLevelPrint(int level);
 

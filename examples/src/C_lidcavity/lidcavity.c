@@ -15,6 +15,7 @@
 #include <omp.h>
 #endif
 #include "HYPREDRV.h"
+#include "HYPREDRV_utils.h"
 #include "compatibility.h"
 
 #if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
@@ -2163,7 +2164,7 @@ main(int argc, char *argv[])
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hypredrv));
 
          /* U = U + ΔU */
-         HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorApplyCorrection(hypredrv));
+         HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorApplyCorrection(hypredrv, 0));
 
          /* Report running log */
          if (params.verbose > 0)

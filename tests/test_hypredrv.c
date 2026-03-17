@@ -44,6 +44,7 @@ struct hypredrv_struct
    HYPRE_IJVector vec_nn;
    HYPRE_IJVector *vec_s;
    bool           owns_mat_M;
+   bool           owns_vec_x;
    bool           owns_vec_x0;
    bool           owns_vec_xref;
 
@@ -211,6 +212,10 @@ test_HYPREDRV_all_api_init_guard(void)
    code = HYPREDRV_LinearSystemGetRHSValues(NULL, &ptr);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
 
+   HYPRE_Matrix mat_out = NULL;
+   code = HYPREDRV_LinearSystemGetMatrix(NULL, &mat_out);
+   ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
+
    double norm = 0.0;
    code        = HYPREDRV_LinearSystemGetSolutionNorm(NULL, "l2", &norm);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
@@ -282,6 +287,21 @@ test_HYPREDRV_all_api_obj_guard(void)
    code              = HYPREDRV_LinearSystemGetSolutionValues(NULL, &ptr);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
    code = HYPREDRV_LinearSystemGetRHSValues(NULL, &ptr);
+   ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
+
+   HYPRE_Matrix mat_null = NULL;
+   code = HYPREDRV_LinearSystemGetMatrix(NULL, &mat_null);
+   ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
+
+   int typed_iter_null = -1;
+   double typed_t_null = -1.0;
+   code = HYPREDRV_LinearSolverGetNumIter(NULL, &typed_iter_null);
+   ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
+   code = HYPREDRV_LinearSolverGetSetupTime(NULL, &typed_t_null);
+   ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
+   code = HYPREDRV_LinearSolverGetSolveTime(NULL, &typed_t_null);
+   ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
+   code = HYPREDRV_StateVectorApplyCorrection(NULL, 0);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
 
    double norm = 0.0;
@@ -392,6 +412,27 @@ test_create_parse_and_destroy(void)
    ASSERT_NOT_NULL(rhs_expected);
    ASSERT_PTR_EQ(rhs_data, rhs_expected);
    ASSERT_TRUE(rhs_data != sol_data);
+
+   HYPRE_Matrix mat_retrieved = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetMatrix(obj, &mat_retrieved), ERROR_NONE);
+   ASSERT_NOT_NULL(mat_retrieved);
+   ASSERT_PTR_EQ((void *)mat_retrieved, (void *)state->mat_A);
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetMatrix(obj, NULL) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
+
+   HYPRE_Vector vec_sol = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolution(obj, &vec_sol), ERROR_NONE);
+   ASSERT_NOT_NULL(vec_sol);
+   ASSERT_PTR_EQ(vec_sol, (HYPRE_Vector)state->vec_x);
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetSolution(obj, NULL) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
+
+   HYPRE_Vector vec_rhs = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetRHS(obj, &vec_rhs), ERROR_NONE);
+   ASSERT_NOT_NULL(vec_rhs);
+   ASSERT_PTR_EQ(vec_rhs, (HYPRE_Vector)state->vec_b);
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetRHS(obj, NULL) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
 
    /* Ensure we have a dofmap to work with */
    if (!state->dofmap || state->dofmap->size == 0)
@@ -597,13 +638,25 @@ test_HYPREDRV_stats_level_apis(void)
    hypredrv_StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
    hypredrv_StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_END, "solve");
 
-   /* HYPREDRV_GetLastStat branches */
+   /* HYPREDRV_GetLastStat branches (deprecated) */
    int    iter = -1;
    double t    = -1.0;
    ASSERT_EQ(HYPREDRV_GetLastStat(obj, "iter", &iter), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_GetLastStat(obj, "setup", &t), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_GetLastStat(obj, "solve", &t), ERROR_NONE);
    ASSERT_TRUE(HYPREDRV_GetLastStat(obj, "unknown", &t) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
+
+   /* Typed stat getters */
+   int    typed_iter   = -1;
+   double setup_time   = -1.0;
+   double solve_time   = -1.0;
+   ASSERT_EQ(HYPREDRV_LinearSolverGetNumIter(obj, &typed_iter), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverGetSetupTime(obj, &setup_time), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverGetSolveTime(obj, &solve_time), ERROR_NONE);
+   ASSERT_TRUE(HYPREDRV_LinearSolverGetNumIter(obj, NULL) & ERROR_UNKNOWN);
+   ASSERT_TRUE(HYPREDRV_LinearSolverGetSetupTime(obj, NULL) & ERROR_UNKNOWN);
+   ASSERT_TRUE(HYPREDRV_LinearSolverGetSolveTime(obj, NULL) & ERROR_UNKNOWN);
    hypredrv_ErrorCodeResetAll();
 
    hypredrv_ErrorCodeResetAll();
@@ -693,7 +746,11 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
 
    ASSERT_EQ(HYPREDRV_StateVectorCopy(obj, 0, 1), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_StateVectorUpdateAll(obj), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_StateVectorApplyCorrection(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_StateVectorApplyCorrection(obj, 0), ERROR_NONE);
+   ASSERT_TRUE(HYPREDRV_StateVectorApplyCorrection(obj, -1) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(HYPREDRV_StateVectorApplyCorrection(obj, 99) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
 
    /* Force xref path in LinearSolverApply */
    state->vec_xref = state->vec_b;
@@ -1356,6 +1413,50 @@ test_HYPREDRV_misc_0hit_branches(void)
    hypredrv_ErrorCodeResetAll();
    state->vec_x = saved_x;
 
+   /* GetSolution / GetRHS: happy path */
+   HYPRE_Vector vec_sol_out = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolution(obj, &vec_sol_out), ERROR_NONE);
+   ASSERT_NOT_NULL(vec_sol_out);
+   ASSERT_PTR_EQ(vec_sol_out, (HYPRE_Vector)state->vec_x);
+
+   HYPRE_Vector vec_rhs_out = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetRHS(obj, &vec_rhs_out), ERROR_NONE);
+   ASSERT_NOT_NULL(vec_rhs_out);
+   ASSERT_PTR_EQ(vec_rhs_out, (HYPRE_Vector)state->vec_b);
+
+   /* GetSolution / GetRHS: NULL output arg */
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetSolution(obj, NULL) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetRHS(obj, NULL) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
+
+   /* GetSolution when vec_x is NULL */
+   HYPRE_IJVector restore_x = state->vec_x;
+   state->vec_x             = NULL;
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetSolution(obj, &vec_sol_out) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
+   state->vec_x = restore_x;
+
+   /* GetRHS when vec_b is NULL */
+   HYPRE_IJVector restore_b = state->vec_b;
+   state->vec_b             = NULL;
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetRHS(obj, &vec_rhs_out) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
+   state->vec_b = restore_b;
+
+   /* SetSolution: NULL recreates from vec_b */
+   ASSERT_EQ(HYPREDRV_LinearSystemSetSolution(obj, NULL), ERROR_NONE);
+   vec_sol_out = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolution(obj, &vec_sol_out), ERROR_NONE);
+   ASSERT_NOT_NULL(vec_sol_out);
+
+   /* SetSolution(NULL) with no vec_b → error */
+   HYPRE_IJVector restore_b2 = state->vec_b;
+   state->vec_b              = NULL;
+   ASSERT_TRUE(HYPREDRV_LinearSystemSetSolution(obj, NULL) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
+   state->vec_b = restore_b2;
+
    double ok_norm = 0.0;
    ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionNorm(obj, "L2", &ok_norm), ERROR_NONE);
 
@@ -1384,13 +1485,19 @@ test_HYPREDRV_misc_0hit_branches(void)
    ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(0, "lvl", 1), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(0, "lvl", 1), ERROR_NONE);
 
-   /* Cover GetLastStat else-if branches + error branch */
+   /* Cover GetLastStat else-if branches + error branch (deprecated API) */
    int    it = -1;
    double t  = -1.0;
    ASSERT_EQ(HYPREDRV_GetLastStat(obj, "iter", &it), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_GetLastStat(obj, "setup", &t), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_GetLastStat(obj, "solve", &t), ERROR_NONE);
    ASSERT_TRUE(HYPREDRV_GetLastStat(obj, "unknown", &t) & ERROR_UNKNOWN);
+   hypredrv_ErrorCodeResetAll();
+
+   /* Typed stat getters — same data, type-safe */
+   ASSERT_EQ(HYPREDRV_LinearSolverGetNumIter(obj, &it), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverGetSetupTime(obj, &t), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverGetSolveTime(obj, &t), ERROR_NONE);
    hypredrv_ErrorCodeResetAll();
 
    hypredrv_ErrorCodeResetAll();
