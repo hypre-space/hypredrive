@@ -30,4 +30,10 @@ const hypredrv_Preset *hypredrv_PresetFind(const char *name);
 /* Returns a formatted help string listing available presets (caller must free). */
 char *hypredrv_PresetHelp(void);
 
+/* Registers a new user preset. Returns 0 on success, -1 on failure. */
+int hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *help);
+
+/* Frees all user-registered presets. Called from HYPREDRV_Finalize(). */
+void hypredrv_PresetFreeUserPresets(void);
+
 #endif /* HYPREDRV_PRESETS_HEADER */

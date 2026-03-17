@@ -111,6 +111,7 @@ set(_hypredrv_unit_test_cases
     "test_eigspec|test_eigspec.c|FALSE"
     "test_linsys|test_linsys.c|TRUE"
     "test_stats|test_stats.c|TRUE"
+    "test_presets|test_presets.c|FALSE"
 )
 
 foreach(_case IN LISTS _hypredrv_unit_test_cases)

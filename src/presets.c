@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "presets.h"
+#include "error.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -31,6 +32,28 @@ static const hypredrv_Preset g_presets[] = {
    HYPREDRV_PRESET(elasticity_3d, "BoomerAMG for 3D elasticity"),
 };
 
+/* Dynamic user-registered presets */
+static hypredrv_Preset *g_user_presets     = NULL;
+static size_t           g_num_user_presets = 0;
+static size_t           g_cap_user_presets = 0;
+
+/*-----------------------------------------------------------------------------
+ * Normalize preset name in-place: lowercase and treat '-' as '_'.
+ *-----------------------------------------------------------------------------*/
+
+static void
+normalize_preset_name(char *s)
+{
+   for (; *s; ++s)
+   {
+      *s = (char)tolower((unsigned char)*s);
+      if (*s == '-')
+      {
+         *s = '_';
+      }
+   }
+}
+
 /*-----------------------------------------------------------------------------
  * Count number of pre-defined preconditioner variants (presets).
  *-----------------------------------------------------------------------------*/
@@ -38,7 +61,108 @@ static const hypredrv_Preset g_presets[] = {
 static size_t
 hypredrv_PresetCount(void)
 {
-   return sizeof(g_presets) / sizeof(g_presets[0]);
+   return (sizeof(g_presets) / sizeof(g_presets[0])) + g_num_user_presets;
+}
+
+/*-----------------------------------------------------------------------------
+ * Register a new user-defined preset. Returns 0 on success, -1 on failure.
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *help)
+{
+   if (!name || !*name || !yaml_text || !*yaml_text)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("hypredrv_PresetRegister: name and yaml_text must be non-NULL and non-empty");
+      return -1;
+   }
+
+   char *norm = strdup(name);
+   if (!norm)
+   {
+      ErrorCodeSet(ERROR_ALLOCATION);
+      return -1;
+   }
+   normalize_preset_name(norm);
+
+   /* Check for duplicates in built-in presets */
+   for (size_t i = 0; i < sizeof(g_presets) / sizeof(g_presets[0]); i++)
+   {
+      if (!strcmp(norm, g_presets[i].name))
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd(
+            "hypredrv_PresetRegister: preset '%s' conflicts with built-in preset", norm);
+         free(norm);
+         return -1;
+      }
+   }
+
+   /* Check for duplicates in user presets */
+   for (size_t i = 0; i < g_num_user_presets; i++)
+   {
+      if (!strcmp(norm, g_user_presets[i].name))
+      {
+         ErrorCodeSet(ERROR_INVALID_VAL);
+         ErrorMsgAdd("hypredrv_PresetRegister: preset '%s' already registered", norm);
+         free(norm);
+         return -1;
+      }
+   }
+
+   /* Grow array if needed */
+   if (g_num_user_presets >= g_cap_user_presets)
+   {
+      size_t           new_cap = g_cap_user_presets ? g_cap_user_presets * 2 : 8;
+      hypredrv_Preset *tmp =
+         (hypredrv_Preset *)realloc(g_user_presets, new_cap * sizeof(hypredrv_Preset));
+      if (!tmp)
+      {
+         ErrorCodeSet(ERROR_ALLOCATION);
+         free(norm);
+         return -1;
+      }
+      g_user_presets     = tmp;
+      g_cap_user_presets = new_cap;
+   }
+
+   char *dup_text = strdup(yaml_text);
+   char *dup_help = strdup(help ? help : "");
+   if (!dup_text || !dup_help)
+   {
+      free(norm);
+      free(dup_text);
+      free(dup_help);
+      ErrorCodeSet(ERROR_ALLOCATION);
+      return -1;
+   }
+
+   g_user_presets[g_num_user_presets].name = norm;
+   g_user_presets[g_num_user_presets].text = dup_text;
+   g_user_presets[g_num_user_presets].help = dup_help;
+   g_num_user_presets++;
+
+   return 0;
+}
+
+/*-----------------------------------------------------------------------------
+ * Free all user-registered presets. Safe to call multiple times.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_PresetFreeUserPresets(void)
+{
+   for (size_t i = 0; i < g_num_user_presets; i++)
+   {
+      free((char *)g_user_presets[i].name);
+      free((char *)g_user_presets[i].text);
+      free((char *)g_user_presets[i].help);
+   }
+   free(g_user_presets);
+   g_user_presets     = NULL;
+   g_num_user_presets = 0;
+   g_cap_user_presets = 0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -48,16 +172,23 @@ hypredrv_PresetCount(void)
 char *
 hypredrv_PresetHelp(void)
 {
-   const size_t n      = hypredrv_PresetCount();
+   const size_t nb     = sizeof(g_presets) / sizeof(g_presets[0]);
    const char  *header = "Available preconditioner presets:\n";
 
    size_t bytes = strlen(header) + 1;
-   for (size_t i = 0; i < n; i++)
+   for (size_t i = 0; i < nb; i++)
    {
-      const char *name = g_presets[i].name ? g_presets[i].name : "";
-      const char *help = g_presets[i].help ? g_presets[i].help : "";
+      const char *pname = g_presets[i].name ? g_presets[i].name : "";
+      const char *phelp = g_presets[i].help ? g_presets[i].help : "";
       bytes +=
-         strlen("    - ") + strlen(name) + strlen(": ") + strlen(help) + strlen("\n");
+         strlen("    - ") + strlen(pname) + strlen(": ") + strlen(phelp) + strlen("\n");
+   }
+   for (size_t i = 0; i < g_num_user_presets; i++)
+   {
+      const char *pname = g_user_presets[i].name ? g_user_presets[i].name : "";
+      const char *phelp = g_user_presets[i].help ? g_user_presets[i].help : "";
+      bytes +=
+         strlen("    - ") + strlen(pname) + strlen(": ") + strlen(phelp) + strlen("\n");
    }
 
    char *out = (char *)malloc(bytes);
@@ -68,11 +199,18 @@ hypredrv_PresetHelp(void)
    out[0] = '\0';
 
    (void)strcat(out, header);
-   for (size_t i = 0; i < n; i++)
+   for (size_t i = 0; i < nb; i++)
    {
       char line[1024];
       (void)snprintf(line, sizeof(line), "    - %s: %s\n", g_presets[i].name,
                      g_presets[i].help);
+      (void)strcat(out, line);
+   }
+   for (size_t i = 0; i < g_num_user_presets; i++)
+   {
+      char line[1024];
+      (void)snprintf(line, sizeof(line), "    - %s: %s\n", g_user_presets[i].name,
+                     g_user_presets[i].help);
       (void)strcat(out, line);
    }
    return out;
@@ -113,6 +251,18 @@ hypredrv_PresetFind(const char *name)
       {
          match = &g_presets[i];
          break;
+      }
+   }
+
+   if (!match)
+   {
+      for (size_t i = 0; i < g_num_user_presets; i++)
+      {
+         if (!strcmp(lower, g_user_presets[i].name))
+         {
+            match = &g_user_presets[i];
+            break;
+         }
       }
    }
 
