@@ -156,7 +156,7 @@ def save_and_show_plot(savefig=None):
     plt.show()
     plt.close()
 
-def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False, show_nl_iters=True):
+def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False, show_nl_iters=True, log_x=False, log_y=False):
     """
     Plots iteration counts as a function of a specified column in the DataFrame.
 
@@ -238,20 +238,25 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
         plt.title(f'{prefix}Linear solver iterations vs {xlabel}', fontsize=tfs, fontweight='bold')
     plt.ylabel('Iterations', fontsize=alfs)
     plt.xlabel(xlabel, fontsize=alfs)
-    plt.ylim(bottom=0.0)
     ax = plt.gca()
+    if log_x:
+        ax.set_xscale('log')
+    if log_y:
+        ax.set_yscale('log')
+    else:
+        plt.ylim(bottom=0.0)
     ax.tick_params(axis='x', labelsize=alfs)
     ax.tick_params(axis='y', labelsize=alfs)
-    # Use an integer tick locator with pruning to avoid bloated labels
-    try:
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-    except Exception:
-        pass
+    if not log_x:
+        try:
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+        except Exception:
+            pass
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"iters_{agg_str}{savefig}")
 
-def plot_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False):
+def plot_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False, log_x=False, log_y=False):
     """
     Plots setup and solve times, as well as their total, as a function of a specified column in the DataFrame.
 
@@ -325,16 +330,22 @@ def plot_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefi
         plt.title(f'{prefix}Linear solver times vs {xlabel}', fontsize=tfs, fontweight='bold')
     plt.ylabel(f'Times {time_unit}', fontsize=alfs)
     plt.xlabel(xlabel, fontsize=alfs)
-    plt.tick_params(axis='x', labelsize=alfs)
-    plt.tick_params(axis='y', labelsize=alfs)
     ax = plt.gca()
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-    plt.ylim(bottom=0.0)
+    if log_x:
+        ax.set_xscale('log')
+    if log_y:
+        ax.set_yscale('log')
+    ax.tick_params(axis='x', labelsize=alfs)
+    ax.tick_params(axis='y', labelsize=alfs)
+    if not log_x:
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+    if not log_y:
+        plt.ylim(bottom=0.0)
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"times_{agg_str}{savefig}")
 
-def plot_time_metric(df, cumulative, xtype, xlabel, time_unit, metric, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False):
+def plot_time_metric(df, cumulative, xtype, xlabel, time_unit, metric, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False, log_x=False, log_y=False):
     """
     Plots a single time metric (one of 'setup', 'solve', 'total') across entries and files.
     Groups by 'source' when multiple input files are provided.
@@ -382,15 +393,21 @@ def plot_time_metric(df, cumulative, xtype, xlabel, time_unit, metric, use_title
     plt.ylabel(f"Times {time_unit}", fontsize=alfs)
     plt.xlabel(xlabel, fontsize=alfs)
     ax = plt.gca()
+    if log_x:
+        ax.set_xscale('log')
+    if log_y:
+        ax.set_yscale('log')
     ax.tick_params(axis='x', labelsize=alfs)
     ax.tick_params(axis='y', labelsize=alfs)
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-    plt.ylim(bottom=0.0)
+    if not log_x:
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+    if not log_y:
+        plt.ylim(bottom=0.0)
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"{metric}_{agg_str}{savefig}")
 
-def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False, show_nl_iters=True):
+def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False, show_nl_iters=True, log_x=False, log_y=False):
     """
     Plots setup and solve times, as well as iteration counts, as a function of a specified column in the DataFrame.
     Setup and solve times are plotted on the primary Y-axis, while iteration counts are plotted on a secondary Y-axis.
@@ -426,14 +443,21 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
     # Plot setup and solve times on the primary Y-axis
     ax1.set_xlabel(xlabel, fontsize=alfs)
     ax1.set_ylabel(f'Times {time_unit}', fontsize=alfs)
+    if log_x:
+        ax1.set_xscale('log')
+    if log_y:
+        ax1.set_yscale('log')
     ax1.tick_params(axis='y', labelsize=alfs)
     ax1.tick_params(axis='x', labelsize=alfs)
-    ax1.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+    if not log_x:
+        ax1.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
 
     # Secondary Y-axis for iteration counts
     ax2 = ax1.twinx()
     ax2.set_ylabel('Iterations', fontsize=alfs)
     ax2.tick_params(axis='y', labelsize=alfs)
+    if log_y:
+        ax2.set_yscale('log')
 
     lines = []
     labels = []
@@ -477,7 +501,10 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
                 if len(nl_iters_data):
                     max_iters = max(max_iters, max(nl_iters_data))
 
-        ax2.set_ylim(bottom=0, top=max_iters * 2.0 if max_iters > 0 else 1)
+        if log_y:
+            ax2.set_ylim(bottom=1, top=max_iters * 2.0 if max_iters > 1 else 10)
+        else:
+            ax2.set_ylim(bottom=0, top=max_iters * 2.0 if max_iters > 0 else 1)
     else:
         grp = df.sort_values(by=xtype)
         setup_data = grp['setup'].cumsum() if cumulative else grp['setup']
@@ -502,7 +529,10 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
             labels.append(l4.get_label())
             if len(nl_iters_data):
                 max_iters = max(max_iters, max(nl_iters_data))
-        ax2.set_ylim(bottom=0, top=max_iters * 2.0 if max_iters > 0 else 1)
+        if log_y:
+            ax2.set_ylim(bottom=1, top=max_iters * 2.0 if max_iters > 1 else 10)
+        else:
+            ax2.set_ylim(bottom=0, top=max_iters * 2.0 if max_iters > 0 else 1)
 
     if title:
         plt.title(title, fontsize=tfs, fontweight='bold')
@@ -553,7 +583,7 @@ def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig
     plt.tight_layout()
     save_and_show_plot(f"{metric}_bar_{savefig}")
 
-def plot_throughput(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None, title=None):
+def plot_throughput(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None, title=None, log_x=False, log_y=False):
     """
     Plots throughput (degrees of freedom per second) as a function of a specified column in the DataFrame.
     Throughput is calculated as number of rows (degrees of freedom) divided by total time (setup + solve).
@@ -651,10 +681,16 @@ def plot_throughput(df, cumulative, xtype, xlabel, time_unit, use_title=False, s
     plt.ylabel(f'Throughput ({throughput_unit})', fontsize=alfs)
     plt.xlabel(xlabel, fontsize=alfs)
     ax = plt.gca()
+    if log_x:
+        ax.set_xscale('log')
+    if log_y:
+        ax.set_yscale('log')
     ax.tick_params(axis='x', labelsize=alfs)
     ax.tick_params(axis='y', labelsize=alfs)
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-    plt.ylim(bottom=0.0)
+    if not log_x:
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+    if not log_y:
+        plt.ylim(bottom=0.0)
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"throughput_{agg_str}{savefig}")
@@ -777,6 +813,8 @@ def main():
                         help="Aggregate stats within each timestep (requires --tsteps)")
     parser.add_argument("-p", "--phase", type=str, default='total', choices=['setup', 'solve', 'total', 'iters'],
                         help="Phase for bar mode: setup, solve, total (setup+solve), or iters")
+    parser.add_argument("--log-x", action="store_true", help="Use log scale for X axis")
+    parser.add_argument("--log-y", action="store_true", help="Use log scale for Y axis")
     parser.add_argument("-v", "--verbose", action='count', default=0, help='Increase verbosity (-v=INFO, -vv=DEBUG)')
 
     # Parse arguments
@@ -938,26 +976,29 @@ def main():
         plot_bar_time_metric(df, args.phase, time_unit, args.legend_names, args.use_title, savefig, args.title)
         return
 
+    log_x = args.log_x
+    log_y = args.log_y
+
     if check_mode_exact_match(args.mode, 'iters'):
-        plot_iterations(df, args.cumulative, args.xtype, xlabel, args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, show_nl_iters)
+        plot_iterations(df, args.cumulative, args.xtype, xlabel, args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, show_nl_iters, log_x, log_y)
 
     if check_mode_exact_match(args.mode, 'times'):
-        plot_times(df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend)
+        plot_times(df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, log_x, log_y)
 
     if check_mode_exact_match(args.mode, 'iters-and-times'):
-        plot_iters_times(df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, show_nl_iters)
+        plot_iters_times(df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, show_nl_iters, log_x, log_y)
 
     if check_mode_exact_match(args.mode, 'setup'):
-        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'setup', args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend)
+        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'setup', args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, log_x, log_y)
 
     if check_mode_exact_match(args.mode, 'solve'):
-        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'solve', args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend)
+        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'solve', args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, log_x, log_y)
 
     if check_mode_exact_match(args.mode, 'total'):
-        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'total', args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend)
+        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'total', args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, log_x, log_y)
 
     if check_mode_exact_match(args.mode, 'throughput'):
-        plot_throughput(df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, savefig, args.linestyle, args.markersize, args.title)
+        plot_throughput(df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, savefig, args.linestyle, args.markersize, args.title, log_x, log_y)
 
 if __name__ == "__main__":
     main()

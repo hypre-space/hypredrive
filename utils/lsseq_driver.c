@@ -25,6 +25,8 @@
 
 /* Temp buffer for path concatenation (two MAX_FILENAME_LENGTH paths + suffix) to satisfy -Wformat-truncation. */
 #define PATH_TMP_SIZE (2 * MAX_FILENAME_LENGTH + 64)
+/* Cap digits_suffix for %0*d to avoid -Wformat-truncation (practical suffixes use <= 32 digits). */
+#define MAX_DIGITS_SUFFIX_FMT 32
 
 static void
 path_copy(char *dest, size_t dest_size, const char *src)
@@ -303,7 +305,12 @@ static void
 BuildPrefix(char *prefix, size_t prefix_size, const char *dirname, int digits_suffix, int suffix,
             const char *filename)
 {
-   snprintf(prefix, prefix_size, "%s_%0*d/%s", dirname, digits_suffix, suffix, filename);
+   int d = (digits_suffix > MAX_DIGITS_SUFFIX_FMT) ? MAX_DIGITS_SUFFIX_FMT : digits_suffix;
+   if (d < 1)
+   {
+      d = 1;
+   }
+   snprintf(prefix, prefix_size, "%s_%0*d/%s", dirname, d, suffix, filename);
 }
 
 static void
@@ -353,7 +360,12 @@ PathIsRegularFile(const char *path)
 static void
 BuildSystemDir(char *dir, size_t dir_size, const char *dirprefix, int digits_suffix, int suffix)
 {
-   snprintf(dir, dir_size, "%s_%0*d", dirprefix, digits_suffix, suffix);
+   int d = (digits_suffix > MAX_DIGITS_SUFFIX_FMT) ? MAX_DIGITS_SUFFIX_FMT : digits_suffix;
+   if (d < 1)
+   {
+      d = 1;
+   }
+   snprintf(dir, dir_size, "%s_%0*d", dirprefix, d, suffix);
 }
 
 static int
@@ -1076,7 +1088,7 @@ ReadMatrixPart(const char *prefix, int part_id, MatrixPartRaw *raw)
 {
    FILE    *fp = NULL;
    uint64_t header[11];
-   char     filename[MAX_FILENAME_LENGTH];
+   char     filename[MAX_FILENAME_LENGTH + 32]; /* prefix + ".%05d.bin" */
    size_t   row_bytes = 0, val_bytes = 0, nnz = 0;
 
    if (!prefix || !raw)
@@ -1140,7 +1152,7 @@ ReadRHSPart(const char *prefix, int part_id, RHSPartRaw *raw)
 {
    FILE    *fp = NULL;
    uint64_t header[8];
-   char     filename[MAX_FILENAME_LENGTH];
+   char     filename[MAX_FILENAME_LENGTH + 32]; /* prefix + ".%05d.bin" */
 
    if (!prefix || !raw)
    {

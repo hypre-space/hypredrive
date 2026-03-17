@@ -700,6 +700,65 @@ The default in the example is a conjugate gradient solver with an unknown-based 
 preconditioner (Prolongation operator considers only intra-variable couplings, i.e.,
 connections within the same type of displacement component).
 
+Solver Comparison
+~~~~~~~~~~~~~~~~~
+
+The elasticity driver now exposes a dedicated ``--solver-preset`` option to exercise
+both built-in and application-registered preconditioner presets from the command line.
+The available values are:
+
+- ``elasticity_3D``: built-in BoomerAMG elasticity preset.
+- ``elasticity_sdc_3D``: application-registered preset that matches ``elasticity_3D``
+  and additionally sets ``coarsening.filter_functions: on``.
+- ``elasticity_nodal_3D``: application-registered preset that matches ``elasticity_3D``
+  and additionally sets ``coarsening.nodal: 1``.
+
+The two custom presets are registered at runtime by the application via
+``HYPREDRV_PreconPresetRegister`` before parsing YAML or applying command-line overrides.
+They are therefore example-local conveniences and not global built-in presets.
+
+To compare all three configurations over a DOF sweep (8 variants from about
+``1e4`` to ``1e6`` unknowns), run:
+
+.. code-block:: bash
+
+   ./reproduce.sh
+
+The script runs each preset across all size variants, stores outputs in
+``elasticity_builtin.out``, ``elasticity_sdc.out``, and ``elasticity_nodal.out``,
+and then always generates plots by default. It calls ``scripts/analyze_statistics.py``
+with ``-t rows`` and ``--log-x`` to produce separate comparison figures with a
+log-scale X axis (DOFs):
+
+.. figure:: figures/elasticity_dofs_iters.png
+   :alt: Iterations versus DOFs for elasticity presets
+   :width: 80%
+   :align: center
+
+   Linear solver iterations vs DOFs.
+
+.. figure:: figures/elasticity_dofs_setup.png
+   :alt: Setup time versus DOFs for elasticity presets
+   :width: 80%
+   :align: center
+
+   Preconditioner setup time vs DOFs.
+
+.. figure:: figures/elasticity_dofs_solve.png
+   :alt: Solve time versus DOFs for elasticity presets
+   :width: 80%
+   :align: center
+
+   Solve time vs DOFs.
+
+The script prints verbose messages indicating which plot is being generated.
+
+To regenerate only the plots from existing ``*.out`` logs (without rerunning solves):
+
+.. code-block:: bash
+
+   ./reproduce.sh --plot-only
+
 Visualizing the Solution
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -756,15 +815,17 @@ figure above and the reference output included below.
     -E <val>          : Young's modulus E (1.0e5)
     -nu <val>         : Poisson ratio nu (0.3)
     -rho <val>        : Density rho (1.0)
+    --solver-preset <name>
+                     : Solver preset selector (elasticity_3D | elasticity_sdc_3D | elasticity_nodal_3D)
     -ns|--nsolve <n>  : Number of solves (5)
     -vis <m>          : Visualization mode (0)
         0: none
         1: ASCII VTK
         2: binary VTK
-    -v|--verbose <n>  : Verbosity bitset (1)
-        0x1: Linear solver statistics
-        0x2: Library information
-        0x4: Linear system printing
+    -v|--verbose <n>  : Verbosity bitset (0)
+        0x1: Library info and linear solver statistics
+        0x2: System info
+        0x4: Print linear system matrices
     -h|--help         : Print this message
 
 For a single-process run, the output should be similar to the following:
