@@ -74,7 +74,8 @@ hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *hel
    if (!name || !*name || !yaml_text || !*yaml_text)
    {
       ErrorCodeSet(ERROR_INVALID_VAL);
-      ErrorMsgAdd("hypredrv_PresetRegister: name and yaml_text must be non-NULL and non-empty");
+      ErrorMsgAdd(
+         "hypredrv_PresetRegister: name and yaml_text must be non-NULL and non-empty");
       return -1;
    }
 
