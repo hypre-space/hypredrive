@@ -8,6 +8,7 @@ on:
       - 'src/**'
       - 'examples/src/**'
       - 'scripts/check_private_prefix.sh'
+      - 'scripts/list_public_apis.sh'
       - '.clang-format'
   push:
     branches: [ master ]
@@ -16,6 +17,7 @@ on:
       - 'src/**'
       - 'examples/src/**'
       - 'scripts/check_private_prefix.sh'
+      - 'scripts/list_public_apis.sh'
       - '.clang-format'
   workflow_dispatch:    # Allow manual triggering
 
@@ -28,6 +30,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install clang-format
+        timeout-minutes: 3
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-format
@@ -47,3 +50,13 @@ jobs:
 
       - name: private prefix check
         run: bash scripts/check_private_prefix.sh
+
+  public-apis:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: public APIs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: public API prefix check
+        run: bash scripts/list_public_apis.sh --check

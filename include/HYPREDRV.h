@@ -706,6 +706,10 @@ extern "C"
     * @param hypredrv The HYPREDRV_t object for which the initial guess of the solution
     * vector of the linear system is to be set.
     *
+    * @param vec Optional initial-guess vector. If NULL, the initial guess is built from
+    * input/default behavior (`x0_filename`/`init_guess_mode`). If non-NULL, this vector
+    * is used as `x0`.
+    *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
@@ -714,16 +718,20 @@ extern "C"
     * valid pointer to an initialized HYPREDRV_t object. Passing a NULL or uninitialized
     * object will result in an error.
     *
+    * @note Ownership for non-NULL \e vec:
+    * - library mode ON (`HYPREDRV_SetLibraryMode`): borrowed (not destroyed by HYPREDRV).
+    * - library mode OFF: ownership is transferred to HYPREDRV.
+    *
     * Example Usage:
     * @code
     *    HYPREDRV_t *hypredrv;
     *    // ... (hypredrv is created, and its components are initialized) ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv, NULL));
     * @endcode
     */
 
    HYPREDRV_EXPORT_SYMBOL uint32_t
-   HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv);
+   HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv, HYPRE_Vector vec);
 
    /**
     * @brief Set or refresh the reference solution vector used by GMRES tagged
@@ -736,6 +744,10 @@ extern "C"
     * @param hypredrv The HYPREDRV_t object for which the reference solution vector is to
     * be set or refreshed.
     *
+    * @param vec Optional reference-solution vector. If NULL, the reference solution is
+    * updated using the existing file/default rules (`xref_filename`/`xref_basename`).
+    * If non-NULL, this vector is used directly as the reference solution.
+    *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
@@ -743,15 +755,21 @@ extern "C"
     * @note On hypre versions older than v3.0.0, this function is a no-op for GMRES tagged
     * residual/error internals.
     *
+    * @note Ownership for non-NULL \e vec:
+    * - library mode ON (`HYPREDRV_SetLibraryMode`): borrowed (not destroyed by HYPREDRV).
+    * - library mode OFF: ownership is transferred to HYPREDRV.
+    *
+    * This vector can be tagged and scaled/unscaled internally during solve setup/apply.
+    *
     * Example Usage:
     * @code
     *    HYPREDRV_t *hypredrv;
     *    // ... (hypredrv is created, and its components are initialized) ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetReferenceSolution(hypredrv));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetReferenceSolution(hypredrv, NULL));
     * @endcode
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t
-   HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv);
+   HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec);
 
    /**
     * @brief Apply DOF-map tags to active linear-system vectors.
@@ -815,6 +833,10 @@ extern "C"
     * @param hypredrv The HYPREDRV_t object for which the preconditioner matrix is to be
     * set.
     *
+    * @param mat Optional preconditioner matrix. If NULL, the preconditioner matrix is
+    * resolved by current file/default behavior (`precmat_filename`/`precmat_basename`
+    * with fallback to the system matrix). If non-NULL, this matrix is used directly.
+    *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
@@ -823,16 +845,22 @@ extern "C"
     * valid pointer to an initialized HYPREDRV_t object. Passing a NULL or uninitialized
     * object will result in an error.
     *
+    * @note Ownership for non-NULL \e mat:
+    * - library mode ON (`HYPREDRV_SetLibraryMode`): borrowed (not destroyed by HYPREDRV).
+    * - library mode OFF: ownership is transferred to HYPREDRV.
+    *
+    * This matrix may be scaled/unscaled internally during solve setup/apply.
+    *
     * Example Usage:
     * @code
     *    HYPREDRV_t *hypredrv;
     *    // ... (hypredrv is created, and its components are initialized) ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv, NULL));
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t
-   HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv,
+                                                                      HYPRE_Matrix mat);
 
    /**
     * @brief Set the degree of freedom (DOF) map for the linear system of a HYPREDRV

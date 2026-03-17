@@ -1113,6 +1113,33 @@ test_hypredrv_LinearSystemSetInitialGuess_x0_filename_branches(void)
    TEST_HYPRE_FINALIZE();
 }
 
+static void
+test_hypredrv_LinearSystemCreateWorkingSolution_recreates_x(void)
+{
+   TEST_HYPRE_INIT();
+
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+   args.exec_policy = 0;
+
+   const HYPRE_Complex rhs_vals[3] = {1.0, 2.0, 3.0};
+   HYPRE_IJVector      rhs         = create_test_ijvector(MPI_COMM_SELF, 0, 2, rhs_vals);
+   HYPRE_IJVector      x           = create_test_ijvector(MPI_COMM_SELF, 0, 2, rhs_vals);
+   HYPRE_BigInt        ilow = -1, iup = -1;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemCreateWorkingSolution(MPI_COMM_SELF, &args, rhs, &x);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(x);
+   HYPRE_IJVectorGetLocalRange(x, &ilow, &iup);
+   ASSERT_EQ(ilow, 0);
+   ASSERT_EQ(iup, 2);
+
+   HYPRE_IJVectorDestroy(x);
+   HYPRE_IJVectorDestroy(rhs);
+   TEST_HYPRE_FINALIZE();
+}
+
 static HYPRE_IJMatrix
 create_test_ijmatrix_1x1(MPI_Comm comm, double diag)
 {
@@ -1255,6 +1282,7 @@ run_linsys_misc_and_numeric_tests(void)
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_hypredrv_LinearSystemSetInitialGuess_x0_filename_branches);
 #endif
+   RUN_TEST(test_hypredrv_LinearSystemCreateWorkingSolution_recreates_x);
    RUN_TEST(test_hypredrv_LinearSystemSetPrecMatrix_branchy_paths);
 }
 

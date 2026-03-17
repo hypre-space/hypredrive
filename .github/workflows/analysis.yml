@@ -39,6 +39,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Ubuntu environment
+        timeout-minutes: 3
         uses: ./.github/actions/setup-ubuntu
         with:
           compiler: 'gcc'
@@ -91,6 +92,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Ubuntu environment
+        timeout-minutes: 3
         uses: ./.github/actions/setup-ubuntu
         with:
           compiler: 'clang'
@@ -149,6 +151,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Ubuntu environment
+        timeout-minutes: 3
         uses: ./.github/actions/setup-ubuntu
         with:
           compiler: ${{ matrix.compiler }}

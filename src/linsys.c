@@ -945,6 +945,33 @@ hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
  *-----------------------------------------------------------------------------*/
 
 void
+hypredrv_LinearSystemCreateWorkingSolution(MPI_Comm comm, const LS_args *args,
+                                           HYPRE_IJVector rhs, HYPRE_IJVector *x_ptr)
+{
+   HYPRE_BigInt         jlower = 0, jupper = 0;
+   HYPRE_MemoryLocation memloc =
+      (args && args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+
+   if (!rhs || !x_ptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid arguments for LinearSystemCreateWorkingSolution");
+      return;
+   }
+
+   if (*x_ptr)
+   {
+      HYPRE_IJVectorDestroy(*x_ptr);
+      *x_ptr = NULL;
+   }
+
+   HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
+   HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
+   HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
+   HYPREDRV_IJVectorInitialize(*x_ptr, memloc);
+}
+
+void
 hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                                      HYPRE_IJVector rhs, HYPRE_IJVector *x0_ptr,
                                      HYPRE_IJVector *x_ptr, Stats *stats)
@@ -955,13 +982,6 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
    HYPRE_MemoryLocation memloc =
       (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
 
-   /* Destroy solution vector if it already exists */
-   if (*x_ptr)
-   {
-      HYPRE_IJVectorDestroy(*x_ptr);
-      *x_ptr = NULL;
-   }
-
    /* Destroy initial solution vector */
    if (*x0_ptr)
    {
@@ -969,15 +989,11 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
       *x0_ptr = NULL;
    }
 
-   /* Destroy initial solution vector */
-   if (*x_ptr) HYPRE_IJVectorDestroy(*x_ptr);
-
-   /* Create solution vector
-      TODO: implement HYPRE_IJVectorClone in hypre */
-   HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
-   HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
-   HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
-   HYPREDRV_IJVectorInitialize(*x_ptr, memloc);
+   hypredrv_LinearSystemCreateWorkingSolution(comm, args, rhs, x_ptr);
+   if (hypredrv_ErrorCodeActive())
+   {
+      return;
+   }
 
    if (args->x0_filename[0] == '\0')
    {

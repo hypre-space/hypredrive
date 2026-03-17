@@ -71,6 +71,8 @@ void hypredrv_LinearSystemReadMatrix(MPI_Comm, const LS_args *, HYPRE_IJMatrix *
                                      Stats *);
 void hypredrv_LinearSystemSetRHS(MPI_Comm, const LS_args *, HYPRE_IJMatrix,
                                  HYPRE_IJVector *, HYPRE_IJVector *, Stats *);
+void hypredrv_LinearSystemCreateWorkingSolution(MPI_Comm, const LS_args *, HYPRE_IJVector,
+                                                HYPRE_IJVector *);
 void hypredrv_LinearSystemSetInitialGuess(MPI_Comm, LS_args *, HYPRE_IJMatrix,
                                           HYPRE_IJVector, HYPRE_IJVector *,
                                           HYPRE_IJVector *, Stats *);

@@ -100,6 +100,8 @@ section is required.
 
 - ``precmat_filename`` - The filename of the linear system matrix used for computing the
   preconditioner, which, by default, is set to the original linear system matrix.
+  In the C API, ``HYPREDRV_LinearSystemSetPrecMatrix(h, mat)`` overrides this file-based
+  path when ``mat`` is non-NULL.
 
 - ``rhs_filename`` - (Possibly required) The filename of the linear system right hand side
   vector. This parameter does not have a default value and it is required when the
@@ -108,6 +110,13 @@ section is required.
 - ``x0_filename`` - (Possibly required) The filename of the initial guess for the linear
   system left hand side vector. This parameter does not have a default value and it is
   required when the ``init_guess_mode`` is set to ``file``.
+  In the C API, ``HYPREDRV_LinearSystemSetInitialGuess(h, vec)`` overrides this
+  file/default path when ``vec`` is non-NULL.
+
+- ``xref_filename`` - (Optional) The filename of the reference solution vector used by
+  tagged residual/error reporting. In the C API,
+  ``HYPREDRV_LinearSystemSetReferenceSolution(h, vec)`` overrides file/default behavior
+  when ``vec`` is non-NULL.
 
 .. _linear_system_dofmap:
 
@@ -126,6 +135,13 @@ Degrees of Freedom Map
   - ``file``: vector is read from file.
 
   The default value for this parameter is ``file``.
+
+  .. note::
+     In the library API, passing ``NULL`` to
+     ``HYPREDRV_LinearSystemSetInitialGuess`` /
+     ``HYPREDRV_LinearSystemSetReferenceSolution`` /
+     ``HYPREDRV_LinearSystemSetPrecMatrix`` preserves the file/default behavior described
+     in this section.
 
 - ``rhs_mode`` - Choice of initial guess vector. Available options are the same as for
   ``init_guess_mode``.

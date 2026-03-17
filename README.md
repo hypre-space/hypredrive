@@ -22,18 +22,36 @@ hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use a
 
 ## Examples
 
-**Driver** -- solve a system from a YAML file (see [`examples/`](examples/) and the [driver examples](https://hypredrive.readthedocs.io/en/latest/driver_examples.html) in the docs):
+**Driver** -- solve a system from a YAML file (see [`examples/`](examples/) and the [driver examples](https://hypredrive.readthedocs.io/en/latest/driver_examples.html) in the docs).
 
 ```bash
 mpirun -np 1 ./build/hypredrive-cli examples/ex1.yml
 ```
 
-**Library** -- call the API from your own code. See example drivers below:
+**Library** -- call the API from your own code (see [example drivers](https://hypredrive.readthedocs.io/en/latest/library_examples.html) in the docs).
 
-- [laplacian.c](examples/src/C_laplacian/laplacian.c) -- builds and solves a 3D Laplacian
-- [heatflow.c](examples/src/C_heatflow/heatflow.c) -- transient heat equation
-- [elasticity.c](examples/src/C_elasticity/elasticity.c) -- linear elasticity
-- [lidcavity.c](examples/src/C_lidcavity/lidcavity.c) -- lid-driven cavity (Navier--Stokes)
+```C
+   // Setup hypredrive options from YAML input
+   HYPREDRV_t *hdrv;
+   HYPREDRV_Initialize();
+   HYPREDRV_Create(MPI_COMM_WORLD, &hdrv);
+   HYPREDRV_SetLibraryMode(hdrv);
+   HYPREDRV_InputArgsParse(1, yaml_text, hdrv);
+
+   // Setup linear system ("A" and "b" are built previously)
+   HYPREDRV_LinearSystemSetMatrix(hdrv, (HYPRE_Matrix) A);
+   HYPREDRV_LinearSystemSetRHS(hdrv, (HYPRE_Vector) b);
+
+   // Solve lifecycle (Find "x" in "A x = b")
+   HYPREDRV_LinearSolverCreate(hdrv);
+   HYPREDRV_LinearSolverSetup(hdrv);
+   HYPREDRV_LinearSolverApply(hdrv);
+   HYPREDRV_LinearSolverDestroy(hdrv);
+
+   // Cleanup
+   HYPREDRV_Destroy(&hdrv);
+   HYPREDRV_Finalize();
+```
 
 Documentation is available at [hypredrive.readthedocs.io](https://hypredrive.readthedocs.io/en/latest/). For contribution instructions, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
