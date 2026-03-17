@@ -60,26 +60,26 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, order, FieldTypeIntSet)           \
    ADD_FIELD_OFFSET_ENTRY(_prefix, weight, FieldTypeDoubleSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, outer_weight, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, chebyshev, ChebySetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, chebyshev, hypredrv_ChebySetArgs)
 
 /* AMG's complex smoother fields */
 #define AMGsmt_FIELDS(_prefix)                                  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, FSAISetArgs)           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, hypredrv_FSAISetArgs)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, hypredrv_ILUSetArgs)
 
 /* AMG */
-#define AMG_FIELDS(_prefix)                                       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, interpolation, AMGintSetArgs)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, aggressive, AMGaggSetArgs)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsening, AMGcsnSetArgs)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relaxation, AMGrlxSetArgs)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, smoother, AMGsmtSetArgs)
+#define AMG_FIELDS(_prefix)                                               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, interpolation, hypredrv_AMGintSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, aggressive, hypredrv_AMGaggSetArgs)    \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsening, hypredrv_AMGcsnSetArgs)    \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, relaxation, hypredrv_AMGrlxSetArgs)    \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, smoother, hypredrv_AMGsmtSetArgs)
 
 /* Define the prefix list */
 #define GENERATE_PREFIXED_LIST_AMG      \
@@ -102,14 +102,14 @@
 
 /* Iterates over each prefix in the list and
    generates the various function declarations/definitions and field_offset_map object */
-GENERATE_PREFIXED_LIST_AMG             // LCOV_EXCL_LINE
-DEFINE_VOID_GET_VALID_VALUES_FUNC(AMG) // LCOV_EXCL_LINE
+GENERATE_PREFIXED_LIST_AMG                      // LCOV_EXCL_LINE
+DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_AMG) // LCOV_EXCL_LINE
 
    /*-----------------------------------------------------------------------------
-    * AMGintSetDefaultArgs
+    * hypredrv_AMGintSetDefaultArgs
     *-----------------------------------------------------------------------------*/
 
-   void AMGintSetDefaultArgs(AMGint_args *args)
+   void hypredrv_AMGintSetDefaultArgs(AMGint_args *args)
 {
    args->prolongation_type = 6;
    args->restriction_type  = 0;
@@ -122,7 +122,7 @@ DEFINE_VOID_GET_VALID_VALUES_FUNC(AMG) // LCOV_EXCL_LINE
  *-----------------------------------------------------------------------------*/
 
 void
-AMGcsnSetDefaultArgs(AMGcsn_args *args)
+hypredrv_AMGcsnSetDefaultArgs(AMGcsn_args *args)
 {
    args->rap2 = 0;
 #ifdef HYPRE_USING_GPU
@@ -150,7 +150,7 @@ AMGcsnSetDefaultArgs(AMGcsn_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-AMGaggSetDefaultArgs(AMGagg_args *args)
+hypredrv_AMGaggSetDefaultArgs(AMGagg_args *args)
 {
    args->num_levels        = 0;
    args->num_paths         = 1;
@@ -166,7 +166,7 @@ AMGaggSetDefaultArgs(AMGagg_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-AMGrlxSetDefaultArgs(AMGrlx_args *args)
+hypredrv_AMGrlxSetDefaultArgs(AMGrlx_args *args)
 {
 #ifdef HYPRE_USING_GPU
    args->down_type = 18;
@@ -184,21 +184,21 @@ AMGrlxSetDefaultArgs(AMGrlx_args *args)
    args->weight        = 1.0;
    args->outer_weight  = 1.0;
 
-   ChebySetDefaultArgs(&args->chebyshev);
+   hypredrv_ChebySetDefaultArgs(&args->chebyshev);
 }
 
 /*-----------------------------------------------------------------------------
- * AMGsmtSetDefaultArgs
+ * hypredrv_AMGsmtSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
 void
-AMGsmtSetDefaultArgs(AMGsmt_args *args)
+hypredrv_AMGsmtSetDefaultArgs(AMGsmt_args *args)
 {
    args->type       = 5;
    args->num_levels = 0;
    args->num_sweeps = 1;
-   FSAISetDefaultArgs(&args->fsai);
-   ILUSetDefaultArgs(&args->ilu);
+   hypredrv_FSAISetDefaultArgs(&args->fsai);
+   hypredrv_ILUSetDefaultArgs(&args->ilu);
 }
 
 /*-----------------------------------------------------------------------------
@@ -206,7 +206,7 @@ AMGsmtSetDefaultArgs(AMGsmt_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-AMGSetDefaultArgs(AMG_args *args)
+hypredrv_AMGSetDefaultArgs(AMG_args *args)
 {
    args->max_iter    = 1;
    args->print_level = 0;
@@ -216,11 +216,11 @@ AMGSetDefaultArgs(AMG_args *args)
    args->rbms[1]     = NULL;
    args->rbms[2]     = NULL;
 
-   AMGintSetDefaultArgs(&args->interpolation);
-   AMGaggSetDefaultArgs(&args->aggressive);
-   AMGcsnSetDefaultArgs(&args->coarsening);
-   AMGrlxSetDefaultArgs(&args->relaxation);
-   AMGsmtSetDefaultArgs(&args->smoother);
+   hypredrv_AMGintSetDefaultArgs(&args->interpolation);
+   hypredrv_AMGaggSetDefaultArgs(&args->aggressive);
+   hypredrv_AMGcsnSetDefaultArgs(&args->coarsening);
+   hypredrv_AMGrlxSetDefaultArgs(&args->relaxation);
+   hypredrv_AMGsmtSetDefaultArgs(&args->smoother);
 }
 
 /*-----------------------------------------------------------------------------
@@ -229,7 +229,7 @@ AMGSetDefaultArgs(AMG_args *args)
 
 // clang-format off
 StrIntMapArray
-AMGintGetValidValues(const char *key)
+hypredrv_AMGintGetValidValues(const char *key)
 {
    if (!strcmp(key, "prolongation_type"))
    {
@@ -282,7 +282,7 @@ AMGintGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-AMGcsnGetValidValues(const char *key)
+hypredrv_AMGcsnGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
@@ -314,7 +314,7 @@ AMGcsnGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-AMGaggGetValidValues(const char *key)
+hypredrv_AMGaggGetValidValues(const char *key)
 {
    if (!strcmp(key, "prolongation_type"))
    {
@@ -339,7 +339,7 @@ AMGaggGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-AMGrlxGetValidValues(const char *key)
+hypredrv_AMGrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "down_type"))
    {
@@ -408,7 +408,7 @@ AMGrlxGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-AMGsmtGetValidValues(const char *key)
+hypredrv_AMGsmtGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
@@ -433,7 +433,7 @@ AMGsmtGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
+hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 {
    HYPRE_BigInt   jlower = 0, jupper = 0;
    HYPRE_Int      num_entries = 0;
@@ -502,7 +502,7 @@ AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
  *-----------------------------------------------------------------------------*/
 
 void
-AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
+hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver precon = NULL;
 

@@ -203,7 +203,7 @@ Inspecting the manifest from the shell:
 
 Programmatic access:
 
-- ``LSSeqReadInfo("myseq.zst.bin", &payload, &nbytes)``
+- ``hypredrv_LSSeqReadInfo("myseq.zst.bin", &payload, &nbytes)``
 
 ``LSSeqPartMeta``
 

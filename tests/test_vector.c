@@ -49,7 +49,7 @@ create_temp_binary_float(const char *prefix, uint32_t part_id, uint64_t nrows,
 }
 
 static void
-test_IJVectorReadMultipartBinary_success(void)
+test_hypredrv_IJVectorReadMultipartBinary_success(void)
 {
    const char *prefix    = "test_vec_success";
    double      values[3] = {1.0, 2.0, 3.0};
@@ -58,7 +58,7 @@ test_IJVectorReadMultipartBinary_success(void)
 
    HYPRE_IJVector vec = NULL;
    ErrorCodeResetAll();
-   IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
 
    ASSERT_NOT_NULL(vec);
    ASSERT_FALSE(ErrorCodeActive());
@@ -68,19 +68,19 @@ test_IJVectorReadMultipartBinary_success(void)
 }
 
 static void
-test_IJVectorReadMultipartBinary_missing_file(void)
+test_hypredrv_IJVectorReadMultipartBinary_missing_file(void)
 {
    HYPRE_IJVector vec = NULL;
 
    ErrorCodeResetAll();
-   IJVectorReadMultipartBinary("missing_vector", MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST,
+   hypredrv_IJVectorReadMultipartBinary("missing_vector", MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST,
                                &vec);
    ASSERT_NULL(vec);
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
 }
 
 static void
-test_IJVectorReadMultipartBinary_bad_header(void)
+test_hypredrv_IJVectorReadMultipartBinary_bad_header(void)
 {
    const char *prefix = "test_vec_bad_header";
    char        filename[256];
@@ -95,7 +95,7 @@ test_IJVectorReadMultipartBinary_bad_header(void)
 
    HYPRE_IJVector vec = NULL;
    ErrorCodeResetAll();
-   IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
    ASSERT_NULL(vec);
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
@@ -103,7 +103,7 @@ test_IJVectorReadMultipartBinary_bad_header(void)
 }
 
 static void
-test_IJVectorReadMultipartBinary_float_coefficients(void)
+test_hypredrv_IJVectorReadMultipartBinary_float_coefficients(void)
 {
    const char *prefix    = "test_vec_float";
    float       values[4] = {1.5f, 2.5f, 3.5f, 4.5f};
@@ -112,7 +112,7 @@ test_IJVectorReadMultipartBinary_float_coefficients(void)
 
    HYPRE_IJVector vec = NULL;
    ErrorCodeResetAll();
-   IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
 
    ASSERT_NOT_NULL(vec);
    ASSERT_FALSE(ErrorCodeActive());
@@ -154,10 +154,10 @@ main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
 
-   RUN_TEST(test_IJVectorReadMultipartBinary_success);
-   RUN_TEST(test_IJVectorReadMultipartBinary_missing_file);
-   RUN_TEST(test_IJVectorReadMultipartBinary_bad_header);
-   RUN_TEST(test_IJVectorReadMultipartBinary_float_coefficients);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_success);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_missing_file);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_bad_header);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_float_coefficients);
    RUN_TEST(test_IntArrayParRead_ascii);
 
    MPI_Finalize();

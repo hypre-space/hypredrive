@@ -50,7 +50,7 @@ create_matrix_part(const char *prefix, uint32_t part_id, HYPRE_BigInt row_lower,
 }
 
 static void
-test_IJMatrixReadMultipartBinary_success(void)
+test_hypredrv_IJMatrixReadMultipartBinary_success(void)
 {
    const char    *prefix  = "test_matrix_success";
    HYPRE_BigInt   rows[1] = {0};
@@ -62,7 +62,7 @@ test_IJMatrixReadMultipartBinary_success(void)
    create_matrix_part(prefix, 0, 0, 0, 1, rows, cols, vals);
 
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
    ASSERT_FALSE(ErrorCodeActive());
@@ -75,19 +75,19 @@ test_IJMatrixReadMultipartBinary_success(void)
 }
 
 static void
-test_IJMatrixReadMultipartBinary_missing_file(void)
+test_hypredrv_IJMatrixReadMultipartBinary_missing_file(void)
 {
    HYPRE_IJMatrix mat = NULL;
 
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary("missing_matrix", MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST,
+   hypredrv_IJMatrixReadMultipartBinary("missing_matrix", MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST,
                                &mat);
    ASSERT_NULL(mat);
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
 }
 
 static void
-test_IJMatrixReadMultipartBinary_short_header(void)
+test_hypredrv_IJMatrixReadMultipartBinary_short_header(void)
 {
    const char *prefix = "test_matrix_short";
    char        filename[256];
@@ -103,7 +103,7 @@ test_IJMatrixReadMultipartBinary_short_header(void)
    HYPRE_IJMatrix mat = NULL;
 
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
    ASSERT_NULL(mat);
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
@@ -111,7 +111,7 @@ test_IJMatrixReadMultipartBinary_short_header(void)
 }
 
 static void
-test_IJMatrixReadMultipartBinary_short_header_device_path(void)
+test_hypredrv_IJMatrixReadMultipartBinary_short_header_device_path(void)
 {
    /* Covers the second-pass header read error path (skips host-side precompute). */
    const char *prefix = "test_matrix_short_dev";
@@ -127,7 +127,7 @@ test_IJMatrixReadMultipartBinary_short_header_device_path(void)
 
    HYPRE_IJMatrix mat = NULL;
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
    ASSERT_NULL(mat);
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
@@ -135,7 +135,7 @@ test_IJMatrixReadMultipartBinary_short_header_device_path(void)
 }
 
 static void
-test_IJMatrixReadMultipartBinary_uint32_truncated_rows_device_path(void)
+test_hypredrv_IJMatrixReadMultipartBinary_uint32_truncated_rows_device_path(void)
 {
    /* Trigger fread(row indices) != header[6] in the device path. */
    const char *prefix = "test_matrix_u32_trunc_rows_dev";
@@ -160,7 +160,7 @@ test_IJMatrixReadMultipartBinary_uint32_truncated_rows_device_path(void)
 
    HYPRE_IJMatrix mat = NULL;
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
    ASSERT_NULL(mat);
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
@@ -168,7 +168,7 @@ test_IJMatrixReadMultipartBinary_uint32_truncated_rows_device_path(void)
 }
 
 static void
-test_IJMatrixReadMultipartBinary_uint32_truncated_cols_device_path(void)
+test_hypredrv_IJMatrixReadMultipartBinary_uint32_truncated_cols_device_path(void)
 {
    /* Trigger fread(col indices) != header[6] in the device path after rows succeed. */
    const char *prefix = "test_matrix_u32_trunc_cols_dev";
@@ -195,7 +195,7 @@ test_IJMatrixReadMultipartBinary_uint32_truncated_cols_device_path(void)
 
    HYPRE_IJMatrix mat = NULL;
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &mat);
    ASSERT_NULL(mat);
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
@@ -203,7 +203,7 @@ test_IJMatrixReadMultipartBinary_uint32_truncated_cols_device_path(void)
 }
 
 static void
-test_IJMatrixReadMultipartBinary_invalid_dtype(void)
+test_hypredrv_IJMatrixReadMultipartBinary_invalid_dtype(void)
 {
    const char *prefix = "test_matrix_invalid";
    char        filename[256];
@@ -224,7 +224,7 @@ test_IJMatrixReadMultipartBinary_invalid_dtype(void)
    HYPRE_IJMatrix mat = NULL;
 
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
    ASSERT_NULL(mat);
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
@@ -232,7 +232,7 @@ test_IJMatrixReadMultipartBinary_invalid_dtype(void)
 }
 
 static void
-test_IJMatrixReadMultipartBinary_uint32_indices(void)
+test_hypredrv_IJMatrixReadMultipartBinary_uint32_indices(void)
 {
    const char    *prefix    = "test_matrix_uint32";
    uint32_t       rows32[1] = {0};
@@ -245,7 +245,7 @@ test_IJMatrixReadMultipartBinary_uint32_indices(void)
                             sizeof(uint32_t), vals, sizeof(double));
 
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
    ASSERT_FALSE(ErrorCodeActive());
@@ -258,7 +258,7 @@ test_IJMatrixReadMultipartBinary_uint32_indices(void)
 }
 
 static void
-test_IJMatrixReadMultipartBinary_float_coefficients(void)
+test_hypredrv_IJMatrixReadMultipartBinary_float_coefficients(void)
 {
    const char    *prefix  = "test_matrix_float";
    HYPRE_BigInt   rows[1] = {0};
@@ -270,7 +270,7 @@ test_IJMatrixReadMultipartBinary_float_coefficients(void)
                             sizeof(HYPRE_BigInt), vals, sizeof(float));
 
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
    ASSERT_FALSE(ErrorCodeActive());
@@ -280,7 +280,7 @@ test_IJMatrixReadMultipartBinary_float_coefficients(void)
 }
 
 static void
-test_IJMatrixReadMultipartBinary_uint32_indices_float_coeffs(void)
+test_hypredrv_IJMatrixReadMultipartBinary_uint32_indices_float_coeffs(void)
 {
    const char    *prefix    = "test_matrix_uint32_float";
    uint32_t       rows32[1] = {0};
@@ -293,7 +293,7 @@ test_IJMatrixReadMultipartBinary_uint32_indices_float_coeffs(void)
                             sizeof(uint32_t), vals, sizeof(float));
 
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
    ASSERT_FALSE(ErrorCodeActive());
@@ -306,7 +306,7 @@ test_IJMatrixReadMultipartBinary_uint32_indices_float_coeffs(void)
 }
 
 static void
-test_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs(void)
+test_hypredrv_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs(void)
 {
    const char    *prefix    = "test_matrix_uint64_double";
    uint64_t       rows64[1] = {0};
@@ -319,7 +319,7 @@ test_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs(void)
                             sizeof(uint64_t), vals, sizeof(double));
 
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
    ASSERT_FALSE(ErrorCodeActive());
@@ -332,7 +332,7 @@ test_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs(void)
 }
 
 static void
-test_IJMatrixReadMultipartBinary_uint64_indices_float_coeffs(void)
+test_hypredrv_IJMatrixReadMultipartBinary_uint64_indices_float_coeffs(void)
 {
    const char    *prefix    = "test_matrix_uint64_float";
    uint64_t       rows64[1] = {0};
@@ -345,7 +345,7 @@ test_IJMatrixReadMultipartBinary_uint64_indices_float_coeffs(void)
                             sizeof(uint64_t), vals, sizeof(float));
 
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
 
    ASSERT_NOT_NULL(mat);
    ASSERT_FALSE(ErrorCodeActive());
@@ -358,7 +358,7 @@ test_IJMatrixReadMultipartBinary_uint64_indices_float_coeffs(void)
 }
 
 static void
-test_IJMatrixReadMultipartBinary_invalid_value_type(void)
+test_hypredrv_IJMatrixReadMultipartBinary_invalid_value_type(void)
 {
    const char    *prefix  = "test_matrix_invalid_val";
    HYPRE_BigInt   rows[1] = {0};
@@ -370,7 +370,7 @@ test_IJMatrixReadMultipartBinary_invalid_value_type(void)
                             sizeof(HYPRE_BigInt), vals, 3 /* invalid */);
 
    ErrorCodeResetAll();
-   IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
    ASSERT_NULL(mat);
    ASSERT_TRUE(ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
@@ -383,19 +383,19 @@ main(int argc, char **argv)
    MPI_Init(&argc, &argv);
    TEST_HYPRE_INIT();
 
-   RUN_TEST(test_IJMatrixReadMultipartBinary_success);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_missing_file);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_short_header);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_short_header_device_path);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_invalid_dtype);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_uint32_indices);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_uint32_truncated_rows_device_path);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_uint32_truncated_cols_device_path);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_float_coefficients);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_uint32_indices_float_coeffs);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_uint64_indices_float_coeffs);
-   RUN_TEST(test_IJMatrixReadMultipartBinary_invalid_value_type);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_success);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_missing_file);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_short_header);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_short_header_device_path);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_invalid_dtype);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint32_indices);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint32_truncated_rows_device_path);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint32_truncated_cols_device_path);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_float_coefficients);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint32_indices_float_coeffs);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint64_indices_float_coeffs);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_invalid_value_type);
 
    TEST_HYPRE_FINALIZE();
    MPI_Finalize();

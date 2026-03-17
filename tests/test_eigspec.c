@@ -8,7 +8,7 @@ test_EigSpecSetDefaultArgs(void)
 {
    EigSpec_args args;
    memset(&args, 0, sizeof(args));
-   EigSpecSetDefaultArgs(&args);
+   hypredrv_EigSpecSetDefaultArgs(&args);
    ASSERT_EQ(args.enable, 0);
    ASSERT_EQ(args.vectors, 0);
    ASSERT_EQ(args.hermitian, 0);

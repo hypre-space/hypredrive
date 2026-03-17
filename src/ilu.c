@@ -39,7 +39,7 @@ GENERATE_PREFIXED_COMPONENTS(ILU) // LCOV_EXCL_LINE
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-ILUGetValidValues(const char *key)
+hypredrv_ILUGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
@@ -71,7 +71,7 @@ ILUGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-ILUSetDefaultArgs(ILU_args *args)
+hypredrv_ILUSetDefaultArgs(ILU_args *args)
 {
    args->max_iter        = 1;
    args->print_level     = 0;

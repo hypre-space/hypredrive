@@ -131,8 +131,8 @@ struct MGR_args_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void         MGRSetDefaultArgs(MGR_args *);
-void         MGRSetArgs(void *, const YAMLnode *);
+void         hypredrv_MGRSetDefaultArgs(MGR_args *);
+void         hypredrv_MGRSetArgs(void *, const YAMLnode *);
 void         MGRSetDofmap(MGR_args *, IntArray *);
 void         MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
 void         MGRCreate(MGR_args *, HYPRE_Solver *);

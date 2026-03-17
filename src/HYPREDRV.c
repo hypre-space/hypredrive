@@ -239,7 +239,7 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    {
       if (hypredrv->solver)
       {
-         SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+         hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
       }
       if (hypredrv->precon)
       {
@@ -314,7 +314,7 @@ HYPREDRV_PrintLibInfo(MPI_Comm comm, int print_datetime)
 {
    HYPREDRV_CHECK_INIT();
 
-   PrintLibInfo(comm, print_datetime);
+   hypredrv_PrintLibInfo(comm, print_datetime);
 
    return ErrorCodeGet();
 }
@@ -328,7 +328,7 @@ HYPREDRV_PrintSystemInfo(MPI_Comm comm)
 {
    HYPREDRV_CHECK_INIT();
 
-   PrintSystemInfo(comm);
+   hypredrv_PrintSystemInfo(comm);
 
    return ErrorCodeGet();
 }
@@ -342,7 +342,7 @@ HYPREDRV_PrintExitInfo(MPI_Comm comm, const char *argv0)
 {
    HYPREDRV_CHECK_INIT();
 
-   PrintExitInfo(comm, argv0);
+   hypredrv_PrintExitInfo(comm, argv0);
 
    return ErrorCodeGet();
 }
@@ -446,8 +446,8 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
             hypredrv->iargs->precon_reuse.per_timestep)
    {
       /* Embedded timesteps are optional in compressed-sequence containers. */
-      LSSeqReadTimesteps(hypredrv->iargs->ls.sequence_filename,
-                         &hypredrv->precon_reuse_timestep_starts);
+      hypredrv_LSSeqReadTimesteps(hypredrv->iargs->ls.sequence_filename,
+                                  &hypredrv->precon_reuse_timestep_starts);
    }
 
    return ErrorCodeGet();
@@ -526,7 +526,7 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
    {
       if (hypredrv->solver)
       {
-         SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+         hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
       }
       if (hypredrv->precon)
       {
@@ -624,7 +624,7 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
    }
 
    /* Validate solver name */
-   if (!StrIntMapArrayDomainEntryExists(SolverGetValidTypeIntMap(), preset))
+   if (!StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(), preset))
    {
       ErrorCodeSet(ERROR_INVALID_VAL);
       ErrorMsgAdd(
@@ -636,14 +636,14 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
    /* Destroy existing solver if any */
    if (hypredrv->solver)
    {
-      SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+      hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
    }
 
    /* Set solver method and defaults */
    hypredrv->iargs->solver_method =
-      (solver_t)StrIntMapArrayGetImage(SolverGetValidTypeIntMap(), preset);
-   SolverArgsSetDefaultsForMethod(hypredrv->iargs->solver_method,
-                                  &hypredrv->iargs->solver);
+      (solver_t)StrIntMapArrayGetImage(hypredrv_SolverGetValidTypeIntMap(), preset);
+   hypredrv_SolverArgsSetDefaultsForMethod(hypredrv->iargs->solver_method,
+                                           &hypredrv->iargs->solver);
 
    return ErrorCodeGet();
 }
@@ -836,8 +836,9 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
       hypredrv->scaling_ctx->is_applied = 0;
    }
 
-   long long int num_rows     = LinearSystemMatrixGetNumRows(hypredrv->mat_A);
-   long long int num_nonzeros = LinearSystemMatrixGetNumNonzeros(hypredrv->mat_A);
+   long long int num_rows = hypredrv_LinearSystemMatrixGetNumRows(hypredrv->mat_A);
+   long long int num_nonzeros =
+      hypredrv_LinearSystemMatrixGetNumNonzeros(hypredrv->mat_A);
    if (!hypredrv->mypid)
    {
       PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH);
@@ -859,8 +860,8 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   LinearSystemReadMatrix(hypredrv->comm, &hypredrv->iargs->ls, &hypredrv->mat_A,
-                          hypredrv->stats);
+   hypredrv_LinearSystemReadMatrix(hypredrv->comm, &hypredrv->iargs->ls, &hypredrv->mat_A,
+                                   hypredrv->stats);
 
    return ErrorCodeGet();
 }
@@ -896,8 +897,8 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 
    if (!vec)
    {
-      LinearSystemSetRHS(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
-                         &hypredrv->vec_xref, &hypredrv->vec_b, hypredrv->stats);
+      hypredrv_LinearSystemSetRHS(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
+                                  &hypredrv->vec_xref, &hypredrv->vec_b, hypredrv->stats);
    }
    else
    {
@@ -918,8 +919,9 @@ HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   LinearSystemSetNearNullSpace(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
-                                num_entries, num_components, values, &hypredrv->vec_nn);
+   hypredrv_LinearSystemSetNearNullSpace(hypredrv->comm, &hypredrv->iargs->ls,
+                                         hypredrv->mat_A, num_entries, num_components,
+                                         values, &hypredrv->vec_nn);
 
    return ErrorCodeGet();
 }
@@ -936,9 +938,9 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   LinearSystemSetInitialGuess(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
-                               hypredrv->vec_b, &hypredrv->vec_x0, &hypredrv->vec_x,
-                               hypredrv->stats);
+   hypredrv_LinearSystemSetInitialGuess(
+      hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A, hypredrv->vec_b,
+      &hypredrv->vec_x0, &hypredrv->vec_x, hypredrv->stats);
 
    return ErrorCodeGet();
 }
@@ -955,8 +957,8 @@ HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   LinearSystemSetReferenceSolution(hypredrv->comm, &hypredrv->iargs->ls,
-                                    &hypredrv->vec_xref, hypredrv->stats);
+   hypredrv_LinearSystemSetReferenceSolution(hypredrv->comm, &hypredrv->iargs->ls,
+                                             &hypredrv->vec_xref, hypredrv->stats);
 
    return ErrorCodeGet();
 }
@@ -977,7 +979,8 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv)
       return ErrorCodeGet();
    }
 
-   LinearSystemResetInitialGuess(hypredrv->vec_x0, hypredrv->vec_x, hypredrv->stats);
+   hypredrv_LinearSystemResetInitialGuess(hypredrv->vec_x0, hypredrv->vec_x,
+                                          hypredrv->stats);
 
    return ErrorCodeGet();
 }
@@ -997,10 +1000,10 @@ HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t hypredrv)
       return ErrorCodeGet();
    }
 
-   LinearSystemSetVectorTags(hypredrv->vec_b, hypredrv->dofmap);
-   LinearSystemSetVectorTags(hypredrv->vec_x, hypredrv->dofmap);
-   LinearSystemSetVectorTags(hypredrv->vec_x0, hypredrv->dofmap);
-   LinearSystemSetVectorTags(hypredrv->vec_xref, hypredrv->dofmap);
+   hypredrv_LinearSystemSetVectorTags(hypredrv->vec_b, hypredrv->dofmap);
+   hypredrv_LinearSystemSetVectorTags(hypredrv->vec_x, hypredrv->dofmap);
+   hypredrv_LinearSystemSetVectorTags(hypredrv->vec_x0, hypredrv->dofmap);
+   hypredrv_LinearSystemSetVectorTags(hypredrv->vec_xref, hypredrv->dofmap);
 
    return ErrorCodeGet();
 }
@@ -1021,7 +1024,7 @@ HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_
       return ErrorCodeGet();
    }
 
-   LinearSystemGetSolutionValues(hypredrv->vec_x, sol_data);
+   hypredrv_LinearSystemGetSolutionValues(hypredrv->vec_x, sol_data);
 
    return ErrorCodeGet();
 }
@@ -1043,7 +1046,7 @@ HYPREDRV_LinearSystemGetSolutionNorm(HYPREDRV_t hypredrv, const char *norm_type,
       return ErrorCodeGet();
    }
 
-   LinearSystemComputeVectorNorm(hypredrv->vec_x, norm_type, norm);
+   hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_x, norm_type, norm);
 
    return ErrorCodeGet();
 }
@@ -1064,7 +1067,7 @@ HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv, HYPRE_Complex **rhs_data)
       return ErrorCodeGet();
    }
 
-   LinearSystemGetRHSValues(hypredrv->vec_b, rhs_data);
+   hypredrv_LinearSystemGetRHSValues(hypredrv->vec_b, rhs_data);
 
    return ErrorCodeGet();
 }
@@ -1079,8 +1082,8 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   LinearSystemSetPrecMatrix(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
-                             &hypredrv->mat_M, hypredrv->stats);
+   hypredrv_LinearSystemSetPrecMatrix(hypredrv->comm, &hypredrv->iargs->ls,
+                                      hypredrv->mat_A, &hypredrv->mat_M, hypredrv->stats);
 
    return ErrorCodeGet();
 }
@@ -1148,8 +1151,8 @@ HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   LinearSystemReadDofmap(hypredrv->comm, &hypredrv->iargs->ls, &hypredrv->dofmap,
-                          hypredrv->stats);
+   hypredrv_LinearSystemReadDofmap(hypredrv->comm, &hypredrv->iargs->ls,
+                                   &hypredrv->dofmap, hypredrv->stats);
 
    return ErrorCodeGet();
 }
@@ -1195,8 +1198,8 @@ HYPREDRV_LinearSystemPrint(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_OBJ();
 
    /* Delegate printing to linsys */
-   LinearSystemPrintData(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
-                         hypredrv->vec_b, hypredrv->dofmap);
+   hypredrv_LinearSystemPrintData(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
+                                  hypredrv->vec_b, hypredrv->dofmap);
 
    return ErrorCodeGet();
 }
@@ -1258,10 +1261,10 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
     * be rebuilt against the current system vectors/matrix each cycle. */
    if (hypredrv->solver)
    {
-      SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+      hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
    }
-   SolverCreate(hypredrv->comm, hypredrv->iargs->solver_method, &hypredrv->iargs->solver,
-                &hypredrv->solver);
+   hypredrv_SolverCreate(hypredrv->comm, hypredrv->iargs->solver_method,
+                         &hypredrv->iargs->solver, &hypredrv->solver);
 
    return ErrorCodeGet();
 }
@@ -1350,10 +1353,10 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
 
    HYPREDRV_GMRESSetRefSolution(hypredrv);
 
-   SolverSetupWithReuse(hypredrv->iargs->precon_method, hypredrv->iargs->solver_method,
-                        hypredrv->precon, hypredrv->solver, hypredrv->mat_M,
-                        hypredrv->vec_b, hypredrv->vec_x, hypredrv->stats,
-                        recompute ? 0 : 1);
+   hypredrv_SolverSetupWithReuse(hypredrv->iargs->precon_method,
+                                 hypredrv->iargs->solver_method, hypredrv->precon,
+                                 hypredrv->solver, hypredrv->mat_M, hypredrv->vec_b,
+                                 hypredrv->vec_x, hypredrv->stats, recompute ? 0 : 1);
 
    HYPRE_ClearAllErrors();
 
@@ -1403,8 +1406,8 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       int xref_scaled = 0;
 
       /* Compute initial residual norm before solve (on current system state) */
-      LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x,
-                                      "L2", &r0_norm);
+      hypredrv_LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b,
+                                               hypredrv->vec_x, "L2", &r0_norm);
 
       if (hypredrv->vec_xref)
       {
@@ -1422,8 +1425,8 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 
       /* Solve on scaled system */
       HYPRE_Int iters =
-         SolverSolveOnly(hypredrv->iargs->solver_method, hypredrv->solver,
-                         hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x);
+         hypredrv_SolverSolveOnly(hypredrv->iargs->solver_method, hypredrv->solver,
+                                  hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x);
       if (iters < 0)
       {
          if (xref_scaled)
@@ -1463,27 +1466,30 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       }
 
       /* Compute residual norms on original (now restored) system */
-      LinearSystemComputeVectorNorm(hypredrv->vec_b, "L2", &b_norm);
-      LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x,
-                                      "L2", &r_norm);
+      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_b, "L2", &b_norm);
+      hypredrv_LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b,
+                                               hypredrv->vec_x, "L2", &r_norm);
       b_norm = (b_norm > 0.0) ? b_norm : 1.0;
       StatsRelativeResNormSet(hypredrv->stats, r_norm / b_norm);
    }
    else
    {
-      /* No scaling - use standard SolverApply which handles everything including stats */
-      SolverApply(hypredrv->iargs->solver_method, hypredrv->solver, hypredrv->mat_A,
-                  hypredrv->vec_b, hypredrv->vec_x, hypredrv->stats);
-      /* SolverApply already computed and set all stats */
+      /* No scaling - use standard hypredrv_SolverApply which handles everything including
+       * stats */
+      hypredrv_SolverApply(hypredrv->iargs->solver_method, hypredrv->solver,
+                           hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x,
+                           hypredrv->stats);
+      /* hypredrv_SolverApply already computed and set all stats */
    }
 
    HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
 
    if (hypredrv->vec_xref)
    {
-      LinearSystemComputeVectorNorm(hypredrv->vec_xref, "L2", &xref_norm);
-      LinearSystemComputeVectorNorm(hypredrv->vec_x, "L2", &x_norm);
-      LinearSystemComputeErrorNorm(hypredrv->vec_xref, hypredrv->vec_x, "L2", &e_norm);
+      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_xref, "L2", &xref_norm);
+      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_x, "L2", &x_norm);
+      hypredrv_LinearSystemComputeErrorNorm(hypredrv->vec_xref, hypredrv->vec_x, "L2",
+                                            &e_norm);
       if (!hypredrv->mypid)
       {
          printf("L2 norm of error: %e\n", (double)e_norm);
@@ -1556,7 +1562,7 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
       }
    }
 
-   SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+   hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
 
    return ErrorCodeGet();
 }

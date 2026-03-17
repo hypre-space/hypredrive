@@ -36,7 +36,7 @@ GENERATE_PREFIXED_COMPONENTS(PCG) // LCOV_EXCL_LINE
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-PCGGetValidValues(const char *key)
+hypredrv_PCGGetValidValues(const char *key)
 {
    if (!strcmp(key, "two_norm") || !strcmp(key, "stop_crit") ||
        !strcmp(key, "rel_change"))
@@ -52,7 +52,7 @@ PCGGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-PCGSetDefaultArgs(PCG_args *args)
+hypredrv_PCGSetDefaultArgs(PCG_args *args)
 {
    args->max_iter      = 100;
    args->two_norm      = 1;
@@ -71,7 +71,7 @@ PCGSetDefaultArgs(PCG_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-PCGCreate(MPI_Comm comm, const PCG_args *args, HYPRE_Solver *solver_ptr)
+hypredrv_PCGCreate(MPI_Comm comm, const PCG_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver = NULL;
 

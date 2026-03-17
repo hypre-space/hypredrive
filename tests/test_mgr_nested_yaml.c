@@ -12,7 +12,7 @@
 #include "args.h"
 #include "error.h"
 #include "mgr.h"
-#include "nested_krylov.h"
+#include "krylov.h"
 #include "test_helpers.h"
 
 static void

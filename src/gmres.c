@@ -38,7 +38,7 @@ GENERATE_PREFIXED_COMPONENTS(GMRES) // LCOV_EXCL_LINE
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-GMRESGetValidValues(const char *key)
+hypredrv_GMRESGetValidValues(const char *key)
 {
    if (!strcmp(key, "skip_real_res_check") || !strcmp(key, "rel_change"))
    {
@@ -55,7 +55,7 @@ GMRESGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-GMRESSetDefaultArgs(GMRES_args *args)
+hypredrv_GMRESSetDefaultArgs(GMRES_args *args)
 {
    args->min_iter            = 0;
    args->max_iter            = 300;
@@ -75,7 +75,7 @@ GMRESSetDefaultArgs(GMRES_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-GMRESCreate(MPI_Comm comm, const GMRES_args *args, HYPRE_Solver *solver_ptr)
+hypredrv_GMRESCreate(MPI_Comm comm, const GMRES_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver = NULL;
 

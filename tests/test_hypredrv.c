@@ -335,7 +335,7 @@ test_create_parse_and_destroy(void)
    ASSERT_NOT_NULL(sol_data);
    ASSERT_EQ(HYPREDRV_LinearSystemGetRHSValues(obj, &rhs_data), ERROR_NONE);
    ASSERT_NOT_NULL(rhs_data);
-   LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
+   hypredrv_LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
    ASSERT_NOT_NULL(rhs_expected);
    ASSERT_PTR_EQ(rhs_data, rhs_expected);
    ASSERT_TRUE(rhs_data != sol_data);
@@ -1281,7 +1281,7 @@ test_HYPREDRV_misc_0hit_branches(void)
    ASSERT_EQ(HYPREDRV_LinearSystemGetRHSValues(obj, &rhs_data), ERROR_NONE);
    ASSERT_NOT_NULL(rhs_data);
    HYPRE_Complex *rhs_expected = NULL;
-   LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
+   hypredrv_LinearSystemGetRHSValues(state->vec_b, &rhs_expected);
    ASSERT_NOT_NULL(rhs_expected);
    ASSERT_PTR_EQ(rhs_data, rhs_expected);
    ASSERT_TRUE(rhs_data != sol_data);

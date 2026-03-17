@@ -10,13 +10,13 @@
 #include <strings.h>
 #include "HYPRE_parcsr_mv.h"
 #include "gen_macros.h"
-#include "nested_krylov.h"
+#include "krylov.h"
 
-#define Precon_FIELDS(_prefix)                        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, AMGSetArgs)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRSetArgs)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, ILUSetArgs)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, FSAISetArgs) \
+#define Precon_FIELDS(_prefix)                                 \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, hypredrv_AMGSetArgs)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, hypredrv_MGRSetArgs)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, hypredrv_ILUSetArgs)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, hypredrv_FSAISetArgs) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, reuse, FieldTypeIntSet)
 
 DEFINE_FIELD_OFFSET_MAP(Precon)
@@ -422,16 +422,16 @@ PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
    switch (method)
    {
       case PRECON_BOOMERAMG:
-         AMGSetDefaultArgs(&args->amg);
+         hypredrv_AMGSetDefaultArgs(&args->amg);
          break;
       case PRECON_MGR:
-         MGRSetDefaultArgs(&args->mgr);
+         hypredrv_MGRSetDefaultArgs(&args->mgr);
          break;
       case PRECON_ILU:
-         ILUSetDefaultArgs(&args->ilu);
+         hypredrv_ILUSetDefaultArgs(&args->ilu);
          break;
       case PRECON_FSAI:
-         FSAISetDefaultArgs(&args->fsai);
+         hypredrv_FSAISetDefaultArgs(&args->fsai);
          break;
       case PRECON_NONE:
       default:
@@ -468,8 +468,8 @@ PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
    switch (precon_method)
    {
       case PRECON_BOOMERAMG:
-         AMGSetRBMs(&args->amg, vec_nn);
-         AMGCreate(&args->amg, &precon->main);
+         hypredrv_AMGSetRBMs(&args->amg, vec_nn);
+         hypredrv_AMGCreate(&args->amg, &precon->main);
          break;
 
       case PRECON_MGR:

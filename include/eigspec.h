@@ -28,8 +28,8 @@ typedef struct EigSpec_args_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void EigSpecSetDefaultArgs(EigSpec_args *);
-void EigSpecSetArgs(void *, const YAMLnode *);
+void hypredrv_EigSpecSetDefaultArgs(EigSpec_args *);
+void hypredrv_EigSpecSetArgs(void *, const YAMLnode *);
 
 /* Internal helpers */
 #ifdef HYPREDRV_ENABLE_EIGSPEC

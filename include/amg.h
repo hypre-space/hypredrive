@@ -119,9 +119,9 @@ typedef struct AMG_args_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void AMGSetDefaultArgs(AMG_args *);
-void AMGSetArgs(void *, const YAMLnode *);
-void AMGCreate(const AMG_args *, HYPRE_Solver *);
-void AMGSetRBMs(AMG_args *, HYPRE_IJVector);
+void hypredrv_AMGSetDefaultArgs(AMG_args *);
+void hypredrv_AMGSetArgs(void *, const YAMLnode *);
+void hypredrv_AMGCreate(const AMG_args *, HYPRE_Solver *);
+void hypredrv_AMGSetRBMs(AMG_args *, HYPRE_IJVector);
 
 #endif /* AMG_HEADER */

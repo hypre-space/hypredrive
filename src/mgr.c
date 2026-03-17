@@ -8,7 +8,7 @@
 #include "mgr.h"
 #include <mpi.h>
 #include "gen_macros.h"
-#include "nested_krylov.h"
+#include "krylov.h"
 #include "stats.h"
 #if !HYPRE_CHECK_MIN_VERSION(30100, 5)
 #include "_hypre_utilities.h" // for hypre_Solver
@@ -112,17 +112,17 @@ MGRNestedFRelaxWrapperFree(HYPRE_Solver *wrapper_ptr)
  *-----------------------------------------------------------------------------*/
 
 /* Generate type-setting wrappers for union fields */
-DEFINE_TYPED_SETTER(MGRclsAMGSetArgs, MGRcls_args, amg, 0, AMGSetArgs)
-DEFINE_TYPED_SETTER(MGRclsILUSetArgs, MGRcls_args, ilu, 32, ILUSetArgs)
-DEFINE_TYPED_SETTER(MGRfrlxAMGSetArgs, MGRfrlx_args, amg, 2, AMGSetArgs)
-DEFINE_TYPED_SETTER(MGRfrlxILUSetArgs, MGRfrlx_args, ilu, 32, ILUSetArgs)
-DEFINE_TYPED_SETTER(MGRgrlxAMGSetArgs, MGRgrlx_args, amg, 20, AMGSetArgs)
-DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRclsAMGSetArgs, MGRcls_args, amg, 0, hypredrv_AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRclsILUSetArgs, MGRcls_args, ilu, 32, hypredrv_ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxAMGSetArgs, MGRfrlx_args, amg, 2, hypredrv_AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxILUSetArgs, MGRfrlx_args, ilu, 32, hypredrv_ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRgrlxAMGSetArgs, MGRgrlx_args, amg, 20, hypredrv_AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, hypredrv_ILUSetArgs)
 static void MGRclsTypeSet(void *, const YAMLnode *);
 static void MGRfrlxTypeSet(void *, const YAMLnode *);
 static void MGRgrlxTypeSet(void *, const YAMLnode *);
 static void MGRfrlxMGRSetArgs(void *, const YAMLnode *);
-void        MGRSetArgsFromYAML(void *, YAMLnode *);
+void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
 
 #define MGRcls_FIELDS(_prefix)                            \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRclsTypeSet)   \
@@ -142,13 +142,13 @@ void        MGRSetArgsFromYAML(void *, YAMLnode *);
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)
 
-#define MGRlvl_FIELDS(_prefix)                                         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, FieldTypeStackIntArraySet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_level_type, FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, f_relaxation, MGRfrlxSetArgs)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, g_relaxation, MGRgrlxSetArgs)
+#define MGRlvl_FIELDS(_prefix)                                            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, FieldTypeStackIntArraySet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, FieldTypeIntSet)    \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_level_type, FieldTypeIntSet)    \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, f_relaxation, hypredrv_MGRfrlxSetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, g_relaxation, hypredrv_MGRgrlxSetArgs)
 
 #define MGR_FIELDS(_prefix)                                           \
    ADD_FIELD_OFFSET_ENTRY(_prefix, non_c_to_f, FieldTypeIntSet)       \
@@ -160,7 +160,7 @@ void        MGRSetArgsFromYAML(void *, YAMLnode *);
    ADD_FIELD_OFFSET_ENTRY(_prefix, nonglk_max_elmts, FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, FieldTypeDoubleSet)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_th, FieldTypeDoubleSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsest_level, MGRclsSetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsest_level, hypredrv_MGRclsSetArgs)
 
 #define MGRcls_NUM_FIELDS \
    (sizeof(MGRcls_field_offset_map) / sizeof(MGRcls_field_offset_map[0]))
@@ -199,7 +199,8 @@ GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR) // LCOV_EXCL_LINE
       return false;
    }
    StrToLowerCase(tmp);
-   bool is_valid = StrIntMapArrayDomainEntryExists(SolverGetValidTypeIntMap(), tmp);
+   bool is_valid =
+      StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(), tmp);
    free(tmp);
    return is_valid;
 }
@@ -243,7 +244,7 @@ MGRGetOrCreateNestedMGR(MGR_args **ptr)
       *ptr = (MGR_args *)malloc(sizeof(MGR_args));
       if (*ptr)
       {
-         MGRSetDefaultArgs(*ptr);
+         hypredrv_MGRSetDefaultArgs(*ptr);
       }
    }
 
@@ -532,11 +533,11 @@ cleanup:
       }                                                                     \
       if (args->type == (_amg_type))                                        \
       {                                                                     \
-         AMGSetDefaultArgs(&args->amg);                                     \
+         hypredrv_AMGSetDefaultArgs(&args->amg);                            \
       }                                                                     \
       else if (args->type == (_ilu_type))                                   \
       {                                                                     \
-         ILUSetDefaultArgs(&args->ilu);                                     \
+         hypredrv_ILUSetDefaultArgs(&args->ilu);                            \
       }                                                                     \
    }
 
@@ -585,7 +586,7 @@ MGRBaseParSolverSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector
  *-----------------------------------------------------------------------------*/
 
 void
-MGRclsSetDefaultArgs(MGRcls_args *args)
+hypredrv_MGRclsSetDefaultArgs(MGRcls_args *args)
 {
    /* Default coarsest solver: let MGRCreate interpret type < 0 as "default AMG". */
    args->type       = -1;
@@ -594,7 +595,7 @@ MGRclsSetDefaultArgs(MGRcls_args *args)
 
    /* Initialize default AMG args (union storage). If user later selects ILU via YAML,
     * ILUSetArgs/ILUSetDefaultArgs will reinitialize the union storage. */
-   AMGSetDefaultArgs(&args->amg);
+   hypredrv_AMGSetDefaultArgs(&args->amg);
 }
 
 /*-----------------------------------------------------------------------------
@@ -602,7 +603,7 @@ MGRclsSetDefaultArgs(MGRcls_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
+hypredrv_MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
 {
    args->type       = 7;
    args->num_sweeps = 1;
@@ -618,7 +619,7 @@ MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRgrlxSetDefaultArgs(MGRgrlx_args *args)
+hypredrv_MGRgrlxSetDefaultArgs(MGRgrlx_args *args)
 {
    /* Default to "none" (disabled). If user selects a global smoother type via YAML
     * but omits num_sweeps, we want at least one sweep. */
@@ -629,7 +630,7 @@ MGRgrlxSetDefaultArgs(MGRgrlx_args *args)
 
    /* Initialize default AMG args (union storage). If user later selects ILU via YAML,
     * ILUSetArgs/ILUSetDefaultArgs will reinitialize the union storage. */
-   AMGSetDefaultArgs(&args->amg);
+   hypredrv_AMGSetDefaultArgs(&args->amg);
 }
 
 /*-----------------------------------------------------------------------------
@@ -637,15 +638,15 @@ MGRgrlxSetDefaultArgs(MGRgrlx_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRlvlSetDefaultArgs(MGRlvl_args *args)
+hypredrv_MGRlvlSetDefaultArgs(MGRlvl_args *args)
 {
    args->f_dofs            = STACK_INTARRAY_CREATE();
    args->prolongation_type = 0;
    args->restriction_type  = 0;
    args->coarse_level_type = 0;
 
-   MGRfrlxSetDefaultArgs(&args->f_relaxation);
-   MGRgrlxSetDefaultArgs(&args->g_relaxation);
+   hypredrv_MGRfrlxSetDefaultArgs(&args->f_relaxation);
+   hypredrv_MGRgrlxSetDefaultArgs(&args->g_relaxation);
 }
 
 /*-----------------------------------------------------------------------------
@@ -653,7 +654,7 @@ MGRlvlSetDefaultArgs(MGRlvl_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRSetDefaultArgs(MGR_args *args)
+hypredrv_MGRSetDefaultArgs(MGR_args *args)
 {
    args->dofmap           = NULL;
    args->max_iter         = 1;
@@ -668,11 +669,11 @@ MGRSetDefaultArgs(MGR_args *args)
 
    for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
    {
-      MGRlvlSetDefaultArgs(&args->level[i]);
+      hypredrv_MGRlvlSetDefaultArgs(&args->level[i]);
       args->frelax[i] = NULL;
       args->grelax[i] = NULL;
    }
-   MGRclsSetDefaultArgs(&args->coarsest_level);
+   hypredrv_MGRclsSetDefaultArgs(&args->coarsest_level);
    args->csolver           = NULL;
    args->csolver_type      = -1;
    args->vec_nn            = NULL;
@@ -697,14 +698,14 @@ MGRfrlxMGRSetArgs(void *field, const YAMLnode *node)
    }
 
    parent->type = MGR_FRLX_TYPE_NESTED_MGR;
-   MGRSetArgsFromYAML(nested_mgr, (YAMLnode *)node);
+   hypredrv_MGRSetArgsFromYAML(nested_mgr, (YAMLnode *)node);
 }
 
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
 void
-MGRclsSetArgsFromYAML(void *vargs, YAMLnode *parent)
+hypredrv_MGRclsSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
    MGRcls_args *args = (MGRcls_args *)vargs;
 
@@ -730,8 +731,9 @@ MGRclsSetArgsFromYAML(void *vargs, YAMLnode *parent)
             continue;
          }
 
-         YAML_NODE_VALIDATE(child, MGRclsGetValidKeys, MGRclsGetValidValues);
-         YAML_NODE_SET_FIELD(child, args, MGRclsSetFieldByName);
+         YAML_NODE_VALIDATE(child, hypredrv_MGRclsGetValidKeys,
+                            hypredrv_MGRclsGetValidValues);
+         YAML_NODE_SET_FIELD(child, args, hypredrv_MGRclsSetFieldByName);
       }
    }
    else
@@ -741,8 +743,9 @@ MGRclsSetArgsFromYAML(void *vargs, YAMLnode *parent)
       parent->key = (char *)malloc(5 * sizeof(char));
       snprintf(parent->key, 5, "type");
 
-      YAML_NODE_VALIDATE(parent, MGRclsGetValidKeys, MGRclsGetValidValues);
-      YAML_NODE_SET_FIELD(parent, args, MGRclsSetFieldByName);
+      YAML_NODE_VALIDATE(parent, hypredrv_MGRclsGetValidKeys,
+                         hypredrv_MGRclsGetValidValues);
+      YAML_NODE_SET_FIELD(parent, args, hypredrv_MGRclsSetFieldByName);
 
       free(parent->key);
       parent->key = strdup(temp_key);
@@ -754,7 +757,7 @@ MGRclsSetArgsFromYAML(void *vargs, YAMLnode *parent)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRfrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
+hypredrv_MGRfrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
    MGRfrlx_args *args = (MGRfrlx_args *)vargs;
 
@@ -779,8 +782,9 @@ MGRfrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
             continue;
          }
 
-         YAML_NODE_VALIDATE(child, MGRfrlxGetValidKeys, MGRfrlxGetValidValues);
-         YAML_NODE_SET_FIELD(child, args, MGRfrlxSetFieldByName);
+         YAML_NODE_VALIDATE(child, hypredrv_MGRfrlxGetValidKeys,
+                            hypredrv_MGRfrlxGetValidValues);
+         YAML_NODE_SET_FIELD(child, args, hypredrv_MGRfrlxSetFieldByName);
       }
    }
    else
@@ -790,8 +794,9 @@ MGRfrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
       parent->key = (char *)malloc(5 * sizeof(char));
       snprintf(parent->key, 5, "type");
 
-      YAML_NODE_VALIDATE(parent, MGRfrlxGetValidKeys, MGRfrlxGetValidValues);
-      YAML_NODE_SET_FIELD(parent, args, MGRfrlxSetFieldByName);
+      YAML_NODE_VALIDATE(parent, hypredrv_MGRfrlxGetValidKeys,
+                         hypredrv_MGRfrlxGetValidValues);
+      YAML_NODE_SET_FIELD(parent, args, hypredrv_MGRfrlxSetFieldByName);
 
       free(parent->key);
       parent->key = strdup(temp_key);
@@ -803,7 +808,7 @@ MGRfrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRgrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
+hypredrv_MGRgrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
    MGRgrlx_args *args = (MGRgrlx_args *)vargs;
 
@@ -832,8 +837,9 @@ MGRgrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
             continue;
          }
 
-         YAML_NODE_VALIDATE(child, MGRgrlxGetValidKeys, MGRgrlxGetValidValues);
-         YAML_NODE_SET_FIELD(child, args, MGRgrlxSetFieldByName);
+         YAML_NODE_VALIDATE(child, hypredrv_MGRgrlxGetValidKeys,
+                            hypredrv_MGRgrlxGetValidValues);
+         YAML_NODE_SET_FIELD(child, args, hypredrv_MGRgrlxSetFieldByName);
       }
    }
    else
@@ -843,8 +849,9 @@ MGRgrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
       parent->key = (char *)malloc(5 * sizeof(char));
       snprintf(parent->key, 5, "type");
 
-      YAML_NODE_VALIDATE(parent, MGRgrlxGetValidKeys, MGRgrlxGetValidValues);
-      YAML_NODE_SET_FIELD(parent, args, MGRgrlxSetFieldByName);
+      YAML_NODE_VALIDATE(parent, hypredrv_MGRgrlxGetValidKeys,
+                         hypredrv_MGRgrlxGetValidValues);
+      YAML_NODE_SET_FIELD(parent, args, hypredrv_MGRgrlxSetFieldByName);
 
       free(parent->key);
       parent->key = strdup(temp_key);
@@ -857,7 +864,7 @@ MGRgrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-MGRclsGetValidValues(const char *key)
+hypredrv_MGRclsGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
@@ -876,7 +883,7 @@ MGRclsGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-MGRfrlxGetValidValues(const char *key)
+hypredrv_MGRfrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
@@ -909,7 +916,7 @@ MGRfrlxGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-MGRgrlxGetValidValues(const char *key)
+hypredrv_MGRgrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
@@ -934,7 +941,7 @@ MGRgrlxGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-MGRlvlGetValidValues(const char *key)
+hypredrv_MGRlvlGetValidValues(const char *key)
 {
    if (!strcmp(key, "prolongation_type"))
    {
@@ -967,11 +974,11 @@ MGRlvlGetValidValues(const char *key)
    }
    if (!strcmp(key, "f_relaxation"))
    {
-      return MGRfrlxGetValidValues("type");
+      return hypredrv_MGRfrlxGetValidValues("type");
    }
    if (!strcmp(key, "g_relaxation"))
    {
-      return MGRgrlxGetValidValues("type");
+      return hypredrv_MGRgrlxGetValidValues("type");
    }
    else
    {
@@ -984,7 +991,7 @@ MGRlvlGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-MGRGetValidValues(const char *key)
+hypredrv_MGRGetValidValues(const char *key)
 {
    if (!strcmp(key, "relax_type"))
    {
@@ -1030,7 +1037,7 @@ MGRGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
+hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
    MGR_args *args = (MGR_args *)vargs;
    YAML_NODE_ITERATE(parent, child)
@@ -1055,15 +1062,15 @@ MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
                   {
                      YAML_NODE_SET_VALID(great_grandchild);
                      YAML_NODE_SET_FIELD(great_grandchild, &args->level[lvl],
-                                         MGRlvlSetFieldByName);
+                                         hypredrv_MGRlvlSetFieldByName);
                      continue;
                   }
 
-                  YAML_NODE_VALIDATE(great_grandchild, MGRlvlGetValidKeys,
-                                     MGRlvlGetValidValues);
+                  YAML_NODE_VALIDATE(great_grandchild, hypredrv_MGRlvlGetValidKeys,
+                                     hypredrv_MGRlvlGetValidValues);
 
                   YAML_NODE_SET_FIELD(great_grandchild, &args->level[lvl],
-                                      MGRlvlSetFieldByName);
+                                      hypredrv_MGRlvlSetFieldByName);
                }
 
                args->num_levels++;
@@ -1079,12 +1086,12 @@ MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
       {
          args->num_levels++;
          YAML_NODE_SET_VALID(child);
-         MGRclsSetArgsFromYAML(&args->coarsest_level, child);
+         hypredrv_MGRclsSetArgsFromYAML(&args->coarsest_level, child);
       }
       else
       {
-         YAML_NODE_VALIDATE(child, MGRGetValidKeys, MGRGetValidValues);
-         YAML_NODE_SET_FIELD(child, args, MGRSetFieldByName);
+         YAML_NODE_VALIDATE(child, hypredrv_MGRGetValidKeys, hypredrv_MGRGetValidValues);
+         YAML_NODE_SET_FIELD(child, args, hypredrv_MGRSetFieldByName);
       }
    }
 }
@@ -1478,7 +1485,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       }
       else if (args->level[i].f_relaxation.type == 2)
       {
-         AMGCreate(&args->level[i].f_relaxation.amg, &frelax);
+         hypredrv_AMGCreate(&args->level[i].f_relaxation.amg, &frelax);
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
          HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
 #else
@@ -1602,7 +1609,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       }
       else if (args->level[i].g_relaxation.type == 20)
       {
-         AMGCreate(&args->level[i].g_relaxation.amg, &grelax);
+         hypredrv_AMGCreate(&args->level[i].g_relaxation.amg, &grelax);
          HYPRE_MGRSetGlobalSmootherAtLevel(precon, grelax, i);
          args->grelax[i] = grelax;
       }
@@ -1659,7 +1666,7 @@ MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       /* Config coarsest level solver */
       if (args->coarsest_level.type == 0)
       {
-         AMGCreate(&args->coarsest_level.amg, &args->csolver);
+         hypredrv_AMGCreate(&args->coarsest_level.amg, &args->csolver);
          args->csolver_type = 0;
          HYPRE_MGRSetCoarseSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup,
                                   args->csolver);

@@ -32,7 +32,7 @@ GENERATE_PREFIXED_COMPONENTS(Scaling) // LCOV_EXCL_LINE
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-ScalingGetValidValues(const char *key)
+hypredrv_ScalingGetValidValues(const char *key)
 {
    if (!strcmp(key, "enabled"))
    {
@@ -55,7 +55,7 @@ ScalingGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-ScalingSetDefaultArgs(Scaling_args *args)
+hypredrv_ScalingSetDefaultArgs(Scaling_args *args)
 {
    args->enabled       = 0;
    args->type          = SCALING_RHS_L2;
@@ -116,7 +116,7 @@ ScalingComputeRHSL2(MPI_Comm comm, Scaling_context *ctx, HYPRE_IJVector vec_b)
 {
    double b_norm = 0.0;
 
-   LinearSystemComputeVectorNorm(vec_b, "L2", &b_norm);
+   hypredrv_LinearSystemComputeVectorNorm(vec_b, "L2", &b_norm);
 
    if (b_norm > 0.0)
    {

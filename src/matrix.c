@@ -28,8 +28,10 @@ HYPREDRV_IJMatrixInitialize(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_loca
 }
 
 void
-IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_nparts,
-                            HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *mat_ptr)
+hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
+                                     uint64_t             g_nparts,
+                                     HYPRE_MemoryLocation memory_location,
+                                     HYPRE_IJMatrix      *mat_ptr)
 {
    int      nprocs = 0, myid = 0;
    uint32_t nparts = 0;

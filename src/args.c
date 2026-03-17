@@ -45,7 +45,7 @@ FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
 GENERATE_PREFIXED_COMPONENTS(General) // LCOV_EXCL_LINE
 
 StrIntMapArray
-GeneralGetValidValues(const char *key)
+hypredrv_GeneralGetValidValues(const char *key)
 {
    if (!strcmp(key, "warmup") || !strcmp(key, "print_config_params") ||
        !strcmp(key, "use_millisec"))
@@ -70,7 +70,7 @@ GeneralGetValidValues(const char *key)
 }
 
 void
-GeneralSetDefaultArgs(General_args *args)
+hypredrv_GeneralSetDefaultArgs(General_args *args)
 {
    args->warmup              = 0;
    args->statistics          = 1;
@@ -94,11 +94,11 @@ InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
    input_args *iargs = (input_args *)malloc(sizeof(input_args));
 
    /* Set general default options */
-   GeneralSetDefaultArgs(&iargs->general);
+   hypredrv_GeneralSetDefaultArgs(&iargs->general);
    iargs->general.print_config_params = !lib_mode;
 
    /* Set default Linear System options */
-   LinearSystemSetDefaultArgs(&iargs->ls);
+   hypredrv_LinearSystemSetDefaultArgs(&iargs->ls);
    iargs->ls.exec_policy = iargs->general.exec_policy;
 
    /* Set default preconditioner and solver */
@@ -107,7 +107,7 @@ InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
    PreconReuseSetDefaultArgs(&iargs->precon_reuse);
 
    /* Set default scaling */
-   ScalingSetDefaultArgs(&iargs->scaling);
+   hypredrv_ScalingSetDefaultArgs(&iargs->scaling);
 
    /* Initialize preconditioner variants (default: single variant) */
    iargs->num_precon_variants   = 1;
@@ -175,7 +175,7 @@ InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
    }
 
    YAML_NODE_SET_VALID(parent);
-   GeneralSetArgsFromYAML(&iargs->general, parent);
+   hypredrv_GeneralSetArgsFromYAML(&iargs->general, parent);
 
    /* Mirror general exec policy into linear-system args for downstream use */
    iargs->ls.exec_policy = iargs->general.exec_policy;
@@ -205,8 +205,8 @@ InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
       ErrorMsgAddUnexpectedVal(key);
    }
 
-   LinearSystemSetArgsFromYAML(&iargs->ls, parent);
-   LinearSystemSetNumSystems(&iargs->ls);
+   hypredrv_LinearSystemSetArgsFromYAML(&iargs->ls, parent);
+   hypredrv_LinearSystemSetNumSystems(&iargs->ls);
 }
 
 /*-----------------------------------------------------------------------------
@@ -274,18 +274,18 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
          return;
       }
 
-      iargs->solver_method = (solver_t)StrIntMapArrayGetImage(SolverGetValidTypeIntMap(),
-                                                              parent->children->key);
+      iargs->solver_method = (solver_t)StrIntMapArrayGetImage(
+         hypredrv_SolverGetValidTypeIntMap(), parent->children->key);
 
-      SolverSetArgsFromYAML(&iargs->solver, parent);
+      hypredrv_SolverSetArgsFromYAML(&iargs->solver, parent);
    }
    else
    {
-      iargs->solver_method =
-         (solver_t)StrIntMapArrayGetImage(SolverGetValidTypeIntMap(), parent->val);
+      iargs->solver_method = (solver_t)StrIntMapArrayGetImage(
+         hypredrv_SolverGetValidTypeIntMap(), parent->val);
 
       /* Value-only form (e.g., `solver: gmres`): use per-method defaults. */
-      SolverArgsSetDefaultsForMethod(iargs->solver_method, &iargs->solver);
+      hypredrv_SolverArgsSetDefaultsForMethod(iargs->solver_method, &iargs->solver);
 
       /* Preserve legacy behavior: suppress solver print by default for value-only form.
        */
@@ -311,7 +311,7 @@ InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
    /* Parse scaling if present */
    if (scaling_node)
    {
-      ScalingSetArgsFromYAML(&iargs->scaling, scaling_node);
+      hypredrv_ScalingSetArgsFromYAML(&iargs->scaling, scaling_node);
       /* Mark scaling node as valid to avoid validation errors */
       YAML_NODE_SET_VALID(scaling_node);
       /* Reattach to parent for tree validation (but after parsing) */

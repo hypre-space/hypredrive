@@ -28,15 +28,15 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(BiCGSTAB)      // LCOV_EXCL_LINE
-DEFINE_VOID_GET_VALID_VALUES_FUNC(BiCGSTAB) // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS(BiCGSTAB)               // LCOV_EXCL_LINE
+DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_BiCGSTAB) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * BiCGSTABSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
 void
-BiCGSTABSetDefaultArgs(BiCGSTAB_args *args)
+hypredrv_BiCGSTABSetDefaultArgs(BiCGSTAB_args *args)
 {
    args->min_iter     = 0;
    args->max_iter     = 100;
@@ -53,7 +53,8 @@ BiCGSTABSetDefaultArgs(BiCGSTAB_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-BiCGSTABCreate(MPI_Comm comm, const BiCGSTAB_args *args, HYPRE_Solver *solver_ptr)
+hypredrv_BiCGSTABCreate(MPI_Comm comm, const BiCGSTAB_args *args,
+                        HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver = NULL;
 

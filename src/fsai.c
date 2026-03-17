@@ -38,7 +38,7 @@ GENERATE_PREFIXED_COMPONENTS(FSAI) // LCOV_EXCL_LINE
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-FSAIGetValidValues(const char *key)
+hypredrv_FSAIGetValidValues(const char *key)
 {
    if (!strcmp(key, "algo_type"))
    {
@@ -57,7 +57,7 @@ FSAIGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-FSAISetDefaultArgs(FSAI_args *args)
+hypredrv_FSAISetDefaultArgs(FSAI_args *args)
 {
    args->max_iter      = 1;
    args->print_level   = 0;

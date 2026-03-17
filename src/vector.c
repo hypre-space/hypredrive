@@ -21,8 +21,10 @@ HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_loca
 }
 
 void
-IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm, uint64_t g_nparts,
-                            HYPRE_MemoryLocation memory_location, HYPRE_IJVector *vec_ptr)
+hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
+                                     uint64_t             g_nparts,
+                                     HYPRE_MemoryLocation memory_location,
+                                     HYPRE_IJVector      *vec_ptr)
 {
    int      nprocs = 0, myid = 0;
    uint32_t nparts = 0;

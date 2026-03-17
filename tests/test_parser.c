@@ -12,63 +12,63 @@
 #include "gmres.h"
 #include "ilu.h"
 #include "mgr.h"
-#include "nested_krylov.h"
+#include "krylov.h"
 #include "pcg.h"
 #include "test_helpers.h"
 #include "yaml.h"
 
 /* Internal/generated functions not in public headers */
-void           AMGSetArgsFromYAML(void *, YAMLnode *);
-void           AMGintSetArgsFromYAML(void *, YAMLnode *);
-void           AMGaggSetArgsFromYAML(void *, YAMLnode *);
-void           AMGcsnSetArgsFromYAML(void *, YAMLnode *);
-void           AMGrlxSetArgsFromYAML(void *, YAMLnode *);
-void           AMGsmtSetArgsFromYAML(void *, YAMLnode *);
-StrArray       AMGGetValidKeys(void);
-StrIntMapArray AMGGetValidValues(const char *);
-StrArray       AMGintGetValidKeys(void);
-StrIntMapArray AMGintGetValidValues(const char *);
-StrArray       AMGaggGetValidKeys(void);
-StrIntMapArray AMGaggGetValidValues(const char *);
-StrArray       AMGcsnGetValidKeys(void);
-StrIntMapArray AMGcsnGetValidValues(const char *);
-StrArray       AMGrlxGetValidKeys(void);
-StrIntMapArray AMGrlxGetValidValues(const char *);
-StrArray       AMGsmtGetValidKeys(void);
-StrIntMapArray AMGsmtGetValidValues(const char *);
-void           FSAISetArgsFromYAML(void *, YAMLnode *);
-StrArray       FSAIGetValidKeys(void);
-StrIntMapArray FSAIGetValidValues(const char *);
-void           ILUSetArgsFromYAML(void *, YAMLnode *);
-StrArray       ILUGetValidKeys(void);
-StrIntMapArray ILUGetValidValues(const char *);
-void           ILUSetDefaultArgs(ILU_args *);
-void           FSAISetDefaultArgs(FSAI_args *);
-void           PCGSetDefaultArgs(PCG_args *);
-void           PCGSetArgsFromYAML(void *, YAMLnode *);
-StrArray       PCGGetValidKeys(void);
-StrIntMapArray PCGGetValidValues(const char *);
-void           GMRESSetDefaultArgs(GMRES_args *);
-void           GMRESSetArgsFromYAML(void *, YAMLnode *);
-StrArray       GMRESGetValidKeys(void);
-StrIntMapArray GMRESGetValidValues(const char *);
-void           FGMRESSetDefaultArgs(FGMRES_args *);
-void           FGMRESSetArgsFromYAML(void *, YAMLnode *);
-StrArray       FGMRESGetValidKeys(void);
-StrIntMapArray FGMRESGetValidValues(const char *);
-void           BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
-void           BiCGSTABSetArgsFromYAML(void *, YAMLnode *);
-StrArray       BiCGSTABGetValidKeys(void);
-StrIntMapArray BiCGSTABGetValidValues(const char *);
-void           ChebySetArgsFromYAML(void *, YAMLnode *);
-StrArray       ChebyGetValidKeys(void);
-StrIntMapArray ChebyGetValidValues(const char *);
+void           hypredrv_AMGSetArgsFromYAML(void *, YAMLnode *);
+void           hypredrv_AMGintSetArgsFromYAML(void *, YAMLnode *);
+void           hypredrv_AMGaggSetArgsFromYAML(void *, YAMLnode *);
+void           hypredrv_AMGcsnSetArgsFromYAML(void *, YAMLnode *);
+void           hypredrv_AMGrlxSetArgsFromYAML(void *, YAMLnode *);
+void           hypredrv_AMGsmtSetArgsFromYAML(void *, YAMLnode *);
+StrArray       hypredrv_AMGGetValidKeys(void);
+StrIntMapArray hypredrv_AMGGetValidValues(const char *);
+StrArray       hypredrv_AMGintGetValidKeys(void);
+StrIntMapArray hypredrv_AMGintGetValidValues(const char *);
+StrArray       hypredrv_AMGaggGetValidKeys(void);
+StrIntMapArray hypredrv_AMGaggGetValidValues(const char *);
+StrArray       hypredrv_AMGcsnGetValidKeys(void);
+StrIntMapArray hypredrv_AMGcsnGetValidValues(const char *);
+StrArray       hypredrv_AMGrlxGetValidKeys(void);
+StrIntMapArray hypredrv_AMGrlxGetValidValues(const char *);
+StrArray       hypredrv_AMGsmtGetValidKeys(void);
+StrIntMapArray hypredrv_AMGsmtGetValidValues(const char *);
+void           hypredrv_FSAISetArgsFromYAML(void *, YAMLnode *);
+StrArray       hypredrv_FSAIGetValidKeys(void);
+StrIntMapArray hypredrv_FSAIGetValidValues(const char *);
+void           hypredrv_ILUSetArgsFromYAML(void *, YAMLnode *);
+StrArray       hypredrv_ILUGetValidKeys(void);
+StrIntMapArray hypredrv_ILUGetValidValues(const char *);
+void           hypredrv_ILUSetDefaultArgs(ILU_args *);
+void           hypredrv_FSAISetDefaultArgs(FSAI_args *);
+void           hypredrv_PCGSetDefaultArgs(PCG_args *);
+void           hypredrv_PCGSetArgsFromYAML(void *, YAMLnode *);
+StrArray       hypredrv_PCGGetValidKeys(void);
+StrIntMapArray hypredrv_PCGGetValidValues(const char *);
+void           hypredrv_GMRESSetDefaultArgs(GMRES_args *);
+void           hypredrv_GMRESSetArgsFromYAML(void *, YAMLnode *);
+StrArray       hypredrv_GMRESGetValidKeys(void);
+StrIntMapArray hypredrv_GMRESGetValidValues(const char *);
+void           hypredrv_FGMRESSetDefaultArgs(FGMRES_args *);
+void           hypredrv_FGMRESSetArgsFromYAML(void *, YAMLnode *);
+StrArray       hypredrv_FGMRESGetValidKeys(void);
+StrIntMapArray hypredrv_FGMRESGetValidValues(const char *);
+void           hypredrv_BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
+void           hypredrv_BiCGSTABSetArgsFromYAML(void *, YAMLnode *);
+StrArray       hypredrv_BiCGSTABGetValidKeys(void);
+StrIntMapArray hypredrv_BiCGSTABGetValidValues(const char *);
+void           hypredrv_ChebySetArgsFromYAML(void *, YAMLnode *);
+StrArray       hypredrv_ChebyGetValidKeys(void);
+StrIntMapArray hypredrv_ChebyGetValidValues(const char *);
 
 /* MGR (custom YAML parser + generated sub-components) */
-void           MGRSetDefaultArgs(MGR_args *);
-void           MGRSetArgsFromYAML(void *, YAMLnode *);
-StrIntMapArray MGRGetValidValues(const char *);
-StrIntMapArray MGRlvlGetValidValues(const char *);
+void           hypredrv_MGRSetDefaultArgs(MGR_args *);
+void           hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
+StrIntMapArray hypredrv_MGRGetValidValues(const char *);
+StrIntMapArray hypredrv_MGRlvlGetValidValues(const char *);
 HYPRE_Int     *MGRConvertArgInt(MGR_args *, const char *);
 
 static YAMLnode *
@@ -103,11 +103,11 @@ static void populate_amgsmt(YAMLnode *parent, int level);
 static void
 populate_cheby(YAMLnode *parent, int level)
 {
-   StrArray keys = ChebyGetValidKeys();
+   StrArray keys = hypredrv_ChebyGetValidKeys();
    for (size_t i = 0; i < keys.size; i++)
    {
       const char    *key = keys.data[i];
-      StrIntMapArray map = ChebyGetValidValues(key);
+      StrIntMapArray map = hypredrv_ChebyGetValidValues(key);
       const char    *val = pick_value(map);
       add_child(parent, key, val, level);
    }
@@ -116,11 +116,11 @@ populate_cheby(YAMLnode *parent, int level)
 static void
 populate_fsai(YAMLnode *parent, int level)
 {
-   StrArray keys = FSAIGetValidKeys();
+   StrArray keys = hypredrv_FSAIGetValidKeys();
    for (size_t i = 0; i < keys.size; i++)
    {
       const char    *key = keys.data[i];
-      StrIntMapArray map = FSAIGetValidValues(key);
+      StrIntMapArray map = hypredrv_FSAIGetValidValues(key);
       const char    *val = pick_value(map);
       add_child(parent, key, val, level);
    }
@@ -129,11 +129,11 @@ populate_fsai(YAMLnode *parent, int level)
 static void
 populate_ilu(YAMLnode *parent, int level)
 {
-   StrArray keys = ILUGetValidKeys();
+   StrArray keys = hypredrv_ILUGetValidKeys();
    for (size_t i = 0; i < keys.size; i++)
    {
       const char    *key = keys.data[i];
-      StrIntMapArray map = ILUGetValidValues(key);
+      StrIntMapArray map = hypredrv_ILUGetValidValues(key);
       const char    *val = pick_value(map);
       add_child(parent, key, val, level);
    }
@@ -142,11 +142,11 @@ populate_ilu(YAMLnode *parent, int level)
 static void
 populate_amgint(YAMLnode *parent, int level)
 {
-   StrArray keys = AMGintGetValidKeys();
+   StrArray keys = hypredrv_AMGintGetValidKeys();
    for (size_t i = 0; i < keys.size; i++)
    {
       const char    *key = keys.data[i];
-      StrIntMapArray map = AMGintGetValidValues(key);
+      StrIntMapArray map = hypredrv_AMGintGetValidValues(key);
       const char    *val = pick_value(map);
       add_child(parent, key, val, level);
    }
@@ -155,11 +155,11 @@ populate_amgint(YAMLnode *parent, int level)
 static void
 populate_amgagg(YAMLnode *parent, int level)
 {
-   StrArray keys = AMGaggGetValidKeys();
+   StrArray keys = hypredrv_AMGaggGetValidKeys();
    for (size_t i = 0; i < keys.size; i++)
    {
       const char    *key = keys.data[i];
-      StrIntMapArray map = AMGaggGetValidValues(key);
+      StrIntMapArray map = hypredrv_AMGaggGetValidValues(key);
       const char    *val = pick_value(map);
       add_child(parent, key, val, level);
    }
@@ -168,11 +168,11 @@ populate_amgagg(YAMLnode *parent, int level)
 static void
 populate_amgcsn(YAMLnode *parent, int level)
 {
-   StrArray keys = AMGcsnGetValidKeys();
+   StrArray keys = hypredrv_AMGcsnGetValidKeys();
    for (size_t i = 0; i < keys.size; i++)
    {
       const char    *key = keys.data[i];
-      StrIntMapArray map = AMGcsnGetValidValues(key);
+      StrIntMapArray map = hypredrv_AMGcsnGetValidValues(key);
       const char    *val = pick_value(map);
       add_child(parent, key, val, level);
    }
@@ -181,11 +181,11 @@ populate_amgcsn(YAMLnode *parent, int level)
 static void
 populate_amgrlx(YAMLnode *parent, int level)
 {
-   StrArray keys = AMGrlxGetValidKeys();
+   StrArray keys = hypredrv_AMGrlxGetValidKeys();
    for (size_t i = 0; i < keys.size; i++)
    {
       const char    *key = keys.data[i];
-      StrIntMapArray map = AMGrlxGetValidValues(key);
+      StrIntMapArray map = hypredrv_AMGrlxGetValidValues(key);
 
       if (!strcmp(key, "chebyshev"))
       {
@@ -203,11 +203,11 @@ populate_amgrlx(YAMLnode *parent, int level)
 static void
 populate_amgsmt(YAMLnode *parent, int level)
 {
-   StrArray keys = AMGsmtGetValidKeys();
+   StrArray keys = hypredrv_AMGsmtGetValidKeys();
    for (size_t i = 0; i < keys.size; i++)
    {
       const char    *key = keys.data[i];
-      StrIntMapArray map = AMGsmtGetValidValues(key);
+      StrIntMapArray map = hypredrv_AMGsmtGetValidValues(key);
 
       if (!strcmp(key, "fsai"))
       {
@@ -230,11 +230,11 @@ populate_amgsmt(YAMLnode *parent, int level)
 static void
 populate_amg(YAMLnode *parent, int level)
 {
-   StrArray keys = AMGGetValidKeys();
+   StrArray keys = hypredrv_AMGGetValidKeys();
    for (size_t i = 0; i < keys.size; i++)
    {
       const char    *key = keys.data[i];
-      StrIntMapArray map = AMGGetValidValues(key);
+      StrIntMapArray map = hypredrv_AMGGetValidValues(key);
 
       if (!strcmp(key, "interpolation"))
       {
@@ -315,28 +315,28 @@ test_exhaustive_solver_parsers(void)
    BiCGSTAB_args bicg;
    Cheby_args cheby;
 
-   PCGSetDefaultArgs(&pcg);
-   GMRESSetDefaultArgs(&gmres);
-   FGMRESSetDefaultArgs(&fgmres);
-   BiCGSTABSetDefaultArgs(&bicg);
-   ChebySetDefaultArgs(&cheby);
+   hypredrv_PCGSetDefaultArgs(&pcg);
+   hypredrv_GMRESSetDefaultArgs(&gmres);
+   hypredrv_FGMRESSetDefaultArgs(&fgmres);
+   hypredrv_BiCGSTABSetDefaultArgs(&bicg);
+   hypredrv_ChebySetDefaultArgs(&cheby);
 
-   exercise_solver_component(PCGSetArgsFromYAML, PCGGetValidKeys, PCGGetValidValues, &pcg);
-   exercise_solver_component(GMRESSetArgsFromYAML, GMRESGetValidKeys, GMRESGetValidValues,
+   exercise_solver_component(hypredrv_PCGSetArgsFromYAML, hypredrv_PCGGetValidKeys, hypredrv_PCGGetValidValues, &pcg);
+   exercise_solver_component(hypredrv_GMRESSetArgsFromYAML, hypredrv_GMRESGetValidKeys, hypredrv_GMRESGetValidValues,
                              &gmres);
-   exercise_solver_component(FGMRESSetArgsFromYAML, FGMRESGetValidKeys, FGMRESGetValidValues,
+   exercise_solver_component(hypredrv_FGMRESSetArgsFromYAML, hypredrv_FGMRESGetValidKeys, hypredrv_FGMRESGetValidValues,
                              &fgmres);
-   exercise_solver_component(BiCGSTABSetArgsFromYAML, BiCGSTABGetValidKeys,
-                             BiCGSTABGetValidValues, &bicg);
-   exercise_solver_component(ChebySetArgsFromYAML, ChebyGetValidKeys, ChebyGetValidValues,
+   exercise_solver_component(hypredrv_BiCGSTABSetArgsFromYAML, hypredrv_BiCGSTABGetValidKeys,
+                             hypredrv_BiCGSTABGetValidValues, &bicg);
+   exercise_solver_component(hypredrv_ChebySetArgsFromYAML, hypredrv_ChebyGetValidKeys, hypredrv_ChebyGetValidValues,
                              &cheby);
 
    /* Also exercise the flat-value SetArgsFromYAML branch (no children) */
-   exercise_component_flat(PCGSetArgsFromYAML, &pcg, "pcg", "pcg");
-   exercise_component_flat(GMRESSetArgsFromYAML, &gmres, "gmres", "gmres");
-   exercise_component_flat(FGMRESSetArgsFromYAML, &fgmres, "fgmres", "fgmres");
-   exercise_component_flat(BiCGSTABSetArgsFromYAML, &bicg, "bicgstab", "bicgstab");
-   exercise_component_flat(ChebySetArgsFromYAML, &cheby, "cheby", "cheby");
+   exercise_component_flat(hypredrv_PCGSetArgsFromYAML, &pcg, "pcg", "pcg");
+   exercise_component_flat(hypredrv_GMRESSetArgsFromYAML, &gmres, "gmres", "gmres");
+   exercise_component_flat(hypredrv_FGMRESSetArgsFromYAML, &fgmres, "fgmres", "fgmres");
+   exercise_component_flat(hypredrv_BiCGSTABSetArgsFromYAML, &bicg, "bicgstab", "bicgstab");
+   exercise_component_flat(hypredrv_ChebySetArgsFromYAML, &cheby, "cheby", "cheby");
 }
 
 static void
@@ -344,56 +344,56 @@ test_exhaustive_ilu_fsai_parsers(void)
 {
    ILU_args  ilu;
    FSAI_args fsai;
-   ILUSetDefaultArgs(&ilu);
-   FSAISetDefaultArgs(&fsai);
+   hypredrv_ILUSetDefaultArgs(&ilu);
+   hypredrv_FSAISetDefaultArgs(&fsai);
 
-   YAMLnode *ilu_parent = build_scalar_children(ILUGetValidKeys(), ILUGetValidValues, 1);
+   YAMLnode *ilu_parent = build_scalar_children(hypredrv_ILUGetValidKeys(), hypredrv_ILUGetValidValues, 1);
    ErrorCodeResetAll();
-   ILUSetArgsFromYAML(&ilu, ilu_parent);
+   hypredrv_ILUSetArgsFromYAML(&ilu, ilu_parent);
    ASSERT_FALSE(ErrorCodeActive());
    YAMLnodeDestroy(ilu_parent);
 
-   YAMLnode *fsai_parent = build_scalar_children(FSAIGetValidKeys(), FSAIGetValidValues, 1);
+   YAMLnode *fsai_parent = build_scalar_children(hypredrv_FSAIGetValidKeys(), hypredrv_FSAIGetValidValues, 1);
    ErrorCodeResetAll();
-   FSAISetArgsFromYAML(&fsai, fsai_parent);
+   hypredrv_FSAISetArgsFromYAML(&fsai, fsai_parent);
    ASSERT_FALSE(ErrorCodeActive());
    YAMLnodeDestroy(fsai_parent);
 
-   exercise_component_flat(ILUSetArgsFromYAML, &ilu, "ilu", "ilu");
-   exercise_component_flat(FSAISetArgsFromYAML, &fsai, "fsai", "fsai");
+   exercise_component_flat(hypredrv_ILUSetArgsFromYAML, &ilu, "ilu", "ilu");
+   exercise_component_flat(hypredrv_FSAISetArgsFromYAML, &fsai, "fsai", "fsai");
 }
 
 static void
 test_exhaustive_amg_parser(void)
 {
    AMG_args args;
-   AMGSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args);
 
    YAMLnode *root = YAMLnodeCreate("amg", "", 0);
    populate_amg(root, 1);
 
    ErrorCodeResetAll();
-   AMGSetArgsFromYAML(&args, root);
+   hypredrv_AMGSetArgsFromYAML(&args, root);
    ASSERT_FALSE(ErrorCodeActive());
 
    YAMLnodeDestroy(root);
 
    /* Flat-value branch (no children) */
-   exercise_component_flat((void (*)(void *, YAMLnode *))AMGSetArgsFromYAML, &args, "amg", "amg");
+   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_AMGSetArgsFromYAML, &args, "amg", "amg");
 }
 
 static void
 test_exhaustive_mgr_parser(void)
 {
    MGR_args args;
-   MGRSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args);
 
    YAMLnode *mgr = YAMLnodeCreate("mgr", "", 0);
 
    /* Scalars (exercise YAML_NODE_VALIDATE path using MGRGetValidKeys/Values) */
    add_child(mgr, "max_iter", "2", 1);
    add_child(mgr, "num_levels", "2", 1);
-   add_child(mgr, "relax_type", pick_value(MGRGetValidValues("relax_type")), 1);
+   add_child(mgr, "relax_type", pick_value(hypredrv_MGRGetValidValues("relax_type")), 1);
    add_child(mgr, "print_level", "0", 1);
 
    /* levels (exercise custom parsing + lvl bounds checks + nested validation) */
@@ -402,9 +402,9 @@ test_exhaustive_mgr_parser(void)
    /* level 0 */
    YAMLnode *lvl0 = add_child(levels, "0", "", 2);
    add_child(lvl0, "f_dofs", "[0]", 3);
-   add_child(lvl0, "prolongation_type", pick_value(MGRlvlGetValidValues("prolongation_type")), 3);
-   add_child(lvl0, "restriction_type", pick_value(MGRlvlGetValidValues("restriction_type")), 3);
-   add_child(lvl0, "coarse_level_type", pick_value(MGRlvlGetValidValues("coarse_level_type")), 3);
+   add_child(lvl0, "prolongation_type", pick_value(hypredrv_MGRlvlGetValidValues("prolongation_type")), 3);
+   add_child(lvl0, "restriction_type", pick_value(hypredrv_MGRlvlGetValidValues("restriction_type")), 3);
+   add_child(lvl0, "coarse_level_type", pick_value(hypredrv_MGRlvlGetValidValues("coarse_level_type")), 3);
    YAMLnode *f0 = add_child(lvl0, "f_relaxation", "", 3);
    YAMLnode *f0_gmres = add_child(f0, "gmres", "", 4);
    add_child(f0_gmres, "max_iter", "2", 5);
@@ -435,7 +435,7 @@ test_exhaustive_mgr_parser(void)
    add_child(cls_ilu, "type", "bj-iluk", 3);
 
    ErrorCodeResetAll();
-   MGRSetArgsFromYAML(&args, mgr);
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
    ASSERT_FALSE(ErrorCodeActive());
 
    ASSERT_TRUE(args.level[0].f_relaxation.use_krylov);
@@ -470,7 +470,7 @@ static void
 test_mgr_nested_krylov_rejects_mgr_precon(void)
 {
    MGR_args args;
-   MGRSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args);
 
    YAMLnode *mgr = YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
@@ -483,7 +483,7 @@ test_mgr_nested_krylov_rejects_mgr_precon(void)
    YAMLnode *mgr_prec = add_child(prec, "mgr", "", 6);
 
    ErrorCodeResetAll();
-   MGRSetArgsFromYAML(&args, mgr);
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
    ASSERT_TRUE(ErrorCodeActive());
    ASSERT_EQ(mgr_prec->valid, YAML_NODE_INVALID_VAL);
 

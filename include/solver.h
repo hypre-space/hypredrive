@@ -47,21 +47,22 @@ typedef solver_args Solver_args;
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-StrArray       SolverGetValidKeys(void);
-StrIntMapArray SolverGetValidValues(const char *);
-StrIntMapArray SolverGetValidTypeIntMap(void);
+StrArray       hypredrv_SolverGetValidKeys(void);
+StrIntMapArray hypredrv_SolverGetValidValues(const char *);
+StrIntMapArray hypredrv_SolverGetValidTypeIntMap(void);
 
-void SolverSetArgsFromYAML(void *, YAMLnode *);
-void SolverArgsSetDefaultsForMethod(solver_t, solver_args *);
-void SolverCreate(MPI_Comm, solver_t, solver_args *, HYPRE_Solver *);
-void SolverSetupWithReuse(precon_t, solver_t, HYPRE_Precon, HYPRE_Solver, HYPRE_IJMatrix,
-                          HYPRE_IJVector, HYPRE_IJVector, Stats *, int);
-void SolverSetup(precon_t, solver_t, HYPRE_Precon, HYPRE_Solver, HYPRE_IJMatrix,
-                 HYPRE_IJVector, HYPRE_IJVector, Stats *);
-void SolverApply(solver_t, HYPRE_Solver, HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector,
-                 Stats *);
-HYPRE_Int SolverSolveOnly(solver_t, HYPRE_Solver, HYPRE_IJMatrix, HYPRE_IJVector,
-                          HYPRE_IJVector);
-void      SolverDestroy(solver_t, HYPRE_Solver *);
+void hypredrv_SolverSetArgsFromYAML(void *, YAMLnode *);
+void hypredrv_SolverArgsSetDefaultsForMethod(solver_t, solver_args *);
+void hypredrv_SolverCreate(MPI_Comm, solver_t, solver_args *, HYPRE_Solver *);
+void hypredrv_SolverSetupWithReuse(precon_t, solver_t, HYPRE_Precon, HYPRE_Solver,
+                                   HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector,
+                                   Stats *, int);
+void hypredrv_SolverSetup(precon_t, solver_t, HYPRE_Precon, HYPRE_Solver, HYPRE_IJMatrix,
+                          HYPRE_IJVector, HYPRE_IJVector, Stats *);
+void hypredrv_SolverApply(solver_t, HYPRE_Solver, HYPRE_IJMatrix, HYPRE_IJVector,
+                          HYPRE_IJVector, Stats *);
+HYPRE_Int hypredrv_SolverSolveOnly(solver_t, HYPRE_Solver, HYPRE_IJMatrix, HYPRE_IJVector,
+                                   HYPRE_IJVector);
+void      hypredrv_SolverDestroy(solver_t, HYPRE_Solver *);
 
 #endif /* SOLVER_HEADER */

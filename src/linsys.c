@@ -79,17 +79,17 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, type, FieldTypeIntSet),
-   FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, EigSpecSetArgs),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, hypredrv_EigSpecSetArgs),
 };
 
 #define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
 
 /*-----------------------------------------------------------------------------
- * LinearSystemSetFieldByName
+ * hypredrv_LinearSystemSetFieldByName
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetFieldByName(LS_args *args, const YAMLnode *node)
+hypredrv_LinearSystemSetFieldByName(LS_args *args, const YAMLnode *node)
 {
    for (size_t i = 0; i < LS_NUM_FIELDS; i++)
    {
@@ -103,11 +103,11 @@ LinearSystemSetFieldByName(LS_args *args, const YAMLnode *node)
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemGetValidKeys
+ * hypredrv_LinearSystemGetValidKeys
  *-----------------------------------------------------------------------------*/
 
 StrArray
-LinearSystemGetValidKeys(void)
+hypredrv_LinearSystemGetValidKeys(void)
 {
    static const char *keys[LS_NUM_FIELDS];
 
@@ -120,11 +120,11 @@ LinearSystemGetValidKeys(void)
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemGetValidValues
+ * hypredrv_LinearSystemGetValidValues
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-LinearSystemGetValidValues(const char *key)
+hypredrv_LinearSystemGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
@@ -152,11 +152,11 @@ LinearSystemGetValidValues(const char *key)
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemSetDefaultArgs
+ * hypredrv_LinearSystemSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetDefaultArgs(LS_args *args)
+hypredrv_LinearSystemSetDefaultArgs(LS_args *args)
 {
    args->dirname[0]           = '\0';
    args->sequence_filename[0] = '\0';
@@ -188,17 +188,18 @@ LinearSystemSetDefaultArgs(LS_args *args)
 #endif
 
    /* Eigenspectrum defaults */
-   EigSpecSetDefaultArgs(&args->eigspec);
+   hypredrv_EigSpecSetDefaultArgs(&args->eigspec);
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemSetNearNullSpace
+ * hypredrv_LinearSystemSetNearNullSpace
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
-                             int num_entries, int num_components,
-                             const HYPRE_Complex *values, HYPRE_IJVector *vec_nn_ptr)
+hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
+                                      HYPRE_IJMatrix mat, int num_entries,
+                                      int num_components, const HYPRE_Complex *values,
+                                      HYPRE_IJVector *vec_nn_ptr)
 {
    HYPRE_BigInt ilower = 0, iupper = 0, jlower = 0, jupper = 0;
 
@@ -271,16 +272,17 @@ LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix 
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemSetNumSystems
+ * hypredrv_LinearSystemSetNumSystems
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetNumSystems(LS_args *args)
+hypredrv_LinearSystemSetNumSystems(LS_args *args)
 {
    if (args->sequence_filename[0] != '\0')
    {
       int num_systems = 0;
-      if (LSSeqReadSummary(args->sequence_filename, &num_systems, NULL, NULL, NULL))
+      if (hypredrv_LSSeqReadSummary(args->sequence_filename, &num_systems, NULL, NULL,
+                                    NULL))
       {
          args->num_systems = (HYPRE_Int)num_systems;
       }
@@ -298,11 +300,11 @@ LinearSystemSetNumSystems(LS_args *args)
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemGetSuffix
+ * hypredrv_LinearSystemGetSuffix
  *-----------------------------------------------------------------------------*/
 
 int
-LinearSystemGetSuffix(const LS_args *args, int ls_id)
+hypredrv_LinearSystemGetSuffix(const LS_args *args, int ls_id)
 {
    if (!args)
    {
@@ -335,7 +337,7 @@ LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *file
    resolved[0] = '\0';
    if (args->dirname[0] != '\0')
    {
-      int suffix = LinearSystemGetSuffix(args, ls_id);
+      int suffix = hypredrv_LinearSystemGetSuffix(args, ls_id);
       snprintf(resolved, resolved_size, "%.*s_%0*d/%.*s", (int)strlen(args->dirname),
                args->dirname, (int)args->digits_suffix, suffix, (int)strlen(filename),
                filename);
@@ -348,7 +350,7 @@ LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *file
    }
    if (basename[0] != '\0')
    {
-      int suffix = LinearSystemGetSuffix(args, ls_id);
+      int suffix = hypredrv_LinearSystemGetSuffix(args, ls_id);
       snprintf(resolved, resolved_size, "%.*s_%0*d", (int)strlen(basename), basename,
                (int)args->digits_suffix, suffix);
       return 1;
@@ -378,8 +380,8 @@ LinearSystemIJVectorReadFromFile(MPI_Comm comm, const char *filename,
       if (LinearSystemMultipartCanRead(comm, filename))
       {
          int nparts = CountNumberOfPartitions(filename);
-         IJVectorReadMultipartBinary(filename, comm, (uint64_t)nparts, memory_location,
-                                     vector_ptr);
+         hypredrv_IJVectorReadMultipartBinary(filename, comm, (uint64_t)nparts,
+                                              memory_location, vector_ptr);
       }
       else
       {
@@ -445,8 +447,8 @@ LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
          if (LinearSystemMultipartCanRead(comm, matrix_filename))
          {
             int nparts = CountNumberOfPartitions(matrix_filename);
-            IJMatrixReadMultipartBinary(matrix_filename, comm, (uint64_t)nparts,
-                                        memory_location, matrix_ptr);
+            hypredrv_IJMatrixReadMultipartBinary(matrix_filename, comm, (uint64_t)nparts,
+                                                 memory_location, matrix_ptr);
          }
          else
          {
@@ -485,17 +487,18 @@ LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemSetArgsFromYAML
+ * hypredrv_LinearSystemSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
+hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
 {
    YAML_NODE_ITERATE(parent, child)
    {
-      YAML_NODE_VALIDATE(child, LinearSystemGetValidKeys, LinearSystemGetValidValues);
+      YAML_NODE_VALIDATE(child, hypredrv_LinearSystemGetValidKeys,
+                         hypredrv_LinearSystemGetValidValues);
 
-      YAML_NODE_SET_FIELD(child, args, LinearSystemSetFieldByName);
+      YAML_NODE_SET_FIELD(child, args, hypredrv_LinearSystemSetFieldByName);
    }
 
    /* set_suffix and init_suffix/last_suffix are mutually exclusive */
@@ -509,12 +512,12 @@ LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemReadMatrix
+ * hypredrv_LinearSystemReadMatrix
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix *matrix_ptr,
-                       Stats *stats)
+hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
+                                HYPRE_IJMatrix *matrix_ptr, Stats *stats)
 {
    StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "matrix");
 
@@ -529,8 +532,8 @@ LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix *matri
 
    if (args->sequence_filename[0] != '\0')
    {
-      if (!LSSeqReadMatrix(comm, args->sequence_filename, ls_id,
-                           LinearSystemMemoryLocationGet(args), matrix_ptr))
+      if (!hypredrv_LSSeqReadMatrix(comm, args->sequence_filename, ls_id,
+                                    LinearSystemMemoryLocationGet(args), matrix_ptr))
       {
          StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
          return;
@@ -560,11 +563,11 @@ LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix *matri
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemMatrixGetNumRows
+ * hypredrv_LinearSystemMatrixGetNumRows
  *-----------------------------------------------------------------------------*/
 
 long long int
-LinearSystemMatrixGetNumRows(HYPRE_IJMatrix matrix)
+hypredrv_LinearSystemMatrixGetNumRows(HYPRE_IJMatrix matrix)
 {
    HYPRE_ParCSRMatrix par_A = NULL;
    void              *obj   = NULL;
@@ -589,11 +592,11 @@ LinearSystemMatrixGetNumRows(HYPRE_IJMatrix matrix)
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemMatrixGetNumNonzeros
+ * hypredrv_LinearSystemMatrixGetNumNonzeros
  *-----------------------------------------------------------------------------*/
 
 long long int
-LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
+hypredrv_LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
 {
    HYPRE_ParCSRMatrix par_A = NULL;
    void              *obj   = NULL;
@@ -881,8 +884,9 @@ LinearSystemRHSReadFromFile(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
 }
 
 void
-LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
-                   HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr, Stats *stats)
+hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
+                            HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr,
+                            Stats *stats)
 {
    int ls_id = StatsGetLinearSystemID(stats) + 1;
 
@@ -907,8 +911,8 @@ LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
    {
       if (args->sequence_filename[0] != '\0')
       {
-         if (!LSSeqReadRHS(comm, args->sequence_filename, ls_id,
-                           LinearSystemMemoryLocationGet(args), rhs_ptr))
+         if (!hypredrv_LSSeqReadRHS(comm, args->sequence_filename, ls_id,
+                                    LinearSystemMemoryLocationGet(args), rhs_ptr))
          {
             StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
             return;
@@ -932,13 +936,13 @@ LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemSetInitialGuess
+ * hypredrv_LinearSystemSetInitialGuess
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
-                            HYPRE_IJVector rhs, HYPRE_IJVector *x0_ptr,
-                            HYPRE_IJVector *x_ptr, Stats *stats)
+hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
+                                     HYPRE_IJVector rhs, HYPRE_IJVector *x0_ptr,
+                                     HYPRE_IJVector *x_ptr, Stats *stats)
 {
    (void)mat;
    (void)stats;
@@ -1018,12 +1022,12 @@ LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemSetReferenceSolution
+ * hypredrv_LinearSystemSetReferenceSolution
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
-                                 HYPRE_IJVector *xref_ptr, const Stats *stats)
+hypredrv_LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
+                                          HYPRE_IJVector *xref_ptr, const Stats *stats)
 {
    char xref_filename[MAX_FILENAME_LENGTH] = {0};
    int  ls_id                              = StatsGetLinearSystemID(stats) + 1;
@@ -1059,11 +1063,12 @@ LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
    }
 }
 /*-----------------------------------------------------------------------------
- * LinearSystemResetInitialGuess
+ * hypredrv_LinearSystemResetInitialGuess
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr, Stats *stats)
+hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr,
+                                       Stats *stats)
 {
    HYPRE_ParVector par_x0 = NULL, par_x = NULL;
    void           *obj_x0 = NULL, *obj_x = NULL;
@@ -1089,11 +1094,11 @@ LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr, Stats
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemSetVectorTags
+ * hypredrv_LinearSystemSetVectorTags
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
+hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    if (!vec || !dofmap || !dofmap->data || dofmap->size == 0)
@@ -1127,12 +1132,12 @@ LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemSetPrecMatrix
+ * hypredrv_LinearSystemSetPrecMatrix
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
-                          HYPRE_IJMatrix *precmat_ptr, const Stats *stats)
+hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
+                                   HYPRE_IJMatrix *precmat_ptr, const Stats *stats)
 {
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
 
@@ -1142,8 +1147,8 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat
       int ls_id = StatsGetLinearSystemID(stats) + 1;
       snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d/%.*s",
                (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
-               LinearSystemGetSuffix(args, ls_id), (int)strlen(args->precmat_filename),
-               args->precmat_filename);
+               hypredrv_LinearSystemGetSuffix(args, ls_id),
+               (int)strlen(args->precmat_filename), args->precmat_filename);
    }
    else if (args->precmat_filename[0] != '\0')
    {
@@ -1154,7 +1159,7 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat
       int ls_id = StatsGetLinearSystemID(stats) + 1;
       snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d",
                (int)strlen(args->precmat_basename), args->precmat_basename,
-               (int)args->digits_suffix, LinearSystemGetSuffix(args, ls_id));
+               (int)args->digits_suffix, hypredrv_LinearSystemGetSuffix(args, ls_id));
    }
 
    if (matrix_filename[0] == '\0' || !strcmp(matrix_filename, args->matrix_filename))
@@ -1174,12 +1179,12 @@ LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemReadDofmap
+ * hypredrv_LinearSystemReadDofmap
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **dofmap_ptr,
-                       Stats *stats)
+hypredrv_LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **dofmap_ptr,
+                                Stats *stats)
 {
    int ls_id = StatsGetLinearSystemID(stats) + 1;
 
@@ -1192,7 +1197,7 @@ LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **dofmap_ptr
    if (args->sequence_filename[0] != '\0')
    {
       StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
-      if (!LSSeqReadDofmap(comm, args->sequence_filename, ls_id, dofmap_ptr))
+      if (!hypredrv_LSSeqReadDofmap(comm, args->sequence_filename, ls_id, dofmap_ptr))
       {
          StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
          return;
@@ -1214,8 +1219,8 @@ LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **dofmap_ptr
       {
          snprintf(dofmap_filename, sizeof(dofmap_filename), "%.*s_%0*d/%.*s",
                   (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
-                  LinearSystemGetSuffix(args, ls_id), (int)strlen(args->dofmap_filename),
-                  args->dofmap_filename);
+                  hypredrv_LinearSystemGetSuffix(args, ls_id),
+                  (int)strlen(args->dofmap_filename), args->dofmap_filename);
       }
       else if (args->dofmap_filename[0] != '\0')
       {
@@ -1225,7 +1230,7 @@ LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **dofmap_ptr
       {
          snprintf(dofmap_filename, sizeof(dofmap_filename), "%.*s_%0*d",
                   (int)strlen(args->dofmap_basename), args->dofmap_basename,
-                  (int)args->digits_suffix, LinearSystemGetSuffix(args, ls_id));
+                  (int)args->digits_suffix, hypredrv_LinearSystemGetSuffix(args, ls_id));
       }
 
       /* Destroy previous dofmap array */
@@ -1245,7 +1250,7 @@ LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **dofmap_ptr
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemGetSolutionValues(HYPRE_IJVector sol, HYPRE_Complex **data_ptr)
+hypredrv_LinearSystemGetSolutionValues(HYPRE_IJVector sol, HYPRE_Complex **data_ptr)
 {
    HYPRE_ParVector par_sol = NULL;
    hypre_Vector   *seq_sol = NULL;
@@ -1263,7 +1268,7 @@ LinearSystemGetSolutionValues(HYPRE_IJVector sol, HYPRE_Complex **data_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemGetRHSValues(HYPRE_IJVector rhs, HYPRE_Complex **data_ptr)
+hypredrv_LinearSystemGetRHSValues(HYPRE_IJVector rhs, HYPRE_Complex **data_ptr)
 {
    HYPRE_ParVector par_rhs = NULL;
    hypre_Vector   *seq_rhs = NULL;
@@ -1281,7 +1286,8 @@ LinearSystemGetRHSValues(HYPRE_IJVector rhs, HYPRE_Complex **data_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double *norm)
+hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type,
+                                       double *norm)
 {
    HYPRE_ParVector      par_vec = NULL;
    const hypre_Vector  *seq_vec = NULL;
@@ -1367,12 +1373,12 @@ LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type, double 
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemComputeErrorNorm
+ * hypredrv_LinearSystemComputeErrorNorm
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector vec_x,
-                             const char *norm_type, double *e_norm)
+hypredrv_LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector vec_x,
+                                      const char *norm_type, double *e_norm)
 {
    HYPRE_ParVector par_xref = NULL;
    HYPRE_ParVector par_x    = NULL;
@@ -1411,20 +1417,20 @@ LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector vec_x,
 #endif
 
    /* Compute error norm */
-   LinearSystemComputeVectorNorm(vec_e, norm_type, e_norm);
+   hypredrv_LinearSystemComputeVectorNorm(vec_e, norm_type, e_norm);
 
    /* Free memory */
    HYPRE_IJVectorDestroy(vec_e);
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemComputeResidualNorm
+ * hypredrv_LinearSystemComputeResidualNorm
  *-----------------------------------------------------------------------------*/
 
 void
-LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
-                                HYPRE_IJVector vec_x, const char *norm_type,
-                                double *res_norm)
+hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
+                                         HYPRE_IJVector vec_x, const char *norm_type,
+                                         double *res_norm)
 {
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL;
@@ -1463,7 +1469,7 @@ LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
    HYPRE_ParCSRMatrixMatvec(neg_one, par_A, par_x, one, par_r);
 
    /* Compute residual norm */
-   LinearSystemComputeVectorNorm(vec_r, norm_type, res_norm);
+   hypredrv_LinearSystemComputeVectorNorm(vec_r, norm_type, res_norm);
 
    /* Free memory */
    HYPRE_IJVectorDestroy(vec_r);
@@ -1474,8 +1480,8 @@ LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
  *---------------------------------------------------------------------------*/
 
 void
-LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_A,
-                      HYPRE_IJVector vec_b, const IntArray *dofmap)
+hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_A,
+                               HYPRE_IJVector vec_b, const IntArray *dofmap)
 {
    const char *A_base =
       (args && args->matrix_basename[0] != '\0') ? args->matrix_basename : "IJ.out.A";

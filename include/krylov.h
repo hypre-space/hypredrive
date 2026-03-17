@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#ifndef NESTED_KRYLOV_HEADER
-#define NESTED_KRYLOV_HEADER
+#ifndef KRYLOV_HEADER
+#define KRYLOV_HEADER
 
 #include "HYPRE.h"
 #include "precon.h"
@@ -33,4 +33,4 @@ void NestedKrylovCreate(MPI_Comm, NestedKrylov_args *, IntArray *, HYPRE_IJVecto
                         HYPRE_Solver *);
 void NestedKrylovDestroy(NestedKrylov_args *);
 
-#endif /* NESTED_KRYLOV_HEADER */
+#endif /* KRYLOV_HEADER */

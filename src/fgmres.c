@@ -27,15 +27,15 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(FGMRES)      // LCOV_EXCL_LINE
-DEFINE_VOID_GET_VALID_VALUES_FUNC(FGMRES) // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS(FGMRES)               // LCOV_EXCL_LINE
+DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_FGMRES) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * FGMRESSetDefaultArgs
  *-----------------------------------------------------------------------------*/
 
 void
-FGMRESSetDefaultArgs(FGMRES_args *args)
+hypredrv_FGMRESSetDefaultArgs(FGMRES_args *args)
 {
    args->min_iter     = 0;
    args->max_iter     = 300;
@@ -51,7 +51,7 @@ FGMRESSetDefaultArgs(FGMRES_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-FGMRESCreate(MPI_Comm comm, const FGMRES_args *args, HYPRE_Solver *solver_ptr)
+hypredrv_FGMRESCreate(MPI_Comm comm, const FGMRES_args *args, HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver = NULL;
 

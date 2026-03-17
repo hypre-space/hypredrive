@@ -101,7 +101,7 @@ GENERATE_PREFIXED_COMPONENTS(EigSpec) // LCOV_EXCL_LINE
  *-----------------------------------------------------------------------------*/
 
 StrIntMapArray
-EigSpecGetValidValues(const char *key)
+hypredrv_EigSpecGetValidValues(const char *key)
 {
    if (!strcmp(key, "enable") || !strcmp(key, "vectors") || !strcmp(key, "hermitian") ||
        !strcmp(key, "preconditioned"))
@@ -118,7 +118,7 @@ EigSpecGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-EigSpecSetDefaultArgs(EigSpec_args *args)
+hypredrv_EigSpecSetDefaultArgs(EigSpec_args *args)
 {
    args->enable         = 0;
    args->vectors        = 0;

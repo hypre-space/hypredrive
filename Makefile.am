@@ -12,7 +12,7 @@ hypredrive_lsseq_LDADD = libHYPREDRV.la
 lib_LTLIBRARIES = libHYPREDRV.la
 libHYPREDRV_la_SOURCES = src/error.c src/eigspec.c src/info.c src/stats.c src/utils.c src/containers.c src/yaml.c\
                          src/field.c src/vector.c src/matrix.c src/linsys.c src/cheby.c src/amg.c\
-                         src/fsai.c src/ilu.c src/mgr.c src/precon.c src/presets.c src/nested_krylov.c\
+                         src/fsai.c src/ilu.c src/mgr.c src/precon.c src/presets.c src/krylov.c\
 			 src/pcg.c src/gmres.c src/fgmres.c src/bicgstab.c src/solver.c src/args.c \
                          src/comp.c src/lsseq.c src/scaling.c src/HYPREDRV.c
 libHYPREDRV_la_CFLAGS = $(AM_CPPFLAGS) -fvisibility=hidden

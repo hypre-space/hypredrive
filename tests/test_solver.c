@@ -22,24 +22,24 @@
 #endif
 
 /* Forward declarations */
-void           GMRESSetFieldByName(void *, const YAMLnode *);
-void           GMRESSetDefaultArgs(GMRES_args *);
-StrArray       GMRESGetValidKeys(void);
-StrIntMapArray GMRESGetValidValues(const char *);
-void           PCGSetFieldByName(void *, const YAMLnode *);
-void           PCGSetDefaultArgs(PCG_args *);
-StrIntMapArray PCGGetValidValues(const char *);
-void           BiCGSTABSetFieldByName(void *, const YAMLnode *);
-void           BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
-StrIntMapArray BiCGSTABGetValidValues(const char *);
-void           FGMRESSetFieldByName(void *, const YAMLnode *);
-void           FGMRESSetDefaultArgs(FGMRES_args *);
-StrArray       FGMRESGetValidKeys(void);
-StrIntMapArray FGMRESGetValidValues(const char *);
-void           ChebySetFieldByName(void *, const YAMLnode *);
-void           ChebySetDefaultArgs(Cheby_args *);
-StrArray       ChebyGetValidKeys(void);
-StrIntMapArray ChebyGetValidValues(const char *);
+void           hypredrv_GMRESSetFieldByName(void *, const YAMLnode *);
+void           hypredrv_GMRESSetDefaultArgs(GMRES_args *);
+StrArray       hypredrv_GMRESGetValidKeys(void);
+StrIntMapArray hypredrv_GMRESGetValidValues(const char *);
+void           hypredrv_PCGSetFieldByName(void *, const YAMLnode *);
+void           hypredrv_PCGSetDefaultArgs(PCG_args *);
+StrIntMapArray hypredrv_PCGGetValidValues(const char *);
+void           hypredrv_BiCGSTABSetFieldByName(void *, const YAMLnode *);
+void           hypredrv_BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
+StrIntMapArray hypredrv_BiCGSTABGetValidValues(const char *);
+void           hypredrv_FGMRESSetFieldByName(void *, const YAMLnode *);
+void           hypredrv_FGMRESSetDefaultArgs(FGMRES_args *);
+StrArray       hypredrv_FGMRESGetValidKeys(void);
+StrIntMapArray hypredrv_FGMRESGetValidValues(const char *);
+void           hypredrv_ChebySetFieldByName(void *, const YAMLnode *);
+void           hypredrv_ChebySetDefaultArgs(Cheby_args *);
+StrArray       hypredrv_ChebyGetValidKeys(void);
+StrIntMapArray hypredrv_ChebyGetValidValues(const char *);
 
 typedef struct
 {
@@ -56,7 +56,7 @@ make_scalar_node(const char *key, const char *value)
 }
 
 static void
-test_GMRESSetFieldByName_all_fields(void)
+test_hypredrv_GMRESSetFieldByName_all_fields(void)
 {
    static const keyval_pair updates[] = {
       {.key = "min_iter", .value = "2"},
@@ -73,12 +73,12 @@ test_GMRESSetFieldByName_all_fields(void)
    };
 
    GMRES_args args;
-   GMRESSetDefaultArgs(&args);
+   hypredrv_GMRESSetDefaultArgs(&args);
 
    for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
    {
       YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
-      GMRESSetFieldByName(&args, node);
+      hypredrv_GMRESSetFieldByName(&args, node);
       YAMLnodeDestroy(node);
    }
 
@@ -94,27 +94,27 @@ test_GMRESSetFieldByName_all_fields(void)
    ASSERT_EQ_DOUBLE(args.absolute_tol, 0.5, 1e-12);
    ASSERT_EQ_DOUBLE(args.conv_fac_tol, 0.25, 1e-12);
 
-   StrArray keys = GMRESGetValidKeys();
+   StrArray keys = hypredrv_GMRESGetValidKeys();
    ASSERT_EQ(keys.size, sizeof(updates) / sizeof(updates[0]));
    for (size_t i = 0; i < keys.size; i++)
    {
       ASSERT_TRUE(StrArrayEntryExists(keys, updates[i].key));
    }
 
-   StrIntMapArray bool_map = GMRESGetValidValues("skip_real_res_check");
+   StrIntMapArray bool_map = hypredrv_GMRESGetValidValues("skip_real_res_check");
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(bool_map, "on"));
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(bool_map, "off"));
 
-   StrIntMapArray rel_change_map = GMRESGetValidValues("rel_change");
+   StrIntMapArray rel_change_map = hypredrv_GMRESGetValidValues("rel_change");
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(rel_change_map, "on"));
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(rel_change_map, "off"));
 
    /* Test else branch - key that doesn't match any condition */
-   StrIntMapArray void_map = GMRESGetValidValues("unknown_key");
+   StrIntMapArray void_map = hypredrv_GMRESGetValidValues("unknown_key");
    ASSERT_EQ(void_map.size, 0);
 
    /* Test else branch with another non-matching key */
-   StrIntMapArray void_map2 = GMRESGetValidValues("max_iter");
+   StrIntMapArray void_map2 = hypredrv_GMRESGetValidValues("max_iter");
    ASSERT_EQ(void_map2.size, 0);
 
    YAMLnode *parent = YAMLnodeCreate("gmres", "", 0);
@@ -125,7 +125,7 @@ test_GMRESSetFieldByName_all_fields(void)
    }
 
    GMRES_args args_from_yaml;
-   GMRESSetArgs(&args_from_yaml, parent);
+   hypredrv_GMRESSetArgs(&args_from_yaml, parent);
    YAMLnodeDestroy(parent);
 
    ASSERT_EQ(args_from_yaml.max_iter, 75);
@@ -133,7 +133,7 @@ test_GMRESSetFieldByName_all_fields(void)
 }
 
 static void
-test_PCGSetFieldByName_all_fields(void)
+test_hypredrv_PCGSetFieldByName_all_fields(void)
 {
    static const keyval_pair updates[] = {
       {.key = "max_iter", .value = "150"},
@@ -149,12 +149,12 @@ test_PCGSetFieldByName_all_fields(void)
    };
 
    PCG_args args;
-   PCGSetDefaultArgs(&args);
+   hypredrv_PCGSetDefaultArgs(&args);
 
    for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
    {
       YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
-      PCGSetFieldByName(&args, node);
+      hypredrv_PCGSetFieldByName(&args, node);
       YAMLnodeDestroy(node);
    }
 
@@ -169,32 +169,32 @@ test_PCGSetFieldByName_all_fields(void)
    ASSERT_EQ_DOUBLE(args.residual_tol, 0.33, 1e-12);
    ASSERT_EQ_DOUBLE(args.conv_fac_tol, 0.12, 1e-12);
 
-   StrIntMapArray bool_map = PCGGetValidValues("two_norm");
+   StrIntMapArray bool_map = hypredrv_PCGGetValidValues("two_norm");
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(bool_map, "on"));
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(bool_map, "off"));
 
-   StrIntMapArray stop_crit_map = PCGGetValidValues("stop_crit");
+   StrIntMapArray stop_crit_map = hypredrv_PCGGetValidValues("stop_crit");
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(stop_crit_map, "on"));
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(stop_crit_map, "off"));
 
-   StrIntMapArray rel_change_map = PCGGetValidValues("rel_change");
+   StrIntMapArray rel_change_map = hypredrv_PCGGetValidValues("rel_change");
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(rel_change_map, "on"));
    ASSERT_TRUE(StrIntMapArrayDomainEntryExists(rel_change_map, "off"));
 
    /* Test else branch - key that doesn't match any condition */
-   StrIntMapArray void_map = PCGGetValidValues("unknown_key");
+   StrIntMapArray void_map = hypredrv_PCGGetValidValues("unknown_key");
    ASSERT_EQ(void_map.size, 0);
 
    /* Test else branch with another non-matching key */
-   StrIntMapArray void_map2 = PCGGetValidValues("max_iter");
+   StrIntMapArray void_map2 = hypredrv_PCGGetValidValues("max_iter");
    ASSERT_EQ(void_map2.size, 0);
 
-   StrIntMapArray void_map3 = PCGGetValidValues("relative_tol");
+   StrIntMapArray void_map3 = hypredrv_PCGGetValidValues("relative_tol");
    ASSERT_EQ(void_map3.size, 0);
 }
 
 static void
-test_BiCGSTABSetFieldByName_all_fields(void)
+test_hypredrv_BiCGSTABSetFieldByName_all_fields(void)
 {
    static const keyval_pair updates[] = {
       {.key = "min_iter", .value = "3"},
@@ -208,12 +208,12 @@ test_BiCGSTABSetFieldByName_all_fields(void)
    };
 
    BiCGSTAB_args args;
-   BiCGSTABSetDefaultArgs(&args);
+   hypredrv_BiCGSTABSetDefaultArgs(&args);
 
    for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
    {
       YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
-      BiCGSTABSetFieldByName(&args, node);
+      hypredrv_BiCGSTABSetFieldByName(&args, node);
       YAMLnodeDestroy(node);
    }
 
@@ -231,10 +231,10 @@ static void
 test_BiCGSTABGetValidValues_void_branch(void)
 {
    /* BiCGSTAB uses DEFINE_VOID_GET_VALID_VALUES_FUNC, so all keys return void */
-   StrIntMapArray void_map1 = BiCGSTABGetValidValues("unknown_key");
+   StrIntMapArray void_map1 = hypredrv_BiCGSTABGetValidValues("unknown_key");
    ASSERT_EQ(void_map1.size, 0);
 
-   StrIntMapArray void_map2 = BiCGSTABGetValidValues("max_iter");
+   StrIntMapArray void_map2 = hypredrv_BiCGSTABGetValidValues("max_iter");
    ASSERT_EQ(void_map2.size, 0);
 }
 
@@ -242,26 +242,26 @@ static void
 test_FGMRESGetValidValues_void_branch(void)
 {
    /* FGMRES uses DEFINE_VOID_GET_VALID_VALUES_FUNC, so all keys return void */
-   StrIntMapArray void_map1 = FGMRESGetValidValues("unknown_key");
+   StrIntMapArray void_map1 = hypredrv_FGMRESGetValidValues("unknown_key");
    ASSERT_EQ(void_map1.size, 0);
 
-   StrIntMapArray void_map2 = FGMRESGetValidValues("max_iter");
+   StrIntMapArray void_map2 = hypredrv_FGMRESGetValidValues("max_iter");
    ASSERT_EQ(void_map2.size, 0);
 }
 
 static void
-test_ChebyGetValidValues_void_branch(void)
+test_hypredrv_ChebyGetValidValues_void_branch(void)
 {
    /* Cheby uses DEFINE_VOID_GET_VALID_VALUES_FUNC, so all keys return void */
-   StrIntMapArray void_map1 = ChebyGetValidValues("unknown_key");
+   StrIntMapArray void_map1 = hypredrv_ChebyGetValidValues("unknown_key");
    ASSERT_EQ(void_map1.size, 0);
 
-   StrIntMapArray void_map2 = ChebyGetValidValues("order");
+   StrIntMapArray void_map2 = hypredrv_ChebyGetValidValues("order");
    ASSERT_EQ(void_map2.size, 0);
 }
 
 static void
-test_FGMRESSetFieldByName_all_fields(void)
+test_hypredrv_FGMRESSetFieldByName_all_fields(void)
 {
    static const keyval_pair updates[] = {
       {.key = "min_iter", .value = "1"},
@@ -274,12 +274,12 @@ test_FGMRESSetFieldByName_all_fields(void)
    };
 
    FGMRES_args args;
-   FGMRESSetDefaultArgs(&args);
+   hypredrv_FGMRESSetDefaultArgs(&args);
 
    for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
    {
       YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
-      FGMRESSetFieldByName(&args, node);
+      hypredrv_FGMRESSetFieldByName(&args, node);
       YAMLnodeDestroy(node);
    }
 
@@ -291,7 +291,7 @@ test_FGMRESSetFieldByName_all_fields(void)
    ASSERT_EQ_DOUBLE(args.relative_tol, 1.0e-8, 1e-18);
    ASSERT_EQ_DOUBLE(args.absolute_tol, 0.1, 1e-12);
 
-   StrArray keys = FGMRESGetValidKeys();
+   StrArray keys = hypredrv_FGMRESGetValidKeys();
    ASSERT_EQ(keys.size, sizeof(updates) / sizeof(updates[0]));
    for (size_t i = 0; i < keys.size; i++)
    {
@@ -306,8 +306,8 @@ test_FGMRESSetFieldByName_all_fields(void)
    }
 
    FGMRES_args args_from_yaml;
-   FGMRESSetDefaultArgs(&args_from_yaml);
-   FGMRESSetArgs(&args_from_yaml, parent);
+   hypredrv_FGMRESSetDefaultArgs(&args_from_yaml);
+   hypredrv_FGMRESSetArgs(&args_from_yaml, parent);
    YAMLnodeDestroy(parent);
 
    ASSERT_EQ(args_from_yaml.max_iter, 200);
@@ -315,7 +315,7 @@ test_FGMRESSetFieldByName_all_fields(void)
 }
 
 static void
-test_ChebySetFieldByName_all_fields(void)
+test_hypredrv_ChebySetFieldByName_all_fields(void)
 {
    static const keyval_pair updates[] = {
       {.key = "order", .value = "3"},
@@ -326,12 +326,12 @@ test_ChebySetFieldByName_all_fields(void)
    };
 
    Cheby_args args;
-   ChebySetDefaultArgs(&args);
+   hypredrv_ChebySetDefaultArgs(&args);
 
    for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
    {
       YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
-      ChebySetFieldByName(&args, node);
+      hypredrv_ChebySetFieldByName(&args, node);
       YAMLnodeDestroy(node);
    }
 
@@ -341,7 +341,7 @@ test_ChebySetFieldByName_all_fields(void)
    ASSERT_EQ(args.scale, 2);
    ASSERT_EQ_DOUBLE(args.fraction, 0.4, 1e-12);
 
-   StrArray keys = ChebyGetValidKeys();
+   StrArray keys = hypredrv_ChebyGetValidKeys();
    ASSERT_EQ(keys.size, sizeof(updates) / sizeof(updates[0]));
    for (size_t i = 0; i < keys.size; i++)
    {
@@ -356,8 +356,8 @@ test_ChebySetFieldByName_all_fields(void)
    }
 
    Cheby_args args_from_yaml;
-   ChebySetDefaultArgs(&args_from_yaml);
-   ChebySetArgs(&args_from_yaml, parent);
+   hypredrv_ChebySetDefaultArgs(&args_from_yaml);
+   hypredrv_ChebySetArgs(&args_from_yaml, parent);
    YAMLnodeDestroy(parent);
 
    ASSERT_EQ(args_from_yaml.order, 3);
@@ -365,15 +365,15 @@ test_ChebySetFieldByName_all_fields(void)
 }
 
 static void
-test_GMRESSetFieldByName_unknown_key(void)
+test_hypredrv_GMRESSetFieldByName_unknown_key(void)
 {
    GMRES_args args;
-   GMRESSetDefaultArgs(&args);
+   hypredrv_GMRESSetDefaultArgs(&args);
    int original_max_iter = args.max_iter;
 
    YAMLnode *unknown_node = make_scalar_node("unknown_key", "value");
    ErrorCodeResetAll();
-   GMRESSetFieldByName(&args, unknown_node);
+   hypredrv_GMRESSetFieldByName(&args, unknown_node);
 
    /* SetFieldByName doesn't validate - verify args weren't modified */
    ASSERT_EQ(args.max_iter, original_max_iter);
@@ -381,15 +381,15 @@ test_GMRESSetFieldByName_unknown_key(void)
 }
 
 static void
-test_PCGSetFieldByName_unknown_key(void)
+test_hypredrv_PCGSetFieldByName_unknown_key(void)
 {
    PCG_args args;
-   PCGSetDefaultArgs(&args);
+   hypredrv_PCGSetDefaultArgs(&args);
    int original_max_iter = args.max_iter;
 
    YAMLnode *unknown_node = make_scalar_node("unknown_key", "value");
    ErrorCodeResetAll();
-   PCGSetFieldByName(&args, unknown_node);
+   hypredrv_PCGSetFieldByName(&args, unknown_node);
 
    /* SetFieldByName doesn't validate - verify args weren't modified */
    ASSERT_EQ(args.max_iter, original_max_iter);
@@ -397,15 +397,15 @@ test_PCGSetFieldByName_unknown_key(void)
 }
 
 static void
-test_BiCGSTABSetFieldByName_unknown_key(void)
+test_hypredrv_BiCGSTABSetFieldByName_unknown_key(void)
 {
    BiCGSTAB_args args;
-   BiCGSTABSetDefaultArgs(&args);
+   hypredrv_BiCGSTABSetDefaultArgs(&args);
    int original_max_iter = args.max_iter;
 
    YAMLnode *unknown_node = make_scalar_node("unknown_key", "value");
    ErrorCodeResetAll();
-   BiCGSTABSetFieldByName(&args, unknown_node);
+   hypredrv_BiCGSTABSetFieldByName(&args, unknown_node);
 
    /* SetFieldByName doesn't validate - verify args weren't modified */
    ASSERT_EQ(args.max_iter, original_max_iter);
@@ -413,15 +413,15 @@ test_BiCGSTABSetFieldByName_unknown_key(void)
 }
 
 static void
-test_FGMRESSetFieldByName_unknown_key(void)
+test_hypredrv_FGMRESSetFieldByName_unknown_key(void)
 {
    FGMRES_args args;
-   FGMRESSetDefaultArgs(&args);
+   hypredrv_FGMRESSetDefaultArgs(&args);
    int original_max_iter = args.max_iter;
 
    YAMLnode *unknown_node = make_scalar_node("unknown_key", "value");
    ErrorCodeResetAll();
-   FGMRESSetFieldByName(&args, unknown_node);
+   hypredrv_FGMRESSetFieldByName(&args, unknown_node);
 
    /* SetFieldByName doesn't validate - verify args weren't modified */
    ASSERT_EQ(args.max_iter, original_max_iter);
@@ -429,15 +429,15 @@ test_FGMRESSetFieldByName_unknown_key(void)
 }
 
 static void
-test_ChebySetFieldByName_unknown_key(void)
+test_hypredrv_ChebySetFieldByName_unknown_key(void)
 {
    Cheby_args args;
-   ChebySetDefaultArgs(&args);
+   hypredrv_ChebySetDefaultArgs(&args);
    int original_order = args.order;
 
    YAMLnode *unknown_node = make_scalar_node("unknown_key", "value");
    ErrorCodeResetAll();
-   ChebySetFieldByName(&args, unknown_node);
+   hypredrv_ChebySetFieldByName(&args, unknown_node);
 
    /* SetFieldByName doesn't validate - verify args weren't modified */
    ASSERT_EQ(args.order, original_order);
@@ -449,7 +449,7 @@ test_ChebySetFieldByName_unknown_key(void)
  *-----------------------------------------------------------------------------*/
 
 static void
-test_SolverCreate_all_cases(void)
+test_hypredrv_SolverCreate_all_cases(void)
 {
    TEST_HYPRE_INIT();
 
@@ -457,46 +457,46 @@ test_SolverCreate_all_cases(void)
    HYPRE_Solver solver = NULL;
 
    /* Test PCG */
-   PCGSetDefaultArgs(&args.pcg);
+   hypredrv_PCGSetDefaultArgs(&args.pcg);
    ErrorCodeResetAll();
-   SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
    ASSERT_NOT_NULL(solver);
    ASSERT_FALSE(ErrorCodeActive());
-   SolverDestroy(SOLVER_PCG, &solver);
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
    ASSERT_NULL(solver);
 
    /* Test GMRES */
-   GMRESSetDefaultArgs(&args.gmres);
+   hypredrv_GMRESSetDefaultArgs(&args.gmres);
    ErrorCodeResetAll();
-   SolverCreate(MPI_COMM_SELF, SOLVER_GMRES, &args, &solver);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_GMRES, &args, &solver);
    ASSERT_NOT_NULL(solver);
    ASSERT_FALSE(ErrorCodeActive());
-   SolverDestroy(SOLVER_GMRES, &solver);
+   hypredrv_SolverDestroy(SOLVER_GMRES, &solver);
    ASSERT_NULL(solver);
 
    /* Test FGMRES */
-   FGMRESSetDefaultArgs(&args.fgmres);
+   hypredrv_FGMRESSetDefaultArgs(&args.fgmres);
    ErrorCodeResetAll();
-   SolverCreate(MPI_COMM_SELF, SOLVER_FGMRES, &args, &solver);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_FGMRES, &args, &solver);
    ASSERT_NOT_NULL(solver);
    ASSERT_FALSE(ErrorCodeActive());
-   SolverDestroy(SOLVER_FGMRES, &solver);
+   hypredrv_SolverDestroy(SOLVER_FGMRES, &solver);
    ASSERT_NULL(solver);
 
    /* Test BiCGSTAB */
-   BiCGSTABSetDefaultArgs(&args.bicgstab);
+   hypredrv_BiCGSTABSetDefaultArgs(&args.bicgstab);
    ErrorCodeResetAll();
-   SolverCreate(MPI_COMM_SELF, SOLVER_BICGSTAB, &args, &solver);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_BICGSTAB, &args, &solver);
    ASSERT_NOT_NULL(solver);
    ASSERT_FALSE(ErrorCodeActive());
-   SolverDestroy(SOLVER_BICGSTAB, &solver);
+   hypredrv_SolverDestroy(SOLVER_BICGSTAB, &solver);
    ASSERT_NULL(solver);
 
    TEST_HYPRE_FINALIZE();
 }
 
 static void
-test_SolverCreate_default_case(void)
+test_hypredrv_SolverCreate_default_case(void)
 {
    TEST_HYPRE_INIT();
 
@@ -505,7 +505,7 @@ test_SolverCreate_default_case(void)
 
    /* Test default case with invalid enum value */
    ErrorCodeResetAll();
-   SolverCreate(MPI_COMM_SELF, (solver_t)999, &args, &solver);
+   hypredrv_SolverCreate(MPI_COMM_SELF, (solver_t)999, &args, &solver);
    ASSERT_NULL(solver);
    /* Default case should not set error, just return NULL */
 
@@ -513,7 +513,7 @@ test_SolverCreate_default_case(void)
 }
 
 static void
-test_SolverDestroy_all_cases(void)
+test_hypredrv_SolverDestroy_all_cases(void)
 {
    TEST_HYPRE_INIT();
 
@@ -521,38 +521,38 @@ test_SolverDestroy_all_cases(void)
    HYPRE_Solver solver = NULL;
 
    /* Test PCG destroy */
-   PCGSetDefaultArgs(&args.pcg);
-   SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   hypredrv_PCGSetDefaultArgs(&args.pcg);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
    ASSERT_NOT_NULL(solver);
-   SolverDestroy(SOLVER_PCG, &solver);
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
    ASSERT_NULL(solver);
 
    /* Test GMRES destroy */
-   GMRESSetDefaultArgs(&args.gmres);
-   SolverCreate(MPI_COMM_SELF, SOLVER_GMRES, &args, &solver);
+   hypredrv_GMRESSetDefaultArgs(&args.gmres);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_GMRES, &args, &solver);
    ASSERT_NOT_NULL(solver);
-   SolverDestroy(SOLVER_GMRES, &solver);
+   hypredrv_SolverDestroy(SOLVER_GMRES, &solver);
    ASSERT_NULL(solver);
 
    /* Test FGMRES destroy */
-   FGMRESSetDefaultArgs(&args.fgmres);
-   SolverCreate(MPI_COMM_SELF, SOLVER_FGMRES, &args, &solver);
+   hypredrv_FGMRESSetDefaultArgs(&args.fgmres);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_FGMRES, &args, &solver);
    ASSERT_NOT_NULL(solver);
-   SolverDestroy(SOLVER_FGMRES, &solver);
+   hypredrv_SolverDestroy(SOLVER_FGMRES, &solver);
    ASSERT_NULL(solver);
 
    /* Test BiCGSTAB destroy */
-   BiCGSTABSetDefaultArgs(&args.bicgstab);
-   SolverCreate(MPI_COMM_SELF, SOLVER_BICGSTAB, &args, &solver);
+   hypredrv_BiCGSTABSetDefaultArgs(&args.bicgstab);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_BICGSTAB, &args, &solver);
    ASSERT_NOT_NULL(solver);
-   SolverDestroy(SOLVER_BICGSTAB, &solver);
+   hypredrv_SolverDestroy(SOLVER_BICGSTAB, &solver);
    ASSERT_NULL(solver);
 
    TEST_HYPRE_FINALIZE();
 }
 
 static void
-test_SolverDestroy_default_case(void)
+test_hypredrv_SolverDestroy_default_case(void)
 {
    TEST_HYPRE_INIT();
 
@@ -560,34 +560,34 @@ test_SolverDestroy_default_case(void)
    HYPRE_Solver solver = NULL;
 
    /* Create a solver first */
-   PCGSetDefaultArgs(&args.pcg);
-   SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   hypredrv_PCGSetDefaultArgs(&args.pcg);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
    ASSERT_NOT_NULL(solver);
 
    /* Test default case with invalid enum - should return early */
-   SolverDestroy((solver_t)999, &solver);
+   hypredrv_SolverDestroy((solver_t)999, &solver);
    /* Solver should still exist since default case returns early */
    ASSERT_NOT_NULL(solver);
 
    /* Clean up properly */
-   SolverDestroy(SOLVER_PCG, &solver);
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
    ASSERT_NULL(solver);
 
    TEST_HYPRE_FINALIZE();
 }
 
 static void
-test_SolverDestroy_null_solver(void)
+test_hypredrv_SolverDestroy_null_solver(void)
 {
    HYPRE_Solver solver = NULL;
 
    /* Destroy with NULL should not crash */
-   SolverDestroy(SOLVER_PCG, &solver);
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
    ASSERT_NULL(solver);
 }
 
 static void
-test_SolverSetup_default_case(void)
+test_hypredrv_SolverSetup_default_case(void)
 {
    TEST_HYPRE_INIT();
 
@@ -617,15 +617,15 @@ test_SolverSetup_default_case(void)
 
    HYPRE_Solver solver = NULL;
    solver_args  args;
-   PCGSetDefaultArgs(&args.pcg);
-   SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   hypredrv_PCGSetDefaultArgs(&args.pcg);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
 
    /* Test default case with invalid solver enum */
    ErrorCodeResetAll();
-   SolverSetup(PRECON_NONE, (solver_t)999, precon, solver, M, b, x, NULL);
+   hypredrv_SolverSetup(PRECON_NONE, (solver_t)999, precon, solver, M, b, x, NULL);
    /* Should return early without error */
 
-   SolverDestroy(SOLVER_PCG, &solver);
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
    free(precon);
    HYPRE_IJVectorDestroy(x);
    HYPRE_IJVectorDestroy(b);
@@ -634,7 +634,7 @@ test_SolverSetup_default_case(void)
 }
 
 static void
-test_SolverApply_default_case(void)
+test_hypredrv_SolverApply_default_case(void)
 {
    TEST_HYPRE_INIT();
 
@@ -659,15 +659,15 @@ test_SolverApply_default_case(void)
 
    HYPRE_Solver solver = NULL;
    solver_args  args;
-   PCGSetDefaultArgs(&args.pcg);
-   SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   hypredrv_PCGSetDefaultArgs(&args.pcg);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
 
    /* Test default case with invalid solver enum */
    ErrorCodeResetAll();
-   SolverApply((solver_t)999, solver, A, b, x, NULL);
+   hypredrv_SolverApply((solver_t)999, solver, A, b, x, NULL);
    /* Should return early without error */
 
-   SolverDestroy(SOLVER_PCG, &solver);
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
    HYPRE_IJVectorDestroy(x);
    HYPRE_IJVectorDestroy(b);
    HYPRE_IJMatrixDestroy(A);
@@ -675,7 +675,7 @@ test_SolverApply_default_case(void)
 }
 
 static void
-test_SolverCreate_default_case_comprehensive(void)
+test_hypredrv_SolverCreate_default_case_comprehensive(void)
 {
    TEST_HYPRE_INIT();
 
@@ -683,18 +683,18 @@ test_SolverCreate_default_case_comprehensive(void)
 
    /* Test multiple invalid solver types to exercise default case */
    ErrorCodeResetAll();
-   SolverCreate(MPI_COMM_SELF, (solver_t)999, &args, NULL);
+   hypredrv_SolverCreate(MPI_COMM_SELF, (solver_t)999, &args, NULL);
    ASSERT_TRUE(ErrorCodeActive()); /* Should set error for invalid solver */
 
    ErrorCodeResetAll();
-   SolverCreate(MPI_COMM_SELF, (solver_t)-1, &args, NULL);
+   hypredrv_SolverCreate(MPI_COMM_SELF, (solver_t)-1, &args, NULL);
    ASSERT_TRUE(ErrorCodeActive()); /* Should set error for invalid solver */
 
    TEST_HYPRE_FINALIZE();
 }
 
 static void
-test_SolverApply_error_cases(void)
+test_hypredrv_SolverApply_error_cases(void)
 {
    TEST_HYPRE_INIT();
 
@@ -703,28 +703,28 @@ test_SolverApply_error_cases(void)
 
    /* Test with NULL solver */
    ErrorCodeResetAll();
-   SolverApply(SOLVER_PCG, NULL, A, b, x, NULL);
+   hypredrv_SolverApply(SOLVER_PCG, NULL, A, b, x, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    /* Test with NULL matrix */
    ErrorCodeResetAll();
-   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, NULL, b, x, NULL);
+   hypredrv_SolverApply(SOLVER_PCG, (HYPRE_Solver)1, NULL, b, x, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    /* Test with NULL vectors */
    ErrorCodeResetAll();
-   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, A, NULL, x, NULL);
+   hypredrv_SolverApply(SOLVER_PCG, (HYPRE_Solver)1, A, NULL, x, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    ErrorCodeResetAll();
-   SolverApply(SOLVER_PCG, (HYPRE_Solver)1, A, b, NULL, NULL);
+   hypredrv_SolverApply(SOLVER_PCG, (HYPRE_Solver)1, A, b, NULL, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    TEST_HYPRE_FINALIZE();
 }
 
 static void
-test_SolverSetup_error_cases(void)
+test_hypredrv_SolverSetup_error_cases(void)
 {
    TEST_HYPRE_INIT();
 
@@ -733,12 +733,12 @@ test_SolverSetup_error_cases(void)
 
    /* Test with NULL solver */
    ErrorCodeResetAll();
-   SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, NULL, A, b, x, NULL);
+   hypredrv_SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, NULL, A, b, x, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    /* Test with NULL matrix */
    ErrorCodeResetAll();
-   SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, (HYPRE_Solver)1, NULL, b, x, NULL);
+   hypredrv_SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, (HYPRE_Solver)1, NULL, b, x, NULL);
    ASSERT_TRUE(ErrorCodeActive());
 
    TEST_HYPRE_FINALIZE();
@@ -823,31 +823,31 @@ main(int argc, char **argv)
    MPI_Init(&argc, &argv);
 
    /* Solver argument parsing tests */
-   RUN_TEST(test_GMRESSetFieldByName_all_fields);
-   RUN_TEST(test_PCGSetFieldByName_all_fields);
-   RUN_TEST(test_BiCGSTABSetFieldByName_all_fields);
-   RUN_TEST(test_FGMRESSetFieldByName_all_fields);
-   RUN_TEST(test_ChebySetFieldByName_all_fields);
-   RUN_TEST(test_GMRESSetFieldByName_unknown_key);
-   RUN_TEST(test_PCGSetFieldByName_unknown_key);
-   RUN_TEST(test_BiCGSTABSetFieldByName_unknown_key);
-   RUN_TEST(test_FGMRESSetFieldByName_unknown_key);
-   RUN_TEST(test_ChebySetFieldByName_unknown_key);
+   RUN_TEST(test_hypredrv_GMRESSetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_PCGSetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_BiCGSTABSetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_FGMRESSetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_ChebySetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_GMRESSetFieldByName_unknown_key);
+   RUN_TEST(test_hypredrv_PCGSetFieldByName_unknown_key);
+   RUN_TEST(test_hypredrv_BiCGSTABSetFieldByName_unknown_key);
+   RUN_TEST(test_hypredrv_FGMRESSetFieldByName_unknown_key);
+   RUN_TEST(test_hypredrv_ChebySetFieldByName_unknown_key);
    RUN_TEST(test_BiCGSTABGetValidValues_void_branch);
    RUN_TEST(test_FGMRESGetValidValues_void_branch);
-   RUN_TEST(test_ChebyGetValidValues_void_branch);
+   RUN_TEST(test_hypredrv_ChebyGetValidValues_void_branch);
 
    /* Solver dispatch tests */
-   RUN_TEST(test_SolverCreate_all_cases);
-   RUN_TEST(test_SolverCreate_default_case);
-   RUN_TEST(test_SolverDestroy_all_cases);
-   RUN_TEST(test_SolverDestroy_default_case);
-   RUN_TEST(test_SolverDestroy_null_solver);
-   RUN_TEST(test_SolverSetup_default_case);
-   RUN_TEST(test_SolverApply_default_case);
-   RUN_TEST(test_SolverCreate_default_case_comprehensive);
-   RUN_TEST(test_SolverApply_error_cases);
-   RUN_TEST(test_SolverSetup_error_cases);
+   RUN_TEST(test_hypredrv_SolverCreate_all_cases);
+   RUN_TEST(test_hypredrv_SolverCreate_default_case);
+   RUN_TEST(test_hypredrv_SolverDestroy_all_cases);
+   RUN_TEST(test_hypredrv_SolverDestroy_default_case);
+   RUN_TEST(test_hypredrv_SolverDestroy_null_solver);
+   RUN_TEST(test_hypredrv_SolverSetup_default_case);
+   RUN_TEST(test_hypredrv_SolverApply_default_case);
+   RUN_TEST(test_hypredrv_SolverCreate_default_case_comprehensive);
+   RUN_TEST(test_hypredrv_SolverApply_error_cases);
+   RUN_TEST(test_hypredrv_SolverSetup_error_cases);
 
    /* Solver-precon integration tests */
    RUN_TEST(test_all_solver_precon_combinations);

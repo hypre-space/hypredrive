@@ -60,10 +60,10 @@ typedef struct Scaling_context_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-StrIntMapArray ScalingGetValidValues(const char *);
+StrIntMapArray hypredrv_ScalingGetValidValues(const char *);
 
-void ScalingSetDefaultArgs(Scaling_args *);
-void ScalingSetArgsFromYAML(void *, YAMLnode *);
+void hypredrv_ScalingSetDefaultArgs(Scaling_args *);
+void hypredrv_ScalingSetArgsFromYAML(void *, YAMLnode *);
 
 void ScalingContextCreate(Scaling_context **);
 void ScalingContextDestroy(Scaling_context **);

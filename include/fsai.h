@@ -36,8 +36,8 @@ typedef struct FSAI_args_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void FSAISetDefaultArgs(FSAI_args *);
-void FSAISetArgs(void *, const YAMLnode *);
+void hypredrv_FSAISetDefaultArgs(FSAI_args *);
+void hypredrv_FSAISetArgs(void *, const YAMLnode *);
 void FSAICreate(const FSAI_args *, HYPRE_Solver *);
 
 #endif /* FSAI_HEADER */

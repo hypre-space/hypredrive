@@ -487,7 +487,7 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
 }
 
 int
-LSSeqReadInfo(const char *filename, char **payload_ptr, size_t *payload_size)
+hypredrv_LSSeqReadInfo(const char *filename, char **payload_ptr, size_t *payload_size)
 {
    FILE           *fp = NULL;
    LSSeqHeader     header;
@@ -927,8 +927,8 @@ LSSeqWriteRHSPartFile(const char *filename, const LSSeqPartMeta *part, const voi
 }
 
 int
-LSSeqReadSummary(const char *filename, int *num_systems, int *num_patterns,
-                 int *has_dofmap, int *has_timesteps)
+hypredrv_LSSeqReadSummary(const char *filename, int *num_systems, int *num_patterns,
+                          int *has_dofmap, int *has_timesteps)
 {
    LSSeqHeader header;
    FILE       *fp = NULL;
@@ -982,8 +982,8 @@ LSSeqReadSummary(const char *filename, int *num_systems, int *num_patterns,
 }
 
 int
-LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
-                HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr)
+hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
+                         HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr)
 {
    LSSeqData seq;
    FILE     *fp         = NULL;
@@ -1109,8 +1109,8 @@ LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
       free(vals);
    }
 
-   IJMatrixReadMultipartBinary(prefix, comm, (uint64_t)seq.header.num_parts,
-                               memory_location, matrix_ptr);
+   hypredrv_IJMatrixReadMultipartBinary(prefix, comm, (uint64_t)seq.header.num_parts,
+                                        memory_location, matrix_ptr);
    if (ErrorCodeActive() || !*matrix_ptr)
    {
       goto cleanup;
@@ -1131,8 +1131,8 @@ cleanup:
 }
 
 int
-LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
-             HYPRE_MemoryLocation memory_location, HYPRE_IJVector *rhs_ptr)
+hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
+                      HYPRE_MemoryLocation memory_location, HYPRE_IJVector *rhs_ptr)
 {
    LSSeqData seq;
    FILE     *fp         = NULL;
@@ -1220,8 +1220,8 @@ LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
       free(vals);
    }
 
-   IJVectorReadMultipartBinary(prefix, comm, (uint64_t)seq.header.num_parts,
-                               memory_location, rhs_ptr);
+   hypredrv_IJVectorReadMultipartBinary(prefix, comm, (uint64_t)seq.header.num_parts,
+                                        memory_location, rhs_ptr);
    if (ErrorCodeActive() || !*rhs_ptr)
    {
       goto cleanup;
@@ -1242,7 +1242,8 @@ cleanup:
 }
 
 int
-LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id, IntArray **dofmap_ptr)
+hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
+                         IntArray **dofmap_ptr)
 {
    LSSeqData seq;
    FILE     *fp         = NULL;
@@ -1395,7 +1396,7 @@ cleanup:
 }
 
 int
-LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts)
+hypredrv_LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts)
 {
    LSSeqData seq;
    IntArray *starts = NULL;

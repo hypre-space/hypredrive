@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "nested_krylov.h"
+#include "krylov.h"
 #include "bicgstab.h"
 #include "error.h"
 #include "fgmres.h"
@@ -296,7 +296,8 @@ NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_node)
       return;
    }
 
-   if (!StrIntMapArrayDomainEntryExists(SolverGetValidTypeIntMap(), solver_node->key))
+   if (!StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(),
+                                        solver_node->key))
    {
       ErrorCodeSet(ERROR_INVALID_KEY);
       ErrorMsgAdd("Unknown nested solver type: '%s'", solver_node->key);
@@ -304,10 +305,10 @@ NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_node)
       return;
    }
 
-   args->is_set = 1;
-   args->solver_method =
-      (solver_t)StrIntMapArrayGetImage(SolverGetValidTypeIntMap(), solver_node->key);
-   SolverArgsSetDefaultsForMethod(args->solver_method, &args->solver);
+   args->is_set        = 1;
+   args->solver_method = (solver_t)StrIntMapArrayGetImage(
+      hypredrv_SolverGetValidTypeIntMap(), solver_node->key);
+   hypredrv_SolverArgsSetDefaultsForMethod(args->solver_method, &args->solver);
 
    YAMLnode *precon_node = NULL;
    YAMLnode *precon_prev = NULL;
@@ -322,16 +323,16 @@ NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_node)
    switch (args->solver_method)
    {
       case SOLVER_PCG:
-         PCGSetArgs(&args->solver.pcg, solver_node);
+         hypredrv_PCGSetArgs(&args->solver.pcg, solver_node);
          break;
       case SOLVER_GMRES:
-         GMRESSetArgs(&args->solver.gmres, solver_node);
+         hypredrv_GMRESSetArgs(&args->solver.gmres, solver_node);
          break;
       case SOLVER_FGMRES:
-         FGMRESSetArgs(&args->solver.fgmres, solver_node);
+         hypredrv_FGMRESSetArgs(&args->solver.fgmres, solver_node);
          break;
       case SOLVER_BICGSTAB:
-         BiCGSTABSetArgs(&args->solver.bicgstab, solver_node);
+         hypredrv_BiCGSTABSetArgs(&args->solver.bicgstab, solver_node);
          break;
       default:
          ErrorCodeSet(ERROR_INVALID_SOLVER);
@@ -380,19 +381,19 @@ NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *dofmap,
    switch (args->solver_method)
    {
       case SOLVER_PCG:
-         PCGCreate(comm, &args->solver.pcg, &base_solver);
+         hypredrv_PCGCreate(comm, &args->solver.pcg, &base_solver);
          break;
 
       case SOLVER_GMRES:
-         GMRESCreate(comm, &args->solver.gmres, &base_solver);
+         hypredrv_GMRESCreate(comm, &args->solver.gmres, &base_solver);
          break;
 
       case SOLVER_FGMRES:
-         FGMRESCreate(comm, &args->solver.fgmres, &base_solver);
+         hypredrv_FGMRESCreate(comm, &args->solver.fgmres, &base_solver);
          break;
 
       case SOLVER_BICGSTAB:
-         BiCGSTABCreate(comm, &args->solver.bicgstab, &base_solver);
+         hypredrv_BiCGSTABCreate(comm, &args->solver.bicgstab, &base_solver);
          break;
 
       default:
