@@ -67,8 +67,9 @@ A minimal skeleton of a program using the library is shown below.
      // Set linear system components
      HYPREDRV_LinearSystemSetMatrix(h, (HYPRE_Matrix)A);
      HYPREDRV_LinearSystemSetRHS(h, (HYPRE_Vector)b);
-     HYPREDRV_LinearSystemSetInitialGuess(h);
-     HYPREDRV_LinearSystemSetPrecMatrix(h);
+     HYPREDRV_LinearSystemSetInitialGuess(h, NULL);
+     HYPREDRV_LinearSystemSetReferenceSolution(h, NULL);
+     HYPREDRV_LinearSystemSetPrecMatrix(h, NULL);
 
      // Solve lifecycle
      HYPREDRV_LinearSolverCreate(h);
@@ -94,6 +95,11 @@ A minimal skeleton of a program using the library is shown below.
 - For block linear systems, set row mapping information via ``HYPREDRV_LinearSystemSetDofmap``.
 - If compiled with GPU support, you may migrate assembled IJ objects to device memory with
   ``HYPRE_IJMatrixMigrate(..., HYPRE_MEMORY_DEVICE)`` and analogous calls for vectors.
+- ``HYPREDRV_LinearSystemSetInitialGuess`` / ``HYPREDRV_LinearSystemSetReferenceSolution`` /
+  ``HYPREDRV_LinearSystemSetPrecMatrix`` accept optional external vectors/matrix. Passing
+  ``NULL`` keeps file/default behavior; passing non-``NULL`` uses the provided object.
+- Ownership of non-``NULL`` objects follows library mode:
+  ``HYPREDRV_SetLibraryMode`` ON -> borrowed by HYPREDRV; OFF -> ownership is transferred.
 
 Preconditioner reuse
 --------------------
@@ -286,8 +292,8 @@ Solver and preconditioner options (PCG+AMG by default) are provided via YAML par
    // After building IJ A,b as a scalar system:
    HYPREDRV_LinearSystemSetMatrix(hdrv, (HYPRE_Matrix)A);
    HYPREDRV_LinearSystemSetRHS(hdrv,    (HYPRE_Vector)b);
-   HYPREDRV_LinearSystemSetInitialGuess(hdrv);   // zero by default
-   HYPREDRV_LinearSystemSetPrecMatrix(hdrv);     // reuse A if desired
+   HYPREDRV_LinearSystemSetInitialGuess(hdrv, NULL);   // zero by default
+   HYPREDRV_LinearSystemSetPrecMatrix(hdrv, NULL);     // reuse A if desired
 
    // Solve lifecycle
    HYPREDRV_LinearSolverCreate(hdrv);
@@ -605,8 +611,8 @@ for some preconditioners.
      HYPREDRV_LinearSystemSetInterleavedDofmap(hdrv, local_num_nodes, 3);
      HYPREDRV_LinearSystemSetMatrix(hdrv, (HYPRE_Matrix)A);
      HYPREDRV_LinearSystemSetRHS(hdrv, (HYPRE_Vector)b);
-     HYPREDRV_LinearSystemSetInitialGuess(hdrv);
-     HYPREDRV_LinearSystemSetPrecMatrix(hdrv);
+     HYPREDRV_LinearSystemSetInitialGuess(hdrv, NULL);
+     HYPREDRV_LinearSystemSetPrecMatrix(hdrv, NULL);
 
 Near-Nullspace and Rigid Body Modes (RBMs)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1126,8 +1132,8 @@ The following code snippet shows the linear system setup and solve within a Newt
    HYPREDRV_LinearSystemSetInterleavedDofmap(hdrv, local_num_nodes, 3);
    HYPREDRV_LinearSystemSetMatrix(hdrv, (HYPRE_Matrix)A);
    HYPREDRV_LinearSystemSetRHS(hdrv, (HYPRE_Vector)b);
-   HYPREDRV_LinearSystemSetInitialGuess(hdrv);
-   HYPREDRV_LinearSystemSetPrecMatrix(hdrv);
+   HYPREDRV_LinearSystemSetInitialGuess(hdrv, NULL);
+   HYPREDRV_LinearSystemSetPrecMatrix(hdrv, NULL);
 
    // Solve lifecycle
    HYPREDRV_LinearSolverCreate(hdrv);

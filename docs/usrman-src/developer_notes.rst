@@ -24,6 +24,28 @@ container format is in a dedicated chapter:
 
    utilities
 
+Library API Ownership Semantics
+-------------------------------
+
+For public setter APIs that accept optional external hypre objects:
+
+- ``HYPREDRV_LinearSystemSetInitialGuess(h, vec)``
+- ``HYPREDRV_LinearSystemSetReferenceSolution(h, vec)``
+- ``HYPREDRV_LinearSystemSetPrecMatrix(h, mat)``
+
+the ``NULL`` argument keeps the existing file/default behavior from parsed input args.
+When the argument is non-``NULL``, hypredrive uses the supplied object directly.
+
+Ownership depends on library mode:
+
+- ``HYPREDRV_SetLibraryMode`` enabled: supplied objects are borrowed and never destroyed
+  by hypredrive.
+- ``HYPREDRV_SetLibraryMode`` disabled: ownership is transferred to hypredrive, and the
+  objects can be destroyed on replacement or object teardown.
+
+When documenting or reviewing changes around these APIs, keep this object-lifetime contract
+explicit in both code comments and user docs.
+
 
 CI Overview
 -----------

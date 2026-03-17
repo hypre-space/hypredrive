@@ -29,12 +29,15 @@ struct hypredrv_struct
    HYPRE_IJVector vec_xref;
    HYPRE_IJVector vec_nn;
    HYPRE_IJVector *vec_s;
+   bool           owns_mat_M;
+   bool           owns_vec_x0;
+   bool           owns_vec_xref;
 
    HYPRE_Precon precon;
    HYPRE_Solver solver;
 
-   IntArray *precon_reuse_timestep_starts;
    void *scaling_ctx;
+   IntArray *precon_reuse_timestep_starts;
 
    Stats *stats;
 };
