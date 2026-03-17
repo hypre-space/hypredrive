@@ -555,6 +555,31 @@ extern "C"
                                                                      const char *preset);
 
    /**
+    * @brief Register a custom preconditioner preset.
+    *
+    * Registers a named preset from a YAML text string, making it available to
+    * HYPREDRV_InputArgsSetPreconPreset() and the YAML `preset:` key. The preset
+    * text must be a valid YAML snippet that expands under `preconditioner:`.
+    *
+    * @param name      Unique preset name (case-insensitive; '-' and '_' are equivalent).
+    * @param yaml_text YAML snippet string (e.g. "amg:\n  max_iter: 1").
+    * @param help      Short description shown in preset listings (may be NULL).
+    *
+    * @return 0 on success, non-zero on failure (duplicate name, NULL args, alloc
+    * failure).
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_PreconPresetRegister(
+    *       "my_amg", "amg:\n  max_iter: 1\n  tolerance: 1e-8", "Custom AMG preset"));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_PreconPresetRegister(const char *name,
+                                                                 const char *yaml_text,
+                                                                 const char *help);
+
+   /**
     * @brief Build the linear system (matrix, RHS, and LHS) according to the YAML input
     * passed to the HYPREDRV object.
     *

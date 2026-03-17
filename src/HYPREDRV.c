@@ -13,6 +13,7 @@
 #include "info.h"
 #include "linsys.h"
 #include "lsseq.h"
+#include "presets.h"
 #include "scaling.h"
 #include "stats.h"
 #ifdef HYPREDRV_ENABLE_CALIPER
@@ -130,6 +131,7 @@ HYPREDRV_Finalize()
 {
    if (hypredrv_is_initialized)
    {
+      hypredrv_PresetFreeUserPresets();
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
       HYPRE_Finalize();
 #endif
@@ -642,6 +644,25 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
       (solver_t)StrIntMapArrayGetImage(SolverGetValidTypeIntMap(), preset);
    SolverArgsSetDefaultsForMethod(hypredrv->iargs->solver_method,
                                   &hypredrv->iargs->solver);
+
+   return ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_PreconPresetRegister
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_PreconPresetRegister(const char *name, const char *yaml_text, const char *help)
+{
+   if (!name || !yaml_text)
+   {
+      ErrorCodeSet(ERROR_INVALID_VAL);
+      ErrorMsgAdd("HYPREDRV_PreconPresetRegister: name and yaml_text must be non-NULL");
+      return ErrorCodeGet();
+   }
+
+   hypredrv_PresetRegister(name, yaml_text, help);
 
    return ErrorCodeGet();
 }
