@@ -6,7 +6,7 @@
 
 # hypredrive
 
-High-level interface to [hypre](https://github.com/hypre-space/hypre) for solving linear systems. It can be used as:
+High-level interface to [hypre](https://github.com/hypre-space/hypre) for solving sparse linear systems of equations. It can be used as:
 
 - **Driver**: `hypredrive-cli` executable with YAML input files, for example [`examples/ex1.yml`](examples/ex1.yml)
 - **Library**: C API via [`include/HYPREDRV.h`](include/HYPREDRV.h), with examples under [`examples/src/`](examples/src/)
