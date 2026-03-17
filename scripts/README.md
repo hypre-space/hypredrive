@@ -5,6 +5,7 @@ This directory contains utility scripts for validation, data preparation, plotti
 ## Bash Scripts
 
 - `check_private_prefix.sh`: Checks that private `libHYPREDRV` callables use the `hypredrv_` prefix and can optionally auto-fix offending names.
+- `list_public_apis.sh`: Generates a sorted list of all public `HYPREDRV_` API function names by parsing `include/HYPREDRV.h`. Use `--check` to validate that all public APIs start with `HYPREDRV_`.
 - `compare_output.sh`: Normalizes timestamps, versions, and paths before diffing an output file against a reference output.
 - `download_and_extract.sh`: Downloads a tarball, verifies its MD5 checksum, and extracts it into a destination directory.
 - `generate_example_output.sh`: Runs the example YAML inputs and regenerates normalized reference outputs for the examples.
