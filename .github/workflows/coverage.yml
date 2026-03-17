@@ -1,4 +1,4 @@
-name: Coverage
+name: Code Coverage
 
 on:
   pull_request:
@@ -22,13 +22,13 @@ on:
   workflow_dispatch:    # Allow manual triggering
 
 concurrency:
-  group: coverage-${{ github.ref }}
+  group: code-coverage-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   coverage:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
-    name: Code Coverage
+    name: gcov
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

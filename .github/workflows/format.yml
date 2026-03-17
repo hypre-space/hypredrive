@@ -20,6 +20,7 @@ on:
 jobs:
   format:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: clang-format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
