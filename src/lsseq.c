@@ -822,7 +822,8 @@ static void
 LSSeqCleanupPartFiles(const char *prefix, const int *partids, int nparts,
                       const char *suffix)
 {
-   char filename[MAX_FILENAME_LENGTH];
+   /* Buffer sized for prefix + ".%05d" + suffix; avoids -Wformat-truncation */
+   char filename[MAX_FILENAME_LENGTH + 32];
    for (int i = 0; i < nparts; i++)
    {
       snprintf(filename, sizeof(filename), "%s.%05d%s", prefix, partids[i],
