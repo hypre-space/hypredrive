@@ -18,8 +18,8 @@ git clone --depth 1 https://github.com/hypre-space/hypredrive.git && cd hypredri
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel
 ```
 
-hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use an existing install.
-For detailed build instructions including the available library options, see [installation instructions](https://hypredrive.readthedocs.io/en/latest/installation.html) in the docs.
+- hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use an existing install.
+- For detailed build instructions including the available library options, see [installation instructions](https://hypredrive.readthedocs.io/en/latest/installation.html) in the docs.
 
 ## Examples
 
