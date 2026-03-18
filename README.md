@@ -8,7 +8,7 @@
 
 High-level interface to [hypre](https://github.com/hypre-space/hypre) for solving sparse linear systems of equations. It can be used as:
 
-- **Driver**: `hypredrive-cli` executable with YAML input files, for example [`examples/ex1.yml`](examples/ex1.yml)
+- **Driver**: `hypredrive-cli` executable with YAML input files, for example [`examples/ex2.yml`](examples/ex2.yml)
 - **Library**: C API via [`include/HYPREDRV.h`](include/HYPREDRV.h), with examples under [`examples/src/`](examples/src/)
 
 ## Build
@@ -26,7 +26,7 @@ For detailed build instructions including the available library options, see [in
 **Driver** -- solve a system from a YAML file (see [examples files](https://hypredrive.readthedocs.io/en/latest/driver_examples.html) in the docs).
 
 ```bash
-mpirun -np 1 ./build/hypredrive-cli examples/ex1.yml
+mpirun -np 1 ./build/hypredrive-cli examples/ex2.yml -q
 ```
 
 **Library** -- call the API from your own code (see [example drivers](https://hypredrive.readthedocs.io/en/latest/library_examples.html) in the docs).
