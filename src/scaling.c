@@ -493,7 +493,7 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    else
    {
 #if HYPRE_CHECK_MIN_VERSION(30100, 18)
-      hypre_ParVectorPointwiseDivision(x, y, z);
+      hypre_ParVectorPointwiseDivision(par_scaling, par_vec, &par_vec);
 #else
       /* hypre_ParVectorPointwiseDivision(x, y, z) computes z=y/x on host but z=x/y on
        * device (GPU bug). Use inverse+product to get z=y/x=vec/scaling consistently. */
