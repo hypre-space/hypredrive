@@ -558,6 +558,40 @@ test_InputArgsParse_legacy_mode_with_overrides(void)
    unlink(yaml_file);
 }
 
+static void
+test_InputArgsParse_driver_mode_with_nodash_overrides(void)
+{
+   input_args *args        = NULL;
+   char        yaml_file[] = "/tmp/test_config3.yml";
+   FILE       *fp          = fopen(yaml_file, "w");
+   ASSERT_NOT_NULL(fp);
+   fprintf(fp, "solver: gmres\n"
+               "preconditioner:\n"
+               "  mgr:\n"
+               "    print_level: 0\n"
+               "    level:\n"
+               "      0:\n"
+               "        f_dofs: [2]\n"
+               "        f_relaxation: single\n"
+               "    coarsest_level: amg\n");
+   fclose(fp);
+
+   char *argv2[] = {"hypredrive-cli", "-q", yaml_file, "--args",
+                    "preconditioner:mgr:print_level", "1"};
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 6, argv2, &args);
+
+   if (!hypredrv_ErrorCodeActive())
+   {
+      ASSERT_NOT_NULL(args);
+      ASSERT_EQ(args->precon_method, PRECON_MGR);
+      ASSERT_EQ(args->precon.mgr.print_level, 1);
+      hypredrv_InputArgsDestroy(&args);
+   }
+
+   unlink(yaml_file);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -586,6 +620,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParse_null_argv0_error);
    RUN_TEST(test_InputArgsParse_file_not_found_error);
    RUN_TEST(test_InputArgsParse_legacy_mode_with_overrides);
+   RUN_TEST(test_InputArgsParse_driver_mode_with_nodash_overrides);
 
    MPI_Finalize();
    return 0;

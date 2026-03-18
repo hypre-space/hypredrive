@@ -1292,17 +1292,29 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
          continue;
       }
 
-      if (strncmp(k, "--", 2) != 0)
+      bool has_dashes = (strncmp(k, "--", 2) == 0);
+      if (!has_dashes)
       {
-         /* In full argv mode, ignore non override tokens (we only parse pairs after -a
-          * anyway), but keep strictness in pair-list mode. */
-         if (!full_argv_mode)
+         /* In full-argv mode, also accept key paths without the leading "--",
+          * e.g. "--args preconditioner:mgr:print_level 1". */
+         bool looks_like_path = (strchr(k, ':') != NULL);
+         if (full_argv_mode && looks_like_path)
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-            hypredrv_ErrorMsgAdd("Invalid override key '%s' (expected --path:to:key)", k);
-            return;
+            has_dashes = false;
          }
-         continue;
+         else
+         {
+            /* In full argv mode, ignore non-override tokens; keep strictness in
+             * pair-list mode. */
+            if (!full_argv_mode)
+            {
+               hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+               hypredrv_ErrorMsgAdd(
+                  "Invalid override key '%s' (expected path:to:key or --path:to:key)", k);
+               return;
+            }
+            continue;
+         }
       }
 
       if (i + 1 >= argc)

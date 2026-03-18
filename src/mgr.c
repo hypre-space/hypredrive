@@ -221,26 +221,23 @@ DEFINE_TYPED_SETTER(MGRfrlxAMGSetArgs, MGRfrlx_args, amg, 2, hypredrv_AMGSetArgs
 DEFINE_TYPED_SETTER(MGRfrlxILUSetArgs, MGRfrlx_args, ilu, 32, hypredrv_ILUSetArgs)
 DEFINE_TYPED_SETTER(MGRgrlxAMGSetArgs, MGRgrlx_args, amg, 20, hypredrv_AMGSetArgs)
 DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, hypredrv_ILUSetArgs)
-static void MGRclsTypeSet(void *, const YAMLnode *);
-static void MGRfrlxTypeSet(void *, const YAMLnode *);
-static void MGRgrlxTypeSet(void *, const YAMLnode *);
 static void MGRfrlxMGRSetArgs(void *, const YAMLnode *);
 void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
 
-#define MGRcls_FIELDS(_prefix)                            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRclsTypeSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs) \
+#define MGRcls_FIELDS(_prefix)                                      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs)           \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRclsILUSetArgs)
 
 #define MGRfrlx_FIELDS(_prefix)                                          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRfrlxTypeSet)                 \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRfrlxMGRSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)
 
 #define MGRgrlx_FIELDS(_prefix)                                          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, MGRgrlxTypeSet)                 \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)
@@ -624,32 +621,61 @@ cleanup:
 }
 
 /*-----------------------------------------------------------------------------
- * Type setters for union-backed solver args.
  *-----------------------------------------------------------------------------*/
 
-#define DEFINE_MGR_TYPE_SETTER(_func, _parent, _amg_type, _ilu_type)        \
-   static void _func(void *field, const YAMLnode *node)                     \
-   {                                                                        \
-      HYPRE_Int old_type = *((HYPRE_Int *)field);                           \
-      hypredrv_FieldTypeIntSet(field, node);                                \
-      _parent *args = (_parent *)((char *)field - offsetof(_parent, type)); \
-      if (args->type == old_type)                                           \
-      {                                                                     \
-         return;                                                            \
-      }                                                                     \
-      if (args->type == (_amg_type))                                        \
-      {                                                                     \
-         hypredrv_AMGSetDefaultArgs(&args->amg);                            \
-      }                                                                     \
-      else if (args->type == (_ilu_type))                                   \
-      {                                                                     \
-         hypredrv_ILUSetDefaultArgs(&args->ilu);                            \
-      }                                                                     \
+static void
+MGRclsApplyTypeDefaults(MGRcls_args *args, HYPRE_Int old_type)
+{
+   if (!args || args->type == old_type)
+   {
+      return;
    }
 
-DEFINE_MGR_TYPE_SETTER(MGRclsTypeSet, MGRcls_args, 0, 32)
-DEFINE_MGR_TYPE_SETTER(MGRfrlxTypeSet, MGRfrlx_args, 2, 32)
-DEFINE_MGR_TYPE_SETTER(MGRgrlxTypeSet, MGRgrlx_args, 20, 16)
+   if (args->type == 0)
+   {
+      hypredrv_AMGSetDefaultArgs(&args->amg);
+   }
+   else if (args->type == 32)
+   {
+      hypredrv_ILUSetDefaultArgs(&args->ilu);
+   }
+}
+
+static void
+MGRfrlxApplyTypeDefaults(MGRfrlx_args *args, HYPRE_Int old_type)
+{
+   if (!args || args->type == old_type)
+   {
+      return;
+   }
+
+   if (args->type == 2)
+   {
+      hypredrv_AMGSetDefaultArgs(&args->amg);
+   }
+   else if (args->type == 32)
+   {
+      hypredrv_ILUSetDefaultArgs(&args->ilu);
+   }
+}
+
+static void
+MGRgrlxApplyTypeDefaults(MGRgrlx_args *args, HYPRE_Int old_type)
+{
+   if (!args || args->type == old_type)
+   {
+      return;
+   }
+
+   if (args->type == 20)
+   {
+      hypredrv_AMGSetDefaultArgs(&args->amg);
+   }
+   else if (args->type == 16)
+   {
+      hypredrv_ILUSetDefaultArgs(&args->ilu);
+   }
+}
 
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
@@ -839,9 +865,14 @@ hypredrv_MGRclsSetArgsFromYAML(void *vargs, YAMLnode *parent)
             continue;
          }
 
+         HYPRE_Int old_type = args->type;
          YAML_NODE_VALIDATE(child, hypredrv_MGRclsGetValidKeys,
                             hypredrv_MGRclsGetValidValues);
          YAML_NODE_SET_FIELD(child, args, hypredrv_MGRclsSetFieldByName);
+         if (!strcmp(child->key, "type"))
+         {
+            MGRclsApplyTypeDefaults(args, old_type);
+         }
       }
    }
    else
@@ -851,9 +882,11 @@ hypredrv_MGRclsSetArgsFromYAML(void *vargs, YAMLnode *parent)
       parent->key = (char *)malloc(5 * sizeof(char));
       snprintf(parent->key, 5, "type");
 
+      HYPRE_Int old_type = args->type;
       YAML_NODE_VALIDATE(parent, hypredrv_MGRclsGetValidKeys,
                          hypredrv_MGRclsGetValidValues);
       YAML_NODE_SET_FIELD(parent, args, hypredrv_MGRclsSetFieldByName);
+      MGRclsApplyTypeDefaults(args, old_type);
 
       free(parent->key);
       parent->key = strdup(temp_key);
@@ -890,9 +923,14 @@ hypredrv_MGRfrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
             continue;
          }
 
+         HYPRE_Int old_type = args->type;
          YAML_NODE_VALIDATE(child, hypredrv_MGRfrlxGetValidKeys,
                             hypredrv_MGRfrlxGetValidValues);
          YAML_NODE_SET_FIELD(child, args, hypredrv_MGRfrlxSetFieldByName);
+         if (!strcmp(child->key, "type"))
+         {
+            MGRfrlxApplyTypeDefaults(args, old_type);
+         }
       }
    }
    else
@@ -902,9 +940,11 @@ hypredrv_MGRfrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
       parent->key = (char *)malloc(5 * sizeof(char));
       snprintf(parent->key, 5, "type");
 
+      HYPRE_Int old_type = args->type;
       YAML_NODE_VALIDATE(parent, hypredrv_MGRfrlxGetValidKeys,
                          hypredrv_MGRfrlxGetValidValues);
       YAML_NODE_SET_FIELD(parent, args, hypredrv_MGRfrlxSetFieldByName);
+      MGRfrlxApplyTypeDefaults(args, old_type);
 
       free(parent->key);
       parent->key = strdup(temp_key);
@@ -945,9 +985,14 @@ hypredrv_MGRgrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
             continue;
          }
 
+         HYPRE_Int old_type = args->type;
          YAML_NODE_VALIDATE(child, hypredrv_MGRgrlxGetValidKeys,
                             hypredrv_MGRgrlxGetValidValues);
          YAML_NODE_SET_FIELD(child, args, hypredrv_MGRgrlxSetFieldByName);
+         if (!strcmp(child->key, "type"))
+         {
+            MGRgrlxApplyTypeDefaults(args, old_type);
+         }
       }
    }
    else
@@ -957,9 +1002,11 @@ hypredrv_MGRgrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
       parent->key = (char *)malloc(5 * sizeof(char));
       snprintf(parent->key, 5, "type");
 
+      HYPRE_Int old_type = args->type;
       YAML_NODE_VALIDATE(parent, hypredrv_MGRgrlxGetValidKeys,
                          hypredrv_MGRgrlxGetValidValues);
       YAML_NODE_SET_FIELD(parent, args, hypredrv_MGRgrlxSetFieldByName);
+      MGRgrlxApplyTypeDefaults(args, old_type);
 
       free(parent->key);
       parent->key = strdup(temp_key);
