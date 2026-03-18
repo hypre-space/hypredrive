@@ -33,7 +33,7 @@ mpirun -np 1 ./build/hypredrive-cli examples/ex2.yml -q
 
 ```C
    // 1. Setup hypredrive options from YAML input
-   HYPREDRV_t *hdrv;
+   HYPREDRV_t hdrv = NULL;
    HYPREDRV_Initialize();
    HYPREDRV_Create(MPI_COMM_WORLD, &hdrv);
    HYPREDRV_SetLibraryMode(hdrv);
