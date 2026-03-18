@@ -19,7 +19,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel
 ```
 
 - hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use an existing install.
-- For detailed build instructions including the available library options, see [installation instructions](https://hypredrive.readthedocs.io/en/latest/installation.html) in the docs.
+- Check [installation instructions](https://hypredrive.readthedocs.io/en/latest/installation.html) for details, including the available library options.
 
 ## Examples
 
