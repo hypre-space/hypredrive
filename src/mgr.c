@@ -7,6 +7,7 @@
 
 #include "mgr.h"
 #include <mpi.h>
+#include "error.h"
 #include "gen_macros.h"
 #include "krylov.h"
 #include "stats.h"
@@ -111,6 +112,108 @@ hypredrv_MGRNestedFRelaxWrapperFree(HYPRE_Solver *wrapper_ptr)
  * Field definitions using the type-setting wrappers
  *-----------------------------------------------------------------------------*/
 
+/* Module-level DOF label map (set before MGR YAML parsing, may be NULL) */
+static const DofLabelMap *g_dof_labels = NULL;
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_MGRSetDofLabels
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_MGRSetDofLabels(const DofLabelMap *labels)
+{
+   g_dof_labels = labels;
+}
+
+/*-----------------------------------------------------------------------------
+ * MGRlvlFDofsSet
+ *
+ * Custom setter for f_dofs that resolves symbolic label names through
+ * g_dof_labels when the value is not a plain integer array.
+ *-----------------------------------------------------------------------------*/
+
+/* Resolve a single token (already lowercased) into an integer DOF index.
+ * Returns true on success, false (+ error code set) on failure. */
+static bool
+MGRlvlResolveDofToken(const char *tok, StackIntArray *arr)
+{
+   char *end  = NULL;
+   long  ival = strtol(tok, &end, 10);
+
+   if (end != tok && *end == '\0')
+   {
+      /* Plain integer */
+      if (arr->size < MAX_STACK_ARRAY_LENGTH)
+      {
+         arr->data[arr->size++] = (int)ival;
+      }
+      return true;
+   }
+
+   /* Symbolic label */
+   if (!g_dof_labels)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("f_dofs: symbolic label used but no dof_labels defined "
+                           "in linear_system");
+      return false;
+   }
+
+   int val = hypredrv_DofLabelMapLookup(g_dof_labels, tok);
+   if (val < 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("f_dofs: unknown label '%s'", tok);
+      return false;
+   }
+
+   if (arr->size < MAX_STACK_ARRAY_LENGTH)
+   {
+      arr->data[arr->size++] = val;
+   }
+   return true;
+}
+
+static void
+MGRlvlFDofsSet(void *field, const YAMLnode *node)
+{
+   StackIntArray *arr = (StackIntArray *)field;
+   arr->size          = 0;
+
+   /* Block sequence form:
+    *   f_dofs:
+    *     - v_x
+    *     - v_y
+    * Each "-" child carries the token in its val (already lowercased). */
+   if (node->children)
+   {
+      for (const YAMLnode *item                                     = node->children;
+           item != NULL && arr->size < MAX_STACK_ARRAY_LENGTH; item = item->next)
+      {
+         if (!strcmp(item->key, "-") && !MGRlvlResolveDofToken(item->val, arr))
+         {
+            return;
+         }
+      }
+      return;
+   }
+
+   /* Flow sequence form: [v_x, v_y] or [0, 1].
+    * MGRlvlResolveDofToken handles both plain integers and symbolic labels. */
+   char *buf = strdup(node->mapped_val);
+   char *tok = strtok(buf, "[], ");
+   while (tok && arr->size < MAX_STACK_ARRAY_LENGTH)
+   {
+      if (!MGRlvlResolveDofToken(tok, arr))
+      {
+         free(buf);
+         return;
+      }
+      tok = strtok(NULL, "[], ");
+   }
+   free(buf);
+}
+
 /* Generate type-setting wrappers for union fields */
 DEFINE_TYPED_SETTER(MGRclsAMGSetArgs, MGRcls_args, amg, 0, hypredrv_AMGSetArgs)
 DEFINE_TYPED_SETTER(MGRclsILUSetArgs, MGRcls_args, ilu, 32, hypredrv_ILUSetArgs)
@@ -143,7 +246,7 @@ void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)
 
 #define MGRlvl_FIELDS(_prefix)                                                  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, hypredrv_FieldTypeStackIntArraySet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, MGRlvlFDofsSet)                      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, hypredrv_FieldTypeIntSet)  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_level_type, hypredrv_FieldTypeIntSet) \

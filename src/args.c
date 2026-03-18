@@ -154,6 +154,7 @@ hypredrv_InputArgsDestroy(input_args **iargs_ptr)
          hypredrv_DoubleArrayDestroy(&iargs->scaling.custom_values);
       }
       hypredrv_IntArrayDestroy(&iargs->ls.set_suffix);
+      hypredrv_DofLabelMapDestroy(&iargs->ls.dof_labels);
       free(*iargs_ptr);
       *iargs_ptr = NULL;
    }
@@ -780,11 +781,14 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
 void
 hypredrv_InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
 {
+   hypredrv_MGRSetDofLabels(iargs->ls.dof_labels);
+
    YAMLnode *parent = hypredrv_YAMLnodeFindByKey(tree->root, "preconditioner");
    if (!parent)
    {
       hypredrv_ErrorCodeSet(ERROR_MISSING_KEY);
       hypredrv_ErrorMsgAddMissingKey("preconditioner");
+      hypredrv_MGRSetDofLabels(NULL);
       return;
    }
    YAML_NODE_SET_VALID(parent);
@@ -849,6 +853,8 @@ finalize_reuse:
       reuse_node->next = parent->children;
       parent->children = reuse_node;
    }
+
+   hypredrv_MGRSetDofLabels(NULL);
 }
 
 /*-----------------------------------------------------------------------------

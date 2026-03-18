@@ -1,3 +1,9 @@
+linear_system:
+  dof_labels:
+    v_x: 0
+    v_y: 1
+    p:   2
+
 solver:
   fgmres:
     max_iter: 200
@@ -13,7 +19,7 @@ preconditioner:
     coarse_th: 0.0
     level:
       0:
-        f_dofs: [0, 1]
+        f_dofs: [v_x, v_y]
         f_relaxation: amg
           amg:
             print_level: 0
