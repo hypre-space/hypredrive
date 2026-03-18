@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "containers.h"
+#include "error.h"
 /*-----------------------------------------------------------------------------
  * hypredrv_IntArrayWriteAsciiByRank
  *-----------------------------------------------------------------------------*/
@@ -682,4 +683,97 @@ bool
 hypredrv_StrIntMapArrayDomainEntryExists(const StrIntMapArray valid, const char *string)
 {
    return (hypredrv_StrIntMapArrayGetImage(valid, string) > INT_MIN) != 0;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_DofLabelMapCreate
+ *-----------------------------------------------------------------------------*/
+
+DofLabelMap *
+hypredrv_DofLabelMapCreate(void)
+{
+   DofLabelMap *map = (DofLabelMap *)malloc(sizeof(DofLabelMap));
+   if (!map)
+   {
+      return NULL;
+   }
+   map->capacity = 8;
+   map->size     = 0;
+   map->data     = (DofLabelEntry *)malloc(map->capacity * sizeof(DofLabelEntry));
+   if (!map->data)
+   {
+      free(map);
+      return NULL;
+   }
+   return map;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_DofLabelMapAdd
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_DofLabelMapAdd(DofLabelMap *map, const char *name, int value)
+{
+   if (!map || !name)
+   {
+      return;
+   }
+
+   if (map->size >= map->capacity)
+   {
+      size_t         new_capacity = map->capacity * 2;
+      DofLabelEntry *new_data =
+         (DofLabelEntry *)realloc(map->data, new_capacity * sizeof(DofLabelEntry));
+      if (!new_data)
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         return;
+      }
+      map->data     = new_data;
+      map->capacity = new_capacity;
+   }
+
+   strncpy(map->data[map->size].name, name, sizeof(map->data[map->size].name) - 1);
+   map->data[map->size].name[sizeof(map->data[map->size].name) - 1] = '\0';
+   map->data[map->size].value                                       = value;
+   map->size++;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_DofLabelMapLookup
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_DofLabelMapLookup(const DofLabelMap *map, const char *name)
+{
+   if (!map || !name)
+   {
+      return -1;
+   }
+
+   for (size_t i = 0; i < map->size; i++)
+   {
+      if (!strcmp(map->data[i].name, name))
+      {
+         return map->data[i].value;
+      }
+   }
+   return -1;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_DofLabelMapDestroy
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_DofLabelMapDestroy(DofLabelMap **map_ptr)
+{
+   if (!map_ptr || !*map_ptr)
+   {
+      return;
+   }
+   free((*map_ptr)->data);
+   free(*map_ptr);
+   *map_ptr = NULL;
 }

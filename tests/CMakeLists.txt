@@ -112,6 +112,7 @@ set(_hypredrv_unit_test_cases
     "test_linsys|test_linsys.c|TRUE"
     "test_stats|test_stats.c|TRUE"
     "test_presets|test_presets.c|FALSE"
+    "test_dof_labels|test_dof_labels.c|TRUE"
 )
 
 foreach(_case IN LISTS _hypredrv_unit_test_cases)

@@ -9,6 +9,7 @@
 #define MGR_HEADER
 
 #include "amg.h"
+#include "containers.h"
 #include "ilu.h"
 #include "utils.h"
 
@@ -134,6 +135,7 @@ struct MGR_args_struct
 void         hypredrv_MGRSetDefaultArgs(MGR_args *);
 void         hypredrv_MGRSetArgs(void *, const YAMLnode *);
 void         hypredrv_MGRSetDofmap(MGR_args *, IntArray *);
+void         hypredrv_MGRSetDofLabels(const DofLabelMap *);
 void         hypredrv_MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
 void         hypredrv_MGRCreate(MGR_args *, HYPRE_Solver *);
 void         hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);

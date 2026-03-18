@@ -51,6 +51,9 @@ typedef struct LS_args_struct
 
    /* Eigenspectrum options */
    EigSpec_args eigspec;
+
+   /* Optional symbolic DOF label map (may be NULL) */
+   DofLabelMap *dof_labels;
 } LS_args;
 
 /*-----------------------------------------------------------------------------

@@ -41,5 +41,6 @@ void hypredrv_FieldTypeDoubleSet(void *, const YAMLnode *);
 void hypredrv_FieldTypeDoubleArraySet(void *, const YAMLnode *);
 void hypredrv_FieldTypeCharSet(void *, const YAMLnode *);
 void hypredrv_FieldTypeStringSet(void *, const YAMLnode *);
+void hypredrv_FieldTypeNoopSet(void *, const YAMLnode *);
 
 #endif /* FIELD_HEADER */

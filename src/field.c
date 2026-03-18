@@ -86,3 +86,18 @@ hypredrv_FieldTypeDoubleArraySet(void *field, const YAMLnode *node)
 
    *((void **)field) = double_array;
 }
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_FieldTypeNoopSet
+ *
+ * No-op setter used for keys whose parsing is handled via special-case branches
+ * in the caller (e.g. dof_labels in linear_system).  The entry in the field
+ * offset map only exists so the validator accepts the key.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_FieldTypeNoopSet(void *field, const YAMLnode *node)
+{
+   (void)field;
+   (void)node;
+}

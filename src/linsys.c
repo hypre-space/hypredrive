@@ -80,6 +80,9 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, hypredrv_FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, type, hypredrv_FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, hypredrv_EigSpecSetArgs),
+   /* dof_labels is handled via a special-case branch in SetArgsFromYAML; the
+    * entry here only serves the validator so it accepts the key. */
+   FIELD_OFFSET_MAP_ENTRY(LS_args, dof_labels, hypredrv_FieldTypeNoopSet),
 };
 
 #define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
@@ -189,6 +192,8 @@ hypredrv_LinearSystemSetDefaultArgs(LS_args *args)
 
    /* Eigenspectrum defaults */
    hypredrv_EigSpecSetDefaultArgs(&args->eigspec);
+
+   args->dof_labels = NULL;
 }
 
 /*-----------------------------------------------------------------------------
@@ -498,6 +503,88 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
    {
       YAML_NODE_VALIDATE(child, hypredrv_LinearSystemGetValidKeys,
                          hypredrv_LinearSystemGetValidValues);
+
+      /* Special handling for dof_labels: parse as label->int map.
+       *
+       * Two YAML forms are accepted:
+       *
+       *   Block mapping (one entry per line):
+       *     dof_labels:
+       *       v_x: 0
+       *       v_y: 1
+       *       p:   2
+       *
+       *   Flow mapping (inline):
+       *     dof_labels: {v_x: 0, v_y: 1, p: 2}
+       *
+       * Label keys are normalised to lowercase on storage so they match the
+       * lowercased values the YAML parser produces for f_dofs entries. */
+      if (!strcmp(child->key, "dof_labels"))
+      {
+         args->dof_labels = hypredrv_DofLabelMapCreate();
+
+         if (child->children)
+         {
+            /* Block mapping: each child node is a label:value pair */
+            YAML_NODE_ITERATE(child, entry)
+            {
+               int  val = 0;
+               char lower_key[64];
+               if (sscanf(entry->val, "%d", &val) != 1)
+               {
+                  hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+                  hypredrv_ErrorMsgAdd("dof_labels: expected integer value for "
+                                       "label '%s', got '%s'",
+                                       entry->key, entry->val);
+                  break;
+               }
+               strncpy(lower_key, entry->key, sizeof(lower_key) - 1);
+               lower_key[sizeof(lower_key) - 1] = '\0';
+               hypredrv_StrToLowerCase(lower_key);
+               hypredrv_DofLabelMapAdd(args->dof_labels, lower_key, val);
+               YAML_NODE_SET_VALID(entry);
+            }
+         }
+         else if (child->val && child->val[0] == '{')
+         {
+            /* Flow mapping: val is already lowercased by the YAML parser,
+             * so keys inside the string are also lowercase. */
+            char *buf   = strdup(child->val);
+            char *inner = buf;
+            while (*inner == '{' || *inner == ' ') inner++;
+            char *close = strrchr(inner, '}');
+            if (close) *close = '\0';
+            char *pair = strtok(inner, ",");
+            while (pair)
+            {
+               while (*pair == ' ') pair++;
+               char *colon = strchr(pair, ':');
+               if (colon)
+               {
+                  *colon         = '\0';
+                  char *pair_key = pair;
+                  char *pair_val = colon + 1;
+                  hypredrv_StrTrim(pair_key);
+                  while (*pair_val == ' ') pair_val++;
+                  int val_int = 0;
+                  if (sscanf(pair_val, "%d", &val_int) != 1)
+                  {
+                     hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+                     hypredrv_ErrorMsgAdd("dof_labels: expected integer value for "
+                                          "label '%s', got '%s'",
+                                          pair_key, pair_val);
+                     break;
+                  }
+                  hypredrv_DofLabelMapAdd(args->dof_labels, pair_key, val_int);
+               }
+               pair = strtok(NULL, ",");
+            }
+            free(buf);
+         }
+
+         YAML_NODE_SET_VALID(child);
+         continue;
+      }
 
       YAML_NODE_SET_FIELD(child, args, hypredrv_LinearSystemSetFieldByName);
    }

@@ -145,4 +145,26 @@ typedef struct StrStrIntMap_struct
    int         num;
 } StrStrIntMap;
 
+/*--------------------------------------------------------------------------
+ * DofLabelMap struct (name <-> integer dof type)
+ *--------------------------------------------------------------------------*/
+
+typedef struct DofLabelEntry_struct
+{
+   char name[64]; /* label string, e.g. "v_x" */
+   int  value;    /* integer dof type */
+} DofLabelEntry;
+
+typedef struct DofLabelMap_struct
+{
+   DofLabelEntry *data;
+   size_t         size;
+   size_t         capacity;
+} DofLabelMap;
+
+DofLabelMap *hypredrv_DofLabelMapCreate(void);
+void         hypredrv_DofLabelMapAdd(DofLabelMap *, const char *name, int value);
+int          hypredrv_DofLabelMapLookup(const DofLabelMap *, const char *name);
+void         hypredrv_DofLabelMapDestroy(DofLabelMap **);
+
 #endif /* CONTAINERS_HEADER */
