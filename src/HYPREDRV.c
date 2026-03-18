@@ -766,6 +766,10 @@ HYPREDRV_StateVectorGetValues(HYPREDRV_t hypredrv, int index, HYPRE_Complex **da
 
    if (hypredrv->vec_s[state])
    {
+#if defined(HYPRE_USING_GPU)
+      /* Ensure data is accessible on host before returning the pointer */
+      HYPRE_IJVectorMigrate(hypredrv->vec_s[state], HYPRE_MEMORY_HOST);
+#endif
       HYPRE_IJVectorGetObject(hypredrv->vec_s[state], &obj);
       par_vec   = (HYPRE_ParVector)obj;
       seq_vec   = hypre_ParVectorLocalVector(par_vec);
@@ -849,6 +853,10 @@ HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx)
    int   current = hypredrv->states[state_idx];
 
    HYPRE_IJVectorGetObject(hypredrv->vec_x, &obj_delta);
+#if defined(HYPRE_USING_GPU)
+   /* vec_x (delta) lives on device after the solve; bring vec_s to device to match */
+   HYPRE_IJVectorMigrate(hypredrv->vec_s[current], HYPRE_MEMORY_DEVICE);
+#endif
    HYPRE_IJVectorGetObject(hypredrv->vec_s[current], &obj_s);
 
    /* U = U + Δx */

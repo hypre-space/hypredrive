@@ -96,11 +96,17 @@ hypredrv_ScalingContextDestroy(Scaling_context **ctx_ptr)
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    if (ctx->scaling_ijvec)
    {
+      /* scaling_vector is owned by scaling_ijvec when created via dofmap_custom */
       HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
-      ctx->scaling_ijvec = NULL;
+      ctx->scaling_ijvec  = NULL;
+      ctx->scaling_vector = NULL;
    }
-   /* scaling_vector is owned by scaling_ijvec, so no need to destroy separately */
-   ctx->scaling_vector = NULL;
+   else if (ctx->scaling_vector)
+   {
+      /* scaling_vector is directly owned (dofmap_mag case — no IJVector wrapper) */
+      HYPRE_SAFE_CALL(HYPRE_ParVectorDestroy(ctx->scaling_vector));
+      ctx->scaling_vector = NULL;
+   }
 #endif
 
    free(ctx);
@@ -191,44 +197,35 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    MPI_Allreduce(&max_tag, &global_max_tag, 1, MPI_INT, MPI_MAX, comm);
    num_tags = global_max_tag + 1;
 
-   /* Destroy previous scaling_ijvec if it exists (from previous system) */
+   /* Destroy previous scaling vector if it exists (from previous system) */
    if (ctx->scaling_ijvec)
    {
+      /* Came from dofmap_custom path — scaling_vector owned by IJVector */
       HYPRE_IJVectorDestroy(ctx->scaling_ijvec);
       ctx->scaling_ijvec  = NULL;
       ctx->scaling_vector = NULL;
    }
+   else if (ctx->scaling_vector)
+   {
+      HYPRE_ParVectorDestroy(ctx->scaling_vector);
+      ctx->scaling_vector = NULL;
+   }
 
-   /* Create IJVector wrapper for scaling vector */
-   HYPRE_SAFE_CALL(HYPRE_IJVectorCreate(comm, ilower, iupper, &ctx->scaling_ijvec));
-   HYPRE_SAFE_CALL(HYPRE_IJVectorSetObjectType(ctx->scaling_ijvec, HYPRE_PARCSR));
-   HYPRE_SAFE_CALL(HYPRE_IJVectorInitialize(ctx->scaling_ijvec));
-
-   /* Get ParVector from IJVector */
-   void *obj_scaling = NULL;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
-   ctx->scaling_vector = (HYPRE_ParVector)obj_scaling;
-
-   /* Compute scaling using Hypre's tagged API */
-   /* Use scaling_type = 1 by default */
+   /* Compute scaling into a fresh ParVector; use HOST to avoid relying on par_A's
+    * current memory location (matrix may be on HOST or DEVICE at call time).
+    * The scaling vector is migrated to the appropriate memory location on demand
+    * in ScalingTransformVectorDofmap and ScalingUndoDofmap when GPU vectors are
+    * involved. */
    HYPRE_ParVector scaling_parvec = NULL;
    HYPRE_SAFE_CALL(HYPRE_ParCSRMatrixComputeScalingTagged(
       par_A, 1, HYPRE_MEMORY_HOST, num_tags, tags, &scaling_parvec));
 
-   /* Copy the computed scaling data into scaling_ijvec */
-   void           *obj_scaling_vec = NULL;
-   HYPRE_ParVector par_scaling_vec = NULL;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling_vec);
-   par_scaling_vec = (HYPRE_ParVector)obj_scaling_vec;
+#if defined(HYPRE_USING_GPU)
+   /* Ensure the result is on HOST regardless of par_A's memory location. */
+   hypre_ParVectorMigrate((hypre_ParVector *)scaling_parvec, HYPRE_MEMORY_HOST);
+#endif
 
-   /* Copy data from scaling_parvec into scaling_ijvec's ParVector */
-   HYPRE_SAFE_CALL(HYPRE_ParVectorCopy(scaling_parvec, par_scaling_vec));
-
-   /* Destroy the temporary vector returned by HYPRE_ParCSRMatrixComputeScalingTagged */
-   HYPRE_SAFE_CALL(HYPRE_ParVectorDestroy(scaling_parvec));
-
-   /* Update scaling_vector to point to the vector wrapped by scaling_ijvec */
-   ctx->scaling_vector = par_scaling_vec;
+   ctx->scaling_vector = scaling_parvec;
 
    free(tags);
 #else
@@ -317,11 +314,18 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
       return;
    }
 
-   /* Destroy previous scaling_ijvec if it exists (from previous system) */
+   /* Destroy previous scaling vector if it exists (from previous system) */
    if (ctx->scaling_ijvec)
    {
+      /* scaling_vector owned by IJVector */
       HYPRE_IJVectorDestroy(ctx->scaling_ijvec);
       ctx->scaling_ijvec  = NULL;
+      ctx->scaling_vector = NULL;
+   }
+   else if (ctx->scaling_vector)
+   {
+      /* Came from dofmap_mag path — scaling_vector directly owned */
+      HYPRE_ParVectorDestroy(ctx->scaling_vector);
       ctx->scaling_vector = NULL;
    }
 
@@ -466,7 +470,7 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
       return;
    }
 
-   if (!ctx->scaling_ijvec)
+   if (!ctx->scaling_vector)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("ScalingTransformVectorDofmap: scaling vector not computed");
@@ -475,13 +479,10 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
 
    void            *obj_vec     = NULL;
    hypre_ParVector *par_vec     = NULL;
-   void            *obj_scaling = NULL;
-   hypre_ParVector *par_scaling = NULL;
+   hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
 
    HYPRE_IJVectorGetObject(vec, &obj_vec);
    par_vec = (hypre_ParVector *)obj_vec;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
-   par_scaling = (hypre_ParVector *)obj_scaling;
 
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    if ((kind == SCALING_VECTOR_RHS && apply) ||
@@ -491,7 +492,16 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    }
    else
    {
-      hypre_ParVectorPointwiseDivision(par_scaling, par_vec, &par_vec);
+#if HYPRE_CHECK_MIN_VERSION(30100, 18)
+      hypre_ParVectorPointwiseDivision(x, y, z);
+#else
+      /* hypre_ParVectorPointwiseDivision(x, y, z) computes z=y/x on host but z=x/y on
+       * device (GPU bug). Use inverse+product to get z=y/x=vec/scaling consistently. */
+      hypre_ParVector *inv_scaling = NULL;
+      hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
+      hypre_ParVectorPointwiseProduct(inv_scaling, par_vec, &par_vec);
+      hypre_ParVectorDestroy(inv_scaling);
+#endif
    }
 #else
    (void)kind;
@@ -653,10 +663,7 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
    }
 
    /* Apply diagonal scaling: A = diag(M) * A * diag(M), M = diag(M) * M * diag(M) */
-   void            *obj_scaling_vec = NULL;
-   hypre_ParVector *par_scaling_vec = NULL;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling_vec);
-   par_scaling_vec = (hypre_ParVector *)obj_scaling_vec;
+   hypre_ParVector *par_scaling_vec = (hypre_ParVector *)ctx->scaling_vector;
    hypre_ParCSRMatrixDiagScale(par_A, par_scaling_vec, par_scaling_vec);
    if (par_M != par_A)
    {
@@ -831,15 +838,10 @@ ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    }
 
    /* Unscale matrices: A = diag(1/M) * A * diag(1/M), M = diag(1/M) * M * diag(1/M) */
-   /* Create inverse scaling vector */
-   void            *obj_scaling = NULL;
-   hypre_ParVector *par_scaling = NULL;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
-   par_scaling = (hypre_ParVector *)obj_scaling;
-
+   hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
    hypre_ParVector *inv_scaling = NULL;
-   hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
 
+   hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
    hypre_ParCSRMatrixDiagScale(par_A, inv_scaling, inv_scaling);
    if (par_M != par_A)
    {

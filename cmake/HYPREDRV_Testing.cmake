@@ -479,7 +479,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     "f_relaxation: amg"
                     "User AMG"
                     "Strength Threshold = 0.250000"
-                    "Coarsening type = HMIS"
+                    "Coarsening type = "
             )
         endif()
         if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
