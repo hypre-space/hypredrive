@@ -43,7 +43,7 @@ mpirun -np 1 ./build/hypredrive-cli examples/ex2.yml -q
    HYPREDRV_LinearSystemSetMatrix(hdrv, (HYPRE_Matrix) A);
    HYPREDRV_LinearSystemSetRHS(hdrv, (HYPRE_Vector) b);
 
-   // 3. Solve lifecycle (Find "x" in "A x = b")
+   // 3. Solve lifecycle (Solve for "x" in "A x = b")
    HYPREDRV_LinearSolverCreate(hdrv);
    HYPREDRV_LinearSolverSetup(hdrv);
    HYPREDRV_LinearSolverApply(hdrv);
