@@ -19,10 +19,11 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel
 ```
 
 hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use an existing install.
+For detailed build instructions including the available library options, see [installation instructions](https://hypredrive.readthedocs.io/en/latest/installation.html) in the docs.
 
 ## Examples
 
-**Driver** -- solve a system from a YAML file (see [`examples/`](examples/) and the [driver examples](https://hypredrive.readthedocs.io/en/latest/driver_examples.html) in the docs).
+**Driver** -- solve a system from a YAML file (see [examples files](https://hypredrive.readthedocs.io/en/latest/driver_examples.html) in the docs).
 
 ```bash
 mpirun -np 1 ./build/hypredrive-cli examples/ex1.yml
@@ -31,24 +32,24 @@ mpirun -np 1 ./build/hypredrive-cli examples/ex1.yml
 **Library** -- call the API from your own code (see [example drivers](https://hypredrive.readthedocs.io/en/latest/library_examples.html) in the docs).
 
 ```C
-   // Setup hypredrive options from YAML input
+   // 1. Setup hypredrive options from YAML input
    HYPREDRV_t *hdrv;
    HYPREDRV_Initialize();
    HYPREDRV_Create(MPI_COMM_WORLD, &hdrv);
    HYPREDRV_SetLibraryMode(hdrv);
-   HYPREDRV_InputArgsParse(1, yaml_text, hdrv);
+   HYPREDRV_InputArgsParse(1, yaml_text, hdrv); // Solver options are parsed here
 
-   // Setup linear system ("A" and "b" are built previously)
+   // 2. Setup linear system ("A" and "b" are built previously)
    HYPREDRV_LinearSystemSetMatrix(hdrv, (HYPRE_Matrix) A);
    HYPREDRV_LinearSystemSetRHS(hdrv, (HYPRE_Vector) b);
 
-   // Solve lifecycle (Find "x" in "A x = b")
+   // 3. Solve lifecycle (Find "x" in "A x = b")
    HYPREDRV_LinearSolverCreate(hdrv);
    HYPREDRV_LinearSolverSetup(hdrv);
    HYPREDRV_LinearSolverApply(hdrv);
    HYPREDRV_LinearSolverDestroy(hdrv);
 
-   // Cleanup
+   // 4. Cleanup
    HYPREDRV_Destroy(&hdrv);
    HYPREDRV_Finalize();
 ```
