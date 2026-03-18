@@ -214,11 +214,11 @@ dnl Check for minimum HYPRE version
 AC_LANG_PUSH([C])
 AC_MSG_CHECKING([for HYPRE version])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <HYPRE_config.h>],
-                                   [#if HYPRE_RELEASE_NUMBER < 23100
+                                   [#if HYPRE_RELEASE_NUMBER < 22000
                                     #error "HYPRE version too old"
                                     #endif])],
                   [AC_MSG_RESULT([sufficient])],
-                  [AC_MSG_ERROR([HYPRE library version is too old. Use hypre >= 2.31.0])])
+                  [AC_MSG_ERROR([HYPRE library version is too old. Use hypre >= 2.20.0])])
 AC_LANG_POP([C])
 
 AC_CONFIG_MACRO_DIRS([m4])
