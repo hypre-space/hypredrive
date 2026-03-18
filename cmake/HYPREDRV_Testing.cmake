@@ -437,12 +437,13 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 add_hypredrive_test(${_name} ${_nprocs} ${_config})
             endforeach()
             unset(_hypredrv_mgr_examples)
-            add_hypredrive_cli_test(ex4_cli_mgr_print_level_4proc 4 ex4.yml
-                OVERRIDES
-                    --preconditioner:mgr:print_level 1
-                REQUIRE_CONTAINS
-                    "MGR SETUP PARAMETERS:"
-            )
+            # TODO: the following requires a hypre fix
+            # add_hypredrive_cli_test(ex4_cli_mgr_print_level_4proc 4 ex4.yml
+            #     OVERRIDES
+            #         --preconditioner:mgr:print_level 1
+            #     REQUIRE_CONTAINS
+            #         "MGR SETUP PARAMETERS:"
+            # )
             add_hypredrive_cli_test(ex4_cli_mgr_g_ilu 1 ex4.yml
                 OVERRIDES
                     --preconditioner:mgr:print_level 1
