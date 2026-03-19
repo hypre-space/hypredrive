@@ -3,6 +3,10 @@
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
+# Python packages for building the Sphinx user manual in docs/usrman-src/.
+# External tools such as Doxygen, LaTeX, and a system C/C++ toolchain are not
+# covered by this file.
+
 sphinx>=5.3
 breathe>=4.34
 sphinx-rtd-theme>=1.1.1
