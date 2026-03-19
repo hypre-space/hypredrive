@@ -330,18 +330,30 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    }
 
    /* Create IJVector wrapper for scaling vector */
+   HYPRE_MemoryLocation  memory_location =
+      hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
+   HYPRE_Complex        *h_values =
+      hypre_TAlloc(HYPRE_Complex, num_local_rows, HYPRE_MEMORY_HOST);
+   const HYPRE_Complex *values = h_values;
+#ifdef HYPRE_USING_GPU
+   HYPRE_Complex *d_values = NULL;
+#endif
+
+   if (memory_location == HYPRE_MEMORY_UNDEFINED)
+   {
+      memory_location = HYPRE_MEMORY_HOST;
+   }
+
    HYPRE_SAFE_CALL(HYPRE_IJVectorCreate(comm, ilower, iupper, &ctx->scaling_ijvec));
    HYPRE_SAFE_CALL(HYPRE_IJVectorSetObjectType(ctx->scaling_ijvec, HYPRE_PARCSR));
-   HYPRE_SAFE_CALL(HYPRE_IJVectorInitialize(ctx->scaling_ijvec));
+   HYPRE_SAFE_CALL(HYPRE_IJVectorInitialize_v2(ctx->scaling_ijvec, memory_location));
 
-   /* Get ParVector from IJVector */
-   void *obj_scaling = NULL;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
-   ctx->scaling_vector = (HYPRE_ParVector)obj_scaling;
-
-   /* Get local data array from ParVector */
-   hypre_ParVector *par_scaling_vec = (hypre_ParVector *)ctx->scaling_vector;
-   HYPRE_Real *local_data = hypre_VectorData(hypre_ParVectorLocalVector(par_scaling_vec));
+#ifdef HYPRE_USING_GPU
+   if (memory_location == HYPRE_MEMORY_DEVICE)
+   {
+      values = d_values = hypre_TAlloc(HYPRE_Complex, num_local_rows, HYPRE_MEMORY_DEVICE);
+   }
+#endif
 
    /* Fill scaling vector: for each row i, use custom_values[dofmap[i]] */
    for (HYPRE_Int i = 0; i < num_local_rows; i++)
@@ -349,17 +361,48 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
       HYPRE_Int tag = dofmap->data[i];
       if (tag < 0 || tag >= (HYPRE_Int)args->custom_values->size)
       {
+         hypre_TFree(h_values, HYPRE_MEMORY_HOST);
+#ifdef HYPRE_USING_GPU
+         if (d_values)
+         {
+            hypre_TFree(d_values, HYPRE_MEMORY_DEVICE);
+         }
+#endif
+         HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
+         ctx->scaling_ijvec = NULL;
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd(
             "dofmap_custom: invalid tag %d at local row %d (expected 0-%zu)", tag, i,
             args->custom_values->size - 1);
          return;
       }
-      local_data[i] = (HYPRE_Real)args->custom_values->data[tag];
+      h_values[i] = (HYPRE_Complex)args->custom_values->data[tag];
    }
+
+#ifdef HYPRE_USING_GPU
+   if (values != h_values)
+   {
+      hypre_TMemcpy(d_values, h_values, HYPRE_Complex, num_local_rows, HYPRE_MEMORY_DEVICE,
+                    HYPRE_MEMORY_HOST);
+   }
+#endif
+
+   HYPRE_SAFE_CALL(HYPRE_IJVectorSetValues(ctx->scaling_ijvec, num_local_rows, NULL, values));
 
    /* Assemble the vector */
    HYPRE_SAFE_CALL(HYPRE_IJVectorAssemble(ctx->scaling_ijvec));
+   hypre_TFree(h_values, HYPRE_MEMORY_HOST);
+#ifdef HYPRE_USING_GPU
+   if (d_values)
+   {
+      hypre_TFree(d_values, HYPRE_MEMORY_DEVICE);
+   }
+#endif
+
+   /* Cache the assembled ParVector owned by the IJVector */
+   void *obj_scaling = NULL;
+   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
+   ctx->scaling_vector = (HYPRE_ParVector)obj_scaling;
 #else
    (void)comm;
    (void)args;
