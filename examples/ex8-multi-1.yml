@@ -17,7 +17,7 @@ solver:
 preconditioner:
   amg:
     include:
-      - ex8-amg-1.yml
-      - ex8-amg-2.yml
       - ex8-amg-3.yml
+      - ex8-amg-2.yml
+      - ex8-amg-1.yml
       - ex8-amg-4.yml

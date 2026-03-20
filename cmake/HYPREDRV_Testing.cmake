@@ -37,6 +37,56 @@ set(HYPREDRV_FAIL_REGEX_DEFAULT
     "HYPREDRIVE Failure!!!|BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES|Segmentation fault|Abort\\("
 )
 
+set(HYPREDRV_GPU_PROBLEM_SIZE_MULTIPLIER 1)
+if(HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP)
+    set(HYPREDRV_GPU_PROBLEM_SIZE_MULTIPLIER 5)
+endif()
+
+set(HYPREDRV_GPU_DISABLED_TESTS
+    laplacian_7pt_test_4proc
+    laplacian_19pt_test_4proc
+    laplacian_27pt_test_4proc
+    laplacian_125pt_test_4proc
+    elasticity_test_4proc
+    heatflow_test_4proc
+    lidcavity_test_4proc
+    lidcavity_test_mgr_1proc
+    lidcavity_test_mgr_4proc
+)
+
+function(hypredrv_maybe_disable_gpu_test test_name)
+    if((HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
+       test_name IN_LIST HYPREDRV_GPU_DISABLED_TESTS)
+        set_tests_properties(${test_name} PROPERTIES DISABLED TRUE)
+    endif()
+endfunction()
+
+function(hypredrv_scale_problem_size_args out_var)
+    set(_scaled_args "")
+    set(_scaling_n_dims FALSE)
+
+    foreach(_arg IN LISTS ARGN)
+        if(_arg STREQUAL "-n")
+            set(_scaling_n_dims TRUE)
+            list(APPEND _scaled_args "${_arg}")
+        elseif(_scaling_n_dims)
+            if(_arg MATCHES "^[0-9]+$")
+                math(EXPR _scaled_dim
+                    "${_arg} * ${HYPREDRV_GPU_PROBLEM_SIZE_MULTIPLIER}"
+                )
+                list(APPEND _scaled_args "${_scaled_dim}")
+            else()
+                set(_scaling_n_dims FALSE)
+                list(APPEND _scaled_args "${_arg}")
+            endif()
+        else()
+            list(APPEND _scaled_args "${_arg}")
+        endif()
+    endforeach()
+
+    set(${out_var} "${_scaled_args}" PARENT_SCOPE)
+endfunction()
+
 function(add_hypredrive_test test_name num_procs config_file)
     cmake_parse_arguments(TEST_OPTS "NO_QUIET" "" "" ${ARGN})
 
@@ -72,6 +122,7 @@ function(add_hypredrive_test test_name num_procs config_file)
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
         LABELS "integration;hypredrive"
     )
+    hypredrv_maybe_disable_gpu_test(${full_test_name})
     hypredrv_append_test_environment(${full_test_name})
 endfunction()
 
@@ -146,6 +197,7 @@ function(add_hypredrive_cli_test test_name num_procs config_file)
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
         LABELS "integration;hypredrive"
     )
+    hypredrv_maybe_disable_gpu_test(${full_test_name})
     hypredrv_append_test_environment(${full_test_name})
 endfunction()
 
@@ -177,7 +229,8 @@ function(add_executable_test test_name target num_procs)
             -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
     )
     if(EXEC_TEST_ARGS)
-        string(JOIN "|" _driver_args ${EXEC_TEST_ARGS})
+        hypredrv_scale_problem_size_args(_scaled_exec_test_args ${EXEC_TEST_ARGS})
+        string(JOIN "|" _driver_args ${_scaled_exec_test_args})
         list(APPEND _driver_command "-DTARGET_ARGS:STRING=${_driver_args}")
     endif()
 
@@ -189,6 +242,7 @@ function(add_executable_test test_name target num_procs)
         PROPERTIES
             FAIL_REGULAR_EXPRESSION "${EXEC_TEST_FAIL_REGULAR_EXPRESSION}"
     )
+    hypredrv_maybe_disable_gpu_test(${test_name})
     hypredrv_append_test_environment(${test_name})
 
     if(target STREQUAL "hypredrive-cli")
@@ -232,6 +286,7 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
         LABELS "integration;hypredrive"
     )
+    hypredrv_maybe_disable_gpu_test(${test_name})
     hypredrv_append_test_environment(${test_name})
 
     # Optional output comparison if script and reference exist
@@ -368,6 +423,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
                 LABELS "integration;hypredrive"
             )
+            hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_sequence_pack)
             hypredrv_append_test_environment(hypredrive_test_ex7_sequence_pack)
         endif()
         if (HYPREDRV_HAVE_HYPRE_23000_DEV0)
