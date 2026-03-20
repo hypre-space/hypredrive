@@ -54,8 +54,27 @@ set(HYPREDRV_GPU_DISABLED_TESTS
     lidcavity_test_mgr_4proc
 )
 
+get_property(_hypredrv_gpu_test_policy_reported GLOBAL
+    PROPERTY HYPREDRV_GPU_TEST_POLICY_REPORTED
+)
+if((HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND NOT _hypredrv_gpu_test_policy_reported)
+    if(HYPREDRV_ENABLE_ALL_TESTS)
+        message(STATUS "GPU test policy: all tests enabled (GPU skip list overridden)")
+    else()
+        list(JOIN HYPREDRV_GPU_DISABLED_TESTS ", " _hypredrv_gpu_disabled_tests_msg)
+        message(STATUS
+            "GPU test policy: disabling selected tests by default: "
+            "${_hypredrv_gpu_disabled_tests_msg}"
+        )
+        unset(_hypredrv_gpu_disabled_tests_msg)
+    endif()
+    set_property(GLOBAL PROPERTY HYPREDRV_GPU_TEST_POLICY_REPORTED TRUE)
+endif()
+unset(_hypredrv_gpu_test_policy_reported)
+
 function(hypredrv_maybe_disable_gpu_test test_name)
-    if((HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
+    if(NOT HYPREDRV_ENABLE_ALL_TESTS AND
+       (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
        test_name IN_LIST HYPREDRV_GPU_DISABLED_TESTS)
         set_tests_properties(${test_name} PROPERTIES DISABLED TRUE)
     endif()
