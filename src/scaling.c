@@ -163,6 +163,8 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
 
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
    par_A = (HYPRE_ParCSRMatrix)obj_A;
+   HYPRE_MemoryLocation  memory_location =
+      hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
 
    /* Get local range from ParCSRMatrix directly instead of IJMatrix to avoid potential
     * issues */
@@ -211,22 +213,11 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
       ctx->scaling_vector = NULL;
    }
 
-   /* Compute scaling into a fresh ParVector; use HOST to avoid relying on par_A's
-    * current memory location (matrix may be on HOST or DEVICE at call time).
-    * The scaling vector is migrated to the appropriate memory location on demand
-    * in ScalingTransformVectorDofmap and ScalingUndoDofmap when GPU vectors are
-    * involved. */
-   HYPRE_ParVector scaling_parvec = NULL;
+   /* Compute scaling into a fresh ParVector */
    HYPRE_SAFE_CALL(HYPRE_ParCSRMatrixComputeScalingTagged(
-      par_A, 1, HYPRE_MEMORY_HOST, num_tags, tags, &scaling_parvec));
+     par_A, 1, memory_location, num_tags, tags, &ctx->scaling_vector));
 
-#if defined(HYPRE_USING_GPU)
-   /* Ensure the result is on HOST regardless of par_A's memory location. */
-   hypre_ParVectorMigrate((hypre_ParVector *)scaling_parvec, HYPRE_MEMORY_HOST);
-#endif
-
-   ctx->scaling_vector = scaling_parvec;
-
+   /* Free memory */
    free(tags);
 #else
    (void)comm;
@@ -334,9 +325,9 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
       hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
    HYPRE_Complex        *h_values =
       hypre_TAlloc(HYPRE_Complex, num_local_rows, HYPRE_MEMORY_HOST);
-   const HYPRE_Complex *values = h_values;
+   const HYPRE_Complex  *values = h_values;
 #ifdef HYPRE_USING_GPU
-   HYPRE_Complex *d_values = NULL;
+   HYPRE_Complex        *d_values = NULL;
 #endif
 
    if (memory_location == HYPRE_MEMORY_UNDEFINED)
@@ -382,8 +373,8 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
 #ifdef HYPRE_USING_GPU
    if (values != h_values)
    {
-      hypre_TMemcpy(d_values, h_values, HYPRE_Complex, num_local_rows, HYPRE_MEMORY_DEVICE,
-                    HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(d_values, h_values, HYPRE_Complex, num_local_rows,
+                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
    }
 #endif
 
