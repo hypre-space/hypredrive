@@ -31,6 +31,9 @@
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
 
+/* Forward declarations for internal-only functions */
+static uint32_t HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t hypredrv);
+
 // Flag to check if HYPREDRV is initialized
 static bool hypredrv_is_initialized = false;
 /* Default stats object used by no-object helper APIs. */
@@ -411,6 +414,75 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    hypredrv_InputArgsParse(hypredrv->comm, hypredrv->lib_mode, argc, argv,
                            &hypredrv->iargs);
 
+   if (hypredrv_ErrorCodeGet())
+   {
+      return hypredrv_ErrorCodeGet();
+   }
+
+   /* Apply parsed configuration ------------------------------------------- */
+
+   /* Initialize stats from input args */
+   hypredrv_StatsSetNumReps(hypredrv->stats, hypredrv->iargs->general.num_repetitions);
+   hypredrv_StatsSetNumLinearSystems(hypredrv->stats, hypredrv->iargs->ls.num_systems);
+   if (hypredrv->iargs->general.use_millisec)
+   {
+      hypredrv_StatsTimerSetMilliseconds(hypredrv->stats);
+   }
+   else
+   {
+      hypredrv_StatsTimerSetSeconds(hypredrv->stats);
+   }
+
+   /* Set HYPRE execution policy (skipped in library mode: caller owns HYPRE) */
+   if (!hypredrv->lib_mode)
+   {
+      if (hypredrv->iargs->general.exec_policy)
+      {
+#if HYPRE_CHECK_MIN_VERSION(22100, 0)
+         HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
+         HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+         HYPRE_SetSpGemmUseVendor(hypredrv->iargs->general.use_vendor_spgemm);
+         HYPRE_SetSpMVUseVendor(hypredrv->iargs->general.use_vendor_spmv);
+#endif
+#endif
+
+#ifdef HYPRE_USING_UMPIRE
+         HYPRE_SetUmpireDevicePoolName("HYPRE_DEVICE");
+         HYPRE_SetUmpireUMPoolName("HYPRE_UM");
+         HYPRE_SetUmpireHostPoolName("HYPRE_HOST");
+         HYPRE_SetUmpirePinnedPoolName("HYPRE_PINNED");
+
+         HYPRE_SetUmpireDevicePoolSize(hypredrv->iargs->general.dev_pool_size);
+         HYPRE_SetUmpireUMPoolSize(hypredrv->iargs->general.uvm_pool_size);
+         HYPRE_SetUmpireHostPoolSize(hypredrv->iargs->general.host_pool_size);
+         HYPRE_SetUmpirePinnedPoolSize(hypredrv->iargs->general.pinned_pool_size);
+#endif
+      }
+      else
+      {
+#if HYPRE_CHECK_MIN_VERSION(22100, 0)
+         HYPRE_SetMemoryLocation(HYPRE_MEMORY_HOST);
+         HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST);
+#endif
+      }
+   }
+
+   /* Load timestep schedule for preconditioner reuse */
+   if (hypredrv->iargs->ls.timestep_filename[0] != '\0')
+   {
+      hypredrv_PreconReuseTimestepsLoad(&hypredrv->iargs->precon_reuse,
+                                        hypredrv->iargs->ls.timestep_filename,
+                                        &hypredrv->precon_reuse_timestep_starts);
+   }
+   else if (hypredrv->iargs->ls.sequence_filename[0] != '\0' &&
+            hypredrv->iargs->precon_reuse.enabled &&
+            hypredrv->iargs->precon_reuse.per_timestep)
+   {
+      hypredrv_LSSeqReadTimesteps(hypredrv->iargs->ls.sequence_filename,
+                                  &hypredrv->precon_reuse_timestep_starts);
+   }
+
    return hypredrv_ErrorCodeGet();
 }
 
@@ -430,116 +502,75 @@ HYPREDRV_SetLibraryMode(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_SetGlobalOptions
- *-----------------------------------------------------------------------------*/
-
-uint32_t
-HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
-{
-   HYPREDRV_CHECK_INIT();
-   HYPREDRV_CHECK_OBJ();
-
-   /* Initialize Stats from input args (works for both YAML and preset-based config) */
-   hypredrv_StatsSetNumReps(hypredrv->stats, hypredrv->iargs->general.num_repetitions);
-   hypredrv_StatsSetNumLinearSystems(hypredrv->stats, hypredrv->iargs->ls.num_systems);
-   if (hypredrv->iargs->general.use_millisec)
-   {
-      hypredrv_StatsTimerSetMilliseconds(hypredrv->stats);
-   }
-   else
-   {
-      hypredrv_StatsTimerSetSeconds(hypredrv->stats);
-   }
-
-   /* Set HYPRE execution policy */
-   if (hypredrv->iargs->general.exec_policy)
-   {
-#if HYPRE_CHECK_MIN_VERSION(22100, 0)
-      HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
-      HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-      HYPRE_SetSpGemmUseVendor(hypredrv->iargs->general.use_vendor_spgemm);
-      HYPRE_SetSpMVUseVendor(hypredrv->iargs->general.use_vendor_spmv);
-#endif
-#endif
-
-#ifdef HYPRE_USING_UMPIRE
-      /* Setup Umpire pools */
-      HYPRE_SetUmpireDevicePoolName("HYPRE_DEVICE");
-      HYPRE_SetUmpireUMPoolName("HYPRE_UM");
-      HYPRE_SetUmpireHostPoolName("HYPRE_HOST");
-      HYPRE_SetUmpirePinnedPoolName("HYPRE_PINNED");
-
-      HYPRE_SetUmpireDevicePoolSize(hypredrv->iargs->general.dev_pool_size);
-      HYPRE_SetUmpireUMPoolSize(hypredrv->iargs->general.uvm_pool_size);
-      HYPRE_SetUmpireHostPoolSize(hypredrv->iargs->general.host_pool_size);
-      HYPRE_SetUmpirePinnedPoolSize(hypredrv->iargs->general.pinned_pool_size);
-#endif
-   }
-   else
-   {
-#if HYPRE_CHECK_MIN_VERSION(22100, 0)
-      HYPRE_SetMemoryLocation(HYPRE_MEMORY_HOST);
-      HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST);
-#endif
-   }
-
-   if (hypredrv->iargs->ls.timestep_filename[0] != '\0')
-   {
-      hypredrv_PreconReuseTimestepsLoad(&hypredrv->iargs->precon_reuse,
-                                        hypredrv->iargs->ls.timestep_filename,
-                                        &hypredrv->precon_reuse_timestep_starts);
-   }
-   else if (hypredrv->iargs->ls.sequence_filename[0] != '\0' &&
-            hypredrv->iargs->precon_reuse.enabled &&
-            hypredrv->iargs->precon_reuse.per_timestep)
-   {
-      /* Embedded timesteps are optional in compressed-sequence containers. */
-      hypredrv_LSSeqReadTimesteps(hypredrv->iargs->ls.sequence_filename,
-                                  &hypredrv->precon_reuse_timestep_starts);
-   }
-
-   return hypredrv_ErrorCodeGet();
-}
-
-/*-----------------------------------------------------------------------------
  * HYPREDRV_InputArgsGetWarmup
  *-----------------------------------------------------------------------------*/
 
-int
-HYPREDRV_InputArgsGetWarmup(HYPREDRV_t hypredrv)
+uint32_t
+HYPREDRV_InputArgsGetWarmup(HYPREDRV_t hypredrv, int *warmup)
 {
-   return (hypredrv) ? hypredrv->iargs->general.warmup : -1;
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+   if (!warmup)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      return hypredrv_ErrorCodeGet();
+   }
+   *warmup = hypredrv->iargs->general.warmup;
+   return hypredrv_ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
  * HYPREDRV_InputArgsGetNumRepetitions
  *-----------------------------------------------------------------------------*/
 
-int
-HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t hypredrv)
+uint32_t
+HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t hypredrv, int *num_reps)
 {
-   return (hypredrv) ? hypredrv->iargs->general.num_repetitions : -1;
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+   if (!num_reps)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      return hypredrv_ErrorCodeGet();
+   }
+   *num_reps = hypredrv->iargs->general.num_repetitions;
+   return hypredrv_ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
  * HYPREDRV_InputArgsGetNumLinearSystems
  *-----------------------------------------------------------------------------*/
 
-int
-HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t hypredrv)
+uint32_t
+HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t hypredrv, int *num_ls)
 {
-   return (hypredrv) ? hypredrv->iargs->ls.num_systems : -1;
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+   if (!num_ls)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      return hypredrv_ErrorCodeGet();
+   }
+   *num_ls = hypredrv->iargs->ls.num_systems;
+   return hypredrv_ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
  * HYPREDRV_InputArgsGetNumPreconVariants
  *-----------------------------------------------------------------------------*/
 
-int
-HYPREDRV_InputArgsGetNumPreconVariants(HYPREDRV_t hypredrv)
+uint32_t
+HYPREDRV_InputArgsGetNumPreconVariants(HYPREDRV_t hypredrv, int *num_variants)
 {
-   return (hypredrv && hypredrv->iargs) ? hypredrv->iargs->num_precon_variants : -1;
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+   if (!num_variants)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      return hypredrv_ErrorCodeGet();
+   }
+   *num_variants = hypredrv->iargs->num_precon_variants;
+   return hypredrv_ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
@@ -1140,10 +1171,10 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetVectorTags
+ * HYPREDRV_LinearSystemSetVectorTags (internal)
  *-----------------------------------------------------------------------------*/
 
-uint32_t
+static uint32_t
 HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT();
@@ -1554,6 +1585,9 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    int recompute  = hypredrv_PreconReuseShouldRecompute(
       &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timestep_starts, next_ls_id);
 
+   /* Propagate dofmap to vectors (no-op if no dofmap is set) */
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetVectorTags(hypredrv));
+
    /* Create scaling context if needed and not already created */
    if (hypredrv->iargs->scaling.enabled && !hypredrv->scaling_ctx)
    {
@@ -1950,49 +1984,15 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
    }
 #else
    (void)hypredrv;
-   hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-   hypredrv_ErrorMsgAdd("Eigenspectrum feature disabled at build time. Reconfigure with "
-                        "-DHYPREDRV_ENABLE_EIGSPEC=ON");
+   if (!hypredrv->mypid)
+   {
+      fprintf(stderr,
+              "[HYPREDRV] Warning: HYPREDRV_LinearSystemComputeEigenspectrum called "
+              "but eigenspectrum support is disabled. "
+              "Reconfigure with -DHYPREDRV_ENABLE_EIGSPEC=ON to enable it.\n");
+      fflush(stderr);
+   }
 #endif
-
-   return hypredrv_ErrorCodeGet();
-}
-
-/*-----------------------------------------------------------------------------
- * HYPREDRV_GetLastStat
- *-----------------------------------------------------------------------------*/
-
-uint32_t
-HYPREDRV_GetLastStat(HYPREDRV_t hypredrv, const char *name, void *value)
-{
-   HYPREDRV_CHECK_INIT();
-   HYPREDRV_CHECK_OBJ();
-
-   if (!name || !value)
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("Stat name and value cannot be NULL");
-      return hypredrv_ErrorCodeGet();
-   }
-
-   if (!strcmp(name, "iter"))
-   {
-      *(int *)value = hypredrv_StatsGetLastIter(hypredrv->stats);
-   }
-   else if (!strcmp(name, "setup"))
-   {
-      *(double *)value = hypredrv_StatsGetLastSetupTime(hypredrv->stats);
-   }
-   else if (!strcmp(name, "solve"))
-   {
-      *(double *)value = hypredrv_StatsGetLastSolveTime(hypredrv->stats);
-   }
-   else
-   {
-      // Unknown stat name
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("Unknown stat name: '%s'", name);
-   }
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2067,10 +2067,34 @@ HYPREDRV_LinearSolverGetSolveTime(HYPREDRV_t hypredrv, double *seconds)
  * HYPREDRV_StatsLevelGetCount
  *-----------------------------------------------------------------------------*/
 
-int
-HYPREDRV_StatsLevelGetCount(int level)
+uint32_t
+HYPREDRV_StatsLevelGetCount(int level, int *count)
 {
-   return hypredrv_StatsLevelGetCount(hypredrv_default_stats, level);
+   if (!count)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("HYPREDRV_StatsLevelGetCount: count pointer is NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (!hypredrv_default_stats)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("HYPREDRV_StatsLevelGetCount: no active stats context");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (level < 0 || level >= STATS_MAX_LEVELS)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("HYPREDRV_StatsLevelGetCount: invalid level %d (max %d)",
+                           level, STATS_MAX_LEVELS - 1);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   *count = hypredrv_StatsLevelGetCount(hypredrv_default_stats, level);
+
+   return hypredrv_ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------

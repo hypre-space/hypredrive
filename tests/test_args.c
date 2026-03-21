@@ -127,8 +127,7 @@ test_InputArgsParseGeneral_use_millisec_sets_timer(void)
 
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
-   /* Verify parsed value; Stats initialization now happens in HYPREDRV_SetGlobalOptions
-    */
+   /* Verify parsed value; stats initialization happens inside HYPREDRV_InputArgsParse */
    ASSERT_TRUE(args->general.use_millisec);
 
    hypredrv_InputArgsDestroy(&args);

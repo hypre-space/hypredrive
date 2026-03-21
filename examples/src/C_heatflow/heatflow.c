@@ -1519,7 +1519,8 @@ GetVTKDataDir(HeatParams *params, char *buf, size_t bufsize)
 void
 WritePVDCollectionFromStats(HeatParams *params, int num_procs, double final_time)
 {
-   int num_steps = HYPREDRV_StatsLevelGetCount(0);
+   int num_steps = 0;
+   HYPREDRV_StatsLevelGetCount(0, &num_steps);
    if (num_steps == 0) return;
 
    char filename[256];
@@ -2696,7 +2697,6 @@ main(int argc, char *argv[])
    }
 
    /* Set HYPREDRV global options */
-   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
 
    /* Create distributed mesh object */
    CreateDistMesh(comm, params.N[0], params.N[1], params.N[2], params.P[0], params.P[1],
@@ -2805,8 +2805,9 @@ main(int argc, char *argv[])
             HYPREDRV_SAFE_CALL(
                HYPREDRV_LinearSystemGetSolutionNorm(hypredrv, "inf", &delta_inf));
 
-            int num_iterations;
-            HYPREDRV_SAFE_CALL(HYPREDRV_GetLastStat(hypredrv, "iter", &num_iterations));
+            int num_iterations = 0;
+            HYPREDRV_SAFE_CALL(
+               HYPREDRV_LinearSolverGetNumIter(hypredrv, &num_iterations));
             /* Compute energy and Fourier numbers for this (updated) iterate */
             HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorGetValues(hypredrv, 0, &T_now));
             double     energy_now = ComputeTotalEnergyLumped(mesh, &params, T_now);

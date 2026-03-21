@@ -121,7 +121,6 @@ parse_minimal_library_yaml(HYPREDRV_t obj)
       "  amg:\n"
       "    print_level: 0\n";
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
 }
 
 static HYPRE_IJMatrix
@@ -181,16 +180,17 @@ test_HYPREDRV_all_api_init_guard(void)
    code = HYPREDRV_PrintExitInfo(MPI_COMM_SELF, "hypredrive");
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
 
-   /* Args parsing / global options */
+   /* Args parsing */
    code = HYPREDRV_InputArgsParse(0, NULL, NULL);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
-   code = HYPREDRV_SetGlobalOptions(NULL);
-   ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
 
-   /* Input getters (return ints) */
-   (void)HYPREDRV_InputArgsGetWarmup(NULL);
-   (void)HYPREDRV_InputArgsGetNumRepetitions(NULL);
-   (void)HYPREDRV_InputArgsGetNumLinearSystems(NULL);
+   /* Input getters */
+   code = HYPREDRV_InputArgsGetWarmup(NULL, NULL);
+   ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
+   code = HYPREDRV_InputArgsGetNumRepetitions(NULL, NULL);
+   ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
+   code = HYPREDRV_InputArgsGetNumLinearSystems(NULL, NULL);
+   ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
 
    /* Linear system APIs (object methods) */
    code = HYPREDRV_LinearSystemBuild(NULL);
@@ -272,9 +272,6 @@ test_HYPREDRV_all_api_obj_guard(void)
 
    /* Object methods should trip the OBJ guard when hypredrv == NULL */
    code = HYPREDRV_SetLibraryMode(NULL);
-   ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
-
-   code = HYPREDRV_SetGlobalOptions(NULL);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
 
    code = HYPREDRV_LinearSystemBuild(NULL);
@@ -395,7 +392,6 @@ test_create_parse_and_destroy(void)
 
    parse_yaml_into_obj(obj, yaml_config);
 
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
 
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
@@ -528,7 +524,6 @@ test_HYPREDRV_PreconCreate_reuse_logic(void)
             matrix_path, rhs_path);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
@@ -575,7 +570,6 @@ test_HYPREDRV_LinearSolverApply_with_xref(void)
             matrix_path, rhs_path);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    /* xref_filename isn't a supported key in this build; cover the xref branch by
@@ -624,7 +618,6 @@ test_HYPREDRV_stats_level_apis(void)
             matrix_path, rhs_path);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
@@ -637,15 +630,6 @@ test_HYPREDRV_stats_level_apis(void)
    hypredrv_StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_END, "prec");
    hypredrv_StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
    hypredrv_StatsAnnotate(state->stats, HYPREDRV_ANNOTATE_END, "solve");
-
-   /* HYPREDRV_GetLastStat branches (deprecated) */
-   int    iter = -1;
-   double t    = -1.0;
-   ASSERT_EQ(HYPREDRV_GetLastStat(obj, "iter", &iter), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_GetLastStat(obj, "setup", &t), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_GetLastStat(obj, "solve", &t), ERROR_NONE);
-   ASSERT_TRUE(HYPREDRV_GetLastStat(obj, "unknown", &t) & ERROR_UNKNOWN);
-   hypredrv_ErrorCodeResetAll();
 
    /* Typed stat getters */
    int    typed_iter   = -1;
@@ -694,7 +678,6 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
             matrix_path, rhs_path);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
@@ -764,10 +747,8 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
    ASSERT_EQ(HYPREDRV_PreconApply(obj, (HYPRE_Vector)state->vec_b, (HYPRE_Vector)state->vec_x),
              ERROR_NONE);
 
-   /* Eigenspectrum API entrypoint (exercises CHECK_INIT/CHECK_OBJ) */
-   uint32_t eig = HYPREDRV_LinearSystemComputeEigenspectrum(obj);
-   ASSERT_TRUE(eig == ERROR_NONE || (eig & ERROR_UNKNOWN));
-   hypredrv_ErrorCodeResetAll();
+   /* Eigenspectrum API entrypoint: always succeeds (no-op when built without eigspec) */
+   ASSERT_EQ(HYPREDRV_LinearSystemComputeEigenspectrum(obj), ERROR_NONE);
 
    /* Force error branches in GetValues/Copy by nulling an internal vec_s entry */
    HYPRE_IJVector saved_state0 = state->vec_s[state->states[0]];
@@ -786,7 +767,7 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
 }
 
 static void
-test_HYPREDRV_SetGlobalOptions_exec_policy(void)
+test_HYPREDRV_InputArgsParse_exec_policy(void)
 {
    reset_state();
 
@@ -817,10 +798,8 @@ test_HYPREDRV_SetGlobalOptions_exec_policy(void)
             "    print_level: 0\n",
             matrix_path, rhs_path);
 
+   /* exec_policy and vendor flags are applied inside InputArgsParse */
    parse_yaml_into_obj(obj, yaml_config);
-
-   /* Test SetGlobalOptions with host policy */
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
@@ -859,7 +838,6 @@ test_HYPREDRV_PreconCreate_reuse_logic_variations(void)
             matrix_path, rhs_path);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
@@ -909,7 +887,6 @@ test_HYPREDRV_LinearSolverCreate_reuse_logic(void)
             matrix_path, rhs_path);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
@@ -960,7 +937,6 @@ test_HYPREDRV_PreconDestroy_reuse_logic(void)
             matrix_path, rhs_path);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
@@ -1009,7 +985,6 @@ test_HYPREDRV_LinearSolverDestroy_reuse_logic(void)
             matrix_path, rhs_path);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
@@ -1069,7 +1044,6 @@ test_HYPREDRV_PreconDestroy_reuse_linear_system_ids(void)
             matrix_path, rhs_path);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
@@ -1132,7 +1106,6 @@ test_HYPREDRV_PreconDestroy_reuse_per_timestep(void)
             matrix_path, rhs_path, tmp_ts);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
@@ -1199,7 +1172,6 @@ test_HYPREDRV_PreconDestroy_reuse_per_timestep_frequency(void)
             matrix_path, rhs_path, tmp_ts);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
@@ -1380,7 +1352,6 @@ test_HYPREDRV_misc_0hit_branches(void)
             matrix_path, rhs_path);
 
    parse_yaml_into_obj(obj, yaml_config);
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
 
@@ -1487,16 +1458,9 @@ test_HYPREDRV_misc_0hit_branches(void)
    ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(0, "lvl", 1), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(0, "lvl", 1), ERROR_NONE);
 
-   /* Cover GetLastStat else-if branches + error branch (deprecated API) */
+   /* Typed stat getters */
    int    it = -1;
    double t  = -1.0;
-   ASSERT_EQ(HYPREDRV_GetLastStat(obj, "iter", &it), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_GetLastStat(obj, "setup", &t), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_GetLastStat(obj, "solve", &t), ERROR_NONE);
-   ASSERT_TRUE(HYPREDRV_GetLastStat(obj, "unknown", &t) & ERROR_UNKNOWN);
-   hypredrv_ErrorCodeResetAll();
-
-   /* Typed stat getters - same data, type-safe */
    ASSERT_EQ(HYPREDRV_LinearSolverGetNumIter(obj, &it), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverGetSetupTime(obj, &t), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverGetSolveTime(obj, &t), ERROR_NONE);
@@ -1568,10 +1532,10 @@ test_HYPREDRV_preconditioner_variants(void)
    parse_yaml_into_obj(obj, yaml_config);
 
    /* Check that variants were parsed */
-   int num_variants = HYPREDRV_InputArgsGetNumPreconVariants(obj);
+   int num_variants = 0;
+   ASSERT_EQ(HYPREDRV_InputArgsGetNumPreconVariants(obj, &num_variants), ERROR_NONE);
    ASSERT_EQ(num_variants, 2);
 
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    /* Test setting and using each variant */
@@ -1633,7 +1597,6 @@ test_HYPREDRV_preconditioner_preset_yaml(void)
 
    parse_yaml_into_obj(obj, yaml_config);
 
-   ASSERT_EQ(HYPREDRV_SetGlobalOptions(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
@@ -1816,7 +1779,7 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_LinearSolverApply_with_xref);
    RUN_TEST(test_HYPREDRV_stats_level_apis);
    RUN_TEST(test_HYPREDRV_state_vectors_and_eigspec_error_paths);
-   RUN_TEST(test_HYPREDRV_SetGlobalOptions_exec_policy);
+   RUN_TEST(test_HYPREDRV_InputArgsParse_exec_policy);
    RUN_TEST(test_HYPREDRV_PreconCreate_reuse_logic_variations);
    RUN_TEST(test_HYPREDRV_LinearSolverCreate_reuse_logic);
    RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_logic);

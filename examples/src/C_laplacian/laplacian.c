@@ -340,7 +340,6 @@ main(int argc, char *argv[])
    }
 
    /* Set HYPREDRV global options */
-   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
 
    /* Print problem parameters */
    if (!myid)
