@@ -138,7 +138,7 @@ extern "C"
     *
     * @param error_code The error code to be processed (uint32_t)
     *
-    * @note This function prints the error description and returns normally — it does
+    * @note This function prints the error description and returns normally - it does
     * NOT call MPI_Abort. For an abort-on-error helper, use the HYPREDRV_SAFE_CALL
     * macro (defined in HYPREDRV_utils.h), which calls this function and then calls
     * MPI_Abort when the error code is non-zero.
@@ -338,7 +338,7 @@ extern "C"
     * lifetime of the HYPREDRV_t object. Create a new object if you need to
     * switch back to owned mode.
     *
-    * @param hypredrv The HYPREDRV_t object (passed by value — it is an opaque
+    * @param hypredrv The HYPREDRV_t object (passed by value - it is an opaque
     *                 pointer, not a pointer-to-pointer).
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
@@ -731,7 +731,7 @@ extern "C"
     * @param hypredrv The HYPREDRV_t object.
     * @param vec      The HYPRE_Vector to use as the solution buffer. If NULL, HYPREDRV
     *                 allocates an internal buffer (vec_b must already be set). If
-    *                 non-NULL, the vector is borrowed — HYPREDRV will never destroy it.
+    *                 non-NULL, the vector is borrowed - HYPREDRV will never destroy it.
     *
     * @return 0 on success; nonzero error code otherwise. Returns an error when @p vec
     *         is NULL and the RHS vector has not been set yet.
@@ -1498,7 +1498,7 @@ extern "C"
     *
     * Configures the linear solver using the current solver and preconditioner methods,
     * matrix, RHS vector, and solution vector. This function sets up the preconditioner
-    * internally — a prior call to HYPREDRV_PreconSetup() is **not required** for the
+    * internally - a prior call to HYPREDRV_PreconSetup() is **not required** for the
     * normal solver workflow.
     *
     * @note To use the preconditioner standalone (e.g., via HYPREDRV_PreconApply()),
@@ -1787,7 +1787,7 @@ extern "C"
     *
     * @note When hypredrive is built **without** `-DHYPREDRV_ENABLE_EIGSPEC=ON`,
     * this function returns a non-zero error code with a descriptive message
-    * ("Eigenspectrum feature disabled at build time …") — it is not a silent no-op.
+    * ("Eigenspectrum feature disabled at build time …") - it is not a silent no-op.
     * Check the return value or guard the call with `HYPREDRV_SAFE_CALL`.
     *
     * @note When built **with** `-DHYPREDRV_ENABLE_EIGSPEC=ON`, this function

@@ -103,7 +103,7 @@ hypredrv_ScalingContextDestroy(Scaling_context **ctx_ptr)
    }
    else if (ctx->scaling_vector)
    {
-      /* scaling_vector is directly owned (dofmap_mag case — no IJVector wrapper) */
+      /* scaling_vector is directly owned (dofmap_mag case - no IJVector wrapper) */
       HYPRE_SAFE_CALL(HYPRE_ParVectorDestroy(ctx->scaling_vector));
       ctx->scaling_vector = NULL;
    }
@@ -143,14 +143,16 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                         HYPRE_IJMatrix mat_A, IntArray *dofmap)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   void              *obj_A  = NULL;
-   HYPRE_ParCSRMatrix par_A  = NULL;
-   HYPRE_BigInt       ilower = 0, iupper = 0;
-   HYPRE_Int          num_local_rows = 0;
-   HYPRE_Int         *tags           = NULL;
-   HYPRE_Int          num_tags       = 0;
-   HYPRE_Int          max_tag        = -1;
-   int                myid           = 0;
+   HYPRE_MemoryLocation  memloc_tags = HYPRE_MEMORY_HOST;
+   HYPRE_MemoryLocation  orig_mat_memloc = HYPRE_MEMORY_HOST;
+   void                 *obj_A  = NULL;
+   HYPRE_ParCSRMatrix    par_A  = NULL;
+   HYPRE_BigInt          ilower = 0, iupper = 0;
+   HYPRE_Int             num_local_rows = 0;
+   HYPRE_Int            *tags           = NULL;
+   HYPRE_Int             num_tags       = 0;
+   HYPRE_Int             max_tag        = -1;
+   int                   myid           = 0;
 
    MPI_Comm_rank(comm, &myid);
 
@@ -163,8 +165,7 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
 
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
    par_A = (HYPRE_ParCSRMatrix)obj_A;
-   HYPRE_MemoryLocation  memory_location =
-      hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
+   orig_mat_memloc = hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
 
    /* Get local range from ParCSRMatrix directly instead of IJMatrix to avoid potential
     * issues */
@@ -202,7 +203,7 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    /* Destroy previous scaling vector if it exists (from previous system) */
    if (ctx->scaling_ijvec)
    {
-      /* Came from dofmap_custom path — scaling_vector owned by IJVector */
+      /* Came from dofmap_custom path - scaling_vector owned by IJVector */
       HYPRE_IJVectorDestroy(ctx->scaling_ijvec);
       ctx->scaling_ijvec  = NULL;
       ctx->scaling_vector = NULL;
@@ -213,9 +214,27 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
       ctx->scaling_vector = NULL;
    }
 
+   /* Work around hypre's device TaggedFnorm kernel, which can read tags out of bounds
+    * for dofmap_mag on GPU builds. Compute the tagged scaling on host, then migrate the
+    * resulting scaling vector back to the matrix memory location. */
+#if defined(HYPRE_USING_GPU)
+   if (hypre_GetExecPolicy1(orig_mat_memloc) == HYPRE_EXEC_DEVICE)
+   {
+      hypre_ParCSRMatrixMigrate((hypre_ParCSRMatrix *)par_A, HYPRE_MEMORY_HOST);
+   }
+#endif
+
    /* Compute scaling into a fresh ParVector */
    HYPRE_SAFE_CALL(HYPRE_ParCSRMatrixComputeScalingTagged(
-     par_A, 1, memory_location, num_tags, tags, &ctx->scaling_vector));
+     par_A, 1, memloc_tags, num_tags, tags, &ctx->scaling_vector));
+
+#if defined(HYPRE_USING_GPU)
+   if (hypre_GetExecPolicy1(orig_mat_memloc) == HYPRE_EXEC_DEVICE)
+   {
+      hypre_ParVectorMigrate((hypre_ParVector *)ctx->scaling_vector, orig_mat_memloc);
+      hypre_ParCSRMatrixMigrate((hypre_ParCSRMatrix *)par_A, orig_mat_memloc);
+   }
+#endif
 
    /* Free memory */
    free(tags);
@@ -315,7 +334,7 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    }
    else if (ctx->scaling_vector)
    {
-      /* Came from dofmap_mag path — scaling_vector directly owned */
+      /* Came from dofmap_mag path - scaling_vector directly owned */
       HYPRE_ParVectorDestroy(ctx->scaling_vector);
       ctx->scaling_vector = NULL;
    }

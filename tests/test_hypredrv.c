@@ -1494,7 +1494,7 @@ test_HYPREDRV_misc_0hit_branches(void)
    ASSERT_TRUE(HYPREDRV_GetLastStat(obj, "unknown", &t) & ERROR_UNKNOWN);
    hypredrv_ErrorCodeResetAll();
 
-   /* Typed stat getters — same data, type-safe */
+   /* Typed stat getters - same data, type-safe */
    ASSERT_EQ(HYPREDRV_LinearSolverGetNumIter(obj, &it), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverGetSetupTime(obj, &t), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverGetSolveTime(obj, &t), ERROR_NONE);

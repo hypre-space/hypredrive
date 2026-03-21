@@ -1459,7 +1459,7 @@ hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type
 
    if (!strcmp(norm_type, "L2") || !strcmp(norm_type, "l2"))
    {
-      /* hypre_ParVectorInnerProd is GPU-aware — no migration needed */
+      /* hypre_ParVectorInnerProd is GPU-aware - no migration needed */
       global_norm = (double)hypre_ParVectorInnerProd(par_vec, par_vec);
       *norm       = sqrt(global_norm);
    }
