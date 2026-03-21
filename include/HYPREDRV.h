@@ -293,8 +293,11 @@ extern "C"
    /**
     * @brief Parse input arguments for a HYPREDRV object.
     *
-    * This function is responsible for parsing the command-line arguments provided to the
-    * application.
+    * This function parses the command-line arguments and immediately applies the
+    * resulting configuration: HYPRE execution policy and Umpire pool sizes are set
+    * (skipped in library mode, where the caller owns HYPRE initialization), stats
+    * counters are initialized, and any preconditioner-reuse timestep schedule is loaded.
+    * No separate "configure" call is needed after this function.
     *
     * @param argc The count of command-line arguments.
     * @param argv The array of command-line argument strings.
@@ -317,7 +320,7 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsParse(int, char **,
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsParse(int argc, char **argv,
                                                            HYPREDRV_t hypredrv);
 
    /**
@@ -356,118 +359,77 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_SetLibraryMode(HYPREDRV_t hypredrv);
 
    /**
-    * @brief Set HYPRE's global options according to the YAML input.
-    *
-    * @param hypredrv The HYPREDRV_t object from which the global options are to be
-    * retrieved.
-    *
-    * @return Returns an error code with 0 indicating success. Any non-zero value
-    * indicates a failure, and the error code can be further described using
-    * HYPREDRV_ErrorCodeDescribe(error_code).
-    *
-    * Example Usage:
-    * @code
-    *    HYPREDRV_t *hypredrv;
-    *    // ... (hypredrv is created, and its components are initialized) ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
-    * @endcode
-    */
-
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv);
-
-   /**
     * @brief Retrieve the warmup setting from a HYPREDRV object.
     *
-    * This function accesses the HYPREDRV object's input arguments structure to retrieve
-    * the warmup setting. This setting indicates whether a warmup phase should be executed
-    * before the main operations, often used to ensure accurate timing measurements by
-    * eliminating any initialization overhead.
+    * @param hypredrv The HYPREDRV_t object to query.
+    * @param[out] warmup Set to the warmup flag value (0 or 1) on success.
     *
-    * @param hypredrv The HYPREDRV_t object from which the warmup setting is to be
-    * retrieved.
-    *
-    * @return Returns the warmup setting as an integer. If the input object is NULL
-    * or not properly initialized, the function returns -1 to indicate an error or invalid
-    * state.
+    * @return Returns an error code with 0 indicating success.
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_t *hypredrv;
-    *    // ... (hypredrv is created, and its components are set) ...
-    *    int warmup = HYPREDRV_InputArgsGetWarmup(hypredrv);
+    *    int warmup = 0;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetWarmup(hypredrv, &warmup));
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetWarmup(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsGetWarmup(HYPREDRV_t hypredrv,
+                                                               int       *warmup);
 
    /**
     * @brief Retrieve the number of repetitions from a HYPREDRV object.
     *
-    * This function accesses the HYPREDRV object's input arguments structure to retrieve
-    * the number of repetitions setting. This setting specifies how many times the linear
-    * systems should be solved, potentially for benchmarking or testing purposes.
+    * @param hypredrv The HYPREDRV_t object to query.
+    * @param[out] num_reps Set to the number of repetitions on success.
     *
-    * @param hypredrv The HYPREDRV_t object from which the number of repetitions is to be
-    * retrieved.
-    *
-    * @return Returns the number of repetitions as an integer. If the input object is NULL
-    * or not properly initialized, the function returns -1 to indicate an error or invalid
-    * state.
+    * @return Returns an error code with 0 indicating success.
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_t *hypredrv;
-    *    // ... (hypredrv is created, and its components are set) ...
-    *    int num_reps = HYPREDRV_InputArgsGetNumRepetitions(hypredrv);
+    *    int num_reps = 0;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetNumRepetitions(hypredrv, &num_reps));
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t hypredrv, int *num_reps);
 
    /**
     * @brief Retrieve the number of linear systems from a HYPREDRV object.
     *
-    * This function accesses the HYPREDRV object's input arguments structure to retrieve
-    * the number of linear systems being solved.
+    * @param hypredrv The HYPREDRV_t object to query.
+    * @param[out] num_ls Set to the number of linear systems on success.
     *
-    * @param hypredrv The HYPREDRV_t object from which the number of repetitions is to be
-    * retrieved.
-    *
-    * @return Returns the number of linear systems as an integer. If the input object is
-    * NULL or not properly initialized, the function returns -1 to indicate an error or
-    * invalid state.
+    * @return Returns an error code with 0 indicating success.
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_t *hypredrv;
-    *    // ... (hypredrv is created, and its components are set) ...
-    *    int num_ls = HYPREDRV_InputArgsGetNumLinearSystems(hypredrv);
+    *    int num_ls = 0;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetNumLinearSystems(hypredrv, &num_ls));
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t hypredrv, int *num_ls);
 
    /**
     * @brief Retrieve the number of preconditioner variants from a HYPREDRV object.
     *
-    * This function accesses the HYPREDRV object's input arguments structure to retrieve
-    * the number of preconditioner variants configured in the YAML input.
+    * @param hypredrv The HYPREDRV_t object to query.
+    * @param[out] num_variants Set to the number of preconditioner variants on success.
     *
-    * @param hypredrv The HYPREDRV_t object from which the number of variants is to be
-    * retrieved.
-    *
-    * @return Returns the number of preconditioner variants as an integer (default: 1).
-    * If the input object is NULL or not properly initialized, the function returns -1.
+    * @return Returns an error code with 0 indicating success.
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_t *hypredrv;
-    *    // ... (hypredrv is created, and its components are set) ...
-    *    int num_variants = HYPREDRV_InputArgsGetNumPreconVariants(hypredrv);
+    *    int num_variants = 0;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetNumPreconVariants(hypredrv,
+    * &num_variants));
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_InputArgsGetNumPreconVariants(HYPREDRV_t hypredrv);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_InputArgsGetNumPreconVariants(HYPREDRV_t hypredrv, int *num_variants);
 
    /**
     * @brief Set the active preconditioner variant index.
@@ -737,7 +699,7 @@ extern "C"
     *         is NULL and the RHS vector has not been set yet.
     *
     * @note Typical use: provide your own HYPRE_ParVector allocation before calling
-    *       HYPREDRV_LinearSolverSolve() so the result is written directly into your
+    *       HYPREDRV_LinearSolverApply() so the result is written directly into your
     *       buffer. You can then retrieve the same pointer via
     *       HYPREDRV_LinearSystemGetSolution().
     *
@@ -746,7 +708,7 @@ extern "C"
     *    HYPRE_IJVector my_x; // previously created, same size as b
     *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetSolution(hypredrv,
     *                                                        (HYPRE_Vector)my_x));
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSolve(hypredrv));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
     *    // my_x now contains the solution.
     * @endcode
     */
@@ -791,31 +753,6 @@ extern "C"
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec);
-
-   /**
-    * @brief Apply DOF-map tags to active linear-system vectors.
-    *
-    * This function propagates the currently loaded dofmap to vectors involved in the
-    * linear solve (for example RHS, initial guess, solution, and reference solution) so
-    * GMRES tagged output can report per-tag quantities consistently.
-    *
-    * @param hypredrv The HYPREDRV_t object for which vector tags are to be updated.
-    *
-    * @return Returns an error code with 0 indicating success. Any non-zero value
-    * indicates a failure, and the error code can be further described using
-    * HYPREDRV_ErrorCodeDescribe(error_code).
-    *
-    * @note On hypre versions older than v3.0.0, this function is a no-op.
-    *
-    * Example Usage:
-    * @code
-    *    HYPREDRV_t *hypredrv;
-    *    // ... (hypredrv is created, dofmap is loaded) ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetVectorTags(hypredrv));
-    * @endcode
-    */
-   HYPREDRV_EXPORT_SYMBOL uint32_t
-   HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t hypredrv);
 
    /**
     * @brief Reset the initial guess of the solution vector for a HYPREDRV object to its
@@ -1614,6 +1551,9 @@ extern "C"
     * object will result in an error. The function assumes that the linear solver method
     * and the linear solver object itself are properly set in the HYPREDRV_t object.
     *
+    * @note This function also destroys the associated preconditioner. There is no need
+    * to call HYPREDRV_PreconDestroy separately before or after this call.
+    *
     * Example Usage:
     * @code
     *    HYPREDRV_t *hypredrv;
@@ -1666,6 +1606,10 @@ extern "C"
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note This function is **Caliper-only**: it does not record entries in the global
+    * stats context and thus does not feed HYPREDRV_StatsLevelGetEntry(). Use
+    * HYPREDRV_AnnotateLevelBegin/End if you need both Caliper and stats recording.
     *
     * @note When Caliper is enabled (via HYPREDRV_ENABLE_CALIPER), this function also
     * creates Caliper regions that can be captured by Caliper profiling tools.
@@ -1786,9 +1730,9 @@ extern "C"
     * @return Returns an error code with 0 indicating success
     *
     * @note When hypredrive is built **without** `-DHYPREDRV_ENABLE_EIGSPEC=ON`,
-    * this function returns a non-zero error code with a descriptive message
-    * ("Eigenspectrum feature disabled at build time …") - it is not a silent no-op.
-    * Check the return value or guard the call with `HYPREDRV_SAFE_CALL`.
+    * this function is a silent no-op: it prints a one-time warning to stderr on
+    * rank 0 and returns success. It is therefore safe to leave the call
+    * unconditionally in application code.
     *
     * @note When built **with** `-DHYPREDRV_ENABLE_EIGSPEC=ON`, this function
     * operates on a single MPI rank and writes eigenvalues (and optionally
@@ -1804,26 +1748,6 @@ extern "C"
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv);
-
-   /**
-    * @brief Get a statistic from the last linear solve.
-    *
-    * @deprecated Use the typed alternatives instead:
-    *   - HYPREDRV_LinearSolverGetNumIter()   for iteration count
-    *   - HYPREDRV_LinearSolverGetSetupTime() for preconditioner setup time
-    *   - HYPREDRV_LinearSolverGetSolveTime() for solver apply time
-    *
-    * @param hypredrv The HYPREDRV_t object.
-    * @param name Name of the statistic ("iter", "setup", "solve").
-    * @param value Pointer to store the value. Type depends on name:
-    *              - "iter": int*
-    *              - "setup": double* (seconds)
-    *              - "solve": double* (seconds)
-    *
-    * @return Returns an error code with 0 indicating success.
-    */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_GetLastStat(HYPREDRV_t  hypredrv,
-                                                        const char *name, void *value);
 
    /**
     * @brief Get the iteration count from the last linear solve.
@@ -1883,13 +1807,15 @@ extern "C"
     * (HYPREDRV_AnnotateLevelBegin/End with the specified level).
     *
     * @param level The annotation level (0 to STATS_MAX_LEVELS-1).
+    * @param count Pointer to store the number of entries recorded.
     *
-    * @return The number of entries recorded, or 0 if no stats context is active.
+    * @return Returns an error code with 0 indicating success. Returns a non-zero
+    * error code if level is out of range or no stats context is active.
     *
     * @note Operates on the global stats context. See HYPREDRV_AnnotateBegin() for
     * details.
     */
-   HYPREDRV_EXPORT_SYMBOL int HYPREDRV_StatsLevelGetCount(int level);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsLevelGetCount(int level, int *count);
 
    /**
     * @brief Get statistics entry by level and index.

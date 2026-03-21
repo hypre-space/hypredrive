@@ -175,11 +175,12 @@ main(int argc, char **argv)
    }
 
    /*-----------------------------------------------------------
-    * Set hypre's global options and warmup
+    * Apply YAML configuration to HYPRE's global runtime settings
     *-----------------------------------------------------------*/
 
-   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(obj));
-   if (HYPREDRV_InputArgsGetWarmup(obj))
+   int warmup = 0;
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetWarmup(obj, &warmup));
+   if (warmup)
    {
       printf("TODO: Perform warmup");
    }
@@ -188,16 +189,18 @@ main(int argc, char **argv)
     * Build and solve linear system(s)
     *-----------------------------------------------------------*/
 
-   int num_linear_systems  = HYPREDRV_InputArgsGetNumLinearSystems(obj);
-   int num_precon_variants = HYPREDRV_InputArgsGetNumPreconVariants(obj);
+   int num_linear_systems  = 0;
+   int num_precon_variants = 0;
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetNumLinearSystems(obj, &num_linear_systems));
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetNumPreconVariants(obj, &num_precon_variants));
 
    for (int k = 0; k < num_linear_systems; k++)
    {
       /* Build linear system (matrix, RHS, LHS, and auxiliary data) */
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemBuild(obj));
 
-      /* Optionally compute full eigenspectrum */
 #ifdef HYPREDRV_ENABLE_EIGSPEC
+      /* Optionally compute full eigenspectrum (no-op if not built with eigspec) */
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemComputeEigenspectrum(obj));
 #endif
 
@@ -207,7 +210,9 @@ main(int argc, char **argv)
          /* Set active variant */
          HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconVariant(obj, v));
 
-         for (int i = 0; i < HYPREDRV_InputArgsGetNumRepetitions(obj); i++)
+         int num_reps = 0;
+         HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetNumRepetitions(obj, &num_reps));
+         for (int i = 0; i < num_reps; i++)
          {
             /* (Optional) Annotate the entire solve iteration */
             HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("Run-%d", i));

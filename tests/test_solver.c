@@ -787,7 +787,6 @@ test_solver_precon_combination(const char *solver_name, const char *precon_name)
       return; /* Skip invalid combinations */
    }
 
-   HYPREDRV_SetGlobalOptions(obj);
    HYPREDRV_LinearSystemBuild(obj);
 
    /* Test create/setup/apply/destroy cycle */

@@ -1891,7 +1891,8 @@ GetVTKDataDir(LidCavityParams *params, char *buf, size_t bufsize)
 void
 WritePVDCollectionFromStats(LidCavityParams *params, int num_procs, double final_time)
 {
-   int num_steps = HYPREDRV_StatsLevelGetCount(0);
+   int num_steps = 0;
+   HYPREDRV_StatsLevelGetCount(0, &num_steps);
    if (num_steps == 0) return;
 
    char filename[256];
@@ -2065,7 +2066,6 @@ main(int argc, char *argv[])
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, hypredrv_args, hypredrv));
-   HYPREDRV_SAFE_CALL(HYPREDRV_SetGlobalOptions(hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
 
    /* Create distributed mesh object */
@@ -2148,7 +2148,6 @@ main(int argc, char *argv[])
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv, NULL));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv, NULL));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(hypredrv));
-         HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetVectorTags(hypredrv));
 
          if (params.verbose & 0x4)
          {
@@ -2173,7 +2172,8 @@ main(int argc, char *argv[])
             double cfl = params.dt / mesh->h[2];
             double norm_u, norm_v, norm_p;
 
-            HYPREDRV_SAFE_CALL(HYPREDRV_GetLastStat(hypredrv, "iter", &num_iterations));
+            HYPREDRV_SAFE_CALL(
+               HYPREDRV_LinearSolverGetNumIter(hypredrv, &num_iterations));
             ComputeComponentNorms(b, mesh->local_size, &norm_u, &norm_v, &norm_p);
             if (!myid)
             {
