@@ -155,18 +155,18 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                         HYPRE_IJMatrix mat_A, IntArray *dofmap)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   HYPRE_MemoryLocation  memloc_tags = HYPRE_MEMORY_HOST;
+   HYPRE_MemoryLocation memloc_tags = HYPRE_MEMORY_HOST;
 #if defined(HYPRE_USING_GPU)
-   HYPRE_MemoryLocation  orig_mat_memloc = HYPRE_MEMORY_HOST;
+   HYPRE_MemoryLocation orig_mat_memloc = HYPRE_MEMORY_HOST;
 #endif
-   void                 *obj_A  = NULL;
-   HYPRE_ParCSRMatrix    par_A  = NULL;
-   HYPRE_BigInt          ilower = 0, iupper = 0;
-   HYPRE_Int             num_local_rows = 0;
-   HYPRE_Int            *tags           = NULL;
-   HYPRE_Int             num_tags       = 0;
-   HYPRE_Int             max_tag        = -1;
-   int                   myid           = 0;
+   void              *obj_A  = NULL;
+   HYPRE_ParCSRMatrix par_A  = NULL;
+   HYPRE_BigInt       ilower = 0, iupper = 0;
+   HYPRE_Int          num_local_rows = 0;
+   HYPRE_Int         *tags           = NULL;
+   HYPRE_Int          num_tags       = 0;
+   HYPRE_Int          max_tag        = -1;
+   int                myid           = 0;
 
    MPI_Comm_rank(comm, &myid);
 
@@ -230,8 +230,8 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
 #endif
 
    /* Compute scaling into a fresh ParVector */
-   HYPRE_SAFE_CALL(HYPRE_ParCSRMatrixComputeScalingTagged(
-     par_A, 1, memloc_tags, num_tags, tags, &ctx->scaling_vector));
+   HYPRE_SAFE_CALL(HYPRE_ParCSRMatrixComputeScalingTagged(par_A, 1, memloc_tags, num_tags,
+                                                          tags, &ctx->scaling_vector));
 
 #if defined(HYPRE_USING_GPU)
    if (hypre_GetExecPolicy1(orig_mat_memloc) == HYPRE_EXEC_DEVICE)
@@ -333,13 +333,13 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    ScalingContextFreeVector(ctx);
 
    /* Create IJVector wrapper for scaling vector */
-   HYPRE_MemoryLocation  memory_location =
+   HYPRE_MemoryLocation memory_location =
       hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
-   HYPRE_Complex        *h_values =
+   HYPRE_Complex *h_values =
       hypre_TAlloc(HYPRE_Complex, num_local_rows, HYPRE_MEMORY_HOST);
-   const HYPRE_Complex  *values = h_values;
+   const HYPRE_Complex *values = h_values;
 #ifdef HYPRE_USING_GPU
-   HYPRE_Complex        *d_values = NULL;
+   HYPRE_Complex *d_values = NULL;
 #endif
 
    if (memory_location == HYPRE_MEMORY_UNDEFINED)
@@ -354,7 +354,8 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
 #ifdef HYPRE_USING_GPU
    if (memory_location == HYPRE_MEMORY_DEVICE)
    {
-      values = d_values = hypre_TAlloc(HYPRE_Complex, num_local_rows, HYPRE_MEMORY_DEVICE);
+      values = d_values =
+         hypre_TAlloc(HYPRE_Complex, num_local_rows, HYPRE_MEMORY_DEVICE);
    }
 #endif
 
@@ -390,7 +391,8 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    }
 #endif
 
-   HYPRE_SAFE_CALL(HYPRE_IJVectorSetValues(ctx->scaling_ijvec, num_local_rows, NULL, values));
+   HYPRE_SAFE_CALL(
+      HYPRE_IJVectorSetValues(ctx->scaling_ijvec, num_local_rows, NULL, values));
 
    /* Assemble the vector */
    HYPRE_SAFE_CALL(HYPRE_IJVectorAssemble(ctx->scaling_ijvec));

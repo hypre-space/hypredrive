@@ -943,7 +943,8 @@ LinearSystemRHSGeneratedSet(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
          HYPRE_IJMatrixGetObject(mat, &obj_A);
          par_A = (HYPRE_ParCSRMatrix)obj_A;
 #if HYPREDRV_HAVE_MEMORY_APIS
-         mat_memory_location = hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
+         mat_memory_location =
+            hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
          if (mat_memory_location != memory_location)
          {
             hypre_ParCSRMatrixMigrate((hypre_ParCSRMatrix *)par_A, memory_location);
@@ -1247,8 +1248,8 @@ hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
     * The dofmap is always host-allocated, so copy it to a device buffer and
     * hand ownership (owns_tags=2) to HYPRE so it frees the buffer correctly. */
    HYPRE_Int *device_tags = hypre_TAlloc(HYPRE_Int, dofmap->size, HYPRE_MEMORY_DEVICE);
-   hypre_TMemcpy(device_tags, dofmap->data, HYPRE_Int, dofmap->size,
-                 HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+   hypre_TMemcpy(device_tags, dofmap->data, HYPRE_Int, dofmap->size, HYPRE_MEMORY_DEVICE,
+                 HYPRE_MEMORY_HOST);
    HYPRE_IJVectorSetTags(vec, 2, num_tags, device_tags);
 #else
    HYPRE_IJVectorSetTags(vec, 0, num_tags, dofmap->data);
@@ -1476,7 +1477,8 @@ hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type
    else
    {
 #if defined(HYPRE_USING_GPU)
-      /* Manual loops require host-accessible data; save memory location to restore later */
+      /* Manual loops require host-accessible data; save memory location to restore later
+       */
       HYPRE_MemoryLocation orig_memloc = hypre_VectorMemoryLocation(seq_vec);
       if (orig_memloc != HYPRE_MEMORY_HOST)
       {

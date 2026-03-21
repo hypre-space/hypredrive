@@ -224,20 +224,20 @@ DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, hypredrv_ILUSetArg
 static void MGRfrlxMGRSetArgs(void *, const YAMLnode *);
 void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
 
-#define MGRcls_FIELDS(_prefix)                                      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs)           \
+#define MGRcls_FIELDS(_prefix)                                     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs)          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRclsILUSetArgs)
 
 #define MGRfrlx_FIELDS(_prefix)                                          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRfrlxMGRSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)
 
 #define MGRgrlx_FIELDS(_prefix)                                          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)

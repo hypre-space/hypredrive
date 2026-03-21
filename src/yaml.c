@@ -1300,7 +1300,7 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
          bool looks_like_path = (strchr(k, ':') != NULL);
          if (full_argv_mode && looks_like_path)
          {
-            has_dashes = false;
+            /* Accept path-style overrides without the leading "--" in full argv mode. */
          }
          else
          {
