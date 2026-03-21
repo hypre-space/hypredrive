@@ -129,7 +129,7 @@ test_dof_labels_parsed_from_yaml(void)
    ASSERT_NOT_NULL(args);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   /* Verify dof_labels map was parsed — keys are normalised to lowercase */
+   /* Verify dof_labels map was parsed - keys are normalised to lowercase */
    ASSERT_NOT_NULL(args->ls.dof_labels);
    ASSERT_EQ((int)args->ls.dof_labels->size, 3);
    ASSERT_EQ(hypredrv_DofLabelMapLookup(args->ls.dof_labels, "v_x"), 0);
@@ -154,7 +154,7 @@ test_dof_labels_mixed_case_key_normalised(void)
    const char yaml_text[] =
       "linear_system:\n"
       "  dof_labels:\n"
-      "    V_X: 0\n"   /* uppercase key — stored as "v_x" */
+      "    V_X: 0\n"   /* uppercase key - stored as "v_x" */
       "    v_y: 1\n"
       "solver:\n"
       "  pcg:\n"
@@ -246,7 +246,7 @@ test_f_dofs_label_without_dof_labels_is_error(void)
 static void
 test_dof_labels_flow_mapping(void)
 {
-   /* dof_labels: {v_x: 0, v_y: 1, p: 2}  — inline flow-mapping form */
+   /* dof_labels: {v_x: 0, v_y: 1, p: 2}  - inline flow-mapping form */
    const char yaml_text[] =
       "linear_system:\n"
       "  dof_labels: {v_x: 0, v_y: 1, p: 2}\n"
@@ -360,7 +360,7 @@ main(void)
    RUN_TEST(test_DofLabelMapLookup_null_map);
    RUN_TEST(test_DofLabelMapAdd_grows_beyond_initial_capacity);
 
-   /* Integration: YAML parsing — block mapping + flow sequence (primary forms) */
+   /* Integration: YAML parsing - block mapping + flow sequence (primary forms) */
    RUN_TEST(test_dof_labels_parsed_from_yaml);
    RUN_TEST(test_dof_labels_mixed_case_key_normalised);
    RUN_TEST(test_f_dofs_integer_backward_compat);

@@ -46,9 +46,10 @@ PrintUsage(const char *argv0)
    fprintf(stdout, "  -a, --args         Override YAML parameters from the CLI\n");
    fprintf(stdout, "  -p, --prec-preset  Override preconditioner with a preset\n");
    fprintf(stdout, "\nOverride syntax (after -a/--args):\n");
-   fprintf(stdout, "  --path:to:key  <value>\n");
+   fprintf(stdout, "  [--]path:to:key  <value>\n");
    fprintf(stdout, "Examples:\n");
    fprintf(stdout, "  %s input.yml -a --solver:pcg:print_level 1\n", argv0);
+   fprintf(stdout, "  %s input.yml -a solver:pcg:print_level 1\n", argv0);
    fprintf(stdout, "  %s input.yml -a --preconditioner:amg:print_level 2\n", argv0);
    fprintf(stdout, "  %s input.yml -p poisson\n", argv0);
    fflush(stdout);

@@ -27,6 +27,8 @@ typedef struct General_args_struct
    int    print_config_params;
    int    use_millisec;
    int    exec_policy;
+   int    use_vendor_spgemm;
+   int    use_vendor_spmv;
    int    num_repetitions;
    double dev_pool_size;
    double uvm_pool_size;

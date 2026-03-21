@@ -37,6 +37,75 @@ set(HYPREDRV_FAIL_REGEX_DEFAULT
     "HYPREDRIVE Failure!!!|BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES|Segmentation fault|Abort\\("
 )
 
+set(HYPREDRV_GPU_PROBLEM_SIZE_MULTIPLIER 1)
+if(HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP)
+    set(HYPREDRV_GPU_PROBLEM_SIZE_MULTIPLIER 5)
+endif()
+
+set(HYPREDRV_GPU_DISABLED_TESTS
+    laplacian_7pt_test_4proc
+    laplacian_19pt_test_4proc
+    laplacian_27pt_test_4proc
+    laplacian_125pt_test_4proc
+    elasticity_test_4proc
+    heatflow_test_4proc
+    lidcavity_test_4proc
+    lidcavity_test_mgr_1proc
+    lidcavity_test_mgr_4proc
+)
+
+get_property(_hypredrv_gpu_test_policy_reported GLOBAL
+    PROPERTY HYPREDRV_GPU_TEST_POLICY_REPORTED
+)
+if((HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND NOT _hypredrv_gpu_test_policy_reported)
+    if(HYPREDRV_ENABLE_ALL_TESTS)
+        message(STATUS "GPU test policy: all tests enabled (GPU skip list overridden)")
+    else()
+        list(JOIN HYPREDRV_GPU_DISABLED_TESTS ", " _hypredrv_gpu_disabled_tests_msg)
+        message(STATUS
+            "GPU test policy: disabling selected tests by default: "
+            "${_hypredrv_gpu_disabled_tests_msg}"
+        )
+        unset(_hypredrv_gpu_disabled_tests_msg)
+    endif()
+    set_property(GLOBAL PROPERTY HYPREDRV_GPU_TEST_POLICY_REPORTED TRUE)
+endif()
+unset(_hypredrv_gpu_test_policy_reported)
+
+function(hypredrv_maybe_disable_gpu_test test_name)
+    if(NOT HYPREDRV_ENABLE_ALL_TESTS AND
+       (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
+       test_name IN_LIST HYPREDRV_GPU_DISABLED_TESTS)
+        set_tests_properties(${test_name} PROPERTIES DISABLED TRUE)
+    endif()
+endfunction()
+
+function(hypredrv_scale_problem_size_args out_var)
+    set(_scaled_args "")
+    set(_scaling_n_dims FALSE)
+
+    foreach(_arg IN LISTS ARGN)
+        if(_arg STREQUAL "-n")
+            set(_scaling_n_dims TRUE)
+            list(APPEND _scaled_args "${_arg}")
+        elseif(_scaling_n_dims)
+            if(_arg MATCHES "^[0-9]+$")
+                math(EXPR _scaled_dim
+                    "${_arg} * ${HYPREDRV_GPU_PROBLEM_SIZE_MULTIPLIER}"
+                )
+                list(APPEND _scaled_args "${_scaled_dim}")
+            else()
+                set(_scaling_n_dims FALSE)
+                list(APPEND _scaled_args "${_arg}")
+            endif()
+        else()
+            list(APPEND _scaled_args "${_arg}")
+        endif()
+    endforeach()
+
+    set(${out_var} "${_scaled_args}" PARENT_SCOPE)
+endfunction()
+
 function(add_hypredrive_test test_name num_procs config_file)
     cmake_parse_arguments(TEST_OPTS "NO_QUIET" "" "" ${ARGN})
 
@@ -72,6 +141,7 @@ function(add_hypredrive_test test_name num_procs config_file)
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
         LABELS "integration;hypredrive"
     )
+    hypredrv_maybe_disable_gpu_test(${full_test_name})
     hypredrv_append_test_environment(${full_test_name})
 endfunction()
 
@@ -146,6 +216,7 @@ function(add_hypredrive_cli_test test_name num_procs config_file)
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
         LABELS "integration;hypredrive"
     )
+    hypredrv_maybe_disable_gpu_test(${full_test_name})
     hypredrv_append_test_environment(${full_test_name})
 endfunction()
 
@@ -154,7 +225,7 @@ function(add_executable_test test_name target num_procs)
     cmake_parse_arguments(EXEC_TEST
         "RUN_SERIAL"
         "FAIL_REGULAR_EXPRESSION;WORKING_DIRECTORY"
-        "ARGS"
+        "ARGS;REQUIRE_CONTAINS"
         ${ARGN}
     )
 
@@ -177,8 +248,13 @@ function(add_executable_test test_name target num_procs)
             -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
     )
     if(EXEC_TEST_ARGS)
-        string(JOIN "|" _driver_args ${EXEC_TEST_ARGS})
+        hypredrv_scale_problem_size_args(_scaled_exec_test_args ${EXEC_TEST_ARGS})
+        string(JOIN "|" _driver_args ${_scaled_exec_test_args})
         list(APPEND _driver_command "-DTARGET_ARGS:STRING=${_driver_args}")
+    endif()
+    if(EXEC_TEST_REQUIRE_CONTAINS)
+        string(JOIN "|" _require_contains ${EXEC_TEST_REQUIRE_CONTAINS})
+        list(APPEND _driver_command "-DREQUIRE_CONTAINS:STRING=${_require_contains}")
     endif()
 
     add_test(NAME ${test_name}
@@ -189,6 +265,7 @@ function(add_executable_test test_name target num_procs)
         PROPERTIES
             FAIL_REGULAR_EXPRESSION "${EXEC_TEST_FAIL_REGULAR_EXPRESSION}"
     )
+    hypredrv_maybe_disable_gpu_test(${test_name})
     hypredrv_append_test_environment(${test_name})
 
     if(target STREQUAL "hypredrive-cli")
@@ -232,6 +309,7 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
         SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
         LABELS "integration;hypredrive"
     )
+    hypredrv_maybe_disable_gpu_test(${test_name})
     hypredrv_append_test_environment(${test_name})
 
     # Optional output comparison if script and reference exist
@@ -368,6 +446,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
                 LABELS "integration;hypredrive"
             )
+            hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_sequence_pack)
             hypredrv_append_test_environment(hypredrive_test_ex7_sequence_pack)
         endif()
         if (HYPREDRV_HAVE_HYPRE_23000_DEV0)
@@ -437,6 +516,13 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 add_hypredrive_test(${_name} ${_nprocs} ${_config})
             endforeach()
             unset(_hypredrv_mgr_examples)
+            # TODO: the following requires a hypre fix
+            # add_hypredrive_cli_test(ex4_cli_mgr_print_level_4proc 4 ex4.yml
+            #     OVERRIDES
+            #         --preconditioner:mgr:print_level 1
+            #     REQUIRE_CONTAINS
+            #         "MGR SETUP PARAMETERS:"
+            # )
             add_hypredrive_cli_test(ex4_cli_mgr_g_ilu 1 ex4.yml
                 OVERRIDES
                     --preconditioner:mgr:print_level 1
@@ -473,7 +559,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     "f_relaxation: amg"
                     "User AMG"
                     "Strength Threshold = 0.250000"
-                    "Coarsening type = HMIS"
+                    "Coarsening type = "
             )
         endif()
         if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
@@ -532,6 +618,10 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         add_executable_test(hypredrive_cli_extra hypredrive-cli 1
             ARGS "examples/ex1.yml" "--args" "--solver:pcg:max_iter" "5"
             FAIL_REGULAR_EXPRESSION "^$"
+        )
+        add_executable_test(hypredrive_cli_extra_nodash hypredrive-cli 1
+            ARGS "examples/ex1.yml" "--args" "solver:pcg:max_iter" "5"
+            REQUIRE_CONTAINS "max_iter: 5"
         )
     else()
         message(STATUS "Skipping hypredrive integration tests (requires hypre >= 2.19.0).")

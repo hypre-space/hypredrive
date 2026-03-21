@@ -80,6 +80,32 @@ hypredrv_ScalingContextCreate(Scaling_context **ctx_ptr)
 }
 
 /*-----------------------------------------------------------------------------
+ * ScalingContextFreeVector
+ *
+ * Free the scaling vector held by the context, handling both ownership models:
+ *   - dofmap_custom: scaling_vector is owned by scaling_ijvec (IJVector wrapper)
+ *   - dofmap_mag:    scaling_vector is directly owned (no IJVector wrapper)
+ *-----------------------------------------------------------------------------*/
+
+static void
+ScalingContextFreeVector(Scaling_context *ctx)
+{
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   if (ctx->scaling_ijvec)
+   {
+      HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
+      ctx->scaling_ijvec  = NULL;
+      ctx->scaling_vector = NULL;
+   }
+   else if (ctx->scaling_vector)
+   {
+      HYPRE_SAFE_CALL(HYPRE_ParVectorDestroy(ctx->scaling_vector));
+      ctx->scaling_vector = NULL;
+   }
+#endif
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_ScalingContextDestroy
  *-----------------------------------------------------------------------------*/
 
@@ -93,15 +119,7 @@ hypredrv_ScalingContextDestroy(Scaling_context **ctx_ptr)
 
    Scaling_context *ctx = *ctx_ptr;
 
-#if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   if (ctx->scaling_ijvec)
-   {
-      HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
-      ctx->scaling_ijvec = NULL;
-   }
-   /* scaling_vector is owned by scaling_ijvec, so no need to destroy separately */
-   ctx->scaling_vector = NULL;
-#endif
+   ScalingContextFreeVector(ctx);
 
    free(ctx);
    *ctx_ptr = NULL;
@@ -137,6 +155,10 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                         HYPRE_IJMatrix mat_A, IntArray *dofmap)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   HYPRE_MemoryLocation memloc_tags = HYPRE_MEMORY_HOST;
+#if defined(HYPRE_USING_GPU)
+   HYPRE_MemoryLocation orig_mat_memloc = HYPRE_MEMORY_HOST;
+#endif
    void              *obj_A  = NULL;
    HYPRE_ParCSRMatrix par_A  = NULL;
    HYPRE_BigInt       ilower = 0, iupper = 0;
@@ -157,6 +179,9 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
 
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
    par_A = (HYPRE_ParCSRMatrix)obj_A;
+#if defined(HYPRE_USING_GPU)
+   orig_mat_memloc = hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
+#endif
 
    /* Get local range from ParCSRMatrix directly instead of IJMatrix to avoid potential
     * issues */
@@ -191,45 +216,32 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    MPI_Allreduce(&max_tag, &global_max_tag, 1, MPI_INT, MPI_MAX, comm);
    num_tags = global_max_tag + 1;
 
-   /* Destroy previous scaling_ijvec if it exists (from previous system) */
-   if (ctx->scaling_ijvec)
+   /* Destroy previous scaling vector if it exists (from previous system) */
+   ScalingContextFreeVector(ctx);
+
+   /* Work around hypre's device TaggedFnorm kernel, which can read tags out of bounds
+    * for dofmap_mag on GPU builds. Compute the tagged scaling on host, then migrate the
+    * resulting scaling vector back to the matrix memory location. */
+#if defined(HYPRE_USING_GPU)
+   if (hypre_GetExecPolicy1(orig_mat_memloc) == HYPRE_EXEC_DEVICE)
    {
-      HYPRE_IJVectorDestroy(ctx->scaling_ijvec);
-      ctx->scaling_ijvec  = NULL;
-      ctx->scaling_vector = NULL;
+      hypre_ParCSRMatrixMigrate((hypre_ParCSRMatrix *)par_A, HYPRE_MEMORY_HOST);
    }
+#endif
 
-   /* Create IJVector wrapper for scaling vector */
-   HYPRE_SAFE_CALL(HYPRE_IJVectorCreate(comm, ilower, iupper, &ctx->scaling_ijvec));
-   HYPRE_SAFE_CALL(HYPRE_IJVectorSetObjectType(ctx->scaling_ijvec, HYPRE_PARCSR));
-   HYPRE_SAFE_CALL(HYPRE_IJVectorInitialize(ctx->scaling_ijvec));
+   /* Compute scaling into a fresh ParVector */
+   HYPRE_SAFE_CALL(HYPRE_ParCSRMatrixComputeScalingTagged(par_A, 1, memloc_tags, num_tags,
+                                                          tags, &ctx->scaling_vector));
 
-   /* Get ParVector from IJVector */
-   void *obj_scaling = NULL;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
-   ctx->scaling_vector = (HYPRE_ParVector)obj_scaling;
+#if defined(HYPRE_USING_GPU)
+   if (hypre_GetExecPolicy1(orig_mat_memloc) == HYPRE_EXEC_DEVICE)
+   {
+      hypre_ParVectorMigrate((hypre_ParVector *)ctx->scaling_vector, orig_mat_memloc);
+      hypre_ParCSRMatrixMigrate((hypre_ParCSRMatrix *)par_A, orig_mat_memloc);
+   }
+#endif
 
-   /* Compute scaling using Hypre's tagged API */
-   /* Use scaling_type = 1 by default */
-   HYPRE_ParVector scaling_parvec = NULL;
-   HYPRE_SAFE_CALL(HYPRE_ParCSRMatrixComputeScalingTagged(
-      par_A, 1, HYPRE_MEMORY_HOST, num_tags, tags, &scaling_parvec));
-
-   /* Copy the computed scaling data into scaling_ijvec */
-   void           *obj_scaling_vec = NULL;
-   HYPRE_ParVector par_scaling_vec = NULL;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling_vec);
-   par_scaling_vec = (HYPRE_ParVector)obj_scaling_vec;
-
-   /* Copy data from scaling_parvec into scaling_ijvec's ParVector */
-   HYPRE_SAFE_CALL(HYPRE_ParVectorCopy(scaling_parvec, par_scaling_vec));
-
-   /* Destroy the temporary vector returned by HYPRE_ParCSRMatrixComputeScalingTagged */
-   HYPRE_SAFE_CALL(HYPRE_ParVectorDestroy(scaling_parvec));
-
-   /* Update scaling_vector to point to the vector wrapped by scaling_ijvec */
-   ctx->scaling_vector = par_scaling_vec;
-
+   /* Free memory */
    free(tags);
 #else
    (void)comm;
@@ -317,27 +329,35 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
       return;
    }
 
-   /* Destroy previous scaling_ijvec if it exists (from previous system) */
-   if (ctx->scaling_ijvec)
-   {
-      HYPRE_IJVectorDestroy(ctx->scaling_ijvec);
-      ctx->scaling_ijvec  = NULL;
-      ctx->scaling_vector = NULL;
-   }
+   /* Destroy previous scaling vector if it exists (from previous system) */
+   ScalingContextFreeVector(ctx);
 
    /* Create IJVector wrapper for scaling vector */
+   HYPRE_MemoryLocation memory_location =
+      hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
+   HYPRE_Complex *h_values =
+      hypre_TAlloc(HYPRE_Complex, num_local_rows, HYPRE_MEMORY_HOST);
+   const HYPRE_Complex *values = h_values;
+#ifdef HYPRE_USING_GPU
+   HYPRE_Complex *d_values = NULL;
+#endif
+
+   if (memory_location == HYPRE_MEMORY_UNDEFINED)
+   {
+      memory_location = HYPRE_MEMORY_HOST;
+   }
+
    HYPRE_SAFE_CALL(HYPRE_IJVectorCreate(comm, ilower, iupper, &ctx->scaling_ijvec));
    HYPRE_SAFE_CALL(HYPRE_IJVectorSetObjectType(ctx->scaling_ijvec, HYPRE_PARCSR));
-   HYPRE_SAFE_CALL(HYPRE_IJVectorInitialize(ctx->scaling_ijvec));
+   HYPRE_SAFE_CALL(HYPRE_IJVectorInitialize_v2(ctx->scaling_ijvec, memory_location));
 
-   /* Get ParVector from IJVector */
-   void *obj_scaling = NULL;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
-   ctx->scaling_vector = (HYPRE_ParVector)obj_scaling;
-
-   /* Get local data array from ParVector */
-   hypre_ParVector *par_scaling_vec = (hypre_ParVector *)ctx->scaling_vector;
-   HYPRE_Real *local_data = hypre_VectorData(hypre_ParVectorLocalVector(par_scaling_vec));
+#ifdef HYPRE_USING_GPU
+   if (memory_location == HYPRE_MEMORY_DEVICE)
+   {
+      values = d_values =
+         hypre_TAlloc(HYPRE_Complex, num_local_rows, HYPRE_MEMORY_DEVICE);
+   }
+#endif
 
    /* Fill scaling vector: for each row i, use custom_values[dofmap[i]] */
    for (HYPRE_Int i = 0; i < num_local_rows; i++)
@@ -345,17 +365,49 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
       HYPRE_Int tag = dofmap->data[i];
       if (tag < 0 || tag >= (HYPRE_Int)args->custom_values->size)
       {
+         hypre_TFree(h_values, HYPRE_MEMORY_HOST);
+#ifdef HYPRE_USING_GPU
+         if (d_values)
+         {
+            hypre_TFree(d_values, HYPRE_MEMORY_DEVICE);
+         }
+#endif
+         HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
+         ctx->scaling_ijvec = NULL;
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd(
             "dofmap_custom: invalid tag %d at local row %d (expected 0-%zu)", tag, i,
             args->custom_values->size - 1);
          return;
       }
-      local_data[i] = (HYPRE_Real)args->custom_values->data[tag];
+      h_values[i] = (HYPRE_Complex)args->custom_values->data[tag];
    }
+
+#ifdef HYPRE_USING_GPU
+   if (values != h_values)
+   {
+      hypre_TMemcpy(d_values, h_values, HYPRE_Complex, num_local_rows,
+                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+   }
+#endif
+
+   HYPRE_SAFE_CALL(
+      HYPRE_IJVectorSetValues(ctx->scaling_ijvec, num_local_rows, NULL, values));
 
    /* Assemble the vector */
    HYPRE_SAFE_CALL(HYPRE_IJVectorAssemble(ctx->scaling_ijvec));
+   hypre_TFree(h_values, HYPRE_MEMORY_HOST);
+#ifdef HYPRE_USING_GPU
+   if (d_values)
+   {
+      hypre_TFree(d_values, HYPRE_MEMORY_DEVICE);
+   }
+#endif
+
+   /* Cache the assembled ParVector owned by the IJVector */
+   void *obj_scaling = NULL;
+   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
+   ctx->scaling_vector = (HYPRE_ParVector)obj_scaling;
 #else
    (void)comm;
    (void)args;
@@ -466,7 +518,7 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
       return;
    }
 
-   if (!ctx->scaling_ijvec)
+   if (!ctx->scaling_vector)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("ScalingTransformVectorDofmap: scaling vector not computed");
@@ -475,13 +527,10 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
 
    void            *obj_vec     = NULL;
    hypre_ParVector *par_vec     = NULL;
-   void            *obj_scaling = NULL;
-   hypre_ParVector *par_scaling = NULL;
+   hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
 
    HYPRE_IJVectorGetObject(vec, &obj_vec);
    par_vec = (hypre_ParVector *)obj_vec;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
-   par_scaling = (hypre_ParVector *)obj_scaling;
 
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    if ((kind == SCALING_VECTOR_RHS && apply) ||
@@ -491,7 +540,16 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    }
    else
    {
+#if HYPRE_CHECK_MIN_VERSION(30100, 18)
       hypre_ParVectorPointwiseDivision(par_scaling, par_vec, &par_vec);
+#else
+      /* hypre_ParVectorPointwiseDivision(x, y, z) computes z=y/x on host but z=x/y on
+       * device (GPU bug). Use inverse+product to get z=y/x=vec/scaling consistently. */
+      hypre_ParVector *inv_scaling = NULL;
+      hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
+      hypre_ParVectorPointwiseProduct(inv_scaling, par_vec, &par_vec);
+      hypre_ParVectorDestroy(inv_scaling);
+#endif
    }
 #else
    (void)kind;
@@ -653,10 +711,7 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
    }
 
    /* Apply diagonal scaling: A = diag(M) * A * diag(M), M = diag(M) * M * diag(M) */
-   void            *obj_scaling_vec = NULL;
-   hypre_ParVector *par_scaling_vec = NULL;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling_vec);
-   par_scaling_vec = (hypre_ParVector *)obj_scaling_vec;
+   hypre_ParVector *par_scaling_vec = (hypre_ParVector *)ctx->scaling_vector;
    hypre_ParCSRMatrixDiagScale(par_A, par_scaling_vec, par_scaling_vec);
    if (par_M != par_A)
    {
@@ -831,15 +886,10 @@ ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    }
 
    /* Unscale matrices: A = diag(1/M) * A * diag(1/M), M = diag(1/M) * M * diag(1/M) */
-   /* Create inverse scaling vector */
-   void            *obj_scaling = NULL;
-   hypre_ParVector *par_scaling = NULL;
-   HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
-   par_scaling = (hypre_ParVector *)obj_scaling;
-
+   hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
    hypre_ParVector *inv_scaling = NULL;
-   hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
 
+   hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
    hypre_ParCSRMatrixDiagScale(par_A, inv_scaling, inv_scaling);
    if (par_M != par_A)
    {

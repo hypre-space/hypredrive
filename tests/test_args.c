@@ -56,6 +56,25 @@ parse_config_with_overrides(const char *yaml_text, int override_argc,
 }
 
 static void
+test_InputArgsCreate_general_vendor_defaults(void)
+{
+   input_args *args = NULL;
+
+   hypredrv_InputArgsCreate(false, &args);
+   ASSERT_NOT_NULL(args);
+
+#ifdef HYPRE_USING_GPU
+   ASSERT_EQ(args->general.use_vendor_spgemm, 1);
+   ASSERT_EQ(args->general.use_vendor_spmv, 1);
+#else
+   ASSERT_EQ(args->general.use_vendor_spgemm, 0);
+   ASSERT_EQ(args->general.use_vendor_spmv, 0);
+#endif
+
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
 test_InputArgsParseGeneral_flags(void)
 {
    const char yaml_text[] = "general:\n"
@@ -63,6 +82,8 @@ test_InputArgsParseGeneral_flags(void)
                             "  statistics: off\n"
                             "  use_millisec: yes\n"
                             "  print_config_params: no\n"
+                            "  use_vendor_spgemm: yes\n"
+                            "  use_vendor_spmv: yes\n"
                             "  num_repetitions: 3\n"
                             "  dev_pool_size: 2\n"
                             "  uvm_pool_size: 3\n"
@@ -80,6 +101,8 @@ test_InputArgsParseGeneral_flags(void)
    ASSERT_EQ(args->general.warmup, 1);
    ASSERT_EQ(args->general.statistics, 0);
    ASSERT_EQ(args->general.print_config_params, 0);
+   ASSERT_EQ(args->general.use_vendor_spgemm, 1);
+   ASSERT_EQ(args->general.use_vendor_spmv, 1);
    ASSERT_EQ(args->general.num_repetitions, 3);
    ASSERT_EQ((int)(args->general.dev_pool_size / GB_TO_BYTES), 2);
    ASSERT_EQ((int)(args->general.uvm_pool_size / GB_TO_BYTES), 3);
@@ -463,16 +486,19 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
 
    char *overrides[] = {
       "--solver:pcg:max_iter", "50",  "--preconditioner:amg:print_level", "2",
-      "--general:statistics",  "off",
+      "--general:statistics",  "off", "--general:use_vendor_spgemm",      "on",
+      "--general:use_vendor_spmv", "on",
    };
 
-   input_args *args = parse_config_with_overrides(yaml_text, 6, overrides);
+   input_args *args = parse_config_with_overrides(yaml_text, 10, overrides);
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->solver_method, SOLVER_PCG);
    ASSERT_EQ(args->solver.pcg.max_iter, 50);
    ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
    ASSERT_EQ(args->precon.amg.print_level, 2);
    ASSERT_EQ(args->general.statistics, 0);
+   ASSERT_EQ(args->general.use_vendor_spgemm, 1);
+   ASSERT_EQ(args->general.use_vendor_spmv, 1);
 
    hypredrv_InputArgsDestroy(&args);
 }
@@ -558,11 +584,46 @@ test_InputArgsParse_legacy_mode_with_overrides(void)
    unlink(yaml_file);
 }
 
+static void
+test_InputArgsParse_driver_mode_with_nodash_overrides(void)
+{
+   input_args *args        = NULL;
+   char        yaml_file[] = "/tmp/test_config3.yml";
+   FILE       *fp          = fopen(yaml_file, "w");
+   ASSERT_NOT_NULL(fp);
+   fprintf(fp, "solver: gmres\n"
+               "preconditioner:\n"
+               "  mgr:\n"
+               "    print_level: 0\n"
+               "    level:\n"
+               "      0:\n"
+               "        f_dofs: [2]\n"
+               "        f_relaxation: single\n"
+               "    coarsest_level: amg\n");
+   fclose(fp);
+
+   char *argv2[] = {"hypredrive-cli", "-q", yaml_file, "--args",
+                    "preconditioner:mgr:print_level", "1"};
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 6, argv2, &args);
+
+   if (!hypredrv_ErrorCodeActive())
+   {
+      ASSERT_NOT_NULL(args);
+      ASSERT_EQ(args->precon_method, PRECON_MGR);
+      ASSERT_EQ(args->precon.mgr.print_level, 1);
+      hypredrv_InputArgsDestroy(&args);
+   }
+
+   unlink(yaml_file);
+}
+
 int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
 
+   RUN_TEST(test_InputArgsCreate_general_vendor_defaults);
    RUN_TEST(test_InputArgsParseGeneral_flags);
    RUN_TEST(test_InputArgsParseGeneral_use_millisec_sets_timer);
    RUN_TEST(test_InputArgsParseSolver_value_only);
@@ -586,6 +647,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParse_null_argv0_error);
    RUN_TEST(test_InputArgsParse_file_not_found_error);
    RUN_TEST(test_InputArgsParse_legacy_mode_with_overrides);
+   RUN_TEST(test_InputArgsParse_driver_mode_with_nodash_overrides);
 
    MPI_Finalize();
    return 0;

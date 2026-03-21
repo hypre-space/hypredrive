@@ -1,5 +1,5 @@
 coarsening:
-  type: HMIS
+  type: PMIS
   strong_th: 0.5
 interpolation:
   prolongation_type: "MM-ext+i"

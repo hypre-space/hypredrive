@@ -103,7 +103,7 @@ test_PresetRegister_null_args(void)
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
    hypredrv_ErrorCodeResetAll();
 
-   /* NULL help is allowed — treated as empty string */
+   /* NULL help is allowed - treated as empty string */
    ret = hypredrv_PresetRegister("my_null_help", "amg", NULL);
    ASSERT_EQ(ret, 0);
    hypredrv_ErrorCodeResetAll();

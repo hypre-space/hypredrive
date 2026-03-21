@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 
+#include "HYPRE.h"
 #include "utils.h"
 
 /*-----------------------------------------------------------------------------
@@ -21,7 +22,17 @@
  *-----------------------------------------------------------------------------*/
 
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
-#define TEST_HYPRE_INIT() HYPRE_Initialize()
+static inline void
+hypredrv_TestHypreInit(void)
+{
+   HYPRE_Initialize();
+#if defined(HYPRE_USING_GPU)
+   HYPRE_SetMemoryLocation(HYPRE_MEMORY_HOST);
+   HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST);
+#endif
+}
+
+#define TEST_HYPRE_INIT() hypredrv_TestHypreInit()
 #define TEST_HYPRE_FINALIZE() HYPRE_Finalize()
 #else
 #define TEST_HYPRE_INIT() ((void)0)

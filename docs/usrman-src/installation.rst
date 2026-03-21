@@ -133,7 +133,7 @@ Using CMake (Recommended)
    .. code-block:: bash
 
        $ cmake -DCMAKE_BUILD_TYPE=Release \
-               -DHYPRE_VERSION=v2.32.0 \
+               -DHYPRE_VERSION=v3.0.0 \
                -DCMAKE_INSTALL_PREFIX=${HYPREDRIVE_INSTALL_DIR} \
                -B build -S .
 

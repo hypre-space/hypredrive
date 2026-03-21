@@ -72,7 +72,7 @@ preconditioner:
         type: PMIS
         strong_th: 0.5
       interpolation:
-        prolongation_type: standard
+        prolongation_type: direct_sep_weights
       relaxation:
         down_type: 8
         down_sweeps: 2
