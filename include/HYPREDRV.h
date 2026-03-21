@@ -44,37 +44,25 @@ extern "C"
     *--------------------------------------------------------------------------*/
 
    /**
-    * @defgroup HYPREDRV
-    *
-    * @brief Public APIs to solve linear systems with hypre through hypredrive
-    *
+    * @defgroup HYPREDRV HYPREDRV Public API
+    * @brief Public APIs to solve linear systems with hypre through hypredrive.
     * @{
     **/
 
    /*--------------------------------------------------------------------------
     *--------------------------------------------------------------------------*/
 
-   /**
-    * HYPREDRV_t
-    *
-    * The main object type for the HYPREDRV library that encapsulates all data and
-    *functionality needed to solve linear systems using HYPRE. This includes:
-    *
-    * - Input parameters and configuration
-    * - Linear system components (matrix, RHS vector, solution vector)
-    * - Solver and preconditioner objects
-    * - Performance statistics and timing data
-    * - MPI communication context
-    *
-    * The object is created with HYPREDRV_Create() and must be destroyed with
-    *HYPREDRV_Destroy() when no longer needed to prevent memory leaks.
-    *
-    * This is an opaque pointer type - the internal structure is not exposed to users of
-    *the library. All interactions with HYPREDRV_t objects should be done through the
-    *public API functions.
-    **/
-
    struct hypredrv_struct;
+   /**
+    * @ingroup HYPREDRV
+    * @typedef HYPREDRV_t
+    * @brief Opaque handle for a hypredrive context.
+    *
+    * The main object type for the HYPREDRV library encapsulates the parsed input
+    * parameters, linear-system objects, solver/preconditioner state, performance
+    * statistics, and MPI communication context. Create it with HYPREDRV_Create()
+    * and destroy it with HYPREDRV_Destroy().
+    */
    typedef struct hypredrv_struct *HYPREDRV_t;
 
    /**
@@ -187,7 +175,8 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_Create(MPI_Comm, HYPREDRV_t *hypredrv_ptr);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_Create(MPI_Comm    comm,
+                                                   HYPREDRV_t *hypredrv_ptr);
 
    /**
     * @brief Destroy a HYPREDRV object.
@@ -951,11 +940,11 @@ extern "C"
     *
     * Writes the locally owned DOF map entries to a text file. In MPI runs with more than
     * one process, the rank id is appended to the provided filename as a numeric suffix:
-    * "<filename>.<rank>", zero-padded to 5 digits. In single-process runs, the file is
-    * written exactly to <filename>.
+    * ``filename.rank``, zero-padded to 5 digits. In single-process runs, the file is
+    * written exactly to ``filename``.
     *
     * File format (ASCII):
-    *   line 1: <num_entries>
+    *   line 1: number of entries
     *   lines : dofmap entries (space-separated), arbitrary line breaks
     *
     * @param hypredrv A valid HYPREDRV_t object containing the DOF map.

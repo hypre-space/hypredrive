@@ -15,7 +15,13 @@
 # sys.path.insert(0, os.path.abspath('.'))
 
 import os
+import warnings
 from pathlib import Path
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"Sphinx 8 will drop support for representing paths as strings\..*",
+)
 
 
 # -- Project information -----------------------------------------------------
@@ -79,14 +85,28 @@ else:
     html_js_files = []
 
 _docs_src_dir = Path(__file__).resolve().parent
+_repo_root = _docs_src_dir.parent.parent
 _breathe_xml = os.environ.get("HYPREDRV_DOXYGEN_XML")
 if not _breathe_xml:
-    for candidate in (_docs_src_dir.parent / "xml", Path.cwd() / "docs" / "xml"):
+    candidate_paths = [
+        _docs_src_dir.parent / "xml",
+        Path.cwd() / "xml",
+        Path.cwd() / "docs" / "xml",
+        _repo_root / "build-docs" / "docs" / "xml",
+        _repo_root / "build-docs-check" / "docs" / "xml",
+        _repo_root / "build" / "docs" / "xml",
+    ]
+    candidate_paths.extend(sorted(_repo_root.glob("build*/docs/xml")))
+
+    for candidate in candidate_paths:
+        candidate = candidate.resolve()
         if (candidate / "index.xml").exists():
             _breathe_xml = str(candidate)
             break
 if not _breathe_xml:
-    _breathe_xml = str((_docs_src_dir.parent / "xml").resolve())
+    _breathe_xml = (_docs_src_dir.parent / "xml").resolve()
+else:
+    _breathe_xml = Path(_breathe_xml)
 
 breathe_projects = {"hypredrive": _breathe_xml}
 breathe_default_project = "hypredrive"

@@ -24,6 +24,42 @@ depending on the value of other keywords.
    regardless of the presence of lower-case, upper-case, or a mixture of both when
    defining keys and values.
 
+.. _CLIOverrides:
+
+CLI Overrides (``-a/--args``)
+-----------------------------
+
+When running the ``hypredrive`` driver, it is often convenient to keep a base YAML file
+and override a few parameters from the command line.
+
+The driver supports this via the ``-a`` / ``--args`` flag, followed by key/value pairs in
+the form:
+
+- ``--path:to:key <value>``
+
+The ``path:to:key`` is interpreted as a YAML path where ``:`` separates nested blocks.
+Overrides are applied after reading the YAML file, so the command line takes precedence
+over the file.
+
+Examples (based on ``examples/ex1.yml``):
+
+.. code-block:: bash
+
+   # Keep solver as PCG, but change max_iter
+   mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver:pcg:max_iter 50
+
+.. code-block:: bash
+
+   # Switch solver type and set a nested option
+   mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver gmres --solver:gmres:max_iter 30
+
+.. note::
+
+   - Overrides must be provided as key/value pairs after ``-a``.
+   - Key/value pairs may introduce settings not present in the base YAML file.
+   - Keys and values must be separated by a space, for example ``--solver:pcg:max_iter 50``.
+   - Values containing spaces or YAML syntax such as ``[1, 2]`` should be quoted for your shell.
+
 
 General Settings
 ----------------
