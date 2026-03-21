@@ -9,6 +9,6 @@
 
 sphinx>=5.3
 breathe>=4.34
-sphinx-rtd-theme>=1.1.1
+furo>=2024.1.29
 docutils>=0.17.1
 sphinx-copybutton>=0.4.0

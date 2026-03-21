@@ -68,10 +68,7 @@ exclude_patterns = []
 
 # -- Options for HTML output -------------------------------------------------
 
-# The theme to use for HTML and HTML Help pages.  See the documentation for
-# a list of builtin themes.
-#
-html_theme = 'alabaster'
+html_theme = 'furo'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -110,4 +107,3 @@ else:
 
 breathe_projects = {"hypredrive": _breathe_xml}
 breathe_default_project = "hypredrive"
-html_theme = "sphinx_rtd_theme"
