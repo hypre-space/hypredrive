@@ -937,8 +937,18 @@ LinearSystemRHSGeneratedSet(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
 
          void              *obj_A = NULL;
          HYPRE_ParCSRMatrix par_A = NULL;
+#if HYPREDRV_HAVE_MEMORY_APIS
+         HYPRE_MemoryLocation mat_memory_location = HYPRE_MEMORY_UNDEFINED;
+#endif
          HYPRE_IJMatrixGetObject(mat, &obj_A);
          par_A = (HYPRE_ParCSRMatrix)obj_A;
+#if HYPREDRV_HAVE_MEMORY_APIS
+         mat_memory_location = hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
+         if (mat_memory_location != memory_location)
+         {
+            hypre_ParCSRMatrixMigrate((hypre_ParCSRMatrix *)par_A, memory_location);
+         }
+#endif
          HYPRE_ParCSRMatrixMatvec(1.0, par_A, par_x, 0.0, par_b);
          *xref_ptr = xref;
          break;
