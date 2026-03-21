@@ -804,6 +804,8 @@ test_HYPREDRV_SetGlobalOptions_exec_policy(void)
             "general:\n"
             "  statistics: off\n"
             "  exec_policy: host\n"
+            "  spgemm_use_vendor: on\n"
+            "  spmv_use_vendor: on\n"
             "linear_system:\n"
             "  matrix_filename: %s\n"
             "  rhs_filename: %s\n"

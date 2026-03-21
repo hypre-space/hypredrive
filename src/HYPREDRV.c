@@ -458,8 +458,8 @@ HYPREDRV_SetGlobalOptions(HYPREDRV_t hypredrv)
       HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
       HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
-      HYPRE_SetSpGemmUseVendor(0); // TODO: Control this via input option
-      HYPRE_SetSpMVUseVendor(0);   // TODO: Control this via input option
+      HYPRE_SetSpGemmUseVendor(hypredrv->iargs->general.spgemm_use_vendor);
+      HYPRE_SetSpMVUseVendor(hypredrv->iargs->general.spmv_use_vendor);
 #endif
 #endif
 
