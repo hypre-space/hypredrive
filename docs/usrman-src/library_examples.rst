@@ -29,12 +29,13 @@ The library-side workflow in C/C++ generally follows these steps:
 
 1. Initialize MPI (if not already done).
 2. Initialize hypredrive and create an object handle.
-3. Parse a YAML configuration string/file to set solver/preconditioner options.
-4. Assemble your matrix and vectors (``HYPRE_IJMatrix``/``HYPRE_IJVector``) in parallel.
-5. Tell hypredrive about your DOF layout (e.g., interleaved blocks).
-6. Attach matrix/RHS/initial guess/prec matrix to hypredrive.
-7. Create, setup, and apply the solver; print statistics as desired.
-8. Retrieve solution values if needed; finalize and destroy hypredrive.
+3. Call ``HYPREDRV_SetLibraryMode`` to signal library use (must precede step 4).
+4. Parse a YAML configuration string/file to set solver/preconditioner options.
+5. Assemble your matrix and vectors (``HYPRE_IJMatrix``/``HYPRE_IJVector``) in parallel.
+6. Tell hypredrive about your DOF layout (e.g., interleaved blocks).
+7. Attach matrix/RHS/initial guess/prec matrix to hypredrive.
+8. Create, setup, and apply the solver; print statistics as desired.
+9. Retrieve solution values if needed; finalize and destroy hypredrive.
 
 A minimal skeleton of a program using the library is shown below.
 
@@ -50,14 +51,14 @@ A minimal skeleton of a program using the library is shown below.
      HYPREDRV_Initialize();
      HYPREDRV_Create(MPI_COMM_WORLD, &h);
 
+     // Signal that this is a library-mode caller (must precede InputArgsParse)
+     HYPREDRV_SetLibraryMode(h);
+
      // Provide YAML configuration
      const char* yaml = "solver: pcg\n"
                         "preconditioner: amg\n";
      char* args[1] = {(char*)yaml};
      HYPREDRV_InputArgsParse(1, args, h);
-
-     HYPREDRV_SetGlobalOptions(h);
-     HYPREDRV_SetLibraryMode(h);
 
      // Build IJ objects (global row range per rank) and assemble your system
      HYPRE_IJMatrix A;
@@ -91,7 +92,9 @@ A minimal skeleton of a program using the library is shown below.
      return 0;
    }
 
-- YAML configuration can be provided from input file or string.
+- YAML configuration can be provided as an **in-memory string** (as shown above, where the
+  ``char*`` is passed directly as ``argv[0]``) or as a **path to a ``.yml`` / ``.yaml``
+  file** on disk. The YAML structure is identical in both cases.
 - For block linear systems, set row mapping information via ``HYPREDRV_LinearSystemSetDofmap``.
 - If compiled with GPU support, you may migrate assembled IJ objects to device memory with
   ``HYPRE_IJMatrixMigrate(..., HYPRE_MEMORY_DEVICE)`` and analogous calls for vectors.
@@ -101,76 +104,20 @@ A minimal skeleton of a program using the library is shown below.
 - Ownership of non-``NULL`` objects follows library mode:
   ``HYPREDRV_SetLibraryMode`` ON -> borrowed by HYPREDRV; OFF -> ownership is transferred.
 
-Preconditioner reuse
---------------------
+.. note::
+   Preconditioner reuse across a sequence of linear systems (time steps, multiple RHS) is
+   configured via the ``preconditioner.reuse`` YAML subsection. See
+   :ref:`PreconReuse` in the :ref:`InputFileStructure` reference.
 
-When solving a **sequence of linear systems** (e.g. multiple RHS or time steps), you can
-reuse the same preconditioner for several systems to avoid repeated setup cost. The
-preconditioner is rebuilt only at chosen linear system indices; for the rest, the previous
-preconditioner is applied as-is.
-
-Under ``preconditioner``, a ``reuse`` subsection configures this behavior. Available YAML keywords:
-
-- **``enabled``** – Turn reuse logic on or off. Values: ``yes`` / ``no``. Default: ``no``.
-- **``frequency``** – Nonnegative integer. Rebuild when (linear system index) mod
-  (frequency + 1) = 0. So ``0`` = every system, ``1`` = every other, etc.
-- **``linear_system_ids``** – Explicit list of **0-based** linear system indices at which to
-  rebuild (e.g. ``[0, 5, 10]``). Alias: ``linear_solver_ids``. **Cannot** be combined with
-  ``frequency`` or ``per_timestep``.
-- **``per_timestep``** – If ``yes``, ``frequency`` is applied **per timestep**: rebuild at
-  the first system of each timestep, then every (frequency+1)-th system within that timestep.
-  Requires ``linear_system.timestep_filename`` to point to a timestep file. Values: ``yes``
-  / ``no``. **Cannot** be combined with ``linear_system_ids``.
-
-The timestep file (used only when ``per_timestep: yes``) must list how linear systems map
-to timesteps. First line: total number of timesteps. Each following line: ``timestep_id
-ls_start``, where ``ls_start`` is the 0-based index of the first linear system for that
-timestep.
-
-Example: frequency-based reuse (rebuild every 3rd system):
-
-.. code-block:: yaml
-
-   preconditioner:
-     amg: {}
-     reuse:
-       enabled: yes
-       frequency: 2
-
-Example: explicit list of systems at which to rebuild:
-
-.. code-block:: yaml
-
-   preconditioner:
-     amg: {}
-     reuse:
-       enabled: yes
-       linear_system_ids: [0, 10, 20, 30]
-
-Example: reuse per timestep (rebuild at first system of each timestep; requires
-``linear_system.timestep_filename``):
-
-.. code-block:: yaml
-
-   linear_system:
-     timestep_filename: timesteps.txt
-   preconditioner:
-     amg: {}
-     reuse:
-       enabled: yes
-       per_timestep: yes
-       frequency: 0
-
-You can also configure a predefined preconditioner preset without parsing YAML:
+You can also select a predefined preconditioner preset programmatically, without a YAML file:
 
 .. code-block:: c
 
    HYPREDRV_SetLibraryMode(h);
    HYPREDRV_InputArgsSetPreconPreset(h, "poisson");
-   HYPREDRV_SetGlobalOptions(h);
 
-If you later call ``HYPREDRV_InputArgsParse``, the YAML configuration will override
-the preset.
+If you subsequently call ``HYPREDRV_InputArgsParse`` with a YAML string or file, the
+parsed YAML settings will override the preset for any keys it defines.
 
 .. _LibraryExample1:
 

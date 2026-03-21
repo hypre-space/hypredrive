@@ -74,10 +74,10 @@ In this example, we solve a basic linear system using an `AMG-PCG` solver with d
 settings. This example showcases the minimum amount of information required in the input
 file to execute `hypredrive`.
 
-We consider a linear system matrix arising from a seven points finite differences
-discretizaion of the Laplace equation on a `10x10x10` cartesian grid. Furthermore, the
-right hand side is the vector of ones. Both data are read from file and partitioned for a
-single MPI rank. Therefore, this example must be executed on a single process.
+We consider a linear system matrix arising from a seven-point finite-difference
+discretization of the Laplace equation on a 10×10×10 Cartesian grid. The right-hand side
+is the vector of ones. Both are read from file and partitioned for a single MPI rank;
+this example must therefore be run on a single process.
 
 .. note::
    This example requires the ``ps3d10pt7`` dataset. Make sure you have downloaded the
@@ -202,7 +202,7 @@ Example 5: Spreading input parameters in multiple files
 
 In this example, we solve the same problem as in example 3, but using the same solver and
 preconditioner parameters as in example 4. In addition, we define these parameters in
-separate files, which are included in the main input file via the ``include`` keyword .
+separate files, which are included in the main input file via the ``include`` keyword.
 
 .. note::
    This example requires the ``compflow6k`` dataset. Make sure you have downloaded the

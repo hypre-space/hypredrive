@@ -11,11 +11,11 @@ Introduction
 What is `hypredrive`?
 ---------------------
 
-`hypredrive` is a high-level interface driver for `hypre`, a package for solving sparse
-linear systems of equations. It's designed to make the process of setting up linear
-solvers in `hypre` easier via input files in YAML format. Whether you are a researcher or
-an application library developer, `hypredrive` offers an easy way with low overhead to
-test or access the linear solvers provided by `hypre`.
+`hypredrive` is a high-level interface for `hypre`, a package for solving sparse linear
+systems of equations. It is designed to make configuring and running `hypre` solvers easy
+via YAML — supplied either as a file on disk or as an in-memory string from application
+code. Whether you are a researcher or an application developer, `hypredrive` offers a
+lightweight, low-overhead way to access the solvers provided by `hypre`.
 
 Key Features
 ------------
@@ -39,8 +39,8 @@ To get started with `hypredrive`, you should first ensure that the software is p
 installed on your system. For detailed installation instructions, please refer to the
 :ref:`Installation` section.
 
-Once the installation is complete, familiarize yourself with the the input file structure
-for `hypredrive` by reading through the :ref:`InputFileStructure` section. This will
+Once the installation is complete, familiarize yourself with the YAML configuration
+reference in the :ref:`InputFileStructure` section. This will
 provide you with a good understanding of how to configure and run `hypredrive` for your
 specific needs.
 

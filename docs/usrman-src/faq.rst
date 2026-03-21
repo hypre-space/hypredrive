@@ -31,10 +31,11 @@ configuration of `hypredrive`.
 How do I configure `hypredrive` for my specific problem?
 --------------------------------------------------------
 
-You can configure `hypredrive` by creating a YAML configuration file. This file specifies
-all necessary settings, including the linear system, solver, and preconditioner
-configurations. For more information, see the :ref:`InputFileStructure`. For examples of
-input files, see :ref:`DriverExamples`.
+You can configure `hypredrive` by providing YAML — either as a file on disk (for the
+``hypredrive-cli`` driver) or as an in-memory string passed to ``HYPREDRV_InputArgsParse``
+from application code. The YAML specifies all necessary settings, including solver and
+preconditioner configurations. For the full reference, see :ref:`InputFileStructure`. For
+driver usage examples, see :ref:`DriverExamples`.
 
 How can I contribute to `hypredrive`?
 -------------------------------------
@@ -59,7 +60,7 @@ What should I do if I encounter an issue with `hypredrive`?
 -----------------------------------------------------------
 
 If you encounter an issue, you can open a `GitHub issue
-<https://github.com/victorapm/hypredrive/issues>`_. Providing detailed information about
+<https://github.com/hypre-space/hypredrive/issues>`_. Providing detailed information about
 your problem, including configuration files, system details, and error messages, will help
 in resolving issues more quickly.
 
