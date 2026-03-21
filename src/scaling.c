@@ -80,6 +80,32 @@ hypredrv_ScalingContextCreate(Scaling_context **ctx_ptr)
 }
 
 /*-----------------------------------------------------------------------------
+ * ScalingContextFreeVector
+ *
+ * Free the scaling vector held by the context, handling both ownership models:
+ *   - dofmap_custom: scaling_vector is owned by scaling_ijvec (IJVector wrapper)
+ *   - dofmap_mag:    scaling_vector is directly owned (no IJVector wrapper)
+ *-----------------------------------------------------------------------------*/
+
+static void
+ScalingContextFreeVector(Scaling_context *ctx)
+{
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   if (ctx->scaling_ijvec)
+   {
+      HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
+      ctx->scaling_ijvec  = NULL;
+      ctx->scaling_vector = NULL;
+   }
+   else if (ctx->scaling_vector)
+   {
+      HYPRE_SAFE_CALL(HYPRE_ParVectorDestroy(ctx->scaling_vector));
+      ctx->scaling_vector = NULL;
+   }
+#endif
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_ScalingContextDestroy
  *-----------------------------------------------------------------------------*/
 
@@ -93,21 +119,7 @@ hypredrv_ScalingContextDestroy(Scaling_context **ctx_ptr)
 
    Scaling_context *ctx = *ctx_ptr;
 
-#if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   if (ctx->scaling_ijvec)
-   {
-      /* scaling_vector is owned by scaling_ijvec when created via dofmap_custom */
-      HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
-      ctx->scaling_ijvec  = NULL;
-      ctx->scaling_vector = NULL;
-   }
-   else if (ctx->scaling_vector)
-   {
-      /* scaling_vector is directly owned (dofmap_mag case - no IJVector wrapper) */
-      HYPRE_SAFE_CALL(HYPRE_ParVectorDestroy(ctx->scaling_vector));
-      ctx->scaling_vector = NULL;
-   }
-#endif
+   ScalingContextFreeVector(ctx);
 
    free(ctx);
    *ctx_ptr = NULL;
@@ -144,7 +156,9 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    HYPRE_MemoryLocation  memloc_tags = HYPRE_MEMORY_HOST;
+#if defined(HYPRE_USING_GPU)
    HYPRE_MemoryLocation  orig_mat_memloc = HYPRE_MEMORY_HOST;
+#endif
    void                 *obj_A  = NULL;
    HYPRE_ParCSRMatrix    par_A  = NULL;
    HYPRE_BigInt          ilower = 0, iupper = 0;
@@ -165,7 +179,9 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
 
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
    par_A = (HYPRE_ParCSRMatrix)obj_A;
+#if defined(HYPRE_USING_GPU)
    orig_mat_memloc = hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
+#endif
 
    /* Get local range from ParCSRMatrix directly instead of IJMatrix to avoid potential
     * issues */
@@ -201,18 +217,7 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    num_tags = global_max_tag + 1;
 
    /* Destroy previous scaling vector if it exists (from previous system) */
-   if (ctx->scaling_ijvec)
-   {
-      /* Came from dofmap_custom path - scaling_vector owned by IJVector */
-      HYPRE_IJVectorDestroy(ctx->scaling_ijvec);
-      ctx->scaling_ijvec  = NULL;
-      ctx->scaling_vector = NULL;
-   }
-   else if (ctx->scaling_vector)
-   {
-      HYPRE_ParVectorDestroy(ctx->scaling_vector);
-      ctx->scaling_vector = NULL;
-   }
+   ScalingContextFreeVector(ctx);
 
    /* Work around hypre's device TaggedFnorm kernel, which can read tags out of bounds
     * for dofmap_mag on GPU builds. Compute the tagged scaling on host, then migrate the
@@ -325,19 +330,7 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    }
 
    /* Destroy previous scaling vector if it exists (from previous system) */
-   if (ctx->scaling_ijvec)
-   {
-      /* scaling_vector owned by IJVector */
-      HYPRE_IJVectorDestroy(ctx->scaling_ijvec);
-      ctx->scaling_ijvec  = NULL;
-      ctx->scaling_vector = NULL;
-   }
-   else if (ctx->scaling_vector)
-   {
-      /* Came from dofmap_mag path - scaling_vector directly owned */
-      HYPRE_ParVectorDestroy(ctx->scaling_vector);
-      ctx->scaling_vector = NULL;
-   }
+   ScalingContextFreeVector(ctx);
 
    /* Create IJVector wrapper for scaling vector */
    HYPRE_MemoryLocation  memory_location =

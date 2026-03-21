@@ -225,7 +225,7 @@ function(add_executable_test test_name target num_procs)
     cmake_parse_arguments(EXEC_TEST
         "RUN_SERIAL"
         "FAIL_REGULAR_EXPRESSION;WORKING_DIRECTORY"
-        "ARGS"
+        "ARGS;REQUIRE_CONTAINS"
         ${ARGN}
     )
 
@@ -251,6 +251,10 @@ function(add_executable_test test_name target num_procs)
         hypredrv_scale_problem_size_args(_scaled_exec_test_args ${EXEC_TEST_ARGS})
         string(JOIN "|" _driver_args ${_scaled_exec_test_args})
         list(APPEND _driver_command "-DTARGET_ARGS:STRING=${_driver_args}")
+    endif()
+    if(EXEC_TEST_REQUIRE_CONTAINS)
+        string(JOIN "|" _require_contains ${EXEC_TEST_REQUIRE_CONTAINS})
+        list(APPEND _driver_command "-DREQUIRE_CONTAINS:STRING=${_require_contains}")
     endif()
 
     add_test(NAME ${test_name}
@@ -617,7 +621,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         )
         add_executable_test(hypredrive_cli_extra_nodash hypredrive-cli 1
             ARGS "examples/ex1.yml" "--args" "solver:pcg:max_iter" "5"
-            FAIL_REGULAR_EXPRESSION "^$"
+            REQUIRE_CONTAINS "max_iter: 5"
         )
     else()
         message(STATUS "Skipping hypredrive integration tests (requires hypre >= 2.19.0).")
