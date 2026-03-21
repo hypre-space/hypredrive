@@ -2834,7 +2834,7 @@ main(int argc, char **argv)
       char parent_dir[MAX_FILENAME_LENGTH];
       char base[256];
       int  min_suffix = 0, max_suffix = 0;
-      char system_dir[MAX_FILENAME_LENGTH];
+      char system_dir[PATH_TMP_SIZE];
       char timesteps_candidate[MAX_FILENAME_LENGTH];
 
       parent_dir[0] = '\0';
@@ -2944,7 +2944,7 @@ main(int argc, char **argv)
 
    /* Compute shape and detect number of parts from first system directory. */
    int num_systems = (int)(args.last_suffix - args.init_suffix + 1);
-   char matrix_prefix[MAX_FILENAME_LENGTH];
+   char matrix_prefix[PATH_TMP_SIZE];
    BuildPrefix(matrix_prefix, sizeof(matrix_prefix), args.dirname, (int)args.digits_suffix,
                (int)args.init_suffix, args.matrix_filename);
 
@@ -2993,8 +2993,8 @@ main(int argc, char **argv)
       MPI_Abort(comm, 1);
    }
 
-   char rhs_prefix[MAX_FILENAME_LENGTH];
-   char dof_prefix[MAX_FILENAME_LENGTH];
+   char rhs_prefix[PATH_TMP_SIZE];
+   char dof_prefix[PATH_TMP_SIZE];
    int  want_dofmap = (args.dofmap_filename[0] != '\0');
 
    /* v2 batched: one buffer per (local part, type) for values/rhs/dof */
