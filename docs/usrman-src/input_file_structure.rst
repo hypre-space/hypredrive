@@ -33,7 +33,7 @@ The ``general`` section contains global settings that apply to the entire execut
 
 - ``warmup`` - If set to `yes`, `hypredrive` will perform a warmup execution to
   ensure more accurate timing measurements. If `no`, no warmup is performed. The default
-  value for this parameter is `yes`.
+  value for this parameter is `no`.
 
 - ``statistics`` - Controls the verbosity of statistics reporting. Accepts integer values
   or boolean strings (`yes`/`no`, `on`/`off`, `true`/`false`). The default value is `1`
@@ -49,6 +49,10 @@ The ``general`` section contains global settings that apply to the entire execut
 
 - ``use_millisec`` - Show timings on the statistics summary table in milliseconds. The
   default value is `no`, which uses seconds instead.
+
+- ``print_config_params`` - Print the parsed YAML tree to stdout on rank 0 after input
+  parsing. Values: ``yes`` / ``no``. Default: ``yes`` in driver mode and ``no`` in
+  library mode.
 
 - ``num_repetitions`` - Specifies the number of times the operation should be
   repeated. Useful for benchmarking and profiling. The default value for this parameter is
@@ -75,10 +79,12 @@ The ``general`` section contains global settings that apply to the entire execut
   otherwise the default is ``device``.
 
 - ``use_vendor_spgemm`` - Use vendor-optimized sparse matrix-matrix multiplication (SpGEMM)
-  kernels when available. Values: ``yes`` / ``no``. Default: ``no``.
+  kernels when available. Values: ``yes`` / ``no``. Default: ``yes`` on GPU-enabled builds
+  and ``no`` otherwise.
 
 - ``use_vendor_spmv`` - Use vendor-optimized sparse matrix-vector multiplication (SpMV)
-  kernels when available. Values: ``yes`` / ``no``. Default: ``no``.
+  kernels when available. Values: ``yes`` / ``no``. Default: ``yes`` on GPU-enabled builds
+  and ``no`` otherwise.
 
 
 An example code block for the ``general`` section is given below:
@@ -86,17 +92,18 @@ An example code block for the ``general`` section is given below:
 .. code-block:: yaml
 
     general:
-      warmup: yes
+      warmup: no
       statistics: yes
       use_millisec: no
+      print_config_params: yes
       num_repetitions: 1
       dev_pool_size: 8.0
       uvm_pool_size: 8.0
       host_pool_size: 8.0
       pinned_pool_size: 0.5
-      exec_policy: host
-      use_vendor_spgemm: no
-      use_vendor_spmv: no
+      exec_policy: device
+      use_vendor_spgemm: yes
+      use_vendor_spmv: yes
 
 Linear System
 -------------

@@ -351,12 +351,19 @@ variant and report a separate stats entry per variant while reusing the same lin
 
    # Use -p iters to compare iteration counts instead of timings
 
-.. figure:: figures/ex8_total_bar.svg
-   :alt: Total time per preconditioner variant (Example 8)
-   :width: 80%
-   :align: center
+.. only:: html
 
-   Total time (setup + solve) for each preconditioner variant in Example 8.
+   .. figure:: figures/ex8_total_bar.svg
+      :alt: Total time per preconditioner variant (Example 8)
+      :width: 80%
+      :align: center
+
+      Total time (setup + solve) for each preconditioner variant in Example 8.
+
+.. only:: latex
+
+   The HTML manual includes a rendered bar chart for this example. The PDF build omits
+   it because the source asset is SVG-only.
 
 .. note::
    A multi-file version of this input is also provided as ``examples/ex8-multi-1.yml``,

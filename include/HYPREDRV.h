@@ -312,11 +312,11 @@ extern "C"
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_t *hypredrv;
+    *    HYPREDRV_t hypredrv = NULL;
     *    int argc = ...; // Number of arguments
     *    char **argv = ...; // Argument strings
     *    // ... (hypredrv is created) ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, &hypredrv));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, hypredrv));
     * @endcode
     */
 
