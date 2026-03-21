@@ -33,8 +33,8 @@ FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
    ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, hypredrv_FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, spgemm_use_vendor, hypredrv_FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, spmv_use_vendor, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spgemm, hypredrv_FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spmv, hypredrv_FieldTypeIntSet)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_repetitions, hypredrv_FieldTypeIntSet)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, dev_pool_size, FieldTypePoolGBToBytesSet)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, uvm_pool_size, FieldTypePoolGBToBytesSet)      \
@@ -50,8 +50,8 @@ StrIntMapArray
 hypredrv_GeneralGetValidValues(const char *key)
 {
    if (!strcmp(key, "warmup") || !strcmp(key, "print_config_params") ||
-       !strcmp(key, "use_millisec") || !strcmp(key, "spgemm_use_vendor") ||
-       !strcmp(key, "spmv_use_vendor"))
+       !strcmp(key, "use_millisec") || !strcmp(key, "use_vendor_spgemm") ||
+       !strcmp(key, "use_vendor_spmv"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }
@@ -81,12 +81,12 @@ hypredrv_GeneralSetDefaultArgs(General_args *args)
    args->use_millisec        = 0;
 #ifdef HYPRE_USING_GPU
    args->exec_policy       = 1;
-   args->spgemm_use_vendor = 1;
-   args->spmv_use_vendor   = 1;
+   args->use_vendor_spgemm = 1;
+   args->use_vendor_spmv   = 1;
 #else
    args->exec_policy       = 0;
-   args->spgemm_use_vendor = 0;
-   args->spmv_use_vendor   = 0;
+   args->use_vendor_spgemm = 0;
+   args->use_vendor_spmv   = 0;
 #endif
    args->num_repetitions  = 1;
    args->dev_pool_size    = 8.0 * GB_TO_BYTES;

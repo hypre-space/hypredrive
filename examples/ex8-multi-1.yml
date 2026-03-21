@@ -2,6 +2,7 @@ general:
   warmup: false
   num_repetitions: 1
   use_millisec: on
+  use_vendor_spgemm: off
 
 linear_system:
   type: ij

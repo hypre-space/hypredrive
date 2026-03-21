@@ -64,11 +64,11 @@ test_InputArgsCreate_general_vendor_defaults(void)
    ASSERT_NOT_NULL(args);
 
 #ifdef HYPRE_USING_GPU
-   ASSERT_EQ(args->general.spgemm_use_vendor, 1);
-   ASSERT_EQ(args->general.spmv_use_vendor, 1);
+   ASSERT_EQ(args->general.use_vendor_spgemm, 1);
+   ASSERT_EQ(args->general.use_vendor_spmv, 1);
 #else
-   ASSERT_EQ(args->general.spgemm_use_vendor, 0);
-   ASSERT_EQ(args->general.spmv_use_vendor, 0);
+   ASSERT_EQ(args->general.use_vendor_spgemm, 0);
+   ASSERT_EQ(args->general.use_vendor_spmv, 0);
 #endif
 
    hypredrv_InputArgsDestroy(&args);
@@ -82,8 +82,8 @@ test_InputArgsParseGeneral_flags(void)
                             "  statistics: off\n"
                             "  use_millisec: yes\n"
                             "  print_config_params: no\n"
-                            "  spgemm_use_vendor: yes\n"
-                            "  spmv_use_vendor: yes\n"
+                            "  use_vendor_spgemm: yes\n"
+                            "  use_vendor_spmv: yes\n"
                             "  num_repetitions: 3\n"
                             "  dev_pool_size: 2\n"
                             "  uvm_pool_size: 3\n"
@@ -101,8 +101,8 @@ test_InputArgsParseGeneral_flags(void)
    ASSERT_EQ(args->general.warmup, 1);
    ASSERT_EQ(args->general.statistics, 0);
    ASSERT_EQ(args->general.print_config_params, 0);
-   ASSERT_EQ(args->general.spgemm_use_vendor, 1);
-   ASSERT_EQ(args->general.spmv_use_vendor, 1);
+   ASSERT_EQ(args->general.use_vendor_spgemm, 1);
+   ASSERT_EQ(args->general.use_vendor_spmv, 1);
    ASSERT_EQ(args->general.num_repetitions, 3);
    ASSERT_EQ((int)(args->general.dev_pool_size / GB_TO_BYTES), 2);
    ASSERT_EQ((int)(args->general.uvm_pool_size / GB_TO_BYTES), 3);
@@ -486,8 +486,8 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
 
    char *overrides[] = {
       "--solver:pcg:max_iter", "50",  "--preconditioner:amg:print_level", "2",
-      "--general:statistics",  "off", "--general:spgemm_use_vendor",      "on",
-      "--general:spmv_use_vendor", "on",
+      "--general:statistics",  "off", "--general:use_vendor_spgemm",      "on",
+      "--general:use_vendor_spmv", "on",
    };
 
    input_args *args = parse_config_with_overrides(yaml_text, 10, overrides);
@@ -497,8 +497,8 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
    ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
    ASSERT_EQ(args->precon.amg.print_level, 2);
    ASSERT_EQ(args->general.statistics, 0);
-   ASSERT_EQ(args->general.spgemm_use_vendor, 1);
-   ASSERT_EQ(args->general.spmv_use_vendor, 1);
+   ASSERT_EQ(args->general.use_vendor_spgemm, 1);
+   ASSERT_EQ(args->general.use_vendor_spmv, 1);
 
    hypredrv_InputArgsDestroy(&args);
 }
