@@ -14,6 +14,15 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
+import os
+import warnings
+from pathlib import Path
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"Sphinx 8 will drop support for representing paths as strings\..*",
+)
+
 
 # -- Project information -----------------------------------------------------
 
@@ -22,7 +31,8 @@ copyright = u'2024 Lawrence Livermore National Security, LLC and other HYPRE Pro
 author = 'Victor A. P. Magri'
 
 # The full version, including alpha/beta/rc tags
-release = '0.1'
+release = os.environ.get('HYPREDRV_DOCS_RELEASE', '0.1')
+version = os.environ.get('HYPREDRV_DOCS_VERSION', release)
 
 
 # -- General configuration ---------------------------------------------------
@@ -31,6 +41,17 @@ release = '0.1'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = ['breathe', 'sphinx_copybutton']
+c_id_attributes = ['HYPREDRV_EXPORT_SYMBOL']
+cpp_id_attributes = ['HYPREDRV_EXPORT_SYMBOL']
+
+latex_elements = {
+    'preamble': r'''
+\DeclareUnicodeCharacter{0394}{$\Delta$}
+\DeclareUnicodeCharacter{00D7}{$\times$}
+\DeclareUnicodeCharacter{2264}{$\le$}
+\DeclareUnicodeCharacter{2265}{$\ge$}
+''',
+}
 
 # Configure sphinx_copybutton
 copybutton_prompt_text = r"\$ |>>> |\.\.\. "  # Regex for various prompts
@@ -55,8 +76,6 @@ html_theme = 'alabaster'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-# Only include _static if the directory exists
-import os
 if os.path.exists('_static'):
     html_static_path = ['_static']
     # Ensure Sphinx includes custom JavaScript files
@@ -65,6 +84,30 @@ else:
     html_static_path = []
     html_js_files = []
 
-breathe_projects = {"hypredrive": "../xml"}
+_docs_src_dir = Path(__file__).resolve().parent
+_repo_root = _docs_src_dir.parent.parent
+_breathe_xml = os.environ.get("HYPREDRV_DOXYGEN_XML")
+if not _breathe_xml:
+    candidate_paths = [
+        _docs_src_dir.parent / "xml",
+        Path.cwd() / "xml",
+        Path.cwd() / "docs" / "xml",
+        _repo_root / "build-docs" / "docs" / "xml",
+        _repo_root / "build-docs-check" / "docs" / "xml",
+        _repo_root / "build" / "docs" / "xml",
+    ]
+    candidate_paths.extend(sorted(_repo_root.glob("build*/docs/xml")))
+
+    for candidate in candidate_paths:
+        candidate = candidate.resolve()
+        if (candidate / "index.xml").exists():
+            _breathe_xml = str(candidate)
+            break
+if not _breathe_xml:
+    _breathe_xml = (_docs_src_dir.parent / "xml").resolve()
+else:
+    _breathe_xml = Path(_breathe_xml)
+
+breathe_projects = {"hypredrive": _breathe_xml}
 breathe_default_project = "hypredrive"
 html_theme = "sphinx_rtd_theme"

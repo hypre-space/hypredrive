@@ -13,17 +13,6 @@ It explains how the CI is structured, how to reproduce checks locally, and what
 options and targets are available in CMake to enable these workflows. New
 contributors should read this once before opening their first PR.
 
-Utility Programs
-----------------
-
-Documentation for the sequence packer (``hypredrive-lsseq``) and the packed binary
-container format is in a dedicated chapter:
-
-.. toctree::
-   :maxdepth: 2
-
-   utilities
-
 Library API Ownership Semantics
 -------------------------------
 
@@ -138,7 +127,7 @@ On macOS (Apple clang):
    brew update && brew install cmake ninja mpich hypre clang-format
    cmake -S . -B build -G Ninja \
      -DCMAKE_BUILD_TYPE=Debug \
-     -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_BUILD_EXAMPLES=ON \
+     -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
      -DBUILD_SHARED_LIBS=ON -DCMAKE_C_COMPILER=mpicc \
      -DCMAKE_PREFIX_PATH=$(brew --prefix hypre)
    cmake --build build --parallel
@@ -251,7 +240,7 @@ Local reproduction
    pip install gcovr
    cmake -S . -B build-coverage -G Ninja \
      -DCMAKE_BUILD_TYPE=Debug \
-     -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_BUILD_EXAMPLES=ON \
+     -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
      -DHYPREDRV_ENABLE_COVERAGE=ON \
      -DBUILD_SHARED_LIBS=ON -DCMAKE_C_COMPILER=mpicc \
      -DCMAKE_PREFIX_PATH=${HYPRE_PREFIX}

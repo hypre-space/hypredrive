@@ -17,103 +17,25 @@ Verbosity level:         0x3
 Date and time: 2026-02-06 00:30:13
 
 Using HYPREDRV_DEVELOP_STRING: v0.1.0-60-g5785f920e (master)
-================================ System Information ================================
-
-Processing Units
------------------
-Number of Nodes       : 1
-Number of Processors  : 1
-Number of CPU threads : 32
-Tot. # of Processors  : 1
-Tot. # of CPU threads : 32
-CPU Model #0          : AMD Ryzen 9 9950X 16-Core Processor
-
-GPU Model #0          : NVIDIA Corporation GB206 [GeForce RTX 5060 Ti] (rev a1)
-GPU Model #1          : Advanced Micro Devices, Inc. [AMD/ATI] Navi 31 [Radeon RX 7900 XT/7900 XTX/7900 GRE/7900M] (rev cc)
-GPU Model #2          : Advanced Micro Devices, Inc. [AMD/ATI] Granite Ridge [Radeon Graphics] (rev c1)
-
-Memory Information (Used/Total)
---------------------------------
-CPU RAM               : 182.66 / 186.36  (98.02 %) GiB
-GPU RAM #0            :   0.01 /  15.93  ( 0.09 %) GiB
-GPU RAM #1            :   0.03 /  19.98  ( 0.13 %) GiB
-GPU RAM #2            :   1.76 /   2.00  (88.13 %) GiB
-
-NUMA Information
------------------
-NUMA node 0           : memory data unavailable
-
-Network / Interconnect
-----------------------
-InfiniBand            : Not detected
-Interface eno2        : 1000 Mbps (up)
-Interface virbr0      : unknown speed (down)
-Interface wlp11s0     : unknown speed (down)
-Interface docker0     : unknown speed (down)
-Interface eno1        : unknown speed (down)
-
-Accelerator Runtime Information
---------------------------------
-NVIDIA driver         : 580.105.08
-CUDA comp. capability : 12.0
-AMD driver            : ROCm 7.2.0
-
-Accelerator Binding (per rank)
--------------------------------
-Rank 0                : unset
-
-Operating System
------------------
-System Name           : Linux
-Node Name             : z5tux
-Release               : 6.14.0-37-generic
-Version               : #37~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC Thu Nov 20 10:25:38 UTC 2
-Machine Architecture  : x86_64
-
-Compilation Information
-------------------------
-Date                  : Feb  5 2026 at 23:54:30
-Optimization          : Enabled
-Debugging             : Disabled
-Compiler              : GCC 14.2.0
-OpenMP                : Not used
-MPI library           : MPICH (Version: 4.2.2)
-Target architecture   : x86_64
-Endianness            : Little-endian
-
-Current Working Directory
---------------------------
-/home/victor/projects/hypredrive-master
-
-Dynamic Libraries Loaded
-------------------------
-   linux-vdso.so.1 => linux-vdso.so.1 (0x7dc206c34000)
-   libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x7dc206b21000)
-   libmpi.so.12 => /home/victor/projects/mpich-4.2.2/install/release/lib/libmpi.so.12 (0x7dc203200000)
-   libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x7dc202e00000)
-   ld-linux-x86-64.so.2 => /lib64/ld-linux-x86-64.so.2 (0x7dc206c36000)
-
-================================ System Information ================================
-
 Running on 1 MPI rank
 ------------------------------------------------------------------------------------
-solver: 
-  fgmres: 
+solver:
+  fgmres:
     krylov_dim: 100
     max_iter: 300
     print_level: 0
     relative_tol: 1.0e-6
-preconditioner: 
-  amg: 
+preconditioner:
+  amg:
     print_level: 0
-    coarsening: 
+    coarsening:
       strong_th: 0.6
       num_functions: 3
-    smoother: 
+    smoother:
       type: ilu
       num_levels: 5
       num_sweeps: 1
-      ilu: 
+      ilu:
         type: bj-ilut
         fill_level: 0
         droptol: 1e-2
@@ -269,4 +191,4 @@ STATISTICS SUMMARY:
 +---------+-------------+-------------+-------------+------------+------------+---------+
 
 Date and time: 2026-02-06 00:30:16
-/home/victor/projects/hypredrive-master/build-v3.0.0/lidcavity done!
+lidcavity done!

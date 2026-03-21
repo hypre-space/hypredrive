@@ -21,6 +21,7 @@ jobs:
   sphinx:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
     name: Sphinx Documentation
+    needs: doxygen
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -34,7 +35,15 @@ jobs:
         run: |
           pip install -r docs/usrman-src/requirements.txt
 
+      - name: Download Doxygen XML
+        uses: actions/download-artifact@v6
+        with:
+          name: doxygen-xml
+          path: docs/_doxygen_xml
+
       - name: Build Sphinx documentation
+        env:
+          HYPREDRV_DOXYGEN_XML: ${{ github.workspace }}/docs/_doxygen_xml
         run: |
           sphinx-build -W -b html docs/usrman-src docs/_build/html
 
@@ -82,4 +91,12 @@ jobs:
         with:
           name: doxygen-docs
           path: ${{ env.BUILD_DIR }}/docs/html
+          retention-days: 7
+
+      - name: Upload Doxygen XML
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: doxygen-xml
+          path: ${{ env.BUILD_DIR }}/docs/xml
           retention-days: 7

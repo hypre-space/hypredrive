@@ -8,18 +8,57 @@
 Input File Structure
 ====================
 
-`hypredrive` uses a configuration file in YAML format to specify the parameters and settings
-for the program's execution. Below is a detailed explanation of each section in the configuration
-file. In general, the various keywords are optional and, if not explicitly defined by the
-user, default values are used for them. On the other hand, some keywords such as
-``linear_system`` are mandatory and, thus, are marked with `required` or `possibly
-required`, depending on the value of other keywords.
+`hypredrive` uses YAML to specify parameters and settings. The YAML content can be
+provided either as a **file on disk** (driver usage) or as an **in-memory string**
+passed directly to ``HYPREDRV_InputArgsParse`` from application code. The structure
+of the YAML is the same in both cases.
+
+In general, the various keywords are optional and, if not explicitly defined by the
+user, default values are used for them. Some keywords such as ``linear_system`` are
+mandatory for driver use and are marked with `required` or `possibly required`,
+depending on the value of other keywords.
 
 .. note::
 
-   The YAML file parser in `hypredrive` is case-insensitive, meaning that it works
+   The YAML parser in `hypredrive` is case-insensitive, meaning that it works
    regardless of the presence of lower-case, upper-case, or a mixture of both when
-   defining keys and values in the input file.
+   defining keys and values.
+
+.. _CLIOverrides:
+
+CLI Overrides (``-a/--args``)
+-----------------------------
+
+When running the ``hypredrive`` driver, it is often convenient to keep a base YAML file
+and override a few parameters from the command line.
+
+The driver supports this via the ``-a`` / ``--args`` flag, followed by key/value pairs in
+the form:
+
+- ``--path:to:key <value>``
+
+The ``path:to:key`` is interpreted as a YAML path where ``:`` separates nested blocks.
+Overrides are applied after reading the YAML file, so the command line takes precedence
+over the file.
+
+Examples (based on ``examples/ex1.yml``):
+
+.. code-block:: bash
+
+   # Keep solver as PCG, but change max_iter
+   mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver:pcg:max_iter 50
+
+.. code-block:: bash
+
+   # Switch solver type and set a nested option
+   mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver gmres --solver:gmres:max_iter 30
+
+.. note::
+
+   - Overrides must be provided as key/value pairs after ``-a``.
+   - Key/value pairs may introduce settings not present in the base YAML file.
+   - Keys and values must be separated by a space, for example ``--solver:pcg:max_iter 50``.
+   - Values containing spaces or YAML syntax such as ``[1, 2]`` should be quoted for your shell.
 
 
 General Settings
@@ -30,7 +69,7 @@ The ``general`` section contains global settings that apply to the entire execut
 
 - ``warmup`` - If set to `yes`, `hypredrive` will perform a warmup execution to
   ensure more accurate timing measurements. If `no`, no warmup is performed. The default
-  value for this parameter is `yes`.
+  value for this parameter is `no`.
 
 - ``statistics`` - Controls the verbosity of statistics reporting. Accepts integer values
   or boolean strings (`yes`/`no`, `on`/`off`, `true`/`false`). The default value is `1`
@@ -44,8 +83,12 @@ The ``general`` section contains global settings that apply to the entire execut
     and solve times, as well as iteration counts. The aggregate table is only shown when
     there are multiple entries (e.g., when using ``num_repetitions > 1``).
 
-- ``use_milisec`` - Show timings on the statistics summary table in milliseconds. The
+- ``use_millisec`` - Show timings on the statistics summary table in milliseconds. The
   default value is `no`, which uses seconds instead.
+
+- ``print_config_params`` - Print the parsed YAML tree to stdout on rank 0 after input
+  parsing. Values: ``yes`` / ``no``. Default: ``yes`` in driver mode and ``no`` in
+  library mode.
 
 - ``num_repetitions`` - Specifies the number of times the operation should be
   repeated. Useful for benchmarking and profiling. The default value for this parameter is
@@ -67,30 +110,42 @@ The ``general`` section contains global settings that apply to the entire execut
   neglected when hypre is *not* configured with umpire support. The default value for this
   parameter is `512 MB`.
 
+- ``exec_policy`` - Determines whether computations are performed on the ``host`` (CPU) or
+  ``device`` (GPU). When hypre is built without GPU support the only valid value is ``host``;
+  otherwise the default is ``device``.
+
+- ``use_vendor_spgemm`` - Use vendor-optimized sparse matrix-matrix multiplication (SpGEMM)
+  kernels when available. Values: ``yes`` / ``no``. Default: ``yes`` on GPU-enabled builds
+  and ``no`` otherwise.
+
+- ``use_vendor_spmv`` - Use vendor-optimized sparse matrix-vector multiplication (SpMV)
+  kernels when available. Values: ``yes`` / ``no``. Default: ``yes`` on GPU-enabled builds
+  and ``no`` otherwise.
+
 
 An example code block for the ``general`` section is given below:
 
 .. code-block:: yaml
 
     general:
-      warmup: yes
+      warmup: no
       statistics: yes
       use_millisec: no
+      print_config_params: yes
       num_repetitions: 1
       dev_pool_size: 8.0
       uvm_pool_size: 8.0
       host_pool_size: 8.0
       pinned_pool_size: 0.5
+      exec_policy: device
+      use_vendor_spgemm: yes
+      use_vendor_spmv: yes
 
 Linear System
 -------------
 
 The ``linear_system`` section describes the linear system that `hypredrive` will solve. This
 section is required.
-
-- ``exec_policy`` - Determines whether the linear system is to be solved on the ``host``
-  (CPU) or ``device`` (GPU). When hypre is built without GPU support, the default value
-  for this parameter is ``host``; otherwise, the default value is ``device``.
 
 - ``type`` - The format of the linear system matrix. Available options are ``ij`` and
   ``mtx``. The default value for this parameter is ``ij``.
@@ -143,8 +198,8 @@ Degrees of Freedom Map
      ``HYPREDRV_LinearSystemSetPrecMatrix`` preserves the file/default behavior described
      in this section.
 
-- ``rhs_mode`` - Choice of initial guess vector. Available options are the same as for
-  ``init_guess_mode``.
+- ``rhs_mode`` - Determines how the right-hand side vector is provided. Available options
+  are the same as for ``init_guess_mode``.
 
 - ``dirname`` - (Possibly required) Name of the top-level directory storing the linear
   system data. This option helps remove possible redundancies when informing filenames
@@ -160,7 +215,7 @@ Degrees of Freedom Map
   directory. This parameter does not have a default value.
 
 - ``precmat_basename`` - (Possibly required) Common prefix used for the filenames of
-  linear system matrices employed in the compuration of preconditioner. If not specified,
+  linear system matrices employed in the computation of the preconditioner. If not specified,
   the matrices used for preconditioning purposes are set to the original linear system
   matrices formed with `matrix_basename`.
 
@@ -204,7 +259,6 @@ An example code block for the ``linear_system`` section is given below:
       dofmap_filename: dofmap
       rhs_mode: file
       init_guess_mode: file
-      exec_policy: device
 
 Compressed sequence containers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -299,7 +353,9 @@ Available keywords:
 
 - ``custom_values`` - (Required for ``dofmap_custom``) Array of scaling values, one per unique DOF type in the dofmap. Must be provided as a YAML sequence. The number of entries must match the number of unique tags in the dofmap (e.g., if dofmap has tags 0, 1, 2, then ``custom_values`` must have 3 entries).
 
-**Note:** Scaling requires Hypre version >= 3.0.0. If scaling is enabled on older Hypre versions, YAML parsing will succeed but scaling will be silently disabled at runtime.
+.. note::
+   Scaling requires hypre >= 3.0.0. If scaling is enabled on an older build, YAML parsing
+   succeeds but scaling is silently disabled at runtime.
 
 Example configuration with RHS L2 scaling:
 
@@ -1107,6 +1163,68 @@ code block below:
 
    Nested Krylov-in-MGR requires the vendored Hypre build in the ``hypre/`` folder. Make
    sure to build Hypre with ``hypre/build-hypre.sh`` before building HypreDrive.
+
+.. _PreconReuse:
+
+Preconditioner reuse
+~~~~~~~~~~~~~~~~~~~~
+
+When solving a **sequence of linear systems** (e.g. multiple right-hand sides or time
+steps), you can reuse the same preconditioner across several systems to avoid repeated setup
+cost. The preconditioner is rebuilt only at chosen linear-system indices; for the rest, the
+previous factorization is applied as-is.
+
+A ``reuse`` subsection under ``preconditioner`` configures this behavior:
+
+- **``enabled``** – Turn reuse logic on or off. Values: ``yes`` / ``no``. Default: ``no``.
+- **``frequency``** – Nonnegative integer. Rebuild when ``(linear_system_index) mod
+  (frequency + 1) == 0``. So ``0`` = rebuild every system, ``1`` = rebuild every other, etc.
+- **``linear_system_ids``** – Explicit list of **0-based** linear-system indices at which to
+  rebuild (e.g. ``[0, 5, 10]``). Alias: ``linear_solver_ids``. Cannot be combined with
+  ``frequency`` or ``per_timestep``.
+- **``per_timestep``** – If ``yes``, ``frequency`` is applied **per timestep**: rebuild at
+  the first system of each timestep, then every ``(frequency+1)``-th system within that
+  timestep. Requires ``linear_system.timestep_filename`` to point to a timestep file.
+  Values: ``yes`` / ``no``. Cannot be combined with ``linear_system_ids``.
+
+The timestep file (used only when ``per_timestep: yes``) must list how linear systems map
+to timesteps. First line: total number of timesteps. Each following line: ``timestep_id
+ls_start``, where ``ls_start`` is the 0-based index of the first linear system for that
+timestep.
+
+Example: frequency-based reuse (rebuild every 3rd system):
+
+.. code-block:: yaml
+
+   preconditioner:
+     amg: {}
+     reuse:
+       enabled: yes
+       frequency: 2
+
+Example: explicit list of systems at which to rebuild:
+
+.. code-block:: yaml
+
+   preconditioner:
+     amg: {}
+     reuse:
+       enabled: yes
+       linear_system_ids: [0, 10, 20, 30]
+
+Example: reuse per timestep (rebuild at the first system of each timestep; requires
+``linear_system.timestep_filename``):
+
+.. code-block:: yaml
+
+   linear_system:
+     timestep_filename: timesteps.txt
+   preconditioner:
+     amg: {}
+     reuse:
+       enabled: yes
+       per_timestep: yes
+       frequency: 0
 
    MGR cannot be fully defined by the ``mgr`` keyword only. Instead, it is also necessary
    to specify which types of degrees of freedom are treated as F points in each MGR level,

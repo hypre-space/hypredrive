@@ -31,39 +31,7 @@ All example inputs can be found in the ``examples`` folder and reference outputs
    Alternatively, you can download the datasets manually from the Zenodo record and extract
    them into the ``data/`` directory. See ``data/README.md`` for more details.
 
-CLI overrides (``-a/--args``)
------------------------------
-
-When developing or benchmarking, it is often convenient to keep a base YAML file and
-override a few parameters from the command line.
-
-The driver supports this via the ``-a`` / ``--args`` flag, followed by pairs of:
-
-- ``--path:to:key <value>``
-
-The ``path:to:key`` is interpreted as a YAML path where ``:`` separates nested blocks.
-Overrides are applied *after* reading the YAML file, so the CLI has precedence over the
-file.
-
-Examples (based on ``examples/ex1.yml``):
-
-.. code-block:: bash
-
-   # Override solver parameters (keep solver as PCG, but change max_iter)
-   $ mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver:pcg:max_iter 50
-
-.. code-block:: bash
-
-   # Switch solver type and set a nested option (changes solver from PCG to GMRES)
-   $ mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver gmres --solver:gmres:max_iter 30
-
-.. note::
-
-   - Overrides must be provided as **key/value pairs** after ``-a``.
-   - Accepts also key/value pairs not present in the base YAML file.
-   - The key/value pairs must be separated by a space, for example: ``--solver:pcg:max_iter 50``.
-   - If you pass values that include spaces or YAML syntax (e.g., lists like ``[1, 2]``),
-     you will need to quote them according to your shell.
+CLI overrides for the driver are documented in :ref:`CLIOverrides`.
 
 .. _Example1:
 
@@ -74,10 +42,10 @@ In this example, we solve a basic linear system using an `AMG-PCG` solver with d
 settings. This example showcases the minimum amount of information required in the input
 file to execute `hypredrive`.
 
-We consider a linear system matrix arising from a seven points finite differences
-discretizaion of the Laplace equation on a `10x10x10` cartesian grid. Furthermore, the
-right hand side is the vector of ones. Both data are read from file and partitioned for a
-single MPI rank. Therefore, this example must be executed on a single process.
+We consider a linear system matrix arising from a seven-point finite-difference
+discretization of the Laplace equation on a 10×10×10 Cartesian grid. The right-hand side
+is the vector of ones. Both are read from file and partitioned for a single MPI rank;
+this example must therefore be run on a single process.
 
 .. note::
    This example requires the ``ps3d10pt7`` dataset. Make sure you have downloaded the
@@ -202,7 +170,7 @@ Example 5: Spreading input parameters in multiple files
 
 In this example, we solve the same problem as in example 3, but using the same solver and
 preconditioner parameters as in example 4. In addition, we define these parameters in
-separate files, which are included in the main input file via the ``include`` keyword .
+separate files, which are included in the main input file via the ``include`` keyword.
 
 .. note::
    This example requires the ``compflow6k`` dataset. Make sure you have downloaded the
@@ -351,12 +319,19 @@ variant and report a separate stats entry per variant while reusing the same lin
 
    # Use -p iters to compare iteration counts instead of timings
 
-.. figure:: figures/ex8_total_bar.svg
-   :alt: Total time per preconditioner variant (Example 8)
-   :width: 80%
-   :align: center
+.. only:: html
 
-   Total time (setup + solve) for each preconditioner variant in Example 8.
+   .. figure:: figures/ex8_total_bar.svg
+      :alt: Total time per preconditioner variant (Example 8)
+      :width: 80%
+      :align: center
+
+      Total time (setup + solve) for each preconditioner variant in Example 8.
+
+.. only:: latex
+
+   The HTML manual includes a rendered bar chart for this example. The PDF build omits
+   it because the source asset is SVG-only.
 
 .. note::
    A multi-file version of this input is also provided as ``examples/ex8-multi-1.yml``,

@@ -134,7 +134,11 @@ if(HYPREDRV_ENABLE_DOCS)
         if(EXISTS ${SPHINX_SOURCE_DIR})
             # Add custom target to build Sphinx documentation
             add_custom_target(sphinx-doc
-                COMMAND ${SPHINX_BUILD_EXECUTABLE}
+                COMMAND ${CMAKE_COMMAND} -E env
+                    HYPREDRV_DOXYGEN_XML=${DOXYGEN_OUTPUT_DIR}/xml
+                    HYPREDRV_DOCS_RELEASE=${PROJECT_VERSION}
+                    HYPREDRV_DOCS_VERSION=${PROJECT_VERSION}
+                    ${SPHINX_BUILD_EXECUTABLE}
                     -b html
                     ${SPHINX_SOURCE_DIR}
                     ${SPHINX_BUILD_DIR}/html
@@ -145,7 +149,11 @@ if(HYPREDRV_ENABLE_DOCS)
 
             # Add target to build PDF (requires latex)
             add_custom_target(sphinx-latexpdf
-                COMMAND ${SPHINX_BUILD_EXECUTABLE}
+                COMMAND ${CMAKE_COMMAND} -E env
+                    HYPREDRV_DOXYGEN_XML=${DOXYGEN_OUTPUT_DIR}/xml
+                    HYPREDRV_DOCS_RELEASE=${PROJECT_VERSION}
+                    HYPREDRV_DOCS_VERSION=${PROJECT_VERSION}
+                    ${SPHINX_BUILD_EXECUTABLE}
                     -b latexpdf
                     ${SPHINX_SOURCE_DIR}
                     ${SPHINX_BUILD_DIR}/latex
@@ -177,7 +185,11 @@ if(HYPREDRV_ENABLE_DOCS)
                 if(MAKE_EXECUTABLE)
                     add_custom_target(docs
                         COMMAND ${CMAKE_COMMAND} -E echo "Built developer's manual documentation (Doxygen)"
-                        COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR}/docs
+                        COMMAND ${CMAKE_COMMAND} -E env
+                            HYPREDRV_DOXYGEN_XML=${DOXYGEN_OUTPUT_DIR}/xml
+                            HYPREDRV_DOCS_RELEASE=${PROJECT_VERSION}
+                            HYPREDRV_DOCS_VERSION=${PROJECT_VERSION}
+                            ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR}/docs
                             ${MAKE_EXECUTABLE} latexpdf
                         COMMAND ${CMAKE_COMMAND} -E echo "Built user's manual documentation (Sphinx)"
                         DEPENDS doxygen-doc
