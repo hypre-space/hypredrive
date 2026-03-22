@@ -7,7 +7,7 @@
 cmake_minimum_required(VERSION 3.23)
 
 # Project name and version
-project(hypredrive VERSION 0.1 LANGUAGES C)
+project(hypredrive VERSION 0.1.0 LANGUAGES C)
 set(PROJECT_URL "https://github.com/hypre-space/hypredrive")
 set(PROJECT_BUGREPORT "https://github.com/hypre-space/hypredrive/issues")
 

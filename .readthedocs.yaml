@@ -13,6 +13,12 @@ version: 2
 # Set the OS, Python version and other tools
 build:
   os: ubuntu-22.04
+  apt_packages:
+    - doxygen
+    - graphviz
+  jobs:
+    pre_build:
+      - bash docs/gen_doxygen_xml.sh
   tools:
     python: "3.12"
 

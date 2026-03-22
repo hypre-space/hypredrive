@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "HYPRE_utilities.h"
 #include "HYPREDRV.h"
 #include "args.h"
 #include "containers.h"
@@ -121,6 +122,63 @@ parse_minimal_library_yaml(HYPREDRV_t obj)
       "  amg:\n"
       "    print_level: 0\n";
    parse_yaml_into_obj(obj, yaml_config);
+}
+
+static size_t
+count_substr(const char *haystack, const char *needle)
+{
+   size_t      count = 0;
+   const char *ptr   = haystack;
+   size_t      len   = strlen(needle);
+
+   while ((ptr = strstr(ptr, needle)) != NULL)
+   {
+      count++;
+      ptr += len;
+   }
+
+   return count;
+}
+
+static void
+capture_eigspec_warning_output(HYPREDRV_t obj, int num_calls, char *buffer, size_t buf_len)
+{
+   FILE *tmp = tmpfile();
+
+#ifdef __APPLE__
+   if (!tmp)
+   {
+      char path[] = "/tmp/hypredrv_test_eigspec.txt";
+      int  fd     = mkstemp(path);
+      ASSERT_TRUE(fd != -1);
+      tmp = fdopen(fd, "w+");
+      unlink(path);
+   }
+#endif
+
+   ASSERT_NOT_NULL(tmp);
+
+   int tmp_fd    = fileno(tmp);
+   int saved_err = dup(fileno(stderr));
+   ASSERT_TRUE(saved_err != -1);
+
+   fflush(stderr);
+   ASSERT_TRUE(dup2(tmp_fd, fileno(stderr)) != -1);
+
+   for (int i = 0; i < num_calls; i++)
+   {
+      ASSERT_EQ(HYPREDRV_LinearSystemComputeEigenspectrum(obj), ERROR_NONE);
+   }
+   fflush(stderr);
+
+   fseek(tmp, 0, SEEK_SET);
+   size_t read_bytes  = fread(buffer, 1, buf_len - 1, tmp);
+   buffer[read_bytes] = '\0';
+
+   fflush(tmp);
+   ASSERT_TRUE(dup2(saved_err, fileno(stderr)) != -1);
+   close(saved_err);
+   fclose(tmp);
 }
 
 static HYPRE_IJMatrix
@@ -798,11 +856,46 @@ test_HYPREDRV_InputArgsParse_exec_policy(void)
             "    print_level: 0\n",
             matrix_path, rhs_path);
 
-   /* exec_policy and vendor flags are applied inside InputArgsParse */
+#if HYPRE_CHECK_MIN_VERSION(22100, 0)
+   HYPRE_MemoryLocation   memory_location = HYPRE_MEMORY_HOST;
+   HYPRE_ExecutionPolicy  exec_policy     = HYPRE_EXEC_HOST;
+
+   ASSERT_EQ(HYPRE_SetMemoryLocation(HYPRE_MEMORY_HOST), 0);
+   ASSERT_EQ(HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST), 0);
+#endif
+
    parse_yaml_into_obj(obj, yaml_config);
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+#if HYPRE_CHECK_MIN_VERSION(22100, 0)
+   ASSERT_EQ(HYPRE_GetMemoryLocation(&memory_location), 0);
+   ASSERT_EQ(HYPRE_GetExecutionPolicy(&exec_policy), 0);
+   ASSERT_EQ(memory_location, HYPRE_MEMORY_HOST);
+   ASSERT_EQ(exec_policy, HYPRE_EXEC_HOST);
+#endif
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_LinearSystemComputeEigenspectrum_warns_once_when_disabled(void)
+{
+#ifdef HYPREDRV_ENABLE_EIGSPEC
+   return;
+#else
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   char       buffer[1024];
+
+   capture_eigspec_warning_output(obj, 2, buffer, sizeof(buffer));
+
+   ASSERT_EQ(count_substr(buffer, "eigenspectrum support is disabled"), 1);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+#endif
 }
 
 static void
@@ -1778,8 +1871,9 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_PreconCreate_reuse_logic);
    RUN_TEST(test_HYPREDRV_LinearSolverApply_with_xref);
    RUN_TEST(test_HYPREDRV_stats_level_apis);
-   RUN_TEST(test_HYPREDRV_state_vectors_and_eigspec_error_paths);
    RUN_TEST(test_HYPREDRV_InputArgsParse_exec_policy);
+   RUN_TEST(test_HYPREDRV_LinearSystemComputeEigenspectrum_warns_once_when_disabled);
+   RUN_TEST(test_HYPREDRV_state_vectors_and_eigspec_error_paths);
    RUN_TEST(test_HYPREDRV_PreconCreate_reuse_logic_variations);
    RUN_TEST(test_HYPREDRV_LinearSolverCreate_reuse_logic);
    RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_logic);

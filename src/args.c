@@ -89,10 +89,10 @@ hypredrv_GeneralSetDefaultArgs(General_args *args)
    args->use_vendor_spmv   = 0;
 #endif
    args->num_repetitions  = 1;
-   args->dev_pool_size    = 8.0 * GB_TO_BYTES;
-   args->uvm_pool_size    = 8.0 * GB_TO_BYTES;
-   args->host_pool_size   = 8.0 * GB_TO_BYTES;
-   args->pinned_pool_size = 0.5 * GB_TO_BYTES;
+   args->dev_pool_size    = 2.0 * GB_TO_BYTES;
+   args->uvm_pool_size    = 2.0 * GB_TO_BYTES;
+   args->host_pool_size   = 2.0 * GB_TO_BYTES;
+   args->pinned_pool_size = 0.1 * GB_TO_BYTES;
 }
 
 void

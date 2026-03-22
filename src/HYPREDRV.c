@@ -131,6 +131,48 @@ hypredrv_LinearSystemDropOwnedReferenceSolution(HYPREDRV_t hypredrv)
    hypredrv->owns_vec_xref = false;
 }
 
+static uint32_t
+hypredrv_ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
+{
+   if (!hypredrv || !hypredrv->iargs || hypredrv->lib_mode)
+   {
+      return ERROR_NONE;
+   }
+
+   if (hypredrv->iargs->general.exec_policy)
+   {
+#if HYPRE_CHECK_MIN_VERSION(22100, 0)
+      HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
+      HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+      HYPRE_SetSpGemmUseVendor(hypredrv->iargs->general.use_vendor_spgemm);
+      HYPRE_SetSpMVUseVendor(hypredrv->iargs->general.use_vendor_spmv);
+#endif
+#endif
+
+#ifdef HYPRE_USING_UMPIRE
+      HYPRE_SetUmpireDevicePoolName("HYPRE_DEVICE");
+      HYPRE_SetUmpireUMPoolName("HYPRE_UM");
+      HYPRE_SetUmpireHostPoolName("HYPRE_HOST");
+      HYPRE_SetUmpirePinnedPoolName("HYPRE_PINNED");
+
+      HYPRE_SetUmpireDevicePoolSize(hypredrv->iargs->general.dev_pool_size);
+      HYPRE_SetUmpireUMPoolSize(hypredrv->iargs->general.uvm_pool_size);
+      HYPRE_SetUmpireHostPoolSize(hypredrv->iargs->general.host_pool_size);
+      HYPRE_SetUmpirePinnedPoolSize(hypredrv->iargs->general.pinned_pool_size);
+#endif
+   }
+   else
+   {
+#if HYPRE_CHECK_MIN_VERSION(22100, 0)
+      HYPRE_SetMemoryLocation(HYPRE_MEMORY_HOST);
+      HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST);
+#endif
+   }
+
+   return ERROR_NONE;
+}
+
 /*-----------------------------------------------------------------------------
  * HYPREDRV_Initialize
  *-----------------------------------------------------------------------------*/
@@ -431,41 +473,6 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    else
    {
       hypredrv_StatsTimerSetSeconds(hypredrv->stats);
-   }
-
-   /* Set HYPRE execution policy (skipped in library mode: caller owns HYPRE) */
-   if (!hypredrv->lib_mode)
-   {
-      if (hypredrv->iargs->general.exec_policy)
-      {
-#if HYPRE_CHECK_MIN_VERSION(22100, 0)
-         HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
-         HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-         HYPRE_SetSpGemmUseVendor(hypredrv->iargs->general.use_vendor_spgemm);
-         HYPRE_SetSpMVUseVendor(hypredrv->iargs->general.use_vendor_spmv);
-#endif
-#endif
-
-#ifdef HYPRE_USING_UMPIRE
-         HYPRE_SetUmpireDevicePoolName("HYPRE_DEVICE");
-         HYPRE_SetUmpireUMPoolName("HYPRE_UM");
-         HYPRE_SetUmpireHostPoolName("HYPRE_HOST");
-         HYPRE_SetUmpirePinnedPoolName("HYPRE_PINNED");
-
-         HYPRE_SetUmpireDevicePoolSize(hypredrv->iargs->general.dev_pool_size);
-         HYPRE_SetUmpireUMPoolSize(hypredrv->iargs->general.uvm_pool_size);
-         HYPRE_SetUmpireHostPoolSize(hypredrv->iargs->general.host_pool_size);
-         HYPRE_SetUmpirePinnedPoolSize(hypredrv->iargs->general.pinned_pool_size);
-#endif
-      }
-      else
-      {
-#if HYPRE_CHECK_MIN_VERSION(22100, 0)
-         HYPRE_SetMemoryLocation(HYPRE_MEMORY_HOST);
-         HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST);
-#endif
-      }
    }
 
    /* Load timestep schedule for preconditioner reuse */
@@ -959,6 +966,7 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
 
    hypredrv_LinearSystemReadMatrix(hypredrv->comm, &hypredrv->iargs->ls, &hypredrv->mat_A,
                                    hypredrv->stats);
@@ -1000,6 +1008,7 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 
    if (!vec)
    {
+      HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
       if (hypredrv->vec_xref && !hypredrv->owns_vec_xref)
       {
          hypredrv->vec_xref = NULL;
@@ -1026,6 +1035,7 @@ HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
 
    hypredrv_LinearSystemSetNearNullSpace(hypredrv->comm, &hypredrv->iargs->ls,
                                          hypredrv->mat_A, num_entries, num_components,
@@ -1046,6 +1056,7 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 
    if (!vec)
    {
+      HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
       if (hypredrv->vec_x0 && !hypredrv->owns_vec_x0)
       {
          hypredrv->vec_x0 = NULL;
@@ -1124,6 +1135,7 @@ HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 
    if (!vec)
    {
+      HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
       const bool uses_xref_file = (bool)(hypredrv->iargs->ls.xref_filename[0] != '\0' ||
                                          hypredrv->iargs->ls.xref_basename[0] != '\0');
       if (uses_xref_file && hypredrv->vec_xref && !hypredrv->owns_vec_xref)
@@ -1332,6 +1344,7 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat)
 
    if (!mat)
    {
+      HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
       hypredrv_LinearSystemDropOwnedPrecMatrix(hypredrv);
       hypredrv_LinearSystemSetPrecMatrix(hypredrv->comm, &hypredrv->iargs->ls,
                                          hypredrv->mat_A, &hypredrv->mat_M,
@@ -1475,6 +1488,7 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
 
    int  next_ls_id    = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
    bool should_create = ((hypredrv->precon == NULL) ||
@@ -1983,14 +1997,16 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
                                      hypredrv->stats);
    }
 #else
-   (void)hypredrv;
-   if (!hypredrv->mypid)
+   static bool warned_eigspec_disabled = false;
+
+   if (!warned_eigspec_disabled && !hypredrv->mypid)
    {
       fprintf(stderr,
               "[HYPREDRV] Warning: HYPREDRV_LinearSystemComputeEigenspectrum called "
               "but eigenspectrum support is disabled. "
               "Reconfigure with -DHYPREDRV_ENABLE_EIGSPEC=ON to enable it.\n");
       fflush(stderr);
+      warned_eigspec_disabled = true;
    }
 #endif
 
