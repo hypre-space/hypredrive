@@ -31,7 +31,7 @@ copyright = u'2024 Lawrence Livermore National Security, LLC and other HYPRE Pro
 author = 'Victor A. P. Magri'
 
 # The full version, including alpha/beta/rc tags
-release = os.environ.get('HYPREDRV_DOCS_RELEASE', '0.1.0')
+release = os.environ.get('HYPREDRV_DOCS_RELEASE', '0.2.0')
 version = os.environ.get('HYPREDRV_DOCS_VERSION', release)
 
 
