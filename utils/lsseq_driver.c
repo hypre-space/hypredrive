@@ -40,6 +40,39 @@ path_copy(char *dest, size_t dest_size, const char *src)
    dest[len] = '\0';
 }
 
+static int
+path_join(char *dest, size_t dest_size, const char *dir, const char *leaf)
+{
+   size_t dir_len  = 0;
+   size_t leaf_len = 0;
+   int    add_sep  = 0;
+
+   if (!dest || !dir || !leaf || dest_size == 0)
+   {
+      return 0;
+   }
+
+   dir_len  = strlen(dir);
+   leaf_len = strlen(leaf);
+   add_sep  = (dir_len > 0 && dir[dir_len - 1] != '/');
+
+   if (dir_len + (size_t)add_sep + leaf_len >= dest_size)
+   {
+      dest[0] = '\0';
+      return 0;
+   }
+
+   memcpy(dest, dir, dir_len);
+   if (add_sep)
+   {
+      dest[dir_len++] = '/';
+   }
+   memcpy(dest + dir_len, leaf, leaf_len);
+   dest[dir_len + leaf_len] = '\0';
+
+   return 1;
+}
+
 typedef struct MatrixPartRaw_struct
 {
    uint64_t row_index_size;
@@ -2906,17 +2939,30 @@ main(int argc, char **argv)
       if (!args.timesteps_filename_set && args.timesteps_filename[0] == '\0')
       {
          char path_tmp[PATH_TMP_SIZE];
-         snprintf(path_tmp, sizeof(path_tmp), "%s/timesteps.txt",
-                  parent_dir[0] != '\0' ? parent_dir : ".");
-         path_copy(timesteps_candidate, sizeof(timesteps_candidate), path_tmp);
-         if (PathIsRegularFile(timesteps_candidate))
+         if (path_join(path_tmp, sizeof(path_tmp), parent_dir[0] != '\0' ? parent_dir : ".",
+                       "timesteps.txt"))
          {
-            path_copy(args.timesteps_filename, sizeof(args.timesteps_filename), timesteps_candidate);
+            path_copy(timesteps_candidate, sizeof(timesteps_candidate), path_tmp);
          }
          else
          {
-            snprintf(path_tmp, sizeof(path_tmp), "%s/timesteps.txt", system_dir);
-            path_copy(timesteps_candidate, sizeof(timesteps_candidate), path_tmp);
+            timesteps_candidate[0] = '\0';
+         }
+         if (PathIsRegularFile(timesteps_candidate))
+         {
+            path_copy(args.timesteps_filename, sizeof(args.timesteps_filename),
+                      timesteps_candidate);
+         }
+         else
+         {
+            if (path_join(path_tmp, sizeof(path_tmp), system_dir, "timesteps.txt"))
+            {
+               path_copy(timesteps_candidate, sizeof(timesteps_candidate), path_tmp);
+            }
+            else
+            {
+               timesteps_candidate[0] = '\0';
+            }
             if (PathIsRegularFile(timesteps_candidate))
             {
                path_copy(args.timesteps_filename, sizeof(args.timesteps_filename),
