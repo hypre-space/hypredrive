@@ -93,6 +93,10 @@ create_initialized_obj(void)
 {
    HYPREDRV_t obj = NULL;
    ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22100, 0)
+   ASSERT_EQ(HYPRE_SetMemoryLocation(HYPRE_MEMORY_HOST), 0);
+   ASSERT_EQ(HYPRE_SetExecutionPolicy(HYPRE_EXEC_HOST), 0);
+#endif
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
    ASSERT_NOT_NULL(obj);
    return obj;
