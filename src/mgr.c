@@ -43,6 +43,14 @@ HYPREDRV_MGRFRelaxWrapperSolve(void *wrapper_v, void *A, void *b, void *x)
    {
       return 1;
    }
+   /* Nested MGR F-relaxation can reach solve with an uninitialized inner coarse
+    * solver on some hypre versions. Refresh setup on the current reduced system
+    * before applying the nested solve to guarantee the inner AMG path is ready. */
+   if (HYPRE_MGRSetup((HYPRE_Solver)wrapper->inner_mgr, (HYPRE_ParCSRMatrix)A,
+                      (HYPRE_ParVector)b, (HYPRE_ParVector)x))
+   {
+      return 1;
+   }
    return HYPRE_MGRSolve((HYPRE_Solver)wrapper->inner_mgr, (HYPRE_ParCSRMatrix)A,
                          (HYPRE_ParVector)b, (HYPRE_ParVector)x);
 }

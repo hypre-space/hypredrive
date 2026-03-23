@@ -787,6 +787,10 @@ test_hypredrv_LinearSystemPrintData_series_dir_and_null_objects(void)
    HYPRE_IJVectorDestroy(vec_b);
    HYPRE_IJMatrixDestroy(mat);
 
+   remove("A_base.out.00000");
+   remove("b_base.out.00000");
+   remove("d_base.out.00000");
+
    ret = system("rm -rf hypre-data");
    (void)ret; /* Ignore cleanup failures in tests */
    TEST_HYPRE_FINALIZE();
