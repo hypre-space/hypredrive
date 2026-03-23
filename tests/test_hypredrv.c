@@ -51,6 +51,7 @@ struct hypredrv_struct
 
    HYPRE_Precon precon;
    HYPRE_Solver solver;
+   bool         precon_is_setup;
 
    void *scaling_ctx;
    IntArray *precon_reuse_timestep_starts;
@@ -1566,6 +1567,10 @@ test_HYPREDRV_misc_0hit_branches(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(1, "late", 0), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_WORLD, &obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(1, "late", 0), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }

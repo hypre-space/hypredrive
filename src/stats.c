@@ -679,15 +679,20 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
    /* Use name as-is (caller should format before calling) */
    const char *formatted_name = name;
 
+   /* If no annotation is active at this level, treat the end as a no-op. This
+    * happens when the caller begins tracking before any HYPREDRV object exists,
+    * then ends it after the first solver object has been created. */
+   if (stats->level_stack[level].name == NULL)
+   {
+      return;
+   }
+
    /* Check if level matches */
-   if (stats->level_stack[level].name == NULL ||
-       strcmp(stats->level_stack[level].name, formatted_name) != 0)
+   if (strcmp(stats->level_stack[level].name, formatted_name) != 0)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Level %d annotation mismatch: expected '%s', got '%s'", level,
-                           stats->level_stack[level].name ? stats->level_stack[level].name
-                                                          : "NULL",
-                           formatted_name);
+                           stats->level_stack[level].name, formatted_name);
       return;
    }
 

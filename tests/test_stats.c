@@ -36,6 +36,7 @@ struct hypredrv_struct
 
    HYPRE_Precon precon;
    HYPRE_Solver solver;
+   bool         precon_is_setup;
 
    void *scaling_ctx;
    IntArray *precon_reuse_timestep_starts;

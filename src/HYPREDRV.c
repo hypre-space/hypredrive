@@ -87,6 +87,7 @@ typedef struct hypredrv_struct
 
    HYPRE_Precon precon;
    HYPRE_Solver solver;
+   bool         precon_is_setup;
 
    Scaling_context *scaling_ctx;
    IntArray        *precon_reuse_timestep_starts;
@@ -206,6 +207,11 @@ HYPREDRV_Initialize()
       hypredrv_is_initialized = true;
    }
 
+   if (!hypredrv_default_stats)
+   {
+      hypredrv_default_stats = hypredrv_StatsCreate();
+   }
+
    return hypredrv_ErrorCodeGet();
 }
 
@@ -219,6 +225,10 @@ HYPREDRV_Finalize()
    if (hypredrv_is_initialized)
    {
       hypredrv_PresetFreeUserPresets();
+      if (hypredrv_default_stats)
+      {
+         hypredrv_StatsDestroy(&hypredrv_default_stats);
+      }
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
       HYPRE_Finalize();
 #endif
@@ -288,6 +298,7 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
 
    hypredrv->precon                       = NULL;
    hypredrv->solver                       = NULL;
+   hypredrv->precon_is_setup              = false;
    hypredrv->scaling_ctx                  = NULL;
    hypredrv->precon_reuse_timestep_starts = NULL;
    hypredrv->stats                        = NULL;
@@ -295,12 +306,10 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    /* Disable library mode by default */
    hypredrv->lib_mode = false;
 
-   /* Create statistics object and set as active context */
-   hypredrv->stats = hypredrv_StatsCreate();
-   if (!hypredrv_default_stats)
-   {
-      hypredrv_default_stats = hypredrv->stats;
-   }
+   /* Use the global stats context so library-level annotations recorded before
+    * object creation remain attached to the first active solver object and the
+    * no-object stats wrappers observe the same accumulated data. */
+   hypredrv->stats = hypredrv_default_stats;
 
    /* Set output pointer */
    *hypredrv_ptr = hypredrv;
@@ -337,6 +346,7 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
       {
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                                 &hypredrv->precon);
+         hypredrv->precon_is_setup = false;
       }
    }
 
@@ -384,11 +394,10 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
    /* Destroy statistics object */
-   if (hypredrv_default_stats == hypredrv->stats)
+   if (hypredrv->stats != hypredrv_default_stats)
    {
-      hypredrv_default_stats = NULL;
+      hypredrv_StatsDestroy(&hypredrv->stats);
    }
-   hypredrv_StatsDestroy(&hypredrv->stats);
 
    if ((*hypredrv_ptr)->states) free((*hypredrv_ptr)->states);
    if ((*hypredrv_ptr)->vec_s) free((void *)(*hypredrv_ptr)->vec_s);
@@ -1503,9 +1512,11 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
       {
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                                 &hypredrv->precon);
+         hypredrv->precon_is_setup = false;
       }
       hypredrv_PreconCreate(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                             hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon);
+      hypredrv->precon_is_setup = false;
    }
 
    return hypredrv_ErrorCodeGet();
@@ -1557,6 +1568,10 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
    hypredrv_PreconSetup(hypredrv->iargs->precon_method, hypredrv->precon,
                         hypredrv->mat_A);
    HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
+   if (hypredrv->precon)
+   {
+      hypredrv->precon_is_setup = true;
+   }
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1598,6 +1613,8 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    int next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
    int recompute  = hypredrv_PreconReuseShouldRecompute(
       &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timestep_starts, next_ls_id);
+   int skip_precon_setup =
+      (hypredrv->precon != NULL) && hypredrv->precon_is_setup && !recompute;
 
    /* Propagate dofmap to vectors (no-op if no dofmap is set) */
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetVectorTags(hypredrv));
@@ -1636,9 +1653,13 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    hypredrv_SolverSetupWithReuse(hypredrv->iargs->precon_method,
                                  hypredrv->iargs->solver_method, hypredrv->precon,
                                  hypredrv->solver, hypredrv->mat_M, hypredrv->vec_b,
-                                 hypredrv->vec_x, hypredrv->stats, recompute ? 0 : 1);
+                                 hypredrv->vec_x, hypredrv->stats, skip_precon_setup);
 
    HYPRE_ClearAllErrors();
+   if (hypredrv->precon && !skip_precon_setup)
+   {
+      hypredrv->precon_is_setup = true;
+   }
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1817,6 +1838,7 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
    {
       hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                              &hypredrv->precon);
+      hypredrv->precon_is_setup = false;
    }
 
    return hypredrv_ErrorCodeGet();
