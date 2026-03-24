@@ -1617,17 +1617,14 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   /* Create the preconditioner if one does not already exist.  When the
-    * caller has already invoked HYPREDRV_PreconCreate() (e.g. in main.c),
-    * skip the redundant create so the reuse policy is not re-evaluated for
-    * the same linear system. */
-   if (!hypredrv->precon)
+   /* Always delegate preconditioner lifecycle decisions through
+    * HYPREDRV_PreconCreate(). The reuse policy may require rebuilding an
+    * existing object (for example at the first solve of a new timestep in
+    * library mode), so testing only for a non-NULL pointer is insufficient. */
+   if (HYPREDRV_PreconCreate(hypredrv))
    {
-      if (HYPREDRV_PreconCreate(hypredrv))
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         return hypredrv_ErrorCodeGet();
-      }
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      return hypredrv_ErrorCodeGet();
    }
 
    /* Always recreate solver per linear system.

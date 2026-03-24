@@ -89,6 +89,36 @@ setup_ps3d10pt7_paths(char matrix_path[PATH_MAX], char rhs_path[PATH_MAX])
    return true;
 }
 
+static bool
+setup_poromech2k_dir(char ls_dir[PATH_MAX])
+{
+   char matrix0[2 * PATH_MAX];
+   char rhs0[2 * PATH_MAX];
+   char dofmap0[2 * PATH_MAX];
+   char matrix1[2 * PATH_MAX];
+   char rhs1[2 * PATH_MAX];
+   char dofmap1[2 * PATH_MAX];
+
+   snprintf(ls_dir, PATH_MAX, "%s/data/poromech2k/np1/ls", HYPREDRIVE_SOURCE_DIR);
+   snprintf(matrix0, sizeof(matrix0), "%s_00000/IJ.out.A.00000.bin", ls_dir);
+   snprintf(rhs0, sizeof(rhs0), "%s_00000/IJ.out.b.00000.bin", ls_dir);
+   snprintf(dofmap0, sizeof(dofmap0), "%s_00000/dofmap.out.00000", ls_dir);
+   snprintf(matrix1, sizeof(matrix1), "%s_00001/IJ.out.A.00000.bin", ls_dir);
+   snprintf(rhs1, sizeof(rhs1), "%s_00001/IJ.out.b.00000.bin", ls_dir);
+   snprintf(dofmap1, sizeof(dofmap1), "%s_00001/dofmap.out.00000", ls_dir);
+
+   if (access(matrix0, F_OK) != 0 || access(rhs0, F_OK) != 0 || access(dofmap0, F_OK) != 0 ||
+       access(matrix1, F_OK) != 0 || access(rhs1, F_OK) != 0 || access(dofmap1, F_OK) != 0)
+   {
+      fprintf(stderr,
+              "SKIP: missing poromech2k timestep files under %s_00000 or %s_00001\n",
+              ls_dir, ls_dir);
+      return false;
+   }
+
+   return true;
+}
+
 static HYPREDRV_t
 create_initialized_obj(void)
 {
@@ -1585,6 +1615,115 @@ test_HYPREDRV_library_mode_reuse_per_timestep_with_object_annotations(void)
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
+static void
+test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep(void)
+{
+   reset_state();
+
+   char ls_dir[PATH_MAX];
+   if (!setup_poromech2k_dir(ls_dir))
+   {
+      return;
+   }
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[8192];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  dirname: %s\n"
+            "  init_suffix: 0\n"
+            "  last_suffix: 24\n"
+            "  rhs_filename: IJ.out.b\n"
+            "  matrix_filename: IJ.out.A\n"
+            "  dofmap_filename: dofmap.out\n"
+            "  init_guess_mode: zeros\n"
+            "solver:\n"
+            "  fgmres:\n"
+            "    max_iter: 100\n"
+            "    krylov_dim: 30\n"
+            "    print_level: 0\n"
+            "    relative_tol: 1.0e-6\n"
+            "preconditioner:\n"
+            "  reuse:\n"
+            "    enabled: yes\n"
+            "    per_timestep: on\n"
+            "    frequency: 0\n"
+            "  mgr:\n"
+            "    max_iter: 1\n"
+            "    tolerance: 0.0\n"
+            "    print_level: 0\n"
+            "    coarse_th: 1e-20\n"
+            "    level:\n"
+            "      0:\n"
+            "        f_dofs: [0, 1, 2]\n"
+            "        f_relaxation: amg\n"
+            "          amg:\n"
+            "            coarsening:\n"
+            "              type: pmis\n"
+            "              strong_th: 0.5\n"
+            "              num_functions: 3\n"
+            "              filter_functions: on\n"
+            "        g_relaxation: none\n"
+            "        restriction_type: injection\n"
+            "        prolongation_type: blk-jacobi\n"
+            "        coarse_level_type: non-galerkin\n"
+            "      1:\n"
+            "        f_dofs: [5]\n"
+            "        f_relaxation: jacobi\n"
+            "        g_relaxation: none\n"
+            "        restriction_type: injection\n"
+            "        prolongation_type: jacobi\n"
+            "        coarse_level_type: rap\n"
+            "      2:\n"
+            "        f_dofs: [4]\n"
+            "        f_relaxation: single\n"
+            "        g_relaxation: ilu\n"
+            "        restriction_type: columped\n"
+            "        prolongation_type: injection\n"
+            "        coarse_level_type: rap\n"
+            "    coarsest_level:\n"
+            "      amg:\n"
+            "        max_iter: 1\n"
+            "        tolerance: 0.0\n"
+            "        relaxation:\n"
+            "          down_type: l1-jacobi\n"
+            "          up_type: l1-jacobi\n",
+            ls_dir);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBeginOn(obj, 0, "timestep-0", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+   run_library_linear_solve(obj, NULL);
+   ASSERT_NOT_NULL(state->precon);
+   ASSERT_TRUE(state->precon_is_setup);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEndOn(obj, 0, "timestep-0", -1), ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBeginOn(obj, 0, "timestep-1", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   /* Regression guard: the first solve in a new timestep must mark the reused MGR
+    * preconditioner dirty again before setup. */
+   ASSERT_EQ(HYPREDRV_AnnotateBeginOn(obj, "system", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+   ASSERT_FALSE(state->precon_is_setup);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateEndOn(obj, "system", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEndOn(obj, 0, "timestep-1", -1), ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
 struct DestroyObjectContext
 {
    HYPREDRV_t *obj_ptr;
@@ -2258,6 +2397,7 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_per_timestep);
    RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_per_timestep_frequency);
    RUN_TEST(test_HYPREDRV_library_mode_reuse_per_timestep_with_object_annotations);
+   RUN_TEST(test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep);
    RUN_TEST(test_HYPREDRV_library_mode_destroy_prints_named_statistics_summary);
    RUN_TEST(test_HYPREDRV_LinearSolverApply_error_cases);
 }
