@@ -11,6 +11,7 @@ This directory contains utility scripts for validation, data preparation, plotti
 - `download_and_extract.sh`: Downloads a tarball, verifies its MD5 checksum, and extracts it into a destination directory.
 - `generate_example_output.sh`: Runs the example YAML inputs and regenerates normalized reference outputs for the examples.
 - `perf_laplacian.sh`: Builds and runs the standalone Laplacian driver across hypre versions with optional perf/Caliper profiling and scaling summaries.
+- `fetch_build_test.sh`: Fetch, build, and test hypredrive on different machines.
 
 ## Python Scripts
 
