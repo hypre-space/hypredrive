@@ -11,6 +11,7 @@
 #include "HYPRE_parcsr_mv.h"
 #include "gen_macros.h"
 #include "krylov.h"
+#include "stats.h"
 
 #define Precon_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, hypredrv_AMGSetArgs)   \
@@ -150,15 +151,59 @@ PreconReuseFindTimestepIndex(const IntArray *starts, int ls_id)
       return -1;
    }
 
+   int found_idx = -1;
    for (size_t i = 0; i < starts->size; i++)
    {
-      if (starts->data[i] == ls_id)
+      if (starts->data[i] > ls_id)
       {
-         return (int)i;
+         break;
       }
+
+      found_idx = (int)i;
    }
 
-   return -1;
+   return found_idx;
+}
+
+static int
+PreconReuseGetEmbeddedTimestepStart(const Stats *stats, int ls_id)
+{
+   if (!stats || !(stats->level_active & (1 << 0)))
+   {
+      return -1;
+   }
+
+   int timestep_start = stats->level_solve_start[0];
+   if (timestep_start < 0 || timestep_start > ls_id)
+   {
+      return -1;
+   }
+
+   return timestep_start;
+}
+
+static int
+PreconReuseGetSystemIndexWithinTimestep(const IntArray *starts, const Stats *stats,
+                                        int ls_id)
+{
+   int timestep_start = -1;
+
+   int const timestep_idx = PreconReuseFindTimestepIndex(starts, ls_id);
+   if (timestep_idx >= 0)
+   {
+      timestep_start = starts->data[timestep_idx];
+   }
+   else
+   {
+      timestep_start = PreconReuseGetEmbeddedTimestepStart(stats, ls_id);
+   }
+
+   if (timestep_start < 0 || ls_id < timestep_start)
+   {
+      return -1;
+   }
+
+   return ls_id - timestep_start;
 }
 
 void
@@ -246,7 +291,8 @@ hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *file
 
 int
 hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *args,
-                                    const IntArray *timestep_starts, int next_ls_id)
+                                    const IntArray *timestep_starts, const Stats *stats,
+                                    int next_ls_id)
 {
    if (!args)
    {
@@ -271,12 +317,14 @@ hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *args,
 
    if (args->enabled && args->per_timestep)
    {
-      int timestep_idx = PreconReuseFindTimestepIndex(timestep_starts, next_ls_id);
-      if (timestep_idx < 0)
+      int system_idx =
+         PreconReuseGetSystemIndexWithinTimestep(timestep_starts, stats, next_ls_id);
+      if (system_idx < 0)
       {
          return 0;
       }
-      return (timestep_idx % (freq + 1)) == 0;
+
+      return system_idx == 0 || (freq > 0 && (system_idx % (freq + 1)) == 0);
    }
 
    return (next_ls_id % (freq + 1)) == 0;

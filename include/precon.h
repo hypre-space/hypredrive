@@ -16,6 +16,8 @@
 #include "mgr.h"
 #include "yaml.h"
 
+typedef struct Stats_struct Stats;
+
 /*--------------------------------------------------------------------------
  * Preconditioner types enum
  *--------------------------------------------------------------------------*/
@@ -81,7 +83,8 @@ void           hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *, YAMLnode 
 void           hypredrv_PreconReuseTimestepsClear(IntArray **);
 uint32_t       hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *, const char *,
                                                  IntArray **);
-int hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *, const IntArray *, int);
+int hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *, const IntArray *,
+                                        const Stats *, int);
 
 void hypredrv_PreconSetArgsFromYAML(precon_args *,
                                     YAMLnode *); /* TODO: change to PreconSetArgs */

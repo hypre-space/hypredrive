@@ -71,6 +71,10 @@ The ``general`` section contains global settings that apply to the entire execut
   ensure more accurate timing measurements. If `no`, no warmup is performed. The default
   value for this parameter is `no`.
 
+- ``name`` - Optional display label for the current ``HYPREDRV_t`` object. When set,
+  statistics banners use it in messages such as ``STATISTICS SUMMARY for flow-solver:``.
+  The default is empty, which preserves the unlabeled banner.
+
 - ``statistics`` - Controls the verbosity of statistics reporting. Accepts integer values
   or boolean strings (`yes`/`no`, `on`/`off`, `true`/`false`). The default value is `1`
   (or `yes`). Available levels:
@@ -82,6 +86,10 @@ The ``general`` section contains global settings that apply to the entire execut
     showing min, max, average, standard deviation, and total values for build, setup,
     and solve times, as well as iteration counts. The aggregate table is only shown when
     there are multiple entries (e.g., when using ``num_repetitions > 1``).
+
+  In library mode, the configured statistics summary is printed automatically on rank 0
+  when the owning ``HYPREDRV_t`` object is destroyed. Applications can still call
+  ``HYPREDRV_StatsPrint`` earlier if they want an additional snapshot before teardown.
 
 - ``use_millisec`` - Show timings on the statistics summary table in milliseconds. The
   default value is `no`, which uses seconds instead.
@@ -747,6 +755,7 @@ following optional keywords:
 
     - ``jacobi_non_mv``: legacy Jacobi implementation.
     - ``forward-hgs``: forward hybrid Gauss-Seidel.
+    - ``backward-hgs``: backward hybrid Gauss-Seidel.
     - ``chaotic-hgs``: chaotic hybrid Gauss-Seidel.
     - ``hsgs``: hybrid symmetric Gauss-Seidel.
     - ``jacobi``: Jacobi (based on SpMVs).
@@ -754,6 +763,7 @@ following optional keywords:
     - ``2gs-it1``: single iteration two stage Gauss-Seidel.
     - ``2gs-it2``: double iteration two stage Gauss-Seidel.
     - ``forward-hl1gs``: forward hybrid L1-scaled Gauss-Seidel (default).
+    - ``backward-hl1gs``: backward hybrid L1-scaled Gauss-Seidel.
     - ``cg``: conjugate gradient.
     - ``chebyshev``: chebyshev polinomial.
     - ``l1-jacobi``: L1-scaled Jacobi.
@@ -765,6 +775,7 @@ following optional keywords:
     options are:
 
     - ``jacobi_non_mv``: legacy Jacobi implementation.
+    - ``forward-hgs``: forward hybrid Gauss-Seidel.
     - ``backward-hgs``: backward hybrid Gauss-Seidel.
     - ``chaotic-hgs``: chaotic hybrid Gauss-Seidel.
     - ``hsgs``: hybrid symmetric Gauss-Seidel.
@@ -772,6 +783,7 @@ following optional keywords:
     - ``l1-hsgs``: L1-scaled hybrid symmetric Gauss-Seidel.
     - ``2gs-it1``: single iteration two stage Gauss-Seidel.
     - ``2gs-it2``: double iteration two stage Gauss-Seidel.
+    - ``forward-hl1gs``: forward hybrid L1-scaled Gauss-Seidel.
     - ``backward-hl1gs``: backward hybrid L1-scaled Gauss-Seidel (default).
     - ``cg``: conjugate gradient.
     - ``chebyshev``: chebyshev polinomial.
@@ -1184,13 +1196,15 @@ A ``reuse`` subsection under ``preconditioner`` configures this behavior:
   ``frequency`` or ``per_timestep``.
 - **``per_timestep``** – If ``yes``, ``frequency`` is applied **per timestep**: rebuild at
   the first system of each timestep, then every ``(frequency+1)``-th system within that
-  timestep. Requires ``linear_system.timestep_filename`` to point to a timestep file.
+  timestep. In file/driver workflows this requires ``linear_system.timestep_filename`` to point
+  to a timestep file. In embedded library-mode workflows, the same behavior can be driven by
+  object-scoped level-0 timestep annotations on the active ``HYPREDRV_t`` object.
   Values: ``yes`` / ``no``. Cannot be combined with ``linear_system_ids``.
 
-The timestep file (used only when ``per_timestep: yes``) must list how linear systems map
-to timesteps. First line: total number of timesteps. Each following line: ``timestep_id
-ls_start``, where ``ls_start`` is the 0-based index of the first linear system for that
-timestep.
+The timestep file (used in driver / file-based workflows when ``per_timestep: yes``) must list
+how linear systems map to timesteps. First line: total number of timesteps. Each following line:
+``timestep_id ls_start``, where ``ls_start`` is the 0-based index of the first linear system for
+that timestep.
 
 Example: frequency-based reuse (rebuild every 3rd system):
 
@@ -1225,6 +1239,10 @@ Example: reuse per timestep (rebuild at the first system of each timestep; requi
        enabled: yes
        per_timestep: yes
        frequency: 0
+
+In embedded library mode, the same YAML block can be paired with object-scoped annotations such
+as ``HYPREDRV_AnnotateLevelBeginOn(h, 0, "timestep-3", -1)`` /
+``HYPREDRV_AnnotateLevelEndOn(h, 0, "timestep-3", -1)`` instead of a timestep file.
 
    MGR cannot be fully defined by the ``mgr`` keyword only. Instead, it is also necessary
    to specify which types of degrees of freedom are treated as F points in each MGR level,

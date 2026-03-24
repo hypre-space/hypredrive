@@ -348,6 +348,27 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_SetLibraryMode(HYPREDRV_t hypredrv);
 
    /**
+    * @brief Set or clear an optional display name for a HYPREDRV object.
+    *
+    * The name is used in human-readable statistics banners such as
+    * ``STATISTICS SUMMARY for <name>:``. Passing ``NULL`` or an empty string
+    * clears the current label.
+    *
+    * Embedded applications can use this to identify multiple concurrent
+    * ``HYPREDRV_t`` objects without modifying an authoritative YAML file.
+    * When ``general.name`` is present in the parsed YAML input, it populates
+    * the same label automatically.
+    *
+    * @param hypredrv The HYPREDRV_t object to label.
+    * @param name The optional display name, or ``NULL`` to clear it.
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_ObjectSetName(HYPREDRV_t  hypredrv,
+                                                          const char *name);
+
+   /**
     * @brief Retrieve the warmup setting from a HYPREDRV object.
     *
     * @param hypredrv The HYPREDRV_t object to query.
@@ -1580,6 +1601,72 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsPrint(HYPREDRV_t hypredrv);
 
    /**
+    * @brief Begin annotation of a code region on a specific HYPREDRV object.
+    *
+    * This is the object-scoped variant of HYPREDRV_AnnotateBegin(). It records
+    * timing and annotation events on the stats object owned by @p hypredrv,
+    * which makes it suitable for embedded applications that manage multiple
+    * HYPREDRV_t objects concurrently.
+    *
+    * @param hypredrv The HYPREDRV_t object whose stats context should receive
+    *                 the annotation.
+    * @param name The name of the region to annotate.
+    * @param id Optional integer suffix. If @p id is negative, @p name is used
+    *           as-is. Otherwise the effective name becomes "name-id".
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateBeginOn(HYPREDRV_t  hypredrv,
+                                                            const char *name, int id);
+
+   /**
+    * @brief End annotation of a code region on a specific HYPREDRV object.
+    *
+    * @param hypredrv The HYPREDRV_t object whose stats context should receive
+    *                 the annotation end event.
+    * @param name The name of the region to annotate.
+    * @param id Optional integer suffix. If @p id is negative, @p name is used
+    *           as-is. Otherwise the effective name becomes "name-id".
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateEndOn(HYPREDRV_t  hypredrv,
+                                                          const char *name, int id);
+
+   /**
+    * @brief Begin hierarchical annotation on a specific HYPREDRV object.
+    *
+    * @param hypredrv The HYPREDRV_t object whose stats context should receive
+    *                 the annotation.
+    * @param level The hierarchical level (0-9).
+    * @param name The name of the region to annotate.
+    * @param id Optional integer suffix. If @p id is negative, @p name is used
+    *           as-is. Otherwise the effective name becomes "name-id".
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelBeginOn(HYPREDRV_t  hypredrv,
+                                                                 int         level,
+                                                                 const char *name,
+                                                                 int         id);
+
+   /**
+    * @brief End hierarchical annotation on a specific HYPREDRV object.
+    *
+    * @param hypredrv The HYPREDRV_t object whose stats context should receive
+    *                 the annotation.
+    * @param level The hierarchical level (0-9).
+    * @param name The name of the region to annotate.
+    * @param id Optional integer suffix. If @p id is negative, @p name is used
+    *           as-is. Otherwise the effective name becomes "name-id".
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateLevelEndOn(HYPREDRV_t  hypredrv,
+                                                               int         level,
+                                                               const char *name, int id);
+
+   /**
     * @brief Begin annotation of a code region for timing and Caliper instrumentation.
     *
     * This function marks the beginning of a code region for performance measurement.
@@ -1790,6 +1877,20 @@ extern "C"
                                                                      double    *seconds);
 
    /**
+    * @brief Get the number of entries recorded at a specific level for an object.
+    *
+    * This is the object-scoped variant of HYPREDRV_StatsLevelGetCount().
+    *
+    * @param hypredrv The HYPREDRV_t object whose stats context should be queried.
+    * @param level The annotation level (0 to STATS_MAX_LEVELS-1).
+    * @param count Pointer to store the number of entries recorded.
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsLevelGetCountOn(HYPREDRV_t hypredrv,
+                                                                 int level, int *count);
+
+   /**
     * @brief Get the number of entries recorded at a specific level.
     *
     * Returns the count of entries recorded via level annotations
@@ -1805,6 +1906,26 @@ extern "C"
     * details.
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsLevelGetCount(int level, int *count);
+
+   /**
+    * @brief Get statistics entry by level and index for a specific object.
+    *
+    * This is the object-scoped variant of HYPREDRV_StatsLevelGetEntry().
+    *
+    * @param hypredrv The HYPREDRV_t object whose stats context should be queried.
+    * @param level The annotation level (0 to STATS_MAX_LEVELS-1).
+    * @param index Zero-based index of the entry (0 to count-1).
+    * @param entry_id Pointer to store the entry ID (1-based).
+    * @param num_solves Pointer to store the number of solves in this entry.
+    * @param linear_iters Pointer to store the total linear iterations.
+    * @param setup_time Pointer to store the total setup time (seconds).
+    * @param solve_time Pointer to store the total solve time (seconds).
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsLevelGetEntryOn(
+      HYPREDRV_t hypredrv, int level, int index, int *entry_id, int *num_solves,
+      int *linear_iters, double *setup_time, double *solve_time);
 
    /**
     * @brief Get statistics entry by level and index.
@@ -1831,6 +1952,19 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_StatsLevelGetEntry(int level, int index, int *entry_id, int *num_solves,
                                int *linear_iters, double *setup_time, double *solve_time);
+
+   /**
+    * @brief Print statistics summary for a specific level on an object.
+    *
+    * This is the object-scoped variant of HYPREDRV_StatsLevelPrint().
+    *
+    * @param hypredrv The HYPREDRV_t object whose stats context should be printed.
+    * @param level The annotation level to print (0 to STATS_MAX_LEVELS-1).
+    *
+    * @return Returns an error code with 0 indicating success.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_StatsLevelPrintOn(HYPREDRV_t hypredrv,
+                                                              int        level);
 
    /**
     * @brief Print statistics summary for a specific level.

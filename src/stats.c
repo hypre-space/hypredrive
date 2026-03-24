@@ -447,6 +447,7 @@ hypredrv_StatsCreate(void)
    stats->level_depth    = 0;
    stats->use_millisec   = false;
    stats->time_factor    = 1.0;
+   stats->object_name[0] = '\0';
 
    /* Allocate timing arrays */
    stats->dofmap      = (double *)calloc((size_t)capacity, sizeof(double));
@@ -566,6 +567,63 @@ void
 hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char *name)
 {
    hypredrv_StatsAnnotateV(stats, action, name, NULL);
+}
+
+/*--------------------------------------------------------------------------
+ * Helper: format annotation name with optional integer suffix
+ *--------------------------------------------------------------------------*/
+
+static void
+FormatAnnotationNameWithId(char *formatted_name, size_t size, const char *name, int id)
+{
+   const char *safe_name = name ? name : "(null)";
+
+   if (id >= 0)
+   {
+      snprintf(formatted_name, size, "%s-%d", safe_name, id);
+   }
+   else
+   {
+      snprintf(formatted_name, size, "%s", safe_name);
+   }
+}
+
+/*--------------------------------------------------------------------------
+ * hypredrv_StatsAnnotateWithId
+ *--------------------------------------------------------------------------*/
+
+uint32_t
+hypredrv_StatsAnnotateWithId(Stats *stats, HYPREDRV_AnnotateAction action,
+                             const char *name, int id)
+{
+   char formatted_name[1024];
+   FormatAnnotationNameWithId(formatted_name, sizeof(formatted_name), name, id);
+   hypredrv_StatsAnnotate(stats, action, formatted_name);
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*--------------------------------------------------------------------------
+ * hypredrv_StatsAnnotateLevelWithId
+ *--------------------------------------------------------------------------*/
+
+uint32_t
+hypredrv_StatsAnnotateLevelWithId(Stats *stats, HYPREDRV_AnnotateAction action, int level,
+                                  const char *name, int id)
+{
+   char formatted_name[1024];
+   FormatAnnotationNameWithId(formatted_name, sizeof(formatted_name), name, id);
+
+   if (action == HYPREDRV_ANNOTATE_BEGIN)
+   {
+      hypredrv_StatsAnnotateLevelBegin(stats, level, formatted_name);
+   }
+   else
+   {
+      hypredrv_StatsAnnotateLevelEnd(stats, level, formatted_name);
+   }
+
+   return hypredrv_ErrorCodeGet();
 }
 
 /*--------------------------------------------------------------------------
@@ -818,7 +876,14 @@ hypredrv_StatsPrint(const Stats *stats, int print_level)
    const char *scale = ((int)stats->use_millisec) ? "[ms]" : "[s]";
 
    PRINT_EQUAL_LINE(MAX_DIVISOR_LENGTH);
-   printf("\n\nSTATISTICS SUMMARY:\n\n");
+   if (stats->object_name[0] != '\0')
+   {
+      printf("\n\nSTATISTICS SUMMARY for %s:\n\n", stats->object_name);
+   }
+   else
+   {
+      printf("\n\nSTATISTICS SUMMARY:\n\n");
+   }
 
    PrintDivisor();
    PrintHeader(scale);
@@ -982,6 +1047,21 @@ hypredrv_StatsSetNumLinearSystems(Stats *stats, int num_systems)
 }
 
 /*--------------------------------------------------------------------------
+ * hypredrv_StatsSetObjectName
+ *--------------------------------------------------------------------------*/
+
+void
+hypredrv_StatsSetObjectName(Stats *stats, const char *name)
+{
+   if (!stats)
+   {
+      return;
+   }
+
+   snprintf(stats->object_name, sizeof(stats->object_name), "%s", name ? name : "");
+}
+
+/*--------------------------------------------------------------------------
  * hypredrv_StatsGetLastIter
  *--------------------------------------------------------------------------*/
 
@@ -1059,6 +1139,40 @@ hypredrv_StatsLevelGetEntry(const Stats *stats, int level, int index, LevelEntry
 }
 
 /*--------------------------------------------------------------------------
+ * hypredrv_StatsLevelGetCountChecked
+ *--------------------------------------------------------------------------*/
+
+uint32_t
+hypredrv_StatsLevelGetCountChecked(const Stats *stats, int level, int *count,
+                                   const char *caller)
+{
+   if (!count)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("%s: count pointer is NULL", caller);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (!stats)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("%s: no active stats context", caller);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (level < 0 || level >= STATS_MAX_LEVELS)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("%s: invalid level %d (max %d)", caller, level,
+                           STATS_MAX_LEVELS - 1);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   *count = hypredrv_StatsLevelGetCount(stats, level);
+   return hypredrv_ErrorCodeGet();
+}
+
+/*--------------------------------------------------------------------------
  * Helper: Compute aggregates from solve index range
  *--------------------------------------------------------------------------*/
 
@@ -1083,6 +1197,43 @@ ComputeLevelStats(const Stats *stats, const LevelEntry *entry, int *num_solves,
    if (linear_iters) *linear_iters = l_iters;
    if (setup_time) *setup_time = p_time;
    if (solve_time) *solve_time = s_time;
+}
+
+/*--------------------------------------------------------------------------
+ * hypredrv_StatsLevelGetEntrySummary
+ *--------------------------------------------------------------------------*/
+
+uint32_t
+hypredrv_StatsLevelGetEntrySummary(const Stats *stats, int level, int index,
+                                   int *entry_id, int *num_solves, int *linear_iters,
+                                   double *setup_time, double *solve_time)
+{
+   hypredrv_ErrorCodeResetAll();
+
+   if (!stats)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("StatsLevelGetEntry: no active stats context");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   LevelEntry entry;
+   if (hypredrv_StatsLevelGetEntry(stats, level, index, &entry) != 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("StatsLevelGetEntry: invalid level %d or index %d", level,
+                           index);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (entry_id)
+   {
+      *entry_id = entry.id;
+   }
+
+   ComputeLevelStats(stats, &entry, num_solves, linear_iters, setup_time, solve_time);
+
+   return hypredrv_ErrorCodeGet();
 }
 
 /*--------------------------------------------------------------------------

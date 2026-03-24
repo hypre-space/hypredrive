@@ -70,6 +70,7 @@ test_InputArgsCreate_general_vendor_defaults(void)
    ASSERT_EQ(args->general.use_vendor_spgemm, 0);
    ASSERT_EQ(args->general.use_vendor_spmv, 0);
 #endif
+   ASSERT_STREQ(args->general.name, "");
 
    hypredrv_InputArgsDestroy(&args);
 }
@@ -78,6 +79,7 @@ static void
 test_InputArgsParseGeneral_flags(void)
 {
    const char yaml_text[] = "general:\n"
+                            "  name: flow-solver\n"
                             "  warmup: yes\n"
                             "  statistics: off\n"
                             "  use_millisec: yes\n"
@@ -98,6 +100,7 @@ test_InputArgsParseGeneral_flags(void)
 
    input_args *args = parse_config(yaml_text);
    ASSERT_NOT_NULL(args);
+   ASSERT_STREQ(args->general.name, "flow-solver");
    ASSERT_EQ(args->general.warmup, 1);
    ASSERT_EQ(args->general.statistics, 0);
    ASSERT_EQ(args->general.print_config_params, 0);
