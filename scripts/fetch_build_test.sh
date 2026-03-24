@@ -10,7 +10,11 @@ set -euo pipefail
 
 SECONDS=0
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+  script_dir="${PWD}"
+fi
 submit_dir="${SLURM_SUBMIT_DIR:-${PWD}}"
 mode="${1:-all}"
 
@@ -79,7 +83,7 @@ cluster_name="$(classify_machine "${machine_name}")"
 
 default_ctest_timeout() {
   case "${cluster_name}" in
-    matrix|tioga|tuolumne)
+    matrix|tioga|tuolumne|tux-gfx1100|tux-sm120)
       printf '%s\n' '40'
       ;;
     *)
