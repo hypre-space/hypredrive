@@ -109,8 +109,8 @@ FindConfigFile(int argc, char **argv)
    return NULL;
 }
 
-static void
-RequireConfigArgumentOrAbort(int argc, char **argv, MPI_Comm comm, int myid)
+static int
+RequireConfigArgument(int argc, char **argv, int myid)
 {
    if (FindConfigFile(argc, argv) == NULL)
    {
@@ -118,8 +118,10 @@ RequireConfigArgumentOrAbort(int argc, char **argv, MPI_Comm comm, int myid)
       {
          PrintUsage(argv[0]);
       }
-      MPI_Abort(comm, 1);
+      return 0;
    }
+
+   return 1;
 }
 
 int
@@ -143,9 +145,15 @@ main(int argc, char **argv)
          PrintUsage(argv[0]);
       }
       HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
-      MPI_Abort(comm, 0);
+      MPI_Finalize();
+      return 0;
    }
-   RequireConfigArgumentOrAbort(argc, argv, comm, myid);
+   if (!RequireConfigArgument(argc, argv, myid))
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+      MPI_Finalize();
+      return 1;
+   }
 
    /*-----------------------------------------------------------
     * Create driver object and print libraries/driver info
@@ -164,7 +172,13 @@ main(int argc, char **argv)
     * Parse input parameters
     *-----------------------------------------------------------*/
 
-   RequireConfigArgumentOrAbort(argc, argv, comm, myid);
+   if (!RequireConfigArgument(argc, argv, myid))
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&obj));
+      HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+      MPI_Finalize();
+      return 1;
+   }
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, obj));
 
    /* If --precon-preset was given, override the preconditioner */
