@@ -1241,8 +1241,8 @@ Example: reuse per timestep (rebuild at the first system of each timestep; requi
        frequency: 0
 
 In embedded library mode, the same YAML block can be paired with object-scoped annotations such
-as ``HYPREDRV_AnnotateLevelBeginOn(h, 0, "timestep-3", -1)`` /
-``HYPREDRV_AnnotateLevelEndOn(h, 0, "timestep-3", -1)`` instead of a timestep file.
+as ``HYPREDRV_AnnotateLevelBegin(h, 0, "timestep-3", -1)`` /
+``HYPREDRV_AnnotateLevelEnd(h, 0, "timestep-3", -1)`` instead of a timestep file.
 
    MGR cannot be fully defined by the ``mgr`` keyword only. Instead, it is also necessary
    to specify which types of degrees of freedom are treated as F points in each MGR level,

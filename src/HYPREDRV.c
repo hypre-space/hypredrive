@@ -36,8 +36,6 @@ static uint32_t LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv);
 
 // Flag to check if HYPREDRV is initialized
 static bool hypredrv_is_initialized = false;
-/* Default stats object used by no-object helper APIs. */
-static Stats *hypredrv_default_stats = NULL;
 
 // Macro to check if HYPREDRV is initialized
 #define HYPREDRV_CHECK_INIT()                                \
@@ -246,11 +244,6 @@ HYPREDRV_Initialize()
       hypredrv_is_initialized = true;
    }
 
-   if (!hypredrv_default_stats)
-   {
-      hypredrv_default_stats = hypredrv_StatsCreate();
-   }
-
    return hypredrv_ErrorCodeGet();
 }
 
@@ -264,10 +257,6 @@ HYPREDRV_Finalize()
    if (hypredrv_is_initialized)
    {
       hypredrv_PresetFreeUserPresets();
-      if (hypredrv_default_stats)
-      {
-         hypredrv_StatsDestroy(&hypredrv_default_stats);
-      }
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
       HYPRE_Finalize();
 #endif
@@ -301,20 +290,6 @@ HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
    hypredrv_ErrorMsgPrint();
    hypredrv_ErrorMsgClear();
    hypredrv_ErrorBacktracePrint();
-}
-
-/*-----------------------------------------------------------------------------
- * EnsureOwnStats - lazily fork a per-object Stats when the object still
- *                  shares the global default_stats context.
- *-----------------------------------------------------------------------------*/
-
-static void
-EnsureOwnStats(HYPREDRV_t hypredrv)
-{
-   if (hypredrv->stats == hypredrv_default_stats)
-   {
-      hypredrv->stats = hypredrv_StatsCreate();
-   }
 }
 
 /*-----------------------------------------------------------------------------
@@ -359,10 +334,8 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    /* Disable library mode by default */
    hypredrv->lib_mode = false;
 
-   /* Use the global stats context so library-level annotations recorded before
-    * object creation remain attached to the first active solver object and the
-    * no-object stats wrappers observe the same accumulated data. */
-   hypredrv->stats = hypredrv_default_stats;
+   /* Each object owns its own stats context. */
+   hypredrv->stats = hypredrv_StatsCreate();
 
    /* Set output pointer */
    *hypredrv_ptr = hypredrv;
@@ -460,10 +433,7 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    }
 
    /* Destroy statistics object */
-   if (hypredrv->stats != hypredrv_default_stats)
-   {
-      hypredrv_StatsDestroy(&hypredrv->stats);
-   }
+   hypredrv_StatsDestroy(&hypredrv->stats);
 
    if ((*hypredrv_ptr)->states) free((*hypredrv_ptr)->states);
    if ((*hypredrv_ptr)->vec_s) free((void *)(*hypredrv_ptr)->vec_s);
@@ -593,7 +563,6 @@ HYPREDRV_ObjectSetName(HYPREDRV_t hypredrv, const char *name)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
-   EnsureOwnStats(hypredrv);
 
    hypredrv_StatsSetObjectName(hypredrv->stats, name);
 
@@ -1617,14 +1586,23 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   /* Always delegate preconditioner lifecycle decisions through
-    * HYPREDRV_PreconCreate(). The reuse policy may require rebuilding an
-    * existing object (for example at the first solve of a new timestep in
-    * library mode), so testing only for a non-NULL pointer is insufficient. */
-   if (HYPREDRV_PreconCreate(hypredrv))
+   /* Delegate preconditioner lifecycle to PreconCreate.
+    *
+    * Skip the call only when a preconditioner already exists but has NOT been
+    * set up yet: that means it was just created by an explicit
+    * HYPREDRV_PreconCreate() call from the caller (e.g. main.c) for this
+    * same linear system, so re-evaluating the reuse policy would be
+    * redundant (and would destroy an uninitialized object, which crashes).
+    *
+    * If the precon exists AND is already set up, the reuse policy must still
+    * be checked: a new timestep may require re-creating the preconditioner. */
+   if (hypredrv->precon == NULL || hypredrv->precon_is_setup)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      return hypredrv_ErrorCodeGet();
+      if (HYPREDRV_PreconCreate(hypredrv))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         return hypredrv_ErrorCodeGet();
+      }
    }
 
    /* Always recreate solver per linear system.
@@ -1977,23 +1955,13 @@ HYPREDRV_StatsPrint(HYPREDRV_t hypredrv)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateBeginOn(HYPREDRV_t hypredrv, const char *name, int id)
+HYPREDRV_AnnotateBegin(HYPREDRV_t hypredrv, const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
-   EnsureOwnStats(hypredrv);
 
    return hypredrv_StatsAnnotateWithId(hypredrv->stats, HYPREDRV_ANNOTATE_BEGIN, name,
                                        id);
-}
-
-uint32_t
-HYPREDRV_AnnotateBegin(const char *name, int id)
-{
-   HYPREDRV_CHECK_INIT();
-
-   return hypredrv_StatsAnnotateWithId(hypredrv_default_stats, HYPREDRV_ANNOTATE_BEGIN,
-                                       name, id);
 }
 
 /*-----------------------------------------------------------------------------
@@ -2001,22 +1969,12 @@ HYPREDRV_AnnotateBegin(const char *name, int id)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateEndOn(HYPREDRV_t hypredrv, const char *name, int id)
+HYPREDRV_AnnotateEnd(HYPREDRV_t hypredrv, const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
-   EnsureOwnStats(hypredrv);
 
    return hypredrv_StatsAnnotateWithId(hypredrv->stats, HYPREDRV_ANNOTATE_END, name, id);
-}
-
-uint32_t
-HYPREDRV_AnnotateEnd(const char *name, int id)
-{
-   HYPREDRV_CHECK_INIT();
-
-   return hypredrv_StatsAnnotateWithId(hypredrv_default_stats, HYPREDRV_ANNOTATE_END,
-                                       name, id);
 }
 
 /*-----------------------------------------------------------------------------
@@ -2024,23 +1982,13 @@ HYPREDRV_AnnotateEnd(const char *name, int id)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateLevelBeginOn(HYPREDRV_t hypredrv, int level, const char *name, int id)
+HYPREDRV_AnnotateLevelBegin(HYPREDRV_t hypredrv, int level, const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
-   EnsureOwnStats(hypredrv);
 
    return hypredrv_StatsAnnotateLevelWithId(hypredrv->stats, HYPREDRV_ANNOTATE_BEGIN,
                                             level, name, id);
-}
-
-uint32_t
-HYPREDRV_AnnotateLevelBegin(int level, const char *name, int id)
-{
-   HYPREDRV_CHECK_INIT();
-
-   return hypredrv_StatsAnnotateLevelWithId(hypredrv_default_stats,
-                                            HYPREDRV_ANNOTATE_BEGIN, level, name, id);
 }
 
 /*-----------------------------------------------------------------------------
@@ -2048,23 +1996,13 @@ HYPREDRV_AnnotateLevelBegin(int level, const char *name, int id)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateLevelEndOn(HYPREDRV_t hypredrv, int level, const char *name, int id)
+HYPREDRV_AnnotateLevelEnd(HYPREDRV_t hypredrv, int level, const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
-   EnsureOwnStats(hypredrv);
 
    return hypredrv_StatsAnnotateLevelWithId(hypredrv->stats, HYPREDRV_ANNOTATE_END, level,
                                             name, id);
-}
-
-uint32_t
-HYPREDRV_AnnotateLevelEnd(int level, const char *name, int id)
-{
-   HYPREDRV_CHECK_INIT();
-
-   return hypredrv_StatsAnnotateLevelWithId(hypredrv_default_stats, HYPREDRV_ANNOTATE_END,
-                                            level, name, id);
 }
 
 /*-----------------------------------------------------------------------------
@@ -2211,20 +2149,13 @@ HYPREDRV_LinearSolverGetSolveTime(HYPREDRV_t hypredrv, double *seconds)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_StatsLevelGetCount(int level, int *count)
-{
-   return hypredrv_StatsLevelGetCountChecked(hypredrv_default_stats, level, count,
-                                             "HYPREDRV_StatsLevelGetCount");
-}
-
-uint32_t
-HYPREDRV_StatsLevelGetCountOn(HYPREDRV_t hypredrv, int level, int *count)
+HYPREDRV_StatsLevelGetCount(HYPREDRV_t hypredrv, int level, int *count)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
    return hypredrv_StatsLevelGetCountChecked(hypredrv->stats, level, count,
-                                             "HYPREDRV_StatsLevelGetCountOn");
+                                             "HYPREDRV_StatsLevelGetCount");
 }
 
 /*-----------------------------------------------------------------------------
@@ -2232,18 +2163,9 @@ HYPREDRV_StatsLevelGetCountOn(HYPREDRV_t hypredrv, int level, int *count)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_StatsLevelGetEntry(int level, int index, int *entry_id, int *num_solves,
-                            int *linear_iters, double *setup_time, double *solve_time)
-{
-   return hypredrv_StatsLevelGetEntrySummary(hypredrv_default_stats, level, index,
-                                             entry_id, num_solves, linear_iters,
-                                             setup_time, solve_time);
-}
-
-uint32_t
-HYPREDRV_StatsLevelGetEntryOn(HYPREDRV_t hypredrv, int level, int index, int *entry_id,
-                              int *num_solves, int *linear_iters, double *setup_time,
-                              double *solve_time)
+HYPREDRV_StatsLevelGetEntry(HYPREDRV_t hypredrv, int level, int index, int *entry_id,
+                            int *num_solves, int *linear_iters, double *setup_time,
+                            double *solve_time)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
@@ -2258,14 +2180,7 @@ HYPREDRV_StatsLevelGetEntryOn(HYPREDRV_t hypredrv, int level, int index, int *en
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_StatsLevelPrint(int level)
-{
-   hypredrv_StatsLevelPrint(hypredrv_default_stats, level);
-   return hypredrv_ErrorCodeGet();
-}
-
-uint32_t
-HYPREDRV_StatsLevelPrintOn(HYPREDRV_t hypredrv, int level)
+HYPREDRV_StatsLevelPrint(HYPREDRV_t hypredrv, int level)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();

@@ -43,8 +43,8 @@ The library-side workflow in C/C++ generally follows these steps:
 
 If your application owns multiple ``HYPREDRV_t`` objects concurrently, or if you want
 preconditioner reuse to respect application-defined timestep / nonlinear-iteration boundaries,
-use the object-scoped annotation APIs (``HYPREDRV_Annotate*On`` and
-``HYPREDRV_AnnotateLevel*On``) rather than the legacy global wrappers.
+use the annotation APIs (``HYPREDRV_AnnotateBegin`` / ``HYPREDRV_AnnotateEnd`` and
+``HYPREDRV_AnnotateLevelBegin`` / ``HYPREDRV_AnnotateLevelEnd``).
 
 A minimal skeleton of a program using the library is shown below.
 
@@ -122,7 +122,7 @@ A minimal skeleton of a program using the library is shown below.
    configured via the ``preconditioner.reuse`` YAML subsection. See
    :ref:`PreconReuse` in the :ref:`InputFileStructure` reference.
    In embedded multi-handle applications, drive timestep boundaries with
-   ``HYPREDRV_AnnotateLevelBeginOn`` / ``HYPREDRV_AnnotateLevelEndOn`` so reuse decisions stay
+   ``HYPREDRV_AnnotateLevelBegin`` / ``HYPREDRV_AnnotateLevelEnd`` so reuse decisions stay
    attached to the correct ``HYPREDRV_t`` object.
 
 For example, an embedded caller that wants reuse to restart at each timestep can bracket the
@@ -130,15 +130,15 @@ solve lifecycle like this:
 
 .. code-block:: c
 
-   HYPREDRV_AnnotateLevelBeginOn(h, 0, "timestep-7", -1);
-   HYPREDRV_AnnotateLevelBeginOn(h, 1, "newton-0", -1);
-   HYPREDRV_AnnotateBeginOn(h, "system", -1);
+   HYPREDRV_AnnotateLevelBegin(h, 0, "timestep-7", -1);
+   HYPREDRV_AnnotateLevelBegin(h, 1, "newton-0", -1);
+   HYPREDRV_AnnotateBegin(h, "system", -1);
    HYPREDRV_LinearSolverCreate(h);
    HYPREDRV_LinearSolverSetup(h);
-   HYPREDRV_AnnotateEndOn(h, "system", -1);
+   HYPREDRV_AnnotateEnd(h, "system", -1);
    HYPREDRV_LinearSolverApply(h);
-   HYPREDRV_AnnotateLevelEndOn(h, 1, "newton-0", -1);
-   HYPREDRV_AnnotateLevelEndOn(h, 0, "timestep-7", -1);
+   HYPREDRV_AnnotateLevelEnd(h, 1, "newton-0", -1);
+   HYPREDRV_AnnotateLevelEnd(h, 0, "timestep-7", -1);
 
 You can also select a predefined preconditioner preset programmatically, without a YAML file:
 

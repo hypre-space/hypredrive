@@ -147,7 +147,7 @@ test_HYPREDRV_StatsLevelGetEntry_wrapper_branches(void)
    int    entry_id = 0, num_solves = 0, linear_iters = 0;
    double setup_time = 0.0, solve_time = 0.0;
 
-   int ret = HYPREDRV_StatsLevelGetEntry(0, 0, &entry_id, &num_solves, &linear_iters,
+   int ret = HYPREDRV_StatsLevelGetEntry(obj, 0, 0, &entry_id, &num_solves, &linear_iters,
                                         &setup_time, &solve_time);
    ASSERT_EQ(ret, 0);
    ASSERT_EQ(entry_id, 7);
@@ -157,11 +157,11 @@ test_HYPREDRV_StatsLevelGetEntry_wrapper_branches(void)
    ASSERT_EQ_DOUBLE(solve_time, 10.0, 1e-12);
 
    /* Optional output pointer branches */
-   ret = HYPREDRV_StatsLevelGetEntry(0, 0, NULL, NULL, NULL, NULL, NULL);
+   ret = HYPREDRV_StatsLevelGetEntry(obj, 0, 0, NULL, NULL, NULL, NULL, NULL);
    ASSERT_EQ(ret, 0);
 
    /* ret != 0 branch */
-   ret = HYPREDRV_StatsLevelGetEntry(0, -1, &entry_id, &num_solves, &linear_iters,
+   ret = HYPREDRV_StatsLevelGetEntry(obj, 0, -1, &entry_id, &num_solves, &linear_iters,
                                      &setup_time, &solve_time);
    ASSERT_NE(ret, 0);
 

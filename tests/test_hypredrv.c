@@ -211,19 +211,19 @@ run_library_linear_solve(HYPREDRV_t obj, const char *newton_name)
 {
    if (newton_name)
    {
-      ASSERT_EQ(HYPREDRV_AnnotateLevelBeginOn(obj, 1, newton_name, -1), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 1, newton_name, -1), ERROR_NONE);
    }
 
-   ASSERT_EQ(HYPREDRV_AnnotateBeginOn(obj, "system", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateBegin(obj, "system", -1), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_AnnotateEndOn(obj, "system", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateEnd(obj, "system", -1), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
 
    if (newton_name)
    {
-      ASSERT_EQ(HYPREDRV_AnnotateLevelEndOn(obj, 1, newton_name, -1), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 1, newton_name, -1), ERROR_NONE);
    }
 }
 
@@ -459,23 +459,19 @@ test_HYPREDRV_all_api_init_guard(void)
    /* Stats/annotation APIs */
    code = HYPREDRV_StatsPrint(NULL);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
-   code = HYPREDRV_AnnotateBegin("x", 0);
+   code = HYPREDRV_AnnotateBegin(NULL, "x", 0);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
-   code = HYPREDRV_AnnotateEnd("x", 0);
+   code = HYPREDRV_AnnotateEnd(NULL, "x", 0);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
-   code = HYPREDRV_AnnotateBeginOn(NULL, "x", 0);
+   code = HYPREDRV_AnnotateLevelBegin(NULL, 0, "x", 0);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
-   code = HYPREDRV_AnnotateEndOn(NULL, "x", 0);
+   code = HYPREDRV_AnnotateLevelEnd(NULL, 0, "x", 0);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
-   code = HYPREDRV_AnnotateLevelBeginOn(NULL, 0, "x", 0);
+   code = HYPREDRV_StatsLevelGetCount(NULL, 0, NULL);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
-   code = HYPREDRV_AnnotateLevelEndOn(NULL, 0, "x", 0);
+   code = HYPREDRV_StatsLevelGetEntry(NULL, 0, 0, NULL, NULL, NULL, NULL, NULL);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
-   code = HYPREDRV_StatsLevelGetCountOn(NULL, 0, NULL);
-   ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
-   code = HYPREDRV_StatsLevelGetEntryOn(NULL, 0, 0, NULL, NULL, NULL, NULL, NULL);
-   ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
-   code = HYPREDRV_StatsLevelPrintOn(NULL, 0);
+   code = HYPREDRV_StatsLevelPrint(NULL, 0);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
 }
 
@@ -542,20 +538,20 @@ test_HYPREDRV_all_api_obj_guard(void)
 
    code = HYPREDRV_StatsPrint(NULL);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
-   code = HYPREDRV_AnnotateBeginOn(NULL, "x", 0);
+   code = HYPREDRV_AnnotateBegin(NULL, "x", 0);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
-   code = HYPREDRV_AnnotateEndOn(NULL, "x", 0);
+   code = HYPREDRV_AnnotateEnd(NULL, "x", 0);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
-   code = HYPREDRV_AnnotateLevelBeginOn(NULL, 0, "x", 0);
+   code = HYPREDRV_AnnotateLevelBegin(NULL, 0, "x", 0);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
-   code = HYPREDRV_AnnotateLevelEndOn(NULL, 0, "x", 0);
+   code = HYPREDRV_AnnotateLevelEnd(NULL, 0, "x", 0);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
-   code = HYPREDRV_StatsLevelGetCountOn(NULL, 0, &typed_iter_null);
+   code = HYPREDRV_StatsLevelGetCount(NULL, 0, &typed_iter_null);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
-   code = HYPREDRV_StatsLevelGetEntryOn(NULL, 0, 0, &typed_iter_null, NULL, NULL, NULL,
+   code = HYPREDRV_StatsLevelGetEntry(NULL, 0, 0, &typed_iter_null, NULL, NULL, NULL,
                                         NULL);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
-   code = HYPREDRV_StatsLevelPrintOn(NULL, 0);
+   code = HYPREDRV_StatsLevelPrint(NULL, 0);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
 
    /* Reset the global error state before finalizing */
@@ -1495,13 +1491,13 @@ test_HYPREDRV_Annotate_functions(void)
    HYPREDRV_t obj = NULL;
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
 
-   /* Test annotate functions - these should not error even with invalid obj */
-   HYPREDRV_AnnotateBegin("test", 1);
-   HYPREDRV_AnnotateEnd("test", 1);
+   /* Test annotate functions */
+   HYPREDRV_AnnotateBegin(obj, "test", 1);
+   HYPREDRV_AnnotateEnd(obj, "test", 1);
 
-   /* Test with NULL object */
-   HYPREDRV_AnnotateBegin(NULL, 1);
-   HYPREDRV_AnnotateEnd(NULL, 1);
+   /* Test with NULL name */
+   HYPREDRV_AnnotateBegin(obj, NULL, 1);
+   HYPREDRV_AnnotateEnd(obj, NULL, 1);
 
    /* These wrappers intentionally tolerate unknown annotation keys, but they can set
     * sticky error flags; clear before cleanup assertions. */
@@ -1524,14 +1520,13 @@ test_HYPREDRV_object_scoped_annotation_isolation(void)
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj1), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj2), ERROR_NONE);
 
-   ASSERT_EQ(HYPREDRV_AnnotateLevelBeginOn(obj2, 0, "obj2-timestep", -1), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_AnnotateLevelEndOn(obj2, 0, "obj2-timestep", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj2, 0, "obj2-timestep", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj2, 0, "obj2-timestep", -1), ERROR_NONE);
 
    int count1 = -1;
    int count2 = -1;
-   int global_count = -1;
-   ASSERT_EQ(HYPREDRV_StatsLevelGetCountOn(obj1, 0, &count1), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_StatsLevelGetCountOn(obj2, 0, &count2), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_StatsLevelGetCount(obj1, 0, &count1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_StatsLevelGetCount(obj2, 0, &count2), ERROR_NONE);
    ASSERT_EQ(count1, 0);
    ASSERT_EQ(count2, 1);
 
@@ -1540,7 +1535,7 @@ test_HYPREDRV_object_scoped_annotation_isolation(void)
    int    linear_iters = -1;
    double setup_time   = -1.0;
    double solve_time   = -1.0;
-   ASSERT_EQ(HYPREDRV_StatsLevelGetEntryOn(obj2, 0, 0, &entry_id, &num_solves,
+   ASSERT_EQ(HYPREDRV_StatsLevelGetEntry(obj2, 0, 0, &entry_id, &num_solves,
                                            &linear_iters, &setup_time, &solve_time),
              ERROR_NONE);
    ASSERT_EQ(entry_id, 1);
@@ -1549,20 +1544,16 @@ test_HYPREDRV_object_scoped_annotation_isolation(void)
    ASSERT_EQ_DOUBLE(setup_time, 0.0, 1e-12);
    ASSERT_EQ_DOUBLE(solve_time, 0.0, 1e-12);
 
-   ASSERT_EQ(HYPREDRV_StatsLevelGetCount(0, &global_count), ERROR_NONE);
-   ASSERT_EQ(global_count, 0);
+   /* Annotating obj1 should not affect obj2 */
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj1, 0, "obj1-timestep", 0), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj1, 0, "obj1-timestep", 0), ERROR_NONE);
 
-   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(0, "legacy", 0), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(0, "legacy", 0), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_StatsLevelGetCount(0, &global_count), ERROR_NONE);
-   ASSERT_EQ(global_count, 1);
-
-   ASSERT_EQ(HYPREDRV_StatsLevelGetCountOn(obj1, 0, &count1), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_StatsLevelGetCountOn(obj2, 0, &count2), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_StatsLevelGetCount(obj1, 0, &count1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_StatsLevelGetCount(obj2, 0, &count2), ERROR_NONE);
    ASSERT_EQ(count1, 1);
    ASSERT_EQ(count2, 1);
 
-   ASSERT_EQ(HYPREDRV_StatsLevelPrintOn(obj2, 0), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_StatsLevelPrint(obj2, 0), ERROR_NONE);
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj2), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj1), ERROR_NONE);
@@ -1587,7 +1578,7 @@ test_HYPREDRV_library_mode_reuse_per_timestep_with_object_annotations(void)
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
 
-   ASSERT_EQ(HYPREDRV_AnnotateLevelBeginOn(obj, 0, "timestep-0", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 0, "timestep-0", -1), ERROR_NONE);
    run_library_linear_solve(obj, "newton-0");
    ASSERT_NOT_NULL(state->precon);
 
@@ -1595,18 +1586,18 @@ test_HYPREDRV_library_mode_reuse_per_timestep_with_object_annotations(void)
    ASSERT_NOT_NULL(state->precon);
 
    run_library_linear_solve(obj, "newton-1");
-   ASSERT_EQ(HYPREDRV_AnnotateLevelEndOn(obj, 0, "timestep-0", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 0, "timestep-0", -1), ERROR_NONE);
 
-   ASSERT_EQ(HYPREDRV_AnnotateLevelBeginOn(obj, 0, "timestep-1", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 0, "timestep-1", -1), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
    ASSERT_NULL(state->precon);
 
    run_library_linear_solve(obj, "newton-0");
    ASSERT_NOT_NULL(state->precon);
-   ASSERT_EQ(HYPREDRV_AnnotateLevelEndOn(obj, 0, "timestep-1", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 0, "timestep-1", -1), ERROR_NONE);
 
    int timestep_count = -1;
-   ASSERT_EQ(HYPREDRV_StatsLevelGetCountOn(obj, 0, &timestep_count), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_StatsLevelGetCount(obj, 0, &timestep_count), ERROR_NONE);
    ASSERT_EQ(timestep_count, 2);
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
@@ -1698,27 +1689,27 @@ test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep(void)
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
 
-   ASSERT_EQ(HYPREDRV_AnnotateLevelBeginOn(obj, 0, "timestep-0", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 0, "timestep-0", -1), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
    run_library_linear_solve(obj, NULL);
    ASSERT_NOT_NULL(state->precon);
    ASSERT_TRUE(state->precon_is_setup);
-   ASSERT_EQ(HYPREDRV_AnnotateLevelEndOn(obj, 0, "timestep-0", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 0, "timestep-0", -1), ERROR_NONE);
 
-   ASSERT_EQ(HYPREDRV_AnnotateLevelBeginOn(obj, 0, "timestep-1", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 0, "timestep-1", -1), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
    /* Regression guard: the first solve in a new timestep must mark the reused MGR
     * preconditioner dirty again before setup. */
-   ASSERT_EQ(HYPREDRV_AnnotateBeginOn(obj, "system", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateBegin(obj, "system", -1), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
    ASSERT_NOT_NULL(state->precon);
    ASSERT_FALSE(state->precon_is_setup);
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_AnnotateEndOn(obj, "system", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateEnd(obj, "system", -1), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_AnnotateLevelEndOn(obj, 0, "timestep-1", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 0, "timestep-1", -1), ERROR_NONE);
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
@@ -1987,8 +1978,8 @@ test_HYPREDRV_misc_0hit_branches(void)
    hypredrv_ErrorCodeResetAll();
 
    /* Cover AnnotateLevelBegin/End paths */
-   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(0, "lvl", 1), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(0, "lvl", 1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 0, "lvl", 1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 0, "lvl", 1), ERROR_NONE);
 
    /* Typed stat getters */
    int    it = -1;
@@ -2002,9 +1993,9 @@ test_HYPREDRV_misc_0hit_branches(void)
    hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(1, "late", 0), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_WORLD, &obj), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(1, "late", 0), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 1, "late", 0), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 1, "late", 0), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }

@@ -21,8 +21,9 @@ followed by a summary line.
 
 Options:
   --root <repo>  Repository root (default: git rev-parse --show-toplevel)
-  --check        Validate that all public APIs start with HYPREDRV_.
-                 Exit 1 if any violation is found.
+  --check        Validate that all public APIs start with HYPREDRV_ and
+                 accept a HYPREDRV_t parameter (with a small exempt list
+                 for global/utility functions). Exit 1 on any violation.
 EOF
 }
 
@@ -71,6 +72,8 @@ APIS=$(grep -oE 'HYPREDRV_[A-Za-z0-9_]+ *\(' "$HEADER" \
 
 if [[ $CHECK_MODE -eq 1 ]]; then
   VIOLATIONS=0
+
+  # 1. Every public API must start with HYPREDRV_
   while IFS= read -r api; do
     [[ -z "$api" ]] && continue
     if [[ "$api" != HYPREDRV_* ]]; then
@@ -78,6 +81,26 @@ if [[ $CHECK_MODE -eq 1 ]]; then
       VIOLATIONS=$((VIOLATIONS + 1))
     fi
   done <<< "$APIS"
+
+  # 2. Every public API must accept a HYPREDRV_t parameter, except for a small
+  #    set of global/utility functions that legitimately operate without one.
+  EXEMPT_RE='^HYPREDRV_(Initialize|Finalize|ErrorCodeDescribe|Create|PrintLibInfo|PrintSystemInfo|PrintExitInfo|PreconPresetRegister)$'
+  while IFS= read -r api; do
+    [[ -z "$api" ]] && continue
+    echo "$api" | grep -qE "$EXEMPT_RE" && continue
+    # Find the declaration line (skip Doxygen comment lines that reference the API)
+    DECL_LINE=$(grep -nE "${api} *\(" "$HEADER" \
+      | grep -v ':[[:space:]]*\*' \
+      | head -1 | cut -d: -f1)
+    [[ -z "$DECL_LINE" ]] && continue
+    # Check the declaration line and the next for HYPREDRV_t (handles multi-line signatures)
+    SIG=$(sed -n "${DECL_LINE},$((DECL_LINE + 1))p" "$HEADER")
+    if ! echo "$SIG" | grep -q 'HYPREDRV_t'; then
+      echo "Violation: $api must accept a HYPREDRV_t parameter" >&2
+      VIOLATIONS=$((VIOLATIONS + 1))
+    fi
+  done <<< "$APIS"
+
   COUNT=$(echo "$APIS" | grep -c . || true)
   echo "Total: $COUNT public APIs"
   if [[ $VIOLATIONS -gt 0 ]]; then

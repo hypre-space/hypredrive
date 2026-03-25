@@ -45,11 +45,10 @@ Two rules matter most when using the API directly:
   is no need to call ``HYPREDRV_PreconDestroy`` afterward unless you are managing the
   preconditioner separately.
 
-For embedded applications that keep multiple ``HYPREDRV_t`` objects alive at once, prefer the
-object-scoped annotation and hierarchical-stats APIs (the ``*On`` variants). The older
-``HYPREDRV_Annotate*`` and ``HYPREDRV_StatsLevel*`` wrappers remain available for backward
-compatibility, but they operate on the legacy default/global stats context associated with the
-first created ``HYPREDRV_t``.
+For embedded applications that keep multiple ``HYPREDRV_t`` objects alive at once, use the
+object-bound annotation and hierarchical-stats APIs directly on the relevant handle. In the
+current API, ``HYPREDRV_Annotate*`` and ``HYPREDRV_StatsLevel*`` all take a ``HYPREDRV_t``
+argument and record/query state for that specific object.
 
 Reference by Topic
 ------------------
@@ -151,9 +150,6 @@ Statistics and Timing
 - :cpp:func:`HYPREDRV_LinearSolverGetNumIter` - Get the iteration count from the last solve.
 - :cpp:func:`HYPREDRV_LinearSolverGetSetupTime` - Get the setup time from the last solve.
 - :cpp:func:`HYPREDRV_LinearSolverGetSolveTime` - Get the solve time from the last solve.
-- :cpp:func:`HYPREDRV_StatsLevelGetCountOn` - Get how many hierarchical stats entries exist at a level for a specific object.
-- :cpp:func:`HYPREDRV_StatsLevelGetEntryOn` - Get one hierarchical stats entry by level and index for a specific object.
-- :cpp:func:`HYPREDRV_StatsLevelPrintOn` - Print the hierarchical stats summary for a level for a specific object.
 - :cpp:func:`HYPREDRV_StatsLevelGetCount` - Get how many hierarchical stats entries exist at a level.
 - :cpp:func:`HYPREDRV_StatsLevelGetEntry` - Get one hierarchical stats entry by level and index.
 - :cpp:func:`HYPREDRV_StatsLevelPrint` - Print the hierarchical stats summary for a level.
@@ -161,12 +157,8 @@ Statistics and Timing
 Annotation
 ~~~~~~~~~~
 
-- :cpp:func:`HYPREDRV_AnnotateBeginOn` - Begin a named annotation region on a specific object.
-- :cpp:func:`HYPREDRV_AnnotateEndOn` - End a named annotation region on a specific object.
-- :cpp:func:`HYPREDRV_AnnotateLevelBeginOn` - Begin a hierarchical annotation region on a specific object.
-- :cpp:func:`HYPREDRV_AnnotateLevelEndOn` - End a hierarchical annotation region on a specific object.
-- :cpp:func:`HYPREDRV_AnnotateBegin` - Begin a named annotation region for instrumentation.
-- :cpp:func:`HYPREDRV_AnnotateEnd` - End a named annotation region for instrumentation.
+- :cpp:func:`HYPREDRV_AnnotateBegin` - Begin a named annotation region.
+- :cpp:func:`HYPREDRV_AnnotateEnd` - End a named annotation region.
 - :cpp:func:`HYPREDRV_AnnotateLevelBegin` - Begin a hierarchical annotation region at a given level.
 - :cpp:func:`HYPREDRV_AnnotateLevelEnd` - End a hierarchical annotation region at a given level.
 
