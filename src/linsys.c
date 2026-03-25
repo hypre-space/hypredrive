@@ -1243,14 +1243,23 @@ hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
       }
    }
 
-#if defined(HYPRE_USING_GPU)
-   /* On GPU builds, HYPRE expects the tags array to reside in device memory.
-    * The dofmap is always host-allocated, so copy it to a device buffer and
-    * hand ownership (owns_tags=2) to HYPRE so it frees the buffer correctly. */
-   HYPRE_Int *device_tags = hypre_TAlloc(HYPRE_Int, dofmap->size, HYPRE_MEMORY_DEVICE);
-   hypre_TMemcpy(device_tags, dofmap->data, HYPRE_Int, dofmap->size, HYPRE_MEMORY_DEVICE,
-                 HYPRE_MEMORY_HOST);
-   HYPRE_IJVectorSetTags(vec, 2, num_tags, device_tags);
+#if defined(HYPRE_USING_GPU) && HYPREDRV_HAVE_MEMORY_APIS
+   HYPRE_MemoryLocation vec_memloc = hypre_IJVectorMemoryLocation((hypre_IJVector *)vec);
+
+   /* In CUDA/HIP builds, library-mode vectors may still be host-backed.
+    * Only migrate tags when the vector itself is not host-backed; otherwise,
+    * keep the existing host aliasing path and avoid mismatched frees. */
+   if (hypre_GetActualMemLocation(vec_memloc) !=
+       hypre_GetActualMemLocation(HYPRE_MEMORY_HOST))
+   {
+      HYPRE_Int *tags = hypre_TAlloc(HYPRE_Int, dofmap->size, vec_memloc);
+      hypre_TMemcpy(tags, dofmap->data, HYPRE_Int, dofmap->size, vec_memloc, HYPRE_MEMORY_HOST);
+      HYPRE_IJVectorSetTags(vec, 2, num_tags, tags);
+   }
+   else
+   {
+      HYPRE_IJVectorSetTags(vec, 0, num_tags, dofmap->data);
+   }
 #else
    HYPRE_IJVectorSetTags(vec, 0, num_tags, dofmap->data);
 #endif
