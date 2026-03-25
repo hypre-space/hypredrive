@@ -155,6 +155,7 @@ parse_yaml_file_into_obj(HYPREDRV_t obj, const char *yaml_config, const char *tm
    char *argv[] = {tmp_yaml};
    ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
    ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   free(tmp_yaml);
 }
 
 static void
@@ -1700,6 +1701,7 @@ test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep(void)
    run_library_linear_solve(obj, NULL);
    ASSERT_NOT_NULL(state->precon);
    ASSERT_TRUE(state->precon_is_setup);
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 0, "timestep-0", -1), ERROR_NONE);
 
    ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 0, "timestep-1", -1), ERROR_NONE);
@@ -1716,6 +1718,13 @@ test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep(void)
    ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 0, "timestep-1", -1), ERROR_NONE);
+
+   /* LinearSystemBuild created mat_A/vec_b from files, but lib_mode
+    * prevents Destroy from freeing them.  Clean up explicitly. */
+   HYPRE_IJMatrixDestroy(state->mat_A);
+   state->mat_A = NULL;
+   HYPRE_IJVectorDestroy(state->vec_b);
+   state->vec_b = NULL;
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
