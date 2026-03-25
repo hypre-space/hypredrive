@@ -81,6 +81,85 @@ PreconSetupNoop(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
    return 0;
 }
 
+static HYPRE_Int
+PreconSetupDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                    HYPRE_ParVector x)
+{
+   HYPRE_Precon precon = (HYPRE_Precon)solver;
+
+   if (!precon)
+   {
+      return 0;
+   }
+
+   if (precon->stats)
+   {
+      hypredrv_StatsAnnotate(precon->stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
+   }
+
+   HYPRE_Int ierr = 0;
+   switch (precon->method)
+   {
+      case PRECON_BOOMERAMG:
+         ierr = HYPRE_BoomerAMGSetup(precon->main, A, b, x);
+         break;
+
+      case PRECON_MGR:
+         ierr = HYPRE_MGRSetup(precon->main, A, b, x);
+         break;
+
+      case PRECON_ILU:
+         ierr = LOCAL_ILU_SETUP(precon->main, A, b, x);
+         break;
+
+      case PRECON_FSAI:
+         ierr = LOCAL_FSAI_SETUP(precon->main, A, b, x);
+         break;
+
+      case PRECON_NONE:
+         break;
+   }
+
+   if (precon->stats)
+   {
+      hypredrv_StatsAnnotate(precon->stats, HYPREDRV_ANNOTATE_END, "prec");
+   }
+
+   return ierr;
+}
+
+static HYPRE_Int
+PreconSolveDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                    HYPRE_ParVector x)
+{
+   HYPRE_Precon precon = (HYPRE_Precon)solver;
+
+   if (!precon)
+   {
+      return 0;
+   }
+
+   switch (precon->method)
+   {
+      case PRECON_BOOMERAMG:
+         return HYPRE_BoomerAMGSolve(precon->main, A, b, x);
+
+      case PRECON_MGR:
+         return HYPRE_MGRSolve(precon->main, A, b, x);
+
+      case PRECON_ILU:
+         return LOCAL_ILU_SOLVE(precon->main, A, b, x);
+
+      case PRECON_FSAI:
+         return LOCAL_FSAI_SOLVE(precon->main, A, b, x);
+
+      case PRECON_NONE:
+         return 0;
+   }
+
+   return 0;
+}
+
 #define Solver_FIELDS(_prefix)                                     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, pcg, hypredrv_PCGSetArgs)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, gmres, hypredrv_GMRESSetArgs)   \
@@ -244,23 +323,9 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
       return;
    }
 
-   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
-
    void                   *vM = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix      par_M = NULL;
    HYPRE_ParVector         par_b = NULL, par_x = NULL;
-   HYPRE_PtrToParSolverFcn setup_ptrs[] = {
-      HYPRE_BoomerAMGSetup,
-      HYPRE_MGRSetup,
-      LOCAL_ILU_SETUP,
-      LOCAL_FSAI_SETUP,
-   };
-   HYPRE_PtrToParSolverFcn solve_ptrs[] = {
-      HYPRE_BoomerAMGSolve,
-      HYPRE_MGRSolve,
-      LOCAL_ILU_SOLVE,
-      LOCAL_FSAI_SOLVE,
-   };
 
    HYPRE_IJMatrixGetObject(M, &vM);
    par_M = (HYPRE_ParCSRMatrix)vM;
@@ -268,16 +333,20 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
    par_b = (HYPRE_ParVector)vb;
    HYPRE_IJVectorGetObject(x, &vx);
    par_x = (HYPRE_ParVector)vx;
+   if (precon)
+   {
+      precon->stats = skip_precon_setup ? NULL : stats;
+   }
 
    switch (solver_method)
    {
       case SOLVER_PCG:
          if (precon_method != PRECON_NONE)
          {
-            HYPRE_ParCSRPCGSetPrecond(solver, solve_ptrs[precon_method],
-                                      skip_precon_setup ? PreconSetupNoop
-                                                        : setup_ptrs[precon_method],
-                                      precon->main);
+            HYPRE_ParCSRPCGSetPrecond(
+               solver, PreconSolveDispatch,
+               skip_precon_setup ? PreconSetupNoop : PreconSetupDispatch,
+               (HYPRE_Solver)precon);
          }
          HYPRE_ParCSRPCGSetup(solver, par_M, par_b, par_x);
          break;
@@ -285,10 +354,10 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
       case SOLVER_GMRES:
          if (precon_method != PRECON_NONE)
          {
-            HYPRE_ParCSRGMRESSetPrecond(solver, solve_ptrs[precon_method],
-                                        skip_precon_setup ? PreconSetupNoop
-                                                          : setup_ptrs[precon_method],
-                                        precon->main);
+            HYPRE_ParCSRGMRESSetPrecond(
+               solver, PreconSolveDispatch,
+               skip_precon_setup ? PreconSetupNoop : PreconSetupDispatch,
+               (HYPRE_Solver)precon);
          }
          HYPRE_ParCSRGMRESSetup(solver, par_M, par_b, par_x);
          break;
@@ -296,10 +365,10 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
       case SOLVER_FGMRES:
          if (precon_method != PRECON_NONE)
          {
-            HYPRE_ParCSRFlexGMRESSetPrecond(solver, solve_ptrs[precon_method],
-                                            skip_precon_setup ? PreconSetupNoop
-                                                              : setup_ptrs[precon_method],
-                                            precon->main);
+            HYPRE_ParCSRFlexGMRESSetPrecond(
+               solver, PreconSolveDispatch,
+               skip_precon_setup ? PreconSetupNoop : PreconSetupDispatch,
+               (HYPRE_Solver)precon);
          }
          HYPRE_ParCSRFlexGMRESSetup(solver, par_M, par_b, par_x);
          break;
@@ -307,23 +376,20 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
       case SOLVER_BICGSTAB:
          if (precon_method != PRECON_NONE)
          {
-            HYPRE_ParCSRBiCGSTABSetPrecond(solver, solve_ptrs[precon_method],
-                                           skip_precon_setup ? PreconSetupNoop
-                                                             : setup_ptrs[precon_method],
-                                           precon->main);
+            HYPRE_ParCSRBiCGSTABSetPrecond(
+               solver, PreconSolveDispatch,
+               skip_precon_setup ? PreconSetupNoop : PreconSetupDispatch,
+               (HYPRE_Solver)precon);
          }
          HYPRE_ParCSRBiCGSTABSetup(solver, par_M, par_b, par_x);
          break;
 
       default:
-         hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
          return;
    }
 
    /* Clear pending error codes from hypre */
    HYPRE_ClearAllErrors();
-
-   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "prec");
 }
 
 void

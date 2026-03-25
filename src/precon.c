@@ -519,6 +519,16 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
                       HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr)
 {
    HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
+   if (!precon)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      *precon_ptr = NULL;
+      return;
+   }
+
+   precon->main   = NULL;
+   precon->method = precon_method;
+   precon->stats  = NULL;
 
    switch (precon_method)
    {
