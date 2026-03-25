@@ -1611,6 +1611,12 @@ test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep(void)
 {
    reset_state();
 
+   /* MGR with AMG f-relaxation + filter_functions crashes in hypre < 2.21.0 */
+#if HYPREDRV_HYPRE_RELEASE_NUMBER < 22100
+   printf("SKIP: MGR AMG f-relaxation requires hypre >= 2.21.0\n");
+   return;
+#endif
+
    char ls_dir[PATH_MAX];
    if (!setup_poromech2k_dir(ls_dir))
    {
