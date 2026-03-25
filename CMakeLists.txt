@@ -56,6 +56,10 @@ if(HYPREDRV_ENABLE_COVERAGE)
     set(HYPREDRV_ENABLE_EXAMPLES ON)
 endif()
 
+# Configure instrumentation before bringing in fetched dependencies so options
+# like sanitizers/coverage also apply to HYPRE when we build it in-tree.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Instrumentation.cmake)
+
 # Configure unified output directories for all libraries and executables
 # This ensures all libraries (including dependencies) are in the same folder
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -139,6 +143,14 @@ target_include_directories(HYPREDRV
 
 # Link HYPRE library to HYPREDRV
 target_link_libraries(HYPREDRV PUBLIC HYPRE::HYPRE)
+
+if(HYPREDRV_INSTRUMENTATION_LINK_FLAGS)
+    target_link_options(HYPREDRV PUBLIC ${HYPREDRV_INSTRUMENTATION_LINK_FLAGS})
+endif()
+
+if(HYPREDRV_COVERAGE_RUNTIME_LIBRARY)
+    target_link_libraries(HYPREDRV PUBLIC ${HYPREDRV_COVERAGE_RUNTIME_LIBRARY})
+endif()
 
 # Link math library as PRIVATE (only needed for implementation, not public API)
 # CMake will automatically deduplicate if HYPRE already links m

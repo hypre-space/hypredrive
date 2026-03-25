@@ -390,12 +390,21 @@ if(NOT HYPRE_FOUND)
         set(_hypre_autotools_src "${hypre_SOURCE_DIR}/src")
         # Match typical CMake build-type flags for autotools builds.
         set(_hypre_autotools_cflags "${CMAKE_C_FLAGS}")
+        set(_hypre_autotools_ldflags "${CMAKE_EXE_LINKER_FLAGS}")
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O0 -g")
         elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
             set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O2 -g")
         else()
             set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O3 -DNDEBUG")
+        endif()
+        if(HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS)
+            string(JOIN " " _hypre_instrumentation_cflags ${HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS})
+            set(_hypre_autotools_cflags "${_hypre_autotools_cflags} ${_hypre_instrumentation_cflags}")
+        endif()
+        if(HYPREDRV_INSTRUMENTATION_LINK_FLAGS)
+            string(JOIN " " _hypre_instrumentation_ldflags ${HYPREDRV_INSTRUMENTATION_LINK_FLAGS})
+            set(_hypre_autotools_ldflags "${_hypre_autotools_ldflags} ${_hypre_instrumentation_ldflags}")
         endif()
 
         set(_hypre_autotools_configure_extra "")
@@ -461,6 +470,7 @@ if(NOT HYPRE_FOUND)
             CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
                 CC=${MPI_C_COMPILER}
                 CFLAGS=${_hypre_autotools_cflags}
+                LDFLAGS=${_hypre_autotools_ldflags}
                 ${_hypre_autotools_src}/configure --prefix=${_hypre_autotools_prefix}
                 ${_hypre_autotools_configure_extra}
             BUILD_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${CMAKE_MAKE_PROGRAM}
@@ -491,7 +501,10 @@ if(NOT HYPRE_FOUND)
         unset(_hypre_autotools_prefix)
         unset(_hypre_autotools_src)
         unset(_hypre_autotools_cflags)
+        unset(_hypre_autotools_ldflags)
         unset(_hypre_autotools_configure_extra)
+        unset(_hypre_instrumentation_cflags)
+        unset(_hypre_instrumentation_ldflags)
         unset(_hypre_cuda_arch)
         unset(_hypre_hip_arch)
     else()
