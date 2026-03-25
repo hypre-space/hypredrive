@@ -183,27 +183,51 @@ PreconReuseGetEmbeddedTimestepStart(const Stats *stats, int ls_id)
 }
 
 static int
-PreconReuseGetSystemIndexWithinTimestep(const IntArray *starts, const Stats *stats,
-                                        int ls_id)
+PreconReuseGetEmbeddedTimestepIndex(const Stats *stats)
 {
-   int timestep_start = -1;
-
-   int const timestep_idx = PreconReuseFindTimestepIndex(starts, ls_id);
-   if (timestep_idx >= 0)
-   {
-      timestep_start = starts->data[timestep_idx];
-   }
-   else
-   {
-      timestep_start = PreconReuseGetEmbeddedTimestepStart(stats, ls_id);
-   }
-
-   if (timestep_start < 0 || ls_id < timestep_start)
+   if (!stats || !(stats->level_active & (1 << 0)))
    {
       return -1;
    }
 
-   return ls_id - timestep_start;
+   if (stats->level_current_id[0] <= 0)
+   {
+      return -1;
+   }
+
+   return stats->level_current_id[0] - 1;
+}
+
+static int
+PreconReuseResolveTimestepContext(const IntArray *starts, const Stats *stats, int ls_id,
+                                  int *timestep_idx, int *timestep_start)
+{
+   if (!timestep_idx || !timestep_start)
+   {
+      return 0;
+   }
+
+   *timestep_idx   = -1;
+   *timestep_start = -1;
+
+   int const starts_idx = PreconReuseFindTimestepIndex(starts, ls_id);
+   if (starts_idx >= 0)
+   {
+      *timestep_idx   = starts_idx;
+      *timestep_start = starts->data[starts_idx];
+   }
+   else
+   {
+      *timestep_idx   = PreconReuseGetEmbeddedTimestepIndex(stats);
+      *timestep_start = PreconReuseGetEmbeddedTimestepStart(stats, ls_id);
+   }
+
+   if (*timestep_start < 0 || ls_id < *timestep_start)
+   {
+      return 0;
+   }
+
+   return 1;
 }
 
 void
@@ -317,14 +341,26 @@ hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *args,
 
    if (args->enabled && args->per_timestep)
    {
-      int system_idx =
-         PreconReuseGetSystemIndexWithinTimestep(timestep_starts, stats, next_ls_id);
-      if (system_idx < 0)
+      int timestep_idx = -1;
+      int timestep_start = -1;
+      if (!PreconReuseResolveTimestepContext(timestep_starts, stats, next_ls_id,
+                                             &timestep_idx, &timestep_start))
       {
          return 0;
       }
 
-      return system_idx == 0 || (freq > 0 && (system_idx % (freq + 1)) == 0);
+      if (next_ls_id != timestep_start)
+      {
+         return 0;
+      }
+
+      int timestep_period = (freq > 0) ? freq : 1;
+      if (timestep_idx < 0)
+      {
+         return 1;
+      }
+
+      return (timestep_idx % timestep_period) == 0;
    }
 
    return (next_ls_id % (freq + 1)) == 0;

@@ -1442,19 +1442,66 @@ test_HYPREDRV_PreconDestroy_reuse_per_timestep_frequency(void)
    ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
    ASSERT_NOT_NULL(state->precon);
 
-   /* ls id 4 is the second system in timestep 1, so with frequency=1 keep object. */
+   /* ls id 4 is inside timestep 1, so keep reusing the current timestep preconditioner. */
    state->stats->ls_counter = 4;
    ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
    ASSERT_NOT_NULL(state->precon);
 
-   /* ls id 5 is the third system in timestep 1, so with frequency=1 destroy object. */
+   /* ls id 5 is still inside timestep 1, so keep reusing. */
    state->stats->ls_counter = 5;
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   /* ls id 6 is the first system in timestep 2, so rebuild for the new timestep. */
+   state->stats->ls_counter = 6;
    ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
    ASSERT_NULL(state->precon);
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
    free(tmp_ts);
+}
+
+static void
+test_HYPREDRV_library_mode_reuse_per_timestep_frequency_with_object_annotations(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   parse_library_reuse_yaml(obj,
+                            "  reuse:\n"
+                            "    enabled: yes\n"
+                            "    per_timestep: on\n"
+                            "    frequency: 1\n");
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 0, "timestep-0", -1), ERROR_NONE);
+   run_library_linear_solve(obj, "newton-0");
+   ASSERT_NOT_NULL(state->precon);
+
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   run_library_linear_solve(obj, "newton-1");
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 0, "timestep-0", -1), ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 0, "timestep-1", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+   ASSERT_NULL(state->precon);
+
+   run_library_linear_solve(obj, "newton-0");
+   ASSERT_NOT_NULL(state->precon);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 0, "timestep-1", -1), ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
 static void
@@ -2403,6 +2450,8 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_per_timestep);
    RUN_TEST(test_HYPREDRV_PreconDestroy_reuse_per_timestep_frequency);
    RUN_TEST(test_HYPREDRV_library_mode_reuse_per_timestep_with_object_annotations);
+   RUN_TEST(
+      test_HYPREDRV_library_mode_reuse_per_timestep_frequency_with_object_annotations);
    RUN_TEST(test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep);
    RUN_TEST(test_HYPREDRV_library_mode_destroy_prints_named_statistics_summary);
    RUN_TEST(test_HYPREDRV_LinearSolverApply_error_cases);
