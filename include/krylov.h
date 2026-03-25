@@ -15,6 +15,10 @@
 
 typedef struct NestedKrylov_args_struct
 {
+   HYPRE_Int (*setup)(void *, void *, void *, void *);
+   HYPRE_Int (*solve)(void *, void *, void *, void *);
+   HYPRE_Int (*destroy)(void *);
+
    int         is_set;
    solver_t    solver_method;
    solver_args solver;

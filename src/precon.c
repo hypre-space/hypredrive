@@ -740,13 +740,14 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    }
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 11)
-   HYPRE_Solver detached_nested_lvl0_frelax = NULL;
+   HYPRE_Solver detached_nested_lvl0_frelax  = NULL;
+   HYPRE_Solver detached_nested_lvl0_wrapper = NULL;
    if (mgr->num_levels > 1 && mgr->frelax[0] &&
        mgr->level[0].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
    {
+      detached_nested_lvl0_wrapper = mgr->frelax[0];
       detached_nested_lvl0_frelax =
          hypredrv_MGRNestedFRelaxWrapperDetachInner(mgr->frelax[0]);
-      /* hypre destroys the wrapper object inside HYPRE_MGRDestroy() on these versions. */
       mgr->frelax[0] = NULL;
    }
 #endif
@@ -755,6 +756,11 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    *solver_ptr = NULL;
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 11)
+   if (detached_nested_lvl0_wrapper &&
+       hypredrv_MGRNestedFRelaxWrapperIsLive(detached_nested_lvl0_wrapper))
+   {
+      hypredrv_MGRNestedFRelaxWrapperFree(&detached_nested_lvl0_wrapper);
+   }
    if (detached_nested_lvl0_frelax)
    {
       DestroyNestedMGRFRelaxInnerSolver(mgr, 0, &detached_nested_lvl0_frelax);
@@ -798,16 +804,10 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    {
       if (mgr->level[i].f_relaxation.use_krylov && mgr->level[i].f_relaxation.krylov)
       {
-         mgr->level[i].f_relaxation.krylov->base_solver = NULL;
          hypredrv_NestedKrylovDestroy(mgr->level[i].f_relaxation.krylov);
       }
       else if (i == 0 && mgr->frelax[i])
       {
-#if HYPRE_CHECK_MIN_VERSION(30100, 11)
-         /* hypre-master (>= 3.1.0 develop 11 observed) destroys user-provided
-          * level-0 F-relax solvers inside HYPRE_MGRDestroy(). Avoid double free. */
-         mgr->frelax[i] = NULL;
-#else
          /* MGR does not destroy user-provided F-relaxation solvers at level 0. */
          if (mgr->level[i].f_relaxation.type == 2)
          {
@@ -830,12 +830,10 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
          }
 #endif
          mgr->frelax[i] = NULL;
-#endif
       }
 
       if (mgr->level[i].g_relaxation.use_krylov && mgr->level[i].g_relaxation.krylov)
       {
-         mgr->level[i].g_relaxation.krylov->base_solver = NULL;
          hypredrv_NestedKrylovDestroy(mgr->level[i].g_relaxation.krylov);
       }
    }

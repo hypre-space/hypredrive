@@ -78,6 +78,30 @@ ILUSolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
+static HYPRE_Int
+NestedKrylovSetupThunk(void *solver_v, void *A, void *b, void *x)
+{
+   return hypredrv_NestedKrylovSetup((HYPRE_Solver)solver_v, (HYPRE_Matrix)A,
+                                     (HYPRE_Vector)b, (HYPRE_Vector)x);
+}
+
+static HYPRE_Int
+NestedKrylovSolveThunk(void *solver_v, void *A, void *b, void *x)
+{
+   return hypredrv_NestedKrylovSolve((HYPRE_Solver)solver_v, (HYPRE_Matrix)A,
+                                     (HYPRE_Vector)b, (HYPRE_Vector)x);
+}
+
+static HYPRE_Int
+NestedKrylovDestroyThunk(void *solver_v)
+{
+   hypredrv_NestedKrylovDestroy((NestedKrylov_args *)solver_v);
+   return 0;
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
 static void
 NestedKrylovDetachPrecon(YAMLnode *solver_node, YAMLnode **precon_node_out,
                          YAMLnode **precon_prev_out, YAMLnode **precon_next_out)
@@ -363,6 +387,9 @@ hypredrv_NestedKrylovSetDefaultArgs(NestedKrylov_args *args)
       return;
    }
 
+   args->setup         = NestedKrylovSetupThunk;
+   args->solve         = NestedKrylovSolveThunk;
+   args->destroy       = NestedKrylovDestroyThunk;
    args->is_set        = 0;
    args->solver_method = SOLVER_GMRES;
    args->has_precon    = 0;
@@ -534,6 +561,8 @@ hypredrv_NestedKrylovSolve(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
                            HYPRE_Vector x)
 {
    NestedKrylov_args *args = (NestedKrylov_args *)solver;
+   HYPRE_Int          solve_rc;
+   HYPRE_Int          hypre_error;
 
    if (!args || !args->base_solver)
    {
@@ -542,7 +571,20 @@ hypredrv_NestedKrylovSolve(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
       return 1;
    }
 
-   return NestedKrylovBaseSolverSolve(args->solver_method, args->base_solver, A, b, x);
+   solve_rc =
+      NestedKrylovBaseSolverSolve(args->solver_method, args->base_solver, A, b, x);
+   hypre_error = HYPRE_GetError();
+
+   /* Nested Krylov objects are only used as inexact MGR smoothers/coarse solves.
+    * HYPRE_ERROR_CONV from their internal Krylov iteration should not poison the
+    * outer solve; leave harder failures intact. */
+   if (hypre_error && !(hypre_error & ~HYPRE_ERROR_CONV))
+   {
+      HYPRE_ClearAllErrors();
+      return 0;
+   }
+
+   return solve_rc;
 }
 
 /*-----------------------------------------------------------------------------
