@@ -341,7 +341,7 @@ hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *args,
 
    if (args->enabled && args->per_timestep)
    {
-      int timestep_idx = -1;
+      int timestep_idx   = -1;
       int timestep_start = -1;
       if (!PreconReuseResolveTimestepContext(timestep_starts, stats, next_ls_id,
                                              &timestep_idx, &timestep_start))
@@ -610,7 +610,27 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    void              *vA    = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
-   HYPRE_Solver       prec = precon->main;
+
+   if (precon_method == PRECON_NONE)
+   {
+      return;
+   }
+
+   if (!precon)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Preconditioner setup requested with null preconditioner");
+      return;
+   }
+
+   if (!A)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Preconditioner setup requested with null matrix");
+      return;
+   }
+
+   HYPRE_Solver prec = precon->main;
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;

@@ -266,7 +266,13 @@ MGRlvlFDofsSet(void *field, const YAMLnode *node)
    /* Flow sequence form: [v_x, v_y] or [0, 1].
     * MGRlvlResolveDofToken handles both plain integers and symbolic labels. */
    char *buf = strdup(node->mapped_val);
-   char *tok = strtok(buf, "[], ");
+   if (!buf)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate temporary buffer for f_dofs");
+      return;
+   }
+   const char *tok = strtok(buf, "[], ");
    while (tok && arr->size < MAX_STACK_ARRAY_LENGTH)
    {
       if (!MGRlvlResolveDofToken(tok, arr))

@@ -73,6 +73,38 @@ path_join(char *dest, size_t dest_size, const char *dir, const char *leaf)
    return 1;
 }
 
+static int
+format_part_filename(char *dest, size_t dest_size, const char *prefix, int part_id,
+                     const char *suffix)
+{
+   char   tail[32];
+   int    tail_len   = 0;
+   size_t prefix_len = 0;
+
+   if (!dest || dest_size == 0 || !prefix || !suffix)
+   {
+      return 0;
+   }
+
+   tail_len = snprintf(tail, sizeof(tail), ".%05d%s", part_id, suffix);
+   if (tail_len < 0 || (size_t)tail_len >= sizeof(tail))
+   {
+      dest[0] = '\0';
+      return 0;
+   }
+
+   prefix_len = strlen(prefix);
+   if (prefix_len + (size_t)tail_len >= dest_size)
+   {
+      dest[0] = '\0';
+      return 0;
+   }
+
+   memcpy(dest, prefix, prefix_len);
+   memcpy(dest + prefix_len, tail, (size_t)tail_len + 1);
+   return 1;
+}
+
 typedef struct MatrixPartRaw_struct
 {
    uint64_t row_index_size;
@@ -1121,7 +1153,7 @@ ReadMatrixPart(const char *prefix, int part_id, MatrixPartRaw *raw)
 {
    FILE    *fp = NULL;
    uint64_t header[11];
-   char     filename[MAX_FILENAME_LENGTH + 32]; /* prefix + ".%05d.bin" */
+   char     filename[PATH_TMP_SIZE];
    size_t   row_bytes = 0, val_bytes = 0, nnz = 0;
 
    if (!prefix || !raw)
@@ -1130,7 +1162,10 @@ ReadMatrixPart(const char *prefix, int part_id, MatrixPartRaw *raw)
    }
    memset(raw, 0, sizeof(*raw));
 
-   snprintf(filename, sizeof(filename), "%s.%05d.bin", prefix, part_id);
+   if (!format_part_filename(filename, sizeof(filename), prefix, part_id, ".bin"))
+   {
+      return 0;
+   }
    fp = fopen(filename, "rb");
    if (!fp)
    {
@@ -1185,7 +1220,7 @@ ReadRHSPart(const char *prefix, int part_id, RHSPartRaw *raw)
 {
    FILE    *fp = NULL;
    uint64_t header[8];
-   char     filename[MAX_FILENAME_LENGTH + 32]; /* prefix + ".%05d.bin" */
+   char     filename[PATH_TMP_SIZE];
 
    if (!prefix || !raw)
    {
@@ -1193,7 +1228,10 @@ ReadRHSPart(const char *prefix, int part_id, RHSPartRaw *raw)
    }
    memset(raw, 0, sizeof(*raw));
 
-   snprintf(filename, sizeof(filename), "%s.%05d.bin", prefix, part_id);
+   if (!format_part_filename(filename, sizeof(filename), prefix, part_id, ".bin"))
+   {
+      return 0;
+   }
    fp = fopen(filename, "rb");
    if (!fp)
    {
@@ -1243,7 +1281,10 @@ ReadDofPart(const char *prefix, int part_id, DofPartRaw *raw)
    }
    memset(raw, 0, sizeof(*raw));
 
-   snprintf(filename, sizeof(filename), "%s.%05d", prefix, part_id);
+   if (!format_part_filename(filename, sizeof(filename), prefix, part_id, ""))
+   {
+      return 0;
+   }
    fp = fopen(filename, "r");
    if (fp)
    {
@@ -1277,7 +1318,10 @@ ReadDofPart(const char *prefix, int part_id, DofPartRaw *raw)
       return 1;
    }
 
-   snprintf(filename, sizeof(filename), "%s.%05d.bin", prefix, part_id);
+   if (!format_part_filename(filename, sizeof(filename), prefix, part_id, ".bin"))
+   {
+      return 0;
+   }
    fp = fopen(filename, "rb");
    if (!fp)
    {

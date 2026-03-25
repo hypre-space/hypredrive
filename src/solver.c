@@ -323,9 +323,9 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
       return;
    }
 
-   void                   *vM = NULL, *vb = NULL, *vx = NULL;
-   HYPRE_ParCSRMatrix      par_M = NULL;
-   HYPRE_ParVector         par_b = NULL, par_x = NULL;
+   void              *vM = NULL, *vb = NULL, *vx = NULL;
+   HYPRE_ParCSRMatrix par_M = NULL;
+   HYPRE_ParVector    par_b = NULL, par_x = NULL;
 
    HYPRE_IJMatrixGetObject(M, &vM);
    par_M = (HYPRE_ParCSRMatrix)vM;
@@ -343,10 +343,10 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
       case SOLVER_PCG:
          if (precon_method != PRECON_NONE)
          {
-            HYPRE_ParCSRPCGSetPrecond(
-               solver, PreconSolveDispatch,
-               skip_precon_setup ? PreconSetupNoop : PreconSetupDispatch,
-               (HYPRE_Solver)precon);
+            HYPRE_ParCSRPCGSetPrecond(solver, PreconSolveDispatch,
+                                      skip_precon_setup ? PreconSetupNoop
+                                                        : PreconSetupDispatch,
+                                      (HYPRE_Solver)precon);
          }
          HYPRE_ParCSRPCGSetup(solver, par_M, par_b, par_x);
          break;
@@ -354,10 +354,10 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
       case SOLVER_GMRES:
          if (precon_method != PRECON_NONE)
          {
-            HYPRE_ParCSRGMRESSetPrecond(
-               solver, PreconSolveDispatch,
-               skip_precon_setup ? PreconSetupNoop : PreconSetupDispatch,
-               (HYPRE_Solver)precon);
+            HYPRE_ParCSRGMRESSetPrecond(solver, PreconSolveDispatch,
+                                        skip_precon_setup ? PreconSetupNoop
+                                                          : PreconSetupDispatch,
+                                        (HYPRE_Solver)precon);
          }
          HYPRE_ParCSRGMRESSetup(solver, par_M, par_b, par_x);
          break;
@@ -365,10 +365,10 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
       case SOLVER_FGMRES:
          if (precon_method != PRECON_NONE)
          {
-            HYPRE_ParCSRFlexGMRESSetPrecond(
-               solver, PreconSolveDispatch,
-               skip_precon_setup ? PreconSetupNoop : PreconSetupDispatch,
-               (HYPRE_Solver)precon);
+            HYPRE_ParCSRFlexGMRESSetPrecond(solver, PreconSolveDispatch,
+                                            skip_precon_setup ? PreconSetupNoop
+                                                              : PreconSetupDispatch,
+                                            (HYPRE_Solver)precon);
          }
          HYPRE_ParCSRFlexGMRESSetup(solver, par_M, par_b, par_x);
          break;
@@ -376,10 +376,10 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
       case SOLVER_BICGSTAB:
          if (precon_method != PRECON_NONE)
          {
-            HYPRE_ParCSRBiCGSTABSetPrecond(
-               solver, PreconSolveDispatch,
-               skip_precon_setup ? PreconSetupNoop : PreconSetupDispatch,
-               (HYPRE_Solver)precon);
+            HYPRE_ParCSRBiCGSTABSetPrecond(solver, PreconSolveDispatch,
+                                           skip_precon_setup ? PreconSetupNoop
+                                                             : PreconSetupDispatch,
+                                           (HYPRE_Solver)precon);
          }
          HYPRE_ParCSRBiCGSTABSetup(solver, par_M, par_b, par_x);
          break;

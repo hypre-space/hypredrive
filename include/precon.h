@@ -61,8 +61,8 @@ typedef struct PreconReuse_args_struct
 
 typedef struct hypre_Precon_struct
 {
-   HYPRE_Solver main;
-   precon_t     method;
+   HYPRE_Solver         main;
+   precon_t             method;
    struct Stats_struct *stats;
 } hypre_Precon;
 
