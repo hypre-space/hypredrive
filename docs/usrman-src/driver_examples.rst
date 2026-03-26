@@ -9,7 +9,7 @@ Driver Examples (hypredrive CLI)
 ================================
 
 This section provides several examples demonstrating how to set up input files and use
-the ``hypredrive`` executable (driver) to solve different types of linear-system problems.
+the ``hypredrive-cli`` executable (driver) to solve different types of linear-system problems.
 All example inputs can be found in the ``examples`` folder and reference outputs at
 ``examples/refOutput``.
 

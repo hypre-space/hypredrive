@@ -12,8 +12,8 @@ What is `hypredrive`?
 ---------------------
 
 `hypredrive` is a high-level interface for `hypre`, a package for solving sparse linear
-systems of equations. It is designed to make configuring and running `hypre` solvers easy
-via YAML — supplied either as a file on disk or as an in-memory string from application
+systems of equations. It is designed to make configuring and running `hypre` solvers simple
+via YAML - supplied either as a file on disk or as an in-memory string from application
 code. Whether you are a researcher or an application developer, `hypredrive` offers a
 lightweight, low-overhead way to access the solvers provided by `hypre`.
 
@@ -41,10 +41,10 @@ installed on your system. For detailed installation instructions, please refer t
 
 Once the installation is complete, familiarize yourself with the YAML configuration
 reference in the :ref:`InputFileStructure` section. This will
-provide you with a good understanding of how to configure and run `hypredrive` for your
+provide you with a good understanding of how to configure and run `hypredrive-cli` for your
 specific needs.
 
-Here's an example command to run `hypredrive` on a single process with a basic configuration file:
+Here's an example command to run `hypredrive-cli` on a single process with a basic configuration file:
 
 .. code-block:: bash
 
@@ -58,7 +58,9 @@ file. You can find input file examples and detailed explanations in the :ref:`Dr
 Contributing
 ------------
 
-We welcome contributions from the community and are pleased that you're interested in helping improve `hypredrive`! This document provides guidelines and information on how you can contribute.
+We welcome contributions from the community and are pleased that you're interested in
+helping improve `hypredrive`! This document provides guidelines and information on how you
+can contribute.
 
 Ways to Contribute
 ^^^^^^^^^^^^^^^^^^

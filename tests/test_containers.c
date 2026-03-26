@@ -98,6 +98,16 @@ test_StrIntMapArrayGetImage(void)
    ASSERT_EQ(img, INT_MIN); /* Implementation returns INT_MIN for invalid keys */
 }
 
+static void
+test_StrIntMapArray_empty_string_key(void)
+{
+   static const StrIntMap map[] = {{"", -1}, {"none", -1}, {"jacobi", 7}};
+   StrIntMapArray         arr   = STR_INT_MAP_ARRAY_CREATE(map);
+
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(arr, ""));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(arr, ""), -1);
+}
+
 /*-----------------------------------------------------------------------------
  * Test hypredrv_StrToIntArray and hypredrv_StrToStackIntArray
  *-----------------------------------------------------------------------------*/
@@ -169,6 +179,7 @@ main(void)
 
    RUN_TEST(test_StrIntMapArray_basic);
    RUN_TEST(test_StrIntMapArrayGetImage);
+   RUN_TEST(test_StrIntMapArray_empty_string_key);
 
    RUN_TEST(test_StrToStackIntArray_basic);
    RUN_TEST(test_StrToStackIntArray_single);

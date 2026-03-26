@@ -21,7 +21,7 @@ preconditioner:
 
       1:
         f_dofs: [1]
-        f_relaxation: amg
+        f_relaxation:
           amg:
             max_iter: 1
             coarsening:
