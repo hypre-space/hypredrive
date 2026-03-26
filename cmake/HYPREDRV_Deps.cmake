@@ -40,6 +40,35 @@ function(_hypredrv_set_using_caliper enabled)
     endif()
 endfunction()
 
+function(_hypredrv_append_runtime_dirs_from_dependency_roots target_name)
+    if(NOT TARGET ${target_name})
+        return()
+    endif()
+
+    set(_runtime_dirs "")
+    foreach(_dep_dir IN LISTS ARGN)
+        if(NOT IS_DIRECTORY "${_dep_dir}")
+            continue()
+        endif()
+
+        if(_dep_dir MATCHES "(/|^)lib64?$")
+            list(APPEND _runtime_dirs "${_dep_dir}")
+        endif()
+        if(IS_DIRECTORY "${_dep_dir}/lib")
+            list(APPEND _runtime_dirs "${_dep_dir}/lib")
+        endif()
+        if(IS_DIRECTORY "${_dep_dir}/lib64")
+            list(APPEND _runtime_dirs "${_dep_dir}/lib64")
+        endif()
+    endforeach()
+
+    list(REMOVE_DUPLICATES _runtime_dirs)
+    if(_runtime_dirs)
+        set_property(TARGET ${target_name} APPEND PROPERTY BUILD_RPATH ${_runtime_dirs})
+        set_property(TARGET ${target_name} APPEND PROPERTY INSTALL_RPATH ${_runtime_dirs})
+    endif()
+endfunction()
+
 function(_hypredrv_matches_pattern var_name pattern_list_var result_var)
     set(_matched FALSE)
     foreach(pattern IN LISTS ${pattern_list_var})
@@ -594,6 +623,16 @@ if(NOT HYPRE_FOUND)
             add_dependencies(HYPRE caliper)
             message(STATUS "  Added dependency: HYPRE -> caliper")
         endif()
+    endif()
+
+    # HYPRE records dependency roots/libdirs in HYPRE_DEPENDENCY_DIRS, but when
+    # a TPL comes from an imported CMake package (for example Caliper via
+    # find_package(CONFIG)), upstream HYPRE only exports the root hint and does
+    # not automatically append the corresponding libdir to libHYPRE's install
+    # RPATH. Recover those libdirs here so installed shared libraries continue
+    # to resolve external TPLs from their original locations.
+    if(BUILD_SHARED_LIBS AND TARGET HYPRE AND DEFINED HYPRE_DEPENDENCY_DIRS AND HYPRE_DEPENDENCY_DIRS)
+        _hypredrv_append_runtime_dirs_from_dependency_roots(HYPRE ${HYPRE_DEPENDENCY_DIRS})
     endif()
 
     message(STATUS "HYPRE configured and ready")
