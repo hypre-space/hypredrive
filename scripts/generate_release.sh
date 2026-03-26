@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
-# HYPRE Project Developers. See the top-level COPYRIGHT file for details.
-#
-# SPDX-License-Identifier: MIT
+#/******************************************************************************
+#* Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+#* HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+#*
+#* SPDX-License-Identifier: MIT
+#******************************************************************************/
 #
 # generate_release.sh — Bump version strings and optionally tag a release.
 #

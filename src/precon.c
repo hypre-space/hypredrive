@@ -11,6 +11,7 @@
 #include "HYPRE_parcsr_mv.h"
 #include "gen_macros.h"
 #include "krylov.h"
+#include "stats.h"
 
 #define Precon_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, hypredrv_AMGSetArgs)   \
@@ -150,15 +151,83 @@ PreconReuseFindTimestepIndex(const IntArray *starts, int ls_id)
       return -1;
    }
 
+   int found_idx = -1;
    for (size_t i = 0; i < starts->size; i++)
    {
-      if (starts->data[i] == ls_id)
+      if (starts->data[i] > ls_id)
       {
-         return (int)i;
+         break;
       }
+
+      found_idx = (int)i;
    }
 
-   return -1;
+   return found_idx;
+}
+
+static int
+PreconReuseGetEmbeddedTimestepStart(const Stats *stats, int ls_id)
+{
+   if (!stats || !(stats->level_active & (1 << 0)))
+   {
+      return -1;
+   }
+
+   int timestep_start = stats->level_solve_start[0];
+   if (timestep_start < 0 || timestep_start > ls_id)
+   {
+      return -1;
+   }
+
+   return timestep_start;
+}
+
+static int
+PreconReuseGetEmbeddedTimestepIndex(const Stats *stats)
+{
+   if (!stats || !(stats->level_active & (1 << 0)))
+   {
+      return -1;
+   }
+
+   if (stats->level_current_id[0] <= 0)
+   {
+      return -1;
+   }
+
+   return stats->level_current_id[0] - 1;
+}
+
+static int
+PreconReuseResolveTimestepContext(const IntArray *starts, const Stats *stats, int ls_id,
+                                  int *timestep_idx, int *timestep_start)
+{
+   if (!timestep_idx || !timestep_start)
+   {
+      return 0;
+   }
+
+   *timestep_idx   = -1;
+   *timestep_start = -1;
+
+   int const starts_idx = PreconReuseFindTimestepIndex(starts, ls_id);
+   if (starts_idx >= 0)
+   {
+      *timestep_idx   = starts_idx;
+      *timestep_start = starts->data[starts_idx];
+   }
+   else
+   {
+      *timestep_idx   = PreconReuseGetEmbeddedTimestepIndex(stats);
+      *timestep_start = PreconReuseGetEmbeddedTimestepStart(stats, ls_id);
+   }
+
+   if (*timestep_start < 0 || ls_id < *timestep_start)
+   {
+      return 0;
+   }
+
+   return 1;
 }
 
 void
@@ -246,7 +315,8 @@ hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *file
 
 int
 hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *args,
-                                    const IntArray *timestep_starts, int next_ls_id)
+                                    const IntArray *timestep_starts, const Stats *stats,
+                                    int next_ls_id)
 {
    if (!args)
    {
@@ -271,12 +341,26 @@ hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *args,
 
    if (args->enabled && args->per_timestep)
    {
-      int timestep_idx = PreconReuseFindTimestepIndex(timestep_starts, next_ls_id);
-      if (timestep_idx < 0)
+      int timestep_idx   = -1;
+      int timestep_start = -1;
+      if (!PreconReuseResolveTimestepContext(timestep_starts, stats, next_ls_id,
+                                             &timestep_idx, &timestep_start))
       {
          return 0;
       }
-      return (timestep_idx % (freq + 1)) == 0;
+
+      if (next_ls_id != timestep_start)
+      {
+         return 0;
+      }
+
+      int timestep_period = (freq > 0) ? freq : 1;
+      if (timestep_idx < 0)
+      {
+         return 1;
+      }
+
+      return (timestep_idx % timestep_period) == 0;
    }
 
    return (next_ls_id % (freq + 1)) == 0;
@@ -471,6 +555,16 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
                       HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr)
 {
    HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
+   if (!precon)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      *precon_ptr = NULL;
+      return;
+   }
+
+   precon->main   = NULL;
+   precon->method = precon_method;
+   precon->stats  = NULL;
 
    switch (precon_method)
    {
@@ -516,7 +610,27 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    void              *vA    = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
-   HYPRE_Solver       prec = precon->main;
+
+   if (precon_method == PRECON_NONE)
+   {
+      return;
+   }
+
+   if (!precon)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Preconditioner setup requested with null preconditioner");
+      return;
+   }
+
+   if (!A)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Preconditioner setup requested with null matrix");
+      return;
+   }
+
+   HYPRE_Solver prec = precon->main;
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;
@@ -692,13 +806,14 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    }
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 11)
-   HYPRE_Solver detached_nested_lvl0_frelax = NULL;
+   HYPRE_Solver detached_nested_lvl0_frelax  = NULL;
+   HYPRE_Solver detached_nested_lvl0_wrapper = NULL;
    if (mgr->num_levels > 1 && mgr->frelax[0] &&
        mgr->level[0].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
    {
+      detached_nested_lvl0_wrapper = mgr->frelax[0];
       detached_nested_lvl0_frelax =
          hypredrv_MGRNestedFRelaxWrapperDetachInner(mgr->frelax[0]);
-      /* hypre destroys the wrapper object inside HYPRE_MGRDestroy() on these versions. */
       mgr->frelax[0] = NULL;
    }
 #endif
@@ -707,6 +822,11 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    *solver_ptr = NULL;
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 11)
+   if (detached_nested_lvl0_wrapper &&
+       hypredrv_MGRNestedFRelaxWrapperIsLive(detached_nested_lvl0_wrapper))
+   {
+      hypredrv_MGRNestedFRelaxWrapperFree(&detached_nested_lvl0_wrapper);
+   }
    if (detached_nested_lvl0_frelax)
    {
       DestroyNestedMGRFRelaxInnerSolver(mgr, 0, &detached_nested_lvl0_frelax);
@@ -750,16 +870,10 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    {
       if (mgr->level[i].f_relaxation.use_krylov && mgr->level[i].f_relaxation.krylov)
       {
-         mgr->level[i].f_relaxation.krylov->base_solver = NULL;
          hypredrv_NestedKrylovDestroy(mgr->level[i].f_relaxation.krylov);
       }
       else if (i == 0 && mgr->frelax[i])
       {
-#if HYPRE_CHECK_MIN_VERSION(30100, 11)
-         /* hypre-master (>= 3.1.0 develop 11 observed) destroys user-provided
-          * level-0 F-relax solvers inside HYPRE_MGRDestroy(). Avoid double free. */
-         mgr->frelax[i] = NULL;
-#else
          /* MGR does not destroy user-provided F-relaxation solvers at level 0. */
          if (mgr->level[i].f_relaxation.type == 2)
          {
@@ -782,12 +896,10 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
          }
 #endif
          mgr->frelax[i] = NULL;
-#endif
       }
 
       if (mgr->level[i].g_relaxation.use_krylov && mgr->level[i].g_relaxation.krylov)
       {
-         mgr->level[i].g_relaxation.krylov->base_solver = NULL;
          hypredrv_NestedKrylovDestroy(mgr->level[i].g_relaxation.krylov);
       }
    }

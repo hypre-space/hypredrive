@@ -34,8 +34,17 @@ The library-side workflow in C/C++ generally follows these steps:
 5. Assemble your matrix and vectors (``HYPRE_IJMatrix``/``HYPRE_IJVector``) in parallel.
 6. Tell hypredrive about your DOF layout (e.g., interleaved blocks).
 7. Attach matrix/RHS/initial guess/prec matrix to hypredrive.
-8. Create, setup, and apply the solver; print statistics as desired.
+8. Create, setup, and apply the solver. In library mode, ``general.statistics`` is
+   flushed automatically when the ``HYPREDRV_t`` object is destroyed; call
+   ``HYPREDRV_StatsPrint`` yourself only if you want an extra snapshot earlier.
+   If you manage multiple handles, set ``general.name`` in YAML or call
+   ``HYPREDRV_ObjectSetName`` so the summary can identify which object produced it.
 9. Retrieve solution values if needed; finalize and destroy hypredrive.
+
+If your application owns multiple ``HYPREDRV_t`` objects concurrently, or if you want
+preconditioner reuse to respect application-defined timestep / nonlinear-iteration boundaries,
+use the annotation APIs (``HYPREDRV_AnnotateBegin`` / ``HYPREDRV_AnnotateEnd`` and
+``HYPREDRV_AnnotateLevelBegin`` / ``HYPREDRV_AnnotateLevelEnd``).
 
 A minimal skeleton of a program using the library is shown below.
 
@@ -53,9 +62,12 @@ A minimal skeleton of a program using the library is shown below.
 
      // Signal that this is a library-mode caller (must precede InputArgsParse)
      HYPREDRV_SetLibraryMode(h);
+     HYPREDRV_ObjectSetName(h, "flow-solver");
 
      // Provide YAML configuration
-     const char* yaml = "solver: pcg\n"
+     const char* yaml = "general:\n"
+                        "  statistics: 1\n"
+                        "solver: pcg\n"
                         "preconditioner: amg\n";
      char* args[1] = {(char*)yaml};
      HYPREDRV_InputArgsParse(1, args, h);
@@ -78,8 +90,9 @@ A minimal skeleton of a program using the library is shown below.
      HYPREDRV_LinearSolverApply(h);
      HYPREDRV_LinearSolverDestroy(h);
 
-     // (Optional) Query statistics and solution values
-     HYPREDRV_StatsPrint(h);
+    // (Optional) Query statistics early and retrieve solution values
+    // (general.statistics also prints automatically on destroy in library mode)
+    HYPREDRV_StatsPrint(h);
      HYPRE_Real* xvals = NULL;
      HYPREDRV_LinearSystemGetSolutionValues(h, &xvals);
 
@@ -108,6 +121,24 @@ A minimal skeleton of a program using the library is shown below.
    Preconditioner reuse across a sequence of linear systems (time steps, multiple RHS) is
    configured via the ``preconditioner.reuse`` YAML subsection. See
    :ref:`PreconReuse` in the :ref:`InputFileStructure` reference.
+   In embedded multi-handle applications, drive timestep boundaries with
+   ``HYPREDRV_AnnotateLevelBegin`` / ``HYPREDRV_AnnotateLevelEnd`` so reuse decisions stay
+   attached to the correct ``HYPREDRV_t`` object.
+
+For example, an embedded caller that wants reuse to restart at each timestep can bracket the
+solve lifecycle like this:
+
+.. code-block:: c
+
+   HYPREDRV_AnnotateLevelBegin(h, 0, "timestep-7", -1);
+   HYPREDRV_AnnotateLevelBegin(h, 1, "newton-0", -1);
+   HYPREDRV_AnnotateBegin(h, "system", -1);
+   HYPREDRV_LinearSolverCreate(h);
+   HYPREDRV_LinearSolverSetup(h);
+   HYPREDRV_AnnotateEnd(h, "system", -1);
+   HYPREDRV_LinearSolverApply(h);
+   HYPREDRV_AnnotateLevelEnd(h, 1, "newton-0", -1);
+   HYPREDRV_AnnotateLevelEnd(h, 0, "timestep-7", -1);
 
 You can also select a predefined preconditioner preset programmatically, without a YAML file:
 

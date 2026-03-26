@@ -393,6 +393,7 @@ test_exhaustive_mgr_parser(void)
    /* Scalars (exercise YAML_NODE_VALIDATE path using MGRGetValidKeys/Values) */
    add_child(mgr, "max_iter", "2", 1);
    add_child(mgr, "num_levels", "2", 1);
+   add_child(mgr, "pmax", "7", 1);
    add_child(mgr, "relax_type", pick_value(hypredrv_MGRGetValidValues("relax_type")), 1);
    add_child(mgr, "print_level", "0", 1);
 
@@ -449,6 +450,7 @@ test_exhaustive_mgr_parser(void)
    ASSERT_NOT_NULL(args.level[1].g_relaxation.krylov);
    ASSERT_EQ(args.level[1].g_relaxation.krylov->solver_method, SOLVER_GMRES);
    ASSERT_EQ(args.level[1].g_relaxation.krylov->solver.gmres.max_iter, 3);
+   ASSERT_EQ(args.pmax, 7);
 
    ASSERT_EQ(lvl_bad->valid, YAML_NODE_INVALID_KEY);
 
@@ -492,6 +494,48 @@ test_mgr_nested_krylov_rejects_mgr_precon(void)
    hypredrv_MGRDestroyNestedSolverArgs(&args);
 }
 
+static void
+test_relaxation_values_use_canonical_l1_jacobi_spelling(void)
+{
+   StrIntMapArray mgr_map = hypredrv_MGRGetValidValues("relax_type");
+   StrIntMapArray mgr_frelax_map = hypredrv_MGRlvlGetValidValues("f_relaxation");
+   StrIntMapArray amg_map = hypredrv_AMGrlxGetValidValues("down_type");
+
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(mgr_map, "l1-jacobi"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(mgr_frelax_map, "l1-jacobi"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(amg_map, "l1-jacobi"));
+
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(mgr_map, "l1jacobi"));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(mgr_frelax_map, "l1jacobi"));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(amg_map, "l1jacobi"));
+
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(mgr_map, "l1-jacobi"), 18);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(mgr_frelax_map, "l1-jacobi"), 18);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(amg_map, "l1-jacobi"), 18);
+}
+
+static void
+test_amg_relaxation_values_accept_forward_and_backward_hl1gs(void)
+{
+   StrIntMapArray down_map = hypredrv_AMGrlxGetValidValues("down_type");
+   StrIntMapArray up_map = hypredrv_AMGrlxGetValidValues("up_type");
+   StrIntMapArray coarse_map = hypredrv_AMGrlxGetValidValues("coarse_type");
+
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(down_map, "forward-hl1gs"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(down_map, "backward-hl1gs"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(up_map, "forward-hl1gs"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(up_map, "backward-hl1gs"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(coarse_map, "forward-hl1gs"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(coarse_map, "backward-hl1gs"));
+
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(down_map, "forward-hl1gs"), 13);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(down_map, "backward-hl1gs"), 14);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(up_map, "forward-hl1gs"), 13);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(up_map, "backward-hl1gs"), 14);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(coarse_map, "forward-hl1gs"), 13);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(coarse_map, "backward-hl1gs"), 14);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -502,6 +546,8 @@ main(int argc, char **argv)
    RUN_TEST(test_exhaustive_amg_parser);
    RUN_TEST(test_exhaustive_mgr_parser);
    RUN_TEST(test_mgr_nested_krylov_rejects_mgr_precon);
+   RUN_TEST(test_relaxation_values_use_canonical_l1_jacobi_spelling);
+   RUN_TEST(test_amg_relaxation_values_accept_forward_and_backward_hl1gs);
 
    MPI_Finalize();
    return 0;

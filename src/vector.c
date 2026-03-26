@@ -10,7 +10,7 @@
 #include "utils.h"
 
 static void
-HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
+IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
 {
 #if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
    HYPRE_IJVectorInitialize_v2(vec, memory_location);
@@ -106,7 +106,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
    HYPRE_IJVectorCreate(comm, ilower, iupper, &vec);
    HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR);
-   HYPREDRV_IJVectorInitialize(vec, memory_location);
+   IJVectorInitializeCompat(vec, memory_location);
 
    /* Allocate variables */
    h_vals =

@@ -345,6 +345,7 @@ hypredrv_AMGrlxGetValidValues(const char *key)
    {
       static StrIntMap map[] = {{"jacobi_non_mv",  0},
                                 {"forward-hgs",    3},
+                                {"backward-hgs",   4},
                                 {"chaotic-hgs",    5},
                                 {"hsgs",           6},
                                 {"jacobi",         7},
@@ -352,6 +353,7 @@ hypredrv_AMGrlxGetValidValues(const char *key)
                                 {"2gs-it1",       11},
                                 {"2gs-it2",       12},
                                 {"forward-hl1gs", 13},
+                                {"backward-hl1gs", 14},
                                 {"cg",            15},
                                 {"chebyshev",     16},
                                 {"l1-jacobi",     18},
@@ -362,6 +364,7 @@ hypredrv_AMGrlxGetValidValues(const char *key)
    if (!strcmp(key, "up_type"))
    {
       static StrIntMap map[] = {{"jacobi_non_mv",   0},
+                                {"forward-hgs",     3},
                                 {"backward-hgs",    4},
                                 {"chaotic-hgs",     5},
                                 {"hsgs",            6},
@@ -369,6 +372,7 @@ hypredrv_AMGrlxGetValidValues(const char *key)
                                 {"l1-hsgs",         8},
                                 {"2gs-it1",        11},
                                 {"2gs-it2",        12},
+                                {"forward-hl1gs",  13},
                                 {"backward-hl1gs", 14},
                                 {"cg",             15},
                                 {"chebyshev",      16},

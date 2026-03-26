@@ -165,14 +165,14 @@ int  DestroyDistMesh(DistMesh **);
 int  CreateGhostData3D(DistMesh *, GhostData3D **);
 int  DestroyGhostData3D(GhostData3D **);
 int  ExchangeScalarGhosts(DistMesh *, double *, GhostData3D *);
-int  BuildNonlinearSystem_Heat(DistMesh *, HeatParams *, const HYPRE_Real *,
+int  BuildNonlinearSystem_Heat(HYPREDRV_t, DistMesh *, HeatParams *, const HYPRE_Real *,
                                const HYPRE_Real *, HYPRE_IJMatrix *, HYPRE_IJVector *,
                                double *, double, GhostData3D *, GhostData3D *);
 int  WriteVTKsolutionScalar(DistMesh *, HeatParams *, HYPRE_Real *, GhostData3D *, int,
                             double);
 void GetVTKBaseName(HeatParams *, char *, size_t);
 void GetVTKDataDir(HeatParams *, char *, size_t);
-void WritePVDCollectionFromStats(HeatParams *, int, double);
+void WritePVDCollectionFromStats(HYPREDRV_t, HeatParams *, int, double);
 void UpdateTimeStep(HeatParams *, int);
 static HYPRE_Real MMS_ExactSolution(HYPRE_Real x, HYPRE_Real y, HYPRE_Real z,
                                     HYPRE_Real t, HeatParams *p);
@@ -1517,10 +1517,11 @@ GetVTKDataDir(HeatParams *params, char *buf, size_t bufsize)
 }
 
 void
-WritePVDCollectionFromStats(HeatParams *params, int num_procs, double final_time)
+WritePVDCollectionFromStats(HYPREDRV_t hypredrv, HeatParams *params, int num_procs,
+                            double final_time)
 {
    int num_steps = 0;
-   HYPREDRV_StatsLevelGetCount(0, &num_steps);
+   HYPREDRV_StatsLevelGetCount(hypredrv, 0, &num_steps);
    if (num_steps == 0) return;
 
    char filename[256];
@@ -1551,7 +1552,7 @@ WritePVDCollectionFromStats(HeatParams *params, int num_procs, double final_time
    for (int i = start_idx; i < end_idx; i++)
    {
       int timestep_id;
-      HYPREDRV_StatsLevelGetEntry(0, i, &timestep_id, NULL, NULL, NULL, NULL);
+      HYPREDRV_StatsLevelGetEntry(hypredrv, 0, i, &timestep_id, NULL, NULL, NULL, NULL);
 
       /* timestep_id is 1-indexed, file names are 0-indexed */
       int    file_idx = timestep_id - 1;
@@ -1685,10 +1686,10 @@ PrecomputeQ1ScalarTemplates(HYPRE_Real hx, HYPRE_Real hy, HYPRE_Real hz,
 }
 
 int
-BuildNonlinearSystem_Heat(DistMesh *m, HeatParams *p, const HYPRE_Real *T_state,
-                          const HYPRE_Real *T_prev, HYPRE_IJMatrix *A_ptr,
-                          HYPRE_IJVector *b_ptr, double *rnorm_out, double current_time,
-                          GhostData3D *g_T_k, GhostData3D *g_T_n)
+BuildNonlinearSystem_Heat(HYPREDRV_t hypredrv, DistMesh *m, HeatParams *p,
+                          const HYPRE_Real *T_state, const HYPRE_Real *T_prev,
+                          HYPRE_IJMatrix *A_ptr, HYPRE_IJVector *b_ptr, double *rnorm_out,
+                          double current_time, GhostData3D *g_T_k, GhostData3D *g_T_n)
 {
    const HYPRE_Int *gd   = &m->gdims[0];
    HYPRE_BigInt   **ps   = m->pstarts;
@@ -1696,7 +1697,7 @@ BuildNonlinearSystem_Heat(DistMesh *m, HeatParams *p, const HYPRE_Real *T_state,
    HYPRE_BigInt     nlow = m->ilower, nhigh = m->iupper; /* node ids */
    HYPRE_BigInt     dof_low = nlow, dof_high = nhigh;
 
-   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin("system", -1));
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(hypredrv, "system", -1));
 
    HYPRE_IJMatrix A;
    HYPRE_IJVector b;
@@ -2184,7 +2185,7 @@ BuildNonlinearSystem_Heat(DistMesh *m, HeatParams *p, const HYPRE_Real *T_state,
    *A_ptr = A;
    *b_ptr = b;
 
-   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd("system", -1));
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(hypredrv, "system", -1));
 
    return 0;
 }
@@ -2733,7 +2734,7 @@ main(int argc, char *argv[])
       current_time += params.dt;
 
       /* Begin timestep annotation (level 0) */
-      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(0, "timestep", t_step));
+      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(hypredrv, 0, "timestep", t_step));
 
       /* Initialize T_now with the solution from the previous time step */
       HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorCopy(hypredrv, 1, 0));
@@ -2746,7 +2747,8 @@ main(int argc, char *argv[])
       for (newton_iter = 0; newton_iter < params.newton.max_iters; newton_iter++)
       {
          /* Begin Newton iteration annotation (level 1) */
-         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(1, "newton", newton_iter));
+         HYPREDRV_SAFE_CALL(
+            HYPREDRV_AnnotateLevelBegin(hypredrv, 1, "newton", newton_iter));
 
          /* Retrieve current iterate T^{k} */
          HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorGetValues(hypredrv, 0, &T_now));
@@ -2754,7 +2756,7 @@ main(int argc, char *argv[])
          ExchangeScalarGhosts(mesh, T_now, g_T_k);
 
          /* Assemble linear system: J dT = -R */
-         BuildNonlinearSystem_Heat(mesh, &params, T_now, T_old, &A, &b, &rnorm,
+         BuildNonlinearSystem_Heat(hypredrv, mesh, &params, T_now, T_old, &A, &b, &rnorm,
                                    current_time, g_T_k, g_T_n);
 
          /* Check Newton convergence (after first iteration) */
@@ -2762,7 +2764,8 @@ main(int argc, char *argv[])
          {
             HYPRE_IJMatrixDestroy(A);
             HYPRE_IJVectorDestroy(b);
-            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton", newton_iter));
+            HYPREDRV_SAFE_CALL(
+               HYPREDRV_AnnotateLevelEnd(hypredrv, 1, "newton", newton_iter));
             break;
          }
 
@@ -2834,7 +2837,8 @@ main(int argc, char *argv[])
          HYPRE_IJVectorDestroy(b);
 
          /* End Newton iteration annotation (level 1) */
-         HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(1, "newton", newton_iter));
+         HYPREDRV_SAFE_CALL(
+            HYPREDRV_AnnotateLevelEnd(hypredrv, 1, "newton", newton_iter));
       }
       if (!myid && params.verbose > 0 && newton_iter > 1) printf("\n");
 
@@ -2842,7 +2846,7 @@ main(int argc, char *argv[])
       UpdateTimeStep(&params, newton_iter);
 
       /* End timestep annotation (level 0) */
-      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(0, "timestep", t_step));
+      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(hypredrv, 0, "timestep", t_step));
 
       /* Save VTK output */
       if (params.visualize)
@@ -2874,13 +2878,13 @@ main(int argc, char *argv[])
    /* Print timestep statistics summary */
    if (!myid && (params.verbose & 0x1))
    {
-      HYPREDRV_SAFE_CALL(HYPREDRV_StatsLevelPrint(0));
+      HYPREDRV_SAFE_CALL(HYPREDRV_StatsLevelPrint(hypredrv, 0));
    }
 
    /* Write PVD collection file */
    if (!myid && params.visualize)
    {
-      WritePVDCollectionFromStats(&params, nprocs, params.tf);
+      WritePVDCollectionFromStats(hypredrv, &params, nprocs, params.tf);
    }
 
    if (!myid && (params.verbose & 0x1)) HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(hypredrv));

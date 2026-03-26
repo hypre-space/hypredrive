@@ -136,6 +136,7 @@ typedef struct Stats_struct
    /* Output formatting */
    double time_factor;
    bool   use_millisec;
+   char   object_name[MAX_FILENAME_LENGTH];
 
    /* Per-level statistics (stats computed on-demand from solve index range) */
    int         level_count[STATS_MAX_LEVELS];   /* Number of entries per level */
@@ -156,12 +157,16 @@ Stats *hypredrv_StatsCreate(void);
 void   hypredrv_StatsDestroy(Stats **stats_ptr);
 
 /* Annotation functions */
-void hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action,
-                            const char *name);
-void hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action,
-                             const char *name, va_list args);
-void hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name);
-void hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name);
+void     hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action,
+                                const char *name);
+void     hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action,
+                                 const char *name, va_list args);
+uint32_t hypredrv_StatsAnnotateWithId(Stats *stats, HYPREDRV_AnnotateAction action,
+                                      const char *name, int id);
+uint32_t hypredrv_StatsAnnotateLevelWithId(Stats *stats, HYPREDRV_AnnotateAction action,
+                                           int level, const char *name, int id);
+void     hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name);
+void     hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name);
 
 /* Timer configuration */
 void hypredrv_StatsTimerSetMilliseconds(Stats *stats);
@@ -173,6 +178,7 @@ void hypredrv_StatsInitialResNormSet(Stats *stats, double);
 void hypredrv_StatsRelativeResNormSet(Stats *stats, double);
 void hypredrv_StatsSetNumReps(Stats *stats, int);
 void hypredrv_StatsSetNumLinearSystems(Stats *stats, int);
+void hypredrv_StatsSetObjectName(Stats *stats, const char *name);
 
 /* Statistics getters */
 int    hypredrv_StatsGetLinearSystemID(const Stats *stats);
@@ -181,10 +187,16 @@ double hypredrv_StatsGetLastSetupTime(const Stats *stats);
 double hypredrv_StatsGetLastSolveTime(const Stats *stats);
 
 /* Level statistics (populated automatically from level annotations) */
-int  hypredrv_StatsLevelGetCount(const Stats *stats, int level);
-int  hypredrv_StatsLevelGetEntry(const Stats *stats, int level, int index,
-                                 LevelEntry *entry);
-void hypredrv_StatsLevelPrint(const Stats *stats, int level);
+int      hypredrv_StatsLevelGetCount(const Stats *stats, int level);
+int      hypredrv_StatsLevelGetEntry(const Stats *stats, int level, int index,
+                                     LevelEntry *entry);
+uint32_t hypredrv_StatsLevelGetCountChecked(const Stats *stats, int level, int *count,
+                                            const char *caller);
+uint32_t hypredrv_StatsLevelGetEntrySummary(const Stats *stats, int level, int index,
+                                            int *entry_id, int *num_solves,
+                                            int *linear_iters, double *setup_time,
+                                            double *solve_time);
+void     hypredrv_StatsLevelPrint(const Stats *stats, int level);
 
 /* Output */
 void hypredrv_StatsPrint(const Stats *stats, int);

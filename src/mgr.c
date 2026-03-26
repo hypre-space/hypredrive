@@ -15,59 +15,97 @@
 #include "_hypre_utilities.h" // for hypre_Solver
 #endif
 
-typedef struct HYPREDRV_MGRFRelaxWrapper_struct
+typedef struct MGRFRelaxWrapper_struct
 {
    HYPRE_Int (*setup)(void *, void *, void *, void *);
    HYPRE_Int (*solve)(void *, void *, void *, void *);
    HYPRE_Int (*destroy)(void *);
-   HYPRE_Solver inner_mgr;
-} HYPREDRV_MGRFRelaxWrapper;
+   HYPRE_Solver                    inner_mgr;
+   IntArray                       *owned_dofmap;
+   struct MGRFRelaxWrapper_struct *next_live;
+} MGRFRelaxWrapper;
 
-static HYPRE_Int
-HYPREDRV_MGRFRelaxWrapperSetup(void *wrapper_v, void *A, void *b, void *x)
+static MGRFRelaxWrapper *g_mgr_frelax_wrapper_live_head = NULL;
+
+static void
+MGRFRelaxWrapperRegister(MGRFRelaxWrapper *wrapper)
 {
-   HYPREDRV_MGRFRelaxWrapper *wrapper = (HYPREDRV_MGRFRelaxWrapper *)wrapper_v;
-   if (!wrapper || !wrapper->inner_mgr)
+   if (!wrapper)
    {
-      return 1;
+      return;
    }
-   return HYPRE_MGRSetup((HYPRE_Solver)wrapper->inner_mgr, (HYPRE_ParCSRMatrix)A,
-                         (HYPRE_ParVector)b, (HYPRE_ParVector)x);
+
+   wrapper->next_live             = g_mgr_frelax_wrapper_live_head;
+   g_mgr_frelax_wrapper_live_head = wrapper;
+}
+
+static void
+MGRFRelaxWrapperUnregister(MGRFRelaxWrapper *wrapper)
+{
+   MGRFRelaxWrapper **cursor = &g_mgr_frelax_wrapper_live_head;
+
+   while (*cursor)
+   {
+      if (*cursor == wrapper)
+      {
+         *cursor            = wrapper->next_live;
+         wrapper->next_live = NULL;
+         return;
+      }
+      cursor = &(*cursor)->next_live;
+   }
 }
 
 static HYPRE_Int
-HYPREDRV_MGRFRelaxWrapperSolve(void *wrapper_v, void *A, void *b, void *x)
+MGRFRelaxWrapperSetup(void *wrapper_v, void *A, void *b, void *x)
 {
-   HYPREDRV_MGRFRelaxWrapper *wrapper = (HYPREDRV_MGRFRelaxWrapper *)wrapper_v;
+   MGRFRelaxWrapper *wrapper = (MGRFRelaxWrapper *)wrapper_v;
    if (!wrapper || !wrapper->inner_mgr)
    {
       return 1;
    }
-   /* Nested MGR F-relaxation can reach solve with an uninitialized inner coarse
-    * solver on some hypre versions. Refresh setup on the current reduced system
-    * before applying the nested solve to guarantee the inner AMG path is ready. */
    if (HYPRE_MGRSetup((HYPRE_Solver)wrapper->inner_mgr, (HYPRE_ParCSRMatrix)A,
                       (HYPRE_ParVector)b, (HYPRE_ParVector)x))
    {
       return 1;
    }
+   return 0;
+}
+
+static HYPRE_Int
+MGRFRelaxWrapperSolve(void *wrapper_v, void *A, void *b, void *x)
+{
+   MGRFRelaxWrapper *wrapper = (MGRFRelaxWrapper *)wrapper_v;
+   if (!wrapper || !wrapper->inner_mgr)
+   {
+      return 1;
+   }
+   /* hypre calls the setup callback for level-specific F-solvers during the
+    * parent MGR setup. Avoid calling inner MGR setup again from solve because
+    * repeated nested re-setup trips a cleanup bug in current hypre. */
    return HYPRE_MGRSolve((HYPRE_Solver)wrapper->inner_mgr, (HYPRE_ParCSRMatrix)A,
                          (HYPRE_ParVector)b, (HYPRE_ParVector)x);
 }
 
 static HYPRE_Int
-HYPREDRV_MGRFRelaxWrapperDestroy(void *wrapper_v)
+MGRFRelaxWrapperDestroy(void *wrapper_v)
 {
-   HYPREDRV_MGRFRelaxWrapper *wrapper = (HYPREDRV_MGRFRelaxWrapper *)wrapper_v;
+   MGRFRelaxWrapper *wrapper = (MGRFRelaxWrapper *)wrapper_v;
+   if (!wrapper)
+   {
+      return 0;
+   }
+
+   MGRFRelaxWrapperUnregister(wrapper);
+   hypredrv_IntArrayDestroy(&wrapper->owned_dofmap);
    free(wrapper);
    return 0;
 }
 
 static HYPRE_Solver
-MGRNestedFRelaxWrapperCreate(HYPRE_Solver inner_mgr)
+MGRNestedFRelaxWrapperCreate(HYPRE_Solver inner_mgr, IntArray *owned_dofmap)
 {
-   HYPREDRV_MGRFRelaxWrapper *wrapper =
-      (HYPREDRV_MGRFRelaxWrapper *)calloc(1, sizeof(*wrapper));
+   MGRFRelaxWrapper *wrapper = (MGRFRelaxWrapper *)calloc(1, sizeof(*wrapper));
    if (!wrapper)
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
@@ -75,25 +113,44 @@ MGRNestedFRelaxWrapperCreate(HYPRE_Solver inner_mgr)
       return NULL;
    }
 
-   wrapper->setup     = HYPREDRV_MGRFRelaxWrapperSetup;
-   wrapper->solve     = HYPREDRV_MGRFRelaxWrapperSolve;
-   wrapper->destroy   = HYPREDRV_MGRFRelaxWrapperDestroy;
-   wrapper->inner_mgr = inner_mgr;
+   wrapper->setup        = MGRFRelaxWrapperSetup;
+   wrapper->solve        = MGRFRelaxWrapperSolve;
+   wrapper->destroy      = MGRFRelaxWrapperDestroy;
+   wrapper->inner_mgr    = inner_mgr;
+   wrapper->owned_dofmap = owned_dofmap;
+   MGRFRelaxWrapperRegister(wrapper);
    return (HYPRE_Solver)wrapper;
+}
+
+int
+hypredrv_MGRNestedFRelaxWrapperIsLive(HYPRE_Solver wrapper_solver)
+{
+   MGRFRelaxWrapper *cursor = g_mgr_frelax_wrapper_live_head;
+
+   while (cursor)
+   {
+      if ((HYPRE_Solver)cursor == wrapper_solver)
+      {
+         return 1;
+      }
+      cursor = cursor->next_live;
+   }
+
+   return 0;
 }
 
 HYPRE_Solver
 hypredrv_MGRNestedFRelaxWrapperGetInner(HYPRE_Solver wrapper_solver)
 {
-   HYPREDRV_MGRFRelaxWrapper *wrapper = (HYPREDRV_MGRFRelaxWrapper *)wrapper_solver;
+   MGRFRelaxWrapper *wrapper = (MGRFRelaxWrapper *)wrapper_solver;
    return wrapper ? wrapper->inner_mgr : NULL;
 }
 
 HYPRE_Solver
 hypredrv_MGRNestedFRelaxWrapperDetachInner(HYPRE_Solver wrapper_solver)
 {
-   HYPREDRV_MGRFRelaxWrapper *wrapper = (HYPREDRV_MGRFRelaxWrapper *)wrapper_solver;
-   HYPRE_Solver               inner   = NULL;
+   MGRFRelaxWrapper *wrapper = (MGRFRelaxWrapper *)wrapper_solver;
+   HYPRE_Solver      inner   = NULL;
 
    if (!wrapper)
    {
@@ -112,7 +169,7 @@ hypredrv_MGRNestedFRelaxWrapperFree(HYPRE_Solver *wrapper_ptr)
    {
       return;
    }
-   HYPREDRV_MGRFRelaxWrapperDestroy((void *)(*wrapper_ptr));
+   MGRFRelaxWrapperDestroy((void *)(*wrapper_ptr));
    *wrapper_ptr = NULL;
 }
 
@@ -209,7 +266,13 @@ MGRlvlFDofsSet(void *field, const YAMLnode *node)
    /* Flow sequence form: [v_x, v_y] or [0, 1].
     * MGRlvlResolveDofToken handles both plain integers and symbolic labels. */
    char *buf = strdup(node->mapped_val);
-   char *tok = strtok(buf, "[], ");
+   if (!buf)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate temporary buffer for f_dofs");
+      return;
+   }
+   const char *tok = strtok(buf, "[], ");
    while (tok && arr->size < MAX_STACK_ARRAY_LENGTH)
    {
       if (!MGRlvlResolveDofToken(tok, arr))
@@ -692,15 +755,8 @@ static HYPRE_Int
 MGRBaseParSolverSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
                       HYPRE_ParVector x)
 {
-#if HYPRE_CHECK_MIN_VERSION(30100, 5)
-   return HYPRE_SolverSetup(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b, (HYPRE_Vector)x);
-#else
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-#endif
+   return hypredrv_NestedKrylovSetup(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b,
+                                     (HYPRE_Vector)x);
 }
 
 /*-----------------------------------------------------------------------------
@@ -710,15 +766,8 @@ static HYPRE_Int
 MGRBaseParSolverSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
                       HYPRE_ParVector x)
 {
-#if HYPRE_CHECK_MIN_VERSION(30100, 5)
-   return HYPRE_SolverSolve(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b, (HYPRE_Vector)x);
-#else
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-#endif
+   return hypredrv_NestedKrylovSolve(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b,
+                                     (HYPRE_Vector)x);
 }
 
 /*-----------------------------------------------------------------------------
@@ -1051,19 +1100,13 @@ hypredrv_MGRfrlxGetValidValues(const char *key)
    if (!strcmp(key, "type"))
    {
       static StrIntMap map[] = {
-         {"", -1},
-         {"none", -1},
-         {"single", 7},
-         {"jacobi", 7},
-         {"v(1,0)", 1},
-         {"amg", 2},
-         {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
-         {"chebyshev", 16},
-         {"ilu", 32},
-         {"ge", 9},
-         {"spdirect", 29},
-         {"ge-piv", 99},
-         {"ge-inv", 199},
+         {"", -1},          {"none", -1},
+         {"single", 7},     {"jacobi", 7},
+         {"l1-jacobi", 18}, {"v(1,0)", 1},
+         {"amg", 2},        {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
+         {"chebyshev", 16}, {"ilu", 32},
+         {"ge", 9},         {"spdirect", 29},
+         {"ge-piv", 99},    {"ge-inv", 199},
       };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
@@ -1609,6 +1652,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_MGRSetCpointsByPointMarkerArray(precon, num_dofs_hypre, num_levels - 1,
                                          num_c_dofs, c_dofs, dofmap_data);
    HYPRE_MGRSetNonCpointsToFpoints(precon, args->non_c_to_f);
+   HYPRE_MGRSetPMaxElmts(precon, args->pmax);
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
    HYPRE_MGRSetTol(precon, args->tolerance);
    HYPRE_MGRSetPrintLevel(precon, args->print_level);
@@ -1640,15 +1684,16 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    {
       if (args->level[i].f_relaxation.use_krylov && args->level[i].f_relaxation.krylov)
       {
-         HYPRE_Solver wrapper = NULL;
          hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->level[i].f_relaxation.krylov,
-                                     args->dofmap, args->vec_nn, &wrapper);
+                                     args->dofmap, args->vec_nn,
+                                     &args->level[i].f_relaxation.krylov->base_solver);
          if (hypredrv_ErrorCodeActive())
          {
             return;
          }
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
-         HYPRE_MGRSetFSolverAtLevel(precon, wrapper, i);
+         HYPRE_MGRSetFSolverAtLevel(precon,
+                                    (HYPRE_Solver)args->level[i].f_relaxation.krylov, i);
 #else
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("Nested Krylov F-relaxation requires hypre >= 2.31.0");
@@ -1706,18 +1751,20 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          hypredrv_MGRCreate(nested_args, &frelax);
          nested_args->dofmap = saved_dofmap;
          nested_args->vec_nn = saved_vec_nn;
-         hypredrv_IntArrayDestroy(&nested_dofmap);
          if (hypredrv_ErrorCodeActive())
          {
+            hypredrv_IntArrayDestroy(&nested_dofmap);
             return;
          }
 
-         frelax_wrapper = MGRNestedFRelaxWrapperCreate(frelax);
+         frelax_wrapper = MGRNestedFRelaxWrapperCreate(frelax, nested_dofmap);
          if (hypredrv_ErrorCodeActive() || !frelax_wrapper)
          {
             HYPRE_MGRDestroy(frelax);
+            hypredrv_IntArrayDestroy(&nested_dofmap);
             return;
          }
+         nested_dofmap = NULL;
          HYPRE_MGRSetFSolverAtLevel(precon, frelax_wrapper, i);
          args->frelax[i] = frelax_wrapper;
 #else
@@ -1773,14 +1820,15 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    {
       if (args->level[i].g_relaxation.use_krylov && args->level[i].g_relaxation.krylov)
       {
-         HYPRE_Solver wrapper = NULL;
          hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->level[i].g_relaxation.krylov,
-                                     args->dofmap, args->vec_nn, &wrapper);
+                                     args->dofmap, args->vec_nn,
+                                     &args->level[i].g_relaxation.krylov->base_solver);
          if (hypredrv_ErrorCodeActive())
          {
             return;
          }
-         HYPRE_MGRSetGlobalSmootherAtLevel(precon, wrapper, i);
+         HYPRE_MGRSetGlobalSmootherAtLevel(
+            precon, (HYPRE_Solver)args->level[i].g_relaxation.krylov, i);
       }
       else if (args->level[i].g_relaxation.type == 20)
       {
@@ -1799,16 +1847,16 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
    if (args->coarsest_level.use_krylov && args->coarsest_level.krylov)
    {
-      HYPRE_Solver wrapper = NULL;
       hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->coarsest_level.krylov,
-                                  args->dofmap, args->vec_nn, &wrapper);
+                                  args->dofmap, args->vec_nn,
+                                  &args->coarsest_level.krylov->base_solver);
       if (hypredrv_ErrorCodeActive())
       {
          return;
       }
 #if HYPRE_CHECK_MIN_VERSION(30100, 5)
       HYPRE_MGRSetCoarseSolver(precon, MGRBaseParSolverSolve, MGRBaseParSolverSetup,
-                               wrapper);
+                               (HYPRE_Solver)args->coarsest_level.krylov);
 #else
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
       hypredrv_ErrorMsgAdd("Nested Krylov coarsest solver requires hypre >= 3.1.0");

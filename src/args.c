@@ -28,6 +28,7 @@ FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
 }
 
 #define General_FIELDS(_prefix)                                                   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, name, hypredrv_FieldTypeStringSet)             \
    ADD_FIELD_OFFSET_ENTRY(_prefix, warmup, hypredrv_FieldTypeIntSet)              \
    ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, hypredrv_FieldTypeIntSet)          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, hypredrv_FieldTypeIntSet) \
@@ -75,6 +76,7 @@ hypredrv_GeneralGetValidValues(const char *key)
 void
 hypredrv_GeneralSetDefaultArgs(General_args *args)
 {
+   args->name[0]             = '\0';
    args->warmup              = 0;
    args->statistics          = 1;
    args->print_config_params = 1;
@@ -111,6 +113,8 @@ hypredrv_InputArgsCreate(bool lib_mode, input_args **iargs_ptr)
    /* Set default preconditioner and solver */
    iargs->solver_method = SOLVER_PCG;
    iargs->precon_method = PRECON_BOOMERAMG;
+   hypredrv_SolverArgsSetDefaultsForMethod(iargs->solver_method, &iargs->solver);
+   hypredrv_PreconArgsSetDefaultsForMethod(iargs->precon_method, &iargs->precon);
    hypredrv_PreconReuseSetDefaultArgs(&iargs->precon_reuse);
 
    /* Set default scaling */

@@ -139,6 +139,7 @@ void         hypredrv_MGRSetDofLabels(const DofLabelMap *);
 void         hypredrv_MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
 void         hypredrv_MGRCreate(MGR_args *, HYPRE_Solver *);
 void         hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);
+int          hypredrv_MGRNestedFRelaxWrapperIsLive(HYPRE_Solver);
 HYPRE_Solver hypredrv_MGRNestedFRelaxWrapperGetInner(HYPRE_Solver);
 HYPRE_Solver hypredrv_MGRNestedFRelaxWrapperDetachInner(HYPRE_Solver);
 void         hypredrv_MGRNestedFRelaxWrapperFree(HYPRE_Solver *);

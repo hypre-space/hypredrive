@@ -29,7 +29,7 @@
 #include "lsseq.h"
 
 static void
-HYPREDRV_IJVectorInitialize(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
+IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
 {
 #if HYPREDRV_HYPRE_RELEASE_NUMBER >= 22000
    HYPRE_IJVectorInitialize_v2(vec, memory_location);
@@ -235,7 +235,7 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_IJVectorSetNumComponents(*vec_nn_ptr, num_components);
 #endif
-   HYPREDRV_IJVectorInitialize(*vec_nn_ptr, HYPRE_MEMORY_HOST);
+   IJVectorInitializeCompat(*vec_nn_ptr, HYPRE_MEMORY_HOST);
 
    HYPRE_BigInt  *indices = NULL;
    HYPRE_Complex *zeros   = NULL;
@@ -855,7 +855,7 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
    HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
    HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
    HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
-   HYPREDRV_IJVectorInitialize(*rhs_ptr, memory_location);
+   IJVectorInitializeCompat(*rhs_ptr, memory_location);
 
    HYPRE_BigInt local_size    = iupper - ilower + 1;
    int          my_local_size = local_size;
@@ -904,7 +904,7 @@ LinearSystemRHSGeneratedSet(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
    HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
    HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
    HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
-   HYPREDRV_IJVectorInitialize(*rhs_ptr, memory_location);
+   IJVectorInitializeCompat(*rhs_ptr, memory_location);
 
    void           *obj   = NULL;
    HYPRE_ParVector par_b = NULL;
@@ -928,7 +928,7 @@ LinearSystemRHSGeneratedSet(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
          HYPRE_IJVector xref = NULL;
          HYPRE_IJVectorCreate(comm, ilower, iupper, &xref);
          HYPRE_IJVectorSetObjectType(xref, HYPRE_PARCSR);
-         HYPREDRV_IJVectorInitialize(xref, memory_location);
+         IJVectorInitializeCompat(xref, memory_location);
 
          HYPRE_ParVector par_x = NULL;
          HYPRE_IJVectorGetObject(xref, &obj);
@@ -1066,7 +1066,7 @@ hypredrv_LinearSystemCreateWorkingSolution(MPI_Comm comm, const LS_args *args,
    HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
    HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
    HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
-   HYPREDRV_IJVectorInitialize(*x_ptr, memloc);
+   IJVectorInitializeCompat(*x_ptr, memloc);
 }
 
 void
@@ -1098,7 +1098,7 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
       HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
       HYPRE_IJVectorCreate(comm, jlower, jupper, x0_ptr);
       HYPRE_IJVectorSetObjectType(*x0_ptr, HYPRE_PARCSR);
-      HYPREDRV_IJVectorInitialize(*x0_ptr, memloc);
+      IJVectorInitializeCompat(*x0_ptr, memloc);
 
       /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
       void           *obj    = NULL;
@@ -1243,14 +1243,24 @@ hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
       }
    }
 
-#if defined(HYPRE_USING_GPU)
-   /* On GPU builds, HYPRE expects the tags array to reside in device memory.
-    * The dofmap is always host-allocated, so copy it to a device buffer and
-    * hand ownership (owns_tags=2) to HYPRE so it frees the buffer correctly. */
-   HYPRE_Int *device_tags = hypre_TAlloc(HYPRE_Int, dofmap->size, HYPRE_MEMORY_DEVICE);
-   hypre_TMemcpy(device_tags, dofmap->data, HYPRE_Int, dofmap->size, HYPRE_MEMORY_DEVICE,
-                 HYPRE_MEMORY_HOST);
-   HYPRE_IJVectorSetTags(vec, 2, num_tags, device_tags);
+#if defined(HYPRE_USING_GPU) && HYPREDRV_HAVE_MEMORY_APIS
+   HYPRE_MemoryLocation vec_memloc = hypre_IJVectorMemoryLocation((hypre_IJVector *)vec);
+
+   /* In CUDA/HIP builds, library-mode vectors may still be host-backed.
+    * Only migrate tags when the vector itself is not host-backed; otherwise,
+    * keep the existing host aliasing path and avoid mismatched frees. */
+   if (hypre_GetActualMemLocation(vec_memloc) !=
+       hypre_GetActualMemLocation(HYPRE_MEMORY_HOST))
+   {
+      HYPRE_Int *tags = hypre_TAlloc(HYPRE_Int, dofmap->size, vec_memloc);
+      hypre_TMemcpy(tags, dofmap->data, HYPRE_Int, dofmap->size, vec_memloc,
+                    HYPRE_MEMORY_HOST);
+      HYPRE_IJVectorSetTags(vec, 2, num_tags, tags);
+   }
+   else
+   {
+      HYPRE_IJVectorSetTags(vec, 0, num_tags, dofmap->data);
+   }
 #else
    HYPRE_IJVectorSetTags(vec, 0, num_tags, dofmap->data);
 #endif
@@ -1551,9 +1561,9 @@ hypredrv_LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector ve
    HYPRE_IJVectorCreate(hypre_IJVectorComm(vec_x), jlower, jupper, &vec_e);
    HYPRE_IJVectorSetObjectType(vec_e, HYPRE_PARCSR);
 #if HYPREDRV_HAVE_MEMORY_APIS
-   HYPREDRV_IJVectorInitialize(vec_e, hypre_IJVectorMemoryLocation(vec_x));
+   IJVectorInitializeCompat(vec_e, hypre_IJVectorMemoryLocation(vec_x));
 #else
-   HYPREDRV_IJVectorInitialize(vec_e, HYPRE_MEMORY_HOST);
+   IJVectorInitializeCompat(vec_e, HYPRE_MEMORY_HOST);
 #endif
    HYPRE_IJVectorGetObject(vec_e, &obj_e);
    par_e = (HYPRE_ParVector)obj_e;
@@ -1607,9 +1617,9 @@ hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector ve
    HYPRE_IJVectorCreate(hypre_IJVectorComm(vec_b), jlower, jupper, &vec_r);
    HYPRE_IJVectorSetObjectType(vec_r, HYPRE_PARCSR);
 #if HYPREDRV_HAVE_MEMORY_APIS
-   HYPREDRV_IJVectorInitialize(vec_r, hypre_IJVectorMemoryLocation(vec_b));
+   IJVectorInitializeCompat(vec_r, hypre_IJVectorMemoryLocation(vec_b));
 #else
-   HYPREDRV_IJVectorInitialize(vec_r, HYPRE_MEMORY_HOST);
+   IJVectorInitializeCompat(vec_r, HYPRE_MEMORY_HOST);
 #endif
    HYPRE_IJVectorGetObject(vec_r, &obj_r);
    par_r = (HYPRE_ParVector)obj_r;

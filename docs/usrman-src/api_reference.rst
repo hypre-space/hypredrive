@@ -45,6 +45,11 @@ Two rules matter most when using the API directly:
   is no need to call ``HYPREDRV_PreconDestroy`` afterward unless you are managing the
   preconditioner separately.
 
+For embedded applications that keep multiple ``HYPREDRV_t`` objects alive at once, use the
+object-bound annotation and hierarchical-stats APIs directly on the relevant handle. In the
+current API, ``HYPREDRV_Annotate*`` and ``HYPREDRV_StatsLevel*`` all take a ``HYPREDRV_t``
+argument and record/query state for that specific object.
+
 Reference by Topic
 ------------------
 
@@ -62,6 +67,7 @@ Lifecycle and Setup
 - :cpp:func:`HYPREDRV_Initialize` - Initialize hypredrive and its underlying HYPRE runtime state.
 - :cpp:func:`HYPREDRV_Create` - Create a new hypredrive object bound to an MPI communicator.
 - :cpp:func:`HYPREDRV_SetLibraryMode` - Mark externally provided HYPRE objects as borrowed rather than owned.
+- :cpp:func:`HYPREDRV_ObjectSetName` - Attach or clear an optional display name for a specific object.
 - :cpp:func:`HYPREDRV_Destroy` - Destroy a hypredrive object and release its managed resources.
 - :cpp:func:`HYPREDRV_Finalize` - Finalize hypredrive and tear down global runtime state.
 - :cpp:func:`HYPREDRV_ErrorCodeDescribe` - Print a human-readable description for a hypredrive error code.
@@ -137,6 +143,9 @@ Statistics and Timing
 ~~~~~~~~~~~~~~~~~~~~~
 
 - :cpp:func:`HYPREDRV_StatsPrint` - Print the collected statistics for the current object.
+  In library mode, ``general.statistics`` also prints the same summary automatically
+  when the object is destroyed. When ``general.name`` or ``HYPREDRV_ObjectSetName`` is
+  used, the banner includes that label.
 - :cpp:func:`HYPREDRV_LinearSystemComputeEigenspectrum` - Compute the eigenspectrum of the current matrix when enabled.
 - :cpp:func:`HYPREDRV_LinearSolverGetNumIter` - Get the iteration count from the last solve.
 - :cpp:func:`HYPREDRV_LinearSolverGetSetupTime` - Get the setup time from the last solve.
@@ -148,8 +157,8 @@ Statistics and Timing
 Annotation
 ~~~~~~~~~~
 
-- :cpp:func:`HYPREDRV_AnnotateBegin` - Begin a named annotation region for instrumentation.
-- :cpp:func:`HYPREDRV_AnnotateEnd` - End a named annotation region for instrumentation.
+- :cpp:func:`HYPREDRV_AnnotateBegin` - Begin a named annotation region.
+- :cpp:func:`HYPREDRV_AnnotateEnd` - End a named annotation region.
 - :cpp:func:`HYPREDRV_AnnotateLevelBegin` - Begin a hierarchical annotation region at a given level.
 - :cpp:func:`HYPREDRV_AnnotateLevelEnd` - End a hierarchical annotation region at a given level.
 

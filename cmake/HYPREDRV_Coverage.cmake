@@ -20,6 +20,11 @@ if(HYPREDRV_ENABLE_COVERAGE)
             endif()
         endforeach()
 
+        if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND TARGET HYPREDRV)
+            # Static consumers of libHYPREDRV.a need the gcov runtime too.
+            target_link_libraries(HYPREDRV PUBLIC gcov)
+        endif()
+
         # Apply directory-wide defaults so future targets (e.g., examples, tests) get flags
         add_compile_options(-O0 -g --coverage)
         add_link_options(--coverage)

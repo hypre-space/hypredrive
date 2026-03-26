@@ -31,13 +31,11 @@
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
 
-/* Forward declarations for internal-only functions */
-static uint32_t HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t hypredrv);
+/* Forward declarations for file-local helpers */
+static uint32_t LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv);
 
 // Flag to check if HYPREDRV is initialized
 static bool hypredrv_is_initialized = false;
-/* Default stats object used by no-object helper APIs. */
-static Stats *hypredrv_default_stats = NULL;
 
 // Macro to check if HYPREDRV is initialized
 #define HYPREDRV_CHECK_INIT()                                \
@@ -95,8 +93,47 @@ typedef struct hypredrv_struct
    Stats *stats;
 } hypredrv_t;
 
+static uint32_t
+InitializeRuntime(void)
+{
+   if (!hypredrv_is_initialized)
+   {
+      /* A fresh runtime initialization owns a fresh error-state view. */
+      hypredrv_ErrorStateReset();
+
+      /* Initialize hypre */
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+      HYPRE_Initialize();
+#if HYPRE_CHECK_MIN_VERSION(23100, 0)
+      HYPRE_DeviceInitialize();
+#endif
+#endif
+
+#if HYPRE_CHECK_MIN_VERSION(23100, 16)
+      const char *env_log_level = getenv("HYPRE_LOG_LEVEL");
+      HYPRE_Int   log_level =
+         (env_log_level) ? (HYPRE_Int)strtol(env_log_level, NULL, 10) : 0;
+
+      HYPRE_SetLogLevel(log_level);
+#endif
+
+      hypredrv_is_initialized = true;
+   }
+
+   return hypredrv_ErrorCodeGet();
+}
+
 static void
-hypredrv_LinearSystemDropOwnedPrecMatrix(HYPREDRV_t hypredrv)
+DestroyActiveSolver(HYPREDRV_t hypredrv)
+{
+   if (hypredrv && hypredrv->iargs && hypredrv->solver)
+   {
+      hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+   }
+}
+
+static void
+LinearSystemDropOwnedPrecMatrix(HYPREDRV_t hypredrv)
 {
    if (hypredrv->mat_M && hypredrv->mat_M != hypredrv->mat_A && hypredrv->owns_mat_M)
    {
@@ -108,7 +145,7 @@ hypredrv_LinearSystemDropOwnedPrecMatrix(HYPREDRV_t hypredrv)
 }
 
 static void
-hypredrv_LinearSystemDropOwnedInitialGuess(HYPREDRV_t hypredrv)
+LinearSystemDropOwnedInitialGuess(HYPREDRV_t hypredrv)
 {
    if (hypredrv->vec_x0 && hypredrv->owns_vec_x0)
    {
@@ -120,7 +157,7 @@ hypredrv_LinearSystemDropOwnedInitialGuess(HYPREDRV_t hypredrv)
 }
 
 static void
-hypredrv_LinearSystemDropOwnedReferenceSolution(HYPREDRV_t hypredrv)
+LinearSystemDropOwnedReferenceSolution(HYPREDRV_t hypredrv)
 {
    if (hypredrv->vec_xref && hypredrv->vec_xref != hypredrv->vec_b &&
        hypredrv->owns_vec_xref)
@@ -133,7 +170,7 @@ hypredrv_LinearSystemDropOwnedReferenceSolution(HYPREDRV_t hypredrv)
 }
 
 static uint32_t
-hypredrv_ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
+ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
 {
    if (!hypredrv || !hypredrv->iargs || hypredrv->lib_mode)
    {
@@ -207,11 +244,6 @@ HYPREDRV_Initialize()
       hypredrv_is_initialized = true;
    }
 
-   if (!hypredrv_default_stats)
-   {
-      hypredrv_default_stats = hypredrv_StatsCreate();
-   }
-
    return hypredrv_ErrorCodeGet();
 }
 
@@ -225,10 +257,6 @@ HYPREDRV_Finalize()
    if (hypredrv_is_initialized)
    {
       hypredrv_PresetFreeUserPresets();
-      if (hypredrv_default_stats)
-      {
-         hypredrv_StatsDestroy(&hypredrv_default_stats);
-      }
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
       HYPRE_Finalize();
 #endif
@@ -306,10 +334,8 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    /* Disable library mode by default */
    hypredrv->lib_mode = false;
 
-   /* Use the global stats context so library-level annotations recorded before
-    * object creation remain attached to the first active solver object and the
-    * no-object stats wrappers observe the same accumulated data. */
-   hypredrv->stats = hypredrv_default_stats;
+   /* Each object owns its own stats context. */
+   hypredrv->stats = hypredrv_StatsCreate();
 
    /* Set output pointer */
    *hypredrv_ptr = hypredrv;
@@ -333,6 +359,14 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
       return hypredrv_ErrorCodeGet();
+   }
+
+   /* Embedded/library-mode consumers like GEOS expect general.statistics to
+    * flush with the object lifetime rather than from a separate driver hook. */
+   int print_statistics = 0;
+   if (hypredrv->lib_mode && hypredrv->iargs && hypredrv->mypid == 0)
+   {
+      print_statistics = hypredrv->iargs->general.statistics;
    }
 
    /* Destroy solver/preconditioner objects before tearing down dependent state. */
@@ -393,11 +427,13 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
    hypredrv_PreconReuseTimestepsClear(&hypredrv->precon_reuse_timestep_starts);
    hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
-   /* Destroy statistics object */
-   if (hypredrv->stats != hypredrv_default_stats)
+   if (print_statistics > 0)
    {
-      hypredrv_StatsDestroy(&hypredrv->stats);
+      hypredrv_StatsPrint(hypredrv->stats, print_statistics);
    }
+
+   /* Destroy statistics object */
+   hypredrv_StatsDestroy(&hypredrv->stats);
 
    if ((*hypredrv_ptr)->states) free((*hypredrv_ptr)->states);
    if ((*hypredrv_ptr)->vec_s) free((void *)(*hypredrv_ptr)->vec_s);
@@ -483,6 +519,7 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    {
       hypredrv_StatsTimerSetSeconds(hypredrv->stats);
    }
+   hypredrv_StatsSetObjectName(hypredrv->stats, hypredrv->iargs->general.name);
 
    /* Load timestep schedule for preconditioner reuse */
    if (hypredrv->iargs->ls.timestep_filename[0] != '\0')
@@ -513,6 +550,21 @@ HYPREDRV_SetLibraryMode(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_OBJ();
 
    hypredrv->lib_mode = true;
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_ObjectSetName
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_ObjectSetName(HYPREDRV_t hypredrv, const char *name)
+{
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   hypredrv_StatsSetObjectName(hypredrv->stats, name);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -732,10 +784,7 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
    }
 
    /* Destroy existing solver if any */
-   if (hypredrv->solver)
-   {
-      hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
-   }
+   DestroyActiveSolver(hypredrv);
 
    /* Set solver method and defaults */
    hypredrv->iargs->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
@@ -941,7 +990,7 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadDofmap(hypredrv));
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
-   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetVectorTags(hypredrv));
+   HYPREDRV_SAFE_CALL(LinearSystemSetVectorTagsInternal(hypredrv));
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
 
@@ -975,7 +1024,7 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
-   HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
+   HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
    hypredrv_LinearSystemReadMatrix(hypredrv->comm, &hypredrv->iargs->ls, &hypredrv->mat_A,
                                    hypredrv->stats);
@@ -993,7 +1042,7 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat_A)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   hypredrv_LinearSystemDropOwnedPrecMatrix(hypredrv);
+   LinearSystemDropOwnedPrecMatrix(hypredrv);
 
    /* Don't annotate "matrix" here - users annotate with "system" in their code */
    /* This was causing build times and solve times to be recorded in separate entries
@@ -1017,7 +1066,7 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 
    if (!vec)
    {
-      HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
+      HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
       if (hypredrv->vec_xref && !hypredrv->owns_vec_xref)
       {
          hypredrv->vec_xref = NULL;
@@ -1044,7 +1093,7 @@ HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
-   HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
+   HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
    hypredrv_LinearSystemSetNearNullSpace(hypredrv->comm, &hypredrv->iargs->ls,
                                          hypredrv->mat_A, num_entries, num_components,
@@ -1065,7 +1114,7 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 
    if (!vec)
    {
-      HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
+      HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
       if (hypredrv->vec_x0 && !hypredrv->owns_vec_x0)
       {
          hypredrv->vec_x0 = NULL;
@@ -1078,11 +1127,15 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv, HYPRE_Vector vec)
    }
    else
    {
-      hypredrv_LinearSystemDropOwnedInitialGuess(hypredrv);
+      LinearSystemDropOwnedInitialGuess(hypredrv);
       hypredrv->vec_x0 = (HYPRE_IJVector)vec;
       hypredrv->owns_vec_x0 =
          (bool)(!hypredrv->lib_mode && hypredrv->vec_x0 != hypredrv->vec_x &&
                 hypredrv->vec_x0 != hypredrv->vec_b);
+      if (hypredrv->vec_x && !hypredrv->owns_vec_x)
+      {
+         hypredrv->vec_x = NULL;
+      }
       hypredrv_LinearSystemCreateWorkingSolution(hypredrv->comm, &hypredrv->iargs->ls,
                                                  hypredrv->vec_b, &hypredrv->vec_x);
       hypredrv->owns_vec_x = (hypredrv->vec_x != NULL);
@@ -1144,7 +1197,7 @@ HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 
    if (!vec)
    {
-      HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
+      HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
       const bool uses_xref_file = (bool)(hypredrv->iargs->ls.xref_filename[0] != '\0' ||
                                          hypredrv->iargs->ls.xref_basename[0] != '\0');
       if (uses_xref_file && hypredrv->vec_xref && !hypredrv->owns_vec_xref)
@@ -1160,7 +1213,7 @@ HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
    }
    else
    {
-      hypredrv_LinearSystemDropOwnedReferenceSolution(hypredrv);
+      LinearSystemDropOwnedReferenceSolution(hypredrv);
       hypredrv->vec_xref = (HYPRE_IJVector)vec;
       hypredrv->owns_vec_xref =
          (bool)(!hypredrv->lib_mode && hypredrv->vec_xref != hypredrv->vec_b);
@@ -1192,11 +1245,11 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetVectorTags (internal)
+ * LinearSystemSetVectorTagsInternal
  *-----------------------------------------------------------------------------*/
 
 static uint32_t
-HYPREDRV_LinearSystemSetVectorTags(HYPREDRV_t hypredrv)
+LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
@@ -1353,8 +1406,8 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat)
 
    if (!mat)
    {
-      HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
-      hypredrv_LinearSystemDropOwnedPrecMatrix(hypredrv);
+      HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
+      LinearSystemDropOwnedPrecMatrix(hypredrv);
       hypredrv_LinearSystemSetPrecMatrix(hypredrv->comm, &hypredrv->iargs->ls,
                                          hypredrv->mat_A, &hypredrv->mat_M,
                                          hypredrv->stats);
@@ -1363,7 +1416,7 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat)
    }
    else
    {
-      hypredrv_LinearSystemDropOwnedPrecMatrix(hypredrv);
+      LinearSystemDropOwnedPrecMatrix(hypredrv);
       hypredrv->mat_M = (HYPRE_IJMatrix)mat;
       hypredrv->owns_mat_M =
          (bool)(!hypredrv->lib_mode && hypredrv->mat_M != hypredrv->mat_A);
@@ -1497,13 +1550,14 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
-   HYPREDRV_SAFE_CALL(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
+   HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
-   int  next_ls_id    = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
-   bool should_create = ((hypredrv->precon == NULL) ||
-                         hypredrv_PreconReuseShouldRecompute(
-                            &hypredrv->iargs->precon_reuse,
-                            hypredrv->precon_reuse_timestep_starts, next_ls_id)) != 0;
+   int  next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
+   bool should_create =
+      ((hypredrv->precon == NULL) ||
+       hypredrv_PreconReuseShouldRecompute(&hypredrv->iargs->precon_reuse,
+                                           hypredrv->precon_reuse_timestep_starts,
+                                           hypredrv->stats, next_ls_id)) != 0;
 
    if (should_create)
    {
@@ -1532,8 +1586,17 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   /* First, create the preconditioner if we need */
-   if (!hypredrv->precon)
+   /* Delegate preconditioner lifecycle to PreconCreate.
+    *
+    * Skip the call only when a preconditioner already exists but has NOT been
+    * set up yet: that means it was just created by an explicit
+    * HYPREDRV_PreconCreate() call from the caller (e.g. main.c) for this
+    * same linear system, so re-evaluating the reuse policy would be
+    * redundant (and would destroy an uninitialized object, which crashes).
+    *
+    * If the precon exists AND is already set up, the reuse policy must still
+    * be checked: a new timestep may require re-creating the preconditioner. */
+   if (hypredrv->precon == NULL || hypredrv->precon_is_setup)
    {
       if (HYPREDRV_PreconCreate(hypredrv))
       {
@@ -1577,7 +1640,7 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
 }
 
 static void
-HYPREDRV_GMRESSetRefSolution(HYPREDRV_t hypredrv)
+GMRESSetRefSolution(HYPREDRV_t hypredrv)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    if (!hypredrv || hypredrv->iargs->solver_method != SOLVER_GMRES)
@@ -1612,12 +1675,13 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
 
    int next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
    int recompute  = hypredrv_PreconReuseShouldRecompute(
-      &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timestep_starts, next_ls_id);
+      &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timestep_starts,
+      hypredrv->stats, next_ls_id);
    int skip_precon_setup =
       (hypredrv->precon != NULL) && hypredrv->precon_is_setup && !recompute;
 
    /* Propagate dofmap to vectors (no-op if no dofmap is set) */
-   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetVectorTags(hypredrv));
+   HYPREDRV_SAFE_CALL(LinearSystemSetVectorTagsInternal(hypredrv));
 
    /* Create scaling context if needed and not already created */
    if (hypredrv->iargs->scaling.enabled && !hypredrv->scaling_ctx)
@@ -1648,7 +1712,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
       }
    }
 
-   HYPREDRV_GMRESSetRefSolution(hypredrv);
+   GMRESSetRefSolution(hypredrv);
 
    hypredrv_SolverSetupWithReuse(hypredrv->iargs->precon_method,
                                  hypredrv->iargs->solver_method, hypredrv->precon,
@@ -1685,7 +1749,7 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 
    /* Ensure GMRES always sees the current reference solution, including on reused
     * preconditioner cycles where SolverSetup may be skipped. */
-   HYPREDRV_GMRESSetRefSolution(hypredrv);
+   GMRESSetRefSolution(hypredrv);
 
    /* Apply scaling if enabled but not yet applied (e.g., when preconditioner is reused)
     */
@@ -1829,10 +1893,11 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   int  next_ls_id     = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
-   bool should_destroy = hypredrv_PreconReuseShouldRecompute(
-                            &hypredrv->iargs->precon_reuse,
-                            hypredrv->precon_reuse_timestep_starts, next_ls_id) != 0;
+   int  next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
+   bool should_destroy =
+      hypredrv_PreconReuseShouldRecompute(&hypredrv->iargs->precon_reuse,
+                                          hypredrv->precon_reuse_timestep_starts,
+                                          hypredrv->stats, next_ls_id) != 0;
 
    if (should_destroy)
    {
@@ -1879,7 +1944,8 @@ HYPREDRV_StatsPrint(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
-   hypredrv_StatsPrint(hypredrv->stats, hypredrv->iargs->general.statistics);
+   hypredrv_StatsPrint(hypredrv->stats,
+                       hypredrv->iargs ? hypredrv->iargs->general.statistics : 0);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1889,23 +1955,13 @@ HYPREDRV_StatsPrint(HYPREDRV_t hypredrv)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateBegin(const char *name, int id)
+HYPREDRV_AnnotateBegin(HYPREDRV_t hypredrv, const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
 
-   char formatted_name[1024];
-   if (id >= 0)
-   {
-      snprintf(formatted_name, sizeof(formatted_name), "%s-%d", name, id);
-   }
-   else
-   {
-      snprintf(formatted_name, sizeof(formatted_name), "%s", name);
-   }
-   hypredrv_StatsAnnotate(hypredrv_default_stats, HYPREDRV_ANNOTATE_BEGIN,
-                          formatted_name);
-
-   return hypredrv_ErrorCodeGet();
+   return hypredrv_StatsAnnotateWithId(hypredrv->stats, HYPREDRV_ANNOTATE_BEGIN, name,
+                                       id);
 }
 
 /*-----------------------------------------------------------------------------
@@ -1913,22 +1969,12 @@ HYPREDRV_AnnotateBegin(const char *name, int id)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateEnd(const char *name, int id)
+HYPREDRV_AnnotateEnd(HYPREDRV_t hypredrv, const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
 
-   char formatted_name[1024];
-   if (id >= 0)
-   {
-      snprintf(formatted_name, sizeof(formatted_name), "%s-%d", name, id);
-   }
-   else
-   {
-      snprintf(formatted_name, sizeof(formatted_name), "%s", name);
-   }
-   hypredrv_StatsAnnotate(hypredrv_default_stats, HYPREDRV_ANNOTATE_END, formatted_name);
-
-   return hypredrv_ErrorCodeGet();
+   return hypredrv_StatsAnnotateWithId(hypredrv->stats, HYPREDRV_ANNOTATE_END, name, id);
 }
 
 /*-----------------------------------------------------------------------------
@@ -1936,15 +1982,13 @@ HYPREDRV_AnnotateEnd(const char *name, int id)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateLevelBegin(int level, const char *name, int id)
+HYPREDRV_AnnotateLevelBegin(HYPREDRV_t hypredrv, int level, const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
 
-   char formatted_name[1024];
-   snprintf(formatted_name, sizeof(formatted_name), "%s-%d", name, id);
-   hypredrv_StatsAnnotateLevelBegin(hypredrv_default_stats, level, formatted_name);
-
-   return hypredrv_ErrorCodeGet();
+   return hypredrv_StatsAnnotateLevelWithId(hypredrv->stats, HYPREDRV_ANNOTATE_BEGIN,
+                                            level, name, id);
 }
 
 /*-----------------------------------------------------------------------------
@@ -1952,23 +1996,22 @@ HYPREDRV_AnnotateLevelBegin(int level, const char *name, int id)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_AnnotateLevelEnd(int level, const char *name, int id)
+HYPREDRV_AnnotateLevelEnd(HYPREDRV_t hypredrv, int level, const char *name, int id)
 {
    HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
 
-   char formatted_name[1024];
-   snprintf(formatted_name, sizeof(formatted_name), "%s-%d", name, id);
-   hypredrv_StatsAnnotateLevelEnd(hypredrv_default_stats, level, formatted_name);
-
-   return hypredrv_ErrorCodeGet();
+   return hypredrv_StatsAnnotateLevelWithId(hypredrv->stats, HYPREDRV_ANNOTATE_END, level,
+                                            name, id);
 }
 
 /*-----------------------------------------------------------------------------
+ * PreconApplyWrapper
  *-----------------------------------------------------------------------------*/
 
 #ifdef HYPREDRV_ENABLE_EIGSPEC
 static void
-hypredrv_PreconApplyWrapper(void *ctx, void *b, void *x)
+PreconApplyWrapper(void *ctx, void *b, void *x)
 {
    HYPREDRV_PreconApply((HYPREDRV_t)ctx, (HYPRE_Vector)b, (HYPRE_Vector)x);
 }
@@ -2010,7 +2053,7 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
 
       return hypredrv_EigSpecCompute(&hypredrv->iargs->ls.eigspec,
                                      (void *)hypredrv->mat_A, (void *)hypredrv,
-                                     hypredrv_PreconApplyWrapper, hypredrv->stats);
+                                     PreconApplyWrapper, hypredrv->stats);
    }
    else
    {
@@ -2106,33 +2149,13 @@ HYPREDRV_LinearSolverGetSolveTime(HYPREDRV_t hypredrv, double *seconds)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_StatsLevelGetCount(int level, int *count)
+HYPREDRV_StatsLevelGetCount(HYPREDRV_t hypredrv, int level, int *count)
 {
-   if (!count)
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("HYPREDRV_StatsLevelGetCount: count pointer is NULL");
-      return hypredrv_ErrorCodeGet();
-   }
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
 
-   if (!hypredrv_default_stats)
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("HYPREDRV_StatsLevelGetCount: no active stats context");
-      return hypredrv_ErrorCodeGet();
-   }
-
-   if (level < 0 || level >= STATS_MAX_LEVELS)
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("HYPREDRV_StatsLevelGetCount: invalid level %d (max %d)",
-                           level, STATS_MAX_LEVELS - 1);
-      return hypredrv_ErrorCodeGet();
-   }
-
-   *count = hypredrv_StatsLevelGetCount(hypredrv_default_stats, level);
-
-   return hypredrv_ErrorCodeGet();
+   return hypredrv_StatsLevelGetCountChecked(hypredrv->stats, level, count,
+                                             "HYPREDRV_StatsLevelGetCount");
 }
 
 /*-----------------------------------------------------------------------------
@@ -2140,46 +2163,16 @@ HYPREDRV_StatsLevelGetCount(int level, int *count)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_StatsLevelGetEntry(int level, int index, int *entry_id, int *num_solves,
-                            int *linear_iters, double *setup_time, double *solve_time)
+HYPREDRV_StatsLevelGetEntry(HYPREDRV_t hypredrv, int level, int index, int *entry_id,
+                            int *num_solves, int *linear_iters, double *setup_time,
+                            double *solve_time)
 {
-   hypredrv_ErrorCodeResetAll();
-   LevelEntry entry;
-   int ret = hypredrv_StatsLevelGetEntry(hypredrv_default_stats, level, index, &entry);
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
 
-   if (ret != 0)
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("StatsLevelGetEntry: invalid level %d or index %d", level,
-                           index);
-      return hypredrv_ErrorCodeGet();
-   }
-
-   if (entry_id) *entry_id = entry.id;
-
-   /* Compute aggregates from solve index range */
-   int    n_solves = entry.solve_end - entry.solve_start;
-   int    l_iters  = 0;
-   double s_time   = 0.0;
-   double p_time   = 0.0;
-
-   Stats *stats = hypredrv_default_stats;
-   if (stats)
-   {
-      for (int i = entry.solve_start; i < entry.solve_end; i++)
-      {
-         l_iters += stats->iters[i];
-         p_time += stats->prec[i];
-         s_time += stats->solve[i];
-      }
-   }
-
-   if (num_solves) *num_solves = n_solves;
-   if (linear_iters) *linear_iters = l_iters;
-   if (setup_time) *setup_time = p_time;
-   if (solve_time) *solve_time = s_time;
-
-   return hypredrv_ErrorCodeGet();
+   return hypredrv_StatsLevelGetEntrySummary(hypredrv->stats, level, index, entry_id,
+                                             num_solves, linear_iters, setup_time,
+                                             solve_time);
 }
 
 /*-----------------------------------------------------------------------------
@@ -2187,8 +2180,11 @@ HYPREDRV_StatsLevelGetEntry(int level, int index, int *entry_id, int *num_solves
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_StatsLevelPrint(int level)
+HYPREDRV_StatsLevelPrint(HYPREDRV_t hypredrv, int level)
 {
-   hypredrv_StatsLevelPrint(hypredrv_default_stats, level);
+   HYPREDRV_CHECK_INIT();
+   HYPREDRV_CHECK_OBJ();
+
+   hypredrv_StatsLevelPrint(hypredrv->stats, level);
    return hypredrv_ErrorCodeGet();
 }

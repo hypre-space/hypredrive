@@ -61,7 +61,9 @@ typedef struct PreconReuse_args_struct
 
 typedef struct hypre_Precon_struct
 {
-   HYPRE_Solver main;
+   HYPRE_Solver         main;
+   precon_t             method;
+   struct Stats_struct *stats;
 } hypre_Precon;
 
 typedef hypre_Precon *HYPRE_Precon;
@@ -81,7 +83,8 @@ void           hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *, YAMLnode 
 void           hypredrv_PreconReuseTimestepsClear(IntArray **);
 uint32_t       hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *, const char *,
                                                  IntArray **);
-int hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *, const IntArray *, int);
+int hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *, const IntArray *,
+                                        const struct Stats_struct *, int);
 
 void hypredrv_PreconSetArgsFromYAML(precon_args *,
                                     YAMLnode *); /* TODO: change to PreconSetArgs */
