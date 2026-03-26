@@ -1253,7 +1253,8 @@ hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
        hypre_GetActualMemLocation(HYPRE_MEMORY_HOST))
    {
       HYPRE_Int *tags = hypre_TAlloc(HYPRE_Int, dofmap->size, vec_memloc);
-      hypre_TMemcpy(tags, dofmap->data, HYPRE_Int, dofmap->size, vec_memloc, HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(tags, dofmap->data, HYPRE_Int, dofmap->size,
+                    vec_memloc, HYPRE_MEMORY_HOST);
       HYPRE_IJVectorSetTags(vec, 2, num_tags, tags);
    }
    else
