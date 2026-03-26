@@ -11,12 +11,12 @@ Library Examples (libHYPREDRV)
 
 This section demonstrates how to use the ``libHYPREDRV`` library from application codes
 to assemble, configure, and solve linear systems with hypre. Unlike the :ref:`DriverExamples`
-that fully operate the ``hypredrive`` executable via YAML input files, these examples embed the
+that fully operate the ``hypredrive-cli`` executable via YAML input files, these examples embed the
 linear system assembly directly in your program and expose hooks for customizing discretizations,
 data layouts, MPI partitioning, and linear solver options via YAML configuration.
 
 .. note::
-   Prefer the ``hypredrive`` executable (driver) when working with file-based
+   Prefer the ``hypredrive-cli`` executable (driver) when working with file-based
    matrices/vectors and you want to quickly experiment with solver/preconditioner
    configurations. Prefer ``libHYPREDRV`` when your application assembles matrices
    and vectors in memory and you need a lightweight API to invoke HYPRE solvers

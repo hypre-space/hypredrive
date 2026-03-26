@@ -18,9 +18,10 @@ libHYPREDRV_la_SOURCES = src/error.c src/eigspec.c src/info.c src/stats.c src/ut
 libHYPREDRV_la_CFLAGS = $(AM_CPPFLAGS) -fvisibility=hidden
 libHYPREDRV_la_LDFLAGS = -version-info 0:1:0
 
-include_HEADERS = include/HYPREDRV.h include/HYPREDRV_config.h include/HYPREDRV_utils.h
+include_HEADERS = include/HYPREDRV.h include/HYPREDRV_utils.h
+nodist_include_HEADERS = HYPREDRV_config.h
 ACLOCAL_AMFLAGS = -I m4
-AM_CPPFLAGS = -I$(top_srcdir)/include
+AM_CPPFLAGS = -I$(top_builddir) -I$(top_srcdir)/include
 
 EXTRA_DIST = autogen.sh docs/Makefile docs/README.md docs/usrman-src docs/usrman-hypredrive.pdf docs/devman-hypredrive.pdf data examples utils
 MOSTLYCLEANFILES =

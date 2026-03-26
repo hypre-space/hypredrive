@@ -29,7 +29,7 @@ depending on the value of other keywords.
 CLI Overrides (``-a/--args``)
 -----------------------------
 
-When running the ``hypredrive`` driver, it is often convenient to keep a base YAML file
+When running the ``hypredrive-cli`` driver, it is often convenient to keep a base YAML file
 and override a few parameters from the command line.
 
 The driver supports this via the ``-a`` / ``--args`` flag, followed by key/value pairs in
