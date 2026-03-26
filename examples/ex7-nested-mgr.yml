@@ -25,7 +25,7 @@ preconditioner:
     level:
       0:
         f_dofs: [0, 1, 2]       # Eliminate displacement DOFs
-        f_relaxation: mgr
+        f_relaxation:
           mgr:
             # Nested MGR keeps the same DOF labels as the parent (no relabeling).
             max_iter: 1
@@ -35,7 +35,7 @@ preconditioner:
               0:
                 f_dofs: [0]
                 g_relaxation: none
-                f_relaxation: amg
+                f_relaxation:
                   amg:
                     coarsening:
                       type: pmis
@@ -47,7 +47,7 @@ preconditioner:
               1:
                 f_dofs: [1]
                 g_relaxation: none
-                f_relaxation: amg
+                f_relaxation:
                   amg:
                     coarsening:
                       type: pmis

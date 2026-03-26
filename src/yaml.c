@@ -777,6 +777,18 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
    for (int i = 0; i < tokens->size; i++)
    {
       const YAMLtoken *token = &tokens->data[i];
+
+      if (i > 0 && token->level > parent->level && parent->val && strlen(parent->val) > 0)
+      {
+         parent->valid = YAML_NODE_UNEXPECTED_VAL;
+         hypredrv_ErrorCodeSet(ERROR_UNEXPECTED_VAL);
+         hypredrv_ErrorMsgAdd(
+            "YAML key '%s' cannot have both a scalar value and nested entries",
+            parent->key);
+         *tree_ptr = tree;
+         return;
+      }
+
       YAMLnode *node = hypredrv_YAMLnodeCreate(token->key, token->val, token->level);
       YAMLnode *validation_node = node;
 

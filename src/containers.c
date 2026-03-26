@@ -646,10 +646,22 @@ int
 hypredrv_StrIntMapArrayGetImage(const StrIntMapArray valid, const char *string)
 {
    char    *end_ptr    = NULL;
-   long int string_num = strtol(string, &end_ptr, 10);
+   long int string_num = 0;
    size_t   i          = 0;
+   bool     is_integer = false;
 
-   if (*end_ptr == '\0')
+   if (!string)
+   {
+      return INT_MIN;
+   }
+
+   string_num = strtol(string, &end_ptr, 10);
+
+   /* Empty strings are valid YAML scalars in some schemas (for example nested MGR
+    * relaxation blocks). Treat them as strings, not as the number 0. */
+   is_integer = ((string[0] != '\0' && end_ptr != string && *end_ptr == '\0') != 0);
+
+   if (is_integer)
    {
       /* valid number string */
       for (i = 0; i < valid.size; i++)

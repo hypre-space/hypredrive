@@ -1706,7 +1706,7 @@ test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep(void)
             "    level:\n"
             "      0:\n"
             "        f_dofs: [0, 1, 2]\n"
-            "        f_relaxation: amg\n"
+            "        f_relaxation:\n"
             "          amg:\n"
             "            coarsening:\n"
             "              type: pmis\n"

@@ -20,7 +20,7 @@ preconditioner:
     level:
       0:
         f_dofs: [v_x, v_y]
-        f_relaxation: amg
+        f_relaxation:
           amg:
             print_level: 0
             max_iter: 1

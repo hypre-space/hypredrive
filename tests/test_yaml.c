@@ -826,6 +826,34 @@ test_YAMLtreeBuild_indent_with_tabs(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * Test that a scalar YAML value cannot also have nested entries
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_YAMLtreeBuild_scalar_with_children_is_error(void)
+{
+   const char *yaml_text = "f_relaxation: amg\n  coarsening:\n    type: pmis\n";
+   char       *text      = strdup(yaml_text);
+   YAMLtree   *tree      = NULL;
+
+   ASSERT_NOT_NULL(text);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeBuild(2, text, &tree);
+
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(hypredrv_ErrorCodeGet() & ERROR_UNEXPECTED_VAL, ERROR_UNEXPECTED_VAL);
+   ASSERT_NOT_NULL(tree);
+
+   YAMLnode *node = hypredrv_YAMLnodeFindChildByKey(tree->root, "f_relaxation");
+   ASSERT_NOT_NULL(node);
+   ASSERT_EQ(node->valid, YAML_NODE_UNEXPECTED_VAL);
+
+   free(text);
+   hypredrv_YAMLtreeDestroy(&tree);
+}
+
+/*-----------------------------------------------------------------------------
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
@@ -861,6 +889,7 @@ main(void)
    RUN_TEST(test_YAMLtreeBuild_indent_3_spaces);
    RUN_TEST(test_YAMLtreeBuild_indent_4_spaces);
    RUN_TEST(test_YAMLtreeBuild_indent_with_tabs);
+   RUN_TEST(test_YAMLtreeBuild_scalar_with_children_is_error);
 
    return 0; /* Success - CTest handles reporting */
 }

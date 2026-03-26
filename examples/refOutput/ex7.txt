@@ -28,7 +28,7 @@ preconditioner:
     level: 
       0: 
         f_dofs: [0, 1, 2]
-        f_relaxation: amg
+        f_relaxation: 
           amg: 
             coarsening: 
               type: pmis
