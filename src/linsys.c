@@ -612,7 +612,7 @@ hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
 
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
    int  ls_id                                = hypredrv_StatsGetLinearSystemID(stats) + 1;
-   int  myid                                 = hypredrv_LogRankFromComm(comm);
+   int  myid = hypredrv_LogEnabled(2) ? hypredrv_LogRankFromComm(comm) : -1;
    hypredrv_Logf(3, myid, NULL, ls_id, "matrix read begin");
 
    /* Destroy matrix if it already exists */
@@ -1004,7 +1004,7 @@ hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
                             Stats *stats)
 {
    int ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
-   int myid  = hypredrv_LogRankFromComm(comm);
+   int myid  = hypredrv_LogEnabled(2) ? hypredrv_LogRankFromComm(comm) : -1;
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "rhs");
    hypredrv_Logf(3, myid, NULL, ls_id, "rhs setup begin (rhs_mode=%d)",
@@ -1215,7 +1215,7 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
 {
    HYPRE_ParVector par_x0 = NULL, par_x = NULL;
    void           *obj_x0 = NULL, *obj_x = NULL;
-   int             myid  = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   int             myid  = hypredrv_LogEnabled(2) ? hypredrv_LogRankFromComm(MPI_COMM_WORLD) : -1;
    int             ls_id = hypredrv_StatsGetLinearSystemID(stats);
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");

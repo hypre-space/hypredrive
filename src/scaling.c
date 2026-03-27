@@ -70,7 +70,7 @@ hypredrv_ScalingSetDefaultArgs(Scaling_args *args)
 void
 hypredrv_ScalingContextCreate(Scaling_context **ctx_ptr)
 {
-   int              myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   int              myid = hypredrv_LogEnabled(3) ? hypredrv_LogRankFromComm(MPI_COMM_WORLD) : -1;
    Scaling_context *ctx  = (Scaling_context *)malloc(sizeof(Scaling_context));
    ctx->enabled          = 0;
    ctx->type             = SCALING_RHS_L2;
@@ -115,7 +115,7 @@ ScalingContextFreeVector(Scaling_context *ctx)
 void
 hypredrv_ScalingContextDestroy(Scaling_context **ctx_ptr)
 {
-   int myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   int myid = hypredrv_LogEnabled(3) ? hypredrv_LogRankFromComm(MPI_COMM_WORLD) : -1;
    if (!ctx_ptr || !*ctx_ptr)
    {
       return;
@@ -431,7 +431,7 @@ void
 hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                         HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b, IntArray *dofmap)
 {
-   int myid = hypredrv_LogRankFromComm(comm);
+   int myid = hypredrv_LogEnabled(2) ? hypredrv_LogRankFromComm(comm) : -1;
    if (!args || !ctx)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
@@ -761,7 +761,7 @@ hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
                               HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
                               HYPRE_IJVector vec_x)
 {
-   int myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   int myid = hypredrv_LogEnabled(2) ? hypredrv_LogRankFromComm(MPI_COMM_WORLD) : -1;
    if (!ctx || !ctx->enabled)
    {
       return;
@@ -938,7 +938,7 @@ hypredrv_ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
                              HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
                              HYPRE_IJVector vec_x)
 {
-   int myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   int myid = hypredrv_LogEnabled(2) ? hypredrv_LogRankFromComm(MPI_COMM_WORLD) : -1;
    if (!ctx || !ctx->enabled || !ctx->is_applied)
    {
       return;

@@ -521,13 +521,6 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
                                   &hypredrv->precon_reuse_timestep_starts);
    }
 
-   hypredrv_LogObjectf(
-      2, hypredrv,
-      "input args parsed: solver=%d precon=%d stats=%d scaling_enabled=%d "
-      "scaling_type=%d rhs_mode=%d",
-      (int)hypredrv->iargs->solver_method, (int)hypredrv->iargs->precon_method,
-      hypredrv->iargs->general.statistics, hypredrv->iargs->scaling.enabled,
-      (int)hypredrv->iargs->scaling.type, (int)hypredrv->iargs->ls.rhs_mode);
    hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_InputArgsParse end");
 
    return hypredrv_ErrorCodeGet();
@@ -818,6 +811,8 @@ HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv, int nstates, HYPRE_IJVector *vecs)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_StateVectorSet begin (nstates=%d)",
+                       nstates);
 
    hypredrv->nstates = nstates;
    hypredrv->states  = (int *)malloc(sizeof(int) * (size_t)nstates);
@@ -832,10 +827,14 @@ HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv, int nstates, HYPRE_IJVector *vecs)
       else
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_LogObjectf(2, hypredrv,
+                             "HYPREDRV_StateVectorSet failed: missing vector at index=%d",
+                             i);
          return hypredrv_ErrorCodeGet();
       }
    }
 
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_StateVectorSet end");
    return hypredrv_ErrorCodeGet();
 }
 
@@ -848,6 +847,8 @@ HYPREDRV_StateVectorGetValues(HYPREDRV_t hypredrv, int index, HYPRE_Complex **da
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_StateVectorGetValues begin (index=%d)",
+                       index);
 
    int             state   = hypredrv->states[index];
    HYPRE_ParVector par_vec = NULL;
@@ -864,12 +865,17 @@ HYPREDRV_StateVectorGetValues(HYPREDRV_t hypredrv, int index, HYPRE_Complex **da
       par_vec   = (HYPRE_ParVector)obj;
       seq_vec   = hypre_ParVectorLocalVector(par_vec);
       *data_ptr = hypre_VectorData(seq_vec);
+      hypredrv_LogObjectf(3, hypredrv,
+                          "HYPREDRV_StateVectorGetValues resolved state=%d", state);
    }
    else
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_LogObjectf(2, hypredrv,
+                          "HYPREDRV_StateVectorGetValues failed: state vector is NULL");
    }
 
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_StateVectorGetValues end");
    return hypredrv_ErrorCodeGet();
 }
 
@@ -882,6 +888,9 @@ HYPREDRV_StateVectorCopy(HYPREDRV_t hypredrv, int index_in, int index_out)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   hypredrv_LogObjectf(
+      1, hypredrv, "HYPREDRV_StateVectorCopy begin (index_in=%d index_out=%d)",
+      index_in, index_out);
 
    int   state_in  = hypredrv->states[index_in];
    int   state_out = hypredrv->states[index_out];
@@ -898,8 +907,11 @@ HYPREDRV_StateVectorCopy(HYPREDRV_t hypredrv, int index_in, int index_out)
    else
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_LogObjectf(2, hypredrv,
+                          "HYPREDRV_StateVectorCopy failed: source or destination vector is NULL");
    }
 
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_StateVectorCopy end");
    return hypredrv_ErrorCodeGet();
 }
 
@@ -912,12 +924,17 @@ HYPREDRV_StateVectorUpdateAll(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_StateVectorUpdateAll begin");
 
    for (int i = 0; i < hypredrv->nstates; i++)
    {
       hypredrv->states[i] = (hypredrv->states[i] + 1) % hypredrv->nstates;
    }
 
+   hypredrv_LogObjectf(3, hypredrv,
+                       "HYPREDRV_StateVectorUpdateAll rotated %d state slots",
+                       hypredrv->nstates);
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_StateVectorUpdateAll end");
    return hypredrv_ErrorCodeGet();
 }
 
@@ -930,12 +947,17 @@ HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   hypredrv_LogObjectf(1, hypredrv,
+                       "HYPREDRV_StateVectorApplyCorrection begin (state_idx=%d)",
+                       state_idx);
 
    if (state_idx < 0 || state_idx >= hypredrv->nstates)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("state_idx %d out of range [0, %d)", state_idx,
                            hypredrv->nstates);
+      hypredrv_LogObjectf(2, hypredrv,
+                          "HYPREDRV_StateVectorApplyCorrection failed: state index out of range");
       return hypredrv_ErrorCodeGet();
    }
 
@@ -953,6 +975,10 @@ HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx)
    HYPRE_ParVectorAxpy((HYPRE_Complex)1.0, (HYPRE_ParVector)obj_delta,
                        (HYPRE_ParVector)obj_s);
 
+   hypredrv_LogObjectf(3, hypredrv,
+                       "HYPREDRV_StateVectorApplyCorrection applied to state slot=%d",
+                       current);
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_StateVectorApplyCorrection end");
    return hypredrv_ErrorCodeGet();
 }
 

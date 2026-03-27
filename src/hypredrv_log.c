@@ -132,7 +132,7 @@ LogVf(int level, int mypid, const char *object_name, int ls_id, const char *fmt,
    {
       return;
    }
-   if (mypid < 0 || mypid > 0)
+   if (mypid != 0)
    {
       return;
    }
@@ -156,6 +156,11 @@ hypredrv_Logf(int level, int mypid, const char *object_name, int ls_id, const ch
 void
 hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
 {
+   if (!hypredrv_LogEnabled(level))
+   {
+      return;
+   }
+
    int         mypid       = -1;
    const char *object_name = NULL;
    int         ls_id       = 0;

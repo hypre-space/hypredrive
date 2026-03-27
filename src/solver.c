@@ -302,7 +302,7 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
                               HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats,
                               int skip_precon_setup)
 {
-   int myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   int myid = hypredrv_LogEnabled(2) ? hypredrv_LogRankFromComm(MPI_COMM_WORLD) : -1;
    hypredrv_Logf(3, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
                  "solver setup begin (solver=%d precon=%d skip_precon_setup=%d)",
                  (int)solver_method, (int)precon_method, skip_precon_setup);
@@ -489,7 +489,7 @@ void
 hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
                      HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats)
 {
-   int myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   int myid = hypredrv_LogEnabled(2) ? hypredrv_LogRankFromComm(MPI_COMM_WORLD) : -1;
    hypredrv_Logf(3, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
                  "solver apply begin (solver=%d)", (int)solver_method);
 
