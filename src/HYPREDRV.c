@@ -150,10 +150,10 @@ uint32_t
 HYPREDRV_Initialize()
 {
    hypredrv_LogInitializeFromEnv();
-   int mypid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
-   hypredrv_Logf(1, mypid, NULL, 0, "HYPREDRV_Initialize begin");
+   hypredrv_LogCommf(1, MPI_COMM_WORLD, NULL, 0, "HYPREDRV_Initialize begin");
    uint32_t code = hypredrv_RuntimeInitialize();
-   hypredrv_Logf(1, mypid, NULL, 0, "HYPREDRV_Initialize end (code=0x%x)", code);
+   hypredrv_LogCommf(1, MPI_COMM_WORLD, NULL, 0, "HYPREDRV_Initialize end (code=0x%x)",
+                     code);
    return code;
 }
 
@@ -164,12 +164,12 @@ HYPREDRV_Initialize()
 uint32_t
 HYPREDRV_Finalize()
 {
-   int mypid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
-   hypredrv_Logf(1, mypid, NULL, 0, "HYPREDRV_Finalize begin");
+   hypredrv_LogCommf(1, MPI_COMM_WORLD, NULL, 0, "HYPREDRV_Finalize begin");
    if (hypredrv_RuntimeIsInitialized())
    {
-      hypredrv_Logf(2, mypid, NULL, 0, "HYPREDRV_Finalize sees %d active object(s)",
-                    hypredrv_RuntimeGetActiveCount());
+      hypredrv_LogCommf(2, MPI_COMM_WORLD, NULL, 0,
+                        "HYPREDRV_Finalize sees %d active object(s)",
+                        hypredrv_RuntimeGetActiveCount());
       hypredrv_RuntimeDestroyAllLiveObjects(DestroyObjectInternal);
    }
 
@@ -181,7 +181,8 @@ HYPREDRV_Finalize()
 #endif
 
    uint32_t code = hypredrv_ErrorCodeGet();
-   hypredrv_Logf(1, mypid, NULL, 0, "HYPREDRV_Finalize end (code=0x%x)", code);
+   hypredrv_LogCommf(1, MPI_COMM_WORLD, NULL, 0, "HYPREDRV_Finalize end (code=0x%x)",
+                     code);
    return code;
 }
 
@@ -245,7 +246,7 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
 
    if (hypredrv->scaling_ctx)
    {
-      hypredrv_ScalingContextDestroy(&hypredrv->scaling_ctx);
+      hypredrv_ScalingContextDestroy(hypredrv->comm, &hypredrv->scaling_ctx);
    }
 
    if (hypredrv->mat_A != hypredrv->mat_M && hypredrv->owns_mat_M)
@@ -377,6 +378,8 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
 
    if (hypredrv_RuntimeRegisterObject(hypredrv))
    {
+      hypredrv_Logf(1, mypid, NULL, 0,
+                    "HYPREDRV_Create failed: runtime registration error");
       hypredrv_StatsDestroy(&hypredrv->stats);
       free(hypredrv);
       return hypredrv_ErrorCodeGet();
@@ -636,11 +639,15 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_InputArgsSetPreconVariant begin (idx=%d)",
+                       variant_idx);
 
    if (!hypredrv->iargs)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("Input arguments not parsed");
+      hypredrv_LogObjectf(2, hypredrv,
+                          "preconditioner variant switch failed: input args missing");
       return hypredrv_ErrorCodeGet();
    }
 
@@ -649,30 +656,49 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid preconditioner variant index: %d (valid range: 0-%d)",
                            variant_idx, hypredrv->iargs->num_precon_variants - 1);
+      hypredrv_LogObjectf(2, hypredrv,
+                          "preconditioner variant switch failed: invalid idx=%d (max=%d)",
+                          variant_idx, hypredrv->iargs->num_precon_variants - 1);
       return hypredrv_ErrorCodeGet();
    }
 
    int current_variant = hypredrv->iargs->active_precon_variant;
    int variant_changed = (variant_idx != current_variant);
+   hypredrv_LogObjectf(
+      2, hypredrv, "preconditioner variant selection: current=%d requested=%d changed=%d",
+      current_variant, variant_idx, variant_changed);
 
    /* Only rebuild solver/preconditioner when switching variants. */
    if (variant_changed)
    {
       if (hypredrv->solver)
       {
+         hypredrv_LogObjectf(
+            2, hypredrv, "switching preconditioner variant: destroying active solver");
          hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
       }
       if (hypredrv->precon)
       {
+         hypredrv_LogObjectf(
+            2, hypredrv,
+            "switching preconditioner variant: destroying active preconditioner");
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                                 &hypredrv->precon);
+         hypredrv->precon_is_setup = false;
       }
+   }
+   else
+   {
+      hypredrv_LogObjectf(2, hypredrv, "preconditioner variant unchanged; reusing setup");
    }
 
    /* Set active variant */
    hypredrv->iargs->active_precon_variant = variant_idx;
    hypredrv->iargs->precon_method         = hypredrv->iargs->precon_methods[variant_idx];
    hypredrv->iargs->precon                = hypredrv->iargs->precon_variants[variant_idx];
+   hypredrv_LogObjectf(2, hypredrv, "preconditioner variant selected: idx=%d method=%d",
+                       variant_idx, (int)hypredrv->iargs->precon_method);
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_InputArgsSetPreconVariant end");
 
    return hypredrv_ErrorCodeGet();
 }
@@ -826,9 +852,8 @@ HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv, int nstates, HYPRE_IJVector *vecs)
       else
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         hypredrv_LogObjectf(2, hypredrv,
-                             "HYPREDRV_StateVectorSet failed: missing vector at index=%d",
-                             i);
+         hypredrv_LogObjectf(
+            2, hypredrv, "HYPREDRV_StateVectorSet failed: missing vector at index=%d", i);
          return hypredrv_ErrorCodeGet();
       }
    }
@@ -864,8 +889,8 @@ HYPREDRV_StateVectorGetValues(HYPREDRV_t hypredrv, int index, HYPRE_Complex **da
       par_vec   = (HYPRE_ParVector)obj;
       seq_vec   = hypre_ParVectorLocalVector(par_vec);
       *data_ptr = hypre_VectorData(seq_vec);
-      hypredrv_LogObjectf(3, hypredrv,
-                          "HYPREDRV_StateVectorGetValues resolved state=%d", state);
+      hypredrv_LogObjectf(3, hypredrv, "HYPREDRV_StateVectorGetValues resolved state=%d",
+                          state);
    }
    else
    {
@@ -887,9 +912,9 @@ HYPREDRV_StateVectorCopy(HYPREDRV_t hypredrv, int index_in, int index_out)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
-   hypredrv_LogObjectf(
-      1, hypredrv, "HYPREDRV_StateVectorCopy begin (index_in=%d index_out=%d)",
-      index_in, index_out);
+   hypredrv_LogObjectf(1, hypredrv,
+                       "HYPREDRV_StateVectorCopy begin (index_in=%d index_out=%d)",
+                       index_in, index_out);
 
    int   state_in  = hypredrv->states[index_in];
    int   state_out = hypredrv->states[index_out];
@@ -906,8 +931,9 @@ HYPREDRV_StateVectorCopy(HYPREDRV_t hypredrv, int index_in, int index_out)
    else
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_LogObjectf(2, hypredrv,
-                          "HYPREDRV_StateVectorCopy failed: source or destination vector is NULL");
+      hypredrv_LogObjectf(
+         2, hypredrv,
+         "HYPREDRV_StateVectorCopy failed: source or destination vector is NULL");
    }
 
    hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_StateVectorCopy end");
@@ -946,17 +972,17 @@ HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
-   hypredrv_LogObjectf(1, hypredrv,
-                       "HYPREDRV_StateVectorApplyCorrection begin (state_idx=%d)",
-                       state_idx);
+   hypredrv_LogObjectf(
+      1, hypredrv, "HYPREDRV_StateVectorApplyCorrection begin (state_idx=%d)", state_idx);
 
    if (state_idx < 0 || state_idx >= hypredrv->nstates)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("state_idx %d out of range [0, %d)", state_idx,
                            hypredrv->nstates);
-      hypredrv_LogObjectf(2, hypredrv,
-                          "HYPREDRV_StateVectorApplyCorrection failed: state index out of range");
+      hypredrv_LogObjectf(
+         2, hypredrv,
+         "HYPREDRV_StateVectorApplyCorrection failed: state index out of range");
       return hypredrv_ErrorCodeGet();
    }
 
@@ -1030,8 +1056,6 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
              hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
       printf("with %lld rows and %lld nonzeros...\n", num_rows, num_nonzeros);
    }
-   hypredrv_LogObjectf(2, hypredrv, "linear system ready: rows=%lld nonzeros=%lld",
-                       num_rows, num_nonzeros);
    HYPRE_ClearAllErrors();
    hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_LinearSystemBuild end");
 
@@ -1737,7 +1761,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    /* Create scaling context if needed and not already created */
    if (hypredrv->iargs->scaling.enabled && !hypredrv->scaling_ctx)
    {
-      hypredrv_ScalingContextCreate(&hypredrv->scaling_ctx);
+      hypredrv_ScalingContextCreate(hypredrv->comm, &hypredrv->scaling_ctx);
       hypredrv_LogObjectf(2, hypredrv, "created scaling context (type=%d)",
                           (int)hypredrv->iargs->scaling.type);
    }
@@ -1938,10 +1962,33 @@ HYPREDRV_PreconApply(HYPREDRV_t hypredrv, HYPRE_Vector vec_b, HYPRE_Vector vec_x
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_PreconApply begin");
+
+   if (!hypredrv->precon)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("HYPREDRV_PreconApply: preconditioner is NULL");
+      hypredrv_LogObjectf(2, hypredrv,
+                          "HYPREDRV_PreconApply failed: preconditioner is NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+   if (!hypredrv->mat_A || !vec_b || !vec_x)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_PreconApply requires matrix, rhs, and solution vectors");
+      hypredrv_LogObjectf(2, hypredrv,
+                          "HYPREDRV_PreconApply failed: matrix or vector is NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   hypredrv_LogObjectf(2, hypredrv, "preconditioner apply: method=%d has_precon=%d",
+                       (int)hypredrv->iargs->precon_method, (hypredrv->precon != NULL));
 
    hypredrv_PreconApply(hypredrv->iargs->precon_method, hypredrv->precon, hypredrv->mat_A,
                         (HYPRE_IJVector)vec_b, (HYPRE_IJVector)vec_x);
    HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_PreconApply end");
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1955,20 +2002,38 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_PreconDestroy begin");
 
    int  next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
    bool should_destroy =
       hypredrv_PreconReuseShouldRecompute(&hypredrv->iargs->precon_reuse,
                                           hypredrv->precon_reuse_timestep_starts,
                                           hypredrv->stats, next_ls_id) != 0;
+   hypredrv_LogObjectf(2, hypredrv,
+                       "preconditioner destroy decision: should_destroy=%d next_ls_id=%d",
+                       (int)should_destroy, next_ls_id);
 
    if (should_destroy)
    {
-      hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                             &hypredrv->precon);
-      hypredrv->precon_is_setup = false;
+      if (hypredrv->precon)
+      {
+         hypredrv_LogObjectf(2, hypredrv, "destroying preconditioner object");
+         hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                                &hypredrv->precon);
+         hypredrv->precon_is_setup = false;
+      }
+      else
+      {
+         hypredrv_LogObjectf(2, hypredrv,
+                             "preconditioner destroy requested but object is NULL");
+      }
+   }
+   else
+   {
+      hypredrv_LogObjectf(2, hypredrv, "preconditioner kept for reuse");
    }
 
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_PreconDestroy end");
    return hypredrv_ErrorCodeGet();
 }
 
@@ -1981,19 +2046,26 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_LinearSolverDestroy begin");
 
    /* First, destroy the preconditioner if we need */
    if (hypredrv->precon)
    {
+      hypredrv_LogObjectf(2, hypredrv,
+                          "linear solver destroy: evaluating preconditioner teardown");
       if (HYPREDRV_PreconDestroy(hypredrv))
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_LogObjectf(
+            2, hypredrv, "linear solver destroy failed: preconditioner teardown error");
          return hypredrv_ErrorCodeGet();
       }
    }
 
    hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+   hypredrv_LogObjectf(2, hypredrv, "linear solver destroy: solver object released");
 
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_LinearSolverDestroy end");
    return hypredrv_ErrorCodeGet();
 }
 
@@ -2089,11 +2161,18 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_LinearSystemComputeEigenspectrum begin");
 
 #ifdef HYPREDRV_ENABLE_EIGSPEC
    /* Exit early if not computing eigenspectrum */
    if (!hypredrv->iargs->ls.eigspec.enable)
    {
+      hypredrv_LogObjectf(
+         2, hypredrv,
+         "eigenspectrum computation skipped: linear_system.eigspec.enable=0");
+      hypredrv_LogObjectf(1, hypredrv,
+                          "HYPREDRV_LinearSystemComputeEigenspectrum end (code=0x%x)",
+                          hypredrv_ErrorCodeGet());
       return hypredrv_ErrorCodeGet();
    }
 
@@ -2111,18 +2190,28 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
    /* pass preconditioner apply callback directly */
    if (hypredrv->iargs->ls.eigspec.preconditioned)
    {
+      hypredrv_LogObjectf(2, hypredrv,
+                          "eigenspectrum computation path: preconditioned operator");
       HYPREDRV_PreconCreate(hypredrv);
       HYPREDRV_PreconSetup(hypredrv);
 
-      return hypredrv_EigSpecCompute(&hypredrv->iargs->ls.eigspec,
-                                     (void *)hypredrv->mat_A, (void *)hypredrv,
-                                     PreconApplyWrapper, hypredrv->stats);
+      uint32_t code =
+         hypredrv_EigSpecCompute(&hypredrv->iargs->ls.eigspec, (void *)hypredrv->mat_A,
+                                 (void *)hypredrv, PreconApplyWrapper, hypredrv->stats);
+      hypredrv_LogObjectf(
+         1, hypredrv, "HYPREDRV_LinearSystemComputeEigenspectrum end (code=0x%x)", code);
+      return code;
    }
    else
    {
-      return hypredrv_EigSpecCompute(&hypredrv->iargs->ls.eigspec,
-                                     (void *)hypredrv->mat_A, NULL, NULL,
-                                     hypredrv->stats);
+      hypredrv_LogObjectf(2, hypredrv,
+                          "eigenspectrum computation path: unpreconditioned operator");
+      uint32_t code =
+         hypredrv_EigSpecCompute(&hypredrv->iargs->ls.eigspec, (void *)hypredrv->mat_A,
+                                 NULL, NULL, hypredrv->stats);
+      hypredrv_LogObjectf(
+         1, hypredrv, "HYPREDRV_LinearSystemComputeEigenspectrum end (code=0x%x)", code);
+      return code;
    }
 #else
    static bool warned_eigspec_disabled = false;
@@ -2135,9 +2224,19 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
               "Reconfigure with -DHYPREDRV_ENABLE_EIGSPEC=ON to enable it.\n");
       fflush(stderr);
       warned_eigspec_disabled = true;
+      hypredrv_LogObjectf(2, hypredrv,
+                          "eigenspectrum support disabled in build; emitted warning");
+   }
+   else
+   {
+      hypredrv_LogObjectf(
+         2, hypredrv, "eigenspectrum support disabled in build; warning already emitted");
    }
 #endif
 
+   hypredrv_LogObjectf(1, hypredrv,
+                       "HYPREDRV_LinearSystemComputeEigenspectrum end (code=0x%x)",
+                       hypredrv_ErrorCodeGet());
    return hypredrv_ErrorCodeGet();
 }
 

@@ -1124,9 +1124,7 @@ hypredrv_InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv,
    }
    hypredrv_Logf(3, myid, NULL, 0, "config text loaded (config_idx=%d base_indent=%d)",
                  config_idx, base_indent);
-
-   /* Quick way to view/debug the tree */
-   // printf("%*s", (int) strlen(text), text);
+   hypredrv_LogTextBlock(3, myid, NULL, 0, "YAML input text:", text);
 
    /* Build YAML tree */
    hypredrv_YAMLtreeBuild(base_indent, text, &tree);

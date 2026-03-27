@@ -1,7 +1,9 @@
 #include <mpi.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <unistd.h>
 
 #include "HYPRE.h"
 #include "HYPREDRV.h"
@@ -14,6 +16,7 @@
 #include "pcg.h"
 #include "precon.h"
 #include "solver.h"
+#include "hypredrv_log.h"
 #include "test_helpers.h"
 #include "yaml.h"
 
@@ -53,6 +56,34 @@ make_scalar_node(const char *key, const char *value)
    YAMLnode *node   = hypredrv_YAMLnodeCreate(key, "", 0);
    node->mapped_val = strdup(value);
    return node;
+}
+
+typedef void (*CapturedStreamFn)(void *);
+
+static void
+capture_stderr_output(CapturedStreamFn fn, void *context, char *buffer, size_t buf_len)
+{
+   FILE *tmp = tmpfile();
+   ASSERT_NOT_NULL(tmp);
+
+   int tmp_fd    = fileno(tmp);
+   int saved_err = dup(fileno(stderr));
+   ASSERT_TRUE(saved_err != -1);
+
+   fflush(stderr);
+   ASSERT_TRUE(dup2(tmp_fd, fileno(stderr)) != -1);
+
+   fn(context);
+   fflush(stderr);
+
+   fseek(tmp, 0, SEEK_SET);
+   size_t read_bytes  = fread(buffer, 1, buf_len - 1, tmp);
+   buffer[read_bytes] = '\0';
+
+   fflush(tmp);
+   ASSERT_TRUE(dup2(saved_err, fileno(stderr)) != -1);
+   close(saved_err);
+   fclose(tmp);
 }
 
 static void
@@ -744,6 +775,86 @@ test_hypredrv_SolverSetup_error_cases(void)
    TEST_HYPRE_FINALIZE();
 }
 
+struct SolverLogContext
+{
+   HYPRE_Solver   solver;
+   HYPRE_IJMatrix A;
+   HYPRE_IJVector b;
+   HYPRE_IJVector x;
+};
+
+static void
+run_solver_failure_logging_capture(void *context)
+{
+   struct SolverLogContext *log_context = (struct SolverLogContext *)context;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_SolverSetup(PRECON_NONE, (solver_t)999, NULL, log_context->solver,
+                        log_context->A, log_context->b, log_context->x, NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_SolverSolveOnly((solver_t)999, log_context->solver, log_context->A,
+                                      log_context->b, log_context->x),
+             -1);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   solver_args args;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+}
+
+static void
+test_hypredrv_solver_failure_paths_emit_logs(void)
+{
+   TEST_HYPRE_INIT();
+
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+   hypredrv_LogInitializeFromEnv();
+
+   HYPRE_IJMatrix A = NULL;
+   HYPRE_IJVector b = NULL, x = NULL;
+   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &A);
+   HYPRE_IJMatrixSetObjectType(A, HYPRE_PARCSR);
+   HYPRE_IJMatrixInitialize(A);
+   HYPRE_IJMatrixAssemble(A);
+
+   HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &b);
+   HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize(b);
+   HYPRE_IJVectorAssemble(b);
+
+   HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &x);
+   HYPRE_IJVectorSetObjectType(x, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize(x);
+   HYPRE_IJVectorAssemble(x);
+
+   HYPRE_Solver solver = NULL;
+   solver_args  args;
+   hypredrv_PCGSetDefaultArgs(&args.pcg);
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+
+   struct SolverLogContext context = {solver, A, b, x};
+   char                    output[16384];
+   capture_stderr_output(run_solver_failure_logging_capture, &context, output,
+                         sizeof(output));
+
+   ASSERT_NOT_NULL(strstr(output, "solver setup failed: invalid solver method=999"));
+   ASSERT_NOT_NULL(strstr(output, "solver solve failed: invalid solver method=999"));
+   ASSERT_NOT_NULL(strstr(output, "solver create failed: solver_ptr is NULL"));
+
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
+   HYPRE_IJVectorDestroy(x);
+   HYPRE_IJVectorDestroy(b);
+   HYPRE_IJMatrixDestroy(A);
+
+   hypredrv_LogReset();
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   TEST_HYPRE_FINALIZE();
+}
+
 /*-----------------------------------------------------------------------------
  * Solver-precon integration tests (from test_solver_precon_integration.c)
  *-----------------------------------------------------------------------------*/
@@ -847,6 +958,7 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_SolverCreate_default_case_comprehensive);
    RUN_TEST(test_hypredrv_SolverApply_error_cases);
    RUN_TEST(test_hypredrv_SolverSetup_error_cases);
+   RUN_TEST(test_hypredrv_solver_failure_paths_emit_logs);
 
    /* Solver-precon integration tests */
    RUN_TEST(test_all_solver_precon_combinations);

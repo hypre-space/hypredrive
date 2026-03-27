@@ -23,11 +23,14 @@ void hypredrv_LogReset(void);
 int  hypredrv_LogLevelGet(void);
 bool hypredrv_LogEnabled(int level);
 int  hypredrv_LogRankFromComm(MPI_Comm comm);
+void hypredrv_LogCommf(int level, MPI_Comm comm, const char *object_name, int ls_id,
+                       const char *fmt, ...) __attribute__((format(printf, 5, 6)));
 
 void hypredrv_Logf(int level, int mypid, const char *object_name, int ls_id,
-                   const char *fmt, ...)
-    __attribute__((format(printf, 5, 6)));
+                   const char *fmt, ...) __attribute__((format(printf, 5, 6)));
 void hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
-    __attribute__((format(printf, 3, 4)));
+   __attribute__((format(printf, 3, 4)));
+void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
+                           const char *header, const char *text);
 
 #endif /* HYPREDRV_LOG_HEADER */

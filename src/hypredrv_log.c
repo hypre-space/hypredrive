@@ -10,9 +10,13 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "hypredrv_object.h"
 
 static int g_hypredrv_log_level = HYPREDRV_LOG_LEVEL_OFF;
+
+static void LogVf(int level, int mypid, const char *object_name, int ls_id,
+                  const char *fmt, va_list args);
 
 static int
 LogLevelParse(const char *env_log_level)
@@ -85,6 +89,11 @@ hypredrv_LogEnabled(int level)
 int
 hypredrv_LogRankFromComm(MPI_Comm comm)
 {
+   if (comm == MPI_COMM_NULL)
+   {
+      return -1;
+   }
+
    int mpi_initialized = 0;
    MPI_Initialized(&mpi_initialized);
    if (!mpi_initialized)
@@ -108,19 +117,35 @@ hypredrv_LogRankFromComm(MPI_Comm comm)
    return mypid;
 }
 
+void
+hypredrv_LogCommf(int level, MPI_Comm comm, const char *object_name, int ls_id,
+                  const char *fmt, ...)
+{
+   if (!hypredrv_LogEnabled(level))
+   {
+      return;
+   }
+
+   int mypid = hypredrv_LogRankFromComm(comm);
+
+   va_list args;
+   va_start(args, fmt);
+   LogVf(level, mypid, object_name, ls_id, fmt, args);
+   va_end(args);
+}
+
 static void
-LogPrintPrefix(int level, int mypid, const char *object_name, int ls_id)
+LogPrintPrefix(int level, const char *object_name, int ls_id)
 {
    const char *name = (object_name && object_name[0] != '\0') ? object_name : "unnamed";
 
    if (ls_id > 0)
    {
-      (void)fprintf(stderr, "[HYPREDRV][L%d][rank=%d][obj=%s][ls=%d] ", level, mypid,
-                    name, ls_id);
+      (void)fprintf(stderr, "[HYPREDRV][L%d][obj=%s][ls=%d] ", level, name, ls_id);
    }
    else
    {
-      (void)fprintf(stderr, "[HYPREDRV][L%d][rank=%d][obj=%s] ", level, mypid, name);
+      (void)fprintf(stderr, "[HYPREDRV][L%d][obj=%s] ", level, name);
    }
 }
 
@@ -128,16 +153,12 @@ static void
 LogVf(int level, int mypid, const char *object_name, int ls_id, const char *fmt,
       va_list args)
 {
-   if (!hypredrv_LogEnabled(level))
-   {
-      return;
-   }
    if (mypid != 0)
    {
       return;
    }
 
-   LogPrintPrefix(level, mypid, object_name, ls_id);
+   LogPrintPrefix(level, object_name, ls_id);
    (void)vfprintf(stderr, fmt, args);
    (void)fputc('\n', stderr);
    (void)fflush(stderr);
@@ -184,4 +205,37 @@ hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
    va_start(args, fmt);
    LogVf(level, mypid, object_name, ls_id, fmt, args);
    va_end(args);
+}
+
+void
+hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
+                      const char *header, const char *text)
+{
+   if (!hypredrv_LogEnabled(level) || mypid != 0 || !text)
+   {
+      return;
+   }
+
+   if (header)
+   {
+      LogPrintPrefix(level, object_name, ls_id);
+      (void)fprintf(stderr, "%s\n", header);
+   }
+
+   const char *line = text;
+   while (*line)
+   {
+      const char *eol = strchr(line, '\n');
+      int         len = eol ? (int)(eol - line) : (int)strlen(line);
+
+      LogPrintPrefix(level, object_name, ls_id);
+      (void)fprintf(stderr, "  %.*s\n", len, line);
+
+      if (!eol)
+      {
+         break;
+      }
+      line = eol + 1;
+   }
+   (void)fflush(stderr);
 }

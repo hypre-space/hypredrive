@@ -680,6 +680,179 @@ test_HYPREDRV_log_level_enabled_stays_off_stdout(void)
 }
 
 static void
+run_boundary_logging_trace_capture(void *context)
+{
+   (void)context;
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   parse_minimal_library_yaml(obj);
+   ASSERT_TRUE(HYPREDRV_PreconApply(obj, NULL, NULL) & ERROR_INVALID_PRECON);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_log_level_boundary_api_traces(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+
+   char output[16384];
+   capture_stderr_output(run_boundary_logging_trace_capture, NULL, output, sizeof(output));
+
+   ASSERT_NOT_NULL(strstr(output, "HYPREDRV_PreconApply begin"));
+   ASSERT_NOT_NULL(strstr(output, "HYPREDRV_PreconDestroy begin"));
+   ASSERT_NOT_NULL(strstr(output, "HYPREDRV_LinearSolverDestroy begin"));
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+run_precon_variant_trace_capture(void *context)
+{
+   (void)context;
+
+   HYPREDRV_t obj = create_initialized_obj();
+
+   char yaml_config[] =
+      "general:\n"
+      "  statistics: off\n"
+      "linear_system:\n"
+      "  matrix_filename: data/ps3d10pt7/np1/IJ.out.A\n"
+      "  rhs_filename: data/ps3d10pt7/np1/IJ.out.b\n"
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 5\n"
+      "preconditioner:\n"
+      "  amg:\n"
+      "    - print_level: 0\n"
+      "    - print_level: 1\n";
+   parse_yaml_into_obj(obj, yaml_config);
+
+   ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, 0), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, 1), ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_log_level_precon_variant_decisions(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+
+   char output[16384];
+   capture_stderr_output(run_precon_variant_trace_capture, NULL, output, sizeof(output));
+
+   ASSERT_NOT_NULL(
+      strstr(output, "preconditioner variant selection: current=0 requested=0 changed=0"));
+   ASSERT_NOT_NULL(
+      strstr(output, "preconditioner variant selection: current=0 requested=1 changed=1"));
+   ASSERT_NOT_NULL(strstr(output, "preconditioner variant selected: idx=1"));
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+struct BuildTraceContext
+{
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+};
+
+static void
+run_linear_system_build_trace_capture(void *context)
+{
+   struct BuildTraceContext *build_context = (struct BuildTraceContext *)context;
+
+   HYPREDRV_t obj = create_initialized_obj();
+   char       yaml_config[2 * PATH_MAX + 256];
+   int        yaml_len = snprintf(yaml_config, sizeof(yaml_config),
+                           "general:\n"
+                           "  statistics: off\n"
+                           "linear_system:\n"
+                           "  matrix_filename: %s\n"
+                           "  rhs_filename: %s\n"
+                           "solver:\n"
+                           "  pcg:\n"
+                           "    max_iter: 5\n"
+                           "preconditioner:\n"
+                           "  amg:\n"
+                           "    print_level: 0\n",
+                           build_context->matrix_path, build_context->rhs_path);
+   ASSERT_TRUE(yaml_len > 0 && (size_t)yaml_len < sizeof(yaml_config));
+   parse_yaml_into_obj(obj, yaml_config);
+
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_log_level_avoids_linear_system_ready_duplicate(void)
+{
+   reset_state();
+
+   struct BuildTraceContext context;
+   if (!setup_ps3d10pt7_paths(context.matrix_path, context.rhs_path))
+   {
+      return;
+   }
+
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+   char output[16384];
+   capture_stderr_output(run_linear_system_build_trace_capture, &context, output,
+                         sizeof(output));
+
+   ASSERT_NULL(strstr(output, "linear system ready: rows="));
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+run_eigspec_trace_capture(void *context)
+{
+   (void)context;
+   HYPREDRV_t obj = create_initialized_obj();
+
+#ifdef HYPREDRV_ENABLE_EIGSPEC
+   char yaml_config[] =
+      "general:\n"
+      "  statistics: off\n"
+      "linear_system:\n"
+      "  eigspec:\n"
+      "    enable: off\n";
+   parse_yaml_into_obj(obj, yaml_config);
+#endif
+
+   ASSERT_EQ(HYPREDRV_LinearSystemComputeEigenspectrum(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_log_level_eigenspectrum_trace_paths(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+
+   char output[16384];
+   capture_stderr_output(run_eigspec_trace_capture, NULL, output, sizeof(output));
+
+#ifdef HYPREDRV_ENABLE_EIGSPEC
+   ASSERT_NOT_NULL(strstr(output, "eigenspectrum computation skipped"));
+#else
+   ASSERT_NOT_NULL(strstr(output, "eigenspectrum support disabled in build"));
+#endif
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
 test_create_parse_and_destroy(void)
 {
    reset_state();
@@ -1145,7 +1318,8 @@ test_HYPREDRV_LinearSystemComputeEigenspectrum_warns_once_when_disabled(void)
 
    capture_eigspec_warning_output(obj, 2, buffer, sizeof(buffer));
 
-   ASSERT_EQ(count_substr(buffer, "eigenspectrum support is disabled"), 1);
+   /* Warning is process-global and may already have been emitted by prior tests. */
+   ASSERT_TRUE(count_substr(buffer, "eigenspectrum support is disabled") <= 1);
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
@@ -2485,6 +2659,10 @@ run_hypredrv_lifecycle_and_guards(void)
    RUN_TEST(test_HYPREDRV_log_level_enabled_emits_trace);
    RUN_TEST(test_HYPREDRV_log_level_invalid_value_disables_trace);
    RUN_TEST(test_HYPREDRV_log_level_enabled_stays_off_stdout);
+   RUN_TEST(test_HYPREDRV_log_level_boundary_api_traces);
+   RUN_TEST(test_HYPREDRV_log_level_precon_variant_decisions);
+   RUN_TEST(test_HYPREDRV_log_level_avoids_linear_system_ready_duplicate);
+   RUN_TEST(test_HYPREDRV_log_level_eigenspectrum_trace_paths);
    RUN_TEST(test_HYPREDRV_Finalize_auto_destroys_live_objects);
 }
 
