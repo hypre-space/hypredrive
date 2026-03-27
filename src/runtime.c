@@ -141,8 +141,7 @@ hypredrv_RuntimeRegisterObject(HYPREDRV_t hypredrv)
 void
 hypredrv_RuntimeUnregisterObject(HYPREDRV_t hypredrv)
 {
-   HYPREDRV_t *cursor  = &g_runtime_state.live_head;
-   bool        removed = false;
+   HYPREDRV_t *cursor = &g_runtime_state.live_head;
 
    while (*cursor)
    {
@@ -153,7 +152,8 @@ hypredrv_RuntimeUnregisterObject(HYPREDRV_t hypredrv)
          {
             g_runtime_state.active_count--;
          }
-         removed = true;
+         hypredrv_LogObjectf(2, hypredrv, "unregistered object (active=%d)",
+                             g_runtime_state.active_count);
          break;
       }
       cursor = &(*cursor)->next_live;
@@ -162,11 +162,6 @@ hypredrv_RuntimeUnregisterObject(HYPREDRV_t hypredrv)
    if (hypredrv)
    {
       hypredrv->next_live = NULL;
-      if (removed)
-      {
-         hypredrv_LogObjectf(2, hypredrv, "unregistered object (active=%d)",
-                             g_runtime_state.active_count);
-      }
    }
 }
 

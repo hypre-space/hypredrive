@@ -250,18 +250,18 @@ capture_eigspec_warning_output(HYPREDRV_t obj, int num_calls, char *buffer, size
    fclose(tmp);
 }
 
-typedef void (*CapturedStdoutFn)(void *);
-typedef void (*CapturedStderrFn)(void *);
+typedef void (*CapturedStreamFn)(void *);
 
 static void
-capture_stdout_output(CapturedStdoutFn fn, void *context, char *buffer, size_t buf_len)
+capture_stream_output(FILE *stream, CapturedStreamFn fn, void *context, char *buffer,
+                      size_t buf_len)
 {
    FILE *tmp = tmpfile();
 
 #ifdef __APPLE__
    if (!tmp)
    {
-      char path[] = "/tmp/hypredrv_test_stdout.txt";
+      char path[] = "/tmp/hypredrv_test_XXXXXX";
       int  fd     = mkstemp(path);
       ASSERT_TRUE(fd != -1);
       tmp = fdopen(fd, "w+");
@@ -271,62 +271,36 @@ capture_stdout_output(CapturedStdoutFn fn, void *context, char *buffer, size_t b
 
    ASSERT_NOT_NULL(tmp);
 
-   int tmp_fd    = fileno(tmp);
-   int saved_out = dup(fileno(stdout));
-   ASSERT_TRUE(saved_out != -1);
+   int tmp_fd   = fileno(tmp);
+   int saved_fd = dup(fileno(stream));
+   ASSERT_TRUE(saved_fd != -1);
 
-   fflush(stdout);
-   ASSERT_TRUE(dup2(tmp_fd, fileno(stdout)) != -1);
+   fflush(stream);
+   ASSERT_TRUE(dup2(tmp_fd, fileno(stream)) != -1);
 
    fn(context);
-   fflush(stdout);
+   fflush(stream);
 
    fseek(tmp, 0, SEEK_SET);
    size_t read_bytes  = fread(buffer, 1, buf_len - 1, tmp);
    buffer[read_bytes] = '\0';
 
    fflush(tmp);
-   ASSERT_TRUE(dup2(saved_out, fileno(stdout)) != -1);
-   close(saved_out);
+   ASSERT_TRUE(dup2(saved_fd, fileno(stream)) != -1);
+   close(saved_fd);
    fclose(tmp);
 }
 
 static void
-capture_stderr_output(CapturedStderrFn fn, void *context, char *buffer, size_t buf_len)
+capture_stdout_output(CapturedStreamFn fn, void *context, char *buffer, size_t buf_len)
 {
-   FILE *tmp = tmpfile();
+   capture_stream_output(stdout, fn, context, buffer, buf_len);
+}
 
-#ifdef __APPLE__
-   if (!tmp)
-   {
-      char path[] = "/tmp/hypredrv_test_stderr.txt";
-      int  fd     = mkstemp(path);
-      ASSERT_TRUE(fd != -1);
-      tmp = fdopen(fd, "w+");
-      unlink(path);
-   }
-#endif
-
-   ASSERT_NOT_NULL(tmp);
-
-   int tmp_fd    = fileno(tmp);
-   int saved_err = dup(fileno(stderr));
-   ASSERT_TRUE(saved_err != -1);
-
-   fflush(stderr);
-   ASSERT_TRUE(dup2(tmp_fd, fileno(stderr)) != -1);
-
-   fn(context);
-   fflush(stderr);
-
-   fseek(tmp, 0, SEEK_SET);
-   size_t read_bytes  = fread(buffer, 1, buf_len - 1, tmp);
-   buffer[read_bytes] = '\0';
-
-   fflush(tmp);
-   ASSERT_TRUE(dup2(saved_err, fileno(stderr)) != -1);
-   close(saved_err);
-   fclose(tmp);
+static void
+capture_stderr_output(CapturedStreamFn fn, void *context, char *buffer, size_t buf_len)
+{
+   capture_stream_output(stderr, fn, context, buffer, buf_len);
 }
 
 static HYPRE_IJMatrix

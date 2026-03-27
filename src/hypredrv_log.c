@@ -147,6 +147,11 @@ void
 hypredrv_Logf(int level, int mypid, const char *object_name, int ls_id, const char *fmt,
               ...)
 {
+   if (!hypredrv_LogEnabled(level))
+   {
+      return;
+   }
+
    va_list args;
    va_start(args, fmt);
    LogVf(level, mypid, object_name, ls_id, fmt, args);

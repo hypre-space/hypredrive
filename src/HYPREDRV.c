@@ -149,7 +149,6 @@ ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
 uint32_t
 HYPREDRV_Initialize()
 {
-   /* Initialize internal trace config early so begin/end logs are symmetric. */
    hypredrv_LogInitializeFromEnv();
    int mypid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
    hypredrv_Logf(1, mypid, NULL, 0, "HYPREDRV_Initialize begin");
