@@ -69,7 +69,7 @@ Lifecycle and Setup
 - :cpp:func:`HYPREDRV_SetLibraryMode` - Mark externally provided HYPRE objects as borrowed rather than owned.
 - :cpp:func:`HYPREDRV_ObjectSetName` - Attach or clear an optional display name for a specific object.
 - :cpp:func:`HYPREDRV_Destroy` - Destroy a hypredrive object and release its managed resources.
-- :cpp:func:`HYPREDRV_Finalize` - Finalize hypredrive and tear down global runtime state.
+- :cpp:func:`HYPREDRV_Finalize` - Auto-destroy any remaining live handles and tear down global runtime state.
 - :cpp:func:`HYPREDRV_ErrorCodeDescribe` - Print a human-readable description for a hypredrive error code.
 - :cpp:func:`HYPREDRV_PrintLibInfo` - Print version and startup information for hypredrive and hypre.
 - :cpp:func:`HYPREDRV_PrintSystemInfo` - Print detected machine and software environment information.

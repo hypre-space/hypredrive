@@ -4,6 +4,8 @@
 function(setup_test_executable target_name source_file)
     add_executable(${target_name} ${source_file})
 
+    target_include_directories(${target_name} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
     # Provide an absolute source dir path to tests (avoids dependence on CTest
     # working directory and prevents relative-path flakiness across tests).
     target_compile_definitions(${target_name} PRIVATE HYPREDRIVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
