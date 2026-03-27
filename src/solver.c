@@ -9,6 +9,7 @@
 
 #include <math.h>
 #include "gen_macros.h"
+#include "hypredrv_log.h"
 
 #if !HYPRE_CHECK_MIN_VERSION(22500, 0)
 static HYPRE_Int
@@ -301,10 +302,17 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
                               HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats,
                               int skip_precon_setup)
 {
+   int myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   hypredrv_Logf(3, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
+                 "solver setup begin (solver=%d precon=%d skip_precon_setup=%d)",
+                 (int)solver_method, (int)precon_method, skip_precon_setup);
+
    if (!solver)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
       hypredrv_ErrorMsgAdd("SolverSetup: solver is NULL");
+      hypredrv_Logf(2, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
+                    "solver setup failed: solver is NULL");
       return;
    }
 
@@ -312,6 +320,8 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("SolverSetup: matrix or vector is NULL");
+      hypredrv_Logf(2, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
+                    "solver setup failed: matrix or vector is NULL");
       return;
    }
 
@@ -320,6 +330,8 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd(
          "SolverSetup: precon is NULL but precon_method is not PRECON_NONE");
+      hypredrv_Logf(2, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
+                    "solver setup failed: preconditioner is NULL");
       return;
    }
 
@@ -390,6 +402,8 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
 
    /* Clear pending error codes from hypre */
    HYPRE_ClearAllErrors();
+   hypredrv_Logf(3, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
+                 "solver setup end");
 }
 
 void
@@ -475,10 +489,16 @@ void
 hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
                      HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats)
 {
+   int myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   hypredrv_Logf(3, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
+                 "solver apply begin (solver=%d)", (int)solver_method);
+
    if (!solver)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
       hypredrv_ErrorMsgAdd("SolverApply: solver is NULL");
+      hypredrv_Logf(2, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
+                    "solver apply failed: solver is NULL");
       return;
    }
 
@@ -486,6 +506,8 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("SolverApply: matrix or vector is NULL");
+      hypredrv_Logf(2, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
+                    "solver apply failed: matrix or vector is NULL");
       return;
    }
 
@@ -504,6 +526,8 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
    {
       hypredrv_StatsIterSet(stats, 0);
       hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
+      hypredrv_Logf(2, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
+                    "solver apply failed during solve");
       return;
    }
 
@@ -516,6 +540,8 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
    b_norm = (b_norm > 0.0) ? b_norm : 1.0;
 
    hypredrv_StatsRelativeResNormSet(stats, r_norm / b_norm);
+   hypredrv_Logf(3, myid, NULL, hypredrv_StatsGetLinearSystemID(stats),
+                 "solver apply end (iters=%d)", (int)iters);
 }
 
 /*-----------------------------------------------------------------------------

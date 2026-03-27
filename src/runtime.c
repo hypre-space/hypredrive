@@ -8,6 +8,7 @@
 #include "runtime.h"
 #include <stdlib.h>
 #include "error.h"
+#include "hypredrv_log.h"
 #include "hypredrv_object.h"
 #include "presets.h"
 
@@ -74,8 +75,11 @@ hypredrv_RuntimeInitialize(void)
 {
    if (!g_runtime_state.initialized)
    {
+      int mypid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+
       /* A fresh runtime initialization owns a fresh error-state view. */
       hypredrv_ErrorStateReset();
+      hypredrv_Logf(1, mypid, NULL, 0, "runtime initialize begin");
 
       /* Initialize hypre */
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
@@ -91,9 +95,12 @@ hypredrv_RuntimeInitialize(void)
          (env_log_level) ? (HYPRE_Int)strtol(env_log_level, NULL, 10) : 0;
 
       HYPRE_SetLogLevel(log_level);
+      hypredrv_Logf(2, mypid, NULL, 0, "forwarded HYPRE_LOG_LEVEL=%d to hypre",
+                    (int)log_level);
 #endif
 
       g_runtime_state.initialized = true;
+      hypredrv_Logf(1, mypid, NULL, 0, "runtime initialize end");
    }
 
    return hypredrv_ErrorCodeGet();
@@ -125,6 +132,8 @@ hypredrv_RuntimeRegisterObject(HYPREDRV_t hypredrv)
    hypredrv->next_live       = g_runtime_state.live_head;
    g_runtime_state.live_head = hypredrv;
    g_runtime_state.active_count++;
+   hypredrv_LogObjectf(2, hypredrv, "registered object (active=%d)",
+                       g_runtime_state.active_count);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -132,7 +141,8 @@ hypredrv_RuntimeRegisterObject(HYPREDRV_t hypredrv)
 void
 hypredrv_RuntimeUnregisterObject(HYPREDRV_t hypredrv)
 {
-   HYPREDRV_t *cursor = &g_runtime_state.live_head;
+   HYPREDRV_t *cursor  = &g_runtime_state.live_head;
+   bool        removed = false;
 
    while (*cursor)
    {
@@ -143,6 +153,7 @@ hypredrv_RuntimeUnregisterObject(HYPREDRV_t hypredrv)
          {
             g_runtime_state.active_count--;
          }
+         removed = true;
          break;
       }
       cursor = &(*cursor)->next_live;
@@ -151,6 +162,11 @@ hypredrv_RuntimeUnregisterObject(HYPREDRV_t hypredrv)
    if (hypredrv)
    {
       hypredrv->next_live = NULL;
+      if (removed)
+      {
+         hypredrv_LogObjectf(2, hypredrv, "unregistered object (active=%d)",
+                             g_runtime_state.active_count);
+      }
    }
 }
 
@@ -167,15 +183,21 @@ hypredrv_RuntimeDestroyAllLiveObjects(hypredrv_RuntimeDestroyFunc destroy_fn)
       return hypredrv_ErrorCodeGet();
    }
 
+   int mypid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   hypredrv_Logf(1, mypid, NULL, 0, "finalize sweep begin (active=%d)",
+                 g_runtime_state.active_count);
    g_runtime_state.finalize_in_progress = true;
 
    while (g_runtime_state.live_head)
    {
       HYPREDRV_t hypredrv = g_runtime_state.live_head;
+      hypredrv_LogObjectf(2, hypredrv, "auto-destroying live object during finalize");
       destroy_fn(hypredrv);
    }
 
    g_runtime_state.finalize_in_progress = false;
+   hypredrv_Logf(1, mypid, NULL, 0, "finalize sweep end (active=%d)",
+                 g_runtime_state.active_count);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -183,14 +205,20 @@ hypredrv_RuntimeDestroyAllLiveObjects(hypredrv_RuntimeDestroyFunc destroy_fn)
 uint32_t
 hypredrv_RuntimeFinalizeState(void)
 {
+   int mypid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+
    if (g_runtime_state.initialized)
    {
+      hypredrv_Logf(1, mypid, NULL, 0, "runtime finalize begin");
       if (g_runtime_state.live_head)
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd(
             "Runtime finalize requested with %d live HYPREDRV object(s)",
             g_runtime_state.active_count);
+         hypredrv_Logf(1, mypid, NULL, 0,
+                       "runtime finalize blocked: %d live object(s) remain",
+                       g_runtime_state.active_count);
          return hypredrv_ErrorCodeGet();
       }
 
@@ -199,6 +227,7 @@ hypredrv_RuntimeFinalizeState(void)
       HYPRE_Finalize();
 #endif
       g_runtime_state.initialized = false;
+      hypredrv_Logf(1, mypid, NULL, 0, "runtime finalize end");
    }
 
    g_runtime_state.finalize_in_progress = false;
@@ -207,6 +236,7 @@ hypredrv_RuntimeFinalizeState(void)
 
    /* Do not leak message buffers across independent initialize/finalize cycles. */
    hypredrv_ErrorStateReset();
+   hypredrv_LogReset();
 
    return hypredrv_ErrorCodeGet();
 }

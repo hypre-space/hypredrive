@@ -10,6 +10,7 @@
 #include "HYPRE_parcsr_ls.h"
 #include "field.h"
 #include "gen_macros.h"
+#include "hypredrv_log.h"
 #include "presets.h"
 #include "scaling.h"
 #include "stats.h"
@@ -1103,6 +1104,8 @@ hypredrv_InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv,
    char       *config_dir  = NULL;
 
    MPI_Comm_rank(comm, &myid);
+   hypredrv_Logf(3, myid, NULL, 0, "args parse begin (lib_mode=%d argc=%d)",
+                 (int)lib_mode, argc);
 
    /* Read input arguments from file or string.
     *
@@ -1116,22 +1119,28 @@ hypredrv_InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv,
    if (!LoadConfigText(comm, argc, argv, config_idx, &base_indent, &text, &config_dir))
    {
       *args_ptr = NULL;
+      hypredrv_Logf(2, myid, NULL, 0, "args parse failed while loading config text");
       return;
    }
+   hypredrv_Logf(3, myid, NULL, 0, "config text loaded (config_idx=%d base_indent=%d)",
+                 config_idx, base_indent);
 
    /* Quick way to view/debug the tree */
    // printf("%*s", (int) strlen(text), text);
 
    /* Build YAML tree */
    hypredrv_YAMLtreeBuild(base_indent, text, &tree);
+   hypredrv_Logf(3, myid, NULL, 0, "yaml tree build complete");
 
    /* Expand nested include files (post-build to keep parser simple) */
    hypredrv_YAMLtreeExpandIncludes(tree, config_dir ? config_dir : ".");
+   hypredrv_Logf(3, myid, NULL, 0, "yaml include expansion complete");
 
    /* Check if any config option has been passed in via CLI.
       If so, overwrite the data stored in the YAMLtree object
       with the new values. */
    ApplyCLIOverrides(argc, argv, config_idx, tree);
+   hypredrv_Logf(3, myid, NULL, 0, "yaml CLI overrides applied");
 
    /* Return earlier if YAML tree was not built properly */
    if (!myid && hypredrv_ErrorCodeActive())
@@ -1140,6 +1149,7 @@ hypredrv_InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv,
       hypredrv_ErrorCodeSet(ERROR_YAML_TREE_INVALID);
       free(text);
       hypredrv_YAMLtreeDestroy(&tree);
+      hypredrv_Logf(2, myid, NULL, 0, "args parse failed: invalid YAML tree");
       return;
    }
    MPI_Barrier(comm);
@@ -1157,6 +1167,8 @@ hypredrv_InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv,
    hypredrv_InputArgsParseLinearSystem(iargs, tree);
    hypredrv_InputArgsParseSolver(iargs, tree);
    hypredrv_InputArgsParsePrecon(iargs, tree);
+   hypredrv_Logf(3, myid, NULL, 0,
+                 "parsed sections: general/linear_system/solver/preconditioner");
 
    /* Validate the YAML tree (Has to occur after input args parsing) */
    hypredrv_YAMLtreeValidate(tree);
@@ -1168,6 +1180,7 @@ hypredrv_InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv,
       hypredrv_ErrorCodeSet(ERROR_YAML_TREE_INVALID);
       hypredrv_InputArgsDestroy(&iargs);
       hypredrv_YAMLtreeDestroy(&tree);
+      hypredrv_Logf(2, myid, NULL, 0, "args parse failed during post-parse validation");
       return;
    }
 
@@ -1183,4 +1196,10 @@ hypredrv_InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv,
 
    /* Set output pointer */
    *args_ptr = iargs;
+   hypredrv_Logf(2, myid, NULL, 0,
+                 "args parse end: solver=%d precon=%d stats=%d scaling_enabled=%d "
+                 "scaling_type=%d rhs_mode=%d",
+                 (int)iargs->solver_method, (int)iargs->precon_method,
+                 iargs->general.statistics, iargs->scaling.enabled,
+                 (int)iargs->scaling.type, (int)iargs->ls.rhs_mode);
 }

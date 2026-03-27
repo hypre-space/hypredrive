@@ -321,6 +321,13 @@ Coding Style & Project Conventions
   editing those blocks unless necessary.
 - Follow const-correctness and safe API patterns. Error-reporting helpers must be used consistently.
   The ``HYPREDRV_SAFE_CALL`` macro logs location info and aborts or traps under ``HYPREDRV_DEBUG=1``.
+- For internal runtime traces, use the environment variable ``HYPREDRV_LOG_LEVEL``:
+  ``0`` disables traces (default), ``1`` logs lifecycle boundaries, ``2`` adds
+  decision/context messages, and ``3`` enables deeper parse/linear-system/scaling subphase traces.
+  Trace output is emitted to ``stderr`` and filtered to rank 0 by default.
+- ``HYPREDRV_LOG_LEVEL`` controls hypredrive traces only. Hypre's own logging remains controlled
+  by ``HYPRE_LOG_LEVEL`` (forwarded during runtime initialization when supported by the linked
+  Hypre version).
 - Public API naming: ``HYPRE_`` for public HYPRE APIs, ``hypre_`` or project-private helpers are not
   exported. In hypredrive, public C API follows the ``HYPREDRV_`` prefix.
 

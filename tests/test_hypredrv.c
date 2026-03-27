@@ -251,6 +251,7 @@ capture_eigspec_warning_output(HYPREDRV_t obj, int num_calls, char *buffer, size
 }
 
 typedef void (*CapturedStdoutFn)(void *);
+typedef void (*CapturedStderrFn)(void *);
 
 static void
 capture_stdout_output(CapturedStdoutFn fn, void *context, char *buffer, size_t buf_len)
@@ -287,6 +288,44 @@ capture_stdout_output(CapturedStdoutFn fn, void *context, char *buffer, size_t b
    fflush(tmp);
    ASSERT_TRUE(dup2(saved_out, fileno(stdout)) != -1);
    close(saved_out);
+   fclose(tmp);
+}
+
+static void
+capture_stderr_output(CapturedStderrFn fn, void *context, char *buffer, size_t buf_len)
+{
+   FILE *tmp = tmpfile();
+
+#ifdef __APPLE__
+   if (!tmp)
+   {
+      char path[] = "/tmp/hypredrv_test_stderr.txt";
+      int  fd     = mkstemp(path);
+      ASSERT_TRUE(fd != -1);
+      tmp = fdopen(fd, "w+");
+      unlink(path);
+   }
+#endif
+
+   ASSERT_NOT_NULL(tmp);
+
+   int tmp_fd    = fileno(tmp);
+   int saved_err = dup(fileno(stderr));
+   ASSERT_TRUE(saved_err != -1);
+
+   fflush(stderr);
+   ASSERT_TRUE(dup2(tmp_fd, fileno(stderr)) != -1);
+
+   fn(context);
+   fflush(stderr);
+
+   fseek(tmp, 0, SEEK_SET);
+   size_t read_bytes  = fread(buffer, 1, buf_len - 1, tmp);
+   buffer[read_bytes] = '\0';
+
+   fflush(tmp);
+   ASSERT_TRUE(dup2(saved_err, fileno(stderr)) != -1);
+   close(saved_err);
    fclose(tmp);
 }
 
@@ -589,6 +628,81 @@ test_HYPREDRV_Finalize_auto_destroys_live_objects(void)
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj3), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj3), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+run_minimal_lifecycle_for_trace_capture(void *context)
+{
+   (void)context;
+   HYPREDRV_t obj = NULL;
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+   ASSERT_NOT_NULL(obj);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_NULL(obj);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_log_level_default_off(void)
+{
+   reset_state();
+   unsetenv("HYPREDRV_LOG_LEVEL");
+
+   char output[8192];
+   capture_stderr_output(run_minimal_lifecycle_for_trace_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_NULL(strstr(output, "[HYPREDRV][L"));
+}
+
+static void
+test_HYPREDRV_log_level_enabled_emits_trace(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+
+   char output[16384];
+   capture_stderr_output(run_minimal_lifecycle_for_trace_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L1]"));
+   ASSERT_NOT_NULL(strstr(output, "HYPREDRV_Create begin"));
+   ASSERT_NOT_NULL(strstr(output, "registered object"));
+   ASSERT_NOT_NULL(strstr(output, "HYPREDRV_Destroy end"));
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+test_HYPREDRV_log_level_invalid_value_disables_trace(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "invalid", 1);
+
+   char output[8192];
+   capture_stderr_output(run_minimal_lifecycle_for_trace_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_NULL(strstr(output, "[HYPREDRV][L"));
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+test_HYPREDRV_log_level_enabled_stays_off_stdout(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+
+   char output[8192];
+   capture_stdout_output(run_minimal_lifecycle_for_trace_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_NULL(strstr(output, "[HYPREDRV][L"));
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
 }
 
 static void
@@ -2393,6 +2507,10 @@ run_hypredrv_lifecycle_and_guards(void)
    RUN_TEST(test_requires_initialization_guard);
    RUN_TEST(test_initialize_and_finalize_idempotent);
    RUN_TEST(test_HYPREDRV_Create_null_output_pointer);
+   RUN_TEST(test_HYPREDRV_log_level_default_off);
+   RUN_TEST(test_HYPREDRV_log_level_enabled_emits_trace);
+   RUN_TEST(test_HYPREDRV_log_level_invalid_value_disables_trace);
+   RUN_TEST(test_HYPREDRV_log_level_enabled_stays_off_stdout);
    RUN_TEST(test_HYPREDRV_Finalize_auto_destroys_live_objects);
 }
 

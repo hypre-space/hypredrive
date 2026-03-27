@@ -14,13 +14,13 @@ libHYPREDRV_la_SOURCES = src/error.c src/eigspec.c src/info.c src/stats.c src/ut
                          src/field.c src/vector.c src/matrix.c src/linsys.c src/cheby.c src/amg.c\
                          src/fsai.c src/ilu.c src/mgr.c src/precon.c src/presets.c src/krylov.c\
 			 src/pcg.c src/gmres.c src/fgmres.c src/bicgstab.c src/solver.c src/args.c \
-                         src/comp.c src/lsseq.c src/scaling.c src/runtime.c src/HYPREDRV.c
+                         src/comp.c src/lsseq.c src/scaling.c src/runtime.c src/hypredrv_log.c src/HYPREDRV.c
 libHYPREDRV_la_CFLAGS = $(AM_CPPFLAGS) -fvisibility=hidden
 libHYPREDRV_la_LDFLAGS = -version-info 0:1:0
 
 include_HEADERS = include/HYPREDRV.h include/HYPREDRV_utils.h
 nodist_include_HEADERS = HYPREDRV_config.h
-noinst_HEADERS = src/hypredrv_object.h src/runtime.h
+noinst_HEADERS = src/hypredrv_object.h src/runtime.h src/hypredrv_log.h
 ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS = -I$(top_builddir) -I$(top_srcdir)/include
 

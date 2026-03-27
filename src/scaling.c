@@ -13,6 +13,7 @@
 #include "error.h"
 #include "field.h"
 #include "gen_macros.h"
+#include "hypredrv_log.h"
 #include "linsys.h"
 #include "utils.h"
 
@@ -69,14 +70,16 @@ hypredrv_ScalingSetDefaultArgs(Scaling_args *args)
 void
 hypredrv_ScalingContextCreate(Scaling_context **ctx_ptr)
 {
-   Scaling_context *ctx = (Scaling_context *)malloc(sizeof(Scaling_context));
-   ctx->enabled         = 0;
-   ctx->type            = SCALING_RHS_L2;
-   ctx->is_applied      = 0;
-   ctx->scalar_factor   = 1.0;
-   ctx->scaling_vector  = NULL;
-   ctx->scaling_ijvec   = NULL;
-   *ctx_ptr             = ctx;
+   int              myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   Scaling_context *ctx  = (Scaling_context *)malloc(sizeof(Scaling_context));
+   ctx->enabled          = 0;
+   ctx->type             = SCALING_RHS_L2;
+   ctx->is_applied       = 0;
+   ctx->scalar_factor    = 1.0;
+   ctx->scaling_vector   = NULL;
+   ctx->scaling_ijvec    = NULL;
+   *ctx_ptr              = ctx;
+   hypredrv_Logf(3, myid, NULL, 0, "scaling context created");
 }
 
 /*-----------------------------------------------------------------------------
@@ -112,6 +115,7 @@ ScalingContextFreeVector(Scaling_context *ctx)
 void
 hypredrv_ScalingContextDestroy(Scaling_context **ctx_ptr)
 {
+   int myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
    if (!ctx_ptr || !*ctx_ptr)
    {
       return;
@@ -123,6 +127,7 @@ hypredrv_ScalingContextDestroy(Scaling_context **ctx_ptr)
 
    free(ctx);
    *ctx_ptr = NULL;
+   hypredrv_Logf(3, myid, NULL, 0, "scaling context destroyed");
 }
 
 /*-----------------------------------------------------------------------------
@@ -426,21 +431,25 @@ void
 hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                         HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b, IntArray *dofmap)
 {
+   int myid = hypredrv_LogRankFromComm(comm);
    if (!args || !ctx)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("hypredrv_ScalingCompute: args or ctx is NULL");
+      hypredrv_Logf(2, myid, NULL, 0, "scaling compute failed: args or context is NULL");
       return;
    }
 
    if (!args->enabled)
    {
       ctx->enabled = 0;
+      hypredrv_Logf(3, myid, NULL, 0, "scaling compute skipped (disabled)");
       return;
    }
 
    ctx->enabled = 1;
    ctx->type    = args->type;
+   hypredrv_Logf(3, myid, NULL, 0, "scaling compute begin (type=%d)", (int)args->type);
 
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    switch (args->type)
@@ -460,6 +469,9 @@ hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
       default:
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("hypredrv_ScalingCompute: unknown scaling type");
+         hypredrv_Logf(2, myid, NULL, 0,
+                       "scaling compute failed: unknown scaling type=%d",
+                       (int)args->type);
          break;
    }
 #else
@@ -469,6 +481,7 @@ hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    /* Scaling disabled on older hypre versions - silently ignore */
    ctx->enabled = 0;
 #endif
+   hypredrv_Logf(3, myid, NULL, 0, "scaling compute end (enabled=%d)", ctx->enabled);
 }
 
 /*-----------------------------------------------------------------------------
@@ -748,6 +761,7 @@ hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
                               HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
                               HYPRE_IJVector vec_x)
 {
+   int myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
    if (!ctx || !ctx->enabled)
    {
       return;
@@ -756,8 +770,11 @@ hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
    if (ctx->is_applied)
    {
       /* Already applied, skip */
+      hypredrv_Logf(3, myid, NULL, 0, "scaling apply skipped (already applied)");
       return;
    }
+
+   hypredrv_Logf(3, myid, NULL, 0, "scaling apply begin (type=%d)", (int)ctx->type);
 
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    switch (ctx->type)
@@ -774,6 +791,8 @@ hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
       default:
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("hypredrv_ScalingApplyToSystem: unknown scaling type");
+         hypredrv_Logf(2, myid, NULL, 0, "scaling apply failed: unknown scaling type=%d",
+                       (int)ctx->type);
          break;
    }
 #else
@@ -782,6 +801,7 @@ hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
    (void)vec_b;
    (void)vec_x;
 #endif
+   hypredrv_Logf(3, myid, NULL, 0, "scaling apply end (is_applied=%d)", ctx->is_applied);
 }
 
 /*-----------------------------------------------------------------------------
@@ -918,10 +938,13 @@ hypredrv_ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
                              HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
                              HYPRE_IJVector vec_x)
 {
+   int myid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
    if (!ctx || !ctx->enabled || !ctx->is_applied)
    {
       return;
    }
+
+   hypredrv_Logf(3, myid, NULL, 0, "scaling undo begin (type=%d)", (int)ctx->type);
 
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    switch (ctx->type)
@@ -938,6 +961,8 @@ hypredrv_ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
       default:
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("hypredrv_ScalingUndoOnSystem: unknown scaling type");
+         hypredrv_Logf(2, myid, NULL, 0, "scaling undo failed: unknown scaling type=%d",
+                       (int)ctx->type);
          break;
    }
 #else
@@ -946,4 +971,5 @@ hypredrv_ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
    (void)vec_b;
    (void)vec_x;
 #endif
+   hypredrv_Logf(3, myid, NULL, 0, "scaling undo end (is_applied=%d)", ctx->is_applied);
 }

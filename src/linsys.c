@@ -25,6 +25,7 @@
 #include <sys/stat.h>
 #include "containers.h"
 #include "error.h"
+#include "hypredrv_log.h"
 #include "linsys.h"
 #include "lsseq.h"
 
@@ -611,6 +612,8 @@ hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
 
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
    int  ls_id                                = hypredrv_StatsGetLinearSystemID(stats) + 1;
+   int  myid                                 = hypredrv_LogRankFromComm(comm);
+   hypredrv_Logf(3, myid, NULL, ls_id, "matrix read begin");
 
    /* Destroy matrix if it already exists */
    if (*matrix_ptr)
@@ -620,14 +623,18 @@ hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
 
    if (args->sequence_filename[0] != '\0')
    {
+      hypredrv_Logf(3, myid, NULL, ls_id, "matrix source: sequence file '%s'",
+                    args->sequence_filename);
       if (!hypredrv_LSSeqReadMatrix(comm, args->sequence_filename, ls_id,
                                     LinearSystemMemoryLocationGet(args), matrix_ptr))
       {
          hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+         hypredrv_Logf(2, myid, NULL, ls_id, "matrix read failed from sequence source");
          return;
       }
 
       hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+      hypredrv_Logf(3, myid, NULL, ls_id, "matrix read end");
       return;
    }
 
@@ -638,16 +645,21 @@ hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       hypredrv_ErrorMsgAddInvalidFilename("");
       hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+      hypredrv_Logf(2, myid, NULL, ls_id, "matrix filename resolution failed");
       return;
    }
+   hypredrv_Logf(3, myid, NULL, ls_id, "matrix source: '%s'", matrix_filename);
 
    if (!LinearSystemIJMatrixReadFromFile(comm, args, matrix_filename, matrix_ptr))
    {
       hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+      hypredrv_Logf(2, myid, NULL, ls_id, "matrix read failed from '%s'",
+                    matrix_filename);
       return;
    }
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+   hypredrv_Logf(3, myid, NULL, ls_id, "matrix read end");
 }
 
 /*-----------------------------------------------------------------------------
@@ -992,8 +1004,11 @@ hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
                             Stats *stats)
 {
    int ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
+   int myid  = hypredrv_LogRankFromComm(comm);
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "rhs");
+   hypredrv_Logf(3, myid, NULL, ls_id, "rhs setup begin (rhs_mode=%d)",
+                 (int)args->rhs_mode);
 
    if (*xref_ptr)
    {
@@ -1008,16 +1023,21 @@ hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
 
    if (args->rhs_mode != 2)
    {
+      hypredrv_Logf(3, myid, NULL, ls_id, "rhs source: generated mode=%d",
+                    (int)args->rhs_mode);
       LinearSystemRHSGeneratedSet(comm, args, mat, xref_ptr, rhs_ptr);
    }
    else
    {
       if (args->sequence_filename[0] != '\0')
       {
+         hypredrv_Logf(3, myid, NULL, ls_id, "rhs source: sequence file '%s'",
+                       args->sequence_filename);
          if (!hypredrv_LSSeqReadRHS(comm, args->sequence_filename, ls_id,
                                     LinearSystemMemoryLocationGet(args), rhs_ptr))
          {
             hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
+            hypredrv_Logf(2, myid, NULL, ls_id, "rhs read failed from sequence source");
             return;
          }
       }
@@ -1027,15 +1047,19 @@ hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
          LinearSystemDataFilenameResolve(args, ls_id, args->rhs_filename,
                                          args->rhs_basename, rhs_filename,
                                          sizeof(rhs_filename));
+         hypredrv_Logf(3, myid, NULL, ls_id, "rhs source: '%s'", rhs_filename);
          if (!LinearSystemRHSReadFromFile(comm, args, mat, rhs_filename, rhs_ptr))
          {
             hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
+            hypredrv_Logf(2, myid, NULL, ls_id, "rhs read failed from '%s'",
+                          rhs_filename);
             return;
          }
       }
    }
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
+   hypredrv_Logf(3, myid, NULL, ls_id, "rhs setup end");
 }
 
 /*-----------------------------------------------------------------------------
@@ -1191,13 +1215,17 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
 {
    HYPRE_ParVector par_x0 = NULL, par_x = NULL;
    void           *obj_x0 = NULL, *obj_x = NULL;
+   int             myid  = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   int             ls_id = hypredrv_StatsGetLinearSystemID(stats);
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
+   hypredrv_Logf(3, myid, NULL, ls_id, "initial guess reset begin");
 
    if (!x0_ptr || !x_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
+      hypredrv_Logf(2, myid, NULL, ls_id, "initial guess reset failed: x0 or x is NULL");
       return;
    }
 
@@ -1210,6 +1238,7 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
    HYPRE_ParVectorCopy(par_x0, par_x);
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
+   hypredrv_Logf(3, myid, NULL, ls_id, "initial guess reset end");
 }
 
 /*-----------------------------------------------------------------------------
