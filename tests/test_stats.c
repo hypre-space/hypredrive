@@ -8,42 +8,6 @@
 #include "stats.h"
 #include "test_helpers.h"
 
-struct hypredrv_struct
-{
-   MPI_Comm comm;
-   int      mypid;
-   int      nprocs;
-   int      nstates;
-   int     *states;
-   bool     lib_mode;
-
-   input_args *iargs;
-
-   IntArray *dofmap;
-
-   HYPRE_IJMatrix mat_A;
-   HYPRE_IJMatrix mat_M;
-   HYPRE_IJVector vec_b;
-   HYPRE_IJVector vec_x;
-   HYPRE_IJVector vec_x0;
-   HYPRE_IJVector vec_xref;
-   HYPRE_IJVector vec_nn;
-   HYPRE_IJVector *vec_s;
-   bool           owns_mat_M;
-   bool           owns_vec_x;
-   bool           owns_vec_x0;
-   bool           owns_vec_xref;
-
-   HYPRE_Precon precon;
-   HYPRE_Solver solver;
-   bool         precon_is_setup;
-
-   void *scaling_ctx;
-   IntArray *precon_reuse_timestep_starts;
-
-   Stats *stats;
-};
-
 static void
 test_Stats_basic_lifecycle_and_timers(void)
 {
@@ -119,16 +83,7 @@ test_Stats_annotations_and_levels(void)
 static void
 test_HYPREDRV_StatsLevelGetEntry_wrapper_branches(void)
 {
-   /* This test targets the wrapper logic in src/HYPREDRV.c (aggregate computation),
-    * without requiring a full HYPREDRV object. */
-   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
-
-   HYPREDRV_t obj = NULL;
-   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
-   ASSERT_NOT_NULL(obj);
-
-   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
-   Stats                  *s     = state->stats;
+   Stats *s = hypredrv_StatsCreate();
    ASSERT_NOT_NULL(s);
 
    /* Build one synthetic level entry spanning 2 solves */
@@ -147,8 +102,8 @@ test_HYPREDRV_StatsLevelGetEntry_wrapper_branches(void)
    int    entry_id = 0, num_solves = 0, linear_iters = 0;
    double setup_time = 0.0, solve_time = 0.0;
 
-   int ret = HYPREDRV_StatsLevelGetEntry(obj, 0, 0, &entry_id, &num_solves, &linear_iters,
-                                        &setup_time, &solve_time);
+   int ret = hypredrv_StatsLevelGetEntrySummary(s, 0, 0, &entry_id, &num_solves,
+                                                &linear_iters, &setup_time, &solve_time);
    ASSERT_EQ(ret, 0);
    ASSERT_EQ(entry_id, 7);
    ASSERT_EQ(num_solves, 2);
@@ -157,16 +112,15 @@ test_HYPREDRV_StatsLevelGetEntry_wrapper_branches(void)
    ASSERT_EQ_DOUBLE(solve_time, 10.0, 1e-12);
 
    /* Optional output pointer branches */
-   ret = HYPREDRV_StatsLevelGetEntry(obj, 0, 0, NULL, NULL, NULL, NULL, NULL);
+   ret = hypredrv_StatsLevelGetEntrySummary(s, 0, 0, NULL, NULL, NULL, NULL, NULL);
    ASSERT_EQ(ret, 0);
 
    /* ret != 0 branch */
-   ret = HYPREDRV_StatsLevelGetEntry(obj, 0, -1, &entry_id, &num_solves, &linear_iters,
-                                     &setup_time, &solve_time);
+   ret = hypredrv_StatsLevelGetEntrySummary(s, 0, -1, &entry_id, &num_solves,
+                                            &linear_iters, &setup_time, &solve_time);
    ASSERT_NE(ret, 0);
 
-   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   hypredrv_StatsDestroy(&s);
 }
 
 int

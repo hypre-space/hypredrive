@@ -39,7 +39,9 @@ The library-side workflow in C/C++ generally follows these steps:
    ``HYPREDRV_StatsPrint`` yourself only if you want an extra snapshot earlier.
    If you manage multiple handles, set ``general.name`` in YAML or call
    ``HYPREDRV_ObjectSetName`` so the summary can identify which object produced it.
-9. Retrieve solution values if needed; finalize and destroy hypredrive.
+9. Retrieve solution values if needed; destroy handles explicitly when practical, then
+   finalize hypredrive. ``HYPREDRV_Finalize()`` will auto-destroy any remaining live
+   handles, but it cannot rewrite your local handle variables to ``NULL``.
 
 If your application owns multiple ``HYPREDRV_t`` objects concurrently, or if you want
 preconditioner reuse to respect application-defined timestep / nonlinear-iteration boundaries,

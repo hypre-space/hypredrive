@@ -30,98 +30,28 @@
 
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
+#include "hypredrv_object.h"
+#include "runtime.h"
 
 /* Forward declarations for file-local helpers */
 static uint32_t LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv);
-
-// Flag to check if HYPREDRV is initialized
-static bool hypredrv_is_initialized = false;
+static uint32_t DestroyObjectInternal(HYPREDRV_t hypredrv);
 
 // Macro to check if HYPREDRV is initialized
 #define HYPREDRV_CHECK_INIT()                                \
-   if (!hypredrv_is_initialized)                             \
+   if (!hypredrv_RuntimeIsInitialized())                     \
    {                                                         \
       hypredrv_ErrorCodeSet(ERROR_HYPREDRV_NOT_INITIALIZED); \
       return hypredrv_ErrorCodeGet();                        \
    }
 
 // Macro to check if HYPREDRV object is valid
-#define HYPREDRV_CHECK_OBJ()                             \
-   if (!hypredrv)                                        \
-   {                                                     \
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ); \
-      return hypredrv_ErrorCodeGet();                    \
+#define HYPREDRV_CHECK_OBJ()                                 \
+   if (!hypredrv || !hypredrv_RuntimeObjectIsLive(hypredrv)) \
+   {                                                         \
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);     \
+      return hypredrv_ErrorCodeGet();                        \
    }
-
-/*-----------------------------------------------------------------------------
- * hypredrv_t data type
- *-----------------------------------------------------------------------------*/
-
-typedef struct hypredrv_struct
-{
-   MPI_Comm comm;
-   int      mypid;
-   int      nprocs;
-   int      nstates;
-   int     *states;
-   bool     lib_mode;
-
-   input_args *iargs;
-
-   IntArray *dofmap;
-
-   HYPRE_IJMatrix  mat_A;
-   HYPRE_IJMatrix  mat_M;
-   HYPRE_IJVector  vec_b;
-   HYPRE_IJVector  vec_x;
-   HYPRE_IJVector  vec_x0;
-   HYPRE_IJVector  vec_xref;
-   HYPRE_IJVector  vec_nn;
-   HYPRE_IJVector *vec_s;
-   bool            owns_mat_M;
-   bool            owns_vec_x;
-   bool            owns_vec_x0;
-   bool            owns_vec_xref;
-
-   HYPRE_Precon precon;
-   HYPRE_Solver solver;
-   bool         precon_is_setup;
-
-   Scaling_context *scaling_ctx;
-   IntArray        *precon_reuse_timestep_starts;
-
-   Stats *stats;
-} hypredrv_t;
-
-static uint32_t
-InitializeRuntime(void)
-{
-   if (!hypredrv_is_initialized)
-   {
-      /* A fresh runtime initialization owns a fresh error-state view. */
-      hypredrv_ErrorStateReset();
-
-      /* Initialize hypre */
-#if HYPRE_CHECK_MIN_VERSION(22900, 0)
-      HYPRE_Initialize();
-#if HYPRE_CHECK_MIN_VERSION(23100, 0)
-      HYPRE_DeviceInitialize();
-#endif
-#endif
-
-#if HYPRE_CHECK_MIN_VERSION(23100, 16)
-      const char *env_log_level = getenv("HYPRE_LOG_LEVEL");
-      HYPRE_Int   log_level =
-         (env_log_level) ? (HYPRE_Int)strtol(env_log_level, NULL, 10) : 0;
-
-      HYPRE_SetLogLevel(log_level);
-#endif
-
-      hypredrv_is_initialized = true;
-   }
-
-   return hypredrv_ErrorCodeGet();
-}
 
 static void
 DestroyActiveSolver(HYPREDRV_t hypredrv)
@@ -218,33 +148,7 @@ ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
 uint32_t
 HYPREDRV_Initialize()
 {
-   if (!hypredrv_is_initialized)
-   {
-      /* A fresh runtime initialization owns a fresh error-state view. */
-      hypredrv_ErrorStateReset();
-
-      /* Initialize hypre */
-#if HYPRE_CHECK_MIN_VERSION(22900, 0)
-      HYPRE_Initialize();
-#if HYPRE_CHECK_MIN_VERSION(23100, 0)
-      HYPRE_DeviceInitialize();
-#endif
-#endif
-
-#if HYPRE_CHECK_MIN_VERSION(23100, 16)
-      /* Check for environment variables */
-      const char *env_log_level = getenv("HYPRE_LOG_LEVEL");
-      HYPRE_Int   log_level =
-         (env_log_level) ? (HYPRE_Int)strtol(env_log_level, NULL, 10) : 0;
-
-      HYPRE_SetLogLevel(log_level);
-#endif
-
-      /* Set library state to initialized */
-      hypredrv_is_initialized = true;
-   }
-
-   return hypredrv_ErrorCodeGet();
+   return hypredrv_RuntimeInitialize();
 }
 
 /*-----------------------------------------------------------------------------
@@ -254,17 +158,12 @@ HYPREDRV_Initialize()
 uint32_t
 HYPREDRV_Finalize()
 {
-   if (hypredrv_is_initialized)
+   if (hypredrv_RuntimeIsInitialized())
    {
-      hypredrv_PresetFreeUserPresets();
-#if HYPRE_CHECK_MIN_VERSION(22900, 0)
-      HYPRE_Finalize();
-#endif
-      hypredrv_is_initialized = false;
+      hypredrv_RuntimeDestroyAllLiveObjects(DestroyObjectInternal);
    }
 
-   /* Do not leak message buffers across independent initialize/finalize cycles. */
-   hypredrv_ErrorStateReset();
+   hypredrv_RuntimeFinalizeState();
 
 #ifdef HYPREDRV_ENABLE_CALIPER
    /* Flush Caliper data before MPI_Finalize to avoid mpireport warning */
@@ -292,74 +191,18 @@ HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
    hypredrv_ErrorBacktracePrint();
 }
 
-/*-----------------------------------------------------------------------------
- * HYPREDRV_Create
- *-----------------------------------------------------------------------------*/
-
-uint32_t
-HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
+static uint32_t
+DestroyObjectInternal(HYPREDRV_t hypredrv)
 {
-   HYPREDRV_CHECK_INIT();
-
-   HYPREDRV_t hypredrv = (HYPREDRV_t)malloc(sizeof(hypredrv_t));
-
-   MPI_Comm_rank(comm, &hypredrv->mypid);
-   MPI_Comm_size(comm, &hypredrv->nprocs);
-
-   hypredrv->comm          = comm;
-   hypredrv->nstates       = 0;
-   hypredrv->states        = NULL;
-   hypredrv->iargs         = NULL;
-   hypredrv->mat_A         = NULL;
-   hypredrv->mat_M         = NULL;
-   hypredrv->vec_b         = NULL;
-   hypredrv->vec_x         = NULL;
-   hypredrv->vec_x0        = NULL;
-   hypredrv->vec_xref      = NULL;
-   hypredrv->vec_nn        = NULL;
-   hypredrv->vec_s         = NULL;
-   hypredrv->dofmap        = NULL;
-   hypredrv->owns_mat_M    = false;
-   hypredrv->owns_vec_x    = false;
-   hypredrv->owns_vec_x0   = false;
-   hypredrv->owns_vec_xref = false;
-
-   hypredrv->precon                       = NULL;
-   hypredrv->solver                       = NULL;
-   hypredrv->precon_is_setup              = false;
-   hypredrv->scaling_ctx                  = NULL;
-   hypredrv->precon_reuse_timestep_starts = NULL;
-   hypredrv->stats                        = NULL;
-
-   /* Disable library mode by default */
-   hypredrv->lib_mode = false;
-
-   /* Each object owns its own stats context. */
-   hypredrv->stats = hypredrv_StatsCreate();
-
-   /* Set output pointer */
-   *hypredrv_ptr = hypredrv;
-
-   return hypredrv_ErrorCodeGet();
-}
-
-/*-----------------------------------------------------------------------------
- * HYPREDRV_Destroy
- *-----------------------------------------------------------------------------*/
-
-uint32_t
-HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
-{
-   HYPREDRV_CHECK_INIT();
-   hypredrv_ErrorCodeResetAll();
-
-   HYPREDRV_t hypredrv = *hypredrv_ptr;
-
-   if (!hypredrv)
+   if (!hypredrv || !hypredrv_RuntimeObjectIsLive(hypredrv))
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
       return hypredrv_ErrorCodeGet();
    }
+
+   /* Remove the handle from the live registry before tearing down owned state
+    * so finalize-time sweeps never revisit an object that is already mid-destroy. */
+   hypredrv_RuntimeUnregisterObject(hypredrv);
 
    /* Embedded/library-mode consumers like GEOS expect general.statistics to
     * flush with the object lifetime rather than from a separate driver hook. */
@@ -384,7 +227,6 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
       }
    }
 
-   /* Destroy scaling context */
    if (hypredrv->scaling_ctx)
    {
       hypredrv_ScalingContextDestroy(&hypredrv->scaling_ctx);
@@ -432,12 +274,121 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
       hypredrv_StatsPrint(hypredrv->stats, print_statistics);
    }
 
-   /* Destroy statistics object */
    hypredrv_StatsDestroy(&hypredrv->stats);
 
-   if ((*hypredrv_ptr)->states) free((*hypredrv_ptr)->states);
-   if ((*hypredrv_ptr)->vec_s) free((void *)(*hypredrv_ptr)->vec_s);
-   free(*hypredrv_ptr);
+   free(hypredrv->states);
+   free((void *)hypredrv->vec_s);
+   free(hypredrv);
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_Create
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
+{
+   HYPREDRV_CHECK_INIT();
+   hypredrv_ErrorCodeResetAll();
+
+   if (!hypredrv_ptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("HYPREDRV_Create requires a non-NULL output pointer");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPREDRV_t hypredrv = (HYPREDRV_t)calloc(1, sizeof(hypredrv_t));
+   if (!hypredrv)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate HYPREDRV object");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   MPI_Comm_rank(comm, &hypredrv->mypid);
+   MPI_Comm_size(comm, &hypredrv->nprocs);
+
+   hypredrv->comm          = comm;
+   hypredrv->nstates       = 0;
+   hypredrv->states        = NULL;
+   hypredrv->iargs         = NULL;
+   hypredrv->mat_A         = NULL;
+   hypredrv->mat_M         = NULL;
+   hypredrv->vec_b         = NULL;
+   hypredrv->vec_x         = NULL;
+   hypredrv->vec_x0        = NULL;
+   hypredrv->vec_xref      = NULL;
+   hypredrv->vec_nn        = NULL;
+   hypredrv->vec_s         = NULL;
+   hypredrv->dofmap        = NULL;
+   hypredrv->owns_mat_M    = false;
+   hypredrv->owns_vec_x    = false;
+   hypredrv->owns_vec_x0   = false;
+   hypredrv->owns_vec_xref = false;
+
+   hypredrv->precon                       = NULL;
+   hypredrv->solver                       = NULL;
+   hypredrv->precon_is_setup              = false;
+   hypredrv->scaling_ctx                  = NULL;
+   hypredrv->precon_reuse_timestep_starts = NULL;
+   hypredrv->stats                        = NULL;
+   hypredrv->next_live                    = NULL;
+
+   /* Disable library mode by default */
+   hypredrv->lib_mode = false;
+
+   /* Each object owns its own stats context. */
+   hypredrv->stats = hypredrv_StatsCreate();
+   if (!hypredrv->stats)
+   {
+      free(hypredrv);
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate HYPREDRV statistics context");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (hypredrv_RuntimeRegisterObject(hypredrv))
+   {
+      hypredrv_StatsDestroy(&hypredrv->stats);
+      free(hypredrv);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   /* Set output pointer */
+   *hypredrv_ptr = hypredrv;
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * HYPREDRV_Destroy
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
+{
+   HYPREDRV_CHECK_INIT();
+   hypredrv_ErrorCodeResetAll();
+
+   if (!hypredrv_ptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("HYPREDRV_Destroy requires a non-NULL HYPREDRV_t pointer");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPREDRV_t hypredrv = *hypredrv_ptr;
+
+   if (!hypredrv || !hypredrv_RuntimeObjectIsLive(hypredrv))
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   DestroyObjectInternal(hypredrv);
    *hypredrv_ptr = NULL;
 
    return hypredrv_ErrorCodeGet();

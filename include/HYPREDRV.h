@@ -93,8 +93,9 @@ extern "C"
     * @brief Finalizes the HYPREDRV library.
     *
     * Cleans up and releases any resources allocated by the HYPREDRV library. This
-    * function finalizes the HYPRE library and its device-specific components. It should
-    * be the last HYPREDRV-related function called before the application exits.
+    * function automatically destroys any live ``HYPREDRV_t`` objects still owned by the
+    * library, then finalizes the HYPRE library and its device-specific components. It
+    * should be the last HYPREDRV-related function called before the application exits.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -102,7 +103,9 @@ extern "C"
     *
     * @note This function should be called before MPI_Finalize. It is safe to call this
     * function even if HYPREDRV_Initialize was not successfully called or was not called
-    * at all; in such cases, the function will have no effect.
+    * at all; in such cases, the function will have no effect. Auto-destroyed live
+    * handles are reclaimed internally, but caller-owned variables are not rewritten to
+    * ``NULL`` because only the library sees the live-object registry.
     *
     * Example Usage:
     * @code
