@@ -660,6 +660,18 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
 void
 hypredrv_SolverDestroy(solver_t solver_method, HYPRE_Solver *solver_ptr)
 {
+   int log_rank = -1;
+   if (hypredrv_LogEnabled(2))
+   {
+      log_rank = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   }
+
+   if (!solver_ptr)
+   {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0, "solver destroy skipped: solver_ptr is NULL");
+      return;
+   }
+
    if (*solver_ptr)
    {
       switch (solver_method)
@@ -681,9 +693,16 @@ hypredrv_SolverDestroy(solver_t solver_method, HYPRE_Solver *solver_ptr)
             break;
 
          default:
+            HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                          "solver destroy skipped: invalid solver method=%d",
+                          (int)solver_method);
             return;
       }
 
       *solver_ptr = NULL;
+   }
+   else
+   {
+      HYPREDRV_LOGF(3, log_rank, NULL, 0, "solver destroy skipped: solver already NULL");
    }
 }

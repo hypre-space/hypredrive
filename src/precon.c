@@ -11,6 +11,7 @@
 #include "HYPRE_parcsr_mv.h"
 #include "gen_macros.h"
 #include "krylov.h"
+#include "logging.h"
 #include "stats.h"
 
 #define Precon_FIELDS(_prefix)                                 \
@@ -971,10 +972,18 @@ void
 hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
                        HYPRE_Precon *precon_ptr)
 {
+   int log_rank = -1;
+   if (hypredrv_LogEnabled(3))
+   {
+      log_rank = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   }
+
    HYPRE_Precon precon = *precon_ptr;
 
    if (!precon)
    {
+      HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                    "preconditioner destroy skipped: object already NULL");
       return;
    }
 
@@ -983,6 +992,8 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
       switch (precon_method)
       {
          case PRECON_BOOMERAMG:
+            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                          "preconditioner destroy dispatch: method=boomeramg");
             for (HYPRE_Int i = 0; i < args->amg.num_rbms; i++)
             {
                HYPRE_ParVectorDestroy(args->amg.rbms[i]);
@@ -992,22 +1003,30 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
             break;
 
          case PRECON_MGR:
+            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                          "preconditioner destroy dispatch: method=mgr");
             PreconDestroyMGRSolver(&args->mgr, &precon->main);
             break;
 
          case PRECON_ILU:
+            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                          "preconditioner destroy dispatch: method=ilu");
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
             HYPRE_ILUDestroy(precon->main);
 #endif
             break;
 
          case PRECON_FSAI:
+            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                          "preconditioner destroy dispatch: method=fsai");
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
             HYPRE_FSAIDestroy(precon->main);
 #endif
             break;
 
          case PRECON_NONE:
+            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                          "preconditioner destroy dispatch: method=none");
             break;
       }
 

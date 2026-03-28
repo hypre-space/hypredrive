@@ -2093,6 +2093,11 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
          return hypredrv_ErrorCodeGet();
       }
    }
+   else
+   {
+      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                           "linear solver destroy: no preconditioner present");
+   }
 
    hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
    HYPREDRV_LOG_OBJECTF(2, hypredrv, "linear solver destroy: solver object released");
