@@ -45,7 +45,7 @@ Workflows
 Hypredrive uses GitHub Actions with the following workflows (see ``.github/workflows``):
 
 - ``ci.yml``: main build-and-test matrix (Ubuntu + macOS; compilers: gcc/clang; build type: Debug)
-- ``format.yml``: clang-format style checks for ``include/``, ``src/``, ``examples/src/``
+- ``format.yml``: code style checks (clang-format, private/public naming prefix validation, binary symbol prefix validation)
 - ``docs.yml``: builds documentation (Sphinx and Doxygen jobs)
 - ``coverage.yml``: builds with coverage instrumentation and generates HTML/XML reports
 - ``analysis.yml``: code analysis (static: cppcheck and clang-tidy; dynamic: ASan/UBSan with gcc/clang)
@@ -86,9 +86,9 @@ To use a pre-built HYPRE instead, specify ``-DHYPRE_ROOT=<path>``.
 MPI configuration
 ~~~~~~~~~~~~~~~~~
 
-- MPI implementation: MPICH (avoids oversubscription pitfalls common with OpenMPI in CI).
+- MPI implementation: OpenMPI (default in CI). MPICH is also supported.
 - C compiler for CMake: ``-DCMAKE_C_COMPILER=mpicc``.
-- On Ubuntu, the action adds ``-DMPI_INCLUDE_DIR=/usr/include/x86_64-linux-gnu/mpich``.
+- On Ubuntu, the action adds ``-DMPI_INCLUDE_DIR=/usr/lib/x86_64-linux-gnu/openmpi/include``.
 
 Local reproduction of CI
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -98,13 +98,13 @@ On Ubuntu (gcc example):
 .. code-block:: bash
 
    sudo apt-get update
-   sudo apt-get install -y cmake ninja-build mpich libmpich-dev ccache clang-format gcc
+   sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin ccache clang-format gcc
    # Build HYPRE once and set CMAKE_PREFIX_PATH
    git clone --depth 1 --branch master https://github.com/hypre-space/hypre.git
    cmake -S hypre/src -B hypre/build -G Ninja \
      -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIBS=ON \
      -DHYPRE_BUILD_TESTS=OFF -DHYPRE_BUILD_EXAMPLES=OFF \
-     -DCMAKE_C_COMPILER=mpicc -DMPI_INCLUDE_DIR=/usr/include/x86_64-linux-gnu/mpich \
+     -DCMAKE_C_COMPILER=mpicc -DMPI_INCLUDE_DIR=/usr/lib/x86_64-linux-gnu/openmpi/include \
      -DCMAKE_INSTALL_PREFIX=$HOME/.local/hypre/master
    cmake --build hypre/build --parallel
    cmake --install hypre/build
@@ -339,7 +339,8 @@ Troubleshooting CI
 - If a composite action cannot be found, ensure it is not excluded by ``.gitignore`` and that the
   repo is checked out (``actions/checkout``) before using local actions.
 - On Ubuntu, missing MPI headers require the include hint used by the action
-  (``-DMPI_INCLUDE_DIR=/usr/include/x86_64-linux-gnu/mpich``).
+  (``-DMPI_INCLUDE_DIR=/usr/lib/x86_64-linux-gnu/openmpi/include`` for OpenMPI, or
+  ``/usr/include/x86_64-linux-gnu/mpich`` for MPICH).
 - If Doxygen fails with an ``OUTPUT_DIRECTORY`` error, the project already configures it to a build-
   relative ``docs`` directory; rebuild after cleaning stale artifacts.
 - If ``clang-tidy-fix`` causes unexpected renames in macro contexts, restrict fixes to specific

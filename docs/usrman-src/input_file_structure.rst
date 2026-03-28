@@ -586,6 +586,80 @@ Preset names are case-insensitive.
 Applications can also register additional preset names at runtime with
 ``HYPREDRV_PreconPresetRegister()`` before parsing or selecting inputs.
 
+.. _PreconReuse:
+
+Preconditioner reuse
+~~~~~~~~~~~~~~~~~~~~
+
+When solving a **sequence of linear systems** (e.g. multiple right-hand sides or time
+steps), you can reuse the same preconditioner across several systems to avoid repeated setup
+cost. The preconditioner is rebuilt only at chosen linear-system indices; for the rest, the
+previous factorization is applied as-is.
+
+A ``reuse`` subsection under ``preconditioner`` configures this behavior:
+
+- **``enabled``** – Turn reuse logic on or off. Values: ``yes`` / ``no``. Default: ``no``.
+- **``frequency``** – Nonnegative integer. Rebuild when ``(linear_system_index) mod
+  (frequency + 1) == 0``. So ``0`` = rebuild every system, ``1`` = rebuild every other, etc.
+- **``linear_system_ids``** – Explicit list of **0-based** linear-system indices at which to
+  rebuild (e.g. ``[0, 5, 10]``). Alias: ``linear_solver_ids``. Cannot be combined with
+  ``frequency`` or ``per_timestep``.
+- **``per_timestep``** – If ``yes``, ``frequency`` is applied **per timestep**: rebuild at
+  the first system of each timestep, then every ``(frequency+1)``-th system within that
+  timestep. In file/driver workflows this requires ``linear_system.timestep_filename`` to point
+  to a timestep file. In embedded library-mode workflows, the same behavior can be driven by
+  object-scoped level-0 timestep annotations on the active ``HYPREDRV_t`` object.
+  Values: ``yes`` / ``no``. Cannot be combined with ``linear_system_ids``.
+
+The timestep file (used in driver / file-based workflows when ``per_timestep: yes``) must list
+how linear systems map to timesteps. First line: total number of timesteps. Each following line:
+``timestep_id ls_start``, where ``ls_start`` is the 0-based index of the first linear system for
+that timestep.
+
+Example: frequency-based reuse (rebuild every 3rd system):
+
+.. code-block:: yaml
+
+   preconditioner:
+     amg: {}
+     reuse:
+       enabled: yes
+       frequency: 2
+
+Example: explicit list of systems at which to rebuild:
+
+.. code-block:: yaml
+
+   preconditioner:
+     amg: {}
+     reuse:
+       enabled: yes
+       linear_system_ids: [0, 10, 20, 30]
+
+Example: reuse per timestep (rebuild at the first system of each timestep; requires
+``linear_system.timestep_filename``):
+
+.. code-block:: yaml
+
+   linear_system:
+     timestep_filename: timesteps.txt
+   preconditioner:
+     amg: {}
+     reuse:
+       enabled: yes
+       per_timestep: yes
+       frequency: 0
+
+In embedded library mode, the same YAML block can be paired with object-scoped annotations such
+as ``HYPREDRV_AnnotateLevelBegin(h, 0, "timestep-3", -1)`` /
+``HYPREDRV_AnnotateLevelEnd(h, 0, "timestep-3", -1)`` instead of a timestep file.
+
+   MGR cannot be fully defined by the ``mgr`` keyword only. Instead, it is also necessary
+   to specify which types of degrees of freedom are treated as F points in each MGR level,
+   i.e., the last level where a degree of freedom of a given type is present. This is done
+   via the ``f_dofs`` keyword. For a minimal MGR configuration input example, see
+   :ref:`Example3`.
+
 .. _amg:
 
 AMG
@@ -1175,77 +1249,3 @@ code block below:
 
    Nested Krylov-in-MGR requires the vendored Hypre build in the ``hypre/`` folder. Make
    sure to build Hypre with ``hypre/build-hypre.sh`` before building HypreDrive.
-
-.. _PreconReuse:
-
-Preconditioner reuse
-~~~~~~~~~~~~~~~~~~~~
-
-When solving a **sequence of linear systems** (e.g. multiple right-hand sides or time
-steps), you can reuse the same preconditioner across several systems to avoid repeated setup
-cost. The preconditioner is rebuilt only at chosen linear-system indices; for the rest, the
-previous factorization is applied as-is.
-
-A ``reuse`` subsection under ``preconditioner`` configures this behavior:
-
-- **``enabled``** – Turn reuse logic on or off. Values: ``yes`` / ``no``. Default: ``no``.
-- **``frequency``** – Nonnegative integer. Rebuild when ``(linear_system_index) mod
-  (frequency + 1) == 0``. So ``0`` = rebuild every system, ``1`` = rebuild every other, etc.
-- **``linear_system_ids``** – Explicit list of **0-based** linear-system indices at which to
-  rebuild (e.g. ``[0, 5, 10]``). Alias: ``linear_solver_ids``. Cannot be combined with
-  ``frequency`` or ``per_timestep``.
-- **``per_timestep``** – If ``yes``, ``frequency`` is applied **per timestep**: rebuild at
-  the first system of each timestep, then every ``(frequency+1)``-th system within that
-  timestep. In file/driver workflows this requires ``linear_system.timestep_filename`` to point
-  to a timestep file. In embedded library-mode workflows, the same behavior can be driven by
-  object-scoped level-0 timestep annotations on the active ``HYPREDRV_t`` object.
-  Values: ``yes`` / ``no``. Cannot be combined with ``linear_system_ids``.
-
-The timestep file (used in driver / file-based workflows when ``per_timestep: yes``) must list
-how linear systems map to timesteps. First line: total number of timesteps. Each following line:
-``timestep_id ls_start``, where ``ls_start`` is the 0-based index of the first linear system for
-that timestep.
-
-Example: frequency-based reuse (rebuild every 3rd system):
-
-.. code-block:: yaml
-
-   preconditioner:
-     amg: {}
-     reuse:
-       enabled: yes
-       frequency: 2
-
-Example: explicit list of systems at which to rebuild:
-
-.. code-block:: yaml
-
-   preconditioner:
-     amg: {}
-     reuse:
-       enabled: yes
-       linear_system_ids: [0, 10, 20, 30]
-
-Example: reuse per timestep (rebuild at the first system of each timestep; requires
-``linear_system.timestep_filename``):
-
-.. code-block:: yaml
-
-   linear_system:
-     timestep_filename: timesteps.txt
-   preconditioner:
-     amg: {}
-     reuse:
-       enabled: yes
-       per_timestep: yes
-       frequency: 0
-
-In embedded library mode, the same YAML block can be paired with object-scoped annotations such
-as ``HYPREDRV_AnnotateLevelBegin(h, 0, "timestep-3", -1)`` /
-``HYPREDRV_AnnotateLevelEnd(h, 0, "timestep-3", -1)`` instead of a timestep file.
-
-   MGR cannot be fully defined by the ``mgr`` keyword only. Instead, it is also necessary
-   to specify which types of degrees of freedom are treated as F points in each MGR level,
-   i.e., the last level where a degree of freedom of a given type is present. This is done
-   via the ``f_dofs`` keyword. For a minimal MGR configuration input example, see
-   :ref:`Example3`.
