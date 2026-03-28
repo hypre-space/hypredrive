@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "error.h"
+#include "internal/error.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -384,7 +384,7 @@ ErrorStateGet(void)
 }
 
 static int
-ErrorCodeToIndex(ErrorCode code)
+ErrorCodeToIndex(hypredrv_error_t code)
 {
    int index = 0;
 
@@ -406,7 +406,7 @@ ErrorCodeToIndex(ErrorCode code)
  *-----------------------------------------------------------------------------*/
 
 static void
-ErrorCodeCountIncrement(ErrorState *state, ErrorCode code)
+ErrorCodeCountIncrement(ErrorState *state, hypredrv_error_t code)
 {
    int index = ErrorCodeToIndex(code);
    if (index >= 0)
@@ -420,7 +420,7 @@ ErrorCodeCountIncrement(ErrorState *state, ErrorCode code)
  *-----------------------------------------------------------------------------*/
 
 static uint32_t
-ErrorCodeCountGet(const ErrorState *state, ErrorCode code)
+ErrorCodeCountGet(const ErrorState *state, hypredrv_error_t code)
 {
    int index = ErrorCodeToIndex(code);
    return (index >= 0) ? state->code_count[index] : 0;
@@ -444,7 +444,7 @@ ErrorStateRecordMessageDrop(ErrorState *state)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_ErrorCodeSet(ErrorCode code)
+hypredrv_ErrorCodeSet(hypredrv_error_t code)
 {
    ErrorState *state = ErrorStateGet();
 
@@ -672,7 +672,7 @@ ErrorMsgAddBoundedPieces(const char *prefix, const char *value, const char *suff
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
+hypredrv_ErrorMsgAddCodeWithCount(hypredrv_error_t code, const char *suffix)
 {
    uint32_t    count       = ErrorCodeCountGet(ErrorStateGet(), code);
    const char *safe_suffix = suffix ? suffix : "(null)";
