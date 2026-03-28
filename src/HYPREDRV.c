@@ -353,11 +353,16 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    hypredrv_PreconReuseTimestepsClear(&hypredrv->precon_reuse_timesteps);
    hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
-   if (print_statistics > 0)
+   if (print_statistics > 0 && !hypredrv->stats_printed)
    {
       HYPREDRV_LOG_OBJECTF(2, hypredrv, "printing statistics on destroy (level=%d)",
                            print_statistics);
       hypredrv_StatsPrint(hypredrv->stats, print_statistics);
+   }
+   else if (hypredrv->stats_printed)
+   {
+      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                           "skipping statistics on destroy (already printed)");
    }
 
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "DestroyObjectInternal end");
@@ -2115,8 +2120,10 @@ HYPREDRV_StatsPrint(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
 
+   HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_StatsPrint");
    hypredrv_StatsPrint(hypredrv->stats,
                        hypredrv->iargs ? hypredrv->iargs->general.statistics : 0);
+   hypredrv->stats_printed = true;
 
    return hypredrv_ErrorCodeGet();
 }

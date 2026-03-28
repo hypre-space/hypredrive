@@ -155,12 +155,6 @@ EntryPathSlot(const Stats *stats, int entry_index)
    return stats->entry_paths + ((size_t)entry_index * STATS_PATH_LABEL_LENGTH);
 }
 
-static char *
-EntryPathSlotMutable(Stats *stats, int entry_index)
-{
-   return (char *)EntryPathSlot(stats, entry_index);
-}
-
 /*--------------------------------------------------------------------------
  * Helper: Clear or set row-path metadata for current entry
  *--------------------------------------------------------------------------*/
@@ -168,11 +162,13 @@ EntryPathSlotMutable(Stats *stats, int entry_index)
 static void
 SetCurrentEntryPath(Stats *stats, const char *path)
 {
-   char *slot = EntryPathSlotMutable(stats, stats ? stats->counter : -1);
-   if (!slot)
+   if (!stats || !stats->entry_paths || stats->counter < 0 ||
+       stats->counter >= stats->capacity)
    {
       return;
    }
+
+   char *slot = stats->entry_paths + ((size_t)stats->counter * STATS_PATH_LABEL_LENGTH);
 
    if (!path || path[0] == '\0')
    {

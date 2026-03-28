@@ -41,6 +41,7 @@ typedef struct hypredrv_struct
    PreconReuseTimesteps precon_reuse_timesteps;
 
    Stats *stats;
+   bool   stats_printed;
    int    runtime_object_id;
 
    /* Linked-list hook used by the internal runtime registry. */
