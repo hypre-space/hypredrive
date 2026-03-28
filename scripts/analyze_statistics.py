@@ -49,6 +49,7 @@ def parse_statistics_summary(filename, exclude, source_label=None):
 
     statistics_found = False
     in_summary_table = False
+    use_path_column = False
     time_unit = "[s]"
     nranks = 1
     with open(filename, 'r') as fn:
@@ -83,13 +84,26 @@ def parse_statistics_summary(filename, exclude, source_label=None):
                 if len(parts) < 9:
                     continue
 
-                # Keep only per-entry rows; skip headers and aggregate rows
-                # such as Min./Max./Avg./Std./Total.
-                if not parts[1].isdigit():
+                first_col = parts[1]
+
+                # Detect column type from header row
+                if first_col == 'Path':
+                    use_path_column = True
+                    continue
+                elif first_col == 'Entry':
                     continue
 
+                # Keep only per-entry rows; skip sub-headers and aggregate
+                # rows such as Min./Max./Avg./Std./Total.
+                if use_path_column:
+                    if not all(s.isdigit() for s in first_col.split('.')):
+                        continue
+                else:
+                    if not first_col.isdigit():
+                        continue
+
                 # parts layout for data rows:
-                # ['', entry, build, setup, solve, r0, rr, iters, '']
+                # ['', entry_or_path, build, setup, solve, r0, rr, iters, '']
                 data.append((
                     parts[1],
                     parts[2],
@@ -109,13 +123,19 @@ def parse_statistics_summary(filename, exclude, source_label=None):
     # Create a series for each log file entry
     series_list = []
     for i, row in enumerate(data):
-        entry_num = int(row[0])
-        if entry_num is not None and entry_num in exclude:
+        if use_path_column:
+            segments = [int(s) for s in row[0].split('.')]
+            entry_num = i
+        else:
+            segments = None
+            entry_num = int(row[0])
+
+        if entry_num in exclude:
             continue
 
         build_time = float(row[1]) if row[1] not in (None, "") else None
         entry_data = {
-            'entry': int(row[0]),
+            'entry': entry_num,
             'source': source_label if source_label is not None else filename,
             'nranks': int(nranks),
             'rows': int(rows[i]) if i < len(rows) else None,
@@ -128,9 +148,20 @@ def parse_statistics_summary(filename, exclude, source_label=None):
             'resnorm': float(row[5]),
             'iters': int(row[6])
         }
-        series = pd.Series(entry_data, name=f'log_{filename}_entry_{row[0]}')
+
+        if segments is not None:
+            entry_data['path'] = row[0]
+            entry_data['ls_id'] = segments[-1]
+            if len(segments) >= 2:
+                entry_data['timestep'] = segments[0]
+            if len(segments) >= 3:
+                entry_data['nl_step'] = segments[1]
+
+        series = pd.Series(entry_data, name=f'log_{filename}_entry_{entry_num}')
         series_list.append(series)
 
+    if use_path_column:
+        logger.info(f"Detected Path column in {filename}")
     logger.debug(f"Parsed {len(series_list) = } entries from {filename = } (time_unit={time_unit}, nranks={nranks})")
     return series_list, time_unit
 
@@ -778,7 +809,9 @@ def main():
               'entry': "Linear system number",
               'nranks': "Number of MPI ranks",
               'timestep': "Timestep",
-              'timestep_offset': "Timestep"}
+              'timestep_offset': "Timestep",
+              'ls_id': "Linear system ID",
+              'nl_step': "Nonlinear step"}
 
     # List of pre-defined modes:
     mode_choices = ('iters', 'times', 'iters-and-times', 'setup', 'solve', 'total', 'throughput', 'bar')
@@ -900,9 +933,17 @@ def main():
         'resnorm':  'float',
         'iters':    'int'
     }
+    # Path-derived columns (present when stats table uses Path column)
+    has_path_data = 'path' in df.columns
+    if has_path_data:
+        data_types['ls_id'] = 'int'
+    if 'timestep' in df.columns:
+        data_types['timestep'] = 'int'
+    if 'nl_step' in df.columns:
+        data_types['nl_step'] = 'Int64'
 
-    # Convert data types
-    df = df.astype(data_types)
+    # Convert data types (only for columns that exist)
+    df = df.astype({k: v for k, v in data_types.items() if k in df.columns})
 
     if args.tsteps:
         tsteps = read_timesteps_file(args.tsteps)
@@ -933,8 +974,39 @@ def main():
             df['nl_iters_10x'] = (10 * df['timestep'].map(lambda t: nl_iters_per_tstep.get(int(t), 0))).astype(int)
             if args.xtype in ('entry', 'timestep_offset'):
                 args.xtype = 'timestep'
+    elif has_path_data and 'timestep' in df.columns:
+        # Path column provides timestep info — no --tsteps file needed
+        if args.tsteps_aggregate:
+            group_cols = ['timestep']
+            if 'source' in df.columns:
+                group_cols = ['source', 'timestep']
+            # Count entries per group before aggregating (= nonlinear iters)
+            nl_counts = df.groupby(group_cols).size().reset_index(name='_nl_count')
+            agg_map = {
+                'entry': 'min',
+                'nranks': 'first',
+                'rows': 'sum',
+                'nonzeros': 'sum',
+                'build': 'sum',
+                'setup': 'sum',
+                'solve': 'sum',
+                'total': 'sum',
+                'r0norm': 'mean',
+                'resnorm': 'mean',
+                'iters': 'sum',
+            }
+            if 'ls_id' in df.columns:
+                agg_map['ls_id'] = 'min'
+            df = df.groupby(group_cols, as_index=False).agg(agg_map)
+            df = df.merge(nl_counts, on=group_cols)
+            df['nl_iters_10x'] = (10 * df['_nl_count']).astype(int)
+            df.drop(columns=['_nl_count'], inplace=True)
+            if args.xtype == 'entry':
+                args.xtype = 'timestep'
+        elif args.xtype == 'entry':
+            args.xtype = 'ls_id'
     elif args.tsteps_aggregate:
-        raise ValueError("--tsteps-aggregate requires --tsteps")
+        raise ValueError("--tsteps-aggregate requires --tsteps or Path column data")
 
     # Create legend name mapping
     legend_names = {}

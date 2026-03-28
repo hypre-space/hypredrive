@@ -9,13 +9,13 @@
 High-level interface to [hypre](https://github.com/hypre-space/hypre) for solving sparse linear systems of equations. It can be used as:
 
 - **Driver**: `hypredrive-cli` executable with YAML input files, for example [`examples/ex2.yml`](examples/ex2.yml)
-- **Library**: C API via [`include/HYPREDRV.h`](include/HYPREDRV.h) driven by YAML input (file or text), see [`examples/src/`](examples/src/)
+- **Library**: C API via [`include/HYPREDRV.h`](include/HYPREDRV.h) driven by YAML input (file or in-memory), see [`examples/src/`](examples/src/)
 
 ## Build
 
 ```bash
-git clone --depth 1 https://github.com/hypre-space/hypredrive.git && cd hypredrive
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel
+git clone --depth 1 https://github.com/hypre-space/hypredrive.git
+cmake -S hypredrive -B build && cmake --build build --parallel
 ```
 
 - hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use an existing install.
