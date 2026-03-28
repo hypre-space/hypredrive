@@ -8,12 +8,12 @@
 
 #include "HYPRE_utilities.h"
 #include "HYPREDRV.h"
-#include "args.h"
-#include "containers.h"
-#include "error.h"
+#include "internal/args.h"
+#include "internal/containers.h"
+#include "internal/error.h"
 #include "object.h"
-#include "linsys.h"
-#include "stats.h"
+#include "internal/linsys.h"
+#include "internal/stats.h"
 #include "test_helpers.h"
 
 #ifndef HYPREDRIVE_SOURCE_DIR
@@ -106,7 +106,7 @@ parse_yaml_into_obj(HYPREDRV_t obj, char *yaml_config)
 {
    char *argv[] = {yaml_config};
    ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
 }
 
 static void
@@ -122,7 +122,7 @@ parse_yaml_file_into_obj(HYPREDRV_t obj, const char *yaml_config, const char *tm
 
    char *argv[] = {tmp_yaml};
    ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
    free(tmp_yaml);
 }
 
@@ -1196,7 +1196,7 @@ test_create_parse_and_destroy(void)
       HYPREDRV_PreconApply(obj, (HYPRE_Vector)state->vec_b, (HYPRE_Vector)state->vec_x),
       ERROR_NONE);
 
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_NULL(obj);
 
@@ -1436,7 +1436,7 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
    }
 
    hypredrv_ErrorCodeResetAll();
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_StateVectorSet(obj, 2, vecs), ERROR_NONE);
 
    HYPRE_Complex *data = NULL;
@@ -2675,7 +2675,7 @@ test_HYPREDRV_preconditioner_variants(void)
       ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
    }
 
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_NULL(obj);
 

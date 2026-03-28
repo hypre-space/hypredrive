@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "error.h"
-#include "linsys.h"
-#include "lsseq.h"
+#include "internal/error.h"
+#include "internal/linsys.h"
+#include "internal/lsseq.h"
 #include "test_helpers.h"
 
 static uint64_t
@@ -123,22 +123,22 @@ write_test_container(const char *filename)
    timesteps[1].timestep = 1;
    timesteps[1].ls_start = 1;
 
-   ASSERT_EQ(fwrite(&header, sizeof(header), 1, fp), 1);
-   ASSERT_EQ(fwrite(part_meta, sizeof(part_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(pattern_meta, sizeof(pattern_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(sys_meta, sizeof(sys_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(timesteps, sizeof(timesteps), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&header, sizeof(header), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(part_meta, sizeof(part_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(pattern_meta, sizeof(pattern_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(sys_meta, sizeof(sys_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(timesteps, sizeof(timesteps), 1, fp), 1);
 
-   ASSERT_EQ(fwrite(rows0, sizeof(rows0), 1, fp), 1);
-   ASSERT_EQ(fwrite(cols0, sizeof(cols0), 1, fp), 1);
-   ASSERT_EQ(fwrite(rows1, sizeof(rows1), 1, fp), 1);
-   ASSERT_EQ(fwrite(cols1, sizeof(cols1), 1, fp), 1);
-   ASSERT_EQ(fwrite(vals0, sizeof(vals0), 1, fp), 1);
-   ASSERT_EQ(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
-   ASSERT_EQ(fwrite(dof0, sizeof(dof0), 1, fp), 1);
-   ASSERT_EQ(fwrite(vals1, sizeof(vals1), 1, fp), 1);
-   ASSERT_EQ(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
-   ASSERT_EQ(fwrite(dof1, sizeof(dof1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rows0, sizeof(rows0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(cols0, sizeof(cols0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rows1, sizeof(rows1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(cols1, sizeof(cols1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(vals0, sizeof(vals0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof0, sizeof(dof0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(vals1, sizeof(vals1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof1, sizeof(dof1), 1, fp), 1);
 
    fclose(fp);
 }
@@ -268,26 +268,26 @@ write_test_container_with_info(const char *filename)
 
    info.blob_bytes = blob_offset - header.offset_blob_data;
 
-   ASSERT_EQ(fwrite(&header, sizeof(header), 1, fp), 1);
-   ASSERT_EQ(fwrite(&info, sizeof(info), 1, fp), 1);
-   ASSERT_EQ(fwrite(payload, sizeof(payload) - 1u, 1, fp), 1);
-   ASSERT_EQ(fwrite(part_meta, sizeof(part_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(pattern_meta, sizeof(pattern_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(sys_meta, sizeof(sys_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(part_blob_table, sizeof(part_blob_table), 1, fp), 1);
-   ASSERT_EQ(fwrite(timesteps, sizeof(timesteps), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&header, sizeof(header), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&info, sizeof(info), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(payload, sizeof(payload) - 1u, 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(part_meta, sizeof(part_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(pattern_meta, sizeof(pattern_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(sys_meta, sizeof(sys_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(part_blob_table, sizeof(part_blob_table), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(timesteps, sizeof(timesteps), 1, fp), 1);
 
    /* Blobs: pattern then batched part 0 (vals, rhs, dof) */
-   ASSERT_EQ(fwrite(rows0, sizeof(rows0), 1, fp), 1);
-   ASSERT_EQ(fwrite(cols0, sizeof(cols0), 1, fp), 1);
-   ASSERT_EQ(fwrite(rows1, sizeof(rows1), 1, fp), 1);
-   ASSERT_EQ(fwrite(cols1, sizeof(cols1), 1, fp), 1);
-   ASSERT_EQ(fwrite(vals0, sizeof(vals0), 1, fp), 1);
-   ASSERT_EQ(fwrite(vals1, sizeof(vals1), 1, fp), 1);
-   ASSERT_EQ(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
-   ASSERT_EQ(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
-   ASSERT_EQ(fwrite(dof0, sizeof(dof0), 1, fp), 1);
-   ASSERT_EQ(fwrite(dof1, sizeof(dof1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rows0, sizeof(rows0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(cols0, sizeof(cols0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rows1, sizeof(rows1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(cols1, sizeof(cols1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(vals0, sizeof(vals0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(vals1, sizeof(vals1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof0, sizeof(dof0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof1, sizeof(dof1), 1, fp), 1);
 
    fclose(fp);
 }

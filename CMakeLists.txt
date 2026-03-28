@@ -100,9 +100,40 @@ configure_file(
 # Include the generated config header
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
-# Collect all source files (exclude main.c — it belongs to the CLI executable)
-file(GLOB_RECURSE SOURCE_FILES src/*.c)
-list(REMOVE_ITEM SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c")
+# Explicit library source list (keep in sync with Makefile.am)
+set(SOURCE_FILES
+    src/error.c
+    src/eigspec.c
+    src/info.c
+    src/stats.c
+    src/utils.c
+    src/containers.c
+    src/yaml.c
+    src/field.c
+    src/vector.c
+    src/matrix.c
+    src/linsys.c
+    src/cheby.c
+    src/amg.c
+    src/fsai.c
+    src/ilu.c
+    src/mgr.c
+    src/precon.c
+    src/presets.c
+    src/krylov.c
+    src/pcg.c
+    src/gmres.c
+    src/fgmres.c
+    src/bicgstab.c
+    src/solver.c
+    src/args.c
+    src/comp.c
+    src/lsseq.c
+    src/scaling.c
+    src/runtime.c
+    src/logging.c
+    src/HYPREDRV.c
+)
 
 # Define the library
 add_library(HYPREDRV ${SOURCE_FILES})
@@ -122,6 +153,8 @@ target_include_directories(HYPREDRV
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
         $<INSTALL_INTERFACE:include>
+    PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/internal>
 )
 
 # Link HYPRE library to HYPREDRV

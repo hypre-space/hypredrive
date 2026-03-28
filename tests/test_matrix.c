@@ -4,8 +4,8 @@
 #include <string.h>
 
 #include "HYPRE.h"
-#include "error.h"
-#include "linsys.h"
+#include "internal/error.h"
+#include "internal/linsys.h"
 #include "test_helpers.h"
 
 static void
@@ -27,7 +27,7 @@ create_matrix_part_typed(const char *prefix, uint32_t part_id, HYPRE_BigInt row_
    header[7]           = (uint64_t)row_lower;
    header[8]           = (uint64_t)row_upper;
 
-   ASSERT_EQ(fwrite(header, sizeof(uint64_t), 11, fp), 11u);
+   ASSERT_EQ_SIZE(fwrite(header, sizeof(uint64_t), 11, fp), 11u);
    if (nnz > 0)
    {
       ASSERT_EQ(fwrite(rows, row_elem_size, nnz, fp), nnz);
@@ -96,7 +96,7 @@ test_hypredrv_IJMatrixReadMultipartBinary_short_header(void)
    FILE *fp = fopen(filename, "wb");
    ASSERT_NOT_NULL(fp);
    uint64_t header[5] = {0};
-   ASSERT_EQ(fwrite(header, sizeof(uint64_t), 5, fp), 5u);
+   ASSERT_EQ_SIZE(fwrite(header, sizeof(uint64_t), 5, fp), 5u);
    fclose(fp);
    add_temp_file(filename);
 
@@ -121,7 +121,7 @@ test_hypredrv_IJMatrixReadMultipartBinary_short_header_device_path(void)
    FILE *fp = fopen(filename, "wb");
    ASSERT_NOT_NULL(fp);
    uint64_t header[5] = {0};
-   ASSERT_EQ(fwrite(header, sizeof(uint64_t), 5, fp), 5u);
+   ASSERT_EQ_SIZE(fwrite(header, sizeof(uint64_t), 5, fp), 5u);
    fclose(fp);
    add_temp_file(filename);
 
@@ -151,10 +151,10 @@ test_hypredrv_IJMatrixReadMultipartBinary_uint32_truncated_rows_device_path(void
    header[6]           = 2;                          /* nnz */
    header[7]           = 0;                          /* row_lower */
    header[8]           = 0;                          /* row_upper */
-   ASSERT_EQ(fwrite(header, sizeof(uint64_t), 11, fp), 11u);
+   ASSERT_EQ_SIZE(fwrite(header, sizeof(uint64_t), 11, fp), 11u);
 
    uint32_t rows32[1] = {0}; /* intentionally short (need 2) */
-   ASSERT_EQ(fwrite(rows32, sizeof(uint32_t), 1, fp), 1u);
+   ASSERT_EQ_SIZE(fwrite(rows32, sizeof(uint32_t), 1, fp), 1u);
    fclose(fp);
    add_temp_file(filename);
 
@@ -184,12 +184,12 @@ test_hypredrv_IJMatrixReadMultipartBinary_uint32_truncated_cols_device_path(void
    header[6]           = 2;
    header[7]           = 0;
    header[8]           = 0;
-   ASSERT_EQ(fwrite(header, sizeof(uint64_t), 11, fp), 11u);
+   ASSERT_EQ_SIZE(fwrite(header, sizeof(uint64_t), 11, fp), 11u);
 
    uint32_t rows32[2] = {0, 0};
-   ASSERT_EQ(fwrite(rows32, sizeof(uint32_t), 2, fp), 2u);
+   ASSERT_EQ_SIZE(fwrite(rows32, sizeof(uint32_t), 2, fp), 2u);
    uint32_t cols32[1] = {0}; /* intentionally short (need 2) */
-   ASSERT_EQ(fwrite(cols32, sizeof(uint32_t), 1, fp), 1u);
+   ASSERT_EQ_SIZE(fwrite(cols32, sizeof(uint32_t), 1, fp), 1u);
    fclose(fp);
    add_temp_file(filename);
 
@@ -217,7 +217,7 @@ test_hypredrv_IJMatrixReadMultipartBinary_invalid_dtype(void)
    header[6]           = 1;
    header[7]           = 0;
    header[8]           = 0;
-   ASSERT_EQ(fwrite(header, sizeof(uint64_t), 11, fp), 11u);
+   ASSERT_EQ_SIZE(fwrite(header, sizeof(uint64_t), 11, fp), 11u);
    fclose(fp);
    add_temp_file(filename);
 

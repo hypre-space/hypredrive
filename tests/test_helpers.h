@@ -12,10 +12,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <inttypes.h>
 #include <unistd.h>
 
 #include "HYPRE.h"
-#include "utils.h"
+#include "internal/utils.h"
 
 /*-----------------------------------------------------------------------------
  * Hypre init/finalize helpers (older hypre releases do not provide them)
@@ -70,6 +72,28 @@ hypredrv_TestHypreInit(void)
       if ((a) != (b)) { \
          fprintf(stderr, "FAIL: %s:%d: %s (%d) != %s (%d)\n", \
                 __FILE__, __LINE__, #a, (int)(a), #b, (int)(b)); \
+         exit(1); \
+      } \
+   } while (0)
+
+#define ASSERT_EQ_SIZE(a, b) \
+   do { \
+      size_t _lhs = (size_t)(a); \
+      size_t _rhs = (size_t)(b); \
+      if (_lhs != _rhs) { \
+         fprintf(stderr, "FAIL: %s:%d: %s (%zu) != %s (%zu)\n", \
+                __FILE__, __LINE__, #a, _lhs, #b, _rhs); \
+         exit(1); \
+      } \
+   } while (0)
+
+#define ASSERT_EQ_U32(a, b) \
+   do { \
+      uint32_t _lhs = (uint32_t)(a); \
+      uint32_t _rhs = (uint32_t)(b); \
+      if (_lhs != _rhs) { \
+         fprintf(stderr, "FAIL: %s:%d: %s (0x%08" PRIx32 ") != %s (0x%08" PRIx32 ")\n", \
+                __FILE__, __LINE__, #a, _lhs, #b, _rhs); \
          exit(1); \
       } \
    } while (0)
@@ -149,7 +173,7 @@ hypredrv_TestHypreInit(void)
    do { \
       if (access((path), F_OK) != 0) { \
          fprintf(stderr, "SKIP: missing data file: %s\n", (path)); \
-         return; \
+         exit(77); \
       } \
    } while (0)
 

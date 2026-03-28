@@ -7,18 +7,18 @@
 
 #include "HYPRE.h"
 #include "HYPREDRV.h"
-#include "bicgstab.h"
-#include "cheby.h"
-#include "containers.h"
-#include "error.h"
-#include "fgmres.h"
-#include "gmres.h"
-#include "pcg.h"
-#include "precon.h"
-#include "solver.h"
+#include "internal/bicgstab.h"
+#include "internal/cheby.h"
+#include "internal/containers.h"
+#include "internal/error.h"
+#include "internal/fgmres.h"
+#include "internal/gmres.h"
+#include "internal/pcg.h"
+#include "internal/precon.h"
+#include "internal/solver.h"
 #include "logging.h"
 #include "test_helpers.h"
-#include "yaml.h"
+#include "internal/yaml.h"
 
 #ifndef HYPREDRIVE_SOURCE_DIR
 #define HYPREDRIVE_SOURCE_DIR "."
@@ -126,7 +126,7 @@ test_hypredrv_GMRESSetFieldByName_all_fields(void)
    ASSERT_EQ_DOUBLE(args.conv_fac_tol, 0.25, 1e-12);
 
    StrArray keys = hypredrv_GMRESGetValidKeys();
-   ASSERT_EQ(keys.size, sizeof(updates) / sizeof(updates[0]));
+   ASSERT_EQ_SIZE(keys.size, sizeof(updates) / sizeof(updates[0]));
    for (size_t i = 0; i < keys.size; i++)
    {
       ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, updates[i].key));
@@ -323,7 +323,7 @@ test_hypredrv_FGMRESSetFieldByName_all_fields(void)
    ASSERT_EQ_DOUBLE(args.absolute_tol, 0.1, 1e-12);
 
    StrArray keys = hypredrv_FGMRESGetValidKeys();
-   ASSERT_EQ(keys.size, sizeof(updates) / sizeof(updates[0]));
+   ASSERT_EQ_SIZE(keys.size, sizeof(updates) / sizeof(updates[0]));
    for (size_t i = 0; i < keys.size; i++)
    {
       ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, updates[i].key));
@@ -373,7 +373,7 @@ test_hypredrv_ChebySetFieldByName_all_fields(void)
    ASSERT_EQ_DOUBLE(args.fraction, 0.4, 1e-12);
 
    StrArray keys = hypredrv_ChebyGetValidKeys();
-   ASSERT_EQ(keys.size, sizeof(updates) / sizeof(updates[0]));
+   ASSERT_EQ_SIZE(keys.size, sizeof(updates) / sizeof(updates[0]));
    for (size_t i = 0; i < keys.size; i++)
    {
       ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, updates[i].key));

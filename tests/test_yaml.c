@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "test_helpers.h"
-#include "yaml.h"
+#include "internal/yaml.h"
 
 /*-----------------------------------------------------------------------------
  * Test YAMLnode creation and destruction
@@ -813,7 +813,7 @@ test_YAMLtreeBuild_indent_with_tabs(void)
 
    /* Should have detected the error */
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   ASSERT_EQ(hypredrv_ErrorCodeGet() & ERROR_YAML_MIXED_INDENT, ERROR_YAML_MIXED_INDENT);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet() & ERROR_YAML_MIXED_INDENT, ERROR_YAML_MIXED_INDENT);
 
    if (yaml_text)
    {
@@ -842,7 +842,7 @@ test_YAMLtreeBuild_scalar_with_children_is_error(void)
    hypredrv_YAMLtreeBuild(2, text, &tree);
 
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   ASSERT_EQ(hypredrv_ErrorCodeGet() & ERROR_UNEXPECTED_VAL, ERROR_UNEXPECTED_VAL);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet() & ERROR_UNEXPECTED_VAL, ERROR_UNEXPECTED_VAL);
    ASSERT_NOT_NULL(tree);
 
    YAMLnode *node = hypredrv_YAMLnodeFindChildByKey(tree->root, "f_relaxation");
