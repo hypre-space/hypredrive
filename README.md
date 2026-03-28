@@ -15,7 +15,7 @@ High-level interface to [hypre](https://github.com/hypre-space/hypre) for solvin
 
 ```bash
 git clone --depth 1 https://github.com/hypre-space/hypredrive.git
-cmake -DHYPREDRV_ENABLE_DATA=ON -S hypredrive -B build && cmake --build build --parallel && cmake --build build --target check
+cmake -DHYPREDRV_ENABLE_DATA=ON -S hypredrive -B build && cmake --build build -j -t check
 ```
 
 - hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use an existing install.

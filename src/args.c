@@ -28,20 +28,20 @@ FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
    *((double *)field) = gb * GB_TO_BYTES;
 }
 
-#define General_FIELDS(_prefix)                                                   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, name, hypredrv_FieldTypeStringSet)             \
+#define General_FIELDS(_prefix)                                                      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, name, hypredrv_FieldTypeStringSet)                \
    ADD_FIELD_OFFSET_ENTRY(_prefix, statistics_filename, hypredrv_FieldTypeStringSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, warmup, hypredrv_FieldTypeIntSet)              \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, hypredrv_FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, hypredrv_FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spgemm, hypredrv_FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spmv, hypredrv_FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_repetitions, hypredrv_FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, dev_pool_size, FieldTypePoolGBToBytesSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, uvm_pool_size, FieldTypePoolGBToBytesSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, host_pool_size, FieldTypePoolGBToBytesSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, warmup, hypredrv_FieldTypeIntSet)                 \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, hypredrv_FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, hypredrv_FieldTypeIntSet)    \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, hypredrv_FieldTypeIntSet)            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spgemm, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spmv, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_repetitions, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, dev_pool_size, FieldTypePoolGBToBytesSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, uvm_pool_size, FieldTypePoolGBToBytesSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, host_pool_size, FieldTypePoolGBToBytesSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, pinned_pool_size, FieldTypePoolGBToBytesSet)
 
 #define General_NUM_FIELDS \
@@ -78,12 +78,12 @@ hypredrv_GeneralGetValidValues(const char *key)
 void
 hypredrv_GeneralSetDefaultArgs(General_args *args)
 {
-   args->name[0]             = '\0';
+   args->name[0]                = '\0';
    args->statistics_filename[0] = '\0';
-   args->warmup              = 0;
-   args->statistics          = 1;
-   args->print_config_params = 1;
-   args->use_millisec        = 0;
+   args->warmup                 = 0;
+   args->statistics             = 1;
+   args->print_config_params    = 1;
+   args->use_millisec           = 0;
 #ifdef HYPRE_USING_GPU
    args->exec_policy       = 1;
    args->use_vendor_spgemm = 1;
