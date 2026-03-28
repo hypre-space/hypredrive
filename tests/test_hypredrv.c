@@ -11,7 +11,7 @@
 #include "args.h"
 #include "containers.h"
 #include "error.h"
-#include "hypredrv_object.h"
+#include "object.h"
 #include "linsys.h"
 #include "stats.h"
 #include "test_helpers.h"
@@ -748,8 +748,8 @@ test_HYPREDRV_log_level_default_object_names_are_numbered(void)
    capture_stderr_output(run_numbered_default_name_trace_capture, NULL, output,
                          sizeof(output));
 
-   ASSERT_NOT_NULL(strstr(output, "[obj=obj-1]"));
-   ASSERT_NOT_NULL(strstr(output, "[obj=obj-2]"));
+   ASSERT_NOT_NULL(strstr(output, "[obj-1]"));
+   ASSERT_NOT_NULL(strstr(output, "[obj-2]"));
 
    unsetenv("HYPREDRV_LOG_LEVEL");
 }
@@ -859,10 +859,10 @@ test_HYPREDRV_log_level_input_args_internal_logs_use_object_name(void)
    capture_stderr_output(run_input_args_object_name_trace_capture, NULL, output,
                          sizeof(output));
 
-   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L3][obj=obj-1] args parse begin"));
-   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L3][obj=obj-1] yaml tree build complete"));
-   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L2][obj=obj-1] args parse end:"));
-   ASSERT_NULL(strstr(output, "[HYPREDRV][L3][obj=unnamed] args parse begin"));
+   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L3][obj-1] args parse begin"));
+   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L3][obj-1] yaml tree build complete"));
+   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L2][obj-1] args parse end:"));
+   ASSERT_NULL(strstr(output, "[HYPREDRV][L3][unnamed] args parse begin"));
 
    unsetenv("HYPREDRV_LOG_LEVEL");
 }
@@ -898,14 +898,14 @@ test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name(void)
    capture_stderr_output(run_named_library_linear_solve_trace_capture, NULL, output,
                          sizeof(output));
 
-   ASSERT_NOT_NULL(strstr(output, "[obj=named-handle]"));
+   ASSERT_NOT_NULL(strstr(output, "[named-handle]"));
    ASSERT_NOT_NULL(strstr(output, "solver setup begin"));
    ASSERT_NOT_NULL(strstr(output, "solver setup end"));
    ASSERT_NOT_NULL(strstr(output, "initial guess reset begin"));
    ASSERT_NOT_NULL(strstr(output, "initial guess reset end"));
    ASSERT_NOT_NULL(strstr(output, "solver apply begin"));
    ASSERT_NOT_NULL(strstr(output, "solver apply end"));
-   ASSERT_NULL(strstr(output, "obj=unnamed][ls="));
+   ASSERT_NULL(strstr(output, "unnamed][ls="));
 
    unsetenv("HYPREDRV_LOG_LEVEL");
 }

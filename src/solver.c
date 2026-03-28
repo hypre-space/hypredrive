@@ -11,7 +11,7 @@
 #include "_hypre_IJ_mv.h"
 #include "_hypre_parcsr_mv.h"
 #include "gen_macros.h"
-#include "hypredrv_log.h"
+#include "logging.h"
 
 #if !HYPRE_CHECK_MIN_VERSION(22500, 0)
 static HYPRE_Int

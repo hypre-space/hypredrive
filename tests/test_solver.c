@@ -16,7 +16,7 @@
 #include "pcg.h"
 #include "precon.h"
 #include "solver.h"
-#include "hypredrv_log.h"
+#include "logging.h"
 #include "test_helpers.h"
 #include "yaml.h"
 

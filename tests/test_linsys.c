@@ -8,7 +8,7 @@
 #include "HYPRE.h"
 #include "containers.h"
 #include "error.h"
-#include "hypredrv_log.h"
+#include "logging.h"
 #include "linsys.h"
 #include "stats.h"
 #include "test_helpers.h"

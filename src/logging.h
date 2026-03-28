@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#ifndef HYPREDRV_LOG_HEADER
-#define HYPREDRV_LOG_HEADER
+#ifndef HYPREDRV_LOGGING_HEADER
+#define HYPREDRV_LOGGING_HEADER
 
 #include <stdbool.h>
 #include "HYPREDRV.h"
@@ -72,4 +72,4 @@ void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls
       }                                                                                 \
    } while (0)
 
-#endif /* HYPREDRV_LOG_HEADER */
+#endif /* HYPREDRV_LOGGING_HEADER */

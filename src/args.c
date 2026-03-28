@@ -10,7 +10,7 @@
 #include "HYPRE_parcsr_ls.h"
 #include "field.h"
 #include "gen_macros.h"
-#include "hypredrv_log.h"
+#include "logging.h"
 #include "presets.h"
 #include "scaling.h"
 #include "stats.h"

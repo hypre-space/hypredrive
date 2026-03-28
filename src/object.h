@@ -1,5 +1,5 @@
-#ifndef HYPREDRV_OBJECT_HEADER
-#define HYPREDRV_OBJECT_HEADER
+#ifndef HYPREDRV_OBJECT_HEADER_
+#define HYPREDRV_OBJECT_HEADER_
 
 #include "HYPREDRV.h"
 #include "args.h"
@@ -47,4 +47,4 @@ typedef struct hypredrv_struct
    struct hypredrv_struct *next_live;
 } hypredrv_t;
 
-#endif /* HYPREDRV_OBJECT_HEADER */
+#endif /* HYPREDRV_OBJECT_HEADER_ */

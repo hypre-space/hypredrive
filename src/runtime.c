@@ -8,8 +8,8 @@
 #include "runtime.h"
 #include <stdlib.h>
 #include "error.h"
-#include "hypredrv_log.h"
-#include "hypredrv_object.h"
+#include "logging.h"
+#include "object.h"
 #include "presets.h"
 
 typedef struct

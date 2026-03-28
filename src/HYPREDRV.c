@@ -30,8 +30,8 @@
 
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
-#include "hypredrv_log.h"
-#include "hypredrv_object.h"
+#include "logging.h"
+#include "object.h"
 #include "runtime.h"
 
 /* Forward declarations for file-local helpers */

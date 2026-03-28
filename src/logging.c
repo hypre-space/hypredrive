@@ -5,13 +5,13 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "hypredrv_log.h"
+#include "logging.h"
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "hypredrv_object.h"
+#include "object.h"
 
 static int      g_hypredrv_log_level  = HYPREDRV_LOG_LEVEL_OFF;
 static bool     g_hypredrv_log_stdout = false;
@@ -209,11 +209,11 @@ LogPrintPrefix(int level, const char *object_name, int ls_id)
 
    if (ls_id > 0)
    {
-      (void)fprintf(stream, "[HYPREDRV][L%d][obj=%s][ls=%d] ", level, name, ls_id);
+      (void)fprintf(stream, "[HYPREDRV][L%d][%s][ls=%d] ", level, name, ls_id);
    }
    else
    {
-      (void)fprintf(stream, "[HYPREDRV][L%d][obj=%s] ", level, name);
+      (void)fprintf(stream, "[HYPREDRV][L%d][%s] ", level, name);
    }
 }
 
