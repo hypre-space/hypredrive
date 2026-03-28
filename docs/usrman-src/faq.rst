@@ -56,6 +56,21 @@ Can I compile `hypredrive` on Windows machines?
 
 No. At the moment, there are no plans to add Windows support.
 
+How do I debug solver failures?
+-------------------------------
+
+Set the environment variable ``HYPREDRV_LOG_LEVEL`` to enable internal traces:
+
+- ``1``: lifecycle boundaries (create, setup, solve, destroy)
+- ``2``: decision and context messages (reuse policy, scaling choices)
+- ``3``: detailed subphase traces (parsing, linear system assembly, scaling steps)
+
+Traces are emitted to ``stderr`` on rank 0. Set ``HYPREDRV_LOG_STREAM=stdout`` to redirect
+them to ``stdout`` instead.
+
+For error trapping, set ``HYPREDRV_DEBUG=1`` so that ``HYPREDRV_SAFE_CALL`` raises
+``SIGTRAP`` on failure instead of aborting, which is useful under a debugger.
+
 What should I do if I encounter an issue with `hypredrive`?
 -----------------------------------------------------------
 

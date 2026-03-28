@@ -92,9 +92,9 @@ A minimal skeleton of a program using the library is shown below.
      HYPREDRV_LinearSolverApply(h);
      HYPREDRV_LinearSolverDestroy(h);
 
-    // (Optional) Query statistics early and retrieve solution values
-    // (general.statistics also prints automatically on destroy in library mode)
-    HYPREDRV_StatsPrint(h);
+     // (Optional) Query statistics early and retrieve solution values
+     // (general.statistics also prints automatically on destroy in library mode)
+     HYPREDRV_StatsPrint(h);
      HYPRE_Real* xvals = NULL;
      HYPREDRV_LinearSystemGetSolutionValues(h, &xvals);
 
