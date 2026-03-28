@@ -124,12 +124,12 @@ typedef struct StrIntMapArray_struct
    {                                                    \
       .data = map, .size = sizeof(map) / sizeof(map[0]) \
    }
-#define STR_INT_MAP_ARRAY_CREATE_ON_OFF() OnOffMapArray
+#define STR_INT_MAP_ARRAY_CREATE_ON_OFF() hypredrv_OnOffMapArray
 // clang-format off
 #define STR_INT_MAP_ARRAY_VOID() (StrIntMapArray){.data = NULL, .size = 0}
 // clang-format on
 
-extern const StrIntMapArray OnOffMapArray;
+extern const StrIntMapArray hypredrv_OnOffMapArray;
 
 int  hypredrv_StrIntMapArrayGetImage(StrIntMapArray, const char *);
 bool hypredrv_StrIntMapArrayDomainEntryExists(StrIntMapArray, const char *);

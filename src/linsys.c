@@ -25,8 +25,8 @@
 #include <sys/stat.h>
 #include "containers.h"
 #include "error.h"
-#include "logging.h"
 #include "linsys.h"
+#include "logging.h"
 #include "lsseq.h"
 
 static void

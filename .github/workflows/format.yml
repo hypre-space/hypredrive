@@ -8,6 +8,7 @@ on:
       - 'src/**'
       - 'examples/src/**'
       - 'scripts/check_private_prefix.sh'
+      - 'scripts/check_symbol_prefix.sh'
       - 'scripts/list_public_apis.sh'
       - '.clang-format'
   push:
@@ -17,6 +18,7 @@ on:
       - 'src/**'
       - 'examples/src/**'
       - 'scripts/check_private_prefix.sh'
+      - 'scripts/check_symbol_prefix.sh'
       - 'scripts/list_public_apis.sh'
       - '.clang-format'
   workflow_dispatch:    # Allow manual triggering
@@ -50,6 +52,46 @@ jobs:
 
       - name: private prefix check
         run: bash scripts/check_private_prefix.sh
+
+  symbol-prefix:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: symbol prefix
+    runs-on: ubuntu-latest
+    env:
+      HYPRE_VERSION: master
+      BUILD_DIR: build-symbol-check
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Ubuntu environment
+        timeout-minutes: 3
+        uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: 'gcc'
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: 'gcc'
+          build_type: 'Release'
+          hypre_shared_libs: 'ON'
+          os: 'ubuntu-latest'
+
+      - name: Configure and build libHYPREDRV
+        run: |
+          set -euxo pipefail
+          cmake -S . -B $BUILD_DIR -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DHYPREDRV_ENABLE_TESTING=OFF \
+            -DHYPREDRV_ENABLE_EXAMPLES=OFF \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+          cmake --build $BUILD_DIR --target HYPREDRV --parallel
+
+      - name: Check symbol prefixes
+        run: bash scripts/check_symbol_prefix.sh --build-dir $BUILD_DIR
 
   public-apis:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}

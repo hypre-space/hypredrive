@@ -24,8 +24,8 @@ DEFINE_FIELD_OFFSET_MAP(Precon)
 #define Precon_NUM_FIELDS \
    (sizeof(Precon_field_offset_map) / sizeof(Precon_field_offset_map[0]))
 
-DEFINE_SET_FIELD_BY_NAME_FUNC(PreconSetFieldByName, Precon_args, Precon_field_offset_map,
-                              Precon_NUM_FIELDS)
+DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_PreconSetFieldByName, Precon_args,
+                              Precon_field_offset_map, Precon_NUM_FIELDS)
 DEFINE_GET_VALID_KEYS_FUNC(hypredrv_PreconGetValidKeys, Precon_NUM_FIELDS,
                            Precon_field_offset_map)
 
@@ -543,7 +543,8 @@ hypredrv_PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
    }
 
    hypredrv_YAMLSetArgsGeneric((void *)args, parent, hypredrv_PreconGetValidKeys,
-                               hypredrv_PreconGetValidValues, PreconSetFieldByName);
+                               hypredrv_PreconGetValidValues,
+                               hypredrv_PreconSetFieldByName);
 }
 
 /*-----------------------------------------------------------------------------

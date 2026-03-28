@@ -100,8 +100,9 @@ configure_file(
 # Include the generated config header
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
-# Collect all source files
+# Collect all source files (exclude main.c — it belongs to the CLI executable)
 file(GLOB_RECURSE SOURCE_FILES src/*.c)
+list(REMOVE_ITEM SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c")
 
 # Define the library
 add_library(HYPREDRV ${SOURCE_FILES})

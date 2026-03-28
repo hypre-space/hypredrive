@@ -14,8 +14,8 @@
 #include "error.h"
 #include "field.h"
 #include "gen_macros.h"
-#include "logging.h"
 #include "linsys.h"
+#include "logging.h"
 #include "utils.h"
 
 #define Scaling_FIELDS(_prefix)                                       \
