@@ -26,20 +26,23 @@ logger = logging.getLogger(__name__)
 
 def parse_statistics_summary(filename, exclude, source_label=None):
     """
-    Parse statistics from a log file.
+    Parse statistics from a log file.  A single file may contain multiple
+    STATISTICS SUMMARY tables (e.g. from separate HYPREDRV objects).  Each
+    table is returned as an independent (series_list, time_unit) pair so the
+    caller can treat them as separate data sources.
 
     Args:
         filename: Path to the log file
         exclude: List of entry numbers to exclude
         source_label: Optional label to use for this source (defaults to filename)
+
+    Returns:
+        list of (series_list, time_unit) tuples — one per table found.
     """
     logger.info(f"Parsing statistics from {filename = }")
-    data = []
-    rows = []
-    nonzeros = []
 
     # Regular expressions to extract statistics and auxiliary data
-    summary_pattern = re.compile(r"^\s*STATISTICS SUMMARY:\s*$")
+    summary_pattern = re.compile(r"^\s*STATISTICS SUMMARY(?:\s+for\s+(.+?))?\s*:\s*$")
     table_divider_pattern = re.compile(r"^\+-+(?:\+-+)+\+\s*$")
     rows_and_nonzeros_pattern = re.compile(
         r"Solving linear system #\d+ with (\d+) rows and (\d+) nonzeros..."
@@ -47,10 +50,20 @@ def parse_statistics_summary(filename, exclude, source_label=None):
     mpi_rank_pattern = re.compile(r"Running on (\d+) MPI rank[s]?")
     time_unit_pattern = re.compile(r"\s*use_millisec:\s*(\S+)")
 
+    # Per-table accumulators
+    tables = []         # list of (table_name, data, use_path_column)
+    current_data = None
+    current_name = None
+    current_use_path = False
+
+    # Shared across the file
+    rows = []
+    nonzeros = []
     statistics_found = False
     in_summary_table = False
     time_unit = "[s]"
     nranks = 1
+
     with open(filename, 'r') as fn:
         for line in fn:
             if match := time_unit_pattern.match(line):
@@ -69,9 +82,15 @@ def parse_statistics_summary(filename, exclude, source_label=None):
                 nonzeros.append(int(rows_nonzeros_match.group(2)))
                 continue
 
-            if summary_pattern.match(line):
+            if summary_match := summary_pattern.match(line):
+                # Flush previous table (if any)
+                if current_data is not None and current_data:
+                    tables.append((current_name, current_data, current_use_path))
                 statistics_found = True
                 in_summary_table = False
+                current_data = []
+                current_name = summary_match.group(1)  # None when unnamed
+                current_use_path = False
                 continue
 
             if statistics_found and table_divider_pattern.match(line):
@@ -83,14 +102,27 @@ def parse_statistics_summary(filename, exclude, source_label=None):
                 if len(parts) < 9:
                     continue
 
-                # Keep only per-entry rows; skip headers and aggregate rows
-                # such as Min./Max./Avg./Std./Total.
-                if not parts[1].isdigit():
+                first_col = parts[1]
+
+                # Detect column type from header row
+                if first_col == 'Path':
+                    current_use_path = True
+                    continue
+                elif first_col == 'Entry':
                     continue
 
+                # Keep only per-entry rows; skip sub-headers and aggregate
+                # rows such as Min./Max./Avg./Std./Total.
+                if current_use_path:
+                    if not all(s.isdigit() for s in first_col.split('.')):
+                        continue
+                else:
+                    if not first_col.isdigit():
+                        continue
+
                 # parts layout for data rows:
-                # ['', entry, build, setup, solve, r0, rr, iters, '']
-                data.append((
+                # ['', entry_or_path, build, setup, solve, r0, rr, iters, '']
+                current_data.append((
                     parts[1],
                     parts[2],
                     parts[3],
@@ -100,39 +132,78 @@ def parse_statistics_summary(filename, exclude, source_label=None):
                     parts[7],
                 ))
 
-    if not data:
+    # Flush last table
+    if current_data:
+        tables.append((current_name, current_data, current_use_path))
+
+    if not tables:
+        if not statistics_found:
+            raise ValueError(f"Statistics info not found in {filename = } ")
         raise ValueError(f"Data info not found in {filename = } ")
 
-    if not statistics_found:
-        raise ValueError(f"Statistics info not found in {filename = } ")
+    # Build source labels for each table
+    base_label = source_label if source_label is not None else filename
+    num_tables = len(tables)
 
-    # Create a series for each log file entry
-    series_list = []
-    for i, row in enumerate(data):
-        entry_num = int(row[0])
-        if entry_num is not None and entry_num in exclude:
-            continue
+    results = []
+    global_entry_offset = 0  # track cumulative row offset for rows/nonzeros lookup
+    for table_idx, (table_name, data, use_path_column) in enumerate(tables):
+        if table_name:
+            label = table_name if num_tables > 1 else base_label
+        elif num_tables > 1:
+            label = f"{base_label} ({table_idx + 1})"
+        else:
+            label = base_label
 
-        build_time = float(row[1]) if row[1] not in (None, "") else None
-        entry_data = {
-            'entry': int(row[0]),
-            'source': source_label if source_label is not None else filename,
-            'nranks': int(nranks),
-            'rows': int(rows[i]) if i < len(rows) else None,
-            'nonzeros': int(nonzeros[i]) if i < len(nonzeros) else None,
-            'build': build_time,
-            'setup': float(row[2]),
-            'solve': float(row[3]),
-            'total': float(row[2]) + float(row[3]),
-            'r0norm': float(row[4]),
-            'resnorm': float(row[5]),
-            'iters': int(row[6])
-        }
-        series = pd.Series(entry_data, name=f'log_{filename}_entry_{row[0]}')
-        series_list.append(series)
+        series_list = []
+        for i, row in enumerate(data):
+            if use_path_column:
+                segments = [int(s) for s in row[0].split('.')]
+                entry_num = i
+            else:
+                segments = None
+                entry_num = int(row[0])
 
-    logger.debug(f"Parsed {len(series_list) = } entries from {filename = } (time_unit={time_unit}, nranks={nranks})")
-    return series_list, time_unit
+            if entry_num in exclude:
+                continue
+
+            gi = global_entry_offset + i  # global index for rows/nonzeros
+            build_time = float(row[1]) if row[1] not in (None, "") else None
+            entry_data = {
+                'entry': entry_num,
+                'source': label,
+                'nranks': int(nranks),
+                'rows': int(rows[gi]) if gi < len(rows) else None,
+                'nonzeros': int(nonzeros[gi]) if gi < len(nonzeros) else None,
+                'build': build_time,
+                'setup': float(row[2]),
+                'solve': float(row[3]),
+                'total': float(row[2]) + float(row[3]),
+                'r0norm': float(row[4]),
+                'resnorm': float(row[5]),
+                'iters': int(row[6])
+            }
+
+            if segments is not None:
+                entry_data['path'] = row[0]
+                entry_data['ls_id'] = segments[-1]
+                if len(segments) >= 2:
+                    entry_data['timestep'] = segments[0]
+                if len(segments) >= 3:
+                    entry_data['nl_step'] = segments[1]
+
+            series = pd.Series(entry_data, name=f'log_{filename}_t{table_idx}_entry_{entry_num}')
+            series_list.append(series)
+
+        global_entry_offset += len(data)
+
+        if use_path_column:
+            logger.info(f"Detected Path column in table {table_idx + 1} of {filename}")
+        logger.debug(f"Parsed {len(series_list)} entries from table {table_idx + 1} of {filename} (time_unit={time_unit}, nranks={nranks})")
+        results.append((series_list, time_unit))
+
+    logger.info(f"Found {num_tables} statistics table(s) in {filename}")
+    return results
 
 def save_and_show_plot(savefig=None):
     """
@@ -778,7 +849,9 @@ def main():
               'entry': "Linear system number",
               'nranks': "Number of MPI ranks",
               'timestep': "Timestep",
-              'timestep_offset': "Timestep"}
+              'timestep_offset': "Timestep",
+              'ls_id': "Linear system ID",
+              'nl_step': "Nonlinear step"}
 
     # List of pre-defined modes:
     mode_choices = ('iters', 'times', 'iters-and-times', 'setup', 'solve', 'total', 'throughput', 'bar')
@@ -870,8 +943,9 @@ def main():
             # Single file: use basename
             source_label = os.path.basename(filename)
 
-        series_list, time_unit = parse_statistics_summary(filename, args.exclude, source_label)
-        data.extend(series_list)
+        table_results = parse_statistics_summary(filename, args.exclude, source_label)
+        for series_list, time_unit in table_results:
+            data.extend(series_list)
     num_input_files  = len(args.filename)
     num_data_entries = len(data)
     logger.info(f"Parsed {num_input_files = }")
@@ -900,9 +974,17 @@ def main():
         'resnorm':  'float',
         'iters':    'int'
     }
+    # Path-derived columns (present when stats table uses Path column)
+    has_path_data = 'path' in df.columns
+    if has_path_data:
+        data_types['ls_id'] = 'int'
+    if 'timestep' in df.columns:
+        data_types['timestep'] = 'int'
+    if 'nl_step' in df.columns:
+        data_types['nl_step'] = 'Int64'
 
-    # Convert data types
-    df = df.astype(data_types)
+    # Convert data types (only for columns that exist)
+    df = df.astype({k: v for k, v in data_types.items() if k in df.columns})
 
     if args.tsteps:
         tsteps = read_timesteps_file(args.tsteps)
@@ -933,8 +1015,39 @@ def main():
             df['nl_iters_10x'] = (10 * df['timestep'].map(lambda t: nl_iters_per_tstep.get(int(t), 0))).astype(int)
             if args.xtype in ('entry', 'timestep_offset'):
                 args.xtype = 'timestep'
+    elif has_path_data and 'timestep' in df.columns:
+        # Path column provides timestep info — no --tsteps file needed
+        if args.tsteps_aggregate:
+            group_cols = ['timestep']
+            if 'source' in df.columns:
+                group_cols = ['source', 'timestep']
+            # Count entries per group before aggregating (= nonlinear iters)
+            nl_counts = df.groupby(group_cols).size().reset_index(name='_nl_count')
+            agg_map = {
+                'entry': 'min',
+                'nranks': 'first',
+                'rows': 'sum',
+                'nonzeros': 'sum',
+                'build': 'sum',
+                'setup': 'sum',
+                'solve': 'sum',
+                'total': 'sum',
+                'r0norm': 'mean',
+                'resnorm': 'mean',
+                'iters': 'sum',
+            }
+            if 'ls_id' in df.columns:
+                agg_map['ls_id'] = 'min'
+            df = df.groupby(group_cols, as_index=False).agg(agg_map)
+            df = df.merge(nl_counts, on=group_cols)
+            df['nl_iters_10x'] = (10 * df['_nl_count']).astype(int)
+            df.drop(columns=['_nl_count'], inplace=True)
+            if args.xtype == 'entry':
+                args.xtype = 'timestep'
+        elif args.xtype == 'entry':
+            args.xtype = 'ls_id'
     elif args.tsteps_aggregate:
-        raise ValueError("--tsteps-aggregate requires --tsteps")
+        raise ValueError("--tsteps-aggregate requires --tsteps or Path column data")
 
     # Create legend name mapping
     legend_names = {}
@@ -979,26 +1092,42 @@ def main():
     log_x = args.log_x
     log_y = args.log_y
 
-    if check_mode_exact_match(args.mode, 'iters'):
-        plot_iterations(df, args.cumulative, args.xtype, xlabel, args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, show_nl_iters, log_x, log_y)
+    # When a single file contains multiple tables, produce one set of plots
+    # per table instead of merging everything into one plot.
+    sources = df['source'].unique().tolist() if 'source' in df.columns else []
+    split_by_table = len(args.filename) == 1 and len(sources) > 1
 
-    if check_mode_exact_match(args.mode, 'times'):
-        plot_times(df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, log_x, log_y)
+    plot_groups = []
+    if split_by_table:
+        for src in sources:
+            src_df = df[df['source'] == src].copy()
+            src_title = args.title or src
+            src_savefig = f"{src.replace(' ', '_')}_{savefig}" if savefig else None
+            plot_groups.append((src_df, src_title, src_savefig))
+    else:
+        plot_groups.append((df, args.title, savefig))
 
-    if check_mode_exact_match(args.mode, 'iters-and-times'):
-        plot_iters_times(df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, show_nl_iters, log_x, log_y)
+    for plot_df, plot_title, plot_savefig in plot_groups:
+        if check_mode_exact_match(args.mode, 'iters'):
+            plot_iterations(plot_df, args.cumulative, args.xtype, xlabel, args.use_title, plot_savefig, args.linestyle, args.markersize, legend_names, plot_title, args.latex_legend, show_nl_iters, log_x, log_y)
 
-    if check_mode_exact_match(args.mode, 'setup'):
-        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'setup', args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, log_x, log_y)
+        if check_mode_exact_match(args.mode, 'times'):
+            plot_times(plot_df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, plot_savefig, args.linestyle, args.markersize, legend_names, plot_title, args.latex_legend, log_x, log_y)
 
-    if check_mode_exact_match(args.mode, 'solve'):
-        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'solve', args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, log_x, log_y)
+        if check_mode_exact_match(args.mode, 'iters-and-times'):
+            plot_iters_times(plot_df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, plot_savefig, args.linestyle, args.markersize, legend_names, plot_title, args.latex_legend, show_nl_iters, log_x, log_y)
 
-    if check_mode_exact_match(args.mode, 'total'):
-        plot_time_metric(df, args.cumulative, args.xtype, xlabel, time_unit, 'total', args.use_title, savefig, args.linestyle, args.markersize, legend_names, args.title, args.latex_legend, log_x, log_y)
+        if check_mode_exact_match(args.mode, 'setup'):
+            plot_time_metric(plot_df, args.cumulative, args.xtype, xlabel, time_unit, 'setup', args.use_title, plot_savefig, args.linestyle, args.markersize, legend_names, plot_title, args.latex_legend, log_x, log_y)
 
-    if check_mode_exact_match(args.mode, 'throughput'):
-        plot_throughput(df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, savefig, args.linestyle, args.markersize, args.title, log_x, log_y)
+        if check_mode_exact_match(args.mode, 'solve'):
+            plot_time_metric(plot_df, args.cumulative, args.xtype, xlabel, time_unit, 'solve', args.use_title, plot_savefig, args.linestyle, args.markersize, legend_names, plot_title, args.latex_legend, log_x, log_y)
+
+        if check_mode_exact_match(args.mode, 'total'):
+            plot_time_metric(plot_df, args.cumulative, args.xtype, xlabel, time_unit, 'total', args.use_title, plot_savefig, args.linestyle, args.markersize, legend_names, plot_title, args.latex_legend, log_x, log_y)
+
+        if check_mode_exact_match(args.mode, 'throughput'):
+            plot_throughput(plot_df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, plot_savefig, args.linestyle, args.markersize, plot_title, log_x, log_y)
 
 if __name__ == "__main__":
     main()

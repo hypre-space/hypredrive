@@ -37,6 +37,8 @@ The library-side workflow in C/C++ generally follows these steps:
 8. Create, setup, and apply the solver. In library mode, ``general.statistics`` is
    flushed automatically when the ``HYPREDRV_t`` object is destroyed; call
    ``HYPREDRV_StatsPrint`` yourself only if you want an extra snapshot earlier.
+   Set ``general.statistics_filename`` if you want those summaries appended to a file
+   instead of ``stdout``.
    If you manage multiple handles, set ``general.name`` in YAML or call
    ``HYPREDRV_ObjectSetName`` so the summary can identify which object produced it.
 9. Retrieve solution values if needed; destroy handles explicitly when practical, then
@@ -69,6 +71,7 @@ A minimal skeleton of a program using the library is shown below.
      // Provide YAML configuration
      const char* yaml = "general:\n"
                         "  statistics: 1\n"
+                        "  statistics_filename: stats.txt\n"
                         "solver: pcg\n"
                         "preconditioner: amg\n";
      char* args[1] = {(char*)yaml};

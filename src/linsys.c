@@ -338,9 +338,18 @@ LinearSystemStatsIDGet(const Stats *stats)
 }
 
 static const char *
-LinearSystemLogObjectName(const Stats *stats)
+LinearSystemLogObjectName(const Stats *stats, char *buf, size_t buf_size)
 {
-   return (stats && stats->object_name[0] != '\0') ? stats->object_name : NULL;
+   if (stats && stats->object_name[0] != '\0')
+   {
+      return stats->object_name;
+   }
+   if (stats && stats->runtime_object_id > 0 && buf && buf_size > 0)
+   {
+      snprintf(buf, buf_size, "obj-%d", stats->runtime_object_id);
+      return buf;
+   }
+   return NULL;
 }
 
 static MPI_Comm
@@ -631,7 +640,9 @@ void
 hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
                                 HYPRE_IJMatrix *matrix_ptr, Stats *stats)
 {
-   const char *log_object_name = LinearSystemLogObjectName(stats);
+   char        log_name_buf[32];
+   const char *log_object_name =
+      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "matrix");
 
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
@@ -1029,8 +1040,10 @@ hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
                             HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr,
                             Stats *stats)
 {
-   int         ls_id           = hypredrv_StatsGetLinearSystemID(stats) + 1;
-   const char *log_object_name = LinearSystemLogObjectName(stats);
+   int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
+   char        log_name_buf[32];
+   const char *log_object_name =
+      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "rhs");
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "rhs setup begin (rhs_mode=%d)",
@@ -1127,8 +1140,10 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
                                      HYPRE_IJVector *x_ptr, Stats *stats)
 {
    (void)mat;
-   int                  ls_id           = LinearSystemStatsIDGet(stats) + 1;
-   const char          *log_object_name = LinearSystemLogObjectName(stats);
+   int         ls_id = LinearSystemStatsIDGet(stats) + 1;
+   char        log_name_buf[32];
+   const char *log_object_name =
+      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    HYPRE_BigInt         jlower = 0, jupper = 0;
    HYPRE_MemoryLocation memloc =
       (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
@@ -1235,8 +1250,10 @@ hypredrv_LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
                                           HYPRE_IJVector *xref_ptr, const Stats *stats)
 {
    char        xref_filename[MAX_FILENAME_LENGTH] = {0};
-   int         ls_id           = hypredrv_StatsGetLinearSystemID(stats) + 1;
-   const char *log_object_name = LinearSystemLogObjectName(stats);
+   int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
+   char        log_name_buf[32];
+   const char *log_object_name =
+      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "reference solution setup begin");
 
    /* Keep the existing reference solution (e.g., rhs_mode = randsol) unless a file is
@@ -1300,9 +1317,11 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
 {
    HYPRE_ParVector par_x0 = NULL, par_x = NULL;
    void           *obj_x0 = NULL, *obj_x = NULL;
-   MPI_Comm        log_comm        = LinearSystemCommFromVector(x_ptr ? x_ptr : x0_ptr);
-   int             ls_id           = LinearSystemStatsIDGet(stats);
-   const char     *log_object_name = LinearSystemLogObjectName(stats);
+   MPI_Comm        log_comm = LinearSystemCommFromVector(x_ptr ? x_ptr : x0_ptr);
+   int             ls_id    = LinearSystemStatsIDGet(stats);
+   char            log_name_buf[32];
+   const char     *log_object_name =
+      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
    HYPREDRV_LOG_COMMF(3, log_comm, log_object_name, ls_id, "initial guess reset begin");
@@ -1396,7 +1415,9 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
 {
    char        matrix_filename[MAX_FILENAME_LENGTH] = {0};
    int         ls_id                                = LinearSystemStatsIDGet(stats) + 1;
-   const char *log_object_name                      = LinearSystemLogObjectName(stats);
+   char        log_name_buf[32];
+   const char *log_object_name =
+      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                       "preconditioner matrix setup begin");
 
@@ -1459,8 +1480,10 @@ void
 hypredrv_LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **dofmap_ptr,
                                 Stats *stats)
 {
-   int         ls_id           = hypredrv_StatsGetLinearSystemID(stats) + 1;
-   const char *log_object_name = LinearSystemLogObjectName(stats);
+   int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
+   char        log_name_buf[32];
+   const char *log_object_name =
+      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap read begin");
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
 
