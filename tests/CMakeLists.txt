@@ -56,6 +56,7 @@ function(add_unit_test test_name target_name)
         PROPERTIES
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort\\("
+            SKIP_RETURN_CODE 77
             LABELS "unit"
     )
     if(COMMAND hypredrv_append_test_environment)

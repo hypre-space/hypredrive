@@ -5,9 +5,10 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "utils.h"
+#include "internal/utils.h"
 #include <ctype.h>
 #include <string.h>
+#include "internal/containers.h"
 
 /*-----------------------------------------------------------------------------
  * hypredrv_StrToLowerCase
