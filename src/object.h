@@ -1,5 +1,5 @@
-#ifndef HYPREDRV_OBJECT_HEADER
-#define HYPREDRV_OBJECT_HEADER
+#ifndef HYPREDRV_OBJECT_HEADER_
+#define HYPREDRV_OBJECT_HEADER_
 
 #include "HYPREDRV.h"
 #include "args.h"
@@ -41,9 +41,10 @@ typedef struct hypredrv_struct
    IntArray        *precon_reuse_timestep_starts;
 
    Stats *stats;
+   int    runtime_object_id;
 
    /* Linked-list hook used by the internal runtime registry. */
    struct hypredrv_struct *next_live;
 } hypredrv_t;
 
-#endif /* HYPREDRV_OBJECT_HEADER */
+#endif /* HYPREDRV_OBJECT_HEADER_ */

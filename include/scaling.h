@@ -65,8 +65,8 @@ StrIntMapArray hypredrv_ScalingGetValidValues(const char *);
 void hypredrv_ScalingSetDefaultArgs(Scaling_args *);
 void hypredrv_ScalingSetArgsFromYAML(void *, YAMLnode *);
 
-void hypredrv_ScalingContextCreate(Scaling_context **);
-void hypredrv_ScalingContextDestroy(Scaling_context **);
+void hypredrv_ScalingContextCreate(MPI_Comm, Scaling_context **);
+void hypredrv_ScalingContextDestroy(MPI_Comm, Scaling_context **);
 
 void hypredrv_ScalingCompute(MPI_Comm, Scaling_args *, Scaling_context *, HYPRE_IJMatrix,
                              HYPRE_IJVector, IntArray *);

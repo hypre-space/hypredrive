@@ -8,6 +8,7 @@
 #include "HYPRE.h"
 #include "containers.h"
 #include "error.h"
+#include "logging.h"
 #include "linsys.h"
 #include "stats.h"
 #include "test_helpers.h"
@@ -28,6 +29,34 @@ add_child(YAMLnode *parent, const char *key, const char *val, int level)
    YAMLnode *child = hypredrv_YAMLnodeCreate(key, val, level);
    hypredrv_YAMLnodeAddChild(parent, child);
    return child;
+}
+
+typedef void (*CapturedStreamFn)(void *);
+
+static void
+capture_stderr_output(CapturedStreamFn fn, void *context, char *buffer, size_t buf_len)
+{
+   FILE *tmp = tmpfile();
+   ASSERT_NOT_NULL(tmp);
+
+   int tmp_fd    = fileno(tmp);
+   int saved_err = dup(fileno(stderr));
+   ASSERT_TRUE(saved_err != -1);
+
+   fflush(stderr);
+   ASSERT_TRUE(dup2(tmp_fd, fileno(stderr)) != -1);
+
+   fn(context);
+   fflush(stderr);
+
+   fseek(tmp, 0, SEEK_SET);
+   size_t read_bytes  = fread(buffer, 1, buf_len - 1, tmp);
+   buffer[read_bytes] = '\0';
+
+   fflush(tmp);
+   ASSERT_TRUE(dup2(saved_err, fileno(stderr)) != -1);
+   close(saved_err);
+   fclose(tmp);
 }
 
 static HYPRE_IJMatrix create_test_ijmatrix_1x1(MPI_Comm comm, double diag);
@@ -1234,6 +1263,102 @@ test_hypredrv_LinearSystemSetPrecMatrix_branchy_paths(void)
    TEST_HYPRE_FINALIZE();
 }
 
+struct LinsysLogContext
+{
+   HYPRE_IJMatrix mat;
+   HYPRE_IJVector rhs;
+};
+
+static void
+run_linsys_branch_logging_capture(void *context)
+{
+   struct LinsysLogContext *log_context = (struct LinsysLogContext *)context;
+
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+   strncpy(args.x0_filename, "missing_x0_file", sizeof(args.x0_filename) - 1);
+   args.x0_filename[sizeof(args.x0_filename) - 1] = '\0';
+   strncpy(args.xref_filename, "missing_xref_file", sizeof(args.xref_filename) - 1);
+   args.xref_filename[sizeof(args.xref_filename) - 1] = '\0';
+   strncpy(args.precmat_filename, "missing_precmat_file",
+           sizeof(args.precmat_filename) - 1);
+   args.precmat_filename[sizeof(args.precmat_filename) - 1] = '\0';
+   strncpy(args.matrix_filename, "main_matrix_file", sizeof(args.matrix_filename) - 1);
+   args.matrix_filename[sizeof(args.matrix_filename) - 1] = '\0';
+   strncpy(args.dofmap_filename, "missing_dofmap_file", sizeof(args.dofmap_filename) - 1);
+   args.dofmap_filename[sizeof(args.dofmap_filename) - 1] = '\0';
+
+   HYPRE_IJVector x0 = NULL, x = NULL, xref = NULL;
+   HYPRE_IJMatrix precmat = NULL;
+   IntArray      *dofmap  = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, log_context->mat,
+                                        log_context->rhs, &x0, &x, NULL);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetReferenceSolution(MPI_COMM_SELF, &args, &xref, NULL);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, log_context->mat, &precmat,
+                                      NULL);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemReadDofmap(MPI_COMM_SELF, &args, &dofmap, NULL);
+
+   if (dofmap)
+   {
+      hypredrv_IntArrayDestroy(&dofmap);
+   }
+   if (precmat && precmat != log_context->mat)
+   {
+      HYPRE_IJMatrixDestroy(precmat);
+   }
+   if (xref)
+   {
+      HYPRE_IJVectorDestroy(xref);
+   }
+   if (x0)
+   {
+      HYPRE_IJVectorDestroy(x0);
+   }
+   if (x)
+   {
+      HYPRE_IJVectorDestroy(x);
+   }
+}
+
+static void
+test_hypredrv_linsys_branch_logs(void)
+{
+   TEST_HYPRE_INIT();
+
+   setenv("HYPREDRV_LOG_LEVEL", "3", 1);
+   hypredrv_LogInitializeFromEnv();
+
+   const HYPRE_Complex rhs_vals[1] = {1.0};
+   struct LinsysLogContext context = {
+      .mat = create_test_ijmatrix_1x1(MPI_COMM_SELF, 1.0),
+      .rhs = create_test_ijvector(MPI_COMM_SELF, 0, 0, rhs_vals),
+   };
+
+   char output[16384];
+   capture_stderr_output(run_linsys_branch_logging_capture, &context, output,
+                         sizeof(output));
+
+   ASSERT_NOT_NULL(strstr(output, "initial guess source:"));
+   ASSERT_NOT_NULL(strstr(output, "reference solution source:"));
+   ASSERT_NOT_NULL(strstr(output, "preconditioner matrix source:"));
+   ASSERT_NOT_NULL(strstr(output, "dofmap read begin"));
+
+   HYPRE_IJVectorDestroy(context.rhs);
+   HYPRE_IJMatrixDestroy(context.mat);
+
+   hypredrv_LogReset();
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   TEST_HYPRE_FINALIZE();
+}
+
 static void
 run_linsys_args_and_validation_tests(void)
 {
@@ -1288,6 +1413,7 @@ run_linsys_misc_and_numeric_tests(void)
 #endif
    RUN_TEST(test_hypredrv_LinearSystemCreateWorkingSolution_recreates_x);
    RUN_TEST(test_hypredrv_LinearSystemSetPrecMatrix_branchy_paths);
+   RUN_TEST(test_hypredrv_linsys_branch_logs);
 }
 
 int

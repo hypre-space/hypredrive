@@ -8,7 +8,8 @@
 #include "runtime.h"
 #include <stdlib.h>
 #include "error.h"
-#include "hypredrv_object.h"
+#include "logging.h"
+#include "object.h"
 #include "presets.h"
 
 typedef struct
@@ -16,6 +17,7 @@ typedef struct
    bool       initialized;
    bool       finalize_in_progress;
    int        active_count;
+   int        next_object_id;
    HYPREDRV_t live_head;
 } RuntimeState;
 
@@ -23,6 +25,7 @@ static RuntimeState g_runtime_state = {
    .initialized          = false,
    .finalize_in_progress = false,
    .active_count         = 0,
+   .next_object_id       = 1,
    .live_head            = NULL,
 };
 
@@ -76,6 +79,7 @@ hypredrv_RuntimeInitialize(void)
    {
       /* A fresh runtime initialization owns a fresh error-state view. */
       hypredrv_ErrorStateReset();
+      HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "runtime initialize begin");
 
       /* Initialize hypre */
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
@@ -91,9 +95,12 @@ hypredrv_RuntimeInitialize(void)
          (env_log_level) ? (HYPRE_Int)strtol(env_log_level, NULL, 10) : 0;
 
       HYPRE_SetLogLevel(log_level);
+      HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, NULL, 0,
+                         "forwarded HYPRE_LOG_LEVEL=%d to hypre", (int)log_level);
 #endif
 
       g_runtime_state.initialized = true;
+      HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "runtime initialize end");
    }
 
    return hypredrv_ErrorCodeGet();
@@ -122,9 +129,13 @@ hypredrv_RuntimeRegisterObject(HYPREDRV_t hypredrv)
       return hypredrv_ErrorCodeGet();
    }
 
+   hypredrv->runtime_object_id = g_runtime_state.next_object_id++;
+
    hypredrv->next_live       = g_runtime_state.live_head;
    g_runtime_state.live_head = hypredrv;
    g_runtime_state.active_count++;
+   HYPREDRV_LOG_OBJECTF(2, hypredrv, "registered object (active=%d)",
+                        g_runtime_state.active_count);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -143,6 +154,8 @@ hypredrv_RuntimeUnregisterObject(HYPREDRV_t hypredrv)
          {
             g_runtime_state.active_count--;
          }
+         HYPREDRV_LOG_OBJECTF(2, hypredrv, "unregistered object (active=%d)",
+                              g_runtime_state.active_count);
          break;
       }
       cursor = &(*cursor)->next_live;
@@ -167,15 +180,20 @@ hypredrv_RuntimeDestroyAllLiveObjects(hypredrv_RuntimeDestroyFunc destroy_fn)
       return hypredrv_ErrorCodeGet();
    }
 
+   HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "finalize sweep begin (active=%d)",
+                      g_runtime_state.active_count);
    g_runtime_state.finalize_in_progress = true;
 
    while (g_runtime_state.live_head)
    {
       HYPREDRV_t hypredrv = g_runtime_state.live_head;
+      HYPREDRV_LOG_OBJECTF(2, hypredrv, "auto-destroying live object during finalize");
       destroy_fn(hypredrv);
    }
 
    g_runtime_state.finalize_in_progress = false;
+   HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "finalize sweep end (active=%d)",
+                      g_runtime_state.active_count);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -185,12 +203,16 @@ hypredrv_RuntimeFinalizeState(void)
 {
    if (g_runtime_state.initialized)
    {
+      HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "runtime finalize begin");
       if (g_runtime_state.live_head)
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd(
             "Runtime finalize requested with %d live HYPREDRV object(s)",
             g_runtime_state.active_count);
+         HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0,
+                            "runtime finalize blocked: %d live object(s) remain",
+                            g_runtime_state.active_count);
          return hypredrv_ErrorCodeGet();
       }
 
@@ -199,14 +221,17 @@ hypredrv_RuntimeFinalizeState(void)
       HYPRE_Finalize();
 #endif
       g_runtime_state.initialized = false;
+      HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "runtime finalize end");
    }
 
    g_runtime_state.finalize_in_progress = false;
    g_runtime_state.active_count         = 0;
+   g_runtime_state.next_object_id       = 1;
    g_runtime_state.live_head            = NULL;
 
    /* Do not leak message buffers across independent initialize/finalize cycles. */
    hypredrv_ErrorStateReset();
+   hypredrv_LogReset();
 
    return hypredrv_ErrorCodeGet();
 }

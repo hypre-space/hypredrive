@@ -9,11 +9,13 @@
 #include <math.h>
 #include <mpi.h>
 #include <string.h>
+#include "_hypre_IJ_mv.h"
 #include "_hypre_parcsr_mv.h"
 #include "error.h"
 #include "field.h"
 #include "gen_macros.h"
 #include "linsys.h"
+#include "logging.h"
 #include "utils.h"
 
 #define Scaling_FIELDS(_prefix)                                       \
@@ -67,7 +69,7 @@ hypredrv_ScalingSetDefaultArgs(Scaling_args *args)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_ScalingContextCreate(Scaling_context **ctx_ptr)
+hypredrv_ScalingContextCreate(MPI_Comm comm, Scaling_context **ctx_ptr)
 {
    Scaling_context *ctx = (Scaling_context *)malloc(sizeof(Scaling_context));
    ctx->enabled         = 0;
@@ -77,6 +79,7 @@ hypredrv_ScalingContextCreate(Scaling_context **ctx_ptr)
    ctx->scaling_vector  = NULL;
    ctx->scaling_ijvec   = NULL;
    *ctx_ptr             = ctx;
+   HYPREDRV_LOG_COMMF(3, comm, NULL, 0, "scaling context created");
 }
 
 /*-----------------------------------------------------------------------------
@@ -110,7 +113,7 @@ ScalingContextFreeVector(Scaling_context *ctx)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_ScalingContextDestroy(Scaling_context **ctx_ptr)
+hypredrv_ScalingContextDestroy(MPI_Comm comm, Scaling_context **ctx_ptr)
 {
    if (!ctx_ptr || !*ctx_ptr)
    {
@@ -123,6 +126,61 @@ hypredrv_ScalingContextDestroy(Scaling_context **ctx_ptr)
 
    free(ctx);
    *ctx_ptr = NULL;
+   HYPREDRV_LOG_COMMF(3, comm, NULL, 0, "scaling context destroyed");
+}
+
+static MPI_Comm
+ScalingCommFromMatrix(HYPRE_IJMatrix mat)
+{
+   if (!mat)
+   {
+      return MPI_COMM_NULL;
+   }
+
+   void *obj = NULL;
+   HYPRE_IJMatrixGetObject(mat, &obj);
+   if (!obj)
+   {
+      return MPI_COMM_NULL;
+   }
+
+   return hypre_ParCSRMatrixComm((hypre_ParCSRMatrix *)obj);
+}
+
+static MPI_Comm
+ScalingCommFromVector(HYPRE_IJVector vec)
+{
+   if (!vec)
+   {
+      return MPI_COMM_NULL;
+   }
+
+   return hypre_IJVectorComm((hypre_IJVector *)vec);
+}
+
+static MPI_Comm
+ScalingSystemCommResolve(HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
+                         HYPRE_IJVector vec_x)
+{
+   MPI_Comm comm = ScalingCommFromMatrix(mat_A);
+   if (comm != MPI_COMM_NULL)
+   {
+      return comm;
+   }
+
+   comm = ScalingCommFromMatrix(mat_M);
+   if (comm != MPI_COMM_NULL)
+   {
+      return comm;
+   }
+
+   comm = ScalingCommFromVector(vec_b);
+   if (comm != MPI_COMM_NULL)
+   {
+      return comm;
+   }
+
+   return ScalingCommFromVector(vec_x);
 }
 
 /*-----------------------------------------------------------------------------
@@ -426,21 +484,31 @@ void
 hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                         HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b, IntArray *dofmap)
 {
+   int log_rank = -1;
+   if (hypredrv_LogEnabled(2))
+   {
+      log_rank = hypredrv_LogRankFromComm(comm);
+   }
    if (!args || !ctx)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("hypredrv_ScalingCompute: args or ctx is NULL");
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling compute failed: args or context is NULL");
       return;
    }
 
    if (!args->enabled)
    {
       ctx->enabled = 0;
+      HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling compute skipped (disabled)");
       return;
    }
 
    ctx->enabled = 1;
    ctx->type    = args->type;
+   HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling compute begin (type=%d)",
+                 (int)args->type);
 
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    switch (args->type)
@@ -460,15 +528,22 @@ hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
       default:
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("hypredrv_ScalingCompute: unknown scaling type");
+         HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                       "scaling compute failed: unknown scaling type=%d",
+                       (int)args->type);
          break;
    }
 #else
    (void)mat_A;
    (void)vec_b;
    (void)dofmap;
-   /* Scaling disabled on older hypre versions - silently ignore */
+   HYPREDRV_LOGF(
+      2, log_rank, NULL, 0,
+      "scaling requested but disabled (requires Hypre >= v3.0.0; linked release=%d)",
+      (int)HYPREDRV_HYPRE_RELEASE_NUMBER);
    ctx->enabled = 0;
 #endif
+   HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling compute end (enabled=%d)", ctx->enabled);
 }
 
 /*-----------------------------------------------------------------------------
@@ -479,6 +554,7 @@ static void
 ScalingTransformVectorRHSL2(const Scaling_context *ctx, HYPRE_IJVector vec,
                             scaling_vector_kind_t kind, int apply)
 {
+   MPI_Comm log_comm = ScalingCommFromVector(vec);
    if (!vec)
    {
       return;
@@ -489,6 +565,8 @@ ScalingTransformVectorRHSL2(const Scaling_context *ctx, HYPRE_IJVector vec,
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("ScalingTransformVectorRHSL2: invalid scaling factor");
+      HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
+                         "scaling vector transform failed: invalid scalar factor");
       return;
    }
 
@@ -505,6 +583,14 @@ ScalingTransformVectorRHSL2(const Scaling_context *ctx, HYPRE_IJVector vec,
    void            *obj_vec = NULL;
    hypre_ParVector *par_vec = NULL;
    HYPRE_IJVectorGetObject(vec, &obj_vec);
+   if (!obj_vec)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("ScalingTransformVectorRHSL2: vector object is NULL");
+      HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
+                         "scaling vector transform failed: IJ vector object is NULL");
+      return;
+   }
    par_vec = (hypre_ParVector *)obj_vec;
    hypre_ParVectorScale(factor, par_vec);
 }
@@ -513,6 +599,7 @@ static void
 ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
                              scaling_vector_kind_t kind, int apply)
 {
+   MPI_Comm log_comm = ScalingCommFromVector(vec);
    if (!vec)
    {
       return;
@@ -522,6 +609,8 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("ScalingTransformVectorDofmap: scaling vector not computed");
+      HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
+                         "scaling vector transform failed: scaling vector not computed");
       return;
    }
 
@@ -530,6 +619,14 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
 
    HYPRE_IJVectorGetObject(vec, &obj_vec);
+   if (!obj_vec)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("ScalingTransformVectorDofmap: vector object is NULL");
+      HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
+                         "scaling vector transform failed: IJ vector object is NULL");
+      return;
+   }
    par_vec = (hypre_ParVector *)obj_vec;
 
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
@@ -556,6 +653,8 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    (void)apply;
    hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
    hypredrv_ErrorMsgAdd("ScalingTransformVectorDofmap: requires Hypre >= v3.0.0");
+   HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
+                      "scaling vector transform failed: requires Hypre >= v3.0.0");
 #endif
 }
 
@@ -583,10 +682,15 @@ hypredrv_ScalingApplyToVector(const Scaling_context *ctx, HYPRE_IJVector vec,
       default:
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("hypredrv_ScalingApplyToVector: unknown scaling type");
+         HYPREDRV_LOG_COMMF(2, ScalingCommFromVector(vec), NULL, 0,
+                            "scaling apply-to-vector failed: unknown scaling type=%d",
+                            (int)ctx->type);
          break;
    }
 #else
    (void)kind;
+   HYPREDRV_LOG_COMMF(2, ScalingCommFromVector(vec), NULL, 0,
+                      "scaling apply-to-vector failed: requires Hypre >= v3.0.0");
 #endif
 }
 
@@ -614,10 +718,15 @@ hypredrv_ScalingUndoOnVector(const Scaling_context *ctx, HYPRE_IJVector vec,
       default:
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("hypredrv_ScalingUndoOnVector: unknown scaling type");
+         HYPREDRV_LOG_COMMF(2, ScalingCommFromVector(vec), NULL, 0,
+                            "scaling undo-on-vector failed: unknown scaling type=%d",
+                            (int)ctx->type);
          break;
    }
 #else
    (void)kind;
+   HYPREDRV_LOG_COMMF(2, ScalingCommFromVector(vec), NULL, 0,
+                      "scaling undo-on-vector failed: requires Hypre >= v3.0.0");
 #endif
 }
 
@@ -629,6 +738,12 @@ static void
 ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
                   HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
 {
+   MPI_Comm log_comm = ScalingSystemCommResolve(mat_A, mat_M, vec_b, vec_x);
+   int      log_rank = -1;
+   if (hypredrv_LogEnabled(2))
+   {
+      log_rank = hypredrv_LogRankFromComm(log_comm);
+   }
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
@@ -658,11 +773,15 @@ ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    hypredrv_ScalingApplyToVector(ctx, vec_b, SCALING_VECTOR_RHS);
    if (hypredrv_ErrorCodeGet())
    {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling apply failed: RHS vector transform error");
       return;
    }
    hypredrv_ScalingApplyToVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN);
    if (hypredrv_ErrorCodeGet())
    {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling apply failed: unknown vector transform error");
       return;
    }
 
@@ -675,6 +794,7 @@ ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    (void)vec_x;
    hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
    hypredrv_ErrorMsgAdd("ScalingApplyRHSL2: requires Hypre >= v3.0.0");
+   HYPREDRV_LOGF(2, log_rank, NULL, 0, "scaling apply failed: requires Hypre >= v3.0.0");
 #endif
 }
 
@@ -686,6 +806,12 @@ static void
 ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
                    HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
 {
+   MPI_Comm log_comm = ScalingSystemCommResolve(mat_A, mat_M, vec_b, vec_x);
+   int      log_rank = -1;
+   if (hypredrv_LogEnabled(2))
+   {
+      log_rank = hypredrv_LogRankFromComm(log_comm);
+   }
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
@@ -694,6 +820,8 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("ScalingApplyDofmap: scaling vector not computed");
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling apply failed: scaling vector not computed");
       return;
    }
 
@@ -721,11 +849,15 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
    hypredrv_ScalingApplyToVector(ctx, vec_b, SCALING_VECTOR_RHS);
    if (hypredrv_ErrorCodeGet())
    {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling apply failed: RHS vector transform error");
       return;
    }
    hypredrv_ScalingApplyToVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN);
    if (hypredrv_ErrorCodeGet())
    {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling apply failed: unknown vector transform error");
       return;
    }
 
@@ -736,6 +868,9 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
    (void)mat_M;
    (void)vec_b;
    (void)vec_x;
+   hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+   hypredrv_ErrorMsgAdd("ScalingApplyDofmap: requires Hypre >= v3.0.0");
+   HYPREDRV_LOGF(2, log_rank, NULL, 0, "scaling apply failed: requires Hypre >= v3.0.0");
 #endif
 }
 
@@ -748,6 +883,12 @@ hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
                               HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
                               HYPRE_IJVector vec_x)
 {
+   MPI_Comm log_comm = ScalingSystemCommResolve(mat_A, mat_M, vec_b, vec_x);
+   int      log_rank = -1;
+   if (hypredrv_LogEnabled(2))
+   {
+      log_rank = hypredrv_LogRankFromComm(log_comm);
+   }
    if (!ctx || !ctx->enabled)
    {
       return;
@@ -756,8 +897,11 @@ hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
    if (ctx->is_applied)
    {
       /* Already applied, skip */
+      HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling apply skipped (already applied)");
       return;
    }
+
+   HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling apply begin (type=%d)", (int)ctx->type);
 
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    switch (ctx->type)
@@ -774,6 +918,8 @@ hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
       default:
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("hypredrv_ScalingApplyToSystem: unknown scaling type");
+         HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                       "scaling apply failed: unknown scaling type=%d", (int)ctx->type);
          break;
    }
 #else
@@ -781,7 +927,10 @@ hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
    (void)mat_M;
    (void)vec_b;
    (void)vec_x;
+   HYPREDRV_LOGF(2, log_rank, NULL, 0, "scaling apply failed: requires Hypre >= v3.0.0");
 #endif
+   HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling apply end (is_applied=%d)",
+                 ctx->is_applied);
 }
 
 /*-----------------------------------------------------------------------------
@@ -792,6 +941,12 @@ static void
 ScalingUndoRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
                  HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
 {
+   MPI_Comm log_comm = ScalingSystemCommResolve(mat_A, mat_M, vec_b, vec_x);
+   int      log_rank = -1;
+   if (hypredrv_LogEnabled(2))
+   {
+      log_rank = hypredrv_LogRankFromComm(log_comm);
+   }
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
@@ -815,11 +970,15 @@ ScalingUndoRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_
    hypredrv_ScalingUndoOnVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN);
    if (hypredrv_ErrorCodeGet())
    {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling undo failed: unknown vector transform error");
       return;
    }
    hypredrv_ScalingUndoOnVector(ctx, vec_b, SCALING_VECTOR_RHS);
    if (hypredrv_ErrorCodeGet())
    {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling undo failed: RHS vector transform error");
       return;
    }
 
@@ -839,6 +998,7 @@ ScalingUndoRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_
    (void)vec_x;
    hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
    hypredrv_ErrorMsgAdd("ScalingUndoRHSL2: requires Hypre >= v3.0.0");
+   HYPREDRV_LOGF(2, log_rank, NULL, 0, "scaling undo failed: requires Hypre >= v3.0.0");
 #endif
 }
 
@@ -850,6 +1010,12 @@ static void
 ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
                   HYPRE_IJVector vec_b, HYPRE_IJVector vec_x)
 {
+   MPI_Comm log_comm = ScalingSystemCommResolve(mat_A, mat_M, vec_b, vec_x);
+   int      log_rank = -1;
+   if (hypredrv_LogEnabled(2))
+   {
+      log_rank = hypredrv_LogRankFromComm(log_comm);
+   }
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
@@ -858,6 +1024,8 @@ ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("ScalingUndoDofmap: scaling vector not computed");
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling undo failed: scaling vector not computed");
       return;
    }
 
@@ -877,11 +1045,15 @@ ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    hypredrv_ScalingUndoOnVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN);
    if (hypredrv_ErrorCodeGet())
    {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling undo failed: unknown vector transform error");
       return;
    }
    hypredrv_ScalingUndoOnVector(ctx, vec_b, SCALING_VECTOR_RHS);
    if (hypredrv_ErrorCodeGet())
    {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling undo failed: RHS vector transform error");
       return;
    }
 
@@ -906,6 +1078,9 @@ ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    (void)mat_M;
    (void)vec_b;
    (void)vec_x;
+   hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+   hypredrv_ErrorMsgAdd("ScalingUndoDofmap: requires Hypre >= v3.0.0");
+   HYPREDRV_LOGF(2, log_rank, NULL, 0, "scaling undo failed: requires Hypre >= v3.0.0");
 #endif
 }
 
@@ -918,10 +1093,18 @@ hypredrv_ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
                              HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
                              HYPRE_IJVector vec_x)
 {
+   MPI_Comm log_comm = ScalingSystemCommResolve(mat_A, mat_M, vec_b, vec_x);
+   int      log_rank = -1;
+   if (hypredrv_LogEnabled(2))
+   {
+      log_rank = hypredrv_LogRankFromComm(log_comm);
+   }
    if (!ctx || !ctx->enabled || !ctx->is_applied)
    {
       return;
    }
+
+   HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling undo begin (type=%d)", (int)ctx->type);
 
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    switch (ctx->type)
@@ -938,6 +1121,8 @@ hypredrv_ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
       default:
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("hypredrv_ScalingUndoOnSystem: unknown scaling type");
+         HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                       "scaling undo failed: unknown scaling type=%d", (int)ctx->type);
          break;
    }
 #else
@@ -945,5 +1130,8 @@ hypredrv_ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
    (void)mat_M;
    (void)vec_b;
    (void)vec_x;
+   HYPREDRV_LOGF(2, log_rank, NULL, 0, "scaling undo failed: requires Hypre >= v3.0.0");
 #endif
+   HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling undo end (is_applied=%d)",
+                 ctx->is_applied);
 }

@@ -602,10 +602,10 @@ hypredrv_IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_do
 }
 
 /*--------------------------------------------------------------------------
- * OnOffMapArray
+ * hypredrv_OnOffMapArray
  *--------------------------------------------------------------------------*/
 
-const StrIntMapArray OnOffMapArray = {
+const StrIntMapArray hypredrv_OnOffMapArray = {
    .data =
       (const StrIntMap[]){
          {"on", 1},

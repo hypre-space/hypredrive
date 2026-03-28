@@ -4,14 +4,15 @@ This directory contains utility scripts for validation, data preparation, plotti
 
 ## Bash Scripts
 
-- `generate_release.sh`: Bumps version strings in `CMakeLists.txt` and `conf.py` for a new release. Usage: `scripts/generate_release.sh <NEW_VERSION> [--tag] [--dry-run]`.
 - `check_private_prefix.sh`: Checks that private `libHYPREDRV` callables use the `hypredrv_` prefix and can optionally auto-fix offending names.
-- `list_public_apis.sh`: Generates a sorted list of all public `HYPREDRV_` API function names by parsing `include/HYPREDRV.h`. Use `--check` to validate that all public APIs start with `HYPREDRV_`.
+- `check_symbol_prefix.sh`: Verifies that all global symbols in the built `libHYPREDRV` library use approved prefixes.
 - `compare_output.sh`: Normalizes timestamps, versions, and paths before diffing an output file against a reference output.
 - `download_and_extract.sh`: Downloads a tarball, verifies its MD5 checksum, and extracts it into a destination directory.
-- `generate_example_output.sh`: Runs the example YAML inputs and regenerates normalized reference outputs for the examples.
-- `perf_laplacian.sh`: Builds and runs the standalone Laplacian driver across hypre versions with optional perf/Caliper profiling and scaling summaries.
 - `fetch_build_test.sh`: Fetch, build, and test hypredrive on different machines.
+- `generate_example_output.sh`: Runs the example YAML inputs and regenerates normalized reference outputs for the examples.
+- `generate_release.sh`: Bumps version strings in `CMakeLists.txt` and `conf.py` for a new release.
+- `list_public_apis.sh`: Generates a sorted list of all public `HYPREDRV_` API function names by parsing `include/HYPREDRV.h`.
+- `perf_laplacian.sh`: Builds and runs the standalone Laplacian driver across hypre versions with optional perf/Caliper profiling and scaling summaries.
 
 ## Python Scripts
 
