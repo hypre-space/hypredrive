@@ -13,9 +13,10 @@
 #include <string.h>
 #include "hypredrv_object.h"
 
-static int      g_hypredrv_log_level = HYPREDRV_LOG_LEVEL_OFF;
-static MPI_Comm g_last_log_comm      = MPI_COMM_NULL;
-static int      g_last_log_rank      = -1;
+static int      g_hypredrv_log_level  = HYPREDRV_LOG_LEVEL_OFF;
+static bool     g_hypredrv_log_stdout = false;
+static MPI_Comm g_last_log_comm       = MPI_COMM_NULL;
+static int      g_last_log_rank       = -1;
 
 static void LogVf(int level, int mypid, const char *object_name, int ls_id,
                   const char *fmt, va_list args);
@@ -56,18 +57,72 @@ LogLevelParse(const char *env_log_level)
    return (int)raw_level;
 }
 
+static bool
+TextEqualsTrimmedIgnoreCase(const char *text, const char *expected)
+{
+   if (!text || !expected)
+   {
+      return false;
+   }
+
+   while (*text && isspace((unsigned char)*text))
+   {
+      text++;
+   }
+
+   while (*text && *expected)
+   {
+      if (tolower((unsigned char)*text) != tolower((unsigned char)*expected))
+      {
+         return false;
+      }
+      text++;
+      expected++;
+   }
+
+   if (*expected != '\0')
+   {
+      return false;
+   }
+
+   while (*text && isspace((unsigned char)*text))
+   {
+      text++;
+   }
+
+   return *text == '\0';
+}
+
+static bool
+LogToStdoutParse(const char *env_log_stream)
+{
+   return TextEqualsTrimmedIgnoreCase(env_log_stream, "stdout");
+}
+
+static FILE *
+LogStreamGet(void)
+{
+   if (g_hypredrv_log_stdout)
+   {
+      return stdout;
+   }
+   return stderr;
+}
+
 void
 hypredrv_LogInitializeFromEnv(void)
 {
-   g_hypredrv_log_level = LogLevelParse(getenv("HYPREDRV_LOG_LEVEL"));
+   g_hypredrv_log_level  = LogLevelParse(getenv("HYPREDRV_LOG_LEVEL"));
+   g_hypredrv_log_stdout = LogToStdoutParse(getenv("HYPREDRV_LOG_STREAM"));
 }
 
 void
 hypredrv_LogReset(void)
 {
-   g_hypredrv_log_level = HYPREDRV_LOG_LEVEL_OFF;
-   g_last_log_comm      = MPI_COMM_NULL;
-   g_last_log_rank      = -1;
+   g_hypredrv_log_level  = HYPREDRV_LOG_LEVEL_OFF;
+   g_hypredrv_log_stdout = false;
+   g_last_log_comm       = MPI_COMM_NULL;
+   g_last_log_rank       = -1;
 }
 
 int
@@ -149,15 +204,16 @@ hypredrv_LogCommf(int level, MPI_Comm comm, const char *object_name, int ls_id,
 static void
 LogPrintPrefix(int level, const char *object_name, int ls_id)
 {
-   const char *name = (object_name && object_name[0] != '\0') ? object_name : "unnamed";
+   const char *name   = (object_name && object_name[0] != '\0') ? object_name : "unnamed";
+   FILE       *stream = LogStreamGet();
 
    if (ls_id > 0)
    {
-      (void)fprintf(stderr, "[HYPREDRV][L%d][obj=%s][ls=%d] ", level, name, ls_id);
+      (void)fprintf(stream, "[HYPREDRV][L%d][obj=%s][ls=%d] ", level, name, ls_id);
    }
    else
    {
-      (void)fprintf(stderr, "[HYPREDRV][L%d][obj=%s] ", level, name);
+      (void)fprintf(stream, "[HYPREDRV][L%d][obj=%s] ", level, name);
    }
 }
 
@@ -165,15 +221,16 @@ static void
 LogVf(int level, int mypid, const char *object_name, int ls_id, const char *fmt,
       va_list args)
 {
-   if (mypid != 0)
+   if (mypid != 0 || !fmt)
    {
       return;
    }
 
+   FILE *stream = LogStreamGet();
    LogPrintPrefix(level, object_name, ls_id);
-   (void)vfprintf(stderr, fmt, args);
-   (void)fputc('\n', stderr);
-   (void)fflush(stderr);
+   (void)vfprintf(stream, fmt, args);
+   (void)fputc('\n', stream);
+   (void)fflush(stream);
 }
 
 void
@@ -237,10 +294,11 @@ hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
       return;
    }
 
+   FILE *stream = LogStreamGet();
    if (header)
    {
       LogPrintPrefix(level, object_name, ls_id);
-      (void)fprintf(stderr, "%s\n", header);
+      (void)fprintf(stream, "%s\n", header);
    }
 
    const char *line = text;
@@ -250,7 +308,7 @@ hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
       int         len = eol ? (int)(eol - line) : (int)strlen(line);
 
       LogPrintPrefix(level, object_name, ls_id);
-      (void)fprintf(stderr, "  %.*s\n", len, line);
+      (void)fprintf(stream, "  %.*s\n", len, line);
 
       if (!eol)
       {
@@ -258,5 +316,5 @@ hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
       }
       line = eol + 1;
    }
-   (void)fflush(stderr);
+   (void)fflush(stream);
 }

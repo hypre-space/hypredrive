@@ -27,6 +27,9 @@ extern uint32_t HYPREDRV_LinearSystemSetContiguousDofmap(HYPREDRV_t obj,
 static void
 reset_state(void)
 {
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   unsetenv("HYPREDRV_LOG_STREAM");
+
    /* Ensure we start each test with clean global error/message and hypre error state.
     * Note: hypre error flags can be sticky across calls; some code paths inspect
     * HYPRE_GetError() and will misdiagnose unrelated operations otherwise. */
@@ -777,6 +780,89 @@ test_HYPREDRV_log_level_enabled_stays_off_stdout(void)
                          sizeof(output));
 
    ASSERT_NULL(strstr(output, "[HYPREDRV][L"));
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+test_HYPREDRV_log_stream_stdout_emits_trace_on_stdout(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+   setenv("HYPREDRV_LOG_STREAM", "stdout", 1);
+
+   char output[16384];
+   capture_stdout_output(run_minimal_lifecycle_for_trace_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L1]"));
+   ASSERT_NOT_NULL(strstr(output, "HYPREDRV_Create begin"));
+
+   unsetenv("HYPREDRV_LOG_STREAM");
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+test_HYPREDRV_log_stream_stdout_stays_off_stderr(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+   setenv("HYPREDRV_LOG_STREAM", "stdout", 1);
+
+   char output[8192];
+   capture_stderr_output(run_minimal_lifecycle_for_trace_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_NULL(strstr(output, "[HYPREDRV][L"));
+
+   unsetenv("HYPREDRV_LOG_STREAM");
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+test_HYPREDRV_log_stream_invalid_value_falls_back_to_stderr(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+   setenv("HYPREDRV_LOG_STREAM", "bogus", 1);
+
+   char output[16384];
+   capture_stderr_output(run_minimal_lifecycle_for_trace_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L1]"));
+   ASSERT_NOT_NULL(strstr(output, "HYPREDRV_Create begin"));
+
+   unsetenv("HYPREDRV_LOG_STREAM");
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+run_input_args_object_name_trace_capture(void *context)
+{
+   (void)context;
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   parse_minimal_library_yaml(obj);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_log_level_input_args_internal_logs_use_object_name(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "3", 1);
+
+   char output[32768];
+   capture_stderr_output(run_input_args_object_name_trace_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L3][obj=obj-1] args parse begin"));
+   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L3][obj=obj-1] yaml tree build complete"));
+   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L2][obj=obj-1] args parse end:"));
+   ASSERT_NULL(strstr(output, "[HYPREDRV][L3][obj=unnamed] args parse begin"));
 
    unsetenv("HYPREDRV_LOG_LEVEL");
 }
@@ -2764,6 +2850,10 @@ run_hypredrv_lifecycle_and_guards(void)
    RUN_TEST(test_HYPREDRV_log_level_default_object_names_are_numbered);
    RUN_TEST(test_HYPREDRV_log_level_invalid_value_disables_trace);
    RUN_TEST(test_HYPREDRV_log_level_enabled_stays_off_stdout);
+   RUN_TEST(test_HYPREDRV_log_stream_stdout_emits_trace_on_stdout);
+   RUN_TEST(test_HYPREDRV_log_stream_stdout_stays_off_stderr);
+   RUN_TEST(test_HYPREDRV_log_stream_invalid_value_falls_back_to_stderr);
+   RUN_TEST(test_HYPREDRV_log_level_input_args_internal_logs_use_object_name);
    RUN_TEST(test_HYPREDRV_log_level_boundary_api_traces);
    RUN_TEST(test_HYPREDRV_log_level_precon_variant_decisions);
    RUN_TEST(test_HYPREDRV_log_level_avoids_linear_system_ready_duplicate);

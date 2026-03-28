@@ -35,8 +35,10 @@
 #include "runtime.h"
 
 /* Forward declarations for file-local helpers */
-static uint32_t LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv);
-static uint32_t DestroyObjectInternal(HYPREDRV_t hypredrv);
+static uint32_t    LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv);
+static uint32_t    DestroyObjectInternal(HYPREDRV_t hypredrv);
+static const char *ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
+                                        size_t default_object_name_size);
 
 // Macro to check if HYPREDRV is initialized
 #define HYPREDRV_CHECK_INIT()                                \
@@ -61,6 +63,29 @@ DestroyActiveSolver(HYPREDRV_t hypredrv)
    {
       hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
    }
+}
+
+static const char *
+ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
+                     size_t default_object_name_size)
+{
+   const char *object_name = NULL;
+
+   if (hypredrv && hypredrv->stats)
+   {
+      object_name = hypredrv->stats->object_name;
+   }
+
+   if ((!object_name || object_name[0] == '\0') && hypredrv &&
+       hypredrv->runtime_object_id > 0 && default_object_name &&
+       default_object_name_size > 0)
+   {
+      snprintf(default_object_name, default_object_name_size, "obj-%d",
+               hypredrv->runtime_object_id);
+      object_name = default_object_name;
+   }
+
+   return object_name;
 }
 
 /*-----------------------------------------------------------------------------
@@ -483,6 +508,8 @@ HYPREDRV_PrintExitInfo(MPI_Comm comm, const char *argv0)
 uint32_t
 HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
 {
+   char log_object_name[32];
+
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
    hypredrv_LogObjectf(1, hypredrv, "HYPREDRV_InputArgsParse begin (argc=%d)", argc);
@@ -490,8 +517,10 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    /* If preset/defaults were configured before parsing, clear old args first. */
    hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
-   hypredrv_InputArgsParse(hypredrv->comm, hypredrv->lib_mode, argc, argv,
-                           &hypredrv->iargs);
+   log_object_name[0] = '\0';
+   hypredrv_InputArgsParseWithObjectName(
+      hypredrv->comm, hypredrv->lib_mode, argc, argv, &hypredrv->iargs,
+      ResolveLogObjectName(hypredrv, log_object_name, sizeof(log_object_name)));
 
    if (hypredrv_ErrorCodeGet())
    {

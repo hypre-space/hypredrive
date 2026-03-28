@@ -324,7 +324,8 @@ Coding Style & Project Conventions
 - For internal runtime traces, use the environment variable ``HYPREDRV_LOG_LEVEL``:
   ``0`` disables traces (default), ``1`` logs lifecycle boundaries, ``2`` adds
   decision/context messages, and ``3`` enables deeper parse/linear-system/scaling subphase traces.
-  Trace output is emitted to ``stderr`` and filtered to rank 0 by default.
+  Trace output is emitted to ``stderr`` and filtered to rank 0 by default. Set
+  ``HYPREDRV_LOG_STREAM=stdout`` to emit the same traces to ``stdout`` instead.
 - ``HYPREDRV_LOG_LEVEL`` controls hypredrive traces only. Hypre's own logging remains controlled
   by ``HYPRE_LOG_LEVEL`` (forwarded during runtime initialization when supported by the linked
   Hypre version).
