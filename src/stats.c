@@ -10,6 +10,7 @@
 #include <mpi.h>
 #include <stdarg.h>
 #include <string.h>
+#include <unistd.h>
 
 /* Reallocation expansion factor */
 enum
@@ -1084,8 +1085,8 @@ hypredrv_StatsRelativeResNormSet(Stats *stats, double rrnorm)
  * hypredrv_StatsPrint
  *--------------------------------------------------------------------------*/
 
-void
-hypredrv_StatsPrint(const Stats *stats, int print_level)
+static void
+StatsPrintImpl(const Stats *stats, int print_level)
 {
    if (!stats || print_level < 1)
    {
@@ -1222,6 +1223,55 @@ hypredrv_StatsPrint(const Stats *stats, int print_level)
 
    PrintDivisor();
    printf("\n");
+}
+
+void
+hypredrv_StatsPrintToStream(const Stats *stats, int print_level, FILE *stream)
+{
+   if (!stream)
+   {
+      return;
+   }
+
+   if (stream == stdout)
+   {
+      StatsPrintImpl(stats, print_level);
+      return;
+   }
+
+   int stdout_fd = fileno(stdout);
+   int stream_fd = fileno(stream);
+   if (stdout_fd == -1 || stream_fd == -1)
+   {
+      StatsPrintImpl(stats, print_level);
+      return;
+   }
+
+   fflush(stdout);
+   int saved_stdout_fd = dup(stdout_fd);
+   if (saved_stdout_fd == -1)
+   {
+      StatsPrintImpl(stats, print_level);
+      return;
+   }
+
+   if (dup2(stream_fd, stdout_fd) == -1)
+   {
+      close(saved_stdout_fd);
+      StatsPrintImpl(stats, print_level);
+      return;
+   }
+
+   StatsPrintImpl(stats, print_level);
+   fflush(stdout);
+   (void)dup2(saved_stdout_fd, stdout_fd);
+   close(saved_stdout_fd);
+}
+
+void
+hypredrv_StatsPrint(const Stats *stats, int print_level)
+{
+   hypredrv_StatsPrintToStream(stats, print_level, stdout);
 }
 
 /*--------------------------------------------------------------------------

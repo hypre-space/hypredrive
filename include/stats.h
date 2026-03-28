@@ -207,6 +207,7 @@ uint32_t hypredrv_StatsLevelGetEntrySummary(const Stats *stats, int level, int i
 void     hypredrv_StatsLevelPrint(const Stats *stats, int level);
 
 /* Output */
+void hypredrv_StatsPrintToStream(const Stats *stats, int print_level, FILE *stream);
 void hypredrv_StatsPrint(const Stats *stats, int);
 
 #endif /* STATS_HEADER */

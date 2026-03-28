@@ -5,8 +5,10 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include <errno.h>
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 #include "_hypre_parcsr_mv.h" /* For hypre_VectorData, hypre_ParVectorLocalVector */
 #include "args.h"
 #include "containers.h"
@@ -116,6 +118,42 @@ SetPendingSolvePathContext(HYPREDRV_t hypredrv)
    }
 
    hypredrv_StatsSetPendingTimestepContext(hypredrv->stats, timestep_id);
+}
+
+static void
+PrintStatsWithConfiguredDestination(HYPREDRV_t hypredrv, int print_level)
+{
+   if (!hypredrv || !hypredrv->stats || print_level < 1)
+   {
+      return;
+   }
+
+   const char *filename = NULL;
+   if (hypredrv->iargs)
+   {
+      filename = hypredrv->iargs->general.statistics_filename;
+   }
+
+   if (!filename || filename[0] == '\0')
+   {
+      hypredrv_StatsPrint(hypredrv->stats, print_level);
+      return;
+   }
+
+   FILE *stream = fopen(filename, "a");
+   if (!stream)
+   {
+      int saved_errno = errno;
+      fprintf(stderr,
+              "[HYPREDRV] warning: failed to open general.statistics_filename '%s' "
+              "for append (%s). Falling back to stdout.\n",
+              filename, strerror(saved_errno));
+      hypredrv_StatsPrint(hypredrv->stats, print_level);
+      return;
+   }
+
+   hypredrv_StatsPrintToStream(hypredrv->stats, print_level, stream);
+   fclose(stream);
 }
 
 /*-----------------------------------------------------------------------------
@@ -357,7 +395,7 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    {
       HYPREDRV_LOG_OBJECTF(2, hypredrv, "printing statistics on destroy (level=%d)",
                            print_statistics);
-      hypredrv_StatsPrint(hypredrv->stats, print_statistics);
+      PrintStatsWithConfiguredDestination(hypredrv, print_statistics);
    }
    else if (hypredrv->stats_printed)
    {
@@ -2125,8 +2163,8 @@ HYPREDRV_StatsPrint(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_OBJ();
 
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_StatsPrint");
-   hypredrv_StatsPrint(hypredrv->stats,
-                       hypredrv->iargs ? hypredrv->iargs->general.statistics : 0);
+   PrintStatsWithConfiguredDestination(
+      hypredrv, hypredrv->iargs ? hypredrv->iargs->general.statistics : 0);
    hypredrv->stats_printed = true;
 
    return hypredrv_ErrorCodeGet();

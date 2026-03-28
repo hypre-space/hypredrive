@@ -2290,6 +2290,21 @@ struct StatsPrintContext
 };
 
 static void
+read_text_file(const char *path, char *buffer, size_t buf_len)
+{
+   ASSERT_NOT_NULL(path);
+   ASSERT_NOT_NULL(buffer);
+   ASSERT_TRUE(buf_len > 0);
+
+   FILE *fp = fopen(path, "r");
+   ASSERT_NOT_NULL(fp);
+
+   size_t read_bytes  = fread(buffer, 1, buf_len - 1, fp);
+   buffer[read_bytes] = '\0';
+   fclose(fp);
+}
+
+static void
 stats_print_for_capture(void *context)
 {
    struct StatsPrintContext *stats_context = (struct StatsPrintContext *)context;
@@ -2373,6 +2388,110 @@ test_HYPREDRV_library_mode_finalize_prints_named_statistics_summary(void)
 
    ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
    ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+}
+
+static void
+test_HYPREDRV_statistics_filename_routes_stats_to_file(void)
+{
+   reset_state();
+
+   char *stats_file = CREATE_TEMP_FILE("tmp_stats_output_file.txt");
+   ASSERT_NOT_NULL(stats_file);
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: on\n"
+            "  statistics_filename: %s\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  init_guess_mode: zeros\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            stats_file);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   run_library_linear_solve(obj, NULL);
+
+   struct StatsPrintContext stats_context = {obj};
+   char                     stdout_output[8192];
+   capture_stdout_output(stats_print_for_capture, &stats_context, stdout_output,
+                         sizeof(stdout_output));
+   ASSERT_NULL(strstr(stdout_output, "STATISTICS SUMMARY"));
+
+   char file_output[8192];
+   read_text_file(stats_file, file_output, sizeof(file_output));
+   ASSERT_NOT_NULL(strstr(file_output, "STATISTICS SUMMARY"));
+   ASSERT_NOT_NULL(strstr(file_output, "|          0 |"));
+
+   ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   free(stats_file);
+}
+
+static void
+test_HYPREDRV_statistics_filename_fallbacks_to_stdout_on_open_failure(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char invalid_path[PATH_MAX];
+   snprintf(invalid_path, sizeof(invalid_path), "/tmp/hypredrv_missing_%d/stats.out",
+            (int)getpid());
+
+   char yaml_config[PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: on\n"
+            "  statistics_filename: %s\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  init_guess_mode: zeros\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            invalid_path);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   run_library_linear_solve(obj, NULL);
+
+   struct StatsPrintContext stats_context = {obj};
+   char                     stderr_output[8192];
+   capture_stderr_output(stats_print_for_capture, &stats_context, stderr_output,
+                         sizeof(stderr_output));
+   ASSERT_NOT_NULL(strstr(stderr_output, "failed to open general.statistics_filename"));
+
+   char stdout_output[8192];
+   capture_stdout_output(stats_print_for_capture, &stats_context, stdout_output,
+                         sizeof(stdout_output));
+   ASSERT_NOT_NULL(strstr(stdout_output, "STATISTICS SUMMARY"));
+
+   ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
 static void
@@ -3143,6 +3262,8 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep);
    RUN_TEST(test_HYPREDRV_library_mode_destroy_prints_named_statistics_summary);
    RUN_TEST(test_HYPREDRV_library_mode_finalize_prints_named_statistics_summary);
+   RUN_TEST(test_HYPREDRV_statistics_filename_routes_stats_to_file);
+   RUN_TEST(test_HYPREDRV_statistics_filename_fallbacks_to_stdout_on_open_failure);
    RUN_TEST(test_HYPREDRV_stats_flat_runs_keep_entry_column);
    RUN_TEST(test_HYPREDRV_stats_annotated_runs_switch_to_path_column);
    RUN_TEST(test_HYPREDRV_stats_timestep_file_paths_use_preserved_ids);

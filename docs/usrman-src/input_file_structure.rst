@@ -91,6 +91,12 @@ The ``general`` section contains global settings that apply to the entire execut
   when the owning ``HYPREDRV_t`` object is destroyed. Applications can still call
   ``HYPREDRV_StatsPrint`` earlier if they want an additional snapshot before teardown.
 
+- ``statistics_filename`` - Optional file path for statistics output. Default is empty,
+  which keeps writing to ``stdout``. When set, hypredrive appends each statistics
+  snapshot to that file (for example, both explicit ``HYPREDRV_StatsPrint`` calls and
+  library-mode auto-print on destroy). If the file cannot be opened, hypredrive emits a
+  warning on ``stderr`` and falls back to ``stdout`` for that print.
+
 - ``use_millisec`` - Show timings on the statistics summary table in milliseconds. The
   default value is `no`, which uses seconds instead.
 

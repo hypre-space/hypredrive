@@ -30,6 +30,7 @@ FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
 
 #define General_FIELDS(_prefix)                                                   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, name, hypredrv_FieldTypeStringSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, statistics_filename, hypredrv_FieldTypeStringSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, warmup, hypredrv_FieldTypeIntSet)              \
    ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, hypredrv_FieldTypeIntSet)          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, hypredrv_FieldTypeIntSet) \
@@ -78,6 +79,7 @@ void
 hypredrv_GeneralSetDefaultArgs(General_args *args)
 {
    args->name[0]             = '\0';
+   args->statistics_filename[0] = '\0';
    args->warmup              = 0;
    args->statistics          = 1;
    args->print_config_params = 1;
