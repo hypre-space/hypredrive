@@ -1636,8 +1636,9 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
    }
    else
    {
-      hypredrv_LogObjectf(2, hypredrv,
-                          "skipping preconditioner creation (precon already created, pending setup)");
+      hypredrv_LogObjectf(
+         2, hypredrv,
+         "skipping preconditioner creation (precon already created, pending setup)");
    }
 
    /* Always recreate solver per linear system.

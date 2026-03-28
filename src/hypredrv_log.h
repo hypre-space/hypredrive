@@ -33,4 +33,43 @@ void hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
 void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
                            const char *header, const char *text);
 
+#define HYPREDRV_LOGF(_level, _mypid, _object_name, _ls_id, _fmt, ...)       \
+   do                                                                        \
+   {                                                                         \
+      if (hypredrv_LogEnabled((_level)))                                     \
+      {                                                                      \
+         hypredrv_Logf((_level), (_mypid), (_object_name), (_ls_id), (_fmt), \
+                       ##__VA_ARGS__);                                       \
+      }                                                                      \
+   } while (0)
+
+#define HYPREDRV_LOG_COMMF(_level, _comm, _object_name, _ls_id, _fmt, ...)      \
+   do                                                                           \
+   {                                                                            \
+      if (hypredrv_LogEnabled((_level)))                                        \
+      {                                                                         \
+         hypredrv_LogCommf((_level), (_comm), (_object_name), (_ls_id), (_fmt), \
+                           ##__VA_ARGS__);                                      \
+      }                                                                         \
+   } while (0)
+
+#define HYPREDRV_LOG_OBJECTF(_level, _hypredrv, _fmt, ...)                  \
+   do                                                                       \
+   {                                                                        \
+      if (hypredrv_LogEnabled((_level)))                                    \
+      {                                                                     \
+         hypredrv_LogObjectf((_level), (_hypredrv), (_fmt), ##__VA_ARGS__); \
+      }                                                                     \
+   } while (0)
+
+#define HYPREDRV_LOG_TEXTBLOCK(_level, _mypid, _object_name, _ls_id, _header, _text)    \
+   do                                                                                   \
+   {                                                                                    \
+      if (hypredrv_LogEnabled((_level)))                                                \
+      {                                                                                 \
+         hypredrv_LogTextBlock((_level), (_mypid), (_object_name), (_ls_id), (_header), \
+                               (_text));                                                \
+      }                                                                                 \
+   } while (0)
+
 #endif /* HYPREDRV_LOG_HEADER */
