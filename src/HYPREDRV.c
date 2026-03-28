@@ -458,6 +458,10 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
       return hypredrv_ErrorCodeGet();
    }
 
+   /* Propagate runtime ID to stats so solver/linsys log helpers can
+      fall back to "obj-N" without access to the full hypredrv object. */
+   hypredrv->stats->runtime_object_id = hypredrv->runtime_object_id;
+
    /* Set output pointer */
    *hypredrv_ptr = hypredrv;
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_Create end (active=%d)",

@@ -139,6 +139,7 @@ typedef struct Stats_struct
    /* Output formatting */
    double time_factor;
    bool   use_millisec;
+   int    runtime_object_id; /* Fallback for log object name when object_name is empty */
    char   object_name[MAX_FILENAME_LENGTH];
 
    /* Per-level statistics (stats computed on-demand from solve index range) */
