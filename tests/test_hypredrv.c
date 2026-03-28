@@ -582,6 +582,77 @@ test_HYPREDRV_Create_null_output_pointer(void)
 }
 
 static void
+test_HYPREDRV_default_object_names_are_sequential(void)
+{
+   reset_state();
+
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+
+   HYPREDRV_t obj1 = NULL;
+   HYPREDRV_t obj2 = NULL;
+   HYPREDRV_t obj3 = NULL;
+
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj2), ERROR_NONE);
+   ASSERT_NOT_NULL(obj1);
+   ASSERT_NOT_NULL(obj2);
+
+   struct hypredrv_struct *state1 = (struct hypredrv_struct *)obj1;
+   struct hypredrv_struct *state2 = (struct hypredrv_struct *)obj2;
+   ASSERT_TRUE(state1->runtime_object_id == 1);
+   ASSERT_TRUE(state2->runtime_object_id == 2);
+   ASSERT_TRUE(state1->stats->object_name[0] == '\0');
+   ASSERT_TRUE(state2->stats->object_name[0] == '\0');
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj1), ERROR_NONE);
+   ASSERT_NULL(obj1);
+
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj3), ERROR_NONE);
+   ASSERT_NOT_NULL(obj3);
+   struct hypredrv_struct *state3 = (struct hypredrv_struct *)obj3;
+   ASSERT_TRUE(state3->runtime_object_id == 3);
+   ASSERT_TRUE(state3->stats->object_name[0] == '\0');
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj2), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj3), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_default_object_name_persists_without_user_name(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   ASSERT_TRUE(state->stats->object_name[0] == '\0');
+
+   parse_minimal_library_yaml(obj);
+   ASSERT_TRUE(state->stats->object_name[0] == '\0');
+
+   char yaml_named[] =
+      "general:\n"
+      "  name: user-name\n"
+      "  statistics: off\n"
+      "linear_system:\n"
+      "  init_guess_mode: zeros\n"
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 5\n"
+      "preconditioner:\n"
+      "  amg:\n"
+      "    print_level: 0\n";
+   parse_yaml_into_obj(obj, yaml_named);
+   ASSERT_TRUE(strcmp(state->stats->object_name, "user-name") == 0);
+
+   ASSERT_EQ(HYPREDRV_ObjectSetName(obj, NULL), ERROR_NONE);
+   ASSERT_TRUE(state->stats->object_name[0] == '\0');
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
 test_HYPREDRV_Finalize_auto_destroys_live_objects(void)
 {
    reset_state();
@@ -645,6 +716,37 @@ test_HYPREDRV_log_level_enabled_emits_trace(void)
    ASSERT_NOT_NULL(strstr(output, "HYPREDRV_Create begin"));
    ASSERT_NOT_NULL(strstr(output, "registered object"));
    ASSERT_NOT_NULL(strstr(output, "HYPREDRV_Destroy end"));
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+run_numbered_default_name_trace_capture(void *context)
+{
+   (void)context;
+
+   HYPREDRV_t obj1 = NULL;
+   HYPREDRV_t obj2 = NULL;
+   ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj2), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj2), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_log_level_default_object_names_are_numbered(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "1", 1);
+
+   char output[16384];
+   capture_stderr_output(run_numbered_default_name_trace_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_NOT_NULL(strstr(output, "[obj=obj-1]"));
+   ASSERT_NOT_NULL(strstr(output, "[obj=obj-2]"));
 
    unsetenv("HYPREDRV_LOG_LEVEL");
 }
@@ -2655,8 +2757,11 @@ run_hypredrv_lifecycle_and_guards(void)
    RUN_TEST(test_requires_initialization_guard);
    RUN_TEST(test_initialize_and_finalize_idempotent);
    RUN_TEST(test_HYPREDRV_Create_null_output_pointer);
+   RUN_TEST(test_HYPREDRV_default_object_names_are_sequential);
+   RUN_TEST(test_HYPREDRV_default_object_name_persists_without_user_name);
    RUN_TEST(test_HYPREDRV_log_level_default_off);
    RUN_TEST(test_HYPREDRV_log_level_enabled_emits_trace);
+   RUN_TEST(test_HYPREDRV_log_level_default_object_names_are_numbered);
    RUN_TEST(test_HYPREDRV_log_level_invalid_value_disables_trace);
    RUN_TEST(test_HYPREDRV_log_level_enabled_stays_off_stdout);
    RUN_TEST(test_HYPREDRV_log_level_boundary_api_traces);

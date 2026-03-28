@@ -41,6 +41,7 @@ typedef struct hypredrv_struct
    IntArray        *precon_reuse_timestep_starts;
 
    Stats *stats;
+   int    runtime_object_id;
 
    /* Linked-list hook used by the internal runtime registry. */
    struct hypredrv_struct *next_live;

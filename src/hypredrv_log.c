@@ -190,6 +190,8 @@ hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
    int         mypid       = -1;
    const char *object_name = NULL;
    int         ls_id       = 0;
+   char        default_object_name[32];
+   default_object_name[0] = '\0';
 
    if (hypredrv)
    {
@@ -198,6 +200,13 @@ hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
       {
          object_name = hypredrv->stats->object_name;
          ls_id       = hypredrv_StatsGetLinearSystemID(hypredrv->stats);
+      }
+
+      if ((!object_name || object_name[0] == '\0') && hypredrv->runtime_object_id > 0)
+      {
+         snprintf(default_object_name, sizeof(default_object_name), "obj-%d",
+                  hypredrv->runtime_object_id);
+         object_name = default_object_name;
       }
    }
 

@@ -63,6 +63,9 @@ DestroyActiveSolver(HYPREDRV_t hypredrv)
    }
 }
 
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
 static void
 LinearSystemDropOwnedPrecMatrix(HYPREDRV_t hypredrv)
 {
@@ -74,6 +77,9 @@ LinearSystemDropOwnedPrecMatrix(HYPREDRV_t hypredrv)
    hypredrv->mat_M      = NULL;
    hypredrv->owns_mat_M = false;
 }
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
 
 static void
 LinearSystemDropOwnedInitialGuess(HYPREDRV_t hypredrv)
@@ -87,6 +93,9 @@ LinearSystemDropOwnedInitialGuess(HYPREDRV_t hypredrv)
    hypredrv->owns_vec_x0 = false;
 }
 
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
 static void
 LinearSystemDropOwnedReferenceSolution(HYPREDRV_t hypredrv)
 {
@@ -99,6 +108,9 @@ LinearSystemDropOwnedReferenceSolution(HYPREDRV_t hypredrv)
    hypredrv->vec_xref      = NULL;
    hypredrv->owns_vec_xref = false;
 }
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
 
 static uint32_t
 ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
@@ -143,7 +155,6 @@ ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_Initialize
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -158,7 +169,6 @@ HYPREDRV_Initialize()
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_Finalize
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -187,7 +197,6 @@ HYPREDRV_Finalize()
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_ErrorCodeDescribe
  *-----------------------------------------------------------------------------*/
 
 void
@@ -203,6 +212,9 @@ HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
    hypredrv_ErrorMsgClear();
    hypredrv_ErrorBacktracePrint();
 }
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
 
 static uint32_t
 DestroyObjectInternal(HYPREDRV_t hypredrv)
@@ -304,7 +316,6 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_Create
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -359,6 +370,7 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->scaling_ctx                  = NULL;
    hypredrv->precon_reuse_timestep_starts = NULL;
    hypredrv->stats                        = NULL;
+   hypredrv->runtime_object_id            = 0;
    hypredrv->next_live                    = NULL;
 
    /* Disable library mode by default */
@@ -394,7 +406,6 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_Destroy
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -428,7 +439,6 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_PrintLibInfo
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -442,7 +452,6 @@ HYPREDRV_PrintLibInfo(MPI_Comm comm, int print_datetime)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_PrintSystemInfo
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -456,7 +465,6 @@ HYPREDRV_PrintSystemInfo(MPI_Comm comm)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_PrintExitInfo
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -470,7 +478,6 @@ HYPREDRV_PrintExitInfo(MPI_Comm comm, const char *argv0)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_InputArgsParse
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -529,7 +536,6 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_SetLibraryMode
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -544,7 +550,6 @@ HYPREDRV_SetLibraryMode(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_ObjectSetName
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -559,7 +564,6 @@ HYPREDRV_ObjectSetName(HYPREDRV_t hypredrv, const char *name)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_InputArgsGetWarmup
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -577,7 +581,6 @@ HYPREDRV_InputArgsGetWarmup(HYPREDRV_t hypredrv, int *warmup)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_InputArgsGetNumRepetitions
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -595,7 +598,6 @@ HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t hypredrv, int *num_reps)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_InputArgsGetNumLinearSystems
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -613,7 +615,6 @@ HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t hypredrv, int *num_ls)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_InputArgsGetNumPreconVariants
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -631,7 +632,6 @@ HYPREDRV_InputArgsGetNumPreconVariants(HYPREDRV_t hypredrv, int *num_variants)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_InputArgsSetPreconVariant
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -704,7 +704,6 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_InputArgsSetPreconPreset
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -763,7 +762,6 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_InputArgsSetSolverPreset
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -808,7 +806,6 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_PreconPresetRegister
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -828,7 +825,6 @@ HYPREDRV_PreconPresetRegister(const char *name, const char *yaml_text, const cha
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_StateVectorSet
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -863,7 +859,6 @@ HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv, int nstates, HYPRE_IJVector *vecs)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemGetSolutionValues
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -904,7 +899,6 @@ HYPREDRV_StateVectorGetValues(HYPREDRV_t hypredrv, int index, HYPRE_Complex **da
 }
 
 /*-----------------------------------------------------------------------------
- * Cycle through state vectors
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -964,7 +958,6 @@ HYPREDRV_StateVectorUpdateAll(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_StateVectorApplyCorrection
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1008,7 +1001,6 @@ HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemBuild
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1063,7 +1055,6 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemReadMatrix
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1080,7 +1071,6 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetMatrix
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1102,7 +1092,6 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat_A)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetRHS
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1131,7 +1120,6 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetNearNullSpace
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1150,7 +1138,6 @@ HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetInitialGuess
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1192,7 +1179,6 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetSolution
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1233,7 +1219,6 @@ HYPREDRV_LinearSystemSetSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetReferenceSolution
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1270,7 +1255,6 @@ HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemResetInitialGuess
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1292,7 +1276,6 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * LinearSystemSetVectorTagsInternal
  *-----------------------------------------------------------------------------*/
 
 static uint32_t
@@ -1315,7 +1298,6 @@ LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemGetSolutionValues
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1336,7 +1318,6 @@ HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemGetSolutionNorm
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1358,7 +1339,6 @@ HYPREDRV_LinearSystemGetSolutionNorm(HYPREDRV_t hypredrv, const char *norm_type,
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemGetSolution
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1379,7 +1359,6 @@ HYPREDRV_LinearSystemGetSolution(HYPREDRV_t hypredrv, HYPRE_Vector *vec)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemGetRHSValues
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1400,7 +1379,6 @@ HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv, HYPRE_Complex **rhs_data)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemGetRHS
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1421,7 +1399,6 @@ HYPREDRV_LinearSystemGetRHS(HYPREDRV_t hypredrv, HYPRE_Vector *vec)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemGetMatrix
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1442,7 +1419,6 @@ HYPREDRV_LinearSystemGetMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix *mat)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetPrecMatrix
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1473,7 +1449,6 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetDofmap
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1490,7 +1465,6 @@ HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t hypredrv, int size, const int *dofmap)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetInterleavedDofmap
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1508,7 +1482,6 @@ HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t hypredrv, int num_local_blo
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemSetContiguousDofmap
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1526,7 +1499,6 @@ HYPREDRV_LinearSystemSetContiguousDofmap(HYPREDRV_t hypredrv, int num_local_bloc
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemReadDofmap
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1572,7 +1544,6 @@ HYPREDRV_LinearSystemPrintDofmap(HYPREDRV_t hypredrv, const char *filename)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemPrint
  *----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1589,7 +1560,6 @@ HYPREDRV_LinearSystemPrint(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_PreconCreate
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1635,7 +1605,6 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSolverCreate
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1668,7 +1637,7 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
    else
    {
       hypredrv_LogObjectf(2, hypredrv,
-                          "skipping preconditioner creation (existing precon not setup)");
+                          "skipping preconditioner creation (precon already created, pending setup)");
    }
 
    /* Always recreate solver per linear system.
@@ -1688,7 +1657,6 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_PreconSetup
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1709,6 +1677,9 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
 
    return hypredrv_ErrorCodeGet();
 }
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
 
 static void
 GMRESSetRefSolution(HYPREDRV_t hypredrv)
@@ -1735,7 +1706,6 @@ GMRESSetRefSolution(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSolverSetup
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1807,7 +1777,6 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSolverApply
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1954,7 +1923,6 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_PreconApply
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -1994,7 +1962,6 @@ HYPREDRV_PreconApply(HYPREDRV_t hypredrv, HYPRE_Vector vec_b, HYPRE_Vector vec_x
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_PreconDestroy
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2038,7 +2005,6 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSolverDestroy
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2070,7 +2036,6 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_StatsPrint
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2086,7 +2051,6 @@ HYPREDRV_StatsPrint(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_AnnotateBegin
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2100,7 +2064,6 @@ HYPREDRV_AnnotateBegin(HYPREDRV_t hypredrv, const char *name, int id)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_AnnotateEnd
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2113,7 +2076,6 @@ HYPREDRV_AnnotateEnd(HYPREDRV_t hypredrv, const char *name, int id)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_AnnotateLevelBegin
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2127,7 +2089,6 @@ HYPREDRV_AnnotateLevelBegin(HYPREDRV_t hypredrv, int level, const char *name, in
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_AnnotateLevelEnd
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2141,7 +2102,6 @@ HYPREDRV_AnnotateLevelEnd(HYPREDRV_t hypredrv, int level, const char *name, int 
 }
 
 /*-----------------------------------------------------------------------------
- * PreconApplyWrapper
  *-----------------------------------------------------------------------------*/
 
 #ifdef HYPREDRV_ENABLE_EIGSPEC
@@ -2153,7 +2113,6 @@ PreconApplyWrapper(void *ctx, void *b, void *x)
 #endif
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSystemComputeEigenspectrum
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2241,7 +2200,6 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSolverGetNumIter
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2263,7 +2221,6 @@ HYPREDRV_LinearSolverGetNumIter(HYPREDRV_t hypredrv, int *iters)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSolverGetSetupTime
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2285,7 +2242,6 @@ HYPREDRV_LinearSolverGetSetupTime(HYPREDRV_t hypredrv, double *seconds)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_LinearSolverGetSolveTime
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2307,7 +2263,6 @@ HYPREDRV_LinearSolverGetSolveTime(HYPREDRV_t hypredrv, double *seconds)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_StatsLevelGetCount
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2321,7 +2276,6 @@ HYPREDRV_StatsLevelGetCount(HYPREDRV_t hypredrv, int level, int *count)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_StatsLevelGetEntry
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2338,7 +2292,6 @@ HYPREDRV_StatsLevelGetEntry(HYPREDRV_t hypredrv, int level, int index, int *entr
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_StatsLevelPrint
  *-----------------------------------------------------------------------------*/
 
 uint32_t

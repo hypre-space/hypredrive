@@ -17,6 +17,7 @@ typedef struct
    bool       initialized;
    bool       finalize_in_progress;
    int        active_count;
+   int        next_object_id;
    HYPREDRV_t live_head;
 } RuntimeState;
 
@@ -24,6 +25,7 @@ static RuntimeState g_runtime_state = {
    .initialized          = false,
    .finalize_in_progress = false,
    .active_count         = 0,
+   .next_object_id       = 1,
    .live_head            = NULL,
 };
 
@@ -127,6 +129,8 @@ hypredrv_RuntimeRegisterObject(HYPREDRV_t hypredrv)
       return hypredrv_ErrorCodeGet();
    }
 
+   hypredrv->runtime_object_id = g_runtime_state.next_object_id++;
+
    hypredrv->next_live       = g_runtime_state.live_head;
    g_runtime_state.live_head = hypredrv;
    g_runtime_state.active_count++;
@@ -222,6 +226,7 @@ hypredrv_RuntimeFinalizeState(void)
 
    g_runtime_state.finalize_in_progress = false;
    g_runtime_state.active_count         = 0;
+   g_runtime_state.next_object_id       = 1;
    g_runtime_state.live_head            = NULL;
 
    /* Do not leak message buffers across independent initialize/finalize cycles. */
