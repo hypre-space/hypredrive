@@ -79,7 +79,7 @@ hypredrv_ScalingContextCreate(MPI_Comm comm, Scaling_context **ctx_ptr)
    ctx->scaling_vector  = NULL;
    ctx->scaling_ijvec   = NULL;
    *ctx_ptr             = ctx;
-   hypredrv_LogCommf(3, comm, NULL, 0, "scaling context created");
+   HYPREDRV_LOG_COMMF(3, comm, NULL, 0, "scaling context created");
 }
 
 /*-----------------------------------------------------------------------------
@@ -126,7 +126,7 @@ hypredrv_ScalingContextDestroy(MPI_Comm comm, Scaling_context **ctx_ptr)
 
    free(ctx);
    *ctx_ptr = NULL;
-   hypredrv_LogCommf(3, comm, NULL, 0, "scaling context destroyed");
+   HYPREDRV_LOG_COMMF(3, comm, NULL, 0, "scaling context destroyed");
 }
 
 static MPI_Comm
@@ -565,8 +565,8 @@ ScalingTransformVectorRHSL2(const Scaling_context *ctx, HYPRE_IJVector vec,
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("ScalingTransformVectorRHSL2: invalid scaling factor");
-      hypredrv_LogCommf(2, log_comm, NULL, 0,
-                        "scaling vector transform failed: invalid scalar factor");
+      HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
+                         "scaling vector transform failed: invalid scalar factor");
       return;
    }
 
@@ -587,8 +587,8 @@ ScalingTransformVectorRHSL2(const Scaling_context *ctx, HYPRE_IJVector vec,
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("ScalingTransformVectorRHSL2: vector object is NULL");
-      hypredrv_LogCommf(2, log_comm, NULL, 0,
-                        "scaling vector transform failed: IJ vector object is NULL");
+      HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
+                         "scaling vector transform failed: IJ vector object is NULL");
       return;
    }
    par_vec = (hypre_ParVector *)obj_vec;
@@ -609,8 +609,8 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("ScalingTransformVectorDofmap: scaling vector not computed");
-      hypredrv_LogCommf(2, log_comm, NULL, 0,
-                        "scaling vector transform failed: scaling vector not computed");
+      HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
+                         "scaling vector transform failed: scaling vector not computed");
       return;
    }
 
@@ -623,8 +623,8 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("ScalingTransformVectorDofmap: vector object is NULL");
-      hypredrv_LogCommf(2, log_comm, NULL, 0,
-                        "scaling vector transform failed: IJ vector object is NULL");
+      HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
+                         "scaling vector transform failed: IJ vector object is NULL");
       return;
    }
    par_vec = (hypre_ParVector *)obj_vec;
@@ -653,8 +653,8 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    (void)apply;
    hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
    hypredrv_ErrorMsgAdd("ScalingTransformVectorDofmap: requires Hypre >= v3.0.0");
-   hypredrv_LogCommf(2, log_comm, NULL, 0,
-                     "scaling vector transform failed: requires Hypre >= v3.0.0");
+   HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
+                      "scaling vector transform failed: requires Hypre >= v3.0.0");
 #endif
 }
 
@@ -682,15 +682,15 @@ hypredrv_ScalingApplyToVector(const Scaling_context *ctx, HYPRE_IJVector vec,
       default:
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("hypredrv_ScalingApplyToVector: unknown scaling type");
-         hypredrv_LogCommf(2, ScalingCommFromVector(vec), NULL, 0,
-                           "scaling apply-to-vector failed: unknown scaling type=%d",
-                           (int)ctx->type);
+         HYPREDRV_LOG_COMMF(2, ScalingCommFromVector(vec), NULL, 0,
+                            "scaling apply-to-vector failed: unknown scaling type=%d",
+                            (int)ctx->type);
          break;
    }
 #else
    (void)kind;
-   hypredrv_LogCommf(2, ScalingCommFromVector(vec), NULL, 0,
-                     "scaling apply-to-vector failed: requires Hypre >= v3.0.0");
+   HYPREDRV_LOG_COMMF(2, ScalingCommFromVector(vec), NULL, 0,
+                      "scaling apply-to-vector failed: requires Hypre >= v3.0.0");
 #endif
 }
 
@@ -718,15 +718,15 @@ hypredrv_ScalingUndoOnVector(const Scaling_context *ctx, HYPRE_IJVector vec,
       default:
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("hypredrv_ScalingUndoOnVector: unknown scaling type");
-         hypredrv_LogCommf(2, ScalingCommFromVector(vec), NULL, 0,
-                           "scaling undo-on-vector failed: unknown scaling type=%d",
-                           (int)ctx->type);
+         HYPREDRV_LOG_COMMF(2, ScalingCommFromVector(vec), NULL, 0,
+                            "scaling undo-on-vector failed: unknown scaling type=%d",
+                            (int)ctx->type);
          break;
    }
 #else
    (void)kind;
-   hypredrv_LogCommf(2, ScalingCommFromVector(vec), NULL, 0,
-                     "scaling undo-on-vector failed: requires Hypre >= v3.0.0");
+   HYPREDRV_LOG_COMMF(2, ScalingCommFromVector(vec), NULL, 0,
+                      "scaling undo-on-vector failed: requires Hypre >= v3.0.0");
 #endif
 }
 
