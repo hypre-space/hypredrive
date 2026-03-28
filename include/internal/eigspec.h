@@ -6,10 +6,10 @@
 #ifndef EIGSPEC_HEADER
 #define EIGSPEC_HEADER
 
-#include "containers.h"
-#include "field.h"
-#include "stats.h"
-#include "yaml.h"
+#include "internal/containers.h"
+#include "internal/field.h"
+#include "internal/stats.h"
+#include "internal/yaml.h"
 
 /*--------------------------------------------------------------------------
  * Eigenspectrum arguments struct

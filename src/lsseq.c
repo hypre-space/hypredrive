@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "lsseq.h"
+#include "internal/lsseq.h"
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
@@ -14,8 +14,8 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "error.h"
-#include "linsys.h"
+#include "internal/error.h"
+#include "internal/linsys.h"
 
 typedef struct LSSeqData_struct
 {

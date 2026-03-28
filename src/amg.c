@@ -5,11 +5,11 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "amg.h"
+#include "internal/amg.h"
 #include "HYPRE_parcsr_mv.h"
 #include "_hypre_IJ_mv.h"     // For hypre_IJVectorGlobalNumRows
 #include "_hypre_parcsr_mv.h" // For hypre_ParVectorComm, hypre_ParVectorInitialize_v2
-#include "gen_macros.h"
+#include "internal/gen_macros.h"
 
 /*-----------------------------------------------------------------------------
  * Define Field/Offset/Setter mappings

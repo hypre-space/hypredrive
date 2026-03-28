@@ -5,9 +5,11 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include "HYPRE.h"
 #include "HYPRE_IJ_mv.h"
+#include "HYPRE_parcsr_mv.h"
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
-#include "utils.h"
+#include "internal/utils.h"
 
 static void
 IJMatrixInitializeCompat(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_location)

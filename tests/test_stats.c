@@ -2,10 +2,10 @@
 #include <stdio.h>
 
 #include "HYPREDRV.h"
-#include "args.h"
-#include "error.h"
-#include "linsys.h"
-#include "stats.h"
+#include "internal/args.h"
+#include "internal/error.h"
+#include "internal/linsys.h"
+#include "internal/stats.h"
 #include "test_helpers.h"
 
 static void

@@ -17,11 +17,11 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include "comp.h"
-#include "containers.h"
-#include "error.h"
-#include "lsseq.h"
-#include "utils.h"
+#include "internal/comp.h"
+#include "internal/containers.h"
+#include "internal/error.h"
+#include "internal/lsseq.h"
+#include "internal/utils.h"
 
 /* Temp buffer for path concatenation (two MAX_FILENAME_LENGTH paths + suffix) to satisfy -Wformat-truncation. */
 #define PATH_TMP_SIZE (2 * MAX_FILENAME_LENGTH + 64)

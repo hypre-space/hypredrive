@@ -2,10 +2,10 @@
 #define HYPREDRV_OBJECT_HEADER_
 
 #include "HYPREDRV.h"
-#include "args.h"
-#include "containers.h"
-#include "scaling.h"
-#include "stats.h"
+#include "internal/args.h"
+#include "internal/containers.h"
+#include "internal/scaling.h"
+#include "internal/stats.h"
 
 typedef struct hypredrv_struct
 {

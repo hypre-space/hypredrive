@@ -9,12 +9,12 @@
 #define PRECON_HEADER
 
 #include <stdint.h>
-#include "amg.h"
-#include "field.h"
-#include "fsai.h"
-#include "ilu.h"
-#include "mgr.h"
-#include "yaml.h"
+#include "internal/amg.h"
+#include "internal/field.h"
+#include "internal/fsai.h"
+#include "internal/ilu.h"
+#include "internal/mgr.h"
+#include "internal/yaml.h"
 
 /*--------------------------------------------------------------------------
  * Preconditioner types enum

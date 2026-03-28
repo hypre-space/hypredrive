@@ -8,14 +8,14 @@
 #include <math.h>
 #include <stdio.h>
 #include "_hypre_parcsr_mv.h" /* For hypre_VectorData, hypre_ParVectorLocalVector */
-#include "args.h"
-#include "containers.h"
-#include "info.h"
-#include "linsys.h"
-#include "lsseq.h"
-#include "presets.h"
-#include "scaling.h"
-#include "stats.h"
+#include "internal/args.h"
+#include "internal/containers.h"
+#include "internal/info.h"
+#include "internal/linsys.h"
+#include "internal/lsseq.h"
+#include "internal/presets.h"
+#include "internal/scaling.h"
+#include "internal/stats.h"
 #ifdef HYPREDRV_ENABLE_CALIPER
 #include <caliper/cali.h>
 #endif

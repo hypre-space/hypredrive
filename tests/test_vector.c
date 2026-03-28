@@ -3,9 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "containers.h"
-#include "error.h"
-#include "linsys.h"
+#include "internal/containers.h"
+#include "internal/error.h"
+#include "internal/linsys.h"
 #include "test_helpers.h"
 
 static void

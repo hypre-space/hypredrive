@@ -3,12 +3,12 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "args.h"
-#include "error.h"
-#include "stats.h"
+#include "internal/args.h"
+#include "internal/error.h"
+#include "internal/stats.h"
 #include "test_helpers.h"
-#include "utils.h"
-#include "yaml.h"
+#include "internal/utils.h"
+#include "internal/yaml.h"
 
 static YAMLtree *
 build_tree(const char *text)

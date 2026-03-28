@@ -14,7 +14,7 @@
 #endif
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
-#include "compatibility.h"
+#include "internal/compatibility.h"
 // #define VTK_USE_ASCII 0
 
 #if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900

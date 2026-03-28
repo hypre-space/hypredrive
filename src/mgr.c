@@ -5,12 +5,12 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "mgr.h"
+#include "internal/mgr.h"
 #include <mpi.h>
-#include "error.h"
-#include "gen_macros.h"
-#include "krylov.h"
-#include "stats.h"
+#include "internal/error.h"
+#include "internal/gen_macros.h"
+#include "internal/krylov.h"
+#include "internal/stats.h"
 #if !HYPRE_CHECK_MIN_VERSION(30100, 5)
 #include "_hypre_utilities.h" // for hypre_Solver
 #endif

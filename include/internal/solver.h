@@ -10,12 +10,12 @@
 
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "bicgstab.h"
-#include "fgmres.h"
-#include "gmres.h"
-#include "linsys.h"
-#include "pcg.h"
-#include "precon.h"
+#include "internal/bicgstab.h"
+#include "internal/fgmres.h"
+#include "internal/gmres.h"
+#include "internal/linsys.h"
+#include "internal/pcg.h"
+#include "internal/precon.h"
 
 /*--------------------------------------------------------------------------
  * Solver types enum

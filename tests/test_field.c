@@ -1,10 +1,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "containers.h"
-#include "field.h"
+#include "internal/containers.h"
+#include "internal/field.h"
 #include "test_helpers.h"
-#include "yaml.h"
+#include "internal/yaml.h"
 
 static YAMLnode *
 make_node(const char *value)

@@ -9,11 +9,11 @@
 #define AMG_HEADER
 
 #include "HYPRE_parcsr_ls.h"
-#include "cheby.h"
-#include "field.h"
-#include "fsai.h"
-#include "ilu.h"
-#include "yaml.h"
+#include "internal/cheby.h"
+#include "internal/field.h"
+#include "internal/fsai.h"
+#include "internal/ilu.h"
+#include "internal/yaml.h"
 
 /*--------------------------------------------------------------------------
  * AMG complex smoother arguments struct

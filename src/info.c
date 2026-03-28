@@ -8,7 +8,7 @@
 #ifndef __APPLE__
 #define _GNU_SOURCE 1
 #endif
-#include "info.h"
+#include "internal/info.h"
 #include <ctype.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -17,7 +17,7 @@
 #include <unistd.h>
 #include "HYPREDRV_config.h"
 #include "HYPRE_config.h"
-#include "utils.h"
+#include "internal/utils.h"
 #ifdef HYPRE_USING_OPENMP
 #include <omp.h>
 #endif

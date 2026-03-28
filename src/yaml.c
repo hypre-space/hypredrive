@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "yaml.h"
+#include "internal/yaml.h"
 
 /*-----------------------------------------------------------------------------
  * Schema-driven validation helpers (shared by macro-generated parsers)

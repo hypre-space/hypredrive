@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "gmres.h"
-#include "gen_macros.h"
+#include "internal/gmres.h"
+#include "internal/gen_macros.h"
 
 /*-----------------------------------------------------------------------------
  * Define Field/Offset/Setter mapping

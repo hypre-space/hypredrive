@@ -5,39 +5,36 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#ifndef FSAI_HEADER
-#define FSAI_HEADER
+#ifndef BICGSTAB_HEADER
+#define BICGSTAB_HEADER
 
+#include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "field.h"
-#include "yaml.h"
+#include "internal/field.h"
+#include "internal/yaml.h"
 
 /*--------------------------------------------------------------------------
- * FSAI preconditioner arguments struct
+ * BiCGSTAB solver arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct FSAI_args_struct
+typedef struct BiCGSTAB_args_struct
 {
+   HYPRE_Int  min_iter;
    HYPRE_Int  max_iter;
+   HYPRE_Int  stop_crit;
+   HYPRE_Int  logging;
    HYPRE_Int  print_level;
-   HYPRE_Int  algo_type;
-   HYPRE_Int  ls_type;
-   HYPRE_Int  max_steps;
-   HYPRE_Int  max_step_size;
-   HYPRE_Int  max_nnz_row;
-   HYPRE_Int  num_levels;
-   HYPRE_Int  eig_max_iters;
-   HYPRE_Real threshold;
-   HYPRE_Real kap_tolerance;
-   HYPRE_Real tolerance;
-} FSAI_args;
+   HYPRE_Real relative_tol;
+   HYPRE_Real absolute_tol;
+   HYPRE_Real conv_fac_tol;
+} BiCGSTAB_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void hypredrv_FSAISetDefaultArgs(FSAI_args *);
-void hypredrv_FSAISetArgs(void *, const YAMLnode *);
-void hypredrv_FSAICreate(const FSAI_args *, HYPRE_Solver *);
+void hypredrv_BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
+void hypredrv_BiCGSTABSetArgs(void *, const YAMLnode *);
+void hypredrv_BiCGSTABCreate(MPI_Comm, const BiCGSTAB_args *, HYPRE_Solver *);
 
-#endif /* FSAI_HEADER */
+#endif /* BICGSTAB_HEADER */

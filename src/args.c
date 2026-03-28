@@ -5,17 +5,17 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "args.h"
+#include "internal/args.h"
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "field.h"
-#include "gen_macros.h"
+#include "internal/field.h"
+#include "internal/gen_macros.h"
+#include "internal/presets.h"
+#include "internal/scaling.h"
+#include "internal/stats.h"
+#include "internal/utils.h"
+#include "internal/yaml.h"
 #include "logging.h"
-#include "presets.h"
-#include "scaling.h"
-#include "stats.h"
-#include "utils.h"
-#include "yaml.h"
 
 /*-----------------------------------------------------------------------------
  * General args helpers (schema-driven parsing)

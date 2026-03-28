@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "ilu.h"
-#include "gen_macros.h"
+#include "internal/ilu.h"
+#include "internal/gen_macros.h"
 
 /*-----------------------------------------------------------------------------
  * Define Field/Offset/Setter mapping

@@ -23,11 +23,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
-#include "containers.h"
-#include "error.h"
-#include "linsys.h"
+#include "internal/containers.h"
+#include "internal/error.h"
+#include "internal/linsys.h"
+#include "internal/lsseq.h"
 #include "logging.h"
-#include "lsseq.h"
 
 static void
 IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)

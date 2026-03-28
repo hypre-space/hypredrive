@@ -10,8 +10,8 @@
 
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "field.h"
-#include "yaml.h"
+#include "internal/field.h"
+#include "internal/yaml.h"
 
 /*--------------------------------------------------------------------------
  * FGMRES solver arguments struct

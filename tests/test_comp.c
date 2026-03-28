@@ -1,8 +1,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "comp.h"
-#include "error.h"
+#include "internal/comp.h"
+#include "internal/error.h"
 #include "test_helpers.h"
 
 static void

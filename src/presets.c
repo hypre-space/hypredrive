@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "presets.h"
-#include "error.h"
+#include "internal/presets.h"
+#include "internal/error.h"
 
 #include <ctype.h>
 #include <stdio.h>

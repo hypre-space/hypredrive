@@ -9,10 +9,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "args.h"
-#include "error.h"
-#include "mgr.h"
-#include "krylov.h"
+#include "internal/args.h"
+#include "internal/error.h"
+#include "internal/mgr.h"
+#include "internal/krylov.h"
 #include "test_helpers.h"
 
 static input_args *

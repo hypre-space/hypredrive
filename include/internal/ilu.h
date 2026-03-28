@@ -5,39 +5,40 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#ifndef GMRES_HEADER
-#define GMRES_HEADER
+#ifndef ILU_HEADER
+#define ILU_HEADER
 
-#include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "field.h"
-#include "yaml.h"
+#include "internal/field.h"
+#include "internal/yaml.h"
 
 /*--------------------------------------------------------------------------
- * GMRES solver arguments struct
+ * ILU preconditioner arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct GMRES_args_struct
+typedef struct ILU_args_struct
 {
-   HYPRE_Int  min_iter;
    HYPRE_Int  max_iter;
-   HYPRE_Int  stop_crit;
-   HYPRE_Int  skip_real_res_check;
-   HYPRE_Int  krylov_dim;
-   HYPRE_Int  rel_change;
-   HYPRE_Int  logging;
    HYPRE_Int  print_level;
-   HYPRE_Real relative_tol;
-   HYPRE_Real absolute_tol;
-   HYPRE_Real conv_fac_tol;
-} GMRES_args;
+   HYPRE_Int  type;
+   HYPRE_Int  fill_level;
+   HYPRE_Int  reordering;
+   HYPRE_Int  tri_solve;
+   HYPRE_Int  lower_jac_iters;
+   HYPRE_Int  upper_jac_iters;
+   HYPRE_Int  max_row_nnz;
+   HYPRE_Int  schur_max_iter;
+   HYPRE_Real droptol;
+   HYPRE_Real nsh_droptol;
+   HYPRE_Real tolerance;
+} ILU_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void hypredrv_GMRESSetDefaultArgs(GMRES_args *);
-void hypredrv_GMRESSetArgs(void *, const YAMLnode *);
-void hypredrv_GMRESCreate(MPI_Comm, const GMRES_args *, HYPRE_Solver *);
+void hypredrv_ILUSetDefaultArgs(ILU_args *);
+void hypredrv_ILUSetArgs(void *, const YAMLnode *);
+void hypredrv_ILUCreate(const ILU_args *, HYPRE_Solver *);
 
-#endif /* GMRES_HEADER */
+#endif /* ILU_HEADER */

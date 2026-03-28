@@ -9,8 +9,8 @@
 #define FIELD_HEADER
 
 #include <stddef.h>
-#include "containers.h"
-#include "yaml.h"
+#include "internal/containers.h"
+#include "internal/yaml.h"
 
 typedef void (*SetterFnc)(void *, const YAMLnode *);
 

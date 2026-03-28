@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "field.h"
+#include "internal/field.h"
 
 /*-----------------------------------------------------------------------------
  * hypredrv_FieldTypeIntSet

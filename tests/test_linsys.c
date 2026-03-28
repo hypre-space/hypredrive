@@ -6,13 +6,13 @@
 #include <sys/stat.h>
 
 #include "HYPRE.h"
-#include "containers.h"
-#include "error.h"
+#include "internal/containers.h"
+#include "internal/error.h"
 #include "logging.h"
-#include "linsys.h"
-#include "stats.h"
+#include "internal/linsys.h"
+#include "internal/stats.h"
 #include "test_helpers.h"
-#include "yaml.h"
+#include "internal/yaml.h"
 
 static void
 write_text_file(const char *path, const char *contents)
