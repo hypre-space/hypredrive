@@ -55,6 +55,12 @@ typedef struct PreconReuse_args_struct
    int       per_timestep;
 } PreconReuse_args;
 
+typedef struct PreconReuseTimesteps_struct
+{
+   IntArray *ids;
+   IntArray *starts;
+} PreconReuseTimesteps;
+
 /*--------------------------------------------------------------------------
  * Generic preconditioner struct
  *--------------------------------------------------------------------------*/
@@ -80,11 +86,15 @@ void           hypredrv_PreconArgsSetDefaultsForMethod(precon_t, precon_args *);
 void           hypredrv_PreconReuseSetDefaultArgs(PreconReuse_args *);
 void           hypredrv_PreconReuseDestroyArgs(PreconReuse_args *);
 void           hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *, YAMLnode *);
-void           hypredrv_PreconReuseTimestepsClear(IntArray **);
+void           hypredrv_PreconReuseTimestepsClear(PreconReuseTimesteps *);
 uint32_t       hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *, const char *,
-                                                 IntArray **);
-int hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *, const IntArray *,
-                                        const struct Stats_struct *, int);
+                                                 PreconReuseTimesteps *);
+int            hypredrv_PreconReuseResolveTimestep(const PreconReuseTimesteps *,
+                                                   const struct Stats_struct *, int, int *, int *,
+                                                   int *);
+int            hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *,
+                                                   const PreconReuseTimesteps *,
+                                                   const struct Stats_struct *, int);
 
 void hypredrv_PreconSetArgsFromYAML(precon_args *,
                                     YAMLnode *); /* TODO: change to PreconSetArgs */

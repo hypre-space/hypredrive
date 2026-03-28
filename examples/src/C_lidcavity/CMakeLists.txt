@@ -61,6 +61,14 @@ if(HYPREDRV_ENABLE_TESTING)
         add_executable_test(lidcavity_test_4proc lidcavity 4
             ARGS -v 1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3
         )
+        add_executable_test(lidcavity_stats_path_1proc lidcavity 1
+            ARGS -v 1 -n 12 12 -dt 0.1 -tf 0.2
+            RUN_SERIAL
+            REQUIRE_CONTAINS
+                "STATISTICS SUMMARY:"
+                "Path"
+                "1.1.1"
+        )
     endif()
     if(HYPREDRV_HAVE_HYPRE_30100_DEV5)
         add_executable_test(lidcavity_test_mgr_1proc lidcavity 1

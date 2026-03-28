@@ -131,6 +131,8 @@ int hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
                           HYPRE_MemoryLocation memory_location, HYPRE_IJVector *rhs_ptr);
 int hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
                              IntArray **dofmap_ptr);
+int hypredrv_LSSeqReadTimestepsWithIds(const char *filename, IntArray **timestep_ids,
+                                       IntArray **timestep_starts);
 int hypredrv_LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts);
 
 #endif /* LSSEQ_HEADER */

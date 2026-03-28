@@ -37,8 +37,8 @@ typedef struct hypredrv_struct
    HYPRE_Solver solver;
    bool         precon_is_setup;
 
-   Scaling_context *scaling_ctx;
-   IntArray        *precon_reuse_timestep_starts;
+   Scaling_context     *scaling_ctx;
+   PreconReuseTimesteps precon_reuse_timesteps;
 
    Stats *stats;
    int    runtime_object_id;
