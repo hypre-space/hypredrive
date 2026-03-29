@@ -889,6 +889,26 @@ run_named_library_linear_solve_trace_capture(void *context)
 }
 
 static void
+run_default_named_library_linear_solve_trace_capture(void *context)
+{
+   (void)context;
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   parse_minimal_library_yaml(obj);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   run_library_linear_solve(obj, NULL);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
 test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name(void)
 {
    reset_state();
@@ -899,6 +919,28 @@ test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name(void)
                          sizeof(output));
 
    ASSERT_NOT_NULL(strstr(output, "[named-handle]"));
+   ASSERT_NOT_NULL(strstr(output, "solver setup begin"));
+   ASSERT_NOT_NULL(strstr(output, "solver setup end"));
+   ASSERT_NOT_NULL(strstr(output, "initial guess reset begin"));
+   ASSERT_NOT_NULL(strstr(output, "initial guess reset end"));
+   ASSERT_NOT_NULL(strstr(output, "solver apply begin"));
+   ASSERT_NOT_NULL(strstr(output, "solver apply end"));
+   ASSERT_NULL(strstr(output, "unnamed][ls="));
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_default_object_name(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "3", 1);
+
+   char output[32768];
+   capture_stderr_output(run_default_named_library_linear_solve_trace_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_NOT_NULL(strstr(output, "[obj-1]"));
    ASSERT_NOT_NULL(strstr(output, "solver setup begin"));
    ASSERT_NOT_NULL(strstr(output, "solver setup end"));
    ASSERT_NOT_NULL(strstr(output, "initial guess reset begin"));
@@ -2898,6 +2940,8 @@ run_hypredrv_lifecycle_and_guards(void)
    RUN_TEST(test_HYPREDRV_log_stream_invalid_value_falls_back_to_stderr);
    RUN_TEST(test_HYPREDRV_log_level_input_args_internal_logs_use_object_name);
    RUN_TEST(test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name);
+   RUN_TEST(
+      test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_default_object_name);
    RUN_TEST(test_HYPREDRV_log_level_boundary_api_traces);
    RUN_TEST(test_HYPREDRV_log_level_precon_variant_decisions);
    RUN_TEST(test_HYPREDRV_log_level_avoids_linear_system_ready_duplicate);
