@@ -1771,7 +1771,9 @@ extern "C"
     * @brief Get the preconditioner setup time from the last linear solve.
     *
     * @param hypredrv The HYPREDRV_t object.
-    * @param seconds  Pointer to store the setup time in seconds.
+    * @param seconds  Pointer to store the setup time in the currently configured
+    *                 stats units (seconds by default, milliseconds when
+    *                 ``general.use_millisec: on``).
     *
     * @return Returns an error code with 0 indicating success.
     *
@@ -1788,7 +1790,9 @@ extern "C"
     * @brief Get the solver apply time from the last linear solve.
     *
     * @param hypredrv The HYPREDRV_t object.
-    * @param seconds  Pointer to store the solve time in seconds.
+    * @param seconds  Pointer to store the solve time in the currently configured
+    *                 stats units (seconds by default, milliseconds when
+    *                 ``general.use_millisec: on``).
     *
     * @return Returns an error code with 0 indicating success.
     *

@@ -24,43 +24,6 @@ depending on the value of other keywords.
    regardless of the presence of lower-case, upper-case, or a mixture of both when
    defining keys and values.
 
-.. _CLIOverrides:
-
-CLI Overrides (``-a/--args``)
------------------------------
-
-When running the ``hypredrive-cli`` driver, it is often convenient to keep a base YAML file
-and override a few parameters from the command line.
-
-The driver supports this via the ``-a`` / ``--args`` flag, followed by key/value pairs in
-the form:
-
-- ``--path:to:key <value>``
-
-The ``path:to:key`` is interpreted as a YAML path where ``:`` separates nested blocks.
-Overrides are applied after reading the YAML file, so the command line takes precedence
-over the file.
-
-Examples (based on ``examples/ex1.yml``):
-
-.. code-block:: bash
-
-   # Keep solver as PCG, but change max_iter
-   mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver:pcg:max_iter 50
-
-.. code-block:: bash
-
-   # Switch solver type and set a nested option
-   mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver gmres --solver:gmres:max_iter 30
-
-.. note::
-
-   - Overrides must be provided as key/value pairs after ``-a``.
-   - Key/value pairs may introduce settings not present in the base YAML file.
-   - Keys and values must be separated by a space, for example ``--solver:pcg:max_iter 50``.
-   - Values containing spaces or YAML syntax such as ``[1, 2]`` should be quoted for your shell.
-
-
 General Settings
 ----------------
 
@@ -252,6 +215,129 @@ Degrees of Freedom Map
 
 - ``digits_suffix`` - (Optional) Number of digits used to build complete filenames when
   using the ``basename`` or ``dirname`` options. This parameter has a default value of 5.
+
+Scheduled linear-system dumps
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The optional ``print_system`` subsection can emit solver artifacts automatically at
+``build``, ``setup``, and/or ``apply`` lifecycle boundaries.
+
+Defaults:
+
+- ``enabled: off``
+- ``type: all``
+- ``stage: build``
+- ``artifacts: [matrix, rhs, dofmap]``
+- ``output_dir: hypredrive-data``
+- ``overwrite: off``
+
+Available ``type`` values:
+
+- ``all`` - dump every matched stage.
+- ``every_n_systems`` - dump every ``N`` linear systems (requires ``every``).
+- ``every_n_timesteps`` - dump every ``N`` timesteps (requires ``every``).
+- ``ids`` - dump specific **0-based** linear-system ids (requires ``ids``).
+- ``ranges`` - dump ids in one or more inclusive ranges (requires ``ranges``).
+- ``iterations_over`` - dump after ``apply`` when the last linear solve used at least
+  ``threshold`` iterations.
+- ``setup_time_over`` - dump after ``setup`` or ``apply`` when the last setup time was
+  at least ``threshold``.
+- ``solve_time_over`` - dump after ``apply`` when the last solve time was at least
+  ``threshold``.
+- ``selectors`` - union of selector blocks using ``basis`` + ``every`` / ``ids`` /
+  ``ranges`` for index-based matching, or ``basis`` + ``threshold`` for metric-based
+  matching.
+
+Time-based thresholds use the current stats time units:
+
+- seconds by default
+- milliseconds when ``general.use_millisec: on``
+
+Supported artifact names are ``matrix``, ``precmat``, ``rhs``, ``x0``, ``xref``,
+``solution``, ``dofmap``, and ``metadata``.
+
+Dump layout:
+
+- Dumps are written under ``output_dir/<object_name>/`` (no stage subdirectory).
+- Each dumped system gets a continuous folder index: ``ls_00000``, ``ls_00001``, ...
+  in dump creation order.
+- ``systems_index.txt`` maps each ``ls_*`` folder to detailed context (stage,
+  original linear-system id, timestep, variant, repetition, object name).
+
+For multi-range selection, use block-sequence items as range pairs:
+
+.. code-block:: yaml
+
+    linear_system:
+      print_system:
+        enabled: on
+        type: ranges
+        stage: apply
+        artifacts: [matrix, rhs, solution, metadata]
+        output_dir: hypre-dumps
+        overwrite: off
+        ranges:
+          - [20, 24]
+          - [100, 150]
+
+For mixed selectors:
+
+.. code-block:: yaml
+
+    linear_system:
+      print_system:
+        enabled: on
+        type: selectors
+        stage: all
+        selectors:
+          - basis: ids
+            every: 10
+          - basis: timestep
+            ranges:
+              - [2, 4]
+              - [10, 12]
+          - basis: level
+            level: 1
+            ids: [0, 3, 5]
+          - basis: iterations
+            threshold: 80
+          - basis: solve_time
+            threshold: 25.0
+
+For threshold-based top-level triggers:
+
+.. code-block:: yaml
+
+    general:
+      use_millisec: on
+
+    linear_system:
+      print_system:
+        enabled: on
+        type: setup_time_over
+        stage: apply
+        artifacts: [matrix, rhs, metadata]
+        output_dir: hypre-dumps
+        overwrite: off
+        threshold: 50.0
+
+Metric-based selectors support these ``basis`` values:
+
+- ``iterations`` - compares the last linear-iteration count using ``threshold``.
+- ``setup_time`` - compares the last setup time using ``threshold``.
+- ``solve_time`` - compares the last solve time using ``threshold``.
+
+Threshold-based triggers use an inclusive ``>= threshold`` comparison. Metric availability
+depends on the current stage:
+
+- ``iterations`` and ``solve_time`` are available on ``apply``.
+- ``setup_time`` is available on ``setup`` and ``apply``.
+
+CLI overrides can target nested keys, for example:
+
+.. code-block:: bash
+
+    hypredrive-cli --config input.yml --linear_system:print_system:enabled on
 
 
 An example code block for the ``linear_system`` section is given below:

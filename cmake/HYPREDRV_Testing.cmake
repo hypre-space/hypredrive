@@ -225,7 +225,7 @@ function(add_executable_test test_name target num_procs)
     cmake_parse_arguments(EXEC_TEST
         "RUN_SERIAL"
         "FAIL_REGULAR_EXPRESSION;WORKING_DIRECTORY"
-        "ARGS;REQUIRE_CONTAINS"
+        "ARGS;REQUIRE_CONTAINS;REQUIRE_PATHS"
         ${ARGN}
     )
 
@@ -255,6 +255,10 @@ function(add_executable_test test_name target num_procs)
     if(EXEC_TEST_REQUIRE_CONTAINS)
         string(JOIN "|" _require_contains ${EXEC_TEST_REQUIRE_CONTAINS})
         list(APPEND _driver_command "-DREQUIRE_CONTAINS:STRING=${_require_contains}")
+    endif()
+    if(EXEC_TEST_REQUIRE_PATHS)
+        string(JOIN "|" _require_paths ${EXEC_TEST_REQUIRE_PATHS})
+        list(APPEND _driver_command "-DREQUIRE_PATHS:STRING=${_require_paths}")
     endif()
 
     add_test(NAME ${test_name}

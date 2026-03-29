@@ -23,6 +23,66 @@ write_text_file(const char *path, const char *contents)
    fclose(fp);
 }
 
+static int
+file_contains_substr(const char *path, const char *needle)
+{
+   FILE *fp = fopen(path, "r");
+   if (!fp)
+   {
+      return 0;
+   }
+
+   char  line[1024];
+   int   found = 0;
+   while (fgets(line, sizeof(line), fp))
+   {
+      if (strstr(line, needle))
+      {
+         found = 1;
+         break;
+      }
+   }
+   fclose(fp);
+   return found;
+}
+
+static size_t
+file_count_substr(const char *path, const char *needle)
+{
+   FILE *fp = fopen(path, "r");
+   if (!fp)
+   {
+      return 0;
+   }
+
+   size_t count      = 0;
+   size_t needle_len = strlen(needle);
+   char   line[1024];
+   while (fgets(line, sizeof(line), fp))
+   {
+      const char *pos = line;
+      while ((pos = strstr(pos, needle)) != NULL)
+      {
+         count++;
+         pos += needle_len;
+      }
+   }
+   fclose(fp);
+   return count;
+}
+
+static int
+path_join2(char *out, size_t out_size, const char *left, const char *right)
+{
+   if (!out || out_size == 0 || !left || !right)
+   {
+      return 0;
+   }
+
+   int written = snprintf(out, out_size, "%s/%s", left, right);
+   return written >= 0 && (size_t)written < out_size;
+}
+
 static YAMLnode *
 add_child(YAMLnode *parent, const char *key, const char *val, int level)
 {
@@ -60,6 +120,9 @@ capture_stderr_output(CapturedStreamFn fn, void *context, char *buffer, size_t b
 }
 
 static HYPRE_IJMatrix create_test_ijmatrix_1x1(MPI_Comm comm, double diag);
+static HYPRE_IJVector create_test_ijvector(MPI_Comm comm, HYPRE_BigInt ilower,
+                                           HYPRE_BigInt iupper,
+                                           const HYPRE_Complex *vals);
 
 static int
 get_matrix_local_num_entries(HYPRE_IJMatrix mat)
@@ -230,6 +293,161 @@ test_hypredrv_LinearSystemSetArgsFromYAML_set_suffix_and_init_suffix_error(void)
 
    ASSERT_NE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL, 0);
    hypredrv_IntArrayDestroy(&args.set_suffix);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_hypredrv_PrintSystem_defaults(void)
+{
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+
+   ASSERT_EQ(args.print_system.enabled, 0);
+   ASSERT_EQ(args.print_system.type, PRINT_SYSTEM_TYPE_ALL);
+   ASSERT_EQ(args.print_system.stage_mask, PRINT_SYSTEM_STAGE_BUILD_BIT);
+   ASSERT_EQ(args.print_system.artifacts,
+             PRINT_SYSTEM_ARTIFACT_MATRIX | PRINT_SYSTEM_ARTIFACT_RHS |
+                PRINT_SYSTEM_ARTIFACT_DOFMAP);
+   ASSERT_STREQ(args.print_system.output_dir, "hypredrive-data");
+   ASSERT_EQ(args.print_system.overwrite, 0);
+}
+
+static void
+test_hypredrv_LinearSystemSetArgsFromYAML_print_system_block_ranges(void)
+{
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("linear_system", "", 0);
+   YAMLnode *ps     = add_child(parent, "print_system", "", 1);
+   add_child(ps, "enabled", "on", 2);
+   add_child(ps, "type", "ranges", 2);
+   add_child(ps, "stage", "apply", 2);
+   YAMLnode *ranges = add_child(ps, "ranges", "", 2);
+   add_child(ranges, "-", "[20, 24]", 3);
+   add_child(ranges, "-", "[100, 150]", 3);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetArgsFromYAML(&args, parent);
+
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.print_system.enabled, 1);
+   ASSERT_EQ(args.print_system.type, PRINT_SYSTEM_TYPE_RANGES);
+   ASSERT_EQ(args.print_system.stage_mask, PRINT_SYSTEM_STAGE_APPLY_BIT);
+   ASSERT_EQ((int)args.print_system.ranges.size, 2);
+   ASSERT_EQ(args.print_system.ranges.data[0].begin, 20);
+   ASSERT_EQ(args.print_system.ranges.data[0].end, 24);
+   ASSERT_EQ(args.print_system.ranges.data[1].begin, 100);
+   ASSERT_EQ(args.print_system.ranges.data[1].end, 150);
+
+   hypredrv_PrintSystemDestroyArgs(&args.print_system);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_hypredrv_LinearSystemSetArgsFromYAML_print_system_invalid_combo(void)
+{
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("linear_system", "", 0);
+   YAMLnode *ps     = add_child(parent, "print_system", "", 1);
+   add_child(ps, "enabled", "on", 2);
+   add_child(ps, "type", "all", 2);
+   add_child(ps, "ids", "[0, 1]", 2);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetArgsFromYAML(&args, parent);
+   ASSERT_NE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL, 0);
+
+   hypredrv_PrintSystemDestroyArgs(&args.print_system);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_hypredrv_LinearSystemSetArgsFromYAML_print_system_thresholds(void)
+{
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("linear_system", "", 0);
+   YAMLnode *ps     = add_child(parent, "print_system", "", 1);
+   add_child(ps, "enabled", "on", 2);
+   add_child(ps, "type", "iterations_over", 2);
+   add_child(ps, "stage", "apply", 2);
+   add_child(ps, "threshold", "12", 2);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetArgsFromYAML(&args, parent);
+
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.print_system.type, PRINT_SYSTEM_TYPE_ITERATIONS_OVER);
+   ASSERT_EQ(args.print_system.stage_mask, PRINT_SYSTEM_STAGE_APPLY_BIT);
+   ASSERT_EQ(args.print_system.threshold, 12.0);
+
+   hypredrv_PrintSystemDestroyArgs(&args.print_system);
+   hypredrv_YAMLnodeDestroy(parent);
+
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+   parent = hypredrv_YAMLnodeCreate("linear_system", "", 0);
+   ps     = add_child(parent, "print_system", "", 1);
+   add_child(ps, "enabled", "on", 2);
+   add_child(ps, "type", "selectors", 2);
+   add_child(ps, "stage", "all", 2);
+   YAMLnode *selectors = add_child(ps, "selectors", "", 2);
+   YAMLnode *selector  = add_child(selectors, "-", "", 3);
+   add_child(selector, "basis", "setup_time", 4);
+   add_child(selector, "threshold", "1.5", 4);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetArgsFromYAML(&args, parent);
+
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.print_system.type, PRINT_SYSTEM_TYPE_SELECTORS);
+   ASSERT_EQ_SIZE(args.print_system.num_selectors, 1);
+   ASSERT_EQ(args.print_system.selectors[0].basis, PRINT_SYSTEM_BASIS_SETUP_TIME);
+   ASSERT_EQ(args.print_system.selectors[0].threshold, 1.5);
+
+   hypredrv_PrintSystemDestroyArgs(&args.print_system);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_hypredrv_LinearSystemSetArgsFromYAML_print_system_threshold_invalid_combo(void)
+{
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("linear_system", "", 0);
+   YAMLnode *ps     = add_child(parent, "print_system", "", 1);
+   add_child(ps, "enabled", "on", 2);
+   add_child(ps, "type", "solve_time_over", 2);
+   add_child(ps, "stage", "build", 2);
+   add_child(ps, "threshold", "0.1", 2);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetArgsFromYAML(&args, parent);
+   ASSERT_NE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL, 0);
+
+   hypredrv_PrintSystemDestroyArgs(&args.print_system);
+   hypredrv_YAMLnodeDestroy(parent);
+
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+   parent = hypredrv_YAMLnodeCreate("linear_system", "", 0);
+   ps     = add_child(parent, "print_system", "", 1);
+   add_child(ps, "enabled", "on", 2);
+   add_child(ps, "type", "selectors", 2);
+   YAMLnode *selectors = add_child(ps, "selectors", "", 2);
+   YAMLnode *selector  = add_child(selectors, "-", "", 3);
+   add_child(selector, "basis", "iterations", 4);
+   add_child(selector, "threshold", "4", 4);
+   add_child(selector, "ids", "[1, 2]", 4);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetArgsFromYAML(&args, parent);
+   ASSERT_NE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL, 0);
+
+   hypredrv_PrintSystemDestroyArgs(&args.print_system);
    hypredrv_YAMLnodeDestroy(parent);
 }
 
@@ -826,6 +1044,346 @@ test_hypredrv_LinearSystemPrintData_series_dir_and_null_objects(void)
 }
 
 static void
+test_hypredrv_LinearSystemDumpScheduled_ranges_and_artifacts(void)
+{
+   TEST_HYPRE_INIT();
+
+   char outdir[256];
+   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_dump_sched_%d", (int)getpid());
+   char cleanup_cmd[320];
+   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
+   int cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+
+   YAMLnode *ps = hypredrv_YAMLnodeCreate("print_system", "", 0);
+   add_child(ps, "enabled", "on", 1);
+   add_child(ps, "type", "ranges", 1);
+   add_child(ps, "stage", "build", 1);
+   YAMLnode *artifacts = add_child(ps, "artifacts", "", 1);
+   add_child(artifacts, "-", "matrix", 2);
+   add_child(artifacts, "-", "rhs", 2);
+   add_child(artifacts, "-", "dofmap", 2);
+   add_child(artifacts, "-", "metadata", 2);
+   add_child(ps, "output_dir", outdir, 1);
+   add_child(ps, "overwrite", "on", 1);
+   YAMLnode *ranges = add_child(ps, "ranges", "", 1);
+   add_child(ranges, "-", "[20, 24]", 2);
+   add_child(ranges, "-", "[100, 150]", 2);
+
+   hypredrv_PrintSystemSetArgs(&args.print_system, ps);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   hypredrv_YAMLnodeDestroy(ps);
+
+   HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(MPI_COMM_SELF, 3.0);
+   HYPRE_Complex  vals[1] = {4.0};
+   HYPRE_IJVector rhs = create_test_ijvector(MPI_COMM_SELF, 0, 0, vals);
+
+   IntArray *dofmap = NULL;
+   int       dm[2]  = {0, 1};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 2, dm, &dofmap);
+
+   PrintSystemContext ctx;
+   memset(&ctx, 0, sizeof(ctx));
+   ctx.stage            = PRINT_SYSTEM_STAGE_BUILD;
+   ctx.system_index     = 22;
+   ctx.timestep_index   = 3;
+   ctx.variant_index    = 1;
+   ctx.repetition_index = 0;
+   ctx.stats_ls_id      = 21;
+   for (int level = 0; level < STATS_MAX_LEVELS; level++)
+   {
+      ctx.level_ids[level] = -1;
+   }
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemDumpScheduled(MPI_COMM_SELF, &args, mat, NULL, rhs, NULL, NULL,
+                                      NULL, dofmap, &ctx, "obj-1");
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   char dump_root[512];
+   snprintf(dump_root, sizeof(dump_root), "%s/obj-1/ls_00000", outdir);
+   char matrix_file[640], rhs_file[640], dofmap_file[640], metadata_file[640];
+   snprintf(matrix_file, sizeof(matrix_file), "%s/matrix.out.00000", dump_root);
+   snprintf(rhs_file, sizeof(rhs_file), "%s/rhs.out.00000", dump_root);
+   snprintf(dofmap_file, sizeof(dofmap_file), "%s/dofmap.out.00000", dump_root);
+   snprintf(metadata_file, sizeof(metadata_file), "%s/metadata.txt", dump_root);
+   char systems_index[640];
+   snprintf(systems_index, sizeof(systems_index), "%s/obj-1/systems_index.txt", outdir);
+
+   ASSERT_TRUE(access(matrix_file, F_OK) == 0);
+   ASSERT_TRUE(access(rhs_file, F_OK) == 0);
+   ASSERT_TRUE(access(dofmap_file, F_OK) == 0);
+   ASSERT_TRUE(access(metadata_file, F_OK) == 0);
+   ASSERT_TRUE(access(systems_index, F_OK) == 0);
+   ASSERT_TRUE(file_contains_substr(systems_index, "ls_00000"));
+   ASSERT_TRUE(file_contains_substr(systems_index, "stage=build"));
+   ASSERT_TRUE(file_contains_substr(systems_index, "system=22"));
+
+   ctx.system_index = 11;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemDumpScheduled(MPI_COMM_SELF, &args, mat, NULL, rhs, NULL, NULL,
+                                      NULL, dofmap, &ctx, "obj-1");
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   char unmatched_dir[640];
+   snprintf(unmatched_dir, sizeof(unmatched_dir), "%s/obj-1/ls_00001", outdir);
+   ASSERT_TRUE(access(unmatched_dir, F_OK) != 0);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   HYPRE_IJVectorDestroy(rhs);
+   HYPRE_IJMatrixDestroy(mat);
+   hypredrv_PrintSystemDestroyArgs(&args.print_system);
+   cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_hypredrv_LinearSystemDumpScheduled_overwrite_reuses_dump_series(void)
+{
+   TEST_HYPRE_INIT();
+
+   char outdir[256];
+   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_dump_overwrite_%d", (int)getpid());
+   char cleanup_cmd[320];
+   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
+   int cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+
+   PrintSystemContext ctx;
+   memset(&ctx, 0, sizeof(ctx));
+   ctx.stage          = PRINT_SYSTEM_STAGE_BUILD;
+   ctx.system_index   = 0;
+   ctx.timestep_index = 0;
+   ctx.stats_ls_id    = 0;
+   for (int level = 0; level < STATS_MAX_LEVELS; level++)
+   {
+      ctx.level_ids[level] = -1;
+   }
+
+   for (int pass = 0; pass < 2; pass++)
+   {
+      LS_args args;
+      hypredrv_LinearSystemSetDefaultArgs(&args);
+
+      YAMLnode *ps = hypredrv_YAMLnodeCreate("print_system", "", 0);
+      add_child(ps, "enabled", "on", 1);
+      add_child(ps, "type", "all", 1);
+      add_child(ps, "stage", "build", 1);
+      YAMLnode *artifacts = add_child(ps, "artifacts", "", 1);
+      add_child(artifacts, "-", "metadata", 2);
+      add_child(ps, "output_dir", outdir, 1);
+      add_child(ps, "overwrite", "on", 1);
+
+      hypredrv_PrintSystemSetArgs(&args.print_system, ps);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      hypredrv_YAMLnodeDestroy(ps);
+
+      ctx.system_index   = 5 + pass;
+      ctx.timestep_index = 2 + pass;
+      ctx.stats_ls_id    = 5 + pass;
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_LinearSystemDumpScheduled(MPI_COMM_SELF, &args, NULL, NULL, NULL, NULL,
+                                         NULL, NULL, NULL, &ctx, "obj-overwrite");
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+      hypredrv_PrintSystemDestroyArgs(&args.print_system);
+   }
+
+   char object_dir[512];
+   char dump_dir[512];
+   char metadata_file[640];
+   char stale_file[640];
+   char systems_index[640];
+   ASSERT_TRUE(path_join2(object_dir, sizeof(object_dir), outdir, "obj-overwrite"));
+   ASSERT_TRUE(path_join2(dump_dir, sizeof(dump_dir), object_dir, "ls_00000"));
+   ASSERT_TRUE(path_join2(metadata_file, sizeof(metadata_file), dump_dir, "metadata.txt"));
+   ASSERT_TRUE(path_join2(stale_file, sizeof(stale_file), dump_dir, "stale.txt"));
+   ASSERT_TRUE(path_join2(systems_index, sizeof(systems_index), object_dir,
+                          "systems_index.txt"));
+
+   write_text_file(stale_file, "stale");
+
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+
+   YAMLnode *ps = hypredrv_YAMLnodeCreate("print_system", "", 0);
+   add_child(ps, "enabled", "on", 1);
+   add_child(ps, "type", "all", 1);
+   add_child(ps, "stage", "build", 1);
+   YAMLnode *artifacts = add_child(ps, "artifacts", "", 1);
+   add_child(artifacts, "-", "metadata", 2);
+   add_child(ps, "output_dir", outdir, 1);
+   add_child(ps, "overwrite", "on", 1);
+
+   hypredrv_PrintSystemSetArgs(&args.print_system, ps);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   hypredrv_YAMLnodeDestroy(ps);
+
+   ctx.system_index   = 11;
+   ctx.timestep_index = 7;
+   ctx.stats_ls_id    = 11;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemDumpScheduled(MPI_COMM_SELF, &args, NULL, NULL, NULL, NULL,
+                                      NULL, NULL, NULL, &ctx, "obj-overwrite");
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   ASSERT_TRUE(access(metadata_file, F_OK) == 0);
+   ASSERT_TRUE(access(stale_file, F_OK) != 0);
+   ASSERT_TRUE(access(systems_index, F_OK) == 0);
+   ASSERT_TRUE(file_contains_substr(metadata_file, "system_index=11"));
+   ASSERT_TRUE(file_contains_substr(metadata_file, "timestep_index=7"));
+   ASSERT_TRUE(file_contains_substr(systems_index, "system=11"));
+   ASSERT_EQ_SIZE(file_count_substr(systems_index, "ls_00000"), 1);
+
+   char unexpected_dir[640];
+   ASSERT_TRUE(path_join2(unexpected_dir, sizeof(unexpected_dir), object_dir,
+                          "ls_00001"));
+   ASSERT_TRUE(access(unexpected_dir, F_OK) != 0);
+
+   hypredrv_PrintSystemDestroyArgs(&args.print_system);
+   cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_hypredrv_LinearSystemDumpScheduled_threshold_types_and_selectors(void)
+{
+   TEST_HYPRE_INIT();
+
+   char outdir[256];
+   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_dump_thresholds_%d", (int)getpid());
+   char cleanup_cmd[320];
+   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
+   int cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+
+   YAMLnode *ps = hypredrv_YAMLnodeCreate("print_system", "", 0);
+   add_child(ps, "enabled", "on", 1);
+   add_child(ps, "type", "iterations_over", 1);
+   add_child(ps, "stage", "apply", 1);
+   add_child(ps, "threshold", "10", 1);
+   YAMLnode *artifacts = add_child(ps, "artifacts", "", 1);
+   add_child(artifacts, "-", "metadata", 2);
+   add_child(ps, "output_dir", outdir, 1);
+   add_child(ps, "overwrite", "on", 1);
+
+   hypredrv_PrintSystemSetArgs(&args.print_system, ps);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   hypredrv_YAMLnodeDestroy(ps);
+
+   PrintSystemContext ctx;
+   memset(&ctx, 0, sizeof(ctx));
+   ctx.stage            = PRINT_SYSTEM_STAGE_APPLY;
+   ctx.system_index     = 3;
+   ctx.timestep_index   = 1;
+   ctx.last_iter        = 12;
+   ctx.variant_index    = 0;
+   ctx.repetition_index = 0;
+   ctx.stats_ls_id      = 3;
+   ctx.last_setup_time  = 0.5;
+   ctx.last_solve_time  = 0.25;
+   for (int level = 0; level < STATS_MAX_LEVELS; level++)
+   {
+      ctx.level_ids[level] = -1;
+   }
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemDumpScheduled(MPI_COMM_SELF, &args, NULL, NULL, NULL, NULL, NULL,
+                                      NULL, NULL, &ctx, "obj-threshold");
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   char metadata_file[640];
+   ASSERT_TRUE(path_join2(metadata_file, sizeof(metadata_file), outdir,
+                          "obj-threshold/ls_00000/metadata.txt"));
+   ASSERT_TRUE(access(metadata_file, F_OK) == 0);
+   ASSERT_TRUE(file_contains_substr(metadata_file, "last_iter=12"));
+   ASSERT_TRUE(file_contains_substr(metadata_file, "last_setup_time=0.5"));
+   ASSERT_TRUE(file_contains_substr(metadata_file, "last_solve_time=0.25"));
+
+   ctx.last_iter = 10;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemDumpScheduled(MPI_COMM_SELF, &args, NULL, NULL, NULL, NULL, NULL,
+                                      NULL, NULL, &ctx, "obj-threshold");
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   char boundary_metadata[640];
+   ASSERT_TRUE(path_join2(boundary_metadata, sizeof(boundary_metadata), outdir,
+                          "obj-threshold/ls_00001/metadata.txt"));
+   ASSERT_TRUE(access(boundary_metadata, F_OK) == 0);
+   ASSERT_TRUE(file_contains_substr(boundary_metadata, "last_iter=10"));
+
+   hypredrv_PrintSystemDestroyArgs(&args.print_system);
+
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+   ps = hypredrv_YAMLnodeCreate("print_system", "", 0);
+   add_child(ps, "enabled", "on", 1);
+   add_child(ps, "type", "selectors", 1);
+   add_child(ps, "stage", "all", 1);
+   artifacts = add_child(ps, "artifacts", "", 1);
+   add_child(artifacts, "-", "metadata", 2);
+   add_child(ps, "output_dir", outdir, 1);
+   add_child(ps, "overwrite", "off", 1);
+   YAMLnode *selectors = add_child(ps, "selectors", "", 1);
+   YAMLnode *selector  = add_child(selectors, "-", "", 2);
+   add_child(selector, "basis", "solve_time", 3);
+   add_child(selector, "threshold", "0.4", 3);
+
+   hypredrv_PrintSystemSetArgs(&args.print_system, ps);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   hypredrv_YAMLnodeDestroy(ps);
+
+   ctx.stage           = PRINT_SYSTEM_STAGE_SETUP;
+   ctx.last_iter       = -1;
+   ctx.last_setup_time = 0.75;
+   ctx.last_solve_time = -1.0;
+   ctx.system_index    = 5;
+   ctx.stats_ls_id     = 5;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemDumpScheduled(MPI_COMM_SELF, &args, NULL, NULL, NULL, NULL, NULL,
+                                      NULL, NULL, &ctx, "obj-selectors");
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   char selector_unmatched[640];
+   ASSERT_TRUE(path_join2(selector_unmatched, sizeof(selector_unmatched), outdir,
+                          "obj-selectors/ls_00000"));
+   ASSERT_TRUE(access(selector_unmatched, F_OK) != 0);
+
+   ctx.stage           = PRINT_SYSTEM_STAGE_APPLY;
+   ctx.last_iter       = 6;
+   ctx.last_solve_time = 0.75;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemDumpScheduled(MPI_COMM_SELF, &args, NULL, NULL, NULL, NULL, NULL,
+                                      NULL, NULL, &ctx, "obj-selectors");
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   ASSERT_TRUE(path_join2(metadata_file, sizeof(metadata_file), outdir,
+                          "obj-selectors/ls_00000/metadata.txt"));
+   ASSERT_TRUE(access(metadata_file, F_OK) == 0);
+   ASSERT_TRUE(file_contains_substr(metadata_file, "stage=apply"));
+   ASSERT_TRUE(file_contains_substr(metadata_file, "last_solve_time=0.75"));
+
+   hypredrv_PrintSystemDestroyArgs(&args.print_system);
+   cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_hypredrv_LinearSystemMatrixGetNumRows_GetNumNonzeros_error_cases(void)
 {
    /* Test with NULL matrix */
@@ -1370,6 +1928,11 @@ run_linsys_args_and_validation_tests(void)
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_unknown_key);
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_set_suffix);
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_set_suffix_and_init_suffix_error);
+   RUN_TEST(test_hypredrv_PrintSystem_defaults);
+   RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_print_system_block_ranges);
+   RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_print_system_invalid_combo);
+   RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_print_system_thresholds);
+   RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_print_system_threshold_invalid_combo);
    RUN_TEST(test_hypredrv_LinearSystemSetNearNullSpace_mismatch_error);
    RUN_TEST(test_hypredrv_LinearSystemSetNearNullSpace_success);
    RUN_TEST(test_hypredrv_LinearSystemSetNearNullSpace_destroy_previous);
@@ -1403,6 +1966,9 @@ static void
 run_linsys_misc_and_numeric_tests(void)
 {
    RUN_TEST(test_hypredrv_LinearSystemPrintData_series_dir_and_null_objects);
+   RUN_TEST(test_hypredrv_LinearSystemDumpScheduled_ranges_and_artifacts);
+   RUN_TEST(test_hypredrv_LinearSystemDumpScheduled_overwrite_reuses_dump_series);
+   RUN_TEST(test_hypredrv_LinearSystemDumpScheduled_threshold_types_and_selectors);
    RUN_TEST(test_hypredrv_LinearSystemMatrixGetNumRows_GetNumNonzeros_error_cases);
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_LinearSystemReadRHS_error_cases);

@@ -17,12 +17,9 @@
 #undef PACKAGE_URL
 #undef PACKAGE_VERSION
 
-#include <dirent.h>
-#include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
 #include "internal/containers.h"
 #include "internal/error.h"
 #include "internal/linsys.h"
@@ -80,6 +77,7 @@ static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, init_guess_mode, hypredrv_FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, rhs_mode, hypredrv_FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, type, hypredrv_FieldTypeIntSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, print_system, hypredrv_PrintSystemSetArgs),
    FIELD_OFFSET_MAP_ENTRY(LS_args, eigspec, hypredrv_EigSpecSetArgs),
    /* dof_labels is handled via a special-case branch in SetArgsFromYAML; the
     * entry here only serves the validator so it accepts the key. */
@@ -190,6 +188,8 @@ hypredrv_LinearSystemSetDefaultArgs(LS_args *args)
 #else
    args->exec_policy = 0;
 #endif
+
+   hypredrv_PrintSystemSetDefaultArgs(&args->print_system);
 
    /* Eigenspectrum defaults */
    hypredrv_EigSpecSetDefaultArgs(&args->eigspec);
@@ -1788,118 +1788,3 @@ hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector ve
 /*-----------------------------------------------------------------------------
  * Print matrix/vector/dofmap with series directory logic
  *---------------------------------------------------------------------------*/
-
-void
-hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_A,
-                               HYPRE_IJVector vec_b, const IntArray *dofmap)
-{
-   const char *A_base =
-      (args && args->matrix_basename[0] != '\0') ? args->matrix_basename : "IJ.out.A";
-   const char *b_base =
-      (args && args->rhs_basename[0] != '\0') ? args->rhs_basename : "IJ.out.b";
-   const char *d_base =
-      (args && args->dofmap_basename[0] != '\0') ? args->dofmap_basename : "dofmap";
-
-   char A_name[MAX_FILENAME_LENGTH];
-   char b_name[MAX_FILENAME_LENGTH];
-   char d_name[MAX_FILENAME_LENGTH];
-
-   {
-      int max_base = (int)sizeof(A_name) - 1 - 4;
-      if (max_base < 0) max_base = 0; /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
-      snprintf(A_name, sizeof(A_name), "%.*s.out", max_base, A_base);
-   }
-   {
-      int max_base = (int)sizeof(b_name) - 1 - 4;
-      if (max_base < 0) max_base = 0; /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
-      snprintf(b_name, sizeof(b_name), "%.*s.out", max_base, b_base);
-   }
-   {
-      int max_base = (int)sizeof(d_name) - 1 - 4;
-      if (max_base < 0) max_base = 0; /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
-      snprintf(d_name, sizeof(d_name), "%.*s.out", max_base, d_base);
-   }
-
-   int use_series_dir = 1;
-   if (args)
-   {
-      const int has_mat = args->matrix_basename[0] != '\0';
-      const int has_rhs = args->rhs_basename[0] != '\0';
-      const int has_dmf = args->dofmap_basename[0] != '\0';
-      use_series_dir    = !(has_mat || has_rhs || has_dmf);
-   }
-
-   char A_path[2 * MAX_FILENAME_LENGTH];
-   char b_path[2 * MAX_FILENAME_LENGTH];
-   char d_path[2 * MAX_FILENAME_LENGTH];
-
-   if (use_series_dir)
-   {
-      const char *root = "hypre-data";
-      struct stat st;
-      if (stat(root, &st) != 0)
-      {
-         (void)mkdir(root, 0775);
-      }
-
-      int  max_idx = -1;
-      DIR *dir     = opendir(root);
-      if (dir)
-      {
-         const struct dirent *ent = NULL;
-         while ((ent = readdir(dir)) != NULL)
-         {
-            if (ent->d_name[0] == 'l' && ent->d_name[1] == 's' && ent->d_name[2] == '_')
-            {
-               int idx = (int)strtol(ent->d_name + 3, NULL, 10);
-               {
-                  if (idx > max_idx) max_idx = idx;
-               }
-            }
-         }
-         closedir(dir);
-      }
-      int  next_idx = max_idx + 1;
-      char run_dir[256];
-      snprintf(run_dir, sizeof(run_dir), "%s/ls_%05d", root, next_idx);
-      if (stat(run_dir, &st) != 0)
-      {
-         (void)mkdir(run_dir, 0775);
-      }
-
-      snprintf(A_path, sizeof(A_path), "%s/%s", run_dir, A_name);
-      snprintf(b_path, sizeof(b_path), "%s/%s", run_dir, b_name);
-      snprintf(d_path, sizeof(d_path), "%s/%s", run_dir, d_name);
-   }
-   else
-   {
-      snprintf(A_path, sizeof(A_path), "%s", A_name);
-      snprintf(b_path, sizeof(b_path), "%s", b_name);
-      snprintf(d_path, sizeof(d_path), "%s", d_name);
-   }
-
-   if (mat_A)
-   {
-      HYPRE_IJMatrixPrint(mat_A, A_path);
-   }
-   else
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Matrix not set; skipping matrix print.");
-   }
-
-   if (vec_b)
-   {
-      HYPRE_IJVectorPrint(vec_b, b_path);
-   }
-   else
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("RHS not set; skipping vector print.");
-   }
-
-   if (dofmap && dofmap->data)
-   {
-      hypredrv_IntArrayWriteAsciiByRank(comm, dofmap, d_path);
-   }
-}

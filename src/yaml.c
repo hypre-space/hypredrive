@@ -7,6 +7,7 @@
 
 #include "internal/yaml.h"
 #include <limits.h>
+#include <stdint.h>
 #include <unistd.h>
 
 enum
@@ -255,6 +256,46 @@ YAMLincludeContextAddBytes(YAMLincludeContext *ctx, size_t extra_bytes)
 }
 
 static bool
+YAMLtextBufferEnsureCapacity(char **text_ptr, size_t *capacity_ptr, size_t min_capacity)
+{
+   if (!text_ptr || !capacity_ptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid YAML text buffer arguments");
+      return false;
+   }
+
+   if (*capacity_ptr >= min_capacity)
+   {
+      return true;
+   }
+
+   size_t new_capacity = (*capacity_ptr > 0) ? *capacity_ptr : 1024;
+   while (new_capacity < min_capacity)
+   {
+      if (new_capacity > (SIZE_MAX / 2))
+      {
+         hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
+         hypredrv_ErrorMsgAdd("YAML text buffer size overflow");
+         return false;
+      }
+      new_capacity *= 2;
+   }
+
+   char *new_text = (char *)realloc(*text_ptr, new_capacity);
+   if (!new_text)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate YAML text buffer");
+      return false;
+   }
+
+   *text_ptr     = new_text;
+   *capacity_ptr = new_capacity;
+   return true;
+}
+
+static bool
 YAMLincludeResolvePath(const YAMLincludeContext *ctx, const char *dirname,
                        const char *basename, char **resolved_path_ptr)
 {
@@ -470,7 +511,7 @@ hypredrv_YAMLtreeDestroy(YAMLtree **tree_ptr)
 static void
 YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
                         int *base_indent_ptr, size_t *length_ptr, char **text_ptr,
-                        YAMLincludeContext *ctx)
+                        size_t *capacity_ptr, YAMLincludeContext *ctx)
 {
    FILE  *fp  = NULL;
    char  *key = NULL, *val = NULL, *sep = NULL;
@@ -479,7 +520,6 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
    char  *resolved_path = NULL;
    char  *current_dir   = NULL;
    char  *current_base  = NULL;
-   char  *new_text      = NULL;
    int    inner_level = 0, pos = 0;
    size_t num_whitespaces     = 0;
    size_t new_length          = 0;
@@ -643,7 +683,8 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
 
          /* Recursively read the content of the included file */
          YAMLtextReadWithContext(current_dir ? current_dir : dirname, val, inner_level,
-                                 base_indent_ptr, length_ptr, text_ptr, ctx);
+                                 base_indent_ptr, length_ptr, text_ptr, capacity_ptr,
+                                 ctx);
          if (hypredrv_ErrorCodeActive())
          {
             goto cleanup;
@@ -660,14 +701,10 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
          {
             goto fail_with_text_cleanup;
          }
-         new_text = (char *)realloc(*text_ptr, new_length + 1);
-         if (!new_text)
+         if (!YAMLtextBufferEnsureCapacity(text_ptr, capacity_ptr, new_length + 1))
          {
-            hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-            hypredrv_ErrorMsgAdd("Failed to allocate YAML text buffer");
             goto fail_with_text_cleanup;
          }
-         *text_ptr = new_text;
 
          /* Fill with base whitespaces */
          memset((*text_ptr) + (*length_ptr), ' ', num_whitespaces);
@@ -703,6 +740,10 @@ fail_with_text_cleanup:
       free(*text_ptr);
       *text_ptr   = NULL;
       *length_ptr = 0;
+      if (capacity_ptr)
+      {
+         *capacity_ptr = 0;
+      }
    }
    goto cleanup;
 }
@@ -712,12 +753,17 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
                       int *base_indent_ptr, size_t *length_ptr, char **text_ptr)
 {
    YAMLincludeContext ctx;
+   size_t             capacity = 0;
+   if (text_ptr && *text_ptr && length_ptr && (*length_ptr > 0))
+   {
+      capacity = *length_ptr + 1;
+   }
    if (!YAMLincludeContextInit(&ctx, dirname))
    {
       return;
    }
    YAMLtextReadWithContext(dirname, basename, level, base_indent_ptr, length_ptr,
-                           text_ptr, &ctx);
+                           text_ptr, &capacity, &ctx);
    YAMLincludeContextDestroy(&ctx);
 }
 
@@ -1398,10 +1444,11 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
 
             int    inc_base_indent = base_indent;
             size_t inc_len         = 0;
+            size_t inc_capacity    = 0;
             char  *inc_text        = NULL;
 
             YAMLtextReadWithContext(base_dir, paths[i], 0, &inc_base_indent, &inc_len,
-                                    &inc_text, ctx);
+                                    &inc_text, &inc_capacity, ctx);
             if (inc_text)
             {
                YAMLtree *inc_tree = NULL;

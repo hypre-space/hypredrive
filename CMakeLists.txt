@@ -113,6 +113,7 @@ set(SOURCE_FILES
     src/vector.c
     src/matrix.c
     src/linsys.c
+    src/linsys_print.c
     src/cheby.c
     src/amg.c
     src/fsai.c

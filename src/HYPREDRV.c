@@ -7,6 +7,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 #include "_hypre_parcsr_mv.h" /* For hypre_VectorData, hypre_ParVectorLocalVector */
 #include "internal/args.h"
 #include "internal/containers.h"
@@ -39,6 +40,15 @@ static uint32_t    LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv);
 static uint32_t    DestroyObjectInternal(HYPREDRV_t hypredrv);
 static const char *ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
                                         size_t default_object_name_size);
+static uint32_t    LoadTimestepStartsFromFile(const char *filename,
+                                              IntArray  **timestep_starts);
+static int         PrintSystemNeedsTimestepSchedule(const PrintSystem_args *cfg);
+static int  ResolveTimestepIndex(const IntArray *timestep_starts, const Stats *stats,
+                                 int system_index);
+static void AdvanceLibraryManagedSystemIndex(HYPREDRV_t hypredrv);
+static void BuildPrintSystemContext(HYPREDRV_t hypredrv, int stage,
+                                    PrintSystemContext *ctx);
+static void MaybeDumpLinearSystem(HYPREDRV_t hypredrv, int stage);
 static bool PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
                                      size_t default_object_name_size);
 static void PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_object_name,
@@ -128,6 +138,204 @@ PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_object_name,
    {
       hypredrv_StatsSetObjectName(hypredrv->stats, "");
    }
+}
+
+static uint32_t
+LoadTimestepStartsFromFile(const char *filename, IntArray **timestep_starts)
+{
+   PreconReuse_args args;
+   memset(&args, 0, sizeof(args));
+   args.enabled      = 1;
+   args.per_timestep = 1;
+
+   return hypredrv_PreconReuseTimestepsLoad(&args, filename, timestep_starts);
+}
+
+static int
+PrintSystemNeedsTimestepSchedule(const PrintSystem_args *cfg)
+{
+   if (!cfg || !cfg->enabled)
+   {
+      return 0;
+   }
+
+   if (cfg->type == PRINT_SYSTEM_TYPE_EVERY_N_TIMESTEPS)
+   {
+      return 1;
+   }
+
+   if (cfg->type != PRINT_SYSTEM_TYPE_SELECTORS || !cfg->selectors)
+   {
+      return 0;
+   }
+
+   for (size_t i = 0; i < cfg->num_selectors; i++)
+   {
+      if (cfg->selectors[i].basis == PRINT_SYSTEM_BASIS_TIMESTEP)
+      {
+         return 1;
+      }
+   }
+
+   return 0;
+}
+
+static int
+ResolveTimestepIndex(const IntArray *timestep_starts, const Stats *stats,
+                     int system_index)
+{
+   if (system_index < 0)
+   {
+      return -1;
+   }
+
+   if (timestep_starts && timestep_starts->data)
+   {
+      int found = -1;
+      for (size_t i = 0; i < timestep_starts->size; i++)
+      {
+         if (timestep_starts->data[i] > system_index)
+         {
+            break;
+         }
+         found = (int)i;
+      }
+      if (found >= 0)
+      {
+         return found;
+      }
+   }
+
+   if (stats && (stats->level_active & (1 << 0)) && stats->level_current_id[0] > 0)
+   {
+      return stats->level_current_id[0] - 1;
+   }
+
+   return -1;
+}
+
+static void
+AdvanceLibraryManagedSystemIndex(HYPREDRV_t hypredrv)
+{
+   int stats_ls_id = -1;
+
+   if (!hypredrv || !hypredrv->lib_mode)
+   {
+      return;
+   }
+
+   if (hypredrv->stats)
+   {
+      stats_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats);
+   }
+
+   if (hypredrv->current_system_index <= stats_ls_id)
+   {
+      hypredrv->current_system_index = stats_ls_id + 1;
+   }
+}
+
+static void
+BuildPrintSystemContext(HYPREDRV_t hypredrv, int stage, PrintSystemContext *ctx)
+{
+   if (!ctx)
+   {
+      return;
+   }
+
+   memset(ctx, 0, sizeof(*ctx));
+   ctx->stage            = stage;
+   ctx->system_index     = 0;
+   ctx->timestep_index   = -1;
+   ctx->last_iter        = -1;
+   ctx->variant_index    = 0;
+   ctx->repetition_index = 0;
+   ctx->stats_ls_id      = -1;
+   ctx->last_setup_time  = -1.0;
+   ctx->last_solve_time  = -1.0;
+   for (int level = 0; level < STATS_MAX_LEVELS; level++)
+   {
+      ctx->level_ids[level] = -1;
+   }
+
+   if (!hypredrv)
+   {
+      return;
+   }
+
+   if (hypredrv->current_system_index >= 0)
+   {
+      ctx->system_index = hypredrv->current_system_index;
+   }
+
+   if (hypredrv->stats)
+   {
+      ctx->stats_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats);
+      if (hypredrv->current_system_index < 0 && ctx->stats_ls_id >= 0)
+      {
+         ctx->system_index = ctx->stats_ls_id;
+      }
+
+      if (hypredrv->stats->reps > 0)
+      {
+         ctx->repetition_index = hypredrv->stats->reps - 1;
+      }
+
+      for (int level = 0; level < STATS_MAX_LEVELS; level++)
+      {
+         if (hypredrv->stats->level_current_id[level] > 0)
+         {
+            ctx->level_ids[level] = hypredrv->stats->level_current_id[level] - 1;
+         }
+      }
+
+      if (stage == PRINT_SYSTEM_STAGE_SETUP || stage == PRINT_SYSTEM_STAGE_APPLY)
+      {
+         ctx->last_setup_time = hypredrv_StatsGetLastSetupTime(hypredrv->stats);
+      }
+      if (stage == PRINT_SYSTEM_STAGE_APPLY)
+      {
+         ctx->last_iter       = hypredrv_StatsGetLastIter(hypredrv->stats);
+         ctx->last_solve_time = hypredrv_StatsGetLastSolveTime(hypredrv->stats);
+      }
+   }
+
+   if (hypredrv->iargs)
+   {
+      ctx->variant_index = hypredrv->iargs->active_precon_variant;
+   }
+
+   ctx->timestep_index = ResolveTimestepIndex(hypredrv->precon_reuse_timestep_starts,
+                                              hypredrv->stats, ctx->system_index);
+}
+
+static void
+MaybeDumpLinearSystem(HYPREDRV_t hypredrv, int stage)
+{
+   if (!hypredrv || !hypredrv->iargs)
+   {
+      return;
+   }
+
+   PrintSystemContext ctx;
+   BuildPrintSystemContext(hypredrv, stage, &ctx);
+
+   char object_name_buffer[32];
+   object_name_buffer[0] = '\0';
+   const char *object_name =
+      ResolveLogObjectName(hypredrv, object_name_buffer, sizeof(object_name_buffer));
+   HYPREDRV_LOG_OBJECTF(
+      3, hypredrv,
+      "print_system context: stage=%d system_index=%d stats_ls_id=%d "
+      "timestep_index=%d last_iter=%d last_setup=%.17g last_solve=%.17g "
+      "variant=%d repetition=%d level0=%d level1=%d",
+      ctx.stage, ctx.system_index, ctx.stats_ls_id, ctx.timestep_index, ctx.last_iter,
+      ctx.last_setup_time, ctx.last_solve_time, ctx.variant_index, ctx.repetition_index,
+      ctx.level_ids[0], ctx.level_ids[1]);
+   hypredrv_LinearSystemDumpScheduled(
+      hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A, hypredrv->mat_M,
+      hypredrv->vec_b, hypredrv->vec_x0, hypredrv->vec_xref, hypredrv->vec_x,
+      hypredrv->dofmap, &ctx, object_name);
 }
 
 /*-----------------------------------------------------------------------------
@@ -438,6 +646,7 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->precon_reuse_timestep_starts = NULL;
    hypredrv->stats                        = NULL;
    hypredrv->runtime_object_id            = 0;
+   hypredrv->current_system_index         = -1;
    hypredrv->next_live                    = NULL;
 
    /* Disable library mode by default */
@@ -587,15 +796,18 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    hypredrv_StatsSetObjectName(hypredrv->stats, hypredrv->iargs->general.name);
 
    /* Load timestep schedule for preconditioner reuse */
-   if (hypredrv->iargs->ls.timestep_filename[0] != '\0')
+   if (hypredrv->iargs->ls.timestep_filename[0] != '\0' &&
+       ((hypredrv->iargs->precon_reuse.enabled &&
+         hypredrv->iargs->precon_reuse.per_timestep) ||
+        PrintSystemNeedsTimestepSchedule(&hypredrv->iargs->ls.print_system)))
    {
-      hypredrv_PreconReuseTimestepsLoad(&hypredrv->iargs->precon_reuse,
-                                        hypredrv->iargs->ls.timestep_filename,
-                                        &hypredrv->precon_reuse_timestep_starts);
+      LoadTimestepStartsFromFile(hypredrv->iargs->ls.timestep_filename,
+                                 &hypredrv->precon_reuse_timestep_starts);
    }
    else if (hypredrv->iargs->ls.sequence_filename[0] != '\0' &&
-            hypredrv->iargs->precon_reuse.enabled &&
-            hypredrv->iargs->precon_reuse.per_timestep)
+            ((hypredrv->iargs->precon_reuse.enabled &&
+              hypredrv->iargs->precon_reuse.per_timestep) ||
+             PrintSystemNeedsTimestepSchedule(&hypredrv->iargs->ls.print_system)))
    {
       hypredrv_LSSeqReadTimesteps(hypredrv->iargs->ls.sequence_filename,
                                   &hypredrv->precon_reuse_timestep_starts);
@@ -1082,6 +1294,8 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_OBJ();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSystemBuild begin");
 
+   hypredrv->current_system_index++;
+
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadMatrix(hypredrv));
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
    /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
@@ -1121,6 +1335,7 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
       printf("with %lld rows and %lld nonzeros...\n", num_rows, num_nonzeros);
    }
    HYPRE_ClearAllErrors();
+   MaybeDumpLinearSystem(hypredrv, PRINT_SYSTEM_STAGE_BUILD);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSystemBuild end");
 
    return hypredrv_ErrorCodeGet();
@@ -1792,6 +2007,8 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_OBJ();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverSetup begin");
 
+   AdvanceLibraryManagedSystemIndex(hypredrv);
+
    int next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
    int recompute  = hypredrv_PreconReuseShouldRecompute(
       &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timestep_starts,
@@ -1852,6 +2069,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    {
       hypredrv->precon_is_setup = true;
    }
+   MaybeDumpLinearSystem(hypredrv, PRINT_SYSTEM_STAGE_SETUP);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverSetup end");
 
    return hypredrv_ErrorCodeGet();
@@ -2002,6 +2220,7 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
    }
    HYPREDRV_LOG_OBJECTF(2, hypredrv, "solve finished (iters=%d)",
                         hypredrv_StatsGetLastIter(hypredrv->stats));
+   MaybeDumpLinearSystem(hypredrv, PRINT_SYSTEM_STAGE_APPLY);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverApply end");
 
    return hypredrv_ErrorCodeGet();

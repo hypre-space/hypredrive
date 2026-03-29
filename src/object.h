@@ -42,6 +42,7 @@ typedef struct hypredrv_struct
 
    Stats *stats;
    int    runtime_object_id;
+   int    current_system_index;
 
    /* Linked-list hook used by the internal runtime registry. */
    struct hypredrv_struct *next_live;

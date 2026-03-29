@@ -166,6 +166,7 @@ hypredrv_InputArgsDestroy(input_args **iargs_ptr)
          hypredrv_DoubleArrayDestroy(&iargs->scaling.custom_values);
       }
       hypredrv_IntArrayDestroy(&iargs->ls.set_suffix);
+      hypredrv_PrintSystemDestroyArgs(&iargs->ls.print_system);
       hypredrv_DofLabelMapDestroy(&iargs->ls.dof_labels);
       free(*iargs_ptr);
       *iargs_ptr = NULL;
