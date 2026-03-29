@@ -11,21 +11,21 @@
 
 enum
 {
-   YAML_INCLUDE_MAX_DEPTH          = 16,
-   YAML_EXPANDED_TEXT_MAX_BYTES    = 8 * 1024 * 1024,
+   YAML_INCLUDE_MAX_DEPTH           = 16,
+   YAML_EXPANDED_TEXT_MAX_BYTES     = 8 * 1024 * 1024,
    YAML_INCLUDE_PATH_STACK_CAP_INIT = 16,
 };
 
 typedef struct YAMLincludeContext_struct
 {
-   char   *root_dir;
-   char  **read_stack;
-   int     read_stack_size;
-   int     read_stack_capacity;
-   char  **expand_stack;
-   int     expand_stack_size;
-   int     expand_stack_capacity;
-   size_t  expanded_bytes;
+   char  *root_dir;
+   char **read_stack;
+   int    read_stack_size;
+   int    read_stack_capacity;
+   char **expand_stack;
+   int    expand_stack_size;
+   int    expand_stack_capacity;
+   size_t expanded_bytes;
 } YAMLincludeContext;
 
 static bool
@@ -42,7 +42,7 @@ YAMLpathIsUnderRoot(const char *path, const char *root)
       return false;
    }
 
-   return path[root_len] == '\0' || path[root_len] == '/';
+   return ((path[root_len] == '\0') || (path[root_len] == '/')) != 0;
 }
 
 static bool
@@ -57,7 +57,8 @@ YAMLpathStackReserve(char ***stack_ptr, int *capacity_ptr, int min_capacity)
       return true;
    }
 
-   int new_capacity = (*capacity_ptr == 0) ? YAML_INCLUDE_PATH_STACK_CAP_INIT : *capacity_ptr;
+   int new_capacity =
+      (*capacity_ptr == 0) ? YAML_INCLUDE_PATH_STACK_CAP_INIT : *capacity_ptr;
    while (new_capacity < min_capacity)
    {
       new_capacity *= 2;
@@ -478,7 +479,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
    char  *resolved_path = NULL;
    char  *current_dir   = NULL;
    char  *current_base  = NULL;
-   char  *new_text    = NULL;
+   char  *new_text      = NULL;
    int    inner_level = 0, pos = 0;
    size_t num_whitespaces     = 0;
    size_t new_length          = 0;
@@ -659,7 +660,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
          {
             goto fail_with_text_cleanup;
          }
-         new_text   = (char *)realloc(*text_ptr, new_length + 1);
+         new_text = (char *)realloc(*text_ptr, new_length + 1);
          if (!new_text)
          {
             hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
@@ -715,8 +716,8 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
    {
       return;
    }
-   YAMLtextReadWithContext(dirname, basename, level, base_indent_ptr, length_ptr, text_ptr,
-                           &ctx);
+   YAMLtextReadWithContext(dirname, basename, level, base_indent_ptr, length_ptr,
+                           text_ptr, &ctx);
    YAMLincludeContextDestroy(&ctx);
 }
 
@@ -1407,9 +1408,8 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
                hypredrv_YAMLtreeBuild(inc_base_indent, inc_text, &inc_tree);
                if (inc_tree && !hypredrv_ErrorCodeActive())
                {
-                  YAMLnodeExpandIncludesRecursive(inc_tree->root,
-                                                 inc_dir ? inc_dir : base_dir,
-                                                 inc_base_indent, ctx);
+                  YAMLnodeExpandIncludesRecursive(
+                     inc_tree->root, inc_dir ? inc_dir : base_dir, inc_base_indent, ctx);
                }
                if (hypredrv_ErrorCodeActive())
                {
@@ -1805,8 +1805,8 @@ hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
    {
       return;
    }
-   const char *dir = (base_dir && strlen(base_dir) > 0) ? base_dir : ".";
-   int         bi  = tree->base_indent > 0 ? tree->base_indent : 2;
+   const char        *dir = (base_dir && strlen(base_dir) > 0) ? base_dir : ".";
+   int                bi  = tree->base_indent > 0 ? tree->base_indent : 2;
    YAMLincludeContext ctx;
    if (!YAMLincludeContextInit(&ctx, dir))
    {

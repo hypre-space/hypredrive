@@ -30,6 +30,75 @@ typedef struct LSSeqData_struct
    LSSeqTimestepEntry  *timesteps;
 } LSSeqData;
 
+enum
+{
+   LSSEQ_INFO_PAYLOAD_MAX_BYTES = 16u * 1024u * 1024u,
+   LSSEQ_MAX_META_BYTES         = 512u * 1024u * 1024u,
+   LSSEQ_MAX_BLOB_BYTES         = 512u * 1024u * 1024u,
+   LSSEQ_MAX_PARTS              = 1024u * 1024u,
+   LSSEQ_MAX_SYSTEMS            = 1024u * 1024u,
+   LSSEQ_MAX_PATTERNS           = 1024u * 1024u,
+   LSSEQ_MAX_TIMESTEPS          = 1024u * 1024u,
+};
+
+static int
+LSSeqCheckedMulSize(size_t a, size_t b, size_t *result, const char *what)
+{
+   if (!result)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Null output while checking LSSeq size multiplication");
+      return 0;
+   }
+
+   if (a != 0 && b > SIZE_MAX / a)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("LSSeq size overflow while computing %s (%zu * %zu)",
+                           what ? what : "allocation size", a, b);
+      return 0;
+   }
+
+   *result = a * b;
+   return 1;
+}
+
+static int
+LSSeqCheckedAddU64(uint64_t a, uint64_t b, uint64_t *result, const char *what)
+{
+   if (!result)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Null output while checking LSSeq offset addition");
+      return 0;
+   }
+
+   if (UINT64_MAX - a < b)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("LSSeq offset overflow while computing %s",
+                           what ? what : "offset");
+      return 0;
+   }
+
+   *result = a + b;
+   return 1;
+}
+
+static int
+LSSeqValidateByteLimit(size_t nbytes, size_t max_nbytes, const char *what)
+{
+   if (nbytes > max_nbytes)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("LSSeq %s exceeds limit (%zu > %zu bytes)",
+                           what ? what : "allocation", nbytes, max_nbytes);
+      return 0;
+   }
+
+   return 1;
+}
+
 static int
 LSSeqBuildPartOrder(const LSSeqData *seq, uint32_t **order_ptr)
 {
@@ -218,6 +287,18 @@ LSSeqValidateHeader(const LSSeqHeader *header, const char *filename)
                            header->num_parts);
       return 0;
    }
+   if (header->num_parts > LSSEQ_MAX_PARTS || header->num_systems > LSSEQ_MAX_SYSTEMS ||
+       header->num_patterns > LSSEQ_MAX_PATTERNS ||
+       header->num_timesteps > LSSEQ_MAX_TIMESTEPS)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("LSSeq dimensions exceed limits in '%s' (systems=%u parts=%u "
+                           "patterns=%u timesteps=%u)",
+                           filename ? filename : "", header->num_systems,
+                           header->num_parts, header->num_patterns,
+                           header->num_timesteps);
+      return 0;
+   }
    if (header->codec > (uint32_t)COMP_BLOSC)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -330,7 +411,7 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
       }
 
       /* Bound payload size to avoid accidental huge allocations. */
-      if (seq->info_header.payload_size > (uint64_t)(16u * 1024u * 1024u) ||
+      if (seq->info_header.payload_size > (uint64_t)LSSEQ_INFO_PAYLOAD_MAX_BYTES ||
           seq->info_header.payload_size > (uint64_t)SIZE_MAX - 1u)
       {
          fclose(fp);
@@ -341,8 +422,13 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
          return 0;
       }
 
-      expected_payload_end =
-         expected_min_part_offset + (uint64_t)seq->info_header.payload_size;
+      if (!LSSeqCheckedAddU64(expected_min_part_offset,
+                              (uint64_t)seq->info_header.payload_size,
+                              &expected_payload_end, "info payload end"))
+      {
+         fclose(fp);
+         return 0;
+      }
       if (seq->header.offset_part_meta < expected_payload_end)
       {
          fclose(fp);
@@ -389,7 +475,18 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
       }
    }
 
-   seq->parts = (LSSeqPartMeta *)calloc(seq->header.num_parts, sizeof(LSSeqPartMeta));
+   {
+      size_t part_meta_bytes = 0;
+      if (!LSSeqCheckedMulSize((size_t)seq->header.num_parts, sizeof(LSSeqPartMeta),
+                               &part_meta_bytes, "part metadata bytes") ||
+          !LSSeqValidateByteLimit(part_meta_bytes, LSSEQ_MAX_META_BYTES, "part metadata"))
+      {
+         fclose(fp);
+         return 0;
+      }
+   }
+   seq->parts =
+      (LSSeqPartMeta *)calloc((size_t)seq->header.num_parts, sizeof(LSSeqPartMeta));
    if (!seq->parts)
    {
       fclose(fp);
@@ -400,6 +497,16 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
 
    if (seq->header.num_patterns > 0)
    {
+      size_t pattern_meta_bytes = 0;
+      if (!LSSeqCheckedMulSize((size_t)seq->header.num_patterns, sizeof(LSSeqPatternMeta),
+                               &pattern_meta_bytes, "pattern metadata bytes") ||
+          !LSSeqValidateByteLimit(pattern_meta_bytes, LSSEQ_MAX_META_BYTES,
+                                  "pattern metadata"))
+      {
+         fclose(fp);
+         LSSeqDataDestroy(seq);
+         return 0;
+      }
       seq->patterns =
          (LSSeqPatternMeta *)calloc(seq->header.num_patterns, sizeof(LSSeqPatternMeta));
       if (!seq->patterns)
@@ -412,7 +519,26 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
       }
    }
 
-   n_sys_parts = (size_t)seq->header.num_systems * (size_t)seq->header.num_parts;
+   if (!LSSeqCheckedMulSize((size_t)seq->header.num_systems,
+                            (size_t)seq->header.num_parts, &n_sys_parts,
+                            "system-part count"))
+   {
+      fclose(fp);
+      LSSeqDataDestroy(seq);
+      return 0;
+   }
+   {
+      size_t sys_part_meta_bytes = 0;
+      if (!LSSeqCheckedMulSize(n_sys_parts, sizeof(LSSeqSystemPartMeta),
+                               &sys_part_meta_bytes, "system-part metadata bytes") ||
+          !LSSeqValidateByteLimit(sys_part_meta_bytes, LSSEQ_MAX_META_BYTES,
+                                  "system-part metadata"))
+      {
+         fclose(fp);
+         LSSeqDataDestroy(seq);
+         return 0;
+      }
+   }
    seq->sys_parts =
       (LSSeqSystemPartMeta *)calloc(n_sys_parts, sizeof(LSSeqSystemPartMeta));
    if (!seq->sys_parts)
@@ -426,6 +552,17 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
 
    if ((seq->header.flags & LSSEQ_FLAG_HAS_TIMESTEPS) && seq->header.num_timesteps > 0)
    {
+      size_t timestep_meta_bytes = 0;
+      if (!LSSeqCheckedMulSize((size_t)seq->header.num_timesteps,
+                               sizeof(LSSeqTimestepEntry), &timestep_meta_bytes,
+                               "timestep metadata bytes") ||
+          !LSSeqValidateByteLimit(timestep_meta_bytes, LSSEQ_MAX_META_BYTES,
+                                  "timestep metadata"))
+      {
+         fclose(fp);
+         LSSeqDataDestroy(seq);
+         return 0;
+      }
       seq->timesteps = (LSSeqTimestepEntry *)calloc(seq->header.num_timesteps,
                                                     sizeof(LSSeqTimestepEntry));
       if (!seq->timesteps)
@@ -466,8 +603,19 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
    }
 
    {
-      size_t pt_size = (size_t)LSSEQ_PART_BLOB_ENTRIES * (size_t)seq->header.num_parts *
-                       sizeof(uint64_t);
+      size_t pt_entries = 0;
+      size_t pt_size    = 0;
+      if (!LSSeqCheckedMulSize((size_t)LSSEQ_PART_BLOB_ENTRIES,
+                               (size_t)seq->header.num_parts, &pt_entries,
+                               "part blob table entries") ||
+          !LSSeqCheckedMulSize(pt_entries, sizeof(uint64_t), &pt_size,
+                               "part blob table bytes") ||
+          !LSSeqValidateByteLimit(pt_size, LSSEQ_MAX_META_BYTES, "part blob table"))
+      {
+         fclose(fp);
+         LSSeqDataDestroy(seq);
+         return 0;
+      }
       seq->part_blob_table = (uint64_t *)malloc(pt_size);
       if (!seq->part_blob_table ||
           !LSSeqReadAt(fp, seq->header.offset_part_blob_table, seq->part_blob_table,
@@ -562,7 +710,8 @@ hypredrv_LSSeqReadInfo(const char *filename, char **payload_ptr, size_t *payload
       return 0;
    }
 
-   if (info.payload_size > (uint64_t)SIZE_MAX - 1u)
+   if (info.payload_size > (uint64_t)LSSEQ_INFO_PAYLOAD_MAX_BYTES ||
+       info.payload_size > (uint64_t)SIZE_MAX - 1u)
    {
       fclose(fp);
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -683,6 +832,20 @@ LSSeqReadBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size,
                            (unsigned long long)blob_size);
       return 0;
    }
+   if (blob_size > (uint64_t)LSSEQ_MAX_BLOB_BYTES)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Blob size exceeds limit (%llu bytes)",
+                           (unsigned long long)blob_size);
+      return 0;
+   }
+   if (expected_size > LSSEQ_MAX_BLOB_BYTES)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Expected decoded blob size exceeds limit (%zu bytes)",
+                           expected_size);
+      return 0;
+   }
 
    if (blob_size == 0)
    {
@@ -775,6 +938,13 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
       part_blob_table[((size_t)part_id * LSSEQ_PART_BLOB_ENTRIES) + (size_t)(slot * 2)];
    c_size = part_blob_table[((size_t)part_id * LSSEQ_PART_BLOB_ENTRIES) +
                             (size_t)(slot * 2) + 1];
+   if (decomp_size > (uint64_t)SIZE_MAX || decomp_size > (uint64_t)LSSEQ_MAX_BLOB_BYTES)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Requested decoded slice exceeds limit (%llu bytes)",
+                           (unsigned long long)decomp_size);
+      return 0;
+   }
    if (c_size == 0)
    {
       if (decomp_size != 0)
@@ -787,7 +957,8 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
    {
       return 0;
    }
-   if (decomp_offset + decomp_size > (uint64_t)decoded_size)
+   if (decomp_offset > UINT64_MAX - decomp_size ||
+       decomp_offset + decomp_size > (uint64_t)decoded_size)
    {
       free(decoded);
       return 0;
@@ -808,27 +979,157 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
    return 1;
 }
 
-static void
+static int
 LSSeqTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *prefix,
                      size_t prefix_size)
 {
-   int myid = 0;
+   const char *tmp_root = getenv("TMPDIR");
+   char        tmpdir_template[MAX_FILENAME_LENGTH];
+   int         written = 0;
+   int         myid    = 0;
+
+   if (!prefix || prefix_size == 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid temporary prefix output");
+      return 0;
+   }
+
+   if (!tmp_root || tmp_root[0] == '\0')
+   {
+      tmp_root = "/tmp";
+   }
+
    MPI_Comm_rank(comm, &myid);
-   snprintf(prefix, prefix_size, "/tmp/hypredrv_lsseq_%s_%d_%d_%d", tag ? tag : "tmp",
-            (int)getpid(), myid, ls_id);
+   written = snprintf(tmpdir_template, sizeof(tmpdir_template),
+                      "%s/hypredrv_lsseq_%s_%d_%d_%d_XXXXXX", tmp_root, tag ? tag : "tmp",
+                      (int)getpid(), myid, ls_id);
+   if (written < 0 || (size_t)written >= sizeof(tmpdir_template))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Failed to format LSSeq temporary directory template");
+      return 0;
+   }
+
+   if (!mkdtemp(tmpdir_template))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Could not create LSSeq temporary directory under '%s'",
+                           tmp_root);
+      return 0;
+   }
+
+   written = snprintf(prefix, prefix_size, "%s/part", tmpdir_template);
+   if (written < 0 || (size_t)written >= prefix_size)
+   {
+      (void)rmdir(tmpdir_template);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("LSSeq temporary prefix exceeds buffer size (%zu bytes)",
+                           prefix_size);
+      return 0;
+   }
+
+   return 1;
+}
+
+static int
+LSSeqSharedTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *prefix,
+                           size_t prefix_size)
+{
+   const char *tmp_root = getenv("TMPDIR");
+   char        tmpdir_template[MAX_FILENAME_LENGTH];
+   char        tmpdir_path[MAX_FILENAME_LENGTH];
+   int         myid    = 0;
+   int         success = 1;
+   int         written = 0;
+
+   if (!prefix || prefix_size == 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid shared temporary prefix output");
+      return 0;
+   }
+
+   if (!tmp_root || tmp_root[0] == '\0')
+   {
+      tmp_root = "/tmp";
+   }
+
+   memset(tmpdir_path, 0, sizeof(tmpdir_path));
+   MPI_Comm_rank(comm, &myid);
+
+   if (!myid)
+   {
+      written = snprintf(tmpdir_template, sizeof(tmpdir_template),
+                         "%s/hypredrv_lsseq_%s_%d_%d_XXXXXX", tmp_root, tag ? tag : "tmp",
+                         (int)getpid(), ls_id);
+      if (written < 0 || (size_t)written >= sizeof(tmpdir_template))
+      {
+         success = 0;
+      }
+      else if (!mkdtemp(tmpdir_template))
+      {
+         success = 0;
+      }
+      else
+      {
+         strncpy(tmpdir_path, tmpdir_template, sizeof(tmpdir_path) - 1);
+      }
+   }
+
+   MPI_Bcast(&success, 1, MPI_INT, 0, comm);
+   if (!success)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Could not create shared LSSeq temporary directory");
+      return 0;
+   }
+
+   MPI_Bcast(tmpdir_path, (int)sizeof(tmpdir_path), MPI_CHAR, 0, comm);
+   written = snprintf(prefix, prefix_size, "%s/part", tmpdir_path);
+   if (written < 0 || (size_t)written >= prefix_size)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "Shared LSSeq temporary prefix exceeds buffer size (%zu bytes)", prefix_size);
+      return 0;
+   }
+
+   return 1;
 }
 
 static void
 LSSeqCleanupPartFiles(const char *prefix, const int *partids, int nparts,
                       const char *suffix)
 {
+   char dirname[MAX_FILENAME_LENGTH];
    /* Buffer sized for prefix + ".%05d" + suffix; avoids -Wformat-truncation */
    char filename[MAX_FILENAME_LENGTH + 32];
+   if (!prefix || prefix[0] == '\0')
+   {
+      return;
+   }
+
    for (int i = 0; i < nparts; i++)
    {
       snprintf(filename, sizeof(filename), "%s.%05d%s", prefix, partids[i],
                suffix ? suffix : "");
       remove(filename);
+   }
+
+   {
+      const char *slash = strrchr(prefix, '/');
+      if (!slash || slash == prefix)
+      {
+         return;
+      }
+      if ((size_t)(slash - prefix) >= sizeof(dirname))
+      {
+         return;
+      }
+      memcpy(dirname, prefix, (size_t)(slash - prefix));
+      dirname[(size_t)(slash - prefix)] = '\0';
+      (void)rmdir(dirname);
    }
 }
 
@@ -996,11 +1297,11 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
                          HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr)
 {
    LSSeqData seq;
-   FILE     *fp         = NULL;
-   int      *partids    = NULL;
-   uint32_t *part_order = NULL;
-   int       nparts     = 0;
-   char      prefix[MAX_FILENAME_LENGTH];
+   FILE     *fp                          = NULL;
+   int      *partids                     = NULL;
+   uint32_t *part_order                  = NULL;
+   int       nparts                      = 0;
+   char      prefix[MAX_FILENAME_LENGTH] = {0};
    char      part_filename[MAX_FILENAME_LENGTH];
    int       ok = 0;
 
@@ -1047,7 +1348,10 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
       return 0;
    }
 
-   LSSeqTempPrefixBuild(comm, ls_id, "A", prefix, sizeof(prefix));
+   if (!LSSeqTempPrefixBuild(comm, ls_id, "A", prefix, sizeof(prefix)))
+   {
+      goto cleanup;
+   }
    for (int i = 0; i < nparts; i++)
    {
       uint32_t                   tmp_part_id = (uint32_t)partids[i];
@@ -1077,7 +1381,13 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
          goto cleanup;
       }
 
-      expected_size = (size_t)pattern->nnz * (size_t)part->row_index_size;
+      if (!LSSeqCheckedMulSize((size_t)pattern->nnz, (size_t)part->row_index_size,
+                               &expected_size, "matrix index blob size") ||
+          !LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES,
+                                  "matrix index blob"))
+      {
+         goto cleanup;
+      }
       if (!LSSeqReadBlob(fp, (comp_alg_t)seq.header.codec, pattern->rows_blob_offset,
                          pattern->rows_blob_size, expected_size, &rows, &rows_size) ||
           !LSSeqReadBlob(fp, (comp_alg_t)seq.header.codec, pattern->cols_blob_offset,
@@ -1146,11 +1456,11 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
                       HYPRE_MemoryLocation memory_location, HYPRE_IJVector *rhs_ptr)
 {
    LSSeqData seq;
-   FILE     *fp         = NULL;
-   int      *partids    = NULL;
-   uint32_t *part_order = NULL;
-   int       nparts     = 0;
-   char      prefix[MAX_FILENAME_LENGTH];
+   FILE     *fp                          = NULL;
+   int      *partids                     = NULL;
+   uint32_t *part_order                  = NULL;
+   int       nparts                      = 0;
+   char      prefix[MAX_FILENAME_LENGTH] = {0};
    char      part_filename[MAX_FILENAME_LENGTH];
    int       ok = 0;
 
@@ -1197,7 +1507,10 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
       return 0;
    }
 
-   LSSeqTempPrefixBuild(comm, ls_id, "b", prefix, sizeof(prefix));
+   if (!LSSeqTempPrefixBuild(comm, ls_id, "b", prefix, sizeof(prefix)))
+   {
+      goto cleanup;
+   }
    for (int i = 0; i < nparts; i++)
    {
       uint32_t                   tmp_part_id = (uint32_t)partids[i];
@@ -1263,8 +1576,8 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
    int       nparts     = 0;
    char      prefix[MAX_FILENAME_LENGTH];
    char      part_filename[MAX_FILENAME_LENGTH];
-   int       myid = 0, root_pid = 0;
-   int       ok = 0;
+   int       myid = 0;
+   int       ok   = 0;
 
    if (!dofmap_ptr)
    {
@@ -1323,12 +1636,10 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
 
    prefix[0] = '\0';
    MPI_Comm_rank(comm, &myid);
-   if (!myid)
+   if (!LSSeqSharedTempPrefixBuild(comm, ls_id, "dof", prefix, sizeof(prefix)))
    {
-      root_pid = (int)getpid();
+      goto cleanup;
    }
-   MPI_Bcast(&root_pid, 1, MPI_INT, 0, comm);
-   snprintf(prefix, sizeof(prefix), "/tmp/hypredrv_lsseq_dof_%d_%d", root_pid, ls_id);
 
    for (int i = 0; i < nparts; i++)
    {
@@ -1356,7 +1667,14 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
 
       if (sys->dof_num_entries > 0)
       {
-         size_t expected_size = (size_t)sys->dof_num_entries * sizeof(int32_t);
+         size_t expected_size = 0;
+         if (!LSSeqCheckedMulSize((size_t)sys->dof_num_entries, sizeof(int32_t),
+                                  &expected_size, "dof payload size") ||
+             !LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES, "dof payload"))
+         {
+            fclose(out);
+            goto cleanup;
+         }
          if (!LSSeqReadPartBlobSlice(
                 fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
                 seq.part_blob_table, part_id, 2, sys->dof_blob_offset,
