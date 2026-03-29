@@ -860,16 +860,26 @@ test_hypredrv_solver_failure_paths_emit_logs(void)
  *-----------------------------------------------------------------------------*/
 
 static void
+setup_ps3d10pt7_paths(char matrix_path[PATH_MAX], char rhs_path[PATH_MAX])
+{
+   char matrix_check[PATH_MAX];
+   char rhs_check[PATH_MAX];
+
+   snprintf(matrix_path, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.A", HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_path, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.b", HYPREDRIVE_SOURCE_DIR);
+   snprintf(matrix_check, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.A.00000",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_check, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.b.00000", HYPREDRIVE_SOURCE_DIR);
+   TEST_REQUIRE_FILE(matrix_check);
+   TEST_REQUIRE_FILE(rhs_check);
+}
+
+static void
 test_solver_precon_combination(const char *solver_name, const char *precon_name)
 {
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
-   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
-            HYPREDRIVE_SOURCE_DIR);
-   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
-            HYPREDRIVE_SOURCE_DIR);
-   TEST_REQUIRE_FILE(matrix_path);
-   TEST_REQUIRE_FILE(rhs_path);
+   setup_ps3d10pt7_paths(matrix_path, rhs_path);
 
    HYPREDRV_Initialize();
 
@@ -916,7 +926,13 @@ static void
 test_all_solver_precon_combinations(void)
 {
    const char *solvers[] = {"pcg", "gmres", "fgmres", "bicgstab"};
-   const char *precons[] = {"amg", "ilu", "fsai"};
+   const char *precons[] = {
+      "amg",
+      "ilu",
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+      "fsai",
+#endif
+   };
 
    for (size_t i = 0; i < sizeof(solvers) / sizeof(solvers[0]); i++)
    {

@@ -39,11 +39,10 @@ static uint32_t    LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv);
 static uint32_t    DestroyObjectInternal(HYPREDRV_t hypredrv);
 static const char *ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
                                         size_t default_object_name_size);
-static bool        PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
-                                             size_t default_object_name_size);
-static void        PopDefaultLogObjectName(HYPREDRV_t  hypredrv,
-                                           const char *default_object_name,
-                                           bool        pushed_default_name);
+static bool PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
+                                     size_t default_object_name_size);
+static void PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_object_name,
+                                    bool pushed_default_name);
 
 // Macro to check if HYPREDRV is initialized
 #define HYPREDRV_CHECK_INIT()                                \
@@ -1343,8 +1342,8 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv)
    }
 
    char default_object_name[32];
-   bool pushed_default_name =
-      PushDefaultLogObjectName(hypredrv, default_object_name, sizeof(default_object_name));
+   bool pushed_default_name = PushDefaultLogObjectName(hypredrv, default_object_name,
+                                                       sizeof(default_object_name));
    hypredrv_LinearSystemResetInitialGuess(hypredrv->vec_x0, hypredrv->vec_x,
                                           hypredrv->stats);
    PopDefaultLogObjectName(hypredrv, default_object_name, pushed_default_name);
@@ -1840,8 +1839,8 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    GMRESSetRefSolution(hypredrv);
 
    char default_object_name[32];
-   bool pushed_default_name =
-      PushDefaultLogObjectName(hypredrv, default_object_name, sizeof(default_object_name));
+   bool pushed_default_name = PushDefaultLogObjectName(hypredrv, default_object_name,
+                                                       sizeof(default_object_name));
    hypredrv_SolverSetupWithReuse(hypredrv->iargs->precon_method,
                                  hypredrv->iargs->solver_method, hypredrv->precon,
                                  hypredrv->solver, hypredrv->mat_M, hypredrv->vec_b,
@@ -1977,8 +1976,8 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       /* No scaling - use standard hypredrv_SolverApply which handles everything including
        * stats */
       char default_object_name[32];
-      bool pushed_default_name = PushDefaultLogObjectName(
-         hypredrv, default_object_name, sizeof(default_object_name));
+      bool pushed_default_name = PushDefaultLogObjectName(hypredrv, default_object_name,
+                                                          sizeof(default_object_name));
       hypredrv_SolverApply(hypredrv->iargs->solver_method, hypredrv->solver,
                            hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x,
                            hypredrv->stats);

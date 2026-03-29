@@ -275,10 +275,12 @@ static int
 RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
                   char *buffer, size_t len)
 {
-   int    pipefd[2] = {-1, -1};
-   pid_t  child_pid = -1;
-   size_t used      = 0;
-   int    status    = 0;
+   int    pipefd[2]   = {-1, -1};
+   pid_t  child_pid   = -1;
+   size_t used        = 0;
+   int    status      = 0;
+   int    read_failed = 0;
+   char   discard[1024];
 
    if (!exe_path || !argv || !buffer || len == 0)
    {
@@ -322,12 +324,20 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
    }
 
    close(pipefd[1]);
-   while (used + 1 < len)
+   while (1)
    {
-      ssize_t nread = read(pipefd[0], buffer + used, len - used - 1u);
+      int     store_output = (used + 1u < len);
+      char   *target       = store_output ? buffer + used : discard;
+      size_t  space        = store_output ? len - used - 1u : sizeof(discard);
+      ssize_t nread;
+
+      nread = read(pipefd[0], target, space);
       if (nread > 0)
       {
-         used += (size_t)nread;
+         if (store_output)
+         {
+            used += (size_t)nread;
+         }
          continue;
       }
       if (nread == 0)
@@ -338,6 +348,7 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
       {
          continue;
       }
+      read_failed = 1;
       break;
    }
    buffer[used] = '\0';
@@ -352,7 +363,7 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
       return 0;
    }
 
-   return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+   return !read_failed && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
 static int

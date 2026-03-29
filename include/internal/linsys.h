@@ -78,7 +78,7 @@ void hypredrv_LinearSystemCreateWorkingSolution(MPI_Comm, const LS_args *, HYPRE
                                                 HYPRE_IJVector *);
 void hypredrv_LinearSystemSetInitialGuess(MPI_Comm, LS_args *, HYPRE_IJMatrix,
                                           HYPRE_IJVector, HYPRE_IJVector *,
-                                          HYPRE_IJVector *, Stats *);
+                                          HYPRE_IJVector *, const Stats *);
 void hypredrv_LinearSystemSetReferenceSolution(MPI_Comm, const LS_args *,
                                                HYPRE_IJVector *, const Stats *);
 void hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector, Stats *);

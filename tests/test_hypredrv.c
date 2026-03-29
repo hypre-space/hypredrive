@@ -45,10 +45,16 @@ reset_state(void)
 static bool
 setup_ps3d10pt7_paths(char matrix_path[PATH_MAX], char rhs_path[PATH_MAX])
 {
+   char matrix_check[PATH_MAX];
+   char rhs_check[PATH_MAX];
+
    snprintf(matrix_path, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.A", HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.b", HYPREDRIVE_SOURCE_DIR);
+   snprintf(matrix_check, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.A.00000",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_check, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.b.00000", HYPREDRIVE_SOURCE_DIR);
 
-   if (access(matrix_path, F_OK) != 0 || access(rhs_path, F_OK) != 0)
+   if (access(matrix_check, F_OK) != 0 || access(rhs_check, F_OK) != 0)
    {
       fprintf(stderr, "SKIP: missing data files: %s or %s\n", matrix_path, rhs_path);
       return false;
@@ -2484,12 +2490,7 @@ test_HYPREDRV_misc_0hit_branches(void)
 
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
-   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
-            HYPREDRIVE_SOURCE_DIR);
-   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
-            HYPREDRIVE_SOURCE_DIR);
-   TEST_REQUIRE_FILE(matrix_path);
-   TEST_REQUIRE_FILE(rhs_path);
+   setup_ps3d10pt7_paths(matrix_path, rhs_path);
 
    ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
 

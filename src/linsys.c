@@ -1124,7 +1124,7 @@ hypredrv_LinearSystemCreateWorkingSolution(MPI_Comm comm, const LS_args *args,
 void
 hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
                                      HYPRE_IJVector rhs, HYPRE_IJVector *x0_ptr,
-                                     HYPRE_IJVector *x_ptr, Stats *stats)
+                                     HYPRE_IJVector *x_ptr, const Stats *stats)
 {
    (void)mat;
    int                  ls_id           = LinearSystemStatsIDGet(stats) + 1;

@@ -1037,7 +1037,6 @@ LSSeqSharedTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *pref
                            size_t prefix_size)
 {
    const char *tmp_root = getenv("TMPDIR");
-   char        tmpdir_template[MAX_FILENAME_LENGTH];
    char        tmpdir_path[MAX_FILENAME_LENGTH];
    int         myid    = 0;
    int         success = 1;
@@ -1060,6 +1059,8 @@ LSSeqSharedTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *pref
 
    if (!myid)
    {
+      char tmpdir_template[MAX_FILENAME_LENGTH];
+
       written = snprintf(tmpdir_template, sizeof(tmpdir_template),
                          "%s/hypredrv_lsseq_%s_%d_%d_XXXXXX", tmp_root, tag ? tag : "tmp",
                          (int)getpid(), ls_id);
@@ -1102,7 +1103,6 @@ static void
 LSSeqCleanupPartFiles(const char *prefix, const int *partids, int nparts,
                       const char *suffix)
 {
-   char dirname[MAX_FILENAME_LENGTH];
    /* Buffer sized for prefix + ".%05d" + suffix; avoids -Wformat-truncation */
    char filename[MAX_FILENAME_LENGTH + 32];
    if (!prefix || prefix[0] == '\0')
@@ -1118,6 +1118,7 @@ LSSeqCleanupPartFiles(const char *prefix, const int *partids, int nparts,
    }
 
    {
+      char        dirname[MAX_FILENAME_LENGTH];
       const char *slash = strrchr(prefix, '/');
       if (!slash || slash == prefix)
       {

@@ -353,7 +353,7 @@ function(hypredrv_check_hypre_version release develop)
     check_c_source_compiles("
       #include \"HYPRE_config.h\"
       #define HYPRE_SEQUENTIAL
-      #include \"utils.h\"
+      #include \"internal/utils.h\"
       #if !HYPRE_CHECK_MIN_VERSION(${release}, ${develop})
       #error \"need HYPRE >= ${release} + develop >= ${develop}\"
       #endif

@@ -46,8 +46,12 @@ IJVectorValidateHeader(const uint64_t *header, const char *filename)
                            (unsigned long long)header[5]);
       return 0;
    }
+#ifdef HYPRE_COMPLEX
    if (header[5] > (uint64_t)SIZE_MAX / sizeof(HYPRE_Complex) ||
        header[5] > (uint64_t)SIZE_MAX / sizeof(double))
+#else
+   if (header[5] > (uint64_t)SIZE_MAX / sizeof(double))
+#endif
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Vector part sizes overflow allocation bounds in %s",

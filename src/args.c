@@ -173,7 +173,7 @@ hypredrv_InputArgsDestroy(input_args **iargs_ptr)
 }
 
 static YAMLnode *
-InputArgsFindUniqueRootSection(YAMLtree *tree, const char *key)
+InputArgsFindUniqueRootSection(const YAMLtree *tree, const char *key)
 {
    if (!tree || !tree->root || !key)
    {
@@ -209,7 +209,7 @@ InputArgsFindUniqueRootSection(YAMLtree *tree, const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParseGeneral(input_args *iargs, const YAMLtree *tree)
 {
    YAMLnode *parent = InputArgsFindUniqueRootSection(tree, "general");
    if (!parent)
@@ -235,7 +235,7 @@ hypredrv_InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParseLinearSystem(input_args *iargs, const YAMLtree *tree)
 {
    const char key[]  = {"linear_system"};
    YAMLnode  *parent = InputArgsFindUniqueRootSection(tree, key);
@@ -267,7 +267,7 @@ hypredrv_InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
 {
    YAMLnode *parent       = NULL;
    YAMLnode *scaling_node = NULL;
@@ -835,7 +835,7 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParsePrecon(input_args *iargs, const YAMLtree *tree)
 {
    hypredrv_MGRSetDofLabels(iargs->ls.dof_labels);
 

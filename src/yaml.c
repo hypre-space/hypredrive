@@ -255,8 +255,8 @@ YAMLincludeContextAddBytes(YAMLincludeContext *ctx, size_t extra_bytes)
 }
 
 static bool
-YAMLincludeResolvePath(YAMLincludeContext *ctx, const char *dirname, const char *basename,
-                       char **resolved_path_ptr)
+YAMLincludeResolvePath(const YAMLincludeContext *ctx, const char *dirname,
+                       const char *basename, char **resolved_path_ptr)
 {
    if (!ctx || !basename || !resolved_path_ptr)
    {
