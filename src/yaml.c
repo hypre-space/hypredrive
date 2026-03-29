@@ -6,6 +6,302 @@
  ******************************************************************************/
 
 #include "internal/yaml.h"
+#include <limits.h>
+#include <unistd.h>
+
+enum
+{
+   YAML_INCLUDE_MAX_DEPTH          = 16,
+   YAML_EXPANDED_TEXT_MAX_BYTES    = 8 * 1024 * 1024,
+   YAML_INCLUDE_PATH_STACK_CAP_INIT = 16,
+};
+
+typedef struct YAMLincludeContext_struct
+{
+   char   *root_dir;
+   char  **read_stack;
+   int     read_stack_size;
+   int     read_stack_capacity;
+   char  **expand_stack;
+   int     expand_stack_size;
+   int     expand_stack_capacity;
+   size_t  expanded_bytes;
+} YAMLincludeContext;
+
+static bool
+YAMLpathIsUnderRoot(const char *path, const char *root)
+{
+   if (!path || !root)
+   {
+      return false;
+   }
+
+   size_t root_len = strlen(root);
+   if (root_len == 0 || strncmp(path, root, root_len) != 0)
+   {
+      return false;
+   }
+
+   return path[root_len] == '\0' || path[root_len] == '/';
+}
+
+static bool
+YAMLpathStackReserve(char ***stack_ptr, int *capacity_ptr, int min_capacity)
+{
+   if (!stack_ptr || !capacity_ptr)
+   {
+      return false;
+   }
+   if (*capacity_ptr >= min_capacity)
+   {
+      return true;
+   }
+
+   int new_capacity = (*capacity_ptr == 0) ? YAML_INCLUDE_PATH_STACK_CAP_INIT : *capacity_ptr;
+   while (new_capacity < min_capacity)
+   {
+      new_capacity *= 2;
+   }
+
+   char **new_stack = (char **)realloc(*stack_ptr, (size_t)new_capacity * sizeof(char *));
+   if (!new_stack)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate include path stack");
+      return false;
+   }
+
+   *stack_ptr    = new_stack;
+   *capacity_ptr = new_capacity;
+   return true;
+}
+
+static bool
+YAMLpathStackContains(char **stack, int size, const char *path)
+{
+   if (!stack || !path)
+   {
+      return false;
+   }
+   for (int i = 0; i < size; i++)
+   {
+      if (stack[i] && !strcmp(stack[i], path))
+      {
+         return true;
+      }
+   }
+   return false;
+}
+
+static bool
+YAMLreadStackPush(YAMLincludeContext *ctx, const char *path)
+{
+   if (!ctx || !path)
+   {
+      return false;
+   }
+   if (ctx->read_stack_size >= YAML_INCLUDE_MAX_DEPTH)
+   {
+      hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
+      hypredrv_ErrorMsgAdd("YAML include depth exceeded max depth %d",
+                           YAML_INCLUDE_MAX_DEPTH);
+      return false;
+   }
+   if (YAMLpathStackContains(ctx->read_stack, ctx->read_stack_size, path))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("YAML include cycle detected at '%s'", path);
+      return false;
+   }
+   if (!YAMLpathStackReserve(&ctx->read_stack, &ctx->read_stack_capacity,
+                             ctx->read_stack_size + 1))
+   {
+      return false;
+   }
+
+   ctx->read_stack[ctx->read_stack_size] = strdup(path);
+   if (!ctx->read_stack[ctx->read_stack_size])
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to copy include path");
+      return false;
+   }
+   ctx->read_stack_size++;
+   return true;
+}
+
+static void
+YAMLreadStackPop(YAMLincludeContext *ctx)
+{
+   if (!ctx || ctx->read_stack_size <= 0)
+   {
+      return;
+   }
+
+   ctx->read_stack_size--;
+   free(ctx->read_stack[ctx->read_stack_size]);
+   ctx->read_stack[ctx->read_stack_size] = NULL;
+}
+
+static bool
+YAMLexpandStackPush(YAMLincludeContext *ctx, const char *path)
+{
+   if (!ctx || !path)
+   {
+      return false;
+   }
+   if (ctx->expand_stack_size >= YAML_INCLUDE_MAX_DEPTH)
+   {
+      hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
+      hypredrv_ErrorMsgAdd("YAML include expansion depth exceeded max depth %d",
+                           YAML_INCLUDE_MAX_DEPTH);
+      return false;
+   }
+   if (YAMLpathStackContains(ctx->expand_stack, ctx->expand_stack_size, path))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("YAML include cycle detected at '%s'", path);
+      return false;
+   }
+   if (!YAMLpathStackReserve(&ctx->expand_stack, &ctx->expand_stack_capacity,
+                             ctx->expand_stack_size + 1))
+   {
+      return false;
+   }
+
+   ctx->expand_stack[ctx->expand_stack_size] = strdup(path);
+   if (!ctx->expand_stack[ctx->expand_stack_size])
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to copy include expansion path");
+      return false;
+   }
+   ctx->expand_stack_size++;
+   return true;
+}
+
+static void
+YAMLexpandStackPop(YAMLincludeContext *ctx)
+{
+   if (!ctx || ctx->expand_stack_size <= 0)
+   {
+      return;
+   }
+
+   ctx->expand_stack_size--;
+   free(ctx->expand_stack[ctx->expand_stack_size]);
+   ctx->expand_stack[ctx->expand_stack_size] = NULL;
+}
+
+static bool
+YAMLincludeContextInit(YAMLincludeContext *ctx, const char *root_dir)
+{
+   if (!ctx)
+   {
+      return false;
+   }
+
+   memset(ctx, 0, sizeof(*ctx));
+   const char *dir = (root_dir && strlen(root_dir) > 0) ? root_dir : ".";
+   ctx->root_dir   = realpath(dir, NULL);
+   if (!ctx->root_dir)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Failed to resolve YAML root directory '%s'", dir);
+      return false;
+   }
+   return true;
+}
+
+static void
+YAMLincludeContextDestroy(YAMLincludeContext *ctx)
+{
+   if (!ctx)
+   {
+      return;
+   }
+
+   for (int i = 0; i < ctx->read_stack_size; i++)
+   {
+      free(ctx->read_stack[i]);
+   }
+   for (int i = 0; i < ctx->expand_stack_size; i++)
+   {
+      free(ctx->expand_stack[i]);
+   }
+   free(ctx->read_stack);
+   free(ctx->expand_stack);
+   free(ctx->root_dir);
+   memset(ctx, 0, sizeof(*ctx));
+}
+
+static bool
+YAMLincludeContextAddBytes(YAMLincludeContext *ctx, size_t extra_bytes)
+{
+   if (!ctx)
+   {
+      return false;
+   }
+   if (ctx->expanded_bytes > (size_t)YAML_EXPANDED_TEXT_MAX_BYTES - extra_bytes)
+   {
+      hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
+      hypredrv_ErrorMsgAdd("Expanded YAML exceeds %d bytes limit",
+                           YAML_EXPANDED_TEXT_MAX_BYTES);
+      return false;
+   }
+   ctx->expanded_bytes += extra_bytes;
+   return true;
+}
+
+static bool
+YAMLincludeResolvePath(YAMLincludeContext *ctx, const char *dirname, const char *basename,
+                       char **resolved_path_ptr)
+{
+   if (!ctx || !basename || !resolved_path_ptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid include path arguments");
+      return false;
+   }
+
+   if (basename[0] == '/')
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Absolute include paths are not allowed: '%s'", basename);
+      return false;
+   }
+
+   const char *base_dir = (dirname && strlen(dirname) > 0) ? dirname : ".";
+   char       *combined = NULL;
+   hypredrv_CombineFilename(base_dir, basename, &combined);
+   if (!combined)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to construct include path for '%s'", basename);
+      return false;
+   }
+
+   char *resolved = realpath(combined, NULL);
+   if (!resolved)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename(combined);
+      free(combined);
+      return false;
+   }
+   free(combined);
+
+   if (!YAMLpathIsUnderRoot(resolved, ctx->root_dir))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Include path escapes YAML root: '%s'", resolved);
+      free(resolved);
+      return false;
+   }
+
+   *resolved_path_ptr = resolved;
+   return true;
+}
 
 /*-----------------------------------------------------------------------------
  * Schema-driven validation helpers (shared by macro-generated parsers)
@@ -170,15 +466,18 @@ hypredrv_YAMLtreeDestroy(YAMLtree **tree_ptr)
  * hypredrv_YAMLtextRead
  *-----------------------------------------------------------------------------*/
 
-void
-hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
-                      int *base_indent_ptr, size_t *length_ptr, char **text_ptr)
+static void
+YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
+                        int *base_indent_ptr, size_t *length_ptr, char **text_ptr,
+                        YAMLincludeContext *ctx)
 {
    FILE  *fp  = NULL;
    char  *key = NULL, *val = NULL, *sep = NULL;
    char   line[MAX_LINE_LENGTH];
    char   backup[MAX_LINE_LENGTH];
-   char  *filename    = NULL;
+   char  *resolved_path = NULL;
+   char  *current_dir   = NULL;
+   char  *current_base  = NULL;
    char  *new_text    = NULL;
    int    inner_level = 0, pos = 0;
    size_t num_whitespaces     = 0;
@@ -186,20 +485,29 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
    int    base_indent         = *base_indent_ptr; // Track base indentation level
    int    prev_indent         = -1;               // Track previous indentation level
    bool   first_indented_line = true;
+   bool   pushed              = false;
 
-   /* Construct the whole filename */
-   hypredrv_CombineFilename(dirname, basename, &filename);
+   if (!YAMLincludeResolvePath(ctx, dirname, basename, &resolved_path))
+   {
+      return;
+   }
+   if (!YAMLreadStackPush(ctx, resolved_path))
+   {
+      goto cleanup;
+   }
+   pushed = true;
 
-   /* Open file */
-   fp = fopen(filename, "r");
+   hypredrv_SplitFilename(resolved_path, &current_dir, &current_base);
+   free(current_base);
+   current_base = NULL;
+
+   fp = fopen(resolved_path, "r");
    if (!fp)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAddInvalidFilename(filename);
-      free(filename);
-      return;
+      hypredrv_ErrorMsgAddInvalidFilename(resolved_path);
+      goto cleanup;
    }
-   free(filename);
 
    while (fgets(line, sizeof(line), fp))
    {
@@ -237,15 +545,7 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
          {
             hypredrv_ErrorCodeSet(ERROR_YAML_MIXED_INDENT);
             hypredrv_ErrorMsgAdd("Tab characters are not allowed in YAML input!");
-            fclose(fp);
-            /* Free any allocated text before returning */
-            if (*text_ptr)
-            {
-               free(*text_ptr);
-               *text_ptr   = NULL;
-               *length_ptr = 0;
-            }
-            return;
+            goto fail_with_text_cleanup;
          }
          pos++;
       }
@@ -269,15 +569,7 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
             hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_BASE_INDENT);
             hypredrv_ErrorMsgAdd(
                "Base indentation in YAML input must be at least 2 spaces");
-            fclose(fp);
-            /* Free any allocated text before returning */
-            if (*text_ptr)
-            {
-               free(*text_ptr);
-               *text_ptr   = NULL;
-               *length_ptr = 0;
-            }
-            return;
+            goto fail_with_text_cleanup;
          }
       }
 
@@ -288,15 +580,7 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
          {
             hypredrv_ErrorCodeSet(ERROR_YAML_INCONSISTENT_INDENT);
             hypredrv_ErrorMsgAdd("Inconsistent indentation detected in YAML input!");
-            fclose(fp);
-            /* Free any allocated text before returning */
-            if (*text_ptr)
-            {
-               free(*text_ptr);
-               *text_ptr   = NULL;
-               *length_ptr = 0;
-            }
-            return;
+            goto fail_with_text_cleanup;
          }
 
          /* Enforce reasonable indentation jumps.
@@ -314,15 +598,7 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
             {
                hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_INDENT_JUMP);
                hypredrv_ErrorMsgAdd("Invalid indentation jump detected in YAML input!");
-               fclose(fp);
-               /* Free any allocated text before returning */
-               if (*text_ptr)
-               {
-                  free(*text_ptr);
-                  *text_ptr   = NULL;
-                  *length_ptr = 0;
-               }
-               return;
+               goto fail_with_text_cleanup;
             }
          }
 
@@ -365,8 +641,12 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
          inner_level = pos / (base_indent > 0 ? base_indent : 1);
 
          /* Recursively read the content of the included file */
-         hypredrv_YAMLtextRead(dirname, val, inner_level, base_indent_ptr, length_ptr,
-                               text_ptr);
+         YAMLtextReadWithContext(current_dir ? current_dir : dirname, val, inner_level,
+                                 base_indent_ptr, length_ptr, text_ptr, ctx);
+         if (hypredrv_ErrorCodeActive())
+         {
+            goto cleanup;
+         }
       }
       else
       {
@@ -375,18 +655,16 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
 
          /* Regular line, append it to the text */
          new_length = *length_ptr + strlen(backup) + num_whitespaces;
+         if (!YAMLincludeContextAddBytes(ctx, strlen(backup) + num_whitespaces))
+         {
+            goto fail_with_text_cleanup;
+         }
          new_text   = (char *)realloc(*text_ptr, new_length + 1);
          if (!new_text)
          {
-            fclose(fp);
-            /* Free any allocated text before returning */
-            if (*text_ptr)
-            {
-               free(*text_ptr);
-               *text_ptr   = NULL;
-               *length_ptr = 0;
-            }
-            return;
+            hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+            hypredrv_ErrorMsgAdd("Failed to allocate YAML text buffer");
+            goto fail_with_text_cleanup;
          }
          *text_ptr = new_text;
 
@@ -404,7 +682,42 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
       }
    }
 
-   fclose(fp);
+cleanup:
+   if (fp)
+   {
+      fclose(fp);
+   }
+   free(current_base);
+   free(current_dir);
+   free(resolved_path);
+   if (pushed)
+   {
+      YAMLreadStackPop(ctx);
+   }
+   return;
+
+fail_with_text_cleanup:
+   if (*text_ptr)
+   {
+      free(*text_ptr);
+      *text_ptr   = NULL;
+      *length_ptr = 0;
+   }
+   goto cleanup;
+}
+
+void
+hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
+                      int *base_indent_ptr, size_t *length_ptr, char **text_ptr)
+{
+   YAMLincludeContext ctx;
+   if (!YAMLincludeContextInit(&ctx, dirname))
+   {
+      return;
+   }
+   YAMLtextReadWithContext(dirname, basename, level, base_indent_ptr, length_ptr, text_ptr,
+                           &ctx);
+   YAMLincludeContextDestroy(&ctx);
 }
 
 /*-----------------------------------------------------------------------------
@@ -999,7 +1312,8 @@ YAMLnodeCloneDeep(const YAMLnode *src, int level_offset)
 }
 
 static void
-YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_indent)
+YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_indent,
+                                YAMLincludeContext *ctx)
 {
    if (!node)
    {
@@ -1054,23 +1368,63 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
 
          for (int i = 0; i < n_paths; i++)
          {
+            char *resolved_path = NULL;
+            if (!YAMLincludeResolvePath(ctx, base_dir, paths[i], &resolved_path))
+            {
+               for (int j = i; j < n_paths; j++)
+               {
+                  free(paths[j]);
+               }
+               free(paths);
+               return;
+            }
+            if (!YAMLexpandStackPush(ctx, resolved_path))
+            {
+               free(resolved_path);
+               for (int j = i; j < n_paths; j++)
+               {
+                  free(paths[j]);
+               }
+               free(paths);
+               return;
+            }
+
             char *inc_dir  = NULL;
             char *inc_base = NULL;
-            hypredrv_SplitFilename(paths[i], &inc_dir, &inc_base);
+            hypredrv_SplitFilename(resolved_path, &inc_dir, &inc_base);
+            free(inc_base);
+            inc_base = NULL;
 
             int    inc_base_indent = base_indent;
             size_t inc_len         = 0;
             char  *inc_text        = NULL;
 
-            const char *use_dir = (!inc_dir || !strlen(inc_dir) || !strcmp(inc_dir, "."))
-                                     ? base_dir
-                                     : inc_dir;
-            hypredrv_YAMLtextRead(use_dir, inc_base ? inc_base : paths[i], 0,
-                                  &inc_base_indent, &inc_len, &inc_text);
+            YAMLtextReadWithContext(base_dir, paths[i], 0, &inc_base_indent, &inc_len,
+                                    &inc_text, ctx);
             if (inc_text)
             {
                YAMLtree *inc_tree = NULL;
                hypredrv_YAMLtreeBuild(inc_base_indent, inc_text, &inc_tree);
+               if (inc_tree && !hypredrv_ErrorCodeActive())
+               {
+                  YAMLnodeExpandIncludesRecursive(inc_tree->root,
+                                                 inc_dir ? inc_dir : base_dir,
+                                                 inc_base_indent, ctx);
+               }
+               if (hypredrv_ErrorCodeActive())
+               {
+                  hypredrv_YAMLtreeDestroy(&inc_tree);
+                  free(inc_text);
+                  free(inc_dir);
+                  free(resolved_path);
+                  YAMLexpandStackPop(ctx);
+                  for (int j = i; j < n_paths; j++)
+                  {
+                     free(paths[j]);
+                  }
+                  free(paths);
+                  return;
+               }
 
                /* Wrap included content as a sequence item */
                YAMLnode *seq_node = hypredrv_YAMLnodeCreate("-", "", include_level);
@@ -1086,8 +1440,9 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
                free(inc_text);
             }
 
+            YAMLexpandStackPop(ctx);
+            free(resolved_path);
             free(inc_dir);
-            free(inc_base);
             free(paths[i]);
          }
          free(paths);
@@ -1097,7 +1452,7 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
          continue;
       }
 
-      YAMLnodeExpandIncludesRecursive(child, base_dir, base_indent);
+      YAMLnodeExpandIncludesRecursive(child, base_dir, base_indent, ctx);
       child = next;
    }
 }
@@ -1452,7 +1807,13 @@ hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
    }
    const char *dir = (base_dir && strlen(base_dir) > 0) ? base_dir : ".";
    int         bi  = tree->base_indent > 0 ? tree->base_indent : 2;
-   YAMLnodeExpandIncludesRecursive(tree->root, dir, bi);
+   YAMLincludeContext ctx;
+   if (!YAMLincludeContextInit(&ctx, dir))
+   {
+      return;
+   }
+   YAMLnodeExpandIncludesRecursive(tree->root, dir, bi, &ctx);
+   YAMLincludeContextDestroy(&ctx);
 }
 
 /******************************************************************************

@@ -620,6 +620,60 @@ test_InputArgsParse_driver_mode_with_nodash_overrides(void)
    unlink(yaml_file);
 }
 
+static void
+test_InputArgsParse_root_solver_not_shadowed_by_nested_solver(void)
+{
+   const char yaml_text[] = "wrapper:\n"
+                            "  solver: bicgstab\n"
+                            "solver: pcg\n"
+                            "preconditioner: amg\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->solver_method, SOLVER_PCG);
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
+test_InputArgsParse_root_precon_not_shadowed_by_nested_precon(void)
+{
+   const char yaml_text[] = "wrapper:\n"
+                            "  preconditioner: fsai\n"
+                            "solver: pcg\n"
+                            "preconditioner: amg\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
+test_InputArgsParse_duplicate_root_solver_rejected(void)
+{
+   const char yaml_text[] = "solver: pcg\n"
+                            "solver: gmres\n"
+                            "preconditioner: amg\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NULL(args);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_EXTRA_KEY) != 0);
+}
+
+static void
+test_InputArgsParse_duplicate_root_preconditioner_rejected(void)
+{
+   const char yaml_text[] = "solver: pcg\n"
+                            "preconditioner: amg\n"
+                            "preconditioner: fsai\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NULL(args);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_EXTRA_KEY) != 0);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -650,6 +704,10 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParse_file_not_found_error);
    RUN_TEST(test_InputArgsParse_legacy_mode_with_overrides);
    RUN_TEST(test_InputArgsParse_driver_mode_with_nodash_overrides);
+   RUN_TEST(test_InputArgsParse_root_solver_not_shadowed_by_nested_solver);
+   RUN_TEST(test_InputArgsParse_root_precon_not_shadowed_by_nested_precon);
+   RUN_TEST(test_InputArgsParse_duplicate_root_solver_rejected);
+   RUN_TEST(test_InputArgsParse_duplicate_root_preconditioner_rejected);
 
    MPI_Finalize();
    return 0;
