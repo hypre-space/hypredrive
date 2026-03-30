@@ -1491,7 +1491,7 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
          (ctx->last_setup_time >= 0.0) && (ctx->last_setup_time >= cfg->threshold);
       if (reason && reason_size > 0)
       {
-         snprintf(reason, reason_size, "last_setup_time=%.17g threshold=%.17g",
+         snprintf(reason, reason_size, "last_setup_time=%.3e threshold=%.3e",
                   ctx->last_setup_time, cfg->threshold);
       }
       return matched;
@@ -1502,7 +1502,7 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
          (ctx->last_solve_time >= 0.0) && (ctx->last_solve_time >= cfg->threshold);
       if (reason && reason_size > 0)
       {
-         snprintf(reason, reason_size, "last_solve_time=%.17g threshold=%.17g",
+         snprintf(reason, reason_size, "last_solve_time=%.3e threshold=%.3e",
                   ctx->last_solve_time, cfg->threshold);
       }
       return matched;
