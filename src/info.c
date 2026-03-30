@@ -11,10 +11,13 @@
 #include "internal/info.h"
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/utsname.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include "HYPREDRV_config.h"
 #include "HYPRE_config.h"
@@ -34,12 +37,9 @@
 #else
 #include <dirent.h>
 #include <elf.h>
-#include <fcntl.h>
-#include <limits.h>
 #include <link.h>
 #include <sys/stat.h>
 #include <sys/sysinfo.h>
-#include <sys/wait.h>
 #endif
 
 #ifndef STRINGIFY
@@ -61,9 +61,6 @@ static int ReadLineFromFile(const char *path, char *buffer, size_t len);
 static int ReadIntFromFile(const char *path, int *value);
 static int ReadUllFromProcMeminfo(const char *field, unsigned long long *value);
 static int ExtractBracketedToken(const char *line, char *token, size_t len);
-static int FindExecutableInPath(const char *name, char *resolved, size_t len);
-static int RunCommandCapture(const char *exe_path, char *const argv[],
-                             int suppress_stderr, char *buffer, size_t len);
 static int ParseLscpuFallback(const char *lscpu_path, int *num_sockets, char *model_name,
                               size_t model_name_len);
 static int ParseGpuControllerLine(const char *line, char *gpu_info, size_t gpu_info_len);
@@ -87,6 +84,9 @@ static void PrintNetworkInformation(void);
 static void PrintAcceleratorRuntimeInformation(void);
 static void PrintLinuxKernelTuningInformation(void);
 #endif
+static int  FindExecutableInPath(const char *name, char *resolved, size_t len);
+static int  RunCommandCapture(const char *exe_path, char *const argv[],
+                              int suppress_stderr, char *buffer, size_t len);
 static void BuildGpuBindingString(char *buffer, size_t len);
 static void PrintMpiRuntimeInformation(MPI_Comm comm);
 static void PrintThreadingEnvironmentInformation(void);
@@ -128,71 +128,6 @@ static void PrintDynamicLibraries(void);
 static void PrintRunningInfo(MPI_Comm comm);
 #endif
 void hypredrv_PrintSystemInfoLegacy(MPI_Comm comm);
-
-#ifndef __APPLE__
-
-/*--------------------------------------------------------------------------
- * hypredrv_dlpi_callback
- *
- * Linux: Use dl_iterate_phdr to list dynamic libraries
- *--------------------------------------------------------------------------*/
-
-int
-hypredrv_dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
-{
-   (void)size;
-   (void)data;
-   if (info->dlpi_name && info->dlpi_name[0])
-   {
-      const char *filename = strrchr(info->dlpi_name, '/');
-      filename             = filename ? filename + 1 : info->dlpi_name;
-      printf("   %s => %s (0x%lx)\n", filename, info->dlpi_name, info->dlpi_addr);
-   }
-   return 0;
-}
-
-struct DynamicLibList
-{
-   char **paths;
-   int    count;
-   int    capacity;
-   int    failed;
-};
-
-struct DependencyNode
-{
-   char  *path;
-   char **needed;
-   int    needed_count;
-   int    parsed;
-   int    parse_ok;
-};
-
-struct DependencyGraph
-{
-   struct DependencyNode *nodes;
-   int                    count;
-   int                    capacity;
-   int                    failed;
-};
-
-struct PrintedNodeSet
-{
-   int *flags;
-   int  capacity;
-};
-
-static const char *
-PathBasename(const char *path)
-{
-   if (!path)
-   {
-      return "";
-   }
-
-   const char *base = strrchr(path, '/');
-   return base ? base + 1 : path;
-}
 
 static int
 FindExecutableInPath(const char *name, char *resolved, size_t len)
@@ -366,6 +301,8 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
    return !read_failed && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
+#ifndef __APPLE__
+
 static int
 ParseLscpuFallback(const char *lscpu_path, int *num_sockets, char *model_name,
                    size_t model_name_len)
@@ -519,6 +456,69 @@ AppendUniqueString(char ***items, int *count, int *capacity, const char *value)
 
    (*count)++;
    return 1;
+}
+
+/*--------------------------------------------------------------------------
+ * hypredrv_dlpi_callback
+ *
+ * Linux: Use dl_iterate_phdr to list dynamic libraries
+ *--------------------------------------------------------------------------*/
+
+int
+hypredrv_dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
+{
+   (void)size;
+   (void)data;
+   if (info->dlpi_name && info->dlpi_name[0])
+   {
+      const char *filename = strrchr(info->dlpi_name, '/');
+      filename             = filename ? filename + 1 : info->dlpi_name;
+      printf("   %s => %s (0x%lx)\n", filename, info->dlpi_name, info->dlpi_addr);
+   }
+   return 0;
+}
+
+struct DynamicLibList
+{
+   char **paths;
+   int    count;
+   int    capacity;
+   int    failed;
+};
+
+struct DependencyNode
+{
+   char  *path;
+   char **needed;
+   int    needed_count;
+   int    parsed;
+   int    parse_ok;
+};
+
+struct DependencyGraph
+{
+   struct DependencyNode *nodes;
+   int                    count;
+   int                    capacity;
+   int                    failed;
+};
+
+struct PrintedNodeSet
+{
+   int *flags;
+   int  capacity;
+};
+
+static const char *
+PathBasename(const char *path)
+{
+   if (!path)
+   {
+      return "";
+   }
+
+   const char *base = strrchr(path, '/');
+   return base ? base + 1 : path;
 }
 
 static void
