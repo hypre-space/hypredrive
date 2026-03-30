@@ -55,6 +55,8 @@ static bool PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_n
                                      size_t default_object_name_size);
 static void PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_object_name,
                                     bool pushed_default_name);
+static int  PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
+                                               PreconReuseDecision *decision);
 
 // Macro to check if HYPREDRV is initialized
 #define HYPREDRV_CHECK_INIT()                                \
@@ -140,6 +142,48 @@ PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_object_name,
    {
       hypredrv_StatsSetObjectName(hypredrv->stats, "");
    }
+}
+
+static int
+PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
+                                   PreconReuseDecision *decision)
+{
+   if (!hypredrv)
+   {
+      if (decision)
+      {
+         memset(decision, 0, sizeof(*decision));
+         decision->should_rebuild = 1;
+         snprintf(decision->summary, sizeof(decision->summary), "%s",
+                  "collective reuse decision unavailable");
+      }
+      return 1;
+   }
+
+   PreconReuseDecision local_decision;
+   if (!decision)
+   {
+      memset(&local_decision, 0, sizeof(local_decision));
+      decision = &local_decision;
+   }
+
+   int local_should_rebuild = hypredrv_PreconReuseShouldRebuild(
+      &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timesteps.starts,
+      hypredrv->stats, &hypredrv->precon_reuse_state, next_ls_id, decision);
+   int global_should_rebuild = local_should_rebuild;
+   MPI_Allreduce(&local_should_rebuild, &global_should_rebuild, 1, MPI_INT, MPI_MAX,
+                 hypredrv->comm);
+
+   if (global_should_rebuild != local_should_rebuild)
+   {
+      size_t used = strlen(decision->summary);
+      snprintf(decision->summary + used, sizeof(decision->summary) - used,
+               "%scollective_rebuild=%d local_rebuild=%d", used ? " " : "",
+               global_should_rebuild, local_should_rebuild);
+   }
+
+   decision->should_rebuild = global_should_rebuild;
+   return global_should_rebuild;
 }
 
 static void
@@ -2059,9 +2103,7 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
    if (!should_create)
    {
       should_create =
-         hypredrv_PreconReuseShouldRebuild(
-            &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timesteps.starts,
-            hypredrv->stats, &hypredrv->precon_reuse_state, next_ls_id, &decision) != 0;
+         PreconReuseShouldRebuildCollective(hypredrv, next_ls_id, &decision) != 0;
    }
    else
    {
@@ -2218,9 +2260,8 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
 
    int                 next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
    PreconReuseDecision decision;
-   int                 should_rebuild = hypredrv_PreconReuseShouldRebuild(
-      &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timesteps.starts,
-      hypredrv->stats, &hypredrv->precon_reuse_state, next_ls_id, &decision);
+   int                 should_rebuild =
+      PreconReuseShouldRebuildCollective(hypredrv, next_ls_id, &decision);
    hypredrv_PreconReuseLogDecision(hypredrv, next_ls_id, &decision, "LinearSolverSetup");
    int skip_precon_setup =
       (hypredrv->precon != NULL) && hypredrv->precon_is_setup && !should_rebuild;
@@ -2512,9 +2553,7 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
    int                 next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
    PreconReuseDecision decision;
    bool                should_destroy =
-      hypredrv_PreconReuseShouldRebuild(
-         &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timesteps.starts,
-         hypredrv->stats, &hypredrv->precon_reuse_state, next_ls_id, &decision) != 0;
+      PreconReuseShouldRebuildCollective(hypredrv, next_ls_id, &decision) != 0;
    hypredrv_PreconReuseLogDecision(hypredrv, next_ls_id, &decision, "PreconDestroy");
 
    if (should_destroy)
