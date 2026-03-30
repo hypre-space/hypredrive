@@ -283,8 +283,9 @@ PreconReuseApplyAdaptiveShorthandDefaults(PreconReuse_args *args)
 }
 
 static void
-PreconReuseApplyAdaptiveImplicitDefaults(PreconReuse_args *args, int seen_min_history_points,
-                                         int seen_bad_decisions_to_rebuild)
+PreconReuseApplyAdaptiveImplicitDefaults(PreconReuse_args *args,
+                                         int               seen_min_history_points,
+                                         int               seen_bad_decisions_to_rebuild)
 {
    if (!args)
    {
@@ -1244,7 +1245,7 @@ PreconReuseBaselineValue(const PreconReuseScoreComponent_args *component,
    {
       enum
       {
-         WINDOW_MEAN_CAPACITY = 128
+         WINDOW_MEAN_CAPACITY = 128,
       };
       double values[WINDOW_MEAN_CAPACITY];
       int    usable = 0;
@@ -2387,13 +2388,13 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       return;
    }
 
-   int seen_enabled           = 0;
-   int seen_frequency         = 0;
-   int seen_linear_system_ids = 0;
-   int seen_per_timestep      = 0;
-   int seen_policy            = 0;
-   int seen_adaptive          = 0;
-   int seen_min_history_points = 0;
+   int seen_enabled                  = 0;
+   int seen_frequency                = 0;
+   int seen_linear_system_ids        = 0;
+   int seen_per_timestep             = 0;
+   int seen_policy                   = 0;
+   int seen_adaptive                 = 0;
+   int seen_min_history_points       = 0;
    int seen_bad_decisions_to_rebuild = 0;
 
    YAML_NODE_ITERATE(parent, child)

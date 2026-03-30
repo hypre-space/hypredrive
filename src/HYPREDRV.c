@@ -57,6 +57,9 @@ static void PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_obj
                                     bool pushed_default_name);
 static int  PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
                                                PreconReuseDecision *decision);
+static uint32_t ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv);
+static void PrepareExplicitObjectForConfiguredExecution(HYPREDRV_t hypredrv, void *obj,
+                                                        int is_matrix);
 
 // Macro to check if HYPREDRV is initialized
 #define HYPREDRV_CHECK_INIT()                                \
@@ -184,6 +187,39 @@ PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
 
    decision->should_rebuild = global_should_rebuild;
    return global_should_rebuild;
+}
+
+static void
+PrepareExplicitObjectForConfiguredExecution(HYPREDRV_t hypredrv, void *obj, int is_matrix)
+{
+#if !defined(HYPRE_USING_GPU) || !HYPRE_CHECK_MIN_VERSION(22000, 0)
+   (void)hypredrv;
+   (void)obj;
+   (void)is_matrix;
+#else
+   HYPRE_MemoryLocation target_memory = HYPRE_MEMORY_HOST;
+
+   if (!hypredrv || !hypredrv->iargs || !obj)
+   {
+      return;
+   }
+
+   (void)ApplyGlobalRuntimeSettings(hypredrv);
+
+   if (hypredrv->iargs->ls.exec_policy)
+   {
+      target_memory = HYPRE_MEMORY_DEVICE;
+   }
+
+   if (is_matrix)
+   {
+      HYPRE_IJMatrixMigrate((HYPRE_IJMatrix)obj, target_memory);
+   }
+   else
+   {
+      HYPRE_IJVectorMigrate((HYPRE_IJVector)obj, target_memory);
+   }
+#endif
 }
 
 static void
@@ -1049,6 +1085,23 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
                                          &hypredrv->precon_reuse_timesteps.starts);
    }
 
+#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22100, 0)
+   if (hypredrv->iargs->general.exec_policy &&
+       hypredrv->iargs->precon_method == PRECON_BOOMERAMG)
+   {
+      int interp_type = hypredrv->iargs->precon.amg.interpolation.prolongation_type;
+      if (interp_type == 8 || interp_type == 9)
+      {
+         hypredrv->iargs->general.exec_policy = 0;
+         hypredrv->iargs->ls.exec_policy      = 0;
+         HYPREDRV_LOG_OBJECTF(1, hypredrv,
+                              "forcing host execution for compatibility in InputArgsParse: "
+                              "BoomerAMG standard interpolation");
+         HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
+      }
+   }
+#endif
+
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse end");
 
    return hypredrv_ErrorCodeGet();
@@ -1216,6 +1269,33 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
    hypredrv->iargs->active_precon_variant = variant_idx;
    hypredrv->iargs->precon_method         = hypredrv->iargs->precon_methods[variant_idx];
    hypredrv->iargs->precon                = hypredrv->iargs->precon_variants[variant_idx];
+#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22100, 0)
+   if (hypredrv->iargs->general.exec_policy &&
+       hypredrv->iargs->precon_method == PRECON_BOOMERAMG)
+   {
+      int interp_type = hypredrv->iargs->precon.amg.interpolation.prolongation_type;
+      if (interp_type == 8 || interp_type == 9)
+      {
+         hypredrv->iargs->general.exec_policy = 0;
+         hypredrv->iargs->ls.exec_policy      = 0;
+         HYPREDRV_LOG_OBJECTF(
+            1, hypredrv,
+            "forcing host execution for compatibility in InputArgsSetPreconVariant: "
+            "BoomerAMG standard interpolation");
+         HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
+         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_A, 1);
+         if (hypredrv->mat_M && hypredrv->mat_M != hypredrv->mat_A)
+         {
+            PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_M, 1);
+         }
+         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_b, 0);
+         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_x, 0);
+         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_x0, 0);
+         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_xref, 0);
+         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_nn, 0);
+      }
+   }
+#endif
    HYPREDRV_LOG_OBJECTF(2, hypredrv, "preconditioner variant selected: idx=%d method=%d",
                         variant_idx, (int)hypredrv->iargs->precon_method);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsSetPreconVariant end");
@@ -1601,6 +1681,7 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat_A)
 {
    HYPREDRV_CHECK_INIT();
    HYPREDRV_CHECK_OBJ();
+   PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJMatrix)mat_A, 1);
 
    LinearSystemDropOwnedPrecMatrix(hypredrv);
 
@@ -1636,6 +1717,7 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
    }
    else
    {
+      PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)vec, 0);
       hypredrv->vec_b = (HYPRE_IJVector)vec;
    }
 
@@ -1684,6 +1766,7 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv, HYPRE_Vector vec)
    }
    else
    {
+      PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)vec, 0);
       LinearSystemDropOwnedInitialGuess(hypredrv);
       hypredrv->vec_x0 = (HYPRE_IJVector)vec;
       hypredrv->owns_vec_x0 =
@@ -1729,6 +1812,7 @@ HYPREDRV_LinearSystemSetSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
    }
    else
    {
+      PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)vec, 0);
       /* Destroy existing owned solution before replacing. */
       if (hypredrv->vec_x && hypredrv->owns_vec_x)
       {
@@ -1768,6 +1852,7 @@ HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
    }
    else
    {
+      PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)vec, 0);
       LinearSystemDropOwnedReferenceSolution(hypredrv);
       hypredrv->vec_xref = (HYPRE_IJVector)vec;
       hypredrv->owns_vec_xref =
@@ -1966,6 +2051,7 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat)
    }
    else
    {
+      PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJMatrix)mat, 1);
       LinearSystemDropOwnedPrecMatrix(hypredrv);
       hypredrv->mat_M = (HYPRE_IJMatrix)mat;
       hypredrv->owns_mat_M =

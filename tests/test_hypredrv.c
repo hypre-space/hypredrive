@@ -1821,6 +1821,60 @@ test_HYPREDRV_InputArgsParse_exec_policy(void)
 }
 
 static void
+test_HYPREDRV_InputArgsParse_gpu_standard_amg_forces_host_exec(void)
+{
+#if !defined(HYPRE_USING_GPU) || !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#else
+   reset_state();
+
+   char matrix_path[PATH_MAX];
+   char rhs_path[PATH_MAX];
+   if (!setup_ps3d10pt7_paths(matrix_path, rhs_path))
+   {
+      return;
+   }
+
+   HYPREDRV_t obj = create_initialized_obj();
+
+   char yaml_variants[2 * PATH_MAX + 1024];
+   int  yaml_variants_len = snprintf(
+      yaml_variants, sizeof(yaml_variants),
+      "general:\n"
+      "  statistics: off\n"
+      "linear_system:\n"
+      "  matrix_filename: %s\n"
+      "  rhs_filename: %s\n"
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 5\n"
+      "preconditioner:\n"
+      "  variants:\n"
+      "    - amg:\n"
+      "        print_level: 0\n"
+      "        interpolation:\n"
+      "          prolongation_type: MM-ext+i\n"
+      "    - amg:\n"
+      "        print_level: 0\n"
+      "        interpolation:\n"
+      "          prolongation_type: standard\n",
+      matrix_path, rhs_path);
+   ASSERT_TRUE(yaml_variants_len > 0 && (size_t)yaml_variants_len < sizeof(yaml_variants));
+
+   parse_yaml_into_obj(obj, yaml_variants);
+   ASSERT_EQ(obj->iargs->general.exec_policy, 1);
+   ASSERT_EQ(obj->iargs->ls.exec_policy, 1);
+
+   ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, 1), ERROR_NONE);
+   ASSERT_EQ(obj->iargs->general.exec_policy, 0);
+   ASSERT_EQ(obj->iargs->ls.exec_policy, 0);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+#endif
+}
+
+static void
 test_HYPREDRV_LinearSystemComputeEigenspectrum_warns_once_when_disabled(void)
 {
 #ifdef HYPREDRV_ENABLE_EIGSPEC
@@ -3948,6 +4002,7 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_LinearSolverApply_with_xref);
    RUN_TEST(test_HYPREDRV_stats_level_apis);
    RUN_TEST(test_HYPREDRV_InputArgsParse_exec_policy);
+   RUN_TEST(test_HYPREDRV_InputArgsParse_gpu_standard_amg_forces_host_exec);
    RUN_TEST(test_HYPREDRV_LinearSystemComputeEigenspectrum_warns_once_when_disabled);
    RUN_TEST(test_HYPREDRV_state_vectors_and_eigspec_error_paths);
    RUN_TEST(test_HYPREDRV_PreconCreate_reuse_logic_variations);
