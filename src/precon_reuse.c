@@ -282,6 +282,25 @@ PreconReuseApplyAdaptiveShorthandDefaults(PreconReuse_args *args)
    args->guards.bad_decisions_to_rebuild = 2;
 }
 
+static void
+PreconReuseApplyAdaptiveImplicitDefaults(PreconReuse_args *args, int seen_min_history_points,
+                                         int seen_bad_decisions_to_rebuild)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   if (!seen_min_history_points)
+   {
+      args->guards.min_history_points = PRECON_REUSE_BOOTSTRAP_SOLVES;
+   }
+   if (!seen_bad_decisions_to_rebuild)
+   {
+      args->guards.bad_decisions_to_rebuild = 2;
+   }
+}
+
 static int
 PreconReuseParseDirection(const char *value, PreconReuseDirection *out)
 {
@@ -2374,6 +2393,8 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    int seen_per_timestep      = 0;
    int seen_policy            = 0;
    int seen_adaptive          = 0;
+   int seen_min_history_points = 0;
+   int seen_bad_decisions_to_rebuild = 0;
 
    YAML_NODE_ITERATE(parent, child)
    {
@@ -2451,6 +2472,18 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       }
       else if (!strcmp(child->key, "guards"))
       {
+         YAML_NODE_ITERATE(child, guard_child)
+         {
+            if (!strcmp(guard_child->key, "min_history_points"))
+            {
+               seen_min_history_points = 1;
+            }
+            else if (!strcmp(guard_child->key, "bad_decisions_to_rebuild"))
+            {
+               seen_bad_decisions_to_rebuild = 1;
+            }
+         }
+
          if (!PreconReuseParseGuardsNode(child, &args->guards))
          {
             return;
@@ -2520,6 +2553,12 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    {
       YAML_NODE_SET_INVALID_VAL(parent);
       return;
+   }
+
+   if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE)
+   {
+      PreconReuseApplyAdaptiveImplicitDefaults(args, seen_min_history_points,
+                                               seen_bad_decisions_to_rebuild);
    }
 
    if (!args->enabled)

@@ -376,6 +376,8 @@ test_PreconReuseSetArgsFromYAML_adaptive_type_without_components_uses_defaults(v
 
    ASSERT_EQ(args.enabled, 1);
    ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_ADAPTIVE);
+   ASSERT_EQ(args.guards.min_history_points, 3);
+   ASSERT_EQ(args.guards.bad_decisions_to_rebuild, 2);
    ASSERT_EQ_DOUBLE(args.adaptive.rebuild_threshold, 2.5, 1.0e-12);
    ASSERT_EQ_SIZE(args.adaptive.num_components, 2);
    ASSERT_STREQ(args.adaptive.components[0].name, "efficiency");
@@ -383,6 +385,69 @@ test_PreconReuseSetArgsFromYAML_adaptive_type_without_components_uses_defaults(v
 
    hypredrv_PreconReuseDestroyArgs(&args);
    hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_adaptive_scalar_and_explicit_type_share_defaults(void)
+{
+   PreconReuse_args scalar_args, explicit_args;
+   hypredrv_PreconReuseSetDefaultArgs(&scalar_args);
+   hypredrv_PreconReuseSetDefaultArgs(&explicit_args);
+
+   YAMLnode *scalar_parent = hypredrv_YAMLnodeCreate("reuse", "adaptive", 0);
+
+   YAMLnode *explicit_parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(explicit_parent, "enabled", "on", 1);
+   add_child(explicit_parent, "type", "adaptive", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&scalar_args, scalar_parent);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&explicit_args, explicit_parent);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   ASSERT_EQ(scalar_args.enabled, explicit_args.enabled);
+   ASSERT_EQ(scalar_args.policy, explicit_args.policy);
+   ASSERT_EQ(scalar_args.guards.min_reuse_solves, explicit_args.guards.min_reuse_solves);
+   ASSERT_EQ(scalar_args.guards.max_reuse_solves, explicit_args.guards.max_reuse_solves);
+   ASSERT_EQ(scalar_args.guards.min_history_points,
+             explicit_args.guards.min_history_points);
+   ASSERT_EQ(scalar_args.guards.bad_decisions_to_rebuild,
+             explicit_args.guards.bad_decisions_to_rebuild);
+   ASSERT_EQ_DOUBLE(scalar_args.adaptive.rebuild_threshold,
+                    explicit_args.adaptive.rebuild_threshold, 1.0e-12);
+   ASSERT_EQ_DOUBLE(scalar_args.adaptive.positive_floor,
+                    explicit_args.adaptive.positive_floor, 1.0e-12);
+   ASSERT_EQ_SIZE(scalar_args.adaptive.num_components, explicit_args.adaptive.num_components);
+
+   for (size_t i = 0; i < scalar_args.adaptive.num_components; i++)
+   {
+      const PreconReuseScoreComponent_args *lhs = &scalar_args.adaptive.components[i];
+      const PreconReuseScoreComponent_args *rhs = &explicit_args.adaptive.components[i];
+      ASSERT_STREQ(lhs->name, rhs->name);
+      ASSERT_EQ(lhs->enabled, rhs->enabled);
+      ASSERT_EQ(lhs->metric, rhs->metric);
+      ASSERT_EQ_DOUBLE(lhs->weight, rhs->weight, 1.0e-12);
+      ASSERT_EQ(lhs->direction, rhs->direction);
+      ASSERT_EQ_DOUBLE(lhs->target, rhs->target, 1.0e-12);
+      ASSERT_EQ_DOUBLE(lhs->scale, rhs->scale, 1.0e-12);
+      ASSERT_EQ(lhs->mean.kind, rhs->mean.kind);
+      ASSERT_EQ_DOUBLE(lhs->mean.power, rhs->mean.power, 1.0e-12);
+      ASSERT_EQ(lhs->transform.kind, rhs->transform.kind);
+      ASSERT_EQ(lhs->transform.baseline, rhs->transform.baseline);
+      ASSERT_EQ(lhs->transform.amortization_window, rhs->transform.amortization_window);
+      ASSERT_EQ(lhs->history.source, rhs->history.source);
+      ASSERT_EQ(lhs->history.level, rhs->history.level);
+      ASSERT_EQ(lhs->history.max_points, rhs->history.max_points);
+      ASSERT_EQ(lhs->history.reduction, rhs->history.reduction);
+   }
+
+   hypredrv_PreconReuseDestroyArgs(&scalar_args);
+   hypredrv_PreconReuseDestroyArgs(&explicit_args);
+   hypredrv_YAMLnodeDestroy(scalar_parent);
+   hypredrv_YAMLnodeDestroy(explicit_parent);
 }
 
 static void
@@ -2051,6 +2116,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_scalar_installs_default_components);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_rebuild_on_new_level_block_sequence);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_type_without_components_uses_defaults);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_scalar_and_explicit_type_share_defaults);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_rejects_negative_component_weight);
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_bootstrap_defers_scoring);
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_iterations_rms);
