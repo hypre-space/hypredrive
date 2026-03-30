@@ -886,6 +886,211 @@ ProbeRHSPartFile(const char *filename)
    return (file_size == expected) ? 1 : 0;
 }
 
+static void MatrixPartRawDestroy(MatrixPartRaw *part);
+static void RHSPartRawDestroy(RHSPartRaw *part);
+
+static int
+ReadMatrixPartASCIIFile(const char *filename, MatrixPartRaw *raw)
+{
+   FILE     *fp = NULL;
+   uint64_t *rows = NULL;
+   uint64_t *cols = NULL;
+   double   *vals = NULL;
+   size_t    nnz = 0, cap = 0;
+   unsigned long long row_lower = 0, row_upper = 0;
+   unsigned long long col_lower = 0, col_upper = 0;
+   int rc = 0;
+
+   if (!filename || !raw)
+   {
+      return 0;
+   }
+   memset(raw, 0, sizeof(*raw));
+
+   fp = fopen(filename, "r");
+   if (!fp)
+   {
+      return 0;
+   }
+
+   if (fscanf(fp, "%llu %llu %llu %llu", &row_lower, &row_upper, &col_lower, &col_upper) != 4 ||
+       row_upper < row_lower)
+   {
+      fclose(fp);
+      return 0;
+   }
+
+   while (1)
+   {
+      unsigned long long row = 0, col = 0;
+      double             val = 0.0;
+
+      rc = fscanf(fp, "%llu %llu %lf", &row, &col, &val);
+      if (rc == EOF)
+      {
+         break;
+      }
+      if (rc != 3 || row < row_lower || row > row_upper)
+      {
+         fclose(fp);
+         free(rows);
+         free(cols);
+         free(vals);
+         return 0;
+      }
+
+      if (nnz == cap)
+      {
+         size_t    new_cap = cap == 0 ? 4096u : (2u * cap);
+         uint64_t *new_rows = (uint64_t *)malloc(new_cap * sizeof(*new_rows));
+         uint64_t *new_cols = (uint64_t *)malloc(new_cap * sizeof(*new_cols));
+         double   *new_vals = (double *)malloc(new_cap * sizeof(*new_vals));
+         if (!new_rows || !new_cols || !new_vals)
+         {
+            fclose(fp);
+            free(new_rows);
+            free(new_cols);
+            free(new_vals);
+            free(rows);
+            free(cols);
+            free(vals);
+            return 0;
+         }
+         if (nnz > 0)
+         {
+            memcpy(new_rows, rows, nnz * sizeof(*new_rows));
+            memcpy(new_cols, cols, nnz * sizeof(*new_cols));
+            memcpy(new_vals, vals, nnz * sizeof(*new_vals));
+         }
+         free(rows);
+         free(cols);
+         free(vals);
+         rows = new_rows;
+         cols = new_cols;
+         vals = new_vals;
+         cap  = new_cap;
+      }
+
+      rows[nnz] = (uint64_t)row;
+      cols[nnz] = (uint64_t)col;
+      vals[nnz] = val;
+      nnz++;
+   }
+
+   fclose(fp);
+
+   raw->row_index_size = (uint64_t)sizeof(uint64_t);
+   raw->value_size     = (uint64_t)sizeof(double);
+   raw->nnz            = (uint64_t)nnz;
+   raw->row_lower      = (uint64_t)row_lower;
+   raw->row_upper      = (uint64_t)row_upper;
+   raw->nrows          = (uint64_t)(row_upper - row_lower + 1u);
+   raw->rows           = rows;
+   raw->cols           = cols;
+   raw->vals           = vals;
+   (void)col_lower;
+   (void)col_upper;
+
+   return 1;
+}
+
+static int
+ReadRHSPartASCIIFile(const char *filename, RHSPartRaw *raw)
+{
+   FILE               *fp = NULL;
+   double             *vals = NULL;
+   unsigned long long  row_lower = 0, row_upper = 0;
+   uint64_t            nrows = 0;
+   uint64_t            count = 0;
+   int                 rc = 0;
+
+   if (!filename || !raw)
+   {
+      return 0;
+   }
+   memset(raw, 0, sizeof(*raw));
+
+   fp = fopen(filename, "r");
+   if (!fp)
+   {
+      return 0;
+   }
+
+   if (fscanf(fp, "%llu %llu", &row_lower, &row_upper) != 2 || row_upper < row_lower)
+   {
+      fclose(fp);
+      return 0;
+   }
+
+   nrows = (uint64_t)(row_upper - row_lower + 1u);
+   if (nrows > 0)
+   {
+      vals = (double *)calloc((size_t)nrows, sizeof(*vals));
+      if (!vals)
+      {
+         fclose(fp);
+         return 0;
+      }
+   }
+
+   while (1)
+   {
+      unsigned long long row = 0;
+      double             val = 0.0;
+
+      rc = fscanf(fp, "%llu %lf", &row, &val);
+      if (rc == EOF)
+      {
+         break;
+      }
+      if (rc != 2 || row < row_lower || row > row_upper || count >= nrows)
+      {
+         fclose(fp);
+         free(vals);
+         return 0;
+      }
+      vals[(size_t)((uint64_t)row - (uint64_t)row_lower)] = val;
+      count++;
+   }
+
+   fclose(fp);
+
+   if (count != nrows)
+   {
+      free(vals);
+      return 0;
+   }
+
+   raw->value_size = (uint64_t)sizeof(double);
+   raw->nrows      = nrows;
+   raw->vals       = vals;
+   return 1;
+}
+
+static int
+ProbeMatrixPartASCIIFile(const char *filename)
+{
+   MatrixPartRaw raw;
+   if (!ReadMatrixPartASCIIFile(filename, &raw))
+   {
+      return 0;
+   }
+   MatrixPartRawDestroy(&raw);
+   return 1;
+}
+
+static int
+ProbeRHSPartASCIIFile(const char *filename)
+{
+   RHSPartRaw raw;
+   if (!ReadRHSPartASCIIFile(filename, &raw))
+   {
+      return 0;
+   }
+   RHSPartRawDestroy(&raw);
+   return 1;
+}
+
 static int
 ExtractPrefixFromPart0Bin(const char *name, char *prefix, size_t prefix_size)
 {
@@ -1080,6 +1285,24 @@ AutoDetectFilenames(PackArgs *args, const char *system_dir)
       }
    }
 
+   for (size_t i = 0; i < nascii; i++)
+   {
+      char part0_filename[MAX_FILENAME_LENGTH];
+      snprintf(part0_filename, sizeof(part0_filename), "%s/%s.00000", system_dir,
+               ascii_prefixes[i]);
+
+      if (!have_matrix && ProbeMatrixPartASCIIFile(part0_filename))
+      {
+         snprintf(args->matrix_filename, sizeof(args->matrix_filename), "%s", ascii_prefixes[i]);
+         have_matrix = 1;
+      }
+      else if (!have_rhs && ProbeRHSPartASCIIFile(part0_filename))
+      {
+         snprintf(args->rhs_filename, sizeof(args->rhs_filename), "%s", ascii_prefixes[i]);
+         have_rhs = 1;
+      }
+   }
+
    if (args->dofmap_filename[0] == '\0' && nascii > 0)
    {
       for (size_t i = 0; i < nascii; i++)
@@ -1169,7 +1392,11 @@ ReadMatrixPart(const char *prefix, int part_id, MatrixPartRaw *raw)
    fp = fopen(filename, "rb");
    if (!fp)
    {
-      return 0;
+      if (!format_part_filename(filename, sizeof(filename), prefix, part_id, ""))
+      {
+         return 0;
+      }
+      return ReadMatrixPartASCIIFile(filename, raw);
    }
 
    if (fread(header, sizeof(uint64_t), 11, fp) != 11)
@@ -1235,7 +1462,11 @@ ReadRHSPart(const char *prefix, int part_id, RHSPartRaw *raw)
    fp = fopen(filename, "rb");
    if (!fp)
    {
-      return 0;
+      if (!format_part_filename(filename, sizeof(filename), prefix, part_id, ""))
+      {
+         return 0;
+      }
+      return ReadRHSPartASCIIFile(filename, raw);
    }
 
    if (fread(header, sizeof(uint64_t), 8, fp) != 8)
@@ -1560,6 +1791,53 @@ ComputePartRange(int num_parts, int nprocs, int rank, int *start_part, int *num_
    }
 }
 
+static int
+ProgressShouldReport(int completed, int total, int *last_bucket)
+{
+   int bucket = 0;
+
+   if (!last_bucket || total <= 0 || completed <= 0)
+   {
+      return 0;
+   }
+   if (completed >= total)
+   {
+      *last_bucket = 100;
+      return 1;
+   }
+   if (total <= 20)
+   {
+      return 1;
+   }
+
+   bucket = (completed * 100) / total;
+   bucket = (bucket / 10) * 10;
+   if (bucket <= *last_bucket)
+   {
+      return 0;
+   }
+   *last_bucket = bucket;
+   return 1;
+}
+
+static void
+PrintModeProgress(const char *mode, int completed, int total, double start_time)
+{
+   double elapsed = 0.0;
+   double pct     = 0.0;
+
+   if (!mode || total <= 0)
+   {
+      return;
+   }
+
+   pct = 100.0 * (double)completed / (double)total;
+   elapsed = MPI_Wtime() - start_time;
+   printf("[lsseq][%s] progress: %d/%d systems (%.1f%%, %.1fs)\n", mode, completed, total, pct,
+          elapsed);
+   fflush(stdout);
+}
+
 /* Append raw bytes to a growable buffer (for v2 batched part buffers). */
 static int
 BufAppendRaw(void **buf_ptr, size_t *len_ptr, size_t *cap_ptr, const void *data, size_t data_len)
@@ -1805,13 +2083,20 @@ typedef enum ToolMode_enum
    TOOL_MODE_METADATA
 } ToolMode;
 
+typedef enum UnpackFormat_enum
+{
+   UNPACK_FORMAT_HYPRE = 0,
+   UNPACK_FORMAT_MATRIX_MARKET
+} UnpackFormat;
+
 typedef struct UnpackArgs_struct
 {
-   char input_filename[MAX_FILENAME_LENGTH];
-   char output_dir[MAX_FILENAME_LENGTH];
-   char prefix[64];
-   int  digits_suffix;
-   int  digits_suffix_set;
+   char         input_filename[MAX_FILENAME_LENGTH];
+   char         output_dir[MAX_FILENAME_LENGTH];
+   char         prefix[64];
+   int          digits_suffix;
+   int          digits_suffix_set;
+   UnpackFormat format;
 } UnpackArgs;
 
 typedef struct MetadataArgs_struct
@@ -1829,6 +2114,7 @@ typedef struct SeqPackedData_struct
    LSSeqPartMeta       *parts;
    LSSeqPatternMeta    *patterns;
    LSSeqSystemPartMeta *sys_parts;
+   uint64_t            *part_blob_table;
    LSSeqTimestepEntry  *timesteps;
 } SeqPackedData;
 
@@ -1843,6 +2129,7 @@ SeqPackedDataDestroy(SeqPackedData *seq)
    free(seq->parts);
    free(seq->patterns);
    free(seq->sys_parts);
+   free(seq->part_blob_table);
    free(seq->timesteps);
    memset(seq, 0, sizeof(*seq));
 }
@@ -1951,7 +2238,11 @@ LoadPackedSequence(const char *filename, SeqPackedData *seq, int verify_blob_has
       (LSSeqPatternMeta *)calloc((size_t)seq->header.num_patterns, sizeof(LSSeqPatternMeta));
    n_sys_parts = (size_t)seq->header.num_systems * (size_t)seq->header.num_parts;
    seq->sys_parts = (LSSeqSystemPartMeta *)calloc(n_sys_parts, sizeof(LSSeqSystemPartMeta));
-   if (!seq->parts || !seq->patterns || !seq->sys_parts)
+   seq->part_blob_table =
+      (uint64_t *)calloc((size_t)seq->header.num_parts * (size_t)LSSEQ_PART_BLOB_ENTRIES,
+                         sizeof(uint64_t));
+   if (!seq->parts || !seq->patterns || !seq->sys_parts || !seq->part_blob_table ||
+       seq->header.offset_part_blob_table == 0)
    {
       fclose(fp);
       SeqPackedDataDestroy(seq);
@@ -1963,7 +2254,10 @@ LoadPackedSequence(const char *filename, SeqPackedData *seq, int verify_blob_has
        !SeqReadAt(fp, seq->header.offset_pattern_meta, seq->patterns,
                   (size_t)seq->header.num_patterns * sizeof(LSSeqPatternMeta)) ||
        !SeqReadAt(fp, seq->header.offset_sys_part_meta, seq->sys_parts,
-                  n_sys_parts * sizeof(LSSeqSystemPartMeta)))
+                  n_sys_parts * sizeof(LSSeqSystemPartMeta)) ||
+       !SeqReadAt(fp, seq->header.offset_part_blob_table, seq->part_blob_table,
+                  (size_t)seq->header.num_parts * (size_t)LSSEQ_PART_BLOB_ENTRIES *
+                     sizeof(uint64_t)))
    {
       fclose(fp);
       SeqPackedDataDestroy(seq);
@@ -2103,6 +2397,66 @@ DecodeBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size, size
 }
 
 static int
+DecodePartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
+                    const uint64_t *part_blob_table, uint32_t part_id, int slot,
+                    uint64_t decoded_offset, uint64_t decoded_size_expected, void **decoded_ptr,
+                    size_t *decoded_size_ptr)
+{
+   uint64_t c_offset = 0, c_size = 0;
+   void    *decoded = NULL;
+   size_t   decoded_size = 0;
+   void    *slice = NULL;
+
+   if (!fp || !part_blob_table || !decoded_ptr || !decoded_size_ptr || slot < 0 || slot > 2)
+   {
+      return 0;
+   }
+   *decoded_ptr = NULL;
+   *decoded_size_ptr = 0;
+
+   c_offset =
+      part_blob_table[(size_t)part_id * (size_t)LSSEQ_PART_BLOB_ENTRIES + (size_t)(slot * 2)];
+   c_size = part_blob_table[(size_t)part_id * (size_t)LSSEQ_PART_BLOB_ENTRIES +
+                            (size_t)(slot * 2) + 1u];
+
+   if (c_size == 0)
+   {
+      return decoded_size_expected == 0 ? 1 : 0;
+   }
+
+   if (!DecodeBlob(fp, codec, blob_base + c_offset, c_size, 0, &decoded, &decoded_size))
+   {
+      return 0;
+   }
+
+   if (decoded_offset > UINT64_MAX - decoded_size_expected ||
+       decoded_offset + decoded_size_expected > (uint64_t)decoded_size)
+   {
+      free(decoded);
+      return 0;
+   }
+
+   if (decoded_size_expected == 0)
+   {
+      free(decoded);
+      return 1;
+   }
+
+   slice = malloc((size_t)decoded_size_expected);
+   if (!slice)
+   {
+      free(decoded);
+      return 0;
+   }
+
+   memcpy(slice, (const char *)decoded + (size_t)decoded_offset, (size_t)decoded_size_expected);
+   free(decoded);
+   *decoded_ptr = slice;
+   *decoded_size_ptr = (size_t)decoded_size_expected;
+   return 1;
+}
+
+static int
 WriteMatrixPartBinary(const char *filename, const LSSeqPartMeta *part, const LSSeqPatternMeta *pattern,
                       const void *rows, const void *cols, const void *vals)
 {
@@ -2203,6 +2557,186 @@ WriteDofPartASCII(const char *filename, const int32_t *vals, uint64_t nentries)
 }
 
 static int
+ReadPackedIndexValue(const void *data, uint64_t index_size, size_t i, uint64_t *value)
+{
+   if (!data || !value)
+   {
+      return 0;
+   }
+   if (index_size == 4u)
+   {
+      uint32_t tmp = 0;
+      memcpy(&tmp, (const char *)data + i * sizeof(tmp), sizeof(tmp));
+      *value = (uint64_t)tmp;
+      return 1;
+   }
+   if (index_size == 8u)
+   {
+      uint64_t tmp = 0;
+      memcpy(&tmp, (const char *)data + i * sizeof(tmp), sizeof(tmp));
+      *value = tmp;
+      return 1;
+   }
+   return 0;
+}
+
+static int
+ReadPackedRealValue(const void *data, uint64_t value_size, size_t i, double *value)
+{
+   if (!data || !value)
+   {
+      return 0;
+   }
+   if (value_size == 4u)
+   {
+      float tmp = 0.0f;
+      memcpy(&tmp, (const char *)data + i * sizeof(tmp), sizeof(tmp));
+      *value = (double)tmp;
+      return 1;
+   }
+   if (value_size == 8u)
+   {
+      double tmp = 0.0;
+      memcpy(&tmp, (const char *)data + i * sizeof(tmp), sizeof(tmp));
+      *value = tmp;
+      return 1;
+   }
+   return 0;
+}
+
+static int
+WriteMatrixPartMatrixMarket(const char *filename, uint64_t global_nrows, uint64_t global_ncols,
+                            const LSSeqPartMeta *part, const LSSeqPatternMeta *pattern,
+                            const void *rows, const void *cols, const void *vals)
+{
+   FILE   *fp = NULL;
+   size_t  nnz = 0;
+
+   if (!filename || !part || !pattern)
+   {
+      return 0;
+   }
+
+   fp = fopen(filename, "w");
+   if (!fp)
+   {
+      return 0;
+   }
+
+   nnz = (size_t)pattern->nnz;
+   fprintf(fp, "%%%%MatrixMarket matrix coordinate real general\n");
+   fprintf(fp, "%llu %llu %zu\n", (unsigned long long)global_nrows,
+           (unsigned long long)global_ncols, nnz);
+
+   for (size_t i = 0; i < nnz; i++)
+   {
+      uint64_t row = 0, col = 0;
+      double   val = 0.0;
+      if (!ReadPackedIndexValue(rows, part->row_index_size, i, &row) ||
+          !ReadPackedIndexValue(cols, part->row_index_size, i, &col) ||
+          !ReadPackedRealValue(vals, part->value_size, i, &val))
+      {
+         fclose(fp);
+         return 0;
+      }
+      fprintf(fp, "%llu %llu %.17g\n", (unsigned long long)(row + 1u),
+              (unsigned long long)(col + 1u), val);
+   }
+
+   fclose(fp);
+   return 1;
+}
+
+static int
+WriteVectorPartMatrixMarket(const char *filename, uint64_t global_nrows, const LSSeqPartMeta *part,
+                            const void *vals)
+{
+   FILE   *fp = NULL;
+   size_t  nrows = 0;
+
+   if (!filename || !part)
+   {
+      return 0;
+   }
+
+   fp = fopen(filename, "w");
+   if (!fp)
+   {
+      return 0;
+   }
+
+   nrows = (size_t)part->nrows;
+   fprintf(fp, "%%%%MatrixMarket matrix coordinate real general\n");
+   fprintf(fp, "%llu 1 %zu\n", (unsigned long long)global_nrows, nrows);
+
+   for (size_t i = 0; i < nrows; i++)
+   {
+      double val = 0.0;
+      if (!ReadPackedRealValue(vals, part->value_size, i, &val))
+      {
+         fclose(fp);
+         return 0;
+      }
+      fprintf(fp, "%llu 1 %.17g\n",
+              (unsigned long long)(part->row_lower + (uint64_t)i + 1u), val);
+   }
+
+   fclose(fp);
+   return 1;
+}
+
+static int
+WriteDofPartMatrixMarket(const char *filename, uint64_t global_nrows, const LSSeqPartMeta *part,
+                         const int32_t *vals, uint64_t nentries)
+{
+   FILE *fp = NULL;
+
+   if (!filename || !part)
+   {
+      return 0;
+   }
+
+   fp = fopen(filename, "w");
+   if (!fp)
+   {
+      return 0;
+   }
+
+   fprintf(fp, "%%%%MatrixMarket matrix coordinate integer general\n");
+   fprintf(fp, "%llu 1 %llu\n", (unsigned long long)global_nrows, (unsigned long long)nentries);
+
+   for (uint64_t i = 0; i < nentries; i++)
+   {
+      fprintf(fp, "%llu 1 %d\n", (unsigned long long)(part->row_lower + i + 1u),
+              vals ? (int)vals[i] : 0);
+   }
+
+   fclose(fp);
+   return 1;
+}
+
+static int
+FormatOutputPartFilename(char *filename, size_t filename_size, const char *system_dir,
+                         const char *basename, uint32_t part_id, const char *mode_suffix,
+                         const char *extension)
+{
+   char path_tmp[PATH_TMP_SIZE];
+
+   if (!filename || filename_size == 0 || !system_dir || !basename || !mode_suffix || !extension)
+   {
+      return 0;
+   }
+
+   if (snprintf(path_tmp, sizeof(path_tmp), "%s/%s.%05u%s%s", system_dir, basename, part_id,
+                mode_suffix, extension) <= 0)
+   {
+      return 0;
+   }
+   path_copy(filename, filename_size, path_tmp);
+   return 1;
+}
+
+static int
 ManifestFindValue(const char *payload, const char *key, char *value, size_t value_size)
 {
    const char *cur = payload;
@@ -2269,6 +2803,40 @@ UnpackArgsSetDefaults(UnpackArgs *args)
    memset(args, 0, sizeof(*args));
    snprintf(args->prefix, sizeof(args->prefix), "ls");
    args->digits_suffix = 5;
+   args->format = UNPACK_FORMAT_HYPRE;
+}
+
+static int
+UnpackFormatFromString(const char *text, UnpackFormat *format)
+{
+   if (!text || !format)
+   {
+      return 0;
+   }
+   if (!strcmp(text, "hypre") || !strcmp(text, "binary"))
+   {
+      *format = UNPACK_FORMAT_HYPRE;
+      return 1;
+   }
+   if (!strcmp(text, "matrix-market") || !strcmp(text, "mm"))
+   {
+      *format = UNPACK_FORMAT_MATRIX_MARKET;
+      return 1;
+   }
+   return 0;
+}
+
+static const char *
+UnpackFormatName(UnpackFormat format)
+{
+   switch (format)
+   {
+      case UNPACK_FORMAT_MATRIX_MARKET:
+         return "matrix-market";
+      case UNPACK_FORMAT_HYPRE:
+      default:
+         return "hypre";
+   }
 }
 
 static int
@@ -2317,6 +2885,17 @@ ParseUnpackArgs(int argc, char **argv, UnpackArgs *args)
          }
          args->digits_suffix = (int)strtol(argv[++i], NULL, 10);
          args->digits_suffix_set = 1;
+      }
+      else if (!strcmp(argv[i], "--format"))
+      {
+         if (i + 1 >= argc)
+         {
+            return 0;
+         }
+         if (!UnpackFormatFromString(argv[++i], &args->format))
+         {
+            return 0;
+         }
       }
       else
       {
@@ -2375,6 +2954,11 @@ PrintGeneralUsage(const char *prog)
            "Modes:\n"
            "  pack      Pack directory-based sequence into one LSSeq container (default mode).\n"
            "  unpack    Recreate directory-based sequence files from a LSSeq container.\n"
+           "            Unpack options:\n"
+           "              --prefix <name>           Output system-dir prefix (default: ls)\n"
+           "              --digits-suffix <n>       Digits in output system-dir suffix (default: 5)\n"
+           "              --format <fmt>            Output file format:\n"
+           "                                        hypre|binary (default), matrix-market|mm\n"
            "  metadata  Print container metadata and manifest summary.\n",
            prog, prog, prog);
 }
@@ -2511,6 +3095,11 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
    char          dofmap_filename[MAX_FILENAME_LENGTH];
    char          timesteps_name[MAX_FILENAME_LENGTH];
    int           local_start = 0, local_nparts = 0;
+   int           last_progress_bucket = -1;
+   double        progress_start_time  = 0.0;
+   uint64_t      global_nrows         = 0;
+   const char   *part_mode_suffix     = "";
+   const char   *part_extension       = "";
 
    if (!args)
    {
@@ -2581,6 +3170,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
       printf("  output-dir: %s\n", args->output_dir);
       printf("  prefix: %s\n", args->prefix);
       printf("  suffix range: init=%d last=%d (digits=%d)\n", init_suffix, last_suffix, digits_suffix);
+      printf("  format: %s\n", UnpackFormatName(args->format));
       printf("  matrix-filename: %s\n", matrix_filename);
       printf("  rhs-filename: %s\n", rhs_filename);
       printf("  dofmap-filename: %s\n", dofmap_filename[0] ? dofmap_filename : "(none)");
@@ -2632,10 +3222,27 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
       return EXIT_FAILURE;
    }
 
+   for (uint32_t p = 0; p < seq.header.num_parts; p++)
+   {
+      if (seq.parts[p].row_upper + 1u > global_nrows)
+      {
+         global_nrows = seq.parts[p].row_upper + 1u;
+      }
+   }
+   if (args->format == UNPACK_FORMAT_MATRIX_MARKET)
+   {
+      part_extension = ".mtx";
+   }
+   else
+   {
+      part_mode_suffix = ".bin";
+   }
+
    ComputePartRange((int)seq.header.num_parts, nprocs, myid, &local_start, &local_nparts);
    printf("[lsseq][unpack][rank %d/%d] parts: start=%d count=%d\n", myid, nprocs, local_start,
           local_nparts);
    fflush(stdout);
+   progress_start_time = MPI_Wtime();
 
    for (uint32_t s = 0; s < seq.header.num_systems; s++)
    {
@@ -2677,10 +3284,12 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                          (size_t)pat->nnz * (size_t)part->row_index_size, &rows, &rows_sz) ||
              !DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->cols_blob_offset, pat->cols_blob_size,
                          (size_t)pat->nnz * (size_t)part->row_index_size, &cols, &cols_sz) ||
-             !DecodeBlob(fp, (comp_alg_t)seq.header.codec, sp->values_blob_offset, sp->values_blob_size,
-                         (size_t)sp->nnz * (size_t)part->value_size, &vals, &vals_sz) ||
-             !DecodeBlob(fp, (comp_alg_t)seq.header.codec, sp->rhs_blob_offset, sp->rhs_blob_size,
-                         (size_t)part->nrows * (size_t)part->value_size, &rhs, &rhs_sz))
+             !DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
+                                  seq.part_blob_table, part_id, 0, sp->values_blob_offset,
+                                  sp->values_blob_size, &vals, &vals_sz) ||
+             !DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
+                                  seq.part_blob_table, part_id, 1, sp->rhs_blob_offset,
+                                  sp->rhs_blob_size, &rhs, &rhs_sz))
          {
             free(rows); free(cols); free(vals); free(rhs); free(dof);
             fclose(fp);
@@ -2689,16 +3298,24 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
          }
 
          {
-            char path_tmp[PATH_TMP_SIZE];
-            snprintf(path_tmp, sizeof(path_tmp), "%s/%s.%05u.bin", system_dir, matrix_filename,
-                    part_id);
-            path_copy(mfile, sizeof(mfile), path_tmp);
-            snprintf(path_tmp, sizeof(path_tmp), "%s/%s.%05u.bin", system_dir, rhs_filename,
-                    part_id);
-            path_copy(rfile, sizeof(rfile), path_tmp);
+            if (!FormatOutputPartFilename(mfile, sizeof(mfile), system_dir, matrix_filename, part_id,
+                                          part_mode_suffix, part_extension) ||
+                !FormatOutputPartFilename(rfile, sizeof(rfile), system_dir, rhs_filename, part_id,
+                                          part_mode_suffix, part_extension))
+            {
+               free(rows); free(cols); free(vals); free(rhs); free(dof);
+               fclose(fp);
+               SeqPackedDataDestroy(&seq);
+               return EXIT_FAILURE;
+            }
          }
-         if (!WriteMatrixPartBinary(mfile, part, pat, rows, cols, vals) ||
-             !WriteRHSPartBinary(rfile, part, rhs))
+         if ((args->format == UNPACK_FORMAT_MATRIX_MARKET &&
+              (!WriteMatrixPartMatrixMarket(mfile, global_nrows, global_nrows, part, pat, rows,
+                                            cols, vals) ||
+               !WriteVectorPartMatrixMarket(rfile, global_nrows, part, rhs))) ||
+             (args->format == UNPACK_FORMAT_HYPRE &&
+              (!WriteMatrixPartBinary(mfile, part, pat, rows, cols, vals) ||
+               !WriteRHSPartBinary(rfile, part, rhs))))
          {
             free(rows); free(cols); free(vals); free(rhs); free(dof);
             fclose(fp);
@@ -2709,8 +3326,9 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
          if ((seq.header.flags & LSSEQ_FLAG_HAS_DOFMAP) && dofmap_filename[0] != '\0')
          {
             if (sp->dof_num_entries > 0 &&
-                !DecodeBlob(fp, (comp_alg_t)seq.header.codec, sp->dof_blob_offset, sp->dof_blob_size,
-                            (size_t)sp->dof_num_entries * sizeof(int32_t), &dof, &dof_sz))
+                !DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec,
+                                     seq.header.offset_blob_data, seq.part_blob_table, part_id, 2,
+                                     sp->dof_blob_offset, sp->dof_blob_size, &dof, &dof_sz))
             {
                free(rows); free(cols); free(vals); free(rhs); free(dof);
                fclose(fp);
@@ -2718,12 +3336,20 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                return EXIT_FAILURE;
             }
             {
-               char path_tmp[PATH_TMP_SIZE];
-               snprintf(path_tmp, sizeof(path_tmp), "%s/%s.%05u", system_dir, dofmap_filename,
-                       part_id);
-               path_copy(dfile, sizeof(dfile), path_tmp);
+               if (!FormatOutputPartFilename(dfile, sizeof(dfile), system_dir, dofmap_filename,
+                                             part_id, "", part_extension))
+               {
+                  free(rows); free(cols); free(vals); free(rhs); free(dof);
+                  fclose(fp);
+                  SeqPackedDataDestroy(&seq);
+                  return EXIT_FAILURE;
+               }
             }
-            if (!WriteDofPartASCII(dfile, (const int32_t *)dof, sp->dof_num_entries))
+            if ((args->format == UNPACK_FORMAT_MATRIX_MARKET &&
+                 !WriteDofPartMatrixMarket(dfile, global_nrows, part, (const int32_t *)dof,
+                                           sp->dof_num_entries)) ||
+                (args->format == UNPACK_FORMAT_HYPRE &&
+                 !WriteDofPartASCII(dfile, (const int32_t *)dof, sp->dof_num_entries)))
             {
                free(rows); free(cols); free(vals); free(rhs); free(dof);
                fclose(fp);
@@ -2737,6 +3363,12 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
          free(vals);
          free(rhs);
          free(dof);
+      }
+
+      if (!myid &&
+          ProgressShouldReport((int)s + 1, (int)seq.header.num_systems, &last_progress_bucket))
+      {
+         PrintModeProgress("unpack", (int)s + 1, (int)seq.header.num_systems, progress_start_time);
       }
    }
 
@@ -3049,6 +3681,8 @@ main(int argc, char **argv)
    }
 
    int local_start = 0, local_nparts = 0;
+   int last_progress_bucket = -1;
+   double progress_start_time = MPI_Wtime();
    ComputePartRange(num_parts, nprocs, myid, &local_start, &local_nparts);
    printf("[lsseq][pack][rank %d/%d] parts: start=%d count=%d (global num_parts=%d)\n", myid,
           nprocs, local_start, local_nparts, num_parts);
@@ -3124,12 +3758,6 @@ main(int argc, char **argv)
       {
          BuildPrefix(dof_prefix, sizeof(dof_prefix), args.dirname, (int)args.digits_suffix, suffix,
                      args.dofmap_filename);
-      }
-
-      if (!myid && (s == 0 || (num_systems > 20 && (s % 10 == 0))))
-      {
-         printf("[lsseq][pack] packing system %d/%d (suffix=%d)\n", s + 1, num_systems, suffix);
-         fflush(stdout);
       }
 
       for (int lp = 0; lp < local_nparts; lp++)
@@ -3308,6 +3936,11 @@ main(int argc, char **argv)
          MatrixPartRawDestroy(&Araw);
          RHSPartRawDestroy(&braw);
          DofPartRawDestroy(&draw);
+      }
+
+      if (!myid && ProgressShouldReport(s + 1, num_systems, &last_progress_bucket))
+      {
+         PrintModeProgress("pack", s + 1, num_systems, progress_start_time);
       }
    }
 
