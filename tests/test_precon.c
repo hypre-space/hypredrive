@@ -53,6 +53,42 @@ make_scalar_node(const char *key, const char *value)
    return node;
 }
 
+static PreconReuseObservation
+make_reuse_observation(int system_index, int timestep_index, int iters, double setup_time,
+                       double solve_time)
+{
+   PreconReuseObservation obs;
+   memset(&obs, 0, sizeof(obs));
+   obs.system_index    = system_index;
+   obs.timestep_index  = timestep_index;
+   obs.iters           = iters;
+   obs.solve_succeeded = 1;
+   obs.setup_time      = setup_time;
+   obs.solve_time      = solve_time;
+   for (int level = 0; level < STATS_MAX_LEVELS; level++)
+   {
+      obs.level_ids[level] = -1;
+   }
+   return obs;
+}
+
+static void
+seed_post_bootstrap_state(PreconReuseState *state, int baseline_iters, double setup_time,
+                          double solve_time)
+{
+   ASSERT_NOT_NULL(state);
+
+   for (int i = 0; i < 3; i++)
+   {
+      PreconReuseObservation obs =
+         make_reuse_observation(i, 0, baseline_iters, setup_time, solve_time);
+      hypredrv_PreconReuseStateRecordObservation(state, &obs);
+   }
+
+   ASSERT_TRUE(state->baseline_valid);
+   ASSERT_EQ(state->bootstrap_count, 3);
+}
+
 static void
 test_PreconGetValidKeys_contains_expected(void)
 {
@@ -191,6 +227,1036 @@ test_PreconSetArgsFromYAML_ignores_unknown_key(void)
    ASSERT_EQ(args.reuse, 0); /* remains default */
 
    hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_adaptive_type_parses_components(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "enabled", "yes", 1);
+   add_child(parent, "type", "adaptive", 1);
+
+   YAMLnode *guards = add_child(parent, "guards", "", 1);
+   add_child(guards, "min_reuse_solves", "1", 2);
+   add_child(guards, "max_reuse_solves", "7", 2);
+   add_child(guards, "min_history_points", "2", 2);
+   add_child(guards, "bad_decisions_to_rebuild", "3", 2);
+   add_child(guards, "max_iteration_ratio", "2.25", 2);
+   add_child(guards, "max_solve_time_ratio", "1.75", 2);
+   add_child(guards, "rebuild_on_new_timestep", "yes", 2);
+   add_child(guards, "rebuild_on_solver_failure", "no", 2);
+
+   YAMLnode *adaptive = add_child(parent, "adaptive", "", 1);
+   add_child(adaptive, "rebuild_threshold", "0.75", 2);
+   YAMLnode *components = add_child(adaptive, "components", "", 2);
+   YAMLnode *item       = add_child(components, "-", "", 3);
+   add_child(item, "name", "iters-rms", 4);
+   add_child(item, "metric", "iterations", 4);
+   add_child(item, "weight", "2.0", 4);
+   add_child(item, "target", "1.5", 4);
+   add_child(item, "scale", "0.25", 4);
+   YAMLnode *mean = add_child(item, "mean", "", 4);
+   add_child(mean, "kind", "rms", 5);
+   YAMLnode *transform = add_child(item, "transform", "", 4);
+   add_child(transform, "kind", "ratio_to_baseline", 5);
+   add_child(transform, "baseline", "rebuild", 5);
+   YAMLnode *history = add_child(item, "history", "", 4);
+   add_child(history, "source", "active_level", 5);
+   add_child(history, "level", "0", 5);
+   add_child(history, "max_points", "3", 5);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_EQ(args.enabled, 1);
+   ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_ADAPTIVE);
+   ASSERT_EQ(args.guards.min_reuse_solves, 1);
+   ASSERT_EQ(args.guards.max_reuse_solves, 7);
+   ASSERT_EQ(args.guards.min_history_points, 2);
+   ASSERT_EQ(args.guards.bad_decisions_to_rebuild, 3);
+   ASSERT_EQ_DOUBLE(args.guards.max_iteration_ratio, 2.25, 1.0e-12);
+   ASSERT_EQ_DOUBLE(args.guards.max_solve_time_ratio, 1.75, 1.0e-12);
+   ASSERT_EQ(args.guards.rebuild_on_new_timestep, 1);
+   ASSERT_EQ(args.guards.rebuild_on_solver_failure, 0);
+   ASSERT_EQ_DOUBLE(args.adaptive.rebuild_threshold, 0.75, 1.0e-12);
+   ASSERT_EQ_SIZE(args.adaptive.num_components, 1);
+   ASSERT_STREQ(args.adaptive.components[0].name, "iters-rms");
+   ASSERT_EQ(args.adaptive.components[0].metric, PRECON_REUSE_METRIC_ITERATIONS);
+   ASSERT_EQ_DOUBLE(args.adaptive.components[0].weight, 2.0, 1.0e-12);
+   ASSERT_EQ(args.adaptive.components[0].mean.kind, PRECON_REUSE_MEAN_RMS);
+   ASSERT_EQ(args.adaptive.components[0].history.source,
+             PRECON_REUSE_HISTORY_ACTIVE_LEVEL);
+   ASSERT_EQ(args.adaptive.components[0].history.level, 0);
+   ASSERT_EQ(args.adaptive.components[0].history.max_points, 3);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_adaptive_scalar_installs_default_components(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "adaptive", 0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_EQ(args.enabled, 1);
+   ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_ADAPTIVE);
+   ASSERT_EQ(args.guards.min_history_points, 3);
+   ASSERT_EQ(args.guards.bad_decisions_to_rebuild, 2);
+   ASSERT_EQ_SIZE(args.adaptive.num_components, 2);
+
+   ASSERT_STREQ(args.adaptive.components[0].name, "efficiency");
+   ASSERT_EQ(args.adaptive.components[0].metric,
+             PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP);
+   ASSERT_EQ(args.adaptive.components[0].transform.kind, PRECON_REUSE_TRANSFORM_RAW);
+   ASSERT_EQ(args.adaptive.components[0].history.source,
+             PRECON_REUSE_HISTORY_LINEAR_SOLVES);
+
+   ASSERT_STREQ(args.adaptive.components[1].name, "stability");
+   ASSERT_EQ(args.adaptive.components[1].metric, PRECON_REUSE_METRIC_ITERATIONS);
+   ASSERT_EQ(args.adaptive.components[1].mean.kind, PRECON_REUSE_MEAN_RMS);
+   ASSERT_EQ(args.adaptive.components[1].transform.kind,
+             PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_adaptive_rebuild_on_new_level_block_sequence(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "enabled", "yes", 1);
+   add_child(parent, "type", "adaptive", 1);
+
+   YAMLnode *guards = add_child(parent, "guards", "", 1);
+   YAMLnode *levels = add_child(guards, "rebuild_on_new_level", "", 2);
+   add_child(levels, "-", "0", 3);
+   add_child(levels, "-", "2", 3);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_EQ(args.enabled, 1);
+   ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_ADAPTIVE);
+   ASSERT_NOT_NULL(args.guards.rebuild_on_new_level);
+   ASSERT_EQ_SIZE(args.guards.rebuild_on_new_level->size, 2);
+   ASSERT_EQ(args.guards.rebuild_on_new_level->data[0], 0);
+   ASSERT_EQ(args.guards.rebuild_on_new_level->data[1], 2);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_adaptive_type_without_components_uses_defaults(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "type", "adaptive", 1);
+
+   YAMLnode *adaptive = add_child(parent, "adaptive", "", 1);
+   add_child(adaptive, "rebuild_threshold", "2.5", 2);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_EQ(args.enabled, 1);
+   ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_ADAPTIVE);
+   ASSERT_EQ_DOUBLE(args.adaptive.rebuild_threshold, 2.5, 1.0e-12);
+   ASSERT_EQ_SIZE(args.adaptive.num_components, 2);
+   ASSERT_STREQ(args.adaptive.components[0].name, "efficiency");
+   ASSERT_STREQ(args.adaptive.components[1].name, "stability");
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_adaptive_rejects_negative_component_weight(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "enabled", "yes", 1);
+   add_child(parent, "type", "adaptive", 1);
+
+   YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+   YAMLnode *components = add_child(adaptive, "components", "", 2);
+   YAMLnode *item       = add_child(components, "-", "", 3);
+   YAMLnode *weight     = add_child(item, "weight", "-1.0", 4);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_EQ(weight->valid, YAML_NODE_INVALID_VAL);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_iterations_rms(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                   = 1;
+   args.policy                    = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points = 2;
+   args.adaptive.rebuild_threshold = 0.5;
+   args.adaptive.num_components   = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *component = &args.adaptive.components[0];
+   snprintf(component->name, sizeof(component->name), "%s", "iters-rms");
+   component->enabled                = 1;
+   component->metric                 = PRECON_REUSE_METRIC_ITERATIONS;
+   component->weight                 = 1.0;
+   component->direction              = PRECON_REUSE_DIRECTION_ABOVE;
+   component->target                 = 1.5;
+   component->scale                  = 0.25;
+   component->mean.kind              = PRECON_REUSE_MEAN_RMS;
+   component->transform.kind         = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   component->transform.baseline     = PRECON_REUSE_BASELINE_REBUILD;
+   component->transform.amortization_window = 10;
+   component->history.source         = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+   component->history.level          = -1;
+   component->history.max_points     = 2;
+   component->history.reduction      = PRECON_REUSE_REDUCTION_NONE;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 25, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+   obs.system_index = 4;
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                   &decision));
+   ASSERT_EQ(decision.used_adaptive, 1);
+   ASSERT_TRUE(decision.score >= args.adaptive.rebuild_threshold);
+   ASSERT_TRUE(strstr(decision.summary, "iters-rms") != NULL);
+   ASSERT_TRUE(strstr(decision.summary, "status=rebuild") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_max_reuse_solves_guard(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.max_reuse_solves    = 4;
+   args.adaptive.rebuild_threshold = 100.0; /* high threshold so only the guard fires */
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 5, 1.0, 1.0);
+
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 5, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 4,
+                                                   &decision));
+   ASSERT_EQ(decision.used_adaptive, 1);
+   ASSERT_EQ(decision.age, 4);
+   ASSERT_EQ(decision.should_rebuild, 1);
+   ASSERT_TRUE(strstr(decision.summary, "max_reuse_solves") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_rebuild_on_new_level_guard(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+   Stats              *stats = hypredrv_StatsCreate();
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.adaptive.rebuild_threshold = 100.0; /* high threshold so only the guard fires */
+
+   const int level_list[1]       = {0};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, level_list, &args.guards.rebuild_on_new_level);
+   ASSERT_NOT_NULL(args.guards.rebuild_on_new_level);
+
+   /* level_current_id is 1-based; PreconReuseCurrentLevelID returns it minus 1 */
+   stats->level_active        |= (1 << 0);
+   stats->level_current_id[0]  = 5; /* current = 4 */
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 5, 1.0, 1.0);
+   state.last_rebuild_level_ids[0] = 3; /* differs from current 4 */
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, stats, &state, 1,
+                                                    &decision));
+   ASSERT_EQ(decision.used_adaptive, 1);
+   ASSERT_EQ(decision.should_rebuild, 1);
+   ASSERT_TRUE(strstr(decision.summary, "guard=new_level") != NULL);
+
+   hypredrv_StatsDestroy(&stats);
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_active_level_scope(void)
+{
+   PreconReuse_args  args;
+   PreconReuseState  state;
+   PreconReuseDecision decision;
+   Stats            *stats = hypredrv_StatsCreate();
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points  = 2;
+   args.adaptive.rebuild_threshold = 1.0;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *component = &args.adaptive.components[0];
+   snprintf(component->name, sizeof(component->name), "%s", "active-level");
+   component->enabled                = 1;
+   component->metric                 = PRECON_REUSE_METRIC_ITERATIONS;
+   component->weight                 = 1.0;
+   component->direction              = PRECON_REUSE_DIRECTION_ABOVE;
+   component->target                 = 2.0;
+   component->scale                  = 1.0;
+   component->mean.kind              = PRECON_REUSE_MEAN_ARITHMETIC;
+   component->transform.kind         = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   component->transform.baseline     = PRECON_REUSE_BASELINE_REBUILD;
+   component->history.source         = PRECON_REUSE_HISTORY_ACTIVE_LEVEL;
+   component->history.level          = 0;
+   component->history.max_points     = 2;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 30, 1.0, 1.0);
+   obs.level_ids[0] = 1;
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+   obs.system_index = 4;
+   obs.iters        = 40;
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   stats->level_active |= (1 << 0);
+   stats->level_current_id[0] = 2;
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, stats, &state, 5,
+                                                   &decision));
+   ASSERT_TRUE(strstr(decision.summary, "active-level") != NULL);
+
+   hypredrv_StatsDestroy(&stats);
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_completed_level_scope(void)
+{
+   PreconReuse_args  args;
+   PreconReuseState  state;
+   PreconReuseDecision decision;
+   Stats            *stats = hypredrv_StatsCreate();
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points  = 2;
+   args.adaptive.rebuild_threshold = 0.5;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *component = &args.adaptive.components[0];
+   snprintf(component->name, sizeof(component->name), "%s", "completed-level");
+   component->enabled                = 1;
+   component->metric                 = PRECON_REUSE_METRIC_SOLVE_TIME;
+   component->weight                 = 1.0;
+   component->direction              = PRECON_REUSE_DIRECTION_ABOVE;
+   component->target                 = 1.5;
+   component->scale                  = 0.5;
+   component->mean.kind              = PRECON_REUSE_MEAN_ARITHMETIC;
+   component->transform.kind         = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   component->transform.baseline     = PRECON_REUSE_BASELINE_REBUILD;
+   component->history.source         = PRECON_REUSE_HISTORY_COMPLETED_LEVEL;
+   component->history.level          = 0;
+   component->history.max_points     = 2;
+   component->history.reduction      = PRECON_REUSE_REDUCTION_MEAN;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+   state.baseline.system_index = 0;
+
+   stats->counter             = 1;
+   stats->ls_counter          = 2;
+   stats->solve[0]            = 3.0;
+   stats->solve[1]            = 4.0;
+   stats->prec[0]             = 1.0;
+   stats->prec[1]             = 1.0;
+   stats->iters[0]            = 10;
+   stats->iters[1]            = 12;
+   stats->level_count[0]      = 2;
+   stats->level_entries[0][0] = (LevelEntry){.id = 1, .solve_start = 0, .solve_end = 1};
+   stats->level_entries[0][1] = (LevelEntry){.id = 2, .solve_start = 1, .solve_end = 2};
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, stats, &state, 4,
+                                                   &decision));
+   ASSERT_TRUE(strstr(decision.summary, "completed-level") != NULL);
+
+   hypredrv_StatsDestroy(&stats);
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_completed_level_scope_excludes_pre_rebuild_history(
+   void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+   Stats              *stats = hypredrv_StatsCreate();
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points  = 1;
+   args.adaptive.rebuild_threshold = 0.5;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *component = &args.adaptive.components[0];
+   snprintf(component->name, sizeof(component->name), "%s", "completed-level-window");
+   component->enabled            = 1;
+   component->metric             = PRECON_REUSE_METRIC_SOLVE_TIME;
+   component->weight             = 1.0;
+   component->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+   component->target             = 1.5;
+   component->scale              = 0.5;
+   component->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+   component->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   component->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+   component->history.source     = PRECON_REUSE_HISTORY_COMPLETED_LEVEL;
+   component->history.level      = 0;
+   component->history.max_points = 2;
+   component->history.reduction  = PRECON_REUSE_REDUCTION_MEAN;
+
+   hypredrv_PreconReuseStateInit(&state);
+   state.bootstrap_count      = 3;
+   state.baseline_valid       = 1;
+   state.baseline.system_index = 2;
+   state.baseline.solve_time   = 1.0;
+   state.baseline.setup_time   = 1.0;
+   state.baseline.iters        = 10;
+   state.baseline_iters        = 10.0;
+   state.baseline_setup_time   = 1.0;
+   state.baseline_solve_time   = 1.0;
+
+   stats->counter             = 3;
+   stats->ls_counter          = 4;
+   stats->solve[0]            = 100.0;
+   stats->solve[1]            = 100.0;
+   stats->solve[2]            = 1.0;
+   stats->solve[3]            = 1.0;
+   stats->prec[0]             = 1.0;
+   stats->prec[1]             = 1.0;
+   stats->prec[2]             = 1.0;
+   stats->prec[3]             = 1.0;
+   stats->iters[0]            = 10;
+   stats->iters[1]            = 10;
+   stats->iters[2]            = 10;
+   stats->iters[3]            = 10;
+   stats->level_count[0]      = 2;
+   stats->level_entries[0][0] = (LevelEntry){.id = 1, .solve_start = 0, .solve_end = 2};
+   stats->level_entries[0][1] = (LevelEntry){.id = 2, .solve_start = 2, .solve_end = 4};
+
+   ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, stats, &state, 4,
+                                                    &decision));
+   ASSERT_EQ(decision.used_adaptive, 1);
+   ASSERT_EQ(decision.should_rebuild, 0);
+   ASSERT_TRUE(strstr(decision.summary, "completed-level-window") != NULL);
+
+   hypredrv_StatsDestroy(&stats);
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_completed_level_solve_overhead_honors_mean_reduction(
+   void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+   Stats              *stats = hypredrv_StatsCreate();
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points  = 1;
+   args.adaptive.rebuild_threshold = 0.5;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *component = &args.adaptive.components[0];
+   snprintf(component->name, sizeof(component->name), "%s", "completed-overhead-mean");
+   component->enabled                       = 1;
+   component->metric                        = PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP;
+   component->weight                        = 1.0;
+   component->direction                     = PRECON_REUSE_DIRECTION_ABOVE;
+   component->target                        = 1.0;
+   component->scale                         = 0.25;
+   component->mean.kind                     = PRECON_REUSE_MEAN_ARITHMETIC;
+   component->transform.kind                = PRECON_REUSE_TRANSFORM_RAW;
+   component->transform.baseline            = PRECON_REUSE_BASELINE_REBUILD;
+   component->transform.amortization_window = 2;
+   component->history.source                = PRECON_REUSE_HISTORY_COMPLETED_LEVEL;
+   component->history.level                 = 0;
+   component->history.max_points            = 1;
+   component->history.reduction             = PRECON_REUSE_REDUCTION_MEAN;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 4.0, 1.0);
+   state.baseline.system_index = 0;
+
+   stats->counter             = 3;
+   stats->ls_counter          = 4;
+   stats->solve[0]            = 2.0;
+   stats->solve[1]            = 2.0;
+   stats->solve[2]            = 2.0;
+   stats->solve[3]            = 2.0;
+   stats->prec[0]             = 0.0;
+   stats->prec[1]             = 0.0;
+   stats->prec[2]             = 0.0;
+   stats->prec[3]             = 0.0;
+   stats->iters[0]            = 10;
+   stats->iters[1]            = 10;
+   stats->iters[2]            = 10;
+   stats->iters[3]            = 10;
+   stats->level_count[0]      = 1;
+   stats->level_entries[0][0] = (LevelEntry){.id = 1, .solve_start = 0, .solve_end = 4};
+
+   ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, stats, &state, 4,
+                                                    &decision));
+   ASSERT_EQ(decision.used_adaptive, 1);
+   ASSERT_EQ(decision.should_rebuild, 0);
+   ASSERT_TRUE(strstr(decision.summary, "completed-overhead-mean") != NULL);
+
+   hypredrv_StatsDestroy(&stats);
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_bootstrap_defers_scoring(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.adaptive.rebuild_threshold = 0.0;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   snprintf(args.adaptive.components[0].name, sizeof(args.adaptive.components[0].name),
+            "%s", "bootstrap");
+   args.adaptive.components[0].enabled            = 1;
+   args.adaptive.components[0].metric             = PRECON_REUSE_METRIC_ITERATIONS;
+   args.adaptive.components[0].weight             = 1.0;
+   args.adaptive.components[0].direction          = PRECON_REUSE_DIRECTION_ABOVE;
+   args.adaptive.components[0].target             = 1.5;
+   args.adaptive.components[0].scale              = 0.25;
+   args.adaptive.components[0].mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+   args.adaptive.components[0].transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   args.adaptive.components[0].transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+   args.adaptive.components[0].history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+   args.adaptive.components[0].history.max_points = 2;
+
+   hypredrv_PreconReuseStateInit(&state);
+
+   PreconReuseObservation obs = make_reuse_observation(0, 0, 10, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+   obs.system_index = 1;
+   obs.iters        = 50;
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 2,
+                                                    &decision));
+   ASSERT_EQ(decision.used_adaptive, 1);
+   ASSERT_EQ(decision.should_rebuild, 0);
+   ASSERT_TRUE(strstr(decision.summary, "mode=bootstrap") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_bad_decision_streak(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                         = 1;
+   args.policy                          = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points       = 1;
+   args.guards.bad_decisions_to_rebuild = 2;
+   args.adaptive.rebuild_threshold      = 0.5;
+   args.adaptive.num_components         = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+
+   PreconReuseScoreComponent_args *component = &args.adaptive.components[0];
+   snprintf(component->name, sizeof(component->name), "%s", "iters-streak");
+   component->enabled            = 1;
+   component->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+   component->weight             = 1.0;
+   component->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+   component->target             = 1.5;
+   component->scale              = 0.25;
+   component->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+   component->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   component->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+   component->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+   component->history.max_points = 1;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 30, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 4,
+                                                    &decision));
+   ASSERT_EQ(state.bad_decision_streak, 1);
+   ASSERT_TRUE(strstr(decision.summary, "status=hold") != NULL);
+
+   ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 4,
+                                                    &decision));
+   ASSERT_EQ(state.bad_decision_streak, 1);
+
+   obs.system_index = 4;
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                   &decision));
+   ASSERT_EQ(state.bad_decision_streak, 2);
+   ASSERT_TRUE(strstr(decision.summary, "status=rebuild") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_max_iteration_ratio_guard(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.max_iteration_ratio = 2.0;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 25, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 4,
+                                                   &decision));
+   ASSERT_TRUE(strstr(decision.summary, "max_iteration_ratio") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_max_solve_time_ratio_guard(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.max_solve_time_ratio = 2.0;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 10, 1.0, 2.5);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 4,
+                                                   &decision));
+   ASSERT_TRUE(strstr(decision.summary, "max_solve_time_ratio") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_rebuild_on_new_timestep_guard(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+   IntArray           *timestep_starts = NULL;
+   int                 starts[2] = {0, 3};
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                        = 1;
+   args.policy                         = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.rebuild_on_new_timestep = 1;
+
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 2, starts, &timestep_starts);
+   ASSERT_NOT_NULL(timestep_starts);
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, timestep_starts, NULL, &state,
+                                                   3, &decision));
+   ASSERT_TRUE(strstr(decision.summary, "new_timestep") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_IntArrayDestroy(&timestep_starts);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_solver_failure_guard(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                         = 1;
+   args.policy                          = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.rebuild_on_solver_failure = 1;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 0, 1.0, 1.0);
+   obs.solve_succeeded = 0;
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 4,
+                                                   &decision));
+   ASSERT_TRUE(strstr(decision.summary, "solver_failure") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_setup_time_metric(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points  = 1;
+   args.adaptive.rebuild_threshold = 0.5;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *comp = &args.adaptive.components[0];
+   snprintf(comp->name, sizeof(comp->name), "%s", "setup-time");
+   comp->enabled            = 1;
+   comp->metric             = PRECON_REUSE_METRIC_SETUP_TIME;
+   comp->weight             = 1.0;
+   comp->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+   comp->target             = 1.5;
+   comp->scale              = 0.5;
+   comp->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+   comp->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   comp->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+   comp->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+   comp->history.level      = -1;
+   comp->history.max_points = 2;
+   comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0); /* baseline_setup_time=1.0 */
+
+   /* setup_time=3.0 → ratio=3.0, arith mean=3.0, dist=(3-1.5)/0.5=3.0 > threshold=0.5 */
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 10, 3.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+   obs.system_index = 4;
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                   &decision));
+   ASSERT_EQ(decision.used_adaptive, 1);
+   ASSERT_TRUE(decision.score >= args.adaptive.rebuild_threshold);
+   ASSERT_TRUE(strstr(decision.summary, "setup-time") != NULL);
+   ASSERT_TRUE(strstr(decision.summary, "status=rebuild") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_geometric_mean(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points  = 1;
+   args.adaptive.rebuild_threshold = 0.5;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *comp = &args.adaptive.components[0];
+   snprintf(comp->name, sizeof(comp->name), "%s", "iters-geometric");
+   comp->enabled            = 1;
+   comp->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+   comp->weight             = 1.0;
+   comp->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+   comp->target             = 1.5;
+   comp->scale              = 0.5;
+   comp->mean.kind          = PRECON_REUSE_MEAN_GEOMETRIC;
+   comp->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   comp->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+   comp->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+   comp->history.level      = -1;
+   comp->history.max_points = 2;
+   comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0); /* baseline_iters=10 */
+
+   /* iters=30 → ratio=3.0; geom_mean([3,3])=3.0, dist=(3-1.5)/0.5=3.0 > threshold=0.5 */
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 30, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+   obs.system_index = 4;
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                   &decision));
+   ASSERT_EQ(decision.used_adaptive, 1);
+   ASSERT_TRUE(decision.score >= args.adaptive.rebuild_threshold);
+   ASSERT_TRUE(strstr(decision.summary, "iters-geometric") != NULL);
+   ASSERT_TRUE(strstr(decision.summary, "status=rebuild") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_harmonic_mean(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points  = 1;
+   args.adaptive.rebuild_threshold = 0.5;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *comp = &args.adaptive.components[0];
+   snprintf(comp->name, sizeof(comp->name), "%s", "solve-time-harmonic");
+   comp->enabled            = 1;
+   comp->metric             = PRECON_REUSE_METRIC_SOLVE_TIME;
+   comp->weight             = 1.0;
+   comp->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+   comp->target             = 1.5;
+   comp->scale              = 0.5;
+   comp->mean.kind          = PRECON_REUSE_MEAN_HARMONIC;
+   comp->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   comp->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+   comp->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+   comp->history.level      = -1;
+   comp->history.max_points = 2;
+   comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0); /* baseline_solve_time=1.0 */
+
+   /* solve_time=4.0 → ratio=4.0; harm_mean([4,4])=4.0, dist=(4-1.5)/0.5=5.0 > threshold=0.5 */
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 10, 1.0, 4.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+   obs.system_index = 4;
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                   &decision));
+   ASSERT_EQ(decision.used_adaptive, 1);
+   ASSERT_TRUE(decision.score >= args.adaptive.rebuild_threshold);
+   ASSERT_TRUE(strstr(decision.summary, "solve-time-harmonic") != NULL);
+   ASSERT_TRUE(strstr(decision.summary, "status=rebuild") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_delta_from_baseline_transform(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points  = 1;
+   args.adaptive.rebuild_threshold = 0.5;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *comp = &args.adaptive.components[0];
+   snprintf(comp->name, sizeof(comp->name), "%s", "iters-delta");
+   comp->enabled            = 1;
+   comp->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+   comp->weight             = 1.0;
+   comp->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+   comp->target             = 5.0;
+   comp->scale              = 1.0;
+   comp->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+   comp->transform.kind     = PRECON_REUSE_TRANSFORM_DELTA_FROM_BASELINE;
+   comp->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+   comp->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+   comp->history.level      = -1;
+   comp->history.max_points = 2;
+   comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0); /* baseline_iters=10 */
+
+   /* iters=20 → delta=fmax(20-10,0)=10; arith_mean([10,10])=10, dist=(10-5)/1=5 > threshold=0.5 */
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 20, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+   obs.system_index = 4;
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                   &decision));
+   ASSERT_EQ(decision.used_adaptive, 1);
+   ASSERT_TRUE(decision.score >= args.adaptive.rebuild_threshold);
+   ASSERT_TRUE(strstr(decision.summary, "iters-delta") != NULL);
+   ASSERT_TRUE(strstr(decision.summary, "status=rebuild") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_min_reuse_solves_guard(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_reuse_solves    = 4;
+   args.guards.min_history_points  = 1;
+   args.adaptive.rebuild_threshold = 0.5;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *comp = &args.adaptive.components[0];
+   snprintf(comp->name, sizeof(comp->name), "%s", "iters-arith");
+   comp->enabled            = 1;
+   comp->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+   comp->weight             = 1.0;
+   comp->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+   comp->target             = 1.5;
+   comp->scale              = 0.5;
+   comp->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+   comp->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   comp->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+   comp->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+   comp->history.level      = -1;
+   comp->history.max_points = 2;
+   comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0); /* baseline_iters=10 */
+
+   ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 3,
+                                                    &decision));
+   ASSERT_EQ(decision.age, 3);
+   ASSERT_EQ(decision.should_rebuild, 0);
+   ASSERT_TRUE(strstr(decision.summary, "min_reuse_solves") != NULL);
+
+   /* Each observation has iters=30 (ratio=3.0, score >> threshold) so the scoring
+    * path would always fire once the age guard is satisfied. */
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 30, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 4,
+                                                   &decision));
+   ASSERT_EQ(decision.age, 4);
+   ASSERT_EQ(decision.should_rebuild, 1);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
 }
 
 static void
@@ -981,6 +2047,31 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconSetDefaultArgs_resets_reuse);
    RUN_TEST(test_PreconSetArgsFromYAML_sets_fields);
    RUN_TEST(test_PreconSetArgsFromYAML_ignores_unknown_key);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_type_parses_components);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_scalar_installs_default_components);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_rebuild_on_new_level_block_sequence);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_type_without_components_uses_defaults);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_rejects_negative_component_weight);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_bootstrap_defers_scoring);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_iterations_rms);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_bad_decision_streak);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_max_reuse_solves_guard);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_max_iteration_ratio_guard);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_max_solve_time_ratio_guard);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_rebuild_on_new_timestep_guard);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_solver_failure_guard);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_rebuild_on_new_level_guard);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_active_level_scope);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_completed_level_scope);
+   RUN_TEST(
+      test_PreconReuseShouldRebuild_adaptive_completed_level_scope_excludes_pre_rebuild_history);
+   RUN_TEST(
+      test_PreconReuseShouldRebuild_adaptive_completed_level_solve_overhead_honors_mean_reduction);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_setup_time_metric);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_geometric_mean);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_harmonic_mean);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_delta_from_baseline_transform);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_min_reuse_solves_guard);
    RUN_TEST(test_PreconSetArgsFromYAML_mgr_coarsest_level_spdirect_flat);
    RUN_TEST(test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_flat_sets_type);
    RUN_TEST(test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_nested_sets_type_and_args);

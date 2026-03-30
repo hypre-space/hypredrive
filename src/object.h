@@ -39,6 +39,7 @@ typedef struct hypredrv_struct
 
    Scaling_context     *scaling_ctx;
    PreconReuseTimesteps precon_reuse_timesteps;
+   PreconReuseState     precon_reuse_state;
 
    Stats *stats;
    bool   stats_printed;

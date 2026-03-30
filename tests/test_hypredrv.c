@@ -2277,6 +2277,81 @@ test_HYPREDRV_library_mode_reuse_per_timestep_frequency_with_object_annotations(
 }
 
 static void
+test_HYPREDRV_library_mode_adaptive_reuse_rebuilds_after_degradation(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[4096];
+   snprintf(
+      yaml_config, sizeof(yaml_config),
+      "general:\n"
+      "  statistics: off\n"
+      "  exec_policy: host\n"
+      "linear_system:\n"
+      "  init_guess_mode: zeros\n"
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 5\n"
+      "preconditioner:\n"
+      "  reuse: adaptive\n"
+      "  amg:\n"
+      "    print_level: 0\n");
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+
+   run_library_linear_solve(obj, NULL);
+   ASSERT_EQ_SIZE(state->precon_reuse_state.count, 1);
+
+   run_library_linear_solve(obj, NULL);
+   ASSERT_EQ_SIZE(state->precon_reuse_state.count, 2);
+
+   run_library_linear_solve(obj, NULL);
+   ASSERT_EQ_SIZE(state->precon_reuse_state.count, 3);
+   ASSERT_TRUE(state->precon_reuse_state.baseline_valid);
+
+   /* Inject a bad observation so the next solve decision sees high iteration count.
+    * Using setup_time=solve_time=0 means only the stability (iterations) component
+    * contributes; the efficiency component's fmax(0 - baseline_solve, 0) = 0. */
+   PreconReuseObservation bad_obs;
+   memset(&bad_obs, 0, sizeof(bad_obs));
+   bad_obs.iters           = 100;
+   bad_obs.solve_succeeded = 1;
+   for (int l = 0; l < STATS_MAX_LEVELS; l++) bad_obs.level_ids[l] = -1;
+   hypredrv_PreconReuseStateRecordObservation(&state->precon_reuse_state, &bad_obs);
+
+   /* Solve #4: score exceeds threshold but streak(1) < bad_decisions_to_rebuild(2),
+    * so no rebuild yet.  A real observation is appended after the solve. */
+   run_library_linear_solve(obj, NULL);
+   ASSERT_EQ(state->precon_reuse_state.bad_decision_streak, 1);
+
+   /* Inject a second bad observation to push the streak to the rebuild threshold. */
+   hypredrv_PreconReuseStateRecordObservation(&state->precon_reuse_state, &bad_obs);
+
+   /* Solve #5: streak reaches 2 >= bad_decisions_to_rebuild(2), rebuild fires.
+    * MarkRebuild resets state; one real observation is recorded after the rebuild. */
+   run_library_linear_solve(obj, NULL);
+   ASSERT_EQ_SIZE(state->precon_reuse_state.count, 1);
+   /* After rebuild: baseline is cleared and streak is reset. */
+   ASSERT_FALSE(state->precon_reuse_state.baseline_valid);
+   ASSERT_EQ(state->precon_reuse_state.bad_decision_streak, 0);
+   /* Preconditioner was actually rebuilt (not NULL). */
+   ASSERT_NOT_NULL(state->precon);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
 test_HYPREDRV_LinearSolverApply_error_cases(void)
 {
    reset_state();
@@ -3885,6 +3960,7 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_library_mode_reuse_per_timestep_with_object_annotations);
    RUN_TEST(
       test_HYPREDRV_library_mode_reuse_per_timestep_frequency_with_object_annotations);
+   RUN_TEST(test_HYPREDRV_library_mode_adaptive_reuse_rebuilds_after_degradation);
    RUN_TEST(test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep);
    RUN_TEST(test_HYPREDRV_library_mode_destroy_prints_named_statistics_summary);
    RUN_TEST(test_HYPREDRV_library_mode_finalize_prints_named_statistics_summary);
