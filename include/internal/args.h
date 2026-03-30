@@ -23,6 +23,7 @@
 typedef struct General_args_struct
 {
    char   name[MAX_FILENAME_LENGTH];
+   char   statistics_filename[MAX_FILENAME_LENGTH];
    int    warmup;
    int    statistics;
    int    print_config_params;

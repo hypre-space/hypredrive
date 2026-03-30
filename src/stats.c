@@ -10,6 +10,7 @@
 #include <mpi.h>
 #include <stdarg.h>
 #include <string.h>
+#include <unistd.h>
 
 /* Reallocation expansion factor */
 enum
@@ -70,6 +71,8 @@ EnsureCapacity(Stats *stats)
                                  new_capacity);
       failed |= !ReallocateArray((void **)&stats->entry_ls_id, sizeof(int), old_capacity,
                                  new_capacity);
+      failed |= !ReallocateArray((void **)&stats->entry_paths, STATS_PATH_LABEL_LENGTH,
+                                 old_capacity, new_capacity);
 
       if (failed)
       {
@@ -139,6 +142,132 @@ StopScalarTimer(double *timer)
 }
 
 /*--------------------------------------------------------------------------
+ * Helper: Resolve packed row-path slot by entry index
+ *--------------------------------------------------------------------------*/
+
+static const char *
+EntryPathSlot(const Stats *stats, int entry_index)
+{
+   if (!stats || !stats->entry_paths || entry_index < 0 || entry_index >= stats->capacity)
+   {
+      return NULL;
+   }
+
+   return stats->entry_paths + ((size_t)entry_index * STATS_PATH_LABEL_LENGTH);
+}
+
+/*--------------------------------------------------------------------------
+ * Helper: Clear or set row-path metadata for current entry
+ *--------------------------------------------------------------------------*/
+
+static void
+SetCurrentEntryPath(Stats *stats, const char *path)
+{
+   if (!stats || !stats->entry_paths || stats->counter < 0 ||
+       stats->counter >= stats->capacity)
+   {
+      return;
+   }
+
+   char *slot = stats->entry_paths + ((size_t)stats->counter * STATS_PATH_LABEL_LENGTH);
+
+   if (!path || path[0] == '\0')
+   {
+      slot[0] = '\0';
+      return;
+   }
+
+   snprintf(slot, STATS_PATH_LABEL_LENGTH, "%s", path);
+}
+
+static void
+ResetPendingTimestepContext(Stats *stats)
+{
+   if (!stats)
+   {
+      return;
+   }
+
+   stats->pending_timestep_id = -1;
+}
+
+/*--------------------------------------------------------------------------
+ * Helper: Build compact dotted path for current solve entry
+ *--------------------------------------------------------------------------*/
+
+static void
+AssignCurrentSolveEntryPath(Stats *stats)
+{
+   if (!stats)
+   {
+      return;
+   }
+
+   int segments[STATS_MAX_LEVELS + 2];
+   int num_segments = 0;
+
+   int level_start = 0;
+   if (stats->pending_timestep_id >= 0)
+   {
+      segments[num_segments++] = stats->pending_timestep_id;
+
+      /* If caller provided an external timestep id, skip level-0 to avoid
+       * duplicating the same conceptual segment. */
+      if (stats->level_active & (1 << 0))
+      {
+         level_start = 1;
+      }
+   }
+
+   for (int level = level_start; level < STATS_MAX_LEVELS; level++)
+   {
+      if ((stats->level_active & (1 << level)) && stats->level_current_id[level] > 0)
+      {
+         segments[num_segments++] = stats->level_current_id[level];
+      }
+   }
+
+   /* Always append the flat global linear system counter as the leaf. */
+   if (num_segments > 0 && stats->ls_counter > 0)
+   {
+      segments[num_segments++] = stats->ls_counter;
+   }
+
+   if (num_segments == 0)
+   {
+      SetCurrentEntryPath(stats, NULL);
+      ResetPendingTimestepContext(stats);
+      return;
+   }
+
+   char   path[STATS_PATH_LABEL_LENGTH];
+   size_t pos = 0;
+   path[0]    = '\0';
+
+   for (int i = 0; i < num_segments; i++)
+   {
+      int written =
+         snprintf(path + pos, sizeof(path) - pos, (i == 0) ? "%d" : ".%d", segments[i]);
+      if (written < 0)
+      {
+         break;
+      }
+
+      if ((size_t)written >= (sizeof(path) - pos))
+      {
+         pos = sizeof(path) - 1;
+         break;
+      }
+
+      pos += (size_t)written;
+   }
+   path[pos] = '\0';
+
+   SetCurrentEntryPath(stats, path);
+   ResetPendingTimestepContext(stats);
+}
+
+/*--------------------------------------------------------------------------
  * Helper: Handle annotation begin
  *--------------------------------------------------------------------------*/
 
@@ -165,6 +294,8 @@ HandleAnnotationBegin(Stats *stats, const char *name)
       {
          return;
       }
+      SetCurrentEntryPath(stats, NULL);
+      ResetPendingTimestepContext(stats);
       StartVectorTimer(stats, stats->matrix, stats->counter);
    }
    else if (!strcmp(name, "reset_x0"))
@@ -186,6 +317,8 @@ HandleAnnotationBegin(Stats *stats, const char *name)
       {
          return;
       }
+      SetCurrentEntryPath(stats, NULL);
+      ResetPendingTimestepContext(stats);
       StartScalarTimer(&stats->reset_x0);
    }
    else if (!strcmp(name, "rhs"))
@@ -248,6 +381,7 @@ HandleAnnotationBegin(Stats *stats, const char *name)
       {
          stats->entry_ls_id[stats->counter] = stats->ls_counter - 1;
       }
+      AssignCurrentSolveEntryPath(stats);
    }
    else if (!strcmp(name, "initialize"))
    {
@@ -333,7 +467,7 @@ HandleAnnotationEnd(Stats *stats, const char *name)
 
 enum
 {
-   STATS_ENTRY_WIDTH = 6,
+   STATS_ENTRY_WIDTH = 10,
    STATS_TIME_WIDTH  = 11,
    STATS_RES_WIDTH   = 10,
    STATS_ITERS_WIDTH = 6,
@@ -364,11 +498,16 @@ PrintDivisor(void)
  *--------------------------------------------------------------------------*/
 
 static void
-PrintHeader(const char *scale)
+PrintHeader(const char *scale, bool use_path_column)
 {
-   const char *top[]    = {"", "LS build", "setup", "solve", "initial", "relative", ""};
+   const char *top[] = {"", "LS build", "setup", "solve", "initial", "relative", ""};
+   const char *entry_header = "Entry";
+   if (use_path_column)
+   {
+      entry_header = "Path";
+   }
    const char *bottom[] = {
-      "Entry", "times", "times", "times", "res. norm", "res. norm", "iters",
+      entry_header, "times", "times", "times", "res. norm", "res. norm", "iters",
    };
    char time_label[32];
 
@@ -396,17 +535,53 @@ PrintHeader(const char *scale)
  *--------------------------------------------------------------------------*/
 
 static void
-PrintEntryWithIndex(const Stats *stats, int entry_index, int display_index)
+BuildEntryLabel(const Stats *stats, int entry_index, int display_index,
+                bool use_path_column, char *label, size_t label_len)
+{
+   if (!label || label_len == 0)
+   {
+      return;
+   }
+
+   if (use_path_column)
+   {
+      const char *path = EntryPathSlot(stats, entry_index);
+      if (path && path[0] != '\0')
+      {
+         size_t path_len = strlen(path);
+         if (path_len <= STATS_ENTRY_WIDTH)
+         {
+            snprintf(label, label_len, "%s", path);
+         }
+         else
+         {
+            size_t tail_len = (size_t)STATS_ENTRY_WIDTH - 3;
+            snprintf(label, label_len, "...%s", path + (path_len - tail_len));
+         }
+         return;
+      }
+   }
+
+   snprintf(label, label_len, "%d", display_index);
+}
+
+static void
+PrintEntryWithIndex(const Stats *stats, int entry_index, int display_index,
+                    bool use_path_column)
 {
    double build_time =
       stats->time_factor *
       (stats->dofmap[entry_index] + stats->matrix[entry_index] + stats->rhs[entry_index]);
    bool show_build = (build_time > 0.0);
+   char entry_label[STATS_PATH_LABEL_LENGTH];
+
+   BuildEntryLabel(stats, entry_index, display_index, use_path_column, entry_label,
+                   sizeof(entry_label));
 
    if (show_build)
    {
-      printf("| %*d | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
-             display_index, STATS_TIME_WIDTH, 3, build_time, STATS_TIME_WIDTH, 3,
+      printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
+             entry_label, STATS_TIME_WIDTH, 3, build_time, STATS_TIME_WIDTH, 3,
              stats->time_factor * stats->prec[entry_index], STATS_TIME_WIDTH, 3,
              stats->time_factor * stats->solve[entry_index], STATS_RES_WIDTH, 2,
              stats->r0norms[entry_index], STATS_RES_WIDTH, 2, stats->rrnorms[entry_index],
@@ -414,13 +589,49 @@ PrintEntryWithIndex(const Stats *stats, int entry_index, int display_index)
    }
    else
    {
-      printf("| %*d | %*s | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
-             display_index, STATS_TIME_WIDTH, "", STATS_TIME_WIDTH, 3,
+      printf("| %*s | %*s | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
+             entry_label, STATS_TIME_WIDTH, "", STATS_TIME_WIDTH, 3,
              stats->time_factor * stats->prec[entry_index], STATS_TIME_WIDTH, 3,
              stats->time_factor * stats->solve[entry_index], STATS_RES_WIDTH, 2,
              stats->r0norms[entry_index], STATS_RES_WIDTH, 2, stats->rrnorms[entry_index],
              STATS_ITERS_WIDTH, stats->iters[entry_index]);
    }
+}
+
+static bool
+EntryHasSolve(const Stats *stats, int entry_index)
+{
+   if (!stats || entry_index < 0 || entry_index > stats->counter)
+   {
+      return false;
+   }
+
+   return (stats->iters[entry_index] > 0 || stats->solve[entry_index] > 0.0) != 0;
+}
+
+static bool
+HasContextualPathRows(const Stats *stats, int max_entry)
+{
+   if (!stats)
+   {
+      return false;
+   }
+
+   for (int i = 0; i <= max_entry; i++)
+   {
+      if (!EntryHasSolve(stats, i))
+      {
+         continue;
+      }
+
+      const char *path = EntryPathSlot(stats, i);
+      if (path && path[0] != '\0')
+      {
+         return true;
+      }
+   }
+
+   return false;
 }
 
 /*--------------------------------------------------------------------------
@@ -438,16 +649,17 @@ hypredrv_StatsCreate(void)
    stats->capacity = capacity;
    /* First solve entry should start at index 0, but we increment at the start of
     * a new build ("matrix"/"system"), so initialize to -1. */
-   stats->counter        = -1;
-   stats->reps           = 0;
-   stats->num_reps       = 1;
-   stats->num_systems    = -1; /* Unknown by default */
-   stats->ls_counter     = 0;
-   stats->matrix_counter = -1;
-   stats->level_depth    = 0;
-   stats->use_millisec   = false;
-   stats->time_factor    = 1.0;
-   stats->object_name[0] = '\0';
+   stats->counter             = -1;
+   stats->reps                = 0;
+   stats->num_reps            = 1;
+   stats->num_systems         = -1; /* Unknown by default */
+   stats->ls_counter          = 0;
+   stats->matrix_counter      = -1;
+   stats->level_depth         = 0;
+   stats->use_millisec        = false;
+   stats->time_factor         = 1.0;
+   stats->object_name[0]      = '\0';
+   stats->pending_timestep_id = -1;
 
    /* Allocate timing arrays */
    stats->dofmap      = (double *)calloc((size_t)capacity, sizeof(double));
@@ -459,6 +671,7 @@ hypredrv_StatsCreate(void)
    stats->rrnorms     = (double *)calloc((size_t)capacity, sizeof(double));
    stats->r0norms     = (double *)calloc((size_t)capacity, sizeof(double));
    stats->entry_ls_id = (int *)calloc((size_t)capacity, sizeof(int));
+   stats->entry_paths = (char *)calloc((size_t)capacity, STATS_PATH_LABEL_LENGTH);
 
    /* Initialize level stack */
    for (int i = 0; i < STATS_MAX_LEVELS; i++)
@@ -506,6 +719,7 @@ hypredrv_StatsDestroy(Stats **stats_ptr)
    free(stats->rrnorms);
    free(stats->r0norms);
    free(stats->entry_ls_id);
+   free(stats->entry_paths);
 
    /* Free level entry arrays */
    for (int i = 0; i < STATS_MAX_LEVELS; i++)
@@ -676,6 +890,12 @@ hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
    stats->level_active |= (1 << level);
    stats->level_current_id[level]++;
    stats->level_solve_start[level] = stats->ls_counter;
+
+   /* Reset deeper level counters so child IDs are local to the parent */
+   for (int child = level + 1; child < STATS_MAX_LEVELS; child++)
+   {
+      stats->level_current_id[child] = 0;
+   }
 
    /* Commenting out for now to avoid multiple caliper regions for each solve call */
 }
@@ -865,8 +1085,8 @@ hypredrv_StatsRelativeResNormSet(Stats *stats, double rrnorm)
  * hypredrv_StatsPrint
  *--------------------------------------------------------------------------*/
 
-void
-hypredrv_StatsPrint(const Stats *stats, int print_level)
+static void
+StatsPrintImpl(const Stats *stats, int print_level)
 {
    if (!stats || print_level < 1)
    {
@@ -885,21 +1105,23 @@ hypredrv_StatsPrint(const Stats *stats, int print_level)
       printf("\n\nSTATISTICS SUMMARY:\n\n");
    }
 
+   int  max_entry       = stats->counter;
+   bool use_path_column = HasContextualPathRows(stats, max_entry);
+
    PrintDivisor();
-   PrintHeader(scale);
+   PrintHeader(scale, use_path_column);
    PrintDivisor();
 
    /* Print statistics for each entry that had a solve */
    /* This filters out Newton iterations that broke before solving */
    /* Use a display index to avoid gaps in the entry column */
-   int max_entry   = stats->counter;
    int display_idx = 0;
    for (int i = 0; i <= max_entry; i++)
    {
       /* Only print entries that had a solve (iterations > 0 or solve time > 0) */
-      if (stats->iters[i] > 0 || stats->solve[i] > 0.0)
+      if (EntryHasSolve(stats, i))
       {
-         PrintEntryWithIndex(stats, i, display_idx);
+         PrintEntryWithIndex(stats, i, display_idx, use_path_column);
          display_idx++;
       }
    }
@@ -917,7 +1139,7 @@ hypredrv_StatsPrint(const Stats *stats, int print_level)
 
       for (int i = 0; i <= max_entry; i++)
       {
-         if (stats->iters[i] <= 0 && stats->solve[i] <= 0.0)
+         if (!EntryHasSolve(stats, i))
          {
             continue;
          }
@@ -1003,6 +1225,55 @@ hypredrv_StatsPrint(const Stats *stats, int print_level)
    printf("\n");
 }
 
+void
+hypredrv_StatsPrintToStream(const Stats *stats, int print_level, FILE *stream)
+{
+   if (!stream)
+   {
+      return;
+   }
+
+   if (stream == stdout)
+   {
+      StatsPrintImpl(stats, print_level);
+      return;
+   }
+
+   int stdout_fd = fileno(stdout);
+   int stream_fd = fileno(stream);
+   if (stdout_fd == -1 || stream_fd == -1)
+   {
+      StatsPrintImpl(stats, print_level);
+      return;
+   }
+
+   fflush(stdout);
+   int saved_stdout_fd = dup(stdout_fd);
+   if (saved_stdout_fd == -1)
+   {
+      StatsPrintImpl(stats, print_level);
+      return;
+   }
+
+   if (dup2(stream_fd, stdout_fd) == -1)
+   {
+      close(saved_stdout_fd);
+      StatsPrintImpl(stats, print_level);
+      return;
+   }
+
+   StatsPrintImpl(stats, print_level);
+   fflush(stdout);
+   (void)dup2(saved_stdout_fd, stdout_fd);
+   close(saved_stdout_fd);
+}
+
+void
+hypredrv_StatsPrint(const Stats *stats, int print_level)
+{
+   hypredrv_StatsPrintToStream(stats, print_level, stdout);
+}
+
 /*--------------------------------------------------------------------------
  * hypredrv_StatsGetLinearSystemID
  *--------------------------------------------------------------------------*/
@@ -1059,6 +1330,17 @@ hypredrv_StatsSetObjectName(Stats *stats, const char *name)
    }
 
    snprintf(stats->object_name, sizeof(stats->object_name), "%s", name ? name : "");
+}
+
+void
+hypredrv_StatsSetPendingTimestepContext(Stats *stats, int timestep_id)
+{
+   if (!stats)
+   {
+      return;
+   }
+
+   stats->pending_timestep_id = timestep_id;
 }
 
 /*--------------------------------------------------------------------------

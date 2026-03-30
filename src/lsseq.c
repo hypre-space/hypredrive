@@ -1727,9 +1727,11 @@ cleanup:
 }
 
 int
-hypredrv_LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts)
+hypredrv_LSSeqReadTimestepsWithIds(const char *filename, IntArray **timestep_ids,
+                                   IntArray **timestep_starts)
 {
    LSSeqData seq;
+   IntArray *ids    = NULL;
    IntArray *starts = NULL;
 
    if (!timestep_starts)
@@ -1737,6 +1739,11 @@ hypredrv_LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts)
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid output pointer for LSSeqReadTimesteps");
       return 0;
+   }
+
+   if (timestep_ids && *timestep_ids)
+   {
+      hypredrv_IntArrayDestroy(timestep_ids);
    }
 
    if (*timestep_starts)
@@ -1755,9 +1762,22 @@ hypredrv_LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts)
       return 0;
    }
 
+   if (timestep_ids)
+   {
+      ids = hypredrv_IntArrayCreate((size_t)seq.header.num_timesteps);
+      if (!ids)
+      {
+         LSSeqDataDestroy(&seq);
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate LSSeq timestep ids array");
+         return 0;
+      }
+   }
+
    starts = hypredrv_IntArrayCreate((size_t)seq.header.num_timesteps);
    if (!starts)
    {
+      hypredrv_IntArrayDestroy(&ids);
       LSSeqDataDestroy(&seq);
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd("Failed to allocate LSSeq timestep starts array");
@@ -1766,10 +1786,24 @@ hypredrv_LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts)
 
    for (uint32_t i = 0; i < seq.header.num_timesteps; i++)
    {
+      if (ids)
+      {
+         ids->data[i] = seq.timesteps[i].timestep;
+      }
       starts->data[i] = seq.timesteps[i].ls_start;
    }
 
+   if (timestep_ids)
+   {
+      *timestep_ids = ids;
+   }
    *timestep_starts = starts;
    LSSeqDataDestroy(&seq);
    return 1;
+}
+
+int
+hypredrv_LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts)
+{
+   return hypredrv_LSSeqReadTimestepsWithIds(filename, NULL, timestep_starts);
 }

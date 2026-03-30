@@ -348,6 +348,7 @@ test_lsseq_summary_and_timesteps(void)
 {
    const char *filename = "test_lsseq_summary.bin";
    int         num_systems = 0, num_patterns = 0, has_dofmap = 0, has_timesteps = 0;
+   IntArray   *ids = NULL;
    IntArray   *starts = NULL;
 
    write_test_container_with_info(filename);
@@ -367,6 +368,19 @@ test_lsseq_summary_and_timesteps(void)
    ASSERT_EQ((int)starts->size, 2);
    ASSERT_EQ(starts->data[0], 0);
    ASSERT_EQ(starts->data[1], 1);
+   hypredrv_IntArrayDestroy(&starts);
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_LSSeqReadTimestepsWithIds(filename, &ids, &starts));
+   ASSERT_NOT_NULL(ids);
+   ASSERT_NOT_NULL(starts);
+   ASSERT_EQ((int)ids->size, 2);
+   ASSERT_EQ((int)starts->size, 2);
+   ASSERT_EQ(ids->data[0], 0);
+   ASSERT_EQ(ids->data[1], 1);
+   ASSERT_EQ(starts->data[0], 0);
+   ASSERT_EQ(starts->data[1], 1);
+   hypredrv_IntArrayDestroy(&ids);
    hypredrv_IntArrayDestroy(&starts);
 }
 

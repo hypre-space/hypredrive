@@ -2568,6 +2568,33 @@ finalize_for_capture(void *context)
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
+struct StatsPrintContext
+{
+   HYPREDRV_t obj;
+};
+
+static void
+read_text_file(const char *path, char *buffer, size_t buf_len)
+{
+   ASSERT_NOT_NULL(path);
+   ASSERT_NOT_NULL(buffer);
+   ASSERT_TRUE(buf_len > 0);
+
+   FILE *fp = fopen(path, "r");
+   ASSERT_NOT_NULL(fp);
+
+   size_t read_bytes  = fread(buffer, 1, buf_len - 1, fp);
+   buffer[read_bytes] = '\0';
+   fclose(fp);
+}
+
+static void
+stats_print_for_capture(void *context)
+{
+   struct StatsPrintContext *stats_context = (struct StatsPrintContext *)context;
+   ASSERT_EQ(HYPREDRV_StatsPrint(stats_context->obj), ERROR_NONE);
+}
+
 static void
 test_HYPREDRV_library_mode_destroy_prints_named_statistics_summary(void)
 {
@@ -2601,7 +2628,7 @@ test_HYPREDRV_library_mode_destroy_prints_named_statistics_summary(void)
    capture_stdout_output(destroy_object_for_capture, &destroy_context, output, sizeof(output));
 
    ASSERT_TRUE(strstr(output, "STATISTICS SUMMARY for named-handle:") != NULL);
-   ASSERT_TRUE(strstr(output, "|      0 |") != NULL);
+   ASSERT_TRUE(strstr(output, "|          0 |") != NULL);
    ASSERT_NULL(obj);
 
    ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
@@ -2641,10 +2668,317 @@ test_HYPREDRV_library_mode_finalize_prints_named_statistics_summary(void)
    capture_stdout_output(finalize_for_capture, NULL, output, sizeof(output));
 
    ASSERT_TRUE(strstr(output, "STATISTICS SUMMARY for finalize-handle:") != NULL);
-   ASSERT_TRUE(strstr(output, "|      0 |") != NULL);
+   ASSERT_TRUE(strstr(output, "|          0 |") != NULL);
 
    ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
    ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+}
+
+static void
+test_HYPREDRV_statistics_filename_routes_stats_to_file(void)
+{
+   reset_state();
+
+   char *stats_file = CREATE_TEMP_FILE("tmp_stats_output_file.txt");
+   ASSERT_NOT_NULL(stats_file);
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: on\n"
+            "  statistics_filename: %s\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  init_guess_mode: zeros\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            stats_file);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   run_library_linear_solve(obj, NULL);
+
+   struct StatsPrintContext stats_context = {obj};
+   char                     stdout_output[8192];
+   capture_stdout_output(stats_print_for_capture, &stats_context, stdout_output,
+                         sizeof(stdout_output));
+   ASSERT_NULL(strstr(stdout_output, "STATISTICS SUMMARY"));
+
+   char file_output[8192];
+   read_text_file(stats_file, file_output, sizeof(file_output));
+   ASSERT_NOT_NULL(strstr(file_output, "STATISTICS SUMMARY"));
+   ASSERT_NOT_NULL(strstr(file_output, "|          0 |"));
+
+   ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   free(stats_file);
+}
+
+static void
+test_HYPREDRV_statistics_filename_fallbacks_to_stdout_on_open_failure(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char invalid_path[PATH_MAX];
+   snprintf(invalid_path, sizeof(invalid_path), "/tmp/hypredrv_missing_%d/stats.out",
+            (int)getpid());
+
+   char yaml_config[PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: on\n"
+            "  statistics_filename: %s\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  init_guess_mode: zeros\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            invalid_path);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   run_library_linear_solve(obj, NULL);
+
+   struct StatsPrintContext stats_context = {obj};
+   char                     stderr_output[8192];
+   capture_stderr_output(stats_print_for_capture, &stats_context, stderr_output,
+                         sizeof(stderr_output));
+   ASSERT_NOT_NULL(strstr(stderr_output, "failed to open general.statistics_filename"));
+
+   char stdout_output[8192];
+   capture_stdout_output(stats_print_for_capture, &stats_context, stdout_output,
+                         sizeof(stdout_output));
+   ASSERT_NOT_NULL(strstr(stdout_output, "STATISTICS SUMMARY"));
+
+   ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_stats_flat_runs_keep_entry_column(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[] =
+      "general:\n"
+      "  statistics: on\n"
+      "  exec_policy: host\n"
+      "linear_system:\n"
+      "  init_guess_mode: zeros\n"
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 5\n"
+      "preconditioner:\n"
+      "  amg:\n"
+      "    print_level: 0\n";
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   run_library_linear_solve(obj, NULL);
+
+   char output[8192];
+   struct StatsPrintContext stats_context = {obj};
+   capture_stdout_output(stats_print_for_capture, &stats_context, output, sizeof(output));
+
+   ASSERT_TRUE(strstr(output, "Entry") != NULL);
+   ASSERT_TRUE(strstr(output, "Path") == NULL);
+   ASSERT_TRUE(strstr(output, "|          0 |") != NULL);
+
+   ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_stats_annotated_runs_switch_to_path_column(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[] =
+      "general:\n"
+      "  statistics: on\n"
+      "  exec_policy: host\n"
+      "linear_system:\n"
+      "  init_guess_mode: zeros\n"
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 5\n"
+      "preconditioner:\n"
+      "  amg:\n"
+      "    print_level: 0\n";
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 0, "timestep", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelBegin(obj, 1, "nonlinear", -1), ERROR_NONE);
+   run_library_linear_solve(obj, NULL);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 1, "nonlinear", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 0, "timestep", -1), ERROR_NONE);
+
+   char output[8192];
+   struct StatsPrintContext stats_context = {obj};
+   capture_stdout_output(stats_print_for_capture, &stats_context, output, sizeof(output));
+
+   ASSERT_TRUE(strstr(output, "Path") != NULL);
+   ASSERT_TRUE(strstr(output, "1.1.1") != NULL);
+
+   ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_stats_timestep_file_paths_use_preserved_ids(void)
+{
+   reset_state();
+
+   char *tmp_ts = CREATE_TEMP_FILE("tmp_stats_path_timesteps.txt");
+   ASSERT_NOT_NULL(tmp_ts);
+   FILE *tf = fopen(tmp_ts, "w");
+   ASSERT_NOT_NULL(tf);
+   fprintf(tf, "2\n");
+   fprintf(tf, "10 0\n");
+   fprintf(tf, "20 1\n");
+   fclose(tf);
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: on\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  init_guess_mode: zeros\n"
+            "  timestep_filename: %s\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  reuse:\n"
+            "    enabled: on\n"
+            "    per_timestep: on\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            tmp_ts);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+
+   run_library_linear_solve(obj, NULL);
+   run_library_linear_solve(obj, NULL);
+
+   char output[8192];
+   struct StatsPrintContext stats_context = {obj};
+   capture_stdout_output(stats_print_for_capture, &stats_context, output, sizeof(output));
+
+   ASSERT_TRUE(strstr(output, "Path") != NULL);
+   ASSERT_TRUE(strstr(output, "10.1") != NULL);
+   ASSERT_TRUE(strstr(output, "20.2") != NULL);
+
+   ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   free(tmp_ts);
+}
+
+static void
+test_HYPREDRV_stats_path_column_truncates_long_paths(void)
+{
+   reset_state();
+
+   char *tmp_ts = CREATE_TEMP_FILE("tmp_stats_path_truncation.txt");
+   ASSERT_NOT_NULL(tmp_ts);
+   FILE *tf = fopen(tmp_ts, "w");
+   ASSERT_NOT_NULL(tf);
+   fprintf(tf, "1\n");
+   fprintf(tf, "123456789 0\n");
+   fclose(tf);
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[PATH_MAX + 512];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: on\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  init_guess_mode: zeros\n"
+            "  timestep_filename: %s\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  reuse:\n"
+            "    enabled: on\n"
+            "    per_timestep: on\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            tmp_ts);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   run_library_linear_solve(obj, NULL);
+
+   char output[8192];
+   struct StatsPrintContext stats_context = {obj};
+   capture_stdout_output(stats_print_for_capture, &stats_context, output, sizeof(output));
+
+   ASSERT_TRUE(strstr(output, "| ...56789.1 |") != NULL);
+
+   ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   free(tmp_ts);
 }
 
 static void
@@ -2893,10 +3227,14 @@ test_HYPREDRV_InputArgsParse_loads_lsseq_timesteps_for_print_system(void)
             seq_path);
    parse_yaml_into_obj(obj, yaml_config);
 
-   ASSERT_NOT_NULL(obj->precon_reuse_timestep_starts);
-   ASSERT_EQ_SIZE(obj->precon_reuse_timestep_starts->size, 2);
-   ASSERT_EQ(obj->precon_reuse_timestep_starts->data[0], 0);
-   ASSERT_EQ(obj->precon_reuse_timestep_starts->data[1], 1);
+   ASSERT_NOT_NULL(obj->precon_reuse_timesteps.ids);
+   ASSERT_NOT_NULL(obj->precon_reuse_timesteps.starts);
+   ASSERT_EQ_SIZE(obj->precon_reuse_timesteps.ids->size, 2);
+   ASSERT_EQ_SIZE(obj->precon_reuse_timesteps.starts->size, 2);
+   ASSERT_EQ(obj->precon_reuse_timesteps.ids->data[0], 0);
+   ASSERT_EQ(obj->precon_reuse_timesteps.ids->data[1], 1);
+   ASSERT_EQ(obj->precon_reuse_timesteps.starts->data[0], 0);
+   ASSERT_EQ(obj->precon_reuse_timesteps.starts->data[1], 1);
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
@@ -2951,9 +3289,12 @@ test_HYPREDRV_print_system_uses_timestep_filename_without_reuse(void)
             tmp_ts, outdir);
    parse_yaml_into_obj(obj, yaml_config);
 
-   ASSERT_NOT_NULL(obj->precon_reuse_timestep_starts);
-   ASSERT_EQ_SIZE(obj->precon_reuse_timestep_starts->size, 1);
-   ASSERT_EQ(obj->precon_reuse_timestep_starts->data[0], 0);
+   ASSERT_NOT_NULL(obj->precon_reuse_timesteps.ids);
+   ASSERT_NOT_NULL(obj->precon_reuse_timesteps.starts);
+   ASSERT_EQ_SIZE(obj->precon_reuse_timesteps.ids->size, 1);
+   ASSERT_EQ_SIZE(obj->precon_reuse_timesteps.starts->size, 1);
+   ASSERT_EQ(obj->precon_reuse_timesteps.ids->data[0], 0);
+   ASSERT_EQ(obj->precon_reuse_timesteps.starts->data[0], 0);
 
    HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
    HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
@@ -3057,7 +3398,10 @@ test_HYPREDRV_misc_0hit_branches(void)
 
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
-   setup_ps3d10pt7_paths(matrix_path, rhs_path);
+   if (!setup_ps3d10pt7_paths(matrix_path, rhs_path))
+   {
+      return;
+   }
 
    ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
 
@@ -3549,6 +3893,12 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_print_system_lifecycle_dumps_setup_and_apply);
    RUN_TEST(test_HYPREDRV_print_system_apply_stage_ids_use_current_stats_id);
    RUN_TEST(test_HYPREDRV_print_system_setup_stage_ids_advance_for_library_cycles);
+   RUN_TEST(test_HYPREDRV_statistics_filename_routes_stats_to_file);
+   RUN_TEST(test_HYPREDRV_statistics_filename_fallbacks_to_stdout_on_open_failure);
+   RUN_TEST(test_HYPREDRV_stats_flat_runs_keep_entry_column);
+   RUN_TEST(test_HYPREDRV_stats_annotated_runs_switch_to_path_column);
+   RUN_TEST(test_HYPREDRV_stats_timestep_file_paths_use_preserved_ids);
+   RUN_TEST(test_HYPREDRV_stats_path_column_truncates_long_paths);
    RUN_TEST(test_HYPREDRV_LinearSolverApply_error_cases);
 }
 

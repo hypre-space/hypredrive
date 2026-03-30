@@ -30,6 +30,7 @@ enum StatsConstants
 {
    STATS_MAX_LEVELS        = 4,
    STATS_TIMESTEP_CAPACITY = 64,
+   STATS_PATH_LABEL_LENGTH = 64,
 };
 
 /* HYPREDRV_AnnotateAction enum - internal use only (not in public API) */
@@ -128,6 +129,8 @@ typedef struct Stats_struct
    double *r0norms;     /* Initial residual norms (absolute) */
    int    *iters;       /* Iteration counts */
    int    *entry_ls_id; /* Linear system id per entry (for build-time printing) */
+   char *
+      entry_paths; /* Packed per-entry path labels (capacity * STATS_PATH_LABEL_LENGTH) */
 
    /* Global timers */
    double initialize;
@@ -137,6 +140,7 @@ typedef struct Stats_struct
    /* Output formatting */
    double time_factor;
    bool   use_millisec;
+   int    runtime_object_id; /* Fallback for log object name when object_name is empty */
    char   object_name[MAX_FILENAME_LENGTH];
 
    /* Per-level statistics (stats computed on-demand from solve index range) */
@@ -147,6 +151,9 @@ typedef struct Stats_struct
    int level_active;                        /* Bitmask: which levels are active */
    int level_current_id[STATS_MAX_LEVELS];  /* Current entry ID per level */
    int level_solve_start[STATS_MAX_LEVELS]; /* Solve index when level began */
+
+   /* Solve-entry context injected by orchestrating code before solve begin */
+   int pending_timestep_id; /* File/sequence timestep id for the next solve entry */
 } Stats;
 
 /*--------------------------------------------------------------------------
@@ -180,6 +187,7 @@ void hypredrv_StatsRelativeResNormSet(Stats *stats, double);
 void hypredrv_StatsSetNumReps(Stats *stats, int);
 void hypredrv_StatsSetNumLinearSystems(Stats *stats, int);
 void hypredrv_StatsSetObjectName(Stats *stats, const char *name);
+void hypredrv_StatsSetPendingTimestepContext(Stats *stats, int timestep_id);
 
 /* Statistics getters */
 int    hypredrv_StatsGetLinearSystemID(const Stats *stats);
@@ -200,6 +208,7 @@ uint32_t hypredrv_StatsLevelGetEntrySummary(const Stats *stats, int level, int i
 void     hypredrv_StatsLevelPrint(const Stats *stats, int level);
 
 /* Output */
+void hypredrv_StatsPrintToStream(const Stats *stats, int print_level, FILE *stream);
 void hypredrv_StatsPrint(const Stats *stats, int);
 
 #endif /* STATS_HEADER */

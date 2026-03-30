@@ -138,9 +138,18 @@ SolverLinearSystemID(const Stats *stats)
 }
 
 static const char *
-SolverLogObjectName(const Stats *stats)
+SolverLogObjectName(const Stats *stats, char *buf, size_t buf_size)
 {
-   return (stats && stats->object_name[0] != '\0') ? stats->object_name : NULL;
+   if (stats && stats->object_name[0] != '\0')
+   {
+      return stats->object_name;
+   }
+   if (stats && stats->runtime_object_id > 0 && buf && buf_size > 0)
+   {
+      snprintf(buf, buf_size, "obj-%d", stats->runtime_object_id);
+      return buf;
+   }
+   return NULL;
 }
 
 static HYPRE_Int
@@ -372,10 +381,12 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
                               HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats,
                               int skip_precon_setup)
 {
-   MPI_Comm    log_comm        = SolverCommResolve(M, b, x);
-   int         ls_id           = SolverLinearSystemID(stats);
-   int         log_rank        = -1;
-   const char *log_object_name = SolverLogObjectName(stats);
+   MPI_Comm    log_comm = SolverCommResolve(M, b, x);
+   int         ls_id    = SolverLinearSystemID(stats);
+   int         log_rank = -1;
+   char        log_name_buf[32];
+   const char *log_object_name =
+      SolverLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    if (hypredrv_LogEnabled(2))
    {
       log_rank = hypredrv_LogRankFromComm(log_comm);
@@ -591,10 +602,12 @@ void
 hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
                      HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats)
 {
-   MPI_Comm    log_comm        = SolverCommResolve(A, b, x);
-   int         ls_id           = SolverLinearSystemID(stats);
-   int         log_rank        = -1;
-   const char *log_object_name = SolverLogObjectName(stats);
+   MPI_Comm    log_comm = SolverCommResolve(A, b, x);
+   int         ls_id    = SolverLinearSystemID(stats);
+   int         log_rank = -1;
+   char        log_name_buf[32];
+   const char *log_object_name =
+      SolverLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    if (hypredrv_LogEnabled(2))
    {
       log_rank = hypredrv_LogRankFromComm(log_comm);
@@ -660,6 +673,18 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
 void
 hypredrv_SolverDestroy(solver_t solver_method, HYPRE_Solver *solver_ptr)
 {
+   int log_rank = -1;
+   if (hypredrv_LogEnabled(2))
+   {
+      log_rank = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   }
+
+   if (!solver_ptr)
+   {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0, "solver destroy skipped: solver_ptr is NULL");
+      return;
+   }
+
    if (*solver_ptr)
    {
       switch (solver_method)
@@ -681,9 +706,16 @@ hypredrv_SolverDestroy(solver_t solver_method, HYPRE_Solver *solver_ptr)
             break;
 
          default:
+            HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                          "solver destroy skipped: invalid solver method=%d",
+                          (int)solver_method);
             return;
       }
 
       *solver_ptr = NULL;
+   }
+   else
+   {
+      HYPREDRV_LOGF(3, log_rank, NULL, 0, "solver destroy skipped: solver already NULL");
    }
 }

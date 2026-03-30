@@ -12,6 +12,7 @@
 #include "internal/gen_macros.h"
 #include "internal/krylov.h"
 #include "internal/stats.h"
+#include "logging.h"
 
 #define Precon_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, hypredrv_AMGSetArgs)   \
@@ -166,6 +167,27 @@ PreconReuseFindTimestepIndex(const IntArray *starts, int ls_id)
 }
 
 static int
+PreconReuseTimestepIdFromIndex(const PreconReuseTimesteps *timesteps, int idx)
+{
+   if (idx < 0)
+   {
+      return -1;
+   }
+
+   if (!timesteps || !timesteps->ids || !timesteps->ids->data)
+   {
+      return idx;
+   }
+
+   if ((size_t)idx >= timesteps->ids->size)
+   {
+      return idx;
+   }
+
+   return timesteps->ids->data[idx];
+}
+
+static int
 PreconReuseGetEmbeddedTimestepStart(const Stats *stats, int ls_id)
 {
    if (!stats || !(stats->level_active & (1 << 0)))
@@ -199,58 +221,72 @@ PreconReuseGetEmbeddedTimestepIndex(const Stats *stats)
 }
 
 static int
-PreconReuseResolveTimestepContext(const IntArray *starts, const Stats *stats, int ls_id,
+PreconReuseResolveTimestepContext(const PreconReuseTimesteps *timesteps,
+                                  const Stats *stats, int ls_id, int *timestep_id,
                                   int *timestep_idx, int *timestep_start)
 {
-   if (!timestep_idx || !timestep_start)
-   {
-      return 0;
-   }
+   int id_local    = -1;
+   int idx_local   = -1;
+   int start_local = -1;
 
-   *timestep_idx   = -1;
-   *timestep_start = -1;
-
-   int const starts_idx = PreconReuseFindTimestepIndex(starts, ls_id);
+   const IntArray *starts     = timesteps ? timesteps->starts : NULL;
+   int const       starts_idx = PreconReuseFindTimestepIndex(starts, ls_id);
    if (starts_idx >= 0)
    {
-      *timestep_idx   = starts_idx;
-      *timestep_start = starts->data[starts_idx];
+      id_local    = PreconReuseTimestepIdFromIndex(timesteps, starts_idx);
+      idx_local   = starts_idx;
+      start_local = starts->data[starts_idx];
    }
    else
    {
-      *timestep_idx   = PreconReuseGetEmbeddedTimestepIndex(stats);
-      *timestep_start = PreconReuseGetEmbeddedTimestepStart(stats, ls_id);
+      int embedded_idx = PreconReuseGetEmbeddedTimestepIndex(stats);
+      id_local         = (embedded_idx >= 0) ? (embedded_idx + 1) : -1;
+      idx_local        = embedded_idx;
+      start_local      = PreconReuseGetEmbeddedTimestepStart(stats, ls_id);
    }
 
-   if (*timestep_start < 0 || ls_id < *timestep_start)
+   if (start_local < 0 || ls_id < start_local)
    {
       return 0;
    }
 
+   if (timestep_id)
+   {
+      *timestep_id = id_local;
+   }
+   if (timestep_idx)
+   {
+      *timestep_idx = idx_local;
+   }
+   if (timestep_start)
+   {
+      *timestep_start = start_local;
+   }
    return 1;
 }
 
 void
-hypredrv_PreconReuseTimestepsClear(IntArray **timestep_starts)
+hypredrv_PreconReuseTimestepsClear(PreconReuseTimesteps *timesteps)
 {
-   if (!timestep_starts)
+   if (!timesteps)
    {
       return;
    }
 
-   hypredrv_IntArrayDestroy(timestep_starts);
+   hypredrv_IntArrayDestroy(&timesteps->ids);
+   hypredrv_IntArrayDestroy(&timesteps->starts);
 }
 
 uint32_t
 hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *filename,
-                                  IntArray **timestep_starts)
+                                  PreconReuseTimesteps *timesteps)
 {
-   if (!args || !timestep_starts)
+   if (!args || !timesteps)
    {
       return hypredrv_ErrorCodeGet();
    }
 
-   hypredrv_PreconReuseTimestepsClear(timestep_starts);
+   hypredrv_PreconReuseTimestepsClear(timesteps);
 
    if (!args->enabled || !args->per_timestep)
    {
@@ -282,10 +318,20 @@ hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *file
       return hypredrv_ErrorCodeGet();
    }
 
+   IntArray *ids = hypredrv_IntArrayCreate((size_t)total);
+   if (!ids)
+   {
+      fclose(fp);
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate timestep ids array");
+      return hypredrv_ErrorCodeGet();
+   }
+
    IntArray *starts = hypredrv_IntArrayCreate((size_t)total);
    if (!starts)
    {
       fclose(fp);
+      hypredrv_IntArrayDestroy(&ids);
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd("Failed to allocate timestep starts array");
       return hypredrv_ErrorCodeGet();
@@ -298,25 +344,36 @@ hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *args, const char *file
       if (fscanf(fp, "%d %d", &timestep, &ls_start) != 2 || ls_start < 0)
       {
          fclose(fp);
+         hypredrv_IntArrayDestroy(&ids);
          hypredrv_IntArrayDestroy(&starts);
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          hypredrv_ErrorMsgAdd("Invalid timestep entry in '%s' at line %d", filename,
                               i + 2);
          return hypredrv_ErrorCodeGet();
       }
+      ids->data[i]    = timestep;
       starts->data[i] = ls_start;
-      (void)timestep;
    }
 
    fclose(fp);
-   *timestep_starts = starts;
+   timesteps->ids    = ids;
+   timesteps->starts = starts;
    return hypredrv_ErrorCodeGet();
 }
 
 int
-hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *args,
-                                    const IntArray *timestep_starts, const Stats *stats,
-                                    int next_ls_id)
+hypredrv_PreconReuseResolveTimestep(const PreconReuseTimesteps *timesteps,
+                                    const Stats *stats, int ls_id, int *timestep_id,
+                                    int *timestep_idx, int *timestep_start)
+{
+   return PreconReuseResolveTimestepContext(timesteps, stats, ls_id, timestep_id,
+                                            timestep_idx, timestep_start);
+}
+
+int
+hypredrv_PreconReuseShouldRecompute(const PreconReuse_args     *args,
+                                    const PreconReuseTimesteps *timesteps,
+                                    const Stats *stats, int next_ls_id)
 {
    if (!args)
    {
@@ -343,7 +400,7 @@ hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *args,
    {
       int timestep_idx   = -1;
       int timestep_start = -1;
-      if (!PreconReuseResolveTimestepContext(timestep_starts, stats, next_ls_id,
+      if (!PreconReuseResolveTimestepContext(timesteps, stats, next_ls_id, NULL,
                                              &timestep_idx, &timestep_start))
       {
          return 0;
@@ -915,10 +972,18 @@ void
 hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
                        HYPRE_Precon *precon_ptr)
 {
+   int log_rank = -1;
+   if (hypredrv_LogEnabled(3))
+   {
+      log_rank = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
+   }
+
    HYPRE_Precon precon = *precon_ptr;
 
    if (!precon)
    {
+      HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                    "preconditioner destroy skipped: object already NULL");
       return;
    }
 
@@ -927,6 +992,8 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
       switch (precon_method)
       {
          case PRECON_BOOMERAMG:
+            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                          "preconditioner destroy dispatch: method=boomeramg");
             for (HYPRE_Int i = 0; i < args->amg.num_rbms; i++)
             {
                HYPRE_ParVectorDestroy(args->amg.rbms[i]);
@@ -936,22 +1003,30 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
             break;
 
          case PRECON_MGR:
+            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                          "preconditioner destroy dispatch: method=mgr");
             PreconDestroyMGRSolver(&args->mgr, &precon->main);
             break;
 
          case PRECON_ILU:
+            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                          "preconditioner destroy dispatch: method=ilu");
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
             HYPRE_ILUDestroy(precon->main);
 #endif
             break;
 
          case PRECON_FSAI:
+            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                          "preconditioner destroy dispatch: method=fsai");
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
             HYPRE_FSAIDestroy(precon->main);
 #endif
             break;
 
          case PRECON_NONE:
+            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+                          "preconditioner destroy dispatch: method=none");
             break;
       }
 

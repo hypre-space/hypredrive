@@ -1716,6 +1716,7 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
          dl_iterate_phdr(hypredrv_dlpi_callback, NULL);
       }
 #endif
+      printf("\n");
 
       PrintMpiRuntimeInformation(comm);
       PrintThreadingEnvironmentInformation();
