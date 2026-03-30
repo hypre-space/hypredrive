@@ -1,10 +1,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "containers.h"
-#include "field.h"
+#include "internal/containers.h"
+#include "internal/field.h"
 #include "test_helpers.h"
-#include "yaml.h"
+#include "internal/yaml.h"
 
 static YAMLnode *
 make_node(const char *value)
@@ -49,9 +49,32 @@ test_FieldTypeStringSet(void)
 {
    char      buffer[MAX_FILENAME_LENGTH];
    YAMLnode *node = make_node("output.txt");
+   hypredrv_ErrorCodeResetAll();
    hypredrv_FieldTypeStringSet(buffer, node);
    ASSERT_STREQ(buffer, "output.txt");
+    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    hypredrv_YAMLnodeDestroy(node);
+}
+
+static void
+test_FieldTypeStringSet_overlong_rejected(void)
+{
+   char      buffer[MAX_FILENAME_LENGTH];
+   char     *big  = (char *)malloc((size_t)MAX_FILENAME_LENGTH + 32);
+   YAMLnode *node = NULL;
+   ASSERT_NOT_NULL(big);
+   memset(big, 'x', (size_t)MAX_FILENAME_LENGTH + 31);
+   big[MAX_FILENAME_LENGTH + 31] = '\0';
+
+   node = make_node(big);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_FieldTypeStringSet(buffer, node);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL) != 0);
+   ASSERT_STREQ(buffer, "");
+
+   hypredrv_YAMLnodeDestroy(node);
+   free(big);
 }
 
 static void
@@ -87,6 +110,7 @@ main(void)
    RUN_TEST(test_FieldTypeDoubleSet);
    RUN_TEST(test_FieldTypeCharSet);
    RUN_TEST(test_FieldTypeStringSet);
+   RUN_TEST(test_FieldTypeStringSet_overlong_rejected);
    RUN_TEST(test_FieldTypeIntArraySet);
    RUN_TEST(test_FieldTypeStackIntArraySet);
    return 0;

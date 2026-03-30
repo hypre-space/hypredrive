@@ -5,19 +5,140 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "error.h"
+#include "internal/error.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #ifdef __linux__
 
+#include <errno.h>
 #include <execinfo.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+static void
+ErrorTrimNewline(char *text)
+{
+   if (!text)
+   {
+      return;
+   }
+
+   char *nl = strchr(text, '\n');
+   if (nl)
+   {
+      *nl = '\0';
+   }
+}
+
+static int
+ErrorWaitChild(pid_t pid)
+{
+   int status = 0;
+
+   while (waitpid(pid, &status, 0) < 0)
+   {
+      if (errno == EINTR)
+      {
+         continue;
+      }
+      return 0;
+   }
+
+   return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+static int
+ErrorAddr2lineResolve(const char *exe_path, unsigned long offset, char *func,
+                      size_t func_size, char *file, size_t file_size)
+{
+   int   pipefd[2] = {-1, -1};
+   pid_t child_pid = -1;
+   char  offset_arg[32];
+   FILE *fp = NULL;
+
+   if (!exe_path || exe_path[0] == '\0' || !func || !file || func_size == 0 ||
+       file_size == 0)
+   {
+      return 0;
+   }
+
+   if (snprintf(offset_arg, sizeof(offset_arg), "0x%lx", offset) < 0)
+   {
+      return 0;
+   }
+
+   if (pipe(pipefd) != 0)
+   {
+      return 0;
+   }
+
+   child_pid = fork();
+   if (child_pid < 0)
+   {
+      close(pipefd[0]);
+      close(pipefd[1]);
+      return 0;
+   }
+
+   if (child_pid == 0)
+   {
+      int devnull = -1;
+      close(pipefd[0]);
+
+      if (dup2(pipefd[1], STDOUT_FILENO) < 0)
+      {
+         _Exit(127);
+      }
+
+      devnull = open("/dev/null", O_WRONLY);
+      if (devnull >= 0)
+      {
+         (void)dup2(devnull, STDERR_FILENO);
+         close(devnull);
+      }
+      close(pipefd[1]);
+
+      {
+         char *const argv[] = {
+            "addr2line", "-e", (char *)exe_path, "-f", "-C", "-i", offset_arg, NULL,
+         };
+         execvp("addr2line", argv);
+      }
+      _Exit(127);
+   }
+
+   close(pipefd[1]);
+   fp = fdopen(pipefd[0], "r");
+   if (!fp)
+   {
+      close(pipefd[0]);
+      (void)ErrorWaitChild(child_pid);
+      return 0;
+   }
+
+   {
+      int func_cap = (func_size > (size_t)INT_MAX) ? INT_MAX : (int)func_size;
+      int file_cap = (file_size > (size_t)INT_MAX) ? INT_MAX : (int)file_size;
+      if (!fgets(func, func_cap, fp) || !fgets(file, file_cap, fp))
+      {
+         fclose(fp);
+         (void)ErrorWaitChild(child_pid);
+         return 0;
+      }
+   }
+
+   ErrorTrimNewline(func);
+   ErrorTrimNewline(file);
+   fclose(fp);
+
+   return ErrorWaitChild(child_pid);
+}
 
 /*-----------------------------------------------------------------------------
  * ErrorBacktraceGetBaseAddress
@@ -139,35 +260,11 @@ ErrorBacktraceSymbolsPrint(void)
          /* If we found an offset, use addr2line with it */
          if (offset > 0)
          {
-            char cmd[4352];
-            /* Use absolute path and redirect stderr to avoid noise */
-            /* Note: -p outputs on one line, so we use separate -f and -l flags */
-            snprintf(cmd, sizeof(cmd), "addr2line -e %s -f -C -i 0x%lx 2>/dev/null",
-                     exe_path, offset);
-            FILE *fp = popen(cmd, "r");
-            if (fp)
+            if (!ErrorAddr2lineResolve(exe_path, offset, func, sizeof(func), file,
+                                       sizeof(file)))
             {
-               /* Read function name (first line) */
-               if (fgets(func, sizeof(func), fp))
-               {
-                  /* Remove newline */
-                  char *nl = strchr(func, '\n');
-                  if (nl) *nl = '\0';
-               }
-               /* Read file:line (second line) */
-               if (fgets(file, sizeof(file), fp))
-               {
-                  /* Remove newline */
-                  char *nl = strchr(file, '\n');
-                  if (nl) *nl = '\0';
-               }
-               int status = pclose(fp);
-               /* If addr2line failed (non-zero exit), clear the output */
-               if (status != 0)
-               {
-                  func[0] = '\0';
-                  file[0] = '\0';
-               }
+               func[0] = '\0';
+               file[0] = '\0';
             }
          }
 
@@ -269,7 +366,6 @@ hypredrv_ErrorBacktracePrint(void)
    {
       /* Child process */
       char attach_cmd[64];
-      char file_cmd[4200];
       char pid_str[16];
 
       snprintf(attach_cmd, sizeof(attach_cmd), "attach %d", parent_pid);
@@ -280,30 +376,28 @@ hypredrv_ErrorBacktracePrint(void)
       close(lock[0]);
 
       /* Get executable path from /proc/<parent_pid>/exe (not self, since we forked) */
-      char exe_link[64];
-      char exe_path[4096];
-      snprintf(exe_link, sizeof(exe_link), "/proc/%d/exe", parent_pid);
-      ssize_t len = readlink(exe_path, exe_link, sizeof(exe_link) - 1);
+      char proc_exe_path[64];
+      char resolved_exe[4096];
+      snprintf(proc_exe_path, sizeof(proc_exe_path), "/proc/%d/exe", parent_pid);
+      ssize_t len = readlink(proc_exe_path, resolved_exe, sizeof(resolved_exe) - 1);
       if (len > 0)
       {
-         exe_path[len] = '\0';
-         /* Build "file <path>" as a single command string */
-         snprintf(file_cmd, sizeof(file_cmd), "file %s", exe_path);
+         resolved_exe[len] = '\0';
       }
       else
       {
-         file_cmd[0] = '\0';
+         resolved_exe[0] = '\0';
       }
 
       /* Try gdb - interactive mode with colored output
        * Order matters: load symbols first (file), then attach to process.
        * We continue the process briefly so SIGTRAP can be raised, then GDB catches it
        * giving the user an interactive session at the actual error location. */
-      if (file_cmd[0] != '\0')
+      if (resolved_exe[0] != '\0')
       {
-         execlp("gdb", "gdb", "-nx", "-ex", "set style enabled on", "-ex",
-                "set confirm off", "-ex", "set pagination off", "-ex", file_cmd, "-ex",
-                attach_cmd, "-ex", "continue", (char *)NULL);
+         execlp("gdb", "gdb", "-nx", resolved_exe, "-ex", "set style enabled on", "-ex",
+                "set confirm off", "-ex", "set pagination off", "-ex", attach_cmd, "-ex",
+                "continue", (char *)NULL);
       }
       else
       {
@@ -384,7 +478,7 @@ ErrorStateGet(void)
 }
 
 static int
-ErrorCodeToIndex(ErrorCode code)
+ErrorCodeToIndex(hypredrv_error_t code)
 {
    int index = 0;
 
@@ -406,7 +500,7 @@ ErrorCodeToIndex(ErrorCode code)
  *-----------------------------------------------------------------------------*/
 
 static void
-ErrorCodeCountIncrement(ErrorState *state, ErrorCode code)
+ErrorCodeCountIncrement(ErrorState *state, hypredrv_error_t code)
 {
    int index = ErrorCodeToIndex(code);
    if (index >= 0)
@@ -420,7 +514,7 @@ ErrorCodeCountIncrement(ErrorState *state, ErrorCode code)
  *-----------------------------------------------------------------------------*/
 
 static uint32_t
-ErrorCodeCountGet(const ErrorState *state, ErrorCode code)
+ErrorCodeCountGet(const ErrorState *state, hypredrv_error_t code)
 {
    int index = ErrorCodeToIndex(code);
    return (index >= 0) ? state->code_count[index] : 0;
@@ -444,7 +538,7 @@ ErrorStateRecordMessageDrop(ErrorState *state)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_ErrorCodeSet(ErrorCode code)
+hypredrv_ErrorCodeSet(hypredrv_error_t code)
 {
    ErrorState *state = ErrorStateGet();
 
@@ -672,7 +766,7 @@ ErrorMsgAddBoundedPieces(const char *prefix, const char *value, const char *suff
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_ErrorMsgAddCodeWithCount(ErrorCode code, const char *suffix)
+hypredrv_ErrorMsgAddCodeWithCount(hypredrv_error_t code, const char *suffix)
 {
    uint32_t    count       = ErrorCodeCountGet(ErrorStateGet(), code);
    const char *safe_suffix = suffix ? suffix : "(null)";

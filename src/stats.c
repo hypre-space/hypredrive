@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "stats.h"
+#include "internal/stats.h"
 #include <math.h>
 #include <mpi.h>
 #include <stdarg.h>

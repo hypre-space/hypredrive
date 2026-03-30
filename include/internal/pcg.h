@@ -5,31 +5,38 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#ifndef CHEBY_HEADER
-#define CHEBY_HEADER
+#ifndef PCG_HEADER
+#define PCG_HEADER
 
+#include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "field.h"
-#include "yaml.h"
+#include "internal/field.h"
+#include "internal/yaml.h"
 
 /*--------------------------------------------------------------------------
- * Chebyshev smoother arguments struct
+ * PCG solver arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct Cheby_args_struct
+typedef struct PCG_args_struct
 {
-   HYPRE_Int  order;
-   HYPRE_Int  eig_est;
-   HYPRE_Int  variant;
-   HYPRE_Int  scale;
-   HYPRE_Real fraction;
-} Cheby_args;
+   HYPRE_Int  max_iter;
+   HYPRE_Int  two_norm;
+   HYPRE_Int  stop_crit;
+   HYPRE_Int  rel_change;
+   HYPRE_Int  print_level;
+   HYPRE_Int  recompute_res;
+   HYPRE_Real relative_tol;
+   HYPRE_Real absolute_tol;
+   HYPRE_Real residual_tol;
+   HYPRE_Real conv_fac_tol;
+} PCG_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void hypredrv_ChebySetDefaultArgs(Cheby_args *);
-void hypredrv_ChebySetArgs(void *, const YAMLnode *);
+void hypredrv_PCGSetDefaultArgs(PCG_args *);
+void hypredrv_PCGSetArgs(void *, const YAMLnode *);
+void hypredrv_PCGCreate(MPI_Comm, const PCG_args *, HYPRE_Solver *);
 
-#endif /* CHEBY_HEADER */
+#endif /* PCG_HEADER */

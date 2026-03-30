@@ -16,9 +16,8 @@
 #endif
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
-#include "compatibility.h"
 
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900
 #define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) \
    HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
 #define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) \

@@ -5,38 +5,39 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#ifndef PCG_HEADER
-#define PCG_HEADER
+#ifndef FSAI_HEADER
+#define FSAI_HEADER
 
-#include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "field.h"
-#include "yaml.h"
+#include "internal/field.h"
+#include "internal/yaml.h"
 
 /*--------------------------------------------------------------------------
- * PCG solver arguments struct
+ * FSAI preconditioner arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct PCG_args_struct
+typedef struct FSAI_args_struct
 {
    HYPRE_Int  max_iter;
-   HYPRE_Int  two_norm;
-   HYPRE_Int  stop_crit;
-   HYPRE_Int  rel_change;
    HYPRE_Int  print_level;
-   HYPRE_Int  recompute_res;
-   HYPRE_Real relative_tol;
-   HYPRE_Real absolute_tol;
-   HYPRE_Real residual_tol;
-   HYPRE_Real conv_fac_tol;
-} PCG_args;
+   HYPRE_Int  algo_type;
+   HYPRE_Int  ls_type;
+   HYPRE_Int  max_steps;
+   HYPRE_Int  max_step_size;
+   HYPRE_Int  max_nnz_row;
+   HYPRE_Int  num_levels;
+   HYPRE_Int  eig_max_iters;
+   HYPRE_Real threshold;
+   HYPRE_Real kap_tolerance;
+   HYPRE_Real tolerance;
+} FSAI_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void hypredrv_PCGSetDefaultArgs(PCG_args *);
-void hypredrv_PCGSetArgs(void *, const YAMLnode *);
-void hypredrv_PCGCreate(MPI_Comm, const PCG_args *, HYPRE_Solver *);
+void hypredrv_FSAISetDefaultArgs(FSAI_args *);
+void hypredrv_FSAISetArgs(void *, const YAMLnode *);
+void hypredrv_FSAICreate(const FSAI_args *, HYPRE_Solver *);
 
-#endif /* PCG_HEADER */
+#endif /* FSAI_HEADER */

@@ -8,8 +8,8 @@
 #ifndef GEN_MACROS_HEADER
 #define GEN_MACROS_HEADER
 
-#include "containers.h"
-#include "yaml.h"
+#include "internal/containers.h"
+#include "internal/yaml.h"
 
 /**
  * @brief Defines a function to set a field by name.

@@ -13,9 +13,9 @@
 #include "HYPRE.h"
 #include "HYPRE_IJ_mv.h"
 #include "HYPRE_utilities.h"
-#include "comp.h"
-#include "compatibility.h"
-#include "containers.h"
+#include "internal/comp.h"
+#include "internal/compatibility.h"
+#include "internal/containers.h"
 
 #define LSSEQ_MAGIC UINT64_C(0x3151534c56445248) /* "HDRVLSQ1" */
 #define LSSEQ_VERSION UINT32_C(1) /* batched blobs per part (values/rhs/dof) */

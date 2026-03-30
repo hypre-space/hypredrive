@@ -9,10 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "args.h"
-#include "containers.h"
-#include "error.h"
-#include "mgr.h"
+#include "internal/args.h"
+#include "internal/containers.h"
+#include "internal/error.h"
+#include "internal/mgr.h"
 #include "test_helpers.h"
 
 /*-----------------------------------------------------------------------------

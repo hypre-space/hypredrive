@@ -10,8 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "error.h"
-#include "presets.h"
+#include "internal/error.h"
+#include "internal/presets.h"
 #include "test_helpers.h"
 #include "HYPREDRV.h"
 

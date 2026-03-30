@@ -2,10 +2,10 @@
 #define HYPREDRV_OBJECT_HEADER_
 
 #include "HYPREDRV.h"
-#include "args.h"
-#include "containers.h"
-#include "scaling.h"
-#include "stats.h"
+#include "internal/args.h"
+#include "internal/containers.h"
+#include "internal/scaling.h"
+#include "internal/stats.h"
 
 typedef struct hypredrv_struct
 {
@@ -43,6 +43,7 @@ typedef struct hypredrv_struct
    Stats *stats;
    bool   stats_printed;
    int    runtime_object_id;
+   int    current_system_index;
 
    /* Linked-list hook used by the internal runtime registry. */
    struct hypredrv_struct *next_live;

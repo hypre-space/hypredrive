@@ -5,17 +5,17 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "args.h"
+#include "internal/args.h"
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "field.h"
-#include "gen_macros.h"
+#include "internal/field.h"
+#include "internal/gen_macros.h"
+#include "internal/presets.h"
+#include "internal/scaling.h"
+#include "internal/stats.h"
+#include "internal/utils.h"
+#include "internal/yaml.h"
 #include "logging.h"
-#include "presets.h"
-#include "scaling.h"
-#include "stats.h"
-#include "utils.h"
-#include "yaml.h"
 
 /*-----------------------------------------------------------------------------
  * General args helpers (schema-driven parsing)
@@ -168,10 +168,43 @@ hypredrv_InputArgsDestroy(input_args **iargs_ptr)
          hypredrv_DoubleArrayDestroy(&iargs->scaling.custom_values);
       }
       hypredrv_IntArrayDestroy(&iargs->ls.set_suffix);
+      hypredrv_PrintSystemDestroyArgs(&iargs->ls.print_system);
       hypredrv_DofLabelMapDestroy(&iargs->ls.dof_labels);
       free(*iargs_ptr);
       *iargs_ptr = NULL;
    }
+}
+
+static YAMLnode *
+InputArgsFindUniqueRootSection(const YAMLtree *tree, const char *key)
+{
+   if (!tree || !tree->root || !key)
+   {
+      return NULL;
+   }
+
+   YAMLnode *match = NULL;
+   int       count = 0;
+   YAML_NODE_ITERATE(tree->root, child)
+   {
+      if (!strcmp(child->key, key))
+      {
+         if (!match)
+         {
+            match = child;
+         }
+         count++;
+      }
+   }
+
+   if (count > 1)
+   {
+      hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
+      hypredrv_ErrorMsgAdd("Duplicate top-level key '%s' is not allowed", key);
+      return NULL;
+   }
+
+   return match;
 }
 
 /*-----------------------------------------------------------------------------
@@ -179,11 +212,15 @@ hypredrv_InputArgsDestroy(input_args **iargs_ptr)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParseGeneral(input_args *iargs, const YAMLtree *tree)
 {
-   YAMLnode *parent = hypredrv_YAMLnodeFindByKey(tree->root, "general");
+   YAMLnode *parent = InputArgsFindUniqueRootSection(tree, "general");
    if (!parent)
    {
+      if (hypredrv_ErrorCodeActive())
+      {
+         return;
+      }
       /* The \"general\" key is optional */
       iargs->ls.exec_policy = iargs->general.exec_policy;
       return;
@@ -201,13 +238,17 @@ hypredrv_InputArgsParseGeneral(input_args *iargs, YAMLtree *tree)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParseLinearSystem(input_args *iargs, const YAMLtree *tree)
 {
    const char key[]  = {"linear_system"};
-   YAMLnode  *parent = hypredrv_YAMLnodeFindByKey(tree->root, key);
+   YAMLnode  *parent = InputArgsFindUniqueRootSection(tree, key);
 
    if (!parent)
    {
+      if (hypredrv_ErrorCodeActive())
+      {
+         return;
+      }
       // TODO: Add "library" mode to skip the following checks
       // hypredrv_ErrorCodeSet(ERROR_MISSING_KEY);
       // hypredrv_ErrorMsgAddMissingKey(key);
@@ -229,14 +270,18 @@ hypredrv_InputArgsParseLinearSystem(input_args *iargs, YAMLtree *tree)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_InputArgsParseSolver(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
 {
    YAMLnode *parent       = NULL;
    YAMLnode *scaling_node = NULL;
 
-   parent = hypredrv_YAMLnodeFindByKey(tree->root, "solver");
+   parent = InputArgsFindUniqueRootSection(tree, "solver");
    if (!parent)
    {
+      if (hypredrv_ErrorCodeActive())
+      {
+         return;
+      }
       // TODO: Add "library" mode to skip the following checks
       // hypredrv_ErrorCodeSet(ERROR_MISSING_KEY);
       // hypredrv_ErrorMsgAddMissingKey("solver");
@@ -793,13 +838,18 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_InputArgsParsePrecon(input_args *iargs, YAMLtree *tree)
+hypredrv_InputArgsParsePrecon(input_args *iargs, const YAMLtree *tree)
 {
    hypredrv_MGRSetDofLabels(iargs->ls.dof_labels);
 
-   YAMLnode *parent = hypredrv_YAMLnodeFindByKey(tree->root, "preconditioner");
+   YAMLnode *parent = InputArgsFindUniqueRootSection(tree, "preconditioner");
    if (!parent)
    {
+      if (hypredrv_ErrorCodeActive())
+      {
+         hypredrv_MGRSetDofLabels(NULL);
+         return;
+      }
       hypredrv_ErrorCodeSet(ERROR_MISSING_KEY);
       hypredrv_ErrorMsgAddMissingKey("preconditioner");
       hypredrv_MGRSetDofLabels(NULL);

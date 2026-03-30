@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "error.h"
+#include "internal/error.h"
 #include "test_helpers.h"
 
 static void
@@ -25,15 +25,15 @@ test_ErrorCodeSet_get(void)
 {
    /* Reset first to ensure clean state */
    hypredrv_ErrorCodeResetAll();
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_INVALID_KEY);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_INVALID_KEY);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
    hypredrv_ErrorCodeResetAll();
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 }
 
@@ -100,7 +100,7 @@ test_ErrorStateReset(void)
 
    hypredrv_ErrorStateReset();
 
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    char buffer[512];

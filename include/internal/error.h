@@ -16,8 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// TODO: consider using hypredrv_error_t instead of ErrorCode
-typedef enum ErrorCode_enum
+typedef enum hypredrv_error_enum
 {
    ERROR_NONE                     = 0x00000000, // No error
    ERROR_YAML_INVALID_INDENT      = 0x00000001, //  1st bit
@@ -49,10 +48,18 @@ typedef enum ErrorCode_enum
    ERROR_ALLOCATION               = 0x20000000, // 28th bit
    ERROR_OUT_OF_BOUNDS            = 0x40000000, // 29th bit
    ERROR_UNKNOWN                  = 0x80000000, // 30th bit
-} ErrorCode;
+} hypredrv_error_t;
 
-// TODO: consider using hypredrv_ for function names
-void     hypredrv_ErrorCodeSet(ErrorCode);
+/* Backward-compatible alias; prefer hypredrv_error_t in new code. */
+typedef hypredrv_error_t ErrorCode;
+
+/*
+ * THREAD SAFETY
+ *
+ * Error state is process-global and not thread-safe. Callers must invoke these
+ * APIs from a single thread or provide external synchronization.
+ */
+void     hypredrv_ErrorCodeSet(hypredrv_error_t);
 uint32_t hypredrv_ErrorCodeGet(void);
 bool     hypredrv_ErrorCodeActive(void);
 void     hypredrv_ErrorCodeDescribe(uint32_t);
@@ -65,7 +72,7 @@ bool     hypredrv_DistributedErrorCodeActive(MPI_Comm);
  *******************************************************************************/
 
 void hypredrv_ErrorMsgAdd(const char *, ...);
-void hypredrv_ErrorMsgAddCodeWithCount(ErrorCode, const char *);
+void hypredrv_ErrorMsgAddCodeWithCount(hypredrv_error_t, const char *);
 void hypredrv_ErrorMsgAddMissingKey(const char *);
 void hypredrv_ErrorMsgAddExtraKey(const char *);
 void hypredrv_ErrorMsgAddUnexpectedVal(const char *);
@@ -77,16 +84,17 @@ void hypredrv_ErrorBacktracePrint(void);
 /*******************************************************************************
  *******************************************************************************/
 
-#define HYPREDRV_MALLOC_AND_CHECK(ptr, size)                \
-   do                                                       \
-   {                                                        \
-      (ptr) = malloc(size);                                 \
-      if ((ptr) == NULL)                                    \
-      {                                                     \
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);           \
-         hypredrv_ErrorMsgAdd("Memory allocation failed!"); \
-         return;                                            \
-      }                                                     \
+#define HYPREDRV_MALLOC_AND_CHECK(ptr, size)                                             \
+   do                                                                                    \
+   {                                                                                     \
+      (ptr) = malloc(size);                                                              \
+      if ((ptr) == NULL)                                                                 \
+      {                                                                                  \
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                                        \
+         hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__, \
+                              __LINE__, (size_t)(size));                                 \
+         return;                                                                         \
+      }                                                                                  \
    } while (0)
 
 #endif /* ERROR_H */

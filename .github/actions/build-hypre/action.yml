@@ -63,7 +63,7 @@ runs:
       id: hypre-cache
       with:
         path: ${{ runner.tool_cache }}/hypre/${{ steps.resolve-sha.outputs.install_suffix }}
-        key: hypre-${{ steps.resolve-sha.outputs.install_suffix }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}-mixedint-${{ inputs.hypre_mixedint }}-${{ inputs.mpi_flavor }}
+        key: hypre-v2-${{ steps.resolve-sha.outputs.install_suffix }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}-mixedint-${{ inputs.hypre_mixedint }}-${{ inputs.mpi_flavor }}
 
     - name: Build & install HYPRE
       id: build
@@ -71,11 +71,37 @@ runs:
       run: |
         set -euxo pipefail
         PREFIX="${{ runner.tool_cache }}/hypre/${{ steps.resolve-sha.outputs.install_suffix }}"
+        HYPRE_CONFIG_HEADER="$PREFIX/include/HYPRE_config.h"
+        REQUIRE_DEVELOP_METADATA=0
+        if [[ ! "${{ inputs.hypre_version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          REQUIRE_DEVELOP_METADATA=1
+        fi
+
+        HAVE_INSTALL=1
         if [ ! -f "$PREFIX/lib/cmake/HYPRE/HYPREConfig.cmake" ] && \
            [ ! -f "$PREFIX/lib/libHYPRE.so" ] && \
            [ ! -f "$PREFIX/lib/libHYPRE.dylib" ] && \
            [ ! -f "$PREFIX/lib/libHYPRE.a" ]; then
-          git clone --depth 1 --branch ${{ inputs.hypre_version }} https://github.com/hypre-space/hypre.git
+          HAVE_INSTALL=0
+        fi
+        if [ "$HAVE_INSTALL" -eq 1 ] && [ ! -f "$HYPRE_CONFIG_HEADER" ]; then
+          echo "Cached HYPRE install is missing include/HYPRE_config.h; rebuilding"
+          HAVE_INSTALL=0
+        fi
+        if [ "$HAVE_INSTALL" -eq 1 ] && [ "$REQUIRE_DEVELOP_METADATA" -eq 1 ] && \
+           ! grep -Eq '^[[:space:]]*#define[[:space:]]+HYPRE_DEVELOP_NUMBER[[:space:]]+[0-9]+' "$HYPRE_CONFIG_HEADER"; then
+          echo "Cached HYPRE install is missing HYPRE_DEVELOP_NUMBER; rebuilding"
+          HAVE_INSTALL=0
+        fi
+
+        if [ "$HAVE_INSTALL" -eq 0 ]; then
+          rm -rf "$PREFIX" hypre
+          if [[ "${{ inputs.hypre_version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            git clone --depth 1 --branch ${{ inputs.hypre_version }} https://github.com/hypre-space/hypre.git
+          else
+            git clone --branch ${{ inputs.hypre_version }} https://github.com/hypre-space/hypre.git
+            git -C hypre fetch --tags --force
+          fi
           HYPRE_TAG="${{ inputs.hypre_version }}"
           USE_AUTOTOOLS=0
           if [[ "$HYPRE_TAG" =~ ^v ]]; then
@@ -124,6 +150,15 @@ runs:
             cmake --build hypre/build --parallel
             cmake --install hypre/build
           fi
+        fi
+        if [ ! -f "$HYPRE_CONFIG_HEADER" ]; then
+          echo "::error::HYPRE install is missing include/HYPRE_config.h"
+          exit 1
+        fi
+        if [ "$REQUIRE_DEVELOP_METADATA" -eq 1 ] && \
+           ! grep -Eq '^[[:space:]]*#define[[:space:]]+HYPRE_DEVELOP_NUMBER[[:space:]]+[0-9]+' "$HYPRE_CONFIG_HEADER"; then
+          echo "::error::HYPRE install is missing HYPRE_DEVELOP_NUMBER; development builds require full git history and tags."
+          exit 1
         fi
         echo "hypre_prefix=$PREFIX" >> $GITHUB_OUTPUT
         echo "HYPRE_PREFIX=$PREFIX" >> $GITHUB_ENV

@@ -5,14 +5,14 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "comp.h"
+#include "internal/comp.h"
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "HYPREDRV_config.h"
-#include "error.h"
+#include "internal/error.h"
 
 #ifdef HYPREDRV_USING_ZLIB
 #include <zlib.h>

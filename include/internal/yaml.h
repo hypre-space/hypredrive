@@ -13,8 +13,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "error.h"
-#include "utils.h"
+#include "internal/containers.h"
+#include "internal/error.h"
+#include "internal/utils.h"
 
 enum
 {

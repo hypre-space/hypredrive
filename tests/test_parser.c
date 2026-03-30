@@ -2,20 +2,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "amg.h"
-#include "bicgstab.h"
-#include "cheby.h"
-#include "containers.h"
-#include "error.h"
-#include "fgmres.h"
-#include "fsai.h"
-#include "gmres.h"
-#include "ilu.h"
-#include "mgr.h"
-#include "krylov.h"
-#include "pcg.h"
+#include "internal/amg.h"
+#include "internal/bicgstab.h"
+#include "internal/cheby.h"
+#include "internal/containers.h"
+#include "internal/error.h"
+#include "internal/fgmres.h"
+#include "internal/fsai.h"
+#include "internal/gmres.h"
+#include "internal/ilu.h"
+#include "internal/mgr.h"
+#include "internal/krylov.h"
+#include "internal/pcg.h"
 #include "test_helpers.h"
-#include "yaml.h"
+#include "internal/yaml.h"
 
 /* Internal/generated functions not in public headers */
 void           hypredrv_AMGSetArgsFromYAML(void *, YAMLnode *);

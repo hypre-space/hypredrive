@@ -1,0 +1,52 @@
+general:
+  name: lidcavity-print-system
+
+linear_system:
+  dof_labels:
+    v_x: 0
+    v_y: 1
+    p: 2
+  print_system:
+    enabled: on
+    type: iterations_over
+    stage: apply
+    threshold: 0
+    artifacts: [metadata]
+    output_dir: print-trigger-dumps
+    overwrite: on
+
+solver:
+  fgmres:
+    max_iter: 200
+    krylov_dim: 200
+    print_level: 0
+    relative_tol: 1.0e-6
+
+preconditioner:
+  mgr:
+    tolerance: 0.0
+    max_iter: 1
+    print_level: 0
+    coarse_th: 0.0
+    level:
+      0:
+        f_dofs: [v_x, v_y]
+        f_relaxation:
+          amg:
+            print_level: 0
+            max_iter: 1
+            coarsening:
+              strong_th: 0.5
+              num_functions: 2
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: blk-absrowsum
+        coarse_level_type: galerkin
+
+    coarsest_level:
+      amg:
+        max_iter: 1
+        print_level: 0
+        coarsening:
+          strong_th: 0.9
+          num_functions: 1

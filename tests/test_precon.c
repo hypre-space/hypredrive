@@ -3,16 +3,16 @@
 #include <string.h>
 
 #include "HYPRE.h"
-#include "amg.h"
-#include "containers.h"
-#include "error.h"
-#include "fsai.h"
-#include "ilu.h"
-#include "mgr.h"
-#include "krylov.h"
-#include "precon.h"
+#include "internal/amg.h"
+#include "internal/containers.h"
+#include "internal/error.h"
+#include "internal/fsai.h"
+#include "internal/ilu.h"
+#include "internal/mgr.h"
+#include "internal/krylov.h"
+#include "internal/precon.h"
 #include "test_helpers.h"
-#include "yaml.h"
+#include "internal/yaml.h"
 
 /* Forward declarations for internal AMG functions */
 void           hypredrv_AMGSetFieldByName(void *, const YAMLnode *);

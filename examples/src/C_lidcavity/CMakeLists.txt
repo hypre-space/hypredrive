@@ -53,6 +53,9 @@ endif()
 # Add the elasticity driver to the test suite when testing is enabled
 if(HYPREDRV_ENABLE_TESTING)
     include(${CMAKE_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
+    set(_lidcavity_print_system_test_dir
+        ${CMAKE_CURRENT_BINARY_DIR}/print_system_threshold_test)
+    file(MAKE_DIRECTORY ${_lidcavity_print_system_test_dir})
     if(HYPREDRV_HAVE_HYPRE_23000_DEV0)
         add_executable_test(lidcavity_test_1proc lidcavity 1
             ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
@@ -73,6 +76,15 @@ if(HYPREDRV_ENABLE_TESTING)
     if(HYPREDRV_HAVE_HYPRE_30100_DEV5)
         add_executable_test(lidcavity_test_mgr_1proc lidcavity 1
             ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3 -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr.yml
+            RUN_SERIAL
+        )
+        add_executable_test(lidcavity_test_print_1proc lidcavity 1
+            ARGS -v 0 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
+                 -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-print-system.yml
+            WORKING_DIRECTORY ${_lidcavity_print_system_test_dir}
+            REQUIRE_PATHS
+                print-trigger-dumps/lidcavity-print-system/systems_index.txt
+                print-trigger-dumps/lidcavity-print-system/ls_00000/metadata.txt
             RUN_SERIAL
         )
         add_executable_test(lidcavity_test_mgr_4proc lidcavity 4

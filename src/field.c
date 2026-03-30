@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "field.h"
+#include "internal/field.h"
 
 /*-----------------------------------------------------------------------------
  * hypredrv_FieldTypeIntSet
@@ -70,7 +70,23 @@ hypredrv_FieldTypeCharSet(void *field, const YAMLnode *node)
 void
 hypredrv_FieldTypeStringSet(void *field, const YAMLnode *node)
 {
-   snprintf((char *)field, MAX_FILENAME_LENGTH, "%s", node->mapped_val);
+   const char *src = (node && node->mapped_val) ? node->mapped_val : "";
+   int         n   = snprintf((char *)field, MAX_FILENAME_LENGTH, "%s", src);
+   if (n < 0)
+   {
+      ((char *)field)[0] = '\0';
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("Failed to parse string value for key '%s'",
+                           node ? node->key : "<unknown>");
+      return;
+   }
+   if ((size_t)n >= MAX_FILENAME_LENGTH)
+   {
+      ((char *)field)[0] = '\0';
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Value for key '%s' exceeds %d characters",
+                           node ? node->key : "<unknown>", MAX_FILENAME_LENGTH - 1);
+   }
 }
 
 /*-----------------------------------------------------------------------------

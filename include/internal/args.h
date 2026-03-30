@@ -10,11 +10,11 @@
 
 #include <HYPRE_utilities.h>
 #include <stdint.h>
-#include "linsys.h"
-#include "precon.h"
-#include "scaling.h"
-#include "solver.h"
-#include "utils.h"
+#include "internal/linsys.h"
+#include "internal/precon.h"
+#include "internal/scaling.h"
+#include "internal/solver.h"
+#include "internal/utils.h"
 
 /*--------------------------------------------------------------------------
  * Input arguments struct

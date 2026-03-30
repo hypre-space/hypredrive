@@ -11,9 +11,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "HYPRE_utilities.h"
-#include "compatibility.h"
-#include "containers.h"
-#include "error.h"
+#include "internal/compatibility.h"
+#include "internal/error.h"
 
 /*-----------------------------------------------------------------------------
  * HYPRE_SAFE_CALL macro

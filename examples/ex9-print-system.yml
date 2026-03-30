@@ -1,0 +1,30 @@
+general:
+  use_millisec: on
+  statistics: off
+
+linear_system:
+  dirname: data/poromech2k/np1/ls
+  init_suffix: 0
+  last_suffix: 24
+  rhs_filename: IJ.out.b
+  matrix_filename: IJ.out.A
+  dofmap_filename: dofmap.out
+  print_system:
+    enabled: on
+    type: selectors
+    stage: apply
+    artifacts: [matrix, rhs, dofmap, metadata]
+    output_dir: hypredrive-data
+    overwrite: off
+    selectors:
+      - basis: ids
+        ranges:
+          - [0, 2]
+          - [10, 12]
+      - basis: iterations
+        threshold: 50
+      - basis: solve_time
+        threshold: 25.0
+
+solver: gmres
+preconditioner: ilu

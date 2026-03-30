@@ -11,7 +11,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "test_helpers.h"
-#include "utils.h"
+#include "internal/utils.h"
 
 /*-----------------------------------------------------------------------------
  * Test hypredrv_StrToLowerCase

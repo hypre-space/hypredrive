@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "containers.h"
-#include "error.h"
+#include "internal/containers.h"
+#include "internal/error.h"
 /*-----------------------------------------------------------------------------
  * hypredrv_IntArrayWriteAsciiByRank
  *-----------------------------------------------------------------------------*/

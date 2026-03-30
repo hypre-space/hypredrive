@@ -1,6 +1,7 @@
 #include <limits.h>
 #include <mpi.h>
 #include <stdbool.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,12 +9,13 @@
 
 #include "HYPRE_utilities.h"
 #include "HYPREDRV.h"
-#include "args.h"
-#include "containers.h"
-#include "error.h"
+#include "internal/args.h"
+#include "internal/containers.h"
+#include "internal/error.h"
 #include "object.h"
-#include "linsys.h"
-#include "stats.h"
+#include "internal/linsys.h"
+#include "internal/lsseq.h"
+#include "internal/stats.h"
 #include "test_helpers.h"
 
 #ifndef HYPREDRIVE_SOURCE_DIR
@@ -29,6 +31,7 @@ reset_state(void)
 {
    unsetenv("HYPREDRV_LOG_LEVEL");
    unsetenv("HYPREDRV_LOG_STREAM");
+   cleanup_temp_files();
 
    /* Ensure we start each test with clean global error/message and hypre error state.
     * Note: hypre error flags can be sticky across calls; some code paths inspect
@@ -45,10 +48,16 @@ reset_state(void)
 static bool
 setup_ps3d10pt7_paths(char matrix_path[PATH_MAX], char rhs_path[PATH_MAX])
 {
+   char matrix_check[PATH_MAX];
+   char rhs_check[PATH_MAX];
+
    snprintf(matrix_path, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.A", HYPREDRIVE_SOURCE_DIR);
    snprintf(rhs_path, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.b", HYPREDRIVE_SOURCE_DIR);
+   snprintf(matrix_check, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.A.00000",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(rhs_check, PATH_MAX, "%s/data/ps3d10pt7/np1/IJ.out.b.00000", HYPREDRIVE_SOURCE_DIR);
 
-   if (access(matrix_path, F_OK) != 0 || access(rhs_path, F_OK) != 0)
+   if (access(matrix_check, F_OK) != 0 || access(rhs_check, F_OK) != 0)
    {
       fprintf(stderr, "SKIP: missing data files: %s or %s\n", matrix_path, rhs_path);
       return false;
@@ -106,13 +115,13 @@ parse_yaml_into_obj(HYPREDRV_t obj, char *yaml_config)
 {
    char *argv[] = {yaml_config};
    ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
 }
 
 static void
 parse_yaml_file_into_obj(HYPREDRV_t obj, const char *yaml_config, const char *tmp_name)
 {
-   char *tmp_yaml = CREATE_TEMP_FILE(tmp_name);
+   char *tmp_yaml = strdup(tmp_name);
    ASSERT_NOT_NULL(tmp_yaml);
 
    FILE *fp = fopen(tmp_yaml, "w");
@@ -122,7 +131,8 @@ parse_yaml_file_into_obj(HYPREDRV_t obj, const char *yaml_config, const char *tm
 
    char *argv[] = {tmp_yaml};
    ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   remove(tmp_yaml);
    free(tmp_yaml);
 }
 
@@ -168,6 +178,160 @@ parse_library_reuse_yaml(HYPREDRV_t obj, const char *reuse_block)
 }
 
 static void
+write_fnv1a64_seeded(const void *data, size_t nbytes, uint64_t *hash)
+{
+   const unsigned char *bytes = (const unsigned char *)data;
+   ASSERT_NOT_NULL(hash);
+
+   for (size_t i = 0; i < nbytes; i++)
+   {
+      *hash ^= (uint64_t)bytes[i];
+      *hash *= UINT64_C(1099511628211);
+   }
+}
+
+static void
+write_test_lsseq_with_timesteps(const char *filename)
+{
+   const char          payload[] = "source=test\nkind=print_system\n";
+   LSSeqHeader         header;
+   LSSeqInfoHeader     info;
+   LSSeqPartMeta       part_meta[1];
+   LSSeqPatternMeta    pattern_meta[2];
+   LSSeqSystemPartMeta sys_meta[2];
+   LSSeqTimestepEntry  timesteps[2];
+   HYPRE_BigInt        rows0[2] = {0, 1};
+   HYPRE_BigInt        cols0[2] = {0, 1};
+   HYPRE_BigInt        rows1[3] = {0, 0, 1};
+   HYPRE_BigInt        cols1[3] = {0, 1, 1};
+   double              vals0[2] = {10.0, 20.0};
+   double              vals1[3] = {5.0, 1.0, 3.0};
+   double              rhs0[2]  = {1.0, 2.0};
+   double              rhs1[2]  = {3.0, 4.0};
+   int32_t             dof0[2]  = {0, 1};
+   int32_t             dof1[2]  = {1, 1};
+   uint64_t            blob_offset;
+   uint64_t            part_blob_table[LSSEQ_PART_BLOB_ENTRIES] = {0};
+   FILE               *fp = fopen(filename, "wb");
+
+   ASSERT_NOT_NULL(fp);
+
+   memset(&header, 0, sizeof(header));
+   memset(&info, 0, sizeof(info));
+   memset(part_meta, 0, sizeof(part_meta));
+   memset(pattern_meta, 0, sizeof(pattern_meta));
+   memset(sys_meta, 0, sizeof(sys_meta));
+   memset(timesteps, 0, sizeof(timesteps));
+
+   header.magic         = LSSEQ_MAGIC;
+   header.version       = LSSEQ_VERSION;
+   header.flags         = LSSEQ_FLAG_HAS_INFO | LSSEQ_FLAG_HAS_DOFMAP |
+                  LSSEQ_FLAG_HAS_TIMESTEPS;
+   header.codec         = (uint32_t)COMP_NONE;
+   header.num_systems   = 2;
+   header.num_parts     = 1;
+   header.num_patterns  = 2;
+   header.num_timesteps = 2;
+
+   info.magic               = LSSEQ_INFO_MAGIC;
+   info.version             = LSSEQ_INFO_VERSION;
+   info.flags               = LSSEQ_INFO_FLAG_PAYLOAD_KV;
+   info.endian_tag          = UINT32_C(0x01020304);
+   info.payload_size        = (uint64_t)(sizeof(payload) - 1u);
+   info.payload_hash_fnv1a64 = UINT64_C(1469598103934665603);
+   write_fnv1a64_seeded(payload, sizeof(payload) - 1u, &info.payload_hash_fnv1a64);
+   info.blob_hash_fnv1a64 = 0;
+   info.blob_bytes        = 0;
+
+   header.offset_part_meta =
+      sizeof(LSSeqHeader) + sizeof(LSSeqInfoHeader) + (uint64_t)(sizeof(payload) - 1u);
+   header.offset_pattern_meta  = header.offset_part_meta + sizeof(part_meta);
+   header.offset_sys_part_meta = header.offset_pattern_meta + sizeof(pattern_meta);
+   header.offset_part_blob_table =
+      header.offset_sys_part_meta + sizeof(sys_meta);
+   header.offset_timestep_meta =
+      header.offset_part_blob_table + sizeof(part_blob_table);
+   header.offset_blob_data = header.offset_timestep_meta + sizeof(timesteps);
+
+   part_meta[0].row_lower      = 0;
+   part_meta[0].row_upper      = 1;
+   part_meta[0].nrows          = 2;
+   part_meta[0].row_index_size = sizeof(HYPRE_BigInt);
+   part_meta[0].value_size     = sizeof(double);
+
+   blob_offset = header.offset_blob_data;
+
+   pattern_meta[0].part_id          = 0;
+   pattern_meta[0].nnz              = 2;
+   pattern_meta[0].rows_blob_offset = blob_offset;
+   pattern_meta[0].rows_blob_size   = sizeof(rows0);
+   blob_offset += sizeof(rows0);
+   pattern_meta[0].cols_blob_offset = blob_offset;
+   pattern_meta[0].cols_blob_size   = sizeof(cols0);
+   blob_offset += sizeof(cols0);
+
+   pattern_meta[1].part_id          = 0;
+   pattern_meta[1].nnz              = 3;
+   pattern_meta[1].rows_blob_offset = blob_offset;
+   pattern_meta[1].rows_blob_size   = sizeof(rows1);
+   blob_offset += sizeof(rows1);
+   pattern_meta[1].cols_blob_offset = blob_offset;
+   pattern_meta[1].cols_blob_size   = sizeof(cols1);
+   blob_offset += sizeof(cols1);
+
+   sys_meta[0].pattern_id         = 0;
+   sys_meta[0].nnz                = 2;
+   sys_meta[0].values_blob_offset = blob_offset;
+   sys_meta[0].values_blob_size   = sizeof(vals0);
+   blob_offset += sizeof(vals0);
+   sys_meta[0].rhs_blob_offset    = blob_offset;
+   sys_meta[0].rhs_blob_size      = sizeof(rhs0);
+   blob_offset += sizeof(rhs0);
+   sys_meta[0].dof_blob_offset    = blob_offset;
+   sys_meta[0].dof_blob_size      = sizeof(dof0);
+   sys_meta[0].dof_num_entries    = 2;
+   blob_offset += sizeof(dof0);
+
+   sys_meta[1].pattern_id         = 1;
+   sys_meta[1].nnz                = 3;
+   sys_meta[1].values_blob_offset = blob_offset;
+   sys_meta[1].values_blob_size   = sizeof(vals1);
+   blob_offset += sizeof(vals1);
+   sys_meta[1].rhs_blob_offset    = blob_offset;
+   sys_meta[1].rhs_blob_size      = sizeof(rhs1);
+   blob_offset += sizeof(rhs1);
+   sys_meta[1].dof_blob_offset    = blob_offset;
+   sys_meta[1].dof_blob_size      = sizeof(dof1);
+   sys_meta[1].dof_num_entries    = 2;
+
+   timesteps[0].timestep = 0;
+   timesteps[0].ls_start = 0;
+   timesteps[1].timestep = 1;
+   timesteps[1].ls_start = 1;
+
+   ASSERT_EQ_SIZE(fwrite(&header, sizeof(header), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&info, sizeof(info), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(payload, sizeof(payload) - 1u, 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(part_meta, sizeof(part_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(pattern_meta, sizeof(pattern_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(sys_meta, sizeof(sys_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(part_blob_table, sizeof(part_blob_table), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(timesteps, sizeof(timesteps), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rows0, sizeof(rows0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(cols0, sizeof(cols0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rows1, sizeof(rows1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(cols1, sizeof(cols1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(vals0, sizeof(vals0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof0, sizeof(dof0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(vals1, sizeof(vals1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof1, sizeof(dof1), 1, fp), 1);
+
+   fclose(fp);
+}
+
+static void
 attach_library_scalar_system(HYPREDRV_t obj, HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b)
 {
    ASSERT_EQ(HYPREDRV_LinearSystemSetMatrix(obj, (HYPRE_Matrix)mat_A), ERROR_NONE);
@@ -210,6 +374,84 @@ count_substr(const char *haystack, const char *needle)
    }
 
    return count;
+}
+
+static bool
+find_prefixed_entry(const char *dir_path, const char *prefix, char *out_name,
+                    size_t out_size)
+{
+   DIR *dir = opendir(dir_path);
+   if (!dir)
+   {
+      return false;
+   }
+
+   bool                found = false;
+   struct dirent *entry = NULL;
+   while ((entry = readdir(dir)) != NULL)
+   {
+      if (!strncmp(entry->d_name, prefix, strlen(prefix)))
+      {
+         snprintf(out_name, out_size, "%s", entry->d_name);
+         found = true;
+         break;
+      }
+   }
+
+   closedir(dir);
+   return found;
+}
+
+static bool
+file_contains_substr(const char *path, const char *needle)
+{
+   FILE *fp = fopen(path, "r");
+   if (!fp)
+   {
+      return false;
+   }
+
+   bool found = false;
+   char line[1024];
+   while (fgets(line, sizeof(line), fp) != NULL)
+   {
+      if (strstr(line, needle))
+      {
+         found = true;
+         break;
+      }
+   }
+
+   fclose(fp);
+   return found;
+}
+
+static bool
+path_join2(char *out, size_t out_size, const char *left, const char *right)
+{
+   if (!out || out_size == 0 || !left || !right)
+   {
+      return false;
+   }
+
+   size_t left_len  = strlen(left);
+   size_t right_len = strlen(right);
+   bool   add_sep   = (left_len > 0 && left[left_len - 1] != '/');
+   size_t total_len = left_len + (size_t)add_sep + right_len + 1;
+   if (total_len > out_size)
+   {
+      return false;
+   }
+
+   memcpy(out, left, left_len);
+   size_t pos = left_len;
+   if (add_sep)
+   {
+      out[pos++] = '/';
+   }
+   memcpy(out + pos, right, right_len);
+   out[pos + right_len] = '\0';
+   return true;
 }
 
 static void
@@ -889,6 +1131,26 @@ run_named_library_linear_solve_trace_capture(void *context)
 }
 
 static void
+run_default_named_library_linear_solve_trace_capture(void *context)
+{
+   (void)context;
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   parse_minimal_library_yaml(obj);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   run_library_linear_solve(obj, NULL);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
 test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name(void)
 {
    reset_state();
@@ -899,6 +1161,28 @@ test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name(void)
                          sizeof(output));
 
    ASSERT_NOT_NULL(strstr(output, "[named-handle]"));
+   ASSERT_NOT_NULL(strstr(output, "solver setup begin"));
+   ASSERT_NOT_NULL(strstr(output, "solver setup end"));
+   ASSERT_NOT_NULL(strstr(output, "initial guess reset begin"));
+   ASSERT_NOT_NULL(strstr(output, "initial guess reset end"));
+   ASSERT_NOT_NULL(strstr(output, "solver apply begin"));
+   ASSERT_NOT_NULL(strstr(output, "solver apply end"));
+   ASSERT_NULL(strstr(output, "unnamed][ls="));
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_default_object_name(void)
+{
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "3", 1);
+
+   char output[32768];
+   capture_stderr_output(run_default_named_library_linear_solve_trace_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_NOT_NULL(strstr(output, "[obj-1]"));
    ASSERT_NOT_NULL(strstr(output, "solver setup begin"));
    ASSERT_NOT_NULL(strstr(output, "solver setup end"));
    ASSERT_NOT_NULL(strstr(output, "initial guess reset begin"));
@@ -1196,7 +1480,7 @@ test_create_parse_and_destroy(void)
       HYPREDRV_PreconApply(obj, (HYPRE_Vector)state->vec_b, (HYPRE_Vector)state->vec_x),
       ERROR_NONE);
 
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_NULL(obj);
 
@@ -1436,7 +1720,7 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
    }
 
    hypredrv_ErrorCodeResetAll();
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_StateVectorSet(obj, 2, vecs), ERROR_NONE);
 
    HYPRE_Complex *data = NULL;
@@ -2698,6 +2982,344 @@ test_HYPREDRV_stats_path_column_truncates_long_paths(void)
 }
 
 static void
+test_HYPREDRV_print_system_lifecycle_dumps_setup_and_apply(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char outdir[PATH_MAX];
+   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_lifecycle_dump_%d", (int)getpid());
+   char cleanup_cmd[PATH_MAX + 32];
+   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
+   int cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+
+   char yaml_config[PATH_MAX + 768];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  init_guess_mode: zeros\n"
+            "  print_system:\n"
+            "    enabled: on\n"
+            "    type: all\n"
+            "    stage: all\n"
+            "    artifacts: [matrix, rhs, solution, metadata]\n"
+            "    output_dir: %s\n"
+            "    overwrite: on\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            outdir);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   run_library_linear_solve(obj, NULL);
+
+   char object_dir[PATH_MAX];
+   ASSERT_TRUE(path_join2(object_dir, sizeof(object_dir), outdir, "obj-1"));
+
+   char dump0_metadata[PATH_MAX];
+   char dump1_metadata[PATH_MAX];
+   ASSERT_TRUE(path_join2(dump0_metadata, sizeof(dump0_metadata), object_dir,
+                          "ls_00000/metadata.txt"));
+   ASSERT_TRUE(path_join2(dump1_metadata, sizeof(dump1_metadata), object_dir,
+                          "ls_00001/metadata.txt"));
+   ASSERT_TRUE(access(dump0_metadata, F_OK) == 0);
+   ASSERT_TRUE(access(dump1_metadata, F_OK) == 0);
+
+   char systems_index[PATH_MAX];
+   ASSERT_TRUE(path_join2(systems_index, sizeof(systems_index), object_dir,
+                          "systems_index.txt"));
+   ASSERT_TRUE(access(systems_index, F_OK) == 0);
+   ASSERT_TRUE(file_contains_substr(systems_index, "ls_00000"));
+   ASSERT_TRUE(file_contains_substr(systems_index, "ls_00001"));
+   ASSERT_TRUE(file_contains_substr(systems_index, "stage=setup"));
+   ASSERT_TRUE(file_contains_substr(systems_index, "stage=apply"));
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+
+   cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+}
+
+static void
+test_HYPREDRV_print_system_apply_stage_ids_use_current_stats_id(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char outdir[PATH_MAX];
+   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_apply_dump_%d", (int)getpid());
+   char cleanup_cmd[PATH_MAX + 32];
+   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
+   int cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+
+   char yaml_config[PATH_MAX + 768];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  init_guess_mode: zeros\n"
+            "  print_system:\n"
+            "    enabled: on\n"
+            "    type: ids\n"
+            "    stage: apply\n"
+            "    ids: [0]\n"
+            "    artifacts: [metadata]\n"
+            "    output_dir: %s\n"
+            "    overwrite: on\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            outdir);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   run_library_linear_solve(obj, NULL);
+
+   char metadata_path[PATH_MAX];
+   ASSERT_TRUE(path_join2(metadata_path, sizeof(metadata_path), outdir,
+                          "obj-1/ls_00000/metadata.txt"));
+   ASSERT_TRUE(access(metadata_path, F_OK) == 0);
+   ASSERT_TRUE(file_contains_substr(metadata_path, "stage=apply"));
+   ASSERT_TRUE(file_contains_substr(metadata_path, "system_index=0"));
+   ASSERT_TRUE(file_contains_substr(metadata_path, "stats_ls_id=0"));
+
+   char unexpected_path[PATH_MAX];
+   ASSERT_TRUE(path_join2(unexpected_path, sizeof(unexpected_path), outdir,
+                          "obj-1/ls_00001"));
+   ASSERT_TRUE(access(unexpected_path, F_OK) != 0);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+
+   cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+}
+
+static void
+test_HYPREDRV_print_system_setup_stage_ids_advance_for_library_cycles(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char outdir[PATH_MAX];
+   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_setup_dump_%d", (int)getpid());
+   char cleanup_cmd[PATH_MAX + 32];
+   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
+   int cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+
+   char yaml_config[PATH_MAX + 768];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  init_guess_mode: zeros\n"
+            "  print_system:\n"
+            "    enabled: on\n"
+            "    type: ids\n"
+            "    stage: setup\n"
+            "    ids: [1]\n"
+            "    artifacts: [metadata]\n"
+            "    output_dir: %s\n"
+            "    overwrite: on\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            outdir);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A0 = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b0 = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A0, vec_b0);
+   run_library_linear_solve(obj, NULL);
+
+   char metadata_path[PATH_MAX];
+   ASSERT_TRUE(path_join2(metadata_path, sizeof(metadata_path), outdir,
+                          "obj-1/ls_00000/metadata.txt"));
+   ASSERT_TRUE(access(metadata_path, F_OK) != 0);
+
+   HYPRE_IJMatrix mat_A1 = create_test_ijmatrix_1x1(8.0);
+   HYPRE_IJVector vec_b1 = create_test_ijvector_1x1(3.0);
+   attach_library_scalar_system(obj, mat_A1, vec_b1);
+   run_library_linear_solve(obj, NULL);
+
+   ASSERT_TRUE(access(metadata_path, F_OK) == 0);
+   ASSERT_TRUE(file_contains_substr(metadata_path, "stage=setup"));
+   ASSERT_TRUE(file_contains_substr(metadata_path, "system_index=1"));
+   ASSERT_TRUE(file_contains_substr(metadata_path, "stats_ls_id=0"));
+
+   char unexpected_path[PATH_MAX];
+   ASSERT_TRUE(path_join2(unexpected_path, sizeof(unexpected_path), outdir,
+                          "obj-1/ls_00001"));
+   ASSERT_TRUE(access(unexpected_path, F_OK) != 0);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b1), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A1), 0);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b0), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A0), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+
+   cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+}
+
+static void
+test_HYPREDRV_InputArgsParse_loads_lsseq_timesteps_for_print_system(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+
+   char seq_path[PATH_MAX];
+   snprintf(seq_path, sizeof(seq_path), "/tmp/hypredrive_print_system_%d.lsseq",
+            (int)getpid());
+   write_test_lsseq_with_timesteps(seq_path);
+
+   char yaml_config[PATH_MAX + 768];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  sequence_filename: %s\n"
+            "  print_system:\n"
+            "    enabled: on\n"
+            "    type: every_n_timesteps\n"
+            "    every: 1\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            seq_path);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   ASSERT_NOT_NULL(obj->precon_reuse_timesteps.ids);
+   ASSERT_NOT_NULL(obj->precon_reuse_timesteps.starts);
+   ASSERT_EQ_SIZE(obj->precon_reuse_timesteps.ids->size, 2);
+   ASSERT_EQ_SIZE(obj->precon_reuse_timesteps.starts->size, 2);
+   ASSERT_EQ(obj->precon_reuse_timesteps.ids->data[0], 0);
+   ASSERT_EQ(obj->precon_reuse_timesteps.ids->data[1], 1);
+   ASSERT_EQ(obj->precon_reuse_timesteps.starts->data[0], 0);
+   ASSERT_EQ(obj->precon_reuse_timesteps.starts->data[1], 1);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   remove(seq_path);
+}
+
+static void
+test_HYPREDRV_print_system_uses_timestep_filename_without_reuse(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char *tmp_ts = CREATE_TEMP_FILE("tmp_print_system_timesteps.txt");
+   ASSERT_NOT_NULL(tmp_ts);
+   FILE *tf = fopen(tmp_ts, "w");
+   ASSERT_NOT_NULL(tf);
+   fprintf(tf, "1\n");
+   fprintf(tf, "0 0\n");
+   fclose(tf);
+
+   char outdir[PATH_MAX];
+   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_timestep_dump_%d", (int)getpid());
+   char cleanup_cmd[PATH_MAX + 32];
+   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
+   int cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+
+   char yaml_config[2 * PATH_MAX + 768];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  init_guess_mode: zeros\n"
+            "  timestep_filename: %s\n"
+            "  print_system:\n"
+            "    enabled: on\n"
+            "    type: every_n_timesteps\n"
+            "    every: 1\n"
+            "    stage: apply\n"
+            "    artifacts: [metadata]\n"
+            "    output_dir: %s\n"
+            "    overwrite: on\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 5\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            tmp_ts, outdir);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   ASSERT_NOT_NULL(obj->precon_reuse_timesteps.ids);
+   ASSERT_NOT_NULL(obj->precon_reuse_timesteps.starts);
+   ASSERT_EQ_SIZE(obj->precon_reuse_timesteps.ids->size, 1);
+   ASSERT_EQ_SIZE(obj->precon_reuse_timesteps.starts->size, 1);
+   ASSERT_EQ(obj->precon_reuse_timesteps.ids->data[0], 0);
+   ASSERT_EQ(obj->precon_reuse_timesteps.starts->data[0], 0);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   run_library_linear_solve(obj, NULL);
+
+   char metadata_path[PATH_MAX];
+   ASSERT_TRUE(path_join2(metadata_path, sizeof(metadata_path), outdir,
+                          "obj-1/ls_00000/metadata.txt"));
+   ASSERT_TRUE(access(metadata_path, F_OK) == 0);
+   ASSERT_TRUE(file_contains_substr(metadata_path, "stage=apply"));
+   ASSERT_TRUE(file_contains_substr(metadata_path, "system_index=0"));
+   ASSERT_TRUE(file_contains_substr(metadata_path, "timestep_index=0"));
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   free(tmp_ts);
+
+   cleanup_rc = system(cleanup_cmd);
+   (void)cleanup_rc;
+}
+
+static void
 test_HYPREDRV_PrintLibInfo_PrintExitInfo(void)
 {
    reset_state();
@@ -2776,12 +3398,10 @@ test_HYPREDRV_misc_0hit_branches(void)
 
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];
-   snprintf(matrix_path, sizeof(matrix_path), "%s/data/ps3d10pt7/np1/IJ.out.A",
-            HYPREDRIVE_SOURCE_DIR);
-   snprintf(rhs_path, sizeof(rhs_path), "%s/data/ps3d10pt7/np1/IJ.out.b",
-            HYPREDRIVE_SOURCE_DIR);
-   TEST_REQUIRE_FILE(matrix_path);
-   TEST_REQUIRE_FILE(rhs_path);
+   if (!setup_ps3d10pt7_paths(matrix_path, rhs_path))
+   {
+      return;
+   }
 
    ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
 
@@ -2891,6 +3511,10 @@ test_HYPREDRV_misc_0hit_branches(void)
 
    char *tmp_dof = CREATE_TEMP_FILE("tmp_api_dofmap.txt");
    ASSERT_EQ(HYPREDRV_LinearSystemPrintDofmap(obj, tmp_dof), ERROR_NONE);
+   char tmp_dof_rank[PATH_MAX];
+   ASSERT_TRUE(strlen(tmp_dof) + strlen(".00000") + 1 < sizeof(tmp_dof_rank));
+   snprintf(tmp_dof_rank, sizeof(tmp_dof_rank), "%s.00000", tmp_dof);
+   remove(tmp_dof_rank);
    free(tmp_dof);
 
    /* Cover GetSolutionNorm error branches */
@@ -3009,7 +3633,7 @@ test_HYPREDRV_preconditioner_variants(void)
       ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
    }
 
-   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_NULL(obj);
 
@@ -3232,6 +3856,8 @@ run_hypredrv_lifecycle_and_guards(void)
    RUN_TEST(test_HYPREDRV_log_stream_invalid_value_falls_back_to_stderr);
    RUN_TEST(test_HYPREDRV_log_level_input_args_internal_logs_use_object_name);
    RUN_TEST(test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name);
+   RUN_TEST(
+      test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_default_object_name);
    RUN_TEST(test_HYPREDRV_log_level_boundary_api_traces);
    RUN_TEST(test_HYPREDRV_log_level_precon_variant_decisions);
    RUN_TEST(test_HYPREDRV_log_level_avoids_linear_system_ready_duplicate);
@@ -3262,6 +3888,11 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep);
    RUN_TEST(test_HYPREDRV_library_mode_destroy_prints_named_statistics_summary);
    RUN_TEST(test_HYPREDRV_library_mode_finalize_prints_named_statistics_summary);
+   RUN_TEST(test_HYPREDRV_InputArgsParse_loads_lsseq_timesteps_for_print_system);
+   RUN_TEST(test_HYPREDRV_print_system_uses_timestep_filename_without_reuse);
+   RUN_TEST(test_HYPREDRV_print_system_lifecycle_dumps_setup_and_apply);
+   RUN_TEST(test_HYPREDRV_print_system_apply_stage_ids_use_current_stats_id);
+   RUN_TEST(test_HYPREDRV_print_system_setup_stage_ids_advance_for_library_cycles);
    RUN_TEST(test_HYPREDRV_statistics_filename_routes_stats_to_file);
    RUN_TEST(test_HYPREDRV_statistics_filename_fallbacks_to_stdout_on_open_failure);
    RUN_TEST(test_HYPREDRV_stats_flat_runs_keep_entry_column);
@@ -3297,6 +3928,7 @@ main(int argc, char **argv)
    run_hypredrv_solver_and_reuse();
    run_hypredrv_misc_and_preconditioners();
 
+   cleanup_temp_files();
    MPI_Finalize();
    return 0;
 }

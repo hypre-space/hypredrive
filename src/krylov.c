@@ -5,12 +5,12 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "krylov.h"
-#include "bicgstab.h"
-#include "error.h"
-#include "fgmres.h"
-#include "gmres.h"
-#include "pcg.h"
+#include "internal/krylov.h"
+#include "internal/bicgstab.h"
+#include "internal/error.h"
+#include "internal/fgmres.h"
+#include "internal/gmres.h"
+#include "internal/pcg.h"
 #if !HYPRE_CHECK_MIN_VERSION(30100, 1)
 #include "_hypre_utilities.h" // for hypre_Solver
 #endif

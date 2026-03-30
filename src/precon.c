@@ -5,14 +5,14 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "precon.h"
+#include "internal/precon.h"
 #include <stdio.h>
 #include <strings.h>
 #include "HYPRE_parcsr_mv.h"
-#include "gen_macros.h"
-#include "krylov.h"
+#include "internal/gen_macros.h"
+#include "internal/krylov.h"
+#include "internal/stats.h"
 #include "logging.h"
-#include "stats.h"
 
 #define Precon_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, hypredrv_AMGSetArgs)   \

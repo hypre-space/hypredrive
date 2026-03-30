@@ -5,36 +5,31 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#ifndef BICGSTAB_HEADER
-#define BICGSTAB_HEADER
+#ifndef CHEBY_HEADER
+#define CHEBY_HEADER
 
-#include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "field.h"
-#include "yaml.h"
+#include "internal/field.h"
+#include "internal/yaml.h"
 
 /*--------------------------------------------------------------------------
- * BiCGSTAB solver arguments struct
+ * Chebyshev smoother arguments struct
  *--------------------------------------------------------------------------*/
 
-typedef struct BiCGSTAB_args_struct
+typedef struct Cheby_args_struct
 {
-   HYPRE_Int  min_iter;
-   HYPRE_Int  max_iter;
-   HYPRE_Int  stop_crit;
-   HYPRE_Int  logging;
-   HYPRE_Int  print_level;
-   HYPRE_Real relative_tol;
-   HYPRE_Real absolute_tol;
-   HYPRE_Real conv_fac_tol;
-} BiCGSTAB_args;
+   HYPRE_Int  order;
+   HYPRE_Int  eig_est;
+   HYPRE_Int  variant;
+   HYPRE_Int  scale;
+   HYPRE_Real fraction;
+} Cheby_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void hypredrv_BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
-void hypredrv_BiCGSTABSetArgs(void *, const YAMLnode *);
-void hypredrv_BiCGSTABCreate(MPI_Comm, const BiCGSTAB_args *, HYPRE_Solver *);
+void hypredrv_ChebySetDefaultArgs(Cheby_args *);
+void hypredrv_ChebySetArgs(void *, const YAMLnode *);
 
-#endif /* BICGSTAB_HEADER */
+#endif /* CHEBY_HEADER */

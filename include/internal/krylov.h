@@ -9,9 +9,9 @@
 #define KRYLOV_HEADER
 
 #include "HYPRE.h"
-#include "precon.h"
-#include "solver.h"
-#include "yaml.h"
+#include "internal/precon.h"
+#include "internal/solver.h"
+#include "internal/yaml.h"
 
 typedef struct NestedKrylov_args_struct
 {

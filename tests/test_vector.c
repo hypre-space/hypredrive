@@ -3,9 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "containers.h"
-#include "error.h"
-#include "linsys.h"
+#include "internal/containers.h"
+#include "internal/error.h"
+#include "internal/linsys.h"
 #include "test_helpers.h"
 
 static void
@@ -122,6 +122,31 @@ test_hypredrv_IJVectorReadMultipartBinary_float_coefficients(void)
 }
 
 static void
+test_hypredrv_IJVectorReadMultipartBinary_oversized_row_header(void)
+{
+   const char *prefix = "test_vec_oversized_rows";
+   char        filename[256];
+   uint64_t    header[8] = {0};
+
+   snprintf(filename, sizeof(filename), "%s.00000.bin", prefix);
+   FILE *fp = fopen(filename, "wb");
+   ASSERT_NOT_NULL(fp);
+   header[1] = sizeof(double);
+   header[5] = UINT64_C(200000001);
+   ASSERT_EQ_SIZE(fwrite(header, sizeof(uint64_t), 8, fp), 8u);
+   fclose(fp);
+   add_temp_file(filename);
+
+   HYPRE_IJVector vec = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
+   ASSERT_NULL(vec);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+
+   cleanup_temp_files();
+}
+
+static void
 test_IntArrayParRead_ascii(void)
 {
    const char *prefix = "test_intarray_prefix";
@@ -158,6 +183,7 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_missing_file);
    RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_bad_header);
    RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_float_coefficients);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_oversized_row_header);
    RUN_TEST(test_IntArrayParRead_ascii);
 
    MPI_Finalize();

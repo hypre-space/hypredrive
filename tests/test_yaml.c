@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "test_helpers.h"
-#include "yaml.h"
+#include "internal/yaml.h"
 
 /*-----------------------------------------------------------------------------
  * Test YAMLnode creation and destruction
@@ -725,6 +725,196 @@ test_YAMLtreeExpandIncludes_list_under_preconditioner(void)
    hypredrv_YAMLtreeDestroy(&tree);
 }
 
+static void
+test_YAMLtextRead_rejects_absolute_include_path(void)
+{
+   const char *tmpdir = "/tmp/hypredrv_test_yaml_abs";
+   int ret = system("rm -rf /tmp/hypredrv_test_yaml_abs && mkdir -p /tmp/hypredrv_test_yaml_abs");
+   (void)ret;
+
+   FILE *f = fopen("/tmp/hypredrv_test_yaml_abs/main.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "include: /etc/passwd\n");
+   fclose(f);
+
+   int    base_indent = -1;
+   size_t len         = 0;
+   char  *text        = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtextRead(tmpdir, "main.yml", 0, &base_indent, &len, &text);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL) != 0);
+   ASSERT_NULL(text);
+}
+
+static void
+test_YAMLtextRead_rejects_include_traversal_outside_root(void)
+{
+   const char *tmpdir = "/tmp/hypredrv_test_yaml_escape";
+   int ret =
+      system("rm -rf /tmp/hypredrv_test_yaml_escape && mkdir -p /tmp/hypredrv_test_yaml_escape");
+   (void)ret;
+
+   FILE *f = fopen("/tmp/hypredrv_test_escape.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "solver: pcg\n");
+   fclose(f);
+
+   f = fopen("/tmp/hypredrv_test_yaml_escape/main.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "include: ../hypredrv_test_escape.yml\n");
+   fclose(f);
+
+   int    base_indent = -1;
+   size_t len         = 0;
+   char  *text        = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtextRead(tmpdir, "main.yml", 0, &base_indent, &len, &text);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL) != 0);
+   ASSERT_NULL(text);
+
+   remove("/tmp/hypredrv_test_escape.yml");
+}
+
+static void
+test_YAMLtextRead_rejects_include_cycle(void)
+{
+   const char *tmpdir = "/tmp/hypredrv_test_yaml_cycle";
+   int ret =
+      system("rm -rf /tmp/hypredrv_test_yaml_cycle && mkdir -p /tmp/hypredrv_test_yaml_cycle");
+   (void)ret;
+
+   FILE *f = fopen("/tmp/hypredrv_test_yaml_cycle/a.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "include: b.yml\n");
+   fclose(f);
+
+   f = fopen("/tmp/hypredrv_test_yaml_cycle/b.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "include: a.yml\n");
+   fclose(f);
+
+   int    base_indent = -1;
+   size_t len         = 0;
+   char  *text        = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtextRead(tmpdir, "a.yml", 0, &base_indent, &len, &text);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL) != 0);
+   ASSERT_NULL(text);
+}
+
+static void
+test_YAMLtextRead_rejects_excessive_include_depth(void)
+{
+   const char *tmpdir = "/tmp/hypredrv_test_yaml_depth";
+   int ret =
+      system("rm -rf /tmp/hypredrv_test_yaml_depth && mkdir -p /tmp/hypredrv_test_yaml_depth");
+   (void)ret;
+
+   for (int i = 0; i < 20; i++)
+   {
+      char path[128];
+      snprintf(path, sizeof(path), "/tmp/hypredrv_test_yaml_depth/f%02d.yml", i);
+      FILE *f = fopen(path, "w");
+      ASSERT_NOT_NULL(f);
+      if (i < 19)
+      {
+         fprintf(f, "include: f%02d.yml\n", i + 1);
+      }
+      else
+      {
+         fprintf(f, "solver: pcg\n");
+      }
+      fclose(f);
+   }
+
+   int    base_indent = -1;
+   size_t len         = 0;
+   char  *text        = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtextRead(tmpdir, "f00.yml", 0, &base_indent, &len, &text);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_OUT_OF_BOUNDS) != 0);
+   ASSERT_NULL(text);
+}
+
+static void
+test_YAMLtextRead_rejects_excessive_expanded_size(void)
+{
+   const char *tmpdir = "/tmp/hypredrv_test_yaml_size";
+   int ret =
+      system("rm -rf /tmp/hypredrv_test_yaml_size && mkdir -p /tmp/hypredrv_test_yaml_size");
+   (void)ret;
+
+   FILE *f = fopen("/tmp/hypredrv_test_yaml_size/huge.yml", "w");
+   ASSERT_NOT_NULL(f);
+   for (int i = 0; i < 9500; i++)
+   {
+      fprintf(f, "k%04d: ", i);
+      for (int j = 0; j < 890; j++)
+      {
+         fputc('a', f);
+      }
+      fputc('\n', f);
+   }
+   fclose(f);
+
+   f = fopen("/tmp/hypredrv_test_yaml_size/main.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "include: huge.yml\n");
+   fclose(f);
+
+   int    base_indent = -1;
+   size_t len         = 0;
+   char  *text        = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtextRead(tmpdir, "main.yml", 0, &base_indent, &len, &text);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_OUT_OF_BOUNDS) != 0);
+   ASSERT_NULL(text);
+}
+
+static void
+test_YAMLtreeExpandIncludes_rejects_list_traversal_outside_root(void)
+{
+   const char *tmpdir = "/tmp/hypredrv_test_yaml_expand_escape";
+   int ret = system(
+      "rm -rf /tmp/hypredrv_test_yaml_expand_escape && mkdir -p /tmp/hypredrv_test_yaml_expand_escape");
+   (void)ret;
+
+   FILE *f = fopen("/tmp/hypredrv_expand_outside.yml", "w");
+   ASSERT_NOT_NULL(f);
+   fprintf(f, "amg:\n  print_level: 0\n");
+   fclose(f);
+
+   const char *yaml_text = "preconditioner:\n"
+                           "  include:\n"
+                           "    - ../hypredrv_expand_outside.yml\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   hypredrv_YAMLtreeBuild(2, text, &tree);
+   ASSERT_NOT_NULL(tree);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeExpandIncludes(tree, tmpdir);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL) != 0);
+
+   remove("/tmp/hypredrv_expand_outside.yml");
+   free(text);
+   hypredrv_YAMLtreeDestroy(&tree);
+}
+
 /*-----------------------------------------------------------------------------
  * Test indentation spacing equal to 3
  *-----------------------------------------------------------------------------*/
@@ -813,7 +1003,7 @@ test_YAMLtreeBuild_indent_with_tabs(void)
 
    /* Should have detected the error */
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   ASSERT_EQ(hypredrv_ErrorCodeGet() & ERROR_YAML_MIXED_INDENT, ERROR_YAML_MIXED_INDENT);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet() & ERROR_YAML_MIXED_INDENT, ERROR_YAML_MIXED_INDENT);
 
    if (yaml_text)
    {
@@ -842,7 +1032,7 @@ test_YAMLtreeBuild_scalar_with_children_is_error(void)
    hypredrv_YAMLtreeBuild(2, text, &tree);
 
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   ASSERT_EQ(hypredrv_ErrorCodeGet() & ERROR_UNEXPECTED_VAL, ERROR_UNEXPECTED_VAL);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet() & ERROR_UNEXPECTED_VAL, ERROR_UNEXPECTED_VAL);
    ASSERT_NOT_NULL(tree);
 
    YAMLnode *node = hypredrv_YAMLnodeFindChildByKey(tree->root, "f_relaxation");
@@ -886,6 +1076,12 @@ main(void)
    RUN_TEST(test_YAMLtreeBuild_sequence_items);
    RUN_TEST(test_YAMLtreeExpandIncludes_list_under_type);
    RUN_TEST(test_YAMLtreeExpandIncludes_list_under_preconditioner);
+   RUN_TEST(test_YAMLtextRead_rejects_absolute_include_path);
+   RUN_TEST(test_YAMLtextRead_rejects_include_traversal_outside_root);
+   RUN_TEST(test_YAMLtextRead_rejects_include_cycle);
+   RUN_TEST(test_YAMLtextRead_rejects_excessive_include_depth);
+   RUN_TEST(test_YAMLtextRead_rejects_excessive_expanded_size);
+   RUN_TEST(test_YAMLtreeExpandIncludes_rejects_list_traversal_outside_root);
    RUN_TEST(test_YAMLtreeBuild_indent_3_spaces);
    RUN_TEST(test_YAMLtreeBuild_indent_4_spaces);
    RUN_TEST(test_YAMLtreeBuild_indent_with_tabs);

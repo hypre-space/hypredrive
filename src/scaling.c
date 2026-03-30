@@ -5,18 +5,18 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "scaling.h"
+#include "internal/scaling.h"
 #include <math.h>
 #include <mpi.h>
 #include <string.h>
 #include "_hypre_IJ_mv.h"
 #include "_hypre_parcsr_mv.h"
-#include "error.h"
-#include "field.h"
-#include "gen_macros.h"
-#include "linsys.h"
+#include "internal/error.h"
+#include "internal/field.h"
+#include "internal/gen_macros.h"
+#include "internal/linsys.h"
+#include "internal/utils.h"
 #include "logging.h"
-#include "utils.h"
 
 #define Scaling_FIELDS(_prefix)                                       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, enabled, hypredrv_FieldTypeIntSet) \

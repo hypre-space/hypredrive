@@ -8,10 +8,10 @@
 #ifndef MGR_HEADER
 #define MGR_HEADER
 
-#include "amg.h"
-#include "containers.h"
-#include "ilu.h"
-#include "utils.h"
+#include "internal/amg.h"
+#include "internal/containers.h"
+#include "internal/ilu.h"
+#include "internal/utils.h"
 
 struct NestedKrylov_args_struct;
 typedef struct MGR_args_struct MGR_args;

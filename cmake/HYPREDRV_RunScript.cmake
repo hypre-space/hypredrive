@@ -16,6 +16,7 @@
 #   CONFIG_FILE      : optional YAML config (enables dataset checks)
 #   TARGET_ARGS      : optional '|' separated list of extra arguments
 #   REQUIRE_CONTAINS : optional '|' separated list of substrings that must appear in output
+#   REQUIRE_PATHS    : optional '|' separated list of files/directories that must exist after run
 #
 if(NOT DEFINED LAUNCH_DIR OR NOT DEFINED TARGET_BIN)
   message(FATAL_ERROR "HYPREDRV_RunScript.cmake: LAUNCH_DIR and TARGET_BIN must be defined")
@@ -133,4 +134,20 @@ else()
   if(NOT _ret EQUAL 0)
     message(FATAL_ERROR "Executable failed with exit code ${_ret}")
   endif()
+endif()
+
+if(DEFINED REQUIRE_PATHS AND NOT REQUIRE_PATHS STREQUAL "")
+  string(REPLACE "|" ";" _req_path_list "${REQUIRE_PATHS}")
+  foreach(_req_path IN LISTS _req_path_list)
+    if(NOT _req_path STREQUAL "")
+      if(IS_ABSOLUTE "${_req_path}")
+        set(_resolved_req_path "${_req_path}")
+      else()
+        set(_resolved_req_path "${LAUNCH_DIR}/${_req_path}")
+      endif()
+      if(NOT EXISTS "${_resolved_req_path}")
+        message(FATAL_ERROR "Missing required path '${_req_path}' (resolved to '${_resolved_req_path}')")
+      endif()
+    endif()
+  endforeach()
 endif()

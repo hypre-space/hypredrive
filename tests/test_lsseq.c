@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "error.h"
-#include "linsys.h"
-#include "lsseq.h"
+#include "internal/error.h"
+#include "internal/linsys.h"
+#include "internal/lsseq.h"
 #include "test_helpers.h"
 
 static uint64_t
@@ -123,22 +123,22 @@ write_test_container(const char *filename)
    timesteps[1].timestep = 1;
    timesteps[1].ls_start = 1;
 
-   ASSERT_EQ(fwrite(&header, sizeof(header), 1, fp), 1);
-   ASSERT_EQ(fwrite(part_meta, sizeof(part_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(pattern_meta, sizeof(pattern_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(sys_meta, sizeof(sys_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(timesteps, sizeof(timesteps), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&header, sizeof(header), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(part_meta, sizeof(part_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(pattern_meta, sizeof(pattern_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(sys_meta, sizeof(sys_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(timesteps, sizeof(timesteps), 1, fp), 1);
 
-   ASSERT_EQ(fwrite(rows0, sizeof(rows0), 1, fp), 1);
-   ASSERT_EQ(fwrite(cols0, sizeof(cols0), 1, fp), 1);
-   ASSERT_EQ(fwrite(rows1, sizeof(rows1), 1, fp), 1);
-   ASSERT_EQ(fwrite(cols1, sizeof(cols1), 1, fp), 1);
-   ASSERT_EQ(fwrite(vals0, sizeof(vals0), 1, fp), 1);
-   ASSERT_EQ(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
-   ASSERT_EQ(fwrite(dof0, sizeof(dof0), 1, fp), 1);
-   ASSERT_EQ(fwrite(vals1, sizeof(vals1), 1, fp), 1);
-   ASSERT_EQ(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
-   ASSERT_EQ(fwrite(dof1, sizeof(dof1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rows0, sizeof(rows0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(cols0, sizeof(cols0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rows1, sizeof(rows1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(cols1, sizeof(cols1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(vals0, sizeof(vals0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof0, sizeof(dof0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(vals1, sizeof(vals1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof1, sizeof(dof1), 1, fp), 1);
 
    fclose(fp);
 }
@@ -268,27 +268,78 @@ write_test_container_with_info(const char *filename)
 
    info.blob_bytes = blob_offset - header.offset_blob_data;
 
-   ASSERT_EQ(fwrite(&header, sizeof(header), 1, fp), 1);
-   ASSERT_EQ(fwrite(&info, sizeof(info), 1, fp), 1);
-   ASSERT_EQ(fwrite(payload, sizeof(payload) - 1u, 1, fp), 1);
-   ASSERT_EQ(fwrite(part_meta, sizeof(part_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(pattern_meta, sizeof(pattern_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(sys_meta, sizeof(sys_meta), 1, fp), 1);
-   ASSERT_EQ(fwrite(part_blob_table, sizeof(part_blob_table), 1, fp), 1);
-   ASSERT_EQ(fwrite(timesteps, sizeof(timesteps), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&header, sizeof(header), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&info, sizeof(info), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(payload, sizeof(payload) - 1u, 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(part_meta, sizeof(part_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(pattern_meta, sizeof(pattern_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(sys_meta, sizeof(sys_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(part_blob_table, sizeof(part_blob_table), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(timesteps, sizeof(timesteps), 1, fp), 1);
 
    /* Blobs: pattern then batched part 0 (vals, rhs, dof) */
-   ASSERT_EQ(fwrite(rows0, sizeof(rows0), 1, fp), 1);
-   ASSERT_EQ(fwrite(cols0, sizeof(cols0), 1, fp), 1);
-   ASSERT_EQ(fwrite(rows1, sizeof(rows1), 1, fp), 1);
-   ASSERT_EQ(fwrite(cols1, sizeof(cols1), 1, fp), 1);
-   ASSERT_EQ(fwrite(vals0, sizeof(vals0), 1, fp), 1);
-   ASSERT_EQ(fwrite(vals1, sizeof(vals1), 1, fp), 1);
-   ASSERT_EQ(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
-   ASSERT_EQ(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
-   ASSERT_EQ(fwrite(dof0, sizeof(dof0), 1, fp), 1);
-   ASSERT_EQ(fwrite(dof1, sizeof(dof1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rows0, sizeof(rows0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(cols0, sizeof(cols0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rows1, sizeof(rows1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(cols1, sizeof(cols1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(vals0, sizeof(vals0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(vals1, sizeof(vals1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof0, sizeof(dof0), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof1, sizeof(dof1), 1, fp), 1);
 
+   fclose(fp);
+}
+
+static void
+write_lsseq_with_oversized_info_payload(const char *filename)
+{
+   LSSeqHeader     header;
+   LSSeqInfoHeader info;
+   FILE           *fp = fopen(filename, "wb");
+
+   ASSERT_NOT_NULL(fp);
+   memset(&header, 0, sizeof(header));
+   memset(&info, 0, sizeof(info));
+
+   header.magic                = LSSEQ_MAGIC;
+   header.version              = LSSEQ_VERSION;
+   header.flags                = LSSEQ_FLAG_HAS_INFO;
+   header.codec                = (uint32_t)COMP_NONE;
+   header.num_systems          = 1;
+   header.num_parts            = 1;
+   header.offset_part_meta     = sizeof(LSSeqHeader) + sizeof(LSSeqInfoHeader);
+   header.offset_part_blob_table = 1;
+
+   info.magic      = LSSEQ_INFO_MAGIC;
+   info.version    = LSSEQ_INFO_VERSION;
+   info.endian_tag = UINT32_C(0x01020304);
+   info.payload_size = (uint64_t)(16u * 1024u * 1024u) + 1u;
+
+   ASSERT_EQ_SIZE(fwrite(&header, sizeof(header), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&info, sizeof(info), 1, fp), 1);
+   fclose(fp);
+}
+
+static void
+write_lsseq_with_excessive_counts(const char *filename)
+{
+   LSSeqHeader header;
+   FILE       *fp = fopen(filename, "wb");
+
+   ASSERT_NOT_NULL(fp);
+   memset(&header, 0, sizeof(header));
+
+   header.magic                 = LSSEQ_MAGIC;
+   header.version               = LSSEQ_VERSION;
+   header.flags                 = LSSEQ_FLAG_HAS_INFO;
+   header.codec                 = (uint32_t)COMP_NONE;
+   header.num_systems           = 1;
+   header.num_parts             = 2000000u;
+   header.offset_part_blob_table = 1;
+
+   ASSERT_EQ_SIZE(fwrite(&header, sizeof(header), 1, fp), 1);
    fclose(fp);
 }
 
@@ -423,6 +474,35 @@ test_lsseq_requires_info_header(void)
    ASSERT_FALSE(hypredrv_LSSeqReadTimesteps(filename, &starts));
 }
 
+static void
+test_lsseq_rejects_oversized_info_payload(void)
+{
+   const char *filename = "test_lsseq_oversized_info.bin";
+   char       *payload  = NULL;
+   size_t      nbytes   = 0;
+
+   write_lsseq_with_oversized_info_payload(filename);
+   add_temp_file(filename);
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_LSSeqReadInfo(filename, &payload, &nbytes));
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+}
+
+static void
+test_lsseq_rejects_excessive_part_count(void)
+{
+   const char *filename = "test_lsseq_excessive_counts.bin";
+   int         num_systems = 0;
+
+   write_lsseq_with_excessive_counts(filename);
+   add_temp_file(filename);
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_LSSeqReadSummary(filename, &num_systems, NULL, NULL, NULL));
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -433,6 +513,8 @@ main(int argc, char **argv)
    RUN_TEST(test_lsseq_info_block);
    RUN_TEST(test_lsseq_matrix_rhs_dofmap);
    RUN_TEST(test_lsseq_requires_info_header);
+   RUN_TEST(test_lsseq_rejects_oversized_info_payload);
+   RUN_TEST(test_lsseq_rejects_excessive_part_count);
 
    cleanup_temp_files();
 

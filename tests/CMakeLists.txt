@@ -56,6 +56,7 @@ function(add_unit_test test_name target_name)
         PROPERTIES
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort\\("
+            SKIP_RETURN_CODE 77
             LABELS "unit"
     )
     if(COMMAND hypredrv_append_test_environment)
@@ -129,3 +130,6 @@ foreach(_case IN LISTS _hypredrv_unit_test_cases)
         register_unit_test_case(${_target} ${_source})
     endif()
 endforeach()
+
+setup_test_executable(test_linsys_print_mpi test_linsys_print_mpi.c)
+add_executable_test(linsys_print_mpi_2proc test_linsys_print_mpi 2 RUN_SERIAL)

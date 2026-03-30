@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "ilu.h"
-#include "gen_macros.h"
+#include "internal/ilu.h"
+#include "internal/gen_macros.h"
 
 /*-----------------------------------------------------------------------------
  * Define Field/Offset/Setter mapping
@@ -103,6 +103,8 @@ hypredrv_ILUCreate(const ILU_args *args, HYPRE_Solver *precon_ptr)
    return;
 #else
    HYPRE_Solver precon = NULL;
+   int          uses_schur_solver;
+   int          uses_nsh;
 
    HYPRE_ILUCreate(&precon);
 
@@ -119,8 +121,19 @@ hypredrv_ILUCreate(const ILU_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_ILUSetTol(precon, args->tolerance);
    HYPRE_ILUSetMaxNnzPerRow(precon, args->max_row_nnz);
    HYPRE_ILUSetDropThreshold(precon, args->droptol);
-   HYPRE_ILUSetSchurMaxIter(precon, args->schur_max_iter);
-   HYPRE_ILUSetNSHDropThreshold(precon, args->nsh_droptol);
+
+   uses_schur_solver =
+      (args->type == 10 || args->type == 11 || args->type == 20 || args->type == 21 ||
+       args->type == 40 || args->type == 41 || args->type == 50);
+   uses_nsh = (args->type == 20 || args->type == 21);
+   if (uses_schur_solver)
+   {
+      HYPRE_ILUSetSchurMaxIter(precon, args->schur_max_iter);
+   }
+   if (uses_nsh)
+   {
+      HYPRE_ILUSetNSHDropThreshold(precon, args->nsh_droptol);
+   }
 
    *precon_ptr = precon;
 #endif

@@ -18,12 +18,12 @@
 #undef PACKAGE_VERSION
 
 #include "HYPREDRV.h"
-#include "eigspec.h"
-#include "error.h"
-#include "gen_macros.h"
-#include "linsys.h"
-#include "stats.h"
-#include "utils.h"
+#include "internal/eigspec.h"
+#include "internal/error.h"
+#include "internal/gen_macros.h"
+#include "internal/linsys.h"
+#include "internal/stats.h"
+#include "internal/utils.h"
 
 static void
 IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)

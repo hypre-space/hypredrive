@@ -8,16 +8,20 @@
 #ifndef __APPLE__
 #define _GNU_SOURCE 1
 #endif
-#include "info.h"
+#include "internal/info.h"
 #include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/utsname.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include "HYPREDRV_config.h"
 #include "HYPRE_config.h"
-#include "utils.h"
+#include "internal/utils.h"
 #ifdef HYPRE_USING_OPENMP
 #include <omp.h>
 #endif
@@ -33,8 +37,6 @@
 #else
 #include <dirent.h>
 #include <elf.h>
-#include <fcntl.h>
-#include <limits.h>
 #include <link.h>
 #include <sys/stat.h>
 #include <sys/sysinfo.h>
@@ -59,6 +61,9 @@ static int ReadLineFromFile(const char *path, char *buffer, size_t len);
 static int ReadIntFromFile(const char *path, int *value);
 static int ReadUllFromProcMeminfo(const char *field, unsigned long long *value);
 static int ExtractBracketedToken(const char *line, char *token, size_t len);
+static int ParseLscpuFallback(const char *lscpu_path, int *num_sockets, char *model_name,
+                              size_t model_name_len);
+static int ParseGpuControllerLine(const char *line, char *gpu_info, size_t gpu_info_len);
 static int CollectDynamicLibsCallback(struct dl_phdr_info *info, size_t size, void *data);
 static void FreeDynamicLibList(struct DynamicLibList *list);
 static int  ReadElfNeededEntries(const char *path, char ***needed, int *needed_count);
@@ -79,6 +84,9 @@ static void PrintNetworkInformation(void);
 static void PrintAcceleratorRuntimeInformation(void);
 static void PrintLinuxKernelTuningInformation(void);
 #endif
+static int  FindExecutableInPath(const char *name, char *resolved, size_t len);
+static int  RunCommandCapture(const char *exe_path, char *const argv[],
+                              int suppress_stderr, char *buffer, size_t len);
 static void BuildGpuBindingString(char *buffer, size_t len);
 static void PrintMpiRuntimeInformation(MPI_Comm comm);
 static void PrintThreadingEnvironmentInformation(void);
@@ -121,7 +129,334 @@ static void PrintRunningInfo(MPI_Comm comm);
 #endif
 void hypredrv_PrintSystemInfoLegacy(MPI_Comm comm);
 
+static int
+FindExecutableInPath(const char *name, char *resolved, size_t len)
+{
+   const char *path_env = NULL;
+
+   if (!name || !name[0] || !resolved || len == 0)
+   {
+      return 0;
+   }
+
+   resolved[0] = '\0';
+   if (strchr(name, '/'))
+   {
+      if (access(name, X_OK) == 0 && snprintf(resolved, len, "%s", name) > 0)
+      {
+         return 1;
+      }
+      return 0;
+   }
+
+   path_env = getenv("PATH");
+   if (!path_env || !path_env[0])
+   {
+      return 0;
+   }
+
+   {
+      const char *segment = path_env;
+      while (segment && *segment)
+      {
+         const char *next = strchr(segment, ':');
+         size_t      n    = next ? (size_t)(next - segment) : strlen(segment);
+         char        dir[PATH_MAX];
+         char        candidate[PATH_MAX];
+         int         written = 0;
+
+         if (n == 0)
+         {
+            snprintf(dir, sizeof(dir), ".");
+         }
+         else if (n < sizeof(dir))
+         {
+            memcpy(dir, segment, n);
+            dir[n] = '\0';
+         }
+         else
+         {
+            if (!next)
+            {
+               break;
+            }
+            segment = next + 1;
+            continue;
+         }
+
+         written = snprintf(candidate, sizeof(candidate), "%s/%s", dir, name);
+         if (written > 0 && (size_t)written < sizeof(candidate) &&
+             access(candidate, X_OK) == 0)
+         {
+            if (snprintf(resolved, len, "%s", candidate) <= 0)
+            {
+               return 0;
+            }
+            return 1;
+         }
+
+         if (!next)
+         {
+            break;
+         }
+         segment = next + 1;
+      }
+   }
+
+   return 0;
+}
+
+static int
+RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
+                  char *buffer, size_t len)
+{
+   int    pipefd[2]   = {-1, -1};
+   pid_t  child_pid   = -1;
+   size_t used        = 0;
+   int    status      = 0;
+   int    read_failed = 0;
+   char   discard[1024];
+
+   if (!exe_path || !argv || !buffer || len == 0)
+   {
+      return 0;
+   }
+   buffer[0] = '\0';
+
+   if (pipe(pipefd) != 0)
+   {
+      return 0;
+   }
+
+   child_pid = fork();
+   if (child_pid < 0)
+   {
+      close(pipefd[0]);
+      close(pipefd[1]);
+      return 0;
+   }
+
+   if (child_pid == 0)
+   {
+      int devnull = -1;
+      close(pipefd[0]);
+      if (dup2(pipefd[1], STDOUT_FILENO) < 0)
+      {
+         _Exit(127);
+      }
+      if (suppress_stderr)
+      {
+         devnull = open("/dev/null", O_WRONLY);
+         if (devnull >= 0)
+         {
+            (void)dup2(devnull, STDERR_FILENO);
+            close(devnull);
+         }
+      }
+      close(pipefd[1]);
+      execv(exe_path, argv);
+      _Exit(127);
+   }
+
+   close(pipefd[1]);
+   while (1)
+   {
+      int     store_output = (used + 1u < len);
+      char   *target       = store_output ? buffer + used : discard;
+      size_t  space        = store_output ? len - used - 1u : sizeof(discard);
+      ssize_t nread;
+
+      nread = read(pipefd[0], target, space);
+      if (nread > 0)
+      {
+         if (store_output)
+         {
+            used += (size_t)nread;
+         }
+         continue;
+      }
+      if (nread == 0)
+      {
+         break;
+      }
+      if (errno == EINTR)
+      {
+         continue;
+      }
+      read_failed = 1;
+      break;
+   }
+   buffer[used] = '\0';
+   close(pipefd[0]);
+
+   while (waitpid(child_pid, &status, 0) < 0)
+   {
+      if (errno == EINTR)
+      {
+         continue;
+      }
+      return 0;
+   }
+
+   return !read_failed && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
 #ifndef __APPLE__
+
+static int
+ParseLscpuFallback(const char *lscpu_path, int *num_sockets, char *model_name,
+                   size_t model_name_len)
+{
+   char  output[32768];
+   char *line    = NULL;
+   char *saveptr = NULL;
+   char *argv[]  = {(char *)lscpu_path, NULL};
+   int   found   = 0;
+
+   if (!lscpu_path || !num_sockets || !model_name || model_name_len == 0)
+   {
+      return 0;
+   }
+
+   if (!RunCommandCapture(lscpu_path, argv, 1, output, sizeof(output)))
+   {
+      return 0;
+   }
+
+   line = strtok_r(output, "\n", &saveptr);
+   while (line)
+   {
+      while (*line == ' ' || *line == '\t')
+      {
+         line++;
+      }
+      if (strncmp(line, "Socket(s):", strlen("Socket(s):")) == 0)
+      {
+         const char *value = strchr(line, ':');
+         if (value)
+         {
+            *num_sockets = atoi(value + 1);
+            if (*num_sockets > 0)
+            {
+               found = 1;
+            }
+         }
+      }
+      else if (strncmp(line, "Model name:", strlen("Model name:")) == 0)
+      {
+         const char *value = strchr(line, ':');
+         if (value)
+         {
+            while (*(value + 1) == ' ')
+            {
+               value++;
+            }
+            snprintf(model_name, model_name_len, "%s", value + 1);
+            hypredrv_TrimTrailingWhitespace(model_name);
+            if (model_name[0] != '\0')
+            {
+               found = 1;
+            }
+         }
+      }
+
+      line = strtok_r(NULL, "\n", &saveptr);
+   }
+
+   return found;
+}
+
+static int
+ParseGpuControllerLine(const char *line, char *gpu_info, size_t gpu_info_len)
+{
+   const char *start           = NULL;
+   const char *controller_type = NULL;
+
+   if (!line || !gpu_info || gpu_info_len == 0)
+   {
+      return 0;
+   }
+
+   if (strstr(line, "Matrox") || strstr(line, "ASPEED") || strstr(line, "Nuvoton"))
+   {
+      return 0;
+   }
+
+   start           = strstr(line, "VGA compatible controller");
+   controller_type = "VGA compatible controller: ";
+   if (!start)
+   {
+      start           = strstr(line, "3D controller");
+      controller_type = "3D controller: ";
+   }
+   if (!start)
+   {
+      start           = strstr(line, "2D controller");
+      controller_type = "2D controller: ";
+   }
+   if (!start)
+   {
+      start           = strstr(line, "Display controller");
+      controller_type = "Display controller: ";
+   }
+   if (!start)
+   {
+      start           = strstr(line, "Processing accelerators");
+      controller_type = "Processing accelerators: ";
+   }
+   if (!start)
+   {
+      return 0;
+   }
+
+   snprintf(gpu_info, gpu_info_len, "%s", start + strlen(controller_type));
+   hypredrv_TrimTrailingWhitespace(gpu_info);
+   return gpu_info[0] != '\0';
+}
+
+static int
+CompareFixedStrings(const void *a, const void *b)
+{
+   return strcmp((const char *)a, (const char *)b);
+}
+
+static int
+AppendUniqueString(char ***items, int *count, int *capacity, const char *value)
+{
+   if (!items || !count || !capacity || !value)
+   {
+      return 0;
+   }
+
+   for (int i = 0; i < *count; i++)
+   {
+      if (strcmp((*items)[i], value) == 0)
+      {
+         return 1;
+      }
+   }
+
+   if (*count == *capacity)
+   {
+      int    new_capacity = *capacity ? *capacity * 2 : 16;
+      char **new_items = (char **)realloc(*items, (size_t)new_capacity * sizeof(char *));
+      if (!new_items)
+      {
+         return 0;
+      }
+      *items    = new_items;
+      *capacity = new_capacity;
+   }
+
+   (*items)[*count] = strdup(value);
+   if (!(*items)[*count])
+   {
+      return 0;
+   }
+
+   (*count)++;
+   return 1;
+}
 
 /*--------------------------------------------------------------------------
  * hypredrv_dlpi_callback
@@ -184,44 +519,6 @@ PathBasename(const char *path)
 
    const char *base = strrchr(path, '/');
    return base ? base + 1 : path;
-}
-
-static int
-AppendUniqueString(char ***items, int *count, int *capacity, const char *value)
-{
-   if (!items || !count || !capacity || !value)
-   {
-      return 0;
-   }
-
-   for (int i = 0; i < *count; i++)
-   {
-      if (strcmp((*items)[i], value) == 0)
-      {
-         return 1;
-      }
-   }
-
-   if (*count == *capacity)
-   {
-      int    new_capacity = *capacity ? *capacity * 2 : 16;
-      char **new_items = (char **)realloc(*items, (size_t)new_capacity * sizeof(char *));
-      if (!new_items)
-      {
-         return 0;
-      }
-      *items    = new_items;
-      *capacity = new_capacity;
-   }
-
-   (*items)[*count] = strdup(value);
-   if (!(*items)[*count])
-   {
-      return 0;
-   }
-
-   (*count)++;
-   return 1;
 }
 
 static void
@@ -1026,29 +1323,18 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
 
          if (numPhysicalCPUs == 0)
          {
-            fp = popen("lscpu | grep 'Socket(s)' | awk '{print $2}'", "r");
-            if (fp != NULL)
+            char lscpu_path[PATH_MAX];
+            char lscpu_model[sizeof(cpuModels[0])] = {0};
+            if (FindExecutableInPath("lscpu", lscpu_path, sizeof(lscpu_path)) &&
+                ParseLscpuFallback(lscpu_path, &numPhysicalCPUs, lscpu_model,
+                                   sizeof(lscpu_model)) &&
+                lscpu_model[0] != '\0')
             {
-               if (fgets(buffer, sizeof(buffer), fp) != NULL)
+               int fill_count = (numPhysicalCPUs < 8) ? numPhysicalCPUs : 8;
+               for (int i = 0; i < fill_count; i++)
                {
-                  numPhysicalCPUs = atoi(buffer);
+                  snprintf(cpuModels[i], sizeof(cpuModels[i]), "%s", lscpu_model);
                }
-               pclose(fp);
-            }
-
-            fp = popen("lscpu | grep 'Model name:' | sed 's/Model name:\\s*//'", "r");
-            if (fp != NULL)
-            {
-               if (fgets(buffer, sizeof(buffer), fp) != NULL)
-               {
-                  buffer[strcspn(buffer, "\n")] = '\0';
-                  for (int i = 0; i < numPhysicalCPUs; i++)
-                  {
-                     strncpy(cpuModels[i], buffer, sizeof(cpuModels[i]) - 1);
-                     cpuModels[i][sizeof(cpuModels[i]) - 1] = '\0';
-                  }
-               }
-               pclose(fp);
             }
          }
       }
@@ -1069,105 +1355,66 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
       printf("Tot. # of Processors  : %lld\n",
              (long long)numNodes * (long long)numPhysicalCPUs);
       printf("Tot. # of CPU threads : %lld\n", (long long)numNodes * (long long)numCPUs);
-      for (int i = 0; i < numPhysicalCPUs; i++)
+      for (int i = 0; i < ((numPhysicalCPUs < 8) ? numPhysicalCPUs : 8); i++)
       {
          printf("CPU Model #%d          : %s\n", i, cpuModels[i]);
       }
 
 #ifndef __APPLE__
       gcount = 0;
-      fp     = NULL;
-      if (system("command -v lspci > /dev/null 2>&1") == 0)
       {
-         fp = popen("lspci | grep -Ei 'vga|3d|2d|display|accel'", "r");
-      }
-      if (fp != NULL)
-      {
-         while (fgets(buffer, sizeof(buffer), fp) != NULL)
+         char lspci_path[PATH_MAX];
+         if (FindExecutableInPath("lspci", lspci_path, sizeof(lspci_path)))
          {
-            /* Skip onboard server graphics */
-            if (strstr(buffer, "Matrox") != NULL)
-            {
-               continue;
-            }
-            if (strstr(buffer, "ASPEED") != NULL)
-            {
-               continue;
-            }
-            if (strstr(buffer, "Nuvoton") != NULL)
-            {
-               continue;
-            }
+            char  lspci_output[32768];
+            char *line    = NULL;
+            char *saveptr = NULL;
 
-            const char *start = strstr(buffer, "VGA compatible controller");
-            if (!start)
             {
-               start = strstr(buffer, "3D controller");
-            }
-            if (!start)
-            {
-               start = strstr(buffer, "2D controller");
-            }
-            if (!start)
-            {
-               start = strstr(buffer, "Display controller");
-            }
-            if (!start)
-            {
-               start = strstr(buffer, "Processing accelerators");
-            }
-
-            if (start)
-            {
-               /* Adjust the strncpy depending on which controller type was found */
-               const char *controller_type = "VGA compatible controller: ";
-               if (strstr(buffer, "3D controller") != NULL)
+               char *argv[] = {lspci_path, NULL};
+               if (RunCommandCapture(lspci_path, argv, 1, lspci_output,
+                                     sizeof(lspci_output)))
                {
-                  controller_type = "3D controller: ";
+                  line = strtok_r(lspci_output, "\n", &saveptr);
+                  while (line)
+                  {
+                     if ((strcasestr(line, "vga") || strcasestr(line, "3d") ||
+                          strcasestr(line, "2d") || strcasestr(line, "display") ||
+                          strcasestr(line, "accel")) &&
+                         ParseGpuControllerLine(line, gpuInfo, sizeof(gpuInfo)))
+                     {
+                        printf("GPU Model #%d          : %s\n", gcount++, gpuInfo);
+                     }
+                     line = strtok_r(NULL, "\n", &saveptr);
+                  }
                }
-               else if (strstr(buffer, "2D controller") != NULL)
-               {
-                  controller_type = "2D controller: ";
-               }
-               else if (strstr(buffer, "Display controller") != NULL)
-               {
-                  controller_type = "Display controller: ";
-               }
-               else if (strstr(buffer, "Processing accelerators") != NULL)
-               {
-                  controller_type = "Processing accelerators: ";
-               }
-
-               strncpy(gpuInfo, start + strlen(controller_type), sizeof(gpuInfo) - 1);
-               gpuInfo[sizeof(gpuInfo) - 1] = '\0';
-
-               /* Remove newline if present */
-               size_t len = strlen(gpuInfo);
-               if (len > 0 && gpuInfo[len - 1] == '\n')
-               {
-                  gpuInfo[len - 1] = '\0';
-               }
-
-               printf("GPU Model #%d          : %s\n", gcount++, gpuInfo);
-            }
-            else
-            {
-               strncpy(gpuInfo, buffer, sizeof(gpuInfo) - 1);
-               gpuInfo[sizeof(gpuInfo) - 1] = '\0';
             }
          }
-         pclose(fp);
-      }
-      else if (system("command -v nvidia-smi > /dev/null 2>&1") == 0)
-      {
-         fp = popen("nvidia-smi --query-gpu=name --format=csv,noheader", "r");
-         if (fp != NULL)
+         else
          {
-            while (fgets(buffer, sizeof(buffer), fp) != NULL)
+            char nvidia_path[PATH_MAX];
+            if (FindExecutableInPath("nvidia-smi", nvidia_path, sizeof(nvidia_path)))
             {
-               printf("GPU Model #%d          : %s", gcount++, buffer);
+               char  nvidia_output[32768];
+               char *line    = NULL;
+               char *saveptr = NULL;
+               char *argv[]  = {nvidia_path, "--query-gpu=name", "--format=csv,noheader",
+                                NULL};
+               if (RunCommandCapture(nvidia_path, argv, 1, nvidia_output,
+                                     sizeof(nvidia_output)))
+               {
+                  line = strtok_r(nvidia_output, "\n", &saveptr);
+                  while (line)
+                  {
+                     hypredrv_TrimTrailingWhitespace(line);
+                     if (line[0] != '\0')
+                     {
+                        printf("GPU Model #%d          : %s\n", gcount++, line);
+                     }
+                     line = strtok_r(NULL, "\n", &saveptr);
+                  }
+               }
             }
-            pclose(fp);
          }
       }
       gcount = 0;
@@ -1204,107 +1451,118 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
 #endif
 
       /* NVIDIA GPU Memory Information */
-      fp = NULL;
-      if (system("command -v nvidia-smi > /dev/null 2>&1") == 0)
       {
-         fp = popen("nvidia-smi --query-gpu=memory.total,memory.used "
-                    "--format=csv,noheader,nounits",
-                    "r");
-      }
-      if (fp != NULL)
-      {
-         gcount = 0;
-         while (fgets(buffer, sizeof(buffer), fp) != NULL)
+         char nvidia_path[PATH_MAX];
+         if (FindExecutableInPath("nvidia-smi", nvidia_path, sizeof(nvidia_path)))
          {
-            if (sscanf(buffer, "%zu, %zu", &total, &used) == 2)
+            char  nvidia_output[32768];
+            char *line    = NULL;
+            char *saveptr = NULL;
+
             {
-               printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                      gcount++, (double)used / mib_to_gib, (double)total / mib_to_gib,
-                      100.0 * (double)used / (double)total);
+               char *argv[] = {nvidia_path, "--query-gpu=memory.total,memory.used",
+                               "--format=csv,noheader,nounits", NULL};
+               if (RunCommandCapture(nvidia_path, argv, 1, nvidia_output,
+                                     sizeof(nvidia_output)))
+               {
+                  gcount = 0;
+                  line   = strtok_r(nvidia_output, "\n", &saveptr);
+                  while (line)
+                  {
+                     if (sscanf(line, "%zu, %zu", &total, &used) == 2)
+                     {
+                        printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
+                               gcount++, (double)used / mib_to_gib,
+                               (double)total / mib_to_gib,
+                               100.0 * (double)used / (double)total);
+                     }
+                     line = strtok_r(NULL, "\n", &saveptr);
+                  }
+               }
             }
          }
-         pclose(fp);
       }
 
       /* AMD GPU Memory Information */
-      fp = NULL;
-      if (system("command -v amd-smi > /dev/null 2>&1") == 0)
       {
-         fp = popen("amd-smi metric -m --json 2>/dev/null", "r");
-      }
-      if (fp != NULL)
-      {
-         char   json_buffer[32768];
-         size_t read       = fread(json_buffer, 1, sizeof(json_buffer) - 1, fp);
-         json_buffer[read] = '\0';
-         pclose(fp);
-
-         // Parse amd-smi JSON format for all GPUs
-         const char *total_vram_str = "\"total_vram\"";
-         const char *used_vram_str  = "\"used_vram\"";
-         const char *ptr            = json_buffer;
-
-         while ((ptr = strstr(ptr, "\"gpu\"")) != NULL)
+         char amd_path[PATH_MAX];
+         if (FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)))
          {
-            // Find GPU index
-            ptr = strchr(ptr, ':');
-            if (ptr)
+            char  json_output[32768];
+            char *argv[] = {amd_path, "metric", "-m", "--json", NULL};
+            if (RunCommandCapture(amd_path, argv, 1, json_output, sizeof(json_output)))
             {
-               ptr++;
-               while (*ptr == ' ') ptr++;
-               {
-                  char *endptr;
-                  (void)strtol(ptr, &endptr, 10); /* idx unused, advance past it */
-                  ptr = endptr;
-               }
+               // Parse amd-smi JSON format for all GPUs
+               const char *total_vram_str = "\"total_vram\"";
+               const char *used_vram_str  = "\"used_vram\"";
+               const char *ptr            = json_output;
 
-               // Find total_vram for this GPU
-               const char *gpu_start = ptr;
-               const char *total_ptr = strstr(gpu_start, total_vram_str);
-               const char *used_ptr  = strstr(gpu_start, used_vram_str);
-
-               if (total_ptr && used_ptr)
+               while ((ptr = strstr(ptr, "\"gpu\"")) != NULL)
                {
-                  // Extract total_vram value
-                  const char *val_ptr = strstr(total_ptr, "\"value\"");
-                  if (val_ptr)
+                  // Find GPU index
+                  ptr = strchr(ptr, ':');
+                  if (ptr)
                   {
-                     val_ptr = strchr(val_ptr, ':');
-                     if (val_ptr)
+                     ptr++;
+                     while (*ptr == ' ') ptr++;
                      {
-                        val_ptr++;
-                        while (*val_ptr == ' ') val_ptr++;
-                        total = strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
+                        char *endptr;
+                        (void)strtol(ptr, &endptr, 10); /* idx unused, advance past it */
+                        ptr = endptr;
+                     }
+
+                     // Find total_vram for this GPU
+                     const char *gpu_start = ptr;
+                     const char *total_ptr = strstr(gpu_start, total_vram_str);
+                     const char *used_ptr  = strstr(gpu_start, used_vram_str);
+
+                     if (total_ptr && used_ptr)
+                     {
+                        // Extract total_vram value
+                        const char *val_ptr = strstr(total_ptr, "\"value\"");
+                        if (val_ptr)
+                        {
+                           val_ptr = strchr(val_ptr, ':');
+                           if (val_ptr)
+                           {
+                              val_ptr++;
+                              while (*val_ptr == ' ') val_ptr++;
+                              total =
+                                 strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
+                           }
+                        }
+
+                        // Extract used_vram value
+                        val_ptr = strstr(used_ptr, "\"value\"");
+                        if (val_ptr)
+                        {
+                           val_ptr = strchr(val_ptr, ':');
+                           if (val_ptr)
+                           {
+                              val_ptr++;
+                              while (*val_ptr == ' ') val_ptr++;
+                              used =
+                                 strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
+                           }
+                        }
+
+                        if (total > 0)
+                        {
+                           printf(
+                              "GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
+                              gcount++, (double)used / bytes_to_gib,
+                              (double)total / bytes_to_gib,
+                              100.0 * (double)used / (double)total);
+                        }
                      }
                   }
 
-                  // Extract used_vram value
-                  val_ptr = strstr(used_ptr, "\"value\"");
-                  if (val_ptr)
-                  {
-                     val_ptr = strchr(val_ptr, ':');
-                     if (val_ptr)
-                     {
-                        val_ptr++;
-                        while (*val_ptr == ' ') val_ptr++;
-                        used = strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
-                     }
-                  }
-
-                  if (total > 0)
-                  {
-                     printf("GPU RAM #%d            : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                            gcount++, (double)used / bytes_to_gib,
-                            (double)total / bytes_to_gib,
-                            100.0 * (double)used / (double)total);
-                  }
+                  // Move to next GPU entry
+                  ptr = strstr(ptr, "}");
+                  if (ptr) ptr++;
+                  else break;
                }
             }
-
-            // Move to next GPU entry
-            ptr = strstr(ptr, "}");
-            if (ptr) ptr++;
-            else break;
          }
       }
 
@@ -2191,103 +2449,111 @@ PrintGpuInfo(GpuInfo *gpus, int gpu_count)
       }
 
       // Get GPU memory information from nvidia-smi or rocm-smi
-      FILE  *fp = NULL;
-      char   buffer[256];
+      char   output[32768];
       size_t total = 0, used = 0;
       bool   found_memory = false;
 
       // Try nvidia-smi first - query all GPUs and find the one matching our index
-      if (system("command -v nvidia-smi > /dev/null 2>&1") == 0)
       {
-         fp = popen("nvidia-smi --query-gpu=index,memory.total,memory.used "
-                    "--format=csv,noheader,nounits 2>/dev/null",
-                    "r");
-         if (fp != NULL)
+         char nvidia_path[PATH_MAX];
+         if (FindExecutableInPath("nvidia-smi", nvidia_path, sizeof(nvidia_path)))
          {
-            int line_idx = 0;
-            while (fgets(buffer, sizeof(buffer), fp) != NULL && line_idx <= i)
+            char *argv[] = {nvidia_path, "--query-gpu=index,memory.total,memory.used",
+                            "--format=csv,noheader,nounits", NULL};
+            if (RunCommandCapture(nvidia_path, argv, 1, output, sizeof(output)))
             {
-               if (line_idx == i)
+               int   line_idx = 0;
+               char *line     = NULL;
+               char *saveptr  = NULL;
+
+               line = strtok_r(output, "\n", &saveptr);
+               while (line && line_idx <= i)
                {
-                  int idx;
-                  if (sscanf(buffer, "%d, %zu, %zu", &idx, &total, &used) == 3)
+                  if (line_idx == i)
                   {
-                     printf("  Memory               : %6.2f / %6.2f GiB (%5.2f %%)\n",
-                            used / mib_to_gib, total / mib_to_gib,
-                            100.0 * used / (double)total);
-                     found_memory = true;
+                     int idx;
+                     if (sscanf(line, "%d, %zu, %zu", &idx, &total, &used) == 3)
+                     {
+                        printf("  Memory               : %6.2f / %6.2f GiB (%5.2f %%)\n",
+                               used / mib_to_gib, total / mib_to_gib,
+                               100.0 * used / (double)total);
+                        found_memory = true;
+                     }
+                     break;
                   }
-                  break;
+                  line = strtok_r(NULL, "\n", &saveptr);
+                  line_idx++;
                }
-               line_idx++;
             }
-            pclose(fp);
          }
       }
 
       // Try amd-smi if nvidia-smi didn't work
-      if (!found_memory && system("command -v amd-smi > /dev/null 2>&1") == 0)
+      if (!found_memory)
       {
-         char cmd[256];
-         snprintf(cmd, sizeof(cmd), "amd-smi metric -g %d -m --json 2>/dev/null", i);
-         fp = popen(cmd, "r");
-         if (fp != NULL)
+         char amd_path[PATH_MAX];
+         if (FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)))
          {
-            char   json_buffer[32768];
-            size_t read       = fread(json_buffer, 1, sizeof(json_buffer) - 1, fp);
-            json_buffer[read] = '\0';
-            pclose(fp);
-
-            // Parse amd-smi JSON format: "total_vram": {"value": 20464, "unit": "MB"}
-            const char *total_vram_str = "\"total_vram\"";
-            const char *used_vram_str  = "\"used_vram\"";
-            const char *ptr            = json_buffer;
-
-            // Find total_vram
-            ptr = strstr(ptr, total_vram_str);
-            if (ptr)
+            char gpu_idx[32];
+            snprintf(gpu_idx, sizeof(gpu_idx), "%d", i);
             {
-               ptr = strstr(ptr, "\"value\"");
-               if (ptr)
+               char *argv[] = {amd_path, "metric", "-g", gpu_idx, "-m", "--json", NULL};
+               if (RunCommandCapture(amd_path, argv, 1, output, sizeof(output)))
                {
-                  ptr = strchr(ptr, ':');
+                  // Parse amd-smi JSON format: "total_vram": {"value": 20464, "unit":
+                  // "MB"}
+                  const char *total_vram_str = "\"total_vram\"";
+                  const char *used_vram_str  = "\"used_vram\"";
+                  const char *ptr            = output;
+
+                  // Find total_vram
+                  ptr = strstr(ptr, total_vram_str);
                   if (ptr)
                   {
-                     ptr++;
-                     while (*ptr == ' ') ptr++;
-                     total = strtoull(ptr, NULL, 10);
-                     // Convert MB to bytes, then to GiB
-                     total = total * 1024 * 1024;
+                     ptr = strstr(ptr, "\"value\"");
+                     if (ptr)
+                     {
+                        ptr++;
+                        ptr = strchr(ptr, ':');
+                        if (ptr)
+                        {
+                           ptr++;
+                           while (*ptr == ' ') ptr++;
+                           total = strtoull(ptr, NULL, 10);
+                           // Convert MB to bytes, then to GiB
+                           total = total * 1024 * 1024;
+                        }
+                     }
                   }
-               }
-            }
 
-            // Find used_vram
-            ptr = json_buffer;
-            ptr = strstr(ptr, used_vram_str);
-            if (ptr)
-            {
-               ptr = strstr(ptr, "\"value\"");
-               if (ptr)
-               {
-                  ptr = strchr(ptr, ':');
+                  // Find used_vram
+                  ptr = output;
+                  ptr = strstr(ptr, used_vram_str);
                   if (ptr)
                   {
-                     ptr++;
-                     while (*ptr == ' ') ptr++;
-                     used = strtoull(ptr, NULL, 10);
-                     // Convert MB to bytes, then to GiB
-                     used = used * 1024 * 1024;
+                     ptr = strstr(ptr, "\"value\"");
+                     if (ptr)
+                     {
+                        ptr = strchr(ptr, ':');
+                        if (ptr)
+                        {
+                           ptr++;
+                           while (*ptr == ' ') ptr++;
+                           used = strtoull(ptr, NULL, 10);
+                           // Convert MB to bytes, then to GiB
+                           used = used * 1024 * 1024;
+                        }
+                     }
+                  }
+
+                  if (total > 0)
+                  {
+                     printf("  Memory               : %6.2f / %6.2f GiB (%5.2f %%)\n",
+                            used / bytes_to_gib, total / bytes_to_gib,
+                            100.0 * used / (double)total);
+                     found_memory = true;
                   }
                }
-            }
-
-            if (total > 0)
-            {
-               printf("  Memory               : %6.2f / %6.2f GiB (%5.2f %%)\n",
-                      used / bytes_to_gib, total / bytes_to_gib,
-                      100.0 * used / (double)total);
-               found_memory = true;
             }
          }
       }
@@ -3375,88 +3641,128 @@ PrintAcceleratorRuntimeInformation(void)
    printf("Accelerator Runtime Information\n");
    printf("--------------------------------\n");
 
-   int   printed = 0;
-   FILE *fp      = NULL;
-   char  line[256];
+   int printed = 0;
 
-   if (system("command -v nvidia-smi > /dev/null 2>&1") == 0)
    {
-      fp = popen("nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1",
-                 "r");
-      if (fp)
+      char nvidia_path[PATH_MAX];
+      if (FindExecutableInPath("nvidia-smi", nvidia_path, sizeof(nvidia_path)))
       {
-         if (fgets(line, sizeof(line), fp) != NULL)
          {
-            line[strcspn(line, "\n")] = '\0';
-            if (line[0] != '\0')
-            {
-               printf("NVIDIA driver         : %s\n", line);
-               printed = 1;
-            }
-         }
-         pclose(fp);
-      }
+            char  output[32768];
+            char *first_driver = NULL;
+            char *argv[]       = {nvidia_path, "--query-gpu=driver_version",
+                                  "--format=csv,noheader", NULL};
 
-      fp =
-         popen("nvidia-smi --query-gpu=compute_cap --format=csv,noheader | sort -u", "r");
-      if (fp)
-      {
-         int cap_idx = 0;
-         while (fgets(line, sizeof(line), fp) != NULL)
-         {
-            line[strcspn(line, "\n")] = '\0';
-            if (cap_idx == 0)
+            if (RunCommandCapture(nvidia_path, argv, 1, output, sizeof(output)))
             {
-               printf("CUDA comp. capability : %s\n", line[0] ? line : "unknown");
+               first_driver = strtok(output, "\n");
+               if (first_driver)
+               {
+                  hypredrv_TrimTrailingWhitespace(first_driver);
+                  if (first_driver[0] != '\0')
+                  {
+                     printf("NVIDIA driver         : %s\n", first_driver);
+                     printed = 1;
+                  }
+               }
             }
-            else
-            {
-               printf("                        %s\n", line[0] ? line : "unknown");
-            }
-            printed = 1;
-            cap_idx++;
          }
-         pclose(fp);
+
+         {
+            char  output[32768];
+            char *argv[] = {nvidia_path, "--query-gpu=compute_cap",
+                            "--format=csv,noheader", NULL};
+            if (RunCommandCapture(nvidia_path, argv, 1, output, sizeof(output)))
+            {
+               char  caps[64][32];
+               int   cap_count = 0;
+               char *entry     = NULL;
+               char *saveptr   = NULL;
+
+               entry = strtok_r(output, "\n", &saveptr);
+               while (entry)
+               {
+                  int duplicate = 0;
+                  hypredrv_TrimTrailingWhitespace(entry);
+                  if (entry[0] != '\0')
+                  {
+                     for (int i = 0; i < cap_count; i++)
+                     {
+                        if (strcmp(caps[i], entry) == 0)
+                        {
+                           duplicate = 1;
+                           break;
+                        }
+                     }
+                     if (!duplicate && cap_count < (int)(sizeof(caps) / sizeof(caps[0])))
+                     {
+                        snprintf(caps[cap_count], sizeof(caps[cap_count]), "%s", entry);
+                        cap_count++;
+                     }
+                  }
+                  entry = strtok_r(NULL, "\n", &saveptr);
+               }
+
+               if (cap_count > 0)
+               {
+                  qsort(caps, (size_t)cap_count, sizeof(caps[0]), CompareFixedStrings);
+                  for (int i = 0; i < cap_count; i++)
+                  {
+                     if (i == 0)
+                     {
+                        printf("CUDA comp. capability : %s\n", caps[i]);
+                     }
+                     else
+                     {
+                        printf("                        %s\n", caps[i]);
+                     }
+                     printed = 1;
+                  }
+               }
+            }
+         }
       }
    }
 
-   if (system("command -v amd-smi > /dev/null 2>&1") == 0)
    {
-      fp = popen("amd-smi version 2>/dev/null", "r");
-      if (fp)
+      char amd_path[PATH_MAX];
+      if (FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)))
       {
-         // Read the first line which contains version info
-         if (fgets(line, sizeof(line), fp) != NULL)
          {
-            // Extract ROCm version from the output
-            // Format: "AMDSMI Tool: 25.5.1+41065ee6 | AMDSMI Library version: 25.5.1 |
-            // ROCm version: 6.4.3 | ..."
-            const char *rocm_ver = strstr(line, "ROCm version:");
-            if (rocm_ver)
+            char  output[32768];
+            char *argv[] = {amd_path, "version", NULL};
+            if (RunCommandCapture(amd_path, argv, 1, output, sizeof(output)))
             {
-               rocm_ver += strlen("ROCm version:");
-               while (*rocm_ver == ' ') rocm_ver++;
-               // Extract version number (until next | or end of line)
-               char version[64] = {0};
-               int  i           = 0;
-               while (*rocm_ver && *rocm_ver != '|' && i < (int)(sizeof(version) - 1))
+               char *first_line = strtok(output, "\n");
+               if (first_line)
                {
-                  version[i++] = *rocm_ver++;
+                  const char *rocm_ver = strstr(first_line, "ROCm version:");
+                  if (rocm_ver)
+                  {
+                     rocm_ver += strlen("ROCm version:");
+                     while (*rocm_ver == ' ') rocm_ver++;
+                     // Extract version number (until next | or end of line)
+                     char version[64] = {0};
+                     int  i           = 0;
+                     while (*rocm_ver && *rocm_ver != '|' &&
+                            i < (int)(sizeof(version) - 1))
+                     {
+                        version[i++] = *rocm_ver++;
+                     }
+                     version[i] = '\0';
+                     // Trim trailing spaces
+                     while (i > 0 && version[i - 1] == ' ') version[--i] = '\0';
+                     printf("AMD driver            : ROCm %s\n", version);
+                  }
+                  else
+                  {
+                     hypredrv_TrimTrailingWhitespace(first_line);
+                     printf("AMD driver            : %s\n", first_line);
+                  }
+                  printed = 1;
                }
-               version[i] = '\0';
-               // Trim trailing spaces
-               while (i > 0 && version[i - 1] == ' ') version[--i] = '\0';
-               printf("AMD driver            : ROCm %s\n", version);
             }
-            else
-            {
-               // Fallback: try to extract any version info
-               line[strcspn(line, "\n")] = '\0';
-               printf("AMD driver            : %s\n", line);
-            }
-            printed = 1;
          }
-         pclose(fp);
       }
    }
 

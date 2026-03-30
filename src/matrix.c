@@ -5,9 +5,12 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include <stdint.h>
+#include "HYPRE.h"
 #include "HYPRE_IJ_mv.h"
+#include "HYPRE_parcsr_mv.h"
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
-#include "utils.h"
+#include "internal/utils.h"
 
 static void
 IJMatrixInitializeCompat(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_location)
@@ -27,6 +30,63 @@ IJMatrixInitializeCompat(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_locatio
 #endif
 }
 
+enum
+{
+   IJMATRIX_MAX_PART_NNZ   = 200u * 1000u * 1000u,
+   IJMATRIX_MAX_PART_NROWS = 200u * 1000u * 1000u,
+};
+
+static int
+IJMatrixValidateHeader(const uint64_t *header, const char *filename)
+{
+   uint64_t nrows = 0;
+
+   if (!header)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Null matrix part header");
+      return 0;
+   }
+
+   if (header[8] < header[7])
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd(
+         "Invalid matrix row range in %s: row_upper (%llu) < row_lower (%llu)",
+         filename ? filename : "(unknown)", (unsigned long long)header[8],
+         (unsigned long long)header[7]);
+      return 0;
+   }
+
+   nrows = header[8] - header[7] + 1u;
+   if (nrows > (uint64_t)IJMATRIX_MAX_PART_NROWS)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Matrix row count exceeds per-part limit in %s (%llu rows)",
+                           filename ? filename : "(unknown)", (unsigned long long)nrows);
+      return 0;
+   }
+   if (header[6] > (uint64_t)IJMATRIX_MAX_PART_NNZ)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Matrix nnz exceeds per-part limit in %s (%llu entries)",
+                           filename ? filename : "(unknown)",
+                           (unsigned long long)header[6]);
+      return 0;
+   }
+   if (header[6] > (uint64_t)SIZE_MAX / sizeof(HYPRE_BigInt) ||
+       header[6] > (uint64_t)SIZE_MAX / sizeof(HYPRE_Complex) ||
+       nrows > (uint64_t)SIZE_MAX / sizeof(HYPRE_Int))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Matrix part sizes overflow allocation bounds in %s",
+                           filename ? filename : "(unknown)");
+      return 0;
+   }
+
+   return 1;
+}
+
 void
 hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                                      uint64_t             g_nparts,
@@ -41,9 +101,10 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    char     filename[1024];
    uint64_t header[11];
 
-   uint64_t nrows     = 0;
-   uint64_t nrows_sum = 0, nrows_offset = 0;
-   uint64_t nnzs_max = 0;
+   uint64_t nrows        = 0;
+   uint64_t nrows_sum    = 0;
+   uint64_t nrows_offset = 0;
+   size_t   nnzs_max     = 0;
 
    uint32_t *partids = NULL;
    FILE     *fp      = NULL;
@@ -76,8 +137,22 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    }
 
    /* 1b) Compute partids array */
+   if (nparts > (uint32_t)(SIZE_MAX / sizeof(uint32_t)))
+   {
+      *mat_ptr = NULL;
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Matrix part id count exceeds allocation bounds");
+      return;
+   }
    partids = (uint32_t *)malloc(nparts * sizeof(uint32_t));
-   offset  = ((uint32_t)myid) * nparts;
+   if (nparts > 0 && !partids)
+   {
+      *mat_ptr = NULL;
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate matrix part id map (%u entries)", nparts);
+      return;
+   }
+   offset = ((uint32_t)myid) * nparts;
    offset += (myid < ((int)g_nparts % nprocs)) ? (uint32_t)myid
                                                : (uint32_t)((int)g_nparts % nprocs);
    for (part = 0; part < nparts; part++)
@@ -89,6 +164,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    nrows_sum = nnzs_max = 0;
    for (part = 0; part < nparts; part++)
    {
+      uint64_t part_nrows = 0;
       snprintf(filename, sizeof(filename), "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
       if (!fp)
@@ -108,8 +184,21 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       }
       fclose(fp);
 
-      nrows_sum += (uint64_t)(header[8] - header[7] + 1);
-      nnzs_max = ((uint64_t)header[6] > nnzs_max) ? (uint64_t)header[6] : nnzs_max;
+      if (!IJMatrixValidateHeader(header, filename))
+      {
+         goto cleanup;
+      }
+
+      part_nrows = (uint64_t)(header[8] - header[7] + 1u);
+      if (nrows_sum > UINT64_MAX - part_nrows)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Matrix local row count overflow while reading %s",
+                              filename);
+         goto cleanup;
+      }
+      nrows_sum += part_nrows;
+      nnzs_max = ((size_t)header[6] > nnzs_max) ? (size_t)header[6] : nnzs_max;
    }
 
    // printf("[%d]: nrows_sum: %lld, nnz_max: %lld!\n", myid, nrows_sum, nnzs_max);
@@ -131,12 +220,33 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       (nnzs_max > 0) ? (HYPRE_BigInt *)malloc(nnzs_max * sizeof(HYPRE_BigInt)) : NULL;
    h_vals =
       (nnzs_max > 0) ? (HYPRE_Complex *)malloc(nnzs_max * sizeof(HYPRE_Complex)) : NULL;
+   if (nnzs_max > 0 && (!h_rows || !h_cols || !h_vals))
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate matrix read buffers (%zu entries)",
+                           nnzs_max);
+      goto cleanup;
+   }
 
    /* 4a) Pre-compute the sparsity pattern when storing on host memory */
    if (memory_location == HYPRE_MEMORY_HOST)
    {
+      if (nrows_sum > (uint64_t)SIZE_MAX / sizeof(HYPRE_Int))
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Matrix row count exceeds host precompute bounds");
+         goto cleanup;
+      }
       HYPRE_Int *dsizes = (HYPRE_Int *)calloc(nrows_sum, sizeof(HYPRE_Int));
       HYPRE_Int *osizes = (HYPRE_Int *)calloc(nrows_sum, sizeof(HYPRE_Int));
+      if (!dsizes || !osizes)
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate matrix host sparsity buffers");
+         free(dsizes);
+         free(osizes);
+         goto cleanup;
+      }
 
       for (part = 0; part < nparts; part++)
       {
@@ -148,6 +258,13 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
             hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
             hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
             if (fp) fclose(fp);
+            free(dsizes);
+            free(osizes);
+            goto cleanup;
+         }
+         if (!IJMatrixValidateHeader(header, filename))
+         {
+            fclose(fp);
             free(dsizes);
             free(osizes);
             goto cleanup;
@@ -186,6 +303,16 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          else if (header[1] == sizeof(uint32_t))
          {
             uint32_t *buffer = (uint32_t *)malloc(header[6] * sizeof(uint32_t));
+            if (header[6] > 0 && !buffer)
+            {
+               hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+               hypredrv_ErrorMsgAdd("Failed to allocate uint32 index buffer for %s",
+                                    filename);
+               fclose(fp);
+               free(dsizes);
+               free(osizes);
+               goto cleanup;
+            }
 
             if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
             {
@@ -224,6 +351,16 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          else if (header[1] == sizeof(uint64_t))
          {
             uint64_t *buffer = (uint64_t *)malloc(header[6] * sizeof(uint64_t));
+            if (header[6] > 0 && !buffer)
+            {
+               hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+               hypredrv_ErrorMsgAdd("Failed to allocate uint64 index buffer for %s",
+                                    filename);
+               fclose(fp);
+               free(dsizes);
+               free(osizes);
+               goto cleanup;
+            }
 
             if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
             {
@@ -365,6 +502,11 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          if (fp) fclose(fp);
          goto cleanup;
       }
+      if (!IJMatrixValidateHeader(header, filename))
+      {
+         fclose(fp);
+         goto cleanup;
+      }
 
       /* Read row and column indices */
       if (header[1] == sizeof(HYPRE_BigInt) && h_rows != NULL && h_cols != NULL &&
@@ -391,6 +533,14 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       else if (header[1] == sizeof(uint32_t))
       {
          uint32_t *buffer = (uint32_t *)malloc(header[6] * sizeof(uint32_t));
+         if (header[6] > 0 && !buffer)
+         {
+            hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+            hypredrv_ErrorMsgAdd("Failed to allocate uint32 index buffer for %s",
+                                 filename);
+            fclose(fp);
+            goto cleanup;
+         }
 
          if (fread(buffer, sizeof(uint32_t), header[6], fp) != header[6])
          {
@@ -425,6 +575,14 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       else if (header[1] == sizeof(uint64_t))
       {
          uint64_t *buffer = (uint64_t *)malloc(header[6] * sizeof(uint64_t));
+         if (header[6] > 0 && !buffer)
+         {
+            hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+            hypredrv_ErrorMsgAdd("Failed to allocate uint64 index buffer for %s",
+                                 filename);
+            fclose(fp);
+            goto cleanup;
+         }
 
          if (fread(buffer, sizeof(uint64_t), header[6], fp) != header[6])
          {
@@ -487,15 +645,14 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          if (header[6] > 0)
          {
             buffer = (float *)malloc(header[6] * sizeof(float));
-         }
-
-         if (!buffer || fread(buffer, sizeof(float), header[6], fp) != header[6])
-         {
-            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
-            fclose(fp);
-            free(buffer);
-            goto cleanup;
+            if (!buffer || fread(buffer, sizeof(float), header[6], fp) != header[6])
+            {
+               hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+               hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
+               fclose(fp);
+               free(buffer);
+               goto cleanup;
+            }
          }
 
          for (size_t i = 0; h_vals && i < header[6]; i++)
@@ -511,15 +668,14 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          if (header[6] > 0)
          {
             buffer = (double *)malloc(header[6] * sizeof(double));
-         }
-
-         if (!buffer || fread(buffer, sizeof(double), header[6], fp) != header[6])
-         {
-            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
-            fclose(fp);
-            free(buffer);
-            goto cleanup;
+            if (!buffer || fread(buffer, sizeof(double), header[6], fp) != header[6])
+            {
+               hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+               hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
+               fclose(fp);
+               free(buffer);
+               goto cleanup;
+            }
          }
 
          for (size_t i = 0; h_vals && i < header[6]; i++)

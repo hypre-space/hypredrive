@@ -10,9 +10,9 @@
 
 #include "HYPRE_IJ_mv.h"
 #include "HYPRE_parcsr_mv.h"
-#include "compatibility.h"
-#include "containers.h"
-#include "yaml.h"
+#include "internal/compatibility.h"
+#include "internal/containers.h"
+#include "internal/yaml.h"
 
 /*--------------------------------------------------------------------------
  * Scaling type enum
