@@ -51,6 +51,8 @@ set(HYPREDRV_GPU_DISABLED_TESTS
     heatflow_test_4proc
     lidcavity_test_4proc
     lidcavity_test_mgr_1proc
+    lidcavity_test_print_1proc
+    lidcavity_test_adaptive_reuse_1proc
     lidcavity_test_mgr_4proc
 )
 

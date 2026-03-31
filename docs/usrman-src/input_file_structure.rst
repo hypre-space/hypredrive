@@ -688,9 +688,16 @@ steps), you can reuse the same preconditioner across several systems to avoid re
 cost. The preconditioner is rebuilt only at chosen linear-system indices; for the rest, the
 previous factorization is applied as-is.
 
-A ``reuse`` subsection under ``preconditioner`` configures this behavior:
+A ``reuse`` subsection under ``preconditioner`` configures this behavior.
+
+Static reuse
+^^^^^^^^^^^^
+
+The default policy is ``static``. It rebuilds on a fixed schedule:
 
 - **``enabled``** – Turn reuse logic on or off. Values: ``yes`` / ``no``. Default: ``no``.
+- **``policy``** – ``static`` or ``adaptive``. Default: ``static`` unless an
+  ``adaptive`` subsection is present.
 - **``frequency``** – Nonnegative integer. Rebuild when ``(linear_system_index) mod
   (frequency + 1) == 0``. So ``0`` = rebuild every system, ``1`` = rebuild every other, etc.
 - **``linear_system_ids``** – Explicit list of **0-based** linear-system indices at which to
@@ -745,6 +752,153 @@ Example: reuse per timestep (rebuild at the first system of each timestep; requi
 In embedded library mode, the same YAML block can be paired with object-scoped annotations such
 as ``HYPREDRV_AnnotateLevelBegin(h, 0, "timestep-3", -1)`` /
 ``HYPREDRV_AnnotateLevelEnd(h, 0, "timestep-3", -1)`` instead of a timestep file.
+
+Adaptive reuse
+^^^^^^^^^^^^^^
+
+Set ``type: adaptive`` to let HYPREDRV score recent solver behavior and rebuild when the
+score crosses a threshold. This mode is separate from the static schedule above; combining it
+with ``frequency``, ``linear_system_ids``, or ``per_timestep`` produces a parse-time error.
+
+For the simplest opt-in, ``reuse: adaptive`` is valid shorthand. That form enables adaptive
+reuse with HYPREDRV's built-in default score model.
+
+.. code-block:: yaml
+
+   preconditioner:
+     mgr: {}
+     reuse: adaptive
+
+Top-level adaptive keys:
+
+- **``guards.min_reuse_solves``** – Force reuse until this many solves have completed after a
+  rebuild.
+- **``guards.max_reuse_solves``** – Force rebuild once the current preconditioner has been
+  reused this many times. ``-1`` disables the guard.
+- **``guards.min_history_points``** – Minimum number of samples a score component needs before
+  it can trigger a rebuild.
+- **``guards.rebuild_on_new_level``** – Optional list of annotation levels that force a rebuild
+  when the active level entry changes.
+- **``adaptive.rebuild_threshold``** – Rebuild when the weighted score is at least this value.
+- **``adaptive.positive_floor``** – Positive clamp used by geometric / harmonic / nonpositive
+  power means and ratio-like transforms. Defaults to ``1.0e-12``.
+- **``adaptive.components``** – Optional sequence of score components. If omitted,
+  HYPREDRV installs a built-in default component set.
+
+Adaptive decisions are reported through HYPREDRV's existing internal logging framework when
+``HYPREDRV_LOG_LEVEL >= 2``.
+
+Each component contributes a nonnegative term to the total score. The current formula is:
+
+.. math::
+
+   \mathrm{score} = \sum_i w_i \max(0, d_i)
+
+where ``w_i`` is ``weight`` and
+
+.. math::
+
+   d_i =
+   \begin{cases}
+   (\mathrm{aggregate}_i - \mathrm{target}_i) / \mathrm{scale}_i, & \text{direction = above} \\
+   (\mathrm{target}_i - \mathrm{aggregate}_i) / \mathrm{scale}_i, & \text{direction = below}
+   \end{cases}
+
+``aggregate_i`` is the generalized power mean of the transformed history samples for that
+component. HYPREDRV rebuilds when ``score >= adaptive.rebuild_threshold``.
+
+Default adaptive components
+"""""""""""""""""""""""""""
+
+If ``type: adaptive`` is selected and no explicit ``adaptive.components`` list is provided,
+HYPREDRV uses the following built-in components:
+
+- **``efficiency``** – ``metric: solve_overhead_vs_setup``, arithmetic mean, ``target: 1.0``,
+  ``scale: 1.0``, ``transform.kind: raw``, ``transform.amortization_window: 10``,
+  ``history.source: linear_solves``, ``history.max_points: 5``.
+- **``stability``** – ``metric: iterations``, RMS mean, ``target: 1.5``,
+  ``scale: 0.5``, ``transform.kind: ratio_to_baseline``, ``transform.baseline: rebuild``,
+  ``history.source: linear_solves``, ``history.max_points: 5``.
+
+The default model intentionally mixes one efficiency term and one iteration-stability term so
+``reuse: adaptive`` works out of the box without level annotations or a hand-built component
+list. Users can still override any part of the model by providing ``adaptive.components``
+explicitly.
+
+Fields available per component:
+
+- **``name``** – Free-form label used in adaptive decision logs.
+- **``metric``** – ``iterations``, ``solve_time``, ``setup_time``, ``total_time``, or
+  ``solve_overhead_vs_setup``.
+- **``direction``** – ``above`` or ``below``. ``above`` is the common case.
+- **``target``** / **``scale``** – Normalize the aggregated metric before weighting.
+- **``mean.kind``** – ``arithmetic``, ``geometric``, ``harmonic``, ``rms``, ``min``, ``max``,
+  or ``power``.
+- **``mean.power``** – Exponent used only when ``mean.kind: power``.
+- **``transform.kind``** – ``raw``, ``delta_from_baseline``, ``ratio_to_baseline``, or
+  ``relative_increase``.
+- **``transform.baseline``** – ``rebuild`` or ``window_mean``.
+- **``transform.amortization_window``** – Used by ``solve_overhead_vs_setup`` to compare solve
+  overhead against the setup cost amortized over a chosen horizon.
+- **``history.source``** – ``linear_solves``, ``active_level``, or ``completed_level``.
+- **``history.level``** – Required for level-based history sources.
+- **``history.max_points``** – Rolling history length for that component.
+- **``history.reduction``** – ``none``, ``sum``, or ``mean``. For completed-level history,
+  ``mean`` reports per-solve averages inside each level entry.
+
+Named means are specialized forms of the generalized power mean:
+
+- ``arithmetic`` = power ``1``
+- ``geometric`` = power ``0``
+- ``harmonic`` = power ``-1``
+- ``rms`` = power ``2``
+
+The following adaptive policy mirrors the original sketch: an amortization-style efficiency
+term plus an RMS iteration spike detector.
+
+.. code-block:: yaml
+
+   preconditioner:
+     mgr: {}
+     reuse:
+       enabled: yes
+       type: adaptive
+       guards:
+         min_history_points: 2
+         min_reuse_solves: 1
+       adaptive:
+         rebuild_threshold: 1.0
+         components:
+           - name: efficiency
+             metric: solve_overhead_vs_setup
+             target: 1.0
+             scale: 1.0
+             mean:
+               kind: arithmetic
+             transform:
+               kind: raw
+               amortization_window: 10
+             history:
+               source: linear_solves
+               max_points: 5
+           - name: stability
+             metric: iterations
+             target: 1.5
+             scale: 0.5
+             mean:
+               kind: rms
+             transform:
+               kind: ratio_to_baseline
+               baseline: rebuild
+             history:
+               source: active_level
+               level: 0
+               max_points: 3
+
+Level-based history uses the same object-scoped annotation API described above. For example,
+``history.source: active_level`` with ``level: 0`` tracks only solves inside the active
+timestep, while ``history.source: completed_level`` evaluates the summaries produced by
+completed level entries.
 
    MGR cannot be fully defined by the ``mgr`` keyword only. Instead, it is also necessary
    to specify which types of degrees of freedom are treated as F points in each MGR level,

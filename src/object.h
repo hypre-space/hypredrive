@@ -39,11 +39,13 @@ typedef struct hypredrv_struct
 
    Scaling_context     *scaling_ctx;
    PreconReuseTimesteps precon_reuse_timesteps;
+   PreconReuseState     precon_reuse_state;
 
    Stats *stats;
    bool   stats_printed;
    int    runtime_object_id;
    int    current_system_index;
+   int    preferred_exec_policy;
 
    /* Linked-list hook used by the internal runtime registry. */
    struct hypredrv_struct *next_live;

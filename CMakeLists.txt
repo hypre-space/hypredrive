@@ -120,6 +120,7 @@ set(SOURCE_FILES
     src/ilu.c
     src/mgr.c
     src/precon.c
+    src/precon_reuse.c
     src/presets.c
     src/krylov.c
     src/pcg.c

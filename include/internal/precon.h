@@ -14,6 +14,8 @@
 #include "internal/fsai.h"
 #include "internal/ilu.h"
 #include "internal/mgr.h"
+#include "internal/precon_reuse.h"
+#include "internal/stats.h"
 #include "internal/yaml.h"
 
 /*--------------------------------------------------------------------------
@@ -46,21 +48,6 @@ typedef struct precon_args_struct
 } precon_args;
 
 typedef precon_args Precon_args;
-
-typedef struct PreconReuse_args_struct
-{
-   int       enabled;
-   int       frequency;
-   IntArray *linear_system_ids;
-   int       per_timestep;
-} PreconReuse_args;
-
-typedef struct PreconReuseTimesteps_struct
-{
-   IntArray *ids;
-   IntArray *starts;
-} PreconReuseTimesteps;
-
 /*--------------------------------------------------------------------------
  * Generic preconditioner struct
  *--------------------------------------------------------------------------*/
@@ -83,24 +70,11 @@ StrIntMapArray hypredrv_PreconGetValidValues(const char *);
 StrIntMapArray hypredrv_PreconGetValidTypeIntMap(void);
 void           hypredrv_PreconSetDefaultArgs(precon_args *);
 void           hypredrv_PreconArgsSetDefaultsForMethod(precon_t, precon_args *);
-void           hypredrv_PreconReuseSetDefaultArgs(PreconReuse_args *);
-void           hypredrv_PreconReuseDestroyArgs(PreconReuse_args *);
-void           hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *, YAMLnode *);
-void           hypredrv_PreconReuseTimestepsClear(PreconReuseTimesteps *);
-uint32_t       hypredrv_PreconReuseTimestepsLoad(const PreconReuse_args *, const char *,
-                                                 PreconReuseTimesteps *);
-int            hypredrv_PreconReuseResolveTimestep(const PreconReuseTimesteps *,
-                                                   const struct Stats_struct *, int, int *, int *,
-                                                   int *);
-int            hypredrv_PreconReuseShouldRecompute(const PreconReuse_args *,
-                                                   const PreconReuseTimesteps *,
-                                                   const struct Stats_struct *, int);
-
-void hypredrv_PreconSetArgsFromYAML(precon_args *,
-                                    YAMLnode *); /* TODO: change to PreconSetArgs */
-void hypredrv_PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector,
-                           HYPRE_Precon *);
-void hypredrv_PreconSetup(precon_t, HYPRE_Precon, HYPRE_IJMatrix);
+void           hypredrv_PreconSetArgsFromYAML(precon_args *,
+                                              YAMLnode *); /* TODO: change to PreconSetArgs */
+void           hypredrv_PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector,
+                                     HYPRE_Precon *);
+void           hypredrv_PreconSetup(precon_t, HYPRE_Precon, HYPRE_IJMatrix);
 void hypredrv_PreconApply(precon_t, HYPRE_Precon, HYPRE_IJMatrix, HYPRE_IJVector,
                           HYPRE_IJVector);
 void hypredrv_PreconDestroy(precon_t, precon_args *, HYPRE_Precon *);
