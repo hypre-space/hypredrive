@@ -1869,6 +1869,10 @@ test_HYPREDRV_InputArgsParse_gpu_standard_amg_forces_host_exec(void)
    ASSERT_EQ(obj->iargs->general.exec_policy, 0);
    ASSERT_EQ(obj->iargs->ls.exec_policy, 0);
 
+   ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, 0), ERROR_NONE);
+   ASSERT_EQ(obj->iargs->general.exec_policy, 1);
+   ASSERT_EQ(obj->iargs->ls.exec_policy, 1);
+
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 #endif

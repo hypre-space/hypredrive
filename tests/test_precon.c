@@ -360,6 +360,52 @@ test_PreconReuseSetArgsFromYAML_adaptive_rebuild_on_new_level_block_sequence(voi
 }
 
 static void
+test_PreconReuseSetArgsFromYAML_linear_solver_ids_alias(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "enabled", "yes", 1);
+   add_child(parent, "linear_solver_ids", "[0, 2]", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_NOT_NULL(args.linear_system_ids);
+   ASSERT_EQ_SIZE(args.linear_system_ids->size, 2);
+   ASSERT_EQ(args.linear_system_ids->data[0], 0);
+   ASSERT_EQ(args.linear_system_ids->data[1], 2);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_adaptive_rebuild_on_new_level_rejects_out_of_range(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "enabled", "yes", 1);
+   add_child(parent, "type", "adaptive", 1);
+
+   YAMLnode *guards = add_child(parent, "guards", "", 1);
+   add_child(guards, "rebuild_on_new_level", "[99]", 2);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_NE(hypredrv_ErrorCodeGet(), ERROR_NONE);
+   ASSERT_NULL(args.guards.rebuild_on_new_level);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
 test_PreconReuseSetArgsFromYAML_adaptive_type_without_components_uses_defaults(void)
 {
    PreconReuse_args args;
@@ -1094,7 +1140,7 @@ test_PreconReuseShouldRebuild_adaptive_setup_time_metric(void)
    comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
 
    hypredrv_PreconReuseStateInit(&state);
-   seed_post_bootstrap_state(&state, 10, 1.0, 1.0); /* baseline_setup_time=1.0 */
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
 
    /* setup_time=3.0 → ratio=3.0, arith mean=3.0, dist=(3-1.5)/0.5=3.0 > threshold=0.5 */
    PreconReuseObservation obs = make_reuse_observation(3, 0, 10, 3.0, 1.0);
@@ -1146,7 +1192,7 @@ test_PreconReuseShouldRebuild_adaptive_geometric_mean(void)
    comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
 
    hypredrv_PreconReuseStateInit(&state);
-   seed_post_bootstrap_state(&state, 10, 1.0, 1.0); /* baseline_iters=10 */
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
 
    /* iters=30 → ratio=3.0; geom_mean([3,3])=3.0, dist=(3-1.5)/0.5=3.0 > threshold=0.5 */
    PreconReuseObservation obs = make_reuse_observation(3, 0, 30, 1.0, 1.0);
@@ -1198,7 +1244,7 @@ test_PreconReuseShouldRebuild_adaptive_harmonic_mean(void)
    comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
 
    hypredrv_PreconReuseStateInit(&state);
-   seed_post_bootstrap_state(&state, 10, 1.0, 1.0); /* baseline_solve_time=1.0 */
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
 
    /* solve_time=4.0 → ratio=4.0; harm_mean([4,4])=4.0, dist=(4-1.5)/0.5=5.0 > threshold=0.5 */
    PreconReuseObservation obs = make_reuse_observation(3, 0, 10, 1.0, 4.0);
@@ -1250,7 +1296,7 @@ test_PreconReuseShouldRebuild_adaptive_delta_from_baseline_transform(void)
    comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
 
    hypredrv_PreconReuseStateInit(&state);
-   seed_post_bootstrap_state(&state, 10, 1.0, 1.0); /* baseline_iters=10 */
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
 
    /* iters=20 → delta=fmax(20-10,0)=10; arith_mean([10,10])=10, dist=(10-5)/1=5 > threshold=0.5 */
    PreconReuseObservation obs = make_reuse_observation(3, 0, 20, 1.0, 1.0);
@@ -1303,7 +1349,7 @@ test_PreconReuseShouldRebuild_adaptive_min_reuse_solves_guard(void)
    comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
 
    hypredrv_PreconReuseStateInit(&state);
-   seed_post_bootstrap_state(&state, 10, 1.0, 1.0); /* baseline_iters=10 */
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
 
    ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 3,
                                                     &decision));
@@ -2115,6 +2161,9 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_type_parses_components);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_scalar_installs_default_components);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_rebuild_on_new_level_block_sequence);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_linear_solver_ids_alias);
+   RUN_TEST(
+      test_PreconReuseSetArgsFromYAML_adaptive_rebuild_on_new_level_rejects_out_of_range);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_type_without_components_uses_defaults);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_scalar_and_explicit_type_share_defaults);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_rejects_negative_component_weight);

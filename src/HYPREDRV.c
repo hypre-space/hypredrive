@@ -906,11 +906,12 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->precon_reuse_timesteps.ids    = NULL;
    hypredrv->precon_reuse_timesteps.starts = NULL;
    hypredrv_PreconReuseStateInit(&hypredrv->precon_reuse_state);
-   hypredrv->stats                = NULL;
-   hypredrv->stats_printed        = false;
-   hypredrv->runtime_object_id    = 0;
-   hypredrv->current_system_index = -1;
-   hypredrv->next_live            = NULL;
+   hypredrv->stats                 = NULL;
+   hypredrv->stats_printed         = false;
+   hypredrv->runtime_object_id     = 0;
+   hypredrv->current_system_index  = -1;
+   hypredrv->preferred_exec_policy = 0;
+   hypredrv->next_live             = NULL;
 
    /* Disable library mode by default */
    hypredrv->lib_mode = false;
@@ -1086,7 +1087,8 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    }
 
 #if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22100, 0)
-   if (hypredrv->iargs->general.exec_policy &&
+   hypredrv->preferred_exec_policy = hypredrv->iargs->general.exec_policy;
+   if (hypredrv->preferred_exec_policy &&
        hypredrv->iargs->precon_method == PRECON_BOOMERAMG)
    {
       int interp_type = hypredrv->iargs->precon.amg.interpolation.prolongation_type;
@@ -1094,9 +1096,10 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
       {
          hypredrv->iargs->general.exec_policy = 0;
          hypredrv->iargs->ls.exec_policy      = 0;
-         HYPREDRV_LOG_OBJECTF(1, hypredrv,
-                              "forcing host execution for compatibility in InputArgsParse: "
-                              "BoomerAMG standard interpolation");
+         HYPREDRV_LOG_OBJECTF(
+            1, hypredrv,
+            "forcing host execution for compatibility in InputArgsParse: "
+            "BoomerAMG standard interpolation");
          HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
       }
    }
@@ -1270,30 +1273,43 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
    hypredrv->iargs->precon_method         = hypredrv->iargs->precon_methods[variant_idx];
    hypredrv->iargs->precon                = hypredrv->iargs->precon_variants[variant_idx];
 #if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22100, 0)
-   if (hypredrv->iargs->general.exec_policy &&
-       hypredrv->iargs->precon_method == PRECON_BOOMERAMG)
+   int desired_exec_policy = hypredrv->preferred_exec_policy;
+   if (hypredrv->iargs->precon_method == PRECON_BOOMERAMG)
    {
       int interp_type = hypredrv->iargs->precon.amg.interpolation.prolongation_type;
       if (interp_type == 8 || interp_type == 9)
       {
-         hypredrv->iargs->general.exec_policy = 0;
-         hypredrv->iargs->ls.exec_policy      = 0;
+         desired_exec_policy = 0;
+      }
+   }
+   if (hypredrv->iargs->general.exec_policy != desired_exec_policy)
+   {
+      hypredrv->iargs->general.exec_policy = desired_exec_policy;
+      hypredrv->iargs->ls.exec_policy      = desired_exec_policy;
+      if (desired_exec_policy)
+      {
+         HYPREDRV_LOG_OBJECTF(1, hypredrv,
+                              "restoring device execution in InputArgsSetPreconVariant: "
+                              "active variant is GPU-compatible");
+      }
+      else
+      {
          HYPREDRV_LOG_OBJECTF(
             1, hypredrv,
             "forcing host execution for compatibility in InputArgsSetPreconVariant: "
             "BoomerAMG standard interpolation");
-         HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
-         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_A, 1);
-         if (hypredrv->mat_M && hypredrv->mat_M != hypredrv->mat_A)
-         {
-            PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_M, 1);
-         }
-         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_b, 0);
-         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_x, 0);
-         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_x0, 0);
-         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_xref, 0);
-         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_nn, 0);
       }
+      HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
+      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_A, 1);
+      if (hypredrv->mat_M && hypredrv->mat_M != hypredrv->mat_A)
+      {
+         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_M, 1);
+      }
+      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_b, 0);
+      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_x, 0);
+      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_x0, 0);
+      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_xref, 0);
+      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_nn, 0);
    }
 #endif
    HYPREDRV_LOG_OBJECTF(2, hypredrv, "preconditioner variant selected: idx=%d method=%d",

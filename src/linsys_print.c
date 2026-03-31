@@ -1480,7 +1480,7 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
       int matched = (ctx->last_iter >= 0) && ((double)ctx->last_iter >= cfg->threshold);
       if (reason && reason_size > 0)
       {
-         snprintf(reason, reason_size, "last_iter=%d threshold=%.17g", ctx->last_iter,
+         snprintf(reason, reason_size, "last_iter=%d threshold=%.3e", ctx->last_iter,
                   cfg->threshold);
       }
       return matched;
@@ -1531,7 +1531,7 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
                if (PrintSystemBasisUsesThreshold(selector->basis))
                {
                   snprintf(reason, reason_size,
-                           "selector[%zu] basis=%s metric_value=%.17g threshold=%.17g", i,
+                           "selector[%zu] basis=%s metric_value=%.2e threshold=%.2e", i,
                            PrintSystemBasisName(selector->basis), metric_value,
                            selector->threshold);
                }
@@ -2032,7 +2032,7 @@ PrintSystemAppendStageIndex(const char *dump_dir, const PrintSystemContext *ctx,
 
    fprintf(fp,
            "%s (object=%s stage=%s system=%d stats_ls=%d timestep=%d last_iter=%d "
-           "last_setup=%.17g last_solve=%.17g variant=%d repetition=%d)\n",
+           "last_setup=%.2e last_solve=%.2e variant=%d repetition=%d)\n",
            ls_name, object_name ? object_name : "unnamed",
            PrintSystemStageName(ctx->stage), ctx->system_index, ctx->stats_ls_id,
            ctx->timestep_index, ctx->last_iter, ctx->last_setup_time,

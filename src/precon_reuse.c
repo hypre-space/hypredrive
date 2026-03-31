@@ -9,7 +9,6 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-#include <strings.h>
 #include "internal/precon.h"
 #include "logging.h"
 #include "object.h"
@@ -28,6 +27,13 @@ enum
     * scoring begins.  Three observations give a stable mean while keeping the
     * warm-up cost low for typical time-stepping workloads. */
    PRECON_REUSE_BOOTSTRAP_SOLVES = 3,
+
+   /* Hard cap on the in-memory observation history.  Limits both peak memory
+    * usage and the worst-case scan length in PreconReuseCollectSamples when
+    * ACTIVE_LEVEL filtering must search backwards for matching entries.
+    * 256 is well above any realistic max_points value while keeping the
+    * array under 16 KB. */
+   PRECON_REUSE_MAX_OBSERVATIONS = 256,
 };
 
 static void
@@ -157,20 +163,13 @@ PreconReuseParseOnOff(const char *value, int *out)
       return 0;
    }
 
-   if (!strcasecmp(value, "on") || !strcasecmp(value, "yes") ||
-       !strcasecmp(value, "true") || !strcmp(value, "1"))
+   int result = hypredrv_StrIntMapArrayGetImage(hypredrv_OnOffMapArray, value);
+   if (result == INT_MIN)
    {
-      *out = 1;
-      return 1;
+      return 0;
    }
-   if (!strcasecmp(value, "off") || !strcasecmp(value, "no") ||
-       !strcasecmp(value, "false") || !strcmp(value, "0"))
-   {
-      *out = 0;
-      return 1;
-   }
-
-   return 0;
+   *out = result;
+   return 1;
 }
 
 static int
@@ -195,26 +194,19 @@ PreconReuseParseDouble(const char *value, double *out)
    return sscanf(value, "%lf", out) == 1;
 }
 
+static const StrIntMap k_policy_map[] = {
+   {"static", PRECON_REUSE_POLICY_STATIC},
+   {"adaptive", PRECON_REUSE_POLICY_ADAPTIVE},
+};
+
 static int
 PreconReuseParsePolicy(const char *value, PreconReusePolicy *out)
 {
-   if (!value || !out)
-   {
-      return 0;
-   }
-
-   if (!strcasecmp(value, "static"))
-   {
-      *out = PRECON_REUSE_POLICY_STATIC;
-      return 1;
-   }
-   if (!strcasecmp(value, "adaptive"))
-   {
-      *out = PRECON_REUSE_POLICY_ADAPTIVE;
-      return 1;
-   }
-
-   return 0;
+   if (!value || !out) return 0;
+   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_policy_map), value);
+   if (r == INT_MIN) return 0;
+   *out = (PreconReusePolicy)r;
+   return 1;
 }
 
 static int
@@ -271,18 +263,6 @@ PreconReuseInstallDefaultAdaptiveComponents(PreconReuseAdaptive_args *adaptive)
 }
 
 static void
-PreconReuseApplyAdaptiveShorthandDefaults(PreconReuse_args *args)
-{
-   if (!args)
-   {
-      return;
-   }
-
-   args->guards.min_history_points       = PRECON_REUSE_BOOTSTRAP_SOLVES;
-   args->guards.bad_decisions_to_rebuild = 2;
-}
-
-static void
 PreconReuseApplyAdaptiveImplicitDefaults(PreconReuse_args *args,
                                          int               seen_min_history_points,
                                          int               seen_bad_decisions_to_rebuild)
@@ -302,237 +282,134 @@ PreconReuseApplyAdaptiveImplicitDefaults(PreconReuse_args *args,
    }
 }
 
+static void
+PreconReuseApplyAdaptiveShorthandDefaults(PreconReuse_args *args)
+{
+   /* Unconditional defaults — equivalent to implicit with neither field seen. */
+   PreconReuseApplyAdaptiveImplicitDefaults(args, 0, 0);
+}
+
+static const StrIntMap k_direction_map[] = {
+   {"above", PRECON_REUSE_DIRECTION_ABOVE},
+   {"below", PRECON_REUSE_DIRECTION_BELOW},
+};
+
 static int
 PreconReuseParseDirection(const char *value, PreconReuseDirection *out)
 {
-   if (!value || !out)
-   {
-      return 0;
-   }
-
-   if (!strcasecmp(value, "above"))
-   {
-      *out = PRECON_REUSE_DIRECTION_ABOVE;
-      return 1;
-   }
-   if (!strcasecmp(value, "below"))
-   {
-      *out = PRECON_REUSE_DIRECTION_BELOW;
-      return 1;
-   }
-
-   return 0;
+   if (!value || !out) return 0;
+   int r =
+      hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_direction_map), value);
+   if (r == INT_MIN) return 0;
+   *out = (PreconReuseDirection)r;
+   return 1;
 }
+
+static const StrIntMap k_mean_kind_map[] = {
+   {"arithmetic", PRECON_REUSE_MEAN_ARITHMETIC},
+   {"geometric", PRECON_REUSE_MEAN_GEOMETRIC},
+   {"harmonic", PRECON_REUSE_MEAN_HARMONIC},
+   {"rms", PRECON_REUSE_MEAN_RMS},
+   {"min", PRECON_REUSE_MEAN_MIN},
+   {"max", PRECON_REUSE_MEAN_MAX},
+   {"power", PRECON_REUSE_MEAN_POWER},
+};
 
 static int
 PreconReuseParseMeanKind(const char *value, PreconReuseMeanKind *out)
 {
-   if (!value || !out)
-   {
-      return 0;
-   }
-
-   if (!strcasecmp(value, "arithmetic"))
-   {
-      *out = PRECON_REUSE_MEAN_ARITHMETIC;
-      return 1;
-   }
-   if (!strcasecmp(value, "geometric"))
-   {
-      *out = PRECON_REUSE_MEAN_GEOMETRIC;
-      return 1;
-   }
-   if (!strcasecmp(value, "harmonic"))
-   {
-      *out = PRECON_REUSE_MEAN_HARMONIC;
-      return 1;
-   }
-   if (!strcasecmp(value, "rms"))
-   {
-      *out = PRECON_REUSE_MEAN_RMS;
-      return 1;
-   }
-   if (!strcasecmp(value, "min"))
-   {
-      *out = PRECON_REUSE_MEAN_MIN;
-      return 1;
-   }
-   if (!strcasecmp(value, "max"))
-   {
-      *out = PRECON_REUSE_MEAN_MAX;
-      return 1;
-   }
-   if (!strcasecmp(value, "power"))
-   {
-      *out = PRECON_REUSE_MEAN_POWER;
-      return 1;
-   }
-
-   return 0;
+   if (!value || !out) return 0;
+   int r =
+      hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_mean_kind_map), value);
+   if (r == INT_MIN) return 0;
+   *out = (PreconReuseMeanKind)r;
+   return 1;
 }
+
+static const StrIntMap k_transform_kind_map[] = {
+   {"raw", PRECON_REUSE_TRANSFORM_RAW},
+   {"delta_from_baseline", PRECON_REUSE_TRANSFORM_DELTA_FROM_BASELINE},
+   {"ratio_to_baseline", PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE},
+   {"relative_increase", PRECON_REUSE_TRANSFORM_RELATIVE_INCREASE},
+};
 
 static int
 PreconReuseParseTransformKind(const char *value, PreconReuseTransformKind *out)
 {
-   if (!value || !out)
-   {
-      return 0;
-   }
-
-   if (!strcasecmp(value, "raw"))
-   {
-      *out = PRECON_REUSE_TRANSFORM_RAW;
-      return 1;
-   }
-   if (!strcasecmp(value, "delta_from_baseline"))
-   {
-      *out = PRECON_REUSE_TRANSFORM_DELTA_FROM_BASELINE;
-      return 1;
-   }
-   if (!strcasecmp(value, "ratio_to_baseline"))
-   {
-      *out = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
-      return 1;
-   }
-   if (!strcasecmp(value, "relative_increase"))
-   {
-      *out = PRECON_REUSE_TRANSFORM_RELATIVE_INCREASE;
-      return 1;
-   }
-
-   return 0;
+   if (!value || !out) return 0;
+   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_transform_kind_map),
+                                           value);
+   if (r == INT_MIN) return 0;
+   *out = (PreconReuseTransformKind)r;
+   return 1;
 }
+
+static const StrIntMap k_baseline_kind_map[] = {
+   {"rebuild", PRECON_REUSE_BASELINE_REBUILD},
+   {"window_mean", PRECON_REUSE_BASELINE_WINDOW_MEAN},
+};
 
 static int
 PreconReuseParseBaselineKind(const char *value, PreconReuseBaselineKind *out)
 {
-   if (!value || !out)
-   {
-      return 0;
-   }
-
-   if (!strcasecmp(value, "rebuild"))
-   {
-      *out = PRECON_REUSE_BASELINE_REBUILD;
-      return 1;
-   }
-   if (!strcasecmp(value, "window_mean"))
-   {
-      *out = PRECON_REUSE_BASELINE_WINDOW_MEAN;
-      return 1;
-   }
-
-   return 0;
+   if (!value || !out) return 0;
+   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_baseline_kind_map),
+                                           value);
+   if (r == INT_MIN) return 0;
+   *out = (PreconReuseBaselineKind)r;
+   return 1;
 }
+
+static const StrIntMap k_metric_map[] = {
+   {"iterations", PRECON_REUSE_METRIC_ITERATIONS},
+   {"solve_time", PRECON_REUSE_METRIC_SOLVE_TIME},
+   {"setup_time", PRECON_REUSE_METRIC_SETUP_TIME},
+   {"total_time", PRECON_REUSE_METRIC_TOTAL_TIME},
+   {"solve_overhead_vs_setup", PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP},
+};
 
 static int
 PreconReuseParseMetric(const char *value, PreconReuseMetric *out)
 {
-   if (!value || !out)
-   {
-      return 0;
-   }
-
-   if (!strcasecmp(value, "iterations"))
-   {
-      *out = PRECON_REUSE_METRIC_ITERATIONS;
-      return 1;
-   }
-   if (!strcasecmp(value, "solve_time"))
-   {
-      *out = PRECON_REUSE_METRIC_SOLVE_TIME;
-      return 1;
-   }
-   if (!strcasecmp(value, "setup_time"))
-   {
-      *out = PRECON_REUSE_METRIC_SETUP_TIME;
-      return 1;
-   }
-   if (!strcasecmp(value, "total_time"))
-   {
-      *out = PRECON_REUSE_METRIC_TOTAL_TIME;
-      return 1;
-   }
-   if (!strcasecmp(value, "solve_overhead_vs_setup"))
-   {
-      *out = PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP;
-      return 1;
-   }
-
-   return 0;
+   if (!value || !out) return 0;
+   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_metric_map), value);
+   if (r == INT_MIN) return 0;
+   *out = (PreconReuseMetric)r;
+   return 1;
 }
+
+static const StrIntMap k_history_source_map[] = {
+   {"linear_solves", PRECON_REUSE_HISTORY_LINEAR_SOLVES},
+   {"active_level", PRECON_REUSE_HISTORY_ACTIVE_LEVEL},
+   {"completed_level", PRECON_REUSE_HISTORY_COMPLETED_LEVEL},
+};
 
 static int
 PreconReuseParseHistorySource(const char *value, PreconReuseHistorySource *out)
 {
-   if (!value || !out)
-   {
-      return 0;
-   }
-
-   if (!strcasecmp(value, "linear_solves"))
-   {
-      *out = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
-      return 1;
-   }
-   if (!strcasecmp(value, "active_level"))
-   {
-      *out = PRECON_REUSE_HISTORY_ACTIVE_LEVEL;
-      return 1;
-   }
-   if (!strcasecmp(value, "completed_level"))
-   {
-      *out = PRECON_REUSE_HISTORY_COMPLETED_LEVEL;
-      return 1;
-   }
-
-   return 0;
+   if (!value || !out) return 0;
+   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_history_source_map),
+                                           value);
+   if (r == INT_MIN) return 0;
+   *out = (PreconReuseHistorySource)r;
+   return 1;
 }
+
+static const StrIntMap k_reduction_map[] = {
+   {"none", PRECON_REUSE_REDUCTION_NONE},
+   {"mean", PRECON_REUSE_REDUCTION_MEAN},
+   {"sum", PRECON_REUSE_REDUCTION_SUM},
+};
 
 static int
 PreconReuseParseReduction(const char *value, PreconReuseReduction *out)
 {
-   if (!value || !out)
-   {
-      return 0;
-   }
-
-   if (!strcasecmp(value, "none"))
-   {
-      *out = PRECON_REUSE_REDUCTION_NONE;
-      return 1;
-   }
-   if (!strcasecmp(value, "mean"))
-   {
-      *out = PRECON_REUSE_REDUCTION_MEAN;
-      return 1;
-   }
-   if (!strcasecmp(value, "sum"))
-   {
-      *out = PRECON_REUSE_REDUCTION_SUM;
-      return 1;
-   }
-
-   return 0;
-}
-
-static int
-PreconReuseIntArrayContains(const IntArray *arr, int value)
-{
-   if (!arr || !arr->data)
-   {
-      return 0;
-   }
-
-   for (size_t i = 0; i < arr->size; i++)
-   {
-      if (arr->data[i] == value)
-      {
-         return 1;
-      }
-   }
-
-   return 0;
+   if (!value || !out) return 0;
+   int r =
+      hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_reduction_map), value);
+   if (r == INT_MIN) return 0;
+   *out = (PreconReuseReduction)r;
+   return 1;
 }
 
 static int
@@ -794,6 +671,21 @@ hypredrv_PreconReuseDecisionInit(PreconReuseDecision *decision)
    snprintf(decision->summary, sizeof(decision->summary), "%s", "static");
 }
 
+static void
+PreconReuseObservationInitSentinels(PreconReuseObservation *obs)
+{
+   obs->system_index    = -1;
+   obs->timestep_index  = -1;
+   obs->iters           = -1;
+   obs->solve_succeeded = 1;
+   obs->setup_time      = -1.0;
+   obs->solve_time      = -1.0;
+   for (int i = 0; i < STATS_MAX_LEVELS; i++)
+   {
+      obs->level_ids[i] = -1;
+   }
+}
+
 void
 hypredrv_PreconReuseStateInit(PreconReuseState *state)
 {
@@ -809,6 +701,8 @@ hypredrv_PreconReuseStateInit(PreconReuseState *state)
    }
    state->last_solve_succeeded = 1;
    state->last_decision_ls_id  = -1;
+   PreconReuseObservationInitSentinels(&state->baseline);
+   PreconReuseObservationInitSentinels(&state->last_observation);
 }
 
 void
@@ -843,25 +737,8 @@ hypredrv_PreconReuseStateReset(PreconReuseState *state)
    state->baseline_iters       = 0.0;
    state->baseline_setup_time  = 0.0;
    state->baseline_solve_time  = 0.0;
-   memset(&state->baseline, 0, sizeof(state->baseline));
-   memset(&state->last_observation, 0, sizeof(state->last_observation));
-   state->baseline.system_index            = -1;
-   state->baseline.timestep_index          = -1;
-   state->baseline.iters                   = -1;
-   state->baseline.solve_succeeded         = 1;
-   state->baseline.setup_time              = -1.0;
-   state->baseline.solve_time              = -1.0;
-   state->last_observation.system_index    = -1;
-   state->last_observation.timestep_index  = -1;
-   state->last_observation.iters           = -1;
-   state->last_observation.solve_succeeded = 1;
-   state->last_observation.setup_time      = -1.0;
-   state->last_observation.solve_time      = -1.0;
-   for (int i = 0; i < STATS_MAX_LEVELS; i++)
-   {
-      state->baseline.level_ids[i]         = -1;
-      state->last_observation.level_ids[i] = -1;
-   }
+   PreconReuseObservationInitSentinels(&state->baseline);
+   PreconReuseObservationInitSentinels(&state->last_observation);
 }
 
 void
@@ -875,17 +752,32 @@ hypredrv_PreconReuseStateRecordObservation(PreconReuseState             *state,
 
    if (state->count == state->capacity)
    {
-      size_t                  new_capacity = state->capacity ? state->capacity * 2u : 16u;
-      PreconReuseObservation *new_observations = (PreconReuseObservation *)realloc(
-         state->observations, new_capacity * sizeof(*new_observations));
-      if (!new_observations)
+      if (state->capacity >= PRECON_REUSE_MAX_OBSERVATIONS)
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to grow adaptive preconditioner history");
-         return;
+         /* Array is full — drop the oldest entry to make room.  This bounds
+          * both memory usage and the backwards scan in CollectSamples. */
+         memmove(state->observations, state->observations + 1,
+                 (state->count - 1) * sizeof(*state->observations));
+         state->count--;
       }
-      state->observations = new_observations;
-      state->capacity     = new_capacity;
+      else
+      {
+         size_t new_capacity = state->capacity ? state->capacity * 2u : 16u;
+         if (new_capacity > PRECON_REUSE_MAX_OBSERVATIONS)
+         {
+            new_capacity = PRECON_REUSE_MAX_OBSERVATIONS;
+         }
+         PreconReuseObservation *new_observations = (PreconReuseObservation *)realloc(
+            state->observations, new_capacity * sizeof(*new_observations));
+         if (!new_observations)
+         {
+            hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+            hypredrv_ErrorMsgAdd("Failed to grow adaptive preconditioner history");
+            return;
+         }
+         state->observations = new_observations;
+         state->capacity     = new_capacity;
+      }
    }
 
    state->observations[state->count++] = *obs;
@@ -931,7 +823,7 @@ PreconReuseShouldRebuildStatic(const PreconReuse_args *args,
 
    if (args->enabled && args->linear_system_ids && args->linear_system_ids->size > 0)
    {
-      return PreconReuseIntArrayContains(args->linear_system_ids, next_ls_id);
+      return (int)hypredrv_IntArrayEntryExists(args->linear_system_ids, next_ls_id);
    }
 
    if (args->enabled && args->per_timestep)
@@ -2232,6 +2124,18 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
                "Invalid preconditioner.reuse.guards.rebuild_on_new_level");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
+         }
+         for (size_t i = 0; i < levels->size; i++)
+         {
+            if (levels->data[i] < 0 || levels->data[i] >= STATS_MAX_LEVELS)
+            {
+               hypredrv_IntArrayDestroy(&levels);
+               hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+               hypredrv_ErrorMsgAdd(
+                  "Invalid preconditioner.reuse.guards.rebuild_on_new_level");
+               YAML_NODE_SET_INVALID_VAL(child);
+               return 0;
+            }
          }
          hypredrv_IntArrayDestroy(&guards->rebuild_on_new_level);
          guards->rebuild_on_new_level = levels;

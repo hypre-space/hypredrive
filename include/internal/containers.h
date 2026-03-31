@@ -68,6 +68,7 @@ void      hypredrv_IntArrayBuildInterleaved(MPI_Comm, int, int, IntArray **);
 void      hypredrv_IntArrayBuildContiguous(MPI_Comm, int, int, IntArray **);
 void      hypredrv_IntArrayParRead(MPI_Comm, const char *, IntArray **);
 void      hypredrv_IntArrayWriteAsciiByRank(MPI_Comm, const IntArray *, const char *);
+bool      hypredrv_IntArrayEntryExists(const IntArray *, int);
 
 /*--------------------------------------------------------------------------
  * DoubleArray struct

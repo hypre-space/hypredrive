@@ -619,6 +619,29 @@ const StrIntMapArray hypredrv_OnOffMapArray = {
 };
 
 /*--------------------------------------------------------------------------
+ * hypredrv_IntArrayEntryExists
+ *--------------------------------------------------------------------------*/
+
+bool
+hypredrv_IntArrayEntryExists(const IntArray *arr, int value)
+{
+   if (!arr || !arr->data)
+   {
+      return false;
+   }
+
+   for (size_t i = 0; i < arr->size; i++)
+   {
+      if (arr->data[i] == value)
+      {
+         return true;
+      }
+   }
+
+   return false;
+}
+
+/*--------------------------------------------------------------------------
  * hypredrv_StrArrayEntryExists
  *--------------------------------------------------------------------------*/
 
