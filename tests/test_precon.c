@@ -3923,6 +3923,144 @@ test_MGRCreate_g_unique_unsorted_dense_fallback(void)
 }
 
 static void
+test_MGRCreate_prefers_local_dof_labels_over_dense_global_fallback(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 2;
+   mgr.level[0].f_dofs.size      = 1;
+   mgr.level[0].f_dofs.data[0]   = 3;
+   mgr.level[0].f_relaxation.type = 7;
+
+   IntArray *dofmap = hypredrv_IntArrayCreate(4);
+   ASSERT_NOT_NULL(dofmap);
+   dofmap->data[0] = 0;
+   dofmap->data[1] = 3;
+   dofmap->data[2] = 3;
+   dofmap->data[3] = 0;
+   /* Simulate distributed metadata that only reports a coarse global count.
+    * MGRCreate should prefer the explicit local labels over this dense fallback. */
+   dofmap->g_unique_size = 2;
+
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_compact_global_labels_ignore_missing_f_dofs(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 2;
+   mgr.level[0].f_dofs.size      = 1;
+   mgr.level[0].f_dofs.data[0]   = 3;
+   mgr.level[0].f_relaxation.type = 7;
+
+   IntArray *dofmap = hypredrv_IntArrayCreate(0);
+   ASSERT_NOT_NULL(dofmap);
+   dofmap->g_unique_size = 3;
+
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_global_unique_metadata_ignore_missing_f_dofs(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 2;
+   mgr.level[0].f_dofs.size       = 1;
+   mgr.level[0].f_dofs.data[0]    = 3;
+   mgr.level[0].f_relaxation.type = 7;
+
+   IntArray *dofmap = hypredrv_IntArrayCreate(6);
+   ASSERT_NOT_NULL(dofmap);
+   dofmap->data[0]      = 0;
+   dofmap->data[1]      = 1;
+   dofmap->data[2]      = 2;
+   dofmap->data[3]      = 0;
+   dofmap->data[4]      = 1;
+   dofmap->data[5]      = 2;
+   dofmap->g_unique_size = 3;
+
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_MGRCreate_dense_remap_sparse_labels(void)
 {
 #if !HYPRE_CHECK_MIN_VERSION(22100, 0)
@@ -3992,7 +4130,7 @@ test_MGRCreate_f_dofs_out_of_range(void)
 }
 
 static void
-test_MGRCreate_f_dofs_label_not_in_dofmap(void)
+test_MGRCreate_f_dofs_label_not_in_dofmap_is_ignored(void)
 {
 #if !HYPRE_CHECK_MIN_VERSION(22100, 0)
    return;
@@ -4013,8 +4151,19 @@ test_MGRCreate_f_dofs_label_not_in_dofmap(void)
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
    hypredrv_MGRCreate(&mgr, &precon);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   ASSERT_NULL(precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
 
    hypredrv_IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
@@ -5091,9 +5240,12 @@ main(int argc, char **argv)
    RUN_TEST(test_MGRCreate_plain_dofmap_data_only_branch);
    RUN_TEST(test_MGRCreate_unique_data_dofmap_branch);
    RUN_TEST(test_MGRCreate_g_unique_unsorted_dense_fallback);
+   RUN_TEST(test_MGRCreate_prefers_local_dof_labels_over_dense_global_fallback);
+   RUN_TEST(test_MGRCreate_compact_global_labels_ignore_missing_f_dofs);
+   RUN_TEST(test_MGRCreate_global_unique_metadata_ignore_missing_f_dofs);
    RUN_TEST(test_MGRCreate_dense_remap_sparse_labels);
    RUN_TEST(test_MGRCreate_f_dofs_out_of_range);
-   RUN_TEST(test_MGRCreate_f_dofs_label_not_in_dofmap);
+   RUN_TEST(test_MGRCreate_f_dofs_label_not_in_dofmap_is_ignored);
    RUN_TEST(test_MGRCreate_f_dofs_duplicate_label);
    RUN_TEST(test_MGRCreate_empty_dofmap);
    RUN_TEST(test_MGRCreate_dofmap_negative_label);
