@@ -26,7 +26,13 @@ if(TARGET HYPRE::HYPRE)
     endif()
 endif()
 
-install(TARGETS hypredrive-cli HYPREDRV ${_hypre_targets_to_install}
+# Optional lsseq pack/unpack driver (HYPREDRV_ENABLE_COMPRESSION)
+set(_hypredrive_executables hypredrive-cli)
+if(TARGET hypredrive-lsseq)
+    list(APPEND _hypredrive_executables hypredrive-lsseq)
+endif()
+
+install(TARGETS ${_hypredrive_executables} HYPREDRV ${_hypre_targets_to_install}
         EXPORT HYPREDRVTargets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
