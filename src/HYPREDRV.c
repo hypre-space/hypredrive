@@ -2351,8 +2351,7 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
       hypredrv->precon_is_setup = false;
       if (hypredrv_ErrorCodeActive() && hypredrv_LogEnabled(2))
       {
-         HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                              "preconditioner create failed (code=0x%x)",
+         HYPREDRV_LOG_OBJECTF(2, hypredrv, "preconditioner create failed (code=0x%x)",
                               hypredrv_ErrorCodeGet());
          hypredrv_ErrorCodeDescribe(hypredrv_ErrorCodeGet());
          hypredrv_ErrorMsgPrint();
@@ -2397,9 +2396,9 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          if (hypredrv_LogEnabled(2))
          {
-            HYPREDRV_LOG_OBJECTF(
-               2, hypredrv, "linear solver create returning with code=0x%x",
-               hypredrv_ErrorCodeGet());
+            HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                                 "linear solver create returning with code=0x%x",
+                                 hypredrv_ErrorCodeGet());
          }
          /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          HYPREDRV_LOG_OBJECTF(
@@ -2579,7 +2578,7 @@ uint32_t
 HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
-    hypredrv_ErrorStateReset();
+   hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverApply begin");
 
    if (!hypredrv->solver)

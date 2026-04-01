@@ -1516,27 +1516,27 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    *precon_ptr = NULL;
    return;
 #else
-   HYPRE_Solver precon            = NULL;
-   HYPRE_Solver frelax            = NULL;
-   HYPRE_Solver grelax            = NULL;
-   HYPRE_Int   *dofmap_data       = NULL;
-   HYPRE_Int   *dofmap_data_owned = NULL;
-   IntArray    *dofmap            = NULL;
-   HYPRE_Int   *label_present     = NULL;
-   HYPRE_Int   *label_to_dense    = NULL;
-   HYPRE_Int    num_dofs          = 0;
-   HYPRE_Int    num_dofs_hypre    = 0;
-   HYPRE_Int    num_active_dofs   = 0;
-   HYPRE_Int    num_dofs_last     = 0;
-   HYPRE_Int    num_levels        = 0;
-   HYPRE_Int    active_level_map[MAX_MGR_LEVELS - 1] = {0};
-   HYPRE_Int    level_frelax_type[MAX_MGR_LEVELS - 1] = {0};
+   HYPRE_Solver precon                                  = NULL;
+   HYPRE_Solver frelax                                  = NULL;
+   HYPRE_Solver grelax                                  = NULL;
+   HYPRE_Int   *dofmap_data                             = NULL;
+   HYPRE_Int   *dofmap_data_owned                       = NULL;
+   IntArray    *dofmap                                  = NULL;
+   HYPRE_Int   *label_present                           = NULL;
+   HYPRE_Int   *label_to_dense                          = NULL;
+   HYPRE_Int    num_dofs                                = 0;
+   HYPRE_Int    num_dofs_hypre                          = 0;
+   HYPRE_Int    num_active_dofs                         = 0;
+   HYPRE_Int    num_dofs_last                           = 0;
+   HYPRE_Int    num_levels                              = 0;
+   HYPRE_Int    active_level_map[MAX_MGR_LEVELS - 1]    = {0};
+   HYPRE_Int    level_frelax_type[MAX_MGR_LEVELS - 1]   = {0};
    HYPRE_Int    level_frelax_sweeps[MAX_MGR_LEVELS - 1] = {0};
-   HYPRE_Int    level_grelax_type[MAX_MGR_LEVELS - 1] = {0};
+   HYPRE_Int    level_grelax_type[MAX_MGR_LEVELS - 1]   = {0};
    HYPRE_Int    level_grelax_sweeps[MAX_MGR_LEVELS - 1] = {0};
-   HYPRE_Int    level_interp_type[MAX_MGR_LEVELS - 1] = {0};
+   HYPRE_Int    level_interp_type[MAX_MGR_LEVELS - 1]   = {0};
    HYPRE_Int    level_restrict_type[MAX_MGR_LEVELS - 1] = {0};
-   HYPRE_Int    level_coarse_type[MAX_MGR_LEVELS - 1] = {0};
+   HYPRE_Int    level_coarse_type[MAX_MGR_LEVELS - 1]   = {0};
    HYPRE_Int    num_c_dofs[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *c_dofs[MAX_MGR_LEVELS - 1] = {0};
    HYPRE_Int   *inactive_dofs              = NULL;
@@ -1567,8 +1567,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       num_dofs_hypre  = num_dofs;
       num_active_dofs = (HYPRE_Int)present_labels;
    }
-   may_ignore_missing_f_dofs =
-      (dofmap->g_unique_size > 0 && num_active_dofs == num_dofs);
+   may_ignore_missing_f_dofs = (dofmap->g_unique_size > 0 && num_active_dofs == num_dofs);
 
    /* Compute num_c_dofs and c_dofs */
    num_dofs_last = num_active_dofs;
@@ -1672,11 +1671,10 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
             c_dofs[lvl][j++] = i;
          }
       }
-
    }
 
    {
-      HYPRE_Int active_levels = 0;
+      HYPRE_Int active_levels   = 0;
       HYPRE_Int original_levels = num_levels - 1;
 
       for (lvl = 0; lvl < original_levels; lvl++)
@@ -1740,9 +1738,11 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
             if (raw < 0 || raw >= num_dofs || label_to_dense[raw] < 0)
             {
                HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, NULL, 0,
-                                  "MGR invalid C-point label during dense remap: raw=%d num_dofs=%d mapped=%d",
+                                  "MGR invalid C-point label during dense remap: raw=%d "
+                                  "num_dofs=%d mapped=%d",
                                   (int)raw, (int)num_dofs,
-                                  (raw >= 0 && raw < num_dofs) ? (int)label_to_dense[raw] : -1);
+                                  (raw >= 0 && raw < num_dofs) ? (int)label_to_dense[raw]
+                                                               : -1);
                free(label_to_dense);
                free(label_present);
                free(inactive_dofs);
@@ -1798,9 +1798,11 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
             if (raw < 0 || raw >= num_dofs || label_to_dense[raw] < 0)
             {
                HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, NULL, 0,
-                                  "MGR invalid dof label during dense remap: raw=%d num_dofs=%d mapped=%d",
+                                  "MGR invalid dof label during dense remap: raw=%d "
+                                  "num_dofs=%d mapped=%d",
                                   (int)raw, (int)num_dofs,
-                                  (raw >= 0 && raw < num_dofs) ? (int)label_to_dense[raw] : -1);
+                                  (raw >= 0 && raw < num_dofs) ? (int)label_to_dense[raw]
+                                                               : -1);
                free(inactive_dofs);
                for (lvl = 0; lvl < num_levels - 1; lvl++)
                {
@@ -1876,7 +1878,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    /* Config f-relaxation at each MGR level */
    for (i = 0; i < num_levels - 1; i++)
    {
-      HYPRE_Int    orig_lvl  = active_level_map[i];
+      HYPRE_Int    orig_lvl   = active_level_map[i];
       MGRlvl_args *level_args = &args->level[orig_lvl];
 
       if (level_args->f_relaxation.use_krylov && level_args->f_relaxation.krylov)
@@ -1935,8 +1937,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
             goto cleanup;
          }
 
-         nested_dofmap =
-            MGRBuildProjectedFRelaxDofmap(args->dofmap, &level_args->f_dofs);
+         nested_dofmap = MGRBuildProjectedFRelaxDofmap(args->dofmap, &level_args->f_dofs);
          if (hypredrv_ErrorCodeActive() || !nested_dofmap)
          {
             hypredrv_IntArrayDestroy(&nested_dofmap);
@@ -2026,7 +2027,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 #if HYPRE_CHECK_MIN_VERSION(23100, 8)
    for (i = 0; i < num_levels - 1; i++)
    {
-      HYPRE_Int    orig_lvl  = active_level_map[i];
+      HYPRE_Int    orig_lvl   = active_level_map[i];
       MGRlvl_args *level_args = &args->level[orig_lvl];
 
       if (level_args->g_relaxation.use_krylov && level_args->g_relaxation.krylov)

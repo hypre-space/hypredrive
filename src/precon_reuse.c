@@ -2303,8 +2303,7 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
          if (!PreconReuseParseDouble(value, &guards->max_iteration_ratio) ||
              /* GCOVR_EXCL_BR_STOP */
              /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-             (guards->max_iteration_ratio != -1.0 &&
-              guards->max_iteration_ratio <= 0.0))
+             (guards->max_iteration_ratio != -1.0 && guards->max_iteration_ratio <= 0.0))
          /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
