@@ -3112,6 +3112,7 @@ test_lsseq_dofmap_no_flag_and_timestep_modes(void)
       ASSERT_NOT_NULL(fp);
       ASSERT_EQ_SIZE(fread(&header, sizeof(header), 1, fp), 1);
       header.flags &= ~(unsigned int)LSSEQ_FLAG_HAS_TIMESTEPS;
+      ASSERT_EQ(fseek(fp, 0, SEEK_SET), 0);
       ASSERT_EQ_SIZE(fwrite(&header, sizeof(header), 1, fp), 1);
       fclose(fp);
    }
