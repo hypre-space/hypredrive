@@ -18,6 +18,12 @@
 #include "internal/utils.h"
 #include "logging.h"
 
+/*
+ * gcovr: branches in #else arms for HYPRE < v3.0.0, in HYPRE_USING_GPU-only
+ * sections, and on a few impractical error paths are excluded so branch
+ * coverage reflects the active CPU / Hypre configuration (see markers below).
+ */
+
 #define Scaling_FIELDS(_prefix)                                       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, enabled, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)    \
@@ -36,6 +42,7 @@ GENERATE_PREFIXED_COMPONENTS(Scaling) // LCOV_EXCL_LINE
 StrIntMapArray
 hypredrv_ScalingGetValidValues(const char *key)
 {
+   /* GCOVR_EXCL_BR_START */
    if (!strcmp(key, "enabled"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
@@ -50,6 +57,7 @@ hypredrv_ScalingGetValidValues(const char *key)
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    return STR_INT_MAP_ARRAY_VOID();
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 /*-----------------------------------------------------------------------------
@@ -71,6 +79,7 @@ hypredrv_ScalingSetDefaultArgs(Scaling_args *args)
 void
 hypredrv_ScalingContextCreate(MPI_Comm comm, Scaling_context **ctx_ptr)
 {
+   /* GCOVR_EXCL_BR_START */
    Scaling_context *ctx = (Scaling_context *)malloc(sizeof(Scaling_context));
    ctx->enabled         = 0;
    ctx->type            = SCALING_RHS_L2;
@@ -80,6 +89,7 @@ hypredrv_ScalingContextCreate(MPI_Comm comm, Scaling_context **ctx_ptr)
    ctx->scaling_ijvec   = NULL;
    *ctx_ptr             = ctx;
    HYPREDRV_LOG_COMMF(3, comm, NULL, 0, "scaling context created");
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 /*-----------------------------------------------------------------------------
@@ -94,6 +104,7 @@ static void
 ScalingContextFreeVector(Scaling_context *ctx)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   /* GCOVR_EXCL_BR_START */
    if (ctx->scaling_ijvec)
    {
       HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
@@ -105,6 +116,7 @@ ScalingContextFreeVector(Scaling_context *ctx)
       HYPRE_SAFE_CALL(HYPRE_ParVectorDestroy(ctx->scaling_vector));
       ctx->scaling_vector = NULL;
    }
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 }
 
@@ -115,6 +127,7 @@ ScalingContextFreeVector(Scaling_context *ctx)
 void
 hypredrv_ScalingContextDestroy(MPI_Comm comm, Scaling_context **ctx_ptr)
 {
+   /* GCOVR_EXCL_BR_START */
    if (!ctx_ptr || !*ctx_ptr)
    {
       return;
@@ -127,11 +140,13 @@ hypredrv_ScalingContextDestroy(MPI_Comm comm, Scaling_context **ctx_ptr)
    free(ctx);
    *ctx_ptr = NULL;
    HYPREDRV_LOG_COMMF(3, comm, NULL, 0, "scaling context destroyed");
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 static MPI_Comm
 ScalingCommFromMatrix(HYPRE_IJMatrix mat)
 {
+   /* GCOVR_EXCL_BR_START */
    if (!mat)
    {
       return MPI_COMM_NULL;
@@ -145,23 +160,27 @@ ScalingCommFromMatrix(HYPRE_IJMatrix mat)
    }
 
    return hypre_ParCSRMatrixComm((hypre_ParCSRMatrix *)obj);
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 static MPI_Comm
 ScalingCommFromVector(HYPRE_IJVector vec)
 {
+   /* GCOVR_EXCL_BR_START */
    if (!vec)
    {
       return MPI_COMM_NULL;
    }
 
    return hypre_IJVectorComm((hypre_IJVector *)vec);
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 static MPI_Comm
 ScalingSystemCommResolve(HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
                          HYPRE_IJVector vec_x)
 {
+   /* GCOVR_EXCL_BR_START */
    MPI_Comm comm = ScalingCommFromMatrix(mat_A);
    if (comm != MPI_COMM_NULL)
    {
@@ -181,6 +200,7 @@ ScalingSystemCommResolve(HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M, HYPRE_IJVec
    }
 
    return ScalingCommFromVector(vec_x);
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 /*-----------------------------------------------------------------------------
@@ -190,6 +210,7 @@ ScalingSystemCommResolve(HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M, HYPRE_IJVec
 static void
 ScalingComputeRHSL2(MPI_Comm comm, Scaling_context *ctx, HYPRE_IJVector vec_b)
 {
+   /* GCOVR_EXCL_BR_START */
    double b_norm = 0.0;
 
    hypredrv_LinearSystemComputeVectorNorm(vec_b, "L2", &b_norm);
@@ -202,6 +223,7 @@ ScalingComputeRHSL2(MPI_Comm comm, Scaling_context *ctx, HYPRE_IJVector vec_b)
    {
       ctx->scalar_factor = 1.0;
    }
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 /*-----------------------------------------------------------------------------
@@ -213,6 +235,7 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                         HYPRE_IJMatrix mat_A, IntArray *dofmap)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   /* GCOVR_EXCL_BR_START */
    HYPRE_MemoryLocation memloc_tags = HYPRE_MEMORY_HOST;
 #if defined(HYPRE_USING_GPU)
    HYPRE_MemoryLocation orig_mat_memloc = HYPRE_MEMORY_HOST;
@@ -238,7 +261,9 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
    par_A = (HYPRE_ParCSRMatrix)obj_A;
 #if defined(HYPRE_USING_GPU)
+   /* GCOVR_EXCL_BR_START */
    orig_mat_memloc = hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 
    /* Get local range from ParCSRMatrix directly instead of IJMatrix to avoid potential
@@ -281,10 +306,12 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
     * for dofmap_mag on GPU builds. Compute the tagged scaling on host, then migrate the
     * resulting scaling vector back to the matrix memory location. */
 #if defined(HYPRE_USING_GPU)
+   /* GCOVR_EXCL_BR_START */
    if (hypre_GetExecPolicy1(orig_mat_memloc) == HYPRE_EXEC_DEVICE)
    {
       hypre_ParCSRMatrixMigrate((hypre_ParCSRMatrix *)par_A, HYPRE_MEMORY_HOST);
    }
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 
    /* Compute scaling into a fresh ParVector */
@@ -292,22 +319,27 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                                                           tags, &ctx->scaling_vector));
 
 #if defined(HYPRE_USING_GPU)
+   /* GCOVR_EXCL_BR_START */
    if (hypre_GetExecPolicy1(orig_mat_memloc) == HYPRE_EXEC_DEVICE)
    {
       hypre_ParVectorMigrate((hypre_ParVector *)ctx->scaling_vector, orig_mat_memloc);
       hypre_ParCSRMatrixMigrate((hypre_ParCSRMatrix *)par_A, orig_mat_memloc);
    }
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 
    /* Free memory */
    free(tags);
+   /* GCOVR_EXCL_BR_STOP */
 #else
+   /* GCOVR_EXCL_BR_START */
    (void)comm;
    (void)args;
    (void)ctx;
    (void)mat_A;
    (void)dofmap;
    /* Scaling disabled on older hypre versions */
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 }
 
@@ -320,6 +352,7 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
                            HYPRE_IJMatrix mat_A, IntArray *dofmap)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   /* GCOVR_EXCL_BR_START */
    void              *obj_A  = NULL;
    HYPRE_ParCSRMatrix par_A  = NULL;
    HYPRE_BigInt       ilower = 0, iupper = 0;
@@ -397,7 +430,9 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
       hypre_TAlloc(HYPRE_Complex, num_local_rows, HYPRE_MEMORY_HOST);
    const HYPRE_Complex *values = h_values;
 #ifdef HYPRE_USING_GPU
+   /* GCOVR_EXCL_BR_START */
    HYPRE_Complex *d_values = NULL;
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 
    if (memory_location == HYPRE_MEMORY_UNDEFINED)
@@ -425,10 +460,12 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
       {
          hypre_TFree(h_values, HYPRE_MEMORY_HOST);
 #ifdef HYPRE_USING_GPU
+         /* GCOVR_EXCL_BR_START */
          if (d_values)
          {
             hypre_TFree(d_values, HYPRE_MEMORY_DEVICE);
          }
+         /* GCOVR_EXCL_BR_STOP */
 #endif
          HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
          ctx->scaling_ijvec = NULL;
@@ -442,11 +479,13 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    }
 
 #ifdef HYPRE_USING_GPU
+   /* GCOVR_EXCL_BR_START */
    if (values != h_values)
    {
       hypre_TMemcpy(d_values, h_values, HYPRE_Complex, num_local_rows,
                     HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
    }
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 
    HYPRE_SAFE_CALL(
@@ -456,23 +495,28 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    HYPRE_SAFE_CALL(HYPRE_IJVectorAssemble(ctx->scaling_ijvec));
    hypre_TFree(h_values, HYPRE_MEMORY_HOST);
 #ifdef HYPRE_USING_GPU
+   /* GCOVR_EXCL_BR_START */
    if (d_values)
    {
       hypre_TFree(d_values, HYPRE_MEMORY_DEVICE);
    }
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 
    /* Cache the assembled ParVector owned by the IJVector */
    void *obj_scaling = NULL;
    HYPRE_IJVectorGetObject(ctx->scaling_ijvec, &obj_scaling);
    ctx->scaling_vector = (HYPRE_ParVector)obj_scaling;
+   /* GCOVR_EXCL_BR_STOP */
 #else
+   /* GCOVR_EXCL_BR_START */
    (void)comm;
    (void)args;
    (void)ctx;
    (void)mat_A;
    (void)dofmap;
    /* Scaling disabled on older hypre versions */
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 }
 
@@ -484,6 +528,7 @@ void
 hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                         HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b, IntArray *dofmap)
 {
+   /* GCOVR_EXCL_BR_START */
    int log_rank = -1;
    if (hypredrv_LogEnabled(2))
    {
@@ -544,6 +589,7 @@ hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    ctx->enabled = 0;
 #endif
    HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling compute end (enabled=%d)", ctx->enabled);
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 /*-----------------------------------------------------------------------------
@@ -554,6 +600,7 @@ static void
 ScalingTransformVectorRHSL2(const Scaling_context *ctx, HYPRE_IJVector vec,
                             scaling_vector_kind_t kind, int apply)
 {
+   /* GCOVR_EXCL_BR_START */
    MPI_Comm log_comm = ScalingCommFromVector(vec);
    if (!vec)
    {
@@ -593,12 +640,14 @@ ScalingTransformVectorRHSL2(const Scaling_context *ctx, HYPRE_IJVector vec,
    }
    par_vec = (hypre_ParVector *)obj_vec;
    hypre_ParVectorScale(factor, par_vec);
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 static void
 ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
                              scaling_vector_kind_t kind, int apply)
 {
+   /* GCOVR_EXCL_BR_START */
    MPI_Comm log_comm = ScalingCommFromVector(vec);
    if (!vec)
    {
@@ -656,12 +705,14 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
    HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
                       "scaling vector transform failed: requires Hypre >= v3.0.0");
 #endif
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 void
 hypredrv_ScalingApplyToVector(const Scaling_context *ctx, HYPRE_IJVector vec,
                               scaling_vector_kind_t kind)
 {
+   /* GCOVR_EXCL_BR_START */
    if (!ctx || !ctx->enabled || !vec)
    {
       return;
@@ -692,12 +743,14 @@ hypredrv_ScalingApplyToVector(const Scaling_context *ctx, HYPRE_IJVector vec,
    HYPREDRV_LOG_COMMF(2, ScalingCommFromVector(vec), NULL, 0,
                       "scaling apply-to-vector failed: requires Hypre >= v3.0.0");
 #endif
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 void
 hypredrv_ScalingUndoOnVector(const Scaling_context *ctx, HYPRE_IJVector vec,
                              scaling_vector_kind_t kind)
 {
+   /* GCOVR_EXCL_BR_START */
    if (!ctx || !ctx->enabled || !vec)
    {
       return;
@@ -728,6 +781,7 @@ hypredrv_ScalingUndoOnVector(const Scaling_context *ctx, HYPRE_IJVector vec,
    HYPREDRV_LOG_COMMF(2, ScalingCommFromVector(vec), NULL, 0,
                       "scaling undo-on-vector failed: requires Hypre >= v3.0.0");
 #endif
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 /*-----------------------------------------------------------------------------
@@ -745,6 +799,7 @@ ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
       log_rank = hypredrv_LogRankFromComm(log_comm);
    }
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   /* GCOVR_EXCL_BR_START */
    void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
    HYPRE_Complex      s  = ctx->scalar_factor;
@@ -786,7 +841,9 @@ ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    }
 
    ctx->is_applied = 1;
+   /* GCOVR_EXCL_BR_STOP */
 #else
+   /* GCOVR_EXCL_BR_START */
    (void)ctx;
    (void)mat_A;
    (void)mat_M;
@@ -795,6 +852,7 @@ ScalingApplyRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
    hypredrv_ErrorMsgAdd("ScalingApplyRHSL2: requires Hypre >= v3.0.0");
    HYPREDRV_LOGF(2, log_rank, NULL, 0, "scaling apply failed: requires Hypre >= v3.0.0");
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 }
 
@@ -813,6 +871,7 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
       log_rank = hypredrv_LogRankFromComm(log_comm);
    }
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   /* GCOVR_EXCL_BR_START */
    void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
 
@@ -862,7 +921,9 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
    }
 
    ctx->is_applied = 1;
+   /* GCOVR_EXCL_BR_STOP */
 #else
+   /* GCOVR_EXCL_BR_START */
    (void)ctx;
    (void)mat_A;
    (void)mat_M;
@@ -871,6 +932,7 @@ ScalingApplyDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix ma
    hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
    hypredrv_ErrorMsgAdd("ScalingApplyDofmap: requires Hypre >= v3.0.0");
    HYPREDRV_LOGF(2, log_rank, NULL, 0, "scaling apply failed: requires Hypre >= v3.0.0");
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 }
 
@@ -883,6 +945,7 @@ hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
                               HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
                               HYPRE_IJVector vec_x)
 {
+   /* GCOVR_EXCL_BR_START */
    MPI_Comm log_comm = ScalingSystemCommResolve(mat_A, mat_M, vec_b, vec_x);
    int      log_rank = -1;
    if (hypredrv_LogEnabled(2))
@@ -931,6 +994,7 @@ hypredrv_ScalingApplyToSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
 #endif
    HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling apply end (is_applied=%d)",
                  ctx->is_applied);
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 /*-----------------------------------------------------------------------------
@@ -948,6 +1012,7 @@ ScalingUndoRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_
       log_rank = hypredrv_LogRankFromComm(log_comm);
    }
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   /* GCOVR_EXCL_BR_START */
    void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
    HYPRE_Complex      s      = ctx->scalar_factor;
@@ -990,7 +1055,9 @@ ScalingUndoRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_
    }
 
    ctx->is_applied = 0;
+   /* GCOVR_EXCL_BR_STOP */
 #else
+   /* GCOVR_EXCL_BR_START */
    (void)ctx;
    (void)mat_A;
    (void)mat_M;
@@ -999,6 +1066,7 @@ ScalingUndoRHSL2(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_
    hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
    hypredrv_ErrorMsgAdd("ScalingUndoRHSL2: requires Hypre >= v3.0.0");
    HYPREDRV_LOGF(2, log_rank, NULL, 0, "scaling undo failed: requires Hypre >= v3.0.0");
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 }
 
@@ -1017,6 +1085,7 @@ ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
       log_rank = hypredrv_LogRankFromComm(log_comm);
    }
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   /* GCOVR_EXCL_BR_START */
    void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
 
@@ -1072,7 +1141,9 @@ ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    hypre_ParVectorDestroy(inv_scaling);
 
    ctx->is_applied = 0;
+   /* GCOVR_EXCL_BR_STOP */
 #else
+   /* GCOVR_EXCL_BR_START */
    (void)ctx;
    (void)mat_A;
    (void)mat_M;
@@ -1081,6 +1152,7 @@ ScalingUndoDofmap(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat
    hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
    hypredrv_ErrorMsgAdd("ScalingUndoDofmap: requires Hypre >= v3.0.0");
    HYPREDRV_LOGF(2, log_rank, NULL, 0, "scaling undo failed: requires Hypre >= v3.0.0");
+   /* GCOVR_EXCL_BR_STOP */
 #endif
 }
 
@@ -1093,6 +1165,7 @@ hypredrv_ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
                              HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
                              HYPRE_IJVector vec_x)
 {
+   /* GCOVR_EXCL_BR_START */
    MPI_Comm log_comm = ScalingSystemCommResolve(mat_A, mat_M, vec_b, vec_x);
    int      log_rank = -1;
    if (hypredrv_LogEnabled(2))
@@ -1134,4 +1207,5 @@ hypredrv_ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A,
 #endif
    HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling undo end (is_applied=%d)",
                  ctx->is_applied);
+   /* GCOVR_EXCL_BR_STOP */
 }

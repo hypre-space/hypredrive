@@ -9,7 +9,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <mpi.h>
+
 #include "internal/containers.h"
+#include "internal/error.h"
 #include "test_helpers.h"
 
 /*-----------------------------------------------------------------------------
@@ -164,13 +168,30 @@ test_IntArray_zero_size(void)
    hypredrv_IntArrayDestroy(&arr);
 }
 
+static void
+test_IntArray_WriteAsciiByRank_fopen_failure(void)
+{
+   IntArray *arr = hypredrv_IntArrayCreate(1);
+   ASSERT_NOT_NULL(arr);
+   arr->data[0] = 42;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IntArrayWriteAsciiByRank(MPI_COMM_SELF, arr,
+                                     "/nonexistent_dir_hypredrive_zzzz/prefix");
+   ASSERT_NE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND, 0);
+
+   hypredrv_IntArrayDestroy(&arr);
+}
+
 /*-----------------------------------------------------------------------------
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
 int
-main(void)
+main(int argc, char **argv)
 {
+   MPI_Init(&argc, &argv);
+
    RUN_TEST(test_StackIntArray_create);
    RUN_TEST(test_StackIntArray_basic_ops);
 
@@ -187,6 +208,8 @@ main(void)
 
    RUN_TEST(test_IntArray_create_destroy);
    RUN_TEST(test_IntArray_zero_size);
+   RUN_TEST(test_IntArray_WriteAsciiByRank_fopen_failure);
 
+   MPI_Finalize();
    return 0; /* Success - CTest handles reporting */
 }

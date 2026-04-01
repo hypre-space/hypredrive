@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "HYPRE.h"
 #include "internal/containers.h"
 #include "internal/error.h"
 #include "internal/linsys.h"
@@ -49,6 +50,25 @@ create_temp_binary_float(const char *prefix, uint32_t part_id, uint64_t nrows,
 }
 
 static void
+create_temp_binary_invalid_coef_size(const char *prefix, uint32_t part_id, uint64_t bad_size,
+                                      uint64_t nrows)
+{
+   char filename[256];
+   snprintf(filename, sizeof(filename), "%s.%05u.bin", prefix, part_id);
+   FILE *fp = fopen(filename, "wb");
+   ASSERT_NOT_NULL(fp);
+
+   uint64_t header[8] = {0};
+   header[1]          = bad_size;
+   header[5]          = nrows;
+
+   fwrite(header, sizeof(uint64_t), 8, fp);
+   fclose(fp);
+
+   add_temp_file(filename);
+}
+
+static void
 test_hypredrv_IJVectorReadMultipartBinary_success(void)
 {
    const char *prefix    = "test_vec_success";
@@ -68,6 +88,82 @@ test_hypredrv_IJVectorReadMultipartBinary_success(void)
 }
 
 static void
+test_hypredrv_IJVectorReadMultipartBinary_invalid_coef_dtype(void)
+{
+   const char *prefix = "test_vec_bad_coef";
+   create_temp_binary_invalid_coef_size(prefix, 0, UINT64_C(7), 1);
+
+   HYPRE_IJVector vec = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
+   ASSERT_NULL(vec);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+
+   cleanup_temp_files();
+}
+
+static void
+test_hypredrv_IJVectorReadMultipartBinary_zero_nrows_success(void)
+{
+   const char *prefix = "test_vec_zero_rows";
+   double       dummy  = 0.0;
+
+   create_temp_binary(prefix, 0, 0, &dummy);
+
+   HYPRE_IJVector vec = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
+
+   ASSERT_NOT_NULL(vec);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   HYPRE_IJVectorDestroy(vec);
+   cleanup_temp_files();
+}
+
+static void
+test_hypredrv_IJVectorReadMultipartBinary_multipart_single_rank(void)
+{
+   const char *prefix = "test_vec_multipart";
+   double      v0[2]  = {10.0, 20.0};
+   double      v1[1]  = {30.0};
+
+   create_temp_binary(prefix, 0, 2, v0);
+   create_temp_binary(prefix, 1, 1, v1);
+
+   HYPRE_IJVector vec = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 2, HYPRE_MEMORY_HOST, &vec);
+
+   ASSERT_NOT_NULL(vec);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   HYPRE_IJVectorDestroy(vec);
+   cleanup_temp_files();
+}
+
+static void
+test_hypredrv_IJVectorReadMultipartBinary_multipart_mixed_float_double(void)
+{
+   const char *prefix = "test_vec_mixed";
+   float       vf[1]  = {1.25f};
+   double      vd[1]  = {9.0};
+
+   create_temp_binary_float(prefix, 0, 1, vf);
+   create_temp_binary(prefix, 1, 1, vd);
+
+   HYPRE_IJVector vec = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 2, HYPRE_MEMORY_HOST, &vec);
+
+   ASSERT_NOT_NULL(vec);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   HYPRE_IJVectorDestroy(vec);
+   cleanup_temp_files();
+}
+
+static void
 test_hypredrv_IJVectorReadMultipartBinary_missing_file(void)
 {
    HYPRE_IJVector vec = NULL;
@@ -77,6 +173,18 @@ test_hypredrv_IJVectorReadMultipartBinary_missing_file(void)
                                &vec);
    ASSERT_NULL(vec);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+}
+
+static void
+test_hypredrv_IJVectorReadMultipartBinary_invalid_part_count(void)
+{
+   HYPRE_IJVector vec = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorReadMultipartBinary("unused_prefix", MPI_COMM_SELF, 0, HYPRE_MEMORY_HOST,
+                                        &vec);
+   ASSERT_NULL(vec);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 }
 
 static void
@@ -147,6 +255,115 @@ test_hypredrv_IJVectorReadMultipartBinary_oversized_row_header(void)
 }
 
 static void
+test_hypredrv_IJVectorReadMultipartBinary_float_truncated_payload(void)
+{
+   const char *prefix = "test_vec_float_trunc";
+   char        filename[256];
+   uint64_t    header[8] = {0};
+
+   snprintf(filename, sizeof(filename), "%s.00000.bin", prefix);
+   FILE *fp = fopen(filename, "wb");
+   ASSERT_NOT_NULL(fp);
+   header[1] = sizeof(float);
+   header[5] = 8;
+   ASSERT_EQ_SIZE(fwrite(header, sizeof(uint64_t), 8, fp), 8u);
+   /* Write fewer coefficients than header claims */
+   {
+      float v = 1.0f;
+      ASSERT_EQ_SIZE(fwrite(&v, sizeof(float), 1, fp), 1u);
+   }
+   fclose(fp);
+   add_temp_file(filename);
+
+   HYPRE_IJVector vec = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
+   ASSERT_NULL(vec);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+
+   cleanup_temp_files();
+}
+
+static void
+test_hypredrv_IJVectorReadMultipartBinary_double_truncated_payload(void)
+{
+   const char *prefix = "test_vec_double_trunc";
+   char        filename[256];
+   uint64_t    header[8] = {0};
+
+   snprintf(filename, sizeof(filename), "%s.00000.bin", prefix);
+   FILE *fp = fopen(filename, "wb");
+   ASSERT_NOT_NULL(fp);
+   header[1] = sizeof(double);
+   header[5] = 8;
+   ASSERT_EQ_SIZE(fwrite(header, sizeof(uint64_t), 8, fp), 8u);
+   {
+      double v = 1.0;
+      ASSERT_EQ_SIZE(fwrite(&v, sizeof(v), 1, fp), 1u);
+   }
+   fclose(fp);
+   add_temp_file(filename);
+
+   HYPRE_IJVector vec = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &vec);
+   ASSERT_NULL(vec);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+
+   cleanup_temp_files();
+}
+
+#if defined(HYPRE_USING_GPU)
+static void
+test_hypredrv_IJVectorReadMultipartBinary_short_header_device_path(void)
+{
+   const char *prefix = "test_vec_short_dev";
+   char        filename[256];
+   snprintf(filename, sizeof(filename), "%s.00000.bin", prefix);
+
+   FILE *fp = fopen(filename, "wb");
+   ASSERT_NOT_NULL(fp);
+   uint64_t header[5] = {0};
+   ASSERT_EQ_SIZE(fwrite(header, sizeof(uint64_t), 5, fp), 5u);
+   fclose(fp);
+   add_temp_file(filename);
+
+   HYPRE_IJVector vec = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &vec);
+   ASSERT_NULL(vec);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+
+   cleanup_temp_files();
+}
+
+static void
+test_hypredrv_IJVectorReadMultipartBinary_device_invalid_coef_zero_rows(void)
+{
+   const char *prefix = "test_vec_dev_bad_coef0";
+   char        filename[256];
+   snprintf(filename, sizeof(filename), "%s.00000.bin", prefix);
+
+   FILE *fp = fopen(filename, "wb");
+   ASSERT_NOT_NULL(fp);
+   uint64_t header[8] = {0};
+   header[1]          = UINT64_C(99);
+   header[5]          = 0;
+   ASSERT_EQ_SIZE(fwrite(header, sizeof(uint64_t), 8, fp), 8u);
+   fclose(fp);
+   add_temp_file(filename);
+
+   HYPRE_IJVector vec = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_DEVICE, &vec);
+   ASSERT_NULL(vec);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+
+   cleanup_temp_files();
+}
+#endif /* HYPRE_USING_GPU */
+
+static void
 test_IntArrayParRead_ascii(void)
 {
    const char *prefix = "test_intarray_prefix";
@@ -178,14 +395,27 @@ int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
+   TEST_HYPRE_INIT();
 
    RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_success);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_invalid_coef_dtype);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_zero_nrows_success);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_multipart_single_rank);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_multipart_mixed_float_double);
    RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_missing_file);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_invalid_part_count);
    RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_bad_header);
    RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_float_coefficients);
    RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_oversized_row_header);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_float_truncated_payload);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_double_truncated_payload);
+#if defined(HYPRE_USING_GPU)
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_short_header_device_path);
+   RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_device_invalid_coef_zero_rows);
+#endif
    RUN_TEST(test_IntArrayParRead_ascii);
 
+   TEST_HYPRE_FINALIZE();
    MPI_Finalize();
    return 0;
 }

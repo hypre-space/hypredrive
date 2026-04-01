@@ -25,17 +25,6 @@
 #include "internal/stats.h"
 #include "internal/utils.h"
 
-static void
-IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
-{
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
-   HYPRE_IJVectorInitialize_v2(vec, memory_location);
-#else
-   (void)memory_location;
-   HYPRE_IJVectorInitialize(vec);
-#endif
-}
-
 /*
  * Eigenspectrum (debug/analysis) functionality
  *
@@ -128,6 +117,20 @@ hypredrv_EigSpecSetDefaultArgs(EigSpec_args *args)
 }
 
 #ifdef HYPREDRV_ENABLE_EIGSPEC
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+static void
+IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
+{
+#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
+   HYPRE_IJVectorInitialize_v2(vec, memory_location);
+#else
+   (void)memory_location;
+   HYPRE_IJVectorInitialize(vec);
+#endif
+}
 
 /*-----------------------------------------------------------------------------
  * LAPACK Fortran symbols

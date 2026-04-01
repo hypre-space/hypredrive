@@ -67,6 +67,12 @@ StrIntMapArray hypredrv_ChebyGetValidValues(const char *);
 /* MGR (custom YAML parser + generated sub-components) */
 void           hypredrv_MGRSetDefaultArgs(MGR_args *);
 void           hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
+void           hypredrv_MGRclsSetDefaultArgs(MGRcls_args *);
+void           hypredrv_MGRfrlxSetDefaultArgs(MGRfrlx_args *);
+void           hypredrv_MGRgrlxSetDefaultArgs(MGRgrlx_args *);
+void           hypredrv_MGRclsSetArgsFromYAML(void *, YAMLnode *);
+void           hypredrv_MGRfrlxSetArgsFromYAML(void *, YAMLnode *);
+void           hypredrv_MGRgrlxSetArgsFromYAML(void *, YAMLnode *);
 StrIntMapArray hypredrv_MGRGetValidValues(const char *);
 StrIntMapArray hypredrv_MGRlvlGetValidValues(const char *);
 HYPRE_Int     *hypredrv_MGRConvertArgInt(MGR_args *, const char *);
@@ -468,6 +474,493 @@ test_exhaustive_mgr_parser(void)
    hypredrv_MGRDestroyNestedSolverArgs(&args);
 }
 
+/* Flat coarsest_level / relaxation scalars; g_relaxation nested Krylov promotes type < 0 */
+static void
+test_mgr_parser_flat_scalars_and_grelax_krylov_type_promotion(void)
+{
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   add_child(lvl0, "f_dofs", "[0]", 3);
+   add_child(lvl0, "f_relaxation", "jacobi", 3);
+   YAMLnode *g0 = add_child(lvl0, "g_relaxation", "", 3);
+   YAMLnode *g0_gmres = add_child(g0, "gmres", "", 4);
+   add_child(g0_gmres, "max_iter", "2", 5);
+   add_child(mgr, "coarsest_level", "amg", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(args.level[0].g_relaxation.use_krylov);
+   ASSERT_EQ(args.level[0].g_relaxation.type, 0);
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+}
+
+/* Block-sequence f_dofs with a non-`-` child: ignored tokens path in MGRlvlFDofsSet */
+static void
+test_mgr_f_dofs_yaml_block_sequence_extra_non_dash_keys(void)
+{
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   YAMLnode *fd = add_child(lvl0, "f_dofs", "", 3);
+   add_child(fd, "-", "0", 4);
+   add_child(fd, "extra", "ignored", 4);
+   add_child(mgr, "coarsest_level", "amg", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ((int)args.level[0].f_dofs.size, 1);
+   ASSERT_EQ(args.level[0].f_dofs.data[0], 0);
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+}
+
+/* Symbolic f_dofs with dof_labels: flow sequence [v_x] */
+static void
+test_mgr_f_dofs_symbolic_flow_sequence_with_dof_labels(void)
+{
+   DofLabelMap *labels = hypredrv_DofLabelMapCreate();
+   hypredrv_DofLabelMapAdd(labels, "v_x", 0);
+   hypredrv_MGRSetDofLabels(labels);
+
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   add_child(lvl0, "f_dofs", "[v_x]", 3);
+   add_child(mgr, "coarsest_level", "amg", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ((int)args.level[0].f_dofs.size, 1);
+   ASSERT_EQ(args.level[0].f_dofs.data[0], 0);
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+   hypredrv_MGRSetDofLabels(NULL);
+   hypredrv_DofLabelMapDestroy(&labels);
+}
+
+/* Symbolic f_dofs block sequence with dof_labels */
+static void
+test_mgr_f_dofs_symbolic_block_sequence_with_dof_labels(void)
+{
+   DofLabelMap *labels = hypredrv_DofLabelMapCreate();
+   hypredrv_DofLabelMapAdd(labels, "v_x", 0);
+   hypredrv_DofLabelMapAdd(labels, "v_y", 1);
+   hypredrv_MGRSetDofLabels(labels);
+
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   YAMLnode *fd = add_child(lvl0, "f_dofs", "", 3);
+   add_child(fd, "-", "v_x", 4);
+   add_child(fd, "-", "v_y", 4);
+   add_child(mgr, "coarsest_level", "amg", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ((int)args.level[0].f_dofs.size, 2);
+   ASSERT_EQ(args.level[0].f_dofs.data[0], 0);
+   ASSERT_EQ(args.level[0].f_dofs.data[1], 1);
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+   hypredrv_MGRSetDofLabels(NULL);
+   hypredrv_DofLabelMapDestroy(&labels);
+}
+
+static void
+test_mgr_f_dofs_symbolic_without_dof_labels_errors(void)
+{
+   hypredrv_MGRSetDofLabels(NULL);
+
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   add_child(lvl0, "f_dofs", "[v_x]", 3);
+   add_child(mgr, "coarsest_level", "amg", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+}
+
+/* Block-sequence f_dofs: first token fails (symbolic without dof_labels) */
+static void
+test_mgr_f_dofs_block_sequence_symbolic_error_returns_early(void)
+{
+   hypredrv_MGRSetDofLabels(NULL);
+
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   YAMLnode *fd = add_child(lvl0, "f_dofs", "", 3);
+   add_child(fd, "-", "v_x", 4);
+   add_child(mgr, "coarsest_level", "amg", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+}
+
+/* Explicit `type:` child triggers MGR*ApplyTypeDefaults on type change */
+static void
+test_mgr_explicit_type_key_triggers_apply_type_defaults(void)
+{
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   add_child(lvl0, "f_dofs", "[0]", 3);
+   YAMLnode *f0 = add_child(lvl0, "f_relaxation", "", 3);
+   add_child(f0, "type", "jacobi", 4);
+   YAMLnode *g0 = add_child(lvl0, "g_relaxation", "", 3);
+   add_child(g0, "type", "blk-jacobi", 4);
+
+   YAMLnode *cls = add_child(mgr, "coarsest_level", "", 1);
+   add_child(cls, "type", "amg", 2);
+   YAMLnode *cls_amg = add_child(cls, "amg", "", 2);
+   add_child(cls_amg, "max_iter", "1", 3);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ((int)args.level[0].f_relaxation.type, 7);
+   ASSERT_EQ((int)args.level[0].g_relaxation.type, 0);
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+}
+
+static void
+test_mgr_f_dofs_unknown_symbolic_label_errors(void)
+{
+   DofLabelMap *labels = hypredrv_DofLabelMapCreate();
+   hypredrv_DofLabelMapAdd(labels, "v_x", 0);
+   hypredrv_MGRSetDofLabels(labels);
+
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   add_child(lvl0, "f_dofs", "[v_y]", 3);
+   add_child(mgr, "coarsest_level", "amg", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+   hypredrv_MGRSetDofLabels(NULL);
+   hypredrv_DofLabelMapDestroy(&labels);
+}
+
+/* F-relaxation ILU nested block -> MGRfrlxILUSetArgs */
+static void
+test_mgr_f_relaxation_ilu_nested_block(void)
+{
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   add_child(lvl0, "f_dofs", "[0]", 3);
+   YAMLnode *f0 = add_child(lvl0, "f_relaxation", "", 3);
+   YAMLnode *f0_ilu = add_child(f0, "ilu", "", 4);
+   add_child(f0_ilu, "type", "bj-ilut", 5);
+   add_child(f0_ilu, "fill_level", "1", 5);
+   add_child(mgr, "coarsest_level", "amg", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ((int)args.level[0].f_relaxation.type, 32);
+   ASSERT_EQ((int)args.level[0].f_relaxation.ilu.fill_level, 1);
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+}
+
+/* Flat-value branches (no children) in cls/frlx/grlx SetArgsFromYAML */
+static void
+test_mgr_cls_frxl_grlx_flat_scalar_branches(void)
+{
+   MGRcls_args cls;
+   hypredrv_MGRclsSetDefaultArgs(&cls);
+   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_MGRclsSetArgsFromYAML, &cls,
+                           "ilu", "ilu");
+
+   MGRfrlx_args frlx;
+   hypredrv_MGRfrlxSetDefaultArgs(&frlx);
+   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_MGRfrlxSetArgsFromYAML, &frlx,
+                           "ilu", "ilu");
+
+   MGRgrlx_args grlx;
+   hypredrv_MGRgrlxSetDefaultArgs(&grlx);
+   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_MGRgrlxSetArgsFromYAML, &grlx,
+                           "ilu", "ilu");
+}
+
+static void
+test_mgr_MGR_setters_null_parent_early_return(void)
+{
+   MGRcls_args cls;
+   hypredrv_MGRclsSetDefaultArgs(&cls);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRclsSetArgsFromYAML(&cls, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   MGRfrlx_args frlx;
+   hypredrv_MGRfrlxSetDefaultArgs(&frlx);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRfrlxSetArgsFromYAML(&frlx, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   MGRgrlx_args grlx;
+   hypredrv_MGRgrlxSetDefaultArgs(&grlx);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRgrlxSetArgsFromYAML(&grlx, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+}
+
+static void
+test_mgr_MGRDestroyNestedSolverArgs_null(void)
+{
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRDestroyNestedSolverArgs(NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+}
+
+static void
+test_mgr_MGRConvertArgInt_max_levels_guard_and_nested_mgr_remap(void)
+{
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   args.num_levels = MAX_MGR_LEVELS - 1;
+   ASSERT_NULL(hypredrv_MGRConvertArgInt(&args, "f_relaxation:type"));
+   ASSERT_NULL(hypredrv_MGRConvertArgInt(&args, "prolongation_type"));
+
+   hypredrv_MGRSetDefaultArgs(&args);
+   args.num_levels = 2;
+   args.level[0].f_relaxation.type = MGR_FRLX_TYPE_NESTED_MGR;
+   HYPRE_Int *buf = hypredrv_MGRConvertArgInt(&args, "f_relaxation:type");
+   ASSERT_NOT_NULL(buf);
+   ASSERT_EQ(buf[0], 7);
+}
+
+static void
+test_nested_krylov_parse_precon_errors(void)
+{
+   NestedKrylov_args args;
+
+   /* Invalid scalar preconditioner type */
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
+      add_child(solver, "max_iter", "2", 1);
+      YAMLnode *prec = add_child(solver, "preconditioner", "not_a_real_precon_type", 1);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(prec->valid, YAML_NODE_INVALID_VAL);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+
+   /* Scalar 'mgr' preconditioner rejected */
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
+      add_child(solver, "max_iter", "2", 1);
+      YAMLnode *prec = add_child(solver, "preconditioner", "mgr", 1);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(prec->valid, YAML_NODE_INVALID_VAL);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+
+   /* Block preconditioner with no nested type */
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
+      add_child(solver, "max_iter", "2", 1);
+      YAMLnode *prec = add_child(solver, "preconditioner", "", 1);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(prec->valid, YAML_NODE_INVALID_KEY);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+
+   /* Extra key beside single nested preconditioner type */
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
+      add_child(solver, "max_iter", "2", 1);
+      YAMLnode *prec = add_child(solver, "preconditioner", "", 1);
+      add_child(prec, "amg", "", 2);
+      YAMLnode *extra = add_child(prec, "oops", "", 2);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(extra->valid, YAML_NODE_INVALID_KEY);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+
+   /* Unknown nested preconditioner key */
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
+      add_child(solver, "max_iter", "2", 1);
+      YAMLnode *prec = add_child(solver, "preconditioner", "", 1);
+      YAMLnode *bad = add_child(prec, "not_a_precon", "", 2);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(bad->valid, YAML_NODE_INVALID_KEY);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+
+   hypredrv_NestedKrylovSetDefaultArgs(NULL);
+   hypredrv_NestedKrylovSetArgsFromYAML(&args, NULL);
+}
+
+static void
+test_nested_krylov_parser_extra_coverage(void)
+{
+   NestedKrylov_args args;
+
+   /* Unknown nested solver key (hypredrv_NestedKrylovSetArgsFromYAML invalid-key branch). */
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("not_a_nested_solver_type", "", 0);
+      add_child(solver, "max_iter", "2", 1);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(solver->valid, YAML_NODE_INVALID_KEY);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+
+   /* Scalar nested preconditioner success: preconditioner: amg (NestedKrylovParsePrecon). */
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
+      add_child(solver, "max_iter", "2", 1);
+      YAMLnode *prec = add_child(solver, "preconditioner", "amg", 1);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(args.solver_method, SOLVER_GMRES);
+      ASSERT_TRUE(args.has_precon);
+      ASSERT_EQ(args.precon_method, PRECON_BOOMERAMG);
+      ASSERT_EQ(prec->valid, YAML_NODE_VALID);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+
+   /* preconditioner first child: detach prev==NULL, restore prepend (NestedKrylovDetach/RestorePrecon). */
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
+      add_child(solver, "preconditioner", "amg", 1);
+      add_child(solver, "max_iter", "2", 1);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_TRUE(args.has_precon);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+}
+
+static void
+test_nested_krylov_solver_switch_pc_fgmres_bicgstab(void)
+{
+   NestedKrylov_args args;
+
+   /* Exercise NestedKrylovSetArgsFromYAML switch over solver_method (krylov.c). */
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("pcg", "", 0);
+      add_child(solver, "max_iter", "10", 1);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(args.solver_method, SOLVER_PCG);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("fgmres", "", 0);
+      add_child(solver, "max_iter", "8", 1);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(args.solver_method, SOLVER_FGMRES);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("bicgstab", "", 0);
+      add_child(solver, "max_iter", "12", 1);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(args.solver_method, SOLVER_BICGSTAB);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+}
+
 static void
 test_mgr_nested_krylov_rejects_mgr_precon(void)
 {
@@ -545,6 +1038,22 @@ main(int argc, char **argv)
    RUN_TEST(test_exhaustive_ilu_fsai_parsers);
    RUN_TEST(test_exhaustive_amg_parser);
    RUN_TEST(test_exhaustive_mgr_parser);
+   RUN_TEST(test_mgr_parser_flat_scalars_and_grelax_krylov_type_promotion);
+   RUN_TEST(test_mgr_f_dofs_yaml_block_sequence_extra_non_dash_keys);
+   RUN_TEST(test_mgr_f_dofs_symbolic_flow_sequence_with_dof_labels);
+   RUN_TEST(test_mgr_f_dofs_symbolic_block_sequence_with_dof_labels);
+   RUN_TEST(test_mgr_f_dofs_symbolic_without_dof_labels_errors);
+   RUN_TEST(test_mgr_f_dofs_unknown_symbolic_label_errors);
+   RUN_TEST(test_mgr_f_dofs_block_sequence_symbolic_error_returns_early);
+   RUN_TEST(test_mgr_explicit_type_key_triggers_apply_type_defaults);
+   RUN_TEST(test_mgr_f_relaxation_ilu_nested_block);
+   RUN_TEST(test_mgr_cls_frxl_grlx_flat_scalar_branches);
+   RUN_TEST(test_mgr_MGR_setters_null_parent_early_return);
+   RUN_TEST(test_mgr_MGRDestroyNestedSolverArgs_null);
+   RUN_TEST(test_mgr_MGRConvertArgInt_max_levels_guard_and_nested_mgr_remap);
+   RUN_TEST(test_nested_krylov_parse_precon_errors);
+   RUN_TEST(test_nested_krylov_parser_extra_coverage);
+   RUN_TEST(test_nested_krylov_solver_switch_pc_fgmres_bicgstab);
    RUN_TEST(test_mgr_nested_krylov_rejects_mgr_precon);
    RUN_TEST(test_relaxation_values_use_canonical_l1_jacobi_spelling);
    RUN_TEST(test_amg_relaxation_values_accept_forward_and_backward_hl1gs);

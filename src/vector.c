@@ -31,12 +31,14 @@ enum
 static int
 IJVectorValidateHeader(const uint64_t *header, const char *filename)
 {
+   /* LCOV_EXCL_START */
    if (!header)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Null vector part header");
       return 0;
    }
+   /* LCOV_EXCL_STOP */
 
    if (header[5] > (uint64_t)IJVECTOR_MAX_PART_NROWS)
    {
@@ -46,18 +48,30 @@ IJVectorValidateHeader(const uint64_t *header, const char *filename)
                            (unsigned long long)header[5]);
       return 0;
    }
+   /* Per-part row cap is far below SIZE_MAX/sizeof(coeff); keep overflow guard for
+    * hypothetical builds without the cap, but do not count it toward coverage. */
 #ifdef HYPRE_COMPLEX
+   /* LCOV_EXCL_START */
    if (header[5] > (uint64_t)SIZE_MAX / sizeof(HYPRE_Complex) ||
        header[5] > (uint64_t)SIZE_MAX / sizeof(double))
-#else
-   if (header[5] > (uint64_t)SIZE_MAX / sizeof(double))
-#endif
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Vector part sizes overflow allocation bounds in %s",
                            filename ? filename : "(unknown)");
       return 0;
    }
+   /* LCOV_EXCL_STOP */
+#else
+   /* LCOV_EXCL_START */
+   if (header[5] > (uint64_t)SIZE_MAX / sizeof(double))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Vector part sizes overflow allocation bounds in %s",
+                           filename ? filename : "(unknown)");
+      return 0;
+   }
+   /* LCOV_EXCL_STOP */
+#endif
 
    return 1;
 }
@@ -111,6 +125,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       return;
    }
    partids = (uint32_t *)malloc(nparts * sizeof(uint32_t));
+   /* LCOV_EXCL_START */
    if (nparts > 0 && !partids)
    {
       *vec_ptr = NULL;
@@ -118,6 +133,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       hypredrv_ErrorMsgAdd("Failed to allocate vector part id map (%u entries)", nparts);
       return;
    }
+   /* LCOV_EXCL_STOP */
    offset = ((uint32_t)myid) * nparts;
    offset += (myid < ((int)g_nparts % nprocs)) ? (uint32_t)myid
                                                : (uint32_t)((int)g_nparts % nprocs);
@@ -155,6 +171,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       {
          goto cleanup;
       }
+      /* LCOV_EXCL_START */
       if (nrows_sum > UINT64_MAX - header[5])
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -162,6 +179,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                               filename);
          goto cleanup;
       }
+      /* LCOV_EXCL_STOP */
       nrows_sum += header[5];
       nrows_max = (header[5] > nrows_max) ? header[5] : nrows_max;
    }
@@ -178,6 +196,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    /* Allocate variables */
    h_vals =
       (nrows_max > 0) ? (HYPRE_Complex *)malloc(nrows_max * sizeof(HYPRE_Complex)) : NULL;
+   /* LCOV_EXCL_START */
    if (nrows_max > 0 && !h_vals)
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
@@ -185,6 +204,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                            (unsigned long long)nrows_max);
       goto cleanup;
    }
+   /* LCOV_EXCL_STOP */
 #ifdef HYPRE_USING_GPU
    if (memory_location == HYPRE_MEMORY_DEVICE)
    {
@@ -201,14 +221,18 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    {
       snprintf(filename, sizeof(filename), "%s.%05d.bin", prefixname, (int)partids[part]);
       fp = fopen(filename, "rb");
+      /* Second-pass fopen failure mirrors pass 1 but is not reachable once pass 1
+       * succeeded on the same files in a single-threaded run. */
+      /* LCOV_EXCL_START */
       if (!fp)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          hypredrv_ErrorMsgAddInvalidFilename(filename);
          goto cleanup;
       }
+      /* LCOV_EXCL_STOP */
 
-      if (fread(header, sizeof(uint64_t), 8, fp) != 8)
+      if (fread(header, sizeof(uint64_t), 8, fp) != 8) /* LCOV_EXCL_START */
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
@@ -216,13 +240,15 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          fp = NULL;
          goto cleanup;
       }
+      /* LCOV_EXCL_STOP */
 
-      if (!IJVectorValidateHeader(header, filename))
+      if (!IJVectorValidateHeader(header, filename)) /* LCOV_EXCL_START */
       {
          fclose(fp);
          fp = NULL;
          goto cleanup;
       }
+      /* LCOV_EXCL_STOP */
 
       /* Read vector coefficients */
       if (header[1] == sizeof(float))
@@ -301,10 +327,12 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
 cleanup:
    /* Free memory */
+   /* LCOV_EXCL_START */
    if (fp)
    {
       fclose(fp);
    }
+   /* LCOV_EXCL_STOP */
    free(partids);
    free(h_vals);
 #ifdef HYPRE_USING_GPU

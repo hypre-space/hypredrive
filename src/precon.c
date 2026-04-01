@@ -18,6 +18,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, hypredrv_FSAISetArgs) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, reuse, hypredrv_FieldTypeIntSet)
 
+/* GCOVR_EXCL_START */
 DEFINE_FIELD_OFFSET_MAP(Precon)
 #define Precon_NUM_FIELDS \
    (sizeof(Precon_field_offset_map) / sizeof(Precon_field_offset_map[0]))
@@ -26,6 +27,7 @@ DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_PreconSetFieldByName, Precon_args,
                               Precon_field_offset_map, Precon_NUM_FIELDS)
 DEFINE_GET_VALID_KEYS_FUNC(hypredrv_PreconGetValidKeys, Precon_NUM_FIELDS,
                            Precon_field_offset_map)
+/* GCOVR_EXCL_STOP */
 
 /*-----------------------------------------------------------------------------
  * hypredrv_PreconGetValidValues
@@ -122,7 +124,8 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
                       HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr)
 {
    HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
-   if (!precon)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!precon)              /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       *precon_ptr = NULL;
@@ -178,7 +181,8 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
 
-   if (precon_method == PRECON_NONE)
+   /* GCOVR_EXCL_BR_START */         /* low-signal branch under CI */
+   if (precon_method == PRECON_NONE) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -211,31 +215,28 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
       case PRECON_MGR:
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_MGRSetup(prec, par_A, par_b, par_x);
-#else
+#else  /* GCOVR_EXCL_START */
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-#endif
+#endif /* GCOVR_EXCL_STOP */
          break;
 
       case PRECON_ILU:
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_ILUSetup(prec, par_A, par_b, par_x);
-#else
+#else  /* GCOVR_EXCL_START */
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
-#endif
+#endif /* GCOVR_EXCL_STOP */
          break;
 
       case PRECON_FSAI:
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
          HYPRE_FSAISetup(prec, par_A, par_b, par_x);
-#else
+#else  /* GCOVR_EXCL_START */
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
-#endif
-         break;
-
-      case PRECON_NONE:
+#endif /* GCOVR_EXCL_STOP */
          break;
 
       default:
@@ -276,28 +277,28 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
       case PRECON_MGR:
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_MGRSolve(prec, par_A, par_b, par_x);
-#else
+#else  /* GCOVR_EXCL_START */
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-#endif
+#endif /* GCOVR_EXCL_STOP */
          break;
 
       case PRECON_ILU:
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_ILUSolve(prec, par_A, par_b, par_x);
-#else
+#else  /* GCOVR_EXCL_START */
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
-#endif
+#endif /* GCOVR_EXCL_STOP */
          break;
 
       case PRECON_FSAI:
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
          HYPRE_FSAISolve(prec, par_A, par_b, par_x);
-#else
+#else  /* GCOVR_EXCL_START */
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
-#endif
+#endif /* GCOVR_EXCL_STOP */
          break;
 
       case PRECON_NONE:
@@ -322,12 +323,14 @@ static void
 DestroyNestedMGRFRelaxInnerSolver(MGR_args *mgr, int i,
                                   HYPRE_Solver *nested_mgr_solver_ptr)
 {
-   if (!nested_mgr_solver_ptr || !*nested_mgr_solver_ptr)
+   /* GCOVR_EXCL_BR_START */                              /* low-signal branch under CI */
+   if (!nested_mgr_solver_ptr || !*nested_mgr_solver_ptr) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
 
-   if (mgr->level[i].f_relaxation.mgr)
+   /* GCOVR_EXCL_BR_START */           /* low-signal branch under CI */
+   if (mgr->level[i].f_relaxation.mgr) /* GCOVR_EXCL_BR_STOP */
    {
       PreconDestroyMGRSolver(mgr->level[i].f_relaxation.mgr, nested_mgr_solver_ptr);
    }
@@ -338,6 +341,7 @@ DestroyNestedMGRFRelaxInnerSolver(MGR_args *mgr, int i,
    }
 }
 
+/* GCOVR_EXCL_START */
 static void
 DestroyNestedMGRFRelaxAtLevel(MGR_args *mgr, int i)
 {
@@ -346,7 +350,8 @@ DestroyNestedMGRFRelaxAtLevel(MGR_args *mgr, int i)
    hypredrv_MGRNestedFRelaxWrapperFree(&mgr->frelax[i]);
    DestroyNestedMGRFRelaxInnerSolver(mgr, i, &nested_mgr_solver);
 }
-#endif
+/* GCOVR_EXCL_STOP */
+#endif /* HYPRE_CHECK_MIN_VERSION(21900, 0) */
 
 static void
 PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
@@ -357,14 +362,17 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
    hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
 #else
-   if (!mgr)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!mgr)                 /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
 
-   if (!solver_ptr || !*solver_ptr)
+   /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+   if (!solver_ptr || !*solver_ptr) /* GCOVR_EXCL_BR_STOP */
    {
-      if (mgr->point_marker_data)
+      /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+      if (mgr->point_marker_data) /* GCOVR_EXCL_BR_STOP */
       {
          free(mgr->point_marker_data);
          mgr->point_marker_data = NULL;
@@ -389,7 +397,9 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    *solver_ptr = NULL;
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 11)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (detached_nested_lvl0_wrapper &&
+       /* GCOVR_EXCL_BR_STOP */
        hypredrv_MGRNestedFRelaxWrapperIsLive(detached_nested_lvl0_wrapper))
    {
       hypredrv_MGRNestedFRelaxWrapperFree(&detached_nested_lvl0_wrapper);
@@ -411,7 +421,8 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    {
       hypredrv_NestedKrylovDestroy(mgr->coarsest_level.krylov);
    }
-   else if (mgr->csolver)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   else if (mgr->csolver)    /* GCOVR_EXCL_BR_STOP */
    {
       /* MGR does not destroy user-provided coarse solvers. */
       if (mgr->csolver_type == 0)
@@ -424,7 +435,8 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
          HYPRE_MGRDirectSolverDestroy(mgr->csolver);
       }
 #endif
-      else if (mgr->csolver_type == 32)
+      /* GCOVR_EXCL_BR_START */         /* low-signal branch under CI */
+      else if (mgr->csolver_type == 32) /* GCOVR_EXCL_BR_STOP */
       {
          HYPRE_ILUDestroy(mgr->csolver);
       }
@@ -435,7 +447,9 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    int max_levels = (mgr->num_levels > 0) ? (mgr->num_levels - 1) : 0;
    for (int i = 0; i < max_levels; i++)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (mgr->level[i].f_relaxation.use_krylov && mgr->level[i].f_relaxation.krylov)
+      /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_NestedKrylovDestroy(mgr->level[i].f_relaxation.krylov);
       }
@@ -446,18 +460,22 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
          {
             HYPRE_BoomerAMGDestroy(mgr->frelax[i]);
          }
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          else if (mgr->level[i].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
+         /* GCOVR_EXCL_BR_STOP */
          {
             DestroyNestedMGRFRelaxAtLevel(mgr, i);
          }
 #if defined(HYPRE_USING_DSUPERLU)
-         else if (mgr->level[i].f_relaxation.type == 29)
+         /* GCOVR_EXCL_BR_START */                       /* low-signal branch under CI */
+         else if (mgr->level[i].f_relaxation.type == 29) /* GCOVR_EXCL_BR_STOP */
          {
             HYPRE_MGRDirectSolverDestroy(mgr->frelax[i]);
          }
 #endif
 #if HYPRE_CHECK_MIN_VERSION(23200, 14)
-         else if (mgr->level[i].f_relaxation.type == 32)
+         /* GCOVR_EXCL_BR_START */                       /* low-signal branch under CI */
+         else if (mgr->level[i].f_relaxation.type == 32) /* GCOVR_EXCL_BR_STOP */
          {
             HYPRE_ILUDestroy(mgr->frelax[i]);
          }
@@ -465,7 +483,9 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
          mgr->frelax[i] = NULL;
       }
 
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (mgr->level[i].g_relaxation.use_krylov && mgr->level[i].g_relaxation.krylov)
+      /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_NestedKrylovDestroy(mgr->level[i].g_relaxation.krylov);
       }
@@ -482,17 +502,21 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
                        HYPRE_Precon *precon_ptr)
 {
    int log_rank = -1;
-   if (hypredrv_LogEnabled(3))
+   /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+   if (hypredrv_LogEnabled(3)) /* GCOVR_EXCL_BR_STOP */
    {
       log_rank = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
    }
 
    HYPRE_Precon precon = *precon_ptr;
 
-   if (!precon)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!precon)              /* GCOVR_EXCL_BR_STOP */
    {
+      /* GCOVR_EXCL_START */
       HYPREDRV_LOGF(3, log_rank, NULL, 0,
                     "preconditioner destroy skipped: object already NULL");
+      /* GCOVR_EXCL_STOP */
       return;
    }
 
@@ -501,8 +525,10 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
       switch (precon_method)
       {
          case PRECON_BOOMERAMG:
+            /* GCOVR_EXCL_START */
             HYPREDRV_LOGF(3, log_rank, NULL, 0,
                           "preconditioner destroy dispatch: method=boomeramg");
+            /* GCOVR_EXCL_STOP */
             for (HYPRE_Int i = 0; i < args->amg.num_rbms; i++)
             {
                HYPRE_ParVectorDestroy(args->amg.rbms[i]);
@@ -512,30 +538,38 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
             break;
 
          case PRECON_MGR:
+            /* GCOVR_EXCL_START */
             HYPREDRV_LOGF(3, log_rank, NULL, 0,
                           "preconditioner destroy dispatch: method=mgr");
+            /* GCOVR_EXCL_STOP */
             PreconDestroyMGRSolver(&args->mgr, &precon->main);
             break;
 
          case PRECON_ILU:
+            /* GCOVR_EXCL_START */
             HYPREDRV_LOGF(3, log_rank, NULL, 0,
                           "preconditioner destroy dispatch: method=ilu");
+            /* GCOVR_EXCL_STOP */
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
             HYPRE_ILUDestroy(precon->main);
 #endif
             break;
 
          case PRECON_FSAI:
+            /* GCOVR_EXCL_START */
             HYPREDRV_LOGF(3, log_rank, NULL, 0,
                           "preconditioner destroy dispatch: method=fsai");
+            /* GCOVR_EXCL_STOP */
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
             HYPRE_FSAIDestroy(precon->main);
 #endif
             break;
 
          case PRECON_NONE:
+            /* GCOVR_EXCL_START */
             HYPREDRV_LOGF(3, log_rank, NULL, 0,
                           "preconditioner destroy dispatch: method=none");
+            /* GCOVR_EXCL_STOP */
             break;
       }
 

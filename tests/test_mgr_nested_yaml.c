@@ -117,6 +117,35 @@ test_mgr_relaxation_block_yaml_parse(void)
    hypredrv_InputArgsDestroy(&iargs);
 }
 
+static void
+test_mgr_nested_yaml_grelax_nested_krylov_inline(void)
+{
+   const char yaml_text[] =
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 10\n"
+      "preconditioner:\n"
+      "  mgr:\n"
+      "    level:\n"
+      "      0:\n"
+      "        f_dofs: [0]\n"
+      "        f_relaxation: jacobi\n"
+      "        g_relaxation:\n"
+      "          gmres:\n"
+      "            max_iter: 2\n"
+      "    coarsest_level:\n"
+      "      amg:\n"
+      "        print_level: 0\n";
+
+   input_args *iargs = parse_config(yaml_text);
+   ASSERT_NOT_NULL(iargs);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(iargs->precon.mgr.level[0].g_relaxation.use_krylov);
+   ASSERT_EQ(iargs->precon.mgr.level[0].g_relaxation.krylov->solver_method, SOLVER_GMRES);
+
+   hypredrv_InputArgsDestroy(&iargs);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -126,6 +155,7 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_nested_yaml_parse);
    RUN_TEST(test_mgr_nested_mgr_yaml_parse);
    RUN_TEST(test_mgr_relaxation_block_yaml_parse);
+   RUN_TEST(test_mgr_nested_yaml_grelax_nested_krylov_inline);
 
    MPI_Finalize();
    return 0;

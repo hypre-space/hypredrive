@@ -2,7 +2,12 @@
 # Helper function to set up test executable with proper RPATH
 # Similar to hypredrive executable - link directly to both HYPREDRV and HYPRE
 function(setup_test_executable target_name source_file)
-    add_executable(${target_name} ${source_file})
+    if(HYPREDRV_ENABLE_COVERAGE)
+        add_executable(${target_name} ${source_file} "${CMAKE_SOURCE_DIR}/tests/test_coverage_init.c")
+        target_compile_definitions(${target_name} PRIVATE HYPREDRV_COVERAGE_TESTS=1)
+    else()
+        add_executable(${target_name} ${source_file})
+    endif()
 
     target_include_directories(${target_name} PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
@@ -100,10 +105,13 @@ set(_hypredrv_unit_test_cases
     "test_containers|test_containers.c|FALSE"
     "test_yaml|test_yaml.c|FALSE"
     "test_error|test_error.c|FALSE"
+    "test_logging|test_logging.c|FALSE"
     "test_field|test_field.c|FALSE"
+    "test_runtime|test_runtime.c|FALSE"
     "test_args|test_args.c|FALSE"
     "test_precon|test_precon.c|TRUE"
     "test_parser|test_parser.c|TRUE"
+    "test_krylov|test_krylov.c|TRUE"
     "test_mgr_nested_yaml|test_mgr_nested_yaml.c|TRUE"
     "test_solver|test_solver.c|TRUE"
     "test_hypredrv|test_hypredrv.c|TRUE"
@@ -133,3 +141,15 @@ endforeach()
 
 setup_test_executable(test_linsys_print_mpi test_linsys_print_mpi.c)
 add_executable_test(linsys_print_mpi_2proc test_linsys_print_mpi 2 RUN_SERIAL)
+
+setup_test_executable(test_matrix_mpi test_matrix_mpi.c)
+add_executable_test(matrix_mpi_2proc test_matrix_mpi 2 RUN_SERIAL)
+
+setup_test_executable(test_vector_mpi test_vector_mpi.c)
+add_executable_test(vector_mpi_2proc test_vector_mpi 2 RUN_SERIAL)
+
+setup_test_executable(test_lsseq_mpi test_lsseq_mpi.c)
+add_executable_test(lsseq_mpi_2proc test_lsseq_mpi 2 RUN_SERIAL)
+
+setup_test_executable(test_args_mpi test_args_mpi.c)
+add_executable_test(args_mpi_2proc test_args_mpi 2 RUN_SERIAL)

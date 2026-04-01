@@ -1,4 +1,5 @@
 #include <mpi.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,6 +14,7 @@
 #include "internal/precon.h"
 #include "test_helpers.h"
 #include "internal/yaml.h"
+#include "logging.h"
 
 /* Forward declarations for internal AMG functions */
 void           hypredrv_AMGSetFieldByName(void *, const YAMLnode *);
@@ -89,6 +91,40 @@ seed_post_bootstrap_state(PreconReuseState *state, int baseline_iters, double se
    ASSERT_EQ(state->bootstrap_count, 3);
 }
 
+/* Invalid preconditioner enum for exercising default: branches in precon.c */
+static const precon_t PRECON_INVALID = (precon_t)9999;
+
+static HYPRE_IJMatrix
+precon_test_ij_matrix_1x1(double diag)
+{
+   HYPRE_IJMatrix mat = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat), 0);
+   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJMatrixInitialize(mat), 0);
+   HYPRE_Int    nrows     = 1;
+   HYPRE_Int    ncols[1]  = {1};
+   HYPRE_BigInt rows[1]   = {0};
+   HYPRE_BigInt cols[1]  = {0};
+   double       values[1] = {diag};
+   ASSERT_EQ(HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, values), 0);
+   ASSERT_EQ(HYPRE_IJMatrixAssemble(mat), 0);
+   return mat;
+}
+
+static HYPRE_IJVector
+precon_test_ij_vector_1x1(double value)
+{
+   HYPRE_IJVector vec = NULL;
+   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &vec), 0);
+   ASSERT_EQ(HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJVectorInitialize(vec), 0);
+   HYPRE_BigInt idx[1] = {0};
+   double       val[1] = {value};
+   ASSERT_EQ(HYPRE_IJVectorSetValues(vec, 1, idx, val), 0);
+   ASSERT_EQ(HYPRE_IJVectorAssemble(vec), 0);
+   return vec;
+}
+
 static void
 test_PreconGetValidKeys_contains_expected(void)
 {
@@ -146,6 +182,26 @@ test_PreconSetArgsFromYAML_sets_fields(void)
    ASSERT_EQ(args.amg.max_iter, 5);
 
    hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconSetArgsFromYAML_null_or_empty_parent_noop(void)
+{
+   precon_args args;
+
+   hypredrv_PreconSetDefaultArgs(&args);
+   args.reuse = 7;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetArgsFromYAML(&args, NULL);
+   ASSERT_EQ(args.reuse, 7);
+
+   {
+      YAMLnode *empty = hypredrv_YAMLnodeCreate("preconditioner", "", 0);
+      hypredrv_PreconSetArgsFromYAML(&args, empty);
+      hypredrv_YAMLnodeDestroy(empty);
+   }
+   ASSERT_EQ(args.reuse, 7);
 }
 
 static void
@@ -227,6 +283,53 @@ test_PreconSetArgsFromYAML_ignores_unknown_key(void)
    ASSERT_EQ(args.reuse, 0); /* remains default */
 
    hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuse_null_args_noop(void)
+{
+   hypredrv_PreconReuseSetDefaultArgs(NULL);
+   hypredrv_PreconReuseDestroyArgs(NULL);
+   hypredrv_PreconReuseStateInit(NULL);
+   hypredrv_PreconReuseStateDestroy(NULL);
+   hypredrv_PreconReuseStateReset(NULL);
+   hypredrv_PreconReuseStateRecordObservation(NULL, NULL);
+}
+
+static void
+test_mgr_nested_frelax_wrapper_api_null_safe(void)
+{
+   ASSERT_EQ(hypredrv_MGRNestedFRelaxWrapperIsLive((HYPRE_Solver)(uintptr_t)1), 0);
+   ASSERT_NULL(hypredrv_MGRNestedFRelaxWrapperGetInner(NULL));
+   ASSERT_NULL(hypredrv_MGRNestedFRelaxWrapperDetachInner(NULL));
+   hypredrv_MGRNestedFRelaxWrapperFree(NULL);
+   {
+      HYPRE_Solver s = NULL;
+      hypredrv_MGRNestedFRelaxWrapperFree(&s);
+   }
+   hypredrv_MGRSetDofLabels(NULL);
+}
+
+static void
+test_hypredrv_PreconArgsSetDefaultsForMethod_and_GetValidValues(void)
+{
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_BOOMERAMG, NULL);
+
+   StrIntMapArray void_map = hypredrv_PreconGetValidValues("type");
+   ASSERT_EQ(void_map.size, 0);
+
+   StrIntMapArray types = hypredrv_PreconGetValidTypeIntMap();
+   ASSERT_TRUE(types.size > 0);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(types, "mgr"), (int)PRECON_MGR);
+
+   precon_args args;
+   memset(&args, 0, sizeof(args));
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_BOOMERAMG, &args);
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &args);
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_ILU, &args);
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_FSAI, &args);
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_NONE, &args);
+   hypredrv_PreconArgsSetDefaultsForMethod((precon_t)999, &args);
 }
 
 static void
@@ -1264,6 +1367,173 @@ test_PreconReuseShouldRebuild_adaptive_harmonic_mean(void)
 }
 
 static void
+test_PreconReuseShouldRebuild_null_args_early_exit(void)
+{
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseStateInit(&state);
+
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(NULL, NULL, NULL, &state, 0, &decision), 1);
+   ASSERT_EQ(decision.should_rebuild, 1);
+
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(NULL, NULL, NULL, &state, 0, NULL), 1);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_min_max_mean_iterations(void)
+{
+   /* MIN over per-solve iteration ratios (exercises min loop in PreconReuseGeneralizedMean) */
+   {
+      PreconReuse_args    args;
+      PreconReuseState    state;
+      PreconReuseDecision decision;
+
+      hypredrv_PreconReuseSetDefaultArgs(&args);
+      args.enabled                    = 1;
+      args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+      args.guards.min_history_points  = 1;
+      args.adaptive.rebuild_threshold = 0.5;
+      args.adaptive.num_components    = 1;
+      args.adaptive.components =
+         (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+      ASSERT_NOT_NULL(args.adaptive.components);
+      PreconReuseScoreComponent_args *comp = &args.adaptive.components[0];
+      snprintf(comp->name, sizeof(comp->name), "%s", "iters-min");
+      comp->enabled            = 1;
+      comp->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+      comp->weight             = 1.0;
+      comp->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+      comp->target             = 1.0;
+      comp->scale              = 0.5;
+      comp->mean.kind          = PRECON_REUSE_MEAN_MIN;
+      comp->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+      comp->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+      comp->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+      comp->history.level      = -1;
+      comp->history.max_points = 2;
+      comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
+
+      hypredrv_PreconReuseStateInit(&state);
+      seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+      PreconReuseObservation obs = make_reuse_observation(3, 0, 30, 1.0, 1.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+      obs.system_index = 4;
+      obs.iters          = 15;
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+      ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                    &decision));
+      ASSERT_EQ(decision.used_adaptive, 1);
+      ASSERT_TRUE(strstr(decision.summary, "iters-min") != NULL);
+
+      hypredrv_PreconReuseStateDestroy(&state);
+      hypredrv_PreconReuseDestroyArgs(&args);
+   }
+
+   /* MAX over per-solve iteration ratios */
+   {
+      PreconReuse_args    args;
+      PreconReuseState    state;
+      PreconReuseDecision decision;
+
+      hypredrv_PreconReuseSetDefaultArgs(&args);
+      args.enabled                    = 1;
+      args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+      args.guards.min_history_points  = 1;
+      args.adaptive.rebuild_threshold = 0.5;
+      args.adaptive.num_components    = 1;
+      args.adaptive.components =
+         (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+      ASSERT_NOT_NULL(args.adaptive.components);
+      PreconReuseScoreComponent_args *comp = &args.adaptive.components[0];
+      snprintf(comp->name, sizeof(comp->name), "%s", "iters-max");
+      comp->enabled            = 1;
+      comp->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+      comp->weight             = 1.0;
+      comp->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+      comp->target             = 1.0;
+      comp->scale              = 0.5;
+      comp->mean.kind          = PRECON_REUSE_MEAN_MAX;
+      comp->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+      comp->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+      comp->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+      comp->history.level      = -1;
+      comp->history.max_points = 2;
+      comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
+
+      hypredrv_PreconReuseStateInit(&state);
+      seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+      PreconReuseObservation obs = make_reuse_observation(3, 0, 15, 1.0, 1.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+      obs.system_index = 4;
+      obs.iters          = 30;
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+      ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                    &decision));
+      ASSERT_EQ(decision.used_adaptive, 1);
+      ASSERT_TRUE(strstr(decision.summary, "iters-max") != NULL);
+
+      hypredrv_PreconReuseStateDestroy(&state);
+      hypredrv_PreconReuseDestroyArgs(&args);
+   }
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_power_mean_near_zero(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points  = 1;
+   args.adaptive.rebuild_threshold = 0.5;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *comp = &args.adaptive.components[0];
+   snprintf(comp->name, sizeof(comp->name), "%s", "iters-power");
+   comp->enabled            = 1;
+   comp->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+   comp->weight             = 1.0;
+   comp->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+   comp->target             = 1.5;
+   comp->scale              = 0.5;
+   comp->mean.kind          = PRECON_REUSE_MEAN_POWER;
+   comp->mean.power         = 0.0;
+   comp->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   comp->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+   comp->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+   comp->history.level      = -1;
+   comp->history.max_points = 2;
+   comp->history.reduction  = PRECON_REUSE_REDUCTION_NONE;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 30, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+   obs.system_index = 4;
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5, &decision));
+   ASSERT_EQ(decision.used_adaptive, 1);
+   ASSERT_TRUE(strstr(decision.summary, "iters-power") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
 test_PreconReuseShouldRebuild_adaptive_delta_from_baseline_transform(void)
 {
    PreconReuse_args    args;
@@ -1371,8 +1641,1302 @@ test_PreconReuseShouldRebuild_adaptive_min_reuse_solves_guard(void)
 }
 
 static void
+test_PreconReuse_api_null_observation_and_log_noop(void)
+{
+   PreconReuseObservation obs;
+   PreconReuseDecision    decision;
+
+   memset(&decision, 0, sizeof(decision));
+   hypredrv_PreconReuseLogDecision(NULL, 0, &decision, "unit");
+   hypredrv_PreconReuseLogDecision(NULL, 0, NULL, "unit");
+
+   hypredrv_PreconReuseBuildObservation(NULL, NULL, NULL);
+   hypredrv_PreconReuseBuildObservation(NULL, NULL, &obs);
+   ASSERT_EQ(obs.system_index, -1);
+
+   hypredrv_PreconReuseMarkRebuild(NULL, NULL);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_scalar_static_frequency_shorthand(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "2", 0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_EQ(args.enabled, 1);
+   ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_STATIC);
+   ASSERT_EQ(args.frequency, 2);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_scalar_invalid_value(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "not-a-number-or-policy", 0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_EQ(parent->valid, YAML_NODE_INVALID_VAL);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_enabled_off_clears_static_fields(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "enabled", "off", 1);
+   add_child(parent, "frequency", "5", 1);
+   add_child(parent, "per_timestep", "on", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_EQ(args.enabled, 0);
+   ASSERT_EQ(args.frequency, 0);
+   ASSERT_EQ(args.per_timestep, 0);
+   ASSERT_NULL(args.linear_system_ids);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_static_conflict_requires_explicit_adaptive(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "enabled", "yes", 1);
+   add_child(parent, "type", "static", 1);
+   YAMLnode *adaptive = add_child(parent, "adaptive", "", 1);
+   add_child(adaptive, "rebuild_threshold", "1.0", 2);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_EQ(parent->valid, YAML_NODE_INVALID_VAL);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_adaptive_conflict_with_frequency(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "enabled", "yes", 1);
+   add_child(parent, "frequency", "2", 1);
+   YAMLnode *adaptive = add_child(parent, "adaptive", "", 1);
+   add_child(adaptive, "rebuild_threshold", "1.0", 2);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_EQ(parent->valid, YAML_NODE_INVALID_VAL);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_static_conflict_linear_system_ids_with_frequency(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "enabled", "yes", 1);
+   add_child(parent, "type", "static", 1);
+   add_child(parent, "linear_system_ids", "[0]", 1);
+   add_child(parent, "frequency", "1", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_EQ(parent->valid, YAML_NODE_INVALID_VAL);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_infer_adaptive_policy_from_adaptive_block(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   YAMLnode *adaptive = add_child(parent, "adaptive", "", 1);
+   add_child(adaptive, "rebuild_threshold", "1.25", 2);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_ADAPTIVE);
+   ASSERT_EQ(args.enabled, 1);
+   ASSERT_EQ_DOUBLE(args.adaptive.rebuild_threshold, 1.25, 1.0e-12);
+   ASSERT_EQ_SIZE(args.adaptive.num_components, 2u);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_unknown_root_key(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   YAMLnode *bad     = add_child(parent, "not_a_valid_reuse_key", "1", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_EQ(bad->valid, YAML_NODE_INVALID_KEY);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_parse_mean_transform_history_errors(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      add_child(item, "mean", "not-a-mean-kind", 4);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      YAMLnode *mean       = add_child(item, "mean", "", 4);
+      add_child(mean, "kind", "power", 5);
+      add_child(mean, "power", "not-a-double", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      YAMLnode *mean       = add_child(item, "mean", "", 4);
+      add_child(mean, "kind", "arithmetic", 5);
+      add_child(mean, "bogus_child", "1", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_KEY);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      add_child(item, "transform", "not-a-transform", 4);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      YAMLnode *transform  = add_child(item, "transform", "", 4);
+      add_child(transform, "kind", "raw", 5);
+      add_child(transform, "baseline", "not-a-baseline", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      YAMLnode *transform  = add_child(item, "transform", "", 4);
+      add_child(transform, "kind", "raw", 5);
+      add_child(transform, "amortization_window", "0", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      YAMLnode *transform  = add_child(item, "transform", "", 4);
+      add_child(transform, "kind", "raw", 5);
+      add_child(transform, "extra_key", "1", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_KEY);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      YAMLnode *history    = add_child(item, "history", "", 4);
+      add_child(history, "source", "not-a-source", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      YAMLnode *history    = add_child(item, "history", "", 4);
+      add_child(history, "source", "active_level", 5);
+      add_child(history, "level", "-2", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      YAMLnode *history    = add_child(item, "history", "", 4);
+      add_child(history, "source", "linear_solves", 5);
+      add_child(history, "max_points", "0", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      YAMLnode *history    = add_child(item, "history", "", 4);
+      add_child(history, "source", "linear_solves", 5);
+      add_child(history, "reduction", "not-a-reduction", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      YAMLnode *history    = add_child(item, "history", "", 4);
+      add_child(history, "source", "linear_solves", 5);
+      add_child(history, "typo_key", "1", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_KEY);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_parse_component_guards_adaptive_errors(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      add_child(item, "metric", "not-a-metric", 4);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      add_child(item, "enabled", "maybe", 4);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      add_child(item, "scale", "0", 4);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      add_child(item, "metric", "solve_overhead_vs_setup", 4);
+      YAMLnode *transform  = add_child(item, "transform", "", 4);
+      add_child(transform, "kind", "raw", 5);
+      add_child(transform, "amortization_window", "0", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+      YAMLnode *item       = add_child(components, "-", "", 3);
+      add_child(item, "not_a_component_key", "1", 4);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_KEY);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *guards = add_child(parent, "guards", "", 1);
+      add_child(guards, "min_reuse_solves", "-1", 2);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *guards = add_child(parent, "guards", "", 1);
+      add_child(guards, "bad_decisions_to_rebuild", "0", 2);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *guards = add_child(parent, "guards", "", 1);
+      add_child(guards, "rebuild_on_new_timestep", "maybe", 2);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *guards = add_child(parent, "guards", "", 1);
+      add_child(guards, "bogus_guard", "1", 2);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_KEY);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive   = add_child(parent, "adaptive", "", 1);
+      YAMLnode *components = add_child(adaptive, "components", "", 2);
+
+      (void)components;
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *adaptive = add_child(parent, "adaptive", "", 1);
+      add_child(adaptive, "unknown_adaptive_key", "1", 2);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_KEY);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *guards = add_child(parent, "guards", "", 1);
+      YAMLnode *levels = add_child(guards, "rebuild_on_new_level", "", 2);
+      YAMLnode *item   = add_child(levels, "-", "", 3);
+      add_child(item, "level", "not-int", 4);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+      hypredrv_ErrorCodeResetAll();
+   }
+
+   {
+      YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+      add_child(parent, "enabled", "yes", 1);
+      add_child(parent, "type", "adaptive", 1);
+      YAMLnode *guards = add_child(parent, "guards", "", 1);
+      add_child(guards, "rebuild_on_new_level", "[0, 1]", 2);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_NOT_NULL(args.guards.rebuild_on_new_level);
+      ASSERT_EQ_SIZE(args.guards.rebuild_on_new_level->size, 2u);
+
+      hypredrv_PreconReuseDestroyArgs(&args);
+      hypredrv_YAMLnodeDestroy(parent);
+   }
+}
+
+static void
+test_PreconReuseShouldRebuild_static_frequency_and_linear_system_ids(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled  = 1;
+   args.policy   = PRECON_REUSE_POLICY_STATIC;
+   args.frequency = 2;
+   hypredrv_PreconReuseStateInit(&state);
+
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5, &decision), 0);
+   ASSERT_EQ(decision.should_rebuild, 0);
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 6, &decision), 1);
+   ASSERT_EQ(decision.should_rebuild, 1);
+
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 2, (int[]){ 1, 3 }, &args.linear_system_ids);
+   ASSERT_NOT_NULL(args.linear_system_ids);
+
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 2, &decision), 0);
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 1, &decision), 1);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_static_per_timestep_with_starts(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+   IntArray           *starts = NULL;
+   int                 data[2] = { 0, 10 };
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled      = 1;
+   args.policy       = PRECON_REUSE_POLICY_STATIC;
+   args.per_timestep = 1;
+   args.frequency    = 2;
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 2, data, &starts);
+   ASSERT_NOT_NULL(starts);
+
+   hypredrv_PreconReuseStateInit(&state);
+
+   /* Timestep index 1 with period 2 -> no rebuild on first solve of that timestep. */
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(&args, starts, NULL, &state, 10, &decision),
+             0);
+   /* Timestep index 0 matches (0 % 2) == 0. */
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(&args, starts, NULL, &state, 0, &decision),
+             1);
+
+   hypredrv_IntArrayDestroy(&starts);
+   hypredrv_PreconReuseStateDestroy(&state);
+}
+
+static void
+test_PreconReuseShouldRebuild_static_per_timestep_missing_context_returns_hold(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled      = 1;
+   args.policy       = PRECON_REUSE_POLICY_STATIC;
+   args.per_timestep = 1;
+   args.frequency    = 1;
+   hypredrv_PreconReuseStateInit(&state);
+
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5, &decision),
+             0);
+   ASSERT_EQ(decision.should_rebuild, 0);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+}
+
+static void
+test_PreconReuseShouldRebuild_static_disabled_always_rebuilds(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled   = 0;
+   args.policy    = PRECON_REUSE_POLICY_STATIC;
+   args.frequency = 5;
+   hypredrv_PreconReuseStateInit(&state);
+
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 7, &decision), 1);
+   ASSERT_EQ(decision.should_rebuild, 1);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_null_state_requests_rebuild(void)
+{
+   PreconReuse_args    args;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled = 1;
+   args.policy  = PRECON_REUSE_POLICY_ADAPTIVE;
+
+   /* Adaptive early exit when state is NULL returns 1 without writing decision fields. */
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, NULL, 1, &decision), 1);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_initial_build_next_ls_id_nonpositive(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled = 1;
+   args.policy  = PRECON_REUSE_POLICY_ADAPTIVE;
+
+   hypredrv_PreconReuseStateInit(&state);
+
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 0, &decision), 1);
+   ASSERT_TRUE(strstr(decision.summary, "initial build") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_status_good_and_insufficient_history(void)
+{
+   {
+      PreconReuse_args    args;
+      PreconReuseState    state;
+      PreconReuseDecision decision;
+
+      hypredrv_PreconReuseSetDefaultArgs(&args);
+      args.enabled                    = 1;
+      args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+      args.guards.min_history_points  = 1;
+      args.adaptive.rebuild_threshold = 1.0e9;
+      args.adaptive.num_components    = 1;
+      args.adaptive.components =
+         (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+      ASSERT_NOT_NULL(args.adaptive.components);
+      PreconReuseScoreComponent_args *c = &args.adaptive.components[0];
+      snprintf(c->name, sizeof(c->name), "%s", "low-score");
+      c->enabled            = 1;
+      c->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+      c->weight             = 1.0;
+      c->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+      c->target             = 1.0e9;
+      c->scale              = 1.0;
+      c->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+      c->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+      c->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+      c->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+      c->history.max_points = 2;
+
+      hypredrv_PreconReuseStateInit(&state);
+      seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+      PreconReuseObservation obs = make_reuse_observation(3, 0, 10, 1.0, 1.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+      obs.system_index = 4;
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+      ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                     &decision));
+      ASSERT_TRUE(strstr(decision.summary, "status=good") != NULL);
+
+      hypredrv_PreconReuseStateDestroy(&state);
+      hypredrv_PreconReuseDestroyArgs(&args);
+   }
+
+   {
+      PreconReuse_args    args;
+      PreconReuseState    state;
+      PreconReuseDecision decision;
+
+      hypredrv_PreconReuseSetDefaultArgs(&args);
+      args.enabled                    = 1;
+      args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+      args.guards.min_history_points  = 50;
+      args.adaptive.rebuild_threshold = 0.0;
+      args.adaptive.num_components    = 1;
+      args.adaptive.components =
+         (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+      ASSERT_NOT_NULL(args.adaptive.components);
+      PreconReuseScoreComponent_args *c = &args.adaptive.components[0];
+      snprintf(c->name, sizeof(c->name), "%s", "need-more-points");
+      c->enabled            = 1;
+      c->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+      c->weight             = 1.0;
+      c->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+      c->target             = 0.0;
+      c->scale              = 1.0;
+      c->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+      c->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+      c->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+      c->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+      c->history.max_points = 2;
+
+      hypredrv_PreconReuseStateInit(&state);
+      seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+      ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                     &decision));
+      ASSERT_TRUE(strstr(decision.summary, "history=insufficient") != NULL);
+
+      hypredrv_PreconReuseStateDestroy(&state);
+      hypredrv_PreconReuseDestroyArgs(&args);
+   }
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_relative_increase_total_time_below_direction(void)
+{
+   {
+      PreconReuse_args    args;
+      PreconReuseState    state;
+      PreconReuseDecision decision;
+
+      hypredrv_PreconReuseSetDefaultArgs(&args);
+      args.enabled                    = 1;
+      args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+      args.guards.min_history_points  = 1;
+      args.adaptive.rebuild_threshold = 0.5;
+      args.adaptive.num_components    = 1;
+      args.adaptive.components =
+         (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+      ASSERT_NOT_NULL(args.adaptive.components);
+      PreconReuseScoreComponent_args *c = &args.adaptive.components[0];
+      snprintf(c->name, sizeof(c->name), "%s", "rel-inc");
+      c->enabled            = 1;
+      c->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+      c->weight             = 1.0;
+      c->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+      c->target             = 1.0;
+      c->scale              = 1.0;
+      c->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+      c->transform.kind     = PRECON_REUSE_TRANSFORM_RELATIVE_INCREASE;
+      c->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+      c->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+      c->history.max_points = 2;
+
+      hypredrv_PreconReuseStateInit(&state);
+      seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+      PreconReuseObservation obs = make_reuse_observation(3, 0, 30, 1.0, 1.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+      obs.system_index = 4;
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+      ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                    &decision));
+      ASSERT_TRUE(strstr(decision.summary, "rel-inc") != NULL);
+
+      hypredrv_PreconReuseStateDestroy(&state);
+      hypredrv_PreconReuseDestroyArgs(&args);
+   }
+
+   {
+      PreconReuse_args    args;
+      PreconReuseState    state;
+      PreconReuseDecision decision;
+
+      hypredrv_PreconReuseSetDefaultArgs(&args);
+      args.enabled                    = 1;
+      args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+      args.guards.min_history_points  = 1;
+      args.adaptive.rebuild_threshold = 0.5;
+      args.adaptive.num_components    = 1;
+      args.adaptive.components =
+         (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+      ASSERT_NOT_NULL(args.adaptive.components);
+      PreconReuseScoreComponent_args *c = &args.adaptive.components[0];
+      snprintf(c->name, sizeof(c->name), "%s", "total-time");
+      c->enabled            = 1;
+      c->metric             = PRECON_REUSE_METRIC_TOTAL_TIME;
+      c->weight             = 1.0;
+      c->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+      c->target             = 1.0;
+      c->scale              = 1.0;
+      c->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+      c->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+      c->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+      c->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+      c->history.max_points = 2;
+
+      hypredrv_PreconReuseStateInit(&state);
+      seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+      PreconReuseObservation obs = make_reuse_observation(3, 0, 10, 3.0, 4.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+      obs.system_index = 4;
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+      ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                    &decision));
+      ASSERT_TRUE(strstr(decision.summary, "total-time") != NULL);
+
+      hypredrv_PreconReuseStateDestroy(&state);
+      hypredrv_PreconReuseDestroyArgs(&args);
+   }
+
+   {
+      PreconReuse_args    args;
+      PreconReuseState    state;
+      PreconReuseDecision decision;
+
+      hypredrv_PreconReuseSetDefaultArgs(&args);
+      args.enabled                    = 1;
+      args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+      args.guards.min_history_points  = 1;
+      args.adaptive.rebuild_threshold = 0.5;
+      args.adaptive.num_components    = 1;
+      args.adaptive.components =
+         (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+      ASSERT_NOT_NULL(args.adaptive.components);
+      PreconReuseScoreComponent_args *c = &args.adaptive.components[0];
+      snprintf(c->name, sizeof(c->name), "%s", "below-dir");
+      c->enabled            = 1;
+      c->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+      c->weight             = 1.0;
+      c->direction          = PRECON_REUSE_DIRECTION_BELOW;
+      /* Keep aggregate near baseline ratio 1.0 so (target-aggregate) <= 0 for direction=below. */
+      c->target             = 1.0;
+      c->scale              = 1.0;
+      c->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+      c->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+      c->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+      c->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+      c->history.max_points = 2;
+
+      hypredrv_PreconReuseStateInit(&state);
+      seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+      PreconReuseObservation obs = make_reuse_observation(3, 0, 10, 1.0, 1.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+      obs.system_index = 4;
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+      ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                     &decision));
+      ASSERT_TRUE(strstr(decision.summary, "below-dir") != NULL);
+
+      hypredrv_PreconReuseStateDestroy(&state);
+      hypredrv_PreconReuseDestroyArgs(&args);
+   }
+
+   {
+      PreconReuse_args    args;
+      PreconReuseState    state;
+      PreconReuseDecision decision;
+      Stats              *stats = hypredrv_StatsCreate();
+
+      hypredrv_PreconReuseSetDefaultArgs(&args);
+      args.enabled                    = 1;
+      args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+      args.guards.min_history_points  = 1;
+      args.adaptive.rebuild_threshold = 0.5;
+      args.adaptive.num_components    = 1;
+      args.adaptive.components =
+         (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+      ASSERT_NOT_NULL(args.adaptive.components);
+      PreconReuseScoreComponent_args *c = &args.adaptive.components[0];
+      snprintf(c->name, sizeof(c->name), "%s", "active-miss");
+      c->enabled            = 1;
+      c->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+      c->weight             = 1.0;
+      c->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+      c->target             = 0.0;
+      c->scale              = 1.0;
+      c->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+      c->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+      c->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+      c->history.source     = PRECON_REUSE_HISTORY_ACTIVE_LEVEL;
+      c->history.level      = 0;
+      c->history.max_points = 2;
+
+      hypredrv_PreconReuseStateInit(&state);
+      seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+      /* No active level in stats -> sample_count == 0 -> insufficient history. */
+      ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, stats, &state, 5,
+                                                     &decision));
+      ASSERT_TRUE(strstr(decision.summary, "history=insufficient") != NULL);
+
+      hypredrv_StatsDestroy(&stats);
+      hypredrv_PreconReuseStateDestroy(&state);
+      hypredrv_PreconReuseDestroyArgs(&args);
+   }
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_power_mean_negative_p_and_summary_truncation(void)
+{
+   {
+      PreconReuse_args    args;
+      PreconReuseState    state;
+      PreconReuseDecision decision;
+
+      hypredrv_PreconReuseSetDefaultArgs(&args);
+      args.enabled                    = 1;
+      args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+      args.guards.min_history_points  = 1;
+      args.adaptive.rebuild_threshold = 0.5;
+      args.adaptive.num_components    = 1;
+      args.adaptive.components =
+         (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+      ASSERT_NOT_NULL(args.adaptive.components);
+      PreconReuseScoreComponent_args *c = &args.adaptive.components[0];
+      snprintf(c->name, sizeof(c->name), "%s", "power-neg");
+      c->enabled            = 1;
+      c->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+      c->weight             = 1.0;
+      c->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+      c->target             = 1.0;
+      c->scale              = 1.0;
+      c->mean.kind          = PRECON_REUSE_MEAN_POWER;
+      c->mean.power         = -1.0;
+      c->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+      c->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+      c->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+      c->history.max_points = 2;
+
+      hypredrv_PreconReuseStateInit(&state);
+      seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+      PreconReuseObservation obs = make_reuse_observation(3, 0, 30, 1.0, 1.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+      obs.system_index = 4;
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+      ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 5,
+                                                    &decision));
+      ASSERT_TRUE(strstr(decision.summary, "power-neg") != NULL);
+
+      hypredrv_PreconReuseStateDestroy(&state);
+      hypredrv_PreconReuseDestroyArgs(&args);
+   }
+
+   {
+      PreconReuse_args    args;
+      PreconReuseState    state;
+      PreconReuseDecision decision;
+
+      hypredrv_PreconReuseSetDefaultArgs(&args);
+      args.enabled                    = 1;
+      args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+      args.guards.min_history_points  = 1;
+      args.guards.bad_decisions_to_rebuild = 1;
+      args.adaptive.rebuild_threshold = 0.1;
+      args.adaptive.num_components    = 24;
+      args.adaptive.components = (PreconReuseScoreComponent_args *)calloc(
+         args.adaptive.num_components, sizeof(PreconReuseScoreComponent_args));
+      ASSERT_NOT_NULL(args.adaptive.components);
+
+      for (size_t i = 0; i < args.adaptive.num_components; i++)
+      {
+         PreconReuseScoreComponent_args *c = &args.adaptive.components[i];
+         snprintf(c->name, sizeof(c->name), "long_named_component_%04zu_extra", i);
+         c->enabled            = 1;
+         c->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+         c->weight             = 0.01;
+         c->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+         c->target             = 1.0;
+         c->scale              = 1.0;
+         c->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+         c->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+         c->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+         c->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+         c->history.max_points = 1;
+      }
+
+      hypredrv_PreconReuseStateInit(&state);
+      seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+      PreconReuseObservation obs = make_reuse_observation(3, 0, 50, 1.0, 1.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+      ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 4,
+                                                    &decision));
+      ASSERT_TRUE(strstr(decision.summary, "...") != NULL);
+
+      hypredrv_PreconReuseStateDestroy(&state);
+      hypredrv_PreconReuseDestroyArgs(&args);
+   }
+}
+
+static void
+test_PreconReuseStateRecordObservation_realloc_and_cap_drop_oldest(void)
+{
+   PreconReuseState state;
+   hypredrv_PreconReuseStateInit(&state);
+
+   for (int i = 0; i < 256; i++)
+   {
+      PreconReuseObservation obs = make_reuse_observation(i, 0, 1, 1.0, 1.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+   }
+   ASSERT_EQ_SIZE(state.count, 256u);
+   ASSERT_TRUE(state.capacity >= 256u);
+
+   {
+      PreconReuseObservation extra = make_reuse_observation(999, 0, 1, 1.0, 1.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &extra);
+   }
+
+   ASSERT_EQ_SIZE(state.count, 256u);
+   ASSERT_EQ(state.observations[0].system_index, 1);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_window_mean_baseline_warns_and_scores(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                    = 1;
+   args.policy                     = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points  = 1;
+   args.adaptive.rebuild_threshold = 0.5;
+   args.adaptive.num_components    = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+   PreconReuseScoreComponent_args *c = &args.adaptive.components[0];
+   snprintf(c->name, sizeof(c->name), "%s", "window-mean");
+   c->enabled            = 1;
+   c->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+   c->weight             = 1.0;
+   c->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+   c->target             = 1.0;
+   c->scale              = 10.0;
+   c->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+   c->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   c->transform.baseline = PRECON_REUSE_BASELINE_WINDOW_MEAN;
+   c->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+   c->history.max_points = 200;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+   /* Oldest window (first 128 samples for baseline) stays low; recent history is high so
+    * ratio_to_baseline triggers a rebuild while exercising window_mean > 128. */
+   for (int i = 0; i < 128; i++)
+   {
+      PreconReuseObservation o = make_reuse_observation(3 + i, 0, 10, 1.0, 1.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &o);
+   }
+   for (int i = 0; i < 23; i++)
+   {
+      PreconReuseObservation o = make_reuse_observation(200 + i, 0, 100, 1.0, 1.0);
+      hypredrv_PreconReuseStateRecordObservation(&state, &o);
+   }
+
+   PreconReuseObservation obs = make_reuse_observation(500, 0, 100, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   (void)hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 501, &decision);
+   ASSERT_TRUE(strstr(decision.summary, "window-mean") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_duplicate_ls_id_skips_bad_streak_increment(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled                         = 1;
+   args.policy                          = PRECON_REUSE_POLICY_ADAPTIVE;
+   args.guards.min_history_points       = 1;
+   args.guards.bad_decisions_to_rebuild = 2;
+   args.adaptive.rebuild_threshold      = 0.5;
+   args.adaptive.num_components         = 1;
+   args.adaptive.components =
+      (PreconReuseScoreComponent_args *)calloc(1, sizeof(PreconReuseScoreComponent_args));
+   ASSERT_NOT_NULL(args.adaptive.components);
+
+   PreconReuseScoreComponent_args *c = &args.adaptive.components[0];
+   snprintf(c->name, sizeof(c->name), "%s", "streak-dup");
+   c->enabled            = 1;
+   c->metric             = PRECON_REUSE_METRIC_ITERATIONS;
+   c->weight             = 1.0;
+   c->direction          = PRECON_REUSE_DIRECTION_ABOVE;
+   c->target             = 1.0;
+   c->scale              = 0.25;
+   c->mean.kind          = PRECON_REUSE_MEAN_ARITHMETIC;
+   c->transform.kind     = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
+   c->transform.baseline = PRECON_REUSE_BASELINE_REBUILD;
+   c->history.source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
+   c->history.max_points = 1;
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 30, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 4, &decision));
+   ASSERT_EQ(state.bad_decision_streak, 1);
+   ASSERT_FALSE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 4, &decision));
+   ASSERT_EQ(state.bad_decision_streak, 1);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_static_per_timestep_embedded_stats(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+   Stats              *stats = hypredrv_StatsCreate();
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+   args.enabled      = 1;
+   args.policy       = PRECON_REUSE_POLICY_STATIC;
+   args.per_timestep = 1;
+   args.frequency    = 1;
+
+   stats->level_active           |= (1u << 0);
+   stats->level_solve_start[0]    = 5;
+   stats->level_current_id[0]     = 2;
+
+   hypredrv_PreconReuseStateInit(&state);
+
+   ASSERT_EQ(hypredrv_PreconReuseShouldRebuild(&args, NULL, stats, &state, 5, &decision),
+             1);
+
+   hypredrv_StatsDestroy(&stats);
+   hypredrv_PreconReuseStateDestroy(&state);
+}
+
+static void
 test_PreconDestroy_null_precon(void)
 {
+   setenv("HYPREDRV_LOG_LEVEL", "3", 1);
+   hypredrv_LogInitializeFromEnv();
+
    HYPRE_Precon precon = NULL;
    precon_args  args;
    hypredrv_PreconSetDefaultArgs(&args);
@@ -1380,6 +2944,9 @@ test_PreconDestroy_null_precon(void)
    /* hypredrv_PreconDestroy with NULL should not crash */
    hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
    ASSERT_NULL(precon);
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   hypredrv_LogInitializeFromEnv();
 }
 
 static void
@@ -1402,19 +2969,21 @@ test_PreconSetup_default_case(void)
 {
    TEST_HYPRE_INIT();
 
-   HYPRE_Precon precon = malloc(sizeof(struct hypre_Precon_struct));
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args.amg);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
    ASSERT_NOT_NULL(precon);
-   precon->main = NULL;
 
-   HYPRE_IJMatrix mat = NULL;
-   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat);
-   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(mat);
+   HYPRE_IJMatrix mat = precon_test_ij_matrix_1x1(1.0);
 
-   /* Test default case in switch (invalid precon_method) */
-   hypredrv_PreconSetup(PRECON_NONE, precon, mat);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_INVALID, precon, mat);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_PRECON);
 
-   free(precon);
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
    HYPRE_IJMatrixDestroy(mat);
    TEST_HYPRE_FINALIZE();
 }
@@ -1424,31 +2993,364 @@ test_PreconApply_default_case(void)
 {
    TEST_HYPRE_INIT();
 
-   HYPRE_Precon precon = malloc(sizeof(struct hypre_Precon_struct));
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args.amg);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
    ASSERT_NOT_NULL(precon);
-   precon->main = NULL;
 
-   HYPRE_IJMatrix mat = NULL;
-   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat);
-   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(mat);
+   HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(1.0);
+   HYPRE_IJVector vec_b = precon_test_ij_vector_1x1(1.0);
+   HYPRE_IJVector vec_x = precon_test_ij_vector_1x1(0.0);
 
-   HYPRE_IJVector vec_b = NULL, vec_x = NULL;
-   HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &vec_b);
-   HYPRE_IJVectorSetObjectType(vec_b, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize(vec_b);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_BOOMERAMG, precon, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &vec_x);
-   HYPRE_IJVectorSetObjectType(vec_x, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize(vec_x);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconApply(PRECON_INVALID, precon, mat, vec_b, vec_x);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_PRECON);
 
-   /* Test default case in switch (invalid precon_method) */
-   hypredrv_PreconApply(PRECON_NONE, precon, mat, vec_b, vec_x);
-
-   free(precon);
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
    HYPRE_IJVectorDestroy(vec_b);
    HYPRE_IJVectorDestroy(vec_x);
    HYPRE_IJMatrixDestroy(mat);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_PreconApply_precon_none(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_NONE, &args, NULL, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(1.0);
+   HYPRE_IJVector vec_b = precon_test_ij_vector_1x1(1.0);
+   HYPRE_IJVector vec_x = precon_test_ij_vector_1x1(0.0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconApply(PRECON_NONE, precon, mat, vec_b, vec_x);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_PreconDestroy(PRECON_NONE, &args, &precon);
+   ASSERT_NULL(precon);
+
+   HYPRE_IJVectorDestroy(vec_x);
+   HYPRE_IJVectorDestroy(vec_b);
+   HYPRE_IJMatrixDestroy(mat);
+   TEST_HYPRE_FINALIZE();
+}
+
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+static void
+test_PreconApply_mgr_minimal(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+   args.mgr.num_levels = 1;
+
+   IntArray *dofmap = NULL;
+   const int map[1] = {0};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(1.0);
+   HYPRE_IJVector vec_b = precon_test_ij_vector_1x1(1.0);
+   HYPRE_IJVector vec_x = precon_test_ij_vector_1x1(0.0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_MGR, precon, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconApply(PRECON_MGR, precon, mat, vec_b, vec_x);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+
+   HYPRE_IJVectorDestroy(vec_x);
+   HYPRE_IJVectorDestroy(vec_b);
+   HYPRE_IJMatrixDestroy(mat);
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
+
+static void
+test_PreconDestroy_amg_log_dispatch_no_rbms(void)
+{
+   TEST_HYPRE_INIT();
+
+   setenv("HYPREDRV_LOG_LEVEL", "3", 1);
+   hypredrv_LogInitializeFromEnv();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args.amg);
+   args.amg.max_iter = 1;
+   args.amg.num_rbms = 0;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
+   ASSERT_NULL(precon);
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   hypredrv_LogInitializeFromEnv();
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_PreconCreate_invalid_method(void)
+{
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args.amg);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_INVALID, &args, NULL, NULL, &precon);
+   ASSERT_NULL(precon);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_PRECON);
+}
+
+static void
+test_PreconCreate_precon_none(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_NONE, &args, NULL, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+   ASSERT_NULL(precon->main);
+
+   hypredrv_PreconDestroy(PRECON_NONE, &args, &precon);
+   ASSERT_NULL(precon);
+
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_PreconSetup_null_precon(void)
+{
+   TEST_HYPRE_INIT();
+
+   HYPRE_IJMatrix mat = precon_test_ij_matrix_1x1(1.0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_BOOMERAMG, NULL, mat);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_PRECON);
+
+   HYPRE_IJMatrixDestroy(mat);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_PreconSetup_null_A(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args.amg);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_BOOMERAMG, precon, NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_Precon_lifecycle_boomeramg_1x1(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args.amg);
+   args.amg.max_iter = 1;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(4.0);
+   HYPRE_IJVector vec_b = precon_test_ij_vector_1x1(1.0);
+   HYPRE_IJVector vec_x = precon_test_ij_vector_1x1(0.0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_BOOMERAMG, precon, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconApply(PRECON_BOOMERAMG, precon, mat, vec_b, vec_x);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
+   ASSERT_NULL(precon);
+
+   HYPRE_IJVectorDestroy(vec_x);
+   HYPRE_IJVectorDestroy(vec_b);
+   HYPRE_IJMatrixDestroy(mat);
+   TEST_HYPRE_FINALIZE();
+}
+
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+static void
+test_Precon_lifecycle_ilu_1x1(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_ILUSetDefaultArgs(&args.ilu);
+   args.ilu.max_iter = 1;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_ILU, &args, NULL, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(4.0);
+   HYPRE_IJVector vec_b = precon_test_ij_vector_1x1(1.0);
+   HYPRE_IJVector vec_x = precon_test_ij_vector_1x1(0.0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_ILU, precon, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconApply(PRECON_ILU, precon, mat, vec_b, vec_x);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_PreconDestroy(PRECON_ILU, &args, &precon);
+   ASSERT_NULL(precon);
+
+   HYPRE_IJVectorDestroy(vec_x);
+   HYPRE_IJVectorDestroy(vec_b);
+   HYPRE_IJMatrixDestroy(mat);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
+
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+static void
+test_Precon_lifecycle_fsai_1x1(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_FSAISetDefaultArgs(&args.fsai);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_FSAI, &args, NULL, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(4.0);
+   HYPRE_IJVector vec_b = precon_test_ij_vector_1x1(1.0);
+   HYPRE_IJVector vec_x = precon_test_ij_vector_1x1(0.0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_FSAI, precon, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconApply(PRECON_FSAI, precon, mat, vec_b, vec_x);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_PreconDestroy(PRECON_FSAI, &args, &precon);
+   ASSERT_NULL(precon);
+
+   HYPRE_IJVectorDestroy(vec_x);
+   HYPRE_IJVectorDestroy(vec_b);
+   HYPRE_IJMatrixDestroy(mat);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
+
+static void
+test_PreconDestroy_amg_rbms_loop(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args.amg);
+   args.amg.max_iter = 1;
+
+   HYPRE_BigInt    part[2] = {0, 1};
+   HYPRE_ParVector pv      = NULL;
+   ASSERT_EQ(HYPRE_ParVectorCreate(MPI_COMM_SELF, 1, part, &pv), 0);
+   ASSERT_EQ(HYPRE_ParVectorInitialize(pv), 0);
+
+   args.amg.num_rbms = 1;
+   args.amg.rbms[0]  = pv;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
+   ASSERT_NULL(precon);
+   ASSERT_NULL(args.amg.rbms[0]);
+
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_PreconDestroy_none_with_main_logs(void)
+{
+   TEST_HYPRE_INIT();
+
+   static char precon_none_dummy_main_storage;
+   setenv("HYPREDRV_LOG_LEVEL", "3", 1);
+   hypredrv_LogInitializeFromEnv();
+
+   HYPRE_Precon precon = malloc(sizeof(struct hypre_Precon_struct));
+   ASSERT_NOT_NULL(precon);
+   precon->main  = (HYPRE_Solver)&precon_none_dummy_main_storage;
+   precon->stats = NULL;
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+
+   hypredrv_PreconDestroy(PRECON_NONE, &args, &precon);
+   ASSERT_NULL(precon);
+
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   hypredrv_LogInitializeFromEnv();
+
    TEST_HYPRE_FINALIZE();
 }
 
@@ -1533,6 +3435,11 @@ test_MGRCreate_coarsest_level_branches(void)
    hypredrv_MGRCreate(&mgr, &precon);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
    if (mgr.csolver)
    {
  #if HYPRE_CHECK_MIN_VERSION(21900, 0)
@@ -1594,6 +3501,43 @@ test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
    hypredrv_IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
 }
+
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+static void
+test_PreconDestroy_mgr_coarsest_use_krylov_without_krylov_ptr(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+   args.mgr.num_levels = 1;
+
+   IntArray *dofmap = NULL;
+   const int map[1] = {0};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   /* use_krylov true, krylov NULL: short-circuit branch of && in PreconDestroyMGRSolver */
+   args.mgr.coarsest_level.use_krylov = 1;
+   args.mgr.coarsest_level.krylov     = NULL;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
 
 static void
 test_PreconSetup_mgr_frelax_nested_mgr_dof_labels(void)
@@ -1679,12 +3623,27 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
 
    args.mgr.num_levels = 1;
 
+   HYPRE_Precon precon = NULL;
+
+   /* Coarsest explicit AMG (csolver_type == 0) */
+   args.mgr.coarsest_level.type = 0;
+   hypredrv_AMGSetDefaultArgs(&args.mgr.coarsest_level.amg);
+   args.mgr.coarsest_level.amg.max_iter = 1;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+
    /* Coarsest level ILU -> expect hypredrv_PreconDestroy to hit HYPRE_ILUDestroy(args.mgr.csolver) */
    args.mgr.coarsest_level.type = 32;
    hypredrv_ILUSetDefaultArgs(&args.mgr.coarsest_level.ilu);
    args.mgr.coarsest_level.ilu.max_iter = 1;
 
-   HYPRE_Precon precon = NULL;
+   precon = NULL;
    hypredrv_ErrorCodeResetAll();
    hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
    ASSERT_NOT_NULL(precon);
@@ -1708,6 +3667,858 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
    hypredrv_IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
 }
+
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+static void
+test_PreconDestroy_mgr_frelax_amg_type2(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+
+   IntArray *dofmap = NULL;
+   const int map[3] = {0, 1, 2};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   args.mgr.num_levels = 2;
+   args.mgr.level[0].f_dofs.size = 1;
+   args.mgr.level[0].f_dofs.data[0] = 0;
+   args.mgr.level[0].f_relaxation.type = 2;
+   hypredrv_AMGSetDefaultArgs(&args.mgr.level[0].f_relaxation.amg);
+   args.mgr.level[0].f_relaxation.amg.max_iter = 1;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
+
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
+static void
+test_PreconDestroy_mgr_grelax_krylov_nested(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+
+   IntArray *dofmap = NULL;
+   const int map[3] = {0, 1, 2};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   args.mgr.num_levels = 2;
+   args.mgr.level[0].f_dofs.size = 1;
+   args.mgr.level[0].f_dofs.data[0] = 0;
+   args.mgr.level[0].f_relaxation.type = 7;
+
+   args.mgr.level[0].g_relaxation.use_krylov = 1;
+   args.mgr.level[0].g_relaxation.krylov =
+      (NestedKrylov_args *)malloc(sizeof(NestedKrylov_args));
+   ASSERT_NOT_NULL(args.mgr.level[0].g_relaxation.krylov);
+   hypredrv_NestedKrylovSetDefaultArgs(args.mgr.level[0].g_relaxation.krylov);
+   args.mgr.level[0].g_relaxation.krylov->is_set = 1;
+   args.mgr.level[0].g_relaxation.krylov->solver_method = SOLVER_GMRES;
+   hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_GMRES,
+                                           &args.mgr.level[0].g_relaxation.krylov->solver);
+   args.mgr.level[0].g_relaxation.krylov->solver.gmres.max_iter = 2;
+   args.mgr.level[0].g_relaxation.krylov->has_precon = 1;
+   args.mgr.level[0].g_relaxation.krylov->precon_method = PRECON_BOOMERAMG;
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_BOOMERAMG,
+                                           &args.mgr.level[0].g_relaxation.krylov->precon);
+   args.mgr.level[0].g_relaxation.krylov->precon.amg.max_iter = 1;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+
+   hypredrv_MGRDestroyNestedSolverArgs(&args.mgr);
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
+
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+/* IntArray with only data/size (no unique / g_unique): exercises mgr.c plain-dofmap branch */
+static IntArray *
+precon_test_intarray_plain_data_only(int n, const int *vals)
+{
+   IntArray *a = hypredrv_IntArrayCreate((size_t)n);
+   memcpy(a->data, vals, (size_t)n * sizeof(int));
+   return a;
+}
+
+static void
+test_MGRCreate_missing_dofmap(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 1;
+   mgr.dofmap     = NULL;
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_NULL(precon);
+
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_plain_dofmap_data_only_branch(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 1;
+
+   const int      vals[3] = {0, 1, 2};
+   IntArray *dofmap = precon_test_intarray_plain_data_only(3, vals);
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_unique_data_dofmap_branch(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 1;
+
+   IntArray *dofmap = hypredrv_IntArrayCreate(3);
+   dofmap->data[0] = 0;
+   dofmap->data[1] = 1;
+   dofmap->data[2] = 2;
+   dofmap->unique_size = 3;
+   dofmap->unique_data   = (int *)malloc(3U * sizeof(int));
+   dofmap->unique_data[0] = 0;
+   dofmap->unique_data[1] = 1;
+   dofmap->unique_data[2] = 2;
+
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_g_unique_unsorted_dense_fallback(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 1;
+
+   IntArray *dofmap = hypredrv_IntArrayCreate(3);
+   dofmap->data[0]  = 0;
+   dofmap->data[1]  = 1;
+   dofmap->data[2]  = 2;
+   dofmap->g_unique_size = 3;
+   dofmap->g_unique_data = (int *)malloc(3U * sizeof(int));
+   ASSERT_NOT_NULL(dofmap->g_unique_data);
+   /* Not strictly increasing -> first branch clears labels -> dense g_unique_size path */
+   dofmap->g_unique_data[0] = 0;
+   dofmap->g_unique_data[1] = 2;
+   dofmap->g_unique_data[2] = 1;
+
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_dense_remap_sparse_labels(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 2;
+   mgr.level[0].f_dofs.size      = 1;
+   mgr.level[0].f_dofs.data[0]   = 0;
+   mgr.level[0].f_relaxation.type = 7;
+
+   const int      vals[4] = {0, 3, 3, 0};
+   IntArray *dofmap = precon_test_intarray_plain_data_only(4, vals);
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_f_dofs_out_of_range(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 2;
+   mgr.level[0].f_dofs.size    = 1;
+   mgr.level[0].f_dofs.data[0] = 9;
+   mgr.level[0].f_relaxation.type = 7;
+
+   const int      vals[3] = {0, 1, 2};
+   IntArray *dofmap = precon_test_intarray_plain_data_only(3, vals);
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_NULL(precon);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_f_dofs_label_not_in_dofmap(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 2;
+   mgr.level[0].f_dofs.size    = 1;
+   mgr.level[0].f_dofs.data[0] = 1;
+   mgr.level[0].f_relaxation.type = 7;
+
+   const int      vals[4] = {0, 2, 2, 0};
+   IntArray *dofmap = precon_test_intarray_plain_data_only(4, vals);
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_NULL(precon);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_f_dofs_duplicate_label(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 2;
+   mgr.level[0].f_dofs.size    = 2;
+   mgr.level[0].f_dofs.data[0] = 0;
+   mgr.level[0].f_dofs.data[1] = 0;
+   mgr.level[0].f_relaxation.type = 7;
+
+   const int      vals[3] = {0, 1, 2};
+   IntArray *dofmap = precon_test_intarray_plain_data_only(3, vals);
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_NULL(precon);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_empty_dofmap(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 1;
+
+   IntArray *dofmap = hypredrv_IntArrayCreate(0);
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_NULL(precon);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_dofmap_negative_label(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 1;
+
+   const int      v      = -1;
+   IntArray *dofmap = precon_test_intarray_plain_data_only(1, &v);
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_NULL(precon);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
+static void
+test_MGRCreate_nested_mgr_validation_errors(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   /* Nested MGR F-relaxation only supported at outer level 0 */
+   {
+      MGR_args mgr;
+      hypredrv_MGRSetDefaultArgs(&mgr);
+      mgr.num_levels = 3;
+
+      IntArray *dofmap = NULL;
+      const int map[3] = {0, 1, 2};
+      hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+      ASSERT_NOT_NULL(dofmap);
+      hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+      mgr.level[0].f_dofs.size          = 1;
+      mgr.level[0].f_dofs.data[0]       = 0;
+      mgr.level[0].f_relaxation.type    = 7;
+
+      mgr.level[1].f_dofs.size       = 1;
+      mgr.level[1].f_dofs.data[0]    = 1;
+      mgr.level[1].f_relaxation.type = MGR_FRLX_TYPE_NESTED_MGR;
+      MGR_args *inner                = (MGR_args *)malloc(sizeof(MGR_args));
+      ASSERT_NOT_NULL(inner);
+      hypredrv_MGRSetDefaultArgs(inner);
+      inner->num_levels = 1;
+      mgr.level[1].f_relaxation.mgr = inner;
+
+      HYPRE_Solver precon = NULL;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_MGRCreate(&mgr, &precon);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_NULL(precon);
+
+      free(inner);
+      hypredrv_IntArrayDestroy(&dofmap);
+   }
+
+   /* Missing nested mgr: block */
+   {
+      MGR_args mgr;
+      hypredrv_MGRSetDefaultArgs(&mgr);
+      mgr.num_levels = 2;
+
+      IntArray *dofmap = NULL;
+      const int map[3] = {0, 1, 2};
+      hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+      ASSERT_NOT_NULL(dofmap);
+      hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+      mgr.level[0].f_dofs.size       = 1;
+      mgr.level[0].f_dofs.data[0]    = 0;
+      mgr.level[0].f_relaxation.type = MGR_FRLX_TYPE_NESTED_MGR;
+      mgr.level[0].f_relaxation.mgr = NULL;
+
+      HYPRE_Solver precon = NULL;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_MGRCreate(&mgr, &precon);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_NULL(precon);
+
+      hypredrv_IntArrayDestroy(&dofmap);
+   }
+
+   /* Nested MGR requires non-empty parent f_dofs */
+   {
+      MGR_args mgr;
+      hypredrv_MGRSetDefaultArgs(&mgr);
+      mgr.num_levels = 2;
+
+      IntArray *dofmap = NULL;
+      const int map[3] = {0, 1, 2};
+      hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+      ASSERT_NOT_NULL(dofmap);
+      hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+      mgr.level[0].f_dofs.size       = 0;
+      mgr.level[0].f_relaxation.type = MGR_FRLX_TYPE_NESTED_MGR;
+      MGR_args *inner                = (MGR_args *)malloc(sizeof(MGR_args));
+      ASSERT_NOT_NULL(inner);
+      hypredrv_MGRSetDefaultArgs(inner);
+      inner->num_levels = 1;
+      mgr.level[0].f_relaxation.mgr = inner;
+
+      HYPRE_Solver precon = NULL;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_MGRCreate(&mgr, &precon);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_NULL(precon);
+
+      free(inner);
+      hypredrv_IntArrayDestroy(&dofmap);
+   }
+
+   /* Nested projection: parent f_dofs label not present in dofmap */
+   {
+      MGR_args mgr;
+      hypredrv_MGRSetDefaultArgs(&mgr);
+      mgr.num_levels = 2;
+
+      const int      vals[4] = {0, 2, 2, 0};
+      IntArray *dofmap = precon_test_intarray_plain_data_only(4, vals);
+      hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+      mgr.level[0].f_dofs.size       = 1;
+      mgr.level[0].f_dofs.data[0]    = 1;
+      mgr.level[0].f_relaxation.type = MGR_FRLX_TYPE_NESTED_MGR;
+      MGR_args *inner                = (MGR_args *)malloc(sizeof(MGR_args));
+      ASSERT_NOT_NULL(inner);
+      hypredrv_MGRSetDefaultArgs(inner);
+      inner->num_levels = 1;
+      mgr.level[0].f_relaxation.mgr = inner;
+
+      HYPRE_Solver precon = NULL;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_MGRCreate(&mgr, &precon);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_NULL(precon);
+
+      free(inner);
+      hypredrv_IntArrayDestroy(&dofmap);
+   }
+
+   /* Nested projection: duplicate parent f_dofs labels */
+   {
+      MGR_args mgr;
+      hypredrv_MGRSetDefaultArgs(&mgr);
+      mgr.num_levels = 2;
+
+      IntArray *dofmap = NULL;
+      const int map[3] = {0, 1, 2};
+      hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+      ASSERT_NOT_NULL(dofmap);
+      hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+      mgr.level[0].f_dofs.size       = 2;
+      mgr.level[0].f_dofs.data[0]    = 0;
+      mgr.level[0].f_dofs.data[1]    = 0;
+      mgr.level[0].f_relaxation.type = MGR_FRLX_TYPE_NESTED_MGR;
+      MGR_args *inner                = (MGR_args *)malloc(sizeof(MGR_args));
+      ASSERT_NOT_NULL(inner);
+      hypredrv_MGRSetDefaultArgs(inner);
+      inner->num_levels = 1;
+      mgr.level[0].f_relaxation.mgr = inner;
+
+      HYPRE_Solver precon = NULL;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_MGRCreate(&mgr, &precon);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_NULL(precon);
+
+      free(inner);
+      hypredrv_IntArrayDestroy(&dofmap);
+   }
+
+   TEST_HYPRE_FINALIZE();
+}
+#endif /* HYPRE_CHECK_MIN_VERSION(30100, 5) */
+
+static void
+test_PreconCreate_mgr_with_near_null_vector(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+   args.mgr.num_levels = 1;
+
+   IntArray *dofmap = NULL;
+   const int map[1] = {0};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   HYPRE_IJVector vec_nn = precon_test_ij_vector_1x1(1.0);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, vec_nn, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+
+   HYPRE_IJVectorDestroy(vec_nn);
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+#endif /* HYPRE_CHECK_MIN_VERSION(21900, 0) */
+
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+static void
+test_PreconDestroy_mgr_frelax_krylov_nested(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+
+   IntArray *dofmap = NULL;
+   const int map[3] = {0, 1, 2};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   args.mgr.num_levels = 2;
+   args.mgr.level[0].f_dofs.size    = 1;
+   args.mgr.level[0].f_dofs.data[0] = 0;
+   args.mgr.level[0].f_relaxation.type = 7;
+
+   args.mgr.level[0].f_relaxation.use_krylov = 1;
+   args.mgr.level[0].f_relaxation.krylov =
+      (NestedKrylov_args *)malloc(sizeof(NestedKrylov_args));
+   ASSERT_NOT_NULL(args.mgr.level[0].f_relaxation.krylov);
+   hypredrv_NestedKrylovSetDefaultArgs(args.mgr.level[0].f_relaxation.krylov);
+   args.mgr.level[0].f_relaxation.krylov->is_set = 1;
+   args.mgr.level[0].f_relaxation.krylov->solver_method = SOLVER_GMRES;
+   hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_GMRES,
+                                           &args.mgr.level[0].f_relaxation.krylov->solver);
+   args.mgr.level[0].f_relaxation.krylov->solver.gmres.max_iter = 2;
+   args.mgr.level[0].f_relaxation.krylov->has_precon            = 1;
+   args.mgr.level[0].f_relaxation.krylov->precon_method         = PRECON_BOOMERAMG;
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_BOOMERAMG,
+                                           &args.mgr.level[0].f_relaxation.krylov->precon);
+   args.mgr.level[0].f_relaxation.krylov->precon.amg.max_iter = 1;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+
+   hypredrv_MGRDestroyNestedSolverArgs(&args.mgr);
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
+
+#if HYPRE_CHECK_MIN_VERSION(23200, 14)
+static void
+test_PreconDestroy_mgr_frelax_ilu_type32(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+
+   IntArray *dofmap = NULL;
+   const int map[3] = {0, 1, 2};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   args.mgr.num_levels = 2;
+   args.mgr.level[0].f_dofs.size    = 1;
+   args.mgr.level[0].f_dofs.data[0] = 0;
+   args.mgr.level[0].f_relaxation.type = 32;
+   hypredrv_ILUSetDefaultArgs(&args.mgr.level[0].f_relaxation.ilu);
+   args.mgr.level[0].f_relaxation.ilu.max_iter = 1;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
+
+#if defined(HYPRE_USING_DSUPERLU) && HYPRE_CHECK_MIN_VERSION(23100, 9)
+static void
+test_PreconDestroy_mgr_frelax_spdirect_type29(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+
+   IntArray *dofmap = NULL;
+   const int map[3] = {0, 1, 2};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   args.mgr.num_levels = 2;
+   args.mgr.level[0].f_dofs.size    = 1;
+   args.mgr.level[0].f_dofs.data[0] = 0;
+   args.mgr.level[0].f_relaxation.type = 29;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
+
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
+static void
+test_PreconDestroy_mgr_grelax_amg_type20(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+
+   IntArray *dofmap = NULL;
+   const int map[3] = {0, 1, 2};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   args.mgr.num_levels = 2;
+   args.mgr.level[0].f_dofs.size    = 1;
+   args.mgr.level[0].f_dofs.data[0] = 0;
+   args.mgr.level[0].f_relaxation.type = 7;
+   args.mgr.level[0].g_relaxation.type = 20;
+   hypredrv_AMGSetDefaultArgs(&args.mgr.level[0].g_relaxation.amg);
+   args.mgr.level[0].g_relaxation.amg.max_iter = 1;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   HYPRE_IJMatrix mat = precon_test_ij_matrix_1x1(1.0);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_MGR, precon, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+   HYPRE_IJMatrixDestroy(mat);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_PreconDestroy_mgr_grelax_ilu_type16(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+
+   IntArray *dofmap = NULL;
+   const int map[3] = {0, 1, 2};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   args.mgr.num_levels = 2;
+   args.mgr.level[0].f_dofs.size    = 1;
+   args.mgr.level[0].f_dofs.data[0] = 0;
+   args.mgr.level[0].f_relaxation.type = 7;
+   args.mgr.level[0].g_relaxation.type = 16;
+   hypredrv_ILUSetDefaultArgs(&args.mgr.level[0].g_relaxation.ilu);
+   args.mgr.level[0].g_relaxation.ilu.max_iter = 1;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_NOT_NULL(precon);
+
+   HYPRE_IJMatrix mat = precon_test_ij_matrix_1x1(1.0);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_MGR, precon, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+   HYPRE_IJMatrixDestroy(mat);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
 
 static void
 test_hypredrv_ILUSetFieldByName_all_fields(void)
@@ -1793,6 +4604,25 @@ test_hypredrv_ILUGetValidValues_unknown_key(void)
    StrIntMapArray map = hypredrv_ILUGetValidValues("unknown_key");
    ASSERT_EQ(map.size, 0);
 }
+
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+static void
+test_hypredrv_ILUCreate_hits_schur_and_nsh_branches(void)
+{
+   ILU_args     args;
+   HYPRE_Solver precon = NULL;
+
+   hypredrv_ILUSetDefaultArgs(&args);
+   /* nsh-ilut (21): Schur coarse solve + NSH drop threshold paths in hypredrv_ILUCreate */
+   args.type = 21;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ILUCreate(&args, &precon);
+   ASSERT_NOT_NULL(precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   HYPRE_ILUDestroy(precon);
+}
+#endif
 
 static void
 test_hypredrv_FSAISetFieldByName_all_fields(void)
@@ -2157,7 +4987,12 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconGetValidTypeIntMap_contains_known_types);
    RUN_TEST(test_PreconSetDefaultArgs_resets_reuse);
    RUN_TEST(test_PreconSetArgsFromYAML_sets_fields);
+   RUN_TEST(test_PreconSetArgsFromYAML_null_or_empty_parent_noop);
    RUN_TEST(test_PreconSetArgsFromYAML_ignores_unknown_key);
+   RUN_TEST(test_PreconReuse_null_args_noop);
+   RUN_TEST(test_PreconReuseShouldRebuild_null_args_early_exit);
+   RUN_TEST(test_mgr_nested_frelax_wrapper_api_null_safe);
+   RUN_TEST(test_hypredrv_PreconArgsSetDefaultsForMethod_and_GetValidValues);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_type_parses_components);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_scalar_installs_default_components);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_rebuild_on_new_level_block_sequence);
@@ -2185,23 +5020,108 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_setup_time_metric);
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_geometric_mean);
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_harmonic_mean);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_min_max_mean_iterations);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_power_mean_near_zero);
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_delta_from_baseline_transform);
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_min_reuse_solves_guard);
+   RUN_TEST(test_PreconReuse_api_null_observation_and_log_noop);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_scalar_static_frequency_shorthand);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_scalar_invalid_value);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_enabled_off_clears_static_fields);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_static_conflict_requires_explicit_adaptive);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_conflict_with_frequency);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_static_conflict_linear_system_ids_with_frequency);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_infer_adaptive_policy_from_adaptive_block);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_unknown_root_key);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_parse_mean_transform_history_errors);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_parse_component_guards_adaptive_errors);
+   RUN_TEST(test_PreconReuseShouldRebuild_static_frequency_and_linear_system_ids);
+   RUN_TEST(test_PreconReuseShouldRebuild_static_per_timestep_with_starts);
+   RUN_TEST(test_PreconReuseShouldRebuild_static_per_timestep_missing_context_returns_hold);
+   RUN_TEST(test_PreconReuseShouldRebuild_static_disabled_always_rebuilds);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_null_state_requests_rebuild);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_initial_build_next_ls_id_nonpositive);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_status_good_and_insufficient_history);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_relative_increase_total_time_below_direction);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_power_mean_negative_p_and_summary_truncation);
+   RUN_TEST(test_PreconReuseStateRecordObservation_realloc_and_cap_drop_oldest);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_window_mean_baseline_warns_and_scores);
+   RUN_TEST(test_PreconReuseShouldRebuild_duplicate_ls_id_skips_bad_streak_increment);
+   RUN_TEST(test_PreconReuseShouldRebuild_static_per_timestep_embedded_stats);
    RUN_TEST(test_PreconSetArgsFromYAML_mgr_coarsest_level_spdirect_flat);
    RUN_TEST(test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_flat_sets_type);
    RUN_TEST(test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_nested_sets_type_and_args);
    RUN_TEST(test_PreconDestroy_null_precon);
    RUN_TEST(test_PreconDestroy_null_main);
+   RUN_TEST(test_PreconCreate_invalid_method);
+   RUN_TEST(test_PreconCreate_precon_none);
+   RUN_TEST(test_PreconSetup_null_precon);
+   RUN_TEST(test_PreconSetup_null_A);
+   RUN_TEST(test_Precon_lifecycle_boomeramg_1x1);
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+   RUN_TEST(test_Precon_lifecycle_ilu_1x1);
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+   RUN_TEST(test_Precon_lifecycle_fsai_1x1);
+#endif
+   RUN_TEST(test_PreconDestroy_amg_rbms_loop);
+   RUN_TEST(test_PreconDestroy_none_with_main_logs);
    RUN_TEST(test_PreconSetup_default_case);
    RUN_TEST(test_PreconApply_default_case);
+   RUN_TEST(test_PreconApply_precon_none);
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+   RUN_TEST(test_PreconApply_mgr_minimal);
+#endif
+   RUN_TEST(test_PreconDestroy_amg_log_dispatch_no_rbms);
    RUN_TEST(test_MGRCreate_coarsest_level_branches);
    RUN_TEST(test_PreconCreate_mgr_coarsest_level_krylov_nested);
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+   RUN_TEST(test_PreconDestroy_mgr_coarsest_use_krylov_without_krylov_ptr);
+#endif
    RUN_TEST(test_PreconSetup_mgr_frelax_nested_mgr_dof_labels);
    RUN_TEST(test_PreconDestroy_mgr_csolver_destroy_branches);
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+   RUN_TEST(test_PreconDestroy_mgr_frelax_amg_type2);
+#endif
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
+   RUN_TEST(test_PreconDestroy_mgr_grelax_krylov_nested);
+#endif
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+   RUN_TEST(test_MGRCreate_missing_dofmap);
+   RUN_TEST(test_MGRCreate_plain_dofmap_data_only_branch);
+   RUN_TEST(test_MGRCreate_unique_data_dofmap_branch);
+   RUN_TEST(test_MGRCreate_g_unique_unsorted_dense_fallback);
+   RUN_TEST(test_MGRCreate_dense_remap_sparse_labels);
+   RUN_TEST(test_MGRCreate_f_dofs_out_of_range);
+   RUN_TEST(test_MGRCreate_f_dofs_label_not_in_dofmap);
+   RUN_TEST(test_MGRCreate_f_dofs_duplicate_label);
+   RUN_TEST(test_MGRCreate_empty_dofmap);
+   RUN_TEST(test_MGRCreate_dofmap_negative_label);
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
+   RUN_TEST(test_MGRCreate_nested_mgr_validation_errors);
+#endif
+   RUN_TEST(test_PreconCreate_mgr_with_near_null_vector);
+#endif
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+   RUN_TEST(test_PreconDestroy_mgr_frelax_krylov_nested);
+#endif
+#if HYPRE_CHECK_MIN_VERSION(23200, 14)
+   RUN_TEST(test_PreconDestroy_mgr_frelax_ilu_type32);
+#endif
+#if defined(HYPRE_USING_DSUPERLU) && HYPRE_CHECK_MIN_VERSION(23100, 9)
+   RUN_TEST(test_PreconDestroy_mgr_frelax_spdirect_type29);
+#endif
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
+   RUN_TEST(test_PreconDestroy_mgr_grelax_amg_type20);
+   RUN_TEST(test_PreconDestroy_mgr_grelax_ilu_type16);
+#endif
    RUN_TEST(test_hypredrv_ILUSetFieldByName_all_fields);
    RUN_TEST(test_hypredrv_ILUSetFieldByName_unknown_key);
    RUN_TEST(test_hypredrv_ILUGetValidValues_type);
    RUN_TEST(test_hypredrv_ILUGetValidValues_unknown_key);
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+   RUN_TEST(test_hypredrv_ILUCreate_hits_schur_and_nsh_branches);
+#endif
    RUN_TEST(test_hypredrv_FSAISetFieldByName_all_fields);
    RUN_TEST(test_hypredrv_FSAISetFieldByName_unknown_key);
    RUN_TEST(test_hypredrv_FSAIGetValidValues_algo_type);

@@ -316,27 +316,35 @@ hypredrv_IntArrayUnique(MPI_Comm comm, IntArray *int_array)
 
    /* Sort input array */
    tmp_array = hypredrv_IntArrayClone((const IntArray *)int_array);
-   hypredrv_IntArraySort(tmp_array);
-
-   /* Find number of unique entries locally */
-   int_array->unique_size = 1;
-   for (size_t i = 1; i < int_array->size; i++)
+   if (int_array->size > 0)
    {
-      if (tmp_array->data[i] != tmp_array->data[i - 1])
+      hypredrv_IntArraySort(tmp_array);
+
+      /* Find number of unique entries locally */
+      int_array->unique_size = 1;
+      for (size_t i = 1; i < int_array->size; i++)
       {
-         int_array->unique_size++;
+         if (tmp_array->data[i] != tmp_array->data[i - 1])
+         {
+            int_array->unique_size++;
+         }
+      }
+
+      /* Compute local unique array */
+      int_array->unique_data    = (int *)calloc(int_array->unique_size, sizeof(int));
+      int_array->unique_data[0] = tmp_array->data[0];
+      for (size_t i = 1, k = 0; i < int_array->size; i++)
+      {
+         if (tmp_array->data[i] != tmp_array->data[i - 1])
+         {
+            int_array->unique_data[++k] = tmp_array->data[i];
+         }
       }
    }
-
-   /* Compute local unique array */
-   int_array->unique_data    = (int *)calloc(int_array->unique_size, sizeof(int));
-   int_array->unique_data[0] = tmp_array->data[0];
-   for (size_t i = 1, k = 0; i < int_array->size; i++)
+   else
    {
-      if (tmp_array->data[i] != tmp_array->data[i - 1])
-      {
-         int_array->unique_data[++k] = tmp_array->data[i];
-      }
+      int_array->unique_size = 0;
+      int_array->unique_data = NULL;
    }
    hypredrv_IntArrayDestroy(&tmp_array);
 
@@ -358,7 +366,9 @@ hypredrv_IntArrayUnique(MPI_Comm comm, IntArray *int_array)
          displs[i] = displs[i - 1] + all_num_entries[i - 1];
          total_num_entries += all_num_entries[i];
       }
-      all_data = (int *)malloc((size_t)total_num_entries * sizeof(int));
+      all_data = (total_num_entries > 0)
+                    ? (int *)malloc((size_t)total_num_entries * sizeof(int))
+                    : NULL;
    }
    MPI_Gatherv(int_array->unique_data, (int)int_array->unique_size, MPI_INT, all_data,
                all_num_entries, displs, MPI_INT, 0, comm);
@@ -366,33 +376,46 @@ hypredrv_IntArrayUnique(MPI_Comm comm, IntArray *int_array)
    /* Compute global number of unique entries */
    if (!myid)
    {
-      /* Sort input array */
-      qsort(all_data, (size_t)total_num_entries, sizeof(int), hypredrv_IntArrayCompare);
-
-      /* Find number of unique entries */
-      int_array->g_unique_size = 1;
-      for (int i = 1; i < total_num_entries; i++)
+      if (total_num_entries > 0)
       {
-         if (all_data[i] != all_data[i - 1])
+         /* Sort input array */
+         qsort(all_data, (size_t)total_num_entries, sizeof(int),
+               hypredrv_IntArrayCompare);
+
+         /* Find number of unique entries */
+         int_array->g_unique_size = 1;
+         for (int i = 1; i < total_num_entries; i++)
          {
-            int_array->g_unique_size++;
+            if (all_data[i] != all_data[i - 1])
+            {
+               int_array->g_unique_size++;
+            }
          }
+      }
+      else
+      {
+         int_array->g_unique_size = 0;
       }
    }
    MPI_Bcast(&int_array->g_unique_size, 1, MPI_UNSIGNED_LONG, 0, comm);
-   int_array->g_unique_data = (int *)calloc(int_array->g_unique_size, sizeof(int));
+   int_array->g_unique_data = (int_array->g_unique_size > 0)
+                                 ? (int *)calloc(int_array->g_unique_size, sizeof(int))
+                                 : NULL;
 
    /* Compute global unique data */
-   if (!myid)
+   if (!myid && int_array->g_unique_size > 0)
    {
       int_array->g_unique_data[0] = all_data[0];
-      for (size_t i = 1, k = 0; i < int_array->g_unique_size; i++)
+      for (size_t i = 1, k = 0; i < (size_t)total_num_entries; i++)
       {
          if (all_data[i] != all_data[i - 1])
          {
             int_array->g_unique_data[++k] = all_data[i];
          }
       }
+   }
+   if (!myid)
+   {
       free(all_data);
       free(all_num_entries);
       free(displs);

@@ -343,6 +343,34 @@ test_f_dofs_block_sequence_integers(void)
    hypredrv_InputArgsDestroy(&args);
 }
 
+static void
+test_f_dofs_unknown_label_when_dof_labels_exist(void)
+{
+   const char yaml_text[] =
+      "linear_system:\n"
+      "  dof_labels:\n"
+      "    v_x: 0\n"
+      "    v_y: 1\n"
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 10\n"
+      "preconditioner:\n"
+      "  mgr:\n"
+      "    level:\n"
+      "      0:\n"
+      "        f_dofs: [v_x, not_a_label]\n"
+      "    coarsest_level:\n"
+      "      amg:\n"
+      "        print_level: 0\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   if (args)
+   {
+      hypredrv_InputArgsDestroy(&args);
+   }
+}
+
 /*-----------------------------------------------------------------------------
  * Main test runner
  *-----------------------------------------------------------------------------*/
@@ -370,6 +398,7 @@ main(void)
    RUN_TEST(test_dof_labels_flow_mapping);
    RUN_TEST(test_f_dofs_block_sequence_labels);
    RUN_TEST(test_f_dofs_block_sequence_integers);
+   RUN_TEST(test_f_dofs_unknown_label_when_dof_labels_exist);
 
    TEST_HYPRE_FINALIZE();
    MPI_Finalize();

@@ -194,10 +194,6 @@ main(int argc, char **argv)
 
    int warmup = 0;
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetWarmup(obj, &warmup));
-   if (warmup)
-   {
-      printf("TODO: Perform warmup");
-   }
 
    /*-----------------------------------------------------------
     * Build and solve linear system(s)

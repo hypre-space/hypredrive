@@ -247,19 +247,95 @@ capture_error_output(void (*print_fn)(void), char *buffer, size_t buf_len)
 }
 
 static void
-test_ErrorCodeDescribe_prints_counts(void)
+test_ErrorCodeDescribe_comprehensive_table(void)
+{
+   typedef struct
+   {
+      uint32_t         code_mask;
+      const char      *expect;
+      const char      *label;
+   } describe_case;
+
+   static const describe_case cases[] = {
+      {ERROR_YAML_INVALID_INDENT, "invalid indendation", "indent"},
+      {ERROR_YAML_INVALID_DIVISOR, "invalid divisor", "divisor"},
+      {ERROR_INVALID_VAL, "invalid value", "invalid_val"},
+      {ERROR_UNEXPECTED_VAL, "unexpected value", "unexpected_val"},
+      {ERROR_MAYBE_INVALID_VAL, "possibly invalid value", "maybe_invalid"},
+      {ERROR_MISSING_DOFMAP, "Missing dofmap info needed by MGR!", "missing_dofmap"},
+      {ERROR_UNKNOWN_HYPREDRV_OBJ, "HYPREDRV object is not set properly!!", "unknown_obj"},
+      {ERROR_HYPREDRV_NOT_INITIALIZED, "HYPREDRV is not initialized!!", "not_init"},
+      {ERROR_HYPRE_INTERNAL, "HYPRE internal error", "hypre_internal"},
+   };
+
+   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+   {
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_ErrorMsgClear();
+      hypredrv_ErrorCodeSet((hypredrv_error_t)cases[i].code_mask);
+      hypredrv_ErrorCodeDescribe(hypredrv_ErrorCodeGet());
+
+      char buffer[768];
+      capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
+      ASSERT_NOT_NULL(strstr(buffer, cases[i].expect));
+   }
+
+   /* Plural branch in hypredrv_ErrorMsgAddCodeWithCount (count > 1). */
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorCodeDescribe(hypredrv_ErrorCodeGet());
+   {
+      char buffer[512];
+      capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
+      ASSERT_NOT_NULL(strstr(buffer, "Found 2 invalid keys"));
+   }
+
+   /* Singular branch for the same code path. */
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorCodeDescribe(hypredrv_ErrorCodeGet());
+   {
+      char buffer[512];
+      capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
+      ASSERT_NOT_NULL(strstr(buffer, "Found 1 invalid key"));
+   }
+
+   /* Combined mask: multiple describe() branches in one pass. */
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_INDENT);
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeSet(ERROR_UNEXPECTED_VAL);
+   hypredrv_ErrorCodeDescribe(hypredrv_ErrorCodeGet());
+   {
+      char buffer[1024];
+      capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
+      ASSERT_NOT_NULL(strstr(buffer, "invalid indendation"));
+      ASSERT_NOT_NULL(strstr(buffer, "invalid value"));
+      ASSERT_NOT_NULL(strstr(buffer, "unexpected value"));
+   }
+
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
+test_ErrorMsgAddCodeWithCount_null_suffix(void)
 {
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
 
    hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorMsgAddCodeWithCount(ERROR_INVALID_KEY, NULL);
 
-   hypredrv_ErrorCodeDescribe(hypredrv_ErrorCodeGet());
-
-   char buffer[512];
+   /* hypredrv_ErrorMsgPrint() emits a large banner; a small buffer truncates before the
+    * detail lines captured by capture_error_output(). */
+   char buffer[2048];
    capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
-   ASSERT_NOT_NULL(strstr(buffer, "Found 2 invalid keys"));
+   ASSERT_NOT_NULL(strstr(buffer, "Found 1 (null)"));
 
    hypredrv_ErrorMsgClear();
    hypredrv_ErrorCodeResetAll();
@@ -429,7 +505,8 @@ main(int argc, char **argv)
    RUN_TEST(test_ErrorMsgAddExtraKey);
    RUN_TEST(test_ErrorMsgAddUnexpectedVal);
    RUN_TEST(test_ErrorMsgAddInvalidFilename);
-   RUN_TEST(test_ErrorCodeDescribe_prints_counts);
+   RUN_TEST(test_ErrorCodeDescribe_comprehensive_table);
+   RUN_TEST(test_ErrorMsgAddCodeWithCount_null_suffix);
    RUN_TEST(test_DistributedErrorCodeActive);
    RUN_TEST(test_ErrorMsgPrint_with_no_messages);
    RUN_TEST(test_ErrorBacktracePrint_has_filenames_and_lines);

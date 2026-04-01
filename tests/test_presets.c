@@ -112,6 +112,25 @@ test_PresetRegister_null_args(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * test_PresetRegister_hyphen_in_name_normalizes
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_PresetRegister_hyphen_in_name_normalizes(void)
+{
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+
+   ASSERT_EQ(hypredrv_PresetRegister("my-hyphen-preset", "amg:\n  max_iter: 1", "hyphens"), 0);
+   const hypredrv_Preset *p = hypredrv_PresetFind("my_hyphen_preset");
+   ASSERT_NOT_NULL(p);
+   ASSERT_STREQ(p->name, "my_hyphen_preset");
+
+   hypredrv_PresetFreeUserPresets();
+   hypredrv_ErrorCodeResetAll();
+}
+
+/*-----------------------------------------------------------------------------
  * test_PresetFind_user_preset_case_insensitive
  *-----------------------------------------------------------------------------*/
 
@@ -231,6 +250,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PresetRegister_duplicate_builtin);
    RUN_TEST(test_PresetRegister_duplicate_user);
    RUN_TEST(test_PresetRegister_null_args);
+   RUN_TEST(test_PresetRegister_hyphen_in_name_normalizes);
    RUN_TEST(test_PresetFind_user_preset_case_insensitive);
    RUN_TEST(test_PresetHelp_includes_user_preset);
    RUN_TEST(test_PresetFreeUserPresets_idempotent);

@@ -160,6 +160,15 @@ hypredrv_TestHypreInit(void)
       } \
    } while (0)
 
+#define ASSERT_GT(a, b) \
+   do { \
+      if (!((a) > (b))) { \
+         fprintf(stderr, "FAIL: %s:%d: expected %s > %s\n", \
+                __FILE__, __LINE__, #a, #b); \
+         exit(1); \
+      } \
+   } while (0)
+
 /*-----------------------------------------------------------------------------
  * Test runner helper (simple wrapper, CTest handles orchestration)
  *-----------------------------------------------------------------------------*/

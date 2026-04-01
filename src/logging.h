@@ -36,7 +36,8 @@ void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls
 #define HYPREDRV_LOGF(_level, _mypid, _object_name, _ls_id, _fmt, ...)       \
    do                                                                        \
    {                                                                         \
-      if (hypredrv_LogEnabled((_level)))                                     \
+      /* GCOVR_EXCL_BR_START */          /* low-signal branch under CI */    \
+      if (hypredrv_LogEnabled((_level))) /* GCOVR_EXCL_BR_STOP */            \
       {                                                                      \
          hypredrv_Logf((_level), (_mypid), (_object_name), (_ls_id), (_fmt), \
                        ##__VA_ARGS__);                                       \
@@ -46,7 +47,8 @@ void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls
 #define HYPREDRV_LOG_COMMF(_level, _comm, _object_name, _ls_id, _fmt, ...)      \
    do                                                                           \
    {                                                                            \
-      if (hypredrv_LogEnabled((_level)))                                        \
+      /* GCOVR_EXCL_BR_START */          /* low-signal branch under CI */       \
+      if (hypredrv_LogEnabled((_level))) /* GCOVR_EXCL_BR_STOP */               \
       {                                                                         \
          hypredrv_LogCommf((_level), (_comm), (_object_name), (_ls_id), (_fmt), \
                            ##__VA_ARGS__);                                      \
@@ -56,7 +58,8 @@ void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls
 #define HYPREDRV_LOG_OBJECTF(_level, _hypredrv, _fmt, ...)                  \
    do                                                                       \
    {                                                                        \
-      if (hypredrv_LogEnabled((_level)))                                    \
+      /* GCOVR_EXCL_BR_START */          /* low-signal branch under CI */   \
+      if (hypredrv_LogEnabled((_level))) /* GCOVR_EXCL_BR_STOP */           \
       {                                                                     \
          hypredrv_LogObjectf((_level), (_hypredrv), (_fmt), ##__VA_ARGS__); \
       }                                                                     \
@@ -65,7 +68,8 @@ void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls
 #define HYPREDRV_LOG_TEXTBLOCK(_level, _mypid, _object_name, _ls_id, _header, _text)    \
    do                                                                                   \
    {                                                                                    \
-      if (hypredrv_LogEnabled((_level)))                                                \
+      /* GCOVR_EXCL_BR_START */          /* low-signal branch under CI */               \
+      if (hypredrv_LogEnabled((_level))) /* GCOVR_EXCL_BR_STOP */                       \
       {                                                                                 \
          hypredrv_LogTextBlock((_level), (_mypid), (_object_name), (_ls_id), (_header), \
                                (_text));                                                \

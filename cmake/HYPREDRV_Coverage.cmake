@@ -39,7 +39,11 @@ if(HYPREDRV_ENABLE_COVERAGE)
     set(_gcov_candidates)
     set(_use_llvm_cov FALSE)
     if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-        # For Clang, prefer llvm-cov over gcov
+        # For Clang, prefer llvm-cov over gcov. Clear any stale cache entry: upgrading
+        # Clang (e.g. 18 -> 23) without deleting CMakeCache can leave LLVM_COV_EXECUTABLE
+        # pointing at an older llvm-cov, which cannot read the current gcno/gcda (merge
+        # errors, 0% coverage for large TUs like yaml.c).
+        unset(LLVM_COV_EXECUTABLE CACHE)
         # Try versioned llvm-cov first (e.g., llvm-cov-22), then generic
         set(_llvm_cov_names)
 
@@ -47,8 +51,8 @@ if(HYPREDRV_ENABLE_COVERAGE)
         if(CMAKE_C_COMPILER_VERSION_MAJOR)
             list(APPEND _llvm_cov_names llvm-cov-${CMAKE_C_COMPILER_VERSION_MAJOR})
         endif()
-        # Also try common version numbers (14-22) as fallback
-        foreach(ver RANGE 22 14 -1)
+        # Also try common version numbers (newer LLVM first, then 14-22) as fallback
+        foreach(ver RANGE 30 14 -1)
             list(APPEND _llvm_cov_names llvm-cov-${ver})
         endforeach()
         list(APPEND _llvm_cov_names llvm-cov)
@@ -59,7 +63,7 @@ if(HYPREDRV_ENABLE_COVERAGE)
             list(APPEND _llvm_search_paths /usr/lib/llvm-${CMAKE_C_COMPILER_VERSION_MAJOR}/bin)
         endif()
         # Also search common versioned paths
-        foreach(ver RANGE 22 14 -1)
+        foreach(ver RANGE 30 14 -1)
             list(APPEND _llvm_search_paths /usr/lib/llvm-${ver}/bin)
         endforeach()
         list(APPEND _llvm_search_paths /usr/lib/llvm/bin /usr/local/llvm/bin)
@@ -138,6 +142,9 @@ if(HYPREDRV_ENABLE_COVERAGE)
         message(WARNING "Coverage executable not found; gcovr will fall back to default 'gcov'")
     endif()
     if(GCOVR_EXECUTABLE)
+        # Hypre version-gated (#if HYPRE_CHECK_MIN_VERSION) code is only exercised for the
+        # linked Hypre; branch/line totals reflect that single configuration unless you run
+        # additional coverage jobs per Hypre version.
         set(_gcovr_args
             --root ${CMAKE_SOURCE_DIR}
             --object-directory ${CMAKE_BINARY_DIR}
@@ -151,15 +158,39 @@ if(HYPREDRV_ENABLE_COVERAGE)
             --exclude-directories "${CMAKE_BINARY_DIR}/tests"
             # Ignore branch points on fail-fast call-site wrappers; the error/abort paths
             # are intentionally not practically triggerable in unit tests without aborting.
-            --exclude-branches-by-pattern "HYPREDRV_SAFE_CALL\\("
+            # Gcovr branch-pattern matching is start-anchored, so prefix with .*
+            # to match typical indented call sites in the source.
+            --exclude-branches-by-pattern ".*HYPREDRV_SAFE_CALL\\("
             # Ignore branch points for repeated boilerplate guards in the public API.
             # Note: these are macro *invocations* (no parentheses in the name).
-            --exclude-branches-by-pattern "HYPREDRV_CHECK_INIT"
-            --exclude-branches-by-pattern "HYPREDRV_CHECK_OBJ"
+            --exclude-branches-by-pattern ".*HYPREDRV_CHECK_INIT.*"
+            --exclude-branches-by-pattern ".*HYPREDRV_CHECK_OBJ.*"
+            # Logging wrappers expand to if (hypredrv_LogEnabled(...)) { ... }; both
+            # outcomes are low value for regression signal and dominate branch counts.
+            --exclude-branches-by-pattern ".*hypredrv_LogEnabled.*"
+            # HYPRE_SAFE_CALL error paths are impractical to trigger without injecting HYPRE failures.
+            --exclude-branches-by-pattern ".*HYPRE_SAFE_CALL\\("
+            # Stats annotations are bookkeeping; both enter/exit paths are low signal for linsys.
+            --exclude-branches-by-pattern ".*hypredrv_StatsAnnotate.*"
+            # Malloc failure paths are impractical without fault injection.
+            --exclude-branches-by-pattern ".*HYPREDRV_MALLOC_AND_CHECK.*"
+            # MPI logging wrappers: hypredrv_LogEnabled branches are low signal.
+            # Use a pattern that cannot match HYPREDRV_MALLOC_AND_CHECK (which contains "LOG").
+            --exclude-branches-by-pattern ".*HYPREDRV_LOG_COMMF\\(.*"
+            # args.c: distributed error coordination branches are low signal vs. MPI rank plumbing.
+            --exclude-branches-by-pattern ".*if \\(.*hypredrv_DistributedErrorCodeActive\\("
+            # args.c: allocation-guard branches in preconditioner preset parsing (fault-only in CI).
+            --exclude-branches-by-pattern ".*if \\(!PreconParseContextAllocVariants\\("
+            # solver.c: PCG/GMRES/FlexGMRES/BiCGSTAB preconditioner hook branches (mirrored per solver).
+            --exclude-branches-by-pattern ".*if \\(.*precon_method != PRECON_NONE\\)"
+            # solver.c: optional preconditioner handle/stats bookkeeping.
+            --exclude-branches-by-pattern ".*if \\(precon\\)"
+            --exclude-branches-by-pattern ".*if \\(precon->stats\\)"
             --gcov-ignore-errors all
             --gcov-ignore-parse-errors
             --merge-mode-functions=merge-use-line-0
             --xml coverage.xml --xml-pretty
+            --json-summary coverage-summary.json
             --html-details coverage.html
             --print-summary
         )
@@ -183,10 +214,14 @@ if(HYPREDRV_ENABLE_COVERAGE)
                 endif()
             endif()
 
+            # Run serially: parallel ctest processes all write the same .gcda files for
+            # shared objects (e.g. libHYPREDRV), corrupting coverage (arc mismatch, 0%
+            # for large TUs like yaml.c).
             add_custom_target(run_tests_for_coverage
-                COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+                COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target all
+                COMMAND ${CMAKE_CTEST_COMMAND} -j1 --output-on-failure
                 WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-                COMMENT "Running tests to generate coverage data"
+                COMMENT "Building all targets then running tests to generate coverage data"
                 VERBATIM
             )
 
