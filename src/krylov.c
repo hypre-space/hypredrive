@@ -196,13 +196,6 @@ NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
       }
       args->precon_method = (precon_t)hypredrv_StrIntMapArrayGetImage(
          hypredrv_PreconGetValidTypeIntMap(), precon_node->val);
-      if (args->precon_method == PRECON_MGR)
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("Nested preconditioner 'mgr' is not supported");
-         YAML_NODE_SET_INVALID_VAL(precon_node);
-         return;
-      }
       args->has_precon = 1;
       hypredrv_PreconArgsSetDefaultsForMethod(args->precon_method, &args->precon);
       return;
@@ -236,13 +229,6 @@ NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
 
    args->precon_method = (precon_t)hypredrv_StrIntMapArrayGetImage(
       hypredrv_PreconGetValidTypeIntMap(), type_node->key);
-   if (args->precon_method == PRECON_MGR)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      hypredrv_ErrorMsgAdd("Nested preconditioner 'mgr' is not supported");
-      YAML_NODE_SET_INVALID_VAL(type_node);
-      return;
-   }
 
    args->has_precon = 1;
    hypredrv_PreconArgsSetDefaultsForMethod(args->precon_method, &args->precon);

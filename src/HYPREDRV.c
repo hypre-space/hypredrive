@@ -1177,11 +1177,13 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    }
    hypredrv_StatsSetObjectName(hypredrv->stats, hypredrv->iargs->general.name);
 
-   /* Load timestep schedule for preconditioner reuse */
+   /* Load timestep schedule for any feature that needs timestep-aware context:
+    * preconditioner reuse, stats path labeling, or print-system dumping. */
    hypredrv_IntArrayDestroy(&hypredrv->precon_reuse_timesteps.ids);
    hypredrv_IntArrayDestroy(&hypredrv->precon_reuse_timesteps.starts);
    if (hypredrv->iargs->ls.timestep_filename[0] != '\0' &&
-       ((hypredrv->iargs->precon_reuse.enabled &&
+       ((hypredrv->iargs->general.statistics > 0) ||
+        (hypredrv->iargs->precon_reuse.enabled &&
          hypredrv->iargs->precon_reuse.per_timestep) ||
         PrintSystemNeedsTimestepSchedule(&hypredrv->iargs->ls.print_system)))
    {
@@ -1191,7 +1193,8 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    }
    /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    else if (hypredrv->iargs->ls.sequence_filename[0] != '\0' &&
-            ((hypredrv->iargs->precon_reuse.enabled &&
+            ((hypredrv->iargs->general.statistics > 0) ||
+             (hypredrv->iargs->precon_reuse.enabled &&
               hypredrv->iargs->precon_reuse.per_timestep) ||
              PrintSystemNeedsTimestepSchedule(&hypredrv->iargs->ls.print_system)))
    /* GCOVR_EXCL_BR_STOP */
@@ -2307,6 +2310,7 @@ uint32_t
 HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconCreate begin");
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
@@ -2345,6 +2349,13 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
       hypredrv_PreconCreate(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                             hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon);
       hypredrv->precon_is_setup = false;
+      if (hypredrv_ErrorCodeActive() && hypredrv_LogEnabled(2))
+      {
+         HYPREDRV_LOG_OBJECTF(2, hypredrv, "preconditioner create failed (code=0x%x)",
+                              hypredrv_ErrorCodeGet());
+         hypredrv_ErrorCodeDescribe(hypredrv_ErrorCodeGet());
+         hypredrv_ErrorMsgPrint();
+      }
    }
    else
    {
@@ -2364,6 +2375,7 @@ uint32_t
 HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverCreate begin");
 
    /* Delegate preconditioner lifecycle to PreconCreate.
@@ -2382,6 +2394,12 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
       if (HYPREDRV_PreconCreate(hypredrv)) /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         if (hypredrv_LogEnabled(2))
+         {
+            HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                                 "linear solver create returning with code=0x%x",
+                                 hypredrv_ErrorCodeGet());
+         }
          /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          HYPREDRV_LOG_OBJECTF(
             1, hypredrv, "HYPREDRV_LinearSolverCreate failed: preconditioner create");
@@ -2421,6 +2439,7 @@ uint32_t
 HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   hypredrv_ErrorStateReset();
    /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconSetup begin");
    /* GCOVR_EXCL_BR_STOP */
@@ -2474,6 +2493,7 @@ uint32_t
 HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverSetup begin");
 
    AdvanceLibraryManagedSystemIndex(hypredrv);
@@ -2558,6 +2578,7 @@ uint32_t
 HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverApply begin");
 
    if (!hypredrv->solver)
@@ -2755,6 +2776,7 @@ uint32_t
 HYPREDRV_PreconApply(HYPREDRV_t hypredrv, HYPRE_Vector vec_b, HYPRE_Vector vec_x)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconApply begin");
 
    if (!hypredrv->precon)

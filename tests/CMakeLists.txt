@@ -149,11 +149,7 @@ setup_test_executable(test_vector_mpi test_vector_mpi.c)
 add_executable_test(vector_mpi_2proc test_vector_mpi 2 RUN_SERIAL)
 
 setup_test_executable(test_lsseq_mpi test_lsseq_mpi.c)
-# Skip CTest on macOS: some MPI stacks do not give every rank the same cwd as the
-# launcher, which makes relative fixture paths flaky (see lsseq_mpi_testpath in the test).
-if(NOT APPLE)
-   add_executable_test(lsseq_mpi_2proc test_lsseq_mpi 2 RUN_SERIAL)
-endif()
+add_executable_test(lsseq_mpi_2proc test_lsseq_mpi 2 RUN_SERIAL)
 
 setup_test_executable(test_args_mpi test_args_mpi.c)
 add_executable_test(args_mpi_2proc test_args_mpi 2 RUN_SERIAL)

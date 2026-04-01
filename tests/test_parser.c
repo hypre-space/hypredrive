@@ -805,20 +805,6 @@ test_nested_krylov_parse_precon_errors(void)
       hypredrv_YAMLnodeDestroy(solver);
    }
 
-   /* Scalar 'mgr' preconditioner rejected */
-   hypredrv_NestedKrylovSetDefaultArgs(&args);
-   {
-      YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
-      add_child(solver, "max_iter", "2", 1);
-      YAMLnode *prec = add_child(solver, "preconditioner", "mgr", 1);
-
-      hypredrv_ErrorCodeResetAll();
-      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
-      ASSERT_TRUE(hypredrv_ErrorCodeActive());
-      ASSERT_EQ(prec->valid, YAML_NODE_INVALID_VAL);
-      hypredrv_YAMLnodeDestroy(solver);
-   }
-
    /* Block preconditioner with no nested type */
    hypredrv_NestedKrylovSetDefaultArgs(&args);
    {
@@ -903,6 +889,49 @@ test_nested_krylov_parser_extra_coverage(void)
       hypredrv_YAMLnodeDestroy(solver);
    }
 
+   /* Scalar nested preconditioner success: preconditioner: mgr. */
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
+      add_child(solver, "max_iter", "2", 1);
+      YAMLnode *prec = add_child(solver, "preconditioner", "mgr", 1);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(args.solver_method, SOLVER_GMRES);
+      ASSERT_TRUE(args.has_precon);
+      ASSERT_EQ(args.precon_method, PRECON_MGR);
+      ASSERT_EQ(args.precon.mgr.max_iter, 1);
+      ASSERT_EQ(prec->valid, YAML_NODE_VALID);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+
+   /* Block nested preconditioner success: preconditioner: { mgr: ... }. */
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   {
+      YAMLnode *solver = hypredrv_YAMLnodeCreate("fgmres", "", 0);
+      add_child(solver, "max_iter", "3", 1);
+      YAMLnode *prec = add_child(solver, "preconditioner", "", 1);
+      YAMLnode *mgr  = add_child(prec, "mgr", "", 2);
+      add_child(mgr, "max_iter", "2", 3);
+      YAMLnode *coarsest = add_child(mgr, "coarsest_level", "", 3);
+      YAMLnode *amg      = add_child(coarsest, "amg", "", 4);
+      add_child(amg, "print_level", "0", 5);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(args.solver_method, SOLVER_FGMRES);
+      ASSERT_TRUE(args.has_precon);
+      ASSERT_EQ(args.precon_method, PRECON_MGR);
+      ASSERT_EQ(args.precon.mgr.max_iter, 2);
+      ASSERT_EQ(args.precon.mgr.coarsest_level.type, 0);
+      ASSERT_EQ(prec->valid, YAML_NODE_VALID);
+      ASSERT_EQ(mgr->valid, YAML_NODE_VALID);
+      hypredrv_YAMLnodeDestroy(solver);
+   }
+
    /* preconditioner first child: detach prev==NULL, restore prepend (NestedKrylovDetach/RestorePrecon). */
    hypredrv_NestedKrylovSetDefaultArgs(&args);
    {
@@ -962,7 +991,7 @@ test_nested_krylov_solver_switch_pc_fgmres_bicgstab(void)
 }
 
 static void
-test_mgr_nested_krylov_rejects_mgr_precon(void)
+test_mgr_nested_krylov_accepts_mgr_precon(void)
 {
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
@@ -976,11 +1005,21 @@ test_mgr_nested_krylov_rejects_mgr_precon(void)
    YAMLnode *gmres = add_child(f0, "gmres", "", 4);
    YAMLnode *prec = add_child(gmres, "preconditioner", "", 5);
    YAMLnode *mgr_prec = add_child(prec, "mgr", "", 6);
+   add_child(mgr_prec, "max_iter", "2", 7);
+   YAMLnode *coarsest = add_child(mgr_prec, "coarsest_level", "", 7);
+   YAMLnode *amg = add_child(coarsest, "amg", "", 8);
+   add_child(amg, "print_level", "0", 9);
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_MGRSetArgsFromYAML(&args, mgr);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   ASSERT_EQ(mgr_prec->valid, YAML_NODE_INVALID_VAL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(args.level[0].f_relaxation.use_krylov);
+   ASSERT_NOT_NULL(args.level[0].f_relaxation.krylov);
+   ASSERT_TRUE(args.level[0].f_relaxation.krylov->has_precon);
+   ASSERT_EQ(args.level[0].f_relaxation.krylov->precon_method, PRECON_MGR);
+   ASSERT_EQ(args.level[0].f_relaxation.krylov->precon.mgr.max_iter, 2);
+   ASSERT_EQ(args.level[0].f_relaxation.krylov->precon.mgr.coarsest_level.type, 0);
+   ASSERT_EQ(mgr_prec->valid, YAML_NODE_VALID);
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_YAMLnodeDestroy(mgr);
@@ -1054,7 +1093,7 @@ main(int argc, char **argv)
    RUN_TEST(test_nested_krylov_parse_precon_errors);
    RUN_TEST(test_nested_krylov_parser_extra_coverage);
    RUN_TEST(test_nested_krylov_solver_switch_pc_fgmres_bicgstab);
-   RUN_TEST(test_mgr_nested_krylov_rejects_mgr_precon);
+   RUN_TEST(test_mgr_nested_krylov_accepts_mgr_precon);
    RUN_TEST(test_relaxation_values_use_canonical_l1_jacobi_spelling);
    RUN_TEST(test_amg_relaxation_values_accept_forward_and_backward_hl1gs);
 

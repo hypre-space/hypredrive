@@ -414,6 +414,7 @@ test_PreconReuseSetArgsFromYAML_adaptive_scalar_installs_default_components(void
    ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_ADAPTIVE);
    ASSERT_EQ(args.guards.min_history_points, 3);
    ASSERT_EQ(args.guards.bad_decisions_to_rebuild, 2);
+   ASSERT_EQ_DOUBLE(args.guards.max_iteration_ratio, 3.0, 1.0e-12);
    ASSERT_EQ_SIZE(args.adaptive.num_components, 2);
 
    ASSERT_STREQ(args.adaptive.components[0].name, "efficiency");
@@ -428,6 +429,33 @@ test_PreconReuseSetArgsFromYAML_adaptive_scalar_installs_default_components(void
    ASSERT_EQ(args.adaptive.components[1].mean.kind, PRECON_REUSE_MEAN_RMS);
    ASSERT_EQ(args.adaptive.components[1].transform.kind,
              PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_adaptive_allows_disabled_hard_guards(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "enabled", "yes", 1);
+   add_child(parent, "type", "adaptive", 1);
+
+   YAMLnode *guards = add_child(parent, "guards", "", 1);
+   add_child(guards, "max_iteration_ratio", "-1", 2);
+   add_child(guards, "max_solve_time_ratio", "-1", 2);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.enabled, 1);
+   ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_ADAPTIVE);
+   ASSERT_EQ_DOUBLE(args.guards.max_iteration_ratio, -1.0, 1.0e-12);
+   ASSERT_EQ_DOUBLE(args.guards.max_solve_time_ratio, -1.0, 1.0e-12);
 
    hypredrv_PreconReuseDestroyArgs(&args);
    hypredrv_YAMLnodeDestroy(parent);
@@ -527,6 +555,7 @@ test_PreconReuseSetArgsFromYAML_adaptive_type_without_components_uses_defaults(v
    ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_ADAPTIVE);
    ASSERT_EQ(args.guards.min_history_points, 3);
    ASSERT_EQ(args.guards.bad_decisions_to_rebuild, 2);
+   ASSERT_EQ_DOUBLE(args.guards.max_iteration_ratio, 3.0, 1.0e-12);
    ASSERT_EQ_DOUBLE(args.adaptive.rebuild_threshold, 2.5, 1.0e-12);
    ASSERT_EQ_SIZE(args.adaptive.num_components, 2);
    ASSERT_STREQ(args.adaptive.components[0].name, "efficiency");
@@ -565,6 +594,8 @@ test_PreconReuseSetArgsFromYAML_adaptive_scalar_and_explicit_type_share_defaults
              explicit_args.guards.min_history_points);
    ASSERT_EQ(scalar_args.guards.bad_decisions_to_rebuild,
              explicit_args.guards.bad_decisions_to_rebuild);
+   ASSERT_EQ_DOUBLE(scalar_args.guards.max_iteration_ratio,
+                    explicit_args.guards.max_iteration_ratio, 1.0e-12);
    ASSERT_EQ_DOUBLE(scalar_args.adaptive.rebuild_threshold,
                     explicit_args.adaptive.rebuild_threshold, 1.0e-12);
    ASSERT_EQ_DOUBLE(scalar_args.adaptive.positive_floor,
@@ -1100,6 +1131,37 @@ test_PreconReuseShouldRebuild_adaptive_bad_decision_streak(void)
 
    hypredrv_PreconReuseStateDestroy(&state);
    hypredrv_PreconReuseDestroyArgs(&args);
+}
+
+static void
+test_PreconReuseShouldRebuild_adaptive_default_max_iteration_ratio_guard(void)
+{
+   PreconReuse_args    args;
+   PreconReuseState    state;
+   PreconReuseDecision decision;
+
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "adaptive", 0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ_DOUBLE(args.guards.max_iteration_ratio, 3.0, 1.0e-12);
+
+   hypredrv_PreconReuseStateInit(&state);
+   seed_post_bootstrap_state(&state, 10, 1.0, 1.0);
+
+   PreconReuseObservation obs = make_reuse_observation(3, 0, 31, 1.0, 1.0);
+   hypredrv_PreconReuseStateRecordObservation(&state, &obs);
+
+   ASSERT_TRUE(hypredrv_PreconReuseShouldRebuild(&args, NULL, NULL, &state, 4,
+                                                 &decision));
+   ASSERT_TRUE(strstr(decision.summary, "max_iteration_ratio") != NULL);
+
+   hypredrv_PreconReuseStateDestroy(&state);
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
 }
 
 static void
@@ -3923,6 +3985,144 @@ test_MGRCreate_g_unique_unsorted_dense_fallback(void)
 }
 
 static void
+test_MGRCreate_prefers_local_dof_labels_over_dense_global_fallback(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 2;
+   mgr.level[0].f_dofs.size      = 1;
+   mgr.level[0].f_dofs.data[0]   = 3;
+   mgr.level[0].f_relaxation.type = 7;
+
+   IntArray *dofmap = hypredrv_IntArrayCreate(4);
+   ASSERT_NOT_NULL(dofmap);
+   dofmap->data[0] = 0;
+   dofmap->data[1] = 3;
+   dofmap->data[2] = 3;
+   dofmap->data[3] = 0;
+   /* Simulate distributed metadata that only reports a coarse global count.
+    * MGRCreate should prefer the explicit local labels over this dense fallback. */
+   dofmap->g_unique_size = 2;
+
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_compact_global_labels_ignore_missing_f_dofs(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 2;
+   mgr.level[0].f_dofs.size      = 1;
+   mgr.level[0].f_dofs.data[0]   = 3;
+   mgr.level[0].f_relaxation.type = 7;
+
+   IntArray *dofmap = hypredrv_IntArrayCreate(0);
+   ASSERT_NOT_NULL(dofmap);
+   dofmap->g_unique_size = 3;
+
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_MGRCreate_global_unique_metadata_ignore_missing_f_dofs(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 2;
+   mgr.level[0].f_dofs.size       = 1;
+   mgr.level[0].f_dofs.data[0]    = 3;
+   mgr.level[0].f_relaxation.type = 7;
+
+   IntArray *dofmap = hypredrv_IntArrayCreate(6);
+   ASSERT_NOT_NULL(dofmap);
+   dofmap->data[0]      = 0;
+   dofmap->data[1]      = 1;
+   dofmap->data[2]      = 2;
+   dofmap->data[3]      = 0;
+   dofmap->data[4]      = 1;
+   dofmap->data[5]      = 2;
+   dofmap->g_unique_size = 3;
+
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_MGRCreate_dense_remap_sparse_labels(void)
 {
 #if !HYPRE_CHECK_MIN_VERSION(22100, 0)
@@ -3992,7 +4192,7 @@ test_MGRCreate_f_dofs_out_of_range(void)
 }
 
 static void
-test_MGRCreate_f_dofs_label_not_in_dofmap(void)
+test_MGRCreate_f_dofs_label_not_in_dofmap_is_ignored(void)
 {
 #if !HYPRE_CHECK_MIN_VERSION(22100, 0)
    return;
@@ -4013,8 +4213,19 @@ test_MGRCreate_f_dofs_label_not_in_dofmap(void)
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
    hypredrv_MGRCreate(&mgr, &precon);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   ASSERT_NULL(precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   HYPRE_MGRDestroy(precon);
+   if (mgr.point_marker_data)
+   {
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+   if (mgr.csolver)
+   {
+      HYPRE_BoomerAMGDestroy(mgr.csolver);
+      mgr.csolver = NULL;
+   }
 
    hypredrv_IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
@@ -4171,7 +4382,8 @@ test_MGRCreate_nested_mgr_validation_errors(void)
       hypredrv_IntArrayDestroy(&dofmap);
    }
 
-   /* Nested MGR requires non-empty parent f_dofs */
+   /* Empty parent f_dofs leaves the outer level inactive, so nested projection
+    * validation is not reached. Keep this case as a no-op regression check. */
    {
       MGR_args mgr;
       hypredrv_MGRSetDefaultArgs(&mgr);
@@ -4194,14 +4406,30 @@ test_MGRCreate_nested_mgr_validation_errors(void)
       HYPRE_Solver precon = NULL;
       hypredrv_ErrorCodeResetAll();
       hypredrv_MGRCreate(&mgr, &precon);
-      ASSERT_TRUE(hypredrv_ErrorCodeActive());
-      ASSERT_NULL(precon);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      if (precon)
+      {
+         HYPRE_MGRDestroy(precon);
+      }
+      if (mgr.point_marker_data)
+      {
+         free(mgr.point_marker_data);
+         mgr.point_marker_data = NULL;
+      }
+      if (mgr.csolver)
+      {
+         HYPRE_BoomerAMGDestroy(mgr.csolver);
+         mgr.csolver = NULL;
+         mgr.csolver_type = -1;
+      }
 
       free(inner);
       hypredrv_IntArrayDestroy(&dofmap);
    }
 
-   /* Nested projection: parent f_dofs label not present in dofmap */
+   /* A parent f_dofs label that is absent from the dofmap leaves the level
+    * inactive before nested projection validation runs. Keep this as a no-op
+    * regression check. */
    {
       MGR_args mgr;
       hypredrv_MGRSetDefaultArgs(&mgr);
@@ -4223,8 +4451,22 @@ test_MGRCreate_nested_mgr_validation_errors(void)
       HYPRE_Solver precon = NULL;
       hypredrv_ErrorCodeResetAll();
       hypredrv_MGRCreate(&mgr, &precon);
-      ASSERT_TRUE(hypredrv_ErrorCodeActive());
-      ASSERT_NULL(precon);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      if (precon)
+      {
+         HYPRE_MGRDestroy(precon);
+      }
+      if (mgr.point_marker_data)
+      {
+         free(mgr.point_marker_data);
+         mgr.point_marker_data = NULL;
+      }
+      if (mgr.csolver)
+      {
+         HYPRE_BoomerAMGDestroy(mgr.csolver);
+         mgr.csolver = NULL;
+         mgr.csolver_type = -1;
+      }
 
       free(inner);
       hypredrv_IntArrayDestroy(&dofmap);
@@ -4995,6 +5237,7 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_PreconArgsSetDefaultsForMethod_and_GetValidValues);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_type_parses_components);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_scalar_installs_default_components);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_allows_disabled_hard_guards);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_adaptive_rebuild_on_new_level_block_sequence);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_linear_solver_ids_alias);
    RUN_TEST(
@@ -5006,6 +5249,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_iterations_rms);
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_bad_decision_streak);
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_max_reuse_solves_guard);
+   RUN_TEST(test_PreconReuseShouldRebuild_adaptive_default_max_iteration_ratio_guard);
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_max_iteration_ratio_guard);
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_max_solve_time_ratio_guard);
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_rebuild_on_new_timestep_guard);
@@ -5091,9 +5335,12 @@ main(int argc, char **argv)
    RUN_TEST(test_MGRCreate_plain_dofmap_data_only_branch);
    RUN_TEST(test_MGRCreate_unique_data_dofmap_branch);
    RUN_TEST(test_MGRCreate_g_unique_unsorted_dense_fallback);
+   RUN_TEST(test_MGRCreate_prefers_local_dof_labels_over_dense_global_fallback);
+   RUN_TEST(test_MGRCreate_compact_global_labels_ignore_missing_f_dofs);
+   RUN_TEST(test_MGRCreate_global_unique_metadata_ignore_missing_f_dofs);
    RUN_TEST(test_MGRCreate_dense_remap_sparse_labels);
    RUN_TEST(test_MGRCreate_f_dofs_out_of_range);
-   RUN_TEST(test_MGRCreate_f_dofs_label_not_in_dofmap);
+   RUN_TEST(test_MGRCreate_f_dofs_label_not_in_dofmap_is_ignored);
    RUN_TEST(test_MGRCreate_f_dofs_duplicate_label);
    RUN_TEST(test_MGRCreate_empty_dofmap);
    RUN_TEST(test_MGRCreate_dofmap_negative_label);

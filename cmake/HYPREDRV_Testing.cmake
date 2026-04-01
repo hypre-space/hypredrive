@@ -554,7 +554,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     --preconditioner:mgr:level:0:f_relaxation ilu
                 REQUIRE_CONTAINS
                     "f_relaxation: ilu"
-                    "[0, 1]          --        BJ-ILU0"
+                    "[0, 1]     Unknown        BJ-ILU0"
             )
             add_hypredrive_cli_test(ex4_cli_mgr_f_amg 1 ex4.yml
                 OVERRIDES
@@ -583,6 +583,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         endif()
         if (HYPREDRV_HAVE_HYPRE_30100_DEV5)
             add_hypredrive_test(ex7_nested_mgr_1proc 1 ex7-nested-mgr.yml)
+            add_hypredrive_test(ex7_nested_krylov_mgr_1proc 1 ex7-nested-krylov-mgr.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_30000_DEV0)
             add_hypredrive_cli_test(ex7_cli_dofmap_scaling 1 ex7.yml
