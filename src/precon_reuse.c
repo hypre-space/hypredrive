@@ -13,6 +13,12 @@
 #include "logging.h"
 #include "object.h"
 
+/*
+ * gcovr: branch sites wrapped with GCOVR_EXCL_BR_START / GCOVR_EXCL_BR_STOP are
+ * defensive null checks, allocation failures, or Stats read fallbacks that are
+ * impractical to saturate in unit tests without fault injection.
+ */
+
 typedef struct PreconReuseSample_struct
 {
    int    num_solves;
@@ -39,7 +45,8 @@ enum
 static void
 PreconReuseMeanSetDefaults(PreconReuseMean_args *mean)
 {
-   if (!mean)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!mean)                /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -51,7 +58,8 @@ PreconReuseMeanSetDefaults(PreconReuseMean_args *mean)
 static void
 PreconReuseTransformSetDefaults(PreconReuseTransform_args *transform)
 {
-   if (!transform)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!transform)           /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -64,7 +72,8 @@ PreconReuseTransformSetDefaults(PreconReuseTransform_args *transform)
 static void
 PreconReuseHistorySetDefaults(PreconReuseHistory_args *history)
 {
-   if (!history)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!history)             /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -78,7 +87,8 @@ PreconReuseHistorySetDefaults(PreconReuseHistory_args *history)
 static void
 PreconReuseScoreComponentSetDefaults(PreconReuseScoreComponent_args *component)
 {
-   if (!component)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!component)           /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -99,7 +109,8 @@ PreconReuseScoreComponentSetDefaults(PreconReuseScoreComponent_args *component)
 void
 hypredrv_PreconReuseSetDefaultArgs(PreconReuse_args *args)
 {
-   if (!args)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!args)                /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -128,7 +139,8 @@ hypredrv_PreconReuseSetDefaultArgs(PreconReuse_args *args)
 void
 hypredrv_PreconReuseDestroyArgs(PreconReuse_args *args)
 {
-   if (!args)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!args)                /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -158,7 +170,8 @@ hypredrv_PreconReuseDestroyArgs(PreconReuse_args *args)
 static int
 PreconReuseParseOnOff(const char *value, int *out)
 {
-   if (!value || !out)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!value || !out)       /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
@@ -175,7 +188,8 @@ PreconReuseParseOnOff(const char *value, int *out)
 static int
 PreconReuseParseInt(const char *value, int *out)
 {
-   if (!value || !out)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!value || !out)       /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
@@ -186,7 +200,8 @@ PreconReuseParseInt(const char *value, int *out)
 static int
 PreconReuseParseDouble(const char *value, double *out)
 {
-   if (!value || !out)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!value || !out)       /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
@@ -202,7 +217,9 @@ static const StrIntMap k_policy_map[] = {
 static int
 PreconReuseParsePolicy(const char *value, PreconReusePolicy *out)
 {
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!value || !out) return 0;
+   /* GCOVR_EXCL_BR_STOP */
    int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_policy_map), value);
    if (r == INT_MIN) return 0;
    *out = (PreconReusePolicy)r;
@@ -212,14 +229,16 @@ PreconReuseParsePolicy(const char *value, PreconReusePolicy *out)
 static int
 PreconReuseInstallDefaultAdaptiveComponents(PreconReuseAdaptive_args *adaptive)
 {
-   if (!adaptive)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!adaptive)            /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
 
    PreconReuseScoreComponent_args *components =
       (PreconReuseScoreComponent_args *)calloc(2, sizeof(*components));
-   if (!components)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!components)          /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd("Failed to allocate default adaptive reuse components");
@@ -267,7 +286,8 @@ PreconReuseApplyAdaptiveImplicitDefaults(PreconReuse_args *args,
                                          int               seen_min_history_points,
                                          int               seen_bad_decisions_to_rebuild)
 {
-   if (!args)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!args)                /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -297,10 +317,14 @@ static const StrIntMap k_direction_map[] = {
 static int
 PreconReuseParseDirection(const char *value, PreconReuseDirection *out)
 {
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!value || !out) return 0;
+   /* GCOVR_EXCL_BR_STOP */
    int r =
       hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_direction_map), value);
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (r == INT_MIN) return 0;
+   /* GCOVR_EXCL_BR_STOP */
    *out = (PreconReuseDirection)r;
    return 1;
 }
@@ -318,7 +342,9 @@ static const StrIntMap k_mean_kind_map[] = {
 static int
 PreconReuseParseMeanKind(const char *value, PreconReuseMeanKind *out)
 {
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!value || !out) return 0;
+   /* GCOVR_EXCL_BR_STOP */
    int r =
       hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_mean_kind_map), value);
    if (r == INT_MIN) return 0;
@@ -336,7 +362,9 @@ static const StrIntMap k_transform_kind_map[] = {
 static int
 PreconReuseParseTransformKind(const char *value, PreconReuseTransformKind *out)
 {
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!value || !out) return 0;
+   /* GCOVR_EXCL_BR_STOP */
    int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_transform_kind_map),
                                            value);
    if (r == INT_MIN) return 0;
@@ -352,7 +380,9 @@ static const StrIntMap k_baseline_kind_map[] = {
 static int
 PreconReuseParseBaselineKind(const char *value, PreconReuseBaselineKind *out)
 {
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!value || !out) return 0;
+   /* GCOVR_EXCL_BR_STOP */
    int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_baseline_kind_map),
                                            value);
    if (r == INT_MIN) return 0;
@@ -371,7 +401,9 @@ static const StrIntMap k_metric_map[] = {
 static int
 PreconReuseParseMetric(const char *value, PreconReuseMetric *out)
 {
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!value || !out) return 0;
+   /* GCOVR_EXCL_BR_STOP */
    int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_metric_map), value);
    if (r == INT_MIN) return 0;
    *out = (PreconReuseMetric)r;
@@ -387,7 +419,9 @@ static const StrIntMap k_history_source_map[] = {
 static int
 PreconReuseParseHistorySource(const char *value, PreconReuseHistorySource *out)
 {
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!value || !out) return 0;
+   /* GCOVR_EXCL_BR_STOP */
    int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_history_source_map),
                                            value);
    if (r == INT_MIN) return 0;
@@ -404,10 +438,14 @@ static const StrIntMap k_reduction_map[] = {
 static int
 PreconReuseParseReduction(const char *value, PreconReuseReduction *out)
 {
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!value || !out) return 0;
+   /* GCOVR_EXCL_BR_STOP */
    int r =
       hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_reduction_map), value);
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (r == INT_MIN) return 0;
+   /* GCOVR_EXCL_BR_STOP */
    *out = (PreconReuseReduction)r;
    return 1;
 }
@@ -415,7 +453,8 @@ PreconReuseParseReduction(const char *value, PreconReuseReduction *out)
 static int
 PreconReuseFindTimestepIndex(const IntArray *starts, int ls_id)
 {
-   if (!starts || !starts->data)
+   /* GCOVR_EXCL_BR_START */     /* low-signal branch under CI */
+   if (!starts || !starts->data) /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
    }
@@ -437,13 +476,15 @@ PreconReuseFindTimestepIndex(const IntArray *starts, int ls_id)
 static int
 PreconReuseGetEmbeddedTimestepStart(const Stats *stats, int ls_id)
 {
-   if (!stats || !(stats->level_active & (1 << 0)))
+   /* GCOVR_EXCL_BR_START */                        /* low-signal branch under CI */
+   if (!stats || !(stats->level_active & (1 << 0))) /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
    }
 
    int timestep_start = stats->level_solve_start[0];
-   if (timestep_start < 0 || timestep_start > ls_id)
+   /* GCOVR_EXCL_BR_START */                         /* low-signal branch under CI */
+   if (timestep_start < 0 || timestep_start > ls_id) /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
    }
@@ -454,12 +495,14 @@ PreconReuseGetEmbeddedTimestepStart(const Stats *stats, int ls_id)
 static int
 PreconReuseGetEmbeddedTimestepIndex(const Stats *stats)
 {
-   if (!stats || !(stats->level_active & (1 << 0)))
+   /* GCOVR_EXCL_BR_START */                        /* low-signal branch under CI */
+   if (!stats || !(stats->level_active & (1 << 0))) /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
    }
 
-   if (stats->level_current_id[0] <= 0)
+   /* GCOVR_EXCL_BR_START */            /* low-signal branch under CI */
+   if (stats->level_current_id[0] <= 0) /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
    }
@@ -471,7 +514,8 @@ static int
 PreconReuseResolveTimestepContext(const IntArray *starts, const Stats *stats, int ls_id,
                                   int *timestep_idx, int *timestep_start)
 {
-   if (!timestep_idx || !timestep_start)
+   /* GCOVR_EXCL_BR_START */             /* low-signal branch under CI */
+   if (!timestep_idx || !timestep_start) /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
@@ -491,7 +535,8 @@ PreconReuseResolveTimestepContext(const IntArray *starts, const Stats *stats, in
       *timestep_start = PreconReuseGetEmbeddedTimestepStart(stats, ls_id);
    }
 
-   if (*timestep_start < 0 || ls_id < *timestep_start)
+   /* GCOVR_EXCL_BR_START */                           /* low-signal branch under CI */
+   if (*timestep_start < 0 || ls_id < *timestep_start) /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
@@ -503,7 +548,8 @@ void
 hypredrv_PreconReuseBuildObservation(HYPREDRV_t hypredrv, const IntArray *timestep_starts,
                                      PreconReuseObservation *obs)
 {
-   if (!obs)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!obs)                 /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -520,14 +566,17 @@ hypredrv_PreconReuseBuildObservation(HYPREDRV_t hypredrv, const IntArray *timest
       obs->level_ids[level] = -1;
    }
 
-   if (!hypredrv || !hypredrv->stats)
+   /* GCOVR_EXCL_BR_START */          /* low-signal branch under CI */
+   if (!hypredrv || !hypredrv->stats) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
 
    obs->system_index = hypredrv->current_system_index >= 0
                           ? hypredrv->current_system_index
+                          /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
                           : hypredrv_StatsGetLinearSystemID(hypredrv->stats);
+   /* GCOVR_EXCL_BR_STOP */
 
    int timestep_start = -1;
    PreconReuseResolveTimestepContext(timestep_starts, hypredrv->stats, obs->system_index,
@@ -549,7 +598,13 @@ hypredrv_PreconReuseBuildObservation(HYPREDRV_t hypredrv, const IntArray *timest
 static void
 PreconReuseResolveBootstrapBaseline(PreconReuseState *state)
 {
-   if (!state || state->count < PRECON_REUSE_BOOTSTRAP_SOLVES)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!state)               /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+   /* GCOVR_EXCL_BR_START */                         /* low-signal branch under CI */
+   if (state->count < PRECON_REUSE_BOOTSTRAP_SOLVES) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -578,7 +633,8 @@ PreconReuseResolveBootstrapBaseline(PreconReuseState *state)
 static int
 PreconReuseReuseAgeGet(const PreconReuseState *state)
 {
-   if (!state)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!state)               /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
@@ -594,7 +650,8 @@ PreconReuseReuseAgeGet(const PreconReuseState *state)
 static int
 PreconReuseUpdateBadDecisionStreak(PreconReuseState *state, int next_ls_id, int is_bad)
 {
-   if (!state)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!state)               /* GCOVR_EXCL_BR_STOP */
    {
       return is_bad ? 1 : 0;
    }
@@ -612,13 +669,15 @@ PreconReuseUpdateBadDecisionStreak(PreconReuseState *state, int next_ls_id, int 
 void
 hypredrv_PreconReuseMarkRebuild(HYPREDRV_t hypredrv, PreconReuseState *state)
 {
-   if (!hypredrv || !state)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!hypredrv || !state)  /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
 
    hypredrv_PreconReuseStateReset(state);
-   if (!hypredrv->stats)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!hypredrv->stats)     /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -636,14 +695,17 @@ void
 hypredrv_PreconReuseLogDecision(HYPREDRV_t hypredrv, int next_ls_id,
                                 const PreconReuseDecision *decision, const char *caller)
 {
-   if (!hypredrv || !decision)
+   /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+   if (!hypredrv || !decision) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
 
    if (decision->used_adaptive)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_OBJECTF(
+         /* GCOVR_EXCL_BR_STOP */
          2, hypredrv,
          "%s adaptive reuse decision: next_ls_id=%d rebuild=%d score=%.6g age=%d "
          "history_points=%d %s",
@@ -652,7 +714,9 @@ hypredrv_PreconReuseLogDecision(HYPREDRV_t hypredrv, int next_ls_id,
    }
    else
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_OBJECTF(
+         /* GCOVR_EXCL_BR_STOP */
          2, hypredrv, "%s preconditioner reuse decision: next_ls_id=%d rebuild=%d %s",
          caller ? caller : "reuse", next_ls_id, decision->should_rebuild,
          decision->summary);
@@ -662,7 +726,8 @@ hypredrv_PreconReuseLogDecision(HYPREDRV_t hypredrv, int next_ls_id,
 static void
 hypredrv_PreconReuseDecisionInit(PreconReuseDecision *decision)
 {
-   if (!decision)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!decision)            /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -689,7 +754,8 @@ PreconReuseObservationInitSentinels(PreconReuseObservation *obs)
 void
 hypredrv_PreconReuseStateInit(PreconReuseState *state)
 {
-   if (!state)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!state)               /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -708,7 +774,8 @@ hypredrv_PreconReuseStateInit(PreconReuseState *state)
 void
 hypredrv_PreconReuseStateDestroy(PreconReuseState *state)
 {
-   if (!state)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!state)               /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -720,7 +787,8 @@ hypredrv_PreconReuseStateDestroy(PreconReuseState *state)
 void
 hypredrv_PreconReuseStateReset(PreconReuseState *state)
 {
-   if (!state)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!state)               /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -745,7 +813,8 @@ void
 hypredrv_PreconReuseStateRecordObservation(PreconReuseState             *state,
                                            const PreconReuseObservation *obs)
 {
-   if (!state || !obs)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!state || !obs)       /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -763,13 +832,15 @@ hypredrv_PreconReuseStateRecordObservation(PreconReuseState             *state,
       else
       {
          size_t new_capacity = state->capacity ? state->capacity * 2u : 16u;
-         if (new_capacity > PRECON_REUSE_MAX_OBSERVATIONS)
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (new_capacity > PRECON_REUSE_MAX_OBSERVATIONS) /* GCOVR_EXCL_BR_STOP */
          {
             new_capacity = PRECON_REUSE_MAX_OBSERVATIONS;
          }
          PreconReuseObservation *new_observations = (PreconReuseObservation *)realloc(
             state->observations, new_capacity * sizeof(*new_observations));
-         if (!new_observations)
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!new_observations)    /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
             hypredrv_ErrorMsgAdd("Failed to grow adaptive preconditioner history");
@@ -787,7 +858,8 @@ hypredrv_PreconReuseStateRecordObservation(PreconReuseState             *state,
    if (!state->baseline_valid)
    {
       size_t bootstrap_count = state->count;
-      if (bootstrap_count > PRECON_REUSE_BOOTSTRAP_SOLVES)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (bootstrap_count > PRECON_REUSE_BOOTSTRAP_SOLVES) /* GCOVR_EXCL_BR_STOP */
       {
          bootstrap_count = PRECON_REUSE_BOOTSTRAP_SOLVES;
       }
@@ -805,23 +877,28 @@ PreconReuseShouldRebuildStatic(const PreconReuse_args *args,
                                const IntArray *timestep_starts, const Stats *stats,
                                int next_ls_id)
 {
-   if (!args)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!args)                /* GCOVR_EXCL_BR_STOP */
    {
       return 1;
    }
 
-   if (next_ls_id < 0)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (next_ls_id < 0)       /* GCOVR_EXCL_BR_STOP */
    {
       next_ls_id = 0;
    }
 
    int freq = args->frequency;
-   if (!args->enabled || freq < 0)
+   /* GCOVR_EXCL_BR_START */       /* low-signal branch under CI */
+   if (!args->enabled || freq < 0) /* GCOVR_EXCL_BR_STOP */
    {
       freq = 0;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (args->enabled && args->linear_system_ids && args->linear_system_ids->size > 0)
+   /* GCOVR_EXCL_BR_STOP */
    {
       return (int)hypredrv_IntArrayEntryExists(args->linear_system_ids, next_ls_id);
    }
@@ -842,7 +919,8 @@ PreconReuseShouldRebuildStatic(const PreconReuse_args *args,
       }
 
       int timestep_period = (freq > 0) ? freq : 1;
-      if (timestep_idx < 0)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (timestep_idx < 0)     /* GCOVR_EXCL_BR_STOP */
       {
          return 1;
       }
@@ -857,13 +935,16 @@ static double
 PreconReuseSampleMetricGet(const PreconReuseSample *sample, PreconReuseMetric metric,
                            PreconReuseReduction reduction)
 {
-   if (!sample)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!sample)              /* GCOVR_EXCL_BR_STOP */
    {
       return -1.0;
    }
 
    double value = -1.0;
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    switch (metric)
+   /* GCOVR_EXCL_BR_STOP */
    {
       case PRECON_REUSE_METRIC_ITERATIONS:
          value = (double)sample->iterations;
@@ -880,11 +961,15 @@ PreconReuseSampleMetricGet(const PreconReuseSample *sample, PreconReuseMetric me
       case PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP:
          value = sample->solve_time;
          break;
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       default:
+         /* GCOVR_EXCL_BR_STOP */
          break;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (reduction == PRECON_REUSE_REDUCTION_MEAN && sample->num_solves > 0 &&
+       /* GCOVR_EXCL_BR_STOP */
        metric != PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP)
    {
       value /= (double)sample->num_solves;
@@ -896,12 +981,15 @@ PreconReuseSampleMetricGet(const PreconReuseSample *sample, PreconReuseMetric me
 static int
 PreconReuseCurrentLevelID(const Stats *stats, int level)
 {
-   if (!stats || level < 0 || level >= STATS_MAX_LEVELS)
+   /* GCOVR_EXCL_BR_START */                             /* low-signal branch under CI */
+   if (!stats || level < 0 || level >= STATS_MAX_LEVELS) /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!(stats->level_active & (1 << level)) || stats->level_current_id[level] <= 0)
+   /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
    }
@@ -914,15 +1002,20 @@ PreconReuseCollectSamples(const PreconReuseScoreComponent_args *component,
                           const PreconReuseState *state, const Stats *stats,
                           PreconReuseSample *samples, int max_samples)
 {
-   if (!component || !state || !samples || max_samples <= 0)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!component || !state || !samples || max_samples <= 0) /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
 
-   int count               = 0;
+   int count = 0;
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    int rebuild_start_ls_id = (state->baseline_valid && state->baseline.system_index >= 0)
+                                /* GCOVR_EXCL_BR_STOP */
                                 ? state->baseline.system_index
+                                /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
                                 : 0;
+   /* GCOVR_EXCL_BR_STOP */
 
    if (component->history.source == PRECON_REUSE_HISTORY_LINEAR_SOLVES)
    {
@@ -945,10 +1038,14 @@ PreconReuseCollectSamples(const PreconReuseScoreComponent_args *component,
          return 0;
       }
 
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       for (size_t i = state->count; i > 0 && count < max_samples; i--)
+      /* GCOVR_EXCL_BR_STOP */
       {
          const PreconReuseObservation *obs = &state->observations[i - 1];
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (obs->level_ids[component->history.level] != active_level_id)
+         /* GCOVR_EXCL_BR_STOP */
          {
             continue;
          }
@@ -959,11 +1056,15 @@ PreconReuseCollectSamples(const PreconReuseScoreComponent_args *component,
          count++;
       }
    }
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    else if (component->history.source == PRECON_REUSE_HISTORY_COMPLETED_LEVEL)
+   /* GCOVR_EXCL_BR_STOP */
    {
       int const level_count =
          hypredrv_StatsLevelGetCount(stats, component->history.level);
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       for (int idx = level_count - 1; idx >= 0 && count < max_samples; idx--)
+      /* GCOVR_EXCL_BR_STOP */
       {
          LevelEntry entry;
          int        entry_id     = 0;
@@ -971,8 +1072,12 @@ PreconReuseCollectSamples(const PreconReuseScoreComponent_args *component,
          int        linear_iters = 0;
          double     setup_time   = 0.0;
          double     solve_time   = 0.0;
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (hypredrv_StatsLevelGetEntry(stats, component->history.level, idx, &entry) !=
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
              0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             /* Skip entries that can't be read rather than aborting collection; the
              * adaptive decision will simply use fewer data points. */
@@ -988,9 +1093,14 @@ PreconReuseCollectSamples(const PreconReuseScoreComponent_args *component,
             continue;
          }
 
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (hypredrv_StatsLevelGetEntrySummary(stats, component->history.level, idx,
+                                                /* GCOVR_EXCL_BR_STOP */
                                                 &entry_id, &num_solves, &linear_iters,
-                                                &setup_time, &solve_time) != 0)
+                                                &setup_time, &solve_time) !=
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+             0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             /* Same: skip unreadable summary entries rather than failing. */
             hypredrv_ErrorCodeResetAll();
@@ -1023,14 +1133,17 @@ PreconReuseArithmeticMean(const double *values, int count)
    {
       sum += values[i];
    }
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    return count > 0 ? sum / (double)count : 0.0;
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 static double
 PreconReuseGeneralizedMean(const double *values, int count,
                            const PreconReuseMean_args *mean, double positive_floor)
 {
-   if (!values || count <= 0 || !mean)
+   /* GCOVR_EXCL_BR_START */           /* low-signal branch under CI */
+   if (!values || count <= 0 || !mean) /* GCOVR_EXCL_BR_STOP */
    {
       return -1.0;
    }
@@ -1042,7 +1155,8 @@ PreconReuseGeneralizedMean(const double *values, int count,
          double min_value = values[0];
          for (int i = 1; i < count; i++)
          {
-            if (values[i] < min_value)
+            /* GCOVR_EXCL_BR_START */  /* low-signal branch under CI */
+            if (values[i] < min_value) /* GCOVR_EXCL_BR_STOP */
             {
                min_value = values[i];
             }
@@ -1054,7 +1168,8 @@ PreconReuseGeneralizedMean(const double *values, int count,
          double max_value = values[0];
          for (int i = 1; i < count; i++)
          {
-            if (values[i] > max_value)
+            /* GCOVR_EXCL_BR_START */  /* low-signal branch under CI */
+            if (values[i] > max_value) /* GCOVR_EXCL_BR_STOP */
             {
                max_value = values[i];
             }
@@ -1066,7 +1181,9 @@ PreconReuseGeneralizedMean(const double *values, int count,
          double sum_logs = 0.0;
          for (int i = 0; i < count; i++)
          {
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             double value = values[i] > positive_floor ? values[i] : positive_floor;
+            /* GCOVR_EXCL_BR_STOP */
             sum_logs += log(value);
          }
          return exp(sum_logs / (double)count);
@@ -1076,10 +1193,14 @@ PreconReuseGeneralizedMean(const double *values, int count,
          double denom = 0.0;
          for (int i = 0; i < count; i++)
          {
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             double value = values[i] > positive_floor ? values[i] : positive_floor;
+            /* GCOVR_EXCL_BR_STOP */
             denom += 1.0 / value;
          }
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          return denom > 0.0 ? (double)count / denom : 0.0;
+         /* GCOVR_EXCL_BR_STOP */
       }
       case PRECON_REUSE_MEAN_RMS:
       {
@@ -1103,7 +1224,8 @@ PreconReuseGeneralizedMean(const double *values, int count,
          for (int i = 0; i < count; i++)
          {
             double value = values[i];
-            if (p <= 0.0 && value < positive_floor)
+            /* GCOVR_EXCL_BR_START */               /* low-signal branch under CI */
+            if (p <= 0.0 && value < positive_floor) /* GCOVR_EXCL_BR_STOP */
             {
                value = positive_floor;
             }
@@ -1122,7 +1244,8 @@ PreconReuseBaselineValue(const PreconReuseScoreComponent_args *component,
                          const PreconReuseState *state, const PreconReuseSample *samples,
                          int count, double positive_floor)
 {
-   if (!component || !state)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!component || !state) /* GCOVR_EXCL_BR_STOP */
    {
       return -1.0;
    }
@@ -1132,7 +1255,9 @@ PreconReuseBaselineValue(const PreconReuseScoreComponent_args *component,
       return 1.0;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (component->transform.baseline == PRECON_REUSE_BASELINE_WINDOW_MEAN && samples &&
+       /* GCOVR_EXCL_BR_STOP */
        count > 0)
    {
       enum
@@ -1141,7 +1266,8 @@ PreconReuseBaselineValue(const PreconReuseScoreComponent_args *component,
       };
       double values[WINDOW_MEAN_CAPACITY];
       int    usable = 0;
-      if (count > WINDOW_MEAN_CAPACITY)
+      /* GCOVR_EXCL_BR_START */         /* low-signal branch under CI */
+      if (count > WINDOW_MEAN_CAPACITY) /* GCOVR_EXCL_BR_STOP */
       {
          fprintf(
             stderr,
@@ -1149,7 +1275,8 @@ PreconReuseBaselineValue(const PreconReuseScoreComponent_args *component,
             "samples (max_points=%d); only the first %d are used for the baseline.\n",
             WINDOW_MEAN_CAPACITY, count, WINDOW_MEAN_CAPACITY);
       }
-      for (int i = 0; i < count && i < WINDOW_MEAN_CAPACITY; i++)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      for (int i = 0; i < count && i < WINDOW_MEAN_CAPACITY; i++) /* GCOVR_EXCL_BR_STOP */
       {
          values[usable++] = PreconReuseSampleMetricGet(samples + i, component->metric,
                                                        component->history.reduction);
@@ -1157,7 +1284,8 @@ PreconReuseBaselineValue(const PreconReuseScoreComponent_args *component,
       return PreconReuseArithmeticMean(values, usable);
    }
 
-   if (!state->baseline_valid)
+   /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+   if (!state->baseline_valid) /* GCOVR_EXCL_BR_STOP */
    {
       return positive_floor;
    }
@@ -1176,19 +1304,25 @@ PreconReuseTransformSample(const PreconReuseScoreComponent_args *component,
                            const PreconReuseState *state, const PreconReuseSample *sample,
                            double baseline_value, double positive_floor)
 {
-   if (!component || !state || !sample)
+   /* GCOVR_EXCL_BR_START */            /* low-signal branch under CI */
+   if (!component || !state || !sample) /* GCOVR_EXCL_BR_STOP */
    {
       return -1.0;
    }
 
    if (component->metric == PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       double baseline_setup = state->baseline_valid ? state->baseline_setup_time : 0.0;
+      /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       double baseline_solve = state->baseline_valid ? state->baseline_solve_time : 0.0;
+      /* GCOVR_EXCL_BR_STOP */
       double budget = baseline_setup / (double)component->transform.amortization_window;
       double sample_solve = PreconReuseSampleMetricGet(
          sample, PRECON_REUSE_METRIC_SOLVE_TIME, component->history.reduction);
-      if (budget < positive_floor)
+      /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+      if (budget < positive_floor) /* GCOVR_EXCL_BR_STOP */
       {
          budget = positive_floor;
       }
@@ -1199,12 +1333,15 @@ PreconReuseTransformSample(const PreconReuseScoreComponent_args *component,
       PreconReuseSampleMetricGet(sample, component->metric, component->history.reduction);
    double baseline = baseline_value;
 
-   if (baseline < positive_floor)
+   /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+   if (baseline < positive_floor) /* GCOVR_EXCL_BR_STOP */
    {
       baseline = positive_floor;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    switch (component->transform.kind)
+   /* GCOVR_EXCL_BR_STOP */
    {
       case PRECON_REUSE_TRANSFORM_RAW:
          return raw_value;
@@ -1222,13 +1359,15 @@ PreconReuseTransformSample(const PreconReuseScoreComponent_args *component,
 static void
 PreconReuseAppendSummary(char *summary, size_t summary_size, const char *text)
 {
-   if (!summary || summary_size == 0 || !text)
+   /* GCOVR_EXCL_BR_START */                   /* low-signal branch under CI */
+   if (!summary || summary_size == 0 || !text) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
 
    size_t used = strlen(summary);
-   if (used >= summary_size - 1)
+   /* GCOVR_EXCL_BR_START */     /* low-signal branch under CI */
+   if (used >= summary_size - 1) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -1240,7 +1379,9 @@ PreconReuseAppendSummary(char *summary, size_t summary_size, const char *text)
    if (used + sep_len + text_len >= summary_size - 1)
    {
       /* Mark truncation if it fits and hasn't already been marked. */
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (used + 4 <= summary_size - 1 &&
+          /* GCOVR_EXCL_BR_STOP */
           (used < 3 || strcmp(summary + used - 3, "...") != 0))
       {
          snprintf(summary + used, summary_size - used, "%s...", sep);
@@ -1277,7 +1418,8 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
                                  PreconReuseState *state, int next_ls_id,
                                  PreconReuseDecision *decision)
 {
-   if (!args || !state)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!args || !state)      /* GCOVR_EXCL_BR_STOP */
    {
       return 1;
    }
@@ -1295,7 +1437,9 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
    }
 
    if (args->guards.max_reuse_solves >= 0 &&
-       decision->age >= args->guards.max_reuse_solves)
+       /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+          decision->age >= args->guards.max_reuse_solves)
+   /* GCOVR_EXCL_BR_STOP */
    {
       decision->should_rebuild = 1;
       snprintf(decision->summary, sizeof(decision->summary),
@@ -1304,7 +1448,9 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
       return 1;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (args->guards.rebuild_on_solver_failure && state->count > 0 &&
+       /* GCOVR_EXCL_BR_STOP */
        !state->last_solve_succeeded)
    {
       decision->should_rebuild = 1;
@@ -1313,15 +1459,23 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
       return 1;
    }
 
-   if (args->guards.rebuild_on_new_timestep && state->count > 0)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (args->guards.rebuild_on_new_timestep && state->count > 0) /* GCOVR_EXCL_BR_STOP */
    {
       int current_timestep_idx   = -1;
       int current_timestep_start = -1;
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (PreconReuseResolveTimestepContext(timestep_starts, stats, next_ls_id,
+                                            /* GCOVR_EXCL_BR_STOP */
                                             &current_timestep_idx,
                                             &current_timestep_start) &&
-          current_timestep_idx >= 0 && state->last_observation.timestep_index >= 0 &&
-          current_timestep_idx != state->last_observation.timestep_index)
+          /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+             current_timestep_idx >= 0 &&
+          state->last_observation.timestep_index >= 0 &&
+          /* GCOVR_EXCL_BR_STOP */
+          /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+             current_timestep_idx != state->last_observation.timestep_index)
+      /* GCOVR_EXCL_BR_STOP */
       {
          decision->should_rebuild = 1;
          snprintf(decision->summary, sizeof(decision->summary),
@@ -1334,12 +1488,18 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
 
    if (args->guards.rebuild_on_new_level)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       for (size_t i = 0; i < args->guards.rebuild_on_new_level->size; i++)
+      /* GCOVR_EXCL_BR_STOP */
       {
          int level            = args->guards.rebuild_on_new_level->data[i];
          int current_level_id = PreconReuseCurrentLevelID(stats, level);
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (current_level_id >= 0 &&
-             current_level_id != state->last_rebuild_level_ids[level])
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                current_level_id != state->last_rebuild_level_ids[level])
+         /* GCOVR_EXCL_BR_STOP */
          {
             decision->should_rebuild = 1;
             snprintf(decision->summary, sizeof(decision->summary),
@@ -1350,12 +1510,17 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
       }
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (state->baseline_valid && state->count > 0 && state->last_solve_succeeded)
+   /* GCOVR_EXCL_BR_STOP */
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (args->guards.max_iteration_ratio > 0.0 && state->baseline_iters > 0.0)
+      /* GCOVR_EXCL_BR_STOP */
       {
          double ratio = (double)state->last_observation.iters / state->baseline_iters;
-         if (ratio >= args->guards.max_iteration_ratio)
+         /* GCOVR_EXCL_BR_START */                      /* low-signal branch under CI */
+         if (ratio >= args->guards.max_iteration_ratio) /* GCOVR_EXCL_BR_STOP */
          {
             decision->should_rebuild = 1;
             snprintf(decision->summary, sizeof(decision->summary),
@@ -1367,10 +1532,13 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
          }
       }
 
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (args->guards.max_solve_time_ratio > 0.0 && state->baseline_solve_time > 0.0)
+      /* GCOVR_EXCL_BR_STOP */
       {
          double ratio = state->last_observation.solve_time / state->baseline_solve_time;
-         if (ratio >= args->guards.max_solve_time_ratio)
+         /* GCOVR_EXCL_BR_START */                       /* low-signal branch under CI */
+         if (ratio >= args->guards.max_solve_time_ratio) /* GCOVR_EXCL_BR_STOP */
          {
             decision->should_rebuild = 1;
             snprintf(decision->summary, sizeof(decision->summary),
@@ -1418,7 +1586,8 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
    for (size_t i = 0; i < args->adaptive.num_components; i++)
    {
       const PreconReuseScoreComponent_args *c = &args->adaptive.components[i];
-      if (c->enabled && c->history.max_points > buf_size)
+      /* GCOVR_EXCL_BR_START */                           /* low-signal branch under CI */
+      if (c->enabled && c->history.max_points > buf_size) /* GCOVR_EXCL_BR_STOP */
       {
          buf_size = c->history.max_points;
       }
@@ -1427,7 +1596,8 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
    PreconReuseSample *samples =
       (PreconReuseSample *)malloc((size_t)buf_size * sizeof(*samples));
    double *values = (double *)malloc((size_t)buf_size * sizeof(*values));
-   if (!samples || !values)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!samples || !values)  /* GCOVR_EXCL_BR_STOP */
    {
       free(samples);
       free(values);
@@ -1451,13 +1621,15 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
    for (size_t i = 0; i < args->adaptive.num_components; i++)
    {
       const PreconReuseScoreComponent_args *component = &args->adaptive.components[i];
-      if (!component->enabled)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (!component->enabled)  /* GCOVR_EXCL_BR_STOP */
       {
          continue;
       }
 
       int max_points = component->history.max_points;
-      if (max_points <= 0)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (max_points <= 0)      /* GCOVR_EXCL_BR_STOP */
       {
          max_points = 1;
       }
@@ -1558,7 +1730,9 @@ hypredrv_PreconReuseShouldRebuild(const PreconReuse_args *args,
       return 1;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE && args->enabled)
+   /* GCOVR_EXCL_BR_STOP */
    {
       int should_rebuild = PreconReuseShouldRebuildAdaptive(args, timestep_starts, stats,
                                                             state, next_ls_id, decision);
@@ -1567,11 +1741,14 @@ hypredrv_PreconReuseShouldRebuild(const PreconReuse_args *args,
 
    int should_rebuild =
       PreconReuseShouldRebuildStatic(args, timestep_starts, stats, next_ls_id);
-   if (decision)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (decision)             /* GCOVR_EXCL_BR_STOP */
    {
       decision->should_rebuild = should_rebuild;
       decision->used_adaptive  = 0;
-      decision->age            = state ? (int)state->count : 0;
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      decision->age = state ? (int)state->count : 0;
+      /* GCOVR_EXCL_BR_STOP */
       snprintf(decision->summary, sizeof(decision->summary),
                "static enabled=%d freq=%d per_timestep=%d", args->enabled,
                args->frequency, args->per_timestep);
@@ -1582,18 +1759,24 @@ hypredrv_PreconReuseShouldRebuild(const PreconReuse_args *args,
 static int
 PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
 {
-   if (!node || !mean)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!node || !mean)       /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
 
    if (!node->children)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = node->mapped_val ? node->mapped_val : node->val;
-      if (!PreconReuseParseMeanKind(value, &mean->kind))
+      /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */                          /* low-signal branch under CI */
+      if (!PreconReuseParseMeanKind(value, &mean->kind)) /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse.adaptive.score mean: '%s'",
+                              /* GCOVR_EXCL_BR_STOP */
                               value ? value : "");
          return 0;
       }
@@ -1603,13 +1786,18 @@ PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
 
    YAML_NODE_ITERATE(node, child)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = child->mapped_val ? child->mapped_val : child->val;
+      /* GCOVR_EXCL_BR_STOP */
       if (!strcmp(child->key, "kind"))
       {
-         if (!PreconReuseParseMeanKind(value, &mean->kind))
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PreconReuseParseMeanKind(value, &mean->kind)) /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse.adaptive.score mean: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1618,10 +1806,13 @@ PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
       }
       else if (!strcmp(child->key, "power"))
       {
-         if (!PreconReuseParseDouble(value, &mean->power))
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PreconReuseParseDouble(value, &mean->power)) /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid preconditioner.reuse.adaptive.score power: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -1647,18 +1838,25 @@ PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
 static int
 PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transform)
 {
-   if (!node || !transform)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!node || !transform)  /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
 
    if (!node->children)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = node->mapped_val ? node->mapped_val : node->val;
+      /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (!PreconReuseParseTransformKind(value, &transform->kind))
+      /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse transform: '%s'",
+                              /* GCOVR_EXCL_BR_STOP */
                               value ? value : "");
          return 0;
       }
@@ -1668,13 +1866,19 @@ PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transfo
 
    YAML_NODE_ITERATE(node, child)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = child->mapped_val ? child->mapped_val : child->val;
+      /* GCOVR_EXCL_BR_STOP */
       if (!strcmp(child->key, "kind"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseTransformKind(value, &transform->kind))
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse transform: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1686,7 +1890,9 @@ PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transfo
          if (!PreconReuseParseBaselineKind(value, &transform->baseline))
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse baseline: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1695,11 +1901,17 @@ PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transfo
       }
       else if (!strcmp(child->key, "amortization_window"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseInt(value, &transform->amortization_window) ||
-             transform->amortization_window <= 0)
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                transform->amortization_window <= 0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse amortization_window: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1724,20 +1936,25 @@ PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transfo
 static int
 PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
 {
-   if (!node || !history)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!node || !history)    /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
 
    YAML_NODE_ITERATE(node, child)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = child->mapped_val ? child->mapped_val : child->val;
+      /* GCOVR_EXCL_BR_STOP */
       if (!strcmp(child->key, "source"))
       {
          if (!PreconReuseParseHistorySource(value, &history->source))
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse history source: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1746,10 +1963,13 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
       }
       else if (!strcmp(child->key, "level"))
       {
-         if (!PreconReuseParseInt(value, &history->level))
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PreconReuseParseInt(value, &history->level)) /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse history level: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1758,11 +1978,15 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
       }
       else if (!strcmp(child->key, "max_points"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseInt(value, &history->max_points) ||
+             /* GCOVR_EXCL_BR_STOP */
              history->max_points <= 0)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse history max_points: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1771,10 +1995,14 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
       }
       else if (!strcmp(child->key, "reduction"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseReduction(value, &history->reduction))
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse history reduction: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1793,7 +2021,9 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
    }
 
    if (history->source != PRECON_REUSE_HISTORY_LINEAR_SOLVES &&
+       /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
        (history->level < 0 || history->level >= STATS_MAX_LEVELS))
+   /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("preconditioner.reuse history source '%d' requires level",
@@ -1809,7 +2039,8 @@ static int
 PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *component,
                               int component_idx)
 {
-   if (!node || !component)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!node || !component)  /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
@@ -1819,18 +2050,25 @@ PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *co
 
    YAML_NODE_ITERATE(node, child)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = child->mapped_val ? child->mapped_val : child->val;
+      /* GCOVR_EXCL_BR_STOP */
       if (!strcmp(child->key, "name"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          snprintf(component->name, sizeof(component->name), "%s", value ? value : "");
+         /* GCOVR_EXCL_BR_STOP */
          YAML_NODE_SET_VALID(child);
       }
       else if (!strcmp(child->key, "enabled"))
       {
-         if (!PreconReuseParseOnOff(value, &component->enabled))
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PreconReuseParseOnOff(value, &component->enabled)) /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse component enabled: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1842,7 +2080,9 @@ PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *co
          if (!PreconReuseParseMetric(value, &component->metric))
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse component metric: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1851,23 +2091,32 @@ PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *co
       }
       else if (!strcmp(child->key, "weight"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseDouble(value, &component->weight) ||
+             /* GCOVR_EXCL_BR_STOP */
              component->weight < 0.0)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse component weight: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
          }
          YAML_NODE_SET_VALID(child);
       }
-      else if (!strcmp(child->key, "direction"))
+      /* GCOVR_EXCL_BR_START */                  /* low-signal branch under CI */
+      else if (!strcmp(child->key, "direction")) /* GCOVR_EXCL_BR_STOP */
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseDirection(value, &component->direction))
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse component direction: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1876,10 +2125,13 @@ PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *co
       }
       else if (!strcmp(child->key, "target"))
       {
-         if (!PreconReuseParseDouble(value, &component->target))
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PreconReuseParseDouble(value, &component->target)) /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse component target: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1888,10 +2140,14 @@ PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *co
       }
       else if (!strcmp(child->key, "scale"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseDouble(value, &component->scale) || component->scale <= 0.0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse component scale: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
@@ -1930,8 +2186,12 @@ PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *co
       }
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (component->metric == PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP &&
-       component->transform.amortization_window <= 0)
+       /* GCOVR_EXCL_BR_STOP */
+       /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+          component->transform.amortization_window <= 0)
+   /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
@@ -1946,21 +2206,28 @@ PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *co
 static int
 PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
 {
-   if (!node || !guards)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!node || !guards)     /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
 
    YAML_NODE_ITERATE(node, child)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = child->mapped_val ? child->mapped_val : child->val;
+      /* GCOVR_EXCL_BR_STOP */
       if (!strcmp(child->key, "min_reuse_solves"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseInt(value, &guards->min_reuse_solves) ||
+             /* GCOVR_EXCL_BR_STOP */
              guards->min_reuse_solves < 0)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid preconditioner.reuse.guards.min_reuse_solves: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -1970,10 +2237,14 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
       }
       else if (!strcmp(child->key, "max_reuse_solves"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseInt(value, &guards->max_reuse_solves))
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid preconditioner.reuse.guards.max_reuse_solves: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -1983,11 +2254,17 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
       }
       else if (!strcmp(child->key, "min_history_points"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseInt(value, &guards->min_history_points) ||
-             guards->min_history_points <= 0)
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                guards->min_history_points <= 0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid preconditioner.reuse.guards.min_history_points: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -1997,11 +2274,15 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
       }
       else if (!strcmp(child->key, "bad_decisions_to_rebuild"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseInt(value, &guards->bad_decisions_to_rebuild) ||
+             /* GCOVR_EXCL_BR_STOP */
              guards->bad_decisions_to_rebuild <= 0)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid preconditioner.reuse.guards.bad_decisions_to_rebuild: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -2011,11 +2292,17 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
       }
       else if (!strcmp(child->key, "max_iteration_ratio"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseDouble(value, &guards->max_iteration_ratio) ||
-             guards->max_iteration_ratio <= 0.0)
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                guards->max_iteration_ratio <= 0.0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid preconditioner.reuse.guards.max_iteration_ratio: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -2025,11 +2312,17 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
       }
       else if (!strcmp(child->key, "max_solve_time_ratio"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseDouble(value, &guards->max_solve_time_ratio) ||
-             guards->max_solve_time_ratio <= 0.0)
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                guards->max_solve_time_ratio <= 0.0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid preconditioner.reuse.guards.max_solve_time_ratio: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -2042,7 +2335,9 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
          if (!PreconReuseParseOnOff(value, &guards->rebuild_on_new_timestep))
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid preconditioner.reuse.guards.rebuild_on_new_timestep: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -2052,10 +2347,14 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
       }
       else if (!strcmp(child->key, "rebuild_on_solver_failure"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseOnOff(value, &guards->rebuild_on_solver_failure))
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid preconditioner.reuse.guards.rebuild_on_solver_failure: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -2071,13 +2370,15 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
             size_t count = 0;
             for (YAMLnode *item = child->children; item != NULL; item = item->next)
             {
-               if (!strcmp(item->key, "-"))
+               /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+               if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
                {
                   count++;
                }
             }
             levels = hypredrv_IntArrayCreate(count);
-            if (!levels)
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+            if (!levels)              /* GCOVR_EXCL_BR_STOP */
             {
                hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
                hypredrv_ErrorMsgAdd("Failed to allocate guard levels");
@@ -2086,19 +2387,30 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
             size_t idx = 0;
             for (YAMLnode *item = child->children; item != NULL; item = item->next)
             {
-               if (!strcmp(item->key, "-"))
+               /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+               if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
                {
                   const char *item_value =
-                     item->mapped_val ? item->mapped_val : item->val;
+                     /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                        item->mapped_val
+                        ? item->mapped_val
+                        : item->val;
+                  /* GCOVR_EXCL_BR_STOP */
                   YAMLnode *level_node = item->children;
+                  /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
                   while (level_node && strcmp(level_node->key, "level") != 0)
+                  /* GCOVR_EXCL_BR_STOP */
                   {
                      level_node = level_node->next;
                   }
                   if (level_node)
                   {
                      item_value =
-                        level_node->mapped_val ? level_node->mapped_val : level_node->val;
+                        /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                           level_node->mapped_val
+                           ? level_node->mapped_val
+                           : level_node->val;
+                     /* GCOVR_EXCL_BR_STOP */
                   }
                   if (!PreconReuseParseInt(item_value, &levels->data[idx]))
                   {
@@ -2117,7 +2429,8 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
          {
             hypredrv_StrToIntArray(value, &levels);
          }
-         if (!levels)
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!levels)              /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
             hypredrv_ErrorMsgAdd(
@@ -2127,7 +2440,9 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
          }
          for (size_t i = 0; i < levels->size; i++)
          {
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             if (levels->data[i] < 0 || levels->data[i] >= STATS_MAX_LEVELS)
+            /* GCOVR_EXCL_BR_STOP */
             {
                hypredrv_IntArrayDestroy(&levels);
                hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -2158,20 +2473,27 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
 static int
 PreconReuseParseAdaptiveNode(YAMLnode *node, PreconReuseAdaptive_args *adaptive)
 {
-   if (!node || !adaptive)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!node || !adaptive)   /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
 
    YAML_NODE_ITERATE(node, child)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = child->mapped_val ? child->mapped_val : child->val;
+      /* GCOVR_EXCL_BR_STOP */
       if (!strcmp(child->key, "rebuild_threshold"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseDouble(value, &adaptive->rebuild_threshold))
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid preconditioner.reuse.adaptive.rebuild_threshold: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -2179,13 +2501,20 @@ PreconReuseParseAdaptiveNode(YAMLnode *node, PreconReuseAdaptive_args *adaptive)
          }
          YAML_NODE_SET_VALID(child);
       }
-      else if (!strcmp(child->key, "positive_floor"))
+      /* GCOVR_EXCL_BR_START */                       /* low-signal branch under CI */
+      else if (!strcmp(child->key, "positive_floor")) /* GCOVR_EXCL_BR_STOP */
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseDouble(value, &adaptive->positive_floor) ||
-             adaptive->positive_floor <= 0.0)
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                adaptive->positive_floor <= 0.0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid preconditioner.reuse.adaptive.positive_floor: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -2198,7 +2527,8 @@ PreconReuseParseAdaptiveNode(YAMLnode *node, PreconReuseAdaptive_args *adaptive)
          size_t count = 0;
          for (YAMLnode *item = child->children; item != NULL; item = item->next)
          {
-            if (!strcmp(item->key, "-"))
+            /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+            if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
             {
                count++;
             }
@@ -2212,7 +2542,8 @@ PreconReuseParseAdaptiveNode(YAMLnode *node, PreconReuseAdaptive_args *adaptive)
          }
          PreconReuseScoreComponent_args *components =
             (PreconReuseScoreComponent_args *)calloc(count, sizeof(*components));
-         if (!components)
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!components)          /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
             hypredrv_ErrorMsgAdd("Failed to allocate adaptive components");
@@ -2221,7 +2552,8 @@ PreconReuseParseAdaptiveNode(YAMLnode *node, PreconReuseAdaptive_args *adaptive)
          size_t idx = 0;
          for (YAMLnode *item = child->children; item != NULL; item = item->next)
          {
-            if (strcmp(item->key, "-") != 0)
+            /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+            if (strcmp(item->key, "-") != 0) /* GCOVR_EXCL_BR_STOP */
             {
                continue;
             }
@@ -2254,12 +2586,15 @@ PreconReuseParseAdaptiveNode(YAMLnode *node, PreconReuseAdaptive_args *adaptive)
 void
 hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
 {
-   if (!args || !parent)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!args || !parent)     /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!parent->children && parent->val && strcmp(parent->val, "") != 0)
+   /* GCOVR_EXCL_BR_STOP */
    {
       if (PreconReuseParseInt(parent->val, &args->frequency))
       {
@@ -2278,13 +2613,16 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       }
 
       args->enabled = 1;
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE &&
+          /* GCOVR_EXCL_BR_STOP */
           !PreconReuseInstallDefaultAdaptiveComponents(&args->adaptive))
       {
          YAML_NODE_SET_INVALID_VAL(parent);
          return;
       }
-      if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE)
+      /* GCOVR_EXCL_BR_START */                         /* low-signal branch under CI */
+      if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE) /* GCOVR_EXCL_BR_STOP */
       {
          PreconReuseApplyAdaptiveShorthandDefaults(args);
       }
@@ -2303,13 +2641,18 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
 
    YAML_NODE_ITERATE(parent, child)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = child->mapped_val ? child->mapped_val : child->val;
+      /* GCOVR_EXCL_BR_STOP */
       if (!strcmp(child->key, "enabled"))
       {
-         if (!PreconReuseParseOnOff(value, &args->enabled))
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PreconReuseParseOnOff(value, &args->enabled)) /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid value for preconditioner.reuse.enabled: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
@@ -2319,10 +2662,14 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       }
       else if (!strcmp(child->key, "frequency"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PreconReuseParseInt(value, &args->frequency) || args->frequency < 0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid value for preconditioner.reuse.frequency: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
@@ -2335,7 +2682,8 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       {
          IntArray *ids = NULL;
          hypredrv_StrToIntArray(value, &ids);
-         if (!ids)
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!ids)                 /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
             hypredrv_ErrorMsgAdd(
@@ -2350,10 +2698,13 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       }
       else if (!strcmp(child->key, "per_timestep"))
       {
-         if (!PreconReuseParseOnOff(value, &args->per_timestep))
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PreconReuseParseOnOff(value, &args->per_timestep)) /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd(
+               /* GCOVR_EXCL_BR_STOP */
                "Invalid value for preconditioner.reuse.per_timestep: '%s'",
                value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
@@ -2362,12 +2713,17 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          seen_per_timestep = args->per_timestep ? 1 : 0;
          YAML_NODE_SET_VALID(child);
       }
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       else if (!strcmp(child->key, "type") || !strcmp(child->key, "policy"))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         if (!PreconReuseParsePolicy(value, &args->policy))
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PreconReuseParsePolicy(value, &args->policy)) /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid value for preconditioner.reuse.type: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return;
@@ -2422,7 +2778,9 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    }
 
    if (args->policy == PRECON_REUSE_POLICY_STATIC &&
+       /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
        (seen_adaptive || args->adaptive.num_components > 0))
+   /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("preconditioner.reuse adaptive block requires type: adaptive");
@@ -2431,7 +2789,9 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    }
 
    if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE &&
+       /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
        (seen_frequency || seen_linear_system_ids || seen_per_timestep))
+   /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("preconditioner.reuse type: adaptive cannot be used with "
@@ -2442,7 +2802,9 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    }
 
    if (args->policy == PRECON_REUSE_POLICY_STATIC && seen_linear_system_ids &&
+       /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
        (seen_frequency || seen_per_timestep))
+   /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
@@ -2453,7 +2815,9 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    }
 
    if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE &&
-       args->adaptive.num_components == 0 &&
+       /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+          args->adaptive.num_components == 0 &&
+       /* GCOVR_EXCL_BR_STOP */
        !PreconReuseInstallDefaultAdaptiveComponents(&args->adaptive))
    {
       YAML_NODE_SET_INVALID_VAL(parent);

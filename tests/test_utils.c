@@ -105,6 +105,38 @@ test_StrTrim_null(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * Test hypredrv_TrimTrailingWhitespace / hypredrv_NormalizeWhitespace
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_TrimTrailingWhitespace_null(void)
+{
+   hypredrv_TrimTrailingWhitespace(NULL);
+}
+
+static void
+test_TrimTrailingWhitespace_trims_trailing_isspace(void)
+{
+   char buf[] = "prefix\t \n";
+   hypredrv_TrimTrailingWhitespace(buf);
+   ASSERT_STREQ(buf, "prefix");
+}
+
+static void
+test_NormalizeWhitespace_null(void)
+{
+   hypredrv_NormalizeWhitespace(NULL);
+}
+
+static void
+test_NormalizeWhitespace_collapses_internal_spaces(void)
+{
+   char buf[] = "  hello   world  ";
+   hypredrv_NormalizeWhitespace(buf);
+   ASSERT_STREQ(buf, "hello world");
+}
+
+/*-----------------------------------------------------------------------------
  * Test hypredrv_ComputeNumberOfDigits
  *-----------------------------------------------------------------------------*/
 
@@ -341,6 +373,12 @@ test_CountNumberOfPartitions_empty(void)
    ASSERT_EQ(hypredrv_CountNumberOfPartitions(prefix), 0);
 }
 
+static void
+test_CountNumberOfPartitions_null_prefix(void)
+{
+   ASSERT_EQ(hypredrv_CountNumberOfPartitions(NULL), 0);
+}
+
 /*-----------------------------------------------------------------------------
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
@@ -358,6 +396,11 @@ main(void)
    RUN_TEST(test_StrTrim_empty);
    RUN_TEST(test_StrTrim_only_spaces);
    RUN_TEST(test_StrTrim_null);
+
+   RUN_TEST(test_TrimTrailingWhitespace_null);
+   RUN_TEST(test_TrimTrailingWhitespace_trims_trailing_isspace);
+   RUN_TEST(test_NormalizeWhitespace_null);
+   RUN_TEST(test_NormalizeWhitespace_collapses_internal_spaces);
 
    RUN_TEST(test_ComputeNumberOfDigits_basic);
    RUN_TEST(test_ComputeNumberOfDigits_large);
@@ -381,6 +424,7 @@ main(void)
    RUN_TEST(test_CountNumberOfPartitions_binary);
    RUN_TEST(test_CountNumberOfPartitions_ascii);
    RUN_TEST(test_CountNumberOfPartitions_empty);
+   RUN_TEST(test_CountNumberOfPartitions_null_prefix);
 
    cleanup_temp_files();
 

@@ -16,6 +16,7 @@
 #include "internal/pcg.h"
 #include "internal/precon.h"
 #include "internal/solver.h"
+#include "internal/stats.h"
 #include "logging.h"
 #include "test_helpers.h"
 #include "internal/yaml.h"
@@ -618,6 +619,56 @@ test_hypredrv_SolverDestroy_null_solver(void)
 }
 
 static void
+test_hypredrv_SolverDestroy_null_solver_ptr(void)
+{
+   /* NULL solver pointer: log and return (hypredrv_SolverDestroy) */
+   hypredrv_SolverDestroy(SOLVER_PCG, NULL);
+}
+
+static void
+test_hypredrv_SolverSolveOnly_null_solver_and_null_matrix(void)
+{
+   TEST_HYPRE_INIT();
+
+   HYPRE_IJMatrix A = NULL;
+   HYPRE_IJVector b = NULL, x = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_SolverSolveOnly(SOLVER_PCG, NULL, A, b, x), -1);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_SolverSolveOnly(SOLVER_PCG, (HYPRE_Solver)1, NULL, b, x), -1);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_hypredrv_SolverArgsSetDefaultsForMethod_and_GetValidValues(void)
+{
+   hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_PCG, NULL);
+
+   StrIntMapArray void_map = hypredrv_SolverGetValidValues("unknown_key");
+   ASSERT_EQ(void_map.size, 0);
+
+   StrIntMapArray type_map = hypredrv_SolverGetValidValues("type");
+   ASSERT_TRUE(type_map.size > 0);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(type_map, "fgmres"), (int)SOLVER_FGMRES);
+
+   StrIntMapArray type_explicit = hypredrv_SolverGetValidTypeIntMap();
+   ASSERT_EQ(type_explicit.size, type_map.size);
+
+   solver_args args;
+   memset(&args, 0, sizeof(args));
+   hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_PCG, &args);
+   hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_GMRES, &args);
+   hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_FGMRES, &args);
+   hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_BICGSTAB, &args);
+   hypredrv_SolverArgsSetDefaultsForMethod((solver_t)999, &args);
+}
+
+static void
 test_hypredrv_SolverSetup_default_case(void)
 {
    TEST_HYPRE_INIT();
@@ -772,6 +823,41 @@ test_hypredrv_SolverSetup_error_cases(void)
    hypredrv_SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, (HYPRE_Solver)1, NULL, b, x, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
+   /* Non-none precon method but NULL precon handle */
+   {
+      HYPRE_IJMatrix M = NULL;
+      HYPRE_IJVector vb = NULL, vx = NULL;
+
+      HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &M);
+      HYPRE_IJMatrixSetObjectType(M, HYPRE_PARCSR);
+      HYPRE_IJMatrixInitialize(M);
+      HYPRE_IJMatrixAssemble(M);
+
+      HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &vb);
+      HYPRE_IJVectorSetObjectType(vb, HYPRE_PARCSR);
+      HYPRE_IJVectorInitialize(vb);
+      HYPRE_IJVectorAssemble(vb);
+
+      HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &vx);
+      HYPRE_IJVectorSetObjectType(vx, HYPRE_PARCSR);
+      HYPRE_IJVectorInitialize(vx);
+      HYPRE_IJVectorAssemble(vx);
+
+      HYPRE_Solver sol = NULL;
+      solver_args  sargs;
+      hypredrv_PCGSetDefaultArgs(&sargs.pcg);
+      hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &sargs, &sol);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_SolverSetup(PRECON_BOOMERAMG, SOLVER_PCG, NULL, sol, M, vb, vx, NULL);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+      hypredrv_SolverDestroy(SOLVER_PCG, &sol);
+      HYPRE_IJVectorDestroy(vx);
+      HYPRE_IJVectorDestroy(vb);
+      HYPRE_IJMatrixDestroy(M);
+   }
+
    TEST_HYPRE_FINALIZE();
 }
 
@@ -852,6 +938,204 @@ test_hypredrv_solver_failure_paths_emit_logs(void)
 
    hypredrv_LogReset();
    unsetenv("HYPREDRV_LOG_LEVEL");
+   TEST_HYPRE_FINALIZE();
+}
+
+/*-----------------------------------------------------------------------------
+ * Small IJ helpers (1x1) for solver branch coverage
+ *-----------------------------------------------------------------------------*/
+
+static HYPRE_IJMatrix
+create_ijmatrix_1x1(double diag)
+{
+   HYPRE_IJMatrix mat = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat), 0);
+   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJMatrixInitialize(mat), 0);
+   HYPRE_Int    nrows    = 1;
+   HYPRE_Int    ncols[1] = {1};
+   HYPRE_BigInt rows[1]  = {0};
+   HYPRE_BigInt cols[1]  = {0};
+   double       values[1] = {diag};
+   ASSERT_EQ(HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, values), 0);
+   ASSERT_EQ(HYPRE_IJMatrixAssemble(mat), 0);
+   return mat;
+}
+
+static HYPRE_IJVector
+create_ijvector_1x1(double value)
+{
+   HYPRE_IJVector vec = NULL;
+   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &vec), 0);
+   ASSERT_EQ(HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJVectorInitialize(vec), 0);
+   HYPRE_BigInt idx[1] = {0};
+   double       val[1] = {value};
+   ASSERT_EQ(HYPRE_IJVectorSetValues(vec, 1, idx, val), 0);
+   ASSERT_EQ(HYPRE_IJVectorAssemble(vec), 0);
+   return vec;
+}
+
+static void
+test_hypredrv_SolverApply_zero_rhs_and_runtime_object_name(void)
+{
+   TEST_HYPRE_INIT();
+
+   HYPRE_IJMatrix A = create_ijmatrix_1x1(1.0);
+   HYPRE_IJVector b = create_ijvector_1x1(0.0);
+   HYPRE_IJVector x = create_ijvector_1x1(0.0);
+
+   Stats *st = hypredrv_StatsCreate();
+   ASSERT_NOT_NULL(st);
+   st->ls_counter        = 2; /* hypredrv_StatsGetLinearSystemID -> 1 */
+   st->object_name[0]    = '\0';
+   st->runtime_object_id = 9;
+
+   solver_args args;
+   hypredrv_PCGSetDefaultArgs(&args.pcg);
+   args.pcg.max_iter = 10;
+
+   HYPRE_Solver solver = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, solver, A, b, x, st);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_SolverApply(SOLVER_PCG, solver, A, b, x, st);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
+   hypredrv_StatsDestroy(&st);
+   HYPRE_IJVectorDestroy(x);
+   HYPRE_IJVectorDestroy(b);
+   HYPRE_IJMatrixDestroy(A);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_hypredrv_SolverSetupWithReuse_skip_precon_setup_detaches_stats(void)
+{
+   TEST_HYPRE_INIT();
+
+   HYPRE_IJMatrix A = create_ijmatrix_1x1(2.0);
+   HYPRE_IJVector b = create_ijvector_1x1(1.0);
+   HYPRE_IJVector x = create_ijvector_1x1(0.0);
+
+   HYPRE_Solver amg = NULL;
+   ASSERT_EQ(HYPRE_BoomerAMGCreate(&amg), 0);
+
+   HYPRE_Precon precon = (HYPRE_Precon)malloc(sizeof(hypre_Precon));
+   ASSERT_NOT_NULL(precon);
+   memset(precon, 0, sizeof(hypre_Precon));
+   precon->main   = amg;
+   precon->method = PRECON_BOOMERAMG;
+
+   Stats *st = hypredrv_StatsCreate();
+   ASSERT_NOT_NULL(st);
+   st->ls_counter = 1;
+
+   solver_args args;
+   hypredrv_PCGSetDefaultArgs(&args.pcg);
+   args.pcg.max_iter = 5;
+
+   HYPRE_Solver solver = NULL;
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+
+   setenv("HYPREDRV_LOG_LEVEL", "3", 1);
+   setenv("HYPREDRV_LOG_STREAM", "stderr", 1);
+   hypredrv_LogInitializeFromEnv();
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_SolverSetupWithReuse(PRECON_BOOMERAMG, SOLVER_PCG, precon, solver, A, b, x,
+                                 st, 1);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
+   hypredrv_StatsDestroy(&st);
+   HYPRE_BoomerAMGDestroy(amg);
+   free(precon);
+
+   HYPRE_IJVectorDestroy(x);
+   HYPRE_IJVectorDestroy(b);
+   HYPRE_IJMatrixDestroy(A);
+
+   hypredrv_LogReset();
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   unsetenv("HYPREDRV_LOG_STREAM");
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_hypredrv_SolverDestroy_skipped_already_null_with_verbose_log(void)
+{
+   TEST_HYPRE_INIT();
+   setenv("HYPREDRV_LOG_LEVEL", "3", 1);
+   hypredrv_LogInitializeFromEnv();
+   HYPRE_Solver solver = NULL;
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
+   hypredrv_LogReset();
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_hypredrv_SolverApply_invalid_method_negative_iters_branch(void)
+{
+   TEST_HYPRE_INIT();
+
+   HYPRE_IJMatrix A = create_ijmatrix_1x1(1.0);
+   HYPRE_IJVector b = create_ijvector_1x1(1.0);
+   HYPRE_IJVector x = create_ijvector_1x1(0.0);
+   solver_args  args;
+   hypredrv_PCGSetDefaultArgs(&args.pcg);
+   HYPRE_Solver solver = NULL;
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+
+   Stats *st = hypredrv_StatsCreate();
+   ASSERT_NOT_NULL(st);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_SolverApply((solver_t)999, solver, A, b, x, st);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
+   hypredrv_StatsDestroy(&st);
+   HYPRE_IJVectorDestroy(x);
+   HYPRE_IJVectorDestroy(b);
+   HYPRE_IJMatrixDestroy(A);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_hypredrv_SolverApply_comm_resolve_uses_vector_when_matrix_null(void)
+{
+   TEST_HYPRE_INIT();
+
+   HYPRE_IJVector b = create_ijvector_1x1(1.0);
+   HYPRE_IJVector x = create_ijvector_1x1(0.0);
+   solver_args  args;
+   hypredrv_PCGSetDefaultArgs(&args.pcg);
+   HYPRE_Solver solver = NULL;
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+
+   Stats *st = hypredrv_StatsCreate();
+   ASSERT_NOT_NULL(st);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_SolverApply(SOLVER_PCG, solver, NULL, b, x, st);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   hypredrv_SolverDestroy(SOLVER_PCG, &solver);
+   hypredrv_StatsDestroy(&st);
+   HYPRE_IJVectorDestroy(x);
+   HYPRE_IJVectorDestroy(b);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -969,12 +1253,20 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_SolverDestroy_all_cases);
    RUN_TEST(test_hypredrv_SolverDestroy_default_case);
    RUN_TEST(test_hypredrv_SolverDestroy_null_solver);
+   RUN_TEST(test_hypredrv_SolverDestroy_null_solver_ptr);
+   RUN_TEST(test_hypredrv_SolverSolveOnly_null_solver_and_null_matrix);
+   RUN_TEST(test_hypredrv_SolverArgsSetDefaultsForMethod_and_GetValidValues);
    RUN_TEST(test_hypredrv_SolverSetup_default_case);
    RUN_TEST(test_hypredrv_SolverApply_default_case);
    RUN_TEST(test_hypredrv_SolverCreate_default_case_comprehensive);
    RUN_TEST(test_hypredrv_SolverApply_error_cases);
    RUN_TEST(test_hypredrv_SolverSetup_error_cases);
    RUN_TEST(test_hypredrv_solver_failure_paths_emit_logs);
+   RUN_TEST(test_hypredrv_SolverApply_zero_rhs_and_runtime_object_name);
+   RUN_TEST(test_hypredrv_SolverSetupWithReuse_skip_precon_setup_detaches_stats);
+   RUN_TEST(test_hypredrv_SolverDestroy_skipped_already_null_with_verbose_log);
+   RUN_TEST(test_hypredrv_SolverApply_comm_resolve_uses_vector_when_matrix_null);
+   RUN_TEST(test_hypredrv_SolverApply_invalid_method_negative_iters_branch);
 
    /* Solver-precon integration tests */
    RUN_TEST(test_all_solver_precon_combinations);

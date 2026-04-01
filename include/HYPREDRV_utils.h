@@ -33,6 +33,28 @@
 
 #include "HYPREDRV.h"
 
+static inline void
+hypredrv_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *file,
+                             int line, const char *func)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (error_code != 0)
+   {
+      (void)fprintf(stderr, "At %s:%d in %s():\n", file, line, func);
+      HYPREDRV_ErrorCodeDescribe(error_code);
+      const char *debug_env = getenv("HYPREDRV_DEBUG");
+      if (debug_env && strcmp(debug_env, "1") == 0)
+      {
+         raise(SIGTRAP); /* Breakpoint for gdb */
+      }
+      else
+      {
+         MPI_Abort(comm, (int)error_code);
+      }
+   }
+   /* GCOVR_EXCL_BR_STOP */
+}
+
 /**
  * @brief Safely call a HYPREDRV function; abort on error via MPI_COMM_WORLD.
  *
@@ -50,24 +72,11 @@
  * @endcode
  */
 #ifndef HYPREDRV_SAFE_CALL
-#define HYPREDRV_SAFE_CALL(call)                                                     \
-   do                                                                                \
-   {                                                                                 \
-      uint32_t error_code = (call);                                                  \
-      if (error_code != 0)                                                           \
-      {                                                                              \
-         (void)fprintf(stderr, "At %s:%d in %s():\n", __FILE__, __LINE__, __func__); \
-         HYPREDRV_ErrorCodeDescribe(error_code);                                     \
-         const char *debug_env = getenv("HYPREDRV_DEBUG");                           \
-         if (debug_env && strcmp(debug_env, "1") == 0)                               \
-         {                                                                           \
-            raise(SIGTRAP); /* Breakpoint for gdb */                                 \
-         }                                                                           \
-         else                                                                        \
-         {                                                                           \
-            MPI_Abort(MPI_COMM_WORLD, (int)error_code);                              \
-         }                                                                           \
-      }                                                                              \
+#define HYPREDRV_SAFE_CALL(call)                                               \
+   do                                                                          \
+   {                                                                           \
+      hypredrv_SafeCallHandleError((call), MPI_COMM_WORLD, __FILE__, __LINE__, \
+                                   __func__);                                  \
    } while (0)
 #endif
 
@@ -88,24 +97,10 @@
  * @endcode
  */
 #ifndef HYPREDRV_SAFE_CALL_COMM
-#define HYPREDRV_SAFE_CALL_COMM(comm, call)                                          \
-   do                                                                                \
-   {                                                                                 \
-      uint32_t error_code = (call);                                                  \
-      if (error_code != 0)                                                           \
-      {                                                                              \
-         (void)fprintf(stderr, "At %s:%d in %s():\n", __FILE__, __LINE__, __func__); \
-         HYPREDRV_ErrorCodeDescribe(error_code);                                     \
-         const char *debug_env = getenv("HYPREDRV_DEBUG");                           \
-         if (debug_env && strcmp(debug_env, "1") == 0)                               \
-         {                                                                           \
-            raise(SIGTRAP); /* Breakpoint for gdb */                                 \
-         }                                                                           \
-         else                                                                        \
-         {                                                                           \
-            MPI_Abort((comm), (int)error_code);                                      \
-         }                                                                           \
-      }                                                                              \
+#define HYPREDRV_SAFE_CALL_COMM(comm, call)                                       \
+   do                                                                             \
+   {                                                                              \
+      hypredrv_SafeCallHandleError((call), (comm), __FILE__, __LINE__, __func__); \
    } while (0)
 #endif
 

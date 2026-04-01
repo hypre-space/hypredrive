@@ -34,6 +34,9 @@ jobs:
     env:
       HYPRE_VERSION: master
       BUILD_DIR: build-coverage
+      HYPREDRV_COVERAGE_MIN_LINE: '0.90'
+      HYPREDRV_COVERAGE_MIN_BRANCH: '0.80'
+      HYPREDRV_COVERAGE_MIN_FUNCTION: '0.95'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -102,6 +105,15 @@ jobs:
         run: |
           timeout 5m cmake --build $BUILD_DIR --target coverage
 
+      - name: Check coverage thresholds
+        run: |
+          set -euxo pipefail
+          python3 scripts/check_coverage_threshold.py "$BUILD_DIR/coverage-summary.json" \
+            --xml "$BUILD_DIR/coverage.xml" \
+            --min-line "${HYPREDRV_COVERAGE_MIN_LINE}" \
+            --min-branch "${HYPREDRV_COVERAGE_MIN_BRANCH}" \
+            --min-function "${HYPREDRV_COVERAGE_MIN_FUNCTION}"
+
       - name: Extract coverage percentage
         if: always()
         id: coverage
@@ -122,8 +134,15 @@ jobs:
           if [ -f "$BUILD_DIR/coverage.xml" ]; then
             COVERAGE=$(python3 -c "import xml.etree.ElementTree as ET; root = ET.parse('$BUILD_DIR/coverage.xml').getroot(); print(f\"{float(root.get('line-rate', 0)) * 100:.1f}\")")
             BRANCH_COV=$(python3 -c "import xml.etree.ElementTree as ET; root = ET.parse('$BUILD_DIR/coverage.xml').getroot(); print(f\"{float(root.get('branch-rate', 0)) * 100:.1f}\")")
+            FUNC_COV=""
+            if [ -f "$BUILD_DIR/coverage-summary.json" ]; then
+              FUNC_COV=$(python3 -c "import json; d=json.load(open('$BUILD_DIR/coverage-summary.json')); print(f\"{float(d.get('function_percent', 0.0)):.1f}\")")
+            fi
             echo "- **Line Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
             echo "- **Branch Coverage:** ${BRANCH_COV}%" >> $GITHUB_STEP_SUMMARY
+            if [ -n "${FUNC_COV}" ]; then
+              echo "- **Function Coverage:** ${FUNC_COV}%" >> $GITHUB_STEP_SUMMARY
+            fi
             echo "- Coverage reports available as artifacts" >> $GITHUB_STEP_SUMMARY
           else
             echo "Coverage file not found" >> $GITHUB_STEP_SUMMARY

@@ -57,6 +57,48 @@ test_FieldTypeStringSet(void)
 }
 
 static void
+test_FieldTypeStringSet_empty_when_unmapped(void)
+{
+   char      buffer[MAX_FILENAME_LENGTH];
+   YAMLnode *node = hypredrv_YAMLnodeCreate("key", "ignored", 0);
+   free(node->mapped_val);
+   node->mapped_val = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_FieldTypeStringSet(buffer, node);
+   ASSERT_STREQ(buffer, "");
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_YAMLnodeDestroy(node);
+}
+
+static void
+test_FieldTypeNoopSet(void)
+{
+   int       x    = 42;
+   YAMLnode *node = make_node("x");
+   hypredrv_FieldTypeNoopSet(&x, node);
+   ASSERT_EQ(x, 42);
+   hypredrv_YAMLnodeDestroy(node);
+}
+
+static void
+test_FieldTypeDoubleArraySet(void)
+{
+   DoubleArray *arr = NULL;
+   YAMLnode    *node = make_node("0.5, 1.0, 2.5");
+
+   hypredrv_FieldTypeDoubleArraySet(&arr, node);
+   ASSERT_NOT_NULL(arr);
+   ASSERT_EQ(arr->size, 3);
+   ASSERT_EQ_DOUBLE(arr->data[0], 0.5, 1e-12);
+   ASSERT_EQ_DOUBLE(arr->data[2], 2.5, 1e-12);
+
+   hypredrv_DoubleArrayDestroy(&arr);
+   hypredrv_YAMLnodeDestroy(node);
+}
+
+static void
 test_FieldTypeStringSet_overlong_rejected(void)
 {
    char      buffer[MAX_FILENAME_LENGTH];
@@ -110,8 +152,11 @@ main(void)
    RUN_TEST(test_FieldTypeDoubleSet);
    RUN_TEST(test_FieldTypeCharSet);
    RUN_TEST(test_FieldTypeStringSet);
+   RUN_TEST(test_FieldTypeStringSet_empty_when_unmapped);
    RUN_TEST(test_FieldTypeStringSet_overlong_rejected);
    RUN_TEST(test_FieldTypeIntArraySet);
    RUN_TEST(test_FieldTypeStackIntArraySet);
+   RUN_TEST(test_FieldTypeDoubleArraySet);
+   RUN_TEST(test_FieldTypeNoopSet);
    return 0;
 }

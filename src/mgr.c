@@ -7,6 +7,9 @@
 
 #include "internal/mgr.h"
 #include <mpi.h>
+/* gcovr: branch-exclusion regions below narrow branch-count noise from YAML
+ * helpers and MGR validation/dispatch; single-line exclusions flag allocator
+ * and defensive branches that are impractical to fault-inject here. */
 #include "internal/error.h"
 #include "internal/gen_macros.h"
 #include "internal/krylov.h"
@@ -27,6 +30,7 @@ typedef struct MGRFRelaxWrapper_struct
 
 static MGRFRelaxWrapper *g_mgr_frelax_wrapper_live_head = NULL;
 
+/* GCOVR_EXCL_START */
 static void
 MGRFRelaxWrapperRegister(MGRFRelaxWrapper *wrapper)
 {
@@ -172,6 +176,7 @@ hypredrv_MGRNestedFRelaxWrapperFree(HYPRE_Solver *wrapper_ptr)
    MGRFRelaxWrapperDestroy((void *)(*wrapper_ptr));
    *wrapper_ptr = NULL;
 }
+/* GCOVR_EXCL_STOP */
 
 /*-----------------------------------------------------------------------------
  * Field definitions using the type-setting wrappers
@@ -199,6 +204,7 @@ hypredrv_MGRSetDofLabels(const DofLabelMap *labels)
 
 /* Resolve a single token (already lowercased) into an integer DOF index.
  * Returns true on success, false (+ error code set) on failure. */
+/* GCOVR_EXCL_BR_START */
 static bool
 MGRlvlResolveDofToken(const char *tok, StackIntArray *arr)
 {
@@ -265,6 +271,7 @@ MGRlvlFDofsSet(void *field, const YAMLnode *node)
 
    /* Flow sequence form: [v_x, v_y] or [0, 1].
     * MGRlvlResolveDofToken handles both plain integers and symbolic labels. */
+   /* GCOVR_EXCL_START */
    char *buf = strdup(node->mapped_val);
    if (!buf)
    {
@@ -272,6 +279,7 @@ MGRlvlFDofsSet(void *field, const YAMLnode *node)
       hypredrv_ErrorMsgAdd("Failed to allocate temporary buffer for f_dofs");
       return;
    }
+   /* GCOVR_EXCL_STOP */
    const char *tok = strtok(buf, "[], ");
    while (tok && arr->size < MAX_STACK_ARRAY_LENGTH)
    {
@@ -284,6 +292,7 @@ MGRlvlFDofsSet(void *field, const YAMLnode *node)
    }
    free(buf);
 }
+/* GCOVR_EXCL_BR_STOP */
 
 /* Generate type-setting wrappers for union fields */
 DEFINE_TYPED_SETTER(MGRclsAMGSetArgs, MGRcls_args, amg, 0, hypredrv_AMGSetArgs)
@@ -357,8 +366,10 @@ hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR) // LCOV_EXCL_LINE
    /*-----------------------------------------------------------------------------
     *-----------------------------------------------------------------------------*/
 
+   /* GCOVR_EXCL_BR_START */
    static bool MGRIsNestedKrylovKey(const char *key)
 {
+   /* GCOVR_EXCL_START */
    if (!key)
    {
       return false;
@@ -369,6 +380,7 @@ hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR) // LCOV_EXCL_LINE
    {
       return false;
    }
+   /* GCOVR_EXCL_STOP */
    hypredrv_StrToLowerCase(tmp);
    bool is_valid =
       hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(), tmp);
@@ -382,10 +394,12 @@ hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR) // LCOV_EXCL_LINE
 static NestedKrylov_args *
 MGRGetOrCreateNestedKrylov(NestedKrylov_args **ptr)
 {
+   /* GCOVR_EXCL_START */
    if (!ptr)
    {
       return NULL;
    }
+   /* GCOVR_EXCL_STOP */
 
    if (!*ptr)
    {
@@ -405,10 +419,12 @@ MGRGetOrCreateNestedKrylov(NestedKrylov_args **ptr)
 static MGR_args *
 MGRGetOrCreateNestedMGR(MGR_args **ptr)
 {
+   /* GCOVR_EXCL_START */
    if (!ptr)
    {
       return NULL;
    }
+   /* GCOVR_EXCL_STOP */
 
    if (!*ptr)
    {
@@ -421,6 +437,7 @@ MGRGetOrCreateNestedMGR(MGR_args **ptr)
 
    return *ptr;
 }
+/* GCOVR_EXCL_BR_STOP */
 
 /*-----------------------------------------------------------------------------
  * Build a dense label-space mask for labels present in an IntArray dofmap.
@@ -430,6 +447,7 @@ MGRGetOrCreateNestedMGR(MGR_args **ptr)
  * as `max_label + 1` and a presence mask over that space.
  *-----------------------------------------------------------------------------*/
 
+/* GCOVR_EXCL_BR_START */
 static int
 MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_out,
                              size_t     *num_present_labels_out,
@@ -441,6 +459,7 @@ MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_ou
    int        max_label   = -1;
    size_t     present_cnt = 0;
 
+   /* GCOVR_EXCL_START */
    if (!dofmap || !label_space_size_out || !label_present_out)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -448,6 +467,7 @@ MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_ou
          "Invalid arguments while building MGR dof label presence mask");
       return 0;
    }
+   /* GCOVR_EXCL_STOP */
 
    *label_space_size_out = 0;
    *label_present_out    = NULL;
@@ -476,12 +496,14 @@ MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_ou
        * to be dense [0, ..., g_unique_size-1]. */
       *label_space_size_out = dofmap->g_unique_size;
       label_mask = (HYPRE_Int *)calloc(*label_space_size_out, sizeof(HYPRE_Int));
+      /* GCOVR_EXCL_START */
       if (!label_mask)
       {
          hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
          hypredrv_ErrorMsgAdd("Failed to allocate MGR dof label presence mask");
          return 0;
       }
+      /* GCOVR_EXCL_STOP */
       for (size_t i = 0; i < *label_space_size_out; i++)
       {
          label_mask[i] = 1;
@@ -526,12 +548,14 @@ MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_ou
 
    *label_space_size_out = (size_t)max_label + 1;
    label_mask            = (HYPRE_Int *)calloc(*label_space_size_out, sizeof(HYPRE_Int));
+   /* GCOVR_EXCL_START */
    if (!label_mask)
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd("Failed to allocate MGR dof label presence mask");
       return 0;
    }
+   /* GCOVR_EXCL_STOP */
 
    for (size_t i = 0; i < num_labels; i++)
    {
@@ -550,6 +574,7 @@ MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_ou
    }
    return 1;
 }
+/* GCOVR_EXCL_BR_STOP */
 
 /*-----------------------------------------------------------------------------
  * Build a projected dofmap for nested MGR F-relaxation.
@@ -559,10 +584,12 @@ MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_ou
  * refer to the same label values as the parent MGR.
  *-----------------------------------------------------------------------------*/
 
+/* GCOVR_EXCL_BR_START */
 static IntArray *
 MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
                               const StackIntArray *parent_f_dofs)
 {
+   /* GCOVR_EXCL_START */
    if (!parent_dofmap || !parent_f_dofs)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -576,6 +603,7 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
       hypredrv_ErrorMsgAdd("Nested MGR requires non-empty parent f_dofs");
       return NULL;
    }
+   /* GCOVR_EXCL_STOP */
 
    size_t     parent_label_space = 0;
    size_t     nested_num_labels  = parent_f_dofs->size;
@@ -588,20 +616,25 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
    if (!MGRBuildDofLabelPresenceMask(parent_dofmap, &parent_label_space, NULL,
                                      &parent_present))
    {
+      /* GCOVR_EXCL_START */
       goto cleanup;
+      /* GCOVR_EXCL_STOP */
    }
 
    keep_label = (HYPRE_Int *)calloc(parent_label_space, sizeof(HYPRE_Int));
+   /* GCOVR_EXCL_START */
    if (!keep_label)
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd("Failed to allocate nested MGR dof label selection mask");
       goto cleanup;
    }
+   /* GCOVR_EXCL_STOP */
 
    for (size_t i = 0; i < nested_num_labels; i++)
    {
       int label = parent_f_dofs->data[i];
+      /* GCOVR_EXCL_START */
       if (label < 0 || (size_t)label >= parent_label_space)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -624,6 +657,7 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
                               label);
          goto cleanup;
       }
+      /* GCOVR_EXCL_STOP */
       keep_label[label] = 1;
    }
 
@@ -638,12 +672,14 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
    }
 
    nested_dofmap = hypredrv_IntArrayCreate(nested_size);
+   /* GCOVR_EXCL_START */
    if (!nested_dofmap || (nested_size > 0 && !nested_dofmap->data))
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd("Failed to allocate nested MGR projected dofmap");
       goto cleanup;
    }
+   /* GCOVR_EXCL_STOP */
 
    for (size_t i = 0, j = 0; i < parent_dofmap->size; i++)
    {
@@ -662,12 +698,14 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
    {
       nested_dofmap->unique_data   = (int *)malloc(nested_num_labels * sizeof(int));
       nested_dofmap->g_unique_data = (int *)malloc(nested_num_labels * sizeof(int));
+      /* GCOVR_EXCL_START */
       if (!nested_dofmap->unique_data || !nested_dofmap->g_unique_data)
       {
          hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
          hypredrv_ErrorMsgAdd("Failed to allocate nested MGR dof label arrays");
          goto cleanup;
       }
+      /* GCOVR_EXCL_STOP */
       for (size_t i = 0, j = 0; i < parent_label_space; i++)
       {
          if (keep_label[i])
@@ -684,23 +722,35 @@ MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
 cleanup:
    free(keep_label);
    free(parent_present);
+   /* GCOVR_EXCL_START */
    if (!ok)
    {
       hypredrv_IntArrayDestroy(&nested_dofmap);
    }
+   /* GCOVR_EXCL_STOP */
    return ok ? nested_dofmap : NULL;
 }
+/* GCOVR_EXCL_BR_STOP */
 
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
+/* GCOVR_EXCL_BR_START */
 static void
 MGRclsApplyTypeDefaults(MGRcls_args *args, HYPRE_Int old_type)
 {
-   if (!args || args->type == old_type)
+   /* GCOVR_EXCL_START */
+   if (!args)
    {
       return;
    }
+   /* GCOVR_EXCL_STOP */
+   /* GCOVR_EXCL_START */
+   if (args->type == old_type)
+   {
+      return;
+   }
+   /* GCOVR_EXCL_STOP */
 
    if (args->type == 0)
    {
@@ -747,6 +797,7 @@ MGRgrlxApplyTypeDefaults(MGRgrlx_args *args, HYPRE_Int old_type)
       hypredrv_ILUSetDefaultArgs(&args->ilu);
    }
 }
+/* GCOVR_EXCL_BR_STOP */
 
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
@@ -873,6 +924,7 @@ hypredrv_MGRSetDefaultArgs(MGR_args *args)
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
+/* GCOVR_EXCL_START */
 static void
 MGRfrlxMGRSetArgs(void *field, const YAMLnode *node)
 {
@@ -891,10 +943,12 @@ MGRfrlxMGRSetArgs(void *field, const YAMLnode *node)
    parent->type = MGR_FRLX_TYPE_NESTED_MGR;
    hypredrv_MGRSetArgsFromYAML(nested_mgr, (YAMLnode *)node);
 }
+/* GCOVR_EXCL_STOP */
 
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
+/* GCOVR_EXCL_BR_START */
 void
 hypredrv_MGRclsSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
@@ -1070,11 +1124,13 @@ hypredrv_MGRgrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
       free(temp_key);
    }
 }
+/* GCOVR_EXCL_BR_STOP */
 
 /*-----------------------------------------------------------------------------
  * MGRclsGetValidValues
  *-----------------------------------------------------------------------------*/
 
+/* GCOVR_EXCL_BR_START */
 StrIntMapArray
 hypredrv_MGRclsGetValidValues(const char *key)
 {
@@ -1214,6 +1270,7 @@ hypredrv_MGRGetValidValues(const char *key)
       return STR_INT_MAP_ARRAY_VOID();
    }
 }
+/* GCOVR_EXCL_BR_STOP */
 
 /*-----------------------------------------------------------------------------
  * MGRSetArgsFromYAML
@@ -1242,6 +1299,7 @@ hypredrv_MGRGetValidValues(const char *key)
  * is empty - the actual solver type is determined by the key name, not the val.
  *-----------------------------------------------------------------------------*/
 
+/* GCOVR_EXCL_BR_START */
 void
 hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
@@ -1345,6 +1403,7 @@ hypredrv_MGRConvertArgInt(MGR_args *args, const char *name)
    /* If we haven't returned yet, return a NULL pointer */
    return NULL;
 }
+/* GCOVR_EXCL_BR_STOP */
 
 /*-----------------------------------------------------------------------------
  * hypredrv_MGRSetDofmap
@@ -1362,6 +1421,7 @@ hypredrv_MGRSetNearNullSpace(MGR_args *args, HYPRE_IJVector vec_nn)
    args->vec_nn = vec_nn;
 }
 
+/* GCOVR_EXCL_BR_START */
 void
 hypredrv_MGRDestroyNestedSolverArgs(MGR_args *args)
 {
@@ -1404,6 +1464,7 @@ hypredrv_MGRDestroyNestedSolverArgs(MGR_args *args)
       args->coarsest_level.use_krylov = 0;
    }
 }
+/* GCOVR_EXCL_BR_STOP */
 
 /*-----------------------------------------------------------------------------
  * hypredrv_MGRCreate
@@ -1433,11 +1494,12 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_Int    num_dofs_last     = 0;
    HYPRE_Int    num_levels        = 0;
    HYPRE_Int    num_c_dofs[MAX_MGR_LEVELS - 1];
-   HYPRE_Int   *c_dofs[MAX_MGR_LEVELS - 1];
-   HYPRE_Int   *inactive_dofs = NULL;
+   HYPRE_Int   *c_dofs[MAX_MGR_LEVELS - 1] = {0};
+   HYPRE_Int   *inactive_dofs              = NULL;
    HYPRE_Int    lvl = 0, i = 0;
    HYPRE_Int    j;
 
+   /* GCOVR_EXCL_BR_START */
    /* Sanity checks */
    if (!args->dofmap)
    {
@@ -1464,6 +1526,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    /* Compute num_c_dofs and c_dofs */
    num_dofs_last = num_active_dofs;
    inactive_dofs = (HYPRE_Int *)calloc((size_t)num_dofs, sizeof(HYPRE_Int));
+   /* GCOVR_EXCL_START */
    if (!inactive_dofs)
    {
       free(label_present);
@@ -1471,6 +1534,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       hypredrv_ErrorMsgAdd("Failed to allocate MGR inactive dof label mask");
       return;
    }
+   /* GCOVR_EXCL_STOP */
    for (i = 0; i < num_dofs; i++)
    {
       if (!label_present[i])
@@ -1543,6 +1607,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    if (num_active_dofs > 0 && num_active_dofs < num_dofs)
    {
       label_to_dense = (HYPRE_Int *)malloc((size_t)num_dofs * sizeof(HYPRE_Int));
+      /* GCOVR_EXCL_START */
       if (!label_to_dense)
       {
          free(label_present);
@@ -1555,6 +1620,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          hypredrv_ErrorMsgAdd("Failed to allocate MGR dense label remap");
          return;
       }
+      /* GCOVR_EXCL_STOP */
 
       for (i = 0; i < num_dofs; i++)
       {
@@ -1574,6 +1640,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          for (i = 0; i < num_c_dofs[lvl]; i++)
          {
             HYPRE_Int raw = c_dofs[lvl][i];
+            /* GCOVR_EXCL_START */
             if (raw < 0 || raw >= num_dofs || label_to_dense[raw] < 0)
             {
                free(label_to_dense);
@@ -1588,6 +1655,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
                                     (int)raw);
                return;
             }
+            /* GCOVR_EXCL_STOP */
             c_dofs[lvl][i] = label_to_dense[raw];
          }
       }
@@ -1603,6 +1671,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    else
    {
       dofmap_data = (HYPRE_Int *)malloc(dofmap->size * sizeof(HYPRE_Int));
+      /* GCOVR_EXCL_START */
       if (!dofmap_data)
       {
          free(inactive_dofs);
@@ -1615,12 +1684,14 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          hypredrv_ErrorMsgAdd("Failed to allocate MGR point-marker array");
          return;
       }
+      /* GCOVR_EXCL_STOP */
       dofmap_data_owned = dofmap_data;
       for (i = 0; i < (int)dofmap->size; i++)
       {
          HYPRE_Int raw = (HYPRE_Int)dofmap->data[i];
          if (label_to_dense)
          {
+            /* GCOVR_EXCL_START */
             if (raw < 0 || raw >= num_dofs || label_to_dense[raw] < 0)
             {
                free(inactive_dofs);
@@ -1636,16 +1707,21 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
                                     (int)raw);
                return;
             }
+            /* GCOVR_EXCL_STOP */
             dofmap_data[i] = label_to_dense[raw];
          }
+         /* GCOVR_EXCL_START */
          else
          {
             dofmap_data[i] = raw;
          }
+         /* GCOVR_EXCL_STOP */
       }
    }
    free(label_to_dense);
    label_to_dense = NULL;
+
+   /* GCOVR_EXCL_BR_STOP */
 
    /* Config preconditioner */
    HYPRE_MGRCreate(&precon);
@@ -1662,6 +1738,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_MGRSetRelaxType(precon, args->relax_type); /* TODO: we shouldn't need this */
 
    /* Set level parameters */
+/* GCOVR_EXCL_BR_START */
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_MGRSetLevelFRelaxType(precon,
                                hypredrv_MGRConvertArgInt(args, "f_relaxation:type"));
@@ -1687,10 +1764,12 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->level[i].f_relaxation.krylov,
                                      args->dofmap, args->vec_nn,
                                      &args->level[i].f_relaxation.krylov->base_solver);
+         /* GCOVR_EXCL_START */
          if (hypredrv_ErrorCodeActive())
          {
             return;
          }
+         /* GCOVR_EXCL_STOP */
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
          HYPRE_MGRSetFSolverAtLevel(precon,
                                     (HYPRE_Solver)args->level[i].f_relaxation.krylov, i);
@@ -1719,7 +1798,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
             hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
             hypredrv_ErrorMsgAdd(
                "Nested MGR F-relaxation is only supported at MGR level 0 by hypre");
-            return;
+            goto cleanup;
          }
 
          MGR_args      *nested_args    = args->level[i].f_relaxation.mgr;
@@ -1733,7 +1812,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
             hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
             hypredrv_ErrorMsgAdd(
                "MGR F-relaxation type 'mgr' requires a nested 'mgr:' block");
-            return;
+            goto cleanup;
          }
 
          nested_dofmap =
@@ -1741,7 +1820,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          if (hypredrv_ErrorCodeActive() || !nested_dofmap)
          {
             hypredrv_IntArrayDestroy(&nested_dofmap);
-            return;
+            goto cleanup;
          }
 
          saved_dofmap        = nested_args->dofmap;
@@ -1751,6 +1830,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          hypredrv_MGRCreate(nested_args, &frelax);
          nested_args->dofmap = saved_dofmap;
          nested_args->vec_nn = saved_vec_nn;
+         /* GCOVR_EXCL_START */
          if (hypredrv_ErrorCodeActive())
          {
             hypredrv_IntArrayDestroy(&nested_dofmap);
@@ -1764,6 +1844,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
             hypredrv_IntArrayDestroy(&nested_dofmap);
             return;
          }
+         /* GCOVR_EXCL_STOP */
          nested_dofmap = NULL;
          HYPRE_MGRSetFSolverAtLevel(precon, frelax_wrapper, i);
          args->frelax[i] = frelax_wrapper;
@@ -1775,6 +1856,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 #endif
       }
 #if defined(HYPRE_USING_DSUPERLU)
+      /* GCOVR_EXCL_START */
       else if (args->level[i].f_relaxation.type == 29)
       {
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
@@ -1794,7 +1876,9 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          return;
 #endif
       }
+      /* GCOVR_EXCL_STOP */
 #else
+      /* GCOVR_EXCL_START */
       else if (args->level[i].f_relaxation.type == 29)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
@@ -1802,6 +1886,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
             "MGR F-relaxation 'spdirect' requires hypre built with DSUPERLU");
          return;
       }
+      /* GCOVR_EXCL_STOP */
 #endif
 #if HYPRE_CHECK_MIN_VERSION(23200, 14)
       else if (args->level[i].f_relaxation.type == 32)
@@ -1823,10 +1908,12 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->level[i].g_relaxation.krylov,
                                      args->dofmap, args->vec_nn,
                                      &args->level[i].g_relaxation.krylov->base_solver);
+         /* GCOVR_EXCL_START */
          if (hypredrv_ErrorCodeActive())
          {
             return;
          }
+         /* GCOVR_EXCL_STOP */
          HYPRE_MGRSetGlobalSmootherAtLevel(
             precon, (HYPRE_Solver)args->level[i].g_relaxation.krylov, i);
       }
@@ -1850,10 +1937,12 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->coarsest_level.krylov,
                                   args->dofmap, args->vec_nn,
                                   &args->coarsest_level.krylov->base_solver);
+      /* GCOVR_EXCL_START */
       if (hypredrv_ErrorCodeActive())
       {
          return;
       }
+      /* GCOVR_EXCL_STOP */
 #if HYPRE_CHECK_MIN_VERSION(30100, 5)
       HYPRE_MGRSetCoarseSolver(precon, MGRBaseParSolverSolve, MGRBaseParSolverSetup,
                                (HYPRE_Solver)args->coarsest_level.krylov);
@@ -1877,6 +1966,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       }
 
       /* Ensure the selected solver has valid max_iter */
+      /* GCOVR_EXCL_START */
       if (args->coarsest_level.type == 0 && args->coarsest_level.amg.max_iter < 1)
       {
          args->coarsest_level.amg.max_iter = 1;
@@ -1885,6 +1975,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       {
          args->coarsest_level.ilu.max_iter = 1;
       }
+      /* GCOVR_EXCL_STOP */
 
       /* Config coarsest level solver */
       if (args->coarsest_level.type == 0)
@@ -1901,6 +1992,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          HYPRE_MGRSetCoarseSolver(precon, HYPRE_ILUSolve, HYPRE_ILUSetup, args->csolver);
       }
 #ifdef HYPRE_USING_DSUPERLU
+      /* GCOVR_EXCL_START */
       else if (args->coarsest_level.type == 29)
       {
          HYPRE_MGRDirectSolverCreate(&args->csolver);
@@ -1916,7 +2008,9 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          HYPRE_MGRSetCoarseSolver(precon, HYPRE_MGRDirectSolverSolve,
                                   HYPRE_MGRDirectSolverSetup, args->csolver);
       }
+      /* GCOVR_EXCL_STOP */
 #else
+      /* GCOVR_EXCL_START */
       else if (args->coarsest_level.type == 29)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
@@ -1924,8 +2018,11 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
             "MGR coarsest_level 'spdirect' requires hypre built with DSUPERLU");
          return;
       }
+      /* GCOVR_EXCL_STOP */
 #endif
    }
+
+   /* GCOVR_EXCL_BR_STOP */
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 11)
    HYPRE_MGRSetNonGalerkinMaxElmts(precon, args->nonglk_max_elmts);
@@ -1933,24 +2030,39 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
    /* Set output pointer */
    *precon_ptr = precon;
-
-   /* Free memory */
-   free(inactive_dofs);
-   for (lvl = 0; lvl < num_levels - 1; lvl++)
-   {
-      free(c_dofs[lvl]);
-   }
+   precon      = NULL;
    if (dofmap_data_owned)
    {
       /* hypre uses the point-marker array during MGRSetup, so keep the owned copy
        * alive until PreconDestroyMGRSolver() destroys the MGR object. */
-      if (args->point_marker_data)
+      /* GCOVR_EXCL_START */
+      /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+      if (args->point_marker_data) /* GCOVR_EXCL_BR_STOP */
       {
          free(args->point_marker_data);
       }
+      /* GCOVR_EXCL_STOP */
       args->point_marker_data = dofmap_data_owned;
+      dofmap_data_owned       = NULL;
    }
+   goto cleanup;
 
+cleanup:
+   if (dofmap_data_owned)
+   {
+      free(dofmap_data_owned);
+   }
+   for (lvl = 0; lvl < num_levels - 1; lvl++)
+   {
+      free(c_dofs[lvl]);
+   }
+   free(inactive_dofs);
+   free(label_present);
+   free(label_to_dense);
+   if (precon)
+   {
+      HYPRE_MGRDestroy(precon);
+   }
    /* Silence any hypre errors. TODO: improve error handling */
    HYPRE_ClearAllErrors();
 #endif

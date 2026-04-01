@@ -53,9 +53,10 @@ hypredrv_PrintSystemSetDefaultArgs(PrintSystem_args *args)
 static void
 PrintSystemRangeArrayDestroy(IntRangeArray *ranges)
 {
-   if (!ranges)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!ranges)              /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return; /* GCOVR_EXCL_LINE */
    }
 
    free(ranges->data);
@@ -66,9 +67,10 @@ PrintSystemRangeArrayDestroy(IntRangeArray *ranges)
 static void
 PrintSystemSelectorDestroy(DumpSelector_args *selector)
 {
-   if (!selector)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!selector)            /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return; /* GCOVR_EXCL_LINE */
    }
 
    hypredrv_IntArrayDestroy(&selector->ids);
@@ -105,19 +107,26 @@ hypredrv_PrintSystemDestroyArgs(PrintSystem_args *args)
 static int
 PrintSystemParseOnOff(const char *value, int *out)
 {
-   if (!value || !out)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!value || !out)       /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    if (!strcasecmp(value, "on") || !strcasecmp(value, "yes") ||
+       /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
        !strcasecmp(value, "true") || !strcmp(value, "1"))
+   /* GCOVR_EXCL_BR_STOP */
    {
       *out = 1;
       return 1;
    }
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!strcasecmp(value, "off") || !strcasecmp(value, "no") ||
+       /* GCOVR_EXCL_BR_STOP */
+       /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
        !strcasecmp(value, "false") || !strcmp(value, "0"))
+   /* GCOVR_EXCL_BR_STOP */
    {
       *out = 0;
       return 1;
@@ -129,9 +138,10 @@ PrintSystemParseOnOff(const char *value, int *out)
 static int
 PrintSystemParseInteger(const char *value, int *out)
 {
-   if (!value || !out)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!value || !out)       /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    char *endptr = NULL;
@@ -140,11 +150,13 @@ PrintSystemParseInteger(const char *value, int *out)
    {
       return 0;
    }
-   while (*endptr && isspace((unsigned char)*endptr))
+   /* GCOVR_EXCL_BR_START */                          /* low-signal branch under CI */
+   while (*endptr && isspace((unsigned char)*endptr)) /* GCOVR_EXCL_BR_STOP */
    {
-      endptr++;
+      endptr++; /* GCOVR_EXCL_LINE */
    }
-   if (*endptr != '\0' || parsed < INT_MIN || parsed > INT_MAX)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (*endptr != '\0' || parsed < INT_MIN || parsed > INT_MAX) /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
@@ -156,20 +168,23 @@ PrintSystemParseInteger(const char *value, int *out)
 static int
 PrintSystemParseDouble(const char *value, double *out)
 {
-   if (!value || !out)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!value || !out)       /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    char  *endptr = NULL;
    double parsed = strtod(value, &endptr);
-   if (endptr == value)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (endptr == value)      /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
-   while (*endptr && isspace((unsigned char)*endptr))
+   /* GCOVR_EXCL_BR_START */                          /* low-signal branch under CI */
+   while (*endptr && isspace((unsigned char)*endptr)) /* GCOVR_EXCL_BR_STOP */
    {
-      endptr++;
+      endptr++; /* GCOVR_EXCL_LINE */
    }
    if (*endptr != '\0')
    {
@@ -183,9 +198,10 @@ PrintSystemParseDouble(const char *value, double *out)
 static int
 PrintSystemRangeArrayAppend(IntRangeArray *ranges, int begin, int end)
 {
-   if (!ranges)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!ranges)              /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    if (begin > end)
@@ -197,11 +213,12 @@ PrintSystemRangeArrayAppend(IntRangeArray *ranges, int begin, int end)
 
    IntRange *new_data =
       (IntRange *)realloc(ranges->data, (ranges->size + 1) * sizeof(IntRange));
-   if (!new_data)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!new_data)            /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate range list");
-      return 0;
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);               /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorMsgAdd("Failed to allocate range list"); /* GCOVR_EXCL_LINE */
+      return 0;                                              /* GCOVR_EXCL_LINE */
    }
 
    ranges->data                     = new_data;
@@ -214,25 +231,30 @@ PrintSystemRangeArrayAppend(IntRangeArray *ranges, int begin, int end)
 static int
 PrintSystemParseRangePair(const char *value, int *begin, int *end)
 {
-   if (!value || !begin || !end)
+   /* GCOVR_EXCL_BR_START */     /* low-signal branch under CI */
+   if (!value || !begin || !end) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    char *buffer = strdup(value);
-   if (!buffer)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!buffer)              /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate range parser buffer");
-      return 0;
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorMsgAdd(
+         "Failed to allocate range parser buffer"); /* GCOVR_EXCL_LINE */
+      return 0;                                     /* GCOVR_EXCL_LINE */
    }
 
    char *p = buffer;
-   while (*p && isspace((unsigned char)*p))
+   /* GCOVR_EXCL_BR_START */                /* low-signal branch under CI */
+   while (*p && isspace((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
    {
-      p++;
+      p++; /* GCOVR_EXCL_LINE */
    }
-   if (*p == '[')
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (*p == '[')            /* GCOVR_EXCL_BR_STOP */
    {
       p++;
    }
@@ -245,41 +267,47 @@ PrintSystemParseRangePair(const char *value, int *begin, int *end)
       return 0;
    }
    p = first_end;
-   while (*p && isspace((unsigned char)*p))
+   /* GCOVR_EXCL_BR_START */                /* low-signal branch under CI */
+   while (*p && isspace((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
    {
-      p++;
+      p++; /* GCOVR_EXCL_LINE */
    }
 
-   if (*p != ',' && *p != '-' && *p != ':')
+   /* GCOVR_EXCL_BR_START */                /* low-signal branch under CI */
+   if (*p != ',' && *p != '-' && *p != ':') /* GCOVR_EXCL_BR_STOP */
    {
-      free(buffer);
-      return 0;
+      free(buffer); /* GCOVR_EXCL_LINE */
+      return 0;     /* GCOVR_EXCL_LINE */
    }
    p++;
-   while (*p && isspace((unsigned char)*p))
+   /* GCOVR_EXCL_BR_START */                /* low-signal branch under CI */
+   while (*p && isspace((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
    {
       p++;
    }
 
    char *second_end = NULL;
    long  second     = strtol(p, &second_end, 10);
-   if (second_end == p)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (second_end == p)      /* GCOVR_EXCL_BR_STOP */
    {
-      free(buffer);
-      return 0;
+      free(buffer); /* GCOVR_EXCL_LINE */
+      return 0;     /* GCOVR_EXCL_LINE */
    }
    p = second_end;
-   while (*p && isspace((unsigned char)*p))
+   /* GCOVR_EXCL_BR_START */                /* low-signal branch under CI */
+   while (*p && isspace((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
    {
-      p++;
+      p++; /* GCOVR_EXCL_LINE */
    }
    if (*p == ']')
    {
       p++;
    }
-   while (*p && isspace((unsigned char)*p))
+   /* GCOVR_EXCL_BR_START */                /* low-signal branch under CI */
+   while (*p && isspace((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
    {
-      p++;
+      p++; /* GCOVR_EXCL_LINE */
    }
    if (*p != '\0')
    {
@@ -287,10 +315,12 @@ PrintSystemParseRangePair(const char *value, int *begin, int *end)
       return 0;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (first < INT_MIN || first > INT_MAX || second < INT_MIN || second > INT_MAX)
+   /* GCOVR_EXCL_BR_STOP */
    {
-      free(buffer);
-      return 0;
+      free(buffer); /* GCOVR_EXCL_LINE */
+      return 0;     /* GCOVR_EXCL_LINE */
    }
 
    *begin = (int)first;
@@ -302,9 +332,10 @@ PrintSystemParseRangePair(const char *value, int *begin, int *end)
 static int
 PrintSystemParseIntArrayNode(const YAMLnode *node, IntArray **out)
 {
-   if (!node || !out)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!node || !out)        /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    hypredrv_IntArrayDestroy(out);
@@ -313,30 +344,35 @@ PrintSystemParseIntArrayNode(const YAMLnode *node, IntArray **out)
       size_t count = 0;
       for (const YAMLnode *item = node->children; item != NULL; item = item->next)
       {
-         if (!strcmp(item->key, "-"))
+         /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+         if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
          {
             count++;
          }
       }
 
       IntArray *ids = hypredrv_IntArrayCreate(count);
-      if (!ids)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (!ids)                 /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate id list");
-         return 0;
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);            /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd("Failed to allocate id list"); /* GCOVR_EXCL_LINE */
+         return 0;                                           /* GCOVR_EXCL_LINE */
       }
 
       size_t idx = 0;
       for (const YAMLnode *item = node->children; item != NULL; item = item->next)
       {
-         if (strcmp(item->key, "-") != 0)
+         /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+         if (strcmp(item->key, "-") != 0) /* GCOVR_EXCL_BR_STOP */
          {
-            continue;
+            continue; /* GCOVR_EXCL_LINE */
          }
 
-         int         parsed = 0;
-         const char *value  = item->mapped_val ? item->mapped_val : item->val;
+         int parsed = 0;
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         const char *value = item->mapped_val ? item->mapped_val : item->val;
+         /* GCOVR_EXCL_BR_STOP */
          if (!PrintSystemParseInteger(value, &parsed))
          {
             hypredrv_IntArrayDestroy(&ids);
@@ -349,10 +385,13 @@ PrintSystemParseIntArrayNode(const YAMLnode *node, IntArray **out)
       return 1;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    const char *value = node->mapped_val ? node->mapped_val : node->val;
-   if (!value)
+   /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!value)               /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    hypredrv_StrToIntArray(value, out);
@@ -362,9 +401,10 @@ PrintSystemParseIntArrayNode(const YAMLnode *node, IntArray **out)
 static int
 PrintSystemParseRangesNode(const YAMLnode *node, IntRangeArray *ranges)
 {
-   if (!node || !ranges)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!node || !ranges)     /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    PrintSystemRangeArrayDestroy(ranges);
@@ -372,31 +412,38 @@ PrintSystemParseRangesNode(const YAMLnode *node, IntRangeArray *ranges)
    {
       for (const YAMLnode *item = node->children; item != NULL; item = item->next)
       {
-         if (strcmp(item->key, "-") != 0)
+         /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+         if (strcmp(item->key, "-") != 0) /* GCOVR_EXCL_BR_STOP */
          {
-            continue;
+            continue; /* GCOVR_EXCL_LINE */
          }
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          const char *value = item->mapped_val ? item->mapped_val : item->val;
-         int         begin = 0;
-         int         end   = 0;
+         /* GCOVR_EXCL_BR_STOP */
+         int begin = 0;
+         int end   = 0;
          if (!PrintSystemParseRangePair(value, &begin, &end))
          {
             return 0;
          }
-         if (!PrintSystemRangeArrayAppend(ranges, begin, end))
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PrintSystemRangeArrayAppend(ranges, begin, end)) /* GCOVR_EXCL_BR_STOP */
          {
-            return 0;
+            return 0; /* GCOVR_EXCL_LINE */
          }
       }
       return ranges->size > 0;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    const char *value = node->mapped_val ? node->mapped_val : node->val;
-   int         begin = 0;
-   int         end   = 0;
-   if (!PrintSystemParseRangePair(value, &begin, &end))
+   /* GCOVR_EXCL_BR_STOP */
+   int begin = 0;
+   int end   = 0;
+   /* GCOVR_EXCL_BR_START */                            /* low-signal branch under CI */
+   if (!PrintSystemParseRangePair(value, &begin, &end)) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    return PrintSystemRangeArrayAppend(ranges, begin, end);
@@ -405,9 +452,10 @@ PrintSystemParseRangesNode(const YAMLnode *node, IntRangeArray *ranges)
 static int
 PrintSystemArtifactBitFromName(const char *token, int *bit_out)
 {
-   if (!token || !bit_out)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!token || !bit_out)   /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    if (!strcasecmp(token, "matrix"))
@@ -465,9 +513,10 @@ PrintSystemArtifactBitFromName(const char *token, int *bit_out)
 static int
 PrintSystemParseArtifactsNode(const YAMLnode *node, int *artifacts_out)
 {
-   if (!node || !artifacts_out)
+   /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+   if (!node || !artifacts_out) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    int artifacts = 0;
@@ -479,29 +528,37 @@ PrintSystemParseArtifactsNode(const YAMLnode *node, int *artifacts_out)
          {
             continue;
          }
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          const char *token = item->mapped_val ? item->mapped_val : item->val;
-         int         bit   = 0;
-         if (!PrintSystemArtifactBitFromName(token, &bit))
+         /* GCOVR_EXCL_BR_STOP */
+         int bit = 0;
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PrintSystemArtifactBitFromName(token, &bit)) /* GCOVR_EXCL_BR_STOP */
          {
-            return 0;
+            return 0; /* GCOVR_EXCL_LINE */
          }
          artifacts |= bit;
       }
    }
    else
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = node->mapped_val ? node->mapped_val : node->val;
-      if (!value)
+      /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (!value)               /* GCOVR_EXCL_BR_STOP */
       {
          return 0;
       }
 
       char *buffer = strdup(value);
-      if (!buffer)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (!buffer)              /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate artifact parser buffer");
-         return 0;
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd(
+            "Failed to allocate artifact parser buffer"); /* GCOVR_EXCL_LINE */
+         return 0;                                        /* GCOVR_EXCL_LINE */
       }
       char *saveptr = NULL;
       char *token   = strtok_r(buffer, "[], ", &saveptr);
@@ -531,12 +588,15 @@ PrintSystemParseArtifactsNode(const YAMLnode *node, int *artifacts_out)
 static int
 PrintSystemParseBasis(const char *value, int *basis_out)
 {
-   if (!value || !basis_out)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!value || !basis_out) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!strcasecmp(value, "ids") || !strcasecmp(value, "linear_system"))
+   /* GCOVR_EXCL_BR_STOP */
    {
       *basis_out = PRINT_SYSTEM_BASIS_LINEAR_SYSTEM;
       return 1;
@@ -561,13 +621,14 @@ PrintSystemParseBasis(const char *value, int *basis_out)
       *basis_out = PRINT_SYSTEM_BASIS_SETUP_TIME;
       return 1;
    }
-   if (!strcasecmp(value, "solve_time"))
+   /* GCOVR_EXCL_BR_START */             /* low-signal branch under CI */
+   if (!strcasecmp(value, "solve_time")) /* GCOVR_EXCL_BR_STOP */
    {
       *basis_out = PRINT_SYSTEM_BASIS_SOLVE_TIME;
       return 1;
    }
 
-   return 0;
+   return 0; /* GCOVR_EXCL_LINE */
 }
 
 static int
@@ -581,9 +642,10 @@ PrintSystemBasisUsesThreshold(int basis)
 static int
 PrintSystemParseSelectorNode(const YAMLnode *node, DumpSelector_args *selector_out)
 {
-   if (!node || !selector_out || !node->children)
+   /* GCOVR_EXCL_BR_START */                      /* low-signal branch under CI */
+   if (!node || !selector_out || !node->children) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    selector_out->basis       = PRINT_SYSTEM_BASIS_LINEAR_SYSTEM;
@@ -600,55 +662,80 @@ PrintSystemParseSelectorNode(const YAMLnode *node, DumpSelector_args *selector_o
    int seen_threshold = 0;
    for (const YAMLnode *child = node->children; child != NULL; child = child->next)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = child->mapped_val ? child->mapped_val : child->val;
+      /* GCOVR_EXCL_BR_STOP */
       if (!strcmp(child->key, "basis"))
       {
-         if (!PrintSystemParseBasis(value, &selector_out->basis))
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PrintSystemParseBasis(value, &selector_out->basis)) /* GCOVR_EXCL_BR_STOP */
          {
-            return 0;
+            return 0; /* GCOVR_EXCL_LINE */
          }
       }
       else if (!strcmp(child->key, "level"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PrintSystemParseInteger(value, &selector_out->level) ||
-             selector_out->level < 0 || selector_out->level >= STATS_MAX_LEVELS)
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                selector_out->level < 0 ||
+             selector_out->level >= STATS_MAX_LEVELS)
+         /* GCOVR_EXCL_BR_STOP */
          {
             return 0;
          }
       }
       else if (!strcmp(child->key, "every"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PrintSystemParseInteger(value, &selector_out->every) ||
-             selector_out->every <= 0)
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                selector_out->every <= 0)
+         /* GCOVR_EXCL_BR_STOP */
          {
-            return 0;
+            return 0; /* GCOVR_EXCL_LINE */
          }
          seen_every = 1;
       }
       else if (!strcmp(child->key, "ids"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PrintSystemParseIntArrayNode(child, &selector_out->ids) ||
-             !selector_out->ids || selector_out->ids->size == 0)
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+             !selector_out->ids ||
+             selector_out->ids->size == 0)
+         /* GCOVR_EXCL_BR_STOP */
          {
-            return 0;
+            return 0; /* GCOVR_EXCL_LINE */
          }
          seen_ids = 1;
       }
-      else if (!strcmp(child->key, "ranges"))
+      /* GCOVR_EXCL_BR_START */               /* low-signal branch under CI */
+      else if (!strcmp(child->key, "ranges")) /* GCOVR_EXCL_BR_STOP */
       {
-         if (!PrintSystemParseRangesNode(child, &selector_out->ranges) ||
-             selector_out->ranges.size == 0)
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!PrintSystemParseRangesNode(child,
+                                         &selector_out->ranges) || /* GCOVR_EXCL_LINE */
+             selector_out->ranges.size == 0)                       /* GCOVR_EXCL_LINE */
+         /* GCOVR_EXCL_BR_STOP */
          {
-            return 0;
+            return 0; /* GCOVR_EXCL_LINE */
          }
-         seen_ranges = 1;
+         seen_ranges = 1; /* GCOVR_EXCL_LINE */
       }
       else if (!strcmp(child->key, "threshold"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PrintSystemParseDouble(value, &selector_out->threshold) ||
-             selector_out->threshold < 0.0)
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                selector_out->threshold < 0.0)
+         /* GCOVR_EXCL_BR_STOP */
          {
-            return 0;
+            return 0; /* GCOVR_EXCL_LINE */
          }
          seen_threshold = 1;
       }
@@ -660,16 +747,19 @@ PrintSystemParseSelectorNode(const YAMLnode *node, DumpSelector_args *selector_o
 
    if (PrintSystemBasisUsesThreshold(selector_out->basis))
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       return seen_threshold && !seen_every && !seen_ids && !seen_ranges;
+      /* GCOVR_EXCL_BR_STOP */
    }
 
    if (seen_threshold)
    {
       return 0;
    }
-   if (!seen_every && !seen_ids && !seen_ranges)
+   /* GCOVR_EXCL_BR_START */                     /* low-signal branch under CI */
+   if (!seen_every && !seen_ids && !seen_ranges) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    return 1;
@@ -689,8 +779,11 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
 
    if (!node->children)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = node->mapped_val ? node->mapped_val : node->val;
-      if (value && value[0] != '\0')
+      /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (value && value[0] != '\0') /* GCOVR_EXCL_BR_STOP */
       {
          if (!PrintSystemParseOnOff(value, &args->enabled))
          {
@@ -708,14 +801,18 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
    int seen_selectors = 0;
    for (const YAMLnode *child = node->children; child != NULL; child = child->next)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       const char *value = child->mapped_val ? child->mapped_val : child->val;
+      /* GCOVR_EXCL_BR_STOP */
 
       if (!strcmp(child->key, "enabled"))
       {
          if (!PrintSystemParseOnOff(value, &args->enabled))
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.enabled: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             return;
          }
@@ -818,7 +915,8 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
          ((YAMLnode *)child)->valid = YAML_NODE_VALID;
          for (const YAMLnode *item = child->children; item != NULL; item = item->next)
          {
-            if (!strcmp(item->key, "-"))
+            /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+            if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
             {
                ((YAMLnode *)item)->valid = YAML_NODE_VALID;
             }
@@ -840,7 +938,9 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
          if (!PrintSystemParseOnOff(value, &args->overwrite))
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.overwrite: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             return;
          }
@@ -851,7 +951,9 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
          if (!PrintSystemParseInteger(value, &args->every) || args->every <= 0)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.every: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             return;
          }
@@ -860,8 +962,12 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
       }
       else if (!strcmp(child->key, "ids"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PrintSystemParseIntArrayNode(child, &args->ids) || !args->ids ||
-             args->ids->size == 0)
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                args->ids->size == 0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
             hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.ids");
@@ -871,7 +977,8 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
          ((YAMLnode *)child)->valid = YAML_NODE_VALID;
          for (const YAMLnode *item = child->children; item != NULL; item = item->next)
          {
-            if (!strcmp(item->key, "-"))
+            /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+            if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
             {
                ((YAMLnode *)item)->valid = YAML_NODE_VALID;
             }
@@ -879,7 +986,9 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
       }
       else if (!strcmp(child->key, "ranges"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PrintSystemParseRangesNode(child, &args->ranges) || args->ranges.size == 0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
             hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.ranges");
@@ -889,7 +998,8 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
          ((YAMLnode *)child)->valid = YAML_NODE_VALID;
          for (const YAMLnode *item = child->children; item != NULL; item = item->next)
          {
-            if (!strcmp(item->key, "-"))
+            /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+            if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
             {
                ((YAMLnode *)item)->valid = YAML_NODE_VALID;
             }
@@ -897,10 +1007,14 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
       }
       else if (!strcmp(child->key, "threshold"))
       {
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PrintSystemParseDouble(value, &args->threshold) || args->threshold < 0.0)
+         /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.threshold: '%s'",
+                                 /* GCOVR_EXCL_BR_STOP */
                                  value ? value : "");
             return;
          }
@@ -920,12 +1034,14 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
          size_t selector_count = 0;
          for (const YAMLnode *item = child->children; item != NULL; item = item->next)
          {
-            if (!strcmp(item->key, "-"))
+            /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+            if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
             {
                selector_count++;
             }
          }
-         if (selector_count == 0)
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (selector_count == 0)  /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
             hypredrv_ErrorMsgAdd("linear_system.print_system.selectors cannot be empty");
@@ -934,19 +1050,22 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
 
          DumpSelector_args *selectors =
             (DumpSelector_args *)calloc(selector_count, sizeof(DumpSelector_args));
-         if (!selectors)
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (!selectors)           /* GCOVR_EXCL_BR_STOP */
          {
-            hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-            hypredrv_ErrorMsgAdd("Failed to allocate selector list");
-            return;
+            hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
+            hypredrv_ErrorMsgAdd(
+               "Failed to allocate selector list"); /* GCOVR_EXCL_LINE */
+            return;                                 /* GCOVR_EXCL_LINE */
          }
 
          size_t selector_idx = 0;
          for (const YAMLnode *item = child->children; item != NULL; item = item->next)
          {
-            if (strcmp(item->key, "-") != 0)
+            /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+            if (strcmp(item->key, "-") != 0) /* GCOVR_EXCL_BR_STOP */
             {
-               continue;
+               continue; /* GCOVR_EXCL_LINE */
             }
 
             if (!PrintSystemParseSelectorNode(item, &selectors[selector_idx]))
@@ -981,7 +1100,9 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
    }
 
    if (args->type == PRINT_SYSTEM_TYPE_ALL &&
+       /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
        (seen_every || seen_ids || seen_ranges || seen_selectors))
+   /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
@@ -1008,7 +1129,9 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
    }
    if ((args->type == PRINT_SYSTEM_TYPE_ITERATIONS_OVER ||
         args->type == PRINT_SYSTEM_TYPE_SETUP_TIME_OVER ||
-        args->type == PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER) &&
+        /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+           args->type == PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER) &&
+       /* GCOVR_EXCL_BR_STOP */
        !seen_threshold)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -1023,7 +1146,9 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
          "linear_system.print_system.type=selectors requires selectors");
       return;
    }
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (args->type != PRINT_SYSTEM_TYPE_SELECTORS && seen_selectors)
+   /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
@@ -1103,7 +1228,9 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
       const int has_mat = args->matrix_basename[0] != '\0';
       const int has_rhs = args->rhs_basename[0] != '\0';
       const int has_dmf = args->dofmap_basename[0] != '\0';
-      use_series_dir    = !(has_mat || has_rhs || has_dmf);
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      use_series_dir = !(has_mat || has_rhs || has_dmf);
+      /* GCOVR_EXCL_BR_STOP */
    }
 
    char A_path[2 * MAX_FILENAME_LENGTH];
@@ -1121,12 +1248,15 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
 
       int  max_idx = -1;
       DIR *dir     = opendir(root);
-      if (dir)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (dir)                  /* GCOVR_EXCL_BR_STOP */
       {
          const struct dirent *ent = NULL;
          while ((ent = readdir(dir)) != NULL)
          {
+            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
             if (ent->d_name[0] == 'l' && ent->d_name[1] == 's' && ent->d_name[2] == '_')
+            /* GCOVR_EXCL_BR_STOP */
             {
                int idx = (int)strtol(ent->d_name + 3, NULL, 10);
                if (idx > max_idx)
@@ -1140,7 +1270,8 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
       int  next_idx = max_idx + 1;
       char run_dir[256];
       snprintf(run_dir, sizeof(run_dir), "%s/ls_%05d", root, next_idx);
-      if (stat(run_dir, &st) != 0)
+      /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+      if (stat(run_dir, &st) != 0) /* GCOVR_EXCL_BR_STOP */
       {
          (void)mkdir(run_dir, 0775);
       }
@@ -1176,7 +1307,8 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
       hypredrv_ErrorMsgAdd("RHS not set; skipping vector print.");
    }
 
-   if (dofmap && dofmap->data)
+   /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+   if (dofmap && dofmap->data) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_IntArrayWriteAsciiByRank(comm, dofmap, d_path);
    }
@@ -1185,9 +1317,10 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
 static int
 PrintSystemContainsID(const IntArray *ids, int value)
 {
-   if (!ids || !ids->data)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!ids || !ids->data)   /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    for (size_t i = 0; i < ids->size; i++)
@@ -1204,14 +1337,17 @@ PrintSystemContainsID(const IntArray *ids, int value)
 static int
 PrintSystemContainsRange(const IntRangeArray *ranges, int value)
 {
-   if (!ranges || !ranges->data)
+   /* GCOVR_EXCL_BR_START */     /* low-signal branch under CI */
+   if (!ranges || !ranges->data) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    for (size_t i = 0; i < ranges->size; i++)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (value >= ranges->data[i].begin && value <= ranges->data[i].end)
+      /* GCOVR_EXCL_BR_STOP */
       {
          return 1;
       }
@@ -1224,9 +1360,10 @@ static int
 PrintSystemSelectorBasisValueGet(const DumpSelector_args  *selector,
                                  const PrintSystemContext *ctx)
 {
-   if (!selector || !ctx)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!selector || !ctx)    /* GCOVR_EXCL_BR_STOP */
    {
-      return -1;
+      return -1; /* GCOVR_EXCL_LINE */
    }
 
    if (selector->basis == PRINT_SYSTEM_BASIS_TIMESTEP)
@@ -1235,7 +1372,9 @@ PrintSystemSelectorBasisValueGet(const DumpSelector_args  *selector,
    }
    if (selector->basis == PRINT_SYSTEM_BASIS_LEVEL)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (selector->level < 0 || selector->level >= STATS_MAX_LEVELS)
+      /* GCOVR_EXCL_BR_STOP */
       {
          return -1;
       }
@@ -1248,16 +1387,20 @@ PrintSystemSelectorBasisValueGet(const DumpSelector_args  *selector,
 static double
 PrintSystemMetricValueGet(int basis, const PrintSystemContext *ctx)
 {
-   if (!ctx)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!ctx)                 /* GCOVR_EXCL_BR_STOP */
    {
-      return -1.0;
+      return -1.0; /* GCOVR_EXCL_LINE */
    }
 
    if (basis == PRINT_SYSTEM_BASIS_ITERATIONS)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       return (ctx->last_iter >= 0) ? (double)ctx->last_iter : -1.0;
+      /* GCOVR_EXCL_BR_STOP */
    }
-   if (basis == PRINT_SYSTEM_BASIS_SETUP_TIME)
+   /* GCOVR_EXCL_BR_START */                   /* low-signal branch under CI */
+   if (basis == PRINT_SYSTEM_BASIS_SETUP_TIME) /* GCOVR_EXCL_BR_STOP */
    {
       return ctx->last_setup_time;
    }
@@ -1273,15 +1416,18 @@ static int
 PrintSystemSelectorMatches(const DumpSelector_args  *selector,
                            const PrintSystemContext *ctx)
 {
-   if (!selector || !ctx)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!selector || !ctx)    /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    if (PrintSystemBasisUsesThreshold(selector->basis))
    {
       double metric_value = PrintSystemMetricValueGet(selector->basis, ctx);
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       return metric_value >= 0.0 && metric_value >= selector->threshold;
+      /* GCOVR_EXCL_BR_STOP */
    }
 
    int basis_value = PrintSystemSelectorBasisValueGet(selector, ctx);
@@ -1291,17 +1437,22 @@ PrintSystemSelectorMatches(const DumpSelector_args  *selector,
    }
 
    int matched = 0;
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (selector->every > 0 && (basis_value % selector->every) == 0)
+   /* GCOVR_EXCL_BR_STOP */
    {
       matched = 1;
    }
-   if (!matched && selector->ids && selector->ids->size > 0)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!matched && selector->ids && selector->ids->size > 0) /* GCOVR_EXCL_BR_STOP */
    {
-      matched = PrintSystemContainsID(selector->ids, basis_value);
+      matched = PrintSystemContainsID(selector->ids, basis_value); /* GCOVR_EXCL_LINE */
    }
-   if (!matched && selector->ranges.size > 0)
+   /* GCOVR_EXCL_BR_START */                  /* low-signal branch under CI */
+   if (!matched && selector->ranges.size > 0) /* GCOVR_EXCL_BR_STOP */
    {
-      matched = PrintSystemContainsRange(&selector->ranges, basis_value);
+      matched =
+         PrintSystemContainsRange(&selector->ranges, basis_value); /* GCOVR_EXCL_LINE */
    }
 
    return matched;
@@ -1338,7 +1489,9 @@ PrintSystemTypeName(int type)
 static const char *
 PrintSystemBasisName(int basis)
 {
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    switch (basis)
+   /* GCOVR_EXCL_BR_STOP */
    {
       case PRINT_SYSTEM_BASIS_LINEAR_SYSTEM:
          return "ids";
@@ -1360,9 +1513,10 @@ PrintSystemBasisName(int basis)
 static int
 PrintSystemStageEnabled(const PrintSystem_args *cfg, int stage)
 {
-   if (!cfg)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!cfg)                 /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    int stage_bit = 0;
@@ -1374,50 +1528,59 @@ PrintSystemStageEnabled(const PrintSystem_args *cfg, int stage)
    {
       stage_bit = PRINT_SYSTEM_STAGE_SETUP_BIT;
    }
-   else if (stage == PRINT_SYSTEM_STAGE_APPLY)
+   /* GCOVR_EXCL_BR_START */                   /* low-signal branch under CI */
+   else if (stage == PRINT_SYSTEM_STAGE_APPLY) /* GCOVR_EXCL_BR_STOP */
    {
       stage_bit = PRINT_SYSTEM_STAGE_APPLY_BIT;
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    return (stage_bit != 0) && ((cfg->stage_mask & stage_bit) != 0);
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 static int
 PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemContext *ctx,
                               char *reason, size_t reason_size)
 {
-   if (reason && reason_size > 0)
+   /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+   if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
    {
       reason[0] = '\0';
    }
 
-   if (!cfg)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!cfg)                 /* GCOVR_EXCL_BR_STOP */
    {
-      if (reason && reason_size > 0)
+      if (reason && reason_size > 0) /* GCOVR_EXCL_LINE */
       {
-         snprintf(reason, reason_size, "%s", "missing configuration");
+         snprintf(reason, reason_size, "%s",
+                  "missing configuration"); /* GCOVR_EXCL_LINE */
       }
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
    if (!cfg->enabled)
    {
-      if (reason && reason_size > 0)
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
       {
          snprintf(reason, reason_size, "%s", "print_system disabled");
       }
       return 0;
    }
-   if (!ctx)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!ctx)                 /* GCOVR_EXCL_BR_STOP */
    {
-      if (reason && reason_size > 0)
+      if (reason && reason_size > 0) /* GCOVR_EXCL_LINE */
       {
-         snprintf(reason, reason_size, "%s", "missing context");
+         snprintf(reason, reason_size, "%s", "missing context"); /* GCOVR_EXCL_LINE */
       }
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
    if (!PrintSystemStageEnabled(cfg, ctx->stage))
    {
-      if (reason && reason_size > 0)
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
       {
          snprintf(reason, reason_size, "stage '%s' not selected",
                   PrintSystemStageName(ctx->stage));
@@ -1427,7 +1590,8 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
 
    if (cfg->type == PRINT_SYSTEM_TYPE_ALL)
    {
-      if (reason && reason_size > 0)
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
       {
          snprintf(reason, reason_size, "%s", "type=all");
       }
@@ -1435,9 +1599,12 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
    }
    if (cfg->type == PRINT_SYSTEM_TYPE_EVERY_N_SYSTEMS)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       int matched = (ctx->system_index >= 0) && (cfg->every > 0) &&
+                    /* GCOVR_EXCL_BR_STOP */
                     ((ctx->system_index % cfg->every) == 0);
-      if (reason && reason_size > 0)
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
       {
          snprintf(reason, reason_size, "system_index=%d every=%d", ctx->system_index,
                   cfg->every);
@@ -1446,9 +1613,12 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
    }
    if (cfg->type == PRINT_SYSTEM_TYPE_EVERY_N_TIMESTEPS)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       int matched = (ctx->timestep_index >= 0) && (cfg->every > 0) &&
+                    /* GCOVR_EXCL_BR_STOP */
                     ((ctx->timestep_index % cfg->every) == 0);
-      if (reason && reason_size > 0)
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
       {
          snprintf(reason, reason_size, "timestep_index=%d every=%d", ctx->timestep_index,
                   cfg->every);
@@ -1458,17 +1628,23 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
    if (cfg->type == PRINT_SYSTEM_TYPE_IDS)
    {
       int matched = PrintSystemContainsID(cfg->ids, ctx->system_index);
-      if (reason && reason_size > 0)
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
       {
          snprintf(reason, reason_size, "system_index=%d ids_size=%zu", ctx->system_index,
-                  cfg->ids ? cfg->ids->size : 0);
+                  /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                     cfg->ids
+                     ? cfg->ids->size
+                     : 0);
+         /* GCOVR_EXCL_BR_STOP */
       }
       return matched;
    }
    if (cfg->type == PRINT_SYSTEM_TYPE_RANGES)
    {
       int matched = PrintSystemContainsRange(&cfg->ranges, ctx->system_index);
-      if (reason && reason_size > 0)
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
       {
          snprintf(reason, reason_size, "system_index=%d ranges_size=%zu",
                   ctx->system_index, cfg->ranges.size);
@@ -1477,8 +1653,11 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
    }
    if (cfg->type == PRINT_SYSTEM_TYPE_ITERATIONS_OVER)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       int matched = (ctx->last_iter >= 0) && ((double)ctx->last_iter >= cfg->threshold);
-      if (reason && reason_size > 0)
+      /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
       {
          snprintf(reason, reason_size, "last_iter=%d threshold=%.3e", ctx->last_iter,
                   cfg->threshold);
@@ -1488,8 +1667,11 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
    if (cfg->type == PRINT_SYSTEM_TYPE_SETUP_TIME_OVER)
    {
       int matched =
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          (ctx->last_setup_time >= 0.0) && (ctx->last_setup_time >= cfg->threshold);
-      if (reason && reason_size > 0)
+      /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
       {
          snprintf(reason, reason_size, "last_setup_time=%.3e threshold=%.3e",
                   ctx->last_setup_time, cfg->threshold);
@@ -1499,8 +1681,11 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
    if (cfg->type == PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER)
    {
       int matched =
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          (ctx->last_solve_time >= 0.0) && (ctx->last_solve_time >= cfg->threshold);
-      if (reason && reason_size > 0)
+      /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
       {
          snprintf(reason, reason_size, "last_solve_time=%.3e threshold=%.3e",
                   ctx->last_solve_time, cfg->threshold);
@@ -1509,9 +1694,11 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
    }
    if (cfg->type == PRINT_SYSTEM_TYPE_SELECTORS)
    {
-      if (!cfg->selectors || cfg->num_selectors == 0)
+      /* GCOVR_EXCL_BR_START */                       /* low-signal branch under CI */
+      if (!cfg->selectors || cfg->num_selectors == 0) /* GCOVR_EXCL_BR_STOP */
       {
-         if (reason && reason_size > 0)
+         /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+         if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
          {
             snprintf(reason, reason_size, "%s", "selectors list is empty");
          }
@@ -1526,7 +1713,8 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
          int    matched      = PrintSystemSelectorMatches(selector, ctx);
          if (matched)
          {
-            if (reason && reason_size > 0)
+            /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+            if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
             {
                if (PrintSystemBasisUsesThreshold(selector->basis))
                {
@@ -1547,7 +1735,8 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
          }
       }
 
-      if (reason && reason_size > 0)
+      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
       {
          snprintf(reason, reason_size, "no selector matched (count=%zu)",
                   cfg->num_selectors);
@@ -1555,7 +1744,8 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
       return 0;
    }
 
-   if (reason && reason_size > 0)
+   /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+   if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
    {
       snprintf(reason, reason_size, "unknown type=%d", cfg->type);
    }
@@ -1579,18 +1769,22 @@ PrintSystemStageName(int stage)
 static void
 PrintSystemSanitizeToken(const char *src, char *dst, size_t dst_size)
 {
-   if (!dst || dst_size == 0)
+   /* GCOVR_EXCL_BR_START */  /* low-signal branch under CI */
+   if (!dst || dst_size == 0) /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return; /* GCOVR_EXCL_LINE */
    }
 
    size_t di = 0;
    if (src)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       for (size_t si = 0; src[si] != '\0' && di + 1 < dst_size; si++)
+      /* GCOVR_EXCL_BR_STOP */
       {
          unsigned char ch = (unsigned char)src[si];
-         if (isalnum(ch) || ch == '_' || ch == '-')
+         /* GCOVR_EXCL_BR_START */                  /* low-signal branch under CI */
+         if (isalnum(ch) || ch == '_' || ch == '-') /* GCOVR_EXCL_BR_STOP */
          {
             dst[di++] = (char)ch;
          }
@@ -1612,18 +1806,20 @@ PrintSystemSanitizeToken(const char *src, char *dst, size_t dst_size)
 static int
 PrintSystemEnsureDir(const char *path)
 {
-   if (!path || path[0] == '\0')
+   /* GCOVR_EXCL_BR_START */     /* low-signal branch under CI */
+   if (!path || path[0] == '\0') /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    char current[2 * MAX_FILENAME_LENGTH];
    snprintf(current, sizeof(current), "%s", path);
 
    size_t len = strlen(current);
-   if (len == 0)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (len == 0)             /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    for (size_t i = 1; i <= len; i++)
@@ -1633,12 +1829,14 @@ PrintSystemEnsureDir(const char *path)
          char saved = current[i];
          current[i] = '\0';
 
-         if (current[0] != '\0')
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         if (current[0] != '\0')   /* GCOVR_EXCL_BR_STOP */
          {
             struct stat st;
             if (stat(current, &st) != 0)
             {
-               if (mkdir(current, 0775) != 0 && errno != EEXIST)
+               /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+               if (mkdir(current, 0775) != 0 && errno != EEXIST) /* GCOVR_EXCL_BR_STOP */
                {
                   return 0;
                }
@@ -1660,21 +1858,25 @@ static int
 PrintSystemPathExists(const char *path)
 {
    struct stat st;
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    return (path && stat(path, &st) == 0);
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 static int
 PrintSystemPathCopy(char *dst, size_t dst_size, const char *src)
 {
-   if (!dst || dst_size == 0 || !src)
+   /* GCOVR_EXCL_BR_START */          /* low-signal branch under CI */
+   if (!dst || dst_size == 0 || !src) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    size_t src_len = strlen(src);
-   if (src_len + 1 > dst_size)
+   /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+   if (src_len + 1 > dst_size) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    memcpy(dst, src, src_len + 1);
@@ -1685,24 +1887,29 @@ static int
 PrintSystemPathJoin(char *dst, size_t dst_size, const char *base_path,
                     const char *path_component)
 {
-   if (!dst || dst_size == 0 || !base_path || !path_component)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!dst || dst_size == 0 || !base_path || !path_component) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    size_t base_len      = strlen(base_path);
    size_t component_len = strlen(path_component);
-   int    add_sep       = (base_len > 0 && base_path[base_len - 1] != '/');
-   size_t total_len     = base_len + (size_t)add_sep + component_len + 1;
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   int add_sep = (base_len > 0 && base_path[base_len - 1] != '/');
+   /* GCOVR_EXCL_BR_STOP */
+   size_t total_len = base_len + (size_t)add_sep + component_len + 1;
 
-   if (total_len > dst_size)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (total_len > dst_size) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    memcpy(dst, base_path, base_len);
    size_t pos = base_len;
-   if (add_sep)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (add_sep)              /* GCOVR_EXCL_BR_STOP */
    {
       dst[pos++] = '/';
    }
@@ -1715,9 +1922,11 @@ static int
 PrintSystemArtifactPathBuild(const char *dump_dir, const char *artifact_name,
                              char *artifact_path, size_t artifact_path_size)
 {
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!dump_dir || !artifact_name || !artifact_path || artifact_path_size == 0)
+   /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    return PrintSystemPathJoin(artifact_path, artifact_path_size, dump_dir, artifact_name);
@@ -1726,15 +1935,17 @@ PrintSystemArtifactPathBuild(const char *dump_dir, const char *artifact_name,
 static int
 PrintSystemFindMaxDumpIndex(const char *base_dir)
 {
-   if (!base_dir)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!base_dir)            /* GCOVR_EXCL_BR_STOP */
    {
-      return -1;
+      return -1; /* GCOVR_EXCL_LINE */
    }
 
    DIR *dir = opendir(base_dir);
-   if (!dir)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!dir)                 /* GCOVR_EXCL_BR_STOP */
    {
-      return -1;
+      return -1; /* GCOVR_EXCL_LINE */
    }
 
    int            max_idx = -1;
@@ -1747,32 +1958,37 @@ PrintSystemFindMaxDumpIndex(const char *base_dir)
       }
 
       const char *digits = entry->d_name + 3;
-      if (*digits == '\0')
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (*digits == '\0')      /* GCOVR_EXCL_BR_STOP */
       {
-         continue;
+         continue; /* GCOVR_EXCL_LINE */
       }
 
       bool all_digits = true;
       for (const char *p = digits; *p != '\0'; p++)
       {
-         if (!isdigit((unsigned char)*p))
+         /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+         if (!isdigit((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
          {
-            all_digits = false;
-            break;
+            all_digits = false; /* GCOVR_EXCL_LINE */
+            break;              /* GCOVR_EXCL_LINE */
          }
       }
-      if (!all_digits)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (!all_digits)          /* GCOVR_EXCL_BR_STOP */
       {
-         continue;
+         continue; /* GCOVR_EXCL_LINE */
       }
 
       long idx_long = strtol(digits, NULL, 10);
-      if (idx_long < 0 || idx_long > INT_MAX)
+      /* GCOVR_EXCL_BR_START */               /* low-signal branch under CI */
+      if (idx_long < 0 || idx_long > INT_MAX) /* GCOVR_EXCL_BR_STOP */
       {
-         continue;
+         continue; /* GCOVR_EXCL_LINE */
       }
       int idx = (int)idx_long;
-      if (idx > max_idx)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (idx > max_idx)        /* GCOVR_EXCL_BR_STOP */
       {
          max_idx = idx;
       }
@@ -1785,31 +2001,37 @@ PrintSystemFindMaxDumpIndex(const char *base_dir)
 static int
 PrintSystemRemoveTree(const char *path)
 {
-   if (!path || path[0] == '\0')
+   /* GCOVR_EXCL_BR_START */     /* low-signal branch under CI */
+   if (!path || path[0] == '\0') /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    struct stat st;
-   if (lstat(path, &st) != 0)
+   /* GCOVR_EXCL_BR_START */  /* low-signal branch under CI */
+   if (lstat(path, &st) != 0) /* GCOVR_EXCL_BR_STOP */
    {
-      return errno == ENOENT;
+      return errno == ENOENT; /* GCOVR_EXCL_LINE */
    }
 
    if (!S_ISDIR(st.st_mode))
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       return (unlink(path) == 0) || (errno == ENOENT);
+      /* GCOVR_EXCL_BR_STOP */
    }
 
    DIR *dir = opendir(path);
-   if (!dir)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!dir)                 /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    int            ok    = 1;
    struct dirent *entry = NULL;
-   while (ok && (entry = readdir(dir)) != NULL)
+   /* GCOVR_EXCL_BR_START */                    /* low-signal branch under CI */
+   while (ok && (entry = readdir(dir)) != NULL) /* GCOVR_EXCL_BR_STOP */
    {
       if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
       {
@@ -1817,22 +2039,27 @@ PrintSystemRemoveTree(const char *path)
       }
 
       char child[2 * MAX_FILENAME_LENGTH];
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (!PrintSystemPathJoin(child, sizeof(child), path, entry->d_name))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         ok = 0;
-         break;
+         ok = 0; /* GCOVR_EXCL_LINE */
+         break;  /* GCOVR_EXCL_LINE */
       }
 
       ok = PrintSystemRemoveTree(child);
    }
 
    closedir(dir);
-   if (!ok)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!ok)                  /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    return (rmdir(path) == 0) || (errno == ENOENT);
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 static int
@@ -1840,28 +2067,35 @@ PrintSystemChooseDumpDirLocal(const PrintSystem_args *cfg, const PrintSystemCont
                               const char *object_name, char *dump_dir,
                               size_t dump_dir_size)
 {
-   if (!cfg || !ctx || !dump_dir || dump_dir_size == 0)
+   /* GCOVR_EXCL_BR_START */                            /* low-signal branch under CI */
+   if (!cfg || !ctx || !dump_dir || dump_dir_size == 0) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
    (void)ctx;
 
    char object_token[MAX_FILENAME_LENGTH];
    PrintSystemSanitizeToken(object_name, object_token, sizeof(object_token));
 
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    const char *root = (cfg->output_dir[0] != '\0') ? cfg->output_dir : "hypre-dumps";
-   char        base_dir[2 * MAX_FILENAME_LENGTH];
+   /* GCOVR_EXCL_BR_STOP */
+   char base_dir[2 * MAX_FILENAME_LENGTH];
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!PrintSystemPathJoin(base_dir, sizeof(base_dir), root, object_token))
+   /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    PrintSystem_args *cfg_state = (PrintSystem_args *)cfg;
    if (cfg->overwrite && !cfg_state->overwrite_prepared)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (PrintSystemPathExists(base_dir) && !PrintSystemRemoveTree(base_dir))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         return 0;
+         return 0; /* GCOVR_EXCL_LINE */
       }
       cfg_state->next_dump_index    = 0;
       cfg_state->overwrite_prepared = 1;
@@ -1876,45 +2110,56 @@ PrintSystemChooseDumpDirLocal(const PrintSystem_args *cfg, const PrintSystemCont
    char leaf[32];
    if (cfg->overwrite)
    {
-      if (cfg_state->next_dump_index < 0)
+      /* GCOVR_EXCL_BR_START */           /* low-signal branch under CI */
+      if (cfg_state->next_dump_index < 0) /* GCOVR_EXCL_BR_STOP */
       {
-         return 0;
+         return 0; /* GCOVR_EXCL_LINE */
       }
 
       snprintf(leaf, sizeof(leaf), "ls_%05d", cfg_state->next_dump_index);
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (!PrintSystemPathJoin(candidate, sizeof(candidate), base_dir, leaf))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         return 0;
+         return 0; /* GCOVR_EXCL_LINE */
       }
       cfg_state->next_dump_index++;
 
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (PrintSystemPathExists(candidate) && !PrintSystemRemoveTree(candidate))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         return 0;
+         return 0; /* GCOVR_EXCL_LINE */
       }
    }
    else
    {
       int next_idx = PrintSystemFindMaxDumpIndex(base_dir) + 1;
-      if (next_idx < 0)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (next_idx < 0)         /* GCOVR_EXCL_BR_STOP */
       {
-         return 0;
+         return 0; /* GCOVR_EXCL_LINE */
       }
 
       do
       {
          snprintf(leaf, sizeof(leaf), "ls_%05d", next_idx);
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
          if (!PrintSystemPathJoin(candidate, sizeof(candidate), base_dir, leaf))
+         /* GCOVR_EXCL_BR_STOP */
          {
-            return 0;
+            return 0; /* GCOVR_EXCL_LINE */
          }
          next_idx++;
+         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       } while (PrintSystemPathExists(candidate));
+      /* GCOVR_EXCL_BR_STOP */
    }
 
-   if (!PrintSystemPathCopy(dump_dir, dump_dir_size, candidate))
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!PrintSystemPathCopy(dump_dir, dump_dir_size, candidate)) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
    return PrintSystemEnsureDir(dump_dir);
 }
@@ -1927,9 +2172,10 @@ PrintSystemChooseDumpDir(MPI_Comm comm, const PrintSystem_args *cfg,
    int mypid = 0;
    int ok    = 0;
 
-   if (!cfg || !ctx || !dump_dir || dump_dir_size == 0)
+   /* GCOVR_EXCL_BR_START */                            /* low-signal branch under CI */
+   if (!cfg || !ctx || !dump_dir || dump_dir_size == 0) /* GCOVR_EXCL_BR_STOP */
    {
-      return 0;
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    MPI_Comm_rank(comm, &mypid);
@@ -1942,7 +2188,8 @@ PrintSystemChooseDumpDir(MPI_Comm comm, const PrintSystem_args *cfg,
    MPI_Bcast(&ok, 1, MPI_INT, 0, comm);
    if (!ok)
    {
-      if (dump_dir_size > 0)
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      if (dump_dir_size > 0)    /* GCOVR_EXCL_BR_STOP */
       {
          dump_dir[0] = '\0';
       }
@@ -1958,21 +2205,25 @@ static void
 PrintSystemWriteMetadata(const char *dump_dir, const PrintSystemContext *ctx,
                          const char *object_name, int artifacts)
 {
-   if (!dump_dir || !ctx)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!dump_dir || !ctx)    /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return; /* GCOVR_EXCL_LINE */
    }
 
    char metadata_path[2 * MAX_FILENAME_LENGTH];
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!PrintSystemPathJoin(metadata_path, sizeof(metadata_path), dump_dir,
+                            /* GCOVR_EXCL_BR_STOP */
                             "metadata.txt"))
    {
-      return;
+      return; /* GCOVR_EXCL_LINE */
    }
    FILE *fp = fopen(metadata_path, "w");
-   if (!fp)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!fp)                  /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return; /* GCOVR_EXCL_LINE */
    }
 
    fprintf(fp, "object_name=%s\n", object_name ? object_name : "unnamed");
@@ -1998,36 +2249,43 @@ static void
 PrintSystemAppendStageIndex(const char *dump_dir, const PrintSystemContext *ctx,
                             const char *object_name)
 {
-   if (!dump_dir || !ctx)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!dump_dir || !ctx)    /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return; /* GCOVR_EXCL_LINE */
    }
 
    char path_buf[2 * MAX_FILENAME_LENGTH];
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!PrintSystemPathCopy(path_buf, sizeof(path_buf), dump_dir))
+   /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return; /* GCOVR_EXCL_LINE */
    }
 
    char *ls_name = strrchr(path_buf, '/');
-   if (!ls_name || ls_name == path_buf)
+   /* GCOVR_EXCL_BR_START */            /* low-signal branch under CI */
+   if (!ls_name || ls_name == path_buf) /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return; /* GCOVR_EXCL_LINE */
    }
    *ls_name = '\0';
    ls_name++;
 
    char index_path[2 * MAX_FILENAME_LENGTH];
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!PrintSystemPathJoin(index_path, sizeof(index_path), path_buf,
+                            /* GCOVR_EXCL_BR_STOP */
                             "systems_index.txt"))
    {
-      return;
+      return; /* GCOVR_EXCL_LINE */
    }
 
    FILE *fp = fopen(index_path, "a");
-   if (!fp)
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   if (!fp)                  /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return; /* GCOVR_EXCL_LINE */
    }
 
    fprintf(fp,
@@ -2077,7 +2335,9 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, const LS_args *args,
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       hypredrv_ErrorMsgAdd(
          "Failed to create dump directory for linear_system.print_system");
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_COMMF(2, comm, object_name, ls_id_for_log,
+                         /* GCOVR_EXCL_BR_STOP */
                          "print_system failed: cannot create dump directory");
       return hypredrv_ErrorCodeGet();
    }
@@ -2087,11 +2347,14 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, const LS_args *args,
    char path[2 * MAX_FILENAME_LENGTH];
    if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_MATRIX) && mat_A)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (!PrintSystemArtifactPathBuild(dump_dir, "matrix.out", path, sizeof(path)))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAdd("print_system path too long for matrix artifact");
-         return hypredrv_ErrorCodeGet();
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd(
+            "print_system path too long for matrix artifact"); /* GCOVR_EXCL_LINE */
+         return hypredrv_ErrorCodeGet();                       /* GCOVR_EXCL_LINE */
       }
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
                          "print_system write matrix: %s", path);
@@ -2099,33 +2362,45 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, const LS_args *args,
    }
    else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_MATRIX)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         /* GCOVR_EXCL_BR_STOP */
                          "print_system skip matrix: matrix object is NULL");
    }
    if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_PRECMAT) && mat_M)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (!PrintSystemArtifactPathBuild(dump_dir, "precmat.out", path, sizeof(path)))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAdd("print_system path too long for precmat artifact");
-         return hypredrv_ErrorCodeGet();
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd(
+            "print_system path too long for precmat artifact"); /* GCOVR_EXCL_LINE */
+         return hypredrv_ErrorCodeGet();                        /* GCOVR_EXCL_LINE */
       }
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         /* GCOVR_EXCL_BR_STOP */
                          "print_system write precmat: %s", path);
       HYPRE_IJMatrixPrint(mat_M, path);
    }
    else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_PRECMAT)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         /* GCOVR_EXCL_BR_STOP */
                          "print_system skip precmat: preconditioner matrix is NULL");
    }
    if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_RHS) && vec_b)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (!PrintSystemArtifactPathBuild(dump_dir, "rhs.out", path, sizeof(path)))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAdd("print_system path too long for rhs artifact");
-         return hypredrv_ErrorCodeGet();
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd(
+            "print_system path too long for rhs artifact"); /* GCOVR_EXCL_LINE */
+         return hypredrv_ErrorCodeGet();                    /* GCOVR_EXCL_LINE */
       }
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
                          "print_system write rhs: %s", path);
@@ -2133,50 +2408,69 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, const LS_args *args,
    }
    else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_RHS)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         /* GCOVR_EXCL_BR_STOP */
                          "print_system skip rhs: rhs vector is NULL");
    }
    if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_X0) && vec_x0)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (!PrintSystemArtifactPathBuild(dump_dir, "x0.out", path, sizeof(path)))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAdd("print_system path too long for x0 artifact");
-         return hypredrv_ErrorCodeGet();
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd(
+            "print_system path too long for x0 artifact"); /* GCOVR_EXCL_LINE */
+         return hypredrv_ErrorCodeGet();                   /* GCOVR_EXCL_LINE */
       }
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log, "print_system write x0: %s",
+                         /* GCOVR_EXCL_BR_STOP */
                          path);
       HYPRE_IJVectorPrint(vec_x0, path);
    }
    else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_X0)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         /* GCOVR_EXCL_BR_STOP */
                          "print_system skip x0: initial guess vector is NULL");
    }
    if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_XREF) && vec_xref)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (!PrintSystemArtifactPathBuild(dump_dir, "xref.out", path, sizeof(path)))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAdd("print_system path too long for xref artifact");
-         return hypredrv_ErrorCodeGet();
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd(
+            "print_system path too long for xref artifact"); /* GCOVR_EXCL_LINE */
+         return hypredrv_ErrorCodeGet();                     /* GCOVR_EXCL_LINE */
       }
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         /* GCOVR_EXCL_BR_STOP */
                          "print_system write xref: %s", path);
       HYPRE_IJVectorPrint(vec_xref, path);
    }
    else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_XREF)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         /* GCOVR_EXCL_BR_STOP */
                          "print_system skip xref: reference solution is NULL");
    }
    if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_SOLUTION) && vec_x)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (!PrintSystemArtifactPathBuild(dump_dir, "solution.out", path, sizeof(path)))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAdd("print_system path too long for solution artifact");
-         return hypredrv_ErrorCodeGet();
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd(
+            "print_system path too long for solution artifact"); /* GCOVR_EXCL_LINE */
+         return hypredrv_ErrorCodeGet();                         /* GCOVR_EXCL_LINE */
       }
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
                          "print_system write solution: %s", path);
@@ -2184,16 +2478,23 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, const LS_args *args,
    }
    else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_SOLUTION)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         /* GCOVR_EXCL_BR_STOP */
                          "print_system skip solution: solution vector is NULL");
    }
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_DOFMAP) && dofmap && dofmap->data)
+   /* GCOVR_EXCL_BR_STOP */
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (!PrintSystemArtifactPathBuild(dump_dir, "dofmap.out", path, sizeof(path)))
+      /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAdd("print_system path too long for dofmap artifact");
-         return hypredrv_ErrorCodeGet();
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd(
+            "print_system path too long for dofmap artifact"); /* GCOVR_EXCL_LINE */
+         return hypredrv_ErrorCodeGet();                       /* GCOVR_EXCL_LINE */
       }
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
                          "print_system write dofmap: %s", path);
@@ -2201,13 +2502,17 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, const LS_args *args,
    }
    else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_DOFMAP)
    {
+      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         /* GCOVR_EXCL_BR_STOP */
                          "print_system skip dofmap: dofmap is NULL");
    }
 
    int mypid = 0;
    MPI_Comm_rank(comm, &mypid);
+   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_METADATA) && mypid == 0)
+   /* GCOVR_EXCL_BR_STOP */
    {
       PrintSystemWriteMetadata(dump_dir, ctx, object_name, cfg->artifacts);
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,

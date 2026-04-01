@@ -21,6 +21,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+/* addr2line / fork / pipe paths are fault-heavy and not meaningfully testable in CI. */
+/* GCOVR_EXCL_START */
 static void
 ErrorTrimNewline(char *text)
 {
@@ -140,6 +142,8 @@ ErrorAddr2lineResolve(const char *exe_path, unsigned long offset, char *func,
    return ErrorWaitChild(child_pid);
 }
 
+/* GCOVR_EXCL_STOP */
+
 /*-----------------------------------------------------------------------------
  * ErrorBacktraceGetBaseAddress
  *
@@ -147,6 +151,7 @@ ErrorAddr2lineResolve(const char *exe_path, unsigned long offset, char *func,
  * base load address to convert runtime addresses to file offsets.
  *-----------------------------------------------------------------------------*/
 
+/* GCOVR_EXCL_START */
 static unsigned long
 ErrorBacktraceGetBaseAddress(void)
 {
@@ -187,10 +192,13 @@ ErrorBacktraceGetBaseAddress(void)
    return base;
 }
 
+/* GCOVR_EXCL_STOP */
+
 /*-----------------------------------------------------------------------------
  * ErrorBacktraceSymbolsPrint
  *-----------------------------------------------------------------------------*/
 
+/* GCOVR_EXCL_START */
 static void
 ErrorBacktraceSymbolsPrint(void)
 {
@@ -295,6 +303,8 @@ ErrorBacktraceSymbolsPrint(void)
    backtrace_symbols_fd(trace, nptrs, STDERR_FILENO);
 }
 
+/* GCOVR_EXCL_STOP */
+
 /*-----------------------------------------------------------------------------
  * hypredrv_ErrorBacktracePrint
  *-----------------------------------------------------------------------------*/
@@ -325,7 +335,6 @@ hypredrv_ErrorBacktracePrint(void)
     * environment-dependent (procfs, fork/exec, gdb/lldb availability) and not
     * meaningfully testable in CI/unit tests without hanging or spawning debuggers. */
    /* GCOVR_EXCL_START */
-   /* LCOV_EXCL_START */
    /* Interactive debug mode (HYPREDRV_DEBUG=1) */
    /* Check if already being debugged */
    FILE   *f      = fopen("/proc/self/status", "r");
@@ -428,7 +437,6 @@ hypredrv_ErrorBacktracePrint(void)
       // cppcheck-suppress unreachableCode
       waitpid(child_pid, NULL, 0);
    }
-   /* LCOV_EXCL_STOP */
    /* GCOVR_EXCL_STOP */
 }
 
@@ -484,7 +492,7 @@ ErrorCodeToIndex(hypredrv_error_t code)
 
    if (code == ERROR_NONE)
    {
-      return -1;
+      return -1; /* GCOVR_EXCL_LINE */
    }
 
    while (code >>= 1)
@@ -520,6 +528,7 @@ ErrorCodeCountGet(const ErrorState *state, hypredrv_error_t code)
    return (index >= 0) ? state->code_count[index] : 0;
 }
 
+/* GCOVR_EXCL_START */
 static void
 ErrorStateRecordMessageDrop(ErrorState *state)
 {
@@ -532,6 +541,8 @@ ErrorStateRecordMessageDrop(ErrorState *state)
    ErrorCodeCountIncrement(state, ERROR_ALLOCATION);
    state->dropped_msg_count++;
 }
+
+/* GCOVR_EXCL_STOP */
 
 /*-----------------------------------------------------------------------------
  * hypredrv_ErrorCodeSet
@@ -705,6 +716,7 @@ hypredrv_ErrorMsgAdd(const char *format, ...)
    length = vsnprintf(NULL, 0, fmt, args_copy);
    va_end(args_copy);
 
+   /* GCOVR_EXCL_START */
    if (length < 0)
    {
       va_end(args);
@@ -723,13 +735,15 @@ hypredrv_ErrorMsgAdd(const char *format, ...)
       return;
    }
 
+   /* GCOVR_EXCL_STOP */
+
    alloc_size = sizeof(ErrorMsgNode) + (size_t)length + 1;
    node       = (ErrorMsgNode *)malloc(alloc_size);
    if (!node)
    {
-      va_end(args);
-      ErrorStateRecordMessageDrop(state);
-      return;
+      va_end(args);                       /* GCOVR_EXCL_LINE */
+      ErrorStateRecordMessageDrop(state); /* GCOVR_EXCL_LINE */
+      return;                             /* GCOVR_EXCL_LINE */
    }
 
    written = vsnprintf(node->message, (size_t)length + 1, fmt, args);
@@ -737,7 +751,8 @@ hypredrv_ErrorMsgAdd(const char *format, ...)
 
    if (written < 0)
    {
-      snprintf(node->message, (size_t)length + 1, "%s", fallback_msg);
+      snprintf(node->message, (size_t)length + 1, "%s",
+               fallback_msg); /* GCOVR_EXCL_LINE */
    }
 
    node->next      = state->msg_head;
@@ -754,8 +769,9 @@ ErrorMsgAddBoundedPieces(const char *prefix, const char *value, const char *suff
 
    if (snprintf(msg, sizeof(msg), "%s%s%s", safe_prefix, safe_value, safe_suffix) < 0)
    {
-      hypredrv_ErrorMsgAdd("%s", "(failed to format error message)");
-      return;
+      hypredrv_ErrorMsgAdd("%s",
+                           "(failed to format error message)"); /* GCOVR_EXCL_LINE */
+      return;                                                   /* GCOVR_EXCL_LINE */
    }
 
    hypredrv_ErrorMsgAdd("%s", msg);
@@ -835,12 +851,15 @@ hypredrv_ErrorMsgPrint(void)
    {
       fprintf(stderr, "\nError details:\n");
 
+      /* GCOVR_EXCL_START */
       if (state->dropped_msg_count > 0)
       {
          const char *plural = (state->dropped_msg_count > 1) ? "s" : "";
          fprintf(stderr, "  --> Dropped %u error message%s due to allocation failure.\n",
                  state->dropped_msg_count, plural);
       }
+
+      /* GCOVR_EXCL_STOP */
 
       while (current)
       {

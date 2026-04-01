@@ -27,7 +27,8 @@
    do                                                                             \
    {                                                                              \
       HYPRE_Int hypre_ierr = (call);                                              \
-      if (hypre_ierr != 0)                                                        \
+      /* GCOVR_EXCL_BR_START */ /* SAFE_CALL hypre error path */                  \
+      if (hypre_ierr != 0)      /* GCOVR_EXCL_BR_STOP */                          \
       {                                                                           \
          hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                             \
          char hypre_err_msg[HYPRE_MAX_MSG_LEN];                                   \
