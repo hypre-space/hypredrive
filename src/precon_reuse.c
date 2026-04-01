@@ -42,6 +42,8 @@ enum
    PRECON_REUSE_MAX_OBSERVATIONS = 256,
 };
 
+static const double PRECON_REUSE_DEFAULT_MAX_ITERATION_RATIO = 3.0;
+
 static void
 PreconReuseMeanSetDefaults(PreconReuseMean_args *mean)
 {
@@ -284,7 +286,8 @@ PreconReuseInstallDefaultAdaptiveComponents(PreconReuseAdaptive_args *adaptive)
 static void
 PreconReuseApplyAdaptiveImplicitDefaults(PreconReuse_args *args,
                                          int               seen_min_history_points,
-                                         int               seen_bad_decisions_to_rebuild)
+                                         int               seen_bad_decisions_to_rebuild,
+                                         int               seen_max_iteration_ratio)
 {
    /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!args)                /* GCOVR_EXCL_BR_STOP */
@@ -300,13 +303,17 @@ PreconReuseApplyAdaptiveImplicitDefaults(PreconReuse_args *args,
    {
       args->guards.bad_decisions_to_rebuild = 2;
    }
+   if (!seen_max_iteration_ratio)
+   {
+      args->guards.max_iteration_ratio = PRECON_REUSE_DEFAULT_MAX_ITERATION_RATIO;
+   }
 }
 
 static void
 PreconReuseApplyAdaptiveShorthandDefaults(PreconReuse_args *args)
 {
    /* Unconditional defaults — equivalent to implicit with neither field seen. */
-   PreconReuseApplyAdaptiveImplicitDefaults(args, 0, 0);
+   PreconReuseApplyAdaptiveImplicitDefaults(args, 0, 0, 0);
 }
 
 static const StrIntMap k_direction_map[] = {
@@ -2296,7 +2303,8 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
          if (!PreconReuseParseDouble(value, &guards->max_iteration_ratio) ||
              /* GCOVR_EXCL_BR_STOP */
              /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-                guards->max_iteration_ratio <= 0.0)
+             (guards->max_iteration_ratio != -1.0 &&
+              guards->max_iteration_ratio <= 0.0))
          /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -2316,7 +2324,8 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
          if (!PreconReuseParseDouble(value, &guards->max_solve_time_ratio) ||
              /* GCOVR_EXCL_BR_STOP */
              /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-                guards->max_solve_time_ratio <= 0.0)
+             (guards->max_solve_time_ratio != -1.0 &&
+              guards->max_solve_time_ratio <= 0.0))
          /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -2638,6 +2647,7 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    int seen_adaptive                 = 0;
    int seen_min_history_points       = 0;
    int seen_bad_decisions_to_rebuild = 0;
+   int seen_max_iteration_ratio      = 0;
 
    YAML_NODE_ITERATE(parent, child)
    {
@@ -2743,6 +2753,10 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
             {
                seen_bad_decisions_to_rebuild = 1;
             }
+            else if (!strcmp(guard_child->key, "max_iteration_ratio"))
+            {
+               seen_max_iteration_ratio = 1;
+            }
          }
 
          if (!PreconReuseParseGuardsNode(child, &args->guards))
@@ -2827,7 +2841,8 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE)
    {
       PreconReuseApplyAdaptiveImplicitDefaults(args, seen_min_history_points,
-                                               seen_bad_decisions_to_rebuild);
+                                               seen_bad_decisions_to_rebuild,
+                                               seen_max_iteration_ratio);
    }
 
    if (!args->enabled)

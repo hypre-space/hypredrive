@@ -146,6 +146,92 @@ test_mgr_nested_yaml_grelax_nested_krylov_inline(void)
    hypredrv_InputArgsDestroy(&iargs);
 }
 
+static void
+test_mgr_nested_yaml_frelax_nested_krylov_mgr_precon_inline(void)
+{
+   const char yaml_text[] =
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 10\n"
+      "preconditioner:\n"
+      "  mgr:\n"
+      "    level:\n"
+      "      0:\n"
+      "        f_dofs: [0]\n"
+      "        f_relaxation:\n"
+      "          fgmres:\n"
+      "            max_iter: 2\n"
+      "            relative_tol: 0.0\n"
+      "            preconditioner:\n"
+      "              mgr:\n"
+      "                max_iter: 1\n"
+      "                level:\n"
+      "                  0:\n"
+      "                    f_dofs: [0]\n"
+      "                    f_relaxation: jacobi\n"
+      "                    g_relaxation: none\n"
+      "                coarsest_level:\n"
+      "                  amg:\n"
+      "                    print_level: 0\n"
+      "    coarsest_level:\n"
+      "      amg:\n"
+      "        print_level: 0\n";
+
+   input_args *iargs = parse_config(yaml_text);
+   ASSERT_NOT_NULL(iargs);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(iargs->precon.mgr.level[0].f_relaxation.use_krylov);
+   ASSERT_NOT_NULL(iargs->precon.mgr.level[0].f_relaxation.krylov);
+   ASSERT_TRUE(iargs->precon.mgr.level[0].f_relaxation.krylov->has_precon);
+   ASSERT_EQ(iargs->precon.mgr.level[0].f_relaxation.krylov->precon_method, PRECON_MGR);
+   ASSERT_EQ(iargs->precon.mgr.level[0].f_relaxation.krylov->precon.mgr.max_iter, 1);
+   ASSERT_EQ(iargs->precon.mgr.level[0].f_relaxation.krylov->precon.mgr.num_levels, 2);
+
+   hypredrv_InputArgsDestroy(&iargs);
+}
+
+static void
+test_mgr_nested_yaml_coarsest_nested_krylov_mgr_precon_inline(void)
+{
+   const char yaml_text[] =
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 10\n"
+      "preconditioner:\n"
+      "  mgr:\n"
+      "    level:\n"
+      "      0:\n"
+      "        f_dofs: [0]\n"
+      "        f_relaxation: jacobi\n"
+      "        g_relaxation: none\n"
+      "    coarsest_level:\n"
+      "      gmres:\n"
+      "        max_iter: 2\n"
+      "        preconditioner:\n"
+      "          mgr:\n"
+      "            max_iter: 1\n"
+      "            level:\n"
+      "              0:\n"
+      "                f_dofs: [0]\n"
+      "                f_relaxation: jacobi\n"
+      "                g_relaxation: none\n"
+      "            coarsest_level:\n"
+      "              amg:\n"
+      "                print_level: 0\n";
+
+   input_args *iargs = parse_config(yaml_text);
+   ASSERT_NOT_NULL(iargs);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(iargs->precon.mgr.coarsest_level.use_krylov);
+   ASSERT_NOT_NULL(iargs->precon.mgr.coarsest_level.krylov);
+   ASSERT_TRUE(iargs->precon.mgr.coarsest_level.krylov->has_precon);
+   ASSERT_EQ(iargs->precon.mgr.coarsest_level.krylov->precon_method, PRECON_MGR);
+   ASSERT_EQ(iargs->precon.mgr.coarsest_level.krylov->precon.mgr.max_iter, 1);
+   ASSERT_EQ(iargs->precon.mgr.coarsest_level.krylov->precon.mgr.num_levels, 2);
+
+   hypredrv_InputArgsDestroy(&iargs);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -156,6 +242,8 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_nested_mgr_yaml_parse);
    RUN_TEST(test_mgr_relaxation_block_yaml_parse);
    RUN_TEST(test_mgr_nested_yaml_grelax_nested_krylov_inline);
+   RUN_TEST(test_mgr_nested_yaml_frelax_nested_krylov_mgr_precon_inline);
+   RUN_TEST(test_mgr_nested_yaml_coarsest_nested_krylov_mgr_precon_inline);
 
    MPI_Finalize();
    return 0;

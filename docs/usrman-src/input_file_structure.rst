@@ -761,7 +761,9 @@ score crosses a threshold. This mode is separate from the static schedule above;
 with ``frequency``, ``linear_system_ids``, or ``per_timestep`` produces a parse-time error.
 
 For the simplest opt-in, ``reuse: adaptive`` is valid shorthand. That form enables adaptive
-reuse with HYPREDRV's built-in default score model.
+reuse with HYPREDRV's built-in default score model plus default guardrails:
+``guards.min_history_points: 3``, ``guards.bad_decisions_to_rebuild: 2``, and
+``guards.max_iteration_ratio: 3.0``.
 
 .. code-block:: yaml
 
@@ -777,6 +779,13 @@ Top-level adaptive keys:
   reused this many times. ``-1`` disables the guard.
 - **``guards.min_history_points``** – Minimum number of samples a score component needs before
   it can trigger a rebuild.
+- **``guards.bad_decisions_to_rebuild``** – Number of consecutive score-threshold breaches
+  required before adaptive scoring triggers a rebuild.
+- **``guards.max_iteration_ratio``** – Immediate hard guard. Rebuild when the most recent
+  iteration count reaches this multiple of the rebuild baseline, bypassing the
+  score/streak logic. ``-1`` disables the guard.
+- **``guards.max_solve_time_ratio``** – Immediate hard guard on solve time relative to the
+  rebuild baseline. ``-1`` disables the guard.
 - **``guards.rebuild_on_new_level``** – Optional list of annotation levels that force a rebuild
   when the active level entry changes.
 - **``adaptive.rebuild_threshold``** – Rebuild when the weighted score is at least this value.
@@ -822,8 +831,10 @@ HYPREDRV uses the following built-in components:
 
 The default model intentionally mixes one efficiency term and one iteration-stability term so
 ``reuse: adaptive`` works out of the box without level annotations or a hand-built component
-list. Users can still override any part of the model by providing ``adaptive.components``
-explicitly.
+list. The built-in ``guards.max_iteration_ratio: 3.0`` catches severe one-step spikes even
+when ``guards.bad_decisions_to_rebuild: 2`` keeps ordinary adaptive scoring from rebuilding on
+the first bad sample. Users can still override any part of the model by providing
+``adaptive.components`` or explicit ``guards`` entries.
 
 Fields available per component:
 

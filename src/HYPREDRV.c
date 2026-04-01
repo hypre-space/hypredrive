@@ -1177,11 +1177,13 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    }
    hypredrv_StatsSetObjectName(hypredrv->stats, hypredrv->iargs->general.name);
 
-   /* Load timestep schedule for preconditioner reuse */
+   /* Load timestep schedule for any feature that needs timestep-aware context:
+    * preconditioner reuse, stats path labeling, or print-system dumping. */
    hypredrv_IntArrayDestroy(&hypredrv->precon_reuse_timesteps.ids);
    hypredrv_IntArrayDestroy(&hypredrv->precon_reuse_timesteps.starts);
    if (hypredrv->iargs->ls.timestep_filename[0] != '\0' &&
-       ((hypredrv->iargs->precon_reuse.enabled &&
+       ((hypredrv->iargs->general.statistics > 0) ||
+        (hypredrv->iargs->precon_reuse.enabled &&
          hypredrv->iargs->precon_reuse.per_timestep) ||
         PrintSystemNeedsTimestepSchedule(&hypredrv->iargs->ls.print_system)))
    {
@@ -1191,7 +1193,8 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    }
    /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    else if (hypredrv->iargs->ls.sequence_filename[0] != '\0' &&
-            ((hypredrv->iargs->precon_reuse.enabled &&
+            ((hypredrv->iargs->general.statistics > 0) ||
+             (hypredrv->iargs->precon_reuse.enabled &&
               hypredrv->iargs->precon_reuse.per_timestep) ||
              PrintSystemNeedsTimestepSchedule(&hypredrv->iargs->ls.print_system)))
    /* GCOVR_EXCL_BR_STOP */
