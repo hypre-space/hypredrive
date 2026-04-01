@@ -8,12 +8,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef HYPREDRIVE_SOURCE_DIR
+#define HYPREDRIVE_SOURCE_DIR "."
+#endif
+
 #include "internal/comp.h"
 #include "internal/containers.h"
 #include "internal/error.h"
 #include "internal/linsys.h"
 #include "internal/lsseq.h"
 #include "test_helpers.h"
+
+/* Absolute paths under the repo root: some MPI launchers (notably on macOS) do not
+ * guarantee every rank shares the same current working directory as rank 0. */
+static void
+lsseq_mpi_testpath(char *buf, size_t buflen, const char *basename)
+{
+   int n = snprintf(buf, buflen, "%s/%s", HYPREDRIVE_SOURCE_DIR, basename);
+   ASSERT_TRUE(n > 0 && (size_t)n < buflen);
+}
 
 static uint64_t
 fnv1a64_mpi(const void *data, size_t nbytes)
@@ -302,9 +315,11 @@ lsseq_mpi_write_two_part_with_info(const char *filename)
 static void
 test_lsseq_mpi_one_part_with_two_ranks_fails(void)
 {
-   int myid = 0;
-   const char *path = "test_lsseq_mpi_1part.bin";
+   int         myid = 0;
+   char        path[4096];
    HYPRE_IJMatrix mat = NULL;
+
+   lsseq_mpi_testpath(path, sizeof(path), "test_lsseq_mpi_1part.bin");
 
    MPI_Comm_rank(MPI_COMM_WORLD, &myid);
    if (myid == 0)
@@ -329,9 +344,11 @@ static void
 test_lsseq_mpi_two_part_dofmap_and_matrix(void)
 {
    int         myid = 0;
-   const char *path = "test_lsseq_mpi_2part.bin";
+   char        path[4096];
    HYPRE_IJMatrix mat = NULL;
    IntArray    *dofmap = NULL;
+
+   lsseq_mpi_testpath(path, sizeof(path), "test_lsseq_mpi_2part.bin");
 
    MPI_Comm_rank(MPI_COMM_WORLD, &myid);
    if (myid == 0)
