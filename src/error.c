@@ -669,7 +669,7 @@ ErrorStateSerializeMessages(const ErrorState *state, uint64_t *serialized_size)
 
 static void
 ErrorStateApplySynchronized(ErrorState *state, uint32_t code, uint32_t source_code,
-                           const char *serialized)
+                            const char *serialized)
 {
    char *text = NULL;
    char *save = NULL;
