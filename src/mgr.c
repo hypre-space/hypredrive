@@ -502,38 +502,12 @@ MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_ou
          labels     = dofmap->data;
          num_labels = dofmap->size;
       }
-      else if (dofmap->g_unique_size > 0)
-      {
-         /* Compatibility fallback for distributed dofmaps that only provide the
-          * global unique count. Prefer explicit local label data when available,
-          * because the dense [0, ..., g_unique_size-1] assumption can be wrong. */
-         *label_space_size_out = dofmap->g_unique_size;
-         label_mask = (HYPRE_Int *)calloc(*label_space_size_out, sizeof(HYPRE_Int));
-         /* GCOVR_EXCL_START */
-         if (!label_mask)
-         {
-            hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-            hypredrv_ErrorMsgAdd("Failed to allocate MGR dof label presence mask");
-            return 0;
-         }
-         /* GCOVR_EXCL_STOP */
-         for (size_t i = 0; i < *label_space_size_out; i++)
-         {
-            label_mask[i] = 1;
-         }
-         *label_present_out = label_mask;
-         if (num_present_labels_out)
-         {
-            *num_present_labels_out = dofmap->g_unique_size;
-         }
-         return 1;
-      }
       else
       {
          if (dofmap->g_unique_size > 0)
          {
-            /* Defensive fallback: some callers provide only the global unique
-             * count without a usable label array. Treat that as a dense
+            /* Fallback for distributed dofmaps that only provide the global
+             * unique count without a usable label array. Treat that as a dense
              * [0, ..., g_unique_size-1] label space instead of rejecting MGR. */
             *label_space_size_out = dofmap->g_unique_size;
             label_mask = (HYPRE_Int *)calloc(*label_space_size_out, sizeof(HYPRE_Int));

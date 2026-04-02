@@ -318,8 +318,6 @@ test_lsseq_mpi_one_part_with_two_ranks_fails(void)
    int           myid = 0;
    char          path[4096];
    HYPRE_IJMatrix mat = NULL;
-   uint32_t      local_code = 0;
-   uint32_t      global_code = 0;
 
    lsseq_mpi_testpath(path, sizeof(path), "test_lsseq_mpi_1part.bin");
 
@@ -333,9 +331,7 @@ test_lsseq_mpi_one_part_with_two_ranks_fails(void)
    hypredrv_ErrorCodeResetAll();
    ASSERT_FALSE(hypredrv_LSSeqReadMatrix(MPI_COMM_WORLD, path, 0, HYPRE_MEMORY_HOST, &mat));
    ASSERT_NULL(mat);
-   local_code = hypredrv_ErrorCodeGet();
-   MPI_Allreduce(&local_code, &global_code, 1, MPI_UINT32_T, MPI_BOR, MPI_COMM_WORLD);
-   ASSERT_TRUE(global_code & ERROR_FILE_UNEXPECTED_ENTRY);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
    if (myid == 0)
    {
