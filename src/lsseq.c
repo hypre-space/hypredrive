@@ -1607,8 +1607,11 @@ stage_sync:
    hypredrv_IJMatrixReadMultipartBinary(prefix, comm, (uint64_t)seq.header.num_parts,
                                         memory_location, matrix_ptr);
    local_ok = (!hypredrv_ErrorCodeActive() && *matrix_ptr != NULL);
+
+   /* GCOVR_EXCL_BR_START */
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_UNKNOWN,
-                                  "LSSeq matrix collective import failed")) /* GCOVR_EXCL_BR_LINE */
+                                  "LSSeq matrix collective import failed"))
+   /* GCOVR_EXCL_BR_STOP */
    {
       goto cleanup;
    }
@@ -1751,8 +1754,11 @@ stage_sync:
    hypredrv_IJVectorReadMultipartBinary(prefix, comm, (uint64_t)seq.header.num_parts,
                                         memory_location, rhs_ptr);
    local_ok = (!hypredrv_ErrorCodeActive() && *rhs_ptr != NULL);
+
+   /* GCOVR_EXCL_BR_START */
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_UNKNOWN,
-                                  "LSSeq RHS collective import failed")) /* GCOVR_EXCL_BR_LINE */
+                                  "LSSeq RHS collective import failed"))
+   /* GCOVR_EXCL_BR_STOP */
    {
       goto cleanup;
    }
@@ -1941,8 +1947,10 @@ stage_sync:
    MPI_Barrier(comm);
    hypredrv_IntArrayParRead(comm, prefix, dofmap_ptr);
    local_ok = (!hypredrv_ErrorCodeActive() && *dofmap_ptr != NULL);
+   /* GCOVR_EXCL_BR_START */
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_UNKNOWN,
-                                  "LSSeq dofmap collective import failed")) /* GCOVR_EXCL_BR_LINE */
+                                  "LSSeq dofmap collective import failed"))
+   /* GCOVR_EXCL_BR_STOP */
    {
       goto cleanup;
    }
