@@ -595,11 +595,11 @@ hypredrv_DistributedErrorCodeActive(MPI_Comm comm)
 static char *
 ErrorStateSerializeMessages(const ErrorState *state, uint64_t *serialized_size)
 {
-   ErrorMsgNode **nodes = NULL;
-   size_t         count = 0;
-   size_t         total = 1;
-   char          *text  = NULL;
-   size_t         pos   = 0;
+   const char **messages = NULL;
+   size_t       count    = 0;
+   size_t       total    = 1;
+   char        *text     = NULL;
+   size_t       pos      = 0;
 
    if (serialized_size)
    {
@@ -624,30 +624,30 @@ ErrorStateSerializeMessages(const ErrorState *state, uint64_t *serialized_size)
       return NULL;
    }
 
-   nodes = (ErrorMsgNode **)calloc(count, sizeof(*nodes));
-   if (!nodes)
+   messages = (const char **)calloc(count, sizeof(*messages));
+   if (!messages)
    {
       return NULL;
    }
 
    {
       size_t idx = 0;
-      for (ErrorMsgNode *node = state->msg_head; node; node = node->next)
+      for (const ErrorMsgNode *node = state->msg_head; node; node = node->next)
       {
-         nodes[idx++] = node;
+         messages[idx++] = node->message;
       }
    }
 
    text = (char *)malloc(total);
    if (!text)
    {
-      free(nodes);
+      free(messages);
       return NULL;
    }
 
    for (size_t idx = count; idx > 0; idx--)
    {
-      const char *message = nodes[idx - 1]->message;
+      const char *message = messages[idx - 1];
       size_t      len     = strlen(message);
       memcpy(text + pos, message, len);
       pos += len;
@@ -663,7 +663,7 @@ ErrorStateSerializeMessages(const ErrorState *state, uint64_t *serialized_size)
       *serialized_size = (uint64_t)(pos + 1);
    }
 
-   free(nodes);
+   free(messages);
    return text;
 }
 
@@ -787,7 +787,7 @@ hypredrv_DistributedErrorStateSync(MPI_Comm comm)
          int    chunk = (int)((rem > sizeof(sink)) ? sizeof(sink) : rem);
          char  *buf   = sink;
 
-         if (myid == root)
+         if (myid == root && text)
          {
             buf = text + offset;
          }
