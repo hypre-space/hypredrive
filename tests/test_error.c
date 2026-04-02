@@ -354,6 +354,70 @@ test_DistributedErrorCodeActive(void)
 }
 
 static void
+test_DistributedErrorStateSync_self_preserves_code_and_messages(void)
+{
+   char buffer[2048];
+   char *pos_second = NULL;
+   char *pos_first  = NULL;
+
+   hypredrv_ErrorStateReset();
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   hypredrv_ErrorMsgAdd("first message");
+   hypredrv_ErrorMsgAdd("second message");
+
+   ASSERT_TRUE(hypredrv_DistributedErrorStateSync(MPI_COMM_SELF));
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+
+   capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
+   pos_second = strstr(buffer, "second message");
+   pos_first  = strstr(buffer, "first message");
+   ASSERT_NOT_NULL(pos_second);
+   ASSERT_NOT_NULL(pos_first);
+   /* Messages are stored LIFO; "second" (added last) should print before "first". */
+   ASSERT_TRUE(pos_second < pos_first);
+
+   hypredrv_ErrorStateReset();
+}
+
+static void
+test_DistributedErrorStateSync_world_preserves_nonroot_descriptions(void)
+{
+   int  nprocs = 0;
+   int  myid   = 0;
+   char buffer[4096];
+
+   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+
+   if (nprocs < 2)
+   {
+      fprintf(stderr, "SKIP: distributed error sync world test requires at least 2 MPI ranks\n");
+      return;
+   }
+
+   hypredrv_ErrorStateReset();
+   if (myid == 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("rank0 detail");
+   }
+   else if (myid == 1)
+   {
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+   }
+
+   ASSERT_TRUE(hypredrv_DistributedErrorStateSync(MPI_COMM_WORLD));
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_HYPRE_INTERNAL);
+
+   capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
+   ASSERT_NOT_NULL(strstr(buffer, "rank0 detail"));
+   ASSERT_NOT_NULL(strstr(buffer, "HYPRE internal error"));
+
+   hypredrv_ErrorStateReset();
+}
+
+static void
 test_ErrorMsgPrint_with_no_messages(void)
 {
    hypredrv_ErrorCodeResetAll();
@@ -508,6 +572,8 @@ main(int argc, char **argv)
    RUN_TEST(test_ErrorCodeDescribe_comprehensive_table);
    RUN_TEST(test_ErrorMsgAddCodeWithCount_null_suffix);
    RUN_TEST(test_DistributedErrorCodeActive);
+   RUN_TEST(test_DistributedErrorStateSync_self_preserves_code_and_messages);
+   RUN_TEST(test_DistributedErrorStateSync_world_preserves_nonroot_descriptions);
    RUN_TEST(test_ErrorMsgPrint_with_no_messages);
    RUN_TEST(test_ErrorBacktracePrint_has_filenames_and_lines);
    RUN_TEST(test_ErrorBacktracePrint_respects_no_backtrace_env);

@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "internal/error.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,7 +16,6 @@
 #include <errno.h>
 #include <execinfo.h>
 #include <fcntl.h>
-#include <limits.h>
 #include <signal.h>
 #include <sys/prctl.h>
 #include <sys/wait.h>
@@ -590,6 +590,221 @@ hypredrv_DistributedErrorCodeActive(MPI_Comm comm)
    MPI_Allreduce(&code, &flag, 1, MPI_UINT32_T, MPI_BOR, comm);
 
    return (flag != ERROR_NONE);
+}
+
+static char *
+ErrorStateSerializeMessages(const ErrorState *state, uint64_t *serialized_size)
+{
+   const char **messages = NULL;
+   size_t       count    = 0;
+   size_t       total    = 1;
+   char        *text     = NULL;
+   size_t       pos      = 0;
+
+   if (serialized_size)
+   {
+      *serialized_size = 0;
+   }
+   if (!state)
+   {
+      return NULL;
+   }
+
+   for (const ErrorMsgNode *node = state->msg_head; node; node = node->next)
+   {
+      total += strlen(node->message);
+      count++;
+   }
+   if (count > 1)
+   {
+      total += count - 1;
+   }
+   if (count == 0)
+   {
+      return NULL;
+   }
+
+   messages = (const char **)calloc(count, sizeof(*messages));
+   if (!messages)
+   {
+      return NULL;
+   }
+
+   {
+      size_t idx = 0;
+      for (const ErrorMsgNode *node = state->msg_head; node; node = node->next)
+      {
+         messages[idx++] = node->message;
+      }
+   }
+
+   text = (char *)malloc(total);
+   if (!text)
+   {
+      free(messages);
+      return NULL;
+   }
+
+   for (size_t idx = count; idx > 0; idx--)
+   {
+      const char *message = messages[idx - 1];
+      size_t      len     = strlen(message);
+      memcpy(text + pos, message, len);
+      pos += len;
+      if (idx > 1)
+      {
+         text[pos++] = '\n';
+      }
+   }
+   text[pos] = '\0';
+
+   if (serialized_size)
+   {
+      *serialized_size = (uint64_t)(pos + 1);
+   }
+
+   free(messages);
+   return text;
+}
+
+static void
+ErrorStateApplySynchronized(ErrorState *state, uint32_t code, uint32_t source_code,
+                            const char *serialized)
+{
+   char *text = NULL;
+   char *save = NULL;
+   char *line = NULL;
+
+   if (!state)
+   {
+      return;
+   }
+
+   hypredrv_ErrorStateReset();
+
+   for (uint32_t i = 0; i < ERROR_CODE_NUM_ENTRIES; i++)
+   {
+      uint32_t bit = 1u << i;
+      if ((code & bit) != 0)
+      {
+         state->code |= bit;
+         state->code_count[i] = 1;
+      }
+   }
+
+   if (serialized && serialized[0] != '\0')
+   {
+      text = strdup(serialized);
+      if (!text)
+      {
+         state->code |= (uint32_t)ERROR_ALLOCATION;
+         ErrorCodeCountIncrement(state, ERROR_ALLOCATION);
+      }
+   }
+
+   if (text)
+   {
+      for (line = strtok_r(text, "\n", &save); line; line = strtok_r(NULL, "\n", &save))
+      {
+         hypredrv_ErrorMsgAdd("%s", line);
+      }
+      free(text);
+   }
+
+   if (!state->msg_head && code != ERROR_NONE)
+   {
+      hypredrv_ErrorCodeDescribe(code);
+   }
+   else if ((code & ~source_code) != ERROR_NONE)
+   {
+      hypredrv_ErrorCodeDescribe(code & ~source_code);
+   }
+}
+
+bool
+hypredrv_DistributedErrorStateSync(MPI_Comm comm)
+{
+   ErrorState *state       = ErrorStateGet();
+   uint32_t    local_code  = state->code;
+   uint32_t    global_code = ERROR_NONE;
+   uint32_t    root_code   = ERROR_NONE;
+   int         myid        = 0;
+   int         root        = INT_MAX;
+   int         candidate   = INT_MAX;
+   uint64_t    text_size   = 0;
+   char       *text        = NULL;
+
+   MPI_Comm_rank(comm, &myid);
+   if (local_code != ERROR_NONE)
+   {
+      candidate = myid;
+   }
+
+   MPI_Allreduce(&local_code, &global_code, 1, MPI_UINT32_T, MPI_BOR, comm);
+   if (global_code == ERROR_NONE)
+   {
+      return false;
+   }
+
+   MPI_Allreduce(&candidate, &root, 1, MPI_INT, MPI_MIN, comm);
+   if (root == INT_MAX)
+   {
+      root = 0;
+   }
+
+   if (myid == root)
+   {
+      root_code = local_code;
+   }
+   MPI_Bcast(&root_code, 1, MPI_UINT32_T, root, comm);
+
+   if (myid == root)
+   {
+      text = ErrorStateSerializeMessages(state, &text_size);
+      if (text_size > (uint64_t)INT_MAX)
+      {
+         /* Message too long to fit in MPI count; discard to avoid overflow. */
+         free(text);
+         text      = NULL;
+         text_size = 0;
+      }
+   }
+
+   MPI_Bcast(&text_size, 1, MPI_UINT64_T, root, comm);
+   if (text_size > 0)
+   {
+      size_t offset = 0;
+      char   sink[256];
+
+      if (myid != root)
+      {
+         text = (char *)malloc((size_t)text_size);
+      }
+
+      while (offset < (size_t)text_size)
+      {
+         size_t rem   = (size_t)text_size - offset;
+         int    chunk = (int)((rem > sizeof(sink)) ? sizeof(sink) : rem);
+         char  *buf   = sink;
+
+         if (myid == root && text)
+         {
+            buf = text + offset;
+         }
+         else if (text)
+         {
+            buf = text + offset;
+         }
+
+         MPI_Bcast(buf, chunk, MPI_CHAR, root, comm);
+         offset += (size_t)chunk;
+      }
+   }
+
+   ErrorStateApplySynchronized(state, global_code, root_code, text);
+   free(text);
+
+   return true;
 }
 
 /*-----------------------------------------------------------------------------

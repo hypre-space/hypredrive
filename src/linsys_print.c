@@ -560,8 +560,8 @@ PrintSystemParseArtifactsNode(const YAMLnode *node, int *artifacts_out)
             "Failed to allocate artifact parser buffer"); /* GCOVR_EXCL_LINE */
          return 0;                                        /* GCOVR_EXCL_LINE */
       }
-      char *saveptr = NULL;
-      char *token   = strtok_r(buffer, "[], ", &saveptr);
+      char       *saveptr = NULL;
+      const char *token   = strtok_r(buffer, "[], ", &saveptr);
       while (token)
       {
          int bit = 0;
@@ -1948,8 +1948,8 @@ PrintSystemFindMaxDumpIndex(const char *base_dir)
       return -1; /* GCOVR_EXCL_LINE */
    }
 
-   int            max_idx = -1;
-   struct dirent *entry   = NULL;
+   int                  max_idx = -1;
+   const struct dirent *entry   = NULL;
    while ((entry = readdir(dir)) != NULL)
    {
       if (strncmp(entry->d_name, "ls_", 3) != 0)
@@ -2028,8 +2028,8 @@ PrintSystemRemoveTree(const char *path)
       return 0; /* GCOVR_EXCL_LINE */
    }
 
-   int            ok    = 1;
-   struct dirent *entry = NULL;
+   int                  ok    = 1;
+   const struct dirent *entry = NULL;
    /* GCOVR_EXCL_BR_START */                    /* low-signal branch under CI */
    while (ok && (entry = readdir(dir)) != NULL) /* GCOVR_EXCL_BR_STOP */
    {
@@ -2188,11 +2188,7 @@ PrintSystemChooseDumpDir(MPI_Comm comm, const PrintSystem_args *cfg,
    MPI_Bcast(&ok, 1, MPI_INT, 0, comm);
    if (!ok)
    {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (dump_dir_size > 0)    /* GCOVR_EXCL_BR_STOP */
-      {
-         dump_dir[0] = '\0';
-      }
+      dump_dir[0] = '\0';
       return 0;
    }
 

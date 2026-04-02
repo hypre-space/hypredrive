@@ -67,6 +67,7 @@ void     hypredrv_ErrorCodeReset(uint32_t);
 void     hypredrv_ErrorCodeResetAll(void);
 void     hypredrv_ErrorStateReset(void);
 bool     hypredrv_DistributedErrorCodeActive(MPI_Comm);
+bool     hypredrv_DistributedErrorStateSync(MPI_Comm);
 
 /*******************************************************************************
  *******************************************************************************/
