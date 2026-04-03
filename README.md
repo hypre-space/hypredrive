@@ -4,7 +4,7 @@
 [![Analysis](https://github.com/hypre-space/hypredrive/workflows/Code%20Analysis/badge.svg)](https://github.com/hypre-space/hypredrive/actions/workflows/analysis.yml)
 [![CI](https://github.com/hypre-space/hypredrive/workflows/CI/badge.svg)](https://github.com/hypre-space/hypredrive/actions/workflows/ci.yml)
 
-# hypredrive
+# *hypredrive*
 
 High-level interface to [hypre](https://github.com/hypre-space/hypre) for solving sparse linear systems of equations. It can be used as:
 
