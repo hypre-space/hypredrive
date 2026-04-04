@@ -98,6 +98,52 @@ hypredrv_PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
    }
 }
 
+void
+hypredrv_PreconArgsDestroyOwnedConfig(precon_t method, precon_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   switch (method)
+   {
+      case PRECON_MGR:
+         hypredrv_MGRDestroyNestedSolverArgs(&args->mgr);
+         break;
+
+      case PRECON_BOOMERAMG:
+      case PRECON_ILU:
+      case PRECON_FSAI:
+      case PRECON_NONE:
+      default:
+         break;
+   }
+}
+
+void
+hypredrv_PreconArgsDestroyRuntimeState(precon_t method, precon_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   switch (method)
+   {
+      case PRECON_MGR:
+         hypredrv_MGRDestroyCachedSolvers(&args->mgr);
+         break;
+
+      case PRECON_BOOMERAMG:
+      case PRECON_ILU:
+      case PRECON_FSAI:
+      case PRECON_NONE:
+      default:
+         break;
+   }
+}
+
 /*-----------------------------------------------------------------------------
  * hypredrv_PreconSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
@@ -371,6 +417,10 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
    if (!solver_ptr || !*solver_ptr) /* GCOVR_EXCL_BR_STOP */
    {
+      /* Outer MGR solver was never created (e.g. early failure in MGRCreate).
+       * Destroy or preserve any component handles that were set up before the
+       * failure, respecting keep flags set by the caller. */
+      hypredrv_MGRDestroyCachedSolvers(mgr);
       /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
       if (mgr->point_marker_data) /* GCOVR_EXCL_BR_STOP */
       {
@@ -383,18 +433,31 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
 #if HYPRE_CHECK_MIN_VERSION(30100, 11)
    HYPRE_Solver detached_nested_lvl0_frelax  = NULL;
    HYPRE_Solver detached_nested_lvl0_wrapper = NULL;
-   if (mgr->num_levels > 1 && mgr->frelax[0] &&
-       mgr->level[0].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
+   int nested_lvl0_orig = (mgr->num_active_levels > 0) ? mgr->active_level_map[0] : 0;
+   if (mgr->num_levels > 1 && mgr->frelax[nested_lvl0_orig] &&
+       mgr->level[nested_lvl0_orig].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
    {
-      detached_nested_lvl0_wrapper = mgr->frelax[0];
+      detached_nested_lvl0_wrapper = mgr->frelax[nested_lvl0_orig];
       detached_nested_lvl0_frelax =
-         hypredrv_MGRNestedFRelaxWrapperDetachInner(mgr->frelax[0]);
-      mgr->frelax[0] = NULL;
+         hypredrv_MGRNestedFRelaxWrapperDetachInner(mgr->frelax[nested_lvl0_orig]);
+      mgr->frelax[nested_lvl0_orig] = NULL;
    }
+#endif
+
+#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+   /* Destroy hypredrive-managed component solvers before tearing down the outer
+    * MGR hierarchy because their setup data may still reference MGR-owned state. */
+   hypredrv_MGRDestroyCachedSolvers(mgr);
 #endif
 
    HYPRE_MGRDestroy(*solver_ptr);
    *solver_ptr = NULL;
+
+#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+   /* Upstream hypre destroys nested/component solver handles as part of
+    * HYPRE_MGRDestroy(), so only clear hypredrive's stale cache afterwards. */
+   hypredrv_MGRDestroyCachedSolvers(mgr);
+#endif
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 11)
    /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
@@ -406,7 +469,8 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    }
    if (detached_nested_lvl0_frelax)
    {
-      DestroyNestedMGRFRelaxInnerSolver(mgr, 0, &detached_nested_lvl0_frelax);
+      DestroyNestedMGRFRelaxInnerSolver(mgr, nested_lvl0_orig,
+                                        &detached_nested_lvl0_frelax);
    }
 #endif
 
@@ -414,81 +478,6 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    {
       free(mgr->point_marker_data);
       mgr->point_marker_data = NULL;
-   }
-
-   /* TODO: should MGR free these internally? */
-   if (mgr->coarsest_level.use_krylov && mgr->coarsest_level.krylov)
-   {
-      hypredrv_NestedKrylovDestroy(mgr->coarsest_level.krylov);
-   }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   else if (mgr->csolver)    /* GCOVR_EXCL_BR_STOP */
-   {
-      /* MGR does not destroy user-provided coarse solvers. */
-      if (mgr->csolver_type == 0)
-      {
-         HYPRE_BoomerAMGDestroy(mgr->csolver);
-      }
-#if defined(HYPRE_USING_DSUPERLU)
-      else if (mgr->csolver_type == 29)
-      {
-         HYPRE_MGRDirectSolverDestroy(mgr->csolver);
-      }
-#endif
-      /* GCOVR_EXCL_BR_START */         /* low-signal branch under CI */
-      else if (mgr->csolver_type == 32) /* GCOVR_EXCL_BR_STOP */
-      {
-         HYPRE_ILUDestroy(mgr->csolver);
-      }
-   }
-   mgr->csolver      = NULL;
-   mgr->csolver_type = -1;
-
-   int max_levels = (mgr->num_levels > 0) ? (mgr->num_levels - 1) : 0;
-   for (int i = 0; i < max_levels; i++)
-   {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (mgr->level[i].f_relaxation.use_krylov && mgr->level[i].f_relaxation.krylov)
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_NestedKrylovDestroy(mgr->level[i].f_relaxation.krylov);
-      }
-      else if (i == 0 && mgr->frelax[i])
-      {
-         /* MGR does not destroy user-provided F-relaxation solvers at level 0. */
-         if (mgr->level[i].f_relaxation.type == 2)
-         {
-            HYPRE_BoomerAMGDestroy(mgr->frelax[i]);
-         }
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         else if (mgr->level[i].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            DestroyNestedMGRFRelaxAtLevel(mgr, i);
-         }
-#if defined(HYPRE_USING_DSUPERLU)
-         /* GCOVR_EXCL_BR_START */                       /* low-signal branch under CI */
-         else if (mgr->level[i].f_relaxation.type == 29) /* GCOVR_EXCL_BR_STOP */
-         {
-            HYPRE_MGRDirectSolverDestroy(mgr->frelax[i]);
-         }
-#endif
-#if HYPRE_CHECK_MIN_VERSION(23200, 14)
-         /* GCOVR_EXCL_BR_START */                       /* low-signal branch under CI */
-         else if (mgr->level[i].f_relaxation.type == 32) /* GCOVR_EXCL_BR_STOP */
-         {
-            HYPRE_ILUDestroy(mgr->frelax[i]);
-         }
-#endif
-         mgr->frelax[i] = NULL;
-      }
-
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (mgr->level[i].g_relaxation.use_krylov && mgr->level[i].g_relaxation.krylov)
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_NestedKrylovDestroy(mgr->level[i].g_relaxation.krylov);
-      }
    }
 #endif
 }

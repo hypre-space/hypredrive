@@ -211,6 +211,35 @@ PreconReuseParseDouble(const char *value, double *out)
    return sscanf(value, "%lf", out) == 1;
 }
 
+static int
+PreconReuseValueIsAlways(const char *value)
+{
+   return value && strcmp(value, "always") == 0;
+}
+
+static int
+PreconReuseSetAlwaysLinearSystemIDs(PreconReuse_args *args)
+{
+   if (!args)
+   {
+      return 0;
+   }
+
+   IntArray *ids = hypredrv_IntArrayCreate(1);
+   if (!ids || !ids->data)
+   {
+      hypredrv_IntArrayDestroy(&ids);
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate preconditioner.reuse.always selector");
+      return 0;
+   }
+
+   ids->data[0] = 0;
+   hypredrv_IntArrayDestroy(&args->linear_system_ids);
+   args->linear_system_ids = ids;
+   return 1;
+}
+
 static const StrIntMap k_policy_map[] = {
    {"static", PRECON_REUSE_POLICY_STATIC},
    {"adaptive", PRECON_REUSE_POLICY_ADAPTIVE},
@@ -879,10 +908,10 @@ hypredrv_PreconReuseStateRecordObservation(PreconReuseState             *state,
    state->last_decision_ls_id = -1;
 }
 
-static int
-PreconReuseShouldRebuildStatic(const PreconReuse_args *args,
-                               const IntArray *timestep_starts, const Stats *stats,
-                               int next_ls_id)
+int
+hypredrv_PreconReuseShouldRebuildStatic(const PreconReuse_args *args,
+                                        const IntArray         *timestep_starts,
+                                        const Stats *stats, int next_ls_id)
 {
    /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!args)                /* GCOVR_EXCL_BR_STOP */
@@ -1747,7 +1776,7 @@ hypredrv_PreconReuseShouldRebuild(const PreconReuse_args *args,
    }
 
    int should_rebuild =
-      PreconReuseShouldRebuildStatic(args, timestep_starts, stats, next_ls_id);
+      hypredrv_PreconReuseShouldRebuildStatic(args, timestep_starts, stats, next_ls_id);
    /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (decision)             /* GCOVR_EXCL_BR_STOP */
    {
@@ -2612,6 +2641,19 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
          return;
       }
 
+      if (PreconReuseValueIsAlways(parent->val))
+      {
+         args->enabled = 1;
+         args->policy  = PRECON_REUSE_POLICY_STATIC;
+         if (!PreconReuseSetAlwaysLinearSystemIDs(args))
+         {
+            YAML_NODE_SET_INVALID_VAL(parent);
+            return;
+         }
+         YAML_NODE_SET_VALID(parent);
+         return;
+      }
+
       if (!PreconReuseParsePolicy(parent->val, &args->policy))
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -2647,6 +2689,7 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    int seen_min_history_points       = 0;
    int seen_bad_decisions_to_rebuild = 0;
    int seen_max_iteration_ratio      = 0;
+   int always_requested              = 0;
 
    YAML_NODE_ITERATE(parent, child)
    {
@@ -2726,8 +2769,13 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       else if (!strcmp(child->key, "type") || !strcmp(child->key, "policy"))
       /* GCOVR_EXCL_BR_STOP */
       {
+         if (PreconReuseValueIsAlways(value))
+         {
+            args->policy     = PRECON_REUSE_POLICY_STATIC;
+            always_requested = 1;
+         }
          /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         if (!PreconReuseParsePolicy(value, &args->policy)) /* GCOVR_EXCL_BR_STOP */
+         else if (!PreconReuseParsePolicy(value, &args->policy)) /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
             /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
@@ -2785,6 +2833,15 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       args->enabled = 1;
    }
 
+   if (always_requested && !args->enabled)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "preconditioner.reuse always cannot be combined with enabled: off");
+      YAML_NODE_SET_INVALID_VAL(parent);
+      return;
+   }
+
    if (seen_adaptive && !seen_policy)
    {
       args->policy = PRECON_REUSE_POLICY_ADAPTIVE;
@@ -2803,13 +2860,24 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
 
    if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE &&
        /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-       (seen_frequency || seen_linear_system_ids || seen_per_timestep))
+       (always_requested || seen_frequency || seen_linear_system_ids ||
+        seen_per_timestep))
    /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("preconditioner.reuse type: adaptive cannot be used with "
-                           "frequency, linear_system_ids, or per_timestep; "
+                           "always, frequency, linear_system_ids, or per_timestep; "
                            "these keys produce a parse-time error when combined");
+      YAML_NODE_SET_INVALID_VAL(parent);
+      return;
+   }
+
+   if (args->policy == PRECON_REUSE_POLICY_STATIC && always_requested &&
+       (seen_frequency || seen_linear_system_ids || seen_per_timestep))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("preconditioner.reuse always cannot be combined with "
+                           "frequency, linear_system_ids, or per_timestep");
       YAML_NODE_SET_INVALID_VAL(parent);
       return;
    }
@@ -2823,6 +2891,12 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       hypredrv_ErrorMsgAdd(
          "preconditioner.reuse.linear_system_ids cannot be combined with "
          "frequency or per_timestep");
+      YAML_NODE_SET_INVALID_VAL(parent);
+      return;
+   }
+
+   if (always_requested && !PreconReuseSetAlwaysLinearSystemIDs(args))
+   {
       YAML_NODE_SET_INVALID_VAL(parent);
       return;
    }

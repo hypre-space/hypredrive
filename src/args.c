@@ -1097,6 +1097,8 @@ hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset,
 {
    precon_t    method = PRECON_NONE;
    precon_args args;
+   int         had_variant_storage = 0;
+   int         variant_is_active   = 0;
 
    if (!iargs || !preset)
    {
@@ -1112,6 +1114,10 @@ hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset,
                            variant_idx, iargs->num_precon_variants - 1);
       return;
    }
+
+   memset(&args, 0, sizeof(args));
+   had_variant_storage = (iargs->precon_methods && iargs->precon_variants);
+   variant_is_active   = (variant_idx == iargs->active_precon_variant);
 
    if (!iargs->precon_methods || !iargs->precon_variants)
    {
@@ -1135,11 +1141,28 @@ hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset,
    }
 
    PreconPresetBuildArgs(preset, &method, &args);
+   if (hypredrv_ErrorCodeGet())
+   {
+      return;
+   }
+
+   if (had_variant_storage)
+   {
+      hypredrv_PreconArgsDestroyOwnedConfig(iargs->precon_methods[variant_idx],
+                                            &iargs->precon_variants[variant_idx]);
+   }
+   else if (variant_is_active)
+   {
+      hypredrv_PreconArgsDestroyOwnedConfig(iargs->precon_method, &iargs->precon);
+   }
 
    iargs->precon_methods[variant_idx]  = method;
    iargs->precon_variants[variant_idx] = args;
-   iargs->precon_method                = method;
-   iargs->precon                       = args;
+   if (variant_is_active)
+   {
+      iargs->precon_method = method;
+      iargs->precon        = args;
+   }
 
    return;
 }

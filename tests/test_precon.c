@@ -1739,6 +1739,71 @@ test_PreconReuseSetArgsFromYAML_scalar_static_frequency_shorthand(void)
 }
 
 static void
+test_PreconReuseSetArgsFromYAML_scalar_always_shorthand(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "always", 0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_EQ(args.enabled, 1);
+   ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_STATIC);
+   ASSERT_EQ(args.frequency, 0);
+   ASSERT_NOT_NULL(args.linear_system_ids);
+   ASSERT_EQ_SIZE(args.linear_system_ids->size, 1);
+   ASSERT_EQ(args.linear_system_ids->data[0], 0);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_type_always_alias(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   add_child(parent, "type", "always", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_EQ(args.enabled, 1);
+   ASSERT_EQ(args.policy, PRECON_REUSE_POLICY_STATIC);
+   ASSERT_EQ(args.frequency, 0);
+   ASSERT_NOT_NULL(args.linear_system_ids);
+   ASSERT_EQ_SIZE(args.linear_system_ids->size, 1);
+   ASSERT_EQ(args.linear_system_ids->data[0], 0);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconReuseSetArgsFromYAML_always_key_rejected(void)
+{
+   PreconReuse_args args;
+   hypredrv_PreconReuseSetDefaultArgs(&args);
+
+   YAMLnode *parent      = hypredrv_YAMLnodeCreate("reuse", "", 0);
+   YAMLnode *always_node = add_child(parent, "always", "yes", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconReuseSetArgsFromYAML(&args, parent);
+
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_KEY);
+   ASSERT_EQ(always_node->valid, YAML_NODE_INVALID_KEY);
+
+   hypredrv_PreconReuseDestroyArgs(&args);
+   hypredrv_YAMLnodeDestroy(parent);
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
 test_PreconReuseSetArgsFromYAML_scalar_invalid_value(void)
 {
    PreconReuse_args args;
@@ -5270,6 +5335,9 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconReuseShouldRebuild_adaptive_min_reuse_solves_guard);
    RUN_TEST(test_PreconReuse_api_null_observation_and_log_noop);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_scalar_static_frequency_shorthand);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_scalar_always_shorthand);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_type_always_alias);
+   RUN_TEST(test_PreconReuseSetArgsFromYAML_always_key_rejected);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_scalar_invalid_value);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_enabled_off_clears_static_fields);
    RUN_TEST(test_PreconReuseSetArgsFromYAML_static_conflict_requires_explicit_adaptive);

@@ -580,6 +580,32 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 OVERRIDES --general:num_repetitions 4 --linear_system:last_suffix 4
                 REQUIRE_CONTAINS ${_cli_ex7_reps4_ls4_require_contains}
             )
+            if(HYPREDRV_ENABLE_EXPERIMENTAL)
+                add_test(NAME hypredrive_test_ex7_mgr_frelax_reuse_1proc
+                    COMMAND ${CMAKE_COMMAND}
+                            -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+                            -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
+                            -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+                            -DMPI_NUMPROCS=1
+                            -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+                            -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+                            -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+                            -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-reuse.yml
+                            "-DTARGET_ARGS:STRING=-q"
+                            "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|cached MGR handles before create|Solving linear system #24"
+                            -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
+                    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                )
+                set_tests_properties(hypredrive_test_ex7_mgr_frelax_reuse_1proc
+                    PROPERTIES
+                    FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
+                    SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+                    LABELS "integration;hypredrive"
+                )
+                hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_frelax_reuse_1proc)
+                hypredrv_append_test_environment(hypredrive_test_ex7_mgr_frelax_reuse_1proc
+                    "HYPREDRV_LOG_LEVEL=2")
+            endif()
         endif()
         if (HYPREDRV_HAVE_HYPRE_30100_DEV5)
             add_hypredrive_test(ex7_nested_mgr_1proc 1 ex7-nested-mgr.yml)

@@ -14,7 +14,7 @@
 enum
 {
    HYPREDRV_LOG_LEVEL_OFF = 0,
-   HYPREDRV_LOG_LEVEL_MAX = 3,
+   HYPREDRV_LOG_LEVEL_MAX = 4,
 };
 
 void hypredrv_LogInitializeFromEnv(void);

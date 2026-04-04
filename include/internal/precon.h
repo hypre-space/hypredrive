@@ -70,6 +70,8 @@ StrIntMapArray hypredrv_PreconGetValidValues(const char *);
 StrIntMapArray hypredrv_PreconGetValidTypeIntMap(void);
 void           hypredrv_PreconSetDefaultArgs(precon_args *);
 void           hypredrv_PreconArgsSetDefaultsForMethod(precon_t, precon_args *);
+void           hypredrv_PreconArgsDestroyOwnedConfig(precon_t, precon_args *);
+void           hypredrv_PreconArgsDestroyRuntimeState(precon_t, precon_args *);
 void           hypredrv_PreconSetArgsFromYAML(precon_args *,
                                               YAMLnode *); /* TODO: change to PreconSetArgs */
 void           hypredrv_PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector,

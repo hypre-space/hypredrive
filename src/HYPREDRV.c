@@ -923,6 +923,13 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    hypredrv_IntArrayDestroy(&hypredrv->precon_reuse_timesteps.ids);
    hypredrv_IntArrayDestroy(&hypredrv->precon_reuse_timesteps.starts);
    hypredrv_PreconReuseStateDestroy(&hypredrv->precon_reuse_state);
+#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+   if (hypredrv->iargs)
+   {
+      hypredrv_PreconArgsDestroyRuntimeState(hypredrv->iargs->precon_method,
+                                             &hypredrv->iargs->precon);
+   }
+#endif
    hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
    if (print_statistics > 0 && !hypredrv->stats_printed)
@@ -1353,8 +1360,9 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
       return hypredrv_ErrorCodeGet();
    }
 
-   int current_variant = hypredrv->iargs->active_precon_variant;
-   int variant_changed = (variant_idx != current_variant);
+   int      current_variant = hypredrv->iargs->active_precon_variant;
+   int      variant_changed = (variant_idx != current_variant);
+   precon_t current_method  = hypredrv->iargs->precon_method;
    HYPREDRV_LOG_OBJECTF(
       2, hypredrv, "preconditioner variant selection: current=%d requested=%d changed=%d",
       current_variant, variant_idx, variant_changed);
@@ -1362,6 +1370,7 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
    /* Only rebuild solver/preconditioner when switching variants. */
    if (variant_changed)
    {
+      bool had_precon = (hypredrv->precon != NULL);
       if (hypredrv->solver)
       {
          /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
@@ -1381,6 +1390,30 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
                                 &hypredrv->precon);
          hypredrv->precon_is_setup = false;
       }
+
+#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+      if (!had_precon && current_method == PRECON_MGR)
+      {
+         int num_frelax = 0;
+         int num_grelax = 0;
+         int num_coarse = 0;
+         hypredrv_MGRCountCachedSolvers(&hypredrv->iargs->precon.mgr, &num_frelax,
+                                        &num_grelax, &num_coarse);
+         if (num_frelax || num_grelax || num_coarse)
+         {
+            HYPREDRV_LOG_OBJECTF(
+               2, hypredrv,
+               "discarding cached MGR handles before switching preconditioner variant: "
+               "coarse=%d frelax=%d grelax=%d",
+               num_coarse, num_frelax, num_grelax);
+         }
+      }
+#endif
+      if (!had_precon)
+      {
+         hypredrv_PreconArgsDestroyRuntimeState(current_method, &hypredrv->iargs->precon);
+      }
+      hypredrv->precon_is_setup = false;
    }
    else
    {
@@ -1388,10 +1421,14 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
                            "preconditioner variant unchanged; reusing setup");
    }
 
-   /* Set active variant */
+   /* Preserve runtime-managed state (for example cached MGR component handles)
+    * when the active variant is unchanged. */
    hypredrv->iargs->active_precon_variant = variant_idx;
-   hypredrv->iargs->precon_method         = hypredrv->iargs->precon_methods[variant_idx];
-   hypredrv->iargs->precon                = hypredrv->iargs->precon_variants[variant_idx];
+   if (variant_changed)
+   {
+      hypredrv->iargs->precon_method = hypredrv->iargs->precon_methods[variant_idx];
+      hypredrv->iargs->precon        = hypredrv->iargs->precon_variants[variant_idx];
+   }
 #if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22100, 0)
    /* GCOVR_EXCL_BR_START */ /* GPU-only exec-policy coupling (not in host CI) */
    int desired_exec_policy = hypredrv->preferred_exec_policy;
@@ -1464,7 +1501,8 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
                                               &hypredrv->iargs->precon);
    }
 
-   int variant_idx = hypredrv->iargs->active_precon_variant;
+   int      variant_idx    = hypredrv->iargs->active_precon_variant;
+   precon_t current_method = hypredrv->iargs->precon_method;
    /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (variant_idx < 0)      /* GCOVR_EXCL_BR_STOP */
    {
@@ -1478,6 +1516,29 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
    {
       hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                              &hypredrv->precon);
+      hypredrv->precon_is_setup = false;
+   }
+   else
+   {
+#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+      if (current_method == PRECON_MGR)
+      {
+         int num_frelax = 0;
+         int num_grelax = 0;
+         int num_coarse = 0;
+         hypredrv_MGRCountCachedSolvers(&hypredrv->iargs->precon.mgr, &num_frelax,
+                                        &num_grelax, &num_coarse);
+         if (num_frelax || num_grelax || num_coarse)
+         {
+            HYPREDRV_LOG_OBJECTF(
+               2, hypredrv,
+               "discarding cached MGR handles before applying preconditioner preset: "
+               "coarse=%d frelax=%d grelax=%d",
+               num_coarse, num_frelax, num_grelax);
+         }
+      }
+#endif
+      hypredrv_PreconArgsDestroyRuntimeState(current_method, &hypredrv->iargs->precon);
    }
 
    /* GCOVR_EXCL_BR_START */                      /* low-signal branch under CI */
@@ -2374,6 +2435,23 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
                                 &hypredrv->precon);
          hypredrv->precon_is_setup = false;
       }
+#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+      if (hypredrv->iargs->precon_method == PRECON_MGR)
+      {
+         int num_frelax = 0;
+         int num_grelax = 0;
+         int num_coarse = 0;
+         hypredrv_MGRCountCachedSolvers(&hypredrv->iargs->precon.mgr, &num_frelax,
+                                        &num_grelax, &num_coarse);
+         if (num_frelax || num_grelax || num_coarse)
+         {
+            HYPREDRV_LOG_OBJECTF(
+               2, hypredrv,
+               "cached MGR handles before create: coarse=%d frelax=%d grelax=%d",
+               num_coarse, num_frelax, num_grelax);
+         }
+      }
+#endif
       hypredrv_PreconCreate(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                             hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon);
       hypredrv->precon_is_setup = false;
@@ -2472,6 +2550,21 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconSetup begin");
    /* GCOVR_EXCL_BR_STOP */
 
+   int next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
+   if (hypredrv->precon && hypredrv->precon_is_setup &&
+       hypredrv->iargs->precon_method == PRECON_MGR &&
+       hypredrv_MGRComponentReuseSetupMode(&hypredrv->iargs->precon.mgr, hypredrv->stats,
+                                           next_ls_id))
+   {
+      hypredrv_MGRRefreshComponentsForSetup(
+         &hypredrv->iargs->precon.mgr, hypredrv->precon->main,
+         hypredrv->precon_reuse_timesteps.starts, hypredrv->stats, next_ls_id);
+      if (hypredrv_ErrorCodeActive())
+      {
+         return hypredrv_ErrorCodeGet();
+      }
+   }
+
    hypredrv_PreconSetup(hypredrv->iargs->precon_method, hypredrv->precon,
                         hypredrv->mat_A);
    HYPRE_ClearAllErrors();   /* TODO: error handling from hypre */
@@ -2531,11 +2624,17 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    int                 should_rebuild =
       PreconReuseShouldRebuildCollective(hypredrv, next_ls_id, &decision);
    hypredrv_PreconReuseLogDecision(hypredrv, next_ls_id, &decision, "LinearSolverSetup");
-   int skip_precon_setup =
-      (hypredrv->precon != NULL) && hypredrv->precon_is_setup && !should_rebuild;
+   int rerun_mgr_component_setup =
+      (hypredrv->precon != NULL) && hypredrv->precon_is_setup && !should_rebuild &&
+      hypredrv->iargs->precon_method == PRECON_MGR &&
+      hypredrv_MGRComponentReuseSetupMode(&hypredrv->iargs->precon.mgr, hypredrv->stats,
+                                          next_ls_id);
+   int skip_precon_setup = (hypredrv->precon != NULL) && hypredrv->precon_is_setup &&
+                           !should_rebuild && !rerun_mgr_component_setup;
    HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                        "solver setup decisions: rebuild_precon=%d skip_precon_setup=%d",
-                        should_rebuild, skip_precon_setup);
+                        "solver setup decisions: rebuild_precon=%d rerun_mgr_setup=%d "
+                        "skip_precon_setup=%d",
+                        should_rebuild, rerun_mgr_component_setup, skip_precon_setup);
 
    /* Propagate dofmap to vectors (no-op if no dofmap is set) */
    /* GCOVR_EXCL_BR_START */ /* SAFE_CALL fail-fast wrapper */
@@ -2582,6 +2681,17 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    char default_object_name[32];
    bool pushed_default_name = PushDefaultLogObjectName(hypredrv, default_object_name,
                                                        sizeof(default_object_name));
+   if (rerun_mgr_component_setup)
+   {
+      hypredrv_MGRRefreshComponentsForSetup(
+         &hypredrv->iargs->precon.mgr, hypredrv->precon->main,
+         hypredrv->precon_reuse_timesteps.starts, hypredrv->stats, next_ls_id);
+      if (hypredrv_ErrorCodeActive())
+      {
+         PopDefaultLogObjectName(hypredrv, default_object_name, pushed_default_name);
+         return hypredrv_ErrorCodeGet();
+      }
+   }
    hypredrv_SolverSetupWithReuse(hypredrv->iargs->precon_method,
                                  hypredrv->iargs->solver_method, hypredrv->precon,
                                  hypredrv->solver, hypredrv->mat_M, hypredrv->vec_b,
@@ -2863,6 +2973,27 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
    {
       if (hypredrv->precon)
       {
+#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+         if (hypredrv->iargs->precon_method == PRECON_MGR)
+         {
+            hypredrv_MGRSelectCachedSolversToKeep(&hypredrv->iargs->precon.mgr,
+                                                  hypredrv->precon_reuse_timesteps.starts,
+                                                  hypredrv->stats, next_ls_id);
+            int num_frelax = 0;
+            int num_grelax = 0;
+            int num_coarse = 0;
+            hypredrv_MGRCountKeepFlags(&hypredrv->iargs->precon.mgr, &num_frelax,
+                                       &num_grelax, &num_coarse);
+            if (num_frelax || num_grelax || num_coarse)
+            {
+               HYPREDRV_LOG_OBJECTF(
+                  2, hypredrv,
+                  "preserving cached MGR handles across destroy: coarse=%d frelax=%d "
+                  "grelax=%d",
+                  num_coarse, num_frelax, num_grelax);
+            }
+         }
+#endif
          HYPREDRV_LOG_OBJECTF(2, hypredrv, "destroying preconditioner object");
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                                 &hypredrv->precon);

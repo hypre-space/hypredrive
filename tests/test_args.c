@@ -315,6 +315,110 @@ test_InputArgsParsePrecon_mgr_flat_g_relaxation_ilu_defaults(void)
 }
 
 static void
+test_InputArgsParsePrecon_mgr_component_reuse_blocks(void)
+{
+   const char yaml_text[] = "solver:\n"
+                            "  gmres:\n"
+                            "    max_iter: 10\n"
+                            "preconditioner:\n"
+                            "  mgr:\n"
+                            "    level:\n"
+                            "      0:\n"
+                            "        f_dofs: [0]\n"
+                            "        f_relaxation:\n"
+                            "          amg:\n"
+                            "            max_iter: 1\n"
+                            "          reuse:\n"
+                            "            frequency: 2\n"
+                            "        g_relaxation:\n"
+                            "          ilu:\n"
+                            "            max_iter: 1\n"
+                            "          reuse: adaptive\n"
+                            "    coarsest_level:\n"
+                            "      amg:\n"
+                            "        max_iter: 1\n"
+                            "      reuse:\n"
+                            "        enabled: off\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon_method, PRECON_MGR);
+
+   ASSERT_EQ(args->precon.mgr.level[0].f_relaxation.reuse.present, 1);
+   ASSERT_EQ(args->precon.mgr.level[0].f_relaxation.reuse.args.frequency, 2);
+   ASSERT_EQ((int)args->precon.mgr.level[0].f_relaxation.reuse.args.policy,
+             (int)PRECON_REUSE_POLICY_STATIC);
+
+   ASSERT_EQ(args->precon.mgr.level[0].g_relaxation.reuse.present, 1);
+   ASSERT_EQ((int)args->precon.mgr.level[0].g_relaxation.reuse.args.policy,
+             (int)PRECON_REUSE_POLICY_ADAPTIVE);
+
+   ASSERT_EQ(args->precon.mgr.coarsest_level.reuse.present, 1);
+   ASSERT_EQ(args->precon.mgr.coarsest_level.reuse.args.enabled, 0);
+
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
+test_InputArgsParsePrecon_mgr_component_reuse_unknown_nested_key(void)
+{
+   const char yaml_text[] = "solver:\n"
+                            "  gmres:\n"
+                            "    max_iter: 10\n"
+                            "preconditioner:\n"
+                            "  mgr:\n"
+                            "    level:\n"
+                            "      0:\n"
+                            "        f_dofs: [0]\n"
+                            "        f_relaxation:\n"
+                            "          amg:\n"
+                            "            max_iter: 1\n"
+                            "          reuse:\n"
+                            "            frequency: 1\n"
+                            "            not_a_reuse_key: 0\n"
+                            "    coarsest_level: amg\n";
+
+   hypredrv_ErrorCodeResetAll();
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NULL(args);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+}
+
+static void
+test_InputArgsParsePrecon_mgr_component_reuse_always_alias(void)
+{
+   const char yaml_text[] = "solver:\n"
+                            "  gmres:\n"
+                            "    max_iter: 10\n"
+                            "preconditioner:\n"
+                            "  mgr:\n"
+                            "    level:\n"
+                            "      0:\n"
+                            "        f_dofs: [0]\n"
+                            "        f_relaxation:\n"
+                            "          amg:\n"
+                            "            max_iter: 1\n"
+                            "          reuse: always\n"
+                            "    coarsest_level: amg\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon_method, PRECON_MGR);
+
+   ASSERT_EQ(args->precon.mgr.level[0].f_relaxation.reuse.present, 1);
+   ASSERT_EQ(args->precon.mgr.level[0].f_relaxation.reuse.args.enabled, 1);
+   ASSERT_EQ((int)args->precon.mgr.level[0].f_relaxation.reuse.args.policy,
+             (int)PRECON_REUSE_POLICY_STATIC);
+   ASSERT_NOT_NULL(args->precon.mgr.level[0].f_relaxation.reuse.args.linear_system_ids);
+   ASSERT_EQ_SIZE(args->precon.mgr.level[0].f_relaxation.reuse.args.linear_system_ids->size,
+                  1);
+   ASSERT_EQ(args->precon.mgr.level[0].f_relaxation.reuse.args.linear_system_ids->data[0],
+             0);
+
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
 test_InputArgsParsePrecon_root_sequence_variants(void)
 {
    const char yaml_text[] = "solver:\n"
@@ -1712,6 +1816,9 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParsePrecon_variants);
    RUN_TEST(test_InputArgsParsePrecon_mgr_flat_g_relaxation_amg_defaults);
    RUN_TEST(test_InputArgsParsePrecon_mgr_flat_g_relaxation_ilu_defaults);
+   RUN_TEST(test_InputArgsParsePrecon_mgr_component_reuse_blocks);
+   RUN_TEST(test_InputArgsParsePrecon_mgr_component_reuse_unknown_nested_key);
+   RUN_TEST(test_InputArgsParsePrecon_mgr_component_reuse_always_alias);
    RUN_TEST(test_InputArgsParsePrecon_root_sequence_variants);
    RUN_TEST(test_InputArgsParsePrecon_root_sequence_with_preset);
    RUN_TEST(test_InputArgsParse_linear_system_matrix_rhs_file_keys);
