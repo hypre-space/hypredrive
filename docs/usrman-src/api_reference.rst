@@ -86,6 +86,7 @@ Input Parsing and Presets
 - :cpp:func:`HYPREDRV_InputArgsSetPreconVariant` - Select the active preconditioner variant by index.
 - :cpp:func:`HYPREDRV_InputArgsSetPreconPreset` - Apply a named preconditioner preset to the active variant.
 - :cpp:func:`HYPREDRV_InputArgsSetSolverPreset` - Apply a named solver preset without reparsing YAML.
+- :cpp:func:`HYPREDRV_SolverPresetRegister` - Register a custom named solver preset from YAML text.
 - :cpp:func:`HYPREDRV_PreconPresetRegister` - Register a custom named preconditioner preset from YAML text.
 
 Linear System Setup

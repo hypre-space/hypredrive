@@ -3632,6 +3632,18 @@ test_HYPREDRV_public_wrappers_and_getters(void)
 
    ASSERT_EQ(HYPREDRV_InputArgsSetSolverPreset(obj, "pcg"), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_InputArgsSetSolverPreset(obj, "gmres"), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_SolverPresetRegister(
+                "test_solver_preset",
+                "fgmres:\n"
+                "  max_iter: 17\n"
+                "  krylov_dim: 23\n"
+                "  print_level: 0",
+                "test solver preset"),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_InputArgsSetSolverPreset(obj, "test_solver_preset"), ERROR_NONE);
+   ASSERT_EQ(obj->iargs->solver_method, SOLVER_FGMRES);
+   ASSERT_EQ(obj->iargs->solver.fgmres.max_iter, 17);
+   ASSERT_EQ(obj->iargs->solver.fgmres.krylov_dim, 23);
 
    char matrix_path[PATH_MAX];
    char rhs_path[PATH_MAX];

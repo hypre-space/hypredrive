@@ -84,7 +84,7 @@ if [[ $CHECK_MODE -eq 1 ]]; then
 
   # 2. Every public API must accept a HYPREDRV_t parameter, except for a small
   #    set of global/utility functions that legitimately operate without one.
-  EXEMPT_RE='^HYPREDRV_(Initialize|Finalize|ErrorCodeDescribe|Create|PrintLibInfo|PrintSystemInfo|PrintExitInfo|PreconPresetRegister)$'
+  EXEMPT_RE='^HYPREDRV_(Initialize|Finalize|ErrorCodeDescribe|Create|PrintLibInfo|PrintSystemInfo|PrintExitInfo|PreconPresetRegister|SolverPresetRegister)$'
   while IFS= read -r api; do
     [[ -z "$api" ]] && continue
     echo "$api" | grep -qE "$EXEMPT_RE" && continue

@@ -495,15 +495,16 @@ extern "C"
                                                                      const char *preset);
 
    /**
-    * @brief Configure the solver using a predefined preset name.
+    * @brief Configure the solver using a predefined or registered preset name.
     *
-    * This function allows library users to select a named solver (e.g., "pcg",
-    * "gmres", "fgmres", "bicgstab") without calling HYPREDRV_InputArgsParse. It
-    * ensures that the input argument structure exists, then sets the solver method
-    * and initializes its defaults.
+    * This function allows library users to select either a built-in named solver
+    * (e.g., "pcg", "gmres", "fgmres", "bicgstab") or a custom registered solver
+    * preset without calling HYPREDRV_InputArgsParse. It ensures that the input
+    * argument structure exists, then updates the solver method and arguments.
     *
     * @param hypredrv The HYPREDRV_t object for which to set the solver.
-    * @param preset The solver name string (e.g., "pcg", "gmres").
+    * @param preset The solver name string (e.g., "pcg", "gmres") or a custom
+    * registered solver preset.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure (e.g., invalid solver name, object not initialized).
@@ -518,6 +519,25 @@ extern "C"
 
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t  hypredrv,
                                                                      const char *preset);
+
+   /**
+    * @brief Register a custom solver preset.
+    *
+    * Registers a named preset from a YAML text string, making it available to
+    * HYPREDRV_InputArgsSetSolverPreset(). The preset text must be a valid YAML
+    * snippet that expands under `solver:`.
+    *
+    * @param name      Unique preset name (case-insensitive; '-' and '_' are equivalent).
+    * @param yaml_text YAML snippet string (e.g. "fgmres:\n  max_iter: 20").
+    * @param help      Short description shown in preset listings (may be NULL).
+    *
+    * @return 0 on success, non-zero on failure (duplicate name, NULL args, alloc
+    * failure, or conflict with built-in solver names).
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_SolverPresetRegister(const char *name,
+                                                                 const char *yaml_text,
+                                                                 const char *help);
 
    /**
     * @brief Register a custom preconditioner preset.

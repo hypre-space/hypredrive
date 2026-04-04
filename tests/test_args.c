@@ -1266,6 +1266,73 @@ test_hypredrv_InputArgsApplyPreconPreset_unknown_preset(void)
 }
 
 static void
+test_hypredrv_InputArgsApplySolverPreset_null_args(void)
+{
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsApplySolverPreset(NULL, "my_solver");
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL) != 0);
+}
+
+static void
+test_hypredrv_InputArgsApplySolverPreset_null_preset(void)
+{
+   input_args *args = NULL;
+   hypredrv_InputArgsCreate(false, &args);
+   ASSERT_NOT_NULL(args);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsApplySolverPreset(args, NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL) != 0);
+
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
+test_hypredrv_InputArgsApplySolverPreset_apply(void)
+{
+   input_args *args = NULL;
+   hypredrv_InputArgsCreate(false, &args);
+   ASSERT_NOT_NULL(args);
+
+   ASSERT_EQ(hypredrv_PresetRegisterTyped(
+                "my_solver_preset",
+                "fgmres:\n"
+                "  max_iter: 17\n"
+                "  krylov_dim: 23\n"
+                "  print_level: 0",
+                "custom solver",
+                HYPREDRV_PRESET_SOLVER),
+             0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsApplySolverPreset(args, "my_solver_preset");
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args->solver_method, SOLVER_FGMRES);
+   ASSERT_EQ(args->solver.fgmres.max_iter, 17);
+   ASSERT_EQ(args->solver.fgmres.krylov_dim, 23);
+   ASSERT_EQ(args->solver.fgmres.print_level, 0);
+
+   hypredrv_PresetFreeUserPresets();
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
+test_hypredrv_InputArgsApplySolverPreset_unknown_preset(void)
+{
+   input_args *args = NULL;
+   hypredrv_InputArgsCreate(false, &args);
+   ASSERT_NOT_NULL(args);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsApplySolverPreset(args, "__no_such_solver_preset__");
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
 test_InputArgsParse_invalid_yaml_file_on_disk(void)
 {
    char path[256];
@@ -1694,6 +1761,10 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_InputArgsApplyPreconPreset_bad_variant_idx);
    RUN_TEST(test_hypredrv_InputArgsApplyPreconPreset_lazy_alloc_and_apply);
    RUN_TEST(test_hypredrv_InputArgsApplyPreconPreset_unknown_preset);
+   RUN_TEST(test_hypredrv_InputArgsApplySolverPreset_null_args);
+   RUN_TEST(test_hypredrv_InputArgsApplySolverPreset_null_preset);
+   RUN_TEST(test_hypredrv_InputArgsApplySolverPreset_apply);
+   RUN_TEST(test_hypredrv_InputArgsApplySolverPreset_unknown_preset);
    RUN_TEST(test_InputArgsParse_invalid_yaml_file_on_disk);
    RUN_TEST(test_InputArgsParse_include_from_subdirectory);
    RUN_TEST(test_InputArgsParse_driver_mode_config_not_argv0_with_overrides);
