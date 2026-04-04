@@ -32,6 +32,8 @@ typedef struct MGRFRelaxWrapper_struct
 
 static MGRFRelaxWrapper *g_mgr_frelax_wrapper_live_head = NULL;
 
+static const char *MGRCoarseSolverTypeName(const MGRcls_args *args);
+
 /* GCOVR_EXCL_START */
 static void
 MGRFRelaxWrapperRegister(MGRFRelaxWrapper *wrapper)
@@ -2073,6 +2075,11 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          saved_vec_nn        = nested_args->vec_nn;
          nested_args->dofmap = nested_dofmap;
          nested_args->vec_nn = NULL;
+         HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, NULL, 0,
+                            "creating nested MGR F-relaxation at level %d "
+                            "(coarsest=%s)",
+                            (int)orig_lvl,
+                            MGRCoarseSolverTypeName(&nested_args->coarsest_level));
          hypredrv_MGRCreate(nested_args, &frelax);
          nested_args->dofmap = saved_dofmap;
          nested_args->vec_nn = saved_vec_nn;
@@ -2278,6 +2285,10 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          args->coarsest_level.type = 0;
       }
 
+      HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, NULL, 0,
+                         "MGR coarsest solver selected: %s",
+                         MGRCoarseSolverTypeName(&args->coarsest_level));
+
       /* Ensure the selected solver has valid max_iter */
       /* GCOVR_EXCL_START */
       if (args->coarsest_level.type == 0 && args->coarsest_level.amg.max_iter < 1)
@@ -2423,6 +2434,34 @@ MGRResolveCoarseSolverType(const MGRcls_args *args)
    }
 
    return (args->type < 0) ? 0 : args->type;
+}
+
+static const char *
+MGRCoarseSolverTypeName(const MGRcls_args *args)
+{
+   HYPRE_Int type = MGRResolveCoarseSolverType(args);
+
+   if (!args)
+   {
+      return "unknown";
+   }
+
+   if (args->use_krylov && args->krylov)
+   {
+      return "nested-krylov";
+   }
+
+   switch (type)
+   {
+      case 0:
+         return "amg";
+      case 29:
+         return "spdirect";
+      case 32:
+         return "ilu";
+      default:
+         return "unknown";
+   }
 }
 
 static int
