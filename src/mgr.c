@@ -859,8 +859,8 @@ MGRComponentReuseRuntimeSupported(void)
 
 static void
 MGRComponentReuseLogWarning(MGRComponentReuse_args *reuse, int *warned_flag,
-                            const Stats *stats, int next_ls_id,
-                            const char *label, const char *detail)
+                            const Stats *stats, int next_ls_id, const char *label,
+                            const char *detail)
 {
    if (!reuse || !warned_flag || *warned_flag)
    {
@@ -868,8 +868,8 @@ MGRComponentReuseLogWarning(MGRComponentReuse_args *reuse, int *warned_flag,
    }
 
    *warned_flag = 1;
-   HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
-                      "%s %s", label, detail);
+   HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id, "%s %s",
+                      label, detail);
 }
 /* GCOVR_EXCL_BR_STOP */
 
@@ -2895,8 +2895,7 @@ hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *args,
 }
 
 int
-hypredrv_MGRComponentReuseSetupMode(const MGR_args *args, const Stats *stats,
-                                    int next_ls_id)
+hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next_ls_id)
 {
    if (!args)
    {

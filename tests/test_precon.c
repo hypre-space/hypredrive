@@ -3734,6 +3734,79 @@ test_PreconSetup_mgr_frelax_nested_mgr_dof_labels(void)
 }
 
 static void
+test_PreconSetup_mgr_frelax_nested_mgr_body_split_labels(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(23100, 9)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+
+   args.mgr.num_levels = 2; /* one MGR level + coarsest */
+   args.mgr.level[0].f_dofs.size    = 6;
+   args.mgr.level[0].f_dofs.data[0] = 0;
+   args.mgr.level[0].f_dofs.data[1] = 1;
+   args.mgr.level[0].f_dofs.data[2] = 2;
+   args.mgr.level[0].f_dofs.data[3] = 3;
+   args.mgr.level[0].f_dofs.data[4] = 4;
+   args.mgr.level[0].f_dofs.data[5] = 5;
+   args.mgr.level[0].f_relaxation.type = MGR_FRLX_TYPE_NESTED_MGR;
+   args.mgr.level[0].f_relaxation.mgr = (MGR_args *)malloc(sizeof(MGR_args));
+   ASSERT_NOT_NULL(args.mgr.level[0].f_relaxation.mgr);
+   hypredrv_MGRSetDefaultArgs(args.mgr.level[0].f_relaxation.mgr);
+
+   MGR_args *inner = args.mgr.level[0].f_relaxation.mgr;
+   inner->num_levels = 2; /* one inner level + coarsest */
+   inner->level[0].f_dofs.size    = 3;
+   inner->level[0].f_dofs.data[0] = 0;
+   inner->level[0].f_dofs.data[1] = 1;
+   inner->level[0].f_dofs.data[2] = 2;
+   inner->level[0].g_relaxation.type = -1;
+   inner->level[0].f_relaxation.type = 7;
+
+   IntArray *dofmap = NULL;
+   const int map[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 8, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+
+   HYPRE_IJMatrix mat = NULL;
+   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 7, 0, 7, &mat);
+   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
+   HYPRE_IJMatrixInitialize(mat);
+   for (int row = 0; row < 8; row++)
+   {
+      HYPRE_Int    ncols = 1;
+      HYPRE_BigInt irow  = row;
+      HYPRE_BigInt col   = row;
+      HYPRE_Real   val   = 1.0;
+      HYPRE_IJMatrixSetValues(mat, 1, &ncols, &irow, &col, &val);
+   }
+   HYPRE_IJMatrixAssemble(mat);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_MGR, precon, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_NULL(precon);
+
+   HYPRE_IJMatrixDestroy(mat);
+   hypredrv_IntArrayDestroy(&dofmap);
+   hypredrv_MGRDestroyNestedSolverArgs(&args.mgr);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_PreconDestroy_mgr_csolver_destroy_branches(void)
 {
    TEST_HYPRE_INIT();
@@ -5391,6 +5464,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconDestroy_mgr_coarsest_use_krylov_without_krylov_ptr);
 #endif
    RUN_TEST(test_PreconSetup_mgr_frelax_nested_mgr_dof_labels);
+   RUN_TEST(test_PreconSetup_mgr_frelax_nested_mgr_body_split_labels);
    RUN_TEST(test_PreconDestroy_mgr_csolver_destroy_branches);
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_PreconDestroy_mgr_frelax_amg_type2);
