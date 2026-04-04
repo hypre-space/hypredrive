@@ -1329,6 +1329,25 @@ HYPREDRV_InputArgsGetNumPreconVariants(HYPREDRV_t hypredrv, int *num_variants)
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
+#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+static void
+LogMGRCachedHandles(HYPREDRV_t hypredrv, const MGR_args *mgr, const char *msg)
+{
+   int num_frelax = 0;
+   int num_grelax = 0;
+   int num_coarse = 0;
+   hypredrv_MGRCountCachedSolvers(mgr, &num_frelax, &num_grelax, &num_coarse);
+   if (num_frelax || num_grelax || num_coarse)
+   {
+      HYPREDRV_LOG_OBJECTF(2, hypredrv, "%s: coarse=%d frelax=%d grelax=%d",
+                           msg, num_coarse, num_frelax, num_grelax);
+   }
+}
+#endif
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
 uint32_t
 HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
 {
@@ -1394,19 +1413,8 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
 #if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
       if (!had_precon && current_method == PRECON_MGR)
       {
-         int num_frelax = 0;
-         int num_grelax = 0;
-         int num_coarse = 0;
-         hypredrv_MGRCountCachedSolvers(&hypredrv->iargs->precon.mgr, &num_frelax,
-                                        &num_grelax, &num_coarse);
-         if (num_frelax || num_grelax || num_coarse)
-         {
-            HYPREDRV_LOG_OBJECTF(
-               2, hypredrv,
-               "discarding cached MGR handles before switching preconditioner variant: "
-               "coarse=%d frelax=%d grelax=%d",
-               num_coarse, num_frelax, num_grelax);
-         }
+         LogMGRCachedHandles(hypredrv, &hypredrv->iargs->precon.mgr,
+                             "discarding cached MGR handles before switching preconditioner variant");
       }
 #endif
       if (!had_precon)
@@ -1523,19 +1531,8 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
 #if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
       if (current_method == PRECON_MGR)
       {
-         int num_frelax = 0;
-         int num_grelax = 0;
-         int num_coarse = 0;
-         hypredrv_MGRCountCachedSolvers(&hypredrv->iargs->precon.mgr, &num_frelax,
-                                        &num_grelax, &num_coarse);
-         if (num_frelax || num_grelax || num_coarse)
-         {
-            HYPREDRV_LOG_OBJECTF(
-               2, hypredrv,
-               "discarding cached MGR handles before applying preconditioner preset: "
-               "coarse=%d frelax=%d grelax=%d",
-               num_coarse, num_frelax, num_grelax);
-         }
+         LogMGRCachedHandles(hypredrv, &hypredrv->iargs->precon.mgr,
+                             "discarding cached MGR handles before applying preconditioner preset");
       }
 #endif
       hypredrv_PreconArgsDestroyRuntimeState(current_method, &hypredrv->iargs->precon);
@@ -2438,18 +2435,8 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
 #if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
       if (hypredrv->iargs->precon_method == PRECON_MGR)
       {
-         int num_frelax = 0;
-         int num_grelax = 0;
-         int num_coarse = 0;
-         hypredrv_MGRCountCachedSolvers(&hypredrv->iargs->precon.mgr, &num_frelax,
-                                        &num_grelax, &num_coarse);
-         if (num_frelax || num_grelax || num_coarse)
-         {
-            HYPREDRV_LOG_OBJECTF(
-               2, hypredrv,
-               "cached MGR handles before create: coarse=%d frelax=%d grelax=%d",
-               num_coarse, num_frelax, num_grelax);
-         }
+         LogMGRCachedHandles(hypredrv, &hypredrv->iargs->precon.mgr,
+                             "cached MGR handles before create");
       }
 #endif
       hypredrv_PreconCreate(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,

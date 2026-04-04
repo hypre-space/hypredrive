@@ -7,7 +7,6 @@
 
 #include "internal/mgr.h"
 #include <mpi.h>
-#include <stdarg.h>
 /* gcovr: branch-exclusion regions below narrow branch-count noise from YAML
  * helpers and MGR validation/dispatch; single-line exclusions flag allocator
  * and defensive branches that are impractical to fault-inject here. */
@@ -860,7 +859,8 @@ MGRComponentReuseRuntimeSupported(void)
 
 static void
 MGRComponentReuseLogWarning(MGRComponentReuse_args *reuse, int *warned_flag,
-                            const Stats *stats, int next_ls_id, const char *fmt, ...)
+                            const Stats *stats, int next_ls_id,
+                            const char *label, const char *detail)
 {
    if (!reuse || !warned_flag || *warned_flag)
    {
@@ -868,18 +868,8 @@ MGRComponentReuseLogWarning(MGRComponentReuse_args *reuse, int *warned_flag,
    }
 
    *warned_flag = 1;
-   if (!hypredrv_LogEnabled(2))
-   {
-      return;
-   }
-
-   int     mypid = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
-   char    message[256];
-   va_list ap;
-   va_start(ap, fmt);
-   vsnprintf(message, sizeof(message), fmt, ap);
-   va_end(ap);
-   HYPREDRV_LOGF(2, mypid, MGRLogObjectName(stats), next_ls_id, "%s", message);
+   HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
+                      "%s %s", label, detail);
 }
 /* GCOVR_EXCL_BR_STOP */
 
@@ -2534,10 +2524,10 @@ MGRHasNestedFRelaxWrapper(const MGR_args *args)
       return 0;
    }
 
-   int max_levels = (args->num_levels > 0) ? (args->num_levels - 1) : 0;
-   for (int i = 0; i < max_levels; i++)
+   for (int active_lvl = 0; active_lvl < args->num_active_levels; active_lvl++)
    {
-      if (args->level[i].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
+      int orig_lvl = args->active_level_map[active_lvl];
+      if (args->level[orig_lvl].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
       {
          return 1;
       }
@@ -2864,7 +2854,8 @@ MGRRefreshCoarseSolver(MGR_args *args, HYPRE_Solver mgr_solver)
 }
 
 int
-hypredrv_MGRComponentReuseShouldKeepOuter(MGR_args *args, const IntArray *timestep_starts,
+hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *args,
+                                          const IntArray *timestep_starts,
                                           const Stats *stats, int next_ls_id)
 {
    if (!args || !MGRComponentReuseRuntimeSupported() ||
@@ -2904,7 +2895,8 @@ hypredrv_MGRComponentReuseShouldKeepOuter(MGR_args *args, const IntArray *timest
 }
 
 int
-hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next_ls_id)
+hypredrv_MGRComponentReuseSetupMode(const MGR_args *args, const Stats *stats,
+                                    int next_ls_id)
 {
    if (!args)
    {
@@ -2936,10 +2928,8 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
             MGRComponentReuseLogWarning(
                &args->level[orig_lvl].f_relaxation.reuse,
                &args->level[orig_lvl].f_relaxation.reuse.warned_runtime_unsupported,
-               stats, next_ls_id,
-               "%s is ignored unless hypredrive is built with "
-               "HYPREDRV_ENABLE_EXPERIMENTAL",
-               label);
+               stats, next_ls_id, label,
+               "is ignored unless hypredrive is built with HYPREDRV_ENABLE_EXPERIMENTAL");
          }
          if (args->level[orig_lvl].g_relaxation.reuse.present)
          {
@@ -2947,10 +2937,8 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
             MGRComponentReuseLogWarning(
                &args->level[orig_lvl].g_relaxation.reuse,
                &args->level[orig_lvl].g_relaxation.reuse.warned_runtime_unsupported,
-               stats, next_ls_id,
-               "%s is ignored unless hypredrive is built with "
-               "HYPREDRV_ENABLE_EXPERIMENTAL",
-               label);
+               stats, next_ls_id, label,
+               "is ignored unless hypredrive is built with HYPREDRV_ENABLE_EXPERIMENTAL");
          }
       }
       if (args->coarsest_level.reuse.present)
@@ -2958,8 +2946,8 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          MGRComponentReuseLogWarning(
             &args->coarsest_level.reuse,
             &args->coarsest_level.reuse.warned_runtime_unsupported, stats, next_ls_id,
-            "%s is ignored unless hypredrive is built with HYPREDRV_ENABLE_EXPERIMENTAL",
-            "coarsest_level.reuse");
+            "coarsest_level.reuse",
+            "is ignored unless hypredrive is built with HYPREDRV_ENABLE_EXPERIMENTAL");
       }
       return 0;
    }
@@ -2976,10 +2964,9 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
             MGRComponentReuseLogWarning(
                &args->level[orig_lvl].f_relaxation.reuse,
                &args->level[orig_lvl].f_relaxation.reuse.warned_type_unsupported, stats,
-               next_ls_id,
-               "%s is ignored because the current MGR configuration includes "
-               "solver handles that cannot be safely refreshed yet",
-               label);
+               next_ls_id, label,
+               "is ignored because the current MGR configuration includes "
+               "solver handles that cannot be safely refreshed yet");
          }
          if (args->level[orig_lvl].g_relaxation.reuse.present)
          {
@@ -2987,10 +2974,9 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
             MGRComponentReuseLogWarning(
                &args->level[orig_lvl].g_relaxation.reuse,
                &args->level[orig_lvl].g_relaxation.reuse.warned_type_unsupported, stats,
-               next_ls_id,
-               "%s is ignored because the current MGR configuration includes "
-               "solver handles that cannot be safely refreshed yet",
-               label);
+               next_ls_id, label,
+               "is ignored because the current MGR configuration includes "
+               "solver handles that cannot be safely refreshed yet");
          }
       }
       if (args->coarsest_level.reuse.present)
@@ -2998,9 +2984,9 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          MGRComponentReuseLogWarning(
             &args->coarsest_level.reuse,
             &args->coarsest_level.reuse.warned_type_unsupported, stats, next_ls_id,
-            "%s is ignored because the current MGR configuration includes solver handles "
-            "that cannot be safely refreshed yet",
-            "coarsest_level.reuse");
+            "coarsest_level.reuse",
+            "is ignored because the current MGR configuration includes solver handles "
+            "that cannot be safely refreshed yet");
       }
       return 0;
    }
@@ -3016,10 +3002,9 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          if (f_reuse->args.policy != PRECON_REUSE_POLICY_STATIC)
          {
             MGRComponentReuseLogWarning(
-               f_reuse, &f_reuse->warned_policy_unsupported, stats, next_ls_id,
-               "%s accepts adaptive reuse syntax, but only static/scheduled component "
-               "reuse is supported today",
-               label);
+               f_reuse, &f_reuse->warned_policy_unsupported, stats, next_ls_id, label,
+               "accepts adaptive reuse syntax, but only static/scheduled component "
+               "reuse is supported today");
          }
          else if (MGRFRelaxUsesManagedHandle(&args->level[orig_lvl].f_relaxation))
          {
@@ -3028,10 +3013,9 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          else
          {
             MGRComponentReuseLogWarning(
-               f_reuse, &f_reuse->warned_type_unsupported, stats, next_ls_id,
-               "%s is ignored because this F-relaxation type does not expose a reusable "
-               "hypredrive-managed handle",
-               label);
+               f_reuse, &f_reuse->warned_type_unsupported, stats, next_ls_id, label,
+               "is ignored because this F-relaxation type does not expose a reusable "
+               "hypredrive-managed handle");
          }
       }
 
@@ -3042,10 +3026,9 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          if (g_reuse->args.policy != PRECON_REUSE_POLICY_STATIC)
          {
             MGRComponentReuseLogWarning(
-               g_reuse, &g_reuse->warned_policy_unsupported, stats, next_ls_id,
-               "%s accepts adaptive reuse syntax, but only static/scheduled component "
-               "reuse is supported today",
-               label);
+               g_reuse, &g_reuse->warned_policy_unsupported, stats, next_ls_id, label,
+               "accepts adaptive reuse syntax, but only static/scheduled component "
+               "reuse is supported today");
          }
          else if (MGRGRelaxUsesManagedHandle(&args->level[orig_lvl].g_relaxation))
          {
@@ -3054,10 +3037,9 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          else
          {
             MGRComponentReuseLogWarning(
-               g_reuse, &g_reuse->warned_type_unsupported, stats, next_ls_id,
-               "%s is ignored because this global smoother does not expose a reusable "
-               "hypredrive-managed handle",
-               label);
+               g_reuse, &g_reuse->warned_type_unsupported, stats, next_ls_id, label,
+               "is ignored because this global smoother does not expose a reusable "
+               "hypredrive-managed handle");
          }
       }
    }
@@ -3069,9 +3051,9 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          MGRComponentReuseLogWarning(
             &args->coarsest_level.reuse,
             &args->coarsest_level.reuse.warned_policy_unsupported, stats, next_ls_id,
-            "%s accepts adaptive reuse syntax, but only static/scheduled component reuse "
-            "is supported today",
-            "coarsest_level.reuse");
+            "coarsest_level.reuse",
+            "accepts adaptive reuse syntax, but only static/scheduled component reuse "
+            "is supported today");
       }
       else if (MGRCoarseUsesManagedHandle(&args->coarsest_level))
       {
@@ -3082,9 +3064,9 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          MGRComponentReuseLogWarning(
             &args->coarsest_level.reuse,
             &args->coarsest_level.reuse.warned_type_unsupported, stats, next_ls_id,
-            "%s is ignored because this coarsest solver does not expose a reusable "
-            "hypredrive-managed handle",
-            "coarsest_level.reuse");
+            "coarsest_level.reuse",
+            "is ignored because this coarsest solver does not expose a reusable "
+            "hypredrive-managed handle");
       }
    }
 
