@@ -238,6 +238,41 @@ test_HYPREDRV_PreconPresetRegister_public(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * test_HYPREDRV_SolverPresetRegister_public
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_HYPREDRV_SolverPresetRegister_public(void)
+{
+   HYPREDRV_Initialize();
+
+   uint32_t err = HYPREDRV_SolverPresetRegister(
+      "public_solver_preset",
+      "fgmres:\n"
+      "  max_iter: 17\n"
+      "  krylov_dim: 23\n"
+      "  print_level: 0",
+      "Public solver preset");
+   ASSERT_EQ((int)err, 0);
+
+   const hypredrv_Preset *p =
+      hypredrv_PresetFindTyped("public_solver_preset", HYPREDRV_PRESET_SOLVER);
+   ASSERT_NOT_NULL(p);
+   ASSERT_STREQ(p->help, "Public solver preset");
+
+   err = HYPREDRV_SolverPresetRegister("gmres", "gmres:\n  max_iter: 1", "conflict");
+   ASSERT_NE((int)err, 0);
+
+   err = HYPREDRV_SolverPresetRegister(NULL, "gmres:\n  max_iter: 1", "help");
+   ASSERT_NE((int)err, 0);
+
+   HYPREDRV_Finalize();
+
+   ASSERT_NULL(
+      hypredrv_PresetFindTyped("public_solver_preset", HYPREDRV_PRESET_SOLVER));
+}
+
+/*-----------------------------------------------------------------------------
  * Main test runner
  *-----------------------------------------------------------------------------*/
 
@@ -255,6 +290,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PresetHelp_includes_user_preset);
    RUN_TEST(test_PresetFreeUserPresets_idempotent);
    RUN_TEST(test_HYPREDRV_PreconPresetRegister_public);
+   RUN_TEST(test_HYPREDRV_SolverPresetRegister_public);
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();

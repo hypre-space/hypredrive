@@ -27,9 +27,9 @@ static const char preset_elasticity_3d[] = "amg:\n"
                                            "    strong_th: 0.8";
 
 static const hypredrv_Preset g_presets[] = {
-   HYPREDRV_PRESET(poisson, "BoomerAMG for poisson"),
-   HYPREDRV_PRESET(elasticity_2d, "BoomerAMG for 2D elasticity"),
-   HYPREDRV_PRESET(elasticity_3d, "BoomerAMG for 3D elasticity"),
+   HYPREDRV_PRESET(poisson, HYPREDRV_PRESET_PRECON, "BoomerAMG for poisson"),
+   HYPREDRV_PRESET(elasticity_2d, HYPREDRV_PRESET_PRECON, "BoomerAMG for 2D elasticity"),
+   HYPREDRV_PRESET(elasticity_3d, HYPREDRV_PRESET_PRECON, "BoomerAMG for 3D elasticity"),
 };
 
 /* Dynamic user-registered presets */
@@ -54,6 +54,20 @@ normalize_preset_name(char *s)
    }
 }
 
+static const char *
+PresetKindHeader(hypredrv_PresetKind kind)
+{
+   switch (kind)
+   {
+      case HYPREDRV_PRESET_PRECON:
+         return "Available preconditioner presets:\n";
+      case HYPREDRV_PRESET_SOLVER:
+         return "Available solver presets:\n";
+      default:
+         return "Available presets:\n";
+   }
+}
+
 /*-----------------------------------------------------------------------------
  * Count number of pre-defined preconditioner variants (presets).
  *-----------------------------------------------------------------------------*/
@@ -70,6 +84,13 @@ hypredrv_PresetCount(void)
 
 int
 hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *help)
+{
+   return hypredrv_PresetRegisterTyped(name, yaml_text, help, HYPREDRV_PRESET_PRECON);
+}
+
+int
+hypredrv_PresetRegisterTyped(const char *name, const char *yaml_text, const char *help,
+                             hypredrv_PresetKind kind)
 {
    if (!name || !*name || !yaml_text || !*yaml_text)
    {
@@ -143,6 +164,7 @@ hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *hel
    g_user_presets[g_num_user_presets].name = norm;
    g_user_presets[g_num_user_presets].text = dup_text;
    g_user_presets[g_num_user_presets].help = dup_help;
+   g_user_presets[g_num_user_presets].kind = kind;
    g_num_user_presets++;
 
    return 0;
@@ -174,12 +196,22 @@ hypredrv_PresetFreeUserPresets(void)
 char *
 hypredrv_PresetHelp(void)
 {
+   return hypredrv_PresetHelpTyped(HYPREDRV_PRESET_PRECON);
+}
+
+char *
+hypredrv_PresetHelpTyped(hypredrv_PresetKind kind)
+{
    const size_t nb     = sizeof(g_presets) / sizeof(g_presets[0]);
-   const char  *header = "Available preconditioner presets:\n";
+   const char  *header = PresetKindHeader(kind);
 
    size_t bytes = strlen(header) + 1;
    for (size_t i = 0; i < nb; i++)
    {
+      if (g_presets[i].kind != kind)
+      {
+         continue;
+      }
       const char *pname = g_presets[i].name ? g_presets[i].name : "";
       const char *phelp = g_presets[i].help ? g_presets[i].help : "";
       bytes +=
@@ -187,6 +219,10 @@ hypredrv_PresetHelp(void)
    }
    for (size_t i = 0; i < g_num_user_presets; i++)
    {
+      if (g_user_presets[i].kind != kind)
+      {
+         continue;
+      }
       const char *pname = g_user_presets[i].name ? g_user_presets[i].name : "";
       const char *phelp = g_user_presets[i].help ? g_user_presets[i].help : "";
       bytes +=
@@ -203,6 +239,10 @@ hypredrv_PresetHelp(void)
    (void)strcat(out, header);
    for (size_t i = 0; i < nb; i++)
    {
+      if (g_presets[i].kind != kind)
+      {
+         continue;
+      }
       char line[1024];
       (void)snprintf(line, sizeof(line), "    - %s: %s\n", g_presets[i].name,
                      g_presets[i].help);
@@ -210,6 +250,10 @@ hypredrv_PresetHelp(void)
    }
    for (size_t i = 0; i < g_num_user_presets; i++)
    {
+      if (g_user_presets[i].kind != kind)
+      {
+         continue;
+      }
       char line[1024];
       (void)snprintf(line, sizeof(line), "    - %s: %s\n", g_user_presets[i].name,
                      g_user_presets[i].help);
@@ -224,6 +268,12 @@ hypredrv_PresetHelp(void)
 
 const hypredrv_Preset *
 hypredrv_PresetFind(const char *name)
+{
+   return hypredrv_PresetFindTyped(name, HYPREDRV_PRESET_ANY);
+}
+
+const hypredrv_Preset *
+hypredrv_PresetFindTyped(const char *name, hypredrv_PresetKind kind)
 {
    if (!name)
    {
@@ -249,6 +299,10 @@ hypredrv_PresetFind(const char *name)
    const hypredrv_Preset *match = NULL;
    for (size_t i = 0; i < (sizeof(g_presets) / sizeof(g_presets[0])); i++)
    {
+      if (kind >= 0 && g_presets[i].kind != kind)
+      {
+         continue;
+      }
       if (!strcmp(lower, g_presets[i].name))
       {
          match = &g_presets[i];
@@ -260,6 +314,10 @@ hypredrv_PresetFind(const char *name)
    {
       for (size_t i = 0; i < g_num_user_presets; i++)
       {
+         if (kind >= 0 && g_user_presets[i].kind != kind)
+         {
+            continue;
+         }
          if (!strcmp(lower, g_user_presets[i].name))
          {
             match = &g_user_presets[i];

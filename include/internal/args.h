@@ -71,5 +71,6 @@ void hypredrv_InputArgsParse(MPI_Comm, bool, int, char **, input_args **);
 void hypredrv_InputArgsParseWithObjectName(MPI_Comm, bool, int, char **, input_args **,
                                            const char *);
 void hypredrv_InputArgsApplyPreconPreset(input_args *, const char *, int);
+void hypredrv_InputArgsApplySolverPreset(input_args *, const char *);
 
 #endif /* ARGS_HEADER */

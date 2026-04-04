@@ -1523,25 +1523,53 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
       hypredrv_InputArgsCreate(hypredrv->lib_mode, &hypredrv->iargs);
    }
 
-   /* Validate solver name */
-   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(),
-                                                 preset))
+   if (hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(),
+                                                preset))
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "Unknown solver preset: '%s'. Valid options: pcg, gmres, fgmres, bicgstab",
-         preset);
+      DestroyActiveSolver(hypredrv);
+      hypredrv->iargs->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
+         hypredrv_SolverGetValidTypeIntMap(), preset);
+      hypredrv_SolverArgsSetDefaultsForMethod(hypredrv->iargs->solver_method,
+                                              &hypredrv->iargs->solver);
       return hypredrv_ErrorCodeGet();
    }
 
-   /* Destroy existing solver if any */
+   hypredrv_InputArgsApplySolverPreset(hypredrv->iargs, preset);
+   if (hypredrv_ErrorCodeGet())
+   {
+      return hypredrv_ErrorCodeGet();
+   }
+
    DestroyActiveSolver(hypredrv);
 
-   /* Set solver method and defaults */
-   hypredrv->iargs->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
-      hypredrv_SolverGetValidTypeIntMap(), preset);
-   hypredrv_SolverArgsSetDefaultsForMethod(hypredrv->iargs->solver_method,
-                                           &hypredrv->iargs->solver);
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_SolverPresetRegister(const char *name, const char *yaml_text, const char *help)
+{
+   if (!name || !yaml_text)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_SolverPresetRegister: name and yaml_text must be non-NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(),
+                                                name))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_SolverPresetRegister: preset '%s' conflicts with built-in solver",
+         name);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   hypredrv_PresetRegisterTyped(name, yaml_text, help, HYPREDRV_PRESET_SOLVER);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1560,7 +1588,7 @@ HYPREDRV_PreconPresetRegister(const char *name, const char *yaml_text, const cha
       return hypredrv_ErrorCodeGet();
    }
 
-   hypredrv_PresetRegister(name, yaml_text, help);
+   hypredrv_PresetRegisterTyped(name, yaml_text, help, HYPREDRV_PRESET_PRECON);
 
    return hypredrv_ErrorCodeGet();
 }

@@ -453,13 +453,14 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
       /* GCOVR_EXCL_BR_STOP */
    }
 
-   const hypredrv_Preset *preset = hypredrv_PresetFind(preset_name);
+   const hypredrv_Preset *preset =
+      hypredrv_PresetFindTyped(preset_name, HYPREDRV_PRESET_PRECON);
    if (!preset)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Unknown preconditioner preset: '%s'",
                            preset_name ? preset_name : "");
-      char *help = hypredrv_PresetHelp();
+      char *help = hypredrv_PresetHelpTyped(HYPREDRV_PRESET_PRECON);
       if (help)
       {
          hypredrv_ErrorMsgAdd("%s", help);
@@ -513,6 +514,106 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
 
    hypredrv_YAMLtreeDestroy(&preset_tree);
    return;
+}
+
+static void
+SolverParseWrapped(solver_args *dst, solver_t method, const YAMLnode *solver_parent,
+                   const char *type_key, int type_level, YAMLnode *type_children)
+{
+   hypredrv_SolverArgsSetDefaultsForMethod(method, dst);
+
+   YAMLnode fake_type = {0};
+   fake_type.key      = strdup(type_key ? type_key : "");
+   fake_type.val      = strdup("");
+   fake_type.level    = type_level;
+   fake_type.valid    = YAML_NODE_VALID;
+   fake_type.children = type_children;
+   fake_type.next     = NULL;
+
+   YAMLnode fake_parent = {0};
+   fake_parent.key      = "solver";
+   fake_parent.val      = "";
+   fake_parent.level    = solver_parent ? solver_parent->level : 0;
+   fake_parent.valid    = YAML_NODE_VALID;
+   fake_parent.children = &fake_type;
+   fake_parent.next     = NULL;
+
+   hypredrv_SolverSetArgsFromYAML(dst, &fake_parent);
+
+   free(fake_type.mapped_val);
+   fake_type.mapped_val = NULL;
+   free(fake_type.key);
+   fake_type.key = NULL;
+   free(fake_type.val);
+   fake_type.val = NULL;
+   free(fake_parent.mapped_val);
+   fake_parent.mapped_val = NULL;
+}
+
+static void
+SolverPresetBuildArgs(const char *preset_name, solver_t *method_out,
+                      solver_args *args_out)
+{
+   if (!method_out || !args_out)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Preset output arguments must be non-NULL");
+      return;
+   }
+
+   const hypredrv_Preset *preset =
+      hypredrv_PresetFindTyped(preset_name, HYPREDRV_PRESET_SOLVER);
+   if (!preset)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Unknown solver preset: '%s'", preset_name ? preset_name : "");
+      char *help = hypredrv_PresetHelpTyped(HYPREDRV_PRESET_SOLVER);
+      if (help)
+      {
+         hypredrv_ErrorMsgAdd("%s", help);
+         free(help);
+      }
+      return;
+   }
+
+   char *text = strdup(preset->text);
+   if (!text)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate preset YAML text");
+      return;
+   }
+
+   YAMLtree *preset_tree = NULL;
+   hypredrv_YAMLtreeBuild(2, text, &preset_tree);
+   free(text);
+
+   if (!preset_tree || !preset_tree->root || !preset_tree->root->children ||
+       preset_tree->root->children->next)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Preset '%s' must expand to a single solver type",
+                           preset->name);
+      hypredrv_YAMLtreeDestroy(&preset_tree);
+      return;
+   }
+
+   YAMLnode *type_node = preset_tree->root->children;
+   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(),
+                                                 type_node->key))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+      hypredrv_ErrorMsgAdd("Unknown solver type: '%s'", type_node->key);
+      hypredrv_YAMLtreeDestroy(&preset_tree);
+      return;
+   }
+
+   *method_out = (solver_t)hypredrv_StrIntMapArrayGetImage(
+      hypredrv_SolverGetValidTypeIntMap(), type_node->key);
+   SolverParseWrapped(args_out, *method_out, preset_tree->root, type_node->key,
+                      type_node->level, type_node->children);
+
+   hypredrv_YAMLtreeDestroy(&preset_tree);
 }
 
 typedef enum
@@ -1041,6 +1142,29 @@ hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset,
    iargs->precon                       = args;
 
    return;
+}
+
+void
+hypredrv_InputArgsApplySolverPreset(input_args *iargs, const char *preset)
+{
+   solver_t    method = SOLVER_PCG;
+   solver_args args;
+
+   if (!iargs || !preset)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Input args and preset name must be non-NULL");
+      return;
+   }
+
+   SolverPresetBuildArgs(preset, &method, &args);
+   if (hypredrv_ErrorCodeGet())
+   {
+      return;
+   }
+
+   iargs->solver_method = method;
+   iargs->solver        = args;
 }
 
 /*-----------------------------------------------------------------------------
