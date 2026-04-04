@@ -133,6 +133,7 @@ hypredrv_PreconArgsDestroyRuntimeState(precon_t method, precon_args *args)
    {
       case PRECON_MGR:
          hypredrv_MGRDestroyCachedSolvers(&args->mgr);
+         hypredrv_MGRForgetCachedSolvers(&args->mgr);
          break;
 
       case PRECON_BOOMERAMG:
@@ -141,6 +142,94 @@ hypredrv_PreconArgsDestroyRuntimeState(precon_t method, precon_args *args)
       case PRECON_NONE:
       default:
          break;
+   }
+}
+
+static int
+PreconHasConfiguredComponentReuse(precon_t method, const precon_args *args);
+
+static int
+NestedKrylovHasConfiguredComponentReuse(const NestedKrylov_args *args)
+{
+   if (!args || !args->has_precon)
+   {
+      return 0;
+   }
+
+   return PreconHasConfiguredComponentReuse(args->precon_method, &args->precon);
+}
+
+static int
+MGRHasConfiguredComponentReuse(const MGR_args *args)
+{
+   if (!args)
+   {
+      return 0;
+   }
+
+   if (args->coarsest_level.reuse.present)
+   {
+      return 1;
+   }
+
+   if (args->coarsest_level.use_krylov &&
+       NestedKrylovHasConfiguredComponentReuse(args->coarsest_level.krylov))
+   {
+      return 1;
+   }
+
+   int max_levels = (args->num_levels > 0) ? (args->num_levels - 1) : 0;
+   for (int i = 0; i < max_levels; i++)
+   {
+      const MGRlvl_args *level_args = &args->level[i];
+
+      if (level_args->f_relaxation.reuse.present ||
+          level_args->g_relaxation.reuse.present)
+      {
+         return 1;
+      }
+
+      if (level_args->f_relaxation.use_krylov &&
+          NestedKrylovHasConfiguredComponentReuse(level_args->f_relaxation.krylov))
+      {
+         return 1;
+      }
+
+      if (level_args->g_relaxation.use_krylov &&
+          NestedKrylovHasConfiguredComponentReuse(level_args->g_relaxation.krylov))
+      {
+         return 1;
+      }
+
+      if (level_args->f_relaxation.mgr &&
+          MGRHasConfiguredComponentReuse(level_args->f_relaxation.mgr))
+      {
+         return 1;
+      }
+   }
+
+   return 0;
+}
+
+static int
+PreconHasConfiguredComponentReuse(precon_t method, const precon_args *args)
+{
+   if (!args)
+   {
+      return 0;
+   }
+
+   switch (method)
+   {
+      case PRECON_MGR:
+         return MGRHasConfiguredComponentReuse(&args->mgr);
+
+      case PRECON_BOOMERAMG:
+      case PRECON_ILU:
+      case PRECON_FSAI:
+      case PRECON_NONE:
+      default:
+         return 0;
    }
 }
 
@@ -169,6 +258,11 @@ void
 hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
                       HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr)
 {
+   if (!PreconHasConfiguredComponentReuse(precon_method, args))
+   {
+      hypredrv_PreconArgsDestroyRuntimeState(precon_method, args);
+   }
+
    HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
    /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!precon)              /* GCOVR_EXCL_BR_STOP */

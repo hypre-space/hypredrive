@@ -3460,3 +3460,18 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args)
 
    MGRResetCachedSolverKeepFlags(args);
 }
+
+void
+hypredrv_MGRForgetCachedSolvers(MGR_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   args->csolver      = NULL;
+   args->csolver_type = -1;
+   memset(args->frelax, 0, sizeof(args->frelax));
+   memset(args->grelax, 0, sizeof(args->grelax));
+   MGRResetCachedSolverKeepFlags(args);
+}

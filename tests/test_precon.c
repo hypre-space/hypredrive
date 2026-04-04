@@ -3807,6 +3807,90 @@ test_PreconSetup_mgr_frelax_nested_mgr_body_split_labels(void)
 }
 
 static void
+test_PreconCreate_mgr_nested_krylov_inner_mgr_recreate_without_reuse(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(23100, 9)
+   return;
+#endif
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+
+   args.mgr.num_levels = 2;
+   args.mgr.level[0].f_dofs.size    = 6;
+   args.mgr.level[0].f_dofs.data[0] = 0;
+   args.mgr.level[0].f_dofs.data[1] = 1;
+   args.mgr.level[0].f_dofs.data[2] = 2;
+   args.mgr.level[0].f_dofs.data[3] = 3;
+   args.mgr.level[0].f_dofs.data[4] = 4;
+   args.mgr.level[0].f_dofs.data[5] = 5;
+   args.mgr.level[0].f_relaxation.use_krylov = 1;
+   args.mgr.level[0].f_relaxation.krylov =
+      (NestedKrylov_args *)malloc(sizeof(NestedKrylov_args));
+   ASSERT_NOT_NULL(args.mgr.level[0].f_relaxation.krylov);
+   hypredrv_NestedKrylovSetDefaultArgs(args.mgr.level[0].f_relaxation.krylov);
+
+   NestedKrylov_args *nested = args.mgr.level[0].f_relaxation.krylov;
+   nested->is_set            = 1;
+   nested->solver_method     = SOLVER_FGMRES;
+   hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_FGMRES, &nested->solver);
+   nested->solver.fgmres.max_iter   = 1;
+   nested->solver.fgmres.krylov_dim = 1;
+   nested->has_precon               = 1;
+   nested->precon_method            = PRECON_MGR;
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &nested->precon);
+
+   MGR_args *inner = &nested->precon.mgr;
+   inner->num_levels = 2;
+   inner->level[0].f_dofs.size    = 3;
+   inner->level[0].f_dofs.data[0] = 0;
+   inner->level[0].f_dofs.data[1] = 1;
+   inner->level[0].f_dofs.data[2] = 2;
+   inner->level[0].f_relaxation.type = 2;
+   inner->level[0].f_relaxation.amg.max_iter = 1;
+   inner->level[0].g_relaxation.type = -1;
+   inner->coarsest_level.type = 0;
+   inner->coarsest_level.amg.max_iter = 1;
+
+   args.mgr.coarsest_level.type = 0;
+   args.mgr.coarsest_level.amg.max_iter = 1;
+
+   IntArray *dofmap = NULL;
+   const int map[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 8, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   ASSERT_NOT_NULL(inner->frelax[0]);
+   ASSERT_NOT_NULL(inner->csolver);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NULL(precon);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NULL(precon);
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   hypredrv_MGRDestroyNestedSolverArgs(&args.mgr);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_PreconDestroy_mgr_csolver_destroy_branches(void)
 {
    TEST_HYPRE_INIT();
@@ -5465,6 +5549,7 @@ main(int argc, char **argv)
 #endif
    RUN_TEST(test_PreconSetup_mgr_frelax_nested_mgr_dof_labels);
    RUN_TEST(test_PreconSetup_mgr_frelax_nested_mgr_body_split_labels);
+   RUN_TEST(test_PreconCreate_mgr_nested_krylov_inner_mgr_recreate_without_reuse);
    RUN_TEST(test_PreconDestroy_mgr_csolver_destroy_branches);
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_PreconDestroy_mgr_frelax_amg_type2);

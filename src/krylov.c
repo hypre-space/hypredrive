@@ -628,4 +628,10 @@ hypredrv_NestedKrylovDestroy(NestedKrylov_args *args)
       hypredrv_PreconDestroy(args->precon_method, &args->precon, &args->precon_obj);
       args->precon_obj = NULL;
    }
+
+   /* Nested Krylov preconditioners do not have an outer HYPREDRV object driving
+    * reuse policy. Once the nested preconditioner object is destroyed, clear any
+    * method-specific runtime state so subsequent creates start from a clean
+    * configuration unless the caller explicitly keeps the nested object alive. */
+   hypredrv_PreconArgsDestroyRuntimeState(args->precon_method, &args->precon);
 }
