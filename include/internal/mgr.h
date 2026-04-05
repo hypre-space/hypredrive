@@ -10,6 +10,7 @@
 
 #include "internal/amg.h"
 #include "internal/containers.h"
+#include "internal/fsai.h"
 #include "internal/ilu.h"
 #include "internal/precon_reuse.h"
 #include "internal/utils.h"
@@ -49,8 +50,9 @@ typedef struct MGRcls_args_struct
     * Note: anonymous union is a GNU C extension. */
    union
    {
-      AMG_args amg;
-      ILU_args ilu;
+      AMG_args  amg;
+      ILU_args  ilu;
+      FSAI_args fsai;
    };
 } MGRcls_args;
 
@@ -71,8 +73,9 @@ typedef struct MGRfrlx_args_struct
    /* Only one fine-relaxation solver is active at a time. */
    union
    {
-      AMG_args amg;
-      ILU_args ilu;
+      AMG_args  amg;
+      ILU_args  ilu;
+      FSAI_args fsai;
    };
 } MGRfrlx_args;
 
@@ -92,8 +95,9 @@ typedef struct MGRgrlx_args_struct
    /* Only one global-relaxation solver is active at a time. */
    union
    {
-      AMG_args amg;
-      ILU_args ilu;
+      AMG_args  amg;
+      ILU_args  ilu;
+      FSAI_args fsai;
    };
 } MGRgrlx_args;
 

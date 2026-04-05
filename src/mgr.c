@@ -25,6 +25,7 @@ typedef struct MGRFRelaxWrapper_struct
    HYPRE_Int (*setup)(void *, void *, void *, void *);
    HYPRE_Int (*solve)(void *, void *, void *, void *);
    HYPRE_Int (*destroy)(void *);
+   HYPRE_Int                       is_setup;  /* offset 24: mirrors hypre_Solver layout */
    HYPRE_Solver                    inner_mgr;
    IntArray                       *owned_dofmap;
    struct MGRFRelaxWrapper_struct *next_live;
@@ -77,6 +78,7 @@ MGRFRelaxWrapperSetup(void *wrapper_v, void *A, void *b, void *x)
    {
       return 1;
    }
+   wrapper->is_setup = 1;
    return 0;
 }
 
@@ -299,32 +301,38 @@ MGRlvlFDofsSet(void *field, const YAMLnode *node)
 /* GCOVR_EXCL_BR_STOP */
 
 /* Generate type-setting wrappers for union fields */
-DEFINE_TYPED_SETTER(MGRclsAMGSetArgs, MGRcls_args, amg, 0, hypredrv_AMGSetArgs)
-DEFINE_TYPED_SETTER(MGRclsILUSetArgs, MGRcls_args, ilu, 32, hypredrv_ILUSetArgs)
-DEFINE_TYPED_SETTER(MGRfrlxAMGSetArgs, MGRfrlx_args, amg, 2, hypredrv_AMGSetArgs)
-DEFINE_TYPED_SETTER(MGRfrlxILUSetArgs, MGRfrlx_args, ilu, 32, hypredrv_ILUSetArgs)
-DEFINE_TYPED_SETTER(MGRgrlxAMGSetArgs, MGRgrlx_args, amg, 20, hypredrv_AMGSetArgs)
-DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, hypredrv_ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRclsAMGSetArgs,   MGRcls_args,  amg,  0,  hypredrv_AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRclsILUSetArgs,   MGRcls_args,  ilu,  32, hypredrv_ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRclsFSAISetArgs,  MGRcls_args,  fsai, 33, hypredrv_FSAISetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxAMGSetArgs,  MGRfrlx_args, amg,  2,  hypredrv_AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxILUSetArgs,  MGRfrlx_args, ilu,  32, hypredrv_ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxFSAISetArgs, MGRfrlx_args, fsai, 33, hypredrv_FSAISetArgs)
+DEFINE_TYPED_SETTER(MGRgrlxAMGSetArgs,  MGRgrlx_args, amg,  20, hypredrv_AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs,  MGRgrlx_args, ilu,  16, hypredrv_ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRgrlxFSAISetArgs, MGRgrlx_args, fsai, 33, hypredrv_FSAISetArgs)
 static void MGRfrlxMGRSetArgs(void *, const YAMLnode *);
 void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
 
-#define MGRcls_FIELDS(_prefix)                                     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRclsILUSetArgs)
+#define MGRcls_FIELDS(_prefix)                                      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg,  MGRclsAMGSetArgs)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu,  MGRclsILUSetArgs)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRclsFSAISetArgs)
 
 #define MGRfrlx_FIELDS(_prefix)                                          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRfrlxMGRSetArgs)               \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)               \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr,  MGRfrlxMGRSetArgs)              \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg,  MGRfrlxAMGSetArgs)              \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu,  MGRfrlxILUSetArgs)              \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRfrlxFSAISetArgs)
 
 #define MGRgrlx_FIELDS(_prefix)                                          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)               \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg,  MGRgrlxAMGSetArgs)              \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu,  MGRgrlxILUSetArgs)              \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRgrlxFSAISetArgs)
 
 #define MGRlvl_FIELDS(_prefix)                                                  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, MGRlvlFDofsSet)                      \
@@ -852,7 +860,7 @@ MGRComponentReuseDestroyArgs(MGRComponentReuse_args *reuse)
 static int
 MGRComponentReuseRuntimeSupported(void)
 {
-#if HYPREDRV_HAVE_EXPERIMENTAL && HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
    return 1;
 #else
    return 0;
@@ -1267,7 +1275,7 @@ hypredrv_MGRclsGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"def", -1}, {"amg", 0}, {"spdirect", 29}, {"ilu", 32}};
+      static StrIntMap map[] = {{"def", -1}, {"amg", 0}, {"spdirect", 29}, {"ilu", 32}, {"fsai", 33}};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1294,6 +1302,7 @@ hypredrv_MGRfrlxGetValidValues(const char *key)
          {"chebyshev", 16}, {"ilu", 32},
          {"ge", 9},         {"spdirect", 29},
          {"ge-piv", 99},    {"ge-inv", 199},
+         {"fsai", 33},
       };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
@@ -1318,7 +1327,7 @@ hypredrv_MGRgrlxGetValidValues(const char *key)
          {"mixed-gs", 2},  {"amg", 20},     {"h-fgs", 3},      {"h-bgs", 4},
          {"ch-gs", 5},     {"h-ssor", 6},   {"euclid", 8},     {"2stg-fgs", 11},
          {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},   {"ilu", 16},
-         {"l1-hsgs", 88},
+         {"spdirect", 29}, {"l1-hsgs", 88}, {"fsai", 33},
       };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
@@ -1990,7 +1999,9 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
       if (level_args->f_relaxation.use_krylov && level_args->f_relaxation.krylov)
       {
-         if (!level_args->f_relaxation.krylov->base_solver)
+         int krylov_was_cached =
+            (level_args->f_relaxation.krylov->base_solver != NULL);
+         if (!krylov_was_cached)
          {
             hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, level_args->f_relaxation.krylov,
                                         args->dofmap, args->vec_nn,
@@ -2033,6 +2044,10 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          }
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
          HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
+#elif HYPRE_CHECK_MIN_VERSION(21900, 0)
+         HYPRE_MGRSetFSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup,
+                             (HYPRE_Solver)frelax);
+         (void)i;
 #else
          (void)precon;
          (void)i;
@@ -2165,9 +2180,43 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
                                "reusing cached MGR F-relax solver handle at level %d",
                                (int)orig_lvl);
          }
-
          HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
          args->frelax[orig_lvl] = frelax;
+      }
+#endif
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+      else if (level_args->f_relaxation.type == 33)
+      {
+         frelax = args->frelax[orig_lvl];
+         if (!frelax)
+         {
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+            hypredrv_FSAICreate(&level_args->f_relaxation.fsai, &frelax);
+            if (!frelax || hypredrv_ErrorCodeActive())
+            {
+               return;
+            }
+#else
+            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+            hypredrv_ErrorMsgAdd("MGR F-relaxation 'fsai' requires hypre >= 2.25.0");
+            return;
+#endif
+         }
+         else
+         {
+            HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, NULL, 0,
+                               "reusing cached MGR F-relax solver handle at level %d",
+                               (int)orig_lvl);
+         }
+         HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
+         args->frelax[orig_lvl] = frelax;
+      }
+#else
+      else if (level_args->f_relaxation.type == 33)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR F-relaxation 'fsai' requires hypre >= 2.31.0");
+         return;
       }
 #endif
    }
@@ -2184,7 +2233,9 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
       if (level_args->g_relaxation.use_krylov && level_args->g_relaxation.krylov)
       {
-         if (!level_args->g_relaxation.krylov->base_solver)
+         int krylov_was_cached =
+            (level_args->g_relaxation.krylov->base_solver != NULL);
+         if (!krylov_was_cached)
          {
             hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, level_args->g_relaxation.krylov,
                                         args->dofmap, args->vec_nn,
@@ -2238,6 +2289,72 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          HYPRE_MGRSetGlobalSmootherAtLevel(precon, grelax, i);
          args->grelax[orig_lvl] = grelax;
       }
+#ifdef HYPRE_USING_DSUPERLU
+      /* GCOVR_EXCL_START */
+      else if (level_args->g_relaxation.type == 29)
+      {
+         grelax = args->grelax[orig_lvl];
+         if (!grelax)
+         {
+            HYPRE_MGRDirectSolverCreate(&grelax);
+            if (!grelax)
+            {
+               hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+               hypredrv_ErrorMsgAdd("MGR G-relaxation 'spdirect' unavailable: direct "
+                                    "solver creation failed");
+               return;
+            }
+         }
+         else
+         {
+            HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, NULL, 0,
+                               "reusing cached MGR G-relax solver handle at level %d",
+                               (int)orig_lvl);
+         }
+         HYPRE_MGRSetGlobalSmootherAtLevel(precon, grelax, i);
+         args->grelax[orig_lvl] = grelax;
+      }
+      /* GCOVR_EXCL_STOP */
+#else
+      /* GCOVR_EXCL_START */
+      else if (level_args->g_relaxation.type == 29)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR G-relaxation 'spdirect' requires hypre built with DSUPERLU");
+         return;
+      }
+      /* GCOVR_EXCL_STOP */
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+      else if (level_args->g_relaxation.type == 33)
+      {
+         grelax = args->grelax[orig_lvl];
+         if (!grelax)
+         {
+            hypredrv_FSAICreate(&level_args->g_relaxation.fsai, &grelax);
+            if (!grelax || hypredrv_ErrorCodeActive())
+            {
+               return;
+            }
+         }
+         else
+         {
+            HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, NULL, 0,
+                               "reusing cached MGR G-relax solver handle at level %d",
+                               (int)orig_lvl);
+         }
+         HYPRE_MGRSetGlobalSmootherAtLevel(precon, grelax, i);
+         args->grelax[orig_lvl] = grelax;
+      }
+#else
+      else if (level_args->g_relaxation.type == 33)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR G-relaxation 'fsai' requires hypre >= 2.25.0");
+         return;
+      }
+#endif
    }
 #endif
    HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, NULL, 0,
@@ -2246,7 +2363,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
 
    if (args->coarsest_level.use_krylov && args->coarsest_level.krylov)
    {
-      if (!args->coarsest_level.krylov->base_solver)
+      int krylov_was_cached = (args->coarsest_level.krylov->base_solver != NULL);
+      if (!krylov_was_cached)
       {
          hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->coarsest_level.krylov,
                                      args->dofmap, args->vec_nn,
@@ -2304,7 +2422,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       /* Config coarsest level solver */
       if (args->coarsest_level.type == 0)
       {
-         if (!args->csolver || args->csolver_type != 0)
+         int csolver_was_cached = (args->csolver && args->csolver_type == 0);
+         if (!csolver_was_cached)
          {
             hypredrv_AMGCreate(&args->coarsest_level.amg, &args->csolver);
          }
@@ -2319,7 +2438,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       }
       else if (args->coarsest_level.type == 32)
       {
-         if (!args->csolver || args->csolver_type != 32)
+         int csolver_was_cached = (args->csolver && args->csolver_type == 32);
+         if (!csolver_was_cached)
          {
             hypredrv_ILUCreate(&args->coarsest_level.ilu, &args->csolver);
          }
@@ -2335,7 +2455,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
       /* GCOVR_EXCL_START */
       else if (args->coarsest_level.type == 29)
       {
-         if (!args->csolver || args->csolver_type != 29)
+         int csolver_was_cached = (args->csolver && args->csolver_type == 29);
+         if (!csolver_was_cached)
          {
             HYPRE_MGRDirectSolverCreate(&args->csolver);
             if (!args->csolver)
@@ -2367,6 +2488,35 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr)
          return;
       }
       /* GCOVR_EXCL_STOP */
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+      else if (args->coarsest_level.type == 33)
+      {
+         int csolver_was_cached = (args->csolver && args->csolver_type == 33);
+         if (!csolver_was_cached)
+         {
+            hypredrv_FSAICreate(&args->coarsest_level.fsai, &args->csolver);
+            if (!args->csolver || hypredrv_ErrorCodeActive())
+            {
+               return;
+            }
+         }
+         else
+         {
+            HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, NULL, 0,
+                               "reusing cached MGR coarsest solver handle");
+         }
+         args->csolver_type = 33;
+         HYPRE_MGRSetCoarseSolver(precon, HYPRE_FSAISolve, HYPRE_FSAISetup,
+                                  args->csolver);
+      }
+#else
+      else if (args->coarsest_level.type == 33)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR coarsest_level 'fsai' requires hypre >= 2.25.0");
+         return;
+      }
 #endif
    }
    HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, NULL, 0,
@@ -2477,7 +2627,7 @@ MGRFRelaxUsesManagedHandle(const MGRfrlx_args *args)
       return 1;
    }
 
-   return args->type == 2 || args->type == 29 || args->type == 32;
+   return args->type == 2 || args->type == 29 || args->type == 32 || args->type == 33;
 }
 
 static int
@@ -2504,7 +2654,7 @@ MGRGRelaxUsesManagedHandle(const MGRgrlx_args *args)
       return 1;
    }
 
-   return args->type == 20 || args->type == 16;
+   return args->type == 20 || args->type == 16 || args->type == 29 || args->type == 33;
 }
 
 static int
@@ -2658,6 +2808,12 @@ MGRDestroyDetachedFSolver(MGRfrlx_args *f_relaxation, HYPRE_Solver *solver_ptr)
       HYPRE_ILUDestroy(*solver_ptr);
    }
 #endif
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+   else if (f_relaxation->type == 33)
+   {
+      HYPRE_FSAIDestroy(*solver_ptr);
+   }
+#endif
 
    *solver_ptr = NULL;
 }
@@ -2678,6 +2834,20 @@ MGRDestroyDetachedGSolver(MGRgrlx_args *g_relaxation, HYPRE_Solver *solver_ptr)
    else if (g_relaxation->type == 16)
    {
       HYPRE_ILUDestroy(*solver_ptr);
+   }
+#endif
+#ifdef HYPRE_USING_DSUPERLU
+   /* GCOVR_EXCL_START */
+   else if (g_relaxation->type == 29)
+   {
+      HYPRE_MGRDirectSolverDestroy(*solver_ptr);
+   }
+   /* GCOVR_EXCL_STOP */
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+   else if (g_relaxation->type == 33)
+   {
+      HYPRE_FSAIDestroy(*solver_ptr);
    }
 #endif
 
@@ -2744,6 +2914,12 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
       hypredrv_ILUCreate(&level_args->f_relaxation.ilu, &fsolver);
    }
 #endif
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+   else if (level_args->f_relaxation.type == 33)
+   {
+      hypredrv_FSAICreate(&level_args->f_relaxation.fsai, &fsolver);
+   }
+#endif
 
    if (hypredrv_ErrorCodeActive() || !fsolver)
    {
@@ -2788,6 +2964,27 @@ MGRRefreshGRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
    else if (level_args->g_relaxation.type == 16)
    {
       hypredrv_ILUCreate(&level_args->g_relaxation.ilu, &smoother);
+   }
+#endif
+#ifdef HYPRE_USING_DSUPERLU
+   /* GCOVR_EXCL_START */
+   else if (level_args->g_relaxation.type == 29)
+   {
+      HYPRE_MGRDirectSolverCreate(&smoother);
+      if (!smoother)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR G-relaxation 'spdirect' unavailable: direct solver creation failed");
+         return;
+      }
+   }
+   /* GCOVR_EXCL_STOP */
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+   else if (level_args->g_relaxation.type == 33)
+   {
+      hypredrv_FSAICreate(&level_args->g_relaxation.fsai, &smoother);
    }
 #endif
 
@@ -2967,7 +3164,8 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
                &args->level[orig_lvl].f_relaxation.reuse,
                &args->level[orig_lvl].f_relaxation.reuse.warned_runtime_unsupported,
                stats, next_ls_id, label,
-               "is ignored unless hypredrive is built with HYPREDRV_ENABLE_EXPERIMENTAL");
+               "is ignored because the current hypre version does not support "
+               "managed MGR component reuse");
          }
          if (args->level[orig_lvl].g_relaxation.reuse.present)
          {
@@ -2976,7 +3174,8 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
                &args->level[orig_lvl].g_relaxation.reuse,
                &args->level[orig_lvl].g_relaxation.reuse.warned_runtime_unsupported,
                stats, next_ls_id, label,
-               "is ignored unless hypredrive is built with HYPREDRV_ENABLE_EXPERIMENTAL");
+               "is ignored because the current hypre version does not support "
+               "managed MGR component reuse");
          }
       }
       if (args->coarsest_level.reuse.present)
@@ -2985,7 +3184,8 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
             &args->coarsest_level.reuse,
             &args->coarsest_level.reuse.warned_runtime_unsupported, stats, next_ls_id,
             "coarsest_level.reuse",
-            "is ignored unless hypredrive is built with HYPREDRV_ENABLE_EXPERIMENTAL");
+            "is ignored because the current hypre version does not support "
+            "managed MGR component reuse");
       }
       return 0;
    }

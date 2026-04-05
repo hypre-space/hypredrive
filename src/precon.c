@@ -491,6 +491,7 @@ DestroyNestedMGRFRelaxAtLevel(MGR_args *mgr, int i)
    DestroyNestedMGRFRelaxInnerSolver(mgr, i, &nested_mgr_solver);
 }
 /* GCOVR_EXCL_STOP */
+
 #endif /* HYPRE_CHECK_MIN_VERSION(21900, 0) */
 
 static void
@@ -524,49 +525,9 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
       return;
    }
 
-#if HYPRE_CHECK_MIN_VERSION(30100, 11)
-   HYPRE_Solver detached_nested_lvl0_frelax  = NULL;
-   HYPRE_Solver detached_nested_lvl0_wrapper = NULL;
-   int nested_lvl0_orig = (mgr->num_active_levels > 0) ? mgr->active_level_map[0] : 0;
-   if (mgr->num_levels > 1 && mgr->frelax[nested_lvl0_orig] &&
-       mgr->level[nested_lvl0_orig].f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
-   {
-      detached_nested_lvl0_wrapper = mgr->frelax[nested_lvl0_orig];
-      detached_nested_lvl0_frelax =
-         hypredrv_MGRNestedFRelaxWrapperDetachInner(mgr->frelax[nested_lvl0_orig]);
-      mgr->frelax[nested_lvl0_orig] = NULL;
-   }
-#endif
-
-#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
-   /* Destroy hypredrive-managed component solvers before tearing down the outer
-    * MGR hierarchy because their setup data may still reference MGR-owned state. */
-   hypredrv_MGRDestroyCachedSolvers(mgr);
-#endif
-
    HYPRE_MGRDestroy(*solver_ptr);
    *solver_ptr = NULL;
-
-#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL)
-   /* Upstream hypre destroys nested/component solver handles as part of
-    * HYPRE_MGRDestroy(), so only clear hypredrive's stale cache afterwards. */
    hypredrv_MGRDestroyCachedSolvers(mgr);
-#endif
-
-#if HYPRE_CHECK_MIN_VERSION(30100, 11)
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (detached_nested_lvl0_wrapper &&
-       /* GCOVR_EXCL_BR_STOP */
-       hypredrv_MGRNestedFRelaxWrapperIsLive(detached_nested_lvl0_wrapper))
-   {
-      hypredrv_MGRNestedFRelaxWrapperFree(&detached_nested_lvl0_wrapper);
-   }
-   if (detached_nested_lvl0_frelax)
-   {
-      DestroyNestedMGRFRelaxInnerSolver(mgr, nested_lvl0_orig,
-                                        &detached_nested_lvl0_frelax);
-   }
-#endif
 
    if (mgr->point_marker_data)
    {
