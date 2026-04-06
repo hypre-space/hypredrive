@@ -263,7 +263,7 @@ hypredrv_InputArgsParseLinearSystem(input_args *iargs, const YAMLtree *tree)
        * error during YAMLtreeBuild, and hypredrv_InputArgsParseWithObjectName() returns
        * before section parsers run. Kept for robustness if ordering changes. */       /* GCOVR_EXCL_BR_LINE */
       hypredrv_ErrorMsgAddUnexpectedVal(key);
-         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */
    }
 
    hypredrv_LinearSystemSetArgsFromYAML(&iargs->ls, parent);
@@ -436,10 +436,10 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
    if (!method_out || !args_out)
    { /* GCOVR_EXCL_BR_LINE */
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
       hypredrv_ErrorMsgAdd("Preset output arguments must be non-NULL");
-         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
-      return; /* GCOVR_EXCL_LINE */                     /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      return; /* GCOVR_EXCL_LINE */                  /* GCOVR_EXCL_BR_LINE */
    }
 
    const hypredrv_Preset *preset =
@@ -462,10 +462,10 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
    if (!text)
    { /* GCOVR_EXCL_BR_LINE */
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
       hypredrv_ErrorMsgAdd("Failed to allocate preset YAML text");
-         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
-      return; /* GCOVR_EXCL_LINE */                     /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      return; /* GCOVR_EXCL_LINE */                  /* GCOVR_EXCL_BR_LINE */
    }
 
    YAMLtree *preset_tree = NULL;
@@ -663,10 +663,10 @@ PreconParseContextAllocVariants(PreconParseContext *ctx, int num_variants,
    if (!ctx || num_variants <= 0)
    { /* GCOVR_EXCL_BR_LINE */
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
       hypredrv_ErrorMsgAdd("Invalid preconditioner parse allocation request");
-         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
-      return 0; /* GCOVR_EXCL_LINE */                   /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      return 0; /* GCOVR_EXCL_LINE */                /* GCOVR_EXCL_BR_LINE */
    }
 
    ctx->methods  = (precon_t *)malloc(sizeof(precon_t) * (size_t)num_variants);
@@ -675,10 +675,10 @@ PreconParseContextAllocVariants(PreconParseContext *ctx, int num_variants,
    if (!ctx->methods || !ctx->variants)
    { /* GCOVR_EXCL_BR_LINE */
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
       hypredrv_ErrorMsgAdd("%s", error_msg);
-         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
-      return 0; /* GCOVR_EXCL_LINE */                   /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      return 0; /* GCOVR_EXCL_LINE */                /* GCOVR_EXCL_BR_LINE */
    }
 
    ctx->num_variants    = num_variants;
@@ -739,10 +739,10 @@ PreconParsePresetNode(const YAMLnode *preset_node, precon_t *method_out,
    if (!preset_name)
    { /* GCOVR_EXCL_BR_LINE */
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
       hypredrv_ErrorMsgAdd("Failed to allocate preset name");
-         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
-      return 0; /* GCOVR_EXCL_LINE */                   /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      return 0; /* GCOVR_EXCL_LINE */                /* GCOVR_EXCL_BR_LINE */
    }
 
    PreconPresetBuildArgs(preset_name, method_out, args_out);
@@ -1078,10 +1078,10 @@ hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset,
       if (!iargs->precon_methods || !iargs->precon_variants)
       { /* GCOVR_EXCL_BR_LINE */
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-            /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
          hypredrv_ErrorMsgAdd("Failed to allocate preconditioner variants");
-            /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
-         return; /* GCOVR_EXCL_LINE */                     /* GCOVR_EXCL_BR_LINE */
+         /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+         return; /* GCOVR_EXCL_LINE */                  /* GCOVR_EXCL_BR_LINE */
       }
    }
 

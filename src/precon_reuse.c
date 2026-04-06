@@ -1254,7 +1254,7 @@ PreconReuseTransformSample(const PreconReuseScoreComponent_args *component,
    if (component->metric == PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP)
    { /* GCOVR_EXCL_BR_LINE */
       double baseline_setup = state->baseline_valid ? state->baseline_setup_time : 0.0;
-         /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
       double baseline_solve = state->baseline_valid ? state->baseline_solve_time
                                                     : 0.0; /* GCOVR_EXCL_BR_LINE */
       double budget = baseline_setup / (double)component->transform.amortization_window;
@@ -1681,7 +1681,7 @@ PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
    if (!node->children)
    { /* GCOVR_EXCL_BR_LINE */
       const char *value = node->mapped_val ? node->mapped_val : node->val;
-         /* GCOVR_EXCL_BR_LINE */                        /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_BR_LINE */                           /* GCOVR_EXCL_BR_LINE */
       if (!PreconReuseParseMeanKind(value, &mean->kind)) /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
@@ -1753,7 +1753,7 @@ PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transfo
    if (!node->children)
    { /* GCOVR_EXCL_BR_LINE */
       const char *value = node->mapped_val ? node->mapped_val : node->val;
-         /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
       if (!PreconReuseParseTransformKind(value,
                                          &transform->kind)) /* GCOVR_EXCL_BR_LINE */
       {
@@ -1860,9 +1860,10 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
          if (!PreconReuseParseInt(value, &history->level)) /* GCOVR_EXCL_BR_LINE */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse history level: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                                      */
-                                 value ? value : "");
+            hypredrv_ErrorMsgAdd(
+               "Invalid preconditioner.reuse history level: '%s'", /* GCOVR_EXCL_BR_LINE
+                                                                    */
+               value ? value : "");
             YAML_NODE_SET_INVALID_VAL(child);
             return 0;
          }

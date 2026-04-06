@@ -334,7 +334,7 @@ NestedKrylovBaseSolverSolve(solver_t solver_method, HYPRE_Solver solver, HYPRE_M
       case SOLVER_BICGSTAB:
          return HYPRE_ParCSRBiCGSTABSolve(solver, (HYPRE_ParCSRMatrix)A,
                                           (HYPRE_ParVector)b, (HYPRE_ParVector)x);
-            /* GCOVR_EXCL_BR_LINE */ /* invalid solver_t without memory corruption */
+         /* GCOVR_EXCL_BR_LINE */ /* invalid solver_t without memory corruption */
       default:
          hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
          hypredrv_ErrorMsgAdd("Nested Krylov solver method not supported");
