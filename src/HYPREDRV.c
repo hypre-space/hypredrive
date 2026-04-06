@@ -2469,7 +2469,8 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
          }
       }
       hypredrv_PreconCreate(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                            hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon);
+                            hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon,
+                            hypredrv->stats, next_ls_id);
       hypredrv->precon_is_setup = false;
       if (hypredrv_ErrorCodeActive() && hypredrv_LogEnabled(2))
       {

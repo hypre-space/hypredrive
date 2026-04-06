@@ -3101,7 +3101,7 @@ test_PreconSetup_default_case(void)
    hypredrv_AMGSetDefaultArgs(&args.amg);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat = precon_test_ij_matrix_1x1(1.0);
@@ -3125,7 +3125,7 @@ test_PreconApply_default_case(void)
    hypredrv_AMGSetDefaultArgs(&args.amg);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(1.0);
@@ -3156,7 +3156,7 @@ test_PreconApply_precon_none(void)
    hypredrv_PreconSetDefaultArgs(&args);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_NONE, &args, NULL, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_NONE, &args, NULL, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(1.0);
@@ -3197,7 +3197,7 @@ test_PreconApply_mgr_minimal(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(1.0);
@@ -3238,7 +3238,7 @@ test_PreconDestroy_amg_log_dispatch_no_rbms(void)
    args.amg.num_rbms = 0;
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
@@ -3258,7 +3258,7 @@ test_PreconCreate_invalid_method(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_INVALID, &args, NULL, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_INVALID, &args, NULL, NULL, &precon, NULL, 0);
    ASSERT_NULL(precon);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_PRECON);
 }
@@ -3272,7 +3272,7 @@ test_PreconCreate_precon_none(void)
    hypredrv_PreconSetDefaultArgs(&args);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_NONE, &args, NULL, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_NONE, &args, NULL, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
    ASSERT_NULL(precon->main);
 
@@ -3307,7 +3307,7 @@ test_PreconSetup_null_A(void)
    hypredrv_AMGSetDefaultArgs(&args.amg);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -3329,7 +3329,7 @@ test_Precon_lifecycle_boomeramg_1x1(void)
    args.amg.max_iter = 1;
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(4.0);
@@ -3365,7 +3365,7 @@ test_Precon_lifecycle_ilu_1x1(void)
    args.ilu.max_iter = 1;
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_ILU, &args, NULL, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_ILU, &args, NULL, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(4.0);
@@ -3401,7 +3401,7 @@ test_Precon_lifecycle_fsai_1x1(void)
    hypredrv_FSAISetDefaultArgs(&args.fsai);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_FSAI, &args, NULL, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_FSAI, &args, NULL, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(4.0);
@@ -3445,7 +3445,7 @@ test_PreconDestroy_amg_rbms_loop(void)
    args.amg.rbms[0]  = pv;
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon);
@@ -3509,7 +3509,7 @@ test_MGRCreate_coarsest_level_branches(void)
    hypredrv_ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
    /* Clean up coarsest solver (explicit ILU) */
@@ -3527,7 +3527,7 @@ test_MGRCreate_coarsest_level_branches(void)
    hypredrv_ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
    precon                      = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
    /* Clean up coarsest solver (inferred as AMG) */
@@ -3543,7 +3543,7 @@ test_MGRCreate_coarsest_level_branches(void)
    hypredrv_AMGSetDefaultArgs(&mgr.coarsest_level.amg);
    precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
    /* Clean up coarsest solver (explicit AMG) */
@@ -3559,7 +3559,7 @@ test_MGRCreate_coarsest_level_branches(void)
    hypredrv_ILUSetDefaultArgs(&mgr.coarsest_level.ilu);
    precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
    if (mgr.point_marker_data)
@@ -3617,7 +3617,7 @@ test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -3654,7 +3654,7 @@ test_PreconDestroy_mgr_coarsest_use_krylov_without_krylov_ptr(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -3701,7 +3701,7 @@ test_PreconSetup_mgr_frelax_nested_mgr_dof_labels(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
 
@@ -3774,7 +3774,7 @@ test_PreconSetup_mgr_frelax_nested_mgr_body_split_labels(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
 
@@ -3864,7 +3864,7 @@ test_PreconCreate_mgr_nested_krylov_inner_mgr_recreate_without_reuse(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
    ASSERT_NOT_NULL(inner->frelax[0]);
@@ -3876,7 +3876,7 @@ test_PreconCreate_mgr_nested_krylov_inner_mgr_recreate_without_reuse(void)
    ASSERT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
 
@@ -3915,7 +3915,7 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
    args.mgr.coarsest_level.amg.max_iter = 1;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -3929,7 +3929,7 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
 
    precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -3941,7 +3941,7 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
    args.mgr.coarsest_level.type = 29;
    precon                      = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
    hypredrv_ErrorCodeResetAll();
    hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
@@ -3979,7 +3979,7 @@ test_PreconDestroy_mgr_frelax_amg_type2(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -4032,7 +4032,7 @@ test_PreconDestroy_mgr_grelax_krylov_nested(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -4070,7 +4070,7 @@ test_MGRCreate_missing_dofmap(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(precon);
 
@@ -4095,7 +4095,7 @@ test_MGRCreate_plain_dofmap_data_only_branch(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
@@ -4140,7 +4140,7 @@ test_MGRCreate_unique_data_dofmap_branch(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
@@ -4187,7 +4187,7 @@ test_MGRCreate_g_unique_unsorted_dense_fallback(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
@@ -4235,7 +4235,7 @@ test_MGRCreate_prefers_local_dof_labels_over_dense_global_fallback(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
@@ -4277,7 +4277,7 @@ test_MGRCreate_compact_global_labels_ignore_missing_f_dofs(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
@@ -4325,7 +4325,7 @@ test_MGRCreate_global_unique_metadata_ignore_missing_f_dofs(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
@@ -4365,7 +4365,7 @@ test_MGRCreate_dense_remap_sparse_labels(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
@@ -4405,7 +4405,7 @@ test_MGRCreate_f_dofs_out_of_range(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(precon);
 
@@ -4434,7 +4434,7 @@ test_MGRCreate_f_dofs_label_not_in_dofmap_is_ignored(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
    HYPRE_MGRDestroy(precon);
@@ -4475,7 +4475,7 @@ test_MGRCreate_f_dofs_duplicate_label(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(precon);
 
@@ -4500,7 +4500,7 @@ test_MGRCreate_empty_dofmap(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(precon);
 
@@ -4526,7 +4526,7 @@ test_MGRCreate_dofmap_negative_label(void)
 
    HYPRE_Solver precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_MGRCreate(&mgr, &precon);
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(precon);
 
@@ -4570,7 +4570,7 @@ test_MGRCreate_nested_mgr_validation_errors(void)
 
       HYPRE_Solver precon = NULL;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_MGRCreate(&mgr, &precon);
+      hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
       ASSERT_TRUE(hypredrv_ErrorCodeActive());
       ASSERT_NULL(precon);
 
@@ -4597,7 +4597,7 @@ test_MGRCreate_nested_mgr_validation_errors(void)
 
       HYPRE_Solver precon = NULL;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_MGRCreate(&mgr, &precon);
+      hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
       ASSERT_TRUE(hypredrv_ErrorCodeActive());
       ASSERT_NULL(precon);
 
@@ -4627,7 +4627,7 @@ test_MGRCreate_nested_mgr_validation_errors(void)
 
       HYPRE_Solver precon = NULL;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_MGRCreate(&mgr, &precon);
+      hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
       if (precon)
       {
@@ -4672,7 +4672,7 @@ test_MGRCreate_nested_mgr_validation_errors(void)
 
       HYPRE_Solver precon = NULL;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_MGRCreate(&mgr, &precon);
+      hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
       if (precon)
       {
@@ -4718,7 +4718,7 @@ test_MGRCreate_nested_mgr_validation_errors(void)
 
       HYPRE_Solver precon = NULL;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_MGRCreate(&mgr, &precon);
+      hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
       ASSERT_TRUE(hypredrv_ErrorCodeActive());
       ASSERT_NULL(precon);
 
@@ -4752,7 +4752,7 @@ test_PreconCreate_mgr_with_near_null_vector(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, vec_nn, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, vec_nn, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_PreconDestroy(PRECON_MGR, &args, &precon);
@@ -4805,7 +4805,7 @@ test_PreconDestroy_mgr_frelax_krylov_nested(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -4845,7 +4845,7 @@ test_PreconDestroy_mgr_frelax_ilu_type32(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -4882,7 +4882,7 @@ test_PreconDestroy_mgr_frelax_spdirect_type29(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -4922,7 +4922,7 @@ test_PreconDestroy_mgr_grelax_amg_type20(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat = precon_test_ij_matrix_1x1(1.0);
@@ -4966,7 +4966,7 @@ test_PreconDestroy_mgr_grelax_ilu_type16(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat = precon_test_ij_matrix_1x1(1.0);

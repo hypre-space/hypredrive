@@ -256,7 +256,8 @@ hypredrv_PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 
 void
 hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
-                      HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr)
+                      HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr,
+                      const Stats *stats, int next_ls_id)
 {
    if (!PreconHasConfiguredComponentReuse(precon_method, args))
    {
@@ -286,7 +287,7 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
       case PRECON_MGR:
          hypredrv_MGRSetDofmap(&args->mgr, dofmap);
          hypredrv_MGRSetNearNullSpace(&args->mgr, vec_nn);
-         hypredrv_MGRCreate(&args->mgr, &precon->main);
+         hypredrv_MGRCreate(&args->mgr, &precon->main, stats, next_ls_id);
          break;
 
       case PRECON_ILU:
