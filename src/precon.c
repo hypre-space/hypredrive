@@ -256,7 +256,8 @@ hypredrv_PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 
 void
 hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
-                      HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr)
+                      HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr,
+                      const Stats *stats, int next_ls_id)
 {
    if (!PreconHasConfiguredComponentReuse(precon_method, args))
    {
@@ -286,7 +287,7 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
       case PRECON_MGR:
          hypredrv_MGRSetDofmap(&args->mgr, dofmap);
          hypredrv_MGRSetNearNullSpace(&args->mgr, vec_nn);
-         hypredrv_MGRCreate(&args->mgr, &precon->main);
+         hypredrv_MGRCreate(&args->mgr, &precon->main, stats, next_ls_id);
          break;
 
       case PRECON_ILU:
@@ -543,7 +544,7 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
 
 void
 hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
-                       HYPRE_Precon *precon_ptr)
+                       HYPRE_Precon *precon_ptr, const Stats *stats, int ls_id)
 {
    int log_rank = -1;
    /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
@@ -552,13 +553,31 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
       log_rank = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
    }
 
+   /* Resolve object name the same way hypredrv_LogObjectf does */
+   const char *obj_name = NULL;
+   char        obj_name_buf[32];
+   obj_name_buf[0] = '\0';
+   if (stats)
+   {
+      if (stats->object_name[0] != '\0')
+      {
+         obj_name = stats->object_name;
+      }
+      else if (stats->runtime_object_id > 0)
+      {
+         snprintf(obj_name_buf, sizeof(obj_name_buf), "obj-%d",
+                  stats->runtime_object_id);
+         obj_name = obj_name_buf;
+      }
+   }
+
    HYPRE_Precon precon = *precon_ptr;
 
    /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
    if (!precon)              /* GCOVR_EXCL_BR_STOP */
    {
       /* GCOVR_EXCL_START */
-      HYPREDRV_LOGF(3, log_rank, NULL, 0,
+      HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
                     "preconditioner destroy skipped: object already NULL");
       /* GCOVR_EXCL_STOP */
       return;
@@ -570,7 +589,7 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
       {
          case PRECON_BOOMERAMG:
             /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
                           "preconditioner destroy dispatch: method=boomeramg");
             /* GCOVR_EXCL_STOP */
             for (HYPRE_Int i = 0; i < args->amg.num_rbms; i++)
@@ -583,7 +602,7 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
 
          case PRECON_MGR:
             /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
                           "preconditioner destroy dispatch: method=mgr");
             /* GCOVR_EXCL_STOP */
             PreconDestroyMGRSolver(&args->mgr, &precon->main);
@@ -591,7 +610,7 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
 
          case PRECON_ILU:
             /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
                           "preconditioner destroy dispatch: method=ilu");
             /* GCOVR_EXCL_STOP */
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
@@ -601,7 +620,7 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
 
          case PRECON_FSAI:
             /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
                           "preconditioner destroy dispatch: method=fsai");
             /* GCOVR_EXCL_STOP */
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
@@ -611,7 +630,7 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
 
          case PRECON_NONE:
             /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, NULL, 0,
+            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
                           "preconditioner destroy dispatch: method=none");
             /* GCOVR_EXCL_STOP */
             break;

@@ -496,7 +496,7 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
    if (args->has_precon)
    {
       hypredrv_PreconCreate(args->precon_method, &args->precon, dofmap, vec_nn,
-                            &args->precon_obj);
+                            &args->precon_obj, NULL, 0);
       /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
       if (hypredrv_ErrorCodeActive())
       /* GCOVR_EXCL_BR_STOP */ /* PreconCreate failure injection */
@@ -628,7 +628,8 @@ hypredrv_NestedKrylovDestroy(NestedKrylov_args *args)
 
    if (args->precon_obj)
    {
-      hypredrv_PreconDestroy(args->precon_method, &args->precon, &args->precon_obj);
+      hypredrv_PreconDestroy(args->precon_method, &args->precon, &args->precon_obj,
+                             NULL, 0);
       args->precon_obj = NULL;
    }
 

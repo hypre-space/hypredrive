@@ -876,7 +876,8 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
       if (hypredrv->precon)
       {
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                                &hypredrv->precon);
+                                &hypredrv->precon, hypredrv->stats,
+                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
          hypredrv->precon_is_setup = false;
       }
    }
@@ -1406,7 +1407,8 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
             "switching preconditioner variant: destroying active preconditioner");
          /* GCOVR_EXCL_BR_STOP */
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                                &hypredrv->precon);
+                                &hypredrv->precon, hypredrv->stats,
+                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
          hypredrv->precon_is_setup = false;
       }
 
@@ -1524,7 +1526,8 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
    if (hypredrv->precon)     /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                             &hypredrv->precon);
+                             &hypredrv->precon, hypredrv->stats,
+                             hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
       hypredrv->precon_is_setup = false;
    }
    else
@@ -2450,7 +2453,8 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
             }
          }
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                                &hypredrv->precon);
+                                &hypredrv->precon, hypredrv->stats,
+                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
          hypredrv->precon_is_setup = false;
       }
       else if (hypredrv->iargs->precon_method == PRECON_MGR)
@@ -2469,7 +2473,8 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
          }
       }
       hypredrv_PreconCreate(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                            hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon);
+                            hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon,
+                            hypredrv->stats, next_ls_id);
       hypredrv->precon_is_setup = false;
       if (hypredrv_ErrorCodeActive() && hypredrv_LogEnabled(2))
       {
@@ -2997,7 +3002,8 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
 #endif
          HYPREDRV_LOG_OBJECTF(2, hypredrv, "destroying preconditioner object");
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                                &hypredrv->precon);
+                                &hypredrv->precon, hypredrv->stats,
+                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
          hypredrv->precon_is_setup = false;
       }
       else
