@@ -81,6 +81,10 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           queries: security-extended,security-and-quality
+          config: |
+            paths-ignore:
+              - tests/**
+              - examples/**
 
       - name: Build hypredrive (manual)
         if: matrix.language == 'c-cpp'
@@ -91,8 +95,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_C_COMPILER=mpicc \
             -DCMAKE_PREFIX_PATH="${{ steps.build-hypre.outputs.hypre_prefix }}" \
-            -DHYPREDRV_ENABLE_TESTING=ON \
-            -DHYPREDRV_ENABLE_EXAMPLES=ON \
+            -DHYPREDRV_ENABLE_TESTING=OFF \
+            -DHYPREDRV_ENABLE_EXAMPLES=OFF \
             -DHYPREDRV_ENABLE_ANALYSIS=OFF \
             -DBUILD_SHARED_LIBS=ON
           cmake --build "$BUILD_DIR" --parallel
