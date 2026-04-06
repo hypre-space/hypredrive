@@ -1153,7 +1153,23 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse begin (argc=%d)", argc);
    /* GCOVR_EXCL_BR_STOP */
 
-   /* If preset/defaults were configured before parsing, clear old args first. */
+   /* If preset/defaults were configured before parsing, clear old args first.
+    * Tear down active solver/preconditioner objects so HYPRE handles are not
+    * orphaned when iargs (and any variant storage) is freed. */
+   if (hypredrv->iargs)
+   {
+      if (hypredrv->solver)
+      {
+         hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+      }
+      if (hypredrv->precon)
+      {
+         hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                                &hypredrv->precon, hypredrv->stats,
+                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
+         hypredrv->precon_is_setup = false;
+      }
+   }
    hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
    log_object_name[0] = '\0';
