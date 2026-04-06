@@ -1,0 +1,103 @@
+name: Code Quality
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
+      - "LICENSE"
+      - "NOTICE"
+      - "COPYRIGHT"
+  push:
+    branches: [master]
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
+      - "LICENSE"
+      - "NOTICE"
+      - "COPYRIGHT"
+  schedule:
+    - cron: "36 2 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: c-cpp
+            build-mode: manual
+          - language: python
+            build-mode: none
+    env:
+      HYPRE_VERSION: master
+      BUILD_DIR: build-codeql
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Ubuntu environment
+        if: matrix.language == 'c-cpp'
+        timeout-minutes: 3
+        uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: "gcc"
+
+      - name: Build HYPRE
+        if: matrix.language == 'c-cpp'
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: "gcc"
+          build_type: "RelWithDebInfo"
+          hypre_shared_libs: "ON"
+          os: "ubuntu-latest"
+          mpi_flavor: "openmpi"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended,security-and-quality
+
+      - name: Build hypredrive (manual)
+        if: matrix.language == 'c-cpp'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake -S . -B "$BUILD_DIR" -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_PREFIX_PATH="${{ steps.build-hypre.outputs.hypre_prefix }}" \
+            -DHYPREDRV_ENABLE_TESTING=ON \
+            -DHYPREDRV_ENABLE_EXAMPLES=ON \
+            -DHYPREDRV_ENABLE_ANALYSIS=OFF \
+            -DBUILD_SHARED_LIBS=ON
+          cmake --build "$BUILD_DIR" --parallel
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
