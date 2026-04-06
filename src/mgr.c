@@ -2588,11 +2588,10 @@ MGRClearNestedKrylovState(NestedKrylov_args *krylov)
       return;
    }
 
-   /* Called in the non-EXPERIMENTAL path after HYPRE_MGRDestroy. HYPRE owns
-    * these handles once registered via HYPRE_MGRSetFSolverAtLevel /
-    * HYPRE_MGRSetGlobalSmootherAtLevel / HYPRE_MGRSetCoarseSolver and frees
-    * them as part of HYPRE_MGRDestroy via the registered destroy callback.
-    * Only null out our stale references; do not double-free. */
+   /* Called only when HYPRE has already destroyed the nested Krylov internals
+    * through its registered callback path. In current HYPRE MGR teardown this
+    * applies to aff_solver[active>=1] and level_smoother handles, but not to
+    * coarse_grid_solver or aff_solver[active=0]. */
    krylov->base_solver = NULL;
    krylov->precon_obj  = NULL;
 }
@@ -2667,38 +2666,37 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args)
    }
 
    int destroy_handles = MGRDestroyCachedSolversExplicitly();
+   int first_active_level =
+      (args->num_active_levels > 0) ? (int)args->active_level_map[0] : -1;
+   int drop_csolver = !destroy_handles || !args->keep_csolver;
 
    if (args->coarsest_level.use_krylov && args->coarsest_level.krylov)
    {
-      if (destroy_handles && !args->keep_csolver)
+      if (drop_csolver)
       {
          hypredrv_NestedKrylovDestroy(args->coarsest_level.krylov);
       }
-      else if (!destroy_handles)
-      {
-         MGRClearNestedKrylovState(args->coarsest_level.krylov);
-      }
    }
-   else if (args->csolver && !args->keep_csolver)
+   else if (args->csolver && drop_csolver)
    {
-      if (destroy_handles && args->csolver_type == 0)
+      if (args->csolver_type == 0)
       {
          HYPRE_BoomerAMGDestroy(args->csolver);
       }
 #if defined(HYPRE_USING_DSUPERLU)
-      else if (destroy_handles && args->csolver_type == 29)
+      else if (args->csolver_type == 29)
       {
          HYPRE_MGRDirectSolverDestroy(args->csolver);
       }
 #endif
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
-      else if (destroy_handles && args->csolver_type == 32)
+      else if (args->csolver_type == 32)
       {
          HYPRE_ILUDestroy(args->csolver);
       }
 #endif
    }
-   if (!destroy_handles || !args->keep_csolver)
+   if (drop_csolver)
    {
       args->csolver      = NULL;
       args->csolver_type = -1;
@@ -2707,48 +2705,43 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args)
    int max_levels = (args->num_levels > 0) ? (args->num_levels - 1) : 0;
    for (int i = 0; i < max_levels; i++)
    {
+      int drop_frelax = !destroy_handles || !args->keep_frelax[i];
+      int drop_grelax = !destroy_handles || !args->keep_grelax[i];
+
       if (args->level[i].f_relaxation.use_krylov && args->level[i].f_relaxation.krylov)
       {
-         if (destroy_handles && !args->keep_frelax[i])
+         if (drop_frelax)
          {
             hypredrv_NestedKrylovDestroy(args->level[i].f_relaxation.krylov);
          }
-         else if (!destroy_handles)
-         {
-            MGRClearNestedKrylovState(args->level[i].f_relaxation.krylov);
-         }
       }
-      else if (args->frelax[i] && !args->keep_frelax[i])
+      else if (args->frelax[i] && drop_frelax)
       {
-         if (destroy_handles)
+         if (destroy_handles || i == first_active_level)
          {
             MGRDestroyDetachedFSolver(&args->level[i].f_relaxation, &args->frelax[i]);
          }
       }
-      if (!destroy_handles || !args->keep_frelax[i])
+      if (drop_frelax)
       {
          args->frelax[i] = NULL;
       }
 
       if (args->level[i].g_relaxation.use_krylov && args->level[i].g_relaxation.krylov)
       {
-         if (destroy_handles && !args->keep_grelax[i])
+         if (drop_grelax)
          {
             hypredrv_NestedKrylovDestroy(args->level[i].g_relaxation.krylov);
          }
-         else if (!destroy_handles)
-         {
-            MGRClearNestedKrylovState(args->level[i].g_relaxation.krylov);
-         }
       }
-      else if (args->grelax[i] && !args->keep_grelax[i])
+      else if (args->grelax[i] && drop_grelax)
       {
          if (destroy_handles)
          {
             MGRDestroyDetachedGSolver(&args->level[i].g_relaxation, &args->grelax[i]);
          }
       }
-      if (!destroy_handles || !args->keep_grelax[i])
+      if (drop_grelax)
       {
          args->grelax[i] = NULL;
       }
