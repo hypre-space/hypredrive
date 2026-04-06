@@ -704,6 +704,48 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc)
                 hypredrv_append_test_environment(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc
                     "HYPREDRV_LOG_LEVEL=2")
+
+                # MGR cycle type tests (5 linear systems each)
+                foreach(_cycle_case IN ITEMS
+                    "v;ex7-mgr-cycle-v.yml"
+                    "v01;ex7-mgr-cycle-v01.yml"
+                    "v11;ex7-mgr-cycle-v11.yml"
+                    "w;ex7-mgr-cycle-w.yml"
+                    "w11;ex7-mgr-cycle-w11.yml"
+                )
+                    string(REPLACE ";" "|" _parts "${_cycle_case}")
+                    string(REPLACE "|" ";" _parts "${_cycle_case}")
+                    list(GET _parts 0 _suffix)
+                    list(GET _parts 1 _cfg)
+                    set(_tname "hypredrive_test_ex7_mgr_cycle_${_suffix}_1proc")
+                    add_test(NAME ${_tname}
+                        COMMAND ${CMAKE_COMMAND}
+                                -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+                                -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
+                                -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+                                -DMPI_NUMPROCS=1
+                                -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+                                -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+                                -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+                                -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/${_cfg}
+                                "-DTARGET_ARGS:STRING=-q"
+                                "-DREQUIRE_CONTAINS:STRING=Solving linear system #4"
+                                -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
+                        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                    )
+                    set_tests_properties(${_tname}
+                        PROPERTIES
+                        FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
+                        SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+                        LABELS "integration;hypredrive"
+                    )
+                    hypredrv_maybe_disable_gpu_test(${_tname})
+                    hypredrv_append_test_environment(${_tname})
+                endforeach()
+                unset(_cycle_case)
+                unset(_suffix)
+                unset(_cfg)
+                unset(_tname)
             endif()
         endif()
         if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU)

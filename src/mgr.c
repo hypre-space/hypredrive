@@ -342,6 +342,13 @@ void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
    ADD_FIELD_OFFSET_ENTRY(_prefix, f_relaxation, hypredrv_MGRfrlxSetArgs)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, g_relaxation, hypredrv_MGRgrlxSetArgs)
 
+#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+#define MGR_EXPERIMENTAL_FIELDS(_prefix)                                       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, cycle, hypredrv_FieldTypeIntSet)
+#else
+#define MGR_EXPERIMENTAL_FIELDS(_prefix)
+#endif
+
 #define MGR_FIELDS(_prefix)                                                    \
    ADD_FIELD_OFFSET_ENTRY(_prefix, non_c_to_f, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, pmax, hypredrv_FieldTypeIntSet)             \
@@ -352,7 +359,8 @@ void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
    ADD_FIELD_OFFSET_ENTRY(_prefix, nonglk_max_elmts, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, hypredrv_FieldTypeDoubleSet)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_th, hypredrv_FieldTypeDoubleSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsest_level, hypredrv_MGRclsSetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, coarsest_level, hypredrv_MGRclsSetArgs)     \
+   MGR_EXPERIMENTAL_FIELDS(_prefix)
 
 #define MGRcls_NUM_FIELDS \
    (sizeof(MGRcls_field_offset_map) / sizeof(MGRcls_field_offset_map[0]))
@@ -1004,6 +1012,7 @@ hypredrv_MGRSetDefaultArgs(MGR_args *args)
    args->tolerance        = 0.0;
    args->coarse_th        = 0.0;
    args->relax_type       = 7;
+   args->cycle            = 1;
 
    for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
    {
@@ -1411,6 +1420,15 @@ hypredrv_MGRGetValidValues(const char *key)
          {"jacobi", 7},     {"h-fgs", 3},      {"h-bgs", 4},   {"ch-gs", 5},
          {"h-ssor", 6},     {"hl1-ssor", 8},   {"l1-fgs", 13}, {"l1-bgs", 14},
          {"chebyshev", 16}, {"l1-jacobi", 18},
+      };
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   else if (!strcmp(key, "cycle"))
+   {
+      static StrIntMap map[] = {
+         {"v",      1}, {"v(1,0)", 1}, {"v(0,1)", 2}, {"v(1,1)", 3},
+         {"w",      4}, {"w(1,0)", 4}, {"w(0,1)", 5}, {"w(1,1)", 6},
       };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
@@ -3077,6 +3095,20 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
    HYPRE_MGRSetTol(precon, args->tolerance);
    HYPRE_MGRSetPrintLevel(precon, args->print_level);
+#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+   {
+      /* Decode cycle encoding:
+       *   1=v(1,0), 2=v(0,1), 3=v(1,1), 4=w(1,0), 5=w(0,1), 6=w(1,1)
+       *   traversal  = V(1-3) or W(4-6)
+       *   smooth_pos = pre(1), post(2), both(3) — same for F and G relaxation
+       */
+      HYPRE_Int traversal  = (args->cycle >= 4) ? 2 : 1;
+      HYPRE_Int smooth_pos = ((args->cycle - 1) % 3) + 1;
+      HYPRE_MGRSetCycleType(precon, traversal);
+      HYPRE_MGRSetGlobalSmoothCycle(precon, smooth_pos);
+      HYPRE_MGRSetFRelaxSmoothCycle(precon, smooth_pos);
+   }
+#endif
 #if HYPRE_CHECK_MIN_VERSION(22000, 0)
    HYPRE_MGRSetTruncateCoarseGridThreshold(precon, args->coarse_th);
 #endif
