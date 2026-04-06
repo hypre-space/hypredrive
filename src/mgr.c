@@ -764,8 +764,7 @@ MGRclsApplyTypeDefaults(MGRcls_args *args, HYPRE_Int old_type)
    {
       return;
    }
-   /* GCOVR_EXCL_STOP */
-   /* GCOVR_EXCL_START */
+
    if (args->type == old_type)
    {
       return;
@@ -2567,22 +2566,6 @@ MGRLogComponentReuseDecision(const Stats *stats, const char *component_name, int
                       reuse->args.enabled, keep);
 }
 
-static void
-MGRClearNestedKrylovState(NestedKrylov_args *krylov)
-{
-   if (!krylov) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
-   /* Called only when HYPRE has already destroyed the nested Krylov internals
-    * through its registered callback path. In current HYPRE MGR teardown this
-    * applies to aff_solver[active>=1] and level_smoother handles, but not to
-    * coarse_grid_solver or aff_solver[active=0]. */
-   krylov->base_solver = NULL;
-   krylov->precon_obj  = NULL;
-}
-
 void
 hypredrv_MGRSelectCachedSolversToKeep(MGR_args *args, const IntArray *timestep_starts,
                                       const Stats *stats, int next_ls_id)
@@ -2723,7 +2706,7 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args)
       }
       else if (args->grelax[i] && drop_grelax)
       {
-         if (destroy_handles)
+         if (destroy_handles || i == first_active_level)
          {
             MGRDestroyDetachedGSolver(&args->level[i].g_relaxation, &args->grelax[i]);
          }
@@ -3688,16 +3671,10 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
    {
       /* hypre uses the point-marker array during MGRSetup, so keep the owned copy
        * alive until PreconDestroyMGRSolver() destroys the MGR object. */
-      /* GCOVR_EXCL_START */       /* GCOVR_EXCL_BR_LINE */
-      if (args->point_marker_data) /* GCOVR_EXCL_BR_LINE */
-      {
-         free(args->point_marker_data);
-      }
-      /* GCOVR_EXCL_STOP */
+      free(args->point_marker_data);
       args->point_marker_data = dofmap_data_owned;
       dofmap_data_owned       = NULL;
    }
-   goto cleanup;
 
 cleanup:
    if (dofmap_data_owned)
@@ -3717,5 +3694,5 @@ cleanup:
    }
    /* Silence any hypre errors. TODO: improve error handling */
    HYPRE_ClearAllErrors();
-#endif
+#endif /* if !HYPRE_CHECK_MIN_VERSION(21900, 0) */
 }
