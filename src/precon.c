@@ -132,7 +132,7 @@ hypredrv_PreconArgsDestroyRuntimeState(precon_t method, precon_args *args)
    switch (method)
    {
       case PRECON_MGR:
-         hypredrv_MGRDestroyCachedSolvers(&args->mgr);
+         hypredrv_MGRDestroyCachedSolvers(&args->mgr, 0);
          hypredrv_MGRForgetCachedSolvers(&args->mgr);
          break;
 
@@ -509,7 +509,7 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
       /* Outer MGR solver was never created (e.g. early failure in MGRCreate).
        * Destroy or preserve any component handles that were set up before the
        * failure, respecting keep flags set by the caller. */
-      hypredrv_MGRDestroyCachedSolvers(mgr); /* GCOVR_EXCL_BR_LINE */
+      hypredrv_MGRDestroyCachedSolvers(mgr, 0); /* GCOVR_EXCL_BR_LINE */
       if (mgr->point_marker_data)            /* GCOVR_EXCL_BR_LINE */
       {
          free(mgr->point_marker_data);
@@ -518,9 +518,11 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
       return;
    }
 
+   /* Drop hypredrive-managed detached handles first. In current hypre MGR,
+    * user-provided smoother/coarse handles are not reclaimed by MGR destroy. */
+   hypredrv_MGRDestroyCachedSolvers(mgr, 0);
    HYPRE_MGRDestroy(*solver_ptr);
    *solver_ptr = NULL;
-   hypredrv_MGRDestroyCachedSolvers(mgr);
 
    if (mgr->point_marker_data)
    {

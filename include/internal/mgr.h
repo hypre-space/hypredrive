@@ -171,7 +171,7 @@ void hypredrv_MGRSelectCachedSolversToKeep(MGR_args *, const IntArray *,
                                            const struct Stats_struct *, int);
 void hypredrv_MGRCountCachedSolvers(const MGR_args *, int *, int *, int *);
 void hypredrv_MGRCountKeepFlags(const MGR_args *, int *, int *, int *);
-void hypredrv_MGRDestroyCachedSolvers(MGR_args *);
+void hypredrv_MGRDestroyCachedSolvers(MGR_args *, int);
 void hypredrv_MGRForgetCachedSolvers(MGR_args *);
 void hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);
 int  hypredrv_MGRNestedFRelaxWrapperIsLive(HYPRE_Solver);

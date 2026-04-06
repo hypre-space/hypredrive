@@ -113,6 +113,7 @@ jobs:
           set -euxo pipefail
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=ON \
             -DCMAKE_C_FLAGS="-Wconversion -Wextra -Wshadow" \
             -DHYPREDRV_ENABLE_ANALYSIS=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \

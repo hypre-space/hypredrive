@@ -211,6 +211,7 @@ static void
 ScalingComputeRHSL2(MPI_Comm comm, Scaling_context *ctx, HYPRE_IJVector vec_b)
 {
    /* GCOVR_EXCL_BR_START */
+   (void)comm;
    double b_norm = 0.0;
 
    hypredrv_LinearSystemComputeVectorNorm(vec_b, "L2", &b_norm);
@@ -236,6 +237,7 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    /* GCOVR_EXCL_BR_START */
+   (void)args;
    HYPRE_MemoryLocation memloc_tags = HYPRE_MEMORY_HOST;
 #if defined(HYPRE_USING_GPU)
    HYPRE_MemoryLocation orig_mat_memloc = HYPRE_MEMORY_HOST;
@@ -275,7 +277,7 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    iupper         = row_end;
    num_local_rows = (HYPRE_Int)(iupper - ilower + 1);
 
-   if (dofmap->size != num_local_rows)
+   if (num_local_rows < 0 || dofmap->size != (size_t)num_local_rows)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("dofmap size (%d) does not match local matrix rows (%d)",
@@ -386,7 +388,7 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    iupper         = row_end;
    num_local_rows = (HYPRE_Int)(iupper - ilower + 1);
 
-   if (dofmap->size != num_local_rows)
+   if (num_local_rows < 0 || dofmap->size != (size_t)num_local_rows)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("dofmap size (%d) does not match local matrix rows (%d)",

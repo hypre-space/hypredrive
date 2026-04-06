@@ -709,7 +709,8 @@ InputArgsPreconVariant0Activate(input_args *iargs, PreconParseContext *ctx,
 }
 
 static int
-PreconParseMethodResolve(const char *name, int error_code, precon_t *method_out)
+PreconParseMethodResolve(const char *name, hypredrv_error_t error_code,
+                         precon_t *method_out)
 {
    if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(),
                                                  name))
