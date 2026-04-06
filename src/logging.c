@@ -162,8 +162,8 @@ hypredrv_LogRankFromComm(MPI_Comm comm)
 
    int mpi_finalized = 0;
    MPI_Finalized(&mpi_finalized);
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (mpi_finalized)        /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (mpi_finalized) /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
    }
@@ -174,7 +174,7 @@ hypredrv_LogRankFromComm(MPI_Comm comm)
    }
 
    int mypid = -1;
-   /* GCOVR_EXCL_BR_START */                       /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (MPI_Comm_rank(comm, &mypid) != MPI_SUCCESS) /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
@@ -190,7 +190,7 @@ void
 hypredrv_LogCommf(int level, MPI_Comm comm, const char *object_name, int ls_id,
                   const char *fmt, ...)
 {
-   /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!hypredrv_LogEnabled(level)) /* GCOVR_EXCL_BR_STOP */
    {
       return;
@@ -240,7 +240,7 @@ void
 hypredrv_Logf(int level, int mypid, const char *object_name, int ls_id, const char *fmt,
               ...)
 {
-   /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!hypredrv_LogEnabled(level)) /* GCOVR_EXCL_BR_STOP */
    {
       return;
@@ -255,7 +255,7 @@ hypredrv_Logf(int level, int mypid, const char *object_name, int ls_id, const ch
 void
 hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
 {
-   /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!hypredrv_LogEnabled(level)) /* GCOVR_EXCL_BR_STOP */
    {
       return;
@@ -294,7 +294,7 @@ void
 hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
                       const char *header, const char *text)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!hypredrv_LogEnabled(level) || mypid != 0 || !text) /* GCOVR_EXCL_BR_STOP */
    {
       return;

@@ -40,20 +40,20 @@ typedef struct YAMLincludeContext_struct
 static bool
 YAMLpathIsUnderRoot(const char *path, const char *root)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!path || !root)       /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!path || !root) /* GCOVR_EXCL_BR_STOP */
    {
       return false; /* GCOVR_EXCL_LINE */
    }
 
    size_t root_len = strlen(root);
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (root_len == 0 || strncmp(path, root, root_len) != 0) /* GCOVR_EXCL_BR_STOP */
    {
       return false;
    }
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    return ((path[root_len] == '\0') || (path[root_len] == '/')) != 0;
    /* GCOVR_EXCL_BR_STOP */
 }
@@ -61,7 +61,7 @@ YAMLpathIsUnderRoot(const char *path, const char *root)
 static bool
 YAMLpathStackReserve(char ***stack_ptr, int *capacity_ptr, int min_capacity)
 {
-   /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!stack_ptr || !capacity_ptr) /* GCOVR_EXCL_BR_STOP */
    {
       return false; /* GCOVR_EXCL_LINE */
@@ -72,18 +72,18 @@ YAMLpathStackReserve(char ***stack_ptr, int *capacity_ptr, int min_capacity)
    }
 
    int new_capacity =
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         (*capacity_ptr == 0) ? YAML_INCLUDE_PATH_STACK_CAP_INIT : *capacity_ptr;
+      /* GCOVR_EXCL_BR_START */
+      (*capacity_ptr == 0) ? YAML_INCLUDE_PATH_STACK_CAP_INIT : *capacity_ptr;
    /* GCOVR_EXCL_BR_STOP */
-   /* GCOVR_EXCL_BR_START */           /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    while (new_capacity < min_capacity) /* GCOVR_EXCL_BR_STOP */
    {
       new_capacity *= 2; /* GCOVR_EXCL_LINE */
    }
 
    char **new_stack = (char **)realloc(*stack_ptr, (size_t)new_capacity * sizeof(char *));
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!new_stack)           /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!new_stack) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                       /* GCOVR_EXCL_LINE */
       hypredrv_ErrorMsgAdd("Failed to allocate include path stack"); /* GCOVR_EXCL_LINE */
@@ -98,14 +98,14 @@ YAMLpathStackReserve(char ***stack_ptr, int *capacity_ptr, int min_capacity)
 static bool
 YAMLpathStackContains(char **stack, int size, const char *path)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!stack || !path)      /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!stack || !path) /* GCOVR_EXCL_BR_STOP */
    {
       return false;
    }
    for (int i = 0; i < size; i++)
    {
-      /* GCOVR_EXCL_BR_START */                /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (stack[i] && !strcmp(stack[i], path)) /* GCOVR_EXCL_BR_STOP */
       {
          return true;
@@ -117,8 +117,8 @@ YAMLpathStackContains(char **stack, int size, const char *path)
 static bool
 YAMLreadStackPush(YAMLincludeContext *ctx, const char *path)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!ctx || !path)        /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!ctx || !path) /* GCOVR_EXCL_BR_STOP */
    {
       return false; /* GCOVR_EXCL_LINE */
    }
@@ -135,7 +135,7 @@ YAMLreadStackPush(YAMLincludeContext *ctx, const char *path)
       hypredrv_ErrorMsgAdd("YAML include cycle detected at '%s'", path);
       return false;
    }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!YAMLpathStackReserve(&ctx->read_stack, &ctx->read_stack_capacity,
                              /* GCOVR_EXCL_BR_STOP */
                              ctx->read_stack_size + 1))
@@ -144,7 +144,7 @@ YAMLreadStackPush(YAMLincludeContext *ctx, const char *path)
    }
 
    ctx->read_stack[ctx->read_stack_size] = strdup(path);
-   /* GCOVR_EXCL_BR_START */                   /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!ctx->read_stack[ctx->read_stack_size]) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);             /* GCOVR_EXCL_LINE */
@@ -158,7 +158,7 @@ YAMLreadStackPush(YAMLincludeContext *ctx, const char *path)
 static void
 YAMLreadStackPop(YAMLincludeContext *ctx)
 {
-   /* GCOVR_EXCL_BR_START */              /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!ctx || ctx->read_stack_size <= 0) /* GCOVR_EXCL_BR_STOP */
    {
       return; /* GCOVR_EXCL_LINE */
@@ -172,12 +172,12 @@ YAMLreadStackPop(YAMLincludeContext *ctx)
 static bool
 YAMLexpandStackPush(YAMLincludeContext *ctx, const char *path)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!ctx || !path)        /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!ctx || !path) /* GCOVR_EXCL_BR_STOP */
    {
       return false; /* GCOVR_EXCL_LINE */
    }
-   /* GCOVR_EXCL_BR_START */                             /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (ctx->expand_stack_size >= YAML_INCLUDE_MAX_DEPTH) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS); /* GCOVR_EXCL_LINE */
@@ -186,7 +186,7 @@ YAMLexpandStackPush(YAMLincludeContext *ctx, const char *path)
          YAML_INCLUDE_MAX_DEPTH);
       return false; /* GCOVR_EXCL_LINE */
    }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (YAMLpathStackContains(ctx->expand_stack, ctx->expand_stack_size, path))
    /* GCOVR_EXCL_BR_STOP */
    {
@@ -195,7 +195,7 @@ YAMLexpandStackPush(YAMLincludeContext *ctx, const char *path)
                            path); /* GCOVR_EXCL_LINE */
       return false;               /* GCOVR_EXCL_LINE */
    }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!YAMLpathStackReserve(&ctx->expand_stack, &ctx->expand_stack_capacity,
                              /* GCOVR_EXCL_BR_STOP */
                              ctx->expand_stack_size + 1))
@@ -204,7 +204,7 @@ YAMLexpandStackPush(YAMLincludeContext *ctx, const char *path)
    }
 
    ctx->expand_stack[ctx->expand_stack_size] = strdup(path);
-   /* GCOVR_EXCL_BR_START */                       /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!ctx->expand_stack[ctx->expand_stack_size]) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                       /* GCOVR_EXCL_LINE */
@@ -218,7 +218,7 @@ YAMLexpandStackPush(YAMLincludeContext *ctx, const char *path)
 static void
 YAMLexpandStackPop(YAMLincludeContext *ctx)
 {
-   /* GCOVR_EXCL_BR_START */                /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!ctx || ctx->expand_stack_size <= 0) /* GCOVR_EXCL_BR_STOP */
    {
       return; /* GCOVR_EXCL_LINE */
@@ -232,14 +232,14 @@ YAMLexpandStackPop(YAMLincludeContext *ctx)
 static bool
 YAMLincludeContextInit(YAMLincludeContext *ctx, const char *root_dir)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!ctx)                 /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!ctx) /* GCOVR_EXCL_BR_STOP */
    {
       return false; /* GCOVR_EXCL_LINE */
    }
 
    memset(ctx, 0, sizeof(*ctx));
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    const char *dir = (root_dir && strlen(root_dir) > 0) ? root_dir : ".";
    /* GCOVR_EXCL_BR_STOP */
    ctx->root_dir = realpath(dir, NULL);
@@ -255,18 +255,18 @@ YAMLincludeContextInit(YAMLincludeContext *ctx, const char *root_dir)
 static void
 YAMLincludeContextDestroy(YAMLincludeContext *ctx)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!ctx)                 /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!ctx) /* GCOVR_EXCL_BR_STOP */
    {
       return; /* GCOVR_EXCL_LINE */
    }
 
-   /* GCOVR_EXCL_BR_START */                      /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    for (int i = 0; i < ctx->read_stack_size; i++) /* GCOVR_EXCL_BR_STOP */
    {
       free(ctx->read_stack[i]); /* GCOVR_EXCL_LINE */
    }
-   /* GCOVR_EXCL_BR_START */                        /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    for (int i = 0; i < ctx->expand_stack_size; i++) /* GCOVR_EXCL_BR_STOP */
    {
       free(ctx->expand_stack[i]); /* GCOVR_EXCL_LINE */
@@ -280,8 +280,8 @@ YAMLincludeContextDestroy(YAMLincludeContext *ctx)
 static bool
 YAMLincludeContextAddBytes(YAMLincludeContext *ctx, size_t extra_bytes)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!ctx)                 /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!ctx) /* GCOVR_EXCL_BR_STOP */
    {
       return false; /* GCOVR_EXCL_LINE */
    }
@@ -299,7 +299,7 @@ YAMLincludeContextAddBytes(YAMLincludeContext *ctx, size_t extra_bytes)
 static bool
 YAMLtextBufferEnsureCapacity(char **text_ptr, size_t *capacity_ptr, size_t min_capacity)
 {
-   /* GCOVR_EXCL_BR_START */       /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!text_ptr || !capacity_ptr) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);                   /* GCOVR_EXCL_LINE */
@@ -315,7 +315,7 @@ YAMLtextBufferEnsureCapacity(char **text_ptr, size_t *capacity_ptr, size_t min_c
    size_t new_capacity = (*capacity_ptr > 0) ? *capacity_ptr : 1024;
    while (new_capacity < min_capacity)
    {
-      /* GCOVR_EXCL_BR_START */          /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (new_capacity > (SIZE_MAX / 2)) /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);             /* GCOVR_EXCL_LINE */
@@ -326,8 +326,8 @@ YAMLtextBufferEnsureCapacity(char **text_ptr, size_t *capacity_ptr, size_t min_c
    }
 
    char *new_text = (char *)realloc(*text_ptr, new_capacity);
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!new_text)            /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!new_text) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                     /* GCOVR_EXCL_LINE */
       hypredrv_ErrorMsgAdd("Failed to allocate YAML text buffer"); /* GCOVR_EXCL_LINE */
@@ -343,7 +343,7 @@ static bool
 YAMLincludeResolvePath(const YAMLincludeContext *ctx, const char *dirname,
                        const char *basename, char **resolved_path_ptr)
 {
-   /* GCOVR_EXCL_BR_START */                    /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!ctx || !basename || !resolved_path_ptr) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);               /* GCOVR_EXCL_LINE */
@@ -358,13 +358,13 @@ YAMLincludeResolvePath(const YAMLincludeContext *ctx, const char *dirname,
       return false;
    }
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    const char *base_dir = (dirname && strlen(dirname) > 0) ? dirname : ".";
    /* GCOVR_EXCL_BR_STOP */
    char *combined = NULL;
    hypredrv_CombineFilename(base_dir, basename, &combined);
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!combined)            /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!combined) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
       hypredrv_ErrorMsgAdd("Failed to construct include path for '%s'",
@@ -373,8 +373,8 @@ YAMLincludeResolvePath(const YAMLincludeContext *ctx, const char *dirname,
    }
 
    char *resolved = realpath(combined, NULL);
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!resolved)            /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!resolved) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       hypredrv_ErrorMsgAddInvalidFilename(combined);
@@ -411,7 +411,7 @@ YAMLnodeValidateMap(YAMLnode *node, StrIntMapArray map_array)
       {
          node->mapped_val = (char *)malloc((size_t)length * sizeof(char));
       }
-      /* GCOVR_EXCL_BR_START */                        /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       else if (length > (int)strlen(node->mapped_val)) /* GCOVR_EXCL_BR_STOP */
       {
          node->mapped_val =
@@ -431,8 +431,8 @@ void
 hypredrv_YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
                                 YAMLGetValidValuesFunc get_vals)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!node)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!node) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -484,8 +484,8 @@ hypredrv_YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc g
                             YAMLGetValidValuesFunc get_vals,
                             YAMLSetFieldByNameFunc set_field)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!parent)              /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!parent) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -549,8 +549,8 @@ hypredrv_YAMLtreeDestroy(YAMLtree **tree_ptr)
 {
    YAMLtree *tree = *tree_ptr;
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (tree)                 /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (tree) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_YAMLnodeDestroy(tree->root);
       free(tree);
@@ -597,8 +597,8 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
    current_base = NULL;
 
    fp = fopen(resolved_path, "r");
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!fp)                  /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!fp) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       hypredrv_ErrorMsgAddInvalidFilename(resolved_path);
@@ -620,8 +620,8 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
          *comment_ptr = '\0';
          /* Also remove from backup to prevent comment from being included in output */
          comment_ptr = strchr(backup, '#');
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         if (comment_ptr)          /* GCOVR_EXCL_BR_STOP */
+         /* GCOVR_EXCL_BR_START */
+         if (comment_ptr) /* GCOVR_EXCL_BR_STOP */
          {
             *comment_ptr       = '\n'; /* Preserve newline in backup */
             *(comment_ptr + 1) = '\0';
@@ -629,7 +629,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
       }
 
       /* Ignore empty lines and comments */
-      /* GCOVR_EXCL_BR_START */              /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (line[0] == '\0' || line[0] == '#') /* GCOVR_EXCL_BR_STOP */
       {
          continue;
@@ -656,7 +656,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
 
       /* Allow YAML sequence item lines (which may not contain ':') */
       bool is_seq_item_line =
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          (bool)(line[pos] == '-' && (line[pos + 1] == '\0' || line[pos + 1] == ' '));
       /* GCOVR_EXCL_BR_STOP */
 
@@ -676,7 +676,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
       /* Check indentation consistency */
       if (pos > 0)
       {
-         /* GCOVR_EXCL_BR_START */                      /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          if (base_indent > 0 && pos % base_indent != 0) /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_YAML_INCONSISTENT_INDENT);
@@ -690,11 +690,10 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
           */
          if (!first_indented_line && pos > prev_indent)
          {
-            int  jump = pos - prev_indent;
-            bool is_seq_item =
-               (bool)(line[pos] == '-' &&
-                      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-                      (line[pos + 1] == '\0' || line[pos + 1] == ' '));
+            int  jump        = pos - prev_indent;
+            bool is_seq_item = (bool)(line[pos] == '-' &&
+                                      /* GCOVR_EXCL_BR_START */
+                                      (line[pos + 1] == '\0' || line[pos + 1] == ' '));
             /* GCOVR_EXCL_BR_STOP */
             int max_allowed = (int)is_seq_item ? base_indent * 2 : base_indent;
             /* Be tolerant to avoid false positives with deeper nesting */
@@ -714,7 +713,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
       if (!is_seq_item_line)
       {
          /* Check for divisor character */
-         /* GCOVR_EXCL_BR_START */              /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          if ((sep = strchr(line, ':')) == NULL) /* GCOVR_EXCL_BR_STOP */
          {
             continue;
@@ -740,7 +739,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
        * For "include:" with a YAML sequence underneath, keep it in the text and
        * handle it later at the YAML tree level.
        */
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!is_seq_item_line && key && !strcmp(key, "include") && val && strlen(val) > 0)
       /* GCOVR_EXCL_BR_STOP */
       {
@@ -748,7 +747,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
          inner_level = pos / (base_indent > 0 ? base_indent : 1);
 
          /* Recursively read the content of the included file */
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          YAMLtextReadWithContext(current_dir ? current_dir : dirname, val, inner_level,
                                  /* GCOVR_EXCL_BR_STOP */
                                  base_indent_ptr, length_ptr, text_ptr, capacity_ptr,
@@ -769,7 +768,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
          {
             goto fail_with_text_cleanup;
          }
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          if (!YAMLtextBufferEnsureCapacity(text_ptr, capacity_ptr, new_length + 1))
          /* GCOVR_EXCL_BR_STOP */
          {
@@ -805,14 +804,14 @@ cleanup:
    return;
 
 fail_with_text_cleanup:
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (*text_ptr)            /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (*text_ptr) /* GCOVR_EXCL_BR_STOP */
    {
       free(*text_ptr);
       *text_ptr   = NULL;
       *length_ptr = 0;
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (capacity_ptr)         /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (capacity_ptr) /* GCOVR_EXCL_BR_STOP */
       {
          *capacity_ptr = 0;
       }
@@ -826,7 +825,7 @@ hypredrv_YAMLtextRead(const char *dirname, const char *basename, int level,
 {
    YAMLincludeContext ctx;
    size_t             capacity = 0;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (text_ptr && *text_ptr && length_ptr && (*length_ptr > 0)) /* GCOVR_EXCL_BR_STOP */
    {
       capacity = *length_ptr + 1;
@@ -866,8 +865,8 @@ typedef struct YAMLtokenArray_struct
 static void
 YAMLtokenDestroy(YAMLtoken *token)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!token)               /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!token) /* GCOVR_EXCL_BR_STOP */
    {
       return; /* GCOVR_EXCL_LINE */
    }
@@ -882,8 +881,8 @@ YAMLtokenDestroy(YAMLtoken *token)
 static void
 YAMLtokenArrayDestroy(YAMLtokenArray *arr)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!arr)                 /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!arr) /* GCOVR_EXCL_BR_STOP */
    {
       return; /* GCOVR_EXCL_LINE */
    }
@@ -908,15 +907,15 @@ YAMLtokenArrayReserve(YAMLtokenArray *arr, int min_capacity)
 
    int        new_capacity = (arr->capacity == 0) ? 32 : (arr->capacity * 2);
    YAMLtoken *new_data     = NULL;
-   /* GCOVR_EXCL_BR_START */           /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    while (new_capacity < min_capacity) /* GCOVR_EXCL_BR_STOP */
    {
       new_capacity *= 2; /* GCOVR_EXCL_LINE */
    }
 
    new_data = (YAMLtoken *)realloc(arr->data, (size_t)new_capacity * sizeof(YAMLtoken));
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!new_data)            /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!new_data) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                      /* GCOVR_EXCL_LINE */
       hypredrv_ErrorMsgAdd("Failed to allocate YAML token buffer"); /* GCOVR_EXCL_LINE */
@@ -931,13 +930,13 @@ YAMLtokenArrayReserve(YAMLtokenArray *arr, int min_capacity)
 static bool
 YAMLtokenArrayPush(YAMLtokenArray *arr, YAMLtoken *token)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!arr || !token)       /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!arr || !token) /* GCOVR_EXCL_BR_STOP */
    {
       return false; /* GCOVR_EXCL_LINE */
    }
 
-   /* GCOVR_EXCL_BR_START */                       /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!YAMLtokenArrayReserve(arr, arr->size + 1)) /* GCOVR_EXCL_BR_STOP */
    {
       return false; /* GCOVR_EXCL_LINE */
@@ -951,16 +950,16 @@ YAMLtokenArrayPush(YAMLtokenArray *arr, YAMLtoken *token)
 static bool
 YAMLlineIsBlank(const char *line)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!line)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!line) /* GCOVR_EXCL_BR_STOP */
    {
       return true; /* GCOVR_EXCL_LINE */
    }
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   while (*line)             /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   while (*line) /* GCOVR_EXCL_BR_STOP */
    {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (*line != ' ' && *line != '\n' && *line != '\r' && *line != '\t')
       /* GCOVR_EXCL_BR_STOP */
       {
@@ -979,11 +978,11 @@ YAMLlineParseIndent(const char *line, int *indent_out)
    int pos    = 0;
    int indent = 0;
 
-   /* GCOVR_EXCL_BR_START */                         /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    while (line[count] == ' ' || line[count] == '\t') /* GCOVR_EXCL_BR_STOP */
    {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (line[count] == ' ')   /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (line[count] == ' ') /* GCOVR_EXCL_BR_STOP */
       {
          indent++;
          pos++;
@@ -1003,11 +1002,11 @@ YAMLlineParseIndent(const char *line, int *indent_out)
 static bool
 YAMLtokenSetString(char **dst, const char *src)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    char *copy = strdup(src ? src : "");
    /* GCOVR_EXCL_BR_STOP */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!copy)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!copy) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                      /* GCOVR_EXCL_LINE */
       hypredrv_ErrorMsgAdd("Failed to allocate YAML token string"); /* GCOVR_EXCL_LINE */
@@ -1025,8 +1024,8 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
    int   count    = 0;
    char *content  = NULL;
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!line || !token_out)  /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!line || !token_out) /* GCOVR_EXCL_BR_STOP */
    {
       return 0; /* GCOVR_EXCL_LINE */
    }
@@ -1034,13 +1033,13 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
    memset(token_out, 0, sizeof(*token_out));
 
    line[strcspn(line, "\n")] = '\0';
-   /* GCOVR_EXCL_BR_START */                   /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if ((line_ptr = strchr(line, '#')) != NULL) /* GCOVR_EXCL_BR_STOP */
    {
       *line_ptr = '\0';
    }
 
-   /* GCOVR_EXCL_BR_START */  /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (YAMLlineIsBlank(line)) /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
@@ -1048,8 +1047,8 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
 
    count   = YAMLlineParseIndent(line, &indent);
    content = line + count;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (*content == '\0')     /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (*content == '\0') /* GCOVR_EXCL_BR_STOP */
    {
       return 0; /* GCOVR_EXCL_LINE */
    }
@@ -1058,7 +1057,7 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
    token_out->level  = (base_indent > 0) ? (indent / base_indent) : (indent / 2);
 
    /* Sequence item */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (content[0] == '-' && (content[1] == ' ' || content[1] == '\0'))
    /* GCOVR_EXCL_BR_STOP */
    {
@@ -1066,29 +1065,29 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
       token_out->is_sequence_item = true;
       token_out->divisor_is_ok    = true;
 
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!YAMLtokenSetString(&token_out->key, "-") ||
           /* GCOVR_EXCL_BR_STOP */
-          /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+          /* GCOVR_EXCL_BR_START */
           !YAMLtokenSetString(&token_out->val, ""))
       /* GCOVR_EXCL_BR_STOP */
       {
          return -1; /* GCOVR_EXCL_LINE */
       }
 
-      /* GCOVR_EXCL_BR_START */                      /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (content[1] != ' ' || strlen(content) <= 2) /* GCOVR_EXCL_BR_STOP */
       {
          return 1;
       }
 
       inline_content = content + 2;
-      /* GCOVR_EXCL_BR_START */      /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       while (*inline_content == ' ') /* GCOVR_EXCL_BR_STOP */
       {
          inline_content++; /* GCOVR_EXCL_LINE */
       }
-      /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (*inline_content == '\0') /* GCOVR_EXCL_BR_STOP */
       {
          return 1; /* GCOVR_EXCL_LINE */
@@ -1098,7 +1097,7 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
       {
          free(token_out->val);
          token_out->val = NULL;
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          if (!YAMLtokenSetString(&token_out->val, inline_content))
          /* GCOVR_EXCL_BR_STOP */
          {
@@ -1112,8 +1111,8 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
          char *inline_sep  = NULL;
          char *inline_key  = NULL;
          char *inline_val  = NULL;
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         if (!inline_copy)         /* GCOVR_EXCL_BR_STOP */
+         /* GCOVR_EXCL_BR_START */
+         if (!inline_copy) /* GCOVR_EXCL_BR_STOP */
          {
             hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
             hypredrv_ErrorMsgAdd(
@@ -1122,13 +1121,13 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
          }
 
          inline_sep = strchr(inline_copy, ':');
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         if (inline_sep)           /* GCOVR_EXCL_BR_STOP */
+         /* GCOVR_EXCL_BR_START */
+         if (inline_sep) /* GCOVR_EXCL_BR_STOP */
          {
             *inline_sep = '\0';
             inline_key  = inline_copy;
             inline_val  = inline_sep + 1;
-            /* GCOVR_EXCL_BR_START */  /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             while (*inline_key == ' ') /* GCOVR_EXCL_BR_STOP */
             {
                inline_key++; /* GCOVR_EXCL_LINE */
@@ -1138,10 +1137,10 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
                inline_val++;
             }
 
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             if (!YAMLtokenSetString(&token_out->inline_key, inline_key) ||
                 /* GCOVR_EXCL_BR_STOP */
-                /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                /* GCOVR_EXCL_BR_START */
                 !YAMLtokenSetString(&token_out->inline_val, inline_val))
             /* GCOVR_EXCL_BR_STOP */
             {
@@ -1173,8 +1172,8 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
          token_out->divisor_is_ok = false;
       }
 
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      while (*key == ' ')       /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      while (*key == ' ') /* GCOVR_EXCL_BR_STOP */
       {
          key++; /* GCOVR_EXCL_LINE */
       }
@@ -1183,10 +1182,10 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
          val++;
       }
 
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!YAMLtokenSetString(&token_out->key, key) ||
           /* GCOVR_EXCL_BR_STOP */
-          /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+          /* GCOVR_EXCL_BR_START */
           !YAMLtokenSetString(&token_out->val, val))
       /* GCOVR_EXCL_BR_STOP */
       {
@@ -1204,17 +1203,17 @@ YAMLtokenizeText(const char *text, int base_indent, YAMLtokenArray *tokens)
    char *remaining = NULL;
    char *line      = NULL;
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!tokens)              /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!tokens) /* GCOVR_EXCL_BR_STOP */
    {
       return false; /* GCOVR_EXCL_LINE */
    }
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    text_copy = strdup(text ? text : "");
    /* GCOVR_EXCL_BR_STOP */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!text_copy)           /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!text_copy) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
       hypredrv_ErrorMsgAdd(
@@ -1227,18 +1226,18 @@ YAMLtokenizeText(const char *text, int base_indent, YAMLtokenArray *tokens)
    {
       YAMLtoken token;
       int       status = YAMLtokenParseLine(line, base_indent, &token);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (status < 0)           /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (status < 0) /* GCOVR_EXCL_BR_STOP */
       {
          free(text_copy); /* GCOVR_EXCL_LINE */
          return false;    /* GCOVR_EXCL_LINE */
       }
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (status == 0)          /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (status == 0) /* GCOVR_EXCL_BR_STOP */
       {
          continue;
       }
-      /* GCOVR_EXCL_BR_START */                /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!YAMLtokenArrayPush(tokens, &token)) /* GCOVR_EXCL_BR_STOP */
       {
          YAMLtokenDestroy(&token); /* GCOVR_EXCL_LINE */
@@ -1262,7 +1261,7 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
    {
       const YAMLtoken *token = &tokens->data[i];
 
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (i > 0 && token->level > parent->level && parent->val && strlen(parent->val) > 0)
       /* GCOVR_EXCL_BR_STOP */
       {
@@ -1281,7 +1280,7 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
       hypredrv_YAMLnodeAppend(node, &parent);
 
       /* "- key: value" inline mapping under sequence item */
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (token->is_sequence_item && token->inline_key && token->inline_val)
       /* GCOVR_EXCL_BR_STOP */
       {
@@ -1304,7 +1303,7 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
          YAML_NODE_SET_INVALID_INDENT(validation_node);
       }
 
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!token->divisor_is_ok && !token->is_sequence_item) /* GCOVR_EXCL_BR_STOP */
       {
          YAML_NODE_SET_INVALID_DIVISOR(validation_node);
@@ -1320,7 +1319,7 @@ hypredrv_YAMLtreeBuild(int base_indent, const char *text, YAMLtree **tree_ptr)
    YAMLtokenArray tokens;
 
    memset(&tokens, 0, sizeof(tokens));
-   /* GCOVR_EXCL_BR_START */                          /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!YAMLtokenizeText(text, base_indent, &tokens)) /* GCOVR_EXCL_BR_STOP */
    {
       YAMLtokenArrayDestroy(&tokens); /* GCOVR_EXCL_LINE */
@@ -1341,8 +1340,8 @@ hypredrv_YAMLtreeBuild(int base_indent, const char *text, YAMLtree **tree_ptr)
 static void
 YAMLnodeDestroyChildren(YAMLnode *node)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!node)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!node) /* GCOVR_EXCL_BR_STOP */
    {
       return; /* GCOVR_EXCL_LINE */
    }
@@ -1360,7 +1359,7 @@ YAMLnodeDestroyChildren(YAMLnode *node)
 static void
 YAMLnodeClearMappedVal(YAMLnode *node)
 {
-   /* GCOVR_EXCL_BR_START */     /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (node && node->mapped_val) /* GCOVR_EXCL_BR_STOP */
    {
       free(node->mapped_val);
@@ -1371,8 +1370,8 @@ YAMLnodeClearMappedVal(YAMLnode *node)
 static void
 YAMLnodeSetScalarValue(YAMLnode *node, const char *val)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!node)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!node) /* GCOVR_EXCL_BR_STOP */
    {
       return; /* GCOVR_EXCL_LINE */
    }
@@ -1380,10 +1379,10 @@ YAMLnodeSetScalarValue(YAMLnode *node, const char *val)
    YAMLnodeClearMappedVal(node);
 
    free(node->val);
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    node->val = hypredrv_StrTrim(strdup(val ? val : ""));
    /* GCOVR_EXCL_BR_STOP */
-   /* GCOVR_EXCL_BR_START */       /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!strstr(node->key, "name")) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_StrToLowerCase(node->val);
@@ -1394,8 +1393,8 @@ YAMLnodeSetScalarValue(YAMLnode *node, const char *val)
 static void
 YAMLnodeEnsureMapping(YAMLnode *node)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!node)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!node) /* GCOVR_EXCL_BR_STOP */
    {
       return; /* GCOVR_EXCL_LINE */
    }
@@ -1426,7 +1425,7 @@ YAMLnodeGetOrCreateChild(YAMLnode *parent, const char *key)
 static bool
 YAMLnodeHasSequenceItems(YAMLnode *node)
 {
-   /* GCOVR_EXCL_BR_START */     /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!node || !node->children) /* GCOVR_EXCL_BR_STOP */
    {
       return false;
@@ -1448,21 +1447,21 @@ YAMLnodeHasSequenceItems(YAMLnode *node)
 static void
 YAMLnodeRemoveChild(YAMLnode *parent, YAMLnode *child)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!parent || !child)    /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!parent || !child) /* GCOVR_EXCL_BR_STOP */
    {
       return; /* GCOVR_EXCL_LINE */
    }
    YAMLnode *cur  = parent->children;
    YAMLnode *prev = NULL;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   while (cur)               /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   while (cur) /* GCOVR_EXCL_BR_STOP */
    {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (cur == child)         /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (cur == child) /* GCOVR_EXCL_BR_STOP */
       {
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         if (prev)                 /* GCOVR_EXCL_BR_STOP */
+         /* GCOVR_EXCL_BR_START */
+         if (prev) /* GCOVR_EXCL_BR_STOP */
          {
             prev->next = cur->next; /* GCOVR_EXCL_LINE */
          }
@@ -1481,16 +1480,16 @@ YAMLnodeRemoveChild(YAMLnode *parent, YAMLnode *child)
 static YAMLnode *
 YAMLnodeCloneDeep(const YAMLnode *src, int level_offset)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!src)                 /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!src) /* GCOVR_EXCL_BR_STOP */
    {
       return NULL; /* GCOVR_EXCL_LINE */
    }
    YAMLnode *clone =
       hypredrv_YAMLnodeCreate(src->key, src->val, src->level + level_offset);
    clone->valid = src->valid;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (src->mapped_val)      /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (src->mapped_val) /* GCOVR_EXCL_BR_STOP */
    {
       clone->mapped_val = strdup(src->mapped_val); /* GCOVR_EXCL_LINE */
    }
@@ -1506,8 +1505,8 @@ static void
 YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_indent,
                                 YAMLincludeContext *ctx)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!node)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!node) /* GCOVR_EXCL_BR_STOP */
    {
       return; /* GCOVR_EXCL_LINE */
    }
@@ -1523,7 +1522,7 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
          /* Collect include paths */
          char **paths   = NULL;
          int    n_paths = 0;
-         /* GCOVR_EXCL_BR_START */                 /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          if (child->val && strlen(child->val) > 0) /* GCOVR_EXCL_BR_STOP */
          {
             paths    = (char **)malloc(sizeof(char *));
@@ -1533,17 +1532,17 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
 
          YAML_NODE_ITERATE(child, inc_item)
          {
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             if (!strcmp(inc_item->key, "-") && inc_item->val && strlen(inc_item->val) > 0)
             /* GCOVR_EXCL_BR_STOP */
             {
                char **new_paths =
                   (char **)realloc(paths, (size_t)(n_paths + 1) * sizeof(char *));
-               /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-               if (!new_paths)           /* GCOVR_EXCL_BR_STOP */
+               /* GCOVR_EXCL_BR_START */
+               if (!new_paths) /* GCOVR_EXCL_BR_STOP */
                {
                   /* Free existing paths array and all its elements */
-                  /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                  /* GCOVR_EXCL_BR_START */
                   for (int j = 0; j < n_paths; j++)
                   /* GCOVR_EXCL_BR_STOP */ /* GCOVR_EXCL_LINE */
                   {
@@ -1577,11 +1576,11 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
                free(paths);
                return;
             }
-            /* GCOVR_EXCL_BR_START */                     /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             if (!YAMLexpandStackPush(ctx, resolved_path)) /* GCOVR_EXCL_BR_STOP */
             {
-               free(resolved_path);      /* GCOVR_EXCL_LINE */
-               /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+               free(resolved_path); /* GCOVR_EXCL_LINE */
+               /* GCOVR_EXCL_BR_START */
                for (int j = i; j < n_paths; j++)
                /* GCOVR_EXCL_BR_STOP */ /* GCOVR_EXCL_LINE */
                {
@@ -1604,18 +1603,17 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
 
             YAMLtextReadWithContext(base_dir, paths[i], 0, &inc_base_indent, &inc_len,
                                     &inc_text, &inc_capacity, ctx);
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-            if (inc_text)             /* GCOVR_EXCL_BR_STOP */
+            /* GCOVR_EXCL_BR_START */
+            if (inc_text) /* GCOVR_EXCL_BR_STOP */
             {
                YAMLtree *inc_tree = NULL;
                hypredrv_YAMLtreeBuild(inc_base_indent, inc_text, &inc_tree);
-               /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+               /* GCOVR_EXCL_BR_START */
                if (inc_tree && !hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_STOP */
                {
                   YAMLnodeExpandIncludesRecursive(
-                     /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-                     inc_tree->root,
-                     inc_dir ? inc_dir : base_dir, inc_base_indent, ctx);
+                     /* GCOVR_EXCL_BR_START */
+                     inc_tree->root, inc_dir ? inc_dir : base_dir, inc_base_indent, ctx);
                   /* GCOVR_EXCL_BR_STOP */
                }
                if (hypredrv_ErrorCodeActive())
@@ -1670,7 +1668,7 @@ YAMLargsFindFlagIndex(int argc, char **argv, const char *short_flag,
 {
    for (int i = 0; i < argc; i++)
    {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if ((short_flag && !strcmp(argv[i], short_flag)) ||
           /* GCOVR_EXCL_BR_STOP */
           (long_flag && !strcmp(argv[i], long_flag)))
@@ -1686,7 +1684,7 @@ YAMLargsFindConfigFileIndex(int argc, char **argv)
 {
    for (int i = 0; i < argc; i++)
    {
-      /* GCOVR_EXCL_BR_START */                        /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (argv[i] && hypredrv_IsYAMLFilename(argv[i])) /* GCOVR_EXCL_BR_STOP */
       {
          return i;
@@ -1710,8 +1708,8 @@ static void
 YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int start_idx,
                               const char *value)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!ctx || !node)        /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!ctx || !node) /* GCOVR_EXCL_BR_STOP */
    {
       return; /* GCOVR_EXCL_LINE */
    }
@@ -1734,7 +1732,7 @@ YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int star
             YAMLnode *seq_walk = child->children;
             while (seq_walk != NULL)
             {
-               /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+               /* GCOVR_EXCL_BR_START */
                if (!strcmp(seq_walk->key, "-")) /* GCOVR_EXCL_BR_STOP */
                {
                   YAMLtreeUpdateApplyPathToNode(ctx, seq_walk, i + 1, value);
@@ -1749,19 +1747,19 @@ YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int star
       else /* leaf */
       {
          /* Check if current node has sequence items */
-         /* GCOVR_EXCL_BR_START */          /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          if (YAMLnodeHasSequenceItems(cur)) /* GCOVR_EXCL_BR_STOP */
          {
             YAMLnode *seq_walk = cur->children; /* GCOVR_EXCL_LINE */
             while (seq_walk != NULL)            /* GCOVR_EXCL_LINE */
             {
-               /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+               /* GCOVR_EXCL_BR_START */
                if (!strcmp(seq_walk->key, "-"))
                /* GCOVR_EXCL_BR_STOP */ /* GCOVR_EXCL_LINE */
                {
                   YAMLnode *item_leaf = hypredrv_YAMLnodeFindChildByKey(
-                     seq_walk, seg_const);  /* GCOVR_EXCL_LINE */
-                  /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                     seq_walk, seg_const); /* GCOVR_EXCL_LINE */
+                  /* GCOVR_EXCL_BR_START */
                   if (!item_leaf) /* GCOVR_EXCL_BR_STOP */ /* GCOVR_EXCL_LINE */
                   {
                      item_leaf = hypredrv_YAMLnodeCreate(
@@ -1797,7 +1795,7 @@ YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int star
 void
 hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!tree || !tree->root) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_YAML_TREE_NULL);
@@ -1828,7 +1826,7 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
       {
          override_end = cfg_idx;
       }
-      /* GCOVR_EXCL_BR_START */           /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (override_start >= override_end) /* GCOVR_EXCL_BR_STOP */
       {
          return; /* nothing to do */
@@ -1840,7 +1838,7 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
        * - If argv looks like a pure override pair list, parse it.
        * - Otherwise assume caller passed a full argv without overrides -> no-op. */
       bool pair_list_mode = false;
-      /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (argc > 0 && (argc % 2) == 0) /* GCOVR_EXCL_BR_STOP */
       {
          bool looks_like_pairs = true;
@@ -1848,7 +1846,7 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
          {
             const char *k = argv[i];
             const char *v = argv[i + 1];
-            /* GCOVR_EXCL_BR_START */                 /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             if (!k || !v || strncmp(k, "--", 2) != 0) /* GCOVR_EXCL_BR_STOP */
             {
                looks_like_pairs = false;
@@ -1878,8 +1876,8 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
    for (int i = override_start; i < override_end; i += 2)
    {
       const char *k = argv[i];
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (!k)                   /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (!k) /* GCOVR_EXCL_BR_STOP */
       {
          continue;
       }
@@ -1890,7 +1888,7 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
          /* In full-argv mode, also accept key paths without the leading "--",
           * e.g. "--args preconditioner:mgr:print_level 1". */
          bool looks_like_path = (strchr(k, ':') != NULL);
-         /* GCOVR_EXCL_BR_START */              /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          if (full_argv_mode && looks_like_path) /* GCOVR_EXCL_BR_STOP */
          {
             /* Accept path-style overrides without the leading "--" in full argv mode. */
@@ -1899,8 +1897,8 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
          {
             /* In full argv mode, ignore non-override tokens; keep strictness in
              * pair-list mode. */
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-            if (!full_argv_mode)      /* GCOVR_EXCL_BR_STOP */
+            /* GCOVR_EXCL_BR_START */
+            if (!full_argv_mode) /* GCOVR_EXCL_BR_STOP */
             {
                hypredrv_ErrorCodeSet(ERROR_INVALID_KEY); /* GCOVR_EXCL_LINE */
                hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_LINE */
@@ -1913,8 +1911,8 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
          }
       }
 
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (i + 1 >= argc)        /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (i + 1 >= argc) /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);                   /* GCOVR_EXCL_LINE */
          hypredrv_ErrorMsgAdd("Missing value for override '%s'", k); /* GCOVR_EXCL_LINE */
@@ -1922,7 +1920,7 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
       }
 
       const char *v = argv[i + 1];
-      /* GCOVR_EXCL_BR_START */             /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!v || (strncmp(v, "--", 2) == 0)) /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -1945,7 +1943,7 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
          int   num_segments = 0;
          char *save_seg     = NULL;
          char *seg_temp     = strtok_r(p, ":", &save_seg);
-         /* GCOVR_EXCL_BR_START */             /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          while (seg_temp && num_segments < 64) /* GCOVR_EXCL_BR_STOP */
          {
             segments[num_segments++] = seg_temp;
@@ -2033,17 +2031,17 @@ hypredrv_YAMLtreeValidate(YAMLtree *tree)
 void
 hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!tree || !tree->root) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    const char *dir = (base_dir && strlen(base_dir) > 0) ? base_dir : ".";
    /* GCOVR_EXCL_BR_STOP */
    int                bi = tree->base_indent > 0 ? tree->base_indent : 2;
    YAMLincludeContext ctx;
-   /* GCOVR_EXCL_BR_START */               /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!YAMLincludeContextInit(&ctx, dir)) /* GCOVR_EXCL_BR_STOP */
    {
       return;
@@ -2084,7 +2082,7 @@ hypredrv_YAMLnodeCreate(const char *key, const char *val, int level)
       node->val = hypredrv_StrToLowerCase(hypredrv_StrTrim(strdup((char *)val)));
       /* Strip surrounding double quotes if present */
       size_t len = strlen(node->val);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (len >= 2 && node->val[0] == '\"' && node->val[len - 1] == '\"')
       /* GCOVR_EXCL_BR_STOP */
       {
@@ -2108,8 +2106,8 @@ hypredrv_YAMLnodeDestroy(YAMLnode *node)
    YAMLnode *child = NULL;
    YAMLnode *next  = NULL;
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (node == NULL)         /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (node == NULL) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -2138,7 +2136,7 @@ hypredrv_YAMLnodeAddChild(YAMLnode *parent, YAMLnode *child)
 {
    YAMLnode *node = NULL;
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!parent || !child) return;
    /* GCOVR_EXCL_BR_STOP */
 
@@ -2184,7 +2182,7 @@ hypredrv_YAMLnodeAppend(YAMLnode *node, YAMLnode **previous_ptr)
    {
       while (previous_level > node->level)
       {
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          if (!previous->parent) break;
          /* GCOVR_EXCL_BR_STOP */
          previous = previous->parent;
@@ -2220,8 +2218,8 @@ YAMLnodePrintHelper(const YAMLnode *node, const char *cKey, const char *cVal,
 void
 hypredrv_YAMLnodeValidate(YAMLnode *node)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!node)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!node) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -2233,7 +2231,7 @@ hypredrv_YAMLnodeValidate(YAMLnode *node)
       /* Still validate children so invalid keys inside sequence items are caught */
    }
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    switch (node->valid)
    /* GCOVR_EXCL_BR_STOP */
    {
@@ -2278,8 +2276,8 @@ hypredrv_YAMLnodeValidate(YAMLnode *node)
 void
 hypredrv_YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!node)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!node) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -2287,7 +2285,7 @@ hypredrv_YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
    /* Special formatting for sequence items ("-") */
    bool      is_seq_item  = (strcmp(node->key, "-") == 0);
    YAMLnode *inline_child = NULL;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (is_seq_item && node->val && !strlen(node->val) && node->children)
    /* GCOVR_EXCL_BR_STOP */
    {
@@ -2306,7 +2304,7 @@ hypredrv_YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
       }
       else
       {
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          printf("%s\n", (node->val && strlen(node->val) > 0) ? node->val : "");
          /* GCOVR_EXCL_BR_STOP */
       }
@@ -2325,40 +2323,40 @@ hypredrv_YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
                }
                break;
             case YAML_NODE_INVALID_INDENT:
-               /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-               if (!is_seq_item)         /* GCOVR_EXCL_BR_STOP */
+               /* GCOVR_EXCL_BR_START */
+               if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
                {
                   YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
                                       TEXT_BOLD " <-- * INVALID INDENTATION *");
                }
                break;
             case YAML_NODE_INVALID_DIVISOR:
-               /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-               if (!is_seq_item)         /* GCOVR_EXCL_BR_STOP */
+               /* GCOVR_EXCL_BR_START */
+               if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
                {
                   YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
                                       TEXT_BOLD " <-- * INVALID DIVISOR *");
                }
                break;
             case YAML_NODE_INVALID_KEY:
-               /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-               if (!is_seq_item)         /* GCOVR_EXCL_BR_STOP */
+               /* GCOVR_EXCL_BR_START */
+               if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
                {
                   YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD,
                                       TEXT_BOLD " <-- * INVALID KEY *");
                }
                break;
             case YAML_NODE_INVALID_VAL:
-               /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-               if (!is_seq_item)         /* GCOVR_EXCL_BR_STOP */
+               /* GCOVR_EXCL_BR_START */
+               if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
                {
                   YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
                                       TEXT_BOLD " <-- * INVALID VALUE *");
                }
                break;
             case YAML_NODE_UNEXPECTED_VAL:
-               /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-               if (!is_seq_item)         /* GCOVR_EXCL_BR_STOP */
+               /* GCOVR_EXCL_BR_START */
+               if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
                {
                   YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
                                       TEXT_BOLD " <-- * UNEXPECTED VALUE *");
@@ -2371,7 +2369,7 @@ hypredrv_YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
          break;
 
       case YAML_PRINT_MODE_ONLY_VALID:
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          if (node->valid == YAML_NODE_VALID && !is_seq_item) /* GCOVR_EXCL_BR_STOP */
          {
             YAMLnodePrintHelper(node, "", "", "");
@@ -2430,8 +2428,8 @@ hypredrv_YAMLnodeFindByKey(YAMLnode *node, const char *key)
 {
    YAMLnode *child = NULL;
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (node)                 /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (node) /* GCOVR_EXCL_BR_STOP */
    {
       if (!strcmp(node->key, key))
       {
@@ -2464,8 +2462,8 @@ hypredrv_YAMLnodeFindChildByKey(YAMLnode *parent, const char *key)
 {
    YAMLnode *child = NULL;
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (parent)               /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (parent) /* GCOVR_EXCL_BR_STOP */
    {
       child = parent->children;
       while (child)
@@ -2492,8 +2490,8 @@ hypredrv_YAMLnodeFindChildValueByKey(YAMLnode *parent, const char *key)
 {
    YAMLnode *child = NULL;
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (parent)               /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (parent) /* GCOVR_EXCL_BR_STOP */
    {
       child = parent->children;
       while (child)
@@ -2520,7 +2518,7 @@ hypredrv_YAMLnodeFindChildValueByKey(YAMLnode *parent, const char *key)
 int
 hypredrv_YAMLnodeCollectSequenceItems(YAMLnode *parent, YAMLnode ***items_out)
 {
-   /* GCOVR_EXCL_BR_START */  /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!parent || !items_out) /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
@@ -2548,7 +2546,7 @@ hypredrv_YAMLnodeCollectSequenceItems(YAMLnode *parent, YAMLnode ***items_out)
    int idx = 0;
    YAML_NODE_ITERATE(parent, child)
    {
-      /* GCOVR_EXCL_BR_START */     /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!strcmp(child->key, "-")) /* GCOVR_EXCL_BR_STOP */
       {
          arr[idx++] = child;

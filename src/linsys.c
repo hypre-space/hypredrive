@@ -45,12 +45,12 @@ static void
 LinearSystemSetSuffixSet(void *field, const YAMLnode *node)
 {
    IntArray **ptr = (IntArray **)field;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    const char *val = node->mapped_val ? node->mapped_val : node->val;
    /* GCOVR_EXCL_BR_STOP */
 
    hypredrv_IntArrayDestroy(ptr);
-   /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (val && strlen(val) > 0) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_StrToIntArray(val, ptr);
@@ -96,7 +96,7 @@ static const FieldOffsetMap ls_field_offset_map[] = {
 void
 hypredrv_LinearSystemSetFieldByName(LS_args *args, const YAMLnode *node)
 {
-   /* GCOVR_EXCL_BR_START */                  /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    for (size_t i = 0; i < LS_NUM_FIELDS; i++) /* GCOVR_EXCL_BR_STOP */
    {
       if (!strcmp(ls_field_offset_map[i].name, node->key))
@@ -244,8 +244,8 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
 
    HYPRE_BigInt  *indices = NULL;
    HYPRE_Complex *zeros   = NULL;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (num_entries > 0)      /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (num_entries > 0) /* GCOVR_EXCL_BR_STOP */
    {
       indices = (HYPRE_BigInt *)malloc((size_t)num_entries * sizeof(HYPRE_BigInt));
       if (values == NULL)
@@ -292,11 +292,11 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
 void
 hypredrv_LinearSystemSetNumSystems(LS_args *args)
 {
-   /* GCOVR_EXCL_BR_START */               /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (args->sequence_filename[0] != '\0') /* GCOVR_EXCL_BR_STOP */
    {
       int num_systems = 0;
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (hypredrv_LSSeqReadSummary(args->sequence_filename, &num_systems, NULL, NULL,
                                     NULL))
       /* GCOVR_EXCL_BR_STOP */
@@ -306,7 +306,7 @@ hypredrv_LinearSystemSetNumSystems(LS_args *args)
       return;
    }
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (args->set_suffix != NULL && args->set_suffix->size > 0) /* GCOVR_EXCL_BR_STOP */
    {
       args->num_systems = (HYPRE_Int)args->set_suffix->size;
@@ -324,12 +324,12 @@ hypredrv_LinearSystemSetNumSystems(LS_args *args)
 int
 hypredrv_LinearSystemGetSuffix(const LS_args *args, int ls_id)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!args)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!args) /* GCOVR_EXCL_BR_STOP */
    {
       return ls_id;
    }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (args->set_suffix != NULL && ls_id >= 1 &&
        (size_t)(ls_id - 1) < args->set_suffix->size)
    /* GCOVR_EXCL_BR_STOP */
@@ -342,7 +342,7 @@ hypredrv_LinearSystemGetSuffix(const LS_args *args, int ls_id)
 static HYPRE_MemoryLocation
 LinearSystemMemoryLocationGet(const LS_args *args)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    return (args && args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
    /* GCOVR_EXCL_BR_STOP */
 }
@@ -360,7 +360,7 @@ LinearSystemLogObjectName(const Stats *stats, char *buf, size_t buf_size)
    {
       return stats->object_name;
    }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (stats && stats->runtime_object_id > 0 && buf && buf_size > 0)
    /* GCOVR_EXCL_BR_STOP */
    {
@@ -386,7 +386,7 @@ LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *file
                                 const char *basename, char *resolved,
                                 size_t resolved_size)
 {
-   /* GCOVR_EXCL_BR_START */                     /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!args || !resolved || resolved_size == 0) /* GCOVR_EXCL_BR_STOP */
    {
       return 0; /* GCOVR_EXCL_LINE */
@@ -507,7 +507,7 @@ LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
       if (hypredrv_CheckBinaryDataExists(matrix_filename))
       {
          /* GCOVR_EXCL_START */
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          if (LinearSystemMultipartCanRead(comm, matrix_filename)) /* GCOVR_EXCL_BR_STOP */
          {
             int nparts = hypredrv_CountNumberOfPartitions(matrix_filename);
@@ -531,7 +531,7 @@ LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
          file_not_found = 1;
       }
    }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    else if (args->type == 3) /* GCOVR_EXCL_BR_STOP */
    {
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
@@ -605,18 +605,18 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
                YAML_NODE_SET_VALID(entry);
             }
          }
-         /* GCOVR_EXCL_BR_START */                    /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          else if (child->val && child->val[0] == '{') /* GCOVR_EXCL_BR_STOP */
          {
             /* Flow mapping: val is already lowercased by the YAML parser,
              * so keys inside the string are also lowercase. */
             char *buf   = strdup(child->val);
             char *inner = buf;
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             while (*inner == '{' || *inner == ' ') inner++;
             /* GCOVR_EXCL_BR_STOP */
             char *close = strrchr(inner, '}');
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             if (close) *close = '\0';
             /* GCOVR_EXCL_BR_STOP */
             char *pair = strtok(inner, ",");
@@ -624,8 +624,8 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
             {
                while (*pair == ' ') pair++;
                char *colon = strchr(pair, ':');
-               /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-               if (colon)                /* GCOVR_EXCL_BR_STOP */
+               /* GCOVR_EXCL_BR_START */
+               if (colon) /* GCOVR_EXCL_BR_STOP */
                {
                   *colon         = '\0';
                   char *pair_key = pair;
@@ -656,7 +656,7 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
    }
 
    /* set_suffix and init_suffix/last_suffix are mutually exclusive */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (args->set_suffix != NULL && args->set_suffix->size > 0 &&
        (args->init_suffix >= 0 || args->last_suffix >= 0))
    /* GCOVR_EXCL_BR_STOP */
@@ -829,8 +829,8 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
    par_A = (HYPRE_ParCSRMatrix)obj;
    HYPRE_ParCSRMatrixGetDims(par_A, &global_num_rows, &global_num_cols);
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (myid == 0)            /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (myid == 0) /* GCOVR_EXCL_BR_STOP */
    {
       file = fopen(rhs_filename, "r");
       if (file == NULL)
@@ -858,19 +858,19 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
 #ifdef HYPRE_BIG_INT
             long long   tmpM     = strtoll(line, NULL, 10);
             const char *line_ptr = strchr(line, ' ');
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             long long tmpN = (line_ptr != NULL) ? strtoll(line_ptr + 1, NULL, 10) : 0;
             /* GCOVR_EXCL_BR_STOP */
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             int read_ok = (tmpM != 0 && tmpN != 0);
             /* GCOVR_EXCL_BR_STOP */
 #else
             int         tmpM     = (int)strtol(line, NULL, 10);
             const char *line_ptr = strchr(line, ' ');
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             int tmpN = (line_ptr != NULL) ? (int)strtol(line_ptr + 1, NULL, 10) : 0;
             /* GCOVR_EXCL_BR_STOP */
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             int read_ok = (tmpM != 0 && tmpN != 0);
             /* GCOVR_EXCL_BR_STOP */
 #endif
@@ -921,7 +921,7 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
                      break;
                   }
                   double tmp_val = strtod(line, &endptr);
-                  /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                  /* GCOVR_EXCL_BR_START */
                   if (endptr == line || (*endptr != '\0' && *endptr != '\n'))
                   /* GCOVR_EXCL_BR_STOP */
                   {
@@ -944,7 +944,7 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
    MPI_Bcast(&M, 1, HYPRE_MPI_BIG_INT, 0, comm);
    if (M == -1)
    {
-      /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (myid == 0 && all_values) /* GCOVR_EXCL_BR_STOP */
       {
          hypre_TFree(all_values, HYPRE_MEMORY_HOST);
@@ -959,16 +959,16 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
 
    HYPRE_BigInt local_size    = iupper - ilower + 1;
    int          my_local_size = local_size;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (myid == 0)            /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (myid == 0) /* GCOVR_EXCL_BR_STOP */
    {
       counts = hypre_TAlloc(int, num_procs, HYPRE_MEMORY_HOST);
       displs = hypre_TAlloc(int, num_procs, HYPRE_MEMORY_HOST);
    }
    MPI_Gather(&my_local_size, 1, MPI_INT, counts, 1, MPI_INT, 0, comm);
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (myid == 0)            /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (myid == 0) /* GCOVR_EXCL_BR_STOP */
    {
       displs[0] = 0;
       /* GCOVR_EXCL_START */
@@ -987,8 +987,8 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
    HYPRE_IJVectorAssemble(*rhs_ptr);
 
    hypre_TFree(local_values, HYPRE_MEMORY_HOST);
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (myid == 0)            /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (myid == 0) /* GCOVR_EXCL_BR_STOP */
    {
       hypre_TFree(all_values, HYPRE_MEMORY_HOST);
       hypre_TFree(counts, HYPRE_MEMORY_HOST);
@@ -1169,12 +1169,12 @@ hypredrv_LinearSystemCreateWorkingSolution(MPI_Comm comm, const LS_args *args,
 {
    HYPRE_BigInt         jlower = 0, jupper = 0;
    HYPRE_MemoryLocation memloc =
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         (args && args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+      /* GCOVR_EXCL_BR_START */
+      (args && args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
    /* GCOVR_EXCL_BR_STOP */
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!rhs || !x_ptr)       /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!rhs || !x_ptr) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid arguments for LinearSystemCreateWorkingSolution");
@@ -1205,8 +1205,8 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
       LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    HYPRE_BigInt         jlower = 0, jupper = 0;
    HYPRE_MemoryLocation memloc =
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+      /* GCOVR_EXCL_BR_START */
+      (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
    /* GCOVR_EXCL_BR_STOP */
 
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
@@ -1321,7 +1321,7 @@ hypredrv_LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
 
    /* Keep the existing reference solution (e.g., rhs_mode = randsol) unless a file is
     * explicitly requested. */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (args->xref_filename[0] == '\0' && args->xref_basename[0] == '\0')
    /* GCOVR_EXCL_BR_STOP */
    {
@@ -1397,8 +1397,8 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
    HYPREDRV_LOG_COMMF(3, log_comm, log_object_name, ls_id, "initial guess reset begin");
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!x0_ptr || !x_ptr)    /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!x0_ptr || !x_ptr) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
@@ -1427,19 +1427,19 @@ void
 hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!vec || !dofmap || !dofmap->data || dofmap->size == 0) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
 
    HYPRE_Int num_tags = 1;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (dofmap->g_unique_data && dofmap->g_unique_size > 0) /* GCOVR_EXCL_BR_STOP */
    {
       int max_tag = dofmap->g_unique_data[dofmap->g_unique_size - 1];
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (max_tag >= 0)         /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (max_tag >= 0) /* GCOVR_EXCL_BR_STOP */
       {
          num_tags = (HYPRE_Int)max_tag + 1;
       }
@@ -1519,7 +1519,7 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
                (int)args->digits_suffix, hypredrv_LinearSystemGetSuffix(args, ls_id));
    }
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (matrix_filename[0] == '\0' || !strcmp(matrix_filename, args->matrix_filename))
    /* GCOVR_EXCL_BR_STOP */
    {
@@ -1538,8 +1538,8 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
       }
 
       HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, precmat_ptr);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (HYPRE_GetError())     /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (HYPRE_GetError()) /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          hypredrv_ErrorMsgAddInvalidFilename(matrix_filename);
@@ -1739,7 +1739,7 @@ hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type
    double   global_norm = 0.0;
    MPI_Comm comm        = hypre_ParVectorComm(par_vec);
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!strcmp(norm_type, "L2") || !strcmp(norm_type, "l2")) /* GCOVR_EXCL_BR_STOP */
    {
       /* hypre_ParVectorInnerProd is GPU-aware - no migration needed */

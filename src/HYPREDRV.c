@@ -64,22 +64,19 @@ static void PrepareExplicitObjectForConfiguredExecution(HYPREDRV_t hypredrv, voi
 /* Check if hypredrive is initialized */
 static inline uint32_t
 hypredrv_CheckInit(void)
-{
-   /* GCOVR_EXCL_BR_START */
+{ /* GCOVR_EXCL_BR_LINE */
    if (!hypredrv_RuntimeIsInitialized())
    {
       hypredrv_ErrorCodeSet(ERROR_HYPREDRV_NOT_INITIALIZED);
       return 1;
    }
-   return 0;
-   /* GCOVR_EXCL_BR_STOP */
+   return 0; /* GCOVR_EXCL_BR_LINE */
 }
 
 /* Check if hypredrive is initialized and if HYPREDRV object is valid */
 static inline uint32_t
 hypredrv_CheckInitAndObj(HYPREDRV_t hypredrv)
-{
-   /* GCOVR_EXCL_BR_START */
+{ /* GCOVR_EXCL_BR_LINE */
    if (!hypredrv_RuntimeIsInitialized())
    {
       hypredrv_ErrorCodeSet(ERROR_HYPREDRV_NOT_INITIALIZED);
@@ -92,8 +89,7 @@ hypredrv_CheckInitAndObj(HYPREDRV_t hypredrv)
       return 1;
    }
 
-   return 0;
-   /* GCOVR_EXCL_BR_STOP */
+   return 0; /* GCOVR_EXCL_BR_LINE */
 }
 
 // Macro to check if hypredrive is initialized
@@ -112,13 +108,11 @@ hypredrv_CheckInitAndObj(HYPREDRV_t hypredrv)
 
 static void
 DestroyActiveSolver(HYPREDRV_t hypredrv)
-{
-   /* GCOVR_EXCL_BR_START */
-   if (hypredrv && hypredrv->iargs && hypredrv->solver)
+{                                                       /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv && hypredrv->iargs && hypredrv->solver) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
-   }
-   /* GCOVR_EXCL_BR_STOP */
+   } /* GCOVR_EXCL_BR_LINE */
 }
 
 static const char *
@@ -126,24 +120,20 @@ ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
                      size_t default_object_name_size)
 {
    const char *object_name = NULL;
-
-   /* GCOVR_EXCL_BR_START */
-   if (hypredrv && hypredrv->stats)
+   /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv && hypredrv->stats) /* GCOVR_EXCL_BR_LINE */
    {
       object_name = hypredrv->stats->object_name;
-   }
-   /* GCOVR_EXCL_BR_STOP */
-
-   /* GCOVR_EXCL_BR_START */
-   if ((!object_name || object_name[0] == '\0') && hypredrv &&
+   } /* GCOVR_EXCL_BR_LINE */
+   /* GCOVR_EXCL_BR_LINE */
+   if ((!object_name || object_name[0] == '\0') && hypredrv && /* GCOVR_EXCL_BR_LINE */
        hypredrv->runtime_object_id > 0 && default_object_name &&
        default_object_name_size > 0)
    {
       snprintf(default_object_name, default_object_name_size, "obj-%d",
                hypredrv->runtime_object_id);
       object_name = default_object_name;
-   }
-   /* GCOVR_EXCL_BR_STOP */
+   } /* GCOVR_EXCL_BR_LINE */
 
    return object_name;
 }
@@ -151,24 +141,21 @@ ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
 static bool
 PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
                          size_t default_object_name_size)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!hypredrv || !hypredrv->stats || hypredrv->stats->object_name[0] != '\0' ||
-       !default_object_name || default_object_name_size == 0)
-   /* GCOVR_EXCL_BR_STOP */
+{ /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv || !hypredrv->stats ||
+       hypredrv->stats->object_name[0] != '\0' ||             /* GCOVR_EXCL_BR_LINE */
+       !default_object_name || default_object_name_size == 0) /* GCOVR_EXCL_BR_LINE */
    {
       return false;
    }
 
-   default_object_name[0] = '\0';
-   const char *resolved_name =
-      ResolveLogObjectName(hypredrv, default_object_name, default_object_name_size);
-   /* GCOVR_EXCL_BR_START */
-   if (!resolved_name || resolved_name[0] == '\0')
+   default_object_name[0]    = '\0';
+   const char *resolved_name = ResolveLogObjectName(
+      hypredrv, default_object_name, default_object_name_size); /* GCOVR_EXCL_BR_LINE */
+   if (!resolved_name || resolved_name[0] == '\0')              /* GCOVR_EXCL_BR_LINE */
    {
       return false;
-   }
-   /* GCOVR_EXCL_BR_STOP */
+   } /* GCOVR_EXCL_BR_LINE */
 
    hypredrv_StatsSetObjectName(hypredrv->stats, resolved_name);
    return true;
@@ -177,18 +164,16 @@ PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
 static void
 PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_object_name,
                         bool pushed_default_name)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!pushed_default_name || !hypredrv || !hypredrv->stats || !default_object_name ||
-       default_object_name[0] == '\0')
-   /* GCOVR_EXCL_BR_STOP */
+{ /* GCOVR_EXCL_BR_LINE */
+   if (!pushed_default_name || !hypredrv || !hypredrv->stats ||
+       !default_object_name ||         /* GCOVR_EXCL_BR_LINE */
+       default_object_name[0] == '\0') /* GCOVR_EXCL_BR_LINE */
    {
       return;
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!strcmp(hypredrv->stats->object_name, default_object_name))
-   /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (!strcmp(hypredrv->stats->object_name,
+               default_object_name)) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_StatsSetObjectName(hypredrv->stats, "");
    }
@@ -197,12 +182,10 @@ PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_object_name,
 static int
 PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
                                    PreconReuseDecision *decision)
-{
-   /* GCOVR_EXCL_BR_START */ /* static helper: hypredrv always live */
-   if (!hypredrv)            /* GCOVR_EXCL_BR_STOP */
-   {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (decision)             /* GCOVR_EXCL_BR_STOP */
+{ /* GCOVR_EXCL_BR_LINE */ /* static helper: hypredrv always live */
+   if (!hypredrv)          /* GCOVR_EXCL_BR_LINE */
+   {                       /* GCOVR_EXCL_BR_LINE */
+      if (decision)        /* GCOVR_EXCL_BR_LINE */
       {
          memset(decision, 0, sizeof(*decision));
          decision->should_rebuild = 1;
@@ -212,9 +195,8 @@ PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
       return 1;
    }
 
-   PreconReuseDecision local_decision;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!decision)            /* GCOVR_EXCL_BR_STOP */
+   PreconReuseDecision local_decision; /* GCOVR_EXCL_BR_LINE */
+   if (!decision)                      /* GCOVR_EXCL_BR_LINE */
    {
       memset(&local_decision, 0, sizeof(local_decision));
       decision = &local_decision;
@@ -226,12 +208,12 @@ PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
    int global_should_rebuild = local_should_rebuild;
    MPI_Allreduce(&local_should_rebuild, &global_should_rebuild, 1, MPI_INT, MPI_MAX,
                  hypredrv->comm);
-
-   /* GCOVR_EXCL_BR_START */                          /* MPI rank mismatch */
-   if (global_should_rebuild != local_should_rebuild) /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */                           /* MPI rank mismatch */
+   if (global_should_rebuild != local_should_rebuild) /* GCOVR_EXCL_BR_LINE */
    {
       size_t used = strlen(decision->summary);
-      snprintf(decision->summary + used, sizeof(decision->summary) - used,
+      snprintf(decision->summary + used,
+               sizeof(decision->summary) - used, /* GCOVR_EXCL_BR_LINE */
                "%scollective_rebuild=%d local_rebuild=%d", used ? " " : "",
                global_should_rebuild, local_should_rebuild);
    }
@@ -275,9 +257,8 @@ PrepareExplicitObjectForConfiguredExecution(HYPREDRV_t hypredrv, void *obj, int 
 
 static void
 SetPendingSolvePathContext(HYPREDRV_t hypredrv)
-{
-   /* GCOVR_EXCL_BR_START */          /* low-signal branch under CI */
-   if (!hypredrv || !hypredrv->stats) /* GCOVR_EXCL_BR_STOP */
+{                                     /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv || !hypredrv->stats) /* GCOVR_EXCL_BR_LINE */
    {
       return;
    }
@@ -291,35 +272,29 @@ SetPendingSolvePathContext(HYPREDRV_t hypredrv)
    {
       return;
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_LINE */
    if (hypredrv->precon_reuse_timesteps.starts &&
-       hypredrv->precon_reuse_timesteps.starts->data)
-   /* GCOVR_EXCL_BR_STOP */
-   {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+       hypredrv->precon_reuse_timesteps.starts->data) /* GCOVR_EXCL_BR_LINE */
+   {                                                  /* GCOVR_EXCL_BR_LINE */
       if ((size_t)timestep_idx >= hypredrv->precon_reuse_timesteps.starts->size ||
-          hypredrv->precon_reuse_timesteps.starts->data[timestep_idx] > next_ls_id)
-      /* GCOVR_EXCL_BR_STOP */
+          hypredrv->precon_reuse_timesteps.starts->data[timestep_idx] >
+             next_ls_id) /* GCOVR_EXCL_BR_LINE */
       {
          return;
       }
-   }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   } /* GCOVR_EXCL_BR_LINE */
    else if (!(hypredrv->stats->level_active & (1 << 0)) ||
             hypredrv->stats->level_solve_start[0] < 0 ||
-            hypredrv->stats->level_solve_start[0] > next_ls_id)
-   /* GCOVR_EXCL_BR_STOP */
+            hypredrv->stats->level_solve_start[0] > next_ls_id) /* GCOVR_EXCL_BR_LINE */
    {
       return;
    }
 
-   int timestep_id = timestep_idx + 1;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   int timestep_id = timestep_idx + 1; /* GCOVR_EXCL_BR_LINE */
    if (hypredrv->precon_reuse_timesteps.ids &&
        hypredrv->precon_reuse_timesteps.ids->data &&
-       (size_t)timestep_idx < hypredrv->precon_reuse_timesteps.ids->size)
-   /* GCOVR_EXCL_BR_STOP */
+       (size_t)timestep_idx <
+          hypredrv->precon_reuse_timesteps.ids->size) /* GCOVR_EXCL_BR_LINE */
    {
       timestep_id = hypredrv->precon_reuse_timesteps.ids->data[timestep_idx];
    }
@@ -329,9 +304,8 @@ SetPendingSolvePathContext(HYPREDRV_t hypredrv)
 
 static void
 PrintStatsWithConfiguredDestination(HYPREDRV_t hypredrv, int print_level)
-{
-   /* GCOVR_EXCL_BR_START */                             /* low-signal branch under CI */
-   if (!hypredrv || !hypredrv->stats || print_level < 1) /* GCOVR_EXCL_BR_STOP */
+{                                                        /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv || !hypredrv->stats || print_level < 1) /* GCOVR_EXCL_BR_LINE */
    {
       return;
    }
@@ -370,28 +344,24 @@ PrintStatsWithConfiguredDestination(HYPREDRV_t hypredrv, int print_level)
 static uint32_t
 LoadTimestepScheduleFromFile(const char *filename, IntArray **timestep_ids,
                              IntArray **timestep_starts)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!timestep_starts)     /* GCOVR_EXCL_BR_STOP */
+{                        /* GCOVR_EXCL_BR_LINE */
+   if (!timestep_starts) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid output pointer for timestep schedule");
       return hypredrv_ErrorCodeGet();
    }
-
-   /* GCOVR_EXCL_BR_START */          /* low-signal branch under CI */
-   if (timestep_ids && *timestep_ids) /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (timestep_ids && *timestep_ids) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_IntArrayDestroy(timestep_ids);
-   }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (*timestep_starts)     /* GCOVR_EXCL_BR_STOP */
+   } /* GCOVR_EXCL_BR_LINE */
+   if (*timestep_starts) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_IntArrayDestroy(timestep_starts);
    }
-
-   /* GCOVR_EXCL_BR_START */             /* low-signal branch under CI */
-   if (!filename || filename[0] == '\0') /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (!filename || filename[0] == '\0') /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Missing timestep schedule filename");
@@ -415,13 +385,11 @@ LoadTimestepScheduleFromFile(const char *filename, IntArray **timestep_ids,
       return hypredrv_ErrorCodeGet();
    }
 
-   IntArray *ids = NULL;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (timestep_ids)         /* GCOVR_EXCL_BR_STOP */
+   IntArray *ids = NULL; /* GCOVR_EXCL_BR_LINE */
+   if (timestep_ids)     /* GCOVR_EXCL_BR_LINE */
    {
-      ids = hypredrv_IntArrayCreate((size_t)total);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (!ids)                 /* GCOVR_EXCL_BR_STOP */
+      ids = hypredrv_IntArrayCreate((size_t)total); /* GCOVR_EXCL_BR_LINE */
+      if (!ids)                                     /* GCOVR_EXCL_BR_LINE */
       {
          fclose(fp);
          hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
@@ -430,9 +398,8 @@ LoadTimestepScheduleFromFile(const char *filename, IntArray **timestep_ids,
       }
    }
 
-   IntArray *starts = hypredrv_IntArrayCreate((size_t)total);
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!starts)              /* GCOVR_EXCL_BR_STOP */
+   IntArray *starts = hypredrv_IntArrayCreate((size_t)total); /* GCOVR_EXCL_BR_LINE */
+   if (!starts)                                               /* GCOVR_EXCL_BR_LINE */
    {
       fclose(fp);
       hypredrv_IntArrayDestroy(&ids);
@@ -444,10 +411,9 @@ LoadTimestepScheduleFromFile(const char *filename, IntArray **timestep_ids,
    for (int i = 0; i < total; i++)
    {
       int timestep = 0;
-      int ls_start = 0;
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (fscanf(fp, "%d %d", &timestep, &ls_start) != 2 || ls_start < 0)
-      /* GCOVR_EXCL_BR_STOP */
+      int ls_start = 0; /* GCOVR_EXCL_BR_LINE */
+      if (fscanf(fp, "%d %d", &timestep, &ls_start) != 2 ||
+          ls_start < 0) /* GCOVR_EXCL_BR_LINE */
       {
          fclose(fp);
          hypredrv_IntArrayDestroy(&ids);
@@ -457,18 +423,16 @@ LoadTimestepScheduleFromFile(const char *filename, IntArray **timestep_ids,
                               i + 2);
          return hypredrv_ErrorCodeGet();
       }
-
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (ids)                  /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_LINE */
+      if (ids) /* GCOVR_EXCL_BR_LINE */
       {
          ids->data[i] = timestep;
       }
       starts->data[i] = ls_start;
    }
 
-   fclose(fp);
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (timestep_ids)         /* GCOVR_EXCL_BR_STOP */
+   fclose(fp);       /* GCOVR_EXCL_BR_LINE */
+   if (timestep_ids) /* GCOVR_EXCL_BR_LINE */
    {
       *timestep_ids = ids;
    }
@@ -488,19 +452,16 @@ PrintSystemNeedsTimestepSchedule(const PrintSystem_args *cfg)
    {
       return 1;
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (cfg->type != PRINT_SYSTEM_TYPE_SELECTORS || !cfg->selectors)
-   /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (cfg->type != PRINT_SYSTEM_TYPE_SELECTORS ||
+       !cfg->selectors) /* GCOVR_EXCL_BR_LINE */
    {
       return 0;
    }
-
-   /* GCOVR_EXCL_BR_START */                       /* low-signal branch under CI */
-   for (size_t i = 0; i < cfg->num_selectors; i++) /* GCOVR_EXCL_BR_STOP */
-   {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (cfg->selectors[i].basis == PRINT_SYSTEM_BASIS_TIMESTEP) /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   for (size_t i = 0; i < cfg->num_selectors; i++)                /* GCOVR_EXCL_BR_LINE */
+   {                                                              /* GCOVR_EXCL_BR_LINE */
+      if (cfg->selectors[i].basis == PRINT_SYSTEM_BASIS_TIMESTEP) /* GCOVR_EXCL_BR_LINE */
       {
          return 1;
       }
@@ -512,9 +473,8 @@ PrintSystemNeedsTimestepSchedule(const PrintSystem_args *cfg)
 static int
 ResolveTimestepIndex(const IntArray *timestep_starts, const Stats *stats,
                      int system_index)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (system_index < 0)     /* GCOVR_EXCL_BR_STOP */
+{                        /* GCOVR_EXCL_BR_LINE */
+   if (system_index < 0) /* GCOVR_EXCL_BR_LINE */
    {
       return -1;
    }
@@ -529,17 +489,15 @@ ResolveTimestepIndex(const IntArray *timestep_starts, const Stats *stats,
             break;
          }
          found = (int)i;
-      }
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (found >= 0)           /* GCOVR_EXCL_BR_STOP */
+      } /* GCOVR_EXCL_BR_LINE */
+      if (found >= 0) /* GCOVR_EXCL_BR_LINE */
       {
          return found;
       }
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (stats && (stats->level_active & (1 << 0)) && stats->level_current_id[0] > 0)
-   /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (stats && (stats->level_active & (1 << 0)) &&
+       stats->level_current_id[0] > 0) /* GCOVR_EXCL_BR_LINE */
    {
       return stats->level_current_id[0] - 1;
    }
@@ -556,9 +514,8 @@ AdvanceLibraryManagedSystemIndex(HYPREDRV_t hypredrv)
    {
       return;
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (hypredrv->stats)      /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv->stats) /* GCOVR_EXCL_BR_LINE */
    {
       stats_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats);
    }
@@ -571,9 +528,8 @@ AdvanceLibraryManagedSystemIndex(HYPREDRV_t hypredrv)
 
 static void
 BuildPrintSystemContext(HYPREDRV_t hypredrv, int stage, PrintSystemContext *ctx)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!ctx)                 /* GCOVR_EXCL_BR_STOP */
+{            /* GCOVR_EXCL_BR_LINE */
+   if (!ctx) /* GCOVR_EXCL_BR_LINE */
    {
       return;
    }
@@ -592,26 +548,23 @@ BuildPrintSystemContext(HYPREDRV_t hypredrv, int stage, PrintSystemContext *ctx)
    {
       ctx->level_ids[level] = -1;
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!hypredrv)            /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv) /* GCOVR_EXCL_BR_LINE */
    {
       return;
    }
-
-   /* GCOVR_EXCL_BR_START */                /* low-signal branch under CI */
-   if (hypredrv->current_system_index >= 0) /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv->current_system_index >= 0) /* GCOVR_EXCL_BR_LINE */
    {
       ctx->system_index = hypredrv->current_system_index;
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (hypredrv->stats)      /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv->stats) /* GCOVR_EXCL_BR_LINE */
    {
-      ctx->stats_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (hypredrv->current_system_index < 0 && ctx->stats_ls_id >= 0)
-      /* GCOVR_EXCL_BR_STOP */
+      ctx->stats_ls_id =
+         hypredrv_StatsGetLinearSystemID(hypredrv->stats); /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv->current_system_index < 0 &&
+          ctx->stats_ls_id >= 0) /* GCOVR_EXCL_BR_LINE */
       {
          ctx->system_index = ctx->stats_ls_id;
       }
@@ -639,9 +592,8 @@ BuildPrintSystemContext(HYPREDRV_t hypredrv, int stage, PrintSystemContext *ctx)
          ctx->last_solve_time = hypredrv_StatsGetLastSolveTime(hypredrv->stats);
       }
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (hypredrv->iargs)      /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv->iargs) /* GCOVR_EXCL_BR_LINE */
    {
       ctx->variant_index = hypredrv->iargs->active_precon_variant;
    }
@@ -652,9 +604,8 @@ BuildPrintSystemContext(HYPREDRV_t hypredrv, int stage, PrintSystemContext *ctx)
 
 static void
 MaybeDumpLinearSystem(HYPREDRV_t hypredrv, int stage)
-{
-   /* GCOVR_EXCL_BR_START */          /* low-signal branch under CI */
-   if (!hypredrv || !hypredrv->iargs) /* GCOVR_EXCL_BR_STOP */
+{                                     /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv || !hypredrv->iargs) /* GCOVR_EXCL_BR_LINE */
    {
       return;
    }
@@ -700,9 +651,8 @@ LinearSystemDropOwnedPrecMatrix(HYPREDRV_t hypredrv)
 
 static void
 LinearSystemDropOwnedInitialGuess(HYPREDRV_t hypredrv)
-{
-   /* GCOVR_EXCL_BR_START */                      /* low-signal branch under CI */
-   if (hypredrv->vec_x0 && hypredrv->owns_vec_x0) /* GCOVR_EXCL_BR_STOP */
+{                                                 /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv->vec_x0 && hypredrv->owns_vec_x0) /* GCOVR_EXCL_BR_LINE */
    {
       HYPRE_IJVectorDestroy(hypredrv->vec_x0);
    }
@@ -716,11 +666,9 @@ LinearSystemDropOwnedInitialGuess(HYPREDRV_t hypredrv)
 
 static void
 LinearSystemDropOwnedReferenceSolution(HYPREDRV_t hypredrv)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+{ /* GCOVR_EXCL_BR_LINE */
    if (hypredrv->vec_xref && hypredrv->vec_xref != hypredrv->vec_b &&
-       hypredrv->owns_vec_xref)
-   /* GCOVR_EXCL_BR_STOP */
+       hypredrv->owns_vec_xref) /* GCOVR_EXCL_BR_LINE */
    {
       HYPRE_IJVectorDestroy(hypredrv->vec_xref);
    }
@@ -734,15 +682,13 @@ LinearSystemDropOwnedReferenceSolution(HYPREDRV_t hypredrv)
 
 static uint32_t
 ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!hypredrv || !hypredrv->iargs || hypredrv->lib_mode) /* GCOVR_EXCL_BR_STOP */
+{                                                           /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv || !hypredrv->iargs || hypredrv->lib_mode) /* GCOVR_EXCL_BR_LINE */
    {
       return ERROR_NONE;
    }
-
-   /* GCOVR_EXCL_BR_START */                 /* low-signal branch under CI */
-   if (hypredrv->iargs->general.exec_policy) /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv->iargs->general.exec_policy) /* GCOVR_EXCL_BR_LINE */
    {
 #if HYPRE_CHECK_MIN_VERSION(22100, 0)
       HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
@@ -812,11 +758,9 @@ HYPREDRV_Finalize()
    cali_flush(0);
 #endif
 
-   uint32_t code = hypredrv_ErrorCodeGet();
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   uint32_t code = hypredrv_ErrorCodeGet(); /* GCOVR_EXCL_BR_LINE */
    HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "HYPREDRV_Finalize end (code=0x%x)",
-                      code);
-   /* GCOVR_EXCL_BR_STOP */
+                      code); /* GCOVR_EXCL_BR_LINE */
    return code;
 }
 
@@ -842,9 +786,8 @@ HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
 
 static uint32_t
 DestroyObjectInternal(HYPREDRV_t hypredrv)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!hypredrv || !hypredrv_RuntimeObjectIsLive(hypredrv)) /* GCOVR_EXCL_BR_STOP */
+{                                                            /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv || !hypredrv_RuntimeObjectIsLive(hypredrv)) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
       return hypredrv_ErrorCodeGet();
@@ -940,11 +883,10 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
       PrintStatsWithConfiguredDestination(hypredrv, print_statistics);
    }
    else if (hypredrv->stats_printed)
-   {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                           "skipping statistics on destroy (already printed)");
-      /* GCOVR_EXCL_BR_STOP */
+   { /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOG_OBJECTF(
+         2, hypredrv,
+         "skipping statistics on destroy (already printed)"); /* GCOVR_EXCL_BR_LINE */
    }
 
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "DestroyObjectInternal end");
@@ -971,22 +913,22 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    if (!hypredrv_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("HYPREDRV_Create requires a non-NULL output pointer");
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOGF(1, mypid, NULL, 0, "HYPREDRV_Create failed: output pointer is NULL");
-      /* GCOVR_EXCL_BR_STOP */
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_Create requires a non-NULL output pointer"); /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOGF(
+         1, mypid, NULL, 0,
+         "HYPREDRV_Create failed: output pointer is NULL"); /* GCOVR_EXCL_BR_LINE */
       return hypredrv_ErrorCodeGet();
    }
 
    HYPREDRV_t hypredrv = (HYPREDRV_t)calloc(1, sizeof(hypredrv_t));
-   /* GCOVR_EXCL_BR_START */ /* allocation failure */
-   if (!hypredrv)            /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_LINE */ /* allocation failure */
+   if (!hypredrv)              /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate HYPREDRV object");
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOGF(1, mypid, NULL, 0, "HYPREDRV_Create failed: allocation error");
-      /* GCOVR_EXCL_BR_STOP */
+      hypredrv_ErrorMsgAdd("Failed to allocate HYPREDRV object"); /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOGF(1, mypid, NULL, 0,
+                    "HYPREDRV_Create failed: allocation error"); /* GCOVR_EXCL_BR_LINE */
       return hypredrv_ErrorCodeGet();
    }
 
@@ -1030,26 +972,24 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
 
    /* Each object owns its own stats context. */
    hypredrv->stats = hypredrv_StatsCreate();
-   /* GCOVR_EXCL_BR_START */ /* allocation failure */
-   if (!hypredrv->stats)     /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_LINE */ /* allocation failure */
+   if (!hypredrv->stats)       /* GCOVR_EXCL_BR_LINE */
    {
       free(hypredrv);
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate HYPREDRV statistics context");
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOGF(1, mypid, NULL, 0,
-                    "HYPREDRV_Create failed: statistics allocation error");
-      /* GCOVR_EXCL_BR_STOP */
+      hypredrv_ErrorMsgAdd(
+         "Failed to allocate HYPREDRV statistics context"); /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOGF(
+         1, mypid, NULL, 0,                                      /* GCOVR_EXCL_BR_LINE */
+         "HYPREDRV_Create failed: statistics allocation error"); /* GCOVR_EXCL_BR_LINE */
       return hypredrv_ErrorCodeGet();
    }
-
-   /* GCOVR_EXCL_BR_START */                     /* registry failure */
-   if (hypredrv_RuntimeRegisterObject(hypredrv)) /* GCOVR_EXCL_BR_STOP */
-   {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOGF(1, mypid, NULL, 0,
-                    "HYPREDRV_Create failed: runtime registration error");
-      /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */                      /* registry failure */
+   if (hypredrv_RuntimeRegisterObject(hypredrv)) /* GCOVR_EXCL_BR_LINE */
+   {                                             /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOGF(
+         1, mypid, NULL, 0,                                     /* GCOVR_EXCL_BR_LINE */
+         "HYPREDRV_Create failed: runtime registration error"); /* GCOVR_EXCL_BR_LINE */
       hypredrv_StatsDestroy(&hypredrv->stats);
       free(hypredrv);
       return hypredrv_ErrorCodeGet();
@@ -1075,9 +1015,8 @@ HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
 {
    HYPREDRV_CHECK_INIT();
    hypredrv_ErrorCodeResetAll();
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!hypredrv_ptr)        /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv_ptr) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("HYPREDRV_Destroy requires a non-NULL HYPREDRV_t pointer");
@@ -1147,11 +1086,10 @@ uint32_t
 HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
 {
    char log_object_name[32];
-
-   /* GCOVR_EXCL_BR_START */
+   /* GCOVR_EXCL_BR_LINE */
    HYPREDRV_CHECK_INIT_AND_OBJ();
-   HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse begin (argc=%d)", argc);
-   /* GCOVR_EXCL_BR_STOP */
+   HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse begin (argc=%d)",
+                        argc); /* GCOVR_EXCL_BR_LINE */
 
    /* If preset/defaults were configured before parsing, clear old args first.
     * Tear down active solver/preconditioner objects so HYPRE handles are not
@@ -1176,12 +1114,13 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    hypredrv_InputArgsParseWithObjectName(
       hypredrv->comm, hypredrv->lib_mode, argc, argv, &hypredrv->iargs,
       ResolveLogObjectName(hypredrv, log_object_name, sizeof(log_object_name)));
-
-   /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
-   if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_LINE */
    {
-      HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse failed (code=0x%x)",
-                           hypredrv_ErrorCodeGet());
+      HYPREDRV_LOG_OBJECTF(
+         1, hypredrv,
+         "HYPREDRV_InputArgsParse failed (code=0x%x)", /* GCOVR_EXCL_BR_LINE */
+         hypredrv_ErrorCodeGet());
       return hypredrv_ErrorCodeGet();
    }
 
@@ -1214,14 +1153,13 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
       LoadTimestepScheduleFromFile(hypredrv->iargs->ls.timestep_filename,
                                    &hypredrv->precon_reuse_timesteps.ids,
                                    &hypredrv->precon_reuse_timesteps.starts);
-   }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   } /* GCOVR_EXCL_BR_LINE */
    else if (hypredrv->iargs->ls.sequence_filename[0] != '\0' &&
             ((hypredrv->iargs->general.statistics > 0) ||
              (hypredrv->iargs->precon_reuse.enabled &&
               hypredrv->iargs->precon_reuse.per_timestep) ||
-             PrintSystemNeedsTimestepSchedule(&hypredrv->iargs->ls.print_system)))
-   /* GCOVR_EXCL_BR_STOP */
+             PrintSystemNeedsTimestepSchedule(
+                &hypredrv->iargs->ls.print_system))) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_LSSeqReadTimestepsWithIds(hypredrv->iargs->ls.sequence_filename,
                                          &hypredrv->precon_reuse_timesteps.ids,
@@ -1242,9 +1180,9 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
             1, hypredrv,
             "forcing host execution for compatibility in InputArgsParse: "
             "BoomerAMG standard interpolation");
-         /* GCOVR_EXCL_BR_START */ /* SAFE_CALL fail-fast wrapper */
-         HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
-         /* GCOVR_EXCL_BR_STOP */
+            /* GCOVR_EXCL_BR_LINE */ /* SAFE_CALL fail-fast wrapper */
+         HYPREDRV_SAFE_CALL(
+            ApplyGlobalRuntimeSettings(hypredrv)); /* GCOVR_EXCL_BR_LINE */
       }
    }
 #endif
@@ -1354,7 +1292,7 @@ LogMGRCachedHandles(HYPREDRV_t hypredrv, const MGR_args *mgr, const char *msg)
    int num_grelax = 0;
    int num_coarse = 0;
    hypredrv_MGRCountCachedSolvers(mgr, &num_frelax, &num_grelax, &num_coarse);
-   if (num_frelax || num_grelax || num_coarse)
+   if (num_frelax || num_grelax || num_coarse) /* GCOVR_EXCL_BR_LINE */
    {
       HYPREDRV_LOG_OBJECTF(2, hypredrv, "%s: coarse=%d frelax=%d grelax=%d", msg,
                            num_coarse, num_frelax, num_grelax);
@@ -1375,24 +1313,22 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
    if (!hypredrv->iargs)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("Input arguments not parsed");
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                           "preconditioner variant switch failed: input args missing");
-      /* GCOVR_EXCL_BR_STOP */
+      hypredrv_ErrorMsgAdd("Input arguments not parsed"); /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOG_OBJECTF(
+         2, hypredrv, "preconditioner variant switch failed: input args missing"); /* GCOVR_EXCL_BR_LINE
+                                                                                    */
       return hypredrv_ErrorCodeGet();
    }
 
    if (variant_idx < 0 || variant_idx >= hypredrv->iargs->num_precon_variants)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid preconditioner variant index: %d (valid range: 0-%d)",
-                           variant_idx, hypredrv->iargs->num_precon_variants - 1);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      hypredrv_ErrorMsgAdd(
+         "Invalid preconditioner variant index: %d (valid range: 0-%d)", variant_idx,
+         hypredrv->iargs->num_precon_variants - 1); /* GCOVR_EXCL_BR_LINE */
       HYPREDRV_LOG_OBJECTF(
          2, hypredrv, "preconditioner variant switch failed: invalid idx=%d (max=%d)",
-         variant_idx, hypredrv->iargs->num_precon_variants - 1);
-      /* GCOVR_EXCL_BR_STOP */
+         variant_idx, hypredrv->iargs->num_precon_variants - 1); /* GCOVR_EXCL_BR_LINE */
       return hypredrv_ErrorCodeGet();
    }
 
@@ -1408,20 +1344,19 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
    {
       bool had_precon = (hypredrv->precon != NULL);
       if (hypredrv->solver)
-      {
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      { /* GCOVR_EXCL_BR_LINE */
          HYPREDRV_LOG_OBJECTF(
-            2, hypredrv, "switching preconditioner variant: destroying active solver");
-         /* GCOVR_EXCL_BR_STOP */
+            2, hypredrv,
+            "switching preconditioner variant: destroying active solver"); /* GCOVR_EXCL_BR_LINE
+                                                                            */
          hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
       }
       if (hypredrv->precon)
-      {
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      { /* GCOVR_EXCL_BR_LINE */
          HYPREDRV_LOG_OBJECTF(
             2, hypredrv,
-            "switching preconditioner variant: destroying active preconditioner");
-         /* GCOVR_EXCL_BR_STOP */
+            "switching preconditioner variant: destroying active preconditioner"); /* GCOVR_EXCL_BR_LINE
+                                                                                    */
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                                 &hypredrv->precon, hypredrv->stats,
                                 hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
@@ -1456,8 +1391,10 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
       hypredrv->iargs->precon_method = hypredrv->iargs->precon_methods[variant_idx];
       hypredrv->iargs->precon        = hypredrv->iargs->precon_variants[variant_idx];
    }
-#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22100, 0)
-   /* GCOVR_EXCL_BR_START */ /* GPU-only exec-policy coupling (not in host CI) */
+#if defined(HYPRE_USING_GPU) && \
+   HYPRE_CHECK_MIN_VERSION(     \
+      22100,                    \
+      0) /* GCOVR_EXCL_BR_LINE */ /* GPU-only exec-policy coupling (not in host CI) */
    int desired_exec_policy = hypredrv->preferred_exec_policy;
    if (hypredrv->iargs->precon_method == PRECON_BOOMERAMG)
    {
@@ -1495,8 +1432,7 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
       PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_x0, 0);
       PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_xref, 0);
       PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_nn, 0);
-   }
-   /* GCOVR_EXCL_BR_STOP */
+   } /* GCOVR_EXCL_BR_LINE */
 #endif
    HYPREDRV_LOG_OBJECTF(2, hypredrv, "preconditioner variant selected: idx=%d method=%d",
                         variant_idx, (int)hypredrv->iargs->precon_method);
@@ -1512,9 +1448,8 @@ uint32_t
 HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!preset)              /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (!preset) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Preconditioner preset name cannot be NULL");
@@ -1529,17 +1464,15 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
    }
 
    int      variant_idx    = hypredrv->iargs->active_precon_variant;
-   precon_t current_method = hypredrv->iargs->precon_method;
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (variant_idx < 0)      /* GCOVR_EXCL_BR_STOP */
+   precon_t current_method = hypredrv->iargs->precon_method; /* GCOVR_EXCL_BR_LINE */
+   if (variant_idx < 0)                                      /* GCOVR_EXCL_BR_LINE */
    {
       variant_idx                            = 0;
       hypredrv->iargs->active_precon_variant = 0;
    }
 
-   /* Destroy existing preconditioner object if any */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (hypredrv->precon)     /* GCOVR_EXCL_BR_STOP */
+   /* Destroy existing preconditioner object if any */ /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv->precon)                               /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                              &hypredrv->precon, hypredrv->stats,
@@ -1558,17 +1491,15 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
 #endif
       hypredrv_PreconArgsDestroyRuntimeState(current_method, &hypredrv->iargs->precon);
    }
-
-   /* GCOVR_EXCL_BR_START */                      /* low-signal branch under CI */
-   if (hypredrv->iargs->num_precon_variants <= 0) /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv->iargs->num_precon_variants <= 0) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv->iargs->num_precon_variants   = 1;
       hypredrv->iargs->active_precon_variant = 0;
       variant_idx                            = 0;
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (variant_idx >= hypredrv->iargs->num_precon_variants) /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (variant_idx >= hypredrv->iargs->num_precon_variants) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
@@ -1687,19 +1618,19 @@ HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv, int nstates, HYPRE_IJVector *vecs)
    hypredrv->vec_s   = (HYPRE_IJVector *)malloc(sizeof(HYPRE_IJVector) * (size_t)nstates);
    for (int i = 0; i < nstates; i++)
    {
-      hypredrv->states[i] = i;
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (vecs && vecs[i])      /* GCOVR_EXCL_BR_STOP */
+      hypredrv->states[i] = i; /* GCOVR_EXCL_BR_LINE */
+      if (vecs && vecs[i])     /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv->vec_s[i] = vecs[i];
       }
       else
       {
-         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         HYPREDRV_LOG_OBJECTF(
-            2, hypredrv, "HYPREDRV_StateVectorSet failed: missing vector at index=%d", i);
-         /* GCOVR_EXCL_BR_STOP */
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN); /* GCOVR_EXCL_BR_LINE */
+         HYPREDRV_LOG_OBJECTF(                 /* GCOVR_EXCL_BR_LINE */
+                              2, hypredrv,
+                              "HYPREDRV_StateVectorSet failed: missing vector at "
+                              "index=%d",
+                              i); /* GCOVR_EXCL_BR_LINE */
          return hypredrv_ErrorCodeGet();
       }
    }
@@ -1732,19 +1663,16 @@ HYPREDRV_StateVectorGetValues(HYPREDRV_t hypredrv, int index, HYPRE_Complex **da
       HYPRE_IJVectorGetObject(hypredrv->vec_s[state], &obj);
       par_vec   = (HYPRE_ParVector)obj;
       seq_vec   = hypre_ParVectorLocalVector(par_vec);
-      *data_ptr = hypre_VectorData(seq_vec);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      *data_ptr = hypre_VectorData(seq_vec); /* GCOVR_EXCL_BR_LINE */
       HYPREDRV_LOG_OBJECTF(3, hypredrv, "HYPREDRV_StateVectorGetValues resolved state=%d",
-                           state);
-      /* GCOVR_EXCL_BR_STOP */
+                           state); /* GCOVR_EXCL_BR_LINE */
    }
    else
    {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                           "HYPREDRV_StateVectorGetValues failed: state vector is NULL");
-      /* GCOVR_EXCL_BR_STOP */
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN); /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOG_OBJECTF(
+         2, hypredrv, "HYPREDRV_StateVectorGetValues failed: state vector is NULL"); /* GCOVR_EXCL_BR_LINE
+                                                                                      */
    }
 
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_StateVectorGetValues end");
@@ -1776,12 +1704,11 @@ HYPREDRV_StateVectorCopy(HYPREDRV_t hypredrv, int index_in, int index_out)
    }
    else
    {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN); /* GCOVR_EXCL_BR_LINE */
       HYPREDRV_LOG_OBJECTF(
          2, hypredrv,
-         "HYPREDRV_StateVectorCopy failed: source or destination vector is NULL");
-      /* GCOVR_EXCL_BR_STOP */
+         "HYPREDRV_StateVectorCopy failed: source or destination vector is NULL"); /* GCOVR_EXCL_BR_LINE
+                                                                                    */
    }
 
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_StateVectorCopy end");
@@ -1802,12 +1729,10 @@ HYPREDRV_StateVectorUpdateAll(HYPREDRV_t hypredrv)
    {
       hypredrv->states[i] = (hypredrv->states[i] + 1) % hypredrv->nstates;
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_LINE */
    HYPREDRV_LOG_OBJECTF(3, hypredrv,
                         "HYPREDRV_StateVectorUpdateAll rotated %d state slots",
-                        hypredrv->nstates);
-   /* GCOVR_EXCL_BR_STOP */
+                        hypredrv->nstates); /* GCOVR_EXCL_BR_LINE */
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_StateVectorUpdateAll end");
    return hypredrv_ErrorCodeGet();
 }
@@ -1826,12 +1751,11 @@ HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("state_idx %d out of range [0, %d)", state_idx,
-                           hypredrv->nstates);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                           hypredrv->nstates); /* GCOVR_EXCL_BR_LINE */
       HYPREDRV_LOG_OBJECTF(
          2, hypredrv,
-         "HYPREDRV_StateVectorApplyCorrection failed: state index out of range");
-      /* GCOVR_EXCL_BR_STOP */
+         "HYPREDRV_StateVectorApplyCorrection failed: state index out of range"); /* GCOVR_EXCL_BR_LINE
+                                                                                   */
       return hypredrv_ErrorCodeGet();
    }
 
@@ -1848,12 +1772,10 @@ HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx)
    /* U = U + Δx */
    HYPRE_ParVectorAxpy((HYPRE_Complex)1.0, (HYPRE_ParVector)obj_delta,
                        (HYPRE_ParVector)obj_s);
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_LINE */
    HYPREDRV_LOG_OBJECTF(3, hypredrv,
                         "HYPREDRV_StateVectorApplyCorrection applied to state slot=%d",
-                        current);
-   /* GCOVR_EXCL_BR_STOP */
+                        current); /* GCOVR_EXCL_BR_LINE */
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_StateVectorApplyCorrection end");
    return hypredrv_ErrorCodeGet();
 }
@@ -1868,16 +1790,15 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSystemBuild begin");
 
    hypredrv->current_system_index++;
-
-   /* GCOVR_EXCL_BR_START */
+   /* GCOVR_EXCL_BR_LINE */
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadMatrix(hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv, NULL));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv, NULL));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetReferenceSolution(hypredrv, NULL));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv, NULL));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemReadDofmap(hypredrv));
-   HYPREDRV_SAFE_CALL(LinearSystemSetVectorTagsInternal(hypredrv));
-   /* GCOVR_EXCL_BR_STOP */
+   HYPREDRV_SAFE_CALL(
+      LinearSystemSetVectorTagsInternal(hypredrv)); /* GCOVR_EXCL_BR_LINE */
 
    /* Reset scaling state for new system */
    if (hypredrv->scaling_ctx)
@@ -1948,9 +1869,8 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 
    if (!vec)
    {
-      HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
-      /* GCOVR_EXCL_BR_START */                           /* low-signal branch under CI */
-      if (hypredrv->vec_xref && !hypredrv->owns_vec_xref) /* GCOVR_EXCL_BR_STOP */
+      HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv)); /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv->vec_xref && !hypredrv->owns_vec_xref)       /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv->vec_xref = NULL;
       }
@@ -2012,9 +1932,8 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv, HYPRE_Vector vec)
       hypredrv->vec_x0 = (HYPRE_IJVector)vec;
       hypredrv->owns_vec_x0 =
          (bool)(!hypredrv->lib_mode && hypredrv->vec_x0 != hypredrv->vec_x &&
-                hypredrv->vec_x0 != hypredrv->vec_b);
-      /* GCOVR_EXCL_BR_START */                     /* low-signal branch under CI */
-      if (hypredrv->vec_x && !hypredrv->owns_vec_x) /* GCOVR_EXCL_BR_STOP */
+                hypredrv->vec_x0 != hypredrv->vec_b); /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv->vec_x && !hypredrv->owns_vec_x)   /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv->vec_x = NULL;
       }
@@ -2036,9 +1955,8 @@ HYPREDRV_LinearSystemSetSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 
    if (!vec)
    {
-      /* Discard any borrowed reference before recreating. */
-      /* GCOVR_EXCL_BR_START */  /* low-signal branch under CI */
-      if (!hypredrv->owns_vec_x) /* GCOVR_EXCL_BR_STOP */
+      /* Discard any borrowed reference before recreating. */ /* GCOVR_EXCL_BR_LINE */
+      if (!hypredrv->owns_vec_x)                              /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv->vec_x = NULL;
       }
@@ -2055,9 +1973,8 @@ HYPREDRV_LinearSystemSetSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
    else
    {
       PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)vec, 0);
-      /* Destroy existing owned solution before replacing. */
-      /* GCOVR_EXCL_BR_START */                    /* low-signal branch under CI */
-      if (hypredrv->vec_x && hypredrv->owns_vec_x) /* GCOVR_EXCL_BR_STOP */
+      /* Destroy existing owned solution before replacing. */ /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv->vec_x && hypredrv->owns_vec_x)            /* GCOVR_EXCL_BR_LINE */
       {
          HYPRE_IJVectorDestroy(hypredrv->vec_x);
       }
@@ -2077,24 +1994,21 @@ HYPREDRV_LinearSystemSetReferenceSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
    HYPREDRV_CHECK_INIT_AND_OBJ();
 
    if (!vec)
-   {
-      /* GCOVR_EXCL_BR_START */ /* SAFE_CALL fail-fast wrapper */
+   { /* GCOVR_EXCL_BR_LINE */ /* SAFE_CALL fail-fast wrapper */
       HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
-      /* GCOVR_EXCL_BR_STOP */
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
       const bool uses_xref_file = (bool)(hypredrv->iargs->ls.xref_filename[0] != '\0' ||
                                          hypredrv->iargs->ls.xref_basename[0] != '\0');
-      /* GCOVR_EXCL_BR_STOP */
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (uses_xref_file && hypredrv->vec_xref && !hypredrv->owns_vec_xref)
-      /* GCOVR_EXCL_BR_STOP */
+         /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+      if (uses_xref_file && hypredrv->vec_xref &&
+          !hypredrv->owns_vec_xref) /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv->vec_xref = NULL;
       }
       hypredrv_LinearSystemSetReferenceSolution(hypredrv->comm, &hypredrv->iargs->ls,
-                                                &hypredrv->vec_xref, hypredrv->stats);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (uses_xref_file)       /* GCOVR_EXCL_BR_STOP */
+                                                &hypredrv->vec_xref,
+                                                hypredrv->stats); /* GCOVR_EXCL_BR_LINE */
+      if (uses_xref_file)                                         /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv->owns_vec_xref = (hypredrv->vec_xref != NULL);
       }
@@ -2280,18 +2194,15 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat)
    HYPREDRV_CHECK_INIT_AND_OBJ();
 
    if (!mat)
-   {
-      /* GCOVR_EXCL_BR_START */ /* SAFE_CALL fail-fast wrapper */
-      HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
-      /* GCOVR_EXCL_BR_STOP */
+   { /* GCOVR_EXCL_BR_LINE */ /* SAFE_CALL fail-fast wrapper */
+      HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv)); /* GCOVR_EXCL_BR_LINE */
       LinearSystemDropOwnedPrecMatrix(hypredrv);
       hypredrv_LinearSystemSetPrecMatrix(hypredrv->comm, &hypredrv->iargs->ls,
                                          hypredrv->mat_A, &hypredrv->mat_M,
-                                         hypredrv->stats);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+                                         hypredrv->stats); /* GCOVR_EXCL_BR_LINE */
       hypredrv->owns_mat_M =
-         (bool)(hypredrv->mat_M != NULL && hypredrv->mat_M != hypredrv->mat_A);
-      /* GCOVR_EXCL_BR_STOP */
+         (bool)(hypredrv->mat_M != NULL &&
+                hypredrv->mat_M != hypredrv->mat_A); /* GCOVR_EXCL_BR_LINE */
    }
    else
    {
@@ -2459,13 +2370,14 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
             int num_coarse = 0;
             hypredrv_MGRCountKeepFlags(&hypredrv->iargs->precon.mgr, &num_frelax,
                                        &num_grelax, &num_coarse);
-            if (num_frelax || num_grelax || num_coarse)
+            if (num_frelax || num_grelax || num_coarse) /* GCOVR_EXCL_BR_LINE */
             {
-               HYPREDRV_LOG_OBJECTF(
-                  2, hypredrv,
-                  "preserving cached MGR handles across recreate: coarse=%d frelax=%d "
-                  "grelax=%d",
-                  num_coarse, num_frelax, num_grelax);
+               HYPREDRV_LOG_OBJECTF(/* GCOVR_EXCL_BR_LINE */
+                                    2, hypredrv,
+                                    "preserving cached MGR handles across recreate: "
+                                    "coarse=%d frelax=%d "
+                                    "grelax=%d",
+                                    num_coarse, num_frelax, num_grelax);
             }
          }
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
@@ -2480,22 +2392,25 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
          int num_coarse = 0;
          hypredrv_MGRCountCachedSolvers(&hypredrv->iargs->precon.mgr, &num_frelax,
                                         &num_grelax, &num_coarse);
-         if (num_frelax || num_grelax || num_coarse)
+         if (num_frelax || num_grelax || num_coarse) /* GCOVR_EXCL_BR_LINE */
          {
-            HYPREDRV_LOG_OBJECTF(
-               2, hypredrv,
-               "cached MGR handles before create: coarse=%d frelax=%d grelax=%d",
-               num_coarse, num_frelax, num_grelax);
+            HYPREDRV_LOG_OBJECTF(/* GCOVR_EXCL_BR_LINE */
+                                 2, hypredrv,
+                                 "cached MGR handles before create: coarse=%d frelax=%d "
+                                 "grelax=%d",
+                                 num_coarse, num_frelax, num_grelax);
          }
       }
       hypredrv_PreconCreate(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                             hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon,
                             hypredrv->stats, next_ls_id);
       hypredrv->precon_is_setup = false;
-      if (hypredrv_ErrorCodeActive() && hypredrv_LogEnabled(2))
+      if (hypredrv_ErrorCodeActive() && hypredrv_LogEnabled(2)) /* GCOVR_EXCL_BR_LINE */
       {
-         HYPREDRV_LOG_OBJECTF(2, hypredrv, "preconditioner create failed (code=0x%x)",
-                              hypredrv_ErrorCodeGet());
+         HYPREDRV_LOG_OBJECTF(
+            2, hypredrv,
+            "preconditioner create failed (code=0x%x)", /* GCOVR_EXCL_BR_LINE */
+            hypredrv_ErrorCodeGet());
          hypredrv_ErrorCodeDescribe(hypredrv_ErrorCodeGet());
          hypredrv_ErrorMsgPrint();
       }
@@ -2532,31 +2447,28 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
     * If the precon exists AND is already set up, the reuse policy must still
     * be checked: a new timestep may require re-creating the preconditioner. */
    if (hypredrv->precon == NULL || hypredrv->precon_is_setup)
-   {
-      /* GCOVR_EXCL_BR_START */            /* precon create failure */
-      if (HYPREDRV_PreconCreate(hypredrv)) /* GCOVR_EXCL_BR_STOP */
+   { /* GCOVR_EXCL_BR_LINE */              /* precon create failure */
+      if (HYPREDRV_PreconCreate(hypredrv)) /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         if (hypredrv_LogEnabled(2))
+         if (hypredrv_LogEnabled(2)) /* GCOVR_EXCL_BR_LINE */
          {
-            HYPREDRV_LOG_OBJECTF(2, hypredrv,
+            HYPREDRV_LOG_OBJECTF(2, hypredrv, /* GCOVR_EXCL_BR_LINE */
                                  "linear solver create returning with code=0x%x",
                                  hypredrv_ErrorCodeGet());
-         }
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         HYPREDRV_LOG_OBJECTF(
-            1, hypredrv, "HYPREDRV_LinearSolverCreate failed: preconditioner create");
-         /* GCOVR_EXCL_BR_STOP */
+         } /* GCOVR_EXCL_BR_LINE */
+         HYPREDRV_LOG_OBJECTF(/* GCOVR_EXCL_BR_LINE */
+                              1, hypredrv,
+                              "HYPREDRV_LinearSolverCreate failed: preconditioner "
+                              "create"); /* GCOVR_EXCL_BR_LINE */
          return hypredrv_ErrorCodeGet();
       }
    }
    else
-   {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOG_OBJECTF(
-         2, hypredrv,
-         "skipping preconditioner creation (precon already created, pending setup)");
-      /* GCOVR_EXCL_BR_STOP */
+   { /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                           "skipping preconditioner creation (precon already created, "
+                           "pending setup)"); /* GCOVR_EXCL_BR_LINE */
    }
 
    /* Always recreate solver per linear system.
@@ -2582,10 +2494,9 @@ uint32_t
 HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
-   hypredrv_ErrorStateReset();
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconSetup begin");
-   /* GCOVR_EXCL_BR_STOP */
+   hypredrv_ErrorStateReset(); /* GCOVR_EXCL_BR_LINE */
+   HYPREDRV_LOG_OBJECTF(1, hypredrv,
+                        "HYPREDRV_PreconSetup begin"); /* GCOVR_EXCL_BR_LINE */
 
    int next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
    if (hypredrv->precon && hypredrv->precon_is_setup &&
@@ -2593,21 +2504,18 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
        hypredrv_MGRComponentReuseSetupMode(&hypredrv->iargs->precon.mgr, hypredrv->stats,
                                            next_ls_id))
    {
-      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+      HYPREDRV_LOG_OBJECTF(2, hypredrv, /* GCOVR_EXCL_BR_LINE */
                            "rerunning MGR setup with preserved component handles");
    }
 
    hypredrv_PreconSetup(hypredrv->iargs->precon_method, hypredrv->precon,
                         hypredrv->mat_A);
-   HYPRE_ClearAllErrors();   /* TODO: error handling from hypre */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (hypredrv->precon)     /* GCOVR_EXCL_BR_STOP */
+   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */ /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv->precon)                                         /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv->precon_is_setup = true;
-   }
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconSetup end");
-   /* GCOVR_EXCL_BR_STOP */
+   } /* GCOVR_EXCL_BR_LINE */
+   HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconSetup end"); /* GCOVR_EXCL_BR_LINE */
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2669,18 +2577,17 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
                         should_rebuild, rerun_mgr_component_setup, skip_precon_setup);
 
    /* Propagate dofmap to vectors (no-op if no dofmap is set) */
-   /* GCOVR_EXCL_BR_START */ /* SAFE_CALL fail-fast wrapper */
-   HYPREDRV_SAFE_CALL(LinearSystemSetVectorTagsInternal(hypredrv));
-   /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */ /* SAFE_CALL fail-fast wrapper */
+   HYPREDRV_SAFE_CALL(
+      LinearSystemSetVectorTagsInternal(hypredrv)); /* GCOVR_EXCL_BR_LINE */
 
    /* Create scaling context if needed and not already created */
    if (hypredrv->iargs->scaling.enabled && !hypredrv->scaling_ctx)
    {
-      hypredrv_ScalingContextCreate(hypredrv->comm, &hypredrv->scaling_ctx);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      hypredrv_ScalingContextCreate(hypredrv->comm,
+                                    &hypredrv->scaling_ctx); /* GCOVR_EXCL_BR_LINE */
       HYPREDRV_LOG_OBJECTF(2, hypredrv, "created scaling context (type=%d)",
-                           (int)hypredrv->iargs->scaling.type);
-      /* GCOVR_EXCL_BR_STOP */
+                           (int)hypredrv->iargs->scaling.type); /* GCOVR_EXCL_BR_LINE */
    }
 
    /* Compute scaling if enabled (recompute for each system if needed) */
@@ -2688,9 +2595,8 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    {
       hypredrv_ScalingCompute(hypredrv->comm, &hypredrv->iargs->scaling,
                               hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->vec_b,
-                              hypredrv->dofmap);
-      /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
-      if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_STOP */
+                              hypredrv->dofmap); /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_ErrorCodeGet())               /* GCOVR_EXCL_BR_LINE */
       {
          return hypredrv_ErrorCodeGet();
       }
@@ -2700,9 +2606,9 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
    {
       hypredrv_ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
-                                    hypredrv->mat_M, hypredrv->vec_b, hypredrv->vec_x);
-      /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
-      if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_STOP */
+                                    hypredrv->mat_M, hypredrv->vec_b,
+                                    hypredrv->vec_x); /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_ErrorCodeGet())                    /* GCOVR_EXCL_BR_LINE */
       {
          return hypredrv_ErrorCodeGet();
       }
@@ -2742,11 +2648,10 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 
    if (!hypredrv->solver)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOG_OBJECTF(1, hypredrv,
-                           "HYPREDRV_LinearSolverApply failed: solver is NULL");
-      /* GCOVR_EXCL_BR_STOP */
+      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER); /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOG_OBJECTF(
+         1, hypredrv,
+         "HYPREDRV_LinearSolverApply failed: solver is NULL"); /* GCOVR_EXCL_BR_LINE */
       return hypredrv_ErrorCodeGet();
    }
 
@@ -2759,33 +2664,26 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
    GMRESSetRefSolution(hypredrv);
 
    /* Apply scaling if enabled but not yet applied (e.g., when preconditioner is reused)
-    */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+    */    /* GCOVR_EXCL_BR_LINE */
    if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled &&
-       !hypredrv->scaling_ctx->is_applied)
-   /* GCOVR_EXCL_BR_STOP */
-   {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOG_OBJECTF(2, hypredrv, "applying deferred system scaling");
-      /* GCOVR_EXCL_BR_STOP */
+       !hypredrv->scaling_ctx->is_applied) /* GCOVR_EXCL_BR_LINE */
+   {                                       /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                           "applying deferred system scaling"); /* GCOVR_EXCL_BR_LINE */
       hypredrv_ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
-                                    hypredrv->mat_M, hypredrv->vec_b, hypredrv->vec_x);
-      /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
-      if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_STOP */
+                                    hypredrv->mat_M, hypredrv->vec_b,
+                                    hypredrv->vec_x); /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_ErrorCodeGet())                    /* GCOVR_EXCL_BR_LINE */
       {
          return hypredrv_ErrorCodeGet();
       }
    }
 
-   /* Perform solve */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* Perform solve */ /* GCOVR_EXCL_BR_LINE */
    if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled &&
-       hypredrv->scaling_ctx->is_applied)
-   /* GCOVR_EXCL_BR_STOP */
-   {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOG_OBJECTF(2, hypredrv, "solving scaled system");
-      /* GCOVR_EXCL_BR_STOP */
+       hypredrv->scaling_ctx->is_applied)                         /* GCOVR_EXCL_BR_LINE */
+   {                                                              /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOG_OBJECTF(2, hypredrv, "solving scaled system"); /* GCOVR_EXCL_BR_LINE */
       int xref_scaled = 0;
 
       /* Compute initial residual norm before solve (on current system state) */
@@ -2795,9 +2693,8 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       if (hypredrv->vec_xref)
       {
          hypredrv_ScalingApplyToVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
-                                       SCALING_VECTOR_UNKNOWN);
-         /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
-         if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_STOP */
+                                       SCALING_VECTOR_UNKNOWN); /* GCOVR_EXCL_BR_LINE */
+         if (hypredrv_ErrorCodeGet())                           /* GCOVR_EXCL_BR_LINE */
          {
             return hypredrv_ErrorCodeGet();
          }
@@ -2812,22 +2709,22 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       HYPRE_Int iters =
          hypredrv_SolverSolveOnly(hypredrv->iargs->solver_method, hypredrv->solver,
                                   hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x);
-      /* GCOVR_EXCL_BR_START */ /* solver failure requires hypre injection */
-      if (iters < 0)            /* GCOVR_EXCL_BR_STOP */
+         /* GCOVR_EXCL_BR_LINE */ /* solver failure requires hypre injection */
+      if (iters < 0)              /* GCOVR_EXCL_BR_LINE */
       {
-         solve_succeeded = 0;
-         /* GCOVR_EXCL_BR_START */ /* paired with iters<0 path */
-         if (xref_scaled)          /* GCOVR_EXCL_BR_STOP */
+         solve_succeeded = 0; /* GCOVR_EXCL_BR_LINE */ /* paired with iters<0 path */
+         if (xref_scaled)                              /* GCOVR_EXCL_BR_LINE */
          {
             hypredrv_ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
                                          SCALING_VECTOR_UNKNOWN);
          }
          hypredrv_StatsIterSet(hypredrv->stats, 0);
-         hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END, "solve");
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         if (hypredrv->iargs && hypredrv->iargs->precon_reuse.enabled &&
-             hypredrv->iargs->precon_reuse.policy == PRECON_REUSE_POLICY_ADAPTIVE)
-         /* GCOVR_EXCL_BR_STOP */
+         hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END,
+                                "solve"); /* GCOVR_EXCL_BR_LINE */
+         if (hypredrv->iargs &&
+             hypredrv->iargs->precon_reuse.enabled && /* GCOVR_EXCL_BR_LINE */
+             hypredrv->iargs->precon_reuse.policy ==
+                PRECON_REUSE_POLICY_ADAPTIVE) /* GCOVR_EXCL_BR_LINE */
          {
             PreconReuseObservation obs;
             hypredrv_PreconReuseBuildObservation(
@@ -2845,11 +2742,10 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       /* Undo scaling on solution and restore original system */
       hypredrv_ScalingUndoOnSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
                                    hypredrv->mat_M, hypredrv->vec_b, hypredrv->vec_x);
-      /* GCOVR_EXCL_BR_START */    /* undo failure needs injection */
-      if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_STOP */
-      {
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         if (xref_scaled)          /* GCOVR_EXCL_BR_STOP */
+         /* GCOVR_EXCL_BR_LINE */  /* undo failure needs injection */
+      if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_LINE */
+      {                            /* GCOVR_EXCL_BR_LINE */
+         if (xref_scaled)          /* GCOVR_EXCL_BR_LINE */
          {
             hypredrv_ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
                                          SCALING_VECTOR_UNKNOWN);
@@ -2861,8 +2757,8 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       {
          hypredrv_ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
                                       SCALING_VECTOR_UNKNOWN);
-         /* GCOVR_EXCL_BR_START */    /* xref undo failure */
-         if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_STOP */
+            /* GCOVR_EXCL_BR_LINE */  /* xref undo failure */
+         if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_LINE */
          {
             return hypredrv_ErrorCodeGet();
          }
@@ -2871,10 +2767,9 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       /* Compute residual norms on original (now restored) system */
       hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_b, "L2", &b_norm);
       hypredrv_LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b,
-                                               hypredrv->vec_x, "L2", &r_norm);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      b_norm = (b_norm > 0.0) ? b_norm : 1.0;
-      /* GCOVR_EXCL_BR_STOP */
+                                               hypredrv->vec_x, "L2",
+                                               &r_norm); /* GCOVR_EXCL_BR_LINE */
+      b_norm = (b_norm > 0.0) ? b_norm : 1.0;            /* GCOVR_EXCL_BR_LINE */
       hypredrv_StatsRelativeResNormSet(hypredrv->stats, r_norm / b_norm);
    }
    else
@@ -2902,9 +2797,8 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_xref, "L2", &xref_norm);
       hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_x, "L2", &x_norm);
       hypredrv_LinearSystemComputeErrorNorm(hypredrv->vec_xref, hypredrv->vec_x, "L2",
-                                            &e_norm);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (!hypredrv->mypid)     /* GCOVR_EXCL_BR_STOP */
+                                            &e_norm); /* GCOVR_EXCL_BR_LINE */
+      if (!hypredrv->mypid)                           /* GCOVR_EXCL_BR_LINE */
       {
          printf("L2 norm of error: %e\n", (double)e_norm);
          printf("L2 norm of solution: %e\n", (double)x_norm);
@@ -2941,36 +2835,33 @@ HYPREDRV_PreconApply(HYPREDRV_t hypredrv, HYPRE_Vector vec_b, HYPRE_Vector vec_x
    if (!hypredrv->precon)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      hypredrv_ErrorMsgAdd("HYPREDRV_PreconApply: preconditioner is NULL");
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                           "HYPREDRV_PreconApply failed: preconditioner is NULL");
-      /* GCOVR_EXCL_BR_STOP */
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_PreconApply: preconditioner is NULL"); /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOG_OBJECTF(
+         2, hypredrv,
+         "HYPREDRV_PreconApply failed: preconditioner is NULL"); /* GCOVR_EXCL_BR_LINE */
       return hypredrv_ErrorCodeGet();
    }
    if (!hypredrv->mat_A || !vec_b || !vec_x)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd(
-         "HYPREDRV_PreconApply requires matrix, rhs, and solution vectors");
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         "HYPREDRV_PreconApply requires matrix, rhs, and solution vectors"); /* GCOVR_EXCL_BR_LINE
+                                                                              */
       HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                           "HYPREDRV_PreconApply failed: matrix or vector is NULL");
-      /* GCOVR_EXCL_BR_STOP */
+                           "HYPREDRV_PreconApply failed: matrix or vector is NULL"); /* GCOVR_EXCL_BR_LINE
+                                                                                      */
       return hypredrv_ErrorCodeGet();
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_LINE */
    HYPREDRV_LOG_OBJECTF(2, hypredrv, "preconditioner apply: method=%d has_precon=%d",
-                        (int)hypredrv->iargs->precon_method, (hypredrv->precon != NULL));
-   /* GCOVR_EXCL_BR_STOP */
+                        (int)hypredrv->iargs->precon_method,
+                        (hypredrv->precon != NULL)); /* GCOVR_EXCL_BR_LINE */
 
    hypredrv_PreconApply(hypredrv->iargs->precon_method, hypredrv->precon, hypredrv->mat_A,
                         (HYPRE_IJVector)vec_b, (HYPRE_IJVector)vec_x);
-   HYPRE_ClearAllErrors();   /* TODO: error handling from hypre */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconApply end");
-   /* GCOVR_EXCL_BR_STOP */
+   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */  /* GCOVR_EXCL_BR_LINE */
+   HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconApply end"); /* GCOVR_EXCL_BR_LINE */
 
    return hypredrv_ErrorCodeGet();
 }
@@ -3022,11 +2913,10 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
          hypredrv->precon_is_setup = false;
       }
       else
-      {
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                              "preconditioner destroy requested but object is NULL");
-         /* GCOVR_EXCL_BR_STOP */
+      { /* GCOVR_EXCL_BR_LINE */
+         HYPREDRV_LOG_OBJECTF(
+            2, hypredrv, "preconditioner destroy requested but object is NULL"); /* GCOVR_EXCL_BR_LINE
+                                                                                  */
       }
    }
    else
@@ -3052,14 +2942,14 @@ HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
    {
       HYPREDRV_LOG_OBJECTF(2, hypredrv,
                            "linear solver destroy: evaluating preconditioner teardown");
-      /* GCOVR_EXCL_BR_START */             /* rare teardown failure */
-      if (HYPREDRV_PreconDestroy(hypredrv)) /* GCOVR_EXCL_BR_STOP */
+         /* GCOVR_EXCL_BR_LINE */           /* rare teardown failure */
+      if (HYPREDRV_PreconDestroy(hypredrv)) /* GCOVR_EXCL_BR_LINE */
       {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         HYPREDRV_LOG_OBJECTF(
-            2, hypredrv, "linear solver destroy failed: preconditioner teardown error");
-         /* GCOVR_EXCL_BR_STOP */
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON); /* GCOVR_EXCL_BR_LINE */
+         HYPREDRV_LOG_OBJECTF(                        /* GCOVR_EXCL_BR_LINE */
+                              2, hypredrv,
+                              "linear solver destroy failed: preconditioner teardown "
+                              "error"); /* GCOVR_EXCL_BR_LINE */
          return hypredrv_ErrorCodeGet();
       }
    }
@@ -3083,14 +2973,12 @@ uint32_t
 HYPREDRV_StatsPrint(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_LINE */
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_StatsPrint");
-   /* GCOVR_EXCL_BR_STOP */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   PrintStatsWithConfiguredDestination(
-      hypredrv, hypredrv->iargs ? hypredrv->iargs->general.statistics : 0);
-   /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
+   PrintStatsWithConfiguredDestination(hypredrv, hypredrv->iargs
+                                                    ? hypredrv->iargs->general.statistics
+                                                    : 0); /* GCOVR_EXCL_BR_LINE */
    hypredrv->stats_printed = true;
 
    return hypredrv_ErrorCodeGet();
@@ -3223,18 +3111,17 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
               "but eigenspectrum support is disabled. "
               "Reconfigure with -DHYPREDRV_ENABLE_EIGSPEC=ON to enable it.\n");
       fflush(stderr);
-      warned_eigspec_disabled = true;
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                           "eigenspectrum support disabled in build; emitted warning");
-      /* GCOVR_EXCL_BR_STOP */
+      warned_eigspec_disabled = true; /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOG_OBJECTF(
+         2, hypredrv, "eigenspectrum support disabled in build; emitted warning"); /* GCOVR_EXCL_BR_LINE
+                                                                                    */
    }
    else
-   {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   { /* GCOVR_EXCL_BR_LINE */
       HYPREDRV_LOG_OBJECTF(
-         2, hypredrv, "eigenspectrum support disabled in build; warning already emitted");
-      /* GCOVR_EXCL_BR_STOP */
+         2, hypredrv,
+         "eigenspectrum support disabled in build; warning already emitted"); /* GCOVR_EXCL_BR_LINE
+                                                                               */
    }
 #endif
 

@@ -263,9 +263,8 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
       hypredrv_PreconArgsDestroyRuntimeState(precon_method, args);
    }
 
-   HYPRE_Precon precon = malloc(sizeof(hypre_Precon));
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!precon)              /* GCOVR_EXCL_BR_STOP */
+   HYPRE_Precon precon = malloc(sizeof(hypre_Precon)); /* GCOVR_EXCL_BR_LINE */
+   if (!precon)                                        /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       *precon_ptr = NULL;
@@ -320,9 +319,8 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    void              *vA    = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
-
-   /* GCOVR_EXCL_BR_START */         /* low-signal branch under CI */
-   if (precon_method == PRECON_NONE) /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (precon_method == PRECON_NONE) /* GCOVR_EXCL_BR_LINE */
    {
       return;
    }
@@ -462,15 +460,13 @@ static void PreconDestroyMGRSolver(MGR_args *, HYPRE_Solver *);
 static void
 DestroyNestedMGRFRelaxInnerSolver(MGR_args *mgr, int i,
                                   HYPRE_Solver *nested_mgr_solver_ptr)
-{
-   /* GCOVR_EXCL_BR_START */                              /* low-signal branch under CI */
-   if (!nested_mgr_solver_ptr || !*nested_mgr_solver_ptr) /* GCOVR_EXCL_BR_STOP */
+{                                                         /* GCOVR_EXCL_BR_LINE */
+   if (!nested_mgr_solver_ptr || !*nested_mgr_solver_ptr) /* GCOVR_EXCL_BR_LINE */
    {
       return;
    }
-
-   /* GCOVR_EXCL_BR_START */           /* low-signal branch under CI */
-   if (mgr->level[i].f_relaxation.mgr) /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (mgr->level[i].f_relaxation.mgr) /* GCOVR_EXCL_BR_LINE */
    {
       PreconDestroyMGRSolver(mgr->level[i].f_relaxation.mgr, nested_mgr_solver_ptr);
    }
@@ -502,22 +498,19 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
    (void)solver_ptr;
    hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
    hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-#else
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!mgr)                 /* GCOVR_EXCL_BR_STOP */
+#else /* GCOVR_EXCL_BR_LINE */
+   if (!mgr) /* GCOVR_EXCL_BR_LINE */
    {
       return;
    }
-
-   /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
-   if (!solver_ptr || !*solver_ptr) /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (!solver_ptr || !*solver_ptr) /* GCOVR_EXCL_BR_LINE */
    {
       /* Outer MGR solver was never created (e.g. early failure in MGRCreate).
        * Destroy or preserve any component handles that were set up before the
        * failure, respecting keep flags set by the caller. */
-      hypredrv_MGRDestroyCachedSolvers(mgr);
-      /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
-      if (mgr->point_marker_data) /* GCOVR_EXCL_BR_STOP */
+      hypredrv_MGRDestroyCachedSolvers(mgr); /* GCOVR_EXCL_BR_LINE */
+      if (mgr->point_marker_data)            /* GCOVR_EXCL_BR_LINE */
       {
          free(mgr->point_marker_data);
          mgr->point_marker_data = NULL;
@@ -545,9 +538,8 @@ void
 hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
                        HYPRE_Precon *precon_ptr, const Stats *stats, int ls_id)
 {
-   int log_rank = -1;
-   /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
-   if (hypredrv_LogEnabled(3)) /* GCOVR_EXCL_BR_STOP */
+   int log_rank = -1;          /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv_LogEnabled(3)) /* GCOVR_EXCL_BR_LINE */
    {
       log_rank = hypredrv_LogRankFromComm(MPI_COMM_WORLD);
    }
@@ -570,9 +562,8 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
    }
 
    HYPRE_Precon precon = *precon_ptr;
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!precon)              /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_LINE */
+   if (!precon) /* GCOVR_EXCL_BR_LINE */
    {
       /* GCOVR_EXCL_START */
       HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,

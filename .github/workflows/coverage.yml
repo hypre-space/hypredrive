@@ -35,7 +35,7 @@ jobs:
       HYPRE_VERSION: master
       BUILD_DIR: build-coverage
       HYPREDRV_COVERAGE_MIN_LINE: '0.90'
-      HYPREDRV_COVERAGE_MIN_BRANCH: '0.80'
+      HYPREDRV_COVERAGE_MIN_BRANCH: '0.83'
       HYPREDRV_COVERAGE_MIN_FUNCTION: '0.95'
     steps:
       - uses: actions/checkout@v6

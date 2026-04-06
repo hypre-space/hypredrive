@@ -126,6 +126,18 @@ precon_test_ij_vector_1x1(double value)
 }
 
 static void
+precon_test_set_static_mgr_component_reuse(MGRComponentReuse_args *reuse, int frequency)
+{
+   ASSERT_NOT_NULL(reuse);
+   memset(reuse, 0, sizeof(*reuse));
+   hypredrv_PreconReuseSetDefaultArgs(&reuse->args);
+   reuse->present      = 1;
+   reuse->args.enabled = 1;
+   reuse->args.policy  = PRECON_REUSE_POLICY_STATIC;
+   reuse->args.frequency = frequency;
+}
+
+static void
 test_PreconGetValidKeys_contains_expected(void)
 {
    StrArray keys = hypredrv_PreconGetValidKeys();
@@ -3952,6 +3964,178 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
    TEST_HYPRE_FINALIZE();
 }
 
+static void
+test_MGRComponentReuseSetupMode_policy_shape_and_selector_paths(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+   return;
+#else
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels                  = 2;
+   mgr.num_active_levels           = 1;
+   mgr.active_level_map[0]         = 0;
+   mgr.level[0].f_relaxation.type  = 2;
+   mgr.level[0].g_relaxation.type  = -1;
+   mgr.coarsest_level.type         = 0;
+
+   precon_test_set_static_mgr_component_reuse(&mgr.level[0].f_relaxation.reuse, 1);
+   ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 1);
+
+   mgr.level[0].f_relaxation.reuse.args.policy = PRECON_REUSE_POLICY_ADAPTIVE;
+   ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 0);
+   ASSERT_EQ(mgr.level[0].f_relaxation.reuse.warned_policy_unsupported, 1);
+
+   mgr.level[0].f_relaxation.reuse.args.policy = PRECON_REUSE_POLICY_STATIC;
+   mgr.level[0].f_relaxation.type              = 7;
+   ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 0);
+   ASSERT_EQ(mgr.level[0].f_relaxation.reuse.warned_type_unsupported, 1);
+
+   mgr.level[0].f_relaxation.reuse.present = 0;
+   mgr.level[0].g_relaxation.type          = 16;
+   precon_test_set_static_mgr_component_reuse(&mgr.level[0].g_relaxation.reuse, 1);
+   ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 1);
+
+   mgr.level[0].g_relaxation.reuse.present = 0;
+   mgr.coarsest_level.type                 = 7;
+   precon_test_set_static_mgr_component_reuse(&mgr.coarsest_level.reuse, 1);
+   ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 0);
+   ASSERT_EQ(mgr.coarsest_level.reuse.warned_type_unsupported, 1);
+
+   mgr.coarsest_level.type = 32;
+   ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 1);
+
+   mgr.coarsest_level.reuse.present = 0;
+   ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 0);
+#endif
+}
+
+static void
+test_MGRComponentReuseSetupMode_nested_shape_unsupported(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+   return;
+#else
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels                  = 2;
+   mgr.num_active_levels           = 1;
+   mgr.active_level_map[0]         = 0;
+   mgr.level[0].f_relaxation.type  = MGR_FRLX_TYPE_NESTED_MGR;
+
+   precon_test_set_static_mgr_component_reuse(&mgr.level[0].f_relaxation.reuse, 1);
+   ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 0);
+   ASSERT_EQ(mgr.level[0].f_relaxation.reuse.warned_type_unsupported, 1);
+
+   mgr.keep_frelax[0] = 1;
+   mgr.keep_grelax[0] = 1;
+   mgr.keep_csolver   = 1;
+   hypredrv_MGRSelectCachedSolversToKeep(&mgr, NULL, NULL, 1);
+   ASSERT_EQ(mgr.keep_frelax[0], 0);
+   ASSERT_EQ(mgr.keep_grelax[0], 0);
+   ASSERT_EQ(mgr.keep_csolver, 0);
+#endif
+}
+
+static void
+test_MGRComponentReuseShouldKeepOuter_and_SelectKeepFlags(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+   return;
+#else
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels                 = 2;
+   mgr.num_active_levels          = 1;
+   mgr.active_level_map[0]        = 0;
+   mgr.level[0].f_relaxation.type = 2;
+   mgr.level[0].g_relaxation.type = 16;
+   mgr.coarsest_level.type        = 32;
+
+   precon_test_set_static_mgr_component_reuse(&mgr.level[0].f_relaxation.reuse, 1);
+   precon_test_set_static_mgr_component_reuse(&mgr.level[0].g_relaxation.reuse, 1);
+   precon_test_set_static_mgr_component_reuse(&mgr.coarsest_level.reuse, 1);
+
+   ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 1), 1);
+   ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 2), 0);
+
+   hypredrv_MGRSelectCachedSolversToKeep(&mgr, NULL, NULL, 1);
+   ASSERT_EQ(mgr.keep_frelax[0], 1);
+   ASSERT_EQ(mgr.keep_grelax[0], 1);
+   ASSERT_EQ(mgr.keep_csolver, 1);
+
+   int keep_f = -1, keep_g = -1, keep_c = -1;
+   hypredrv_MGRCountKeepFlags(&mgr, &keep_f, &keep_g, &keep_c);
+   ASSERT_EQ(keep_f, 1);
+   ASSERT_EQ(keep_g, 1);
+   ASSERT_EQ(keep_c, 1);
+
+   hypredrv_MGRSelectCachedSolversToKeep(&mgr, NULL, NULL, 2);
+   ASSERT_EQ(mgr.keep_frelax[0], 0);
+   ASSERT_EQ(mgr.keep_grelax[0], 0);
+   ASSERT_EQ(mgr.keep_csolver, 0);
+#endif
+}
+
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+static void
+test_MGRRefreshComponentsForSetup_rebuilds_fsai_handles(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
+   return;
+#else
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+
+   IntArray *dofmap = NULL;
+   const int map[3] = {0, 1, 2};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   args.mgr.num_levels                   = 2;
+   args.mgr.level[0].f_dofs.size         = 1;
+   args.mgr.level[0].f_dofs.data[0]      = 0;
+   args.mgr.level[0].f_relaxation.type   = 33;
+   args.mgr.level[0].g_relaxation.type   = 33;
+   args.mgr.coarsest_level.type          = 32;
+   hypredrv_FSAISetDefaultArgs(&args.mgr.level[0].f_relaxation.fsai);
+   hypredrv_FSAISetDefaultArgs(&args.mgr.level[0].g_relaxation.fsai);
+   hypredrv_ILUSetDefaultArgs(&args.mgr.coarsest_level.ilu);
+   args.mgr.level[0].f_relaxation.fsai.max_iter = 1;
+   args.mgr.level[0].g_relaxation.fsai.max_iter = 1;
+   args.mgr.coarsest_level.ilu.max_iter         = 1;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   ASSERT_NOT_NULL(args.mgr.frelax[0]);
+   ASSERT_NOT_NULL(args.mgr.grelax[0]);
+   ASSERT_NOT_NULL(args.mgr.csolver);
+
+   precon_test_set_static_mgr_component_reuse(&args.mgr.level[0].f_relaxation.reuse, 0);
+   precon_test_set_static_mgr_component_reuse(&args.mgr.level[0].g_relaxation.reuse, 0);
+   precon_test_set_static_mgr_component_reuse(&args.mgr.coarsest_level.reuse, 0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRRefreshComponentsForSetup(&args.mgr, precon->main, NULL, NULL, 1);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(args.mgr.frelax[0]);
+   ASSERT_NOT_NULL(args.mgr.grelax[0]);
+   ASSERT_NOT_NULL(args.mgr.csolver);
+
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon, NULL, 0);
+   ASSERT_NULL(precon);
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+#endif
+}
+#endif
+
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
 static void
 test_PreconDestroy_mgr_frelax_amg_type2(void)
@@ -5551,6 +5735,12 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconSetup_mgr_frelax_nested_mgr_body_split_labels);
    RUN_TEST(test_PreconCreate_mgr_nested_krylov_inner_mgr_recreate_without_reuse);
    RUN_TEST(test_PreconDestroy_mgr_csolver_destroy_branches);
+   RUN_TEST(test_MGRComponentReuseSetupMode_policy_shape_and_selector_paths);
+   RUN_TEST(test_MGRComponentReuseSetupMode_nested_shape_unsupported);
+   RUN_TEST(test_MGRComponentReuseShouldKeepOuter_and_SelectKeepFlags);
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+   RUN_TEST(test_MGRRefreshComponentsForSetup_rebuilds_fsai_handles);
+#endif
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_PreconDestroy_mgr_frelax_amg_type2);
 #endif

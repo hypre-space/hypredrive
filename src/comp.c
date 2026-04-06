@@ -38,8 +38,8 @@ HypredrvStringHasSuffix(const char *str, const char *suffix)
    size_t m = 0;
 
    /* Defensive: callers always pass non-NULL; only reachable via internal misuse. */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!str || !suffix)      /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!str || !suffix) /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
@@ -144,7 +144,7 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
    const size_t header_size = sizeof(uint64_t);
    size_t       comp_size   = 0;
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!osize_ptr || !output_ptr || (!input && isize > 0)) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -157,14 +157,14 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
 
    if (algo == COMP_NONE)
    {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       size_t alloc_n = isize > 0 ? isize : 1;
       /* GCOVR_EXCL_BR_STOP */
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       HYPREDRV_MALLOC_AND_CHECK(*output_ptr, alloc_n);
       /* GCOVR_EXCL_BR_STOP */
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (isize > 0)            /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (isize > 0) /* GCOVR_EXCL_BR_STOP */
       {
          memcpy(*output_ptr, input, isize);
       }
@@ -172,7 +172,7 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
       return;
    }
 
-   /* GCOVR_EXCL_BR_START */       /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (isize > (size_t)UINT64_MAX) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -180,7 +180,7 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
       return;
    }
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    switch (algo)
    /* GCOVR_EXCL_BR_STOP */
    {
@@ -188,7 +188,7 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
       {
 #ifdef HYPREDRV_USING_ZLIB
          comp_size = (size_t)compressBound((uLong)isize);
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          HYPREDRV_MALLOC_AND_CHECK(*output_ptr, header_size + comp_size);
          /* GCOVR_EXCL_BR_STOP */
 
@@ -221,7 +221,7 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
       {
 #ifdef HYPREDRV_USING_ZSTD
          comp_size = ZSTD_compressBound(isize);
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          HYPREDRV_MALLOC_AND_CHECK(*output_ptr, header_size + comp_size);
          /* GCOVR_EXCL_BR_STOP */
 
@@ -402,7 +402,7 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
    const size_t header_size = sizeof(uint64_t);
    size_t       orig_size   = 0;
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!osize_ptr || !output_ptr || (!input && isize > 0)) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -415,14 +415,14 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
 
    if (algo == COMP_NONE)
    {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       size_t alloc_n = isize > 0 ? isize : 1;
       /* GCOVR_EXCL_BR_STOP */
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       HYPREDRV_MALLOC_AND_CHECK(*output_ptr, alloc_n);
       /* GCOVR_EXCL_BR_STOP */
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (isize > 0)            /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (isize > 0) /* GCOVR_EXCL_BR_STOP */
       {
          memcpy(*output_ptr, input, isize);
       }
@@ -439,15 +439,15 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
 
    orig_size = (size_t)(*((const uint64_t *)input));
    {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       size_t alloc_n = orig_size > 0 ? orig_size : 1;
       /* GCOVR_EXCL_BR_STOP */
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       HYPREDRV_MALLOC_AND_CHECK(*output_ptr, alloc_n);
       /* GCOVR_EXCL_BR_STOP */
    }
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    switch (algo)
    /* GCOVR_EXCL_BR_STOP */
    {
