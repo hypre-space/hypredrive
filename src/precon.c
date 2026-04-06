@@ -145,8 +145,7 @@ hypredrv_PreconArgsDestroyRuntimeState(precon_t method, precon_args *args)
    }
 }
 
-static int
-PreconHasConfiguredComponentReuse(precon_t method, const precon_args *args);
+static int PreconHasConfiguredComponentReuse(precon_t method, const precon_args *args);
 
 static int
 NestedKrylovHasConfiguredComponentReuse(const NestedKrylov_args *args)
@@ -256,8 +255,8 @@ hypredrv_PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 
 void
 hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
-                      HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr,
-                      const Stats *stats, int next_ls_id)
+                      HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr, const Stats *stats,
+                      int next_ls_id)
 {
    if (!PreconHasConfiguredComponentReuse(precon_method, args))
    {
@@ -565,8 +564,7 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
       }
       else if (stats->runtime_object_id > 0)
       {
-         snprintf(obj_name_buf, sizeof(obj_name_buf), "obj-%d",
-                  stats->runtime_object_id);
+         snprintf(obj_name_buf, sizeof(obj_name_buf), "obj-%d", stats->runtime_object_id);
          obj_name = obj_name_buf;
       }
    }

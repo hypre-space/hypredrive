@@ -567,8 +567,12 @@ hypredrv_NestedKrylovSetup(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
       return 1;
    }
 
-   HYPRE_Int rc = NestedKrylovBaseSolverSetup(args->solver_method, args->base_solver, A, b, x);
-   if (!rc) { args->is_setup = 1; }
+   HYPRE_Int rc =
+      NestedKrylovBaseSolverSetup(args->solver_method, args->base_solver, A, b, x);
+   if (!rc)
+   {
+      args->is_setup = 1;
+   }
    return rc;
 }
 
@@ -628,8 +632,8 @@ hypredrv_NestedKrylovDestroy(NestedKrylov_args *args)
 
    if (args->precon_obj)
    {
-      hypredrv_PreconDestroy(args->precon_method, &args->precon, &args->precon_obj,
-                             NULL, 0);
+      hypredrv_PreconDestroy(args->precon_method, &args->precon, &args->precon_obj, NULL,
+                             0);
       args->precon_obj = NULL;
    }
 

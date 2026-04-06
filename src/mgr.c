@@ -25,7 +25,7 @@ typedef struct MGRFRelaxWrapper_struct
    HYPRE_Int (*setup)(void *, void *, void *, void *);
    HYPRE_Int (*solve)(void *, void *, void *, void *);
    HYPRE_Int (*destroy)(void *);
-   HYPRE_Int                       is_setup;  /* offset 24: mirrors hypre_Solver layout */
+   HYPRE_Int                       is_setup; /* offset 24: mirrors hypre_Solver layout */
    HYPRE_Solver                    inner_mgr;
    IntArray                       *owned_dofmap;
    struct MGRFRelaxWrapper_struct *next_live;
@@ -301,37 +301,37 @@ MGRlvlFDofsSet(void *field, const YAMLnode *node)
 /* GCOVR_EXCL_BR_STOP */
 
 /* Generate type-setting wrappers for union fields */
-DEFINE_TYPED_SETTER(MGRclsAMGSetArgs,   MGRcls_args,  amg,  0,  hypredrv_AMGSetArgs)
-DEFINE_TYPED_SETTER(MGRclsILUSetArgs,   MGRcls_args,  ilu,  32, hypredrv_ILUSetArgs)
-DEFINE_TYPED_SETTER(MGRclsFSAISetArgs,  MGRcls_args,  fsai, 33, hypredrv_FSAISetArgs)
-DEFINE_TYPED_SETTER(MGRfrlxAMGSetArgs,  MGRfrlx_args, amg,  2,  hypredrv_AMGSetArgs)
-DEFINE_TYPED_SETTER(MGRfrlxILUSetArgs,  MGRfrlx_args, ilu,  32, hypredrv_ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRclsAMGSetArgs, MGRcls_args, amg, 0, hypredrv_AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRclsILUSetArgs, MGRcls_args, ilu, 32, hypredrv_ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRclsFSAISetArgs, MGRcls_args, fsai, 33, hypredrv_FSAISetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxAMGSetArgs, MGRfrlx_args, amg, 2, hypredrv_AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxILUSetArgs, MGRfrlx_args, ilu, 32, hypredrv_ILUSetArgs)
 DEFINE_TYPED_SETTER(MGRfrlxFSAISetArgs, MGRfrlx_args, fsai, 33, hypredrv_FSAISetArgs)
-DEFINE_TYPED_SETTER(MGRgrlxAMGSetArgs,  MGRgrlx_args, amg,  20, hypredrv_AMGSetArgs)
-DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs,  MGRgrlx_args, ilu,  16, hypredrv_ILUSetArgs)
+DEFINE_TYPED_SETTER(MGRgrlxAMGSetArgs, MGRgrlx_args, amg, 20, hypredrv_AMGSetArgs)
+DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, hypredrv_ILUSetArgs)
 DEFINE_TYPED_SETTER(MGRgrlxFSAISetArgs, MGRgrlx_args, fsai, 33, hypredrv_FSAISetArgs)
 static void MGRfrlxMGRSetArgs(void *, const YAMLnode *);
 void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
 
-#define MGRcls_FIELDS(_prefix)                                      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg,  MGRclsAMGSetArgs)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu,  MGRclsILUSetArgs)          \
+#define MGRcls_FIELDS(_prefix)                                     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRclsILUSetArgs)          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRclsFSAISetArgs)
 
 #define MGRfrlx_FIELDS(_prefix)                                          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr,  MGRfrlxMGRSetArgs)              \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg,  MGRfrlxAMGSetArgs)              \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu,  MGRfrlxILUSetArgs)              \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRfrlxMGRSetArgs)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRfrlxFSAISetArgs)
 
 #define MGRgrlx_FIELDS(_prefix)                                          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg,  MGRgrlxAMGSetArgs)              \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu,  MGRgrlxILUSetArgs)              \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRgrlxFSAISetArgs)
 
 #define MGRlvl_FIELDS(_prefix)                                                  \
@@ -343,7 +343,7 @@ void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
    ADD_FIELD_OFFSET_ENTRY(_prefix, g_relaxation, hypredrv_MGRgrlxSetArgs)
 
 #if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
-#define MGR_EXPERIMENTAL_FIELDS(_prefix)                                       \
+#define MGR_EXPERIMENTAL_FIELDS(_prefix) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, cycle, hypredrv_FieldTypeIntSet)
 #else
 #define MGR_EXPERIMENTAL_FIELDS(_prefix)
@@ -848,6 +848,30 @@ MGRLogObjectName(const Stats *stats)
    return NULL;
 }
 
+static HYPRE_Int
+MGRLevelInterpTypeCompat(HYPRE_Int interp_type, const Stats *stats, int next_ls_id,
+                         HYPRE_Int level)
+{
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 30100 && HYPREDRV_HYPRE_DEVELOP_NUMBER == 0
+   if (interp_type == 13 || interp_type == 14)
+   {
+      const char *interp_name = (interp_type == 13) ? "blk-rowsum" : "blk-absrowsum";
+
+      HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
+                         "MGR level %d prolongation '%s' is unsupported by Hypre v3.1.0; "
+                         "falling back to 'blk-jacobi'",
+                         (int)level, interp_name);
+      return 12;
+   }
+#else
+   (void)stats;
+   (void)next_ls_id;
+   (void)level;
+#endif
+
+   return interp_type;
+}
+
 static void
 MGRComponentReuseSetDefaultArgs(MGRComponentReuse_args *reuse)
 {
@@ -1294,7 +1318,9 @@ hypredrv_MGRclsGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
-      static StrIntMap map[] = {{"def", -1}, {"amg", 0}, {"spdirect", 29}, {"ilu", 32}, {"fsai", 33}};
+      static StrIntMap map[] = {
+         {"def", -1}, {"amg", 0}, {"spdirect", 29}, {"ilu", 32}, {"fsai", 33},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1427,8 +1453,8 @@ hypredrv_MGRGetValidValues(const char *key)
    else if (!strcmp(key, "cycle"))
    {
       static StrIntMap map[] = {
-         {"v",      1}, {"v(1,0)", 1}, {"v(0,1)", 2}, {"v(1,1)", 3},
-         {"w",      4}, {"w(1,0)", 4}, {"w(0,1)", 5}, {"w(1,1)", 6},
+         {"v", 1}, {"v(1,0)", 1}, {"v(0,1)", 2}, {"v(1,1)", 3},
+         {"w", 4}, {"w(1,0)", 4}, {"w(0,1)", 5}, {"w(1,1)", 6},
       };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
@@ -2623,8 +2649,8 @@ hypredrv_MGRSelectCachedSolversToKeep(MGR_args *args, const IntArray *timestep_s
    {
       int keep_csolver = MGRComponentReuseShouldKeep(&args->coarsest_level.reuse,
                                                      timestep_starts, stats, next_ls_id);
-      MGRLogComponentReuseDecision(stats, "coarsest_level", -1, &args->coarsest_level.reuse,
-                                   next_ls_id, keep_csolver);
+      MGRLogComponentReuseDecision(stats, "coarsest_level", -1,
+                                   &args->coarsest_level.reuse, next_ls_id, keep_csolver);
       if (keep_csolver)
       {
          args->keep_csolver = 1;
@@ -3122,14 +3148,16 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    for (i = 0; i < num_levels - 1; i++)
    {
-      MGRlvl_args *level_args = &args->level[active_level_map[i]];
+      HYPRE_Int    orig_lvl   = active_level_map[i];
+      MGRlvl_args *level_args = &args->level[orig_lvl];
       HYPRE_Int    type       = level_args->f_relaxation.type;
 
       level_frelax_type[i]   = (type == MGR_FRLX_TYPE_NESTED_MGR) ? 7 : type;
       level_frelax_sweeps[i] = level_args->f_relaxation.num_sweeps;
       level_grelax_type[i]   = level_args->g_relaxation.type;
       level_grelax_sweeps[i] = level_args->g_relaxation.num_sweeps;
-      level_interp_type[i]   = level_args->prolongation_type;
+      level_interp_type[i]   = MGRLevelInterpTypeCompat(level_args->prolongation_type,
+                                                        stats, next_ls_id, orig_lvl);
       level_restrict_type[i] = level_args->restriction_type;
       level_coarse_type[i]   = level_args->coarse_level_type;
    }
@@ -3151,8 +3179,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
 
       if (level_args->f_relaxation.use_krylov && level_args->f_relaxation.krylov)
       {
-         int krylov_was_cached =
-            (level_args->f_relaxation.krylov->base_solver != NULL);
+         int krylov_was_cached = (level_args->f_relaxation.krylov->base_solver != NULL);
          if (!krylov_was_cached)
          {
             hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, level_args->f_relaxation.krylov,
@@ -3385,8 +3412,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
 
       if (level_args->g_relaxation.use_krylov && level_args->g_relaxation.krylov)
       {
-         int krylov_was_cached =
-            (level_args->g_relaxation.krylov->base_solver != NULL);
+         int krylov_was_cached = (level_args->g_relaxation.krylov->base_solver != NULL);
          if (!krylov_was_cached)
          {
             hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, level_args->g_relaxation.krylov,

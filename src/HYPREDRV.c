@@ -2574,12 +2574,11 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
    int next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
    if (hypredrv->precon && hypredrv->precon_is_setup &&
        hypredrv->iargs->precon_method == PRECON_MGR &&
-       hypredrv_MGRComponentReuseSetupMode(&hypredrv->iargs->precon.mgr,
-                                           hypredrv->stats, next_ls_id))
+       hypredrv_MGRComponentReuseSetupMode(&hypredrv->iargs->precon.mgr, hypredrv->stats,
+                                           next_ls_id))
    {
-      HYPREDRV_LOG_OBJECTF(
-         2, hypredrv,
-         "rerunning MGR setup with preserved component handles");
+      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                           "rerunning MGR setup with preserved component handles");
    }
 
    hypredrv_PreconSetup(hypredrv->iargs->precon_method, hypredrv->precon,
@@ -2644,8 +2643,8 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    int rerun_mgr_component_setup =
       (hypredrv->precon != NULL) && hypredrv->precon_is_setup &&
       hypredrv->iargs->precon_method == PRECON_MGR &&
-      hypredrv_MGRComponentReuseSetupMode(&hypredrv->iargs->precon.mgr,
-                                          hypredrv->stats, next_ls_id);
+      hypredrv_MGRComponentReuseSetupMode(&hypredrv->iargs->precon.mgr, hypredrv->stats,
+                                          next_ls_id);
    int skip_precon_setup = (hypredrv->precon != NULL) && hypredrv->precon_is_setup &&
                            !should_rebuild && !rerun_mgr_component_setup;
    HYPREDRV_LOG_OBJECTF(2, hypredrv,

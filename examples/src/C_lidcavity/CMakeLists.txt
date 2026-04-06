@@ -102,9 +102,16 @@ if(HYPREDRV_ENABLE_TESTING)
         )
         hypredrv_append_test_environment(lidcavity_test_adaptive_reuse_1proc
             "HYPREDRV_LOG_LEVEL=2")
-        add_executable_test(lidcavity_test_mgr_4proc lidcavity 4
-          ARGS -v 1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3 -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr.yml
-        )
+        if(HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER)
+            add_executable_test(lidcavity_test_mgr_4proc lidcavity 4
+              ARGS -v 1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3 -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr.yml
+            )
+        else()
+            message(STATUS
+                "Skipping lidcavity_test_mgr_4proc for exact Hypre v3.1.0 "
+                "due to an upstream MPI MGR failure"
+            )
+        endif()
     endif()
 endif()
 

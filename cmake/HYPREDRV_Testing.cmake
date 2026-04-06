@@ -21,6 +21,11 @@ function(hypredrv_append_test_environment test_name)
     if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
         list(APPEND _env_list "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
     endif()
+    get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
+    if(_sanitizer_enabled AND EXISTS "${CMAKE_SOURCE_DIR}/.github/lsan.supp")
+        list(APPEND _env_list
+            "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/.github/lsan.supp")
+    endif()
     if(ARGN)
         list(APPEND _env_list ${ARGN})
     endif()
@@ -406,6 +411,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     hypredrv_check_hypre_version(30100 5)
 
     # Check for optional hypre features used to gate tests.
+    hypredrv_check_hypre_symbol(HYPRE_DEVELOP_NUMBER)
     hypredrv_check_hypre_symbol(HYPRE_USING_DSUPERLU)
 
     # Must be called before add_subdirectory(tests) so that add_test() calls work
@@ -562,6 +568,11 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     "g_relaxation: ilu"
                     "[0, 1]     BJ-ILU0         Jacobi"
             )
+            if(NOT HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER)
+                set(_hypredrv_ex4_cli_mgr_g_amg_expect "Unknown         Jacobi")
+            else()
+                set(_hypredrv_ex4_cli_mgr_g_amg_expect "User AMG         Jacobi")
+            endif()
             add_hypredrive_cli_test(ex4_cli_mgr_g_amg 1 ex4.yml
                 OVERRIDES
                     --preconditioner:mgr:print_level 1
@@ -569,8 +580,9 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     --preconditioner:mgr:level:0:g_relaxation amg
                 REQUIRE_CONTAINS
                     "g_relaxation: amg"
-                    "[0, 1]    User AMG         Jacobi"
+                    "${_hypredrv_ex4_cli_mgr_g_amg_expect}"
             )
+            unset(_hypredrv_ex4_cli_mgr_g_amg_expect)
             add_hypredrive_cli_test(ex4_cli_mgr_f_ilu 1 ex4.yml
                 OVERRIDES
                     --preconditioner:mgr:print_level 1

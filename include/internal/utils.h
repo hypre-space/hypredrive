@@ -76,9 +76,9 @@ bool  hypredrv_IsYAMLFilename(const char *);
  * generated headers (for example from shallow clones or installed configs).
  * Treat an exact release match with no develop number as satisfying same-release
  * feature checks. */
-#define HYPRE_CHECK_MIN_VERSION(release, develop)                               \
-   (HYPRE_RELEASE_NUMBER_GT(release) ||                                         \
-    (HYPREDRV_HYPRE_RELEASE_NUMBER == (release) &&                              \
+#define HYPRE_CHECK_MIN_VERSION(release, develop)  \
+   (HYPRE_RELEASE_NUMBER_GT(release) ||            \
+    (HYPREDRV_HYPRE_RELEASE_NUMBER == (release) && \
      (HYPREDRV_HYPRE_DEVELOP_NUMBER == 0 || HYPRE_DEVELOP_NUMBER_GE(develop))))
 
 enum
