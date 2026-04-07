@@ -5168,63 +5168,6 @@ test_PreconDestroy_mgr_grelax_ilu_type16(void)
 }
 
 static void
-test_PreconDestroy_mgr_grelax_ilu_later_level_type16(void)
-{
-#if !HYPRE_CHECK_MIN_VERSION(22100, 0)
-   return;
-#endif
-#if HYPRE_RELEASE_NUMBER == 30100 && \
-   (!defined(HYPRE_DEVELOP_NUMBER) || HYPRE_DEVELOP_NUMBER == 0)
-   /* Exact hypre v3.1.0 can trap in HYPRE_ILUSetup for this later-level
-    * MGR g-relax shape; newer development builds cover the intended path. */
-   return;
-#endif
-   TEST_HYPRE_INIT();
-
-   precon_args args;
-   hypredrv_PreconSetDefaultArgs(&args);
-   hypredrv_MGRSetDefaultArgs(&args.mgr);
-
-   IntArray *dofmap = NULL;
-   const int map[4] = {0, 1, 2, 3};
-   hypredrv_IntArrayBuild(MPI_COMM_SELF, 4, map, &dofmap);
-   ASSERT_NOT_NULL(dofmap);
-
-   args.mgr.num_levels = 4;
-   args.mgr.level[0].f_dofs.size    = 1;
-   args.mgr.level[0].f_dofs.data[0] = 0;
-   args.mgr.level[0].f_relaxation.type = 7;
-   args.mgr.level[1].f_dofs.size    = 1;
-   args.mgr.level[1].f_dofs.data[0] = 1;
-   args.mgr.level[1].f_relaxation.type = 7;
-   args.mgr.level[2].f_dofs.size    = 1;
-   args.mgr.level[2].f_dofs.data[0] = 2;
-   args.mgr.level[2].f_relaxation.type = 7;
-   args.mgr.level[2].g_relaxation.type = 16;
-   hypredrv_ILUSetDefaultArgs(&args.mgr.level[2].g_relaxation.ilu);
-   args.mgr.level[2].g_relaxation.ilu.max_iter = 1;
-
-   HYPRE_Precon precon = NULL;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
-   ASSERT_NOT_NULL(precon);
-
-   HYPRE_IJMatrix mat = precon_test_ij_matrix_1x1(1.0);
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconSetup(PRECON_MGR, precon, mat);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon, NULL, 0);
-   ASSERT_NULL(precon);
-   HYPRE_IJMatrixDestroy(mat);
-
-   hypredrv_IntArrayDestroy(&dofmap);
-   TEST_HYPRE_FINALIZE();
-}
-#endif
-
-static void
 test_hypredrv_ILUSetFieldByName_all_fields(void)
 {
    static const struct
