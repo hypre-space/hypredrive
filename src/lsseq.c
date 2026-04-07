@@ -1091,11 +1091,34 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
    return 1;
 }
 
+/* Copy TMPDIR into a local buffer after validation; do not thread raw getenv into paths.
+ */
+static void
+LSSeqSanitizedTmpRoot(char *out, size_t out_len)
+{
+   const char *raw = getenv("TMPDIR");
+
+   if (!out || out_len == 0)
+   {
+      return;
+   }
+   if (!raw || raw[0] == '\0' || strstr(raw, "..") != NULL || strlen(raw) >= out_len ||
+       !hypredrv_BinaryPathPrefixIsSafe(raw))
+   {
+      (void)snprintf(out, out_len, "/tmp");
+   }
+   else
+   {
+      (void)snprintf(out, out_len, "%s", raw);
+   }
+}
+
 static int
 LSSeqTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *prefix,
                      size_t prefix_size)
 {
-   const char *tmp_root = getenv("TMPDIR");
+   char        tmp_root_buf[MAX_FILENAME_LENGTH];
+   const char *tmp_root = tmp_root_buf;
    char        tmpdir_template[MAX_FILENAME_LENGTH];
    int         written = 0;
    int         myid    = 0;
@@ -1107,11 +1130,7 @@ LSSeqTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *prefix,
       return 0;
    }
 
-   /* GCOVR_EXCL_BR_START */
-   if (!tmp_root || tmp_root[0] == '\0') /* GCOVR_EXCL_BR_STOP */
-   {
-      tmp_root = "/tmp";
-   }
+   LSSeqSanitizedTmpRoot(tmp_root_buf, sizeof(tmp_root_buf));
 
    MPI_Comm_rank(comm, &myid);
    /* GCOVR_EXCL_BR_START */
@@ -1173,7 +1192,8 @@ static int
 LSSeqSharedTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *prefix,
                            size_t prefix_size)
 {
-   const char *tmp_root = getenv("TMPDIR");
+   char        tmp_root_buf[MAX_FILENAME_LENGTH];
+   const char *tmp_root = tmp_root_buf;
    char        tmpdir_path[MAX_FILENAME_LENGTH];
    int         myid    = 0;
    int         success = 1;
@@ -1186,11 +1206,7 @@ LSSeqSharedTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *pref
       return 0;
    }
 
-   /* GCOVR_EXCL_BR_START */
-   if (!tmp_root || tmp_root[0] == '\0') /* GCOVR_EXCL_BR_STOP */
-   {
-      tmp_root = "/tmp";
-   }
+   LSSeqSanitizedTmpRoot(tmp_root_buf, sizeof(tmp_root_buf));
 
    memset(tmpdir_path, 0, sizeof(tmpdir_path));
    MPI_Comm_rank(comm, &myid);
