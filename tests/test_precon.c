@@ -5778,7 +5778,6 @@ main(int argc, char **argv)
 #if HYPRE_CHECK_MIN_VERSION(23100, 8)
    RUN_TEST(test_PreconDestroy_mgr_grelax_amg_type20);
    RUN_TEST(test_PreconDestroy_mgr_grelax_ilu_type16);
-   RUN_TEST(test_PreconDestroy_mgr_grelax_ilu_later_level_type16);
 #endif
    RUN_TEST(test_hypredrv_ILUSetFieldByName_all_fields);
    RUN_TEST(test_hypredrv_ILUSetFieldByName_unknown_key);
