@@ -27,17 +27,18 @@ endif()
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
 # HYPREDRV build options
-option(HYPREDRV_ENABLE_EIGSPEC     "Enable full eigenspectrum computation" OFF)
-option(HYPREDRV_ENABLE_TESTING     "Enable testing support and check target" OFF)
-option(HYPREDRV_ENABLE_ALL_TESTS   "Force-enable tests that are otherwise disabled in some configurations" OFF)
-option(HYPREDRV_ENABLE_COVERAGE    "Enable code coverage instrumentation" OFF)
-option(HYPREDRV_ENABLE_ANALYSIS    "Enable static code analysis (clang-tidy) and sanitizers (ASan/UBSan)" OFF)
-option(HYPREDRV_ENABLE_DATA        "Enable 'data' target to fetch example datasets" OFF)
-option(HYPREDRV_ENABLE_DOCS        "Enable documentation generation" OFF)
-option(HYPREDRV_ENABLE_EXAMPLES    "Enable the HYPREDRV examples" OFF)
-option(HYPREDRV_ENABLE_HWLOC       "Enable hwloc support for detailed system topology information" OFF)
-option(HYPREDRV_ENABLE_CALIPER     "Enable Caliper instrumentation support" OFF)
-option(HYPREDRV_ENABLE_COMPRESSION "Enable optional lossless compression backends" OFF)
+option(HYPREDRV_ENABLE_EIGSPEC      "Enable full eigenspectrum computation" OFF)
+option(HYPREDRV_ENABLE_EXPERIMENTAL "Enable experimental features" OFF)
+option(HYPREDRV_ENABLE_TESTING      "Enable testing support and check target" OFF)
+option(HYPREDRV_ENABLE_ALL_TESTS    "Force-enable tests that are otherwise disabled in some configurations" OFF)
+option(HYPREDRV_ENABLE_COVERAGE     "Enable code coverage instrumentation" OFF)
+option(HYPREDRV_ENABLE_ANALYSIS     "Enable static code analysis (clang-tidy) and sanitizers (ASan/UBSan)" OFF)
+option(HYPREDRV_ENABLE_DATA         "Enable 'data' target to fetch example datasets" OFF)
+option(HYPREDRV_ENABLE_DOCS         "Enable documentation generation" OFF)
+option(HYPREDRV_ENABLE_EXAMPLES     "Enable the HYPREDRV examples" OFF)
+option(HYPREDRV_ENABLE_HWLOC        "Enable hwloc support for detailed system topology information" OFF)
+option(HYPREDRV_ENABLE_CALIPER      "Enable Caliper instrumentation support" OFF)
+option(HYPREDRV_ENABLE_COMPRESSION  "Enable optional lossless compression backends" OFF)
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -170,9 +171,24 @@ if(HYPREDRV_COVERAGE_RUNTIME_LIBRARY)
     target_link_libraries(HYPREDRV PUBLIC ${HYPREDRV_COVERAGE_RUNTIME_LIBRARY})
 endif()
 
-# Link math library as PRIVATE (only needed for implementation, not public API)
-# CMake will automatically deduplicate if HYPRE already links m
-target_link_libraries(HYPREDRV PRIVATE m)
+# Link math library as PUBLIC so static consumers that also link static HYPRE
+# receive libm after transitive dependencies (required in compatibility builds).
+target_link_libraries(HYPREDRV PUBLIC m)
+
+if(UNIX AND NOT APPLE)
+    # Guard against regressions where static consumers lose libm and fail link.
+    get_target_property(_hypredrv_iface_link_libs HYPREDRV INTERFACE_LINK_LIBRARIES)
+    set(_hypredrv_has_libm OFF)
+    foreach(_lib IN LISTS _hypredrv_iface_link_libs)
+        if(_lib STREQUAL "m" OR _lib STREQUAL "$<LINK_ONLY:m>")
+            set(_hypredrv_has_libm ON)
+            break()
+        endif()
+    endforeach()
+    if(NOT _hypredrv_has_libm)
+        message(FATAL_ERROR "HYPREDRV must propagate libm in INTERFACE_LINK_LIBRARIES on Unix")
+    endif()
+endif()
 
 if(HWLOC_FOUND)
     target_include_directories(HYPREDRV PRIVATE ${HWLOC_INCLUDE_DIR})
@@ -254,6 +270,10 @@ if(HYPREDRV_ENABLE_EIGSPEC)
     find_package(LAPACK REQUIRED)
     target_compile_definitions(HYPREDRV PUBLIC HYPREDRV_ENABLE_EIGSPEC=1)
     target_link_libraries(HYPREDRV PRIVATE LAPACK::LAPACK)
+endif()
+
+if(HYPREDRV_ENABLE_EXPERIMENTAL)
+    target_compile_definitions(HYPREDRV PUBLIC HYPREDRV_ENABLE_EXPERIMENTAL=1)
 endif()
 
 # Define the main executable (hypredrive-cli)

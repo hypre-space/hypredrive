@@ -33,8 +33,8 @@ static int
 ReallocateArray(void **ptr, size_t elem_size, int old_capacity, int new_capacity)
 {
    void *new_ptr = realloc(*ptr, (size_t)new_capacity * elem_size);
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!new_ptr)             /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!new_ptr) /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
@@ -82,8 +82,8 @@ EnsureCapacity(Stats *stats)
       failed |= !ReallocateArray((void **)&stats->entry_paths, STATS_PATH_LABEL_LENGTH,
                                  old_capacity, new_capacity);
 
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (failed)               /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (failed) /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
          hypredrv_ErrorMsgAdd("Stats capacity growth failed (%d -> %d)", old_capacity,
@@ -105,7 +105,7 @@ EnsureCapacity(Stats *stats)
 static void
 StartVectorTimer(const Stats *stats, double *timer_array, int index)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (timer_array && index >= 0 && index < stats->capacity) /* GCOVR_EXCL_BR_STOP */
    {
       timer_array[index] -= MPI_Wtime();
@@ -119,7 +119,7 @@ StartVectorTimer(const Stats *stats, double *timer_array, int index)
 static void
 StopVectorTimer(const Stats *stats, double *timer_array, int index)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (timer_array && index >= 0 && index < stats->capacity) /* GCOVR_EXCL_BR_STOP */
    {
       timer_array[index] += MPI_Wtime();
@@ -133,8 +133,8 @@ StopVectorTimer(const Stats *stats, double *timer_array, int index)
 static void
 StartScalarTimer(double *timer)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (timer)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (timer) /* GCOVR_EXCL_BR_STOP */
    {
       *timer -= MPI_Wtime();
    }
@@ -147,8 +147,8 @@ StartScalarTimer(double *timer)
 static void
 StopScalarTimer(double *timer)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (timer)                /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (timer) /* GCOVR_EXCL_BR_STOP */
    {
       *timer += MPI_Wtime();
    }
@@ -161,7 +161,7 @@ StopScalarTimer(double *timer)
 static const char *
 EntryPathSlot(const Stats *stats, int entry_index)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!stats || !stats->entry_paths || entry_index < 0 || entry_index >= stats->capacity)
    /* GCOVR_EXCL_BR_STOP */
    {
@@ -178,7 +178,7 @@ EntryPathSlot(const Stats *stats, int entry_index)
 static void
 SetCurrentEntryPath(Stats *stats, const char *path)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!stats || !stats->entry_paths || stats->counter < 0 ||
        stats->counter >= stats->capacity)
    /* GCOVR_EXCL_BR_STOP */
@@ -188,7 +188,7 @@ SetCurrentEntryPath(Stats *stats, const char *path)
 
    char *slot = stats->entry_paths + ((size_t)stats->counter * STATS_PATH_LABEL_LENGTH);
 
-   /* GCOVR_EXCL_BR_START */     /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!path || path[0] == '\0') /* GCOVR_EXCL_BR_STOP */
    {
       slot[0] = '\0';
@@ -201,8 +201,8 @@ SetCurrentEntryPath(Stats *stats, const char *path)
 static void
 ResetPendingTimestepContext(Stats *stats)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!stats)               /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!stats) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -217,8 +217,8 @@ ResetPendingTimestepContext(Stats *stats)
 static void
 AssignCurrentSolveEntryPath(Stats *stats)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!stats)               /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!stats) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -241,7 +241,7 @@ AssignCurrentSolveEntryPath(Stats *stats)
 
    for (int level = level_start; level < STATS_MAX_LEVELS; level++)
    {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if ((stats->level_active & (1 << level)) && stats->level_current_id[level] > 0)
       /* GCOVR_EXCL_BR_STOP */
       {
@@ -250,7 +250,7 @@ AssignCurrentSolveEntryPath(Stats *stats)
    }
 
    /* Always append the flat global linear system counter as the leaf. */
-   /* GCOVR_EXCL_BR_START */                      /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (num_segments > 0 && stats->ls_counter > 0) /* GCOVR_EXCL_BR_STOP */
    {
       segments[num_segments++] = stats->ls_counter;
@@ -271,13 +271,13 @@ AssignCurrentSolveEntryPath(Stats *stats)
    {
       int written =
          snprintf(path + pos, sizeof(path) - pos, (i == 0) ? "%d" : ".%d", segments[i]);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (written < 0)          /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (written < 0) /* GCOVR_EXCL_BR_STOP */
       {
          break;
       }
 
-      /* GCOVR_EXCL_BR_START */                    /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if ((size_t)written >= (sizeof(path) - pos)) /* GCOVR_EXCL_BR_STOP */
       {
          pos = sizeof(path) - 1;
@@ -315,7 +315,7 @@ HandleAnnotationBegin(Stats *stats, const char *name)
       stats->reps = 0;
       stats->counter++;
       stats->matrix_counter = stats->counter;
-      /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
       {
          return;
@@ -339,7 +339,7 @@ HandleAnnotationBegin(Stats *stats, const char *name)
          stats->counter++;
       }
       stats->reps++;
-      /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
       {
          return;
@@ -354,7 +354,7 @@ HandleAnnotationBegin(Stats *stats, const char *name)
       {
          stats->counter = 0;
       }
-      /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
       {
          return;
@@ -363,12 +363,12 @@ HandleAnnotationBegin(Stats *stats, const char *name)
    }
    else if (!strcmp(name, "dofmap"))
    {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (stats->counter < 0)   /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (stats->counter < 0) /* GCOVR_EXCL_BR_STOP */
       {
          stats->counter = 0;
       }
-      /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
       {
          return;
@@ -381,7 +381,7 @@ HandleAnnotationBegin(Stats *stats, const char *name)
       {
          stats->counter = 0;
       }
-      /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
       {
          return;
@@ -398,19 +398,19 @@ HandleAnnotationBegin(Stats *stats, const char *name)
       {
          stats->ls_counter++;
       }
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (stats->counter < 0)   /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (stats->counter < 0) /* GCOVR_EXCL_BR_STOP */
       {
          stats->counter = 0;
       }
-      /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
       {
          return;
       }
       StartVectorTimer(stats, stats->solve, stats->counter);
       /* Tag this entry with its linear system id */
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (stats->entry_ls_id && stats->counter < stats->capacity) /* GCOVR_EXCL_BR_STOP */
       {
          stats->entry_ls_id[stats->counter] = stats->ls_counter - 1;
@@ -419,7 +419,7 @@ HandleAnnotationBegin(Stats *stats, const char *name)
    }
    else if (!strcmp(name, "initialize"))
    {
-      /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
       {
          return;
@@ -428,7 +428,7 @@ HandleAnnotationBegin(Stats *stats, const char *name)
    }
    else if (!strcmp(name, "finalize"))
    {
-      /* GCOVR_EXCL_BR_START */   /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
       {
          return;
@@ -574,7 +574,7 @@ static void
 BuildEntryLabel(const Stats *stats, int entry_index, int display_index,
                 bool use_path_column, char *label, size_t label_len)
 {
-   /* GCOVR_EXCL_BR_START */     /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!label || label_len == 0) /* GCOVR_EXCL_BR_STOP */
    {
       return;
@@ -583,7 +583,7 @@ BuildEntryLabel(const Stats *stats, int entry_index, int display_index,
    if (use_path_column)
    {
       const char *path = EntryPathSlot(stats, entry_index);
-      /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (path && path[0] != '\0') /* GCOVR_EXCL_BR_STOP */
       {
          size_t path_len = strlen(path);
@@ -639,7 +639,7 @@ PrintEntryWithIndex(const Stats *stats, int entry_index, int display_index,
 static bool
 EntryHasSolve(const Stats *stats, int entry_index)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!stats || entry_index < 0 || entry_index > stats->counter) /* GCOVR_EXCL_BR_STOP */
    {
       return false;
@@ -651,8 +651,8 @@ EntryHasSolve(const Stats *stats, int entry_index)
 static bool
 HasContextualPathRows(const Stats *stats, int max_entry)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!stats)               /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (!stats) /* GCOVR_EXCL_BR_STOP */
    {
       return false;
    }
@@ -665,7 +665,7 @@ HasContextualPathRows(const Stats *stats, int max_entry)
       }
 
       const char *path = EntryPathSlot(stats, i);
-      /* GCOVR_EXCL_BR_START */    /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (path && path[0] != '\0') /* GCOVR_EXCL_BR_STOP */
       {
          return true;
@@ -807,7 +807,7 @@ hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char
       HYPREDRV_ANNOTATE_REGION_BEGIN("HYPREDRV_%.1014s", formatted_name)
       HandleAnnotationBegin(stats, formatted_name);
    }
-   /* GCOVR_EXCL_BR_START */                 /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    else if (action == HYPREDRV_ANNOTATE_END) /* GCOVR_EXCL_BR_STOP */
    {
       HandleAnnotationEnd(stats, formatted_name);
@@ -917,14 +917,14 @@ hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
    /* Push onto level stack - allocate memory for name */
    size_t name_len                = strlen(formatted_name) + 1;
    stats->level_stack[level].name = (const char *)malloc(name_len);
-   /* GCOVR_EXCL_BR_START */           /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (stats->level_stack[level].name) /* GCOVR_EXCL_BR_STOP */
    {
       memcpy((void *)stats->level_stack[level].name, formatted_name, name_len);
    }
    stats->level_stack[level].level      = level;
    stats->level_stack[level].start_time = MPI_Wtime();
-   /* GCOVR_EXCL_BR_START */        /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (level >= stats->level_depth) /* GCOVR_EXCL_BR_STOP */
    {
       stats->level_depth = level + 1;
@@ -971,8 +971,8 @@ EnsureLevelCapacity(Stats *stats, int level)
       int         new_capacity = count * 2;
       LevelEntry *new_ptr      = (LevelEntry *)realloc(
          stats->level_entries[level], (size_t)new_capacity * sizeof(LevelEntry));
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (new_ptr)              /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (new_ptr) /* GCOVR_EXCL_BR_STOP */
       {
          stats->level_entries[level] = new_ptr;
       }
@@ -991,7 +991,7 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
       return;
    }
 
-   /* GCOVR_EXCL_BR_START */                   /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (level < 0 || level >= STATS_MAX_LEVELS) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -1021,7 +1021,7 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
    }
 
    /* Save level entry if this level is active */
-   /* GCOVR_EXCL_BR_START */               /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (stats->level_active & (1 << level)) /* GCOVR_EXCL_BR_STOP */
    {
       EnsureLevelCapacity(stats, level);
@@ -1038,7 +1038,7 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
    /* Commenting out for now to avoid multiple caliper regions for each solve call */
 
    /* Pop from level stack - free allocated memory */
-   /* GCOVR_EXCL_BR_START */           /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (stats->level_stack[level].name) /* GCOVR_EXCL_BR_STOP */
    {
       free((void *)stats->level_stack[level].name);
@@ -1047,7 +1047,7 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
    stats->level_stack[level].level = -1;
 
    /* Update depth if needed */
-   /* GCOVR_EXCL_BR_START */            /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (level == stats->level_depth - 1) /* GCOVR_EXCL_BR_STOP */
    {
       while (stats->level_depth > 0 &&
@@ -1290,7 +1290,7 @@ hypredrv_StatsPrintToStream(const Stats *stats, int print_level, FILE *stream)
 
    int stdout_fd = fileno(stdout);
    int stream_fd = fileno(stream);
-   /* GCOVR_EXCL_BR_START */               /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (stdout_fd == -1 || stream_fd == -1) /* GCOVR_EXCL_BR_STOP */
    {
       StatsPrintImpl(stats, print_level);
@@ -1299,14 +1299,14 @@ hypredrv_StatsPrintToStream(const Stats *stats, int print_level, FILE *stream)
 
    fflush(stdout);
    int saved_stdout_fd = dup(stdout_fd);
-   /* GCOVR_EXCL_BR_START */  /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (saved_stdout_fd == -1) /* GCOVR_EXCL_BR_STOP */
    {
       StatsPrintImpl(stats, print_level);
       return;
    }
 
-   /* GCOVR_EXCL_BR_START */             /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (dup2(stream_fd, stdout_fd) == -1) /* GCOVR_EXCL_BR_STOP */
    {
       close(saved_stdout_fd);
@@ -1444,7 +1444,7 @@ hypredrv_StatsGetLastSolveTime(const Stats *stats)
 int
 hypredrv_StatsLevelGetCount(const Stats *stats, int level)
 {
-   /* GCOVR_EXCL_BR_START */                             /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!stats || level < 0 || level >= STATS_MAX_LEVELS) /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
@@ -1459,14 +1459,14 @@ hypredrv_StatsLevelGetCount(const Stats *stats, int level)
 int
 hypredrv_StatsLevelGetEntry(const Stats *stats, int level, int index, LevelEntry *entry)
 {
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!stats || !entry || level < 0 || level >= STATS_MAX_LEVELS)
    /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
    }
 
-   /* GCOVR_EXCL_BR_START */                            /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (index < 0 || index >= stats->level_count[level]) /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
@@ -1498,7 +1498,7 @@ hypredrv_StatsLevelGetCountChecked(const Stats *stats, int level, int *count,
       return hypredrv_ErrorCodeGet();
    }
 
-   /* GCOVR_EXCL_BR_START */                   /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (level < 0 || level >= STATS_MAX_LEVELS) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
@@ -1582,15 +1582,15 @@ hypredrv_StatsLevelGetEntrySummary(const Stats *stats, int level, int index,
 void
 hypredrv_StatsLevelPrint(const Stats *stats, int level)
 {
-   /* GCOVR_EXCL_BR_START */                             /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (!stats || level < 0 || level >= STATS_MAX_LEVELS) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
 
    int count = stats->level_count[level];
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (count == 0)           /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_BR_START */
+   if (count == 0) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -1624,13 +1624,13 @@ hypredrv_StatsLevelPrint(const Stats *stats, int level)
    double avg_solve_per_solve =
       total_solves > 0 ? total_solve / (double)total_solves : 0.0;
 
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    double avg_iters_per_entry = count > 0 ? (double)total_linear / count : 0.0;
    /* GCOVR_EXCL_BR_STOP */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    double avg_setup_per_entry = count > 0 ? total_setup / count : 0.0;
    /* GCOVR_EXCL_BR_STOP */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    double avg_solve_per_entry = count > 0 ? total_solve / count : 0.0;
    /* GCOVR_EXCL_BR_STOP */
 

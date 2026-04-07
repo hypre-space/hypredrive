@@ -35,6 +35,14 @@
 #define HYPREDRV_HAVE_HYPRE_30000 0
 #endif
 
+/* Experimental features are opt-in until the corresponding hypre support lands
+ * in a released version and can be guarded by a real version check. */
+#ifdef HYPREDRV_ENABLE_EXPERIMENTAL
+#define HYPREDRV_HAVE_EXPERIMENTAL 1
+#else
+#define HYPREDRV_HAVE_EXPERIMENTAL 0
+#endif
+
 /* Older hypre releases don't provide memory location APIs. */
 #if HYPREDRV_HYPRE_RELEASE_NUMBER < 21900
 typedef int HYPRE_MemoryLocation;

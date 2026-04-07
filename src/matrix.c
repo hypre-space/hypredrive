@@ -675,15 +675,15 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       /* GCOVR_EXCL_STOP */
 
       /* Read matrix coefficients */
-      /* GCOVR_EXCL_BR_START */       /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       if (header[2] == sizeof(float)) /* GCOVR_EXCL_BR_STOP */
       {
          float *buffer = NULL;
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         if (header[6] > 0)        /* GCOVR_EXCL_BR_STOP */
+         /* GCOVR_EXCL_BR_START */
+         if (header[6] > 0) /* GCOVR_EXCL_BR_STOP */
          {
             buffer = (float *)malloc(header[6] * sizeof(float));
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             if (!buffer || fread(buffer, sizeof(float), header[6], fp) != header[6])
             /* GCOVR_EXCL_BR_STOP */
             {
@@ -695,7 +695,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
             }
          }
 
-         /* GCOVR_EXCL_BR_START */                        /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          for (size_t i = 0; h_vals && i < header[6]; i++) /* GCOVR_EXCL_BR_STOP */
          {
             h_vals[i] = (HYPRE_Complex)buffer[i];
@@ -703,15 +703,15 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
          free(buffer);
       }
-      /* GCOVR_EXCL_BR_START */             /* low-signal branch under CI */
+      /* GCOVR_EXCL_BR_START */
       else if (header[2] == sizeof(double)) /* GCOVR_EXCL_BR_STOP */
       {
          double *buffer = NULL;
-         /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-         if (header[6] > 0)        /* GCOVR_EXCL_BR_STOP */
+         /* GCOVR_EXCL_BR_START */
+         if (header[6] > 0) /* GCOVR_EXCL_BR_STOP */
          {
             buffer = (double *)malloc(header[6] * sizeof(double));
-            /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
+            /* GCOVR_EXCL_BR_START */
             if (!buffer || fread(buffer, sizeof(double), header[6], fp) != header[6])
             /* GCOVR_EXCL_BR_STOP */
             {
@@ -723,7 +723,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
             }
          }
 
-         /* GCOVR_EXCL_BR_START */                        /* low-signal branch under CI */
+         /* GCOVR_EXCL_BR_START */
          for (size_t i = 0; h_vals && i < header[6]; i++) /* GCOVR_EXCL_BR_STOP */
          {
             h_vals[i] = (HYPRE_Complex)buffer[i];
@@ -731,8 +731,8 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
          free(buffer);
       }
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      else                      /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      else /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[2],
@@ -774,11 +774,11 @@ cleanup:
    }
 #endif
    /* GCOVR_EXCL_STOP */
-   /* GCOVR_EXCL_BR_START */       /* low-signal branch under CI */
+   /* GCOVR_EXCL_BR_START */
    if (hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_STOP */
    {
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (mat)                  /* GCOVR_EXCL_BR_STOP */
+      /* GCOVR_EXCL_BR_START */
+      if (mat) /* GCOVR_EXCL_BR_STOP */
       {
          HYPRE_IJMatrixDestroy(mat);
       }

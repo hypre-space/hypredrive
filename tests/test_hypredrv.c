@@ -16,6 +16,7 @@
 #include "internal/linsys.h"
 #include "internal/lsseq.h"
 #include "internal/stats.h"
+#include "logging.h"
 #include "test_helpers.h"
 
 #ifndef HYPREDRIVE_SOURCE_DIR
@@ -575,6 +576,37 @@ create_test_ijvector_1x1(double value)
    HYPRE_BigInt idx[1] = {0};
    double       val[1] = {value};
    ASSERT_EQ(HYPRE_IJVectorSetValues(vec, 1, idx, val), 0);
+   ASSERT_EQ(HYPRE_IJVectorAssemble(vec), 0);
+   return vec;
+}
+
+static HYPRE_IJMatrix
+create_test_ijmatrix_2x2(double a00, double a01, double a10, double a11)
+{
+   HYPRE_IJMatrix mat = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 1, 0, 1, &mat), 0);
+   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJMatrixInitialize(mat), 0);
+   HYPRE_Int    nrows     = 2;
+   HYPRE_Int    ncols[2]  = {2, 2};
+   HYPRE_BigInt rows[2]   = {0, 1};
+   HYPRE_BigInt cols[4]   = {0, 1, 0, 1};
+   double       values[4] = {a00, a01, a10, a11};
+   ASSERT_EQ(HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, values), 0);
+   ASSERT_EQ(HYPRE_IJMatrixAssemble(mat), 0);
+   return mat;
+}
+
+static HYPRE_IJVector
+create_test_ijvector_2x1(double v0, double v1)
+{
+   HYPRE_IJVector vec = NULL;
+   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 1, &vec), 0);
+   ASSERT_EQ(HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJVectorInitialize(vec), 0);
+   HYPRE_BigInt idx[2] = {0, 1};
+   double       val[2] = {v0, v1};
+   ASSERT_EQ(HYPRE_IJVectorSetValues(vec, 2, idx, val), 0);
    ASSERT_EQ(HYPRE_IJVectorAssemble(vec), 0);
    return vec;
 }
@@ -2746,6 +2778,320 @@ test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep(void)
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
+struct LinearSetupCaptureContext
+{
+   HYPREDRV_t obj;
+};
+
+static void
+run_linear_setup_for_capture(void *context)
+{
+   struct LinearSetupCaptureContext *setup_context =
+      (struct LinearSetupCaptureContext *)context;
+   ASSERT_EQ(HYPREDRV_AnnotateBegin(setup_context->obj, "system", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(setup_context->obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateEnd(setup_context->obj, "system", -1), ERROR_NONE);
+}
+
+static void
+park_mgr_component_reuse_handles(HYPREDRV_t obj)
+{
+   ASSERT_EQ(HYPREDRV_AnnotateBegin(obj, "system", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateEnd(obj, "system", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_PreconDestroy(obj), ERROR_NONE);
+}
+
+struct SetPreconVariantCaptureContext
+{
+   HYPREDRV_t obj;
+   int        variant_idx;
+};
+
+static void
+set_precon_variant_for_capture(void *context)
+{
+   struct SetPreconVariantCaptureContext *variant_context =
+      (struct SetPreconVariantCaptureContext *)context;
+   ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(variant_context->obj,
+                                                variant_context->variant_idx),
+             ERROR_NONE);
+}
+
+struct SetPreconPresetCaptureContext
+{
+   HYPREDRV_t  obj;
+   const char *preset;
+};
+
+static void
+set_precon_preset_for_capture(void *context)
+{
+   struct SetPreconPresetCaptureContext *preset_context =
+      (struct SetPreconPresetCaptureContext *)context;
+   ASSERT_EQ(HYPREDRV_InputArgsSetPreconPreset(preset_context->obj, preset_context->preset),
+             ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
+{
+#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(23100, 9)
+   return;
+#else
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+   hypredrv_LogInitializeFromEnv();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[] =
+      "general:\n"
+      "  statistics: off\n"
+      "  exec_policy: host\n"
+      "linear_system:\n"
+      "  init_guess_mode: zeros\n"
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 5\n"
+      "preconditioner:\n"
+      "  reuse:\n"
+      "    linear_system_ids: [1]\n"
+      "  mgr:\n"
+      "    max_iter: 1\n"
+      "    print_level: 0\n"
+      "    level:\n"
+      "      0:\n"
+      "        f_dofs: [0]\n"
+      "        f_relaxation:\n"
+      "          amg:\n"
+      "            max_iter: 1\n"
+      "          reuse:\n"
+      "            linear_system_ids: [1]\n"
+      "        g_relaxation:\n"
+      "          ilu:\n"
+      "            max_iter: 1\n"
+      "        restriction_type: injection\n"
+      "        prolongation_type: injection\n"
+      "        coarse_level_type: rap\n"
+      "    coarsest_level:\n"
+      "      amg:\n"
+      "        max_iter: 1\n"
+      "      reuse:\n"
+      "        linear_system_ids: [1]\n";
+
+   parse_yaml_into_obj(obj, yaml_config);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetContiguousDofmap(obj, 1, 2), ERROR_NONE);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_2x2(4.0, 1.0, 1.0, 3.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_2x1(1.0, 2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+
+   ASSERT_EQ(HYPREDRV_AnnotateBegin(obj, "system", -1), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_AnnotateEnd(obj, "system", -1), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+   ASSERT_TRUE(state->precon_is_setup);
+   ASSERT_NOT_NULL(state->iargs->precon.mgr.frelax[0]);
+   ASSERT_NOT_NULL(state->iargs->precon.mgr.grelax[0]);
+   ASSERT_NOT_NULL(state->iargs->precon.mgr.csolver);
+
+   HYPRE_Solver outer0 = state->precon->main;
+   HYPRE_Solver f0     = state->iargs->precon.mgr.frelax[0];
+   HYPRE_Solver c0     = state->iargs->precon.mgr.csolver;
+
+   struct LinearSetupCaptureContext setup_context = {obj};
+   char                             output[4096];
+   capture_stderr_output(run_linear_setup_for_capture, &setup_context, output,
+                         sizeof(output));
+
+   ASSERT_NOT_NULL(state->precon);
+   ASSERT_TRUE(state->precon_is_setup);
+   ASSERT_PTR_EQ(state->precon->main, outer0);
+   ASSERT_PTR_EQ(state->iargs->precon.mgr.frelax[0], f0);
+   ASSERT_PTR_EQ(state->iargs->precon.mgr.csolver, c0);
+   ASSERT_NOT_NULL(state->iargs->precon.mgr.grelax[0]);
+   ASSERT_TRUE(strstr(output, "rerun_mgr_setup=1") != NULL);
+
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   hypredrv_LogInitializeFromEnv();
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+#endif
+}
+
+static void
+test_HYPREDRV_InputArgsSetPreconVariant_discards_cached_mgr_handles(void)
+{
+#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(23100, 9)
+   return;
+#else
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+   hypredrv_LogInitializeFromEnv();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[] =
+      "general:\n"
+      "  statistics: off\n"
+      "  exec_policy: host\n"
+      "linear_system:\n"
+      "  init_guess_mode: zeros\n"
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 5\n"
+      "preconditioner:\n"
+      "  - mgr:\n"
+      "      max_iter: 1\n"
+      "      print_level: 0\n"
+      "      level:\n"
+      "        0:\n"
+      "          f_dofs: [0]\n"
+      "          f_relaxation:\n"
+      "            amg:\n"
+      "              max_iter: 1\n"
+      "            reuse:\n"
+      "              linear_system_ids: [1]\n"
+      "          g_relaxation:\n"
+      "            ilu:\n"
+      "              max_iter: 1\n"
+      "          restriction_type: injection\n"
+      "          prolongation_type: injection\n"
+      "          coarse_level_type: rap\n"
+      "      coarsest_level:\n"
+      "        amg:\n"
+      "          max_iter: 1\n"
+      "        reuse:\n"
+      "          linear_system_ids: [1]\n"
+      "  - amg:\n"
+      "      print_level: 0\n";
+
+   parse_yaml_into_obj(obj, yaml_config);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetContiguousDofmap(obj, 1, 2), ERROR_NONE);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_2x2(4.0, 1.0, 1.0, 3.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_2x1(1.0, 2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   park_mgr_component_reuse_handles(obj);
+   ASSERT_NULL(state->precon);
+   ASSERT_EQ(state->iargs->precon_method, PRECON_MGR);
+   ASSERT_NOT_NULL(state->iargs->precon.mgr.frelax[0]);
+   ASSERT_NOT_NULL(state->iargs->precon.mgr.csolver);
+
+   struct SetPreconVariantCaptureContext variant_context = {obj, 1};
+   char                                  output[4096];
+   capture_stderr_output(set_precon_variant_for_capture, &variant_context, output,
+                         sizeof(output));
+
+   ASSERT_EQ(state->iargs->active_precon_variant, 1);
+   ASSERT_EQ(state->iargs->precon_method, PRECON_BOOMERAMG);
+   ASSERT_TRUE(strstr(output,
+                      "discarding cached MGR handles before switching preconditioner "
+                      "variant") != NULL);
+
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   hypredrv_LogInitializeFromEnv();
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+#endif
+}
+
+static void
+test_HYPREDRV_InputArgsSetPreconPreset_discards_cached_mgr_handles(void)
+{
+#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(23100, 9)
+   return;
+#else
+   reset_state();
+   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+   hypredrv_LogInitializeFromEnv();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[] =
+      "general:\n"
+      "  statistics: off\n"
+      "  exec_policy: host\n"
+      "linear_system:\n"
+      "  init_guess_mode: zeros\n"
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 5\n"
+      "preconditioner:\n"
+      "  mgr:\n"
+      "    max_iter: 1\n"
+      "    print_level: 0\n"
+      "    level:\n"
+      "      0:\n"
+      "        f_dofs: [0]\n"
+      "        f_relaxation:\n"
+      "          amg:\n"
+      "            max_iter: 1\n"
+      "          reuse:\n"
+      "            linear_system_ids: [1]\n"
+      "        g_relaxation:\n"
+      "          ilu:\n"
+      "            max_iter: 1\n"
+      "        restriction_type: injection\n"
+      "        prolongation_type: injection\n"
+      "        coarse_level_type: rap\n"
+      "    coarsest_level:\n"
+      "      amg:\n"
+      "        max_iter: 1\n"
+      "      reuse:\n"
+      "        linear_system_ids: [1]\n";
+
+   parse_yaml_into_obj(obj, yaml_config);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetContiguousDofmap(obj, 1, 2), ERROR_NONE);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_2x2(4.0, 1.0, 1.0, 3.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_2x1(1.0, 2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   park_mgr_component_reuse_handles(obj);
+   ASSERT_NULL(state->precon);
+   ASSERT_EQ(state->iargs->precon_method, PRECON_MGR);
+   ASSERT_NOT_NULL(state->iargs->precon.mgr.frelax[0]);
+   ASSERT_NOT_NULL(state->iargs->precon.mgr.csolver);
+
+   struct SetPreconPresetCaptureContext preset_context = {obj, "elasticity-2D"};
+   char                                 output[4096];
+   capture_stderr_output(set_precon_preset_for_capture, &preset_context, output,
+                         sizeof(output));
+
+   ASSERT_EQ(state->iargs->precon_method, PRECON_BOOMERAMG);
+   ASSERT_EQ(state->iargs->precon.amg.coarsening.num_functions, 2);
+   ASSERT_TRUE(strstr(output,
+                      "discarding cached MGR handles before applying preconditioner "
+                      "preset") != NULL);
+
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   hypredrv_LogInitializeFromEnv();
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+#endif
+}
+
 struct DestroyObjectContext
 {
    HYPREDRV_t *obj_ptr;
@@ -4836,6 +5182,9 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_library_mode_adaptive_reuse_rebuilds_after_degradation);
    RUN_TEST(test_HYPREDRV_PreconReuseBuildObservation_and_MarkRebuild_library);
    RUN_TEST(test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep);
+   RUN_TEST(test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles);
+   RUN_TEST(test_HYPREDRV_InputArgsSetPreconVariant_discards_cached_mgr_handles);
+   RUN_TEST(test_HYPREDRV_InputArgsSetPreconPreset_discards_cached_mgr_handles);
    RUN_TEST(test_HYPREDRV_library_mode_destroy_prints_named_statistics_summary);
    RUN_TEST(test_HYPREDRV_library_mode_finalize_prints_named_statistics_summary);
    RUN_TEST(test_HYPREDRV_InputArgsParse_loads_lsseq_timesteps_for_print_system);

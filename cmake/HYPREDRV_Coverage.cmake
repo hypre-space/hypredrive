@@ -174,6 +174,11 @@ if(HYPREDRV_ENABLE_COVERAGE)
             --exclude-branches-by-pattern ".*hypredrv_StatsAnnotate.*"
             # Malloc failure paths are impractical without fault injection.
             --exclude-branches-by-pattern ".*HYPREDRV_MALLOC_AND_CHECK.*"
+            # Honor explicit branch-exclusion annotations placed inline on branch lines.
+            # Many low-signal branches use "... /* GCOVR_EXCL_BR_STOP */" and should not
+            # contribute to the branch denominator in CI coverage checks.
+            --exclude-branches-by-pattern ".*GCOVR_EXCL_BR_STOP.*"
+            --exclude-branches-by-pattern ".*GCOVR_EXCL_BR_LINE.*"
             # MPI logging wrappers: hypredrv_LogEnabled branches are low signal.
             # Use a pattern that cannot match HYPREDRV_MALLOC_AND_CHECK (which contains "LOG").
             --exclude-branches-by-pattern ".*HYPREDRV_LOG_COMMF\\(.*"

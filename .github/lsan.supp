@@ -9,6 +9,11 @@ leak:orte_
 leak:libopen-pal
 leak:libopen-rte
 
+# MPICH leaks
+leak:MPIDIU_
+leak:MPIDI_
+leak:MPIR_
+
 # Libevent leaks (used by OpenMPI)
 leak:libevent
 leak:event_base_loop

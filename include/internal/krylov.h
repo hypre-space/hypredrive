@@ -19,6 +19,7 @@ typedef struct NestedKrylov_args_struct
    HYPRE_Int (*solve)(void *, void *, void *, void *);
    HYPRE_Int (*destroy)(void *);
 
+   HYPRE_Int   is_setup; /* offset 24: mirrors hypre_Solver layout */
    int         is_set;
    solver_t    solver_method;
    solver_args solver;

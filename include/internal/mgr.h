@@ -10,10 +10,13 @@
 
 #include "internal/amg.h"
 #include "internal/containers.h"
+#include "internal/fsai.h"
 #include "internal/ilu.h"
+#include "internal/precon_reuse.h"
 #include "internal/utils.h"
 
 struct NestedKrylov_args_struct;
+struct Stats_struct;
 typedef struct MGR_args_struct MGR_args;
 
 enum
@@ -22,13 +25,23 @@ enum
    MGR_FRLX_TYPE_NESTED_MGR = 202,
 };
 
+typedef struct MGRComponentReuse_args_struct
+{
+   int              present;
+   int              warned_runtime_unsupported;
+   int              warned_policy_unsupported;
+   int              warned_type_unsupported;
+   PreconReuse_args args;
+} MGRComponentReuse_args;
+
 /*--------------------------------------------------------------------------
  * Coarsest level solver arguments struct
  *--------------------------------------------------------------------------*/
 
 typedef struct MGRcls_args_struct
 {
-   HYPRE_Int type;
+   HYPRE_Int              type;
+   MGRComponentReuse_args reuse;
 
    int                              use_krylov;
    struct NestedKrylov_args_struct *krylov;
@@ -37,8 +50,9 @@ typedef struct MGRcls_args_struct
     * Note: anonymous union is a GNU C extension. */
    union
    {
-      AMG_args amg;
-      ILU_args ilu;
+      AMG_args  amg;
+      ILU_args  ilu;
+      FSAI_args fsai;
    };
 } MGRcls_args;
 
@@ -48,8 +62,9 @@ typedef struct MGRcls_args_struct
 
 typedef struct MGRfrlx_args_struct
 {
-   HYPRE_Int type;
-   HYPRE_Int num_sweeps;
+   HYPRE_Int              type;
+   HYPRE_Int              num_sweeps;
+   MGRComponentReuse_args reuse;
 
    int                              use_krylov;
    struct NestedKrylov_args_struct *krylov;
@@ -58,8 +73,9 @@ typedef struct MGRfrlx_args_struct
    /* Only one fine-relaxation solver is active at a time. */
    union
    {
-      AMG_args amg;
-      ILU_args ilu;
+      AMG_args  amg;
+      ILU_args  ilu;
+      FSAI_args fsai;
    };
 } MGRfrlx_args;
 
@@ -69,8 +85,9 @@ typedef struct MGRfrlx_args_struct
 
 typedef struct MGRgrlx_args_struct
 {
-   HYPRE_Int type;
-   HYPRE_Int num_sweeps;
+   HYPRE_Int              type;
+   HYPRE_Int              num_sweeps;
+   MGRComponentReuse_args reuse;
 
    int                              use_krylov;
    struct NestedKrylov_args_struct *krylov;
@@ -78,8 +95,9 @@ typedef struct MGRgrlx_args_struct
    /* Only one global-relaxation solver is active at a time. */
    union
    {
-      AMG_args amg;
-      ILU_args ilu;
+      AMG_args  amg;
+      ILU_args  ilu;
+      FSAI_args fsai;
    };
 } MGRgrlx_args;
 
@@ -114,6 +132,7 @@ struct MGR_args_struct
    HYPRE_Int  num_levels;
    HYPRE_Int  relax_type; /* TODO: we shouldn't need this */
    HYPRE_Int  print_level;
+   HYPRE_Int  cycle; /* 1=V-cycle (default), 2=W-cycle */
    HYPRE_Int  nonglk_max_elmts;
    HYPRE_Real tolerance;
    HYPRE_Real coarse_th;
@@ -123,8 +142,13 @@ struct MGR_args_struct
 
    HYPRE_Solver csolver;
    HYPRE_Int    csolver_type;
+   HYPRE_Int    keep_csolver;
    HYPRE_Solver frelax[MAX_MGR_LEVELS - 1];
    HYPRE_Solver grelax[MAX_MGR_LEVELS - 1];
+   HYPRE_Int    keep_frelax[MAX_MGR_LEVELS - 1];
+   HYPRE_Int    keep_grelax[MAX_MGR_LEVELS - 1];
+   HYPRE_Int    num_active_levels;
+   HYPRE_Int    active_level_map[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *point_marker_data;
 };
 
@@ -132,14 +156,25 @@ struct MGR_args_struct
  * Public prototypes
  *--------------------------------------------------------------------------*/
 
-void         hypredrv_MGRSetDefaultArgs(MGR_args *);
-void         hypredrv_MGRSetArgs(void *, const YAMLnode *);
-void         hypredrv_MGRSetDofmap(MGR_args *, IntArray *);
-void         hypredrv_MGRSetDofLabels(const DofLabelMap *);
-void         hypredrv_MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
-void         hypredrv_MGRCreate(MGR_args *, HYPRE_Solver *);
-void         hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);
-int          hypredrv_MGRNestedFRelaxWrapperIsLive(HYPRE_Solver);
+void hypredrv_MGRSetDefaultArgs(MGR_args *);
+void hypredrv_MGRSetArgs(void *, const YAMLnode *);
+void hypredrv_MGRSetDofmap(MGR_args *, IntArray *);
+void hypredrv_MGRSetDofLabels(const DofLabelMap *);
+void hypredrv_MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
+void hypredrv_MGRCreate(MGR_args *, HYPRE_Solver *, const struct Stats_struct *, int);
+int  hypredrv_MGRComponentReuseSetupMode(MGR_args *, const struct Stats_struct *, int);
+int  hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *, const IntArray *,
+                                               const struct Stats_struct *, int);
+void hypredrv_MGRRefreshComponentsForSetup(MGR_args *, HYPRE_Solver, const IntArray *,
+                                           const struct Stats_struct *, int);
+void hypredrv_MGRSelectCachedSolversToKeep(MGR_args *, const IntArray *,
+                                           const struct Stats_struct *, int);
+void hypredrv_MGRCountCachedSolvers(const MGR_args *, int *, int *, int *);
+void hypredrv_MGRCountKeepFlags(const MGR_args *, int *, int *, int *);
+void hypredrv_MGRDestroyCachedSolvers(MGR_args *, int);
+void hypredrv_MGRForgetCachedSolvers(MGR_args *);
+void hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);
+int  hypredrv_MGRNestedFRelaxWrapperIsLive(HYPRE_Solver);
 HYPRE_Solver hypredrv_MGRNestedFRelaxWrapperGetInner(HYPRE_Solver);
 HYPRE_Solver hypredrv_MGRNestedFRelaxWrapperDetachInner(HYPRE_Solver);
 void         hypredrv_MGRNestedFRelaxWrapperFree(HYPRE_Solver *);

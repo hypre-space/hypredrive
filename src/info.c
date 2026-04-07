@@ -3381,8 +3381,9 @@ PrintLinuxKernelTuningInformation(void)
       long mins   = uptime / 60;
 
       printf("System uptime         : %ldd %02ldh %02ldm\n", days, hours, mins);
-      printf("Load average (1/5/15) : %.2f / %.2f / %.2f\n", info.loads[0] / 65536.0,
-             info.loads[1] / 65536.0, info.loads[2] / 65536.0);
+      printf("Load average (1/5/15) : %.2f / %.2f / %.2f\n",
+             (double)info.loads[0] / 65536.0, (double)info.loads[1] / 65536.0,
+             (double)info.loads[2] / 65536.0);
    }
 
    char line[256];

@@ -108,10 +108,10 @@ NestedKrylovDetachPrecon(YAMLnode *solver_node, YAMLnode **precon_node_out,
 {
    YAMLnode *prev  = NULL;
    YAMLnode *child = NULL;
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!solver_node || !precon_node_out || !precon_prev_out || !precon_next_out)
-   /* GCOVR_EXCL_BR_STOP */ /* valid pointers from SetArgsFromYAML */
+   /* GCOVR_EXCL_BR_LINE */
+   if (!solver_node || !precon_node_out || !precon_prev_out ||
+       !precon_next_out) /* GCOVR_EXCL_BR_LINE */ /* valid pointers from SetArgsFromYAML
+                                                   */
    {
       return;
    }
@@ -148,10 +148,9 @@ NestedKrylovDetachPrecon(YAMLnode *solver_node, YAMLnode **precon_node_out,
 static void
 NestedKrylovRestorePrecon(YAMLnode *solver_node, YAMLnode *precon_node,
                           YAMLnode *precon_prev, YAMLnode *precon_next)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!solver_node || !precon_node)
-   /* GCOVR_EXCL_BR_STOP */ /* !solver_node unreachable after SetArgsFromYAML */
+{                                                             /* GCOVR_EXCL_BR_LINE */
+   if (!solver_node || !precon_node) /* GCOVR_EXCL_BR_LINE */ /* !solver_node unreachable
+                                                                 after SetArgsFromYAML */
    {
       return;
    }
@@ -173,10 +172,9 @@ NestedKrylovRestorePrecon(YAMLnode *solver_node, YAMLnode *precon_node,
 
 static void
 NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!args || !precon_node)
-   /* GCOVR_EXCL_BR_STOP */ /* only called with live args and precon node */
+{                                                      /* GCOVR_EXCL_BR_LINE */
+   if (!args || !precon_node) /* GCOVR_EXCL_BR_LINE */ /* only called with live args and
+                                                          precon node */
    {
       return;
    }
@@ -241,10 +239,10 @@ NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
 static void
 NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
                        precon_t precon_method, HYPRE_Precon precon)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (!precon || precon_method == PRECON_NONE)
-   /* GCOVR_EXCL_BR_STOP */ /* precon live when has_precon */
+{ /* GCOVR_EXCL_BR_LINE */
+   if (!precon ||
+       precon_method ==
+          PRECON_NONE) /* GCOVR_EXCL_BR_LINE */ /* precon live when has_precon */
    {
       return;
    }
@@ -261,10 +259,8 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
       LOCAL_ILU_SOLVE,
       LOCAL_FSAI_SOLVE,
    };
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   switch (solver_method)
-   /* GCOVR_EXCL_BR_STOP */ /* default arm excluded below */
+   /* GCOVR_EXCL_BR_LINE */
+   switch (solver_method) /* GCOVR_EXCL_BR_LINE */ /* default arm excluded below */
    {
       case SOLVER_PCG:
          HYPRE_ParCSRPCGSetPrecond(solver, solve_ptrs[precon_method],
@@ -281,13 +277,11 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
       case SOLVER_BICGSTAB:
          HYPRE_ParCSRBiCGSTABSetPrecond(solver, solve_ptrs[precon_method],
                                         setup_ptrs[precon_method], precon->main);
-         break;
-      /* GCOVR_EXCL_BR_START */ /* invalid solver_t without memory corruption */
+         break; /* GCOVR_EXCL_BR_LINE */ /* invalid solver_t without memory corruption */
       default:
          hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
          hypredrv_ErrorMsgAdd("Nested Krylov solver method not supported");
-         break;
-         /* GCOVR_EXCL_BR_STOP */
+         break; /* GCOVR_EXCL_BR_LINE */
    }
 }
 
@@ -297,10 +291,8 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
 static HYPRE_Int
 NestedKrylovBaseSolverSetup(solver_t solver_method, HYPRE_Solver solver, HYPRE_Matrix A,
                             HYPRE_Vector b, HYPRE_Vector x)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   switch (solver_method)
-   /* GCOVR_EXCL_BR_STOP */ /* default arm excluded below */
+{                                                  /* GCOVR_EXCL_BR_LINE */
+   switch (solver_method) /* GCOVR_EXCL_BR_LINE */ /* default arm excluded below */
    {
       case SOLVER_PCG:
          return HYPRE_ParCSRPCGSetup(solver, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
@@ -327,10 +319,8 @@ NestedKrylovBaseSolverSetup(solver_t solver_method, HYPRE_Solver solver, HYPRE_M
 static HYPRE_Int
 NestedKrylovBaseSolverSolve(solver_t solver_method, HYPRE_Solver solver, HYPRE_Matrix A,
                             HYPRE_Vector b, HYPRE_Vector x)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   switch (solver_method)
-   /* GCOVR_EXCL_BR_STOP */ /* default arm excluded below */
+{                                                  /* GCOVR_EXCL_BR_LINE */
+   switch (solver_method) /* GCOVR_EXCL_BR_LINE */ /* default arm excluded below */
    {
       case SOLVER_PCG:
          return HYPRE_ParCSRPCGSolve(solver, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
@@ -344,12 +334,11 @@ NestedKrylovBaseSolverSolve(solver_t solver_method, HYPRE_Solver solver, HYPRE_M
       case SOLVER_BICGSTAB:
          return HYPRE_ParCSRBiCGSTABSolve(solver, (HYPRE_ParCSRMatrix)A,
                                           (HYPRE_ParVector)b, (HYPRE_ParVector)x);
-      /* GCOVR_EXCL_BR_START */ /* invalid solver_t without memory corruption */
+         /* GCOVR_EXCL_BR_LINE */ /* invalid solver_t without memory corruption */
       default:
          hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
          hypredrv_ErrorMsgAdd("Nested Krylov solver method not supported");
-         return 1;
-         /* GCOVR_EXCL_BR_STOP */
+         return 1; /* GCOVR_EXCL_BR_LINE */
    }
 }
 
@@ -358,10 +347,8 @@ NestedKrylovBaseSolverSolve(solver_t solver_method, HYPRE_Solver solver, HYPRE_M
 
 static void
 NestedKrylovBaseSolverDestroy(solver_t solver_method, HYPRE_Solver solver)
-{
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   switch (solver_method)
-   /* GCOVR_EXCL_BR_STOP */ /* default arm excluded below */
+{                                                  /* GCOVR_EXCL_BR_LINE */
+   switch (solver_method) /* GCOVR_EXCL_BR_LINE */ /* default arm excluded below */
    {
       case SOLVER_PCG:
          HYPRE_ParCSRPCGDestroy(solver);
@@ -374,13 +361,11 @@ NestedKrylovBaseSolverDestroy(solver_t solver_method, HYPRE_Solver solver)
          break;
       case SOLVER_BICGSTAB:
          HYPRE_ParCSRBiCGSTABDestroy(solver);
-         break;
-      /* GCOVR_EXCL_BR_START */ /* invalid solver_t without memory corruption */
+         break; /* GCOVR_EXCL_BR_LINE */ /* invalid solver_t without memory corruption */
       default:
          hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
          hypredrv_ErrorMsgAdd("Nested Krylov solver method not supported");
-         break;
-         /* GCOVR_EXCL_BR_STOP */
+         break; /* GCOVR_EXCL_BR_LINE */
    }
 }
 
@@ -440,10 +425,8 @@ hypredrv_NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_n
    {
       NestedKrylovParsePrecon(args, precon_node);
    }
-
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   switch (args->solver_method)
-   /* GCOVR_EXCL_BR_STOP */ /* default arm excluded below */
+   /* GCOVR_EXCL_BR_LINE */
+   switch (args->solver_method) /* GCOVR_EXCL_BR_LINE */ /* default arm excluded below */
    {
       case SOLVER_PCG:
          hypredrv_PCGSetArgs(&args->solver.pcg, solver_node);
@@ -456,13 +439,11 @@ hypredrv_NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_n
          break;
       case SOLVER_BICGSTAB:
          hypredrv_BiCGSTABSetArgs(&args->solver.bicgstab, solver_node);
-         break;
-      /* GCOVR_EXCL_BR_START */ /* invalid solver_t without memory corruption */
+         break; /* GCOVR_EXCL_BR_LINE */ /* invalid solver_t without memory corruption */
       default:
          hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
          hypredrv_ErrorMsgAdd("Nested Krylov solver method not supported");
-         break;
-         /* GCOVR_EXCL_BR_STOP */
+         break; /* GCOVR_EXCL_BR_LINE */
    }
 
    NestedKrylovRestorePrecon(solver_node, precon_node, precon_prev, precon_next);
@@ -496,19 +477,16 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
    if (args->has_precon)
    {
       hypredrv_PreconCreate(args->precon_method, &args->precon, dofmap, vec_nn,
-                            &args->precon_obj);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (hypredrv_ErrorCodeActive())
-      /* GCOVR_EXCL_BR_STOP */ /* PreconCreate failure injection */
+                            &args->precon_obj, NULL, 0);       /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */ /* PreconCreate failure
+                                                                  injection */
       {
          return;
       }
    }
 
-   /* Create solver object always */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   switch (args->solver_method)
-   /* GCOVR_EXCL_BR_STOP */ /* default arm excluded below */
+   /* Create solver object always */                     /* GCOVR_EXCL_BR_LINE */
+   switch (args->solver_method) /* GCOVR_EXCL_BR_LINE */ /* default arm excluded below */
    {
       case SOLVER_PCG:
          hypredrv_PCGCreate(comm, &args->solver.pcg, &base_solver);
@@ -536,9 +514,8 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
    if (args->has_precon)
    {
       NestedKrylovSetPrecond(args->solver_method, base_solver, args->precon_method,
-                             args->precon_obj);
-      /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-      if (hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_STOP */ /* SetPrecond error path */
+                             args->precon_obj);                /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */ /* SetPrecond error path */
       {
          return;
       }
@@ -567,7 +544,13 @@ hypredrv_NestedKrylovSetup(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
       return 1;
    }
 
-   return NestedKrylovBaseSolverSetup(args->solver_method, args->base_solver, A, b, x);
+   HYPRE_Int rc =
+      NestedKrylovBaseSolverSetup(args->solver_method, args->base_solver, A, b, x);
+   if (!rc)
+   {
+      args->is_setup = 1;
+   }
+   return rc;
 }
 
 /*-----------------------------------------------------------------------------
@@ -594,10 +577,11 @@ hypredrv_NestedKrylovSolve(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
 
    /* Nested Krylov objects are only used as inexact MGR smoothers/coarse solves.
     * HYPRE_ERROR_CONV from their internal Krylov iteration should not poison the
-    * outer solve; leave harder failures intact. */
-   /* GCOVR_EXCL_BR_START */ /* low-signal branch under CI */
-   if (hypre_error && !(hypre_error & ~HYPRE_ERROR_CONV))
-   /* GCOVR_EXCL_BR_STOP */ /* HYPRE conv flags hard to stabilize in unit tests */
+    * outer solve; leave harder failures intact. */    /* GCOVR_EXCL_BR_LINE */
+   if (hypre_error &&
+       !(hypre_error &
+         ~HYPRE_ERROR_CONV)) /* GCOVR_EXCL_BR_LINE */ /* HYPRE conv flags hard to
+                                                         stabilize in unit tests */
    {
       HYPRE_ClearAllErrors();
       return 0;
@@ -622,10 +606,19 @@ hypredrv_NestedKrylovDestroy(NestedKrylov_args *args)
       NestedKrylovBaseSolverDestroy(args->solver_method, args->base_solver);
       args->base_solver = NULL;
    }
+   args->is_setup = 0;
 
    if (args->precon_obj)
    {
-      hypredrv_PreconDestroy(args->precon_method, &args->precon, &args->precon_obj);
+      args->precon_obj->is_setup = 1;
+      hypredrv_PreconDestroy(args->precon_method, &args->precon, &args->precon_obj, NULL,
+                             0);
       args->precon_obj = NULL;
    }
+
+   /* Nested Krylov preconditioners do not have an outer HYPREDRV object driving
+    * reuse policy. Once the nested preconditioner object is destroyed, clear any
+    * method-specific runtime state so subsequent creates start from a clean
+    * configuration unless the caller explicitly keeps the nested object alive. */
+   hypredrv_PreconArgsDestroyRuntimeState(args->precon_method, &args->precon);
 }
