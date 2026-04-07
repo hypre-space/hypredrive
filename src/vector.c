@@ -76,6 +76,19 @@ IJVectorValidateHeader(const uint64_t *header, const char *filename)
    return 1;
 }
 
+static int
+IJVectorPartRowsMatchesPrepass(uint64_t nrows_max, uint64_t part_rows, const char *filename)
+{
+   if (part_rows > nrows_max)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Vector part row count exceeds pre-scan maximum at %s",
+                           filename ? filename : "(unknown)");
+      return 0;
+   }
+   return 1;
+}
+
 void
 hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                                      uint64_t             g_nparts,
@@ -113,6 +126,14 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       *vec_ptr = NULL;
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Invalid number of parts!");
+      return;
+   }
+
+   if (!hypredrv_BinaryPathPrefixIsSafe(prefixname))
+   {
+      *vec_ptr = NULL;
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid vector data path prefix");
       return;
    }
 
@@ -249,6 +270,12 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          goto cleanup;
       }
       /* LCOV_EXCL_STOP */
+      if (!IJVectorPartRowsMatchesPrepass(nrows_max, header[5], filename))
+      {
+         fclose(fp);
+         fp = NULL;
+         goto cleanup;
+      }
 
       /* Read vector coefficients */
       if (header[1] == sizeof(float))
@@ -256,7 +283,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          float *buffer = NULL;
          if (header[5] > 0)
          {
-            buffer = (float *)malloc(header[5] * sizeof(float));
+            buffer = (float *)malloc((size_t)nrows_max * sizeof(float));
             if (!buffer || fread(buffer, sizeof(float), header[5], fp) != header[5])
             {
                hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -280,7 +307,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          double *buffer = NULL;
          if (header[5] > 0)
          {
-            buffer = (double *)malloc(header[5] * sizeof(double));
+            buffer = (double *)malloc((size_t)nrows_max * sizeof(double));
             if (!buffer || fread(buffer, sizeof(double), header[5], fp) != header[5])
             {
                hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);

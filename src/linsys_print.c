@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -2003,24 +2004,24 @@ PrintSystemRemoveTree(const char *path)
       return 0; /* GCOVR_EXCL_LINE */
    }
 
-   struct stat st;
+   /* Open directory without following symlinks (avoids lstat+unlink TOCTOU). */
+   int dfd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
    /* GCOVR_EXCL_BR_START */
-   if (lstat(path, &st) != 0) /* GCOVR_EXCL_BR_STOP */
+   if (dfd < 0) /* GCOVR_EXCL_BR_STOP */
    {
-      return errno == ENOENT; /* GCOVR_EXCL_LINE */
-   }
-
-   if (!S_ISDIR(st.st_mode))
-   {
-      /* GCOVR_EXCL_BR_START */
+      if (errno == ENOENT)
+      {
+         return 1; /* GCOVR_EXCL_LINE */
+      }
+      /* Not a directory, or symlink: remove by path (unlink removes symlinks). */
       return (unlink(path) == 0) || (errno == ENOENT);
-      /* GCOVR_EXCL_BR_STOP */
    }
 
-   DIR *dir = opendir(path);
+   DIR *dir = fdopendir(dfd);
    /* GCOVR_EXCL_BR_START */
    if (!dir) /* GCOVR_EXCL_BR_STOP */
    {
+      close(dfd);
       return 0; /* GCOVR_EXCL_LINE */
    }
 
@@ -2211,10 +2212,17 @@ PrintSystemWriteMetadata(const char *dump_dir, const PrintSystemContext *ctx,
    {
       return; /* GCOVR_EXCL_LINE */
    }
-   FILE *fp = fopen(metadata_path, "w");
+   int fd = open(metadata_path, O_WRONLY | O_CREAT | O_TRUNC, (mode_t)0600);
+   /* GCOVR_EXCL_BR_START */
+   if (fd < 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      return; /* GCOVR_EXCL_LINE */
+   }
+   FILE *fp = fdopen(fd, "w");
    /* GCOVR_EXCL_BR_START */
    if (!fp) /* GCOVR_EXCL_BR_STOP */
    {
+      close(fd);
       return; /* GCOVR_EXCL_LINE */
    }
 
@@ -2273,10 +2281,17 @@ PrintSystemAppendStageIndex(const char *dump_dir, const PrintSystemContext *ctx,
       return; /* GCOVR_EXCL_LINE */
    }
 
-   FILE *fp = fopen(index_path, "a");
+   int fd = open(index_path, O_WRONLY | O_APPEND | O_CREAT, (mode_t)0600);
+   /* GCOVR_EXCL_BR_START */
+   if (fd < 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      return; /* GCOVR_EXCL_LINE */
+   }
+   FILE *fp = fdopen(fd, "a");
    /* GCOVR_EXCL_BR_START */
    if (!fp) /* GCOVR_EXCL_BR_STOP */
    {
+      close(fd);
       return; /* GCOVR_EXCL_LINE */
    }
 

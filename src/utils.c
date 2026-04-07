@@ -7,7 +7,9 @@
 
 #include "internal/utils.h"
 #include <ctype.h>
+#include <fcntl.h>
 #include <string.h>
+#include <unistd.h>
 #include "internal/containers.h"
 
 /*-----------------------------------------------------------------------------
@@ -99,6 +101,80 @@ hypredrv_NormalizeWhitespace(char *str)
 }
 
 /*-----------------------------------------------------------------------------
+ * hypredrv_BinaryPathPrefixIsSafe
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_BinaryPathPrefixIsSafe(const char *prefix)
+{
+   size_t len;
+
+   if (!prefix || prefix[0] == '\0')
+   {
+      return 0;
+   }
+   len = strlen(prefix);
+   if (len == 0 || len >= (size_t)MAX_FILENAME_LENGTH)
+   {
+      return 0;
+   }
+   if (strstr(prefix, "..") != NULL)
+   {
+      return 0;
+   }
+   return 1;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_FopenCreateRestricted
+ *
+ * Create or open for write with mode 0600 (subject to umask). binary: use "wb"/"ab".
+ *-----------------------------------------------------------------------------*/
+
+FILE *
+hypredrv_FopenCreateRestricted(const char *path, int append, int binary)
+{
+   int         fd;
+   int         flags = O_WRONLY | O_CREAT;
+   const char *fdmode;
+
+   if (!path || path[0] == '\0')
+   {
+      return NULL;
+   }
+   if (append)
+   {
+      flags |= O_APPEND;
+   }
+   else
+   {
+      flags |= O_TRUNC;
+   }
+   fd = open(path, flags, (mode_t)0600);
+   if (fd < 0)
+   {
+      return NULL;
+   }
+   if (append)
+   {
+      fdmode = binary ? "ab" : "a";
+   }
+   else
+   {
+      fdmode = binary ? "wb" : "w";
+   }
+   {
+      FILE *fp = fdopen(fd, fdmode);
+      if (!fp)
+      {
+         (void)close(fd);
+         return NULL;
+      }
+      return fp;
+   }
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_CheckBinaryDataExists
  *-----------------------------------------------------------------------------*/
 
@@ -109,6 +185,11 @@ hypredrv_CheckBinaryDataExists(const char *prefix)
 
    int   file_exists = 0;
    FILE *fp          = NULL;
+
+   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
+   {
+      return 0;
+   }
 
    /* Check if binary data exist */
    snprintf(filename, sizeof(filename), "%*s.00000.bin", (int)strlen(prefix), prefix);
@@ -133,6 +214,11 @@ hypredrv_CheckASCIIDataExists(const char *prefix)
    int   file_exists = 0;
    FILE *fp          = NULL;
 
+   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
+   {
+      return 0;
+   }
+
    /* Check if ASCII data exist */
    snprintf(filename, sizeof(filename), "%*s.00000", (int)strlen(prefix), prefix);
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
@@ -155,6 +241,10 @@ hypredrv_CountNumberOfPartitions(const char *prefix)
    int  num_files = 0;
 
    if (prefix == NULL)
+   {
+      return 0;
+   }
+   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
    {
       return 0;
    }

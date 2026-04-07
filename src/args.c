@@ -1246,6 +1246,12 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
 
    if (argc > 0 && hypredrv_IsYAMLFilename(argv[0]))
    {
+      if (!hypredrv_BinaryPathPrefixIsSafe(argv[0]))
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid configuration file path");
+         return false;
+      }
       hypredrv_InputArgsRead(comm, argv[0], base_indent_ptr, text_ptr);
       if (hypredrv_ErrorCodeActive())
       {
@@ -1258,6 +1264,12 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
 
    if (config_idx >= 0)
    {
+      if (!hypredrv_BinaryPathPrefixIsSafe(argv[config_idx]))
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid configuration file path");
+         return false;
+      }
       hypredrv_InputArgsRead(comm, argv[config_idx], base_indent_ptr, text_ptr);
       if (hypredrv_ErrorCodeActive())
       {

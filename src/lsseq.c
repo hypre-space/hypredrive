@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include "internal/error.h"
 #include "internal/linsys.h"
+#include "internal/utils.h"
 
 typedef struct LSSeqData_struct
 {
@@ -198,6 +199,12 @@ LSSeqFormatPartFilename(char *filename, size_t filename_size, const char *prefix
    if (!suffix)
    {
       suffix = "";
+   }
+   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid sequence staging path prefix");
+      return 0;
    }
 
    id_len = snprintf(id_buf, sizeof(id_buf), "%05u", part_id);
@@ -1280,7 +1287,7 @@ LSSeqWriteMatrixPartFile(const char *filename, const LSSeqPartMeta *part,
       return 0;
    }
 
-   fp = fopen(filename, "wb");
+   fp = hypredrv_FopenCreateRestricted(filename, 0, 1);
    if (!fp) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
@@ -1341,7 +1348,7 @@ LSSeqWriteRHSPartFile(const char *filename, const LSSeqPartMeta *part, const voi
       return 0;
    }
 
-   fp = fopen(filename, "wb");
+   fp = hypredrv_FopenCreateRestricted(filename, 0, 1);
    if (!fp) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
@@ -1884,7 +1891,7 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
          local_ok = 0;
          break;
       }
-      out = fopen(part_filename, "w");
+      out = hypredrv_FopenCreateRestricted(part_filename, 0, 0);
       if (!out) /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
