@@ -2235,28 +2235,51 @@ hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *args,
  * currently present. If no reuse handles are present, the function returns 0
  * immediately, indicating that the driver should perform a fresh setup.
  *
- * Otherwise, it prepares the internal "setup mode" state in args based on
- * the current solver statistics and the next linear-solve identifier
+ * Otherwise, it prepares the internal "setup mode" state in @a args based on
+ * the current solver statistics @a stats and the next linear-solve identifier
  * @a next_ls_id, so that subsequent setup/solve calls can either reuse or
  * rebuild components as appropriate.
+ *
+ * Return value:
+ *    0 : no reusable components are currently present, or @a args is NULL;
+ *        the caller should perform a full (non-reuse) setup.
+ *    1 : at least one managed reuse handle is present and @a args has been
+ *        updated to reflect the selected reuse strategy for the next solve.
+ *
+ * Side effects:
+ *    This routine may modify internal reuse-related fields in @a args,
+ *    e.g., per-level or coarsest-level "setup mode" indicators that control
+ *    whether existing components are reused or rebuilt on subsequent calls
+ *    to MGR setup/solve drivers.
  *--------------------------------------------------------------------------*/
 
 int
 hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next_ls_id)
 {
+   /* Defensive check: if the MGR argument block is not available, there is
+    * no meaningful reuse decision to make, so fall back to "no reuse". */
    if (!args)
    {
       return 0;
    }
 
+   /* First, detect whether *any* managed reuse handle is currently present
+    * on the hierarchy. If none are present, we can immediately signal that
+    * a fresh setup is required without inspecting solver statistics. */
    int any_present = args->coarsest_level.reuse.present;
    for (int active_lvl = 0; active_lvl < args->num_active_levels; active_lvl++)
    {
       int orig_lvl = args->active_level_map[active_lvl];
+
+      /* Fine-grid relaxation on this logical level. */
       any_present |= args->level[orig_lvl].f_relaxation.reuse.present;
+
+      /* Coarse-grid / G-relaxation on this logical level. */
       any_present |= args->level[orig_lvl].g_relaxation.reuse.present;
    }
 
+   /* If no reuse handles are active anywhere in the hierarchy, instruct the
+    * caller to perform a full setup and return without touching reuse state. */
    if (!any_present)
    {
       return 0;
