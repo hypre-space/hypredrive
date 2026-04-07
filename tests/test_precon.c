@@ -5173,6 +5173,12 @@ test_PreconDestroy_mgr_grelax_ilu_later_level_type16(void)
 #if !HYPRE_CHECK_MIN_VERSION(22100, 0)
    return;
 #endif
+#if HYPRE_RELEASE_NUMBER == 30100 && \
+   (!defined(HYPRE_DEVELOP_NUMBER) || HYPRE_DEVELOP_NUMBER == 0)
+   /* Exact hypre v3.1.0 can trap in HYPRE_ILUSetup for this later-level
+    * MGR g-relax shape; newer development builds cover the intended path. */
+   return;
+#endif
    TEST_HYPRE_INIT();
 
    precon_args args;
