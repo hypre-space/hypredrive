@@ -77,7 +77,8 @@ IJVectorValidateHeader(const uint64_t *header, const char *filename)
 }
 
 static int
-IJVectorPartRowsMatchesPrepass(uint64_t nrows_max, uint64_t part_rows, const char *filename)
+IJVectorPartRowsMatchesPrepass(uint64_t nrows_max, uint64_t part_rows,
+                               const char *filename)
 {
    if (part_rows > nrows_max)
    {

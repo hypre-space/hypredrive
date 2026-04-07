@@ -352,8 +352,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          /* LCOV_EXCL_START */
          else if (header[1] == sizeof(uint32_t))
          {
-            uint32_t *buffer =
-               (uint32_t *)malloc((size_t)nnzs_max * sizeof(uint32_t));
+            uint32_t *buffer = (uint32_t *)malloc((size_t)nnzs_max * sizeof(uint32_t));
             if (header[6] > 0 && !buffer)
             {
                hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
@@ -401,8 +400,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          }
          else if (header[1] == sizeof(uint64_t))
          {
-            uint64_t *buffer =
-               (uint64_t *)malloc((size_t)nnzs_max * sizeof(uint64_t));
+            uint64_t *buffer = (uint64_t *)malloc((size_t)nnzs_max * sizeof(uint64_t));
             if (header[6] > 0 && !buffer)
             {
                hypredrv_ErrorCodeSet(ERROR_ALLOCATION);

@@ -235,6 +235,13 @@ LSSeqFormatPartFilename(char *filename, size_t filename_size, const char *prefix
    memcpy(filename + prefix_len + 1u + (size_t)id_len, suffix, suffix_len);
    filename[total_len] = '\0';
 
+   if (!hypredrv_BinaryPathPrefixIsSafe(filename))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid sequence part filename");
+      return 0;
+   }
+
    return 1;
 }
 
@@ -1286,6 +1293,12 @@ LSSeqWriteMatrixPartFile(const char *filename, const LSSeqPartMeta *part,
       hypredrv_ErrorMsgAdd("Invalid matrix part-file write arguments");
       return 0;
    }
+   if (!hypredrv_BinaryPathPrefixIsSafe(filename))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid matrix temporary part path");
+      return 0;
+   }
 
    fp = hypredrv_FopenCreateRestricted(filename, 0, 1);
    if (!fp) /* GCOVR_EXCL_BR_LINE */
@@ -1345,6 +1358,12 @@ LSSeqWriteRHSPartFile(const char *filename, const LSSeqPartMeta *part, const voi
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid RHS part-file write arguments");
+      return 0;
+   }
+   if (!hypredrv_BinaryPathPrefixIsSafe(filename))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid RHS temporary part path");
       return 0;
    }
 

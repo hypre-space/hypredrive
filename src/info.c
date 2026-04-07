@@ -110,8 +110,7 @@ GpuInfoScanVendorFirstWord(const char *vendor_name, GpuInfo *gpu)
 {
    char fmt[24];
 
-   (void)snprintf(fmt, sizeof(fmt), "%%%lus",
-                  (unsigned long)(sizeof(gpu->vendor) - 1u));
+   (void)snprintf(fmt, sizeof(fmt), "%%%lus", (unsigned long)(sizeof(gpu->vendor) - 1u));
    return sscanf(vendor_name, fmt, gpu->vendor);
 }
 
