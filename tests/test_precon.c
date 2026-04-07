@@ -5166,6 +5166,7 @@ test_PreconDestroy_mgr_grelax_ilu_type16(void)
    hypredrv_IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
 }
+#endif
 
 static void
 test_hypredrv_ILUSetFieldByName_all_fields(void)
