@@ -18,6 +18,7 @@
 #include "internal/presets.h"
 #include "internal/scaling.h"
 #include "internal/stats.h"
+#include "internal/utils.h"
 #ifdef HYPREDRV_ENABLE_CALIPER
 #include <caliper/cali.h>
 #endif
@@ -326,7 +327,7 @@ PrintStatsWithConfiguredDestination(HYPREDRV_t hypredrv, int print_level)
       return;
    }
 
-   FILE *stream = fopen(filename, "a");
+   FILE *stream = hypredrv_FopenCreateRestricted(filename, 1, 0);
    if (!stream)
    {
       int saved_errno = errno;

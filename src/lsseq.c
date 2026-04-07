@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include "internal/error.h"
 #include "internal/linsys.h"
+#include "internal/utils.h"
 
 typedef struct LSSeqData_struct
 {
@@ -199,6 +200,12 @@ LSSeqFormatPartFilename(char *filename, size_t filename_size, const char *prefix
    {
       suffix = "";
    }
+   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid sequence staging path prefix");
+      return 0;
+   }
 
    id_len = snprintf(id_buf, sizeof(id_buf), "%05u", part_id);
    /* GCOVR_EXCL_BR_START */
@@ -227,6 +234,13 @@ LSSeqFormatPartFilename(char *filename, size_t filename_size, const char *prefix
    memcpy(filename + prefix_len + 1u, id_buf, (size_t)id_len);
    memcpy(filename + prefix_len + 1u + (size_t)id_len, suffix, suffix_len);
    filename[total_len] = '\0';
+
+   if (!hypredrv_BinaryPathPrefixIsSafe(filename))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid sequence part filename");
+      return 0;
+   }
 
    return 1;
 }
@@ -1077,11 +1091,34 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
    return 1;
 }
 
+/* Copy TMPDIR into a local buffer after validation; do not thread raw getenv into paths.
+ */
+static void
+LSSeqSanitizedTmpRoot(char *out, size_t out_len)
+{
+   const char *raw = getenv("TMPDIR");
+
+   if (!out || out_len == 0)
+   {
+      return;
+   }
+   if (!raw || raw[0] == '\0' || strstr(raw, "..") != NULL || strlen(raw) >= out_len ||
+       !hypredrv_BinaryPathPrefixIsSafe(raw))
+   {
+      (void)snprintf(out, out_len, "/tmp");
+   }
+   else
+   {
+      (void)snprintf(out, out_len, "%s", raw);
+   }
+}
+
 static int
 LSSeqTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *prefix,
                      size_t prefix_size)
 {
-   const char *tmp_root = getenv("TMPDIR");
+   char        tmp_root_buf[MAX_FILENAME_LENGTH];
+   const char *tmp_root = tmp_root_buf;
    char        tmpdir_template[MAX_FILENAME_LENGTH];
    int         written = 0;
    int         myid    = 0;
@@ -1093,11 +1130,7 @@ LSSeqTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *prefix,
       return 0;
    }
 
-   /* GCOVR_EXCL_BR_START */
-   if (!tmp_root || tmp_root[0] == '\0') /* GCOVR_EXCL_BR_STOP */
-   {
-      tmp_root = "/tmp";
-   }
+   LSSeqSanitizedTmpRoot(tmp_root_buf, sizeof(tmp_root_buf));
 
    MPI_Comm_rank(comm, &myid);
    /* GCOVR_EXCL_BR_START */
@@ -1159,7 +1192,8 @@ static int
 LSSeqSharedTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *prefix,
                            size_t prefix_size)
 {
-   const char *tmp_root = getenv("TMPDIR");
+   char        tmp_root_buf[MAX_FILENAME_LENGTH];
+   const char *tmp_root = tmp_root_buf;
    char        tmpdir_path[MAX_FILENAME_LENGTH];
    int         myid    = 0;
    int         success = 1;
@@ -1172,11 +1206,7 @@ LSSeqSharedTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *pref
       return 0;
    }
 
-   /* GCOVR_EXCL_BR_START */
-   if (!tmp_root || tmp_root[0] == '\0') /* GCOVR_EXCL_BR_STOP */
-   {
-      tmp_root = "/tmp";
-   }
+   LSSeqSanitizedTmpRoot(tmp_root_buf, sizeof(tmp_root_buf));
 
    memset(tmpdir_path, 0, sizeof(tmpdir_path));
    MPI_Comm_rank(comm, &myid);
@@ -1279,8 +1309,14 @@ LSSeqWriteMatrixPartFile(const char *filename, const LSSeqPartMeta *part,
       hypredrv_ErrorMsgAdd("Invalid matrix part-file write arguments");
       return 0;
    }
+   if (!hypredrv_BinaryPathPrefixIsSafe(filename))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid matrix temporary part path");
+      return 0;
+   }
 
-   fp = fopen(filename, "wb");
+   fp = hypredrv_FopenCreateRestricted(filename, 0, 1);
    if (!fp) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
@@ -1340,8 +1376,14 @@ LSSeqWriteRHSPartFile(const char *filename, const LSSeqPartMeta *part, const voi
       hypredrv_ErrorMsgAdd("Invalid RHS part-file write arguments");
       return 0;
    }
+   if (!hypredrv_BinaryPathPrefixIsSafe(filename))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid RHS temporary part path");
+      return 0;
+   }
 
-   fp = fopen(filename, "wb");
+   fp = hypredrv_FopenCreateRestricted(filename, 0, 1);
    if (!fp) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
@@ -1884,7 +1926,7 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
          local_ok = 0;
          break;
       }
-      out = fopen(part_filename, "w");
+      out = hypredrv_FopenCreateRestricted(part_filename, 0, 0);
       if (!out) /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);

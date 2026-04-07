@@ -31,6 +31,11 @@
 #include <blosc.h>
 #endif
 
+/* Cap output allocation to mitigate malicious compressed payloads (CWE-789). */
+#ifndef HYPREDRV_MAX_DECOMPRESSED_BYTES
+#define HYPREDRV_MAX_DECOMPRESSED_BYTES ((size_t)16ULL * 1024ULL * 1024ULL * 1024ULL)
+#endif
+
 static int
 HypredrvStringHasSuffix(const char *str, const char *suffix)
 {
@@ -416,6 +421,13 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
    if (algo == COMP_NONE)
    {
       /* GCOVR_EXCL_BR_START */
+      if (isize > HYPREDRV_MAX_DECOMPRESSED_BYTES)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Uncompressed payload size exceeds maximum (%zu bytes)",
+                              (size_t)HYPREDRV_MAX_DECOMPRESSED_BYTES);
+         return;
+      }
       size_t alloc_n = isize > 0 ? isize : 1;
       /* GCOVR_EXCL_BR_STOP */
       /* GCOVR_EXCL_BR_START */
@@ -438,6 +450,13 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
    }
 
    orig_size = (size_t)(*((const uint64_t *)input));
+   if (orig_size > HYPREDRV_MAX_DECOMPRESSED_BYTES)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Declared decompressed size exceeds maximum (%zu bytes)",
+                           (size_t)HYPREDRV_MAX_DECOMPRESSED_BYTES);
+      return;
+   }
    {
       /* GCOVR_EXCL_BR_START */
       size_t alloc_n = orig_size > 0 ? orig_size : 1;

@@ -608,7 +608,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
    while (fgets(line, sizeof(line), fp))
    {
       /* Save the original line */
-      strcpy(backup, line);
+      memcpy(backup, line, sizeof(backup));
 
       /* Remove trailing newline character */
       line[strcspn(line, "\n")] = '\0';

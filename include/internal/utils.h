@@ -51,6 +51,8 @@ void  hypredrv_NormalizeWhitespace(char *);
 int   hypredrv_CheckBinaryDataExists(const char *);
 int   hypredrv_CheckASCIIDataExists(const char *);
 int   hypredrv_CountNumberOfPartitions(const char *);
+int   hypredrv_BinaryPathPrefixIsSafe(const char *prefix);
+FILE *hypredrv_FopenCreateRestricted(const char *path, int append, int binary);
 int   hypredrv_ComputeNumberOfDigits(int);
 void  hypredrv_SplitFilename(const char *, char **, char **);
 void  hypredrv_CombineFilename(const char *, const char *, char **);

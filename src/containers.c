@@ -7,6 +7,7 @@
 
 #include "internal/containers.h"
 #include "internal/error.h"
+#include "internal/utils.h"
 /*-----------------------------------------------------------------------------
  * hypredrv_IntArrayWriteAsciiByRank
  *-----------------------------------------------------------------------------*/
@@ -24,7 +25,7 @@ hypredrv_IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char 
    MPI_Comm_size(comm, &nprocs);
 
    snprintf(fname, sizeof(fname), "%s.%05d", filename, myid);
-   fp = fopen(fname, "w");
+   fp = hypredrv_FopenCreateRestricted(fname, 0, 0);
    if (!fp)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
@@ -441,6 +442,13 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
    bool      is_binary = false;
 
    *int_array_ptr = NULL;
+
+   if (!prefix || !hypredrv_BinaryPathPrefixIsSafe(prefix))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid dofmap path prefix");
+      return;
+   }
 
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);

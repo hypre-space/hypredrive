@@ -104,6 +104,16 @@ typedef struct
    hwloc_obj_t ancestor; // Non-I/O ancestor (has nodeset)
 } GpuInfo;
 
+/* sscanf("%s") into vendor[] is unsafe; width must match sizeof(GpuInfo::vendor). */
+static int
+GpuInfoScanVendorFirstWord(const char *vendor_name, GpuInfo *gpu)
+{
+   char fmt[24];
+
+   (void)snprintf(fmt, sizeof(fmt), "%%%lus", (unsigned long)(sizeof(gpu->vendor) - 1u));
+   return sscanf(vendor_name, fmt, gpu->vendor);
+}
+
 static hwloc_topology_t topology = NULL;
 
 // Prototypes
@@ -218,6 +228,10 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
    char   discard[1024];
 
    if (!exe_path || !argv || !buffer || len == 0)
+   {
+      return 0;
+   }
+   if (!hypredrv_BinaryPathPrefixIsSafe(exe_path))
    {
       return 0;
    }
@@ -2281,7 +2295,7 @@ DiscoverGpus(GpuInfo **gpus, int *count)
       if (vendor_name)
       {
          // Get first word only
-         sscanf(vendor_name, "%s", gpu->vendor);
+         (void)GpuInfoScanVendorFirstWord(vendor_name, gpu);
       }
       else
       {
@@ -2372,7 +2386,7 @@ DiscoverGpus(GpuInfo **gpus, int *count)
          const char *vendor_name = hwloc_obj_get_info_by_name(pci_obj, "PCIVendor");
          if (vendor_name)
          {
-            sscanf(vendor_name, "%s", gpu->vendor);
+            (void)GpuInfoScanVendorFirstWord(vendor_name, gpu);
          }
          else
          {
@@ -3798,17 +3812,17 @@ hypredrv_PrintLibInfo(MPI_Comm comm, int print_datetime)
    {
       if (print_datetime)
       {
-         time_t           t       = 0;
-         const struct tm *tm_info = NULL;
-         char             buffer[100];
+         time_t    t = 0;
+         struct tm tm_buf;
+         char      buffer[100];
 
          /* Get current time */
          time(&t);
-         tm_info = localtime(&t);
-
-         /* Format and print the date and time */
-         strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
-         printf("Date and time: %s\n", buffer);
+         if (localtime_r(&t, &tm_buf))
+         {
+            strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm_buf);
+            printf("Date and time: %s\n", buffer);
+         }
       }
 
 #if defined(HYPREDRV_DEVELOP_STRING) && defined(HYPREDRV_BRANCH_NAME)
@@ -3846,16 +3860,20 @@ hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
 
    if (!myid)
    {
-      char             buffer[100];
-      const struct tm *tm_info = NULL;
-      time_t           t       = 0;
+      char      buffer[100];
+      time_t    t = 0;
+      struct tm tm_buf;
 
       /* Get current time */
       time(&t);
-      tm_info = localtime(&t);
-
-      /* Format and print the date and time */
-      strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_info);
+      if (localtime_r(&t, &tm_buf))
+      {
+         strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm_buf);
+      }
+      else
+      {
+         (void)snprintf(buffer, sizeof(buffer), "(time unavailable)");
+      }
       printf("Date and time: %s\n%s done!\n", buffer, argv0 ? argv0 : "Driver");
    }
 }

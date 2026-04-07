@@ -94,6 +94,19 @@ IJMatrixValidateHeader(const uint64_t *header, const char *filename)
    return 1;
 }
 
+static int
+IJMatrixPartNnzMatchesPrepass(size_t nnzs_max, uint64_t part_nnz, const char *filename)
+{
+   if (part_nnz > (uint64_t)nnzs_max)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Matrix part nnz exceeds pre-scan maximum at %s",
+                           filename ? filename : "(unknown)");
+      return 0;
+   }
+   return 1;
+}
+
 void
 hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                                      uint64_t             g_nparts,
@@ -140,6 +153,14 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       *mat_ptr = NULL;
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Invalid number of parts!");
+      return;
+   }
+
+   if (!hypredrv_BinaryPathPrefixIsSafe(prefixname))
+   {
+      *mat_ptr = NULL;
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid matrix data path prefix");
       return;
    }
 
@@ -288,6 +309,13 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
             free(osizes);
             goto cleanup;
          }
+         if (!IJMatrixPartNnzMatchesPrepass(nnzs_max, header[6], filename))
+         {
+            fclose(fp);
+            free(dsizes);
+            free(osizes);
+            goto cleanup;
+         }
          /* GCOVR_EXCL_STOP */
 
          /* Read row and column indices */
@@ -324,7 +352,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          /* LCOV_EXCL_START */
          else if (header[1] == sizeof(uint32_t))
          {
-            uint32_t *buffer = (uint32_t *)malloc(header[6] * sizeof(uint32_t));
+            uint32_t *buffer = (uint32_t *)malloc((size_t)nnzs_max * sizeof(uint32_t));
             if (header[6] > 0 && !buffer)
             {
                hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
@@ -372,7 +400,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          }
          else if (header[1] == sizeof(uint64_t))
          {
-            uint64_t *buffer = (uint64_t *)malloc(header[6] * sizeof(uint64_t));
+            uint64_t *buffer = (uint64_t *)malloc((size_t)nnzs_max * sizeof(uint64_t));
             if (header[6] > 0 && !buffer)
             {
                hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
@@ -538,6 +566,11 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          fclose(fp);
          goto cleanup;
       }
+      if (!IJMatrixPartNnzMatchesPrepass(nnzs_max, header[6], filename))
+      {
+         fclose(fp);
+         goto cleanup;
+      }
       /* GCOVR_EXCL_STOP */
 
       /* Read row and column indices */
@@ -566,7 +599,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       /* LCOV_EXCL_START */
       else if (header[1] == sizeof(uint32_t))
       {
-         uint32_t *buffer = (uint32_t *)malloc(header[6] * sizeof(uint32_t));
+         uint32_t *buffer = (uint32_t *)malloc((size_t)nnzs_max * sizeof(uint32_t));
          if (header[6] > 0 && !buffer)
          {
             hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
@@ -608,7 +641,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       }
       else if (header[1] == sizeof(uint64_t))
       {
-         uint64_t *buffer = (uint64_t *)malloc(header[6] * sizeof(uint64_t));
+         uint64_t *buffer = (uint64_t *)malloc((size_t)nnzs_max * sizeof(uint64_t));
          if (header[6] > 0 && !buffer)
          {
             hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
@@ -682,7 +715,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          /* GCOVR_EXCL_BR_START */
          if (header[6] > 0) /* GCOVR_EXCL_BR_STOP */
          {
-            buffer = (float *)malloc(header[6] * sizeof(float));
+            buffer = (float *)malloc((size_t)nnzs_max * sizeof(float));
             /* GCOVR_EXCL_BR_START */
             if (!buffer || fread(buffer, sizeof(float), header[6], fp) != header[6])
             /* GCOVR_EXCL_BR_STOP */
@@ -710,7 +743,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          /* GCOVR_EXCL_BR_START */
          if (header[6] > 0) /* GCOVR_EXCL_BR_STOP */
          {
-            buffer = (double *)malloc(header[6] * sizeof(double));
+            buffer = (double *)malloc((size_t)nnzs_max * sizeof(double));
             /* GCOVR_EXCL_BR_START */
             if (!buffer || fread(buffer, sizeof(double), header[6], fp) != header[6])
             /* GCOVR_EXCL_BR_STOP */
