@@ -271,9 +271,10 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
       return;
    }
 
-   precon->main   = NULL;
-   precon->method = precon_method;
-   precon->stats  = NULL;
+   precon->main     = NULL;
+   precon->method   = precon_method;
+   precon->is_setup = 0;
+   precon->stats    = NULL;
 
    switch (precon_method)
    {
@@ -348,11 +349,13 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    {
       case PRECON_BOOMERAMG:
          HYPRE_BoomerAMGSetup(prec, par_A, par_b, par_x);
+         precon->is_setup = 1;
          break;
 
       case PRECON_MGR:
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_MGRSetup(prec, par_A, par_b, par_x);
+         precon->is_setup = 1;
 #else  /* GCOVR_EXCL_START */
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
@@ -362,6 +365,7 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
       case PRECON_ILU:
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_ILUSetup(prec, par_A, par_b, par_x);
+         precon->is_setup = 1;
 #else  /* GCOVR_EXCL_START */
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
@@ -371,6 +375,7 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
       case PRECON_FSAI:
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
          HYPRE_FSAISetup(prec, par_A, par_b, par_x);
+         precon->is_setup = 1;
 #else  /* GCOVR_EXCL_START */
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
@@ -455,7 +460,7 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
  */
 
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
-static void PreconDestroyMGRSolver(MGR_args *, HYPRE_Solver *);
+static void PreconDestroyMGRSolver(MGR_args *, HYPRE_Solver *, int);
 
 static void
 DestroyNestedMGRFRelaxInnerSolver(MGR_args *mgr, int i,
@@ -468,7 +473,7 @@ DestroyNestedMGRFRelaxInnerSolver(MGR_args *mgr, int i,
    /* GCOVR_EXCL_BR_LINE */
    if (mgr->level[i].f_relaxation.mgr) /* GCOVR_EXCL_BR_LINE */
    {
-      PreconDestroyMGRSolver(mgr->level[i].f_relaxation.mgr, nested_mgr_solver_ptr);
+      PreconDestroyMGRSolver(mgr->level[i].f_relaxation.mgr, nested_mgr_solver_ptr, 1);
    }
    else
    {
@@ -491,11 +496,12 @@ DestroyNestedMGRFRelaxAtLevel(MGR_args *mgr, int i)
 #endif /* HYPRE_CHECK_MIN_VERSION(21900, 0) */
 
 static void
-PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
+PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr, int precon_was_setup)
 {
 #if !HYPRE_CHECK_MIN_VERSION(21900, 0)
    (void)mgr;
    (void)solver_ptr;
+   (void)precon_was_setup;
    hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
    hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
 #else /* GCOVR_EXCL_BR_LINE */
@@ -510,7 +516,7 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
        * Destroy or preserve any component handles that were set up before the
        * failure, respecting keep flags set by the caller. */
       hypredrv_MGRDestroyCachedSolvers(mgr, 0); /* GCOVR_EXCL_BR_LINE */
-      if (mgr->point_marker_data)            /* GCOVR_EXCL_BR_LINE */
+      if (mgr->point_marker_data)
       {
          free(mgr->point_marker_data);
          mgr->point_marker_data = NULL;
@@ -518,11 +524,22 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr)
       return;
    }
 
-   /* Drop hypredrive-managed detached handles first. In current hypre MGR,
-    * user-provided smoother/coarse handles are not reclaimed by MGR destroy. */
-   hypredrv_MGRDestroyCachedSolvers(mgr, 0);
-   HYPRE_MGRDestroy(*solver_ptr);
-   *solver_ptr = NULL;
+   if (!precon_was_setup)
+   {
+      /* Setup was never called, so refreshed handles may still be owned by
+       * hypredrive only. Reclaim them before destroying the outer MGR object. */
+      hypredrv_MGRDestroyCachedSolvers(mgr, 0);
+      HYPRE_MGRDestroy(*solver_ptr);
+      *solver_ptr = NULL;
+   }
+   else
+   {
+      HYPRE_MGRDestroy(*solver_ptr);
+      *solver_ptr = NULL;
+      /* Parent MGR is gone; clear cached-handle state without destroying
+       * parent-owned internals a second time. */
+      hypredrv_MGRDestroyCachedSolvers(mgr, 1);
+   }
 
    if (mgr->point_marker_data)
    {
@@ -596,7 +613,7 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
             HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
                           "preconditioner destroy dispatch: method=mgr");
             /* GCOVR_EXCL_STOP */
-            PreconDestroyMGRSolver(&args->mgr, &precon->main);
+            PreconDestroyMGRSolver(&args->mgr, &precon->main, precon->is_setup);
             break;
 
          case PRECON_ILU:

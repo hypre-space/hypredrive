@@ -200,6 +200,11 @@ PreconSetupDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
       hypredrv_StatsAnnotate(precon->stats, HYPREDRV_ANNOTATE_END, "prec");
    }
 
+   if (precon->method != PRECON_NONE)
+   {
+      precon->is_setup = 1;
+   }
+
    return ierr;
 }
 

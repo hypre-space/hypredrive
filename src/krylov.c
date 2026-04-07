@@ -610,6 +610,7 @@ hypredrv_NestedKrylovDestroy(NestedKrylov_args *args)
 
    if (args->precon_obj)
    {
+      args->precon_obj->is_setup = 1;
       hypredrv_PreconDestroy(args->precon_method, &args->precon, &args->precon_obj, NULL,
                              0);
       args->precon_obj = NULL;

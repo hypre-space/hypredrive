@@ -2226,6 +2226,21 @@ hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *args,
    return 0;
 }
 
+/*--------------------------------------------------------------------------
+ * Decide how MGR component reuse should be configured for the next solve.
+ *
+ * This routine inspects all managed reuse handles associated with the MGR
+ * hierarchy (fine- and coarse-grid relaxations on each active level, plus the
+ * coarsest-level solver) and decides whether any reusable components are
+ * currently present. If no reuse handles are present, the function returns 0
+ * immediately, indicating that the driver should perform a fresh setup.
+ *
+ * Otherwise, it prepares the internal "setup mode" state in args based on
+ * the current solver statistics and the next linear-solve identifier
+ * @a next_ls_id, so that subsequent setup/solve calls can either reuse or
+ * rebuild components as appropriate.
+ *--------------------------------------------------------------------------*/
+
 int
 hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next_ls_id)
 {
@@ -2464,6 +2479,16 @@ MGRDestroyCachedSolversExplicitly(void)
 #endif
 }
 
+static int
+MGRLegacyPostDestroyNeedsGRelaxReclaim(void)
+{
+#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 30000
+   return 0;
+#else
+   return 1;
+#endif
+}
+
 static void
 MGRResetCachedSolverKeepFlags(MGR_args *args)
 {
@@ -2580,22 +2605,6 @@ MGRLogComponentReuseDecision(const Stats *stats, const char *component_name, int
                       reuse->args.enabled, keep);
 }
 
-static void
-MGRClearNestedKrylovState(NestedKrylov_args *krylov)
-{
-   if (!krylov)
-   {
-      return;
-   }
-
-   /* Called only when HYPRE has already destroyed the nested Krylov internals
-    * through its registered callback path. In current HYPRE MGR teardown this
-    * applies to aff_solver[active>=1] and level_smoother handles, but not to
-    * coarse_grid_solver or aff_solver[active=0]. */
-   krylov->base_solver = NULL;
-   krylov->precon_obj  = NULL;
-}
-
 void
 hypredrv_MGRSelectCachedSolversToKeep(MGR_args *args, const IntArray *timestep_starts,
                                       const Stats *stats, int next_ls_id)
@@ -2666,12 +2675,15 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
    }
 
    int destroy_handles = MGRDestroyCachedSolversExplicitly();
-   /* Destroy detached user-managed handles before parent MGR teardown.
-    * When parent MGR is already destroyed, avoid second-pass destruction. */
+   /* Detached user-managed handles are always reclaimed before parent teardown.
+    * After parent teardown, experimental builds reclaim dropped detached
+    * handles explicitly. Standard builds keep the legacy first-active-level
+    * fallback only where older hypre MGR teardowns still leave ownership to us. */
    int destroy_managed_detached = !hypre_destroyed;
    int first_active_level =
       (args->num_active_levels > 0) ? (int)args->active_level_map[0] : -1;
-   int drop_csolver = !destroy_handles || !args->keep_csolver;
+   int legacy_grelax_reclaim = MGRLegacyPostDestroyNeedsGRelaxReclaim();
+   int drop_csolver          = !destroy_handles || !args->keep_csolver;
 
    if (args->coarsest_level.use_krylov && args->coarsest_level.krylov)
    {
@@ -2720,7 +2732,8 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
       }
       else if (args->frelax[i] && drop_frelax)
       {
-         if (destroy_managed_detached || i == first_active_level)
+         if (destroy_managed_detached || destroy_handles ||
+             (hypre_destroyed && i == first_active_level))
          {
             MGRDestroyDetachedFSolver(&args->level[i].f_relaxation, &args->frelax[i]);
          }
@@ -2739,7 +2752,8 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
       }
       else if (args->grelax[i] && drop_grelax)
       {
-         if (destroy_managed_detached)
+         if (destroy_managed_detached || destroy_handles ||
+             (hypre_destroyed && legacy_grelax_reclaim && i == first_active_level))
          {
             MGRDestroyDetachedGSolver(&args->level[i].g_relaxation, &args->grelax[i]);
          }
@@ -3710,16 +3724,10 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
    {
       /* hypre uses the point-marker array during MGRSetup, so keep the owned copy
        * alive until PreconDestroyMGRSolver() destroys the MGR object. */
-      /* GCOVR_EXCL_START */
-      if (args->point_marker_data)
-      {
-         free(args->point_marker_data);
-      }
-      /* GCOVR_EXCL_STOP */
+      free(args->point_marker_data);
       args->point_marker_data = dofmap_data_owned;
       dofmap_data_owned       = NULL;
    }
-   goto cleanup;
 
 cleanup:
    if (dofmap_data_owned)
@@ -3739,5 +3747,5 @@ cleanup:
    }
    /* Silence any hypre errors. TODO: improve error handling */
    HYPRE_ClearAllErrors();
-#endif
+#endif /* !HYPRE_CHECK_MIN_VERSION(21900, 0) */
 }

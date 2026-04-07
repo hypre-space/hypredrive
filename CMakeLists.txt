@@ -171,9 +171,24 @@ if(HYPREDRV_COVERAGE_RUNTIME_LIBRARY)
     target_link_libraries(HYPREDRV PUBLIC ${HYPREDRV_COVERAGE_RUNTIME_LIBRARY})
 endif()
 
-# Link math library as PRIVATE (only needed for implementation, not public API)
-# CMake will automatically deduplicate if HYPRE already links m
-target_link_libraries(HYPREDRV PRIVATE m)
+# Link math library as PUBLIC so static consumers that also link static HYPRE
+# receive libm after transitive dependencies (required in compatibility builds).
+target_link_libraries(HYPREDRV PUBLIC m)
+
+if(UNIX AND NOT APPLE)
+    # Guard against regressions where static consumers lose libm and fail link.
+    get_target_property(_hypredrv_iface_link_libs HYPREDRV INTERFACE_LINK_LIBRARIES)
+    set(_hypredrv_has_libm OFF)
+    foreach(_lib IN LISTS _hypredrv_iface_link_libs)
+        if(_lib STREQUAL "m" OR _lib STREQUAL "$<LINK_ONLY:m>")
+            set(_hypredrv_has_libm ON)
+            break()
+        endif()
+    endforeach()
+    if(NOT _hypredrv_has_libm)
+        message(FATAL_ERROR "HYPREDRV must propagate libm in INTERFACE_LINK_LIBRARIES on Unix")
+    endif()
+endif()
 
 if(HWLOC_FOUND)
     target_include_directories(HYPREDRV PRIVATE ${HWLOC_INCLUDE_DIR})
