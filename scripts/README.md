@@ -21,5 +21,6 @@ This directory contains utility scripts for validation, data preparation, plotti
 - `analyze_statistics.py`: Parses statistics outputs and generates plots for iterations, timings, and related solver metrics.
 - `check_coverage_threshold.py`: check if the current `gcovr` code coverage passes predefined thresholds.
 - `eigplot.py`: Reads eigenvalue files and plots the spectrum with summary statistics and optional histogram or inset views.
+- `job_launcher.py`: Portable wrapper automating job submission across diverse HPC platforms.
 - `spmat_reorder.py`: Reorders HYPRE IJ matrices by dofmap index groups and can write reordered matrices and partition info.
 - `spyplot.py`: Reads HYPRE matrix files and generates sparse matrix spy plots from text or binary matrix parts.
