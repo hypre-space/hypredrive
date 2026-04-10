@@ -55,6 +55,57 @@ PrintUsage(const char *argv0)
    fflush(stdout);
 }
 
+static void
+PrintBanner(void)
+{
+   static const bool colors = false;
+
+   const char *hypre_lines[] = {
+      "██╗  ██╗██╗   ██╗██████╗ ██████╗ ███████╗",
+      "██║  ██║╚██╗ ██╔╝██╔══██╗██╔══██╗██╔════╝",
+      "███████║ ╚████╔╝ ██████╔╝██████╔╝█████╗" "  ",
+      "██╔══██║  ╚██╔╝  ██╔═══╝ ██╔══██╗██╔══╝" "  ",
+      "██║  ██║   ██║   ██║     ██║  ██║███████╗",
+      "╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝  ╚═╝╚══════╝",
+   };
+   const char *drive_lines[] = {
+      "██████╗ ██████╗ ██╗██╗   ██╗███████╗",
+      "██╔══██╗██╔══██╗██║██║   ██║██╔════╝",
+      "██║  ██║██████╔╝██║██║   ██║█████╗" "  ",
+      "██║  ██║██╔══██╗██║╚██╗ ██╔╝██╔══╝" "  ",
+      "██████╔╝██║  ██║██║ ╚████╔╝ ███████╗",
+      "╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝",
+   };
+   const int num_banner_lines = (int)(sizeof(hypre_lines) / sizeof(hypre_lines[0]));
+   const int banner_width     = 87 - ((colors) ? 0 : 7);
+
+   const char *H = colors ? "\033[1;38;2;175;36;41m" : "";
+   const char *D = colors ? "\033[1;38;2;0;159;224m" : "";
+   const char *M = colors ? "\033[1;30m" : "";
+   const char *W = colors ? "\033[0m" : "";
+
+   printf("\n");
+   printf("%s  ┌", M);
+   for (int i = 0; i < banner_width; i++)
+   {
+      printf("─");
+   }
+   printf("┐%s\n", W);
+
+   for (int i = 0; i < num_banner_lines; i++)
+   {
+      printf("%s  │ %s%s%s %s%s%s │%s\n", M, H, hypre_lines[i], M, D, drive_lines[i], M, W);
+   }
+
+   printf("%s  └", M);
+   for (int i = 0; i < banner_width; i++)
+   {
+      printf("─");
+   }
+   printf("┘%s\n", W);
+   printf("\n");
+}
+
 static int
 HelpRequested(int argc, char **argv)
 {
@@ -137,6 +188,11 @@ main(int argc, char **argv)
 
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
+   if (!myid)
+   {
+      PrintBanner();
+   }
+
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
    if (HelpRequested(argc, argv))
    {
