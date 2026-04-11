@@ -57,36 +57,11 @@ struct DynamicLibList;
 struct DependencyGraph;
 struct PrintedNodeSet;
 
-static int ReadLineFromFile(const char *path, char *buffer, size_t len);
-static int ReadIntFromFile(const char *path, int *value);
-static int ReadUllFromProcMeminfo(const char *field, unsigned long long *value);
-static int ExtractBracketedToken(const char *line, char *token, size_t len);
-static int ParseLscpuFallback(const char *lscpu_path, int *num_sockets, char *model_name,
-                              size_t model_name_len);
-static int ParseGpuControllerLine(const char *line, char *gpu_info, size_t gpu_info_len);
-static int CollectDynamicLibsCallback(struct dl_phdr_info *info, size_t size, void *data);
-static void FreeDynamicLibList(struct DynamicLibList *list);
-static int  ReadElfNeededEntries(const char *path, char ***needed, int *needed_count);
-static const char *ResolveNeededPath(const struct DynamicLibList *loaded,
-                                     const char                  *needed);
-static int  FindOrAddDependencyNode(struct DependencyGraph *graph, const char *path);
-static int  LoadDependencyNode(struct DependencyGraph *graph, int node_index);
-static int  NodeIsInStack(const int *stack, int depth, int node_index);
-static int  EnsurePrintedNodeCapacity(struct PrintedNodeSet *set, int required);
-static void PrintDependencySubtree(struct DependencyGraph      *graph,
-                                   const struct DynamicLibList *loaded, int node_index,
-                                   const char *prefix, int *stack, int depth,
-                                   struct PrintedNodeSet *printed);
-static void FreeDependencyGraph(struct DependencyGraph *graph);
-static int  PrintDynamicLibrariesTree(void);
 static void PrintLinuxNumaInformation(double bytes_to_gib);
 static void PrintNetworkInformation(void);
 static void PrintAcceleratorRuntimeInformation(void);
 static void PrintLinuxKernelTuningInformation(void);
 #endif
-static int  FindExecutableInPath(const char *name, char *resolved, size_t len);
-static int  RunCommandCapture(const char *exe_path, char *const argv[],
-                              int suppress_stderr, char *buffer, size_t len);
 static void BuildGpuBindingString(char *buffer, size_t len);
 static void PrintMpiRuntimeInformation(MPI_Comm comm);
 static void PrintThreadingEnvironmentInformation(void);
@@ -120,22 +95,6 @@ static hwloc_topology_t topology = NULL;
 static int  InitHwlocTopology(void);
 static void CleanupHwlocTopology(void);
 static void hypredrv_PrintSystemInfoHwloc(MPI_Comm comm);
-static void PrintCpuTopologyInfo(MPI_Comm comm);
-static void PrintCacheHierarchy(void);
-static void PrintGpuInfo(GpuInfo *gpus, int gpu_count);
-static int  DiscoverGpus(GpuInfo **gpus, int *count);
-static void PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count);
-static void PrintNetworkInfoHwloc(void);
-static void PrintProcessBinding(void);
-static void PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count);
-static void PrintTopologyTree(void);
-static void PrintTopologyTreeRecursive(hwloc_obj_t obj, int depth);
-static void PrintMemoryInformation(double bytes_to_gib, double mib_to_gib);
-static void PrintOperatingSystemInfo(void);
-static void PrintCompilationInfo(void);
-static void PrintWorkingDirectory(void);
-static void PrintDynamicLibraries(void);
-static void PrintRunningInfo(MPI_Comm comm);
 #endif
 void hypredrv_PrintSystemInfoLegacy(MPI_Comm comm);
 
@@ -214,6 +173,54 @@ FindExecutableInPath(const char *name, char *resolved, size_t len)
    }
 
    return 0;
+}
+
+static void
+ResolveDriverName(const char *argv0, char *resolved, size_t resolved_len)
+{
+   if (!resolved || resolved_len == 0)
+   {
+      return;
+   }
+
+   if (!argv0 || !argv0[0])
+   {
+      (void)snprintf(resolved, resolved_len, "%s", "Driver");
+      return;
+   }
+
+   char candidate[PATH_MAX];
+   int  written = 0;
+
+   if (strchr(argv0, '/'))
+   {
+      written = snprintf(candidate, sizeof(candidate), "%s", argv0);
+      if (written < 0 || (size_t)written >= sizeof(candidate))
+      {
+         (void)snprintf(resolved, resolved_len, "%s", argv0);
+         return;
+      }
+   }
+   else if (!FindExecutableInPath(argv0, candidate, sizeof(candidate)))
+   {
+      (void)snprintf(resolved, resolved_len, "%s", argv0);
+      return;
+   }
+
+   char        expanded[PATH_MAX];
+   const char *expanded_path = realpath(candidate, expanded);
+   if (expanded_path && expanded_path[0] != '\0')
+   {
+      if (snprintf(resolved, resolved_len, "%s", expanded_path) > 0)
+      {
+         return;
+      }
+   }
+
+   if (snprintf(resolved, resolved_len, "%s", candidate) <= 0)
+   {
+      (void)snprintf(resolved, resolved_len, "%s", argv0);
+   }
 }
 
 static int
@@ -3861,6 +3868,7 @@ hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
    if (!myid)
    {
       char      buffer[100];
+      char      driver_name[PATH_MAX];
       time_t    t = 0;
       struct tm tm_buf;
 
@@ -3874,6 +3882,8 @@ hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
       {
          (void)snprintf(buffer, sizeof(buffer), "(time unavailable)");
       }
-      printf("Date and time: %s\n%s done!\n", buffer, argv0 ? argv0 : "Driver");
+
+      ResolveDriverName(argv0, driver_name, sizeof(driver_name));
+      printf("Date and time: %s\n%s done!\n", buffer, driver_name);
    }
 }

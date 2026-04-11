@@ -4,9 +4,9 @@
 [![Analysis](https://github.com/hypre-space/hypredrive/workflows/Code%20Analysis/badge.svg)](https://github.com/hypre-space/hypredrive/actions/workflows/analysis.yml)
 [![CI](https://github.com/hypre-space/hypredrive/workflows/CI/badge.svg)](https://github.com/hypre-space/hypredrive/actions/workflows/ci.yml)
 
-# *hypredrive*
+![](docs/hypredrive-logo.png)
 
-High-level interface to [hypre](https://github.com/hypre-space/hypre) for solving sparse linear systems of equations. It can be used as:
+*hypredrive* is a flexible framework for high-performance sparse linear algebra through [hypre](https://github.com/hypre-space/hypre). It can be used as:
 
 - **Driver**: `hypredrive-cli` executable with YAML input files, for example [`examples/ex2.yml`](examples/ex2.yml)
 - **Library**: C API via [`include/HYPREDRV.h`](include/HYPREDRV.h) driven by YAML input (file or in-memory), see [`examples/src/`](examples/src/)
