@@ -110,9 +110,9 @@ class Machine:
                     "### Frontier modules",
                     "export MPICH_VERSION=8.1.32",
                     "export MPICH_GPU_SUPPORT_ENABLED=0",
-                    "export LD_LIBRARY_PATH="
-                    "/opt/cray/pe/mpich/${MPICH_VERSION}/gtl/lib/:"
-                    "/opt/cray/pe/mpich/${MPICH_VERSION}/gtl/crayclang/17.0/lib"
+                    "export LD_LIBRARY_PATH=" +
+                    "/opt/cray/pe/mpich/${MPICH_VERSION}/gtl/lib/:" +
+                    "/opt/cray/pe/mpich/${MPICH_VERSION}/gtl/crayclang/17.0/lib" +
                     ":${LD_LIBRARY_PATH}",
                     "module load cray-mpich/${MPICH_VERSION}",
                     "module load rocm/6.2.0",
