@@ -1150,7 +1150,7 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
 
       char next_prefix[4096];
       int  written = snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix,
-                             is_last ? "    " : "|   ");
+                              is_last ? "    " : "|   ");
       if (written < 0 || (size_t)written >= sizeof(next_prefix))
       {
          continue;

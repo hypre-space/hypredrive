@@ -143,7 +143,7 @@ hypredrv_compression_from_filename(const char *filename)
 
 static int
 compress_zlib(size_t isize, const void *input, size_t header_size, void **output_ptr,
-                   size_t *comp_size)
+              size_t *comp_size)
 {
 #ifdef HYPREDRV_USING_ZLIB
    *comp_size = (size_t)compressBound((uLong)isize);
@@ -191,7 +191,7 @@ compress_zlib(size_t isize, const void *input, size_t header_size, void **output
 
 static int
 compress_zstd(size_t isize, const void *input, size_t header_size, void **output_ptr,
-                   size_t *comp_size, int compression_level)
+              size_t *comp_size, int compression_level)
 {
 #ifdef HYPREDRV_USING_ZSTD
    *comp_size = ZSTD_compressBound(isize);
@@ -249,7 +249,7 @@ compress_zstd(size_t isize, const void *input, size_t header_size, void **output
 
 static int
 compress_lz4(size_t isize, const void *input, size_t header_size, void **output_ptr,
-                  size_t *comp_size)
+             size_t *comp_size)
 {
 #ifdef HYPREDRV_USING_LZ4
    /* GCOVR_EXCL_START */
@@ -303,8 +303,8 @@ compress_lz4(size_t isize, const void *input, size_t header_size, void **output_
 }
 
 static int
-compress_lz4hc(size_t isize, const void *input, size_t header_size,
-                    void **output_ptr, size_t *comp_size)
+compress_lz4hc(size_t isize, const void *input, size_t header_size, void **output_ptr,
+               size_t *comp_size)
 {
 #ifdef HYPREDRV_USING_LZ4
    /* GCOVR_EXCL_START */
@@ -359,8 +359,8 @@ compress_lz4hc(size_t isize, const void *input, size_t header_size,
 }
 
 static int
-compress_blosc(size_t isize, const void *input, size_t header_size,
-                    void **output_ptr, size_t *comp_size)
+compress_blosc(size_t isize, const void *input, size_t header_size, void **output_ptr,
+               size_t *comp_size)
 {
 #ifdef HYPREDRV_USING_BLOSC
    blosc_init();
@@ -469,7 +469,7 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
          break;
       case COMP_ZSTD:
          if (!compress_zstd(isize, input, header_size, output_ptr, &comp_size,
-                                 compression_level))
+                            compression_level))
          {
             return;
          }
@@ -510,8 +510,8 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
  *-----------------------------------------------------------------------------*/
 
 static int
-decompress_zlib(size_t isize, const void *input, size_t header_size,
-                     size_t *orig_size, void **output_ptr)
+decompress_zlib(size_t isize, const void *input, size_t header_size, size_t *orig_size,
+                void **output_ptr)
 {
 #ifdef HYPREDRV_USING_ZLIB
    uLongf zorig_size = (uLongf)*orig_size;
@@ -545,8 +545,8 @@ decompress_zlib(size_t isize, const void *input, size_t header_size,
 }
 
 static int
-decompress_zstd(size_t isize, const void *input, size_t header_size,
-                     size_t orig_size, void **output_ptr)
+decompress_zstd(size_t isize, const void *input, size_t header_size, size_t orig_size,
+                void **output_ptr)
 {
 #ifdef HYPREDRV_USING_ZSTD
    size_t result =
@@ -580,7 +580,7 @@ decompress_zstd(size_t isize, const void *input, size_t header_size,
 
 static int
 decompress_lz4(size_t isize, const void *input, size_t header_size, size_t orig_size,
-                    void **output_ptr)
+               void **output_ptr)
 {
 #ifdef HYPREDRV_USING_LZ4
    /* GCOVR_EXCL_START */
@@ -623,8 +623,8 @@ decompress_lz4(size_t isize, const void *input, size_t header_size, size_t orig_
 }
 
 static int
-decompress_blosc(size_t isize, const void *input, size_t header_size,
-                      size_t orig_size, void **output_ptr)
+decompress_blosc(size_t isize, const void *input, size_t header_size, size_t orig_size,
+                 void **output_ptr)
 {
 #ifdef HYPREDRV_USING_BLOSC
    (void)isize;
