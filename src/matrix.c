@@ -36,6 +36,15 @@ enum
    IJMATRIX_MAX_PART_NROWS = 200u * 1000u * 1000u,
 };
 
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+_Static_assert((size_t)IJMATRIX_MAX_PART_NNZ <= SIZE_MAX / sizeof(HYPRE_BigInt),
+               "IJ matrix part nnz fits HYPRE_BigInt allocation");
+_Static_assert((size_t)IJMATRIX_MAX_PART_NNZ <= SIZE_MAX / sizeof(HYPRE_Complex),
+               "IJ matrix part nnz fits HYPRE_Complex allocation");
+_Static_assert((size_t)IJMATRIX_MAX_PART_NROWS <= SIZE_MAX / sizeof(HYPRE_Int),
+               "IJ matrix part nrows fits HYPRE_Int allocation");
+#endif
+
 static int
 IJMatrixValidateHeader(const uint64_t *header, const char *filename)
 {
@@ -75,18 +84,6 @@ IJMatrixValidateHeader(const uint64_t *header, const char *filename)
       hypredrv_ErrorMsgAdd("Matrix nnz exceeds per-part limit in %s (%llu entries)",
                            filename ? filename : "(unknown)",
                            (unsigned long long)header[6]);
-      return 0;
-   }
-   /* GCOVR_EXCL_STOP */
-   /* Unreachable in practice without absurd dimensions; keep metrics honest. */
-   /* GCOVR_EXCL_START */
-   if (header[6] > (uint64_t)SIZE_MAX / sizeof(HYPRE_BigInt) ||
-       header[6] > (uint64_t)SIZE_MAX / sizeof(HYPRE_Complex) ||
-       nrows > (uint64_t)SIZE_MAX / sizeof(HYPRE_Int))
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Matrix part sizes overflow allocation bounds in %s",
-                           filename ? filename : "(unknown)");
       return 0;
    }
    /* GCOVR_EXCL_STOP */

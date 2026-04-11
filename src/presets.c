@@ -69,16 +69,6 @@ PresetKindHeader(hypredrv_PresetKind kind)
 }
 
 /*-----------------------------------------------------------------------------
- * Count number of pre-defined preconditioner variants (presets).
- *-----------------------------------------------------------------------------*/
-
-static size_t
-hypredrv_PresetCount(void)
-{
-   return (sizeof(g_presets) / sizeof(g_presets[0])) + g_num_user_presets;
-}
-
-/*-----------------------------------------------------------------------------
  * Register a new user-defined preset. Returns 0 on success, -1 on failure.
  *-----------------------------------------------------------------------------*/
 

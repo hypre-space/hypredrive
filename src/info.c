@@ -247,18 +247,34 @@ static int
 RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
                   char *buffer, size_t len)
 {
+   enum
+   {
+      RUN_COMMAND_CAPTURE_ARGV_CAP = 32
+   };
    int    pipefd[2]   = {-1, -1};
    pid_t  child_pid   = -1;
    size_t used        = 0;
    int    status      = 0;
    int    read_failed = 0;
    char   discard[1024];
+   char   exe_storage[PATH_MAX];
 
    if (!exe_path || !argv || !buffer || len == 0)
    {
       return 0;
    }
    if (!hypredrv_BinaryPathPrefixIsSafe(exe_path))
+   {
+      return 0;
+   }
+   {
+      int w = snprintf(exe_storage, sizeof(exe_storage), "%s", exe_path);
+      if (w < 0 || (size_t)w >= sizeof(exe_storage))
+      {
+         return 0;
+      }
+   }
+   if (!hypredrv_BinaryPathPrefixIsSafe(exe_storage))
    {
       return 0;
    }
@@ -295,11 +311,30 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
          }
       }
       close(pipefd[1]);
-      if (!hypredrv_BinaryPathPrefixIsSafe(exe_path))
+      if (!hypredrv_BinaryPathPrefixIsSafe(exe_storage))
       {
          _Exit(127);
       }
-      execv(exe_path, argv);
+      if (argv[0] == exe_path)
+      {
+         char *alt_argv[RUN_COMMAND_CAPTURE_ARGV_CAP];
+         int   i;
+
+         for (i = 0; i < RUN_COMMAND_CAPTURE_ARGV_CAP - 1 && argv[i] != NULL; i++)
+         {
+            alt_argv[i] = (i == 0) ? exe_storage : argv[i];
+         }
+         if (argv[i] != NULL)
+         {
+            _Exit(127);
+         }
+         alt_argv[i] = NULL;
+         execv(exe_storage, alt_argv);
+      }
+      else
+      {
+         execv(exe_storage, argv);
+      }
       _Exit(127);
    }
 
@@ -1268,10 +1303,7 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
    MPI_Allreduce(MPI_IN_PLACE, &host_alloc_ok, 1, MPI_INT, MPI_MIN, comm);
    if (!host_alloc_ok)
    {
-      if (allHostnames)
-      {
-         free(allHostnames);
-      }
+      free(allHostnames);
       return;
    }
    MPI_Allgather(hostname, HYPRE_MAX_HOSTNAME, MPI_CHAR, allHostnames, HYPRE_MAX_HOSTNAME,
@@ -1781,14 +1813,8 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
 #endif
    }
 
-   if (allHostnames)
-   {
-      free(allHostnames);
-   }
-   if (gpuBindingAll)
-   {
-      free(gpuBindingAll);
-   }
+   free(allHostnames);
+   free(gpuBindingAll);
 }
 
 static void
@@ -2108,10 +2134,7 @@ PrintCpuTopologyInfo(MPI_Comm comm)
    MPI_Allreduce(MPI_IN_PLACE, &host_alloc_ok, 1, MPI_INT, MPI_MIN, comm);
    if (!host_alloc_ok)
    {
-      if (allHostnames)
-      {
-         free(allHostnames);
-      }
+      free(allHostnames);
       return;
    }
    MPI_Allgather(hostname, HYPRE_MAX_HOSTNAME, MPI_CHAR, allHostnames, HYPRE_MAX_HOSTNAME,
@@ -2219,9 +2242,8 @@ PrintCpuTopologyInfo(MPI_Comm comm)
       }
 
       PrintCacheHierarchy();
-
-      free(allHostnames);
    }
+   free(allHostnames);
 }
 
 static hwloc_obj_t
