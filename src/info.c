@@ -207,7 +207,7 @@ ResolveDriverName(const char *argv0, char *resolved, size_t resolved_len)
       return;
    }
 
-   char expanded[PATH_MAX];
+   char        expanded[PATH_MAX];
    const char *expanded_path = realpath(candidate, expanded);
    if (expanded_path && expanded_path[0] != '\0')
    {
