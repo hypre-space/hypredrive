@@ -972,8 +972,8 @@ def plot_weak_scaling(df, xtype, xlabel, metrics, metric_labels, time_unit,
         else:
             try:
                 ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.debug("Could not set integer x-axis locator; using default locator.", exc_info=exc)
     plt.grid(True)
     plt.tight_layout()
     metric_tag = '_'.join(metrics)
