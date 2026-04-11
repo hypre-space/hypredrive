@@ -23,6 +23,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   source-list-sync:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
@@ -103,7 +107,7 @@ jobs:
 
       - name: Setup ccache (Ubuntu)
         if: startsWith(runner.os, 'Linux')
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
         with:
           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
           restore-keys: |
@@ -219,7 +223,7 @@ jobs:
 
       - name: Cache ccache (Ubuntu)
         if: startsWith(runner.os, 'Linux')
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
 
       - name: Upload logs on failure
         if: failure()
@@ -316,7 +320,7 @@ jobs:
           echo "OMPI_CXX=g++" >> $GITHUB_ENV
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
         with:
           key: ${{ runner.os }}-caliper-${{ github.sha }}
           restore-keys: |
@@ -375,7 +379,7 @@ jobs:
           # Caliper runtime-report outputs to stdout, so it should be visible in the logs
 
       - name: Cache ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
 
       - name: Upload logs on failure
         if: failure()
@@ -412,7 +416,7 @@ jobs:
           echo "OMPI_CXX=g++" >> $GITHUB_ENV
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
         with:
           key: ${{ runner.os }}-mixedint-${{ github.sha }}
           restore-keys: |

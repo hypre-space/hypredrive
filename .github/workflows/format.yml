@@ -23,6 +23,10 @@ on:
       - '.clang-format'
   workflow_dispatch:    # Allow manual triggering
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   format:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}

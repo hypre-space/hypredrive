@@ -1162,6 +1162,12 @@ hypredrv_InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr,
          hypredrv_ErrorMsgAdd("Configuration filename is NULL");
          return;
       }
+      if (!hypredrv_BinaryPathPrefixIsSafe(filename))
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid configuration file path");
+         return;
+      }
       FILE *fp = fopen(filename, "r");
       if (!fp)
       {

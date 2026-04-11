@@ -59,7 +59,7 @@ PrintUsage(const char *argv0)
 static void
 PrintBanner(void)
 {
-   static const bool colors = false;
+   static const int colors = 0;
 
    const char *hypre_lines[] = {
       "██╗  ██╗██╗   ██╗██████╗ ██████╗ ███████╗",
