@@ -55,6 +55,7 @@ PrintUsage(const char *argv0)
    fflush(stdout);
 }
 
+// clang-format off
 static void
 PrintBanner(void)
 {
@@ -105,6 +106,7 @@ PrintBanner(void)
    printf("┘%s\n", W);
    printf("\n");
 }
+// clang-format on
 
 static int
 HelpRequested(int argc, char **argv)
