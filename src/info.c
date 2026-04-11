@@ -99,6 +99,30 @@ static void hypredrv_PrintSystemInfoHwloc(MPI_Comm comm);
 void hypredrv_PrintSystemInfoLegacy(MPI_Comm comm);
 
 static int
+CopyExecutablePathIfSafe(const char *candidate, char *resolved, size_t len)
+{
+   char canon[PATH_MAX];
+
+   if (!candidate || !resolved || len == 0)
+   {
+      return 0;
+   }
+   if (realpath(candidate, canon) && canon[0] != '\0')
+   {
+      if (!hypredrv_BinaryPathPrefixIsSafe(canon))
+      {
+         return 0;
+      }
+      return snprintf(resolved, len, "%s", canon) > 0;
+   }
+   if (!hypredrv_BinaryPathPrefixIsSafe(candidate))
+   {
+      return 0;
+   }
+   return snprintf(resolved, len, "%s", candidate) > 0;
+}
+
+static int
 FindExecutableInPath(const char *name, char *resolved, size_t len)
 {
    const char *path_env = NULL;
@@ -111,9 +135,9 @@ FindExecutableInPath(const char *name, char *resolved, size_t len)
    resolved[0] = '\0';
    if (strchr(name, '/'))
    {
-      if (access(name, X_OK) == 0 && snprintf(resolved, len, "%s", name) > 0)
+      if (access(name, X_OK) == 0)
       {
-         return 1;
+         return CopyExecutablePathIfSafe(name, resolved, len);
       }
       return 0;
    }
@@ -157,11 +181,7 @@ FindExecutableInPath(const char *name, char *resolved, size_t len)
          if (written > 0 && (size_t)written < sizeof(candidate) &&
              access(candidate, X_OK) == 0)
          {
-            if (snprintf(resolved, len, "%s", candidate) <= 0)
-            {
-               return 0;
-            }
-            return 1;
+            return CopyExecutablePathIfSafe(candidate, resolved, len);
          }
 
          if (!next)
@@ -275,6 +295,10 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
          }
       }
       close(pipefd[1]);
+      if (!hypredrv_BinaryPathPrefixIsSafe(exe_path))
+      {
+         _Exit(127);
+      }
       execv(exe_path, argv);
       _Exit(127);
    }

@@ -24,7 +24,7 @@ lgfs = 14            # Legends font size
 
 logger = logging.getLogger(__name__)
 
-def parse_statistics_summary(filename, exclude, source_label=None):
+def parse_statistics_summary(filename, exclude, source_label=None, filter_table=None):
     """
     Parse statistics from a log file.  A single file may contain multiple
     STATISTICS SUMMARY tables (e.g. from separate HYPREDRV objects).  Each
@@ -35,6 +35,10 @@ def parse_statistics_summary(filename, exclude, source_label=None):
         filename: Path to the log file
         exclude: List of entry numbers to exclude
         source_label: Optional label to use for this source (defaults to filename)
+        filter_table: If given, only return results from the table whose name
+            matches this string (e.g. 'fractureMechSolver').  When a filter is
+            active the source label is always the file-level label so that data
+            from multiple files remains distinguishable.
 
     Returns:
         list of (series_list, time_unit) tuples — one per table found.
@@ -47,7 +51,16 @@ def parse_statistics_summary(filename, exclude, source_label=None):
     rows_and_nonzeros_pattern = re.compile(
         r"Solving linear system #\d+ with (\d+) rows and (\d+) nonzeros..."
     )
-    mpi_rank_pattern = re.compile(r"Running on (\d+) MPI rank[s]?")
+    mpi_rank_pattern = re.compile(
+        r"Running on (?P<p1>\d+) MPI rank[s]?|^Num ranks:\s+(?P<p2>\d+)"
+    )
+    # Format: "Linear Solver | Status | Unknowns: X | Nonzeros: Y | ..."
+    unknowns_pattern = re.compile(
+        r"Linear Solver\s*\|[^|]*\|\s*Unknowns:\s*([\d,]+)\s*\|\s*Nonzeros:\s*([\d,]+)"
+    )
+    # "  solverName: Global solution scaling factor" — appears right after the
+    # "Linear Solver |..." line and lets us associate it with a named solver.
+    solver_global_pattern = re.compile(r"^\s+(\S+?):\s+Global solution scaling factor")
     time_unit_pattern = re.compile(r"\s*use_millisec:\s*(\S+)")
 
     # Per-table accumulators
@@ -63,6 +76,13 @@ def parse_statistics_summary(filename, exclude, source_label=None):
     in_summary_table = False
     time_unit = "[s]"
     nranks = 1
+    # Pper-solver row/nonzero counts: solver_name -> (rows, nonzeros)
+    # Populated by pairing "Linear Solver |...| Unknowns: X |..." with the
+    # "solverName: Global solution scaling factor" line that follows it.
+    table_default_rows = {}      # solver_name -> rows count
+    table_default_nonzeros = {}  # solver_name -> nonzeros count
+    _pending_rows = None         # rows parsed from most recent "Unknowns:" line
+    _pending_nz   = None
 
     with open(filename, 'r') as fn:
         for line in fn:
@@ -72,15 +92,35 @@ def parse_statistics_summary(filename, exclude, source_label=None):
                 else:
                     time_unit = "[s]"
 
-            if mpi_rank_match := mpi_rank_pattern.match(line):
-                nranks = int(mpi_rank_match.group(1))
-                logger.debug(f"Detected MPI ranks: {nranks = }")
+            if mpi_rank_search := mpi_rank_pattern.search(line):
+                raw_rank = mpi_rank_search.group('p1') or mpi_rank_search.group('p2')
+                nranks = int(raw_rank)
+                logger.debug(f"Detected MPI ranks: {nranks}")
                 continue
 
+            # Logic for matching solver unknowns
             if rows_nonzeros_match := rows_and_nonzeros_pattern.match(line):
                 rows.append(int(rows_nonzeros_match.group(1)))
                 nonzeros.append(int(rows_nonzeros_match.group(2)))
                 continue
+
+            # "Linear Solver | ... | Unknowns: X | Nonzeros: Y |..." line.
+            # Save the counts; we'll associate them with the solver on the next
+            # "solverName: Global solution scaling factor" line.
+            if unknowns_match := unknowns_pattern.search(line):
+                # Strip commas if numbers look like "1,000,000"
+                _pending_rows = int(unknowns_match.group(1).replace(',', ''))
+                _pending_nz   = int(unknowns_match.group(2).replace(',', ''))
+                continue
+
+            if _pending_rows is not None:
+                if solver_global_match := solver_global_pattern.match(line):
+                    sname = solver_global_match.group(1)
+                    table_default_rows[sname]     = _pending_rows
+                    table_default_nonzeros[sname] = _pending_nz
+                    _pending_rows = None
+                    _pending_nz   = None
+                    continue
 
             if summary_match := summary_pattern.match(line):
                 # Flush previous table (if any)
@@ -138,8 +178,18 @@ def parse_statistics_summary(filename, exclude, source_label=None):
 
     if not tables:
         if not statistics_found:
-            raise ValueError(f"Statistics info not found in {filename = } ")
-        raise ValueError(f"Data info not found in {filename = } ")
+            raise ValueError("no STATISTICS SUMMARY found")
+        raise ValueError("STATISTICS SUMMARY found but contained no data")
+
+    # Optionally restrict to a single named table
+    if filter_table is not None:
+        filtered = [(tn, d, up) for tn, d, up in tables if tn == filter_table]
+        if not filtered:
+            available = [tn or "(unnamed)" for tn, _, _ in tables]
+            raise ValueError(
+                f"table '{filter_table}' not found; available: {available}"
+            )
+        tables = filtered
 
     # Build source labels for each table
     base_label = source_label if source_label is not None else filename
@@ -148,7 +198,11 @@ def parse_statistics_summary(filename, exclude, source_label=None):
     results = []
     global_entry_offset = 0  # track cumulative row offset for rows/nonzeros lookup
     for table_idx, (table_name, data, use_path_column) in enumerate(tables):
-        if table_name:
+        if filter_table is not None:
+            # Filtering active: always use the file-level label so that data
+            # from multiple files remains distinguishable.
+            label = base_label
+        elif table_name:
             label = table_name if num_tables > 1 else base_label
         elif num_tables > 1:
             label = f"{base_label} ({table_idx + 1})"
@@ -169,12 +223,21 @@ def parse_statistics_summary(filename, exclude, source_label=None):
 
             gi = global_entry_offset + i  # global index for rows/nonzeros
             build_time = float(row[1]) if row[1] not in (None, "") else None
+
+            # Per-entry rows/nonzeros from "Solving linear system..." (hypredrive format).
+            # Fall back to the per-solver map built from "Unknowns:" lines when the index-based list is empty.
+            if gi < len(rows):
+                entry_rows = int(rows[gi])
+                entry_nz   = int(nonzeros[gi]) if gi < len(nonzeros) else None
+            else:
+                entry_rows = table_default_rows.get(table_name)
+                entry_nz   = table_default_nonzeros.get(table_name)
             entry_data = {
                 'entry': entry_num,
                 'source': label,
                 'nranks': int(nranks),
-                'rows': int(rows[gi]) if gi < len(rows) else None,
-                'nonzeros': int(nonzeros[gi]) if gi < len(nonzeros) else None,
+                'rows': entry_rows,
+                'nonzeros': entry_nz,
                 'build': build_time,
                 'setup': float(row[2]),
                 'solve': float(row[3]),
@@ -766,6 +829,156 @@ def plot_throughput(df, cumulative, xtype, xlabel, time_unit, use_title=False, s
     plt.tight_layout()
     save_and_show_plot(f"throughput_{agg_str}{savefig}")
 
+def plot_weak_scaling(df, xtype, xlabel, metrics, metric_labels, time_unit,
+                      agg='mean', errbar=False, use_title=False, savefig=None,
+                      linestyle='auto', markersize=None, title=None,
+                      log_x=False, log_y=False, show_ideal=False,
+                      annotate_iters=False):
+    """
+    Plots weak scalability: metrics aggregated by xtype (typically nranks) across files.
+
+    Parameters:
+    - df: DataFrame with an xtype column and the requested metric columns.
+    - xtype: Column to group by and use as x-axis (e.g. 'nranks').
+    - xlabel: X-axis label string.
+    - metrics: List of metric column names to plot (e.g. ['setup', 'solve', 'total']).
+    - metric_labels: Corresponding legend/axis labels for each metric.
+    - time_unit: Time unit string used in the y-axis label for time metrics.
+    - agg: Aggregation applied within each xtype group ('mean', 'median', 'min', 'max', 'sum').
+    - errbar: If True, shade the min–max range around each line.
+    - show_ideal: If True, draw a dashed horizontal reference at the smallest-xtype value
+        (ideal weak scaling = constant metric regardless of problem size).
+    - annotate_iters: If True and 'iter_times' is among the metrics, annotate each point on
+        the iter_times curve with the aggregated average iteration count.
+    """
+    logger.debug(f"Plotting weak scaling (xtype={xtype}, metrics={metrics}, agg={agg})")
+
+    if df[xtype].isna().all():
+        raise ValueError(f"Column '{xtype}' has no valid data for weak scaling plot.")
+
+    # Determine y-axis label
+    time_metrics = {'setup', 'solve', 'total', 'build', 'iter_times'}
+    if metrics == ['iters']:
+        ylabel = 'Iterations'
+    elif metrics == ['throughput']:
+        unit_str = 'DOFs/s' if time_unit == '[s]' else f'DOFs/{time_unit.strip("[]")}'
+        ylabel = f'Throughput ({unit_str})'
+    elif all(m in time_metrics for m in metrics):
+        ylabel = f'Time {time_unit}'
+    else:
+        ylabel = 'Value'
+
+    # Build aggregation spec: always compute agg + min/max for optional errbar.
+    # Also pull in 'iters' (mean) when annotation is requested for iter_times.
+    agg_spec = {m: [agg, 'min', 'max'] for m in metrics if m in df.columns}
+    missing = [m for m in metrics if m not in df.columns]
+    if missing:
+        raise ValueError(f"Metric column(s) not found in data: {missing}")
+    need_iters_agg = annotate_iters and 'iter_times' in metrics and 'iters' in df.columns
+    if need_iters_agg:
+        agg_spec['iters'] = ['mean']
+
+    grouped = df.groupby(xtype, as_index=False).agg(agg_spec).sort_values(xtype)
+    # Flatten MultiIndex columns produced by multi-function agg
+    grouped.columns = [
+        '_'.join(str(c) for c in col).rstrip('_') if isinstance(col, tuple) else col
+        for col in grouped.columns
+    ]
+
+    # Build per-x nranks array for secondary tick labels (when xtype is not nranks itself)
+    nranks_per_x = None
+    if xtype != 'nranks' and 'nranks' in df.columns:
+        nranks_lookup = df.groupby(xtype)['nranks'].first()
+        nranks_per_x = grouped[xtype].map(nranks_lookup).to_numpy(dtype=float, na_value=float('nan'))
+
+    plt.figure(figsize=fgs)
+    ms = markersize if markersize is not None else plt.rcParams['lines.markersize']
+
+    def resolve_ls(user_ls, default_ls='-'):
+        if user_ls == 'auto':
+            return default_ls
+        if user_ls == 'none':
+            return 'None'
+        return user_ls
+
+    import numpy as np
+
+    ls = resolve_ls(linestyle)
+    # Cast to plain float to avoid pandas nullable-integer/extension-array
+    # incompatibilities with matplotlib (fill_between, axhline, etc.)
+    x = grouped[xtype].to_numpy(dtype=float, na_value=float('nan'))
+
+    ax = plt.gca()
+    for metric, mlabel in zip(metrics, metric_labels):
+        agg_col = f'{metric}_{agg}'
+        y = grouped[agg_col].to_numpy(dtype=float, na_value=float('nan'))
+        ax.plot(x, y, marker='o', linestyle=ls, markersize=ms, label=mlabel)
+
+        if errbar:
+            y_lo = grouped[f'{metric}_min'].to_numpy(dtype=float, na_value=float('nan'))
+            y_hi = grouped[f'{metric}_max'].to_numpy(dtype=float, na_value=float('nan'))
+            ax.fill_between(x, y_lo, y_hi, alpha=0.2)
+
+        if show_ideal and len(x) > 0:
+            ref = y[0]
+            ax.axhline(ref, linestyle='--', linewidth=1, alpha=0.6,
+                       label=f'Ideal ({mlabel})')
+
+        if annotate_iters and metric == 'iter_times' and need_iters_agg:
+            iters_avg = grouped['iters_mean'].to_numpy(dtype=float, na_value=float('nan'))
+            for xi, yi, ni in zip(x, y, iters_avg):
+                if np.isnan(xi) or np.isnan(yi) or np.isnan(ni):
+                    continue
+                ax.annotate(
+                    f"{ni:.0f}",
+                    xy=(xi, yi),
+                    xytext=(0, 8),
+                    textcoords='offset points',
+                    ha='center', va='bottom',
+                    fontsize=max(alfs - 4, 8),
+                    bbox=dict(boxstyle='round,pad=0.25', facecolor='white',
+                              edgecolor='gray', alpha=0.75),
+                )
+
+    plt.legend(loc='best', fontsize=lgfs)
+
+    if title:
+        plt.title(title, fontsize=tfs, fontweight='bold')
+    elif use_title:
+        agg_str_label = agg.capitalize()
+        plt.title(f'Weak Scaling — {agg_str_label} vs {xlabel}', fontsize=tfs, fontweight='bold')
+
+    plt.ylabel(ylabel, fontsize=alfs)
+    plt.xlabel(xlabel, fontsize=alfs)
+    if log_x:
+        ax.set_xscale('log')
+    if log_y:
+        ax.set_yscale('log')
+    else:
+        if metrics != ['iters']:
+            plt.ylim(bottom=0.0)
+        else:
+            plt.ylim(bottom=0)
+    ax.tick_params(axis='x', labelsize=alfs)
+    ax.tick_params(axis='y', labelsize=alfs)
+    if not log_x:
+        if nranks_per_x is not None and not np.isnan(nranks_per_x).all():
+            ax.set_xticks(x)
+            ax.set_xticklabels(
+                [f"{int(xi):,}\n({int(ni):,} ranks)" if not (np.isnan(xi) or np.isnan(ni)) else f"{xi}"
+                 for xi, ni in zip(x, nranks_per_x)],
+                fontsize=alfs,
+            )
+        else:
+            try:
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+            except Exception as exc:
+                logging.debug("Could not set integer x-axis locator; using default locator.", exc_info=exc)
+    plt.grid(True)
+    plt.tight_layout()
+    metric_tag = '_'.join(metrics)
+    save_and_show_plot(f"weakscaling_{metric_tag}_{savefig}" if savefig else None)
+
 def check_mode_exact_match(mode, word):
     # Split the mode string into parts separated by '+'
     parts = mode.split('+')
@@ -854,21 +1067,52 @@ def main():
               'nl_step': "Nonlinear step"}
 
     # List of pre-defined modes:
-    mode_choices = ('iters', 'times', 'iters-and-times', 'setup', 'solve', 'total', 'throughput', 'bar')
+    mode_choices = ('iters', 'times', 'iters-and-times', 'setup', 'solve', 'total', 'throughput', 'bar', 'weak-scaling')
 
-    # Parser for plus-separated multiple modes, e.g., "setup+solve"
+    # Metric qualifiers accepted after 'weak-scaling+' or 'bar+'
+    ws_metric_choices  = ('setup', 'solve', 'total', 'times', 'iters', 'throughput', 'iter-times')
+    bar_metric_choices = ('setup', 'solve', 'total', 'iters')
+
+    # Parser for plus-separated modes.
+    # Accepted forms:
+    #   • plain modes combined with '+': "setup+solve"
+    #   • "weak-scaling[+metric+...]"  e.g. "weak-scaling+total+iter-times"
+    #   • "bar[+metric]"               e.g. "bar+total"
     def parse_modes(value):
-        parts = value.split('+')
+        parts = [p.replace('_', '-') for p in value.split('+')]
+        if parts[0] == 'weak-scaling':
+            metrics = parts[1:]
+            invalid = [p for p in metrics if p not in ws_metric_choices]
+            if invalid:
+                raise argparse.ArgumentTypeError(
+                    f"Invalid weak-scaling metric(s): {', '.join(invalid)}. "
+                    f"Valid: {', '.join(ws_metric_choices)}"
+                )
+            return '+'.join(['weak-scaling'] + metrics)
+        if parts[0] == 'bar':
+            metrics = parts[1:]
+            if len(metrics) > 1:
+                raise argparse.ArgumentTypeError("'bar' mode accepts at most one metric qualifier")
+            if metrics and metrics[0] not in bar_metric_choices:
+                raise argparse.ArgumentTypeError(
+                    f"Invalid bar metric: '{metrics[0]}'. "
+                    f"Valid: {', '.join(bar_metric_choices)}"
+                )
+            return '+'.join(['bar'] + metrics)
         invalid = [p for p in parts if p not in mode_choices]
         if invalid:
             raise argparse.ArgumentTypeError(f"Invalid mode(s): {', '.join(invalid)}. Valid: {', '.join(mode_choices)}")
-        return value
+        return '+'.join(parts)
 
     # Set up argument parser
     parser = argparse.ArgumentParser(description="Parse the Statistics Summary produced by hypredrive")
     parser.add_argument("-f", "--filename", type=str, nargs="+", required=True, help="Path to the log file")
     parser.add_argument("-e", "--exclude", type=int, nargs="+", default=[], help="Exclude certain entries from the statistics")
-    parser.add_argument("-m", "--mode", type=parse_modes, default='iters-and-times', help="What information to plot; combine multiple with '+' (e.g., 'setup+solve')")
+    parser.add_argument("-m", "--mode", type=parse_modes, default='iters-and-times',
+                        help="What to plot. Combine plain modes with '+' (e.g. 'setup+solve'). "
+                             "For weak-scaling append metric qualifiers: 'weak-scaling+total+iter-times'. "
+                             "For bar append the metric: 'bar+iters'. "
+                             f"Plain modes: {', '.join(mode_choices)}.")
     parser.add_argument("-t", "--xtype", type=str, default='entry', choices=labels.keys(), help="Variable type for the abscissa")
     parser.add_argument("-l", "--xlabel", type=str, default=None, help="Label for the abscissa")
     parser.add_argument("-s", "--savefig", default=None, help="Save figure(s) given this name suffix")
@@ -884,8 +1128,23 @@ def main():
     parser.add_argument("--tsteps", type=str, default=None, help="Timesteps file mapping timestep index to starting ls id")
     parser.add_argument("--tsteps-aggregate", action="store_true",
                         help="Aggregate stats within each timestep (requires --tsteps)")
-    parser.add_argument("-p", "--phase", type=str, default='total', choices=['setup', 'solve', 'total', 'iters'],
-                        help="Phase for bar mode: setup, solve, total (setup+solve), or iters")
+    parser.add_argument("--table-name", type=str, default=None,
+                        help="Select a specific named statistics table from files that contain "
+                             "multiple tables (e.g. 'fractureMechSolver'). When set the source "
+                             "label always reflects the input file, not the table name.")
+    parser.add_argument("--weak-scaling-agg", type=str, default='mean',
+                        choices=['mean', 'median', 'min', 'max', 'sum'],
+                        help="Aggregation applied to each metric within a problem-size group "
+                             "for weak-scaling plots (default: mean)")
+    parser.add_argument("--weak-scaling-errbar", action='store_true',
+                        help="Shade the min–max range around the aggregated line in "
+                             "weak-scaling plots")
+    parser.add_argument("--weak-scaling-ideal", action='store_true',
+                        help="Draw a dashed reference line at the smallest problem-size value "
+                             "(ideal weak scaling = constant metric)")
+    parser.add_argument("--weak-scaling-annotate-iters", action='store_true',
+                        help="Annotate each point on the iter-times curve with the avg. "
+                             "iteration count (only effective when iter-times is plotted)")
     parser.add_argument("--log-x", action="store_true", help="Use log scale for X axis")
     parser.add_argument("--log-y", action="store_true", help="Use log scale for Y axis")
     parser.add_argument("-v", "--verbose", action='count', default=0, help='Increase verbosity (-v=INFO, -vv=DEBUG)')
@@ -943,13 +1202,21 @@ def main():
             # Single file: use basename
             source_label = os.path.basename(filename)
 
-        table_results = parse_statistics_summary(filename, args.exclude, source_label)
+        try:
+            table_results = parse_statistics_summary(filename, args.exclude, source_label,
+                                                          filter_table=args.table_name)
+        except ValueError as exc:
+            logger.warning(f"Skipping {filename}: {exc}")
+            continue
         for series_list, time_unit in table_results:
             data.extend(series_list)
     num_input_files  = len(args.filename)
     num_data_entries = len(data)
     logger.info(f"Parsed {num_input_files = }")
     logger.info(f"Found {num_data_entries = }")
+
+    if not data:
+        sys.exit("Error: no usable statistics data found in any of the provided files.")
 
     # Assemble all series into a single DataFrame
     df = pd.concat(data, axis=1).T.reset_index(drop=True)
@@ -1044,7 +1311,7 @@ def main():
             df.drop(columns=['_nl_count'], inplace=True)
             if args.xtype == 'entry':
                 args.xtype = 'timestep'
-        elif args.xtype == 'entry':
+        elif args.xtype == 'entry' and not check_mode_exact_match(args.mode, 'weak-scaling'):
             args.xtype = 'ls_id'
     elif args.tsteps_aggregate:
         raise ValueError("--tsteps-aggregate requires --tsteps or Path column data")
@@ -1076,9 +1343,71 @@ def main():
     savefig = args.savefig if args.savefig != "." else f"{(args.filename)[0].split('.')[0]}.png"
 
     # Produce plots
+    if check_mode_exact_match(args.mode, 'weak-scaling'):
+        mode_parts = args.mode.split('+')
+        # metrics follow 'weak-scaling'; default to 'total' when none specified
+        phase = '+'.join(mode_parts[1:]) if len(mode_parts) > 1 else 'total'
+
+        # Determine x-axis: default to rows (problem size) when user left --xtype at
+        # its default 'entry'.  Fall back to nranks if rows was not parsed.
+        if args.xtype != 'entry':
+            ws_xtype = args.xtype
+        elif 'rows' in df.columns and df['rows'].notna().any():
+            ws_xtype = 'rows'
+        else:
+            ws_xtype = 'nranks'
+            logger.warning("rows not available; using nranks as weak-scaling x-axis")
+        ws_xlabel = args.xlabel if args.xlabel else labels.get(ws_xtype, ws_xtype)
+
+        df = df.copy()
+        ws_metrics, ws_mlabels = [], []
+        for ph in phase.split('+'):
+            if ph == 'iters':
+                ws_metrics.append('iters')
+                ws_mlabels.append('Iterations')
+            elif ph in ('setup', 'solve', 'total'):
+                ws_metrics.append(ph)
+                ws_mlabels.append(ph.capitalize())
+            elif ph == 'times':
+                ws_metrics += ['setup', 'solve', 'total']
+                ws_mlabels += ['Setup', 'Solve', 'Total']
+            elif ph == 'throughput':
+                df['throughput'] = df.apply(
+                    lambda r: r['rows'] / r['total']
+                    if (pd.notna(r['rows']) and r['rows'] > 0
+                        and pd.notna(r['total']) and r['total'] > 0)
+                    else None,
+                    axis=1,
+                )
+                unit_str = 'DOFs/s' if time_unit == '[s]' else f'DOFs/{time_unit.strip("[]")}'
+                ws_metrics.append('throughput')
+                ws_mlabels.append(f'Throughput ({unit_str})')
+            elif ph == 'iter-times':
+                df['iter_times'] = df.apply(
+                    lambda r: r['solve'] / r['iters']
+                    if (pd.notna(r['iters']) and r['iters'] > 0
+                        and pd.notna(r['solve']))
+                    else None,
+                    axis=1,
+                )
+                ws_metrics.append('iter_times')
+                ws_mlabels.append(f'Solve time / iter {time_unit}')
+
+        plot_weak_scaling(df, ws_xtype, ws_xlabel, ws_metrics, ws_mlabels, time_unit,
+                          agg=args.weak_scaling_agg,
+                          errbar=args.weak_scaling_errbar,
+                          use_title=args.use_title,
+                          savefig=savefig,
+                          linestyle=args.linestyle,
+                          markersize=args.markersize,
+                          title=args.title,
+                          log_x=args.log_x,
+                          log_y=args.log_y,
+                          show_ideal=args.weak_scaling_ideal,
+                          annotate_iters=args.weak_scaling_annotate_iters)
+        return
+
     if check_mode_exact_match(args.mode, 'bar'):
-        if args.mode != 'bar':
-            raise ValueError("Mode 'bar' cannot be combined with other modes.")
         if len(args.filename) != 1:
             raise ValueError("Mode 'bar' expects a single input file.")
         if not args.legend_names:
@@ -1086,7 +1415,9 @@ def main():
         expected = len(df)
         if len(args.legend_names) != expected:
             raise ValueError(f"Number of legend names ({len(args.legend_names)}) must match number of entries ({expected}) after exclusions.")
-        plot_bar_time_metric(df, args.phase, time_unit, args.legend_names, args.use_title, savefig, args.title)
+        mode_parts = args.mode.split('+')
+        bar_metric = mode_parts[1] if len(mode_parts) > 1 else 'total'
+        plot_bar_time_metric(df, bar_metric, time_unit, args.legend_names, args.use_title, savefig, args.title)
         return
 
     log_x = args.log_x

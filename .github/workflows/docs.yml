@@ -17,6 +17,10 @@ on:
       - 'cmake/HYPREDRV_Docs.cmake'
   workflow_dispatch:    # Allow manual triggering
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   sphinx:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
