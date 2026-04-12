@@ -1291,8 +1291,7 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
 
       if (!hypredrv_BinaryPathPrefixIsSafe(argv[config_idx]) ||
           strstr(argv[config_idx], "..") != NULL ||
-          strchr(argv[config_idx], '/') != NULL ||
-          strchr(argv[config_idx], '\\') != NULL)
+          strchr(argv[config_idx], '/') != NULL || strchr(argv[config_idx], '\\') != NULL)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid configuration file path");
