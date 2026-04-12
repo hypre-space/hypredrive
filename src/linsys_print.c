@@ -1207,12 +1207,12 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
 
    {
       size_t max_base = sizeof(A_name) - 1u - 4u;
-      int    prec     = (max_base > (size_t)INT_MAX) ? INT_MAX : (int)max_base;
+      int    prec     = (int)max_base;
       (void)snprintf(A_name, sizeof(A_name), "%.*s.out", prec, A_base);
    }
    {
       size_t max_base = sizeof(b_name) - 1u - 4u;
-      int    prec     = (max_base > (size_t)INT_MAX) ? INT_MAX : (int)max_base;
+      int    prec     = (int)max_base;
       (void)snprintf(b_name, sizeof(b_name), "%.*s.out", prec, b_base);
    }
    {
