@@ -1217,7 +1217,7 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
    }
    {
       size_t max_base = sizeof(d_name) - 1u - 4u;
-      int    prec     = (max_base > (size_t)INT_MAX) ? INT_MAX : (int)max_base;
+      int    prec     = (int)max_base;
       (void)snprintf(d_name, sizeof(d_name), "%.*s.out", prec, d_base);
    }
 
