@@ -107,7 +107,7 @@ CopyExecutablePathIfSafe(const char *candidate, char *resolved, size_t len)
    {
       return 0;
    }
-   if (realpath(candidate, canon) && canon[0] != '\0')
+   if (realpath(candidate, canon) && canon[0] == '/')
    {
       if (!hypredrv_BinaryPathPrefixIsSafe(canon))
       {
@@ -115,17 +115,16 @@ CopyExecutablePathIfSafe(const char *candidate, char *resolved, size_t len)
       }
       return snprintf(resolved, len, "%s", canon) > 0;
    }
-   if (!hypredrv_BinaryPathPrefixIsSafe(candidate))
-   {
-      return 0;
-   }
-   return snprintf(resolved, len, "%s", candidate) > 0;
+
+   return 0;
 }
 
 static int
 FindExecutableInPath(const char *name, char *resolved, size_t len)
 {
-   const char *path_env = NULL;
+   static const char *k_safe_exec_dirs[] = {
+      "/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin", "/opt/rocm/bin",
+   };
 
    if (!name || !name[0] || !resolved || len == 0)
    {
@@ -142,53 +141,20 @@ FindExecutableInPath(const char *name, char *resolved, size_t len)
       return 0;
    }
 
-   path_env = getenv("PATH");
-   if (!path_env || !path_env[0])
    {
-      return 0;
-   }
-
-   {
-      const char *segment = path_env;
-      while (segment && *segment)
+      size_t i;
+      for (i = 0; i < sizeof(k_safe_exec_dirs) / sizeof(k_safe_exec_dirs[0]); i++)
       {
-         const char *next = strchr(segment, ':');
-         size_t      n    = next ? (size_t)(next - segment) : strlen(segment);
-         char        dir[PATH_MAX];
-         char        candidate[PATH_MAX];
-         int         written = 0;
+         char candidate[PATH_MAX];
+         int  written = 0;
 
-         if (n == 0)
-         {
-            snprintf(dir, sizeof(dir), ".");
-         }
-         else if (n < sizeof(dir))
-         {
-            memcpy(dir, segment, n);
-            dir[n] = '\0';
-         }
-         else
-         {
-            if (!next)
-            {
-               break;
-            }
-            segment = next + 1;
-            continue;
-         }
-
-         written = snprintf(candidate, sizeof(candidate), "%s/%s", dir, name);
+         written =
+            snprintf(candidate, sizeof(candidate), "%s/%s", k_safe_exec_dirs[i], name);
          if (written > 0 && (size_t)written < sizeof(candidate) &&
              access(candidate, X_OK) == 0)
          {
             return CopyExecutablePathIfSafe(candidate, resolved, len);
          }
-
-         if (!next)
-         {
-            break;
-         }
-         segment = next + 1;
       }
    }
 
