@@ -1244,6 +1244,96 @@ FindConfigIndex(int argc, char **argv)
    return -1;
 }
 
+static int
+ConfigPathIsUnderRoot(const char *path, const char *root)
+{
+   size_t root_len;
+
+   if (!path || !root)
+   {
+      return 0;
+   }
+   root_len = strlen(root);
+   if (root_len == 0 || strncmp(path, root, root_len) != 0)
+   {
+      return 0;
+   }
+
+   return ((path[root_len] == '\0') || (path[root_len] == '/')) != 0;
+}
+
+static bool
+LoadResolvedConfigPath(const char *candidate, char *cfg_path, size_t cfg_path_size)
+{
+   char *dirname  = NULL;
+   char *basename = NULL;
+   char *root_dir = NULL;
+   char *resolved = NULL;
+   bool  ok       = false;
+
+   if (!candidate || !cfg_path || cfg_path_size == 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid configuration file path");
+      return false;
+   }
+   if (!hypredrv_BinaryPathPrefixIsSafe(candidate) || strstr(candidate, "..") != NULL)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid configuration file path");
+      return false;
+   }
+
+   hypredrv_SplitFilename(candidate, &dirname, &basename);
+   if (!dirname || !basename || basename[0] == '\0')
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid configuration file path");
+      goto cleanup;
+   }
+
+   root_dir = realpath(dirname, NULL);
+   if (!root_dir)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Configuration file not found: '%s'", candidate);
+      goto cleanup;
+   }
+
+   resolved = realpath(candidate, NULL);
+   if (!resolved)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Configuration file not found: '%s'", candidate);
+      goto cleanup;
+   }
+   if (!ConfigPathIsUnderRoot(resolved, root_dir) ||
+       !hypredrv_BinaryPathPrefixIsSafe(resolved) || strstr(resolved, "..") != NULL)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid configuration file path");
+      goto cleanup;
+   }
+   {
+      int w = snprintf(cfg_path, cfg_path_size, "%s", resolved);
+      if (w < 0 || (size_t)w >= cfg_path_size)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Configuration file path too long");
+         goto cleanup;
+      }
+   }
+
+   ok = true;
+
+cleanup:
+   free(resolved);
+   free(root_dir);
+   free(basename);
+   free(dirname);
+   return ok;
+}
+
 static bool
 LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_indent_ptr,
                char **text_ptr, char **config_dir_ptr)
@@ -1254,25 +1344,8 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
    {
       char cfg_path[MAX_FILENAME_LENGTH];
 
-      if (!hypredrv_BinaryPathPrefixIsSafe(argv[0]) || strstr(argv[0], "..") != NULL)
+      if (!LoadResolvedConfigPath(argv[0], cfg_path, sizeof(cfg_path)))
       {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid configuration file path");
-         return false;
-      }
-      {
-         int w = snprintf(cfg_path, sizeof(cfg_path), "%s", argv[0]);
-         if (w < 0 || (size_t)w >= sizeof(cfg_path))
-         {
-            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            hypredrv_ErrorMsgAdd("Configuration file path too long");
-            return false;
-         }
-      }
-      if (!hypredrv_BinaryPathPrefixIsSafe(cfg_path) || strstr(cfg_path, "..") != NULL)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid configuration file path");
          return false;
       }
       hypredrv_InputArgsRead(comm, cfg_path, base_indent_ptr, text_ptr);
@@ -1289,26 +1362,8 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
    {
       char cfg_path[MAX_FILENAME_LENGTH];
 
-      if (!hypredrv_BinaryPathPrefixIsSafe(argv[config_idx]) ||
-          strstr(argv[config_idx], "..") != NULL)
+      if (!LoadResolvedConfigPath(argv[config_idx], cfg_path, sizeof(cfg_path)))
       {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid configuration file path");
-         return false;
-      }
-      {
-         int w = snprintf(cfg_path, sizeof(cfg_path), "%s", argv[config_idx]);
-         if (w < 0 || (size_t)w >= sizeof(cfg_path))
-         {
-            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            hypredrv_ErrorMsgAdd("Configuration file path too long");
-            return false;
-         }
-      }
-      if (!hypredrv_BinaryPathPrefixIsSafe(cfg_path) || strstr(cfg_path, "..") != NULL)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid configuration file path");
          return false;
       }
       hypredrv_InputArgsRead(comm, cfg_path, base_indent_ptr, text_ptr);
