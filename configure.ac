@@ -1,6 +1,6 @@
 AC_PREREQ([2.69])
 AC_INIT([hypredrive],
-        [0.1],
+        [0.2],
         [https://github.com/hypre-space/hypredrive/issues],
         [hypredrive],
         [https://github.com/hypre-space/hypredrive])
