@@ -1254,7 +1254,7 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
    {
       char cfg_path[MAX_FILENAME_LENGTH];
 
-      if (!hypredrv_BinaryPathPrefixIsSafe(argv[0]))
+      if (!hypredrv_BinaryPathPrefixIsSafe(argv[0]) || strstr(argv[0], "..") != NULL)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid configuration file path");
@@ -1269,7 +1269,7 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
             return false;
          }
       }
-      if (!hypredrv_BinaryPathPrefixIsSafe(cfg_path))
+      if (!hypredrv_BinaryPathPrefixIsSafe(cfg_path) || strstr(cfg_path, "..") != NULL)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid configuration file path");
@@ -1289,7 +1289,8 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
    {
       char cfg_path[MAX_FILENAME_LENGTH];
 
-      if (!hypredrv_BinaryPathPrefixIsSafe(argv[config_idx]))
+      if (!hypredrv_BinaryPathPrefixIsSafe(argv[config_idx]) ||
+          strstr(argv[config_idx], "..") != NULL)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid configuration file path");
@@ -1304,7 +1305,7 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
             return false;
          }
       }
-      if (!hypredrv_BinaryPathPrefixIsSafe(cfg_path))
+      if (!hypredrv_BinaryPathPrefixIsSafe(cfg_path) || strstr(cfg_path, "..") != NULL)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid configuration file path");
