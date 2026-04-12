@@ -306,13 +306,11 @@ def read_vtk_file(vtk_path):
                 xml_content += '\n  </AppendedData>\n</VTKFile>'
             else:
                 # Fallback
-                xml_end = tag_end
-                xml_content = raw_content[:xml_end].decode('utf-8', errors='ignore')
+                xml_content = raw_content[:tag_end].decode('utf-8', errors='ignore')
                 xml_content += '\n  </AppendedData>\n</VTKFile>'
         else:
             # Pure ASCII file
-            xml_end = len(raw_content)
-            xml_content = raw_content[:xml_end].decode('utf-8', errors='ignore')
+            xml_content = raw_content.decode('utf-8', errors='ignore')
 
     # Clean XML content - remove any binary contamination
     # Keep only printable ASCII and common XML characters, but be more aggressive

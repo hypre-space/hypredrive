@@ -132,8 +132,6 @@ def read_matrix_coordinate(parts: List[str]) -> Tuple[np.ndarray, np.ndarray, np
                 try:
                     v0, _, _, v3 = map(int, first_values)
                     if v0 == 0 and v3 > 0:  # Common header format
-                        nrows_part = v3
-                        ncols_part = v3  # Assume square if not specified
                         header_read = True
                 except ValueError:
                     header_read = False
@@ -327,6 +325,8 @@ def compute_partition_boundaries(dofmap: np.ndarray, reorder_list: List[int],
     """
     if mapping is None:
         mapping = create_reordering_map(dofmap, reorder_list)
+    elif mapping.shape[0] != dofmap.shape[0]:
+        raise ValueError("Provided mapping length must match dofmap length")
     
     ndoms = len(reorder_list)
     boundaries = np.zeros(ndoms + 1, dtype=np.int64)
@@ -346,6 +346,7 @@ def compute_partition_boundaries(dofmap: np.ndarray, reorder_list: List[int],
     boundaries[0] = 0
     for i in range(ndoms):
         boundaries[i + 1] = boundaries[i] + partition_counts.get(i, 0)
+    boundaries[ndoms] = mapping.shape[0]
     
     return boundaries
 
