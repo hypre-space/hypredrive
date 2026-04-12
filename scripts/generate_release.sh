@@ -61,10 +61,11 @@ fi
 # -- locate files ------------------------------------------------------------
 
 CMAKE_FILE="${REPO_ROOT}/CMakeLists.txt"
+CONFIGURE_AC="${REPO_ROOT}/configure.ac"
 CONF_PY="${REPO_ROOT}/docs/usrman-src/conf.py"
 CHANGELOG="${REPO_ROOT}/CHANGELOG"
 
-for f in "$CMAKE_FILE" "$CONF_PY" "$CHANGELOG"; do
+for f in "$CMAKE_FILE" "$CONFIGURE_AC" "$CONF_PY" "$CHANGELOG"; do
   [[ -f "$f" ]] || die "Expected file not found: $f"
 done
 
@@ -72,6 +73,24 @@ done
 CURRENT_VERSION=$(grep -m1 '^project(hypredrive VERSION' "$CMAKE_FILE" \
   | sed 's/.*VERSION \([0-9][0-9.]*\).*/\1/')
 [[ -z "$CURRENT_VERSION" ]] && die "Could not detect current version in $CMAKE_FILE"
+CONFIGURE_VERSION=$(
+  awk '
+    /^AC_INIT\(\[hypredrive\],/ {p=1; next}
+    p && /^\s*\[/ {
+      if (match($0, /^\s*\[([0-9]+(\.[0-9]+)*)\]/, m)) { print m[1]; exit 0 }
+      p=0
+    }
+    /^\s*\)/ { p=0 }
+  ' "$CONFIGURE_AC"
+)
+[[ -z "$CONFIGURE_VERSION" ]] && die "Could not detect current version in $CONFIGURE_AC"
+
+if [[ "$CURRENT_VERSION" != "$CONFIGURE_VERSION" ]]; then
+  info "Version mismatch before bump:"
+  info "  CMakeLists.txt: ${CURRENT_VERSION}"
+  info "  configure.ac:   ${CONFIGURE_VERSION}"
+  info "Proceeding and syncing both to ${NEW_VERSION}."
+fi
 
 echo
 echo "Releasing hypredrive ${CURRENT_VERSION} → ${NEW_VERSION}${DRY_RUN:+ (dry run)}"
@@ -107,7 +126,15 @@ apply_sed "$CMAKE_FILE" \
   "project(hypredrive VERSION ${CURRENT_VERSION} LANGUAGES C)" \
   "project(hypredrive VERSION ${NEW_VERSION} LANGUAGES C)"
 
-# 2. conf.py fallback release/version strings
+# 2. configure.ac release version (AC_INIT second argument)
+if [[ -n "$DRY_RUN" ]]; then
+  info "$(basename "$CONFIGURE_AC"): would set AC_INIT version to ${NEW_VERSION}"
+else
+  sed -i "/^AC_INIT(\\[hypredrive\\],/ {n; s/^\\([[:space:]]*\\).*/\\1[${NEW_VERSION}],/}" "$CONFIGURE_AC"
+  info "configure.ac: updated"
+fi
+
+# 3. conf.py fallback release/version strings
 apply_sed "$CONF_PY" \
   "os.environ.get('HYPREDRV_DOCS_RELEASE', '[^']*')" \
   "os.environ.get('HYPREDRV_DOCS_RELEASE', '${NEW_VERSION}')"
@@ -121,7 +148,7 @@ if [[ -n "$DO_TAG" ]]; then
     info "git: would create annotated tag v${NEW_VERSION} and push"
   else
     cd "$REPO_ROOT"
-    git add "$CMAKE_FILE" "$CONF_PY"
+    git add "$CMAKE_FILE" "$CONFIGURE_AC" "$CONF_PY"
     git commit -m "Bump version to ${NEW_VERSION}"
     git tag -a "v${NEW_VERSION}" -m "hypredrive ${NEW_VERSION}"
     echo "  Tagged v${NEW_VERSION}. Push with: git push origin v${NEW_VERSION}"
@@ -130,7 +157,7 @@ else
   if [[ -z "$DRY_RUN" ]]; then
     echo "Files updated. Next steps:"
     echo "  1. Update CHANGELOG with release notes for ${NEW_VERSION}"
-    echo "  2. Commit: git add CMakeLists.txt docs/usrman-src/conf.py CHANGELOG"
+    echo "  2. Commit: git add CMakeLists.txt configure.ac docs/usrman-src/conf.py CHANGELOG"
     echo "  3. Tag:    git tag -a v${NEW_VERSION} -m 'hypredrive ${NEW_VERSION}'"
     echo "  4. Push:   git push && git push origin v${NEW_VERSION}"
   fi
