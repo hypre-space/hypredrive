@@ -103,14 +103,8 @@ hypredrv_IntArrayDestroy(IntArray **int_array_ptr)
    if (this)
    {
       free(this->data);
-      if (this->unique_data)
-      {
-         free(this->unique_data);
-      }
-      if (this->g_unique_data)
-      {
-         free(this->g_unique_data);
-      }
+      free(this->unique_data);
+      free(this->g_unique_data);
       free(this);
       *int_array_ptr = NULL;
    }

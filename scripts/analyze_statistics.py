@@ -14,7 +14,6 @@ import bisect
 import logging
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
-from itertools import combinations
 
 # Global variables
 fgs  = (10, 6)       # Figure size
@@ -384,8 +383,8 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
     if not log_x:
         try:
             ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("integer MaxNLocator not applied: %s", exc)
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"iters_{agg_str}{savefig}")

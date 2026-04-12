@@ -1252,36 +1252,71 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
 
    if (argc > 0 && hypredrv_IsYAMLFilename(argv[0]))
    {
-      if (!hypredrv_BinaryPathPrefixIsSafe(argv[0]))
+      char cfg_path[MAX_FILENAME_LENGTH];
+
+      if (!hypredrv_BinaryPathPrefixIsSafe(argv[0]) || strstr(argv[0], "..") != NULL)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid configuration file path");
          return false;
       }
-      hypredrv_InputArgsRead(comm, argv[0], base_indent_ptr, text_ptr);
+      {
+         int w = snprintf(cfg_path, sizeof(cfg_path), "%s", argv[0]);
+         if (w < 0 || (size_t)w >= sizeof(cfg_path))
+         {
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Configuration file path too long");
+            return false;
+         }
+      }
+      if (!hypredrv_BinaryPathPrefixIsSafe(cfg_path) || strstr(cfg_path, "..") != NULL)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid configuration file path");
+         return false;
+      }
+      hypredrv_InputArgsRead(comm, cfg_path, base_indent_ptr, text_ptr);
       if (hypredrv_ErrorCodeActive())
       {
          return false;
       }
-      hypredrv_SplitFilename(argv[0], config_dir_ptr, &config_base);
+      hypredrv_SplitFilename(cfg_path, config_dir_ptr, &config_base);
       free(config_base);
       return true;
    }
 
    if (config_idx >= 0)
    {
-      if (!hypredrv_BinaryPathPrefixIsSafe(argv[config_idx]))
+      char cfg_path[MAX_FILENAME_LENGTH];
+
+      if (!hypredrv_BinaryPathPrefixIsSafe(argv[config_idx]) ||
+          strstr(argv[config_idx], "..") != NULL)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid configuration file path");
          return false;
       }
-      hypredrv_InputArgsRead(comm, argv[config_idx], base_indent_ptr, text_ptr);
+      {
+         int w = snprintf(cfg_path, sizeof(cfg_path), "%s", argv[config_idx]);
+         if (w < 0 || (size_t)w >= sizeof(cfg_path))
+         {
+            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+            hypredrv_ErrorMsgAdd("Configuration file path too long");
+            return false;
+         }
+      }
+      if (!hypredrv_BinaryPathPrefixIsSafe(cfg_path) || strstr(cfg_path, "..") != NULL)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid configuration file path");
+         return false;
+      }
+      hypredrv_InputArgsRead(comm, cfg_path, base_indent_ptr, text_ptr);
       if (hypredrv_ErrorCodeActive())
       {
          return false;
       }
-      hypredrv_SplitFilename(argv[config_idx], config_dir_ptr, &config_base);
+      hypredrv_SplitFilename(cfg_path, config_dir_ptr, &config_base);
       free(config_base);
       return true;
    }

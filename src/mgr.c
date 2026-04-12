@@ -3753,10 +3753,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
    }
 
 cleanup:
-   if (dofmap_data_owned)
-   {
-      free(dofmap_data_owned);
-   }
+   free(dofmap_data_owned);
    for (lvl = 0; lvl < num_levels - 1; lvl++)
    {
       free(c_dofs[lvl]);

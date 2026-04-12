@@ -1206,19 +1206,19 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
    char d_name[MAX_FILENAME_LENGTH];
 
    {
-      int max_base = (int)sizeof(A_name) - 1 - 4;
-      if (max_base < 0) max_base = 0; /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
-      snprintf(A_name, sizeof(A_name), "%.*s.out", max_base, A_base);
+      size_t max_base = sizeof(A_name) - 1u - 4u;
+      int    prec     = (int)max_base;
+      (void)snprintf(A_name, sizeof(A_name), "%.*s.out", prec, A_base);
    }
    {
-      int max_base = (int)sizeof(b_name) - 1 - 4;
-      if (max_base < 0) max_base = 0; /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
-      snprintf(b_name, sizeof(b_name), "%.*s.out", max_base, b_base);
+      size_t max_base = sizeof(b_name) - 1u - 4u;
+      int    prec     = (int)max_base;
+      (void)snprintf(b_name, sizeof(b_name), "%.*s.out", prec, b_base);
    }
    {
-      int max_base = (int)sizeof(d_name) - 1 - 4;
-      if (max_base < 0) max_base = 0; /* LCOV_EXCL_LINE */ /* GCOVR_EXCL_LINE */
-      snprintf(d_name, sizeof(d_name), "%.*s.out", max_base, d_base);
+      size_t max_base = sizeof(d_name) - 1u - 4u;
+      int    prec     = (int)max_base;
+      (void)snprintf(d_name, sizeof(d_name), "%.*s.out", prec, d_base);
    }
 
    int use_series_dir = 1;

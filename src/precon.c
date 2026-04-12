@@ -455,46 +455,6 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    // StatsTimerStop("prec_apply");
 }
 
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------
- */
-
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-static void PreconDestroyMGRSolver(MGR_args *, HYPRE_Solver *, int);
-
-static void
-DestroyNestedMGRFRelaxInnerSolver(MGR_args *mgr, int i,
-                                  HYPRE_Solver *nested_mgr_solver_ptr)
-{                                                         /* GCOVR_EXCL_BR_LINE */
-   if (!nested_mgr_solver_ptr || !*nested_mgr_solver_ptr) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-   /* GCOVR_EXCL_BR_LINE */
-   if (mgr->level[i].f_relaxation.mgr) /* GCOVR_EXCL_BR_LINE */
-   {
-      PreconDestroyMGRSolver(mgr->level[i].f_relaxation.mgr, nested_mgr_solver_ptr, 1);
-   }
-   else
-   {
-      HYPRE_MGRDestroy(*nested_mgr_solver_ptr);
-      *nested_mgr_solver_ptr = NULL;
-   }
-}
-
-/* GCOVR_EXCL_START */
-static void
-DestroyNestedMGRFRelaxAtLevel(MGR_args *mgr, int i)
-{
-   HYPRE_Solver nested_mgr_solver =
-      hypredrv_MGRNestedFRelaxWrapperGetInner(mgr->frelax[i]);
-   hypredrv_MGRNestedFRelaxWrapperFree(&mgr->frelax[i]);
-   DestroyNestedMGRFRelaxInnerSolver(mgr, i, &nested_mgr_solver);
-}
-/* GCOVR_EXCL_STOP */
-
-#endif /* HYPRE_CHECK_MIN_VERSION(21900, 0) */
-
 static void
 PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr, int precon_was_setup)
 {

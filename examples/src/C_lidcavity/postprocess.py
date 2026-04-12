@@ -20,6 +20,7 @@ Options:
 
 import sys
 import argparse
+import contextlib
 import xml.etree.ElementTree as ET
 import numpy as np
 import matplotlib.pyplot as plt
@@ -303,7 +304,6 @@ def read_vtk_file(vtk_path):
                 xml_content = raw_content[:tag_end].decode('utf-8', errors='ignore')
                 # Add closing tags to make valid XML
                 xml_content += '\n  </AppendedData>\n</VTKFile>'
-                xml_end = underscore_pos  # For binary data location
             else:
                 # Fallback
                 xml_end = tag_end
@@ -332,22 +332,18 @@ def read_vtk_file(vtk_path):
         # Strategy 1: Extract up to AppendedData and add closing tags
         xml_match = re.search(r'<VTKFile.*?<AppendedData[^>]*>', xml_content_clean, re.DOTALL)
         if xml_match:
-            try:
-                xml_part = xml_match.group(0) + '\n  </AppendedData>\n</VTKFile>'
+            xml_part = xml_match.group(0) + '\n  </AppendedData>\n</VTKFile>'
+            with contextlib.suppress(ET.ParseError):
                 root = ET.fromstring(xml_part)
-            except ET.ParseError:
-                pass
 
         # Strategy 2: Try to find complete RectilinearGrid section
         if root is None:
             xml_match = re.search(r'<RectilinearGrid.*?</RectilinearGrid>', xml_content_clean, re.DOTALL)
             if xml_match:
-                try:
-                    # Wrap in minimal VTKFile structure
-                    xml_part = '<VTKFile type="RectilinearGrid">' + xml_match.group(0) + '</VTKFile>'
+                # Wrap in minimal VTKFile structure
+                xml_part = '<VTKFile type="RectilinearGrid">' + xml_match.group(0) + '</VTKFile>'
+                with contextlib.suppress(ET.ParseError):
                     root = ET.fromstring(xml_part)
-                except ET.ParseError:
-                    pass
 
         # Strategy 3: Use regex to extract metadata directly (fallback)
         if root is None:

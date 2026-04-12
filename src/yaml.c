@@ -2269,6 +2269,63 @@ hypredrv_YAMLnodeValidate(YAMLnode *node)
    }
 }
 
+static void
+YAMLnodePrintAnyModeValidBranch(YAMLnode *node, bool is_seq_item)
+{
+   switch (node->valid)
+   {
+      case YAML_NODE_VALID:
+         if (!is_seq_item)
+         {
+            YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_GREEN, "");
+         }
+         break;
+      case YAML_NODE_INVALID_INDENT:
+         /* GCOVR_EXCL_BR_START */
+         if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
+         {
+            YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
+                                TEXT_BOLD " <-- * INVALID INDENTATION *");
+         }
+         break;
+      case YAML_NODE_INVALID_DIVISOR:
+         /* GCOVR_EXCL_BR_START */
+         if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
+         {
+            YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
+                                TEXT_BOLD " <-- * INVALID DIVISOR *");
+         }
+         break;
+      case YAML_NODE_INVALID_KEY:
+         /* GCOVR_EXCL_BR_START */
+         if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
+         {
+            YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD,
+                                TEXT_BOLD " <-- * INVALID KEY *");
+         }
+         break;
+      case YAML_NODE_INVALID_VAL:
+         /* GCOVR_EXCL_BR_START */
+         if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
+         {
+            YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
+                                TEXT_BOLD " <-- * INVALID VALUE *");
+         }
+         break;
+      case YAML_NODE_UNEXPECTED_VAL:
+         /* GCOVR_EXCL_BR_START */
+         if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
+         {
+            YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
+                                TEXT_BOLD " <-- * UNEXPECTED VALUE *");
+         }
+         break;
+      default:
+         YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
+                             TEXT_REDBOLD " <-- * INVALID ENTRY *");
+   }
+}
+
 /*-----------------------------------------------------------------------------
  * hypredrv_YAMLnodePrint
  *-----------------------------------------------------------------------------*/
@@ -2314,58 +2371,7 @@ hypredrv_YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
    switch (print_mode)
    {
       case YAML_PRINT_MODE_ANY:
-         switch (node->valid)
-         {
-            case YAML_NODE_VALID:
-               if (!is_seq_item)
-               {
-                  YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_GREEN, "");
-               }
-               break;
-            case YAML_NODE_INVALID_INDENT:
-               /* GCOVR_EXCL_BR_START */
-               if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
-               {
-                  YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
-                                      TEXT_BOLD " <-- * INVALID INDENTATION *");
-               }
-               break;
-            case YAML_NODE_INVALID_DIVISOR:
-               /* GCOVR_EXCL_BR_START */
-               if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
-               {
-                  YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
-                                      TEXT_BOLD " <-- * INVALID DIVISOR *");
-               }
-               break;
-            case YAML_NODE_INVALID_KEY:
-               /* GCOVR_EXCL_BR_START */
-               if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
-               {
-                  YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_YELLOWBOLD,
-                                      TEXT_BOLD " <-- * INVALID KEY *");
-               }
-               break;
-            case YAML_NODE_INVALID_VAL:
-               /* GCOVR_EXCL_BR_START */
-               if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
-               {
-                  YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
-                                      TEXT_BOLD " <-- * INVALID VALUE *");
-               }
-               break;
-            case YAML_NODE_UNEXPECTED_VAL:
-               /* GCOVR_EXCL_BR_START */
-               if (!is_seq_item) /* GCOVR_EXCL_BR_STOP */
-               {
-                  YAMLnodePrintHelper(node, TEXT_GREEN, TEXT_REDBOLD,
-                                      TEXT_BOLD " <-- * UNEXPECTED VALUE *");
-               }
-               break;
-            default:
-               YAMLnodePrintHelper(node, TEXT_REDBOLD, TEXT_REDBOLD,
-                                   TEXT_REDBOLD " <-- * INVALID ENTRY *");
-         }
+         YAMLnodePrintAnyModeValidBranch(node, is_seq_item);
          break;
 
       case YAML_PRINT_MODE_ONLY_VALID:

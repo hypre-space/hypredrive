@@ -7,6 +7,7 @@
 #******************************************************************************/
 
 import argparse
+import logging
 import math
 import os
 from typing import List, Tuple
@@ -16,6 +17,8 @@ from matplotlib import rcParams
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from matplotlib.ticker import MaxNLocator
 from matplotlib.patches import Circle
+
+_logger = logging.getLogger(__name__)
 
 
 def read_eigenvalues(path: str) -> Tuple[List[float], List[float]]:
@@ -63,8 +66,6 @@ def compute_summary(re_vals: List[float], im_vals: List[float], zero_tol: float,
     n_neg_re = sum(1 for re in re_vals if re < -zero_tol)
     n_pos_re = sum(1 for re in re_vals if re > zero_tol)
     n_zero_re = n - n_neg_re - n_pos_re
-    # Spectral abscissa
-    alpha = max_re
     # Near-zero magnitude counts
     n_near_zero_mag = sum(1 for a in abs_vals if a <= zero_tol)
     # Near-one magnitude counts (| |λ| - 1 | <= tol)
@@ -212,8 +213,8 @@ def main():
             from matplotlib.figure import Figure
             # nudge paddings for clarity
             fig.set_constrained_layout_pads(w_pad=0.02, h_pad=0.02, wspace=0.02, hspace=0.02)
-        except Exception:
-            pass
+        except Exception as exc:
+            _logger.debug("constrained_layout_pads skipped: %s", exc)
 
     # Plot per file (allow overlay)
     for idx, path in enumerate(args.files):
@@ -251,8 +252,8 @@ def main():
                 ax_main.set_xscale(args.xscale)
                 if ax_histx is not None:
                     ax_histx.set_xscale(args.xscale)
-            except Exception:
-                pass
+            except Exception as exc:
+                _logger.debug("scatter x-axis scale %r not applied: %s", args.xscale, exc)
 
             # Match histogram axis ranges to scatter ranges
             xlim = ax_main.get_xlim()
@@ -318,7 +319,6 @@ def main():
             inset.xaxis.set_major_locator(MaxNLocator(nbins=max(1, args.inset_nticks)))
             inset.yaxis.set_major_locator(MaxNLocator(nbins=max(1, args.inset_nticks)))
             inset_tickfs = args.inset_tickfont if args.inset_tickfont is not None else max(6, args.alfs - 4)
-            inset_labelfs = args.inset_labelfont if args.inset_labelfont is not None else max(8, args.alfs - 2)
             inset.tick_params(axis='both', labelsize=inset_tickfs)
             #inset.set_xlabel('Re(λ)', fontsize=inset_labelfs)
             #inset.set_ylabel('Im(λ)', fontsize=inset_labelfs)
@@ -326,8 +326,8 @@ def main():
         # Apply requested x-axis scale to Re histogram
         try:
             ax_main[0].set_xscale(args.xscale)
-        except Exception:
-            pass
+        except Exception as exc:
+            _logger.debug("histogram x-axis scale %r not applied: %s", args.xscale, exc)
         ax_main[0].grid(True, linestyle='--', alpha=0.4)
         ax_main[1].grid(True, linestyle='--', alpha=0.4)
 
