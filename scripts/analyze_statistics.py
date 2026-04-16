@@ -23,6 +23,57 @@ lgfs = 14            # Legends font size
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_linestyle(user_linestyle, default_ls='-'):
+    if user_linestyle == 'auto':
+        return default_ls
+    if user_linestyle == 'none':
+        return 'None'
+    return user_linestyle
+
+
+def _resolve_markersize(markersize):
+    return markersize if markersize is not None else plt.rcParams['lines.markersize']
+
+
+def _get_source_groups(df, xtype):
+    sources = df['source'].unique().tolist() if 'source' in df.columns else []
+    if 'source' in df.columns and len(sources) > 1:
+        groups = [(source, df[df['source'] == source].sort_values(by=xtype)) for source in sources]
+        return groups, True
+    return [(None, df.sort_values(by=xtype))], False
+
+
+def _resolve_single_legend_name(sources, legend_names, latex=False):
+    if sources:
+        return get_legend_name(sources[0], legend_names or {}, latex)
+    if legend_names:
+        return next(iter(legend_names.values()))
+    return "data"
+
+
+def _setup_axes(ax, xlabel, ylabel, log_x=False, log_y=False, set_integer_x=False,
+                set_y_bottom=None, safe_integer_locator=False):
+    if log_x:
+        ax.set_xscale('log')
+    if log_y:
+        ax.set_yscale('log')
+    if not log_x and set_integer_x:
+        if safe_integer_locator:
+            try:
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+            except Exception as exc:
+                logger.debug("integer MaxNLocator not applied: %s", exc)
+        else:
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+    if (not log_y) and set_y_bottom is not None:
+        ax.set_ylim(bottom=set_y_bottom)
+    ax.tick_params(axis='x', labelsize=alfs)
+    ax.tick_params(axis='y', labelsize=alfs)
+    ax.set_xlabel(xlabel, fontsize=alfs)
+    ax.set_ylabel(ylabel, fontsize=alfs)
+
+
 def parse_statistics_summary(filename, exclude, source_label=None, filter_table=None):
     """
     Parse statistics from a log file.  A single file may contain multiple
@@ -309,10 +360,7 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
     The function does not return anything but displays a plot.
     """
 
-    # Determine grouping by source (if present)
-    has_source = 'source' in df.columns
-    sources = df['source'].unique().tolist() if has_source else []
-    multiple_sources = has_source and len(sources) > 1
+    source_groups, multiple_sources = _get_source_groups(df, xtype)
 
     agg_str = "agg_" if cumulative else ''
 
@@ -320,47 +368,32 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
     # Plot figure
     plt.figure(figsize=fgs)
 
-    # Resolve marker size to a concrete value to avoid passing None
-    ms = markersize if markersize is not None else plt.rcParams['lines.markersize']
+    ms = _resolve_markersize(markersize)
 
-    def resolve_ls(user_ls, default_ls='-'):
-        if user_ls == 'auto':
-            return default_ls
-        if user_ls == 'none':
-            return 'None'
-        return user_ls
-
-    def resolve_single_legend():
-        if sources:
-            return get_legend_name(sources[0], legend_names or {}, latex)
-        if legend_names:
-            return next(iter(legend_names.values()))
-        return "data"
+    source_values = df['source'].unique().tolist() if 'source' in df.columns else []
+    single_source_label = _resolve_single_legend_name(source_values, legend_names, latex)
 
     has_nl_iters = 'nl_iters_10x' in df.columns
     show_nl = has_nl_iters and show_nl_iters
 
     if multiple_sources:
-        for src in sources:
-            grp = df[df['source'] == src].sort_values(by=xtype)
+        for src, grp in source_groups:
             y = grp['iters'].cumsum() if cumulative else grp['iters']
-            ls = resolve_ls(linestyle, '-')
             legend_name = get_legend_name(src, legend_names or {}, latex)
             linear_label = f"Linear Iters. ({legend_name})" if show_nl else legend_name
-            plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=linear_label)
+            plt.plot(grp[xtype], y, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms, label=linear_label)
             if show_nl:
                 nl = grp['nl_iters_10x'].cumsum() if cumulative else grp['nl_iters_10x']
-                plt.plot(grp[xtype], nl, marker='s', linestyle=resolve_ls(linestyle, ':'), markersize=ms,
+                plt.plot(grp[xtype], nl, marker='s', linestyle=_resolve_linestyle(linestyle, ':'), markersize=ms,
                          label=f"Non-linear iters. (10x) ({legend_name})")
     else:
-        grp = df.sort_values(by=xtype)
+        _, grp = source_groups[0]
         y = grp['iters'].cumsum() if cumulative else grp['iters']
-        ls = resolve_ls(linestyle, '-')
-        legend_name = "Linear Iters." if show_nl else resolve_single_legend()
-        plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=legend_name)
+        legend_name = "Linear Iters." if show_nl else single_source_label
+        plt.plot(grp[xtype], y, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms, label=legend_name)
         if show_nl:
             nl = grp['nl_iters_10x'].cumsum() if cumulative else grp['nl_iters_10x']
-            plt.plot(grp[xtype], nl, marker='s', linestyle=resolve_ls(linestyle, ':'), markersize=ms,
+            plt.plot(grp[xtype], nl, marker='s', linestyle=_resolve_linestyle(linestyle, ':'), markersize=ms,
                      label="Non-linear iters. (10x)")
 
     plt.legend(loc="upper left", fontsize=lgfs)
@@ -369,22 +402,8 @@ def plot_iterations(df, cumulative, xtype, xlabel, use_title=False, savefig=None
     elif use_title:
         prefix = 'Cumulative ' if cumulative else ''
         plt.title(f'{prefix}Linear solver iterations vs {xlabel}', fontsize=tfs, fontweight='bold')
-    plt.ylabel('Iterations', fontsize=alfs)
-    plt.xlabel(xlabel, fontsize=alfs)
     ax = plt.gca()
-    if log_x:
-        ax.set_xscale('log')
-    if log_y:
-        ax.set_yscale('log')
-    else:
-        plt.ylim(bottom=0.0)
-    ax.tick_params(axis='x', labelsize=alfs)
-    ax.tick_params(axis='y', labelsize=alfs)
-    if not log_x:
-        try:
-            ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-        except Exception as exc:
-            logger.debug("integer MaxNLocator not applied: %s", exc)
+    _setup_axes(ax, xlabel, 'Iterations', log_x=log_x, log_y=log_y, set_integer_x=True, set_y_bottom=0.0, safe_integer_locator=True)
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"iters_{agg_str}{savefig}")
@@ -412,10 +431,7 @@ def plot_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefi
     the DataFrame, as determined by the xtype column. The function does not return anything but displays the plot.
     """
 
-    # Determine grouping by source (if present)
-    has_source = 'source' in df.columns
-    sources = df['source'].unique().tolist() if has_source else []
-    multiple_sources = has_source and len(sources) > 1
+    source_groups, multiple_sources = _get_source_groups(df, xtype)
 
     agg_str = "agg_" if cumulative else ''
 
@@ -423,37 +439,28 @@ def plot_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefi
     # Plot figure
     plt.figure(figsize=fgs)
 
-    # Resolve marker size
-    ms = markersize if markersize is not None else plt.rcParams['lines.markersize']
-
-    def resolve_ls(user_ls, default_ls='-'):
-        if user_ls == 'auto':
-            return default_ls
-        if user_ls == 'none':
-            return 'None'
-        return user_ls
+    ms = _resolve_markersize(markersize)
+    source_values = df['source'].unique().tolist() if 'source' in df.columns else []
+    single_source_label = _resolve_single_legend_name(source_values, legend_names, latex)
 
     if multiple_sources:
-        for src in sources:
-            grp = df[df['source'] == src].sort_values(by=xtype)
+        for src, grp in source_groups:
             setup_data = grp['setup'].cumsum() if cumulative else grp['setup']
             solve_data = grp['solve'].cumsum() if cumulative else grp['solve']
             total_data = grp['total'].cumsum() if cumulative else grp['total']
-            ls = resolve_ls(linestyle, '-')
             legend_name = get_legend_name(src, legend_names or {}, latex)
-            plt.plot(grp[xtype], setup_data, marker='o', linestyle=ls, markersize=ms, label=f"Setup ({legend_name})")
-            plt.plot(grp[xtype], solve_data, marker='o', linestyle=ls, markersize=ms, label=f"Solve ({legend_name})")
-            plt.plot(grp[xtype], total_data, marker='o', linestyle=ls, markersize=ms, label=f"Total ({legend_name})")
+            plt.plot(grp[xtype], setup_data, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms, label=f"Setup ({legend_name})")
+            plt.plot(grp[xtype], solve_data, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms, label=f"Solve ({legend_name})")
+            plt.plot(grp[xtype], total_data, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms, label=f"Total ({legend_name})")
         plt.legend(loc="best", fontsize=lgfs)
     else:
-        grp = df.sort_values(by=xtype)
+        _, grp = source_groups[0]
         setup_data = grp['setup'].cumsum() if cumulative else grp['setup']
         solve_data = grp['solve'].cumsum() if cumulative else grp['solve']
         total_data = grp['total'].cumsum() if cumulative else grp['total']
-        ls = resolve_ls(linestyle, '-')
-        plt.plot(grp[xtype], setup_data, marker='o', linestyle=ls, markersize=ms, label="Setup")
-        plt.plot(grp[xtype], solve_data, marker='o', linestyle=ls, markersize=ms, label="Solve")
-        plt.plot(grp[xtype], total_data, marker='o', linestyle=ls, markersize=ms, label="Total")
+        plt.plot(grp[xtype], setup_data, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms, label=f"Setup ({single_source_label})")
+        plt.plot(grp[xtype], solve_data, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms, label=f"Solve ({single_source_label})")
+        plt.plot(grp[xtype], total_data, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms, label=f"Total ({single_source_label})")
         plt.legend(loc="best", fontsize=lgfs)
 
     if title:
@@ -461,19 +468,8 @@ def plot_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefi
     elif use_title:
         prefix = 'Cumulative ' if cumulative else ''
         plt.title(f'{prefix}Linear solver times vs {xlabel}', fontsize=tfs, fontweight='bold')
-    plt.ylabel(f'Times {time_unit}', fontsize=alfs)
-    plt.xlabel(xlabel, fontsize=alfs)
     ax = plt.gca()
-    if log_x:
-        ax.set_xscale('log')
-    if log_y:
-        ax.set_yscale('log')
-    ax.tick_params(axis='x', labelsize=alfs)
-    ax.tick_params(axis='y', labelsize=alfs)
-    if not log_x:
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-    if not log_y:
-        plt.ylim(bottom=0.0)
+    _setup_axes(ax, xlabel, f'Times {time_unit}', log_x=log_x, log_y=log_y, set_integer_x=True, set_y_bottom=0.0, safe_integer_locator=False)
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"times_{agg_str}{savefig}")
@@ -486,36 +482,27 @@ def plot_time_metric(df, cumulative, xtype, xlabel, time_unit, metric, use_title
     if metric not in ('setup', 'solve', 'total'):
         raise ValueError(f"Unsupported metric: {metric}")
 
-    has_source = 'source' in df.columns
-    sources = df['source'].unique().tolist() if has_source else []
-    multiple_sources = has_source and len(sources) > 1
+    source_groups, multiple_sources = _get_source_groups(df, xtype)
 
     agg_str = "agg_" if cumulative else ''
-    ms = markersize if markersize is not None else plt.rcParams['lines.markersize']
-
-    def resolve_ls(user_ls, default_ls='-'):
-        if user_ls == 'auto':
-            return default_ls
-        if user_ls == 'none':
-            return 'None'
-        return user_ls
+    ms = _resolve_markersize(markersize)
+    source_values = df['source'].unique().tolist() if 'source' in df.columns else []
+    single_source_label = _resolve_single_legend_name(source_values, legend_names, latex)
 
     logger.debug(f"Plotting metric '{metric}' (cumulative={cumulative}, xtype={xtype})")
     plt.figure(figsize=fgs)
 
     if multiple_sources:
-        for src in sources:
-            grp = df[df['source'] == src].sort_values(by=xtype)
+        for src, grp in source_groups:
             y = grp[metric].cumsum() if cumulative else grp[metric]
-            ls = resolve_ls(linestyle, '-')
             legend_name = get_legend_name(src, legend_names or {}, latex)
-            plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=f"{metric.capitalize()} ({legend_name})")
+            plt.plot(grp[xtype], y, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms, label=f"{metric.capitalize()} ({legend_name})")
         plt.legend(loc="best", fontsize=lgfs)
     else:
-        grp = df.sort_values(by=xtype)
+        _, grp = source_groups[0]
         y = grp[metric].cumsum() if cumulative else grp[metric]
-        ls = resolve_ls(linestyle, '-')
-        plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=f"{metric.capitalize()}")
+        plt.plot(grp[xtype], y, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms,
+                 label=f"{metric.capitalize()} ({single_source_label})")
         plt.legend(loc="best", fontsize=lgfs)
 
     if title:
@@ -523,57 +510,34 @@ def plot_time_metric(df, cumulative, xtype, xlabel, time_unit, metric, use_title
     elif use_title:
         prefix = 'Cumulative ' if cumulative else ''
         plt.title(f"{prefix}{metric.capitalize()} time vs {xlabel}", fontsize=tfs, fontweight='bold')
-    plt.ylabel(f"Times {time_unit}", fontsize=alfs)
-    plt.xlabel(xlabel, fontsize=alfs)
     ax = plt.gca()
-    if log_x:
-        ax.set_xscale('log')
-    if log_y:
-        ax.set_yscale('log')
-    ax.tick_params(axis='x', labelsize=alfs)
-    ax.tick_params(axis='y', labelsize=alfs)
-    if not log_x:
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-    if not log_y:
-        plt.ylim(bottom=0.0)
+    _setup_axes(ax, xlabel, f'Times {time_unit}', log_x=log_x, log_y=log_y, set_integer_x=True, set_y_bottom=0.0, safe_integer_locator=False)
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"{metric}_{agg_str}{savefig}")
 
-def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False, show_nl_iters=True, log_x=False, log_y=False):
+
+def _plot_iters_with_time_metric(df, cumulative, xtype, xlabel, time_unit, time_specs, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False, show_nl_iters=True, log_x=False, log_y=False, filename_prefix='iters_times'):
     """
-    Plots setup and solve times, as well as iteration counts, as a function of a specified column in the DataFrame.
-    Setup and solve times are plotted on the primary Y-axis, while iteration counts are plotted on a secondary Y-axis.
+    Internal helper for plotting timing series and iteration counts.
 
     Parameters:
-    - df (pandas.DataFrame): DataFrame containing the log data with 'setup', 'solve', and 'iters' among its columns.
-    - cumulative (boolean): Plot cumulative sums of the quantities if True.
-    - xtype (str): Column name in 'df' to use as the x-axis for the plot.
-    - xlabel (str): Label for the x-axis.
-    - time_unit (str): Unit used for time in the y-axis
-    - use_title (boolean, optional): Turn on figure's title.
-    - savefig (str, optional): File path to save the figure to. If not provided, the plot is displayed.
-
-    Globals:
-    - fgs (tuple): Figure size for the plot. Must be defined elsewhere in the global scope.
-    - tfs (int): Font size for the title. Must be defined elsewhere in the global scope.
-    - alfs (int): Font size for the axis labels. Must be defined elsewhere in the global scope.
-    - lgfs (int): Font size for the legend. Must be defined elsewhere in the global scope.
-
-    The plot includes lines representing the 'setup' and 'solve' times on the primary Y-axis, and 'iters' on the secondary Y-axis.
-    The function does not return anything but displays the plot.
+    - df (pandas.DataFrame): Input statistics table.
+    - cumulative (boolean): Plot cumulative sums of selected timing/iteration series if True.
+    - xtype (str): Column in df used as x-axis.
+    - xlabel (str): Label for x-axis.
+    - time_unit (str): Unit used for time in y-axis label.
+    - time_specs (list[tuple]): Sequence of (metric, legend_label, color, solve_alpha).
+      The metric names must exist as columns in df (e.g., setup/solve/total).
+    - filename_prefix (str): Output filename prefix.
     """
-    logger.debug(f"Plotting iters-and-times (cumulative={cumulative}, xtype={xtype})")
+    logger.debug(f"Plotting {filename_prefix} (cumulative={cumulative}, xtype={xtype})")
     fig, ax1 = plt.subplots(figsize=fgs)
 
-    # Determine grouping by source (if present)
-    has_source = 'source' in df.columns
-    sources = df['source'].unique().tolist() if has_source else []
-    multiple_sources = has_source and len(sources) > 1
-
+    source_groups, multiple_sources = _get_source_groups(df, xtype)
     agg_str = "agg_" if cumulative else ''
 
-    # Plot setup and solve times on the primary Y-axis
+    # Time axis (left): setup/solve/total.
     ax1.set_xlabel(xlabel, fontsize=alfs)
     ax1.set_ylabel(f'Times {time_unit}', fontsize=alfs)
     if log_x:
@@ -585,7 +549,7 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
     if not log_x:
         ax1.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
 
-    # Secondary Y-axis for iteration counts
+    # Secondary axis (right): iteration counts.
     ax2 = ax1.twinx()
     ax2.set_ylabel('Iterations', fontsize=alfs)
     ax2.tick_params(axis='y', labelsize=alfs)
@@ -595,44 +559,57 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
     lines = []
     labels = []
 
-    # Resolve marker size
-    ms = markersize if markersize is not None else plt.rcParams['lines.markersize']
+    ms = _resolve_markersize(markersize)
     has_nl_iters = 'nl_iters_10x' in df.columns
     show_nl = has_nl_iters and show_nl_iters
+    source_values = df['source'].unique().tolist() if 'source' in df.columns else []
+    single_source_label = _resolve_single_legend_name(source_values, legend_names, latex)
 
-    def resolve_ls(user_ls, default_ls='-'):
-        if user_ls == 'auto':
-            return default_ls
-        if user_ls == 'none':
-            return 'None'
-        return user_ls
+    def add_time_series(grp, legend_name=None):
+        # Add one or more time curves for a sorted subgroup (single source or whole dataset).
+        for metric, label, color, solve_alpha in time_specs:
+            y = grp[metric].cumsum() if cumulative else grp[metric]
+            # Keep backward-compatible alpha behavior: solve line is lighter when shown as part of
+            # setup+solve on one plot; single-series plots should preserve explicit color/alpha.
+            alpha = 0.5
+            if metric == 'solve':
+                alpha = solve_alpha if multiple_sources and solve_alpha is not None else 0.5
+            elif metric != 'solve':
+                alpha = 1.0
+            if not multiple_sources:
+                line, = ax1.plot(grp[xtype], y, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms,
+                                 alpha=alpha, color=color, label=f"{label} ({legend_name})" if legend_name else f"{label} ({single_source_label})")
+            else:
+                line, = ax1.plot(grp[xtype], y, marker='o', linestyle=_resolve_linestyle(linestyle, '-'), markersize=ms,
+                                 alpha=alpha, label=f"{label} ({legend_name})" if legend_name else label)
+            lines.append(line)
+            labels.append(line.get_label())
 
     if multiple_sources:
         max_iters = 0
-        for src in sources:
-            grp = df[df['source'] == src].sort_values(by=xtype)
-            setup_data = grp['setup'].cumsum() if cumulative else grp['setup']
-            solve_data = grp['solve'].cumsum() if cumulative else grp['solve']
+        for src, grp in source_groups:
             iters_data = grp['iters'].cumsum() if cumulative else grp['iters']
             nl_iters_data = grp['nl_iters_10x'].cumsum() if (show_nl and cumulative) else (grp.get('nl_iters_10x') if show_nl else None)
-            ls_main = resolve_ls(linestyle, '-')
-            ls_iter = resolve_ls(linestyle, '--')
             legend_name = get_legend_name(src, legend_names or {}, latex)
-            l1, = ax1.plot(grp[xtype], setup_data, marker='o', linestyle=ls_main, markersize=ms, label=f"Setup ({legend_name})")
-            l2, = ax1.plot(grp[xtype], solve_data, marker='o', linestyle=ls_main, markersize=ms, alpha=0.7, label=f"Solve ({legend_name})")
-            linear_label = f"Linear Iters. ({legend_name})" if show_nl else f"Iterations ({legend_name})"
-            l3, = ax2.plot(grp[xtype], iters_data, marker='o', linestyle=ls_iter, markersize=ms, label=linear_label)
 
-            lines.extend([l1, l2, l3])
-            labels.extend([l.get_label() for l in (l1, l2, l3)])
-            max_iters = max(max_iters, max(iters_data) if len(iters_data) else 0)
+            # Per-source plotting keeps labels like \"Setup (foo)\" / \"Solve (foo)\".
+            add_time_series(grp, legend_name)
+
+            linear_label = f"Linear Iters. ({legend_name})" if show_nl else f"Iterations ({legend_name})"
+            l_iter, = ax2.plot(grp[xtype], iters_data, marker='o', linestyle=_resolve_linestyle(linestyle, '--'), markersize=ms, label=linear_label)
+            lines.append(l_iter)
+            labels.append(l_iter.get_label())
+
             if show_nl and nl_iters_data is not None:
-                l4, = ax2.plot(grp[xtype], nl_iters_data, marker='s', linestyle=resolve_ls(linestyle, ':'), markersize=ms,
-                               label=f"Non-linear iters. (10x) ({legend_name})")
-                lines.append(l4)
-                labels.append(l4.get_label())
+                l_nl, = ax2.plot(grp[xtype], nl_iters_data, marker='s', linestyle=_resolve_linestyle(linestyle, ':'), markersize=ms,
+                                 label=f"Non-linear iters. (10x) ({legend_name})")
+                lines.append(l_nl)
+                labels.append(l_nl.get_label())
                 if len(nl_iters_data):
                     max_iters = max(max_iters, max(nl_iters_data))
+
+            if len(iters_data):
+                max_iters = max(max_iters, max(iters_data))
 
         if log_y:
             ax2.set_ylim(bottom=1, top=max_iters * 2.0 if max_iters > 1 else 10)
@@ -640,28 +617,27 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
             ax2.set_ylim(bottom=0, top=max_iters * 2.0 if max_iters > 0 else 1)
     else:
         grp = df.sort_values(by=xtype)
-        setup_data = grp['setup'].cumsum() if cumulative else grp['setup']
-        solve_data = grp['solve'].cumsum() if cumulative else grp['solve']
         iters_data = grp['iters'].cumsum() if cumulative else grp['iters']
         nl_iters_data = grp['nl_iters_10x'].cumsum() if (show_nl and cumulative) else (grp.get('nl_iters_10x') if show_nl else None)
 
-        ls_main = resolve_ls(linestyle, '-')
-        ls_iter = resolve_ls(linestyle, '--')
-        l1, = ax1.plot(grp[xtype], setup_data, marker='o', linestyle=ls_main, markersize=ms, color='#E69F00', label="Setup")
-        l2, = ax1.plot(grp[xtype], solve_data, marker='o', linestyle=ls_main, markersize=ms, color='#009E73', label="Solve", alpha=0.5)
-        linear_label = "Linear Iters." if show_nl else "Iterations"
-        l3, = ax2.plot(grp[xtype], iters_data, marker='o', linestyle=ls_iter, markersize=ms, color='#0072B2', label=linear_label)
+        # Single input (or single source): preserve historical single-color line styling.
+        add_time_series(grp)
 
-        lines  = [l1, l2, l3]
-        labels = [line.get_label() for line in lines]
+        linear_label = "Linear Iters." if show_nl else "Iterations"
+        l_iter, = ax2.plot(grp[xtype], iters_data, marker='o', linestyle=_resolve_linestyle(linestyle, '--'),
+                          markersize=ms, color='#0072B2', label=linear_label)
+        lines.append(l_iter)
+        labels.append(l_iter.get_label())
         max_iters = max(iters_data) if len(iters_data) else 0
+
         if show_nl and nl_iters_data is not None:
-            l4, = ax2.plot(grp[xtype], nl_iters_data, marker='s', linestyle=resolve_ls(linestyle, ':'), markersize=ms,
-                           color='#D55E00', label="Non-linear iters. (10x)")
-            lines.append(l4)
-            labels.append(l4.get_label())
+            l_nl, = ax2.plot(grp[xtype], nl_iters_data, marker='s', linestyle=_resolve_linestyle(linestyle, ':'), markersize=ms,
+                             color='#D55E00', label="Non-linear iters. (10x)")
+            lines.append(l_nl)
+            labels.append(l_nl.get_label())
             if len(nl_iters_data):
                 max_iters = max(max_iters, max(nl_iters_data))
+
         if log_y:
             ax2.set_ylim(bottom=1, top=max_iters * 2.0 if max_iters > 1 else 10)
         else:
@@ -678,7 +654,63 @@ def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
 
     fig.tight_layout()
     plt.grid(True, which='both', axis='both', linestyle='--', linewidth=0.5, zorder=0)
-    save_and_show_plot(f"iters_times_{agg_str}{savefig}")
+    save_and_show_plot(f"{filename_prefix}_{agg_str}{savefig}")
+
+
+def plot_iters_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False, show_nl_iters=True, log_x=False, log_y=False):
+    """
+    Plots setup and solve time series together with iteration counts.
+    This is the public entry point for the legacy mode `iters-and-times`.
+    """
+    _plot_iters_with_time_metric(
+        df=df,
+        cumulative=cumulative,
+        xtype=xtype,
+        xlabel=xlabel,
+        time_unit=time_unit,
+        time_specs=[
+            ('setup', 'Setup', '#E69F00', 0.7),
+            ('solve', 'Solve', '#009E73', 0.7),
+        ],
+        use_title=use_title,
+        savefig=savefig,
+        linestyle=linestyle,
+        markersize=markersize,
+        legend_names=legend_names,
+        title=title,
+        latex=latex,
+        show_nl_iters=show_nl_iters,
+        log_x=log_x,
+        log_y=log_y,
+        filename_prefix='iters_times'
+    )
+
+
+def plot_iters_total(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None, legend_names=None, title=None, latex=False, show_nl_iters=True, log_x=False, log_y=False):
+    """
+    Plots total (setup + solve) time series together with iteration counts.
+    This is the public entry point for the new mode `iters-and-total`.
+    """
+    _plot_iters_with_time_metric(
+        df=df,
+        cumulative=cumulative,
+        xtype=xtype,
+        xlabel=xlabel,
+        time_unit=time_unit,
+        time_specs=[('total', 'Total', '#E69F00', None)],
+        use_title=use_title,
+        savefig=savefig,
+        linestyle=linestyle,
+        markersize=markersize,
+        legend_names=legend_names,
+        title=title,
+        latex=latex,
+        show_nl_iters=show_nl_iters,
+        log_x=log_x,
+        log_y=log_y,
+        filename_prefix='iters_total'
+    )
+
 
 def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig=None, title=None):
     """
@@ -738,19 +770,10 @@ def plot_throughput(df, cumulative, xtype, xlabel, time_unit, use_title=False, s
 
     The function does not return anything but displays the plot.
     """
-    has_source = 'source' in df.columns
-    sources = df['source'].unique().tolist() if has_source else []
-    multiple_sources = has_source and len(sources) > 1
+    source_groups, multiple_sources = _get_source_groups(df, xtype)
 
     agg_str = "agg_" if cumulative else ''
-    ms = markersize if markersize is not None else plt.rcParams['lines.markersize']
-
-    def resolve_ls(user_ls, default_ls='-'):
-        if user_ls == 'auto':
-            return default_ls
-        if user_ls == 'none':
-            return 'None'
-        return user_ls
+    ms = _resolve_markersize(markersize)
 
     logger.debug(f"Plotting throughput (cumulative={cumulative}, xtype={xtype})")
     plt.figure(figsize=fgs)
@@ -765,8 +788,7 @@ def plot_throughput(df, cumulative, xtype, xlabel, time_unit, use_title=False, s
     )
 
     if multiple_sources:
-        for src in sources:
-            grp = df_with_throughput[df_with_throughput['source'] == src].sort_values(by=xtype)
+        for src, grp in source_groups:
             # Filter out rows where throughput is None
             grp = grp[grp['throughput'].notna()]
             if len(grp) == 0:
@@ -778,7 +800,7 @@ def plot_throughput(df, cumulative, xtype, xlabel, time_unit, use_title=False, s
                 y = cum_rows / cum_total
             else:
                 y = grp['throughput']
-            ls = resolve_ls(linestyle, '-')
+            ls = _resolve_linestyle(linestyle, '-')
             plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label=f"Throughput ({src})")
         plt.legend(loc="best", fontsize=lgfs)
     else:
@@ -793,7 +815,7 @@ def plot_throughput(df, cumulative, xtype, xlabel, time_unit, use_title=False, s
                 y = cum_rows / cum_total
             else:
                 y = grp['throughput']
-            ls = resolve_ls(linestyle, '-')
+            ls = _resolve_linestyle(linestyle, '-')
             plt.plot(grp[xtype], y, marker='o', linestyle=ls, markersize=ms, label="Throughput")
             plt.legend(loc="best", fontsize=lgfs)
 
@@ -893,16 +915,9 @@ def plot_weak_scaling(df, xtype, xlabel, metrics, metric_labels, time_unit,
     plt.figure(figsize=fgs)
     ms = markersize if markersize is not None else plt.rcParams['lines.markersize']
 
-    def resolve_ls(user_ls, default_ls='-'):
-        if user_ls == 'auto':
-            return default_ls
-        if user_ls == 'none':
-            return 'None'
-        return user_ls
-
     import numpy as np
 
-    ls = resolve_ls(linestyle)
+    ls = _resolve_linestyle(linestyle)
     # Cast to plain float to avoid pandas nullable-integer/extension-array
     # incompatibilities with matplotlib (fill_between, axhline, etc.)
     x = grouped[xtype].to_numpy(dtype=float, na_value=float('nan'))
@@ -1066,7 +1081,7 @@ def main():
               'nl_step': "Nonlinear step"}
 
     # List of pre-defined modes:
-    mode_choices = ('iters', 'times', 'iters-and-times', 'setup', 'solve', 'total', 'throughput', 'bar', 'weak-scaling')
+    mode_choices = ('iters', 'times', 'iters-and-times', 'iters-and-total', 'setup', 'solve', 'total', 'throughput', 'bar', 'weak-scaling')
 
     # Metric qualifiers accepted after 'weak-scaling+' or 'bar+'
     ws_metric_choices  = ('setup', 'solve', 'total', 'times', 'iters', 'throughput', 'iter-times')
@@ -1446,6 +1461,9 @@ def main():
 
         if check_mode_exact_match(args.mode, 'iters-and-times'):
             plot_iters_times(plot_df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, plot_savefig, args.linestyle, args.markersize, legend_names, plot_title, args.latex_legend, show_nl_iters, log_x, log_y)
+
+        if check_mode_exact_match(args.mode, 'iters-and-total'):
+            plot_iters_total(plot_df, args.cumulative, args.xtype, xlabel, time_unit, args.use_title, plot_savefig, args.linestyle, args.markersize, legend_names, plot_title, args.latex_legend, show_nl_iters, log_x, log_y)
 
         if check_mode_exact_match(args.mode, 'setup'):
             plot_time_metric(plot_df, args.cumulative, args.xtype, xlabel, time_unit, 'setup', args.use_title, plot_savefig, args.linestyle, args.markersize, legend_names, plot_title, args.latex_legend, log_x, log_y)
