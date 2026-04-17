@@ -10,6 +10,36 @@ set(HYPREDRV_TESTING_DIR "${CMAKE_CURRENT_LIST_DIR}")
 # configure time by probing Hypre version macros from headers.
 include(CheckCSourceCompiles)
 
+function(_hypredrv_collect_plain_include_dirs out_var)
+    set(_plain_include_dirs "")
+    foreach(_inc_dir IN LISTS ARGN)
+        if(NOT _inc_dir)
+            continue()
+        endif()
+        if(_inc_dir MATCHES "^\\$<BUILD_INTERFACE:([^>]+)>$")
+            list(APPEND _plain_include_dirs "${CMAKE_MATCH_1}")
+            continue()
+        endif()
+        if(_inc_dir MATCHES "^\\$<INSTALL_INTERFACE:")
+            continue()
+        endif()
+        if(_inc_dir MATCHES "^\\$<TARGET_PROPERTY:")
+            continue()
+        endif()
+        list(APPEND _plain_include_dirs "${_inc_dir}")
+    endforeach()
+
+    if(EXISTS "${CMAKE_BINARY_DIR}/_deps/hypre-build/HYPRE_config.h")
+        list(APPEND _plain_include_dirs "${CMAKE_BINARY_DIR}/_deps/hypre-build")
+    endif()
+    if(EXISTS "${CMAKE_BINARY_DIR}/_deps/hypre-src/src/HYPRE.h")
+        list(APPEND _plain_include_dirs "${CMAKE_BINARY_DIR}/_deps/hypre-src/src")
+    endif()
+
+    list(REMOVE_DUPLICATES _plain_include_dirs)
+    set(${out_var} "${_plain_include_dirs}" PARENT_SCOPE)
+endfunction()
+
 # Append shared runtime environment settings (and optional extras) to a CTest
 # test without clobbering existing ENVIRONMENT properties.
 function(hypredrv_append_test_environment test_name)
@@ -341,11 +371,14 @@ endfunction()
 function(hypredrv_check_hypre_symbol symbol)
     set(_hypredrv_out_var "HYPREDRV_HAVE_${symbol}")
     set(_hypredrv_saved_includes "${CMAKE_REQUIRED_INCLUDES}")
-    set(CMAKE_REQUIRED_INCLUDES
+    _hypredrv_collect_plain_include_dirs(_hypredrv_required_includes
         ${HYPRE_INCLUDE_DIRS}
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_BINARY_DIR}
         ${MPI_C_INCLUDE_DIRS}
+    )
+    set(CMAKE_REQUIRED_INCLUDES
+        ${_hypredrv_required_includes}
     )
     check_c_source_compiles("
       #include \"HYPRE_config.h\"
@@ -356,6 +389,7 @@ function(hypredrv_check_hypre_symbol symbol)
     " ${_hypredrv_out_var})
     set(CMAKE_REQUIRED_INCLUDES "${_hypredrv_saved_includes}")
     unset(_hypredrv_saved_includes)
+    unset(_hypredrv_required_includes)
     unset(_hypredrv_out_var)
 endfunction()
 
@@ -366,11 +400,14 @@ function(hypredrv_check_hypre_version release develop)
     # Include Hypre headers (from find_package) and HypreDrive headers (for utils.h)
     set(_hypredrv_saved_includes "${CMAKE_REQUIRED_INCLUDES}")
     set(_hypredrv_saved_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
-    set(CMAKE_REQUIRED_INCLUDES
+    _hypredrv_collect_plain_include_dirs(_hypredrv_required_includes
         ${HYPRE_INCLUDE_DIRS}
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_BINARY_DIR}
         ${MPI_C_INCLUDE_DIRS}
+    )
+    set(CMAKE_REQUIRED_INCLUDES
+        ${_hypredrv_required_includes}
     )
     if(DEFINED HYPREDRV_HYPRE_RELEASE_NUMBER)
         list(APPEND CMAKE_REQUIRED_DEFINITIONS
@@ -395,6 +432,7 @@ function(hypredrv_check_hypre_version release develop)
     set(CMAKE_REQUIRED_DEFINITIONS "${_hypredrv_saved_definitions}")
     unset(_hypredrv_saved_includes)
     unset(_hypredrv_saved_definitions)
+    unset(_hypredrv_required_includes)
     unset(_hypredrv_out_var)
 endfunction()
 

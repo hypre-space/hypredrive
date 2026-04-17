@@ -30,6 +30,58 @@ function(_hypredrv_link_mpi_interface target_name)
     endif()
 endfunction()
 
+function(_hypredrv_collect_plain_include_dirs_for_deps out_var)
+    set(_plain_include_dirs "")
+    foreach(_inc_dir IN LISTS ARGN)
+        if(NOT _inc_dir)
+            continue()
+        endif()
+        if(_inc_dir MATCHES "^\\$<BUILD_INTERFACE:([^>]+)>$")
+            list(APPEND _plain_include_dirs "${CMAKE_MATCH_1}")
+            continue()
+        endif()
+        if(_inc_dir MATCHES "^\\$<INSTALL_INTERFACE:")
+            continue()
+        endif()
+        if(_inc_dir MATCHES "^\\$<TARGET_PROPERTY:")
+            continue()
+        endif()
+        list(APPEND _plain_include_dirs "${_inc_dir}")
+    endforeach()
+    list(REMOVE_DUPLICATES _plain_include_dirs)
+    set(${out_var} "${_plain_include_dirs}" PARENT_SCOPE)
+endfunction()
+
+function(_hypredrv_detect_hypre_sycl_usage)
+    set(HYPREDRV_HYPRE_USES_SYCL FALSE PARENT_SCOPE)
+
+    if(NOT TARGET HYPRE::HYPRE)
+        return()
+    endif()
+
+    get_target_property(_hypre_compile_defs HYPRE::HYPRE INTERFACE_COMPILE_DEFINITIONS)
+    if(_hypre_compile_defs)
+        foreach(_def IN LISTS _hypre_compile_defs)
+            if(_def MATCHES "(^|[^A-Za-z0-9_])HYPRE_USING_SYCL([^A-Za-z0-9_]|$)")
+                set(HYPREDRV_HYPRE_USES_SYCL TRUE PARENT_SCOPE)
+                return()
+            endif()
+        endforeach()
+    endif()
+
+    get_target_property(_hypre_include_dirs HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+    _hypredrv_collect_plain_include_dirs_for_deps(_hypre_plain_include_dirs ${_hypre_include_dirs})
+    foreach(_inc_dir IN LISTS _hypre_plain_include_dirs)
+        if(EXISTS "${_inc_dir}/HYPRE_config.h")
+            file(READ "${_inc_dir}/HYPRE_config.h" _hypre_config_content)
+            if(_hypre_config_content MATCHES "#define[ \t]+HYPRE_USING_SYCL([ \t]+1)?")
+                set(HYPREDRV_HYPRE_USES_SYCL TRUE PARENT_SCOPE)
+                return()
+            endif()
+        endif()
+    endforeach()
+endfunction()
+
 function(_hypredrv_set_using_caliper enabled)
     if(enabled)
         set(HYPREDRV_USING_CALIPER 1 PARENT_SCOPE)
@@ -594,6 +646,38 @@ if(NOT HYPRE_FOUND)
         endif()
     endif()
 
+    # Workaround: HYPRE's SYCL device enumeration constructs a single
+    # sycl::platform from gpu_selector_v, which fails when the selected
+    # platform exposes no GPUs. Rewrite both call sites to enumerate GPUs
+    # across all platforms via sycl::device::get_devices(). Remove this once
+    # the equivalent change lands upstream (see hypre-sycl.patch).
+    if(HYPRE_ENABLE_SYCL AND EXISTS "${hypre_SOURCE_DIR}/src/utilities/general.c")
+        file(READ "${hypre_SOURCE_DIR}/src/utilities/general.c" HYPRE_GENERAL_CONTENT)
+        if(NOT HYPRE_GENERAL_CONTENT MATCHES "hypre_GetSYCLGpuDevices")
+            set(_set_device_old "         sycl::platform platform(sycl::gpu_selector_v);\n         auto gpu_devices = platform.get_devices(sycl::info::device_type::gpu);\n")
+            set(_set_device_new "         auto gpu_devices = hypre_GetSYCLGpuDevices();\n")
+            set(_count_old "   (*device_count) = 0;\n   sycl::platform platform(sycl::gpu_selector_v);\n   auto const& gpu_devices = platform.get_devices(sycl::info::device_type::gpu);\n   HYPRE_Int i;\n   for (i = 0; i < gpu_devices.size(); i++)\n   {\n      (*device_count)++;\n   }\n")
+            set(_count_new "   auto gpu_devices = hypre_GetSYCLGpuDevices();\n   (*device_count) = (hypre_int) gpu_devices.size();\n")
+
+            if(NOT (HYPRE_GENERAL_CONTENT MATCHES "sycl::platform platform.sycl::gpu_selector_v"))
+                message(WARNING
+                    "  HYPRE general.c does not contain the expected 'sycl::platform(sycl::gpu_selector_v)' call sites. "
+                    "The SYCL enumeration workaround will be skipped; upstream HYPRE may have been updated.")
+            else()
+                string(REPLACE
+                    "#include \"_hypre_utilities.hpp\"\n"
+                    "#include \"_hypre_utilities.hpp\"\n\n#if defined(HYPRE_USING_SYCL)\nstatic std::vector<sycl::device>\nhypre_GetSYCLGpuDevices(void)\n{\n   return sycl::device::get_devices(sycl::info::device_type::gpu);\n}\n#endif\n"
+                    HYPRE_GENERAL_CONTENT "${HYPRE_GENERAL_CONTENT}")
+                string(REPLACE "${_set_device_old}" "${_set_device_new}"
+                    HYPRE_GENERAL_CONTENT "${HYPRE_GENERAL_CONTENT}")
+                string(REPLACE "${_count_old}" "${_count_new}"
+                    HYPRE_GENERAL_CONTENT "${HYPRE_GENERAL_CONTENT}")
+                file(WRITE "${hypre_SOURCE_DIR}/src/utilities/general.c" "${HYPRE_GENERAL_CONTENT}")
+                message(STATUS "  HYPRE general.c patched to enumerate SYCL GPU devices via sycl::device::get_devices")
+            endif()
+        endif()
+    endif()
+
     # Add HYPRE subdirectory manually (pointing to src subdirectory)
     # This is done after MakeAvailable and patching to allow patching before configuration
     if(NOT TARGET HYPRE::HYPRE)
@@ -641,6 +725,7 @@ endif()
 
 # Get HYPRE properties
 if(TARGET HYPRE::HYPRE)
+    _hypredrv_detect_hypre_sycl_usage()
     get_target_property(HYPRE_INCLUDE_DIRS HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
 
     # Try to get library location - handle both Release and Debug configurations.
@@ -707,6 +792,7 @@ if(TARGET HYPRE::HYPRE)
     message(STATUS "Found HYPRE:")
     message(STATUS "  include directories: ${HYPRE_INCLUDE_DIRS}")
     message(STATUS "  libraries: ${HYPRE_LIBRARY_FILE}")
+    message(STATUS "  uses SYCL: ${HYPREDRV_HYPRE_USES_SYCL}")
 
     # Build a runtime library search path for CTest so executables can launch
     # when HYPRE's transitive shared-library dependencies (e.g., Caliper) are

@@ -67,6 +67,11 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
+# Some external HYPRE package configs pull in C++/SYCL-side imported targets
+# during find_package(HYPRE). Make CXX available up front when a compiler
+# exists, without forcing pure-C builds to fail on toolchains that lack C++.
+enable_language(CXX OPTIONAL)
+
 # Include directories
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
@@ -371,10 +376,21 @@ if(HYPREDRV_ENABLE_EXAMPLES)
 endif()
 
 # Add a check target
+set(_hypredrv_smoke_check_args
+    -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+    -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
+)
+if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
+    list(APPEND _hypredrv_smoke_check_args
+         "-DTEST_RUNTIME_ENV_ASSIGNMENT=${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
+endif()
+if(HYPREDRV_HYPRE_USES_SYCL)
+    list(APPEND _hypredrv_smoke_check_args -DHYPREDRV_SMOKE_TEST_USES_SYCL=ON)
+endif()
+
 add_custom_target(check
   COMMAND ${CMAKE_COMMAND}
-          -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
-          -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
+          ${_hypredrv_smoke_check_args}
           -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_SmokeCheck.cmake
   DEPENDS hypredrive-cli
   COMMENT "Running smoke test (ex1.yml)"
