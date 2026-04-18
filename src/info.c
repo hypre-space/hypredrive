@@ -356,6 +356,12 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
    return !read_failed && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
+static int GetIntelXeCardByOrdinal(int gpu_ordinal, char *drm_path, size_t len);
+static int QueryIntelClinfoMemoryByOrdinal(int gpu_ordinal, size_t *total);
+static int QueryIntelXeMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total,
+                                     size_t *used);
+static int QueryIntelXeMemoryByOrdinal(int gpu_ordinal, size_t *total, size_t *used);
+
 #ifndef __APPLE__
 
 static int
@@ -659,7 +665,8 @@ PciBusIdMatches(const char *lhs, const char *rhs)
 }
 
 static int
-QueryNvidiaMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size_t *used)
+QueryNvidiaMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total,
+                         size_t *used)
 {
    char nvidia_path[PATH_MAX];
    char output[32768];
@@ -675,7 +682,8 @@ QueryNvidiaMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, s
    }
 
    {
-      char *argv[] = {nvidia_path, "--query-gpu=index,pci.bus_id,memory.total,memory.used",
+      char *argv[] = {nvidia_path,
+                      "--query-gpu=index,pci.bus_id,memory.total,memory.used",
                       "--format=csv,noheader,nounits", NULL};
       if (!RunCommandCapture(nvidia_path, argv, 1, output, sizeof(output)))
       {
@@ -688,8 +696,8 @@ QueryNvidiaMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, s
    line          = strtok_r(output, "\n", &saveptr);
    while (line)
    {
-      int  idx         = -1;
-      char busid[64]   = {0};
+      int    idx       = -1;
+      char   busid[64] = {0};
       size_t gpu_total = 0;
       size_t gpu_used  = 0;
 
@@ -721,7 +729,8 @@ QueryNvidiaMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, s
 }
 
 static int
-QueryAmdMetricMemoryByIndex(const char *amd_path, int gpu_index, size_t *total, size_t *used)
+QueryAmdMetricMemoryByIndex(const char *amd_path, int gpu_index, size_t *total,
+                            size_t *used)
 {
    char output[32768];
    char gpu_idx[32];
@@ -733,7 +742,7 @@ QueryAmdMetricMemoryByIndex(const char *amd_path, int gpu_index, size_t *total, 
 
    snprintf(gpu_idx, sizeof(gpu_idx), "%d", gpu_index);
    {
-      char *argv[] = { (char *)amd_path, "metric", "-g", gpu_idx, "-m", "--json", NULL };
+      char *argv[] = {(char *)amd_path, "metric", "-g", gpu_idx, "-m", "--json", NULL};
       if (!RunCommandCapture(amd_path, argv, 1, output, sizeof(output)))
       {
          return 0;
@@ -835,7 +844,7 @@ QueryAmdMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size
             value_start = strchr(value_start, '"');
             if (value_start && value_start < obj_end)
             {
-               char bdf[64] = {0};
+               char        bdf[64]   = {0};
                const char *value_end = strchr(value_start + 1, '"');
                if (value_end && value_end < obj_end)
                {
@@ -891,10 +900,10 @@ QueryIntelClinfoMemoryByOrdinal(int gpu_ordinal, size_t *total)
       }
    }
 
-   int   current_ordinal       = -1;
-   int   current_is_intel_gpu  = 0;
-   char *line                  = NULL;
-   char *saveptr               = NULL;
+   int   current_ordinal      = -1;
+   int   current_is_intel_gpu = 0;
+   char *line                 = NULL;
+   char *saveptr              = NULL;
 
    line = strtok_r(output, "\n", &saveptr);
    while (line)
@@ -963,9 +972,9 @@ CompareIntelXeCards(const void *lhs, const void *rhs)
 static int
 ReadUeventValue(const char *uevent_path, const char *key, char *value, size_t len)
 {
-   FILE *stream = NULL;
-   char  line[256];
-   int   found = 0;
+   FILE  *stream = NULL;
+   char   line[256];
+   int    found = 0;
    size_t key_len;
 
    if (!uevent_path || !key || !value || len == 0)
@@ -1007,9 +1016,9 @@ ReadUeventValue(const char *uevent_path, const char *key, char *value, size_t le
 static int
 CollectIntelXeCards(IntelXeCard *cards, int max_cards)
 {
-   DIR *dir = NULL;
+   DIR           *dir = NULL;
    struct dirent *entry;
-   int count = 0;
+   int            count = 0;
 
    if (!cards || max_cards <= 0)
    {
@@ -1025,7 +1034,7 @@ CollectIntelXeCards(IntelXeCard *cards, int max_cards)
    while ((entry = readdir(dir)) != NULL)
    {
       int  card_number = -1;
-      char trailing = '\0';
+      char trailing    = '\0';
       char uevent_path[PATH_MAX];
       char driver[32];
       char pci_slot_name[20];
@@ -1053,7 +1062,8 @@ CollectIntelXeCards(IntelXeCard *cards, int max_cards)
       }
 
       cards[count].card_number = card_number;
-      snprintf(cards[count].pci_busid, sizeof(cards[count].pci_busid), "%s", pci_slot_name);
+      snprintf(cards[count].pci_busid, sizeof(cards[count].pci_busid), "%s",
+               pci_slot_name);
       snprintf(cards[count].drm_path, sizeof(cards[count].drm_path), "/dev/dri/card%d",
                card_number);
       count++;
@@ -1068,10 +1078,10 @@ CollectIntelXeCards(IntelXeCard *cards, int max_cards)
 static int
 QueryIntelXeMemoryFromDrmPath(const char *drm_path, size_t *total, size_t *used)
 {
-   struct drm_xe_device_query       query   = {0};
-   struct drm_xe_query_mem_regions *regions = NULL;
+   struct drm_xe_device_query       query      = {0};
+   struct drm_xe_query_mem_regions *regions    = NULL;
    size_t                           vram_total = 0, vram_used = 0;
-   size_t                           sys_total  = 0, sys_used  = 0;
+   size_t                           sys_total = 0, sys_used = 0;
    int                              fd = -1;
    int                              ok = 0;
 
@@ -1198,7 +1208,8 @@ GetIntelXeCardByOrdinal(int gpu_ordinal, char *drm_path, size_t len)
 }
 
 static int
-QueryIntelXeMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size_t *used)
+QueryIntelXeMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total,
+                          size_t *used)
 {
    char drm_path[PATH_MAX];
 
@@ -1233,7 +1244,8 @@ GetIntelXeCardByOrdinal(int gpu_ordinal, char *drm_path, size_t len)
 }
 
 static int
-QueryIntelXeMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size_t *used)
+QueryIntelXeMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total,
+                          size_t *used)
 {
    (void)pci_busid;
    (void)gpu_index;
@@ -1683,9 +1695,8 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
    char **needed_entries = node->needed;
    int    needed_count   = node->needed_count;
 
-   const char **line_names =
-      (const char **)malloc((size_t)needed_count * sizeof(char *));
-   int *child_ids = (int *)malloc((size_t)needed_count * sizeof(int));
+   const char **line_names = (const char **)malloc((size_t)needed_count * sizeof(char *));
+   int         *child_ids  = (int *)malloc((size_t)needed_count * sizeof(int));
    if (!line_names || !child_ids)
    {
       free(line_names);
@@ -1760,7 +1771,7 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
 
       char next_prefix[4096];
       int  written = snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix,
-                             is_last ? "    " : "|   ");
+                              is_last ? "    " : "|   ");
       if (written < 0 || (size_t)written >= sizeof(next_prefix))
       {
          continue;
@@ -2173,7 +2184,7 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
                {
                   // Find GPU index
                   int gpu_index = -1;
-                  ptr = strchr(ptr, ':');
+                  ptr           = strchr(ptr, ':');
                   if (ptr)
                   {
                      ptr++;
@@ -2181,7 +2192,7 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
                      {
                         char *endptr;
                         gpu_index = (int)strtol(ptr, &endptr, 10);
-                        ptr = endptr;
+                        ptr       = endptr;
                      }
 
                      // Find total_vram for this GPU
@@ -2223,8 +2234,8 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
                         {
                            printf(
                               "GPU RAM AMD #%d        : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                              gpu_index >= 0 ? gpu_index : gcount, (double)used / bytes_to_gib,
-                              (double)total / bytes_to_gib,
+                              gpu_index >= 0 ? gpu_index : gcount,
+                              (double)used / bytes_to_gib, (double)total / bytes_to_gib,
                               100.0 * (double)used / (double)total);
                            gcount++;
                         }
@@ -2249,8 +2260,7 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
             {
                printf("GPU RAM Intel #%d      : %6.2f / %6.2f  (%5.2f %%) GiB\n",
                       intel_index, (double)used / bytes_to_gib,
-                      (double)total / bytes_to_gib,
-                      100.0 * (double)used / (double)total);
+                      (double)total / bytes_to_gib, 100.0 * (double)used / (double)total);
             }
             else if (QueryIntelClinfoMemoryByOrdinal(intel_index, &total))
             {
@@ -3168,8 +3178,8 @@ PrintGpuInfo(GpuInfo *gpus, int gpu_count)
    printf("\nGPU Information\n");
    printf("----------------\n");
 
-   double mib_to_gib   = (double)(1 << 10);
-   double bytes_to_gib = (double)(1 << 30);
+   double mib_to_gib    = (double)(1 << 10);
+   double bytes_to_gib  = (double)(1 << 30);
    int    intel_ordinal = 0;
 
    for (int i = 0; i < gpu_count; i++)
@@ -3231,9 +3241,10 @@ PrintGpuInfo(GpuInfo *gpus, int gpu_count)
             int gpu_index = -1;
             if (QueryIntelXeMemoryByBusId(gpus[i].pci_busid, &gpu_index, &total, &used))
             {
-               printf("  Memory               : %6.2f / %6.2f GiB (%5.2f %%) [Intel #%d]\n",
-                      used / bytes_to_gib, total / bytes_to_gib,
-                      100.0 * used / (double)total, gpu_index);
+               printf(
+                  "  Memory               : %6.2f / %6.2f GiB (%5.2f %%) [Intel #%d]\n",
+                  used / bytes_to_gib, total / bytes_to_gib, 100.0 * used / (double)total,
+                  gpu_index);
                found_memory = true;
             }
             /* clinfo fallback: no PCI bus id is exposed, so we index Intel
@@ -3243,7 +3254,8 @@ PrintGpuInfo(GpuInfo *gpus, int gpu_count)
              * orderings diverge. */
             else if (QueryIntelClinfoMemoryByOrdinal(intel_ordinal, &total))
             {
-               printf("  Memory               :    n/a / %6.2f GiB (usage unavailable) [Intel #%d]\n",
+               printf("  Memory               :    n/a / %6.2f GiB (usage unavailable) "
+                      "[Intel #%d]\n",
                       total / bytes_to_gib, intel_ordinal);
                found_memory = true;
             }
