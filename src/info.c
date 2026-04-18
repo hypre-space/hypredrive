@@ -1771,7 +1771,7 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
 
       char next_prefix[4096];
       int  written = snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix,
-                              is_last ? "    " : "|   ");
+                             is_last ? "    " : "|   ");
       if (written < 0 || (size_t)written >= sizeof(next_prefix))
       {
          continue;
@@ -4466,7 +4466,66 @@ PrintAcceleratorRuntimeInformation(void)
    printf("\n");
 }
 
-#endif /* !__APPLE__ */
+#else /* __APPLE__ */
+
+/* Keep linker-visible Intel helper symbols on Apple and other non-Linux builds
+ * where the DRM/XE query path is intentionally unavailable. */
+static int
+GetIntelXeCardByOrdinal(int gpu_ordinal, char *drm_path, size_t len)
+{
+   (void)gpu_ordinal;
+   (void)drm_path;
+   (void)len;
+   return 0;
+}
+
+static int
+QueryIntelClinfoMemoryByOrdinal(int gpu_ordinal, size_t *total)
+{
+   (void)gpu_ordinal;
+   if (total)
+   {
+      *total = 0;
+   }
+   return 0;
+}
+
+static int
+QueryIntelXeMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total,
+                          size_t *used)
+{
+   (void)pci_busid;
+   if (gpu_index)
+   {
+      *gpu_index = -1;
+   }
+   if (total)
+   {
+      *total = 0;
+   }
+   if (used)
+   {
+      *used = 0;
+   }
+   return 0;
+}
+
+static int
+QueryIntelXeMemoryByOrdinal(int gpu_ordinal, size_t *total, size_t *used)
+{
+   (void)gpu_ordinal;
+   if (total)
+   {
+      *total = 0;
+   }
+   if (used)
+   {
+      *used = 0;
+   }
+   return 0;
+}
+
+#endif /* __APPLE__ */
 
 /*--------------------------------------------------------------------------
  * PrintLibInfo

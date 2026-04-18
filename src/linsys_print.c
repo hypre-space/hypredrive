@@ -35,7 +35,7 @@ hypredrv_PrintSystemSetDefaultArgs(PrintSystem_args *args)
    args->type       = PRINT_SYSTEM_TYPE_ALL;
    args->stage_mask = PRINT_SYSTEM_STAGE_BUILD_BIT;
    args->artifacts  = PRINT_SYSTEM_ARTIFACT_MATRIX | PRINT_SYSTEM_ARTIFACT_RHS |
-                      PRINT_SYSTEM_ARTIFACT_DOFMAP;
+                     PRINT_SYSTEM_ARTIFACT_DOFMAP;
    snprintf(args->output_dir, sizeof(args->output_dir), "%s", "hypredrive-data");
    args->overwrite          = 0;
    args->next_dump_index    = 0;
