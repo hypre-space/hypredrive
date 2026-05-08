@@ -114,7 +114,7 @@ MGRFRelaxWrapperDestroy(void *wrapper_v)
 
 static void
 hypredrv_MGRSetFSolverAtLevel(HYPRE_Solver precon, HYPRE_Solver fsolver, HYPRE_Int level,
-                             HYPRE_Int f_relax_type)
+                              HYPRE_Int f_relax_type)
 {
    if (!precon || !fsolver)
    {
@@ -133,8 +133,8 @@ hypredrv_MGRSetFSolverAtLevel(HYPRE_Solver precon, HYPRE_Solver fsolver, HYPRE_I
 #ifdef HYPRE_USING_DSUPERLU
    if (level == 0 && f_relax_type == 29)
    {
-      HYPRE_MGRSetFSolver(precon, HYPRE_MGRDirectSolverSolve,
-                          HYPRE_MGRDirectSolverSetup, fsolver);
+      HYPRE_MGRSetFSolver(precon, HYPRE_MGRDirectSolverSolve, HYPRE_MGRDirectSolverSetup,
+                          fsolver);
       return;
    }
 #endif
@@ -3270,8 +3270,9 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
                (int)orig_lvl);
          }
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
-         hypredrv_MGRSetFSolverAtLevel(precon, (HYPRE_Solver)level_args->f_relaxation.krylov,
-                                       i, level_args->f_relaxation.type);
+         hypredrv_MGRSetFSolverAtLevel(precon,
+                                       (HYPRE_Solver)level_args->f_relaxation.krylov, i,
+                                       level_args->f_relaxation.type);
 #else
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("Nested Krylov F-relaxation requires hypre >= 2.31.0");
