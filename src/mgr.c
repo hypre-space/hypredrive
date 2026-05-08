@@ -112,6 +112,41 @@ MGRFRelaxWrapperDestroy(void *wrapper_v)
    return 0;
 }
 
+static void
+hypredrv_MGRSetFSolverAtLevel(HYPRE_Solver precon, HYPRE_Solver fsolver, HYPRE_Int level,
+                             HYPRE_Int f_relax_type)
+{
+   if (!precon || !fsolver)
+   {
+      return;
+   }
+
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+   /* Work around legacy/modern API mixing in newer hypre: for first-level ILU and
+    * direct solvers, configure through the legacy entry point so setup uses the
+    * expected callbacks on the provided solver handle. */
+   if (level == 0 && f_relax_type == 32)
+   {
+      HYPRE_MGRSetFSolver(precon, HYPRE_ILUSolve, HYPRE_ILUSetup, fsolver);
+      return;
+   }
+#ifdef HYPRE_USING_DSUPERLU
+   if (level == 0 && f_relax_type == 29)
+   {
+      HYPRE_MGRSetFSolver(precon, HYPRE_MGRDirectSolverSolve,
+                          HYPRE_MGRDirectSolverSetup, fsolver);
+      return;
+   }
+#endif
+   HYPRE_MGRSetFSolverAtLevel(precon, fsolver, level);
+#else
+   (void)level;
+   (void)f_relax_type;
+#endif
+   (void)fsolver;
+   (void)precon;
+}
+
 static HYPRE_Solver
 MGRNestedFRelaxWrapperCreate(HYPRE_Solver inner_mgr, IntArray *owned_dofmap)
 {
@@ -1978,8 +2013,9 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
       }
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
-      HYPRE_MGRSetFSolverAtLevel(
-         mgr_solver, (HYPRE_Solver)level_args->f_relaxation.krylov, active_lvl);
+      hypredrv_MGRSetFSolverAtLevel(mgr_solver,
+                                    (HYPRE_Solver)level_args->f_relaxation.krylov,
+                                    active_lvl, level_args->f_relaxation.type);
 #endif
       return;
    }
@@ -2023,7 +2059,8 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
    }
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
-   HYPRE_MGRSetFSolverAtLevel(mgr_solver, fsolver, active_lvl);
+   hypredrv_MGRSetFSolverAtLevel(mgr_solver, fsolver, active_lvl,
+                                 level_args->f_relaxation.type);
 #endif
    MGRDestroyDetachedFSolver(&level_args->f_relaxation, &old_fsolver);
    args->frelax[orig_lvl] = fsolver;
@@ -3161,11 +3198,11 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
        *   traversal  = V(1-3) or W(4-6)
        *   smooth_pos = pre(1), post(2), both(3) — same for F and G relaxation
        */
-      HYPRE_Int traversal  = (args->cycle >= 4) ? 2 : 1;
       HYPRE_Int smooth_pos = ((args->cycle - 1) % 3) + 1;
-      HYPRE_MGRSetCycleType(precon, traversal);
+      /* Some hypre snapshots in this stream do not expose
+         HYPRE_MGRSetCycleType/HYPRE_MGRSetFRelaxSmoothCycle; set the
+         currently supported global smooth cycle knob as a safe fallback. */
       HYPRE_MGRSetGlobalSmoothCycle(precon, smooth_pos);
-      HYPRE_MGRSetFRelaxSmoothCycle(precon, smooth_pos);
    }
 #endif
 #if HYPRE_CHECK_MIN_VERSION(22000, 0)
@@ -3233,8 +3270,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
                (int)orig_lvl);
          }
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
-         HYPRE_MGRSetFSolverAtLevel(precon, (HYPRE_Solver)level_args->f_relaxation.krylov,
-                                    i);
+         hypredrv_MGRSetFSolverAtLevel(precon, (HYPRE_Solver)level_args->f_relaxation.krylov,
+                                       i, level_args->f_relaxation.type);
 #else
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("Nested Krylov F-relaxation requires hypre >= 2.31.0");
@@ -3255,7 +3292,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
                                (int)orig_lvl);
          }
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
-         HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
+         hypredrv_MGRSetFSolverAtLevel(precon, frelax, i, level_args->f_relaxation.type);
 #elif HYPRE_CHECK_MIN_VERSION(21900, 0)
          HYPRE_MGRSetFSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup,
                              (HYPRE_Solver)frelax);
@@ -3326,7 +3363,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
          }
          /* GCOVR_EXCL_STOP */
          nested_dofmap = NULL;
-         HYPRE_MGRSetFSolverAtLevel(precon, frelax_wrapper, i);
+         hypredrv_MGRSetFSolverAtLevel(precon, frelax_wrapper, i,
+                                       level_args->f_relaxation.type);
          args->frelax[orig_lvl] = frelax_wrapper;
 #else
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
@@ -3358,7 +3396,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
                                "reusing cached MGR F-relax solver handle at level %d",
                                (int)orig_lvl);
          }
-         HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
+         hypredrv_MGRSetFSolverAtLevel(precon, frelax, i, level_args->f_relaxation.type);
          args->frelax[orig_lvl] = frelax;
 #else
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
@@ -3392,7 +3430,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
                                "reusing cached MGR F-relax solver handle at level %d",
                                (int)orig_lvl);
          }
-         HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
+         hypredrv_MGRSetFSolverAtLevel(precon, frelax, i, level_args->f_relaxation.type);
          args->frelax[orig_lvl] = frelax;
       }
 #endif
@@ -3420,7 +3458,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
                                "reusing cached MGR F-relax solver handle at level %d",
                                (int)orig_lvl);
          }
-         HYPRE_MGRSetFSolverAtLevel(precon, frelax, i);
+         hypredrv_MGRSetFSolverAtLevel(precon, frelax, i, level_args->f_relaxation.type);
          args->frelax[orig_lvl] = frelax;
       }
 #else

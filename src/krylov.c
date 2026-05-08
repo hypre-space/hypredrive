@@ -383,6 +383,7 @@ hypredrv_NestedKrylovSetDefaultArgs(NestedKrylov_args *args)
    args->setup         = NestedKrylovSetupThunk;
    args->solve         = NestedKrylovSolveThunk;
    args->destroy       = NestedKrylovDestroyThunk;
+   args->is_setup      = 0;
    args->is_set        = 0;
    args->solver_method = SOLVER_GMRES;
    args->has_precon    = 0;
