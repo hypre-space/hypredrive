@@ -17,6 +17,7 @@
 #undef PACKAGE_URL
 #undef PACKAGE_VERSION
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -34,6 +35,17 @@ IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_locatio
 #else
    (void)memory_location;
    HYPRE_IJVectorInitialize(vec);
+#endif
+}
+
+static void
+IJMatrixInitializeCompat(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_location)
+{
+#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
+   HYPRE_IJMatrixInitialize_v2(mat, memory_location);
+#else
+   (void)memory_location;
+   HYPRE_IJMatrixInitialize(mat);
 #endif
 }
 
@@ -732,6 +744,168 @@ hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "matrix read end");
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_LinearSystemBuildMatrixFromCSR
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm comm, HYPRE_MemoryLocation memory_location,
+                                        HYPRE_BigInt        row_start,
+                                        HYPRE_BigInt        row_end,
+                                        const HYPRE_BigInt *indptr,
+                                        const HYPRE_BigInt *col_indices,
+                                        const HYPRE_Real   *data,
+                                        HYPRE_IJMatrix     *mat_ptr)
+{
+   if (!mat_ptr || !indptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: mat_ptr and indptr must be non-NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+   if (row_end < row_start)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: row_end (%lld) < row_start (%lld)",
+                           (long long)row_end, (long long)row_start);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_BigInt nrows_big = row_end - row_start + 1;
+   if (nrows_big > (HYPRE_BigInt)INT_MAX)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: local row count (%lld) exceeds INT_MAX",
+                           (long long)nrows_big);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_Int nrows = (HYPRE_Int)nrows_big;
+   HYPRE_Int nnz   = (HYPRE_Int)(indptr[nrows] - indptr[0]);
+   if (nnz > 0 && (!col_indices || !data))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "BuildMatrixFromCSR: col_indices/data must be non-NULL when nnz > 0");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   /* Destroy any pre-existing matrix at *mat_ptr (caller pattern, like ReadMatrix) */
+   if (*mat_ptr)
+   {
+      HYPRE_IJMatrixDestroy(*mat_ptr);
+      *mat_ptr = NULL;
+   }
+
+   /* IJMatrixCreate requires a square global column range matching the row range
+    * across all ranks. We pass the rank-local row range for both row and column
+    * lower/upper bounds; HYPRE composes the global column partition from the
+    * concatenation. This matches how matrices read from file are built (see
+    * src/matrix.c) and gives standard ParCSR layout. */
+   HYPRE_IJMatrixCreate(comm, row_start, row_end, row_start, row_end, mat_ptr);
+   HYPRE_IJMatrixSetObjectType(*mat_ptr, HYPRE_PARCSR);
+   IJMatrixInitializeCompat(*mat_ptr, memory_location);
+
+   if (nrows == 0)
+   {
+      HYPRE_IJMatrixAssemble(*mat_ptr);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   /* Build the per-row column counts and the global row index list expected by
+    * HYPRE_IJMatrixSetValues. We allocate using HYPRE's allocator so that the
+    * temporary fits cleanly in the existing memory-tracking story. */
+   HYPRE_Int    *ncols_per_row = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
+   HYPRE_BigInt *row_ids       = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_HOST);
+   for (HYPRE_Int i = 0; i < nrows; i++)
+   {
+      HYPRE_BigInt row_nnz = indptr[i + 1] - indptr[i];
+      if (row_nnz < 0)
+      {
+         hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
+         hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
+         HYPRE_IJMatrixDestroy(*mat_ptr);
+         *mat_ptr = NULL;
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: indptr is not monotonically "
+                              "non-decreasing at row %lld",
+                              (long long)i);
+         return hypredrv_ErrorCodeGet();
+      }
+      ncols_per_row[i] = (HYPRE_Int)row_nnz;
+      row_ids[i]       = row_start + (HYPRE_BigInt)i;
+   }
+
+   /* Single-shot value insertion. HYPRE copies into its own ParCSR storage. */
+   HYPRE_IJMatrixSetValues(*mat_ptr, nrows, ncols_per_row, row_ids,
+                           col_indices + indptr[0], data + indptr[0]);
+   HYPRE_IJMatrixAssemble(*mat_ptr);
+
+   hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
+   hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_LinearSystemBuildRHSFromArray
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm comm, HYPRE_MemoryLocation memory_location,
+                                       HYPRE_BigInt row_start, HYPRE_BigInt row_end,
+                                       const HYPRE_Real *values, HYPRE_IJVector *rhs_ptr)
+{
+   if (!rhs_ptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("BuildRHSFromArray: rhs_ptr must be non-NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+   if (row_end < row_start)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("BuildRHSFromArray: row_end (%lld) < row_start (%lld)",
+                           (long long)row_end, (long long)row_start);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_BigInt nrows_big = row_end - row_start + 1;
+   if (nrows_big > (HYPRE_BigInt)INT_MAX)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("BuildRHSFromArray: local row count (%lld) exceeds INT_MAX",
+                           (long long)nrows_big);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_Int nrows = (HYPRE_Int)nrows_big;
+   if (nrows > 0 && !values)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("BuildRHSFromArray: values must be non-NULL when nrows > 0");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (*rhs_ptr)
+   {
+      HYPRE_IJVectorDestroy(*rhs_ptr);
+      *rhs_ptr = NULL;
+   }
+
+   HYPRE_IJVectorCreate(comm, row_start, row_end, rhs_ptr);
+   HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
+   IJVectorInitializeCompat(*rhs_ptr, memory_location);
+
+   if (nrows > 0)
+   {
+      HYPRE_IJVectorSetValues(*rhs_ptr, nrows, NULL, values);
+   }
+   HYPRE_IJVectorAssemble(*rhs_ptr);
+
+   return hypredrv_ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------

@@ -1,0 +1,81 @@
+[build-system]
+requires = [
+    "scikit-build-core>=0.10",
+    "cython>=3.0",
+    "numpy>=1.20",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "hypredrive"
+version = "0.3.0.dev0"
+description = "Python interface to the hypredrive sparse-linear-system driver"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "HYPRE Project Developers" },
+]
+keywords = ["hypre", "linear-solver", "amg", "sparse", "scientific-computing", "mpi"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+dependencies = [
+    "numpy>=1.20",
+]
+
+[project.optional-dependencies]
+mpi = ["mpi4py>=3.1"]
+scipy = ["scipy>=1.7"]
+test = [
+    "pytest>=7",
+    "scipy>=1.7",
+    "mpi4py>=3.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/hypre-space/hypredrive"
+Documentation = "https://hypredrive.readthedocs.io"
+Repository = "https://github.com/hypre-space/hypredrive.git"
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+cmake.version = ">=3.23"
+cmake.build-type = "Release"
+build.verbose = false
+logging.level = "INFO"
+wheel.packages = ["src/hypredrive"]
+sdist.include = [
+    "src/hypredrive/*.pyx",
+    "src/hypredrive/*.pxd",
+    "src/hypredrive/*.py",
+    "CMakeLists.txt",
+    "README.md",
+]
+sdist.exclude = [
+    "tests/",
+    ".pytest_cache/",
+    "**/__pycache__/",
+]
+
+[tool.scikit-build.cmake.define]
+# Default to system / installed HYPREDRV. Users override with
+#   pip install . --config-settings=cmake.define.HYPREDRV_DIR=/path/to/hypredrive/install/lib/cmake/HYPREDRV
+HYPREDRV_PYTHON_USE_INSTALLED = "ON"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+addopts = "-ra"

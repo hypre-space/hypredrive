@@ -1,6 +1,7 @@
 ###############
 # Miscellaneous
 ###############
+.DS_Store
 *.o
 *.lo
 *.btr
@@ -16,6 +17,8 @@ old-*
 *.vtr
 .gdbinit
 __pycache__/
+.python-version
+.venv/
 .libs/
 install*/
 .vscode/

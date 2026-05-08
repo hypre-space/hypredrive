@@ -681,6 +681,94 @@ extern "C"
                                                                HYPRE_Vector vec);
 
    /**
+    * @brief Build the linear-system matrix from per-rank CSR arrays.
+    *
+    * Constructs a HYPRE_PARCSR matrix from the caller's rank-local rows in CSR
+    * layout and installs it as the system matrix on the HYPREDRV object.
+    *
+    * The function performs a single internal copy through HYPRE's IJ assembly,
+    * so the caller's @p indptr, @p col_indices, and @p data buffers are not
+    * aliased and may be released as soon as this call returns. HYPREDRV
+    * always takes ownership of the resulting matrix and destroys it on
+    * HYPREDRV_Destroy(), regardless of library mode.
+    *
+    * The row range is hypre-style inclusive: rank-local rows are
+    * [@p row_start, @p row_end]. Column indices in @p col_indices are global.
+    * The union of [@p row_start, @p row_end] across all ranks must form a
+    * contiguous global row partition starting at 0.
+    *
+    * @param hypredrv     The HYPREDRV_t object to associate the matrix with.
+    * @param row_start    First locally-owned global row index (inclusive).
+    * @param row_end      Last locally-owned global row index (inclusive).
+    * @param indptr       CSR row pointers, length nrows+1, where
+    *                     nrows = row_end - row_start + 1.
+    * @param col_indices  Global column indices, length indptr[nrows].
+    * @param data         Nonzero values, length indptr[nrows].
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note When called multiple times, any previously-installed system matrix
+    * (and the preconditioner matrix derived from it) is destroyed first.
+    *
+    * Example Usage:
+    * @code
+    *    HYPRE_BigInt row_start = ..., row_end = ...;     // local row range
+    *    HYPRE_BigInt *indptr   = ..., *col_idx  = ...;
+    *    HYPRE_Real   *data     = ...;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrixFromCSR(
+    *       hypredrv, row_start, row_end, indptr, col_idx, data));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetMatrixFromCSR(
+      HYPREDRV_t          hypredrv,
+      HYPRE_BigInt        row_start,
+      HYPRE_BigInt        row_end,
+      const HYPRE_BigInt *indptr,
+      const HYPRE_BigInt *col_indices,
+      const HYPRE_Real   *data);
+
+   /**
+    * @brief Build the linear-system right-hand side from a per-rank values array.
+    *
+    * Constructs a HYPRE_PARCSR vector from the caller's rank-local values and
+    * installs it as the RHS on the HYPREDRV object.
+    *
+    * The function copies @p values into HYPRE-owned storage; the caller's
+    * buffer may be released as soon as this call returns. HYPREDRV always takes
+    * ownership of the resulting vector and destroys it on HYPREDRV_Destroy(),
+    * regardless of library mode.
+    *
+    * @param hypredrv   The HYPREDRV_t object to associate the RHS with.
+    * @param row_start  First locally-owned global row index (inclusive).
+    * @param row_end    Last locally-owned global row index (inclusive).
+    * @param values     Local RHS values, length row_end - row_start + 1.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note Typically called after HYPREDRV_LinearSystemSetMatrixFromCSR with
+    * the same @p row_start / @p row_end, so the RHS partition matches the
+    * matrix row partition.
+    *
+    * Example Usage:
+    * @code
+    *    HYPRE_Real *b = ...;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHSFromArray(
+    *       hypredrv, row_start, row_end, b));
+    * @endcode
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetRHSFromArray(
+      HYPREDRV_t        hypredrv,
+      HYPRE_BigInt      row_start,
+      HYPRE_BigInt      row_end,
+      const HYPRE_Real *values);
+
+   /**
     * @brief Set the initial guess for the solution vector of the linear system for a
     * HYPREDRV object.
     *
