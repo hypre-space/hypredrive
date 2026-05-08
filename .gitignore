@@ -31,10 +31,10 @@ perf-out/
 #############
 # Executables
 #############
-hypredrive*
-laplacian
-elasticity
-lidcavity
+/hypredrive*
+/laplacian
+/elasticity
+/lidcavity
 
 #############
 # Examples
