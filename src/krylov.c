@@ -390,6 +390,7 @@ hypredrv_NestedKrylovSetDefaultArgs(NestedKrylov_args *args)
    args->precon_method = PRECON_NONE;
    args->base_solver   = NULL;
    args->precon_obj    = NULL;
+   args->setup_matrix   = NULL;
 }
 
 /*-----------------------------------------------------------------------------
@@ -549,7 +550,8 @@ hypredrv_NestedKrylovSetup(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
       NestedKrylovBaseSolverSetup(args->solver_method, args->base_solver, A, b, x);
    if (!rc)
    {
-      args->is_setup = 1;
+      args->is_setup    = 1;
+      args->setup_matrix = A;
    }
    return rc;
 }
@@ -569,6 +571,17 @@ hypredrv_NestedKrylovSolve(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Nested Krylov solve called with invalid solver");
+      return 1;
+   }
+
+   if (!A)
+   {
+      A = args->setup_matrix;
+   }
+   if (!A)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Nested Krylov solve called before setup matrix was set");
       return 1;
    }
 
@@ -607,7 +620,8 @@ hypredrv_NestedKrylovDestroy(NestedKrylov_args *args)
       NestedKrylovBaseSolverDestroy(args->solver_method, args->base_solver);
       args->base_solver = NULL;
    }
-   args->is_setup = 0;
+   args->is_setup    = 0;
+   args->setup_matrix = NULL;
 
    if (args->precon_obj)
    {

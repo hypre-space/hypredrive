@@ -30,6 +30,7 @@ typedef struct NestedKrylov_args_struct
 
    HYPRE_Solver base_solver;
    HYPRE_Precon precon_obj;
+   HYPRE_Matrix setup_matrix;
 } NestedKrylov_args;
 
 void      hypredrv_NestedKrylovSetDefaultArgs(NestedKrylov_args *);
