@@ -457,6 +457,23 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
       return;
    }
 
+#if !defined(HYPREDRV_USING_LZ4)
+   if (algo == COMP_LZ4 || algo == COMP_LZ4HC)
+   {
+      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+      hypredrv_ErrorMsgAdd("LZ4 compression not enabled during build time!");
+      return;
+   }
+#endif
+#if !defined(HYPREDRV_USING_BLOSC)
+   if (algo == COMP_BLOSC)
+   {
+      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+      hypredrv_ErrorMsgAdd("BLOSC compression not enabled during build time!");
+      return;
+   }
+#endif
+
    /* GCOVR_EXCL_BR_START */
    switch (algo)
    /* GCOVR_EXCL_BR_STOP */
@@ -720,6 +737,24 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
                            (size_t)HYPREDRV_MAX_DECOMPRESSED_BYTES);
       return;
    }
+
+#if !defined(HYPREDRV_USING_LZ4)
+   if (algo == COMP_LZ4 || algo == COMP_LZ4HC)
+   {
+      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+      hypredrv_ErrorMsgAdd("LZ4 decompression not enabled during build time!");
+      return;
+   }
+#endif
+#if !defined(HYPREDRV_USING_BLOSC)
+   if (algo == COMP_BLOSC)
+   {
+      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+      hypredrv_ErrorMsgAdd("BLOSC decompression not enabled during build time!");
+      return;
+   }
+#endif
+
    {
       /* GCOVR_EXCL_BR_START */
       size_t alloc_n = orig_size > 0 ? orig_size : 1;

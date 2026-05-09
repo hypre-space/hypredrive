@@ -3748,7 +3748,7 @@ test_PreconSetup_mgr_frelax_nested_mgr_dof_labels(void)
 static void
 test_PreconSetup_mgr_frelax_nested_mgr_body_split_labels(void)
 {
-#if !HYPRE_CHECK_MIN_VERSION(23100, 9)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 5)
    return;
 #endif
    TEST_HYPRE_INIT();

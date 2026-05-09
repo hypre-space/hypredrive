@@ -870,7 +870,7 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    hypredrv_IntArrayDestroy(&hypredrv->precon_reuse_timesteps.ids);
    hypredrv_IntArrayDestroy(&hypredrv->precon_reuse_timesteps.starts);
    hypredrv_PreconReuseStateDestroy(&hypredrv->precon_reuse_state);
-#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+#if HYPRE_CHECK_MIN_VERSION(30100, 28)
    if (hypredrv->iargs)
    {
       hypredrv_PreconArgsDestroyRuntimeState(hypredrv->iargs->precon_method,
@@ -2862,7 +2862,7 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
    {
       if (hypredrv->precon)
       {
-#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+#if HYPRE_CHECK_MIN_VERSION(30100, 28)
          if (hypredrv->iargs->precon_method == PRECON_MGR)
          {
             hypredrv_MGRSelectCachedSolversToKeep(&hypredrv->iargs->precon.mgr,

@@ -74,14 +74,14 @@ bool  hypredrv_IsYAMLFilename(const char *);
 
 /* Check for minimum HYPRE version in order to allow certain features.
  *
- * For exact tagged releases, HYPRE_DEVELOP_NUMBER may be omitted from
- * generated headers (for example from shallow clones or installed configs).
- * Treat an exact release match with no develop number as satisfying same-release
- * feature checks. */
+ * Exact tagged releases may omit HYPRE_DEVELOP_NUMBER from generated headers.
+ * Those tags satisfy same-release checks only when the requested develop number
+ * is zero.  Positive develop-number checks are for post-release snapshots and
+ * must not be enabled for the exact release tag. */
 #define HYPRE_CHECK_MIN_VERSION(release, develop)  \
    (HYPRE_RELEASE_NUMBER_GT(release) ||            \
     (HYPREDRV_HYPRE_RELEASE_NUMBER == (release) && \
-     (HYPREDRV_HYPRE_DEVELOP_NUMBER == 0 || HYPRE_DEVELOP_NUMBER_GE(develop))))
+     ((develop) == 0 || HYPRE_DEVELOP_NUMBER_GE(develop))))
 
 enum
 {
