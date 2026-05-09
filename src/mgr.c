@@ -2547,7 +2547,7 @@ MGRDestroyCachedSolversExplicitly(void)
 static int
 MGRLegacyPostDestroyNeedsGRelaxReclaim(void)
 {
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 30000
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
    return 0;
 #else
    return 1;
