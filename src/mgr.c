@@ -2537,7 +2537,7 @@ hypredrv_MGRRefreshComponentsForSetup(MGR_args *args, HYPRE_Solver precon,
 static int
 MGRDestroyCachedSolversExplicitly(void)
 {
-#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+#if HYPRE_CHECK_MIN_VERSION(30100, 28)
    return 1;
 #else
    return 0;
