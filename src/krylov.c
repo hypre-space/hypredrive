@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "internal/krylov.h"
+#include "HYPRE_parcsr_mv.h"
 #include "internal/bicgstab.h"
 #include "internal/error.h"
 #include "internal/fgmres.h"
@@ -317,6 +318,42 @@ NestedKrylovBaseSolverSetup(solver_t solver_method, HYPRE_Solver solver, HYPRE_M
  *-----------------------------------------------------------------------------*/
 
 static HYPRE_Int
+NestedKrylovCreateSetupVector(HYPRE_Matrix A, HYPRE_ParVector *vector_ptr)
+{
+   MPI_Comm      comm         = MPI_COMM_NULL;
+   HYPRE_BigInt  global_rows  = 0;
+   HYPRE_BigInt  global_cols  = 0;
+   HYPRE_BigInt *partitioning = NULL;
+   HYPRE_Int     rc           = 0;
+
+   if (!A || !vector_ptr)
+   {
+      return 1;
+   }
+
+   rc |= HYPRE_ParCSRMatrixGetComm((HYPRE_ParCSRMatrix)A, &comm);
+   rc |= HYPRE_ParCSRMatrixGetDims((HYPRE_ParCSRMatrix)A, &global_rows, &global_cols);
+   rc |= HYPRE_ParCSRMatrixGetRowPartitioning((HYPRE_ParCSRMatrix)A, &partitioning);
+   if (!rc)
+   {
+      rc |= HYPRE_ParVectorCreate(comm, global_rows, partitioning, vector_ptr);
+      rc |= HYPRE_ParVectorInitialize(*vector_ptr);
+   }
+   free(partitioning);
+
+   if (rc && *vector_ptr)
+   {
+      HYPRE_ParVectorDestroy(*vector_ptr);
+      *vector_ptr = NULL;
+   }
+
+   return rc;
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+static HYPRE_Int
 NestedKrylovBaseSolverSolve(solver_t solver_method, HYPRE_Solver solver, HYPRE_Matrix A,
                             HYPRE_Vector b, HYPRE_Vector x)
 {                                                  /* GCOVR_EXCL_BR_LINE */
@@ -390,7 +427,7 @@ hypredrv_NestedKrylovSetDefaultArgs(NestedKrylov_args *args)
    args->precon_method = PRECON_NONE;
    args->base_solver   = NULL;
    args->precon_obj    = NULL;
-   args->setup_matrix   = NULL;
+   args->setup_matrix  = NULL;
 }
 
 /*-----------------------------------------------------------------------------
@@ -537,7 +574,10 @@ HYPRE_Int
 hypredrv_NestedKrylovSetup(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
                            HYPRE_Vector x)
 {
-   NestedKrylov_args *args = (NestedKrylov_args *)solver;
+   NestedKrylov_args *args    = (NestedKrylov_args *)solver;
+   HYPRE_ParVector    setup_b = NULL;
+   HYPRE_ParVector    setup_x = NULL;
+   HYPRE_Int          rc      = 0;
 
    if (!args || !args->base_solver)
    {
@@ -546,11 +586,32 @@ hypredrv_NestedKrylovSetup(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
       return 1;
    }
 
-   HYPRE_Int rc =
-      NestedKrylovBaseSolverSetup(args->solver_method, args->base_solver, A, b, x);
+   if (!b)
+   {
+      rc = NestedKrylovCreateSetupVector(A, &setup_b);
+      b  = (HYPRE_Vector)setup_b;
+   }
+   if (!rc && !x)
+   {
+      rc = NestedKrylovCreateSetupVector(A, &setup_x);
+      x  = (HYPRE_Vector)setup_x;
+   }
+
    if (!rc)
    {
-      args->is_setup    = 1;
+      rc = NestedKrylovBaseSolverSetup(args->solver_method, args->base_solver, A, b, x);
+   }
+   if (setup_b)
+   {
+      HYPRE_ParVectorDestroy(setup_b);
+   }
+   if (setup_x)
+   {
+      HYPRE_ParVectorDestroy(setup_x);
+   }
+   if (!rc)
+   {
+      args->is_setup     = 1;
       args->setup_matrix = A;
    }
    return rc;
@@ -620,7 +681,7 @@ hypredrv_NestedKrylovDestroy(NestedKrylov_args *args)
       NestedKrylovBaseSolverDestroy(args->solver_method, args->base_solver);
       args->base_solver = NULL;
    }
-   args->is_setup    = 0;
+   args->is_setup     = 0;
    args->setup_matrix = NULL;
 
    if (args->precon_obj)

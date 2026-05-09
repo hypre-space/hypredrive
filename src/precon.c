@@ -496,8 +496,8 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr, int precon_was_s
    {
       HYPRE_MGRDestroy(*solver_ptr);
       *solver_ptr = NULL;
-      /* Parent MGR is gone; clear cached-handle state without destroying
-       * parent-owned internals a second time. */
+      /* Parent MGR is gone; clear any preserved cached-handle state without
+       * destroying parent-owned internals a second time. */
       hypredrv_MGRDestroyCachedSolvers(mgr, 1);
    }
 
