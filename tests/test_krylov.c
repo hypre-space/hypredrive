@@ -291,6 +291,48 @@ run_nested_lifecycle_precon_fsai(solver_t method)
 }
 #endif
 
+#if HYPREDRV_HAVE_EXPERIMENTAL
+static void
+run_nested_lifecycle_precon_schwarz(solver_t method)
+{
+   NestedKrylov_args nk;
+   configure_nested_solver(&nk, method);
+   nk.has_precon    = 1;
+   nk.precon_method = PRECON_SCHWARZ;
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_SCHWARZ, &nk.precon);
+
+   HYPRE_Solver inner = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL, &inner);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(inner);
+
+   HYPRE_IJMatrix ij_A = create_ijmatrix_1x1(4.0);
+   HYPRE_IJVector ij_b = create_ijvector_1x1(1.0);
+   HYPRE_IJVector ij_x = create_ijvector_1x1(0.0);
+
+   void *par_A = NULL, *par_b = NULL, *par_x = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixGetObject(ij_A, &par_A), 0);
+   ASSERT_EQ(HYPRE_IJVectorGetObject(ij_b, &par_b), 0);
+   ASSERT_EQ(HYPRE_IJVectorGetObject(ij_x, &par_x), 0);
+
+   ASSERT_EQ(hypredrv_NestedKrylovSetup((HYPRE_Solver)&nk, (HYPRE_Matrix)par_A,
+                                        (HYPRE_Vector)par_b, (HYPRE_Vector)par_x),
+             0);
+   ASSERT_EQ(hypredrv_NestedKrylovSolve((HYPRE_Solver)&nk, (HYPRE_Matrix)par_A,
+                                        (HYPRE_Vector)par_b, (HYPRE_Vector)par_x),
+             0);
+
+   hypredrv_NestedKrylovDestroy(&nk);
+   ASSERT_NULL(nk.base_solver);
+   ASSERT_NULL(nk.precon_obj);
+
+   ASSERT_EQ(HYPRE_IJVectorDestroy(ij_x), 0);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(ij_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(ij_A), 0);
+}
+#endif
+
 static void
 test_nested_krylov_solver_matrix_no_precon(void)
 {
@@ -322,6 +364,14 @@ test_nested_krylov_precon_fsai_matrix(void)
 {
 #if HYPRE_CHECK_MIN_VERSION(30100, 1)
    run_nested_lifecycle_precon_fsai(SOLVER_GMRES);
+#endif
+}
+
+static void
+test_nested_krylov_precon_schwarz_matrix(void)
+{
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   run_nested_lifecycle_precon_schwarz(SOLVER_GMRES);
 #endif
 }
 
@@ -380,6 +430,7 @@ main(int argc, char **argv)
    RUN_TEST(test_nested_krylov_solver_matrix_with_amg_precon);
    RUN_TEST(test_nested_krylov_precon_ilu_matrix);
    RUN_TEST(test_nested_krylov_precon_fsai_matrix);
+   RUN_TEST(test_nested_krylov_precon_schwarz_matrix);
    RUN_TEST(test_nested_krylov_destroy_clears_mgr_runtime_state);
 
    TEST_HYPRE_FINALIZE();

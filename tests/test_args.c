@@ -176,6 +176,64 @@ test_InputArgsParsePrecon_value_only(void)
    hypredrv_InputArgsDestroy(&args);
 }
 
+#if HYPREDRV_HAVE_EXPERIMENTAL
+static void
+test_InputArgsParsePrecon_schwarz_value_only(void)
+{
+   const char yaml_text[] = "solver: pcg\n"
+                            "preconditioner: schwarz\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon_method, PRECON_SCHWARZ);
+   ASSERT_EQ(args->precon.schwarz.variant, 10);
+   ASSERT_EQ(args->precon.schwarz.overlap, 1);
+   ASSERT_EQ(args->precon.schwarz.local_solver_type, 0);
+
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
+test_InputArgsParsePrecon_schwarz_typed_block(void)
+{
+   const char yaml_text[] = "solver: pcg\n"
+                            "preconditioner:\n"
+                            "  schwarz:\n"
+                            "    variant: ras-ilut\n"
+                            "    overlap: 2\n"
+                            "    local_solver_type: ilut\n"
+                            "    ilut_droptol: 1.0e-3\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon_method, PRECON_SCHWARZ);
+   ASSERT_EQ(args->precon.schwarz.variant, 20);
+   ASSERT_EQ(args->precon.schwarz.overlap, 2);
+   ASSERT_EQ(args->precon.schwarz.local_solver_type, 1);
+   ASSERT_EQ_DOUBLE(args->precon.schwarz.ilut_droptol, 1.0e-3, 1e-12);
+
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
+test_InputArgsParsePrecon_schwarz_spdirect(void)
+{
+   const char yaml_text[] = "solver: pcg\n"
+                            "preconditioner:\n"
+                            "  schwarz:\n"
+                            "    variant: ras-spdirect\n"
+                            "    local_solver_type: spdirect\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon_method, PRECON_SCHWARZ);
+   ASSERT_EQ(args->precon.schwarz.variant, 40);
+   ASSERT_EQ(args->precon.schwarz.local_solver_type, 3);
+
+   hypredrv_InputArgsDestroy(&args);
+}
+#endif
+
 static void
 test_InputArgsParsePrecon_preset_value_only(void)
 {
@@ -1810,6 +1868,11 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParseGeneral_use_millisec_sets_timer);
    RUN_TEST(test_InputArgsParseSolver_value_only);
    RUN_TEST(test_InputArgsParsePrecon_value_only);
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   RUN_TEST(test_InputArgsParsePrecon_schwarz_value_only);
+   RUN_TEST(test_InputArgsParsePrecon_schwarz_typed_block);
+   RUN_TEST(test_InputArgsParsePrecon_schwarz_spdirect);
+#endif
    RUN_TEST(test_InputArgsParsePrecon_preset_value_only);
    RUN_TEST(test_InputArgsParsePrecon_preset_explicit_key);
    RUN_TEST(test_InputArgsParsePrecon_missing);

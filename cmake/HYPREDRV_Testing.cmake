@@ -699,7 +699,11 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 unset(_tname)
             endif()
         endif()
-        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU)
+        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU AND HYPREDRV_ENABLE_EXPERIMENTAL AND NOT HYPREDRV_ENABLE_ANALYSIS)
+            add_hypredrive_test(ex1_schwarz_spdirect_1proc 1
+                ex1-schwarz-spdirect.yml)
+        endif()
+        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU AND NOT HYPREDRV_ENABLE_ANALYSIS AND NOT HYPREDRV_ENABLE_COVERAGE)
             add_hypredrive_test(ex7_mgr_frelax_spdirect_1proc 1
                 ex7-mgr-frelax-spdirect.yml)
             add_hypredrive_test(ex7_mgr_grelax_spdirect_1proc 1

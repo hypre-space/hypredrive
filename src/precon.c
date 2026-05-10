@@ -11,11 +11,19 @@
 #include "internal/krylov.h"
 #include "logging.h"
 
+#if HYPREDRV_HAVE_EXPERIMENTAL
+#define HYPREDRV_PRECON_SCHWARZ_FIELD(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, schwarz, hypredrv_SchwarzSetArgs)
+#else
+#define HYPREDRV_PRECON_SCHWARZ_FIELD(_prefix)
+#endif
+
 #define Precon_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, hypredrv_AMGSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, hypredrv_MGRSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, hypredrv_ILUSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, hypredrv_FSAISetArgs) \
+   HYPREDRV_PRECON_SCHWARZ_FIELD(_prefix)                      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, reuse, hypredrv_FieldTypeIntSet)
 
 /* GCOVR_EXCL_START */
@@ -49,10 +57,11 @@ StrIntMapArray
 hypredrv_PreconGetValidTypeIntMap(void)
 {
    static StrIntMap map[] = {
-      {"amg", (int)PRECON_BOOMERAMG},
-      {"mgr", (int)PRECON_MGR},
-      {"ilu", (int)PRECON_ILU},
-      {"fsai", (int)PRECON_FSAI},
+      {"amg", (int)PRECON_BOOMERAMG},   {"mgr", (int)PRECON_MGR},
+      {"ilu", (int)PRECON_ILU},         {"fsai", (int)PRECON_FSAI},
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      {"schwarz", (int)PRECON_SCHWARZ},
+#endif
    };
 
    return STR_INT_MAP_ARRAY_CREATE(map);
@@ -92,6 +101,11 @@ hypredrv_PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
       case PRECON_FSAI:
          hypredrv_FSAISetDefaultArgs(&args->fsai);
          break;
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      case PRECON_SCHWARZ:
+         hypredrv_SchwarzSetDefaultArgs(&args->schwarz);
+         break;
+#endif
       case PRECON_NONE:
       default:
          break;
@@ -115,6 +129,9 @@ hypredrv_PreconArgsDestroyOwnedConfig(precon_t method, precon_args *args)
       case PRECON_BOOMERAMG:
       case PRECON_ILU:
       case PRECON_FSAI:
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      case PRECON_SCHWARZ:
+#endif
       case PRECON_NONE:
       default:
          break;
@@ -139,6 +156,9 @@ hypredrv_PreconArgsDestroyRuntimeState(precon_t method, precon_args *args)
       case PRECON_BOOMERAMG:
       case PRECON_ILU:
       case PRECON_FSAI:
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      case PRECON_SCHWARZ:
+#endif
       case PRECON_NONE:
       default:
          break;
@@ -226,6 +246,9 @@ PreconHasConfiguredComponentReuse(precon_t method, const precon_args *args)
       case PRECON_BOOMERAMG:
       case PRECON_ILU:
       case PRECON_FSAI:
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      case PRECON_SCHWARZ:
+#endif
       case PRECON_NONE:
       default:
          return 0;
@@ -296,6 +319,12 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
       case PRECON_FSAI:
          hypredrv_FSAICreate(&args->fsai, &precon->main);
          break;
+
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      case PRECON_SCHWARZ:
+         hypredrv_SchwarzCreate(&args->schwarz, &precon->main);
+         break;
+#endif
 
       case PRECON_NONE:
          break;
@@ -382,6 +411,13 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 #endif /* GCOVR_EXCL_STOP */
          break;
 
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      case PRECON_SCHWARZ:
+         HYPRE_SchwarzSetup(prec, par_A, par_b, par_x);
+         precon->is_setup = 1;
+         break;
+#endif
+
       default:
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          break;
@@ -443,6 +479,12 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
          hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
 #endif /* GCOVR_EXCL_STOP */
          break;
+
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      case PRECON_SCHWARZ:
+         HYPRE_SchwarzSolve(prec, par_A, par_b, par_x);
+         break;
+#endif
 
       case PRECON_NONE:
          break;
@@ -595,6 +637,16 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
             HYPRE_FSAIDestroy(precon->main);
 #endif
             break;
+
+#if HYPREDRV_HAVE_EXPERIMENTAL
+         case PRECON_SCHWARZ:
+            /* GCOVR_EXCL_START */
+            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
+                          "preconditioner destroy dispatch: method=schwarz");
+            /* GCOVR_EXCL_STOP */
+            HYPRE_SchwarzDestroy(precon->main);
+            break;
+#endif
 
          case PRECON_NONE:
             /* GCOVR_EXCL_START */
