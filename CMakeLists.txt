@@ -124,6 +124,7 @@ set(SOURCE_FILES
     src/amg.c
     src/fsai.c
     src/ilu.c
+    src/schwarz.c
     src/mgr.c
     src/precon.c
     src/precon_reuse.c

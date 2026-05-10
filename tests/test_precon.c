@@ -36,6 +36,12 @@ void           hypredrv_FSAISetFieldByName(void *, const YAMLnode *);
 void           hypredrv_FSAISetDefaultArgs(FSAI_args *);
 StrArray       hypredrv_FSAIGetValidKeys(void);
 StrIntMapArray hypredrv_FSAIGetValidValues(const char *);
+#if HYPREDRV_HAVE_EXPERIMENTAL
+void           hypredrv_SchwarzSetFieldByName(void *, const YAMLnode *);
+void           hypredrv_SchwarzSetDefaultArgs(Schwarz_args *);
+StrArray       hypredrv_SchwarzGetValidKeys(void);
+StrIntMapArray hypredrv_SchwarzGetValidValues(const char *);
+#endif
 
 void hypredrv_MGRSetDefaultArgs(MGR_args *);
 
@@ -146,6 +152,9 @@ test_PreconGetValidKeys_contains_expected(void)
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "mgr"));
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "ilu"));
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "fsai"));
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "schwarz"));
+#endif
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "reuse"));
 }
 
@@ -159,6 +168,10 @@ test_PreconGetValidTypeIntMap_contains_known_types(void)
 
    ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mgr"));
    ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mgr"), PRECON_MGR);
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "schwarz"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "schwarz"), PRECON_SCHWARZ);
+#endif
 }
 
 static void
@@ -3438,6 +3451,42 @@ test_Precon_lifecycle_fsai_1x1(void)
 }
 #endif
 
+#if HYPREDRV_HAVE_EXPERIMENTAL
+static void
+test_Precon_lifecycle_schwarz_1x1(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_SchwarzSetDefaultArgs(&args.schwarz);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_SCHWARZ, &args, NULL, NULL, &precon, NULL, 0);
+   ASSERT_NOT_NULL(precon);
+
+   HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(4.0);
+   HYPRE_IJVector vec_b = precon_test_ij_vector_1x1(1.0);
+   HYPRE_IJVector vec_x = precon_test_ij_vector_1x1(0.0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetup(PRECON_SCHWARZ, precon, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconApply(PRECON_SCHWARZ, precon, mat, vec_b, vec_x);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_PreconDestroy(PRECON_SCHWARZ, &args, &precon, NULL, 0);
+   ASSERT_NULL(precon);
+
+   HYPRE_IJVectorDestroy(vec_x);
+   HYPRE_IJVectorDestroy(vec_b);
+   HYPRE_IJMatrixDestroy(mat);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
+
 static void
 test_PreconDestroy_amg_rbms_loop(void)
 {
@@ -5353,6 +5402,99 @@ test_hypredrv_FSAIGetValidValues_unknown_key(void)
    ASSERT_EQ(map.size, 0);
 }
 
+#if HYPREDRV_HAVE_EXPERIMENTAL
+static void
+test_hypredrv_SchwarzSetDefaultArgs(void)
+{
+   Schwarz_args args;
+   hypredrv_SchwarzSetDefaultArgs(&args);
+
+   ASSERT_EQ(args.variant, 10);
+   ASSERT_EQ(args.overlap, 1);
+   ASSERT_EQ(args.local_solver_type, 0);
+   ASSERT_EQ(args.iluk_level_of_fill, 0);
+   ASSERT_EQ(args.max_iter, 1);
+   ASSERT_EQ_DOUBLE(args.tolerance, 0.0, 1e-12);
+}
+
+static void
+test_hypredrv_SchwarzSetFieldByName_all_fields(void)
+{
+   static const struct
+   {
+      const char *key;
+      const char *value;
+   } updates[] = {
+      {.key = "variant", .value = "20"},
+      {.key = "overlap", .value = "2"},
+      {.key = "domain_type", .value = "1"},
+      {.key = "num_functions", .value = "3"},
+      {.key = "use_nonsymm", .value = "1"},
+      {.key = "local_solver_type", .value = "1"},
+      {.key = "iluk_level_of_fill", .value = "2"},
+      {.key = "ilut_max_nnz_row", .value = "500"},
+      {.key = "max_iter", .value = "2"},
+      {.key = "print_level", .value = "1"},
+      {.key = "logging", .value = "1"},
+      {.key = "relax_weight", .value = "0.75"},
+      {.key = "ilut_droptol", .value = "1.0e-3"},
+      {.key = "tolerance", .value = "1.0e-8"},
+   };
+
+   Schwarz_args args;
+   hypredrv_SchwarzSetDefaultArgs(&args);
+
+   for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
+   {
+      YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
+      hypredrv_SchwarzSetFieldByName(&args, node);
+      hypredrv_YAMLnodeDestroy(node);
+   }
+
+   ASSERT_EQ(args.variant, 20);
+   ASSERT_EQ(args.overlap, 2);
+   ASSERT_EQ(args.domain_type, 1);
+   ASSERT_EQ(args.num_functions, 3);
+   ASSERT_EQ(args.use_nonsymm, 1);
+   ASSERT_EQ(args.local_solver_type, 1);
+   ASSERT_EQ(args.iluk_level_of_fill, 2);
+   ASSERT_EQ(args.ilut_max_nnz_row, 500);
+   ASSERT_EQ(args.max_iter, 2);
+   ASSERT_EQ(args.print_level, 1);
+   ASSERT_EQ(args.logging, 1);
+   ASSERT_EQ_DOUBLE(args.relax_weight, 0.75, 1e-12);
+   ASSERT_EQ_DOUBLE(args.ilut_droptol, 1.0e-3, 1e-12);
+   ASSERT_EQ_DOUBLE(args.tolerance, 1.0e-8, 1e-12);
+}
+
+static void
+test_hypredrv_SchwarzGetValidValues(void)
+{
+   StrIntMapArray variants = hypredrv_SchwarzGetValidValues("variant");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(variants, "ras-iluk"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(variants, "as-amg"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(variants, "ras-spdirect"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(variants, "ras-iluk"), 10);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(variants, "as-amg"), 31);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(variants, "ras-spdirect"), 40);
+
+   StrIntMapArray local_solvers = hypredrv_SchwarzGetValidValues("local_solver_type");
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(local_solvers, "iluk"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(local_solvers, "ilut"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(local_solvers, "amg"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(local_solvers, "spdirect"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(local_solvers, "superlu"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(local_solvers, "iluk"), 0);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(local_solvers, "ilut"), 1);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(local_solvers, "amg"), 2);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(local_solvers, "spdirect"), 3);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(local_solvers, "superlu"), 3);
+
+   StrIntMapArray unknown = hypredrv_SchwarzGetValidValues("unknown_key");
+   ASSERT_EQ(unknown.size, 0);
+}
+#endif
+
 /* AMG argument tests (merged from test_amg_args.c) */
 static void
 test_hypredrv_AMGSetFieldByName_all_fields(void)
@@ -5717,6 +5859,9 @@ main(int argc, char **argv)
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
    RUN_TEST(test_Precon_lifecycle_fsai_1x1);
 #endif
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   RUN_TEST(test_Precon_lifecycle_schwarz_1x1);
+#endif
    RUN_TEST(test_PreconDestroy_amg_rbms_loop);
    RUN_TEST(test_PreconDestroy_none_with_main_logs);
    RUN_TEST(test_PreconSetup_default_case);
@@ -5790,6 +5935,11 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_FSAISetFieldByName_unknown_key);
    RUN_TEST(test_hypredrv_FSAIGetValidValues_algo_type);
    RUN_TEST(test_hypredrv_FSAIGetValidValues_unknown_key);
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   RUN_TEST(test_hypredrv_SchwarzSetDefaultArgs);
+   RUN_TEST(test_hypredrv_SchwarzSetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_SchwarzGetValidValues);
+#endif
    RUN_TEST(test_hypredrv_AMGSetFieldByName_all_fields);
    RUN_TEST(test_hypredrv_AMGSetFieldByName_unknown_key);
    RUN_TEST(test_hypredrv_AMGintGetValidValues_prolongation_type);

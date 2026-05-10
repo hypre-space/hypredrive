@@ -189,6 +189,12 @@ PreconSetupDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
          ierr = LOCAL_FSAI_SETUP(precon->main, A, b, x);
          break;
 
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      case PRECON_SCHWARZ:
+         ierr = HYPRE_SchwarzSetup(precon->main, A, b, x);
+         break;
+#endif
+
       /* GCOVR_EXCL_BR_START */
       case PRECON_NONE:
          /* GCOVR_EXCL_BR_STOP */
@@ -233,6 +239,11 @@ PreconSolveDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
 
       case PRECON_FSAI:
          return LOCAL_FSAI_SOLVE(precon->main, A, b, x);
+
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      case PRECON_SCHWARZ:
+         return HYPRE_SchwarzSolve(precon->main, A, b, x);
+#endif
 
       /* GCOVR_EXCL_BR_START */
       case PRECON_NONE:
