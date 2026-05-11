@@ -1443,6 +1443,8 @@ hypredrv_InputArgsParseWithObjectName(MPI_Comm comm, bool lib_mode, int argc, ch
    const int config_idx = FindConfigIndex(argc, argv);
    if (!LoadConfigText(comm, argc, argv, config_idx, &base_indent, &text, &config_dir))
    {
+      (void)hypredrv_DistributedErrorStateSync(comm);
+      hypredrv_ErrorReportSetCollective(true);
       *args_ptr = NULL;
       HYPREDRV_LOGF(2, myid, log_object_name, 0,
                     "args parse failed while loading config text");
@@ -1468,10 +1470,14 @@ hypredrv_InputArgsParseWithObjectName(MPI_Comm comm, bool lib_mode, int argc, ch
    HYPREDRV_LOGF(3, myid, log_object_name, 0, "yaml CLI overrides applied");
 
    /* Return earlier if YAML tree was not built properly */
-   if (!myid && hypredrv_ErrorCodeActive())
+   if (hypredrv_DistributedErrorStateSync(comm))
    {
-      hypredrv_YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
       hypredrv_ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      hypredrv_ErrorReportSetCollective(true);
+      if (!myid)
+      {
+         hypredrv_YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+      }
       free(text);
       free(config_dir);
       hypredrv_YAMLtreeDestroy(&tree);
@@ -1500,10 +1506,14 @@ hypredrv_InputArgsParseWithObjectName(MPI_Comm comm, bool lib_mode, int argc, ch
    hypredrv_YAMLtreeValidate(tree);
 
    /* Return earlier if YAML tree is invalid */
-   if (!myid && hypredrv_ErrorCodeActive())
+   if (hypredrv_DistributedErrorStateSync(comm))
    {
-      hypredrv_YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
       hypredrv_ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      hypredrv_ErrorReportSetCollective(true);
+      if (!myid)
+      {
+         hypredrv_YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+      }
       hypredrv_InputArgsDestroy(&iargs);
       hypredrv_YAMLtreeDestroy(&tree);
       HYPREDRV_LOGF(2, myid, log_object_name, 0,

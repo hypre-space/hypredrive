@@ -7,6 +7,7 @@
 
 #include "internal/error.h"
 #include <limits.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +17,6 @@
 #include <errno.h>
 #include <execinfo.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -437,7 +437,7 @@ hypredrv_ErrorBacktracePrint(void)
       // cppcheck-suppress unreachableCode
       waitpid(child_pid, NULL, 0);
    }
-   /* GCOVR_EXCL_STOP */
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 #else
@@ -475,6 +475,7 @@ typedef struct ErrorState
    uint32_t      code_count[ERROR_CODE_NUM_ENTRIES];
    ErrorMsgNode *msg_head;
    uint32_t      dropped_msg_count;
+   bool          collective_report;
 } ErrorState;
 
 static ErrorState global_error_state = {0};
@@ -575,6 +576,72 @@ bool
 hypredrv_ErrorCodeActive(void)
 {
    return (ErrorStateGet()->code != ERROR_NONE);
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_ErrorReportSetCollective
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_ErrorReportSetCollective(bool collective)
+{
+   ErrorStateGet()->collective_report = collective;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_ErrorReportIsCollective
+ *-----------------------------------------------------------------------------*/
+
+bool
+hypredrv_ErrorReportIsCollective(void)
+{
+   return ErrorStateGet()->collective_report;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_SafeCallHandleError
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *file,
+                             int line, const char *func)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (error_code != 0)
+   {
+      bool collective_report = hypredrv_ErrorReportIsCollective();
+      bool describe_error    = true;
+      if (collective_report)
+      {
+         int myid = 0;
+         MPI_Comm_rank(comm, &myid);
+         describe_error = (myid == 0);
+      }
+
+      if (describe_error)
+      {
+         (void)fprintf(stderr, "At %s:%d in %s():\n", file, line, func);
+         hypredrv_ErrorCodeDescribe(error_code);
+         hypredrv_ErrorMsgPrint();
+         hypredrv_ErrorMsgClear();
+         hypredrv_ErrorBacktracePrint();
+      }
+      if (collective_report)
+      {
+         MPI_Barrier(comm);
+      }
+      const char *debug_env = getenv("HYPREDRV_DEBUG");
+      if (debug_env && strcmp(debug_env, "1") == 0)
+      {
+         raise(SIGTRAP); /* Breakpoint for gdb */
+      }
+      else
+      {
+         MPI_Abort(comm, (int)error_code);
+         exit((int)error_code);
+      }
+   }
+   /* GCOVR_EXCL_STOP */
 }
 
 /*-----------------------------------------------------------------------------
@@ -691,7 +758,6 @@ ErrorStateApplySynchronized(ErrorState *state, uint32_t code, uint32_t source_co
          state->code_count[i] = 1;
       }
    }
-
    if (serialized && serialized[0] != '\0')
    {
       text = strdup(serialized);
@@ -896,6 +962,7 @@ hypredrv_ErrorCodeResetAll(void)
 {
    /* Clear *all* bits, including ERROR_UNKNOWN (0x80000000). */
    hypredrv_ErrorCodeReset(0xFFFFFFFFu);
+   ErrorStateGet()->collective_report = false;
 }
 
 /*-----------------------------------------------------------------------------
