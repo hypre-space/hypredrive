@@ -46,14 +46,13 @@ typedef struct MGRSchwarzWrapper_struct
 
 enum
 {
-   MGR_HYPRE_SOLVER_IS_SETUP_OFFSET =
-      sizeof(HYPRE_PtrToSolverFcn) + sizeof(HYPRE_PtrToSolverFcn) +
-      sizeof(HYPRE_PtrToDestroyFcn),
+   MGR_HYPRE_SOLVER_IS_SETUP_OFFSET = sizeof(HYPRE_PtrToSolverFcn) +
+                                      sizeof(HYPRE_PtrToSolverFcn) +
+                                      sizeof(HYPRE_PtrToDestroyFcn),
 };
 
 typedef char MGRSchwarzWrapperLayoutCheck
-   [(offsetof(MGRSchwarzWrapper, is_setup) == MGR_HYPRE_SOLVER_IS_SETUP_OFFSET) ? 1 :
-                                                                                  -1];
+   [(offsetof(MGRSchwarzWrapper, is_setup) == MGR_HYPRE_SOLVER_IS_SETUP_OFFSET) ? 1 : -1];
 #endif
 
 static MGRFRelaxWrapper *g_mgr_frelax_wrapper_live_head = NULL;
@@ -281,8 +280,7 @@ MGRSchwarzWrapperSolve(HYPRE_Solver wrapper_v, HYPRE_Matrix A, HYPRE_Vector b,
       return 1;
    }
 
-   if (!wrapper->is_setup &&
-       MGRSchwarzWrapperSetup(wrapper_v, A, b, x))
+   if (!wrapper->is_setup && MGRSchwarzWrapperSetup(wrapper_v, A, b, x))
    {
       return 1;
    }
@@ -310,16 +308,16 @@ MGRSchwarzWrapperDestroy(HYPRE_Solver wrapper_v)
 }
 
 static HYPRE_Int
-MGRSchwarzWrapperParSetup(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
-                          HYPRE_ParVector b, HYPRE_ParVector x)
+MGRSchwarzWrapperParSetup(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                          HYPRE_ParVector x)
 {
    return MGRSchwarzWrapperSetup(wrapper, (HYPRE_Matrix)A, (HYPRE_Vector)b,
                                  (HYPRE_Vector)x);
 }
 
 static HYPRE_Int
-MGRSchwarzWrapperParSolve(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
-                          HYPRE_ParVector b, HYPRE_ParVector x)
+MGRSchwarzWrapperParSolve(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                          HYPRE_ParVector x)
 {
    return MGRSchwarzWrapperSolve(wrapper, (HYPRE_Matrix)A, (HYPRE_Vector)b,
                                  (HYPRE_Vector)x);
@@ -482,10 +480,10 @@ DEFINE_TYPED_SETTER(MGRgrlxFSAISetArgs, MGRgrlx_args, fsai, 33, hypredrv_FSAISet
 #if HYPREDRV_HAVE_EXPERIMENTAL
 DEFINE_TYPED_SETTER(MGRclsSchwarzSetArgs, MGRcls_args, schwarz, MGR_SOLVER_TYPE_SCHWARZ,
                     hypredrv_SchwarzSetArgs)
-DEFINE_TYPED_SETTER(MGRfrlxSchwarzSetArgs, MGRfrlx_args, schwarz,
-                    MGR_SOLVER_TYPE_SCHWARZ, hypredrv_SchwarzSetArgs)
-DEFINE_TYPED_SETTER(MGRgrlxSchwarzSetArgs, MGRgrlx_args, schwarz,
-                    MGR_SOLVER_TYPE_SCHWARZ, hypredrv_SchwarzSetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxSchwarzSetArgs, MGRfrlx_args, schwarz, MGR_SOLVER_TYPE_SCHWARZ,
+                    hypredrv_SchwarzSetArgs)
+DEFINE_TYPED_SETTER(MGRgrlxSchwarzSetArgs, MGRgrlx_args, schwarz, MGR_SOLVER_TYPE_SCHWARZ,
+                    hypredrv_SchwarzSetArgs)
 #endif
 static void MGRfrlxMGRSetArgs(void *, const YAMLnode *);
 void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
@@ -503,28 +501,28 @@ void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
 #define MGRgrlx_SCHWARZ_FIELD(_prefix)
 #endif
 
-#define MGRcls_FIELDS(_prefix)                                      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs)           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRclsILUSetArgs)           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRclsFSAISetArgs)         \
+#define MGRcls_FIELDS(_prefix)                                     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRclsILUSetArgs)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRclsFSAISetArgs)        \
    MGRcls_SCHWARZ_FIELD(_prefix)
 
-#define MGRfrlx_FIELDS(_prefix)                                           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRfrlxMGRSetArgs)                \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)                \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)                \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRfrlxFSAISetArgs)              \
+#define MGRfrlx_FIELDS(_prefix)                                          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRfrlxMGRSetArgs)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRfrlxFSAISetArgs)             \
    MGRfrlx_SCHWARZ_FIELD(_prefix)
 
-#define MGRgrlx_FIELDS(_prefix)                                           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)                \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)                \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRgrlxFSAISetArgs)              \
+#define MGRgrlx_FIELDS(_prefix)                                          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRgrlxFSAISetArgs)             \
    MGRgrlx_SCHWARZ_FIELD(_prefix)
 
 #define MGRlvl_FIELDS(_prefix)                                                  \
@@ -1521,8 +1519,8 @@ hypredrv_MGRclsGetValidValues(const char *key)
    {
 #if HYPREDRV_HAVE_EXPERIMENTAL
       static StrIntMap map[] = {
-         {"def", -1},      {"amg", 0}, {"spdirect", 29}, {"ilu", 32},
-         {"fsai", 33},     {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
+         {"def", -1}, {"amg", 0},   {"spdirect", 29},
+         {"ilu", 32}, {"fsai", 33}, {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
       };
 #else
       static StrIntMap map[] = {
@@ -1590,12 +1588,16 @@ hypredrv_MGRgrlxGetValidValues(const char *key)
    {
 #if HYPREDRV_HAVE_EXPERIMENTAL
       static StrIntMap map[] = {
-         {"", -1},         {"none", -1},    {"blk-jacobi", 0}, {"blk-gs", 1},
-         {"mixed-gs", 2},  {"amg", 20},     {"h-fgs", 3},      {"h-bgs", 4},
-         {"ch-gs", 5},     {"h-ssor", 6},   {"euclid", 8},     {"2stg-fgs", 11},
-         {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},   {"ilu", 16},
-         {"spdirect", 29}, {"l1-hsgs", 88}, {"fsai", 33},
-         {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
+         {"", -1},          {"none", -1},
+         {"blk-jacobi", 0}, {"blk-gs", 1},
+         {"mixed-gs", 2},   {"amg", 20},
+         {"h-fgs", 3},      {"h-bgs", 4},
+         {"ch-gs", 5},      {"h-ssor", 6},
+         {"euclid", 8},     {"2stg-fgs", 11},
+         {"2stg-bgs", 12},  {"l1-hfgs", 13},
+         {"l1-hbgs", 14},   {"ilu", 16},
+         {"spdirect", 29},  {"l1-hsgs", 88},
+         {"fsai", 33},      {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
       };
 #else
       static StrIntMap map[] = {
@@ -2304,8 +2306,7 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
    {
       hypredrv_MGRSetFSolverAtLevel(mgr_solver, fsolver, active_lvl,
                                     MGR_FRLX_TYPE_CUSTOM_SOLVER_CB,
-                                    MGRSchwarzWrapperParSolve,
-                                    MGRSchwarzWrapperParSetup);
+                                    MGRSchwarzWrapperParSolve, MGRSchwarzWrapperParSetup);
    }
    else
 #endif
@@ -3831,8 +3832,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
                                "reusing cached MGR F-relax solver handle at level %d",
                                (int)orig_lvl);
          }
-         hypredrv_MGRSetFSolverAtLevel(precon, frelax, i,
-                                       MGR_FRLX_TYPE_CUSTOM_SOLVER_CB,
+         hypredrv_MGRSetFSolverAtLevel(precon, frelax, i, MGR_FRLX_TYPE_CUSTOM_SOLVER_CB,
                                        MGRSchwarzWrapperParSolve,
                                        MGRSchwarzWrapperParSetup);
          args->frelax[orig_lvl] = frelax;

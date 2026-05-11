@@ -83,7 +83,10 @@ void hypredrv_ErrorMsgAddInvalidFilename(const char *);
 void hypredrv_ErrorMsgPrint(void);
 void hypredrv_ErrorMsgClear(void);
 void hypredrv_ErrorBacktracePrint(void);
+#ifndef HYPREDRV_SAFE_CALL_HANDLE_ERROR_DECLARED
+#define HYPREDRV_SAFE_CALL_HANDLE_ERROR_DECLARED
 void hypredrv_SafeCallHandleError(uint32_t, MPI_Comm, const char *, int, const char *);
+#endif
 
 /*******************************************************************************
  *******************************************************************************/
