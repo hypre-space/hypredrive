@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "_hypre_parcsr_mv.h" /* For hypre_VectorData, hypre_ParVectorLocalVector */
 #include "internal/args.h"
@@ -783,9 +784,6 @@ HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
    hypredrv_ErrorMsgClear();
    hypredrv_ErrorBacktracePrint();
 }
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
 
 static uint32_t
 DestroyObjectInternal(HYPREDRV_t hypredrv)

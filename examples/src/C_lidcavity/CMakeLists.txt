@@ -75,6 +75,20 @@ if(HYPREDRV_ENABLE_TESTING)
                 "Path"
                 "1.1.1"
         )
+        if(HYPREDRV_ENABLE_EXPERIMENTAL)
+            add_executable_test(lidcavity_test_schwarz_ras_iluk_1proc lidcavity 1
+                ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
+                     -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-schwarz-ras-iluk.yml
+                RUN_SERIAL
+            )
+            if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU)
+                add_executable_test(lidcavity_test_schwarz_ras_spdirect_1proc lidcavity 1
+                    ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
+                         -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-schwarz-ras-spdirect.yml
+                    RUN_SERIAL
+                )
+            endif()
+        endif()
     endif()
     if(HYPREDRV_HAVE_HYPRE_30100_DEV5)
         add_executable_test(lidcavity_test_mgr_1proc lidcavity 1
@@ -102,6 +116,50 @@ if(HYPREDRV_ENABLE_TESTING)
         )
         hypredrv_append_test_environment(lidcavity_test_adaptive_reuse_1proc
             "HYPREDRV_LOG_LEVEL=2")
+        if(HYPREDRV_ENABLE_EXPERIMENTAL)
+            add_executable_test(lidcavity_test_mgr_schwarz_frelax_iluk_1proc lidcavity 1
+                ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
+                     -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-schwarz-frelax-iluk.yml
+                RUN_SERIAL
+            )
+            add_executable_test(lidcavity_test_mgr_schwarz_grelax_iluk_1proc lidcavity 1
+                ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
+                     -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-schwarz-grelax-iluk.yml
+                RUN_SERIAL
+            )
+            add_executable_test(lidcavity_test_mgr_schwarz_coarsest_iluk_1proc lidcavity 1
+                ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
+                     -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-schwarz-coarsest-iluk.yml
+                RUN_SERIAL
+            )
+            if(HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER)
+                add_executable_test(lidcavity_test_mgr_schwarz_frelax_iluk_4proc lidcavity 4
+                    ARGS -v 1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3
+                         -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-schwarz-frelax-iluk.yml
+                )
+                add_executable_test(lidcavity_test_mgr_schwarz_grelax_iluk_4proc lidcavity 4
+                    ARGS -v 1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3
+                         -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-schwarz-grelax-iluk.yml
+                )
+                add_executable_test(lidcavity_test_mgr_schwarz_coarsest_iluk_4proc lidcavity 4
+                    ARGS -v 1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3
+                         -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-schwarz-coarsest-iluk.yml
+                )
+            endif()
+            if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU)
+                add_executable_test(lidcavity_test_mgr_schwarz_frelax_spdirect_1proc lidcavity 1
+                    ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
+                         -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-schwarz-frelax-spdirect.yml
+                    RUN_SERIAL
+                )
+                if(HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER)
+                    add_executable_test(lidcavity_test_mgr_schwarz_frelax_spdirect_4proc lidcavity 4
+                        ARGS -v 1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3
+                             -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-schwarz-frelax-spdirect.yml
+                    )
+                endif()
+            endif()
+        endif()
         if(HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER)
             add_executable_test(lidcavity_test_mgr_4proc lidcavity 4
               ARGS -v 1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3 -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr.yml

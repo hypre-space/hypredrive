@@ -7,6 +7,7 @@
 
 #include "internal/mgr.h"
 #include <mpi.h>
+#include <stddef.h>
 /* gcovr: branch-exclusion regions below narrow branch-count noise from YAML
  * helpers and MGR validation/dispatch; single-line exclusions flag allocator
  * and defensive branches that are impractical to fault-inject here. */
@@ -30,6 +31,29 @@ typedef struct MGRFRelaxWrapper_struct
    IntArray                       *owned_dofmap;
    struct MGRFRelaxWrapper_struct *next_live;
 } MGRFRelaxWrapper;
+
+#if HYPREDRV_HAVE_EXPERIMENTAL
+typedef struct MGRSchwarzWrapper_struct
+{
+   /* Keep the first fields layout-compatible with hypre_Solver as validated
+    * against the hypre 3.1 development stream used by the Schwarz branch. */
+   HYPRE_PtrToSolverFcn  setup;
+   HYPRE_PtrToSolverFcn  solve;
+   HYPRE_PtrToDestroyFcn destroy;
+   HYPRE_Int             is_setup;
+   HYPRE_Solver          inner;
+} MGRSchwarzWrapper;
+
+enum
+{
+   MGR_HYPRE_SOLVER_IS_SETUP_OFFSET = sizeof(HYPRE_PtrToSolverFcn) +
+                                      sizeof(HYPRE_PtrToSolverFcn) +
+                                      sizeof(HYPRE_PtrToDestroyFcn),
+};
+
+typedef char MGRSchwarzWrapperLayoutCheck
+   [(offsetof(MGRSchwarzWrapper, is_setup) == MGR_HYPRE_SOLVER_IS_SETUP_OFFSET) ? 1 : -1];
+#endif
 
 static MGRFRelaxWrapper *g_mgr_frelax_wrapper_live_head = NULL;
 
@@ -224,6 +248,107 @@ hypredrv_MGRNestedFRelaxWrapperFree(HYPRE_Solver *wrapper_ptr)
    MGRFRelaxWrapperDestroy((void *)(*wrapper_ptr));
    *wrapper_ptr = NULL;
 }
+
+#if HYPREDRV_HAVE_EXPERIMENTAL
+static HYPRE_Int
+MGRSchwarzWrapperSetup(HYPRE_Solver wrapper_v, HYPRE_Matrix A, HYPRE_Vector b,
+                       HYPRE_Vector x)
+{
+   MGRSchwarzWrapper *wrapper = (MGRSchwarzWrapper *)wrapper_v;
+   if (!wrapper || !wrapper->inner)
+   {
+      return 1;
+   }
+
+   if (HYPRE_SchwarzSetup((HYPRE_Solver)wrapper->inner, (HYPRE_ParCSRMatrix)A,
+                          (HYPRE_ParVector)b, (HYPRE_ParVector)x))
+   {
+      return 1;
+   }
+
+   wrapper->is_setup = 1;
+   return 0;
+}
+
+static HYPRE_Int
+MGRSchwarzWrapperSolve(HYPRE_Solver wrapper_v, HYPRE_Matrix A, HYPRE_Vector b,
+                       HYPRE_Vector x)
+{
+   MGRSchwarzWrapper *wrapper = (MGRSchwarzWrapper *)wrapper_v;
+   if (!wrapper || !wrapper->inner)
+   {
+      return 1;
+   }
+
+   if (!wrapper->is_setup && MGRSchwarzWrapperSetup(wrapper_v, A, b, x))
+   {
+      return 1;
+   }
+
+   return HYPRE_SchwarzSolve((HYPRE_Solver)wrapper->inner, (HYPRE_ParCSRMatrix)A,
+                             (HYPRE_ParVector)b, (HYPRE_ParVector)x);
+}
+
+static HYPRE_Int
+MGRSchwarzWrapperDestroy(HYPRE_Solver wrapper_v)
+{
+   MGRSchwarzWrapper *wrapper = (MGRSchwarzWrapper *)wrapper_v;
+   if (!wrapper)
+   {
+      return 0;
+   }
+
+   if (wrapper->inner)
+   {
+      HYPRE_SchwarzDestroy(wrapper->inner);
+      wrapper->inner = NULL;
+   }
+   free(wrapper);
+   return 0;
+}
+
+static HYPRE_Int
+MGRSchwarzWrapperParSetup(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                          HYPRE_ParVector x)
+{
+   return MGRSchwarzWrapperSetup(wrapper, (HYPRE_Matrix)A, (HYPRE_Vector)b,
+                                 (HYPRE_Vector)x);
+}
+
+static HYPRE_Int
+MGRSchwarzWrapperParSolve(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                          HYPRE_ParVector x)
+{
+   return MGRSchwarzWrapperSolve(wrapper, (HYPRE_Matrix)A, (HYPRE_Vector)b,
+                                 (HYPRE_Vector)x);
+}
+
+static HYPRE_Solver
+MGRSchwarzWrapperCreate(const Schwarz_args *args)
+{
+   HYPRE_Solver       inner   = NULL;
+   MGRSchwarzWrapper *wrapper = (MGRSchwarzWrapper *)calloc(1, sizeof(*wrapper));
+   if (!wrapper)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate MGR Schwarz solver wrapper");
+      return NULL;
+   }
+
+   hypredrv_SchwarzCreate(args, &inner);
+   if (hypredrv_ErrorCodeActive() || !inner)
+   {
+      free(wrapper);
+      return NULL;
+   }
+
+   wrapper->setup   = MGRSchwarzWrapperSetup;
+   wrapper->solve   = MGRSchwarzWrapperSolve;
+   wrapper->destroy = MGRSchwarzWrapperDestroy;
+   wrapper->inner   = inner;
+   return (HYPRE_Solver)wrapper;
+}
+#endif
 /* GCOVR_EXCL_STOP */
 
 /*-----------------------------------------------------------------------------
@@ -352,14 +477,36 @@ DEFINE_TYPED_SETTER(MGRfrlxFSAISetArgs, MGRfrlx_args, fsai, 33, hypredrv_FSAISet
 DEFINE_TYPED_SETTER(MGRgrlxAMGSetArgs, MGRgrlx_args, amg, 20, hypredrv_AMGSetArgs)
 DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, hypredrv_ILUSetArgs)
 DEFINE_TYPED_SETTER(MGRgrlxFSAISetArgs, MGRgrlx_args, fsai, 33, hypredrv_FSAISetArgs)
+#if HYPREDRV_HAVE_EXPERIMENTAL
+DEFINE_TYPED_SETTER(MGRclsSchwarzSetArgs, MGRcls_args, schwarz, MGR_SOLVER_TYPE_SCHWARZ,
+                    hypredrv_SchwarzSetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxSchwarzSetArgs, MGRfrlx_args, schwarz, MGR_SOLVER_TYPE_SCHWARZ,
+                    hypredrv_SchwarzSetArgs)
+DEFINE_TYPED_SETTER(MGRgrlxSchwarzSetArgs, MGRgrlx_args, schwarz, MGR_SOLVER_TYPE_SCHWARZ,
+                    hypredrv_SchwarzSetArgs)
+#endif
 static void MGRfrlxMGRSetArgs(void *, const YAMLnode *);
 void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
+
+#if HYPREDRV_HAVE_EXPERIMENTAL
+#define MGRcls_SCHWARZ_FIELD(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, schwarz, MGRclsSchwarzSetArgs)
+#define MGRfrlx_SCHWARZ_FIELD(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, schwarz, MGRfrlxSchwarzSetArgs)
+#define MGRgrlx_SCHWARZ_FIELD(_prefix) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, schwarz, MGRgrlxSchwarzSetArgs)
+#else
+#define MGRcls_SCHWARZ_FIELD(_prefix)
+#define MGRfrlx_SCHWARZ_FIELD(_prefix)
+#define MGRgrlx_SCHWARZ_FIELD(_prefix)
+#endif
 
 #define MGRcls_FIELDS(_prefix)                                     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRclsAMGSetArgs)          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRclsILUSetArgs)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRclsFSAISetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRclsFSAISetArgs)        \
+   MGRcls_SCHWARZ_FIELD(_prefix)
 
 #define MGRfrlx_FIELDS(_prefix)                                          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
@@ -367,14 +514,16 @@ void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
    ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, MGRfrlxMGRSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)               \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRfrlxFSAISetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRfrlxFSAISetArgs)             \
+   MGRfrlx_SCHWARZ_FIELD(_prefix)
 
 #define MGRgrlx_FIELDS(_prefix)                                          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRgrlxAMGSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRgrlxILUSetArgs)               \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRgrlxFSAISetArgs)
+   ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRgrlxFSAISetArgs)             \
+   MGRgrlx_SCHWARZ_FIELD(_prefix)
 
 #define MGRlvl_FIELDS(_prefix)                                                  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, f_dofs, MGRlvlFDofsSet)                      \
@@ -831,6 +980,12 @@ MGRclsApplyTypeDefaults(MGRcls_args *args, HYPRE_Int old_type)
    {
       hypredrv_ILUSetDefaultArgs(&args->ilu);
    }
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   else if (args->type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      hypredrv_SchwarzSetDefaultArgs(&args->schwarz);
+   }
+#endif
 }
 
 static void
@@ -849,6 +1004,12 @@ MGRfrlxApplyTypeDefaults(MGRfrlx_args *args, HYPRE_Int old_type)
    {
       hypredrv_ILUSetDefaultArgs(&args->ilu);
    }
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   else if (args->type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      hypredrv_SchwarzSetDefaultArgs(&args->schwarz);
+   }
+#endif
 }
 
 static void
@@ -867,6 +1028,12 @@ MGRgrlxApplyTypeDefaults(MGRgrlx_args *args, HYPRE_Int old_type)
    {
       hypredrv_ILUSetDefaultArgs(&args->ilu);
    }
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   else if (args->type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      hypredrv_SchwarzSetDefaultArgs(&args->schwarz);
+   }
+#endif
 }
 
 static const char *
@@ -1350,9 +1517,16 @@ hypredrv_MGRclsGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      static StrIntMap map[] = {
+         {"def", -1}, {"amg", 0},   {"spdirect", 29},
+         {"ilu", 32}, {"fsai", 33}, {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
+      };
+#else
       static StrIntMap map[] = {
          {"def", -1}, {"amg", 0}, {"spdirect", 29}, {"ilu", 32}, {"fsai", 33},
       };
+#endif
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1371,6 +1545,18 @@ hypredrv_MGRfrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      static StrIntMap map[] = {
+         {"", -1},          {"none", -1},
+         {"single", 7},     {"jacobi", 7},
+         {"l1-jacobi", 18}, {"v(1,0)", 1},
+         {"amg", 2},        {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
+         {"chebyshev", 16}, {"ilu", 32},
+         {"ge", 9},         {"spdirect", 29},
+         {"ge-piv", 99},    {"ge-inv", 199},
+         {"fsai", 33},      {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
+      };
+#else
       static StrIntMap map[] = {
          {"", -1},          {"none", -1},
          {"single", 7},     {"jacobi", 7},
@@ -1381,6 +1567,7 @@ hypredrv_MGRfrlxGetValidValues(const char *key)
          {"ge-piv", 99},    {"ge-inv", 199},
          {"fsai", 33},
       };
+#endif
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1399,6 +1586,20 @@ hypredrv_MGRgrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      static StrIntMap map[] = {
+         {"", -1},          {"none", -1},
+         {"blk-jacobi", 0}, {"blk-gs", 1},
+         {"mixed-gs", 2},   {"amg", 20},
+         {"h-fgs", 3},      {"h-bgs", 4},
+         {"ch-gs", 5},      {"h-ssor", 6},
+         {"euclid", 8},     {"2stg-fgs", 11},
+         {"2stg-bgs", 12},  {"l1-hfgs", 13},
+         {"l1-hbgs", 14},   {"ilu", 16},
+         {"spdirect", 29},  {"l1-hsgs", 88},
+         {"fsai", 33},      {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
+      };
+#else
       static StrIntMap map[] = {
          {"", -1},         {"none", -1},    {"blk-jacobi", 0}, {"blk-gs", 1},
          {"mixed-gs", 2},  {"amg", 20},     {"h-fgs", 3},      {"h-bgs", 4},
@@ -1406,6 +1607,7 @@ hypredrv_MGRgrlxGetValidValues(const char *key)
          {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},   {"ilu", 16},
          {"spdirect", 29}, {"l1-hsgs", 88}, {"fsai", 33},
       };
+#endif
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1737,6 +1939,12 @@ MGRCoarseSolverTypeName(const MGRcls_args *args)
          return "spdirect";
       case 32:
          return "ilu";
+      case 33:
+         return "fsai";
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      case MGR_SOLVER_TYPE_SCHWARZ:
+         return "schwarz";
+#endif
       default:
          return "unknown";
    }
@@ -1755,7 +1963,11 @@ MGRFRelaxUsesManagedHandle(const MGRfrlx_args *args)
       return 1;
    }
 
-   return args->type == 2 || args->type == 29 || args->type == 32 || args->type == 33;
+   return args->type == 2 || args->type == 29 || args->type == 32 || args->type == 33
+#if HYPREDRV_HAVE_EXPERIMENTAL
+          || args->type == MGR_SOLVER_TYPE_SCHWARZ
+#endif
+      ;
 }
 
 static int
@@ -1782,7 +1994,11 @@ MGRGRelaxUsesManagedHandle(const MGRgrlx_args *args)
       return 1;
    }
 
-   return args->type == 20 || args->type == 16 || args->type == 29 || args->type == 33;
+   return args->type == 20 || args->type == 16 || args->type == 29 || args->type == 33
+#if HYPREDRV_HAVE_EXPERIMENTAL
+          || args->type == MGR_SOLVER_TYPE_SCHWARZ
+#endif
+      ;
 }
 
 static int
@@ -1810,7 +2026,11 @@ MGRCoarseUsesManagedHandle(const MGRcls_args *args)
    }
 
    HYPRE_Int type = MGRResolveCoarseSolverType(args);
-   return type == 0 || type == 29 || type == 32;
+   return type == 0 || type == 29 || type == 32
+#if HYPREDRV_HAVE_EXPERIMENTAL
+          || type == MGR_SOLVER_TYPE_SCHWARZ
+#endif
+      ;
 }
 
 static int
@@ -1942,6 +2162,12 @@ MGRDestroyDetachedFSolver(const MGRfrlx_args *f_relaxation, HYPRE_Solver *solver
       HYPRE_FSAIDestroy(*solver_ptr);
    }
 #endif
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   else if (f_relaxation->type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      MGRSchwarzWrapperDestroy(*solver_ptr);
+   }
+#endif
 
    *solver_ptr = NULL;
 }
@@ -1976,6 +2202,12 @@ MGRDestroyDetachedGSolver(const MGRgrlx_args *g_relaxation, HYPRE_Solver *solver
    else if (g_relaxation->type == 33)
    {
       HYPRE_FSAIDestroy(*solver_ptr);
+   }
+#endif
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   else if (g_relaxation->type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      MGRSchwarzWrapperDestroy(*solver_ptr);
    }
 #endif
 
@@ -2049,6 +2281,19 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
       hypredrv_FSAICreate(&level_args->f_relaxation.fsai, &fsolver);
    }
 #endif
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   else if (level_args->f_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      if (active_lvl != 0)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR F-relaxation 'schwarz' is only supported at MGR level 0");
+         return;
+      }
+      fsolver = MGRSchwarzWrapperCreate(&level_args->f_relaxation.schwarz);
+   }
+#endif
 
    if (hypredrv_ErrorCodeActive() || !fsolver)
    {
@@ -2056,8 +2301,19 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
    }
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
-   hypredrv_MGRSetFSolverAtLevel(mgr_solver, fsolver, active_lvl,
-                                 level_args->f_relaxation.type, NULL, NULL);
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   if (level_args->f_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      hypredrv_MGRSetFSolverAtLevel(mgr_solver, fsolver, active_lvl,
+                                    MGR_FRLX_TYPE_CUSTOM_SOLVER_CB,
+                                    MGRSchwarzWrapperParSolve, MGRSchwarzWrapperParSetup);
+   }
+   else
+#endif
+   {
+      hypredrv_MGRSetFSolverAtLevel(mgr_solver, fsolver, active_lvl,
+                                    level_args->f_relaxation.type, NULL, NULL);
+   }
 #endif
    MGRDestroyDetachedFSolver(&level_args->f_relaxation, &old_fsolver);
    args->frelax[orig_lvl] = fsolver;
@@ -2115,6 +2371,12 @@ MGRRefreshGRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
    else if (level_args->g_relaxation.type == 33)
    {
       hypredrv_FSAICreate(&level_args->g_relaxation.fsai, &smoother);
+   }
+#endif
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   else if (level_args->g_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      smoother = MGRSchwarzWrapperCreate(&level_args->g_relaxation.schwarz);
    }
 #endif
 
@@ -2190,6 +2452,18 @@ MGRRefreshCoarseSolver(MGR_args *args, HYPRE_Solver mgr_solver)
       args->csolver_type = 29;
    }
 #endif
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   else if (type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      hypredrv_SchwarzCreate(&args->coarsest_level.schwarz, &coarse_solver);
+      if (!hypredrv_ErrorCodeActive())
+      {
+         HYPRE_MGRSetCoarseSolver(mgr_solver, HYPRE_SchwarzSolve, HYPRE_SchwarzSetup,
+                                  coarse_solver);
+         args->csolver_type = MGR_SOLVER_TYPE_SCHWARZ;
+      }
+   }
+#endif
 
    if (hypredrv_ErrorCodeActive() || !coarse_solver)
    {
@@ -2212,6 +2486,12 @@ MGRRefreshCoarseSolver(MGR_args *args, HYPRE_Solver mgr_solver)
       else if (old_type == 32)
       {
          HYPRE_ILUDestroy(old_coarse_solver);
+      }
+#endif
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      else if (old_type == MGR_SOLVER_TYPE_SCHWARZ)
+      {
+         HYPRE_SchwarzDestroy(old_coarse_solver);
       }
 #endif
    }
@@ -2793,6 +3073,12 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
          HYPRE_ILUDestroy(args->csolver);
       }
 #endif
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      else if (args->csolver_type == MGR_SOLVER_TYPE_SCHWARZ)
+      {
+         HYPRE_SchwarzDestroy(args->csolver);
+      }
+#endif
    }
    if (drop_csolver)
    {
@@ -3247,18 +3533,30 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
 
       if (level_args->f_relaxation.use_krylov)
       {
-         level_frelax_type[i] = 2;
+         level_frelax_type[i] = MGR_FRLX_TYPE_CUSTOM_SOLVER_CB;
       }
       else if (type == MGR_FRLX_TYPE_NESTED_MGR)
       {
          level_frelax_type[i] = 7;
       }
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      else if (type == MGR_SOLVER_TYPE_SCHWARZ)
+      {
+         level_frelax_type[i] = MGR_FRLX_TYPE_CUSTOM_SOLVER_CB;
+      }
+#endif
       else
       {
          level_frelax_type[i] = type;
       }
       level_frelax_sweeps[i] = level_args->f_relaxation.num_sweeps;
       level_grelax_type[i]   = level_args->g_relaxation.type;
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      if (level_args->g_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+      {
+         level_grelax_type[i] = MGR_GRLX_TYPE_USER_SMOOTHER;
+      }
+#endif
       level_grelax_sweeps[i] = level_args->g_relaxation.num_sweeps;
       level_interp_type[i]   = MGRLevelInterpTypeCompat(level_args->prolongation_type,
                                                         stats, next_ls_id, orig_lvl);
@@ -3508,6 +3806,43 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
          return;
       }
 #endif
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      else if (level_args->f_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+      {
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+         if (i != 0)
+         {
+            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+            hypredrv_ErrorMsgAdd(
+               "MGR F-relaxation 'schwarz' is only supported at MGR level 0");
+            return;
+         }
+         frelax = args->frelax[orig_lvl];
+         if (!frelax)
+         {
+            frelax = MGRSchwarzWrapperCreate(&level_args->f_relaxation.schwarz);
+            if (!frelax || hypredrv_ErrorCodeActive())
+            {
+               return;
+            }
+         }
+         else
+         {
+            HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
+                               "reusing cached MGR F-relax solver handle at level %d",
+                               (int)orig_lvl);
+         }
+         hypredrv_MGRSetFSolverAtLevel(precon, frelax, i, MGR_FRLX_TYPE_CUSTOM_SOLVER_CB,
+                                       MGRSchwarzWrapperParSolve,
+                                       MGRSchwarzWrapperParSetup);
+         args->frelax[orig_lvl] = frelax;
+#else
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR F-relaxation 'schwarz' requires hypre >= 2.31.0");
+         return;
+#endif
+      }
+#endif
    }
    HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
                       "MGR stage after F-relax setup: code=0x%x",
@@ -3643,6 +3978,28 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
          return;
       }
 #endif
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      else if (level_args->g_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+      {
+         grelax = args->grelax[orig_lvl];
+         if (!grelax)
+         {
+            grelax = MGRSchwarzWrapperCreate(&level_args->g_relaxation.schwarz);
+            if (!grelax || hypredrv_ErrorCodeActive())
+            {
+               return;
+            }
+         }
+         else
+         {
+            HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
+                               "reusing cached MGR G-relax solver handle at level %d",
+                               (int)orig_lvl);
+         }
+         HYPRE_MGRSetGlobalSmootherAtLevel(precon, grelax, i);
+         args->grelax[orig_lvl] = grelax;
+      }
+#endif
    }
 #endif
    HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
@@ -3705,6 +4062,13 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
       {
          args->coarsest_level.ilu.max_iter = 1;
       }
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      else if (args->coarsest_level.type == MGR_SOLVER_TYPE_SCHWARZ &&
+               args->coarsest_level.schwarz.max_iter < 1)
+      {
+         args->coarsest_level.schwarz.max_iter = 1;
+      }
+#endif
       /* GCOVR_EXCL_STOP */
 
       /* Config coarsest level solver */
@@ -3804,6 +4168,29 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("MGR coarsest_level 'fsai' requires hypre >= 2.25.0");
          return;
+      }
+#endif
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      else if (args->coarsest_level.type == MGR_SOLVER_TYPE_SCHWARZ)
+      {
+         int csolver_was_cached =
+            (args->csolver && args->csolver_type == MGR_SOLVER_TYPE_SCHWARZ);
+         if (!csolver_was_cached)
+         {
+            hypredrv_SchwarzCreate(&args->coarsest_level.schwarz, &args->csolver);
+            if (!args->csolver || hypredrv_ErrorCodeActive())
+            {
+               return;
+            }
+         }
+         else
+         {
+            HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
+                               "reusing cached MGR coarsest solver handle");
+         }
+         args->csolver_type = MGR_SOLVER_TYPE_SCHWARZ;
+         HYPRE_MGRSetCoarseSolver(precon, HYPRE_SchwarzSolve, HYPRE_SchwarzSetup,
+                                  args->csolver);
       }
 #endif
    }

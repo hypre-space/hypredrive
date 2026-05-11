@@ -109,6 +109,23 @@ test_ErrorStateReset(void)
 }
 
 static void
+test_ErrorReportCollectiveFlag_resets(void)
+{
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_ErrorReportIsCollective());
+
+   hypredrv_ErrorReportSetCollective(true);
+   ASSERT_TRUE(hypredrv_ErrorReportIsCollective());
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_ErrorReportIsCollective());
+
+   hypredrv_ErrorReportSetCollective(true);
+   hypredrv_ErrorStateReset();
+   ASSERT_FALSE(hypredrv_ErrorReportIsCollective());
+}
+
+static void
 test_ErrorMsgAdd_null_format(void)
 {
    hypredrv_ErrorMsgClear();
@@ -563,6 +580,7 @@ main(int argc, char **argv)
    RUN_TEST(test_ErrorMsgAdd);
    RUN_TEST(test_ErrorMsgClear);
    RUN_TEST(test_ErrorStateReset);
+   RUN_TEST(test_ErrorReportCollectiveFlag_resets);
    RUN_TEST(test_ErrorMsgAdd_null_format);
    RUN_TEST(test_ErrorMsgHelpers_accept_null_inputs);
    RUN_TEST(test_ErrorMsgAddMissingKey);
