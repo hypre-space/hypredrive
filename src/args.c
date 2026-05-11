@@ -1277,13 +1277,6 @@ LoadResolvedConfigPath(const char *candidate, char *cfg_path, size_t cfg_path_si
       hypredrv_ErrorMsgAdd("Invalid configuration file path");
       return false;
    }
-   if (!hypredrv_BinaryPathPrefixIsSafe(candidate) || strstr(candidate, "..") != NULL)
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Invalid configuration file path");
-      return false;
-   }
-
    hypredrv_SplitFilename(candidate, &dirname, &basename);
    if (!dirname || !basename || basename[0] == '\0')
    {

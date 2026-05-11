@@ -1560,6 +1560,48 @@ test_InputArgsParse_include_from_subdirectory(void)
 }
 
 static void
+test_InputArgsParse_parent_relative_config_path(void)
+{
+   char cwd[512];
+   char dir[256];
+   char subdir[288];
+   char config[288];
+   input_args *args = NULL;
+
+   ASSERT_NOT_NULL(getcwd(cwd, sizeof(cwd)));
+
+   (void)snprintf(dir, sizeof(dir), "/tmp/hypred_args_parent_%d", (int)getpid());
+   (void)snprintf(subdir, sizeof(subdir), "%s/run", dir);
+   (void)snprintf(config, sizeof(config), "%s/config.yml", dir);
+
+   ASSERT_EQ(mkdir(dir, 0700), 0);
+   ASSERT_EQ(mkdir(subdir, 0700), 0);
+
+   FILE *fp = fopen(config, "w");
+   ASSERT_NOT_NULL(fp);
+   fprintf(fp, "solver: pcg\n");
+   fprintf(fp, "preconditioner: amg\n");
+   fclose(fp);
+
+   ASSERT_EQ(chdir(subdir), 0);
+   char *argv[] = {"../config.yml"};
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+
+   ASSERT_EQ(chdir(cwd), 0);
+
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->solver_method, SOLVER_PCG);
+   ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
+
+   hypredrv_InputArgsDestroy(&args);
+   unlink(config);
+   rmdir(subdir);
+   rmdir(dir);
+}
+
+static void
 test_InputArgsParse_driver_mode_config_not_argv0_with_overrides(void)
 {
    char yaml_file[256];
@@ -1937,6 +1979,7 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_InputArgsApplySolverPreset_unknown_preset);
    RUN_TEST(test_InputArgsParse_invalid_yaml_file_on_disk);
    RUN_TEST(test_InputArgsParse_include_from_subdirectory);
+   RUN_TEST(test_InputArgsParse_parent_relative_config_path);
    RUN_TEST(test_InputArgsParse_driver_mode_config_not_argv0_with_overrides);
    RUN_TEST(test_InputArgsParseWithObjectName_basic);
    RUN_TEST(test_InputArgsParseWithObjectName_invalid_yaml_tree);
