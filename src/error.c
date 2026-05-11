@@ -437,7 +437,7 @@ hypredrv_ErrorBacktracePrint(void)
       // cppcheck-suppress unreachableCode
       waitpid(child_pid, NULL, 0);
    }
-   /* GCOVR_EXCL_BR_STOP */
+   /* GCOVR_EXCL_STOP */
 }
 
 #else
@@ -638,10 +638,11 @@ hypredrv_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *fil
       else
       {
          MPI_Abort(comm, (int)error_code);
+         /* Defensive fallback for non-conforming or mocked MPI runtimes that return. */
          exit((int)error_code);
       }
    }
-   /* GCOVR_EXCL_STOP */
+   /* GCOVR_EXCL_BR_STOP */
 }
 
 /*-----------------------------------------------------------------------------

@@ -9,10 +9,14 @@
 #define MGR_HEADER
 
 #include "internal/amg.h"
+#include "internal/compatibility.h"
 #include "internal/containers.h"
 #include "internal/fsai.h"
 #include "internal/ilu.h"
 #include "internal/precon_reuse.h"
+#if HYPREDRV_HAVE_EXPERIMENTAL
+#include "internal/schwarz.h"
+#endif
 #include "internal/utils.h"
 
 struct NestedKrylov_args_struct;
@@ -21,8 +25,18 @@ typedef struct MGR_args_struct MGR_args;
 
 enum
 {
-   MAX_MGR_LEVELS           = 32,
-   MGR_FRLX_TYPE_NESTED_MGR = 202,
+   MAX_MGR_LEVELS = 32,
+
+   /* hypre's level-0 custom F-solver callback path is keyed through AMG's
+    * F-relaxation type. We use it for wrapped Schwarz F-relaxation because it
+    * keeps hypre's extracted A_FF matrix alive through setup and solve. */
+   MGR_FRLX_TYPE_CUSTOM_SOLVER_CB = 2,
+   MGR_FRLX_TYPE_NESTED_MGR       = 202,
+
+   /* Disable hypre's built-in global smoother slot when a user smoother is
+    * installed via HYPRE_MGRSetGlobalSmootherAtLevel. */
+   MGR_GRLX_TYPE_USER_SMOOTHER = -1,
+   MGR_SOLVER_TYPE_SCHWARZ     = 34,
 };
 
 typedef struct MGRComponentReuse_args_struct
@@ -53,6 +67,9 @@ typedef struct MGRcls_args_struct
       AMG_args  amg;
       ILU_args  ilu;
       FSAI_args fsai;
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      Schwarz_args schwarz;
+#endif
    };
 } MGRcls_args;
 
@@ -76,6 +93,9 @@ typedef struct MGRfrlx_args_struct
       AMG_args  amg;
       ILU_args  ilu;
       FSAI_args fsai;
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      Schwarz_args schwarz;
+#endif
    };
 } MGRfrlx_args;
 
@@ -98,6 +118,9 @@ typedef struct MGRgrlx_args_struct
       AMG_args  amg;
       ILU_args  ilu;
       FSAI_args fsai;
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      Schwarz_args schwarz;
+#endif
    };
 } MGRgrlx_args;
 

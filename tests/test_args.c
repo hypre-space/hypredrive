@@ -1589,7 +1589,10 @@ test_InputArgsParse_parent_relative_config_path(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
 
-   ASSERT_EQ(chdir(cwd), 0);
+   /* Restore cwd before any result assertions so later tests are unaffected
+    * if the parse unexpectedly fails. */
+   int restore_cwd = chdir(cwd);
+   ASSERT_EQ(restore_cwd, 0);
 
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->solver_method, SOLVER_PCG);

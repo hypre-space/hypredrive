@@ -718,6 +718,49 @@ test_mgr_f_relaxation_ilu_nested_block(void)
    hypredrv_MGRDestroyNestedSolverArgs(&args);
 }
 
+#if HYPREDRV_HAVE_EXPERIMENTAL
+static void
+test_mgr_schwarz_nested_blocks_for_f_g_and_coarsest(void)
+{
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   add_child(lvl0, "f_dofs", "[0]", 3);
+
+   YAMLnode *f0 = add_child(lvl0, "f_relaxation", "", 3);
+   YAMLnode *f0_schwarz = add_child(f0, "schwarz", "", 4);
+   add_child(f0_schwarz, "variant", "ras-iluk", 5);
+   add_child(f0_schwarz, "overlap", "2", 5);
+
+   YAMLnode *g0 = add_child(lvl0, "g_relaxation", "", 3);
+   YAMLnode *g0_schwarz = add_child(g0, "schwarz", "", 4);
+   add_child(g0_schwarz, "variant", "ras-ilut", 5);
+   add_child(g0_schwarz, "local_solver_type", "ilut", 5);
+
+   YAMLnode *cls = add_child(mgr, "coarsest_level", "", 1);
+   YAMLnode *cls_schwarz = add_child(cls, "schwarz", "", 2);
+   add_child(cls_schwarz, "variant", "ras-spdirect", 3);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ((int)args.level[0].f_relaxation.type, MGR_SOLVER_TYPE_SCHWARZ);
+   ASSERT_EQ((int)args.level[0].f_relaxation.schwarz.variant, 10);
+   ASSERT_EQ((int)args.level[0].f_relaxation.schwarz.overlap, 2);
+   ASSERT_EQ((int)args.level[0].g_relaxation.type, MGR_SOLVER_TYPE_SCHWARZ);
+   ASSERT_EQ((int)args.level[0].g_relaxation.schwarz.variant, 20);
+   ASSERT_EQ((int)args.level[0].g_relaxation.schwarz.local_solver_type, 1);
+   ASSERT_EQ((int)args.coarsest_level.type, MGR_SOLVER_TYPE_SCHWARZ);
+   ASSERT_EQ((int)args.coarsest_level.schwarz.variant, 40);
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+}
+#endif
+
 /* Flat-value branches (no children) in cls/frlx/grlx SetArgsFromYAML */
 static void
 test_mgr_cls_frxl_grlx_flat_scalar_branches(void)
@@ -1086,6 +1129,9 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_f_dofs_block_sequence_symbolic_error_returns_early);
    RUN_TEST(test_mgr_explicit_type_key_triggers_apply_type_defaults);
    RUN_TEST(test_mgr_f_relaxation_ilu_nested_block);
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   RUN_TEST(test_mgr_schwarz_nested_blocks_for_f_g_and_coarsest);
+#endif
    RUN_TEST(test_mgr_cls_frxl_grlx_flat_scalar_branches);
    RUN_TEST(test_mgr_MGR_setters_null_parent_early_return);
    RUN_TEST(test_mgr_MGRDestroyNestedSolverArgs_null);
