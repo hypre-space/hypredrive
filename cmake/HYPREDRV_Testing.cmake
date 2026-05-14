@@ -447,6 +447,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     hypredrv_check_hypre_version(23300 0)
     hypredrv_check_hypre_version(30000 0)
     hypredrv_check_hypre_version(30100 5)
+    hypredrv_check_hypre_version(30100 38)
 
     # Check for optional hypre features used to gate tests.
     hypredrv_check_hypre_symbol(HYPRE_DEVELOP_NUMBER)
@@ -655,106 +656,6 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 REQUIRE_CONTAINS ${_cli_ex7_reps4_ls4_require_contains}
             )
             if(HYPREDRV_ENABLE_EXPERIMENTAL)
-                add_test(NAME hypredrive_test_ex7_mgr_frelax_reuse_1proc
-                    COMMAND ${CMAKE_COMMAND}
-                            -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
-                            -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
-                            -DMPIEXEC=${MPIEXEC_EXECUTABLE}
-                            -DMPI_NUMPROCS=1
-                            -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
-                            -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
-                            -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
-                            -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-reuse.yml
-                            "-DTARGET_ARGS:STRING=-q"
-                            "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|cached MGR handles before create|Solving linear system #24"
-                            -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
-                    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                )
-                set_tests_properties(hypredrive_test_ex7_mgr_frelax_reuse_1proc
-                    PROPERTIES
-                    FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
-                    SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
-                    LABELS "integration;hypredrive"
-                )
-                hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_frelax_reuse_1proc)
-                hypredrv_append_test_environment(hypredrive_test_ex7_mgr_frelax_reuse_1proc
-                    "HYPREDRV_LOG_LEVEL=2")
-
-                add_test(NAME hypredrive_test_ex7_mgr_grelax_reuse_1proc
-                    COMMAND ${CMAKE_COMMAND}
-                            -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
-                            -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
-                            -DMPIEXEC=${MPIEXEC_EXECUTABLE}
-                            -DMPI_NUMPROCS=1
-                            -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
-                            -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
-                            -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
-                            -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-grelax-reuse.yml
-                            "-DTARGET_ARGS:STRING=-q"
-                            "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|cached MGR handles before create|grelax=1|Solving linear system #24"
-                            -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
-                    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                )
-                set_tests_properties(hypredrive_test_ex7_mgr_grelax_reuse_1proc
-                    PROPERTIES
-                    FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
-                    SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
-                    LABELS "integration;hypredrive"
-                )
-                hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_grelax_reuse_1proc)
-                hypredrv_append_test_environment(hypredrive_test_ex7_mgr_grelax_reuse_1proc
-                    "HYPREDRV_LOG_LEVEL=2")
-
-                add_test(NAME hypredrive_test_ex7_mgr_coarse_reuse_1proc
-                    COMMAND ${CMAKE_COMMAND}
-                            -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
-                            -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
-                            -DMPIEXEC=${MPIEXEC_EXECUTABLE}
-                            -DMPI_NUMPROCS=1
-                            -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
-                            -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
-                            -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
-                            -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-coarse-reuse.yml
-                            "-DTARGET_ARGS:STRING=-q"
-                            "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|cached MGR handles before create|coarse=1|Solving linear system #24"
-                            -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
-                    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                )
-                set_tests_properties(hypredrive_test_ex7_mgr_coarse_reuse_1proc
-                    PROPERTIES
-                    FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
-                    SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
-                    LABELS "integration;hypredrive"
-                )
-                hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_coarse_reuse_1proc)
-                hypredrv_append_test_environment(hypredrive_test_ex7_mgr_coarse_reuse_1proc
-                    "HYPREDRV_LOG_LEVEL=2")
-
-                add_test(NAME hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc
-                    COMMAND ${CMAKE_COMMAND}
-                            -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
-                            -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
-                            -DMPIEXEC=${MPIEXEC_EXECUTABLE}
-                            -DMPI_NUMPROCS=1
-                            -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
-                            -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
-                            -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
-                            -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-ilu-reuse.yml
-                            "-DTARGET_ARGS:STRING=-q"
-                            "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|cached MGR handles before create|frelax=1|Solving linear system #24"
-                            -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
-                    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                )
-                set_tests_properties(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc
-                    PROPERTIES
-                    FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
-                    SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
-                    LABELS "integration;hypredrive"
-                )
-                hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc)
-                hypredrv_append_test_environment(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc
-                    "HYPREDRV_LOG_LEVEL=2")
-
                 # MGR cycle type tests (5 linear systems each)
                 foreach(_cycle_case IN ITEMS
                     "v;ex7-mgr-cycle-v.yml"
@@ -798,7 +699,11 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 unset(_tname)
             endif()
         endif()
-        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU)
+        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU AND HYPREDRV_ENABLE_EXPERIMENTAL AND NOT HYPREDRV_ENABLE_ANALYSIS)
+            add_hypredrive_test(ex1_schwarz_spdirect_1proc 1
+                ex1-schwarz-spdirect.yml)
+        endif()
+        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU AND NOT HYPREDRV_ENABLE_ANALYSIS AND NOT HYPREDRV_ENABLE_COVERAGE)
             add_hypredrive_test(ex7_mgr_frelax_spdirect_1proc 1
                 ex7-mgr-frelax-spdirect.yml)
             add_hypredrive_test(ex7_mgr_grelax_spdirect_1proc 1
@@ -808,7 +713,8 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         endif()
         if (HYPREDRV_HAVE_HYPRE_30100_DEV5)
             add_hypredrive_test(ex7_nested_mgr_1proc 1 ex7-nested-mgr.yml)
-            add_hypredrive_test(ex7_nested_krylov_mgr_1proc 1 ex7-nested-krylov-mgr.yml)
+            add_hypredrive_test(ex7_nested_krylov_mgr_1proc 1
+                ex7-nested-krylov-mgr.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_30000_DEV0)
             add_hypredrive_cli_test(ex7_cli_dofmap_scaling 1 ex7.yml
@@ -831,6 +737,107 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 add_hypredrive_test(${_name} ${_nprocs} ${_config})
             endforeach()
             unset(_hypredrv_ex8_examples)
+        endif()
+        if (HYPREDRV_HAVE_HYPRE_30100_DEV38)
+            add_test(NAME hypredrive_test_ex7_mgr_frelax_reuse_1proc
+                COMMAND ${CMAKE_COMMAND}
+                        -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+                        -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
+                        -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+                        -DMPI_NUMPROCS=1
+                        -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+                        -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+                        -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+                        -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-reuse.yml
+                        "-DTARGET_ARGS:STRING=-q"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|cached MGR handles before create|Solving linear system #24"
+                        -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            )
+            set_tests_properties(hypredrive_test_ex7_mgr_frelax_reuse_1proc
+                PROPERTIES
+                FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
+                SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+                LABELS "integration;hypredrive"
+            )
+            hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_frelax_reuse_1proc)
+            hypredrv_append_test_environment(hypredrive_test_ex7_mgr_frelax_reuse_1proc
+                "HYPREDRV_LOG_LEVEL=2")
+
+            add_test(NAME hypredrive_test_ex7_mgr_grelax_reuse_1proc
+                COMMAND ${CMAKE_COMMAND}
+                        -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+                        -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
+                        -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+                        -DMPI_NUMPROCS=1
+                        -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+                        -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+                        -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+                        -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-grelax-reuse.yml
+                        "-DTARGET_ARGS:STRING=-q"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|cached MGR handles before create|grelax=1|Solving linear system #24"
+                        -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            )
+            set_tests_properties(hypredrive_test_ex7_mgr_grelax_reuse_1proc
+                PROPERTIES
+                FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
+                SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+                LABELS "integration;hypredrive"
+            )
+            hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_grelax_reuse_1proc)
+            hypredrv_append_test_environment(hypredrive_test_ex7_mgr_grelax_reuse_1proc
+                "HYPREDRV_LOG_LEVEL=2")
+
+            add_test(NAME hypredrive_test_ex7_mgr_coarse_reuse_1proc
+                COMMAND ${CMAKE_COMMAND}
+                        -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+                        -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
+                        -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+                        -DMPI_NUMPROCS=1
+                        -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+                        -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+                        -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+                        -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-coarse-reuse.yml
+                        "-DTARGET_ARGS:STRING=-q"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|cached MGR handles before create|coarse=1|Solving linear system #24"
+                        -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            )
+            set_tests_properties(hypredrive_test_ex7_mgr_coarse_reuse_1proc
+                PROPERTIES
+                FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
+                SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+                LABELS "integration;hypredrive"
+            )
+            hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_coarse_reuse_1proc)
+            hypredrv_append_test_environment(hypredrive_test_ex7_mgr_coarse_reuse_1proc
+                "HYPREDRV_LOG_LEVEL=2")
+
+            add_test(NAME hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc
+                COMMAND ${CMAKE_COMMAND}
+                        -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+                        -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
+                        -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+                        -DMPI_NUMPROCS=1
+                        -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+                        -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+                        -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+                        -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-ilu-reuse.yml
+                        "-DTARGET_ARGS:STRING=-q"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|cached MGR handles before create|frelax=1|Solving linear system #24"
+                        -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            )
+            set_tests_properties(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc
+                PROPERTIES
+                FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
+                SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+                LABELS "integration;hypredrive"
+            )
+            hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc)
+            hypredrv_append_test_environment(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc
+                "HYPREDRV_LOG_LEVEL=2")
         endif()
 
         # Test main.c help/usage/error branches

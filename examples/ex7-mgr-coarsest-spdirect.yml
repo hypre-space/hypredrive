@@ -1,0 +1,47 @@
+general:
+  use_millisec: on
+
+linear_system:
+  dirname: data/poromech2k/np1/ls
+  init_suffix: 0
+  last_suffix: 0
+  rhs_filename: IJ.out.b
+  matrix_filename: IJ.out.A
+  dofmap_filename: dofmap.out
+
+solver:
+  fgmres:
+    max_iter: 50
+    krylov_dim: 30
+    print_level: 0
+    relative_tol: 1.0e-6
+
+preconditioner:
+  mgr:
+    max_iter: 1
+    tolerance: 0.0
+    print_level: 0
+    coarse_th: 1e-20
+    level:
+      0:
+        f_dofs: [0, 1, 2]
+        f_relaxation: jacobi
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: rap
+      1:
+        f_dofs: [5]
+        f_relaxation: jacobi
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: rap
+      2:
+        f_dofs: [4]
+        f_relaxation: single
+        g_relaxation: ilu
+        restriction_type: columped
+        prolongation_type: injection
+        coarse_level_type: rap
+    coarsest_level: spdirect

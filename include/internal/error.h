@@ -66,6 +66,8 @@ void     hypredrv_ErrorCodeDescribe(uint32_t);
 void     hypredrv_ErrorCodeReset(uint32_t);
 void     hypredrv_ErrorCodeResetAll(void);
 void     hypredrv_ErrorStateReset(void);
+void     hypredrv_ErrorReportSetCollective(bool collective);
+bool     hypredrv_ErrorReportIsCollective(void);
 bool     hypredrv_DistributedErrorCodeActive(MPI_Comm);
 bool     hypredrv_DistributedErrorStateSync(MPI_Comm);
 
@@ -81,6 +83,10 @@ void hypredrv_ErrorMsgAddInvalidFilename(const char *);
 void hypredrv_ErrorMsgPrint(void);
 void hypredrv_ErrorMsgClear(void);
 void hypredrv_ErrorBacktracePrint(void);
+#ifndef HYPREDRV_SAFE_CALL_HANDLE_ERROR_DECLARED
+#define HYPREDRV_SAFE_CALL_HANDLE_ERROR_DECLARED
+void hypredrv_SafeCallHandleError(uint32_t, MPI_Comm, const char *, int, const char *);
+#endif
 
 /*******************************************************************************
  *******************************************************************************/

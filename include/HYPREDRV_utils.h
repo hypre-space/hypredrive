@@ -15,9 +15,9 @@
  *
  * Include this header after HYPREDRV.h when you want to use the
  * HYPREDRV_SAFE_CALL or HYPREDRV_SAFE_CALL_COMM convenience macros.
- * These macros are kept in a separate header to avoid leaking system
- * symbols (strcmp, getenv, raise, ...) into translation units that only
- * need the public HYPREDRV API types and function declarations.
+ * These macros are kept in a separate header so translation units that only need
+ * the public HYPREDRV API types and function declarations do not also receive
+ * abort-on-error convenience macros.
  *
  * @code
  *   #include <HYPREDRV.h>
@@ -26,34 +26,15 @@
  */
 
 #include <mpi.h>
-#include <signal.h> // For: raise
-#include <stdio.h>  // For: fprintf
-#include <stdlib.h> // For: getenv
-#include <string.h> // For: strcmp
 
 #include "HYPREDRV.h"
 
-static inline void
-hypredrv_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *file,
-                             int line, const char *func)
-{
-   /* GCOVR_EXCL_BR_START */
-   if (error_code != 0)
-   {
-      (void)fprintf(stderr, "At %s:%d in %s():\n", file, line, func);
-      HYPREDRV_ErrorCodeDescribe(error_code);
-      const char *debug_env = getenv("HYPREDRV_DEBUG");
-      if (debug_env && strcmp(debug_env, "1") == 0)
-      {
-         raise(SIGTRAP); /* Breakpoint for gdb */
-      }
-      else
-      {
-         MPI_Abort(comm, (int)error_code);
-      }
-   }
-   /* GCOVR_EXCL_BR_STOP */
-}
+#ifndef HYPREDRV_SAFE_CALL_HANDLE_ERROR_DECLARED
+#define HYPREDRV_SAFE_CALL_HANDLE_ERROR_DECLARED
+HYPREDRV_EXPORT_SYMBOL void hypredrv_SafeCallHandleError(uint32_t error_code,
+                                                         MPI_Comm comm, const char *file,
+                                                         int line, const char *func);
+#endif
 
 /**
  * @brief Safely call a HYPREDRV function; abort on error via MPI_COMM_WORLD.

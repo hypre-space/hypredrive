@@ -1,0 +1,13 @@
+solver:
+  fgmres:
+    max_iter: 200
+    krylov_dim: 100
+    print_level: 0
+    relative_tol: 1.0e-6
+
+preconditioner:
+  schwarz:
+    variant: ras-spdirect
+    overlap: 1
+    max_iter: 1
+    print_level: 0

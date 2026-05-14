@@ -10,11 +10,15 @@
 
 #include <stdint.h>
 #include "internal/amg.h"
+#include "internal/compatibility.h"
 #include "internal/field.h"
 #include "internal/fsai.h"
 #include "internal/ilu.h"
 #include "internal/mgr.h"
 #include "internal/precon_reuse.h"
+#if HYPREDRV_HAVE_EXPERIMENTAL
+#include "internal/schwarz.h"
+#endif
 #include "internal/stats.h"
 #include "internal/yaml.h"
 
@@ -28,6 +32,9 @@ typedef enum precon_type_enum
    PRECON_MGR,
    PRECON_ILU,
    PRECON_FSAI,
+#if HYPREDRV_HAVE_EXPERIMENTAL
+   PRECON_SCHWARZ,
+#endif
    PRECON_NONE,
 } precon_t;
 
@@ -43,6 +50,9 @@ typedef struct precon_args_struct
       MGR_args  mgr;
       ILU_args  ilu;
       FSAI_args fsai;
+#if HYPREDRV_HAVE_EXPERIMENTAL
+      Schwarz_args schwarz;
+#endif
    };
    int reuse;
 } precon_args;

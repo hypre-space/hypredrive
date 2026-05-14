@@ -2270,7 +2270,7 @@ hypredrv_YAMLnodeValidate(YAMLnode *node)
 }
 
 static void
-YAMLnodePrintAnyModeValidBranch(YAMLnode *node, bool is_seq_item)
+YAMLnodePrintAnyModeValidBranch(const YAMLnode *node, bool is_seq_item)
 {
    switch (node->valid)
    {

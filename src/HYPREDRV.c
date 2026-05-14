@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "_hypre_parcsr_mv.h" /* For hypre_VectorData, hypre_ParVectorLocalVector */
 #include "internal/args.h"
@@ -784,9 +785,6 @@ HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
    hypredrv_ErrorBacktracePrint();
 }
 
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
-
 static uint32_t
 DestroyObjectInternal(HYPREDRV_t hypredrv)
 {
@@ -876,7 +874,7 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    hypredrv_IntArrayDestroy(&hypredrv->precon_reuse_timesteps.ids);
    hypredrv_IntArrayDestroy(&hypredrv->precon_reuse_timesteps.starts);
    hypredrv_PreconReuseStateDestroy(&hypredrv->precon_reuse_state);
-#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+#if HYPRE_CHECK_MIN_VERSION(30100, 28)
    if (hypredrv->iargs)
    {
       hypredrv_PreconArgsDestroyRuntimeState(hypredrv->iargs->precon_method,
@@ -2971,7 +2969,7 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
    {
       if (hypredrv->precon)
       {
-#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+#if HYPRE_CHECK_MIN_VERSION(30100, 28)
          if (hypredrv->iargs->precon_method == PRECON_MGR)
          {
             hypredrv_MGRSelectCachedSolversToKeep(&hypredrv->iargs->precon.mgr,
