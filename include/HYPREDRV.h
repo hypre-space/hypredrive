@@ -723,12 +723,9 @@ extern "C"
     */
 
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetMatrixFromCSR(
-      HYPREDRV_t          hypredrv,
-      HYPRE_BigInt        row_start,
-      HYPRE_BigInt        row_end,
-      const HYPRE_BigInt *indptr,
-      const HYPRE_BigInt *col_indices,
-      const HYPRE_Real   *data);
+      HYPREDRV_t hypredrv, HYPRE_BigInt row_start, HYPRE_BigInt row_end,
+      const HYPRE_BigInt *indptr, const HYPRE_BigInt *col_indices,
+      const HYPRE_Real *data);
 
    /**
     * @brief Build the linear-system right-hand side from a per-rank values array.
@@ -762,11 +759,9 @@ extern "C"
     * @endcode
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetRHSFromArray(
-      HYPREDRV_t        hypredrv,
-      HYPRE_BigInt      row_start,
-      HYPRE_BigInt      row_end,
-      const HYPRE_Real *values);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
+                                        HYPRE_BigInt row_end, const HYPRE_Real *values);
 
    /**
     * @brief Set the initial guess for the solution vector of the linear system for a

@@ -1904,10 +1904,8 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t          hypredrv,
-                                      HYPRE_BigInt        row_start,
-                                      HYPRE_BigInt        row_end,
-                                      const HYPRE_BigInt *indptr,
+HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
+                                      HYPRE_BigInt row_end, const HYPRE_BigInt *indptr,
                                       const HYPRE_BigInt *col_indices,
                                       const HYPRE_Real   *data)
 {
@@ -1935,8 +1933,8 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t          hypredrv,
     * and returns them; mirror the existing pattern of bubbling that up via
     * hypredrv_ErrorCodeGet() rather than aborting. */
    (void)hypredrv_LinearSystemBuildMatrixFromCSR(hypredrv->comm, memory_location,
-                                                 row_start, row_end, indptr,
-                                                 col_indices, data, &hypredrv->mat_A);
+                                                 row_start, row_end, indptr, col_indices,
+                                                 data, &hypredrv->mat_A);
 
    hypredrv->owns_mat_A = (hypredrv->mat_A != NULL);
    hypredrv->mat_M      = hypredrv->mat_A;
@@ -1949,10 +1947,8 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t          hypredrv,
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t        hypredrv,
-                                     HYPRE_BigInt      row_start,
-                                     HYPRE_BigInt      row_end,
-                                     const HYPRE_Real *values)
+HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
+                                     HYPRE_BigInt row_end, const HYPRE_Real *values)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
@@ -1968,9 +1964,8 @@ HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t        hypredrv,
       (hypredrv->iargs && hypredrv->iargs->ls.exec_policy) ? HYPRE_MEMORY_DEVICE
                                                            : HYPRE_MEMORY_HOST;
 
-   (void)hypredrv_LinearSystemBuildRHSFromArray(hypredrv->comm, memory_location,
-                                                row_start, row_end, values,
-                                                &hypredrv->vec_b);
+   (void)hypredrv_LinearSystemBuildRHSFromArray(
+      hypredrv->comm, memory_location, row_start, row_end, values, &hypredrv->vec_b);
 
    hypredrv->owns_vec_b = (hypredrv->vec_b != NULL);
 

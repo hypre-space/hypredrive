@@ -751,13 +751,12 @@ hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm comm, HYPRE_MemoryLocation memory_location,
-                                        HYPRE_BigInt        row_start,
-                                        HYPRE_BigInt        row_end,
+hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
+                                        HYPRE_MemoryLocation memory_location,
+                                        HYPRE_BigInt row_start, HYPRE_BigInt row_end,
                                         const HYPRE_BigInt *indptr,
                                         const HYPRE_BigInt *col_indices,
-                                        const HYPRE_Real   *data,
-                                        HYPRE_IJMatrix     *mat_ptr)
+                                        const HYPRE_Real *data, HYPRE_IJMatrix *mat_ptr)
 {
    if (!mat_ptr || !indptr)
    {
@@ -854,7 +853,8 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm comm, HYPRE_MemoryLocation memo
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm comm, HYPRE_MemoryLocation memory_location,
+hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
+                                       HYPRE_MemoryLocation memory_location,
                                        HYPRE_BigInt row_start, HYPRE_BigInt row_end,
                                        const HYPRE_Real *values, HYPRE_IJVector *rhs_ptr)
 {
