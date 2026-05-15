@@ -18,7 +18,7 @@ to internal naming choices and make later refactors painful.
 
 from __future__ import annotations
 
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import numpy as np
 
