@@ -66,7 +66,6 @@ def _build_local_laplacian_csr(
             cols.append(grow + 1)
             data.append(-1.0)
     indptr = np.zeros(nrows + 1, dtype=bigint)
-    nnz = 0
     for i in range(nrows):
         grow = row_start + i
         nnz_i = 1
