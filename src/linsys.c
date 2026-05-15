@@ -773,10 +773,10 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
    }
 
    HYPRE_BigInt nrows_big = row_end - row_start + 1;
-   if (nrows_big > (HYPRE_BigInt)INT_MAX)
+   if (nrows_big < (HYPRE_BigInt)INT_MIN || nrows_big > (HYPRE_BigInt)INT_MAX)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: local row count (%lld) exceeds INT_MAX",
+      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: local row count (%lld) is out of HYPRE_Int range",
                            (long long)nrows_big);
       return hypredrv_ErrorCodeGet();
    }
