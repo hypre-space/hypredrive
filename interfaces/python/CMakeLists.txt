@@ -178,6 +178,8 @@ set(_python_test_commands
     COMMAND "${CMAKE_COMMAND}" -E env
             ${_python_test_env}
             "${Python_EXECUTABLE}" -m pytest
+            -q
+            --tb=short
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_options.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_solve_serial.py"
 )
@@ -189,7 +191,10 @@ if(MPIEXEC_EXECUTABLE AND _mpi4py_rc EQUAL 0)
                 "${MPIEXEC_EXECUTABLE}" "${MPIEXEC_NUMPROC_FLAG}" "2"
                 ${MPIEXEC_PREFLAGS}
                 "${Python_EXECUTABLE}" -m pytest
+                -q
+                --tb=short
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_solve_mpi.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_laplacian_example_mpi.py"
                 ${MPIEXEC_POSTFLAGS}
     )
 else()

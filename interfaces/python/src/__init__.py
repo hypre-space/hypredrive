@@ -17,21 +17,12 @@ from __future__ import annotations
 
 import importlib
 
-from .driver import BIGINT_DTYPE, REAL_DTYPE
+from .errors import HypreDriveError
 from .options import OptionsLike, configure, normalize_options, options_to_yaml
 from .result import SolveResult
 
-_DRIVER_EXPORTS = {"HypreDrive", "solve"}
+_DRIVER_EXPORTS = {"BIGINT_DTYPE", "HypreDrive", "REAL_DTYPE", "solve"}
 _SESSION_EXPORTS = {"finalize", "initialize", "is_initialized"}
-
-BIGINT_DTYPE = None
-HypreDrive = None
-HypreDriveError = None
-REAL_DTYPE = None
-finalize = None
-initialize = None
-is_initialized = None
-solve = None
 
 __all__ = [
     "BIGINT_DTYPE",
@@ -74,8 +65,6 @@ def __getattr__(name: str):
     elif name in _SESSION_EXPORTS:
         session = importlib.import_module(".session", __name__)
         value = getattr(session, name)
-    elif name == "HypreDriveError":
-        from .errors import HypreDriveError as value
     else:
         raise AttributeError(f"module 'hypredrive' has no attribute {name!r}")
     globals()[name] = value

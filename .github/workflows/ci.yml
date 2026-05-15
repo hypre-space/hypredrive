@@ -146,8 +146,8 @@ jobs:
           else
             export DYLD_LIBRARY_PATH="$INSTALL_PREFIX/lib:${{ steps.build-hypre.outputs.hypre_prefix }}/lib:${DYLD_LIBRARY_PATH:-}"
           fi
-          python -m pytest interfaces/python/tests/test_options.py interfaces/python/tests/test_solve_serial.py -ra
-          mpiexec -n 2 python -m pytest interfaces/python/tests/test_solve_mpi.py -ra
+          python -m pytest -q --tb=short interfaces/python/tests/test_options.py interfaces/python/tests/test_solve_serial.py -ra
+          mpiexec -n 2 python -m pytest -q --tb=short interfaces/python/tests/test_solve_mpi.py interfaces/python/tests/test_laplacian_example_mpi.py -ra
 
       - name: Upload Python CI logs on failure
         if: failure()

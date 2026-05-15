@@ -72,6 +72,11 @@ Optional dependencies can be installed through package extras:
    pip install ./interfaces/python[scipy]
    pip install -e ./interfaces/python[test]
 
+``mpi4py`` is optional for package import and serial solves, but it is the
+supported MPI boundary for distributed Python use. HypreDrive accepts
+``mpi4py.MPI.Comm`` objects and forwards the underlying communicator to the C
+library instead of exposing its own Python MPI wrapper.
+
 Quick start
 -----------
 
@@ -203,7 +208,9 @@ MPI tests must be launched under an MPI process manager:
 
 .. code-block:: bash
 
-   mpirun -np 2 python -m pytest interfaces/python/tests/test_solve_mpi.py -v
+   mpirun -np 2 python -m pytest \
+     interfaces/python/tests/test_solve_mpi.py \
+     interfaces/python/tests/test_laplacian_example_mpi.py -v
 
 Tests that require the native extension or ``mpi4py`` skip when those optional runtime
 components are unavailable.
@@ -216,7 +223,7 @@ Current limitations
 - GPU/device execution is not exposed as a Python-native data path.
 - Result metadata is intentionally small; the one-shot API currently exposes the solution
   array and solution norm.
-- ``mpi4py`` integration is optional and uses ``Comm.py2f()`` plus the C-side
-  ``MPI_Comm_f2c`` bridge.
+- Distributed Python solves require ``mpi4py`` and use ``Comm.py2f()`` plus the
+  C-side ``MPI_Comm_f2c`` bridge.
 - Python examples live under ``interfaces/python/examples``. ``laplacian.py`` is the
   MPI-capable 3D example; ``laplacian2d_seq.py`` is the serial 2D example.

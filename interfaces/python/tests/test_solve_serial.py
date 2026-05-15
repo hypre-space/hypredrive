@@ -33,10 +33,10 @@ def test_one_shot_solve(laplacian_1d, base_options):
     assert result.solution_norm == pytest.approx(
         float(np.linalg.norm(result.x)), rel=1e-6
     )
-    assert result == hd.SolveResult(
-        x=result.x.copy(), solution_norm=result.solution_norm
-    )
-    assert result != hd.SolveResult(x=result.x.copy(), solution_norm=result.solution_norm)
+    same_values = hd.SolveResult(x=result.x.copy(), solution_norm=result.solution_norm)
+    np.testing.assert_allclose(same_values.x, result.x)
+    assert same_values.solution_norm == result.solution_norm
+    assert result != same_values
     with pytest.raises(TypeError):
         hash(result)
 
