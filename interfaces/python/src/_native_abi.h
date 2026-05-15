@@ -7,6 +7,7 @@
 #include "HYPREDRV.h"
 #include "HYPRE.h"
 #include "HYPRE_utilities.h"
+#include "mpi.h"
 
 /*
  * Cython needs concrete base types for C typedef declarations, but HYPRE
@@ -31,6 +32,25 @@ static inline size_t
 hypredrive_PythonSolutionEntrySize(void)
 {
     return sizeof(HYPRE_Complex);
+}
+
+static inline uint32_t
+hypredrive_PythonCreateWithSelf(HYPREDRV_t *hypredrv_ptr)
+{
+    return HYPREDRV_Create(MPI_COMM_SELF, hypredrv_ptr);
+}
+
+static inline uint32_t
+hypredrive_PythonCreateFromFortranComm(int fortran_comm,
+                                       HYPREDRV_t *hypredrv_ptr)
+{
+    return HYPREDRV_Create(MPI_Comm_f2c((MPI_Fint) fortran_comm), hypredrv_ptr);
+}
+
+static inline uint32_t
+hypredrive_PythonCreateWithWorld(HYPREDRV_t *hypredrv_ptr)
+{
+    return HYPREDRV_Create(MPI_COMM_WORLD, hypredrv_ptr);
 }
 
 static inline uint32_t

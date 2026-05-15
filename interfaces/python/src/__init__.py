@@ -22,7 +22,7 @@ from .driver import (
     solve,
 )
 from .errors import HypreDriveError
-from .options import OptionsLike, normalize_options, options_to_yaml
+from .options import OptionsLike, configure, normalize_options, options_to_yaml
 from .result import SolveResult
 from .session import finalize, initialize, is_initialized
 
@@ -33,6 +33,7 @@ __all__ = [
     "OptionsLike",
     "REAL_DTYPE",
     "SolveResult",
+    "configure",
     "finalize",
     "initialize",
     "is_initialized",

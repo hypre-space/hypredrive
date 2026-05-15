@@ -26,6 +26,60 @@ from typing import Any, Mapping, Union
 OptionsLike = Union[Mapping[str, Any], str, os.PathLike[str], None]
 
 
+def configure(
+    *,
+    solver: str | None = None,
+    preconditioner: str | None = None,
+    general: Mapping[str, Any] | None = None,
+    linear_system: Mapping[str, Any] | None = None,
+    **method_options: Any,
+) -> dict[str, Any]:
+    """Build a hypredrive options dictionary from common method names.
+
+    ``solver`` and ``preconditioner`` select the method blocks under the
+    matching top-level YAML sections. ``general`` and ``linear_system`` are
+    copied into their matching top-level sections. Additional keyword arguments
+    are matched by method name, e.g. ``pcg={...}`` or ``amg={...}``.
+    """
+    options: dict[str, Any] = {}
+    for section, values in (
+        ("general", general),
+        ("linear_system", linear_system),
+    ):
+        if values is None:
+            continue
+        if not isinstance(values, Mapping):
+            raise TypeError(
+                f"{section} options must be a Mapping, got {type(values).__name__}"
+            )
+        options[section] = dict(values)
+    for section, method in (
+        ("solver", solver),
+        ("preconditioner", preconditioner),
+    ):
+        if method is None:
+            continue
+        if not isinstance(method, str):
+            raise TypeError(
+                f"{section} must be a string or None, got {type(method).__name__}"
+            )
+        values = method_options.pop(method, {})
+        if isinstance(values, Mapping):
+            values = dict(values)
+        elif isinstance(values, (list, tuple)):
+            values = list(values)
+        else:
+            raise TypeError(
+                f"{method} options must be a Mapping, list, or tuple; "
+                f"got {type(values).__name__}"
+            )
+        options[section] = {method: values}
+    if method_options:
+        names = ", ".join(sorted(method_options))
+        raise ValueError(f"unused method option block(s): {names}")
+    return options
+
+
 def _format_scalar(value: Any) -> str:
     """Render a scalar in a form hypredrive's YAML parser accepts.
 
@@ -64,6 +118,13 @@ def _emit(node: Mapping[str, Any], indent: int, lines: list[str]) -> None:
             lines.append(f"{pad}{key}:")
             _emit(value, indent + 1, lines)
         elif isinstance(value, (list, tuple)):
+            if value and all(isinstance(item, Mapping) for item in value):
+                lines.append(f"{pad}{key}:")
+                item_pad = "  " * (indent + 1)
+                for item in value:
+                    lines.append(f"{item_pad}-")
+                    _emit(item, indent + 2, lines)
+                continue
             # Hypredrive uses comma-separated scalars rather than YAML
             # sequences for fields like ``set_suffix``; mirror that.
             joined = ",".join(_format_scalar(item) for item in value)

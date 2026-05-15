@@ -37,7 +37,7 @@ You need:
 
 ```bash
 cmake --install build --prefix $HOME/opt/hypredrive
-pip install ./python \
+pip install ./interfaces/python \
   --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
 ```
 
@@ -46,7 +46,7 @@ pip install ./python \
 ```bash
 cmake -S . -B build -DBUILD_SHARED_LIBS=ON -DHYPREDRV_ENABLE_TESTING=OFF
 cmake --build build --parallel
-pip install -e ./python \
+pip install -e ./interfaces/python \
   --config-settings=cmake.define.HYPREDRV_DIR=$PWD/build
 ```
 
@@ -59,10 +59,35 @@ where `HYPREDRVConfig.cmake` is generated; no install step needed.
 solves:
 
 ```bash
-pip install ./python[mpi]
+pip install ./interfaces/python[mpi]
 ```
 
 ## Quick start
+
+Assemble sparse systems from NumPy/SciPy and solve through the same C library backend:
+
+```python
+import numpy as np
+import scipy.sparse as sp
+import hypredrive as hd
+
+n = 64
+A = sp.diags(
+    [-np.ones(n - 1), 2.0 * np.ones(n), -np.ones(n - 1)],
+    [-1, 0, 1],
+    format="csr",
+)
+b = np.ones(n)
+
+options = hd.configure(
+    solver="pcg",
+    preconditioner="amg",
+    pcg={"relative_tol": 1.0e-8},
+)
+
+result = hd.solve(A, b, options=options)
+print(result.solution_norm)
+```
 
 ### One-shot solve
 
@@ -81,10 +106,12 @@ b = np.ones(n)
 result = hd.solve(
     A,
     b,
-    options={
-        "solver": {"pcg": {"max_iter": 100, "relative_tol": 1.0e-8}},
-        "preconditioner": {"amg": {"print_level": 0}},
-    },
+    options=hd.configure(
+        solver="pcg",
+        preconditioner="amg",
+        pcg={"max_iter": 100, "relative_tol": 1.0e-8},
+        amg={"print_level": 0},
+    ),
 )
 print("solution norm:", result.solution_norm)
 print("first few entries:", result.x[:5])
@@ -146,17 +173,17 @@ The supported keys are exactly those documented for the YAML CLI; see
 ## Testing
 
 After installing the package in editable mode and the optional test
-dependencies (``pip install -e ./python[test]``), run:
+dependencies (``pip install -e ./interfaces/python[test]``), run:
 
 ```bash
-python -m pytest python/tests/test_solve_serial.py -v
+python -m pytest interfaces/python/tests/test_solve_serial.py -v
 ```
 
 MPI integration tests must be launched under a process manager so that
 ``MPI.COMM_WORLD`` has multiple ranks:
 
 ```bash
-mpirun -np 2 python -m pytest python/tests/test_solve_mpi.py -v
+mpirun -np 2 python -m pytest interfaces/python/tests/test_solve_mpi.py -v
 ```
 
 If you run ``test_solve_mpi.py`` without ``mpirun``, tests skip when only

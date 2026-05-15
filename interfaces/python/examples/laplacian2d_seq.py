@@ -6,7 +6,7 @@ The system is solved with PCG preconditioned by BoomerAMG.
 
 Run as:
 
-    mpirun -np 1 python examples_python/laplacian2d.py
+    mpirun -np 1 python interfaces/python/examples/laplacian2d_seq.py
 
 (``mpirun`` is required because hypredrive's C library does not call
 ``MPI_Init`` itself; we trigger it by importing ``mpi4py.MPI``.)

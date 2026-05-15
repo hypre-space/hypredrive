@@ -56,12 +56,12 @@ cmake.version = ">=3.23"
 cmake.build-type = "Release"
 build.verbose = false
 logging.level = "INFO"
-wheel.packages = ["src/hypredrive"]
+wheel.packages = []
 sdist.include = [
-    "src/hypredrive/*.pyx",
-    "src/hypredrive/*.pxd",
-    "src/hypredrive/*.h",
-    "src/hypredrive/*.py",
+    "src/*.pyx",
+    "src/*.pxd",
+    "src/*.h",
+    "src/*.py",
     "CMakeLists.txt",
     "README.md",
 ]

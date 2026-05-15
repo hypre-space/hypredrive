@@ -9,7 +9,7 @@ of a 1D Laplacian and pass ``mpi4py.MPI.COMM_WORLD`` into
 Serial pytest only exercises one rank, so you must launch the MPI process
 group explicitly::
 
-    mpirun -np 2 python -m pytest python/tests/test_solve_mpi.py -v
+    mpirun -np 2 python -m pytest interfaces/python/tests/test_solve_mpi.py -v
 
 If ``mpi4py`` or MPI is unavailable, the module is skipped. Tests that need
 a multi-rank world skip when ``MPI.COMM_WORLD.Get_size() < 2``.

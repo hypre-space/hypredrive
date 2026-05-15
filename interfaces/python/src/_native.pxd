@@ -10,13 +10,6 @@ from libc.stddef cimport size_t
 from libc.stdint cimport int64_t, uint32_t
 
 
-cdef extern from "mpi.h" nogil:
-    ctypedef struct ompi_communicator_t   # opaque; OpenMPI uses pointer-comm
-    ctypedef void *MPI_Comm
-    MPI_Comm MPI_COMM_SELF
-    MPI_Comm MPI_COMM_WORLD
-
-
 cdef extern from "HYPRE.h" nogil:
     ctypedef void *HYPRE_Vector
     ctypedef void *HYPRE_Matrix
@@ -29,7 +22,6 @@ cdef extern from "HYPREDRV.h" nogil:
     uint32_t HYPREDRV_Initialize()
     uint32_t HYPREDRV_Finalize()
 
-    uint32_t HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
     uint32_t HYPREDRV_Destroy(HYPREDRV_t *hypredrv_ptr)
     uint32_t HYPREDRV_SetLibraryMode(HYPREDRV_t hypredrv)
 
@@ -50,10 +42,16 @@ cdef extern from "HYPREDRV.h" nogil:
     void HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
 
 
-cdef extern from "hypredrive/_native_abi.h" nogil:
+cdef extern from "_native_abi.h" nogil:
     size_t hypredrive_PythonIndexSize()
     size_t hypredrive_PythonRealSize()
     size_t hypredrive_PythonSolutionEntrySize()
+
+    uint32_t hypredrive_PythonCreateWithSelf(HYPREDRV_t *hypredrv_ptr)
+    uint32_t hypredrive_PythonCreateFromFortranComm(
+        int fortran_comm,
+        HYPREDRV_t *hypredrv_ptr)
+    uint32_t hypredrive_PythonCreateWithWorld(HYPREDRV_t *hypredrv_ptr)
 
     uint32_t hypredrive_PythonSetMatrixFromCSR(
         HYPREDRV_t hypredrv,

@@ -33,10 +33,6 @@ from . cimport _native as _c
 cnp.import_array()
 
 
-cdef extern from "mpi.h" nogil:
-    _c.MPI_Comm MPI_Comm_f2c(int comm)
-
-
 # ---------------------------------------------------------------------------
 # Module-level capability discovery
 # ---------------------------------------------------------------------------
@@ -105,22 +101,23 @@ def _finalize():
 # Communicator resolution
 # ---------------------------------------------------------------------------
 
-cdef _c.MPI_Comm _resolve_comm(object comm) except *:
-    """Translate an mpi4py ``Comm`` or ``None`` into an ``MPI_Comm`` handle.
+cdef uint32_t _create_driver(object comm, _c.HYPREDRV_t *handle) except? 1:
+    """Create a driver from an mpi4py ``Comm`` or ``None``.
 
     We avoid a compile-time dependency on mpi4py by going through the
-    Fortran handle bridge ``Comm.py2f()`` -> ``MPI_Comm_f2c``.
+    Fortran handle bridge ``Comm.py2f()``; the C shim converts it to the
+    ABI-specific ``MPI_Comm`` representation.
     """
     cdef int fortran_handle
     if comm is None:
-        return _c.MPI_COMM_SELF
+        return _c.hypredrive_PythonCreateWithSelf(handle)
     if not hasattr(comm, "py2f"):
         raise TypeError(
             "comm must be an mpi4py.MPI.Comm (or None for MPI_COMM_SELF); "
             f"got {type(comm).__name__}"
         )
     fortran_handle = int(comm.py2f())
-    return MPI_Comm_f2c(fortran_handle)
+    return _c.hypredrive_PythonCreateFromFortranComm(fortran_handle, handle)
 
 
 # ---------------------------------------------------------------------------
@@ -140,13 +137,11 @@ cdef class HypreDriveCore:
     cdef bint _solver_created
 
     def __cinit__(self, object comm=None, bint library_mode=True):
-        cdef _c.MPI_Comm c
         self._handle = NULL
         self._alive = False
         self._solver_created = False
 
-        c = _resolve_comm(comm)
-        _check(_c.HYPREDRV_Create(c, &self._handle), "HYPREDRV_Create")
+        _check(_create_driver(comm, &self._handle), "HYPREDRV_Create")
         self._alive = True
         if library_mode:
             _check(_c.HYPREDRV_SetLibraryMode(self._handle),
