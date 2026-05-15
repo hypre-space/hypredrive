@@ -873,10 +873,10 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
    }
 
    HYPRE_BigInt nrows_big = row_end - row_start + 1;
-   if (nrows_big > (HYPRE_BigInt)INT_MAX)
+   if ((HYPRE_BigInt)((HYPRE_Int)nrows_big) != nrows_big)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildRHSFromArray: local row count (%lld) exceeds INT_MAX",
+      hypredrv_ErrorMsgAdd("BuildRHSFromArray: local row count (%lld) exceeds HYPRE_Int range",
                            (long long)nrows_big);
       return hypredrv_ErrorCodeGet();
    }
