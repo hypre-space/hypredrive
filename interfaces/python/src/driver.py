@@ -122,7 +122,6 @@ class HypreDrive:
         )
         self._row_start: Optional[int] = None
         self._row_end: Optional[int] = None
-        self._matrix_set: bool = False
         self._rhs_set: bool = False
 
         # Always parse a YAML configuration up front so the C side has a
@@ -243,7 +242,6 @@ class HypreDrive:
         )
         self._row_start = row_start_i
         self._row_end = row_end_i
-        self._matrix_set = True
 
     def set_rhs(
         self,
@@ -289,7 +287,7 @@ class HypreDrive:
     def solve(self) -> None:
         """Run setup + apply on the configured solver/preconditioner."""
         self._require_open()
-        if not self._matrix_set:
+        if self._row_start is None:
             raise RuntimeError("solve(): no matrix set; call set_matrix_from_csr")
         if not self._rhs_set:
             raise RuntimeError("solve(): no RHS set; call set_rhs")

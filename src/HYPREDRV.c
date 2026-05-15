@@ -62,8 +62,6 @@ static int  PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_
 static uint32_t ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv);
 static void PrepareExplicitObjectForConfiguredExecution(HYPREDRV_t hypredrv, void *obj,
                                                         int is_matrix);
-static void LinearSystemRecordMatrixRange(HYPREDRV_t hypredrv);
-
 /* Check if hypredrive is initialized */
 static inline uint32_t
 hypredrv_CheckInit(void)
@@ -76,29 +74,6 @@ hypredrv_CheckInit(void)
    }
    return 0;
    /* GCOVR_EXCL_BR_LINE */
-}
-
-static void
-LinearSystemRecordMatrixRange(HYPREDRV_t hypredrv)
-{
-   HYPRE_BigInt ilower = 0, iupper = -1, jlower = 0, jupper = -1;
-
-   hypredrv->mat_A_range_known = false;
-   hypredrv->mat_A_row_start   = 0;
-   hypredrv->mat_A_row_end     = -1;
-
-   if (!hypredrv->mat_A)
-   {
-      return;
-   }
-
-   if (HYPRE_IJMatrixGetLocalRange(hypredrv->mat_A, &ilower, &iupper, &jlower,
-                                   &jupper) == 0)
-   {
-      hypredrv->mat_A_range_known = true;
-      hypredrv->mat_A_row_start   = ilower;
-      hypredrv->mat_A_row_end     = iupper;
-   }
 }
 
 /* Check if hypredrive is initialized and if HYPREDRV object is valid */
@@ -981,9 +956,6 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->owns_vec_x    = false;
    hypredrv->owns_vec_x0   = false;
    hypredrv->owns_vec_xref = false;
-   hypredrv->mat_A_range_known = false;
-   hypredrv->mat_A_row_start   = 0;
-   hypredrv->mat_A_row_end     = -1;
 
    hypredrv->precon                        = NULL;
    hypredrv->solver                        = NULL;
@@ -1848,13 +1820,9 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_INIT_AND_OBJ();
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
-   /* The internal helper destroys any pre-existing matrix at *mat_ptr before
-    * reading from file, so we drop ownership claims first to avoid spurious
-    * double-free attempts during destroy. */
    hypredrv_LinearSystemReadMatrix(hypredrv->comm, &hypredrv->iargs->ls, &hypredrv->mat_A,
                                    hypredrv->stats);
    hypredrv->owns_mat_A = (hypredrv->mat_A != NULL);
-   LinearSystemRecordMatrixRange(hypredrv);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1870,23 +1838,16 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat_A)
 
    LinearSystemDropOwnedPrecMatrix(hypredrv);
 
-   /* Drop any previously-owned mat_A before replacing it with the caller-supplied
-    * one. The same-pointer case keeps the ownership flag below; if this object
-    * already owned mat_A, it still owns it after the refresh. */
    if (hypredrv->mat_A && hypredrv->owns_mat_A &&
        hypredrv->mat_A != (HYPRE_IJMatrix)mat_A)
    {
       HYPRE_IJMatrixDestroy(hypredrv->mat_A);
    }
 
-   /* Don't annotate "matrix" here - users annotate with "system" in their code */
-   /* This was causing build times and solve times to be recorded in separate entries
-    */
    hypredrv->mat_A      = (HYPRE_IJMatrix)mat_A;
    hypredrv->mat_M      = (HYPRE_IJMatrix)mat_A;
    hypredrv->owns_mat_A = (bool)(!hypredrv->lib_mode && mat_A != NULL);
    hypredrv->owns_mat_M = false;
-   LinearSystemRecordMatrixRange(hypredrv);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1906,8 +1867,6 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
       {
          hypredrv->vec_xref = NULL;
       }
-      /* The internal helper destroys *vec_b before re-reading it from file.
-       * Refresh ownership flags accordingly. */
       hypredrv_LinearSystemSetRHS(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
                                   &hypredrv->vec_xref, &hypredrv->vec_b, hypredrv->stats);
       hypredrv->owns_vec_b    = (hypredrv->vec_b != NULL);
@@ -1916,8 +1875,6 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
    else
    {
       PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)vec, 0);
-      /* Drop any previously-owned vec_b before replacing with the caller-supplied
-       * one. */
       if (hypredrv->vec_b && hypredrv->owns_vec_b &&
           hypredrv->vec_b != (HYPRE_IJVector)vec)
       {
@@ -1945,22 +1902,15 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_star
    /* Replacing mat_A invalidates any preconditioner matrix derived from it. */
    LinearSystemDropOwnedPrecMatrix(hypredrv);
 
-   /* Drop any previously-owned mat_A; the internal builder also destroys *mat_ptr
-    * defensively, but the local check keeps the ownership flag in sync if the
-    * builder fails before allocating a replacement. */
    if (hypredrv->mat_A && hypredrv->owns_mat_A)
    {
       HYPRE_IJMatrixDestroy(hypredrv->mat_A);
    }
    hypredrv->mat_A      = NULL;
    hypredrv->owns_mat_A = false;
-   hypredrv->mat_A_range_known = false;
 
-   /* The internal builder records validation errors in the global error state
-    * and returns them; mirror the existing pattern of bubbling that up via
-    * hypredrv_ErrorCodeGet() rather than aborting. Caller-provided CSR buffers
-    * are host pointers (NumPy arrays, malloc'd C arrays), so initialize this path
-    * on host regardless of the configured execution policy. */
+   /* Caller-provided CSR buffers are host pointers, so the builder runs on host
+    * regardless of the configured execution policy. */
    (void)hypredrv_LinearSystemBuildMatrixFromCSR(hypredrv->comm, HYPRE_MEMORY_HOST,
                                                  row_start, row_end, indptr, col_indices,
                                                  data, &hypredrv->mat_A);
@@ -1968,7 +1918,6 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_star
    hypredrv->owns_mat_A = (hypredrv->mat_A != NULL);
    hypredrv->mat_M      = hypredrv->mat_A;
    hypredrv->owns_mat_M = false;
-   LinearSystemRecordMatrixRange(hypredrv);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1983,16 +1932,21 @@ HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start
    HYPREDRV_CHECK_INIT_AND_OBJ();
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
-   if (hypredrv->mat_A_range_known &&
-       (row_start != hypredrv->mat_A_row_start || row_end != hypredrv->mat_A_row_end))
+   if (hypredrv->mat_A)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "HYPREDRV_LinearSystemSetRHSFromArray: RHS row range [%lld, %lld] "
-         "does not match matrix row range [%lld, %lld]",
-         (long long)row_start, (long long)row_end,
-         (long long)hypredrv->mat_A_row_start, (long long)hypredrv->mat_A_row_end);
-      return hypredrv_ErrorCodeGet();
+      HYPRE_BigInt ilower = 0, iupper = -1, jlower = 0, jupper = -1;
+      if (HYPRE_IJMatrixGetLocalRange(hypredrv->mat_A, &ilower, &iupper, &jlower,
+                                      &jupper) == 0 &&
+          (row_start != ilower || row_end != iupper))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
+            "HYPREDRV_LinearSystemSetRHSFromArray: RHS row range [%lld, %lld] "
+            "does not match matrix row range [%lld, %lld]",
+            (long long)row_start, (long long)row_end,
+            (long long)ilower, (long long)iupper);
+         return hypredrv_ErrorCodeGet();
+      }
    }
 
    if (hypredrv->vec_b && hypredrv->owns_vec_b)
@@ -2002,9 +1956,8 @@ HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start
    hypredrv->vec_b      = NULL;
    hypredrv->owns_vec_b = false;
 
-   /* Caller-provided RHS buffers are host pointers (NumPy arrays, malloc'd C
-    * arrays), so initialize this path on host regardless of the configured
-    * execution policy. */
+   /* Caller-provided RHS buffers are host pointers, so the builder runs on host
+    * regardless of the configured execution policy. */
    (void)hypredrv_LinearSystemBuildRHSFromArray(
       hypredrv->comm, HYPRE_MEMORY_HOST, row_start, row_end, values, &hypredrv->vec_b);
 
