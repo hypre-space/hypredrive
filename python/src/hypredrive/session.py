@@ -28,7 +28,6 @@ from . import _native
 
 _lock = threading.Lock()
 _initialized = False
-_atexit_registered = False
 
 
 def _atexit_finalize() -> None:
@@ -43,19 +42,17 @@ def initialize() -> None:
     ``atexit`` hook so the runtime is torn down even if the user forgets
     to call :func:`finalize` explicitly.
     """
-    global _initialized, _atexit_registered
+    global _initialized
     with _lock:
         if _initialized:
             return
         _native._initialize()
         _initialized = True
-        if not _atexit_registered:
-            # Register at first init rather than at module import so that
-            # we never queue an atexit hook in processes that import
-            # hypredrive but never use it (rare, but keeps the import
-            # side-effect-free).
-            atexit.register(_atexit_finalize)
-            _atexit_registered = True
+        # Register at first init rather than at module import so that
+        # we never queue an atexit hook in processes that import
+        # hypredrive but never use it (rare, but keeps the import
+        # side-effect-free).
+        atexit.register(_atexit_finalize)
 
 
 def finalize() -> None:
