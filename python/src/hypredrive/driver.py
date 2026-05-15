@@ -23,7 +23,6 @@ from typing import Any, Optional
 import numpy as np
 
 from . import _native, session
-from .errors import HypreDriveError
 from .options import OptionsLike, normalize_options
 from .result import SolveResult
 
