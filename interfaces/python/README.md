@@ -53,6 +53,11 @@ pip install -e ./interfaces/python \
 The `HYPREDRV_DIR` form points scikit-build-core at the build directory
 where `HYPREDRVConfig.cmake` is generated; no install step needed.
 
+Python source distributions are intended for downstream packagers and
+developer environments where `HYPREDRV` and `HYPRE` are discoverable by
+CMake. They are not self-contained PyPI-style source packages for systems
+without the C library stack.
+
 ### Optional MPI integration
 
 `mpi4py` is an optional dependency. Install it to drive distributed
@@ -156,6 +161,12 @@ with hd.HypreDrive(options=opts, comm=comm) as drv:
     x_local = drv.get_solution()
 ```
 
+For raw CSR input, `row_start` and `row_end` describe the inclusive global
+row range owned by the rank, and `col_indices` are global column IDs. A
+SciPy CSR matrix plus an explicit row range is treated as this rank's
+local slab and must have `shape[0] == row_end - row_start + 1`. Empty
+local row ranges are not currently supported.
+
 ## Configuration
 
 Anywhere `options` is accepted you can pass:
@@ -198,3 +209,6 @@ one rank is available.
   host-resident).
 * The `mpi4py` integration goes through `MPI_Comm_f2c`, so the binding
   works against any mpi4py version that exposes `Comm.py2f()`.
+* Python examples live under `interfaces/python/examples`: `laplacian.py`
+  is the MPI-capable 3D example, and `laplacian2d_seq.py` is the serial 2D
+  example.

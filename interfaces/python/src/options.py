@@ -118,6 +118,8 @@ def _emit(node: Mapping[str, Any], indent: int, lines: list[str]) -> None:
             lines.append(f"{pad}{key}:")
             _emit(value, indent + 1, lines)
         elif isinstance(value, (list, tuple)):
+            if not value:
+                raise ValueError(f"option sequence for {key!r} must not be empty")
             if value and all(isinstance(item, Mapping) for item in value):
                 lines.append(f"{pad}{key}:")
                 item_pad = "  " * (indent + 1)
@@ -159,14 +161,19 @@ def normalize_options(options: OptionsLike) -> str:
         return "general:\n  statistics: off\n"
     if isinstance(options, Mapping):
         return options_to_yaml(options)
-    if isinstance(options, (str, os.PathLike)):
-        text = os.fspath(options)
-        # Heuristic: if it looks like a path that exists, read it; otherwise
-        # treat the string as YAML literal. Both shapes are valid for the C
-        # parser, but reading here lets us surface a clean Python-side
-        # FileNotFoundError when the user clearly meant a path.
-        if "\n" not in text and Path(text).is_file():
-            return Path(text).read_text(encoding="utf-8")
+    if isinstance(options, os.PathLike):
+        path = Path(options)
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        return path.read_text(encoding="utf-8")
+    if isinstance(options, str):
+        text = options
+        if "\n" not in text:
+            path = Path(text)
+            if path.is_file():
+                return path.read_text(encoding="utf-8")
+            if path.suffix or "/" in text or "\\" in text:
+                raise FileNotFoundError(path)
         return text
     raise TypeError(
         "options must be a Mapping, str, PathLike, or None; "

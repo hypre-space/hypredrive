@@ -782,7 +782,31 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
    }
 
    HYPRE_Int nrows = (HYPRE_Int)nrows_big;
-   HYPRE_Int nnz   = (HYPRE_Int)(indptr[nrows] - indptr[0]);
+   if (indptr[0] < 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: indptr[0] (%lld) must be nonnegative",
+                           (long long)indptr[0]);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_BigInt nnz_big = indptr[nrows] - indptr[0];
+   if (nnz_big < 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: indptr[nrows] (%lld) < indptr[0] (%lld)",
+                           (long long)indptr[nrows], (long long)indptr[0]);
+      return hypredrv_ErrorCodeGet();
+   }
+   if (nnz_big > (HYPRE_BigInt)INT_MAX)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: local nonzero count (%lld) exceeds HYPRE_Int range",
+                           (long long)nnz_big);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_Int nnz = (HYPRE_Int)nnz_big;
    if (nnz > 0 && (!col_indices || !data))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -812,10 +836,17 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       HYPRE_IJMatrixAssemble(*mat_ptr);
       return hypredrv_ErrorCodeGet();
    }
+   if (nnz == 0)
+   {
+      HYPRE_IJMatrixAssemble(*mat_ptr);
+      return hypredrv_ErrorCodeGet();
+   }
 
    /* Build the per-row column counts and the global row index list expected by
     * HYPRE_IJMatrixSetValues. We allocate using HYPRE's allocator so that the
     * temporary fits cleanly in the existing memory-tracking story. */
+   /* HYPRE_IJMatrixSetValues consumes row metadata as host-side scratch even when
+    * matrix values are initialized for a device memory location. */
    HYPRE_Int    *ncols_per_row = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
    HYPRE_BigInt *row_ids       = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_HOST);
    for (HYPRE_Int i = 0; i < nrows; i++)
@@ -833,8 +864,36 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
                               (long long)i);
          return hypredrv_ErrorCodeGet();
       }
+      if (row_nnz > (HYPRE_BigInt)INT_MAX)
+      {
+         hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
+         hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
+         HYPRE_IJMatrixDestroy(*mat_ptr);
+         *mat_ptr = NULL;
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: row %lld nonzero count (%lld) exceeds HYPRE_Int range",
+                              (long long)i, (long long)row_nnz);
+         return hypredrv_ErrorCodeGet();
+      }
       ncols_per_row[i] = (HYPRE_Int)row_nnz;
       row_ids[i]       = row_start + (HYPRE_BigInt)i;
+   }
+
+   for (HYPRE_Int k = 0; k < nnz; k++)
+   {
+      HYPRE_BigInt col = col_indices[indptr[0] + (HYPRE_BigInt)k];
+      if (col < 0)
+      {
+         hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
+         hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
+         HYPRE_IJMatrixDestroy(*mat_ptr);
+         *mat_ptr = NULL;
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: col_indices[%lld] (%lld) must be nonnegative",
+                              (long long)(indptr[0] + (HYPRE_BigInt)k),
+                              (long long)col);
+         return hypredrv_ErrorCodeGet();
+      }
    }
 
    /* Single-shot value insertion. HYPRE copies into its own ParCSR storage. */

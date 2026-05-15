@@ -21,16 +21,30 @@ The binding follows three principles:
 """
 
 from libc.stdint cimport int64_t, uint32_t, intptr_t
-from libc.stdlib cimport malloc, free
 from libc.string cimport memcpy
+
+from cpython.mem cimport PyMem_Malloc, PyMem_Free
 
 cimport cython
 import numpy as np
 cimport numpy as cnp
 
-from . cimport _native as _c
+# The source package is intentionally flattened under interfaces/python/src,
+# so _native.pxd is a sibling file at Cython time rather than under a physical
+# hypredrive/ package directory.
+cimport _native as _c
 
 cnp.import_array()
+
+cdef size_t _HYPREDRIVE_PYTHON_REAL_SIZE = _c.hypredrive_PythonRealSize()
+cdef size_t _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE = (
+    _c.hypredrive_PythonSolutionEntrySize()
+)
+if _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE != _HYPREDRIVE_PYTHON_REAL_SIZE:
+    raise ImportError(
+        "complex-valued HYPRE builds are not supported by the real-valued "
+        "hypredrive Python binding"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -176,18 +190,23 @@ cdef class HypreDriveCore:
         if not self._alive:
             raise RuntimeError("HypreDriveCore is closed")
         cdef bytes payload = yaml_text  # keep a reference alive for the duration
-        cdef char *argv0 = payload
-        cdef char **argv = <char **>malloc(sizeof(char *))
-        if argv == NULL:
+        cdef Py_ssize_t nbytes = len(payload)
+        cdef const char *payload_data = payload
+        cdef char *payload_copy = <char *>PyMem_Malloc(<size_t>nbytes + 1)
+        cdef char *argv[2]
+        if payload_copy == NULL:
             raise MemoryError()
-        argv[0] = argv0
         try:
+            memcpy(payload_copy, payload_data, <size_t>nbytes)
+            payload_copy[nbytes] = 0
+            argv[0] = payload_copy
+            argv[1] = NULL
             _check(
                 _c.HYPREDRV_InputArgsParse(1, argv, self._handle),
                 "HYPREDRV_InputArgsParse",
             )
         finally:
-            free(argv)
+            PyMem_Free(payload_copy)
 
     # ------------------------------------------------------------------
     # Linear-system data ingest
@@ -211,6 +230,18 @@ cdef class HypreDriveCore:
         """
         if not self._alive:
             raise RuntimeError("HypreDriveCore is closed")
+        if not cnp.PyArray_IS_C_CONTIGUOUS(indptr):
+            raise ValueError("indptr must be C-contiguous")
+        if not cnp.PyArray_IS_C_CONTIGUOUS(col_indices):
+            raise ValueError("col_indices must be C-contiguous")
+        if not cnp.PyArray_IS_C_CONTIGUOUS(data):
+            raise ValueError("data must be C-contiguous")
+        if <size_t>cnp.PyArray_ITEMSIZE(indptr) != _c.hypredrive_PythonIndexSize():
+            raise ValueError("indptr dtype does not match HYPRE_BigInt")
+        if <size_t>cnp.PyArray_ITEMSIZE(col_indices) != _c.hypredrive_PythonIndexSize():
+            raise ValueError("col_indices dtype does not match HYPRE_BigInt")
+        if <size_t>cnp.PyArray_ITEMSIZE(data) != _HYPREDRIVE_PYTHON_REAL_SIZE:
+            raise ValueError("data dtype does not match HYPRE_Real")
 
         _check(
             _c.hypredrive_PythonSetMatrixFromCSR(
@@ -232,6 +263,10 @@ cdef class HypreDriveCore:
     ):
         if not self._alive:
             raise RuntimeError("HypreDriveCore is closed")
+        if not cnp.PyArray_IS_C_CONTIGUOUS(values):
+            raise ValueError("values must be C-contiguous")
+        if <size_t>cnp.PyArray_ITEMSIZE(values) != _HYPREDRIVE_PYTHON_REAL_SIZE:
+            raise ValueError("values dtype does not match HYPRE_Real")
 
         _check(
             _c.hypredrive_PythonSetRHSFromArray(
@@ -243,8 +278,11 @@ cdef class HypreDriveCore:
             "HYPREDRV_LinearSystemSetRHSFromArray",
         )
 
-    def set_initial_guess_zero(self):
-        """Build the working solution / x0 buffers using the YAML default."""
+    def setup_initial_guess(self):
+        """Set up x0 according to ``linear_system.init_guess_mode``.
+
+        Passing NULL delegates the actual initial-guess policy to the C layer.
+        """
         if not self._alive:
             raise RuntimeError("HypreDriveCore is closed")
         _check(
@@ -304,12 +342,7 @@ cdef class HypreDriveCore:
         if src == NULL:
             raise RuntimeError("hypredrive returned a NULL solution pointer")
         cdef Py_ssize_t n = out.shape[0]
-        cdef size_t scalar_size = _c.hypredrive_PythonSolutionEntrySize()
-        if scalar_size != <size_t>cnp.PyArray_ITEMSIZE(out):
-            raise RuntimeError(
-                "complex-valued HYPRE builds are not supported by the "
-                "real-valued Python binding"
-            )
+        cdef size_t scalar_size = _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE
         memcpy(cnp.PyArray_DATA(out), src,
                <size_t>n * scalar_size)
 

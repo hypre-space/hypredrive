@@ -71,11 +71,6 @@ sdist.exclude = [
     "**/__pycache__/",
 ]
 
-[tool.scikit-build.cmake.define]
-# Default to system / installed HYPREDRV. Users override with
-#   pip install . --config-settings=cmake.define.HYPREDRV_DIR=/path/to/hypredrive/install/lib/cmake/HYPREDRV
-HYPREDRV_PYTHON_USE_INSTALLED = "ON"
-
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["tests"]

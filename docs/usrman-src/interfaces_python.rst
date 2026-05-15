@@ -41,6 +41,10 @@ Against an installed hypredrive:
    pip install ./interfaces/python \
      --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
 
+Python source distributions are intended for downstream packagers and developer
+environments where ``HYPREDRV`` and ``HYPRE`` are discoverable by CMake. They are not
+self-contained PyPI-style source packages for systems without the C library stack.
+
 Against an in-tree development build:
 
 .. code-block:: bash
@@ -144,6 +148,25 @@ inclusive; column indices are global.
        drv.solve()
        x_local = drv.get_solution()
 
+CSR input details
+-----------------
+
+``set_matrix_from_csr`` accepts either a SciPy CSR matrix or the raw
+``(indptr, col_indices, data)`` arrays. With raw arrays, ``row_start`` and
+``row_end`` are required and describe the inclusive global row range owned by the
+rank. ``indptr`` has length ``nrows + 1`` where
+``nrows = row_end - row_start + 1``; ``col_indices`` contains global column
+indices; and all input buffers may be released after the call returns because HYPRE
+copies the data during IJ assembly.
+
+Passing a SciPy CSR matrix with no explicit row range means single-rank/full-local
+assembly. Passing a SciPy CSR matrix with ``row_start`` and ``row_end`` means the
+matrix is this rank's local slab and must have
+``shape[0] == row_end - row_start + 1``.
+
+Empty local row ranges are not currently supported by the CSR/array API; every
+participating MPI rank must own at least one row.
+
 Configuration input
 -------------------
 
@@ -195,3 +218,5 @@ Current limitations
   array and solution norm.
 - ``mpi4py`` integration is optional and uses ``Comm.py2f()`` plus the C-side
   ``MPI_Comm_f2c`` bridge.
+- Python examples live under ``interfaces/python/examples``. ``laplacian.py`` is the
+  MPI-capable 3D example; ``laplacian2d_seq.py`` is the serial 2D example.

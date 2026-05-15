@@ -10,7 +10,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-hd = pytest.importorskip("hypredrive")
+pytest.importorskip("hypredrive.driver")
+import hypredrive as hd
 
 
 def test_one_shot_solve(laplacian_1d, base_options):
@@ -32,6 +33,18 @@ def test_one_shot_solve(laplacian_1d, base_options):
     assert result.solution_norm == pytest.approx(
         float(np.linalg.norm(result.x)), rel=1e-6
     )
+    assert result == result
+    assert result != hd.SolveResult(x=result.x.copy(), solution_norm=result.solution_norm)
+    with pytest.raises(TypeError):
+        hash(result)
+
+
+def test_one_shot_row_range_must_be_paired(laplacian_1d, base_options):
+    indptr, cols, data, rhs, n = laplacian_1d
+    with pytest.raises(TypeError, match="provided together"):
+        hd.solve((indptr, cols, data), rhs, options=base_options, row_start=0)
+    with pytest.raises(TypeError, match="provided together"):
+        hd.solve((indptr, cols, data), rhs, options=base_options, row_end=n - 1)
 
 
 def test_driver_lifecycle(laplacian_1d, base_options):
@@ -44,6 +57,8 @@ def test_driver_lifecycle(laplacian_1d, base_options):
         drv.set_rhs(rhs)
         drv.solve()
         x1 = drv.get_solution()
+        with pytest.raises(ValueError, match="kind must be one of"):
+            drv.solution_norm("bad")
         # A second solve on the same driver must succeed and produce the
         # same answer (deterministic under fixed YAML).
         drv.set_rhs(rhs)
@@ -79,6 +94,22 @@ def test_invalid_inputs_raise(base_options):
                 np.array([], dtype=hd.REAL_DTYPE),
                 row_start=0,
                 row_end=5,  # claims 6 rows but indptr has 1 entry
+            )
+        with pytest.raises(ValueError, match="monotonically"):
+            drv.set_matrix_from_csr(
+                np.array([0, 2, 1], dtype=hd.BIGINT_DTYPE),
+                np.array([0, 1], dtype=hd.BIGINT_DTYPE),
+                np.array([1.0, 1.0], dtype=hd.REAL_DTYPE),
+                row_start=0,
+                row_end=1,
+            )
+        with pytest.raises(ValueError, match="HYPRE_BigInt range"):
+            drv.set_matrix_from_csr(
+                np.array([0], dtype=hd.BIGINT_DTYPE),
+                np.array([], dtype=hd.BIGINT_DTYPE),
+                np.array([], dtype=hd.REAL_DTYPE),
+                row_start=np.iinfo(hd.BIGINT_DTYPE).max + 1,
+                row_end=np.iinfo(hd.BIGINT_DTYPE).max + 1,
             )
 
 

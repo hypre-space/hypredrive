@@ -709,8 +709,13 @@ extern "C"
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
     *
-    * @note When called multiple times, any previously-installed system matrix
+    * @note When called multiple times, any previously owned system matrix
     * (and the preconditioner matrix derived from it) is destroyed first.
+    * Callers may release @p indptr, @p col_indices, and @p data as soon as
+    * this call returns; HYPRE copies the values during IJ assembly.
+    *
+    * @note Empty local row ranges are not currently supported by this API:
+    * every participating rank must provide at least one local row.
     *
     * Example Usage:
     * @code
@@ -721,7 +726,6 @@ extern "C"
     *       hypredrv, row_start, row_end, indptr, col_idx, data));
     * @endcode
     */
-
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetMatrixFromCSR(
       HYPREDRV_t hypredrv, HYPRE_BigInt row_start, HYPRE_BigInt row_end,
       const HYPRE_BigInt *indptr, const HYPRE_BigInt *col_indices,
@@ -758,7 +762,6 @@ extern "C"
     *       hypredrv, row_start, row_end, b));
     * @endcode
     */
-
    HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
                                         HYPRE_BigInt row_end, const HYPRE_Real *values);

@@ -23,7 +23,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-hd = pytest.importorskip("hypredrive")
+pytest.importorskip("hypredrive.driver")
+import hypredrive as hd
 pytest.importorskip("mpi4py")
 
 from mpi4py import MPI  # noqa: E402

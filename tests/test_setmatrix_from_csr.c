@@ -114,6 +114,46 @@ free_csr(HYPRE_BigInt *indptr, HYPRE_BigInt *cols, HYPRE_Real *data, HYPRE_Real 
    free(rhs);
 }
 
+static HYPRE_IJMatrix
+build_identity_ijmatrix(HYPRE_BigInt row_start, HYPRE_BigInt row_end)
+{
+   HYPRE_BigInt nrows_big = row_end - row_start + 1;
+   HYPRE_Int    nrows     = (HYPRE_Int)nrows_big;
+   HYPRE_Int   *ncols     = (HYPRE_Int *)malloc(sizeof(HYPRE_Int) * (size_t)nrows);
+   HYPRE_BigInt *rows     = (HYPRE_BigInt *)malloc(sizeof(HYPRE_BigInt) * (size_t)nrows);
+   HYPRE_BigInt *cols     = (HYPRE_BigInt *)malloc(sizeof(HYPRE_BigInt) * (size_t)nrows);
+   HYPRE_Real   *data     = (HYPRE_Real *)malloc(sizeof(HYPRE_Real) * (size_t)nrows);
+   HYPRE_IJMatrix mat     = NULL;
+
+   ASSERT_NOT_NULL(ncols);
+   ASSERT_NOT_NULL(rows);
+   ASSERT_NOT_NULL(cols);
+   ASSERT_NOT_NULL(data);
+
+   for (HYPRE_Int i = 0; i < nrows; i++)
+   {
+      rows[i]  = row_start + (HYPRE_BigInt)i;
+      cols[i]  = rows[i];
+      data[i]  = 1.0;
+      ncols[i] = 1;
+   }
+
+   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, row_start, row_end, row_start, row_end,
+                                  &mat),
+             0);
+   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJMatrixInitialize(mat), 0);
+   ASSERT_EQ(HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, data), 0);
+   ASSERT_EQ(HYPRE_IJMatrixAssemble(mat), 0);
+
+   free(ncols);
+   free(rows);
+   free(cols);
+   free(data);
+
+   return mat;
+}
+
 /*-----------------------------------------------------------------------------
  * test_setmatrix_from_csr_basic_solve
  *
@@ -224,6 +264,33 @@ test_setmatrix_from_csr_invalid_args(void)
    code = HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, indptr2, NULL, NULL);
    ASSERT_TRUE(code & ERROR_INVALID_VAL);
 
+   /* negative absolute indptr start */
+   HYPRE_BigInt indptr_negative[2] = {-1, 0};
+   HYPRE_BigInt cols_negative[1]   = {0};
+   HYPRE_Real   data_negative[1]   = {1.0};
+   hypredrv_ErrorCodeResetAll();
+   code = HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, indptr_negative,
+                                                cols_negative, data_negative);
+   ASSERT_TRUE(code & ERROR_INVALID_VAL);
+
+   /* negative column index */
+   HYPRE_BigInt indptr_col_negative[2] = {0, 1};
+   HYPRE_BigInt cols_col_negative[1]   = {-1};
+   HYPRE_Real   data_col_negative[1]   = {1.0};
+   hypredrv_ErrorCodeResetAll();
+   code = HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, indptr_col_negative,
+                                                cols_col_negative, data_col_negative);
+   ASSERT_TRUE(code & ERROR_INVALID_VAL);
+
+   /* non-monotonic indptr */
+   HYPRE_BigInt indptr_bad[4] = {0, 2, 1, 3};
+   HYPRE_BigInt cols_bad[3]   = {0, 1, 2};
+   HYPRE_Real   data_bad[3]   = {1.0, 1.0, 1.0};
+   hypredrv_ErrorCodeResetAll();
+   code = HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 2, indptr_bad, cols_bad,
+                                                data_bad);
+   ASSERT_TRUE(code & ERROR_INVALID_VAL);
+
    /* RHS: NULL values with nrows > 0 */
    hypredrv_ErrorCodeResetAll();
    code = HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 4, NULL);
@@ -235,8 +302,108 @@ test_setmatrix_from_csr_invalid_args(void)
    code = HYPREDRV_LinearSystemSetRHSFromArray(obj, 5, 4, &dummy_vals);
    ASSERT_TRUE(code & ERROR_INVALID_VAL);
 
+   /* RHS: row range must match the installed CSR matrix row range. */
+   HYPRE_BigInt indptr_rhs_check[2] = {0, 1};
+   HYPRE_BigInt cols_rhs_check[1]   = {0};
+   HYPRE_Real   data_rhs_check[1]   = {1.0};
+   HYPRE_Real   rhs_mismatch[1]     = {1.0};
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, indptr_rhs_check,
+                                                   cols_rhs_check, data_rhs_check),
+             ERROR_NONE);
+   hypredrv_ErrorCodeResetAll();
+   code = HYPREDRV_LinearSystemSetRHSFromArray(obj, 1, 1, rhs_mismatch);
+   ASSERT_TRUE(code & ERROR_INVALID_VAL);
+
+   /* RHS: larger installed matrix range mismatch. */
+   HYPRE_BigInt indptr10[11];
+   HYPRE_BigInt cols10[10];
+   HYPRE_Real   data10[10];
+   HYPRE_Real   rhs_short[6] = {0.0};
+   for (int i = 0; i < 10; i++)
+   {
+      indptr10[i] = (HYPRE_BigInt)i;
+      cols10[i]   = (HYPRE_BigInt)i;
+      data10[i]   = 1.0;
+   }
+   indptr10[10] = 10;
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 9, indptr10, cols10,
+                                                   data10),
+             ERROR_NONE);
+   hypredrv_ErrorCodeResetAll();
+   code = HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 5, rhs_short);
+   ASSERT_TRUE(code & ERROR_INVALID_VAL);
+
    /* Tear down — destroy must not be confused by failed builds. */
    hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+/*-----------------------------------------------------------------------------
+ * test_setmatrix_from_csr_ownership_transitions
+ *
+ * Mix internally owned CSR matrices with a borrowed matrix installed through
+ * SetMatrix. Sanitizer builds should catch leaks or double-destroys here.
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_setmatrix_from_csr_ownership_transitions(void)
+{
+   HYPRE_BigInt indptr10[11];
+   HYPRE_BigInt cols10[10];
+   HYPRE_Real   data10[10];
+   HYPRE_Real   rhs_short[6] = {0.0};
+   HYPRE_IJMatrix borrowed = NULL;
+
+   for (int i = 0; i < 10; i++)
+   {
+      indptr10[i] = (HYPRE_BigInt)i;
+      cols10[i]   = (HYPRE_BigInt)i;
+      data10[i]   = 1.0;
+   }
+   indptr10[10] = 10;
+
+   HYPREDRV_t obj = create_lib_obj();
+
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 9, indptr10, cols10,
+                                                   data10),
+             ERROR_NONE);
+
+   borrowed = build_identity_ijmatrix(0, 9);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrix(obj, (HYPRE_Matrix)borrowed), ERROR_NONE);
+
+   hypredrv_ErrorCodeResetAll();
+   uint32_t code = HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 5, rhs_short);
+   ASSERT_TRUE(code & ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeResetAll();
+
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 9, indptr10, cols10,
+                                                   data10),
+             ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(borrowed), 0);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+/*-----------------------------------------------------------------------------
+ * test_setmatrix_from_csr_all_empty_rows
+ *
+ * Valid CSR can have rows with no entries. The builder must not form pointer
+ * arithmetic on NULL col/data buffers when the local nonzero count is zero.
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_setmatrix_from_csr_all_empty_rows(void)
+{
+   HYPRE_BigInt indptr[4] = {0, 0, 0, 0};
+
+   HYPREDRV_t obj = create_lib_obj();
+
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 2, indptr, NULL, NULL),
+             ERROR_NONE);
+
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
@@ -292,6 +459,8 @@ main(int argc, char **argv)
    RUN_TEST(test_setmatrix_from_csr_basic_solve);
    RUN_TEST(test_setmatrix_from_csr_rebuild_no_leak);
    RUN_TEST(test_setmatrix_from_csr_invalid_args);
+   RUN_TEST(test_setmatrix_from_csr_ownership_transitions);
+   RUN_TEST(test_setmatrix_from_csr_all_empty_rows);
    RUN_TEST(test_setmatrix_from_csr_single_row);
 
    MPI_Finalize();

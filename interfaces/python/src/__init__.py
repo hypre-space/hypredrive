@@ -15,16 +15,13 @@ before being passed to the native layer.
 
 from __future__ import annotations
 
-from .driver import (
-    BIGINT_DTYPE,
-    HypreDrive,
-    REAL_DTYPE,
-    solve,
-)
-from .errors import HypreDriveError
+import importlib
+
 from .options import OptionsLike, configure, normalize_options, options_to_yaml
 from .result import SolveResult
-from .session import finalize, initialize, is_initialized
+
+_DRIVER_EXPORTS = {"BIGINT_DTYPE", "HypreDrive", "REAL_DTYPE", "solve"}
+_SESSION_EXPORTS = {"finalize", "initialize", "is_initialized"}
 
 __all__ = [
     "BIGINT_DTYPE",
@@ -43,3 +40,18 @@ __all__ = [
 ]
 
 __version__ = "0.3.0.dev0"
+
+
+def __getattr__(name: str):
+    if name in _DRIVER_EXPORTS:
+        driver = importlib.import_module(".driver", __name__)
+        value = getattr(driver, name)
+    elif name in _SESSION_EXPORTS:
+        session = importlib.import_module(".session", __name__)
+        value = getattr(session, name)
+    elif name == "HypreDriveError":
+        from .errors import HypreDriveError as value
+    else:
+        raise AttributeError(f"module 'hypredrive' has no attribute {name!r}")
+    globals()[name] = value
+    return value

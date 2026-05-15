@@ -6,9 +6,22 @@ that catch regressions in the dict->YAML emission.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 
 from hypredrive.options import configure, normalize_options, options_to_yaml
+
+
+def test_package_import_does_not_eagerly_load_native_driver():
+    code = (
+        "import hypredrive, sys; "
+        "assert 'hypredrive.driver' not in sys.modules; "
+        "from hypredrive.options import configure; "
+        "assert configure(solver='pcg')['solver'] == {'pcg': {}}"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
 
 
 def test_simple_dict_emits_indented_yaml():
@@ -180,6 +193,17 @@ def test_list_joined_with_commas():
     assert "set_suffix: 1,2,5" in yaml
 
 
+def test_empty_sequence_rejected():
+    with pytest.raises(ValueError, match="must not be empty"):
+        options_to_yaml({"linear_system": {"set_suffix": []}})
+
+
+def test_empty_method_option_sequence_rejected_on_emit():
+    options = configure(solver="pcg", preconditioner="amg", amg=[])
+    with pytest.raises(ValueError, match="must not be empty"):
+        options_to_yaml(options)
+
+
 def test_unknown_key_type_rejected():
     with pytest.raises(TypeError):
         options_to_yaml({1: "bad"})
@@ -199,3 +223,17 @@ def test_normalize_path_reads_file(tmp_path):
     fp = tmp_path / "opts.yml"
     fp.write_text("general:\n  statistics: on\n", encoding="utf-8")
     assert normalize_options(fp).strip() == "general:\n  statistics: on".strip()
+
+
+def test_normalize_missing_pathlike_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        normalize_options(tmp_path / "missing.yml")
+
+
+def test_normalize_missing_path_string_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        normalize_options(str(tmp_path / "missing.yml"))
+
+
+def test_normalize_single_line_yaml_literal_still_passes_through():
+    assert normalize_options("general:") == "general:"

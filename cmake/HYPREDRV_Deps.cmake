@@ -479,6 +479,10 @@ if(NOT HYPRE_FOUND)
         else()
             set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O3 -DNDEBUG")
         endif()
+        if(HYPREDRV_ENABLE_PYTHON AND NOT _hypre_autotools_cflags MATCHES "(^| )-fPIC($| )")
+            set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -fPIC")
+            message(STATUS "Python interface enabled: building auto-fetched HYPRE autotools static library with -fPIC")
+        endif()
         if(HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS)
             string(JOIN " " _hypre_instrumentation_cflags ${HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS})
             set(_hypre_autotools_cflags "${_hypre_autotools_cflags} ${_hypre_instrumentation_cflags}")
@@ -605,6 +609,11 @@ if(NOT HYPRE_FOUND)
     # Configure HYPRE-specific build options (override any user settings)
     set(HYPRE_BUILD_TESTS OFF CACHE BOOL "Build HYPRE tests" FORCE)
     set(HYPRE_BUILD_EXAMPLES OFF CACHE BOOL "Build HYPRE examples" FORCE)
+    if(HYPREDRV_ENABLE_PYTHON)
+        set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL
+            "Build position independent code for shared-library consumers" FORCE)
+        message(STATUS "Python interface enabled: building auto-fetched HYPRE CMake target with position-independent code")
+    endif()
 
     # Configure HYPRE to output libraries and headers in the same directories as main project
     # This ensures all libraries are in the same lib/ folder and headers in the same include/ folder

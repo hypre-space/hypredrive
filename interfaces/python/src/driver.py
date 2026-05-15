@@ -78,6 +78,17 @@ def _as_real_array(arr: Any, name: str) -> np.ndarray:
     return a
 
 
+def _validate_bigint_scalar(value: Any, name: str) -> int:
+    ivalue = int(value)
+    info = np.iinfo(BIGINT_DTYPE)
+    if ivalue < int(info.min) or ivalue > int(info.max):
+        raise ValueError(
+            f"{name} ({ivalue}) is outside the HYPRE_BigInt range "
+            f"[{int(info.min)}, {int(info.max)}]"
+        )
+    return ivalue
+
+
 # ---------------------------------------------------------------------------
 # HypreDrive: object-oriented entry point
 # ---------------------------------------------------------------------------
@@ -154,7 +165,9 @@ class HypreDrive:
         1. ``set_matrix_from_csr(scipy_csr_matrix)``: the ``indptr``,
            ``indices``, ``data`` triple is taken from the SciPy object.
            ``row_start`` defaults to ``0`` and ``row_end`` to
-           ``shape[0] - 1``.
+           ``shape[0] - 1``. If an explicit row range is supplied with a
+           SciPy matrix, the matrix is interpreted as this rank's local slab
+           and must have ``shape[0] == row_end - row_start + 1``.
         2. ``set_matrix_from_csr(indptr, col_indices, data,
            row_start=..., row_end=...)``: distributed mode, useful when
            each MPI rank owns a slab of rows.
@@ -189,7 +202,10 @@ class HypreDrive:
         indices_arr = _as_bigint_array(indices, "col_indices")
         values_arr = _as_real_array(values, "data")
 
-        nrows = int(row_end) - int(row_start) + 1
+        row_start_i = _validate_bigint_scalar(row_start, "row_start")
+        row_end_i = _validate_bigint_scalar(row_end, "row_end")
+
+        nrows = row_end_i - row_start_i + 1
         if nrows < 0:
             raise ValueError(
                 f"row_end ({row_end}) must be >= row_start ({row_start})"
@@ -199,17 +215,34 @@ class HypreDrive:
                 f"indptr length {indptr_arr.shape[0]} does not match "
                 f"nrows+1 = {nrows + 1}"
             )
-        nnz = int(indptr_arr[-1] - indptr_arr[0])
-        if indices_arr.shape[0] < nnz or values_arr.shape[0] < nnz:
+        indptr_start = int(indptr_arr[0])
+        indptr_end = int(indptr_arr[-1])
+        if indptr_start < 0:
             raise ValueError(
-                f"col_indices/data must have at least nnz={nnz} entries"
+                f"indptr[0] ({indptr_start}) must be nonnegative"
+            )
+        if indptr_end < indptr_start:
+            raise ValueError(
+                f"indptr[-1] ({indptr_end}) must be >= indptr[0] "
+                f"({indptr_start})"
+            )
+        if np.any(indptr_arr[1:] < indptr_arr[:-1]):
+            raise ValueError("indptr entries must be monotonically nondecreasing")
+        required_entries = indptr_end
+        if (
+            indices_arr.shape[0] < required_entries
+            or values_arr.shape[0] < required_entries
+        ):
+            raise ValueError(
+                "col_indices/data must have at least indptr[-1]="
+                f"{required_entries} entries"
             )
 
         self._core.set_matrix_from_csr(
-            int(row_start), int(row_end), indptr_arr, indices_arr, values_arr,
+            row_start_i, row_end_i, indptr_arr, indices_arr, values_arr,
         )
-        self._row_start = int(row_start)
-        self._row_end = int(row_end)
+        self._row_start = row_start_i
+        self._row_end = row_end_i
         self._matrix_set = True
 
     def set_rhs(
@@ -237,14 +270,16 @@ class HypreDrive:
                 "pass row_start / row_end explicitly"
             )
 
-        nrows = int(row_end) - int(row_start) + 1
+        row_start_i = _validate_bigint_scalar(row_start, "row_start")
+        row_end_i = _validate_bigint_scalar(row_end, "row_end")
+        nrows = row_end_i - row_start_i + 1
         if values_arr.shape[0] != nrows:
             raise ValueError(
                 f"RHS length {values_arr.shape[0]} does not match "
                 f"row range size {nrows}"
             )
 
-        self._core.set_rhs_from_array(int(row_start), int(row_end), values_arr)
+        self._core.set_rhs_from_array(row_start_i, row_end_i, values_arr)
         self._rhs_set = True
 
     # ------------------------------------------------------------------
@@ -260,15 +295,18 @@ class HypreDrive:
             raise RuntimeError("solve(): no RHS set; call set_rhs")
 
         # Build x0 (zeros by default, controlled by the YAML init_guess_mode).
-        self._core.set_initial_guess_zero()
+        self._core.setup_initial_guess()
 
         self._core.solver_create()
-        self._core.solver_setup()
-        self._core.solver_apply()
-        # Destroy the solver immediately so a subsequent solve cycle on the
-        # same HypreDrive object starts from a clean slate. The C handles
-        # for the linear system itself are retained for inspection.
-        self._core.solver_destroy()
+        try:
+            self._core.solver_setup()
+            self._core.solver_apply()
+        finally:
+            # Destroy the solver immediately so a subsequent solve cycle on the
+            # same HypreDrive object starts from a clean slate, even if setup or
+            # apply failed. The C handles for the linear system itself are retained
+            # for inspection.
+            self._core.solver_destroy()
 
     # ------------------------------------------------------------------
     # Result extraction
@@ -287,6 +325,8 @@ class HypreDrive:
     def solution_norm(self, kind: str = "l2") -> float:
         """Return the norm of the current solution as computed by HYPRE."""
         self._require_open()
+        if kind not in {"l1", "l2", "linf"}:
+            raise ValueError("kind must be one of 'l1', 'l2', or 'linf'")
         return self._core.solution_norm(kind)
 
     # ------------------------------------------------------------------
@@ -333,6 +373,9 @@ def solve(
         Inclusive local row range, required when ``A`` is not a SciPy
         matrix.
     """
+    if (row_start is None) != (row_end is None):
+        raise TypeError("row_start and row_end must be provided together")
+
     with HypreDrive(options=options, comm=comm) as drv:
         if row_start is None or row_end is None:
             drv.set_matrix_from_csr(A)

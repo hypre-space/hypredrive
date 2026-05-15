@@ -25,6 +25,7 @@ endif()
 
 # ---- Find Python + numpy + Cython ------------------------------------------
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(MPI COMPONENTS C QUIET)
 
 # Discover NumPy headers via the interpreter (avoid relying on FindNumPy).
 execute_process(
@@ -38,24 +39,17 @@ if(NOT _numpy_rc EQUAL 0)
     message(FATAL_ERROR "Failed to locate NumPy include directory; is numpy installed?")
 endif()
 
-# Cython is supplied via PEP 517 build requirements; locate the executable.
+# Cython is supplied via PEP 517 build requirements. Invoke it as a module from
+# the selected Python interpreter so isolated/venv builds do not accidentally use
+# an older system `cython` executable from PATH.
 execute_process(
-    COMMAND "${Python_EXECUTABLE}" -c
-            "import shutil, sys; p = shutil.which('cython') or shutil.which('cython3'); print(p) if p else sys.exit(1)"
-    OUTPUT_VARIABLE _cython_exe
-    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND "${Python_EXECUTABLE}" -c "import Cython"
     RESULT_VARIABLE _cython_rc
 )
 if(NOT _cython_rc EQUAL 0)
-    execute_process(
-        COMMAND "${Python_EXECUTABLE}" -c "import Cython"
-        RESULT_VARIABLE _cython_module_rc
-    )
-    if(NOT _cython_module_rc EQUAL 0)
-        message(FATAL_ERROR "Failed to locate Cython; install cython>=3.0 to build the Python interface")
-    endif()
-    set(_cython_exe "${Python_EXECUTABLE};-m;cython")
+    message(FATAL_ERROR "Failed to import Cython from ${Python_EXECUTABLE}; install cython>=3.0 to build the Python interface")
 endif()
+set(_cython_exe "${Python_EXECUTABLE};-m;cython")
 
 # ---- Cython -> C compilation ----------------------------------------------
 set(_pyx_in  "${CMAKE_CURRENT_SOURCE_DIR}/src/_native.pyx")
@@ -132,13 +126,38 @@ install(TARGETS _native
         LIBRARY DESTINATION hypredrive
 )
 
-add_custom_target(python-test
+execute_process(
+    COMMAND "${Python_EXECUTABLE}" -c "import mpi4py"
+    RESULT_VARIABLE _mpi4py_rc
+)
+
+set(_python_test_commands
     COMMAND "${CMAKE_COMMAND}" -E env
             "PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}"
             "${Python_EXECUTABLE}" -m pytest
-            "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_options.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_solve_serial.py"
+)
+
+if(MPIEXEC_EXECUTABLE AND _mpi4py_rc EQUAL 0)
+    list(APPEND _python_test_commands
+        COMMAND "${CMAKE_COMMAND}" -E env
+                "PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}"
+                "${MPIEXEC_EXECUTABLE}" "${MPIEXEC_NUMPROC_FLAG}" "2"
+                ${MPIEXEC_PREFLAGS}
+                "${Python_EXECUTABLE}" -m pytest
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_solve_mpi.py"
+                ${MPIEXEC_POSTFLAGS}
+    )
+else()
+    message(STATUS "Python MPI tests are not attached to python-test because MPIEXEC or mpi4py was not found")
+endif()
+
+add_custom_target(python-test
+    ${_python_test_commands}
     DEPENDS _native hypredrive_python_sources
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     COMMENT "Running hypredrive Python tests"
+    COMMAND_EXPAND_LISTS
     VERBATIM
 )

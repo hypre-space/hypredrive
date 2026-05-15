@@ -34,6 +34,9 @@ typedef struct hypredrv_struct
    bool            owns_vec_x;
    bool            owns_vec_x0;
    bool            owns_vec_xref;
+   bool            mat_A_range_known;
+   HYPRE_BigInt    mat_A_row_start;
+   HYPRE_BigInt    mat_A_row_end;
 
    HYPRE_Precon precon;
    HYPRE_Solver solver;
