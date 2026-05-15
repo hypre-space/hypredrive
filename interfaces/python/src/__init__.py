@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import importlib
 
+from .driver import BIGINT_DTYPE, REAL_DTYPE
 from .options import OptionsLike, configure, normalize_options, options_to_yaml
 from .result import SolveResult
 
-_DRIVER_EXPORTS = {"BIGINT_DTYPE", "HypreDrive", "REAL_DTYPE", "solve"}
+_DRIVER_EXPORTS = {"HypreDrive", "solve"}
 _SESSION_EXPORTS = {"finalize", "initialize", "is_initialized"}
 
 __all__ = [
