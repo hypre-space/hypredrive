@@ -920,7 +920,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
 fail:
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
-   if (mat_ptr && *mat_ptr)
+   if (*mat_ptr)
    {
       HYPRE_IJMatrixDestroy(*mat_ptr);
       *mat_ptr = NULL;
@@ -1006,7 +1006,7 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
    return hypredrv_ErrorCodeGet();
 
 fail:
-   if (rhs_ptr && *rhs_ptr)
+   if (*rhs_ptr)
    {
       HYPRE_IJVectorDestroy(*rhs_ptr);
       *rhs_ptr = NULL;

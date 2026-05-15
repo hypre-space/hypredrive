@@ -1983,8 +1983,13 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_star
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
-   HYPREDRV_SAFE_CALL(
-      LinearSystemValidateCSRPartitionDebug(hypredrv, row_start, row_end));
+   {
+      uint32_t code = LinearSystemValidateCSRPartitionDebug(hypredrv, row_start, row_end);
+      if (code != ERROR_NONE)
+      {
+         return code;
+      }
+   }
 
    /* Replacing mat_A invalidates any preconditioner matrix derived from it. */
    LinearSystemDropOwnedPrecMatrix(hypredrv);
