@@ -22,7 +22,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-from . import _native, session
+from . import _core, session
 from .options import OptionsLike, normalize_options
 from .result import SolveResult
 
@@ -34,12 +34,12 @@ __all__ = ["HypreDrive", "solve", "BIGINT_DTYPE", "REAL_DTYPE"]
 #
 # HYPRE_BigInt is either ``int32`` or ``int64`` depending on whether HYPRE
 # was built with mixed-int support. The exact dtype is observable at native
-# build time and exposed through ``_native._hypre_bigint_size``; we surface
+# build time and exposed through ``_core._hypre_bigint_size``; we surface
 # it as a module-level numpy dtype so user code does not have to guess.
 # ---------------------------------------------------------------------------
 
 def _resolve_bigint_dtype() -> np.dtype:
-    size = _native._hypre_bigint_size()
+    size = _core._hypre_bigint_size()
     if size == 4:
         return np.dtype(np.int32)
     if size == 8:
@@ -50,7 +50,7 @@ def _resolve_bigint_dtype() -> np.dtype:
 
 
 def _resolve_real_dtype() -> np.dtype:
-    size = _native._hypre_real_size()
+    size = _core._hypre_real_size()
     if size == 8:
         return np.dtype(np.float64)
     if size == 4:
@@ -116,7 +116,7 @@ class HypreDrive:
         comm: Any = None,
     ) -> None:
         session.initialize()
-        self._core: Optional[_native.HypreDriveCore] = _native.HypreDriveCore(
+        self._core: Optional[_core.HypreDriveCore] = _core.HypreDriveCore(
             comm=comm,
             library_mode=True,
         )
@@ -214,7 +214,7 @@ class HypreDrive:
 
         # Keep these checks even though the C builder repeats them. The Python
         # layer gives users immediate shape/range errors, while the C layer
-        # remains the trust boundary for direct _native/C API callers.
+        # remains the trust boundary for direct _core/C API callers.
         nrows = row_end_i - row_start_i + 1
         if nrows < 0:
             raise ValueError(

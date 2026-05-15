@@ -18,9 +18,9 @@ pip install ./interfaces/python \
 For in-tree development:
 
 ```bash
-cmake -S . -B build -DBUILD_SHARED_LIBS=ON
+cmake -S . -B build -DBUILD_SHARED_LIBS=ON -DHYPREDRV_ENABLE_PYTHON=ON
 cmake --build build --parallel
-pip install -e ./interfaces/python \
+python -m pip install -e ./interfaces/python \
   --config-settings=cmake.define.HYPREDRV_DIR=$PWD/build
 ```
 
@@ -89,6 +89,26 @@ mpirun -np 2 python -m pytest \
   interfaces/python/tests/test_laplacian_example_mpi.py -v
 ```
 
+## Benchmarks
+
+For developer benchmarks, prefer the CMake targets when using an in-tree build:
+
+```bash
+python -m pip install cython numpy scipy pyamg
+cmake -S . -B build-bench \
+  -DHYPREDRV_ENABLE_PYTHON=ON \
+  -DPython_EXECUTABLE=$VIRTUAL_ENV/bin/python
+cmake --build build-bench --target python-benchmark
+```
+
+The editable install path also works from a venv:
+
+```bash
+python -m pip install -e ./interfaces/python[bench] \
+  --config-settings=cmake.define.HYPREDRV_DIR=$PWD/build
+python interfaces/python/benchmarks/compare_laplacian.py
+```
+
 ## Notes
 
 * `options` may be a Python `dict`, YAML string, YAML file path, or `None`.
@@ -98,3 +118,4 @@ mpirun -np 2 python -m pytest \
   the linked C library.
 * GPU/device execution is not exposed as a Python-native data path yet.
 * Examples live in `interfaces/python/examples`.
+* Developer benchmarks live in `interfaces/python/benchmarks`.

@@ -14,10 +14,10 @@ import pytest
 from hypredrive.options import configure, normalize_options, options_to_yaml
 
 
-def test_package_import_does_not_eagerly_load_native_driver():
+def test_package_import_does_not_eagerly_load_core_or_driver():
     code = (
         "import hypredrive, sys; "
-        "assert 'hypredrive._native' not in sys.modules; "
+        "assert 'hypredrive._core' not in sys.modules; "
         "assert 'hypredrive.driver' not in sys.modules; "
         "assert 'hypredrive.session' not in sys.modules; "
         "from hypredrive.options import configure; "

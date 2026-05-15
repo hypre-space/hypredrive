@@ -23,6 +23,8 @@
 
 #include "HYPREDRV_python.h"
 
+static int HYPREDRV_python_mpi_owned = 0;
+
 /**
  * @brief Convert a Python ABI int64 row bound into HYPRE_BigInt.
  *
@@ -81,6 +83,63 @@ size_t
 HYPREDRV_PythonSolutionEntrySize(void)
 {
    return sizeof(HYPRE_Complex);
+}
+
+/**
+ * @brief Initialize MPI with the same MPI library linked into hypredrive.
+ */
+uint32_t
+HYPREDRV_PythonMPIInitialize(void)
+{
+   int initialized = 0;
+   int finalized   = 0;
+   MPI_Finalized(&finalized);
+   if (finalized)
+   {
+      return HYPREDRV_ErrorInvalidValue(
+         "HYPREDRV_PythonMPIInitialize: MPI has already been finalized");
+   }
+   MPI_Initialized(&initialized);
+   if (initialized)
+   {
+      return 0;
+   }
+
+   int provided = 0;
+   int mpi_ierr = MPI_Init_thread(NULL, NULL, MPI_THREAD_SERIALIZED, &provided);
+   if (mpi_ierr != MPI_SUCCESS)
+   {
+      return HYPREDRV_ErrorInvalidValue(
+         "HYPREDRV_PythonMPIInitialize: MPI_Init_thread failed");
+   }
+   HYPREDRV_python_mpi_owned = 1;
+   return 0;
+}
+
+/**
+ * @brief Finalize MPI if HYPREDRV_PythonMPIInitialize initialized it.
+ */
+uint32_t
+HYPREDRV_PythonMPIFinalize(void)
+{
+   if (!HYPREDRV_python_mpi_owned)
+   {
+      return 0;
+   }
+
+   int finalized = 0;
+   MPI_Finalized(&finalized);
+   if (!finalized)
+   {
+      int mpi_ierr = MPI_Finalize();
+      if (mpi_ierr != MPI_SUCCESS)
+      {
+         return HYPREDRV_ErrorInvalidValue(
+            "HYPREDRV_PythonMPIFinalize: MPI_Finalize failed");
+      }
+   }
+   HYPREDRV_python_mpi_owned = 0;
+   return 0;
 }
 
 /**

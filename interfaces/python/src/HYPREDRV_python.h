@@ -43,6 +43,20 @@ extern "C"
    size_t HYPREDRV_PythonSolutionEntrySize(void);
 
    /**
+    * @brief Initialize MPI for Python serial use when no owner has done so.
+    *
+    * If MPI is already initialized (for example by mpi4py), this is a no-op.
+    * If this bridge initializes MPI, HYPREDRV_PythonMPIFinalize() will finalize
+    * it later.
+    */
+   uint32_t HYPREDRV_PythonMPIInitialize(void);
+
+   /**
+    * @brief Finalize MPI only if this bridge initialized it.
+    */
+   uint32_t HYPREDRV_PythonMPIFinalize(void);
+
+   /**
     * @brief Create a HYPREDRV object on MPI_COMM_SELF for serial Python use.
     */
    uint32_t HYPREDRV_PythonCreateWithSelf(HYPREDRV_t *hypredrv_ptr);

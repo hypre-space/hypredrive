@@ -33,6 +33,11 @@ if(NOT TARGET HYPREDRV::HYPREDRV)
 endif()
 
 # ---- Find Python + numpy + Cython ------------------------------------------
+if(DEFINED ENV{VIRTUAL_ENV} AND NOT DEFINED Python_EXECUTABLE)
+    set(Python_EXECUTABLE "$ENV{VIRTUAL_ENV}/bin/python" CACHE FILEPATH
+        "Python interpreter from the active virtual environment")
+endif()
+
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(MPI COMPONENTS C QUIET)
 
@@ -61,40 +66,40 @@ endif()
 set(_cython_exe "${Python_EXECUTABLE};-m;cython")
 
 # ---- Cython -> C compilation ----------------------------------------------
-set(_pyx_in  "${CMAKE_CURRENT_SOURCE_DIR}/src/_native.pyx")
-set(_pyx_out "${CMAKE_CURRENT_BINARY_DIR}/_native.c")
+set(_pyx_in  "${CMAKE_CURRENT_SOURCE_DIR}/src/_core.pyx")
+set(_pyx_out "${CMAKE_CURRENT_BINARY_DIR}/_core.c")
 set(_bridge_c "${CMAKE_CURRENT_SOURCE_DIR}/src/HYPREDRV_python.c")
 set(_bridge_h "${CMAKE_CURRENT_SOURCE_DIR}/src/HYPREDRV_python.h")
 
 add_custom_command(
     OUTPUT  "${_pyx_out}"
     COMMAND ${_cython_exe} -3
-            --module-name hypredrive._native
+            --module-name hypredrive._core
             -I "${CMAKE_CURRENT_SOURCE_DIR}/src"
             -o "${_pyx_out}"
             "${_pyx_in}"
     DEPENDS "${_pyx_in}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/_native.pxd"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/_core.pxd"
             "${_bridge_h}"
-    COMMENT "Cythonizing _native.pyx -> _native.c"
+    COMMENT "Cythonizing _core.pyx -> _core.c"
     VERBATIM
 )
 
-python_add_library(_native MODULE WITH_SOABI "${_pyx_out}" "${_bridge_c}")
-set_target_properties(_native PROPERTIES
+python_add_library(_core MODULE WITH_SOABI "${_pyx_out}" "${_bridge_c}")
+set_target_properties(_core PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${_hypredrive_python_package_dir}"
 )
 
-target_include_directories(_native PRIVATE
+target_include_directories(_core PRIVATE
     "${_numpy_include}"
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
-target_link_libraries(_native PRIVATE
+target_link_libraries(_core PRIVATE
     HYPREDRV::HYPREDRV
 )
 
-target_compile_definitions(_native PRIVATE
+target_compile_definitions(_core PRIVATE
     NPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION
 )
 
@@ -132,7 +137,7 @@ add_custom_target(hypredrive_python_sources
 install(FILES ${_python_package_sources}
         DESTINATION "${_hypredrive_python_install_package_dir}"
 )
-install(TARGETS _native
+install(TARGETS _core
         LIBRARY DESTINATION "${_hypredrive_python_install_package_dir}"
 )
 
@@ -204,9 +209,67 @@ endif()
 
 add_custom_target(python-test
     ${_python_test_commands}
-    DEPENDS _native hypredrive_python_sources
+    DEPENDS _core hypredrive_python_sources
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     COMMENT "Running hypredrive Python tests"
     COMMAND_EXPAND_LISTS
     VERBATIM
 )
+
+add_custom_target(python-benchmark
+    COMMAND "${CMAKE_COMMAND}" -E env
+            ${_python_test_env}
+            "${Python_EXECUTABLE}"
+            -c
+            "import scipy, pyamg"
+    COMMAND "${CMAKE_COMMAND}" -E env
+            ${_python_test_env}
+            "${Python_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/compare_laplacian.py"
+            --dim 3
+            --n 100
+            --repeat 1
+    DEPENDS _core hypredrive_python_sources
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMENT "Running hypredrive Python serial benchmark smoke case"
+    COMMAND_EXPAND_LISTS
+    VERBATIM
+)
+
+add_custom_target(python-benchmarks
+    DEPENDS python-benchmark
+    COMMENT "Running hypredrive Python benchmark smoke cases"
+)
+
+if(MPIEXEC_EXECUTABLE AND _mpi4py_rc EQUAL 0)
+    add_custom_target(python-benchmark-mpi
+        COMMAND "${CMAKE_COMMAND}" -E env
+                ${_python_test_env}
+                "${Python_EXECUTABLE}"
+                -c
+                "import mpi4py, scipy"
+        COMMAND "${CMAKE_COMMAND}" -E env
+                ${_python_test_env}
+                "${MPIEXEC_EXECUTABLE}" "${MPIEXEC_NUMPROC_FLAG}" "2"
+                ${MPIEXEC_PREFLAGS}
+                "${Python_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/scaling_laplacian.py"
+                --n 8 8 8
+                --P 2 1 1
+                --repeat 1
+                ${MPIEXEC_POSTFLAGS}
+        DEPENDS _core hypredrive_python_sources
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Running hypredrive Python MPI benchmark smoke case"
+        COMMAND_EXPAND_LISTS
+        VERBATIM
+    )
+else()
+    add_custom_target(python-benchmark-mpi
+        COMMAND "${CMAKE_COMMAND}" -E echo
+                "python-benchmark-mpi requires MPIEXEC and mpi4py"
+        COMMAND "${CMAKE_COMMAND}" -E false
+        COMMENT "Python MPI benchmark prerequisites are missing"
+        VERBATIM
+    )
+endif()

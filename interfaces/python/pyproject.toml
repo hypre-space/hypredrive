@@ -44,6 +44,14 @@ test = [
     "scipy>=1.7",
     "mpi4py>=3.1",
 ]
+bench = [
+    "scipy>=1.7",
+    "pyamg",
+]
+bench-mpi = [
+    "scipy>=1.7",
+    "mpi4py>=3.1",
+]
 
 [project.urls]
 Homepage = "https://github.com/hypre-space/hypredrive"
@@ -58,6 +66,8 @@ build.verbose = false
 logging.level = "INFO"
 wheel.packages = []
 sdist.include = [
+    "benchmarks/*.py",
+    "benchmarks/README.md",
     "src/*.pyx",
     "src/*.pxd",
     "src/*.c",

@@ -38,6 +38,7 @@ cdef extern from "HYPREDRV.h" nogil:
     uint32_t HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
     uint32_t HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
     uint32_t HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
+    uint32_t HYPREDRV_LinearSolverGetNumIter(HYPREDRV_t hypredrv, int *iters)
 
     void HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
 
@@ -46,6 +47,8 @@ cdef extern from "HYPREDRV_python.h" nogil:
     size_t HYPREDRV_PythonIndexSize()
     size_t HYPREDRV_PythonRealSize()
     size_t HYPREDRV_PythonSolutionEntrySize()
+    uint32_t HYPREDRV_PythonMPIInitialize()
+    uint32_t HYPREDRV_PythonMPIFinalize()
 
     uint32_t HYPREDRV_PythonCreateWithSelf(HYPREDRV_t *hypredrv_ptr)
     uint32_t HYPREDRV_PythonCreateFromFortranComm(

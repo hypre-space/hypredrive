@@ -18,7 +18,7 @@ old-*
 .gdbinit
 __pycache__/
 .python-version
-.venv/
+.venv*/
 .libs/
 install*/
 .vscode/

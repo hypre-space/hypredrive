@@ -11,9 +11,9 @@ We address both via a tiny module-level state machine:
 * ``initialize()`` is idempotent and lazy. The first ``HypreDrive`` that
   needs it triggers it; user code may also call it explicitly to control
   ordering relative to ``mpi4py``'s ``Init``.
-* ``finalize()`` is registered with ``atexit`` *before* mpi4py's own
-  finalize hook runs. This is achieved by best-effort importing ``mpi4py.MPI``
-  before registering hypredrive's own hook.
+* ``initialize()`` initializes MPI through the same native MPI library linked
+  into hypredrive if no other owner has initialized it yet. This avoids relying
+  on a possibly ABI-mismatched ``mpi4py`` wheel for serial use.
 * Re-entrant calls are no-ops, so embedding hypredrive inside a larger
   Python application that initializes/finalizes its own MPI is safe.
 """
@@ -23,7 +23,7 @@ from __future__ import annotations
 import atexit
 import threading
 
-from . import _native
+from . import _core
 
 _lock = threading.Lock()
 _initialized = False
@@ -45,12 +45,8 @@ def initialize() -> None:
     with _lock:
         if _initialized:
             return
-        _native._initialize()
+        _core._initialize()
         _initialized = True
-        try:
-            import mpi4py.MPI  # noqa: F401
-        except ImportError:
-            pass
         # Register at first init rather than at module import so that
         # we never queue an atexit hook in processes that import
         # hypredrive but never use it (rare, but keeps the import
@@ -64,7 +60,7 @@ def finalize() -> None:
     with _lock:
         if not _initialized:
             return
-        _native._finalize()
+        _core._finalize()
         _initialized = False
 
 

@@ -29,9 +29,9 @@ cimport numpy as cnp
 from hypredrive.errors import HypreDriveError
 
 # The source package is intentionally flattened under interfaces/python/src,
-# so _native.pxd is a sibling file at Cython time rather than under a physical
+# so _core.pxd is a sibling file at Cython time rather than under a physical
 # hypredrive/ package directory.
-cimport _native as _c
+cimport _core as _c
 
 cnp.import_array()
 
@@ -82,6 +82,7 @@ cdef inline void _check(uint32_t code, str what):
 
 def _initialize():
     """Call ``HYPREDRV_Initialize``. Idempotent at the C level."""
+    _check(_c.HYPREDRV_PythonMPIInitialize(), "HYPREDRV_PythonMPIInitialize")
     _check(_c.HYPREDRV_Initialize(), "HYPREDRV_Initialize")
 
 
@@ -94,6 +95,9 @@ def _finalize():
     cdef uint32_t code = _c.HYPREDRV_Finalize()
     if code != 0:
         # Best effort: still describe to stderr without raising.
+        _c.HYPREDRV_ErrorCodeDescribe(code)
+    code = _c.HYPREDRV_PythonMPIFinalize()
+    if code != 0:
         _c.HYPREDRV_ErrorCodeDescribe(code)
 
 
@@ -215,7 +219,7 @@ cdef class HypreDriveCore:
         if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
         # These checks intentionally duplicate the high-level driver:
-        # HypreDriveCore is the trust boundary for direct _native callers.
+        # HypreDriveCore is the trust boundary for direct _core callers.
         if not cnp.PyArray_IS_C_CONTIGUOUS(indptr):
             raise ValueError("indptr must be C-contiguous")
         if not cnp.PyArray_IS_C_CONTIGUOUS(col_indices):
@@ -298,6 +302,14 @@ cdef class HypreDriveCore:
             raise RuntimeError("HypreDriveCore is closed")
         _check(_c.HYPREDRV_LinearSolverApply(self._handle),
                "HYPREDRV_LinearSolverApply")
+
+    def solver_iterations(self):
+        if self._handle == NULL:
+            raise RuntimeError("HypreDriveCore is closed")
+        cdef int iters = 0
+        _check(_c.HYPREDRV_LinearSolverGetNumIter(self._handle, &iters),
+               "HYPREDRV_LinearSolverGetNumIter")
+        return int(iters)
 
     def solver_destroy(self):
         if self._handle == NULL:

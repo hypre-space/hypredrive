@@ -12,7 +12,7 @@ import pytest
 
 pytest.importorskip("hypredrive.driver")
 import hypredrive as hd
-from hypredrive import _native
+from hypredrive import _core
 
 
 def test_one_shot_solve(laplacian_1d, base_options):
@@ -130,7 +130,7 @@ def test_core_rejects_oversized_solution_copy(laplacian_1d, base_options):
 
 def test_core_rejects_solution_copy_before_solve(base_options):
     hd.initialize()
-    core = _native.HypreDriveCore()
+    core = _core.HypreDriveCore()
     try:
         core.parse_yaml(hd.options_to_yaml(base_options).encode("utf-8"))
         out = np.empty(1, dtype=hd.REAL_DTYPE)
@@ -140,19 +140,19 @@ def test_core_rejects_solution_copy_before_solve(base_options):
         core.close()
 
 
-def test_native_bridge_reports_bigint_overflow(base_options):
+def test_core_bridge_reports_bigint_overflow(base_options):
     if hd.BIGINT_DTYPE.itemsize >= np.dtype(np.int64).itemsize:
         pytest.skip("active HYPRE_BigInt already spans int64")
 
     hd.initialize()
-    core = _native.HypreDriveCore()
+    core = _core.HypreDriveCore()
     try:
         core.parse_yaml(hd.options_to_yaml(base_options).encode("utf-8"))
         indptr = np.array([0], dtype=hd.BIGINT_DTYPE)
         cols = np.array([], dtype=hd.BIGINT_DTYPE)
         data = np.array([], dtype=hd.REAL_DTYPE)
         too_large = np.iinfo(np.int64).max
-        with pytest.raises(_native.HypreDriveError) as exc:
+        with pytest.raises(_core.HypreDriveError) as exc:
             core.set_matrix_from_csr(too_large, too_large, indptr, cols, data)
         assert exc.value.code != 0
     finally:
@@ -181,7 +181,7 @@ def test_nonzero_indptr_offset_supported(base_options):
     np.testing.assert_allclose(result.x, np.array([2.0]), atol=1e-6)
 
 
-def test_rhs_range_mismatch_rejected_by_native_layer(base_options):
+def test_rhs_range_mismatch_rejected_by_core_layer(base_options):
     indptr = np.array([0, 1, 2], dtype=hd.BIGINT_DTYPE)
     cols = np.array([0, 1], dtype=hd.BIGINT_DTYPE)
     data = np.array([1.0, 1.0], dtype=hd.REAL_DTYPE)
@@ -204,7 +204,7 @@ def test_sequence_of_mappings_config_parses(base_options):
         },
     }
     hd.initialize()
-    core = _native.HypreDriveCore()
+    core = _core.HypreDriveCore()
     try:
         core.parse_yaml(hd.options_to_yaml(options).encode("utf-8"))
     finally:
