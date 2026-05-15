@@ -24,6 +24,15 @@ from .result import SolveResult
 _DRIVER_EXPORTS = {"HypreDrive", "solve"}
 _SESSION_EXPORTS = {"finalize", "initialize", "is_initialized"}
 
+BIGINT_DTYPE = None
+HypreDrive = None
+HypreDriveError = None
+REAL_DTYPE = None
+finalize = None
+initialize = None
+is_initialized = None
+solve = None
+
 __all__ = [
     "BIGINT_DTYPE",
     "HypreDrive",
