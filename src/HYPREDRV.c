@@ -1948,8 +1948,9 @@ LinearSystemValidateCSRPartitionDebug(HYPREDRV_t hypredrv, HYPRE_BigInt row_star
    long long expected_start = 0;
    for (int rank = 0; rank < comm_size; rank++)
    {
-      long long start = all_ranges[2 * rank];
-      long long end   = all_ranges[2 * rank + 1];
+      size_t    range_idx = (size_t)2 * (size_t)rank;
+      long long start     = all_ranges[range_idx];
+      long long end       = all_ranges[range_idx + 1];
       if (end < start || start != expected_start)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
