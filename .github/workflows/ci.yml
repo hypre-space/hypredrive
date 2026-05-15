@@ -38,6 +38,185 @@ jobs:
       - name: Verify CMake and Autotools source lists are synchronized
         run: python3 scripts/check_source_sync.py
 
+  python-interface:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: ${{ matrix.os }} | Python 3.12 | installed HYPRE
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+            mpi_flavor: openmpi
+          - os: macos-latest
+            compiler: clang
+            mpi_flavor: mpich
+    env:
+      HYPRE_VERSION: master
+      BUILD_DIR: build-python
+      INSTALL_PREFIX: ${{ github.workspace }}/install-python
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: interfaces/python/pyproject.toml
+
+      - name: Install system dependencies (Ubuntu)
+        timeout-minutes: 3
+        if: startsWith(runner.os, 'Linux')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin gcc g++
+          echo "OMPI_CC=gcc" >> $GITHUB_ENV
+          echo "OMPI_CXX=g++" >> $GITHUB_ENV
+
+      - name: Install system dependencies (macOS)
+        timeout-minutes: 3
+        if: startsWith(runner.os, 'macOS')
+        run: |
+          brew update
+          brew install cmake ninja mpich
+          echo "MPICH_CC=clang" >> $GITHUB_ENV
+          echo "MPICH_CXX=clang++" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest numpy scipy cython scikit-build-core mpi4py
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: ${{ matrix.compiler }}
+          build_type: Debug
+          hypre_shared_libs: 'ON'
+          os: ${{ matrix.os }}
+          mpi_flavor: ${{ matrix.mpi_flavor }}
+
+      - name: Configure hypredrive with Python interface
+        run: |
+          set -euxo pipefail
+          cmake -S . -B "$BUILD_DIR" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" \
+            -DHYPREDRV_ENABLE_PYTHON=ON \
+            -DHYPREDRV_ENABLE_TESTING=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_PREFIX_PATH="${{ steps.build-hypre.outputs.hypre_prefix }}" \
+            -DCMAKE_C_COMPILER=mpicc
+
+      - name: Build and run in-tree Python tests
+        env:
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+          OMPI_MCA_btl_vader_single_copy_mechanism: none
+          OMPI_MCA_rmaps_base_oversubscribe: 1
+          OMP_NUM_THREADS: 1
+        run: cmake --build "$BUILD_DIR" --target python-test --parallel
+
+      - name: Install hypredrive C library
+        run: cmake --build "$BUILD_DIR" --target install --parallel
+
+      - name: Build and install Python package from installed hypredrive
+        run: |
+          set -euxo pipefail
+          python -m pip install --force-reinstall "./interfaces/python[test]" \
+            --config-settings=cmake.define.HYPREDRV_DIR="$INSTALL_PREFIX/lib/cmake/HYPREDRV" \
+            --config-settings=cmake.define.CMAKE_PREFIX_PATH="${{ steps.build-hypre.outputs.hypre_prefix }}"
+
+      - name: Run installed-package Python tests
+        env:
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+          OMPI_MCA_btl_vader_single_copy_mechanism: none
+          OMPI_MCA_rmaps_base_oversubscribe: 1
+          OMP_NUM_THREADS: 1
+        run: |
+          set -euxo pipefail
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            export LD_LIBRARY_PATH="$INSTALL_PREFIX/lib:${{ steps.build-hypre.outputs.hypre_prefix }}/lib:${LD_LIBRARY_PATH:-}"
+          else
+            export DYLD_LIBRARY_PATH="$INSTALL_PREFIX/lib:${{ steps.build-hypre.outputs.hypre_prefix }}/lib:${DYLD_LIBRARY_PATH:-}"
+          fi
+          python -m pytest -q --tb=short interfaces/python/tests/test_options.py interfaces/python/tests/test_solve_serial.py -ra
+          mpiexec -n 2 python -m pytest -q --tb=short interfaces/python/tests/test_solve_mpi.py interfaces/python/tests/test_laplacian_example_mpi.py -ra
+
+      - name: Upload Python CI logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: python-logs-${{ matrix.os }}
+          path: |
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
+
+  python-interface-autofetch:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: ubuntu-latest | Python 3.12 | auto-fetch HYPRE
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BUILD_DIR: build-python-autofetch
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: interfaces/python/pyproject.toml
+
+      - name: Install system dependencies
+        timeout-minutes: 3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin gcc g++
+          echo "OMPI_CC=gcc" >> $GITHUB_ENV
+          echo "OMPI_CXX=g++" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest numpy scipy cython scikit-build-core mpi4py
+
+      - name: Configure hypredrive with auto-fetched HYPRE and Python interface
+        run: |
+          set -euxo pipefail
+          cmake -S . -B "$BUILD_DIR" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHYPRE_VERSION=master \
+            -DHYPREDRV_ENABLE_PYTHON=ON \
+            -DHYPREDRV_ENABLE_TESTING=ON \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_C_COMPILER=mpicc
+
+      - name: Build and run Python tests
+        env:
+          OMPI_ALLOW_RUN_AS_ROOT: 1
+          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+          OMPI_MCA_btl_vader_single_copy_mechanism: none
+          OMPI_MCA_rmaps_base_oversubscribe: 1
+          OMP_NUM_THREADS: 1
+        run: cmake --build "$BUILD_DIR" --target python-test --parallel
+
+      - name: Upload Python auto-fetch logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: python-autofetch-logs
+          path: |
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
+
   build-and-test:
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
     name: ${{ matrix.os }} | ${{ matrix.compiler }} | ${{ matrix.build_type }} | ${{ matrix.hypre_version }}

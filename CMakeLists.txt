@@ -39,10 +39,16 @@ option(HYPREDRV_ENABLE_EXAMPLES     "Enable the HYPREDRV examples" OFF)
 option(HYPREDRV_ENABLE_HWLOC        "Enable hwloc support for detailed system topology information" OFF)
 option(HYPREDRV_ENABLE_CALIPER      "Enable Caliper instrumentation support" OFF)
 option(HYPREDRV_ENABLE_COMPRESSION  "Enable optional lossless compression backends" OFF)
+option(HYPREDRV_ENABLE_PYTHON       "Enable the hypredrive Python interface" OFF)
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+endif()
+
+set(HYPREDRV_USING_DEBUG OFF)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(HYPREDRV_USING_DEBUG ON)
 endif()
 
 # Testing implies data
@@ -351,6 +357,11 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Format.cmake)
 
 # Platform-specific settings
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Platform.cmake)
+
+# Python interface (optional)
+if(HYPREDRV_ENABLE_PYTHON)
+    add_subdirectory(interfaces/python)
+endif()
 
 # Installation and package configuration
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Install.cmake)

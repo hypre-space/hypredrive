@@ -8,8 +8,8 @@
 
 *hypredrive* is a flexible framework for high-performance sparse linear algebra through [hypre](https://github.com/hypre-space/hypre). It can be used as:
 
-- **Driver**: `hypredrive-cli` executable with YAML input files, for example [`examples/ex2.yml`](examples/ex2.yml)
-- **Library**: C API via [`include/HYPREDRV.h`](include/HYPREDRV.h) driven by YAML input (file or in-memory), see [`examples/src/`](examples/src/)
+- **Driver**: `hypredrive-cli` command-line executable with YAML input files
+- **Library**: C API via [`include/HYPREDRV.h`](include/HYPREDRV.h) and other [`interfaces/`](interfaces) driven by YAML input (file or in-memory)
 
 ## Build
 
@@ -20,6 +20,7 @@ cmake -DHYPREDRV_ENABLE_DATA=ON -S hypredrive -B build && cmake --build build -j
 
 - hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use an existing install.
 - Check [installation instructions](https://hypredrive.readthedocs.io/en/latest/installation.html) for details, including the available library options.
+- For language bindings (Python), see [`interfaces/`](interfaces)
 
 ## Examples
 

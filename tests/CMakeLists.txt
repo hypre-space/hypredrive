@@ -124,6 +124,7 @@ set(_hypredrv_unit_test_cases
     "test_stats|test_stats.c|TRUE"
     "test_presets|test_presets.c|FALSE"
     "test_dof_labels|test_dof_labels.c|TRUE"
+    "test_setmatrix_from_csr|test_setmatrix_from_csr.c|TRUE"
 )
 
 foreach(_case IN LISTS _hypredrv_unit_test_cases)
@@ -153,3 +154,6 @@ add_executable_test(lsseq_mpi_2proc test_lsseq_mpi 2 RUN_SERIAL)
 
 setup_test_executable(test_args_mpi test_args_mpi.c)
 add_executable_test(args_mpi_2proc test_args_mpi 2 RUN_SERIAL)
+
+setup_test_executable(test_setmatrix_from_csr_mpi test_setmatrix_from_csr_mpi.c)
+add_executable_test(setmatrix_from_csr_mpi_2proc test_setmatrix_from_csr_mpi 2 RUN_SERIAL)

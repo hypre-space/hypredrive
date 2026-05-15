@@ -62,6 +62,13 @@ typedef int HYPRE_MemoryLocation;
 #define HYPRE_MPI_BIG_INT HYPRE_MPI_INT
 #endif
 
+/* Older hypre releases provide HYPRE_DescribeError but not the public buffer
+ * size macro used by newer headers. Keep the fallback local to hypredrive's
+ * compatibility layer and let newer hypre define the canonical value. */
+#ifndef HYPRE_MAX_MSG_LEN
+#define HYPRE_MAX_MSG_LEN 256
+#endif
+
 /* Very old hypre releases may not define HYPRE_BigInt at all. */
 #if HYPREDRV_HYPRE_RELEASE_NUMBER < 21900
 #ifndef HYPRE_BIGINT

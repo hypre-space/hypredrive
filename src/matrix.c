@@ -16,14 +16,7 @@ static void
 IJMatrixInitializeCompat(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_location)
 {
 #if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
-   if (memory_location == HYPRE_MEMORY_HOST)
-   {
-      HYPRE_IJMatrixInitialize(mat);
-   }
-   else
-   {
-      HYPRE_IJMatrixInitialize_v2(mat, memory_location);
-   }
+   HYPRE_IJMatrixInitialize_v2(mat, memory_location);
 #else
    (void)memory_location;
    HYPRE_IJMatrixInitialize(mat);
@@ -782,7 +775,9 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 #endif
       /* GCOVR_EXCL_STOP */
 
-      HYPRE_IJMatrixSetValues(mat, (HYPRE_BigInt)header[6], NULL, rows, cols, vals);
+      HYPRE_Int nvalues =
+         (HYPRE_Int)header[6]; /* NOLINT(cppcoreguidelines-narrowing-conversions) */
+      HYPRE_IJMatrixSetValues(mat, nvalues, NULL, rows, cols, vals);
    }
 
    HYPRE_IJMatrixAssemble(mat);

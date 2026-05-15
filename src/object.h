@@ -28,7 +28,9 @@ typedef struct hypredrv_struct
    HYPRE_IJVector  vec_xref;
    HYPRE_IJVector  vec_nn;
    HYPRE_IJVector *vec_s;
+   bool            owns_mat_A;
    bool            owns_mat_M;
+   bool            owns_vec_b;
    bool            owns_vec_x;
    bool            owns_vec_x0;
    bool            owns_vec_xref;

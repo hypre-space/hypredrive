@@ -127,6 +127,7 @@ CMake options reference
 - ``-DHYPREDRV_ENABLE_HWLOC=ON`` — hwloc-based topology reporting. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_CALIPER=ON`` — Caliper instrumentation. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_COMPRESSION=ON`` — Lossless compression backends and the ``hypredrive-lsseq`` utility. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_PYTHON=ON`` — Build the Python extension as part of the top-level CMake build. Default: ``OFF``.
 
 *Option interactions*
 
@@ -169,6 +170,14 @@ and standard ``CMAKE_*`` variables to the HYPRE build. Examples:
 
 ``HYPREDRV_ENABLE_COMPRESSION=ON`` probes for zlib, zstd, lz4, and blosc. Available
 backends are enabled automatically at configure time.
+
+*Python interface*
+
+The Python package lives under ``interfaces/python``. The standard package workflow is
+``pip install ./interfaces/python`` against either an installed hypredrive or an in-tree
+development build. The top-level CMake option ``HYPREDRV_ENABLE_PYTHON=ON`` is also
+available for developer and CI builds that want the native Python extension built with
+the C library. See :ref:`PythonInterface` for full installation and usage details.
 
 Verifying the Installation
 --------------------------

@@ -190,6 +190,14 @@ void hypredrv_LinearSystemReadMatrix(MPI_Comm, const LS_args *, HYPRE_IJMatrix *
                                      Stats *);
 void hypredrv_LinearSystemSetRHS(MPI_Comm, const LS_args *, HYPRE_IJMatrix,
                                  HYPRE_IJVector *, HYPRE_IJVector *, Stats *);
+uint32_t hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm, HYPRE_MemoryLocation,
+                                                 HYPRE_BigInt, HYPRE_BigInt,
+                                                 const HYPRE_BigInt *,
+                                                 const HYPRE_BigInt *, const HYPRE_Real *,
+                                                 HYPRE_IJMatrix *);
+uint32_t hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm, HYPRE_MemoryLocation,
+                                                HYPRE_BigInt, HYPRE_BigInt,
+                                                const HYPRE_Real *, HYPRE_IJVector *);
 void hypredrv_LinearSystemCreateWorkingSolution(MPI_Comm, const LS_args *, HYPRE_IJVector,
                                                 HYPRE_IJVector *);
 void hypredrv_LinearSystemSetInitialGuess(MPI_Comm, LS_args *, HYPRE_IJMatrix,

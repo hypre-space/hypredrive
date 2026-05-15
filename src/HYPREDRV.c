@@ -62,7 +62,6 @@ static int  PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_
 static uint32_t ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv);
 static void PrepareExplicitObjectForConfiguredExecution(HYPREDRV_t hypredrv, void *obj,
                                                         int is_matrix);
-
 /* Check if hypredrive is initialized */
 static inline uint32_t
 hypredrv_CheckInit(void)
@@ -785,6 +784,20 @@ HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
    hypredrv_ErrorBacktracePrint();
 }
 
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_ErrorInvalidValue(const char *message)
+{
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   if (message)
+   {
+      hypredrv_ErrorMsgAdd("%s", message);
+   }
+   return hypredrv_ErrorCodeGet();
+}
+
 static uint32_t
 DestroyObjectInternal(HYPREDRV_t hypredrv)
 {
@@ -835,10 +848,16 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    {
       HYPRE_IJMatrixDestroy(hypredrv->mat_M);
    }
-   if (!hypredrv->lib_mode)
+   if (hypredrv->mat_A && hypredrv->owns_mat_A)
    {
       HYPRE_IJMatrixDestroy(hypredrv->mat_A);
+   }
+   if (hypredrv->vec_b && hypredrv->owns_vec_b)
+   {
       HYPRE_IJVectorDestroy(hypredrv->vec_b);
+   }
+   if (!hypredrv->lib_mode)
+   {
       for (int i = 0; i < hypredrv->nstates; i++)
       {
          HYPRE_IJVectorDestroy(hypredrv->vec_s[i]);
@@ -945,7 +964,9 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->vec_nn        = NULL;
    hypredrv->vec_s         = NULL;
    hypredrv->dofmap        = NULL;
+   hypredrv->owns_mat_A    = false;
    hypredrv->owns_mat_M    = false;
+   hypredrv->owns_vec_b    = false;
    hypredrv->owns_vec_x    = false;
    hypredrv->owns_vec_x0   = false;
    hypredrv->owns_vec_xref = false;
@@ -1815,6 +1836,7 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t hypredrv)
 
    hypredrv_LinearSystemReadMatrix(hypredrv->comm, &hypredrv->iargs->ls, &hypredrv->mat_A,
                                    hypredrv->stats);
+   hypredrv->owns_mat_A = (hypredrv->mat_A != NULL);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1830,11 +1852,15 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat_A)
 
    LinearSystemDropOwnedPrecMatrix(hypredrv);
 
-   /* Don't annotate "matrix" here - users annotate with "system" in their code */
-   /* This was causing build times and solve times to be recorded in separate entries
-    */
+   if (hypredrv->mat_A && hypredrv->owns_mat_A &&
+       hypredrv->mat_A != (HYPRE_IJMatrix)mat_A)
+   {
+      HYPRE_IJMatrixDestroy(hypredrv->mat_A);
+   }
+
    hypredrv->mat_A      = (HYPRE_IJMatrix)mat_A;
    hypredrv->mat_M      = (HYPRE_IJMatrix)mat_A;
+   hypredrv->owns_mat_A = (bool)(!hypredrv->lib_mode && mat_A != NULL);
    hypredrv->owns_mat_M = false;
 
    return hypredrv_ErrorCodeGet();
@@ -1855,15 +1881,195 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
       {
          hypredrv->vec_xref = NULL;
       }
+      if (hypredrv->vec_b && !hypredrv->owns_vec_b)
+      {
+         hypredrv->vec_b = NULL;
+      }
       hypredrv_LinearSystemSetRHS(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
                                   &hypredrv->vec_xref, &hypredrv->vec_b, hypredrv->stats);
+      hypredrv->owns_vec_b    = (hypredrv->vec_b != NULL);
       hypredrv->owns_vec_xref = (hypredrv->vec_xref != NULL);
    }
    else
    {
       PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)vec, 0);
-      hypredrv->vec_b = (HYPRE_IJVector)vec;
+      if (hypredrv->vec_b && hypredrv->owns_vec_b &&
+          hypredrv->vec_b != (HYPRE_IJVector)vec)
+      {
+         HYPRE_IJVectorDestroy(hypredrv->vec_b);
+      }
+      hypredrv->vec_b      = (HYPRE_IJVector)vec;
+      hypredrv->owns_vec_b = (bool)(!hypredrv->lib_mode);
    }
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+static uint32_t
+LinearSystemValidateCSRPartitionDebug(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
+                                      HYPRE_BigInt row_end)
+{
+#ifdef HYPREDRV_USING_DEBUG
+   int comm_size = 1;
+   if (MPI_Comm_size(hypredrv->comm, &comm_size) != MPI_SUCCESS)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to query MPI communicator");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   const long long local_range[2] = {(long long)row_start, (long long)row_end};
+   long long      *all_ranges = hypre_TAlloc(long long, 2 * comm_size, HYPRE_MEMORY_HOST);
+   if (!all_ranges)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to allocate debug "
+         "partition scratch space");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   int mpi_ierr = MPI_Allgather(local_range, 2, MPI_LONG_LONG, all_ranges, 2,
+                                MPI_LONG_LONG, hypredrv->comm);
+   if (mpi_ierr != MPI_SUCCESS)
+   {
+      hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to gather debug row "
+         "partition");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   long long expected_start = 0;
+   for (int rank = 0; rank < comm_size; rank++)
+   {
+      size_t    range_idx = (size_t)2 * (size_t)rank;
+      long long start     = all_ranges[range_idx];
+      long long end       = all_ranges[range_idx + 1];
+      if (end < start || start != expected_start)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
+            "HYPREDRV_LinearSystemSetMatrixFromCSR: rank %d row range [%lld, %lld] "
+            "does not continue the global partition at %lld",
+            rank, start, end, expected_start);
+         hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
+         return hypredrv_ErrorCodeGet();
+      }
+      expected_start = end + 1;
+   }
+
+   hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
+#else
+   (void)hypredrv;
+   (void)row_start;
+   (void)row_end;
+#endif
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
+                                      HYPRE_BigInt row_end, const HYPRE_BigInt *indptr,
+                                      const HYPRE_BigInt *col_indices,
+                                      const HYPRE_Real   *data)
+{
+   HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
+   {
+      uint32_t code = LinearSystemValidateCSRPartitionDebug(hypredrv, row_start, row_end);
+      if (code != ERROR_NONE)
+      {
+         return code;
+      }
+   }
+
+   /* Replacing mat_A invalidates any preconditioner matrix derived from it. */
+   LinearSystemDropOwnedPrecMatrix(hypredrv);
+
+   if (hypredrv->mat_A && hypredrv->owns_mat_A)
+   {
+      HYPRE_IJMatrixDestroy(hypredrv->mat_A);
+   }
+   hypredrv->mat_A      = NULL;
+   hypredrv->owns_mat_A = false;
+
+   /* Caller-provided CSR buffers are host pointers, so the builder runs on host
+    * regardless of the configured execution policy. */
+   (void)hypredrv_LinearSystemBuildMatrixFromCSR(hypredrv->comm, HYPRE_MEMORY_HOST,
+                                                 row_start, row_end, indptr, col_indices,
+                                                 data, &hypredrv->mat_A);
+
+   hypredrv->owns_mat_A = (hypredrv->mat_A != NULL);
+   hypredrv->mat_M      = hypredrv->mat_A;
+   hypredrv->owns_mat_M = false;
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
+                                     HYPRE_BigInt row_end, const HYPRE_Real *values)
+{
+   HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
+
+   if (!hypredrv->mat_A)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetRHSFromArray: matrix must be set before RHS");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_BigInt ilower = 0, iupper = -1, jlower = 0, jupper = -1;
+   HYPRE_Int    get_range_ierr =
+      HYPRE_IJMatrixGetLocalRange(hypredrv->mat_A, &ilower, &iupper, &jlower, &jupper);
+   if (get_range_ierr != 0)
+   {
+      char hypre_err_msg[HYPRE_MAX_MSG_LEN];
+      HYPRE_DescribeError(get_range_ierr, hypre_err_msg);
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetRHSFromArray: failed to query matrix local "
+         "range: %s",
+         hypre_err_msg);
+      return hypredrv_ErrorCodeGet();
+   }
+   if (row_start != ilower || row_end != iupper)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetRHSFromArray: RHS row range [%lld, %lld] "
+         "does not match matrix row range [%lld, %lld]",
+         (long long)row_start, (long long)row_end, (long long)ilower, (long long)iupper);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (hypredrv->vec_b && hypredrv->owns_vec_b)
+   {
+      HYPRE_IJVectorDestroy(hypredrv->vec_b);
+   }
+   hypredrv->vec_b      = NULL;
+   hypredrv->owns_vec_b = false;
+
+   /* Caller-provided RHS buffers are host pointers, so the builder runs on host
+    * regardless of the configured execution policy. */
+   (void)hypredrv_LinearSystemBuildRHSFromArray(
+      hypredrv->comm, HYPRE_MEMORY_HOST, row_start, row_end, values, &hypredrv->vec_b);
+
+   hypredrv->owns_vec_b = (hypredrv->vec_b != NULL);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2064,6 +2270,49 @@ HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_
 
    hypredrv_LinearSystemGetSolutionValues(hypredrv->vec_x, sol_data);
 
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemGetSolutionLength(HYPREDRV_t hypredrv, HYPRE_BigInt *length)
+{
+   HYPREDRV_CHECK_INIT_AND_OBJ();
+
+   if (!length)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemGetSolutionLength: length must be non-NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+   if (!hypredrv->vec_x)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemGetSolutionLength: no solution available; run "
+         "solve() first");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_BigInt ilower  = 0;
+   HYPRE_BigInt iupper  = -1;
+   HYPRE_Int hypre_ierr = HYPRE_IJVectorGetLocalRange(hypredrv->vec_x, &ilower, &iupper);
+   if (hypre_ierr != 0)
+   {
+      char hypre_err_msg[HYPRE_MAX_MSG_LEN];
+      HYPRE_DescribeError(hypre_ierr, hypre_err_msg);
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemGetSolutionLength: failed to query solution local "
+         "range: %s",
+         hypre_err_msg);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   *length = iupper - ilower + 1;
    return hypredrv_ErrorCodeGet();
 }
 

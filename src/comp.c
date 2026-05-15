@@ -68,12 +68,16 @@ hypredrv_compression_get_name(comp_alg_t algo)
          return "zlib";
       case COMP_ZSTD:
          return "zstd";
+#ifdef HYPREDRV_USING_LZ4
       case COMP_LZ4:
          return "lz4";
       case COMP_LZ4HC:
          return "lz4hc";
+#endif
+#ifdef HYPREDRV_USING_BLOSC
       case COMP_BLOSC:
          return "blosc";
+#endif
       default:
          return "unknown";
    }
@@ -90,12 +94,16 @@ hypredrv_compression_get_extension(comp_alg_t algo)
          return ".zlib.bin";
       case COMP_ZSTD:
          return ".zst.bin";
+#ifdef HYPREDRV_USING_LZ4
       case COMP_LZ4:
          return ".lz4.bin";
       case COMP_LZ4HC:
          return ".lz4hc.bin";
+#endif
+#ifdef HYPREDRV_USING_BLOSC
       case COMP_BLOSC:
          return ".blosc.bin";
+#endif
       default:
          return ".bin";
    }
@@ -491,6 +499,7 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
             return;
          }
          break;
+#ifdef HYPREDRV_USING_LZ4
       case COMP_LZ4: /* GCOVR_EXCL_LINE */
          if (!compress_lz4(isize, input, header_size, output_ptr, &comp_size))
          {
@@ -503,12 +512,15 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
             return;
          }
          break;
+#endif
+#ifdef HYPREDRV_USING_BLOSC
       case COMP_BLOSC: /* GCOVR_EXCL_LINE */
          if (!compress_blosc(isize, input, header_size, output_ptr, &comp_size))
          {
             return;
          }
          break;
+#endif
       default:
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
@@ -780,6 +792,7 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
             return;
          }
          break;
+#ifdef HYPREDRV_USING_LZ4
       case COMP_LZ4:   /* GCOVR_EXCL_LINE */
       case COMP_LZ4HC: /* GCOVR_EXCL_LINE */
          if (!decompress_lz4(isize, input, header_size, orig_size, output_ptr))
@@ -787,12 +800,15 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
             return;
          }
          break;
+#endif
+#ifdef HYPREDRV_USING_BLOSC
       case COMP_BLOSC: /* GCOVR_EXCL_LINE */
          if (!decompress_blosc(isize, input, header_size, orig_size, output_ptr))
          {
             return;
          }
          break;
+#endif
       default:
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);

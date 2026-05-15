@@ -407,6 +407,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
                 --suppress=unusedFunction
                 --suppress=missingIncludeSystem
                 --suppress=checkersReport
+                --suppress=checkLevelNormal
                 --suppress=toomanyconfigs
                 --suppress=unmatchedSuppression
                 --suppressions-list=${CPPCHECK_SUPPRESSIONS_FILE}

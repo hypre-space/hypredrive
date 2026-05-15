@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "HYPREDRV_config.h"
 #include "internal/comp.h"
 #include "internal/error.h"
 #include "test_helpers.h"
@@ -96,12 +97,24 @@ test_comp_name_extension_all_cases(void)
    ASSERT_STREQ(hypredrv_compression_get_extension(COMP_ZLIB), ".zlib.bin");
    ASSERT_STREQ(hypredrv_compression_get_name(COMP_ZSTD), "zstd");
    ASSERT_STREQ(hypredrv_compression_get_extension(COMP_ZSTD), ".zst.bin");
+#ifdef HYPREDRV_USING_LZ4
    ASSERT_STREQ(hypredrv_compression_get_name(COMP_LZ4), "lz4");
    ASSERT_STREQ(hypredrv_compression_get_extension(COMP_LZ4), ".lz4.bin");
    ASSERT_STREQ(hypredrv_compression_get_name(COMP_LZ4HC), "lz4hc");
    ASSERT_STREQ(hypredrv_compression_get_extension(COMP_LZ4HC), ".lz4hc.bin");
+#else
+   ASSERT_STREQ(hypredrv_compression_get_name(COMP_LZ4), "unknown");
+   ASSERT_STREQ(hypredrv_compression_get_extension(COMP_LZ4), ".bin");
+   ASSERT_STREQ(hypredrv_compression_get_name(COMP_LZ4HC), "unknown");
+   ASSERT_STREQ(hypredrv_compression_get_extension(COMP_LZ4HC), ".bin");
+#endif
+#ifdef HYPREDRV_USING_BLOSC
    ASSERT_STREQ(hypredrv_compression_get_name(COMP_BLOSC), "blosc");
    ASSERT_STREQ(hypredrv_compression_get_extension(COMP_BLOSC), ".blosc.bin");
+#else
+   ASSERT_STREQ(hypredrv_compression_get_name(COMP_BLOSC), "unknown");
+   ASSERT_STREQ(hypredrv_compression_get_extension(COMP_BLOSC), ".bin");
+#endif
 }
 
 static void

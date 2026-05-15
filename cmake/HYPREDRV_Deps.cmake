@@ -373,6 +373,10 @@ endif()
 # Option to specify HYPRE version/branch/tag for FetchContent
 set(HYPRE_VERSION "master" CACHE STRING "HYPRE version/branch/tag to fetch (e.g., master, v2.32.0)")
 
+if(HYPRE_ENABLE_MIXEDINT AND HYPRE_ENABLE_BIGINT)
+    message(FATAL_ERROR "HYPRE_ENABLE_MIXEDINT and HYPRE_ENABLE_BIGINT are mutually exclusive")
+endif()
+
 # Allow users to point to an autotools build by providing include/lib paths.
 # This bypasses find_package(CONFIG) which only works with CMake installs.
 if(NOT TARGET HYPRE::HYPRE AND DEFINED HYPRE_INCLUDE_DIRS AND
@@ -479,6 +483,10 @@ if(NOT HYPRE_FOUND)
         else()
             set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O3 -DNDEBUG")
         endif()
+        if(HYPREDRV_ENABLE_PYTHON AND NOT _hypre_autotools_cflags MATCHES "(^| )-fPIC($| )")
+            set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -fPIC")
+            message(STATUS "Python interface enabled: building auto-fetched HYPRE autotools static library with -fPIC")
+        endif()
         if(HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS)
             string(JOIN " " _hypre_instrumentation_cflags ${HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS})
             set(_hypre_autotools_cflags "${_hypre_autotools_cflags} ${_hypre_instrumentation_cflags}")
@@ -489,7 +497,9 @@ if(NOT HYPRE_FOUND)
         endif()
 
         set(_hypre_autotools_configure_extra "")
-        if(HYPRE_ENABLE_MIXEDINT)
+        if(HYPRE_ENABLE_BIGINT)
+            list(APPEND _hypre_autotools_configure_extra --enable-bigint)
+        elseif(HYPRE_ENABLE_MIXEDINT)
             if(DEFINED _hypre_release_number AND _hypre_release_number GREATER_EQUAL 22000)
                 list(APPEND _hypre_autotools_configure_extra --enable-mixedint)
             else()
@@ -605,6 +615,11 @@ if(NOT HYPRE_FOUND)
     # Configure HYPRE-specific build options (override any user settings)
     set(HYPRE_BUILD_TESTS OFF CACHE BOOL "Build HYPRE tests" FORCE)
     set(HYPRE_BUILD_EXAMPLES OFF CACHE BOOL "Build HYPRE examples" FORCE)
+    if(HYPREDRV_ENABLE_PYTHON)
+        set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL
+            "Build position independent code for shared-library consumers" FORCE)
+        message(STATUS "Python interface enabled: building auto-fetched HYPRE CMake target with position-independent code")
+    endif()
 
     # Configure HYPRE to output libraries and headers in the same directories as main project
     # This ensures all libraries are in the same lib/ folder and headers in the same include/ folder
