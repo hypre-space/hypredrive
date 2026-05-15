@@ -52,6 +52,21 @@ __all__ = [
 __version__ = "0.3.0.dev0"
 
 
+def initialize(*args, **kwargs):
+    session = importlib.import_module(".session", __name__)
+    return session.initialize(*args, **kwargs)
+
+
+def finalize(*args, **kwargs):
+    session = importlib.import_module(".session", __name__)
+    return session.finalize(*args, **kwargs)
+
+
+def is_initialized(*args, **kwargs):
+    session = importlib.import_module(".session", __name__)
+    return session.is_initialized(*args, **kwargs)
+
+
 def __getattr__(name: str):
     if name in _DRIVER_EXPORTS:
         driver = importlib.import_module(".driver", __name__)
