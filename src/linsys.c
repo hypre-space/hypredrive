@@ -776,8 +776,9 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
    if (nrows_big > (HYPRE_BigInt)INT_MAX)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: local row count (%lld) is out of HYPRE_Int range",
-                           (long long)nrows_big);
+      hypredrv_ErrorMsgAdd(
+         "BuildMatrixFromCSR: local row count (%lld) is out of HYPRE_Int range",
+         (long long)nrows_big);
       return hypredrv_ErrorCodeGet();
    }
 
@@ -801,8 +802,9 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
    if (nnz_big > (HYPRE_BigInt)INT_MAX)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: local nonzero count (%lld) exceeds HYPRE_Int range",
-                           (long long)nnz_big);
+      hypredrv_ErrorMsgAdd(
+         "BuildMatrixFromCSR: local nonzero count (%lld) exceeds HYPRE_Int range",
+         (long long)nnz_big);
       return hypredrv_ErrorCodeGet();
    }
 
@@ -860,8 +862,9 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       if (row_nnz > (HYPRE_BigInt)INT_MAX)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: row %lld nonzero count (%lld) exceeds HYPRE_Int range",
-                              (long long)i, (long long)row_nnz);
+         hypredrv_ErrorMsgAdd(
+            "BuildMatrixFromCSR: row %lld nonzero count (%lld) exceeds HYPRE_Int range",
+            (long long)i, (long long)row_nnz);
          goto fail;
       }
       ncols_per_row[i] = (HYPRE_Int)row_nnz;
@@ -870,13 +873,14 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
 
    for (HYPRE_Int k = 0; k < nnz; k++)
    {
-      HYPRE_BigInt col = col_indices[indptr[0] + (HYPRE_BigInt)k];
+      long long    col_index = (long long)indptr[0] + (long long)k;
+      HYPRE_BigInt col       = col_indices[indptr[0] + (HYPRE_BigInt)k];
       if (col < 0)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: col_indices[%lld] (%lld) must be nonnegative",
-                              (long long)(indptr[0] + (HYPRE_BigInt)k),
-                              (long long)col);
+         hypredrv_ErrorMsgAdd(
+            "BuildMatrixFromCSR: col_indices[%lld] (%lld) must be nonnegative", col_index,
+            (long long)col);
          goto fail;
       }
    }
@@ -925,16 +929,17 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
    if ((HYPRE_BigInt)((HYPRE_Int)nrows_big) != nrows_big)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildRHSFromArray: local row count (%lld) exceeds HYPRE_Int range",
-                           (long long)nrows_big);
+      hypredrv_ErrorMsgAdd(
+         "BuildRHSFromArray: local row count (%lld) exceeds HYPRE_Int range",
+         (long long)nrows_big);
       return hypredrv_ErrorCodeGet();
    }
 
    HYPRE_Int nrows = (HYPRE_Int)nrows_big;
-   if (nrows > 0 && !values)
+   if (!values)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildRHSFromArray: values must be non-NULL when nrows > 0");
+      hypredrv_ErrorMsgAdd("BuildRHSFromArray: values must be non-NULL");
       return hypredrv_ErrorCodeGet();
    }
 

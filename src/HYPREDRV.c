@@ -1881,7 +1881,7 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
          HYPRE_IJVectorDestroy(hypredrv->vec_b);
       }
       hypredrv->vec_b      = (HYPRE_IJVector)vec;
-      hypredrv->owns_vec_b = (bool)(!hypredrv->lib_mode && vec != NULL);
+      hypredrv->owns_vec_b = (bool)(!hypredrv->lib_mode);
    }
 
    return hypredrv_ErrorCodeGet();
@@ -1943,8 +1943,8 @@ HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start
          hypredrv_ErrorMsgAdd(
             "HYPREDRV_LinearSystemSetRHSFromArray: RHS row range [%lld, %lld] "
             "does not match matrix row range [%lld, %lld]",
-            (long long)row_start, (long long)row_end,
-            (long long)ilower, (long long)iupper);
+            (long long)row_start, (long long)row_end, (long long)ilower,
+            (long long)iupper);
          return hypredrv_ErrorCodeGet();
       }
    }

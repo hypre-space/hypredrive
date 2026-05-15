@@ -18,6 +18,15 @@
 cmake_minimum_required(VERSION 3.23)
 project(hypredrive_python LANGUAGES C)
 
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(_hypredrive_python_package_root "${CMAKE_CURRENT_BINARY_DIR}")
+    set(_hypredrive_python_install_package_dir "hypredrive")
+else()
+    set(_hypredrive_python_package_root "${CMAKE_CURRENT_BINARY_DIR}/python")
+    set(_hypredrive_python_install_package_dir "python")
+endif()
+set(_hypredrive_python_package_dir "${_hypredrive_python_package_root}/hypredrive")
+
 # ---- Find HYPREDRV ---------------------------------------------------------
 if(NOT TARGET HYPREDRV::HYPREDRV)
     find_package(HYPREDRV CONFIG REQUIRED)
@@ -72,7 +81,7 @@ add_custom_command(
 
 python_add_library(_native MODULE WITH_SOABI "${_pyx_out}")
 set_target_properties(_native PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/hypredrive"
+    LIBRARY_OUTPUT_DIRECTORY "${_hypredrive_python_package_dir}"
 )
 
 target_include_directories(_native PRIVATE
@@ -97,7 +106,7 @@ set(_python_package_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/src/session.py"
 )
 
-set(_python_package_build_dir "${CMAKE_CURRENT_BINARY_DIR}/hypredrive")
+set(_python_package_build_dir "${_hypredrive_python_package_dir}")
 set(_python_package_outputs)
 foreach(_python_package_source IN LISTS _python_package_sources)
     get_filename_component(_python_package_name "${_python_package_source}" NAME)
@@ -120,10 +129,10 @@ add_custom_target(hypredrive_python_sources
 
 # Install the extension into the package directory inside the wheel.
 install(FILES ${_python_package_sources}
-        DESTINATION hypredrive
+        DESTINATION "${_hypredrive_python_install_package_dir}"
 )
 install(TARGETS _native
-        LIBRARY DESTINATION hypredrive
+        LIBRARY DESTINATION "${_hypredrive_python_install_package_dir}"
 )
 
 execute_process(
@@ -131,9 +140,43 @@ execute_process(
     RESULT_VARIABLE _mpi4py_rc
 )
 
+set(_python_test_env
+    "PYTHONPATH=${_hypredrive_python_package_root}"
+)
+
+if(HYPREDRV_SANITIZER_ENABLED AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    execute_process(
+        COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libasan.so
+        OUTPUT_VARIABLE _asan_runtime
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    execute_process(
+        COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libubsan.so
+        OUTPUT_VARIABLE _ubsan_runtime
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    set(_python_sanitizer_preload "")
+    if(IS_ABSOLUTE "${_asan_runtime}" AND EXISTS "${_asan_runtime}")
+        list(APPEND _python_sanitizer_preload "${_asan_runtime}")
+    endif()
+    if(IS_ABSOLUTE "${_ubsan_runtime}" AND EXISTS "${_ubsan_runtime}")
+        list(APPEND _python_sanitizer_preload "${_ubsan_runtime}")
+    endif()
+    if(_python_sanitizer_preload)
+        list(JOIN _python_sanitizer_preload ":" _python_sanitizer_preload_value)
+        list(APPEND _python_test_env
+            "LD_PRELOAD=${_python_sanitizer_preload_value}"
+            "ASAN_OPTIONS=detect_leaks=0:symbolize=1:print_stacktrace=1:abort_on_error=1"
+            "UBSAN_OPTIONS=print_stacktrace=1:abort_on_error=1"
+        )
+    else()
+        message(WARNING "Sanitizers are enabled, but no ASan/UBSan runtime could be resolved for Python tests")
+    endif()
+endif()
+
 set(_python_test_commands
     COMMAND "${CMAKE_COMMAND}" -E env
-            "PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}"
+            ${_python_test_env}
             "${Python_EXECUTABLE}" -m pytest
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_options.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_solve_serial.py"
@@ -142,7 +185,7 @@ set(_python_test_commands
 if(MPIEXEC_EXECUTABLE AND _mpi4py_rc EQUAL 0)
     list(APPEND _python_test_commands
         COMMAND "${CMAKE_COMMAND}" -E env
-                "PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}"
+                ${_python_test_env}
                 "${MPIEXEC_EXECUTABLE}" "${MPIEXEC_NUMPROC_FLAG}" "2"
                 ${MPIEXEC_PREFLAGS}
                 "${Python_EXECUTABLE}" -m pytest
