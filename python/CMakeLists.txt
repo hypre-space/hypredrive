@@ -52,12 +52,14 @@ endif()
 # ---- Cython -> C compilation ----------------------------------------------
 set(_pyx_in  "${CMAKE_CURRENT_SOURCE_DIR}/src/hypredrive/_native.pyx")
 set(_pyx_out "${CMAKE_CURRENT_BINARY_DIR}/_native.c")
+set(_native_abi_h "${CMAKE_CURRENT_SOURCE_DIR}/src/hypredrive/_native_abi.h")
 
 add_custom_command(
     OUTPUT  "${_pyx_out}"
     COMMAND ${_cython_exe} -3 -o "${_pyx_out}" "${_pyx_in}"
     DEPENDS "${_pyx_in}"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/hypredrive/_native.pxd"
+            "${_native_abi_h}"
     COMMENT "Cythonizing _native.pyx -> _native.c"
     VERBATIM
 )
@@ -66,6 +68,7 @@ python_add_library(_native MODULE WITH_SOABI "${_pyx_out}")
 
 target_include_directories(_native PRIVATE
     "${_numpy_include}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
 target_link_libraries(_native PRIVATE

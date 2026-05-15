@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import mpi4py.MPI  # noqa: F401  -- import side-effect: calls MPI_Init
 import numpy as np
 import pytest
-
-import hypredrive as hd
 
 
 @pytest.fixture(scope="session")
@@ -38,6 +35,7 @@ def laplacian_1d():
     a handful of iterations, which keeps the test deterministic across
     HYPRE versions.
     """
+    hd = pytest.importorskip("hypredrive")
     n = 32
     indptr = np.zeros(n + 1, dtype=hd.BIGINT_DTYPE)
     cols: list[int] = []

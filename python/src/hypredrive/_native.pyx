@@ -20,7 +20,7 @@ The binding follows three principles:
   compile-time depend on a particular mpi4py version.
 """
 
-from libc.stdint cimport uint32_t, intptr_t
+from libc.stdint cimport int64_t, uint32_t, intptr_t
 from libc.stdlib cimport malloc, free
 from libc.string cimport memcpy
 
@@ -43,12 +43,12 @@ cdef extern from "mpi.h" nogil:
 
 def _hypre_bigint_size():
     """Return ``sizeof(HYPRE_BigInt)`` as observed at native build time."""
-    return sizeof(_c.HYPRE_BigInt)
+    return _c.hypredrive_PythonIndexSize()
 
 
 def _hypre_real_size():
     """Return ``sizeof(HYPRE_Real)`` as observed at native build time."""
-    return sizeof(_c.HYPRE_Real)
+    return _c.hypredrive_PythonRealSize()
 
 
 # ---------------------------------------------------------------------------
@@ -217,21 +217,14 @@ cdef class HypreDriveCore:
         if not self._alive:
             raise RuntimeError("HypreDriveCore is closed")
 
-        cdef const _c.HYPRE_BigInt *indptr_ptr = \
-            <const _c.HYPRE_BigInt *>cnp.PyArray_DATA(indptr)
-        cdef const _c.HYPRE_BigInt *cols_ptr = \
-            <const _c.HYPRE_BigInt *>cnp.PyArray_DATA(col_indices)
-        cdef const _c.HYPRE_Real *data_ptr = \
-            <const _c.HYPRE_Real *>cnp.PyArray_DATA(data)
-
         _check(
-            _c.HYPREDRV_LinearSystemSetMatrixFromCSR(
+            _c.hypredrive_PythonSetMatrixFromCSR(
                 self._handle,
-                <_c.HYPRE_BigInt>row_start,
-                <_c.HYPRE_BigInt>row_end,
-                indptr_ptr,
-                cols_ptr,
-                data_ptr,
+                <int64_t>row_start,
+                <int64_t>row_end,
+                <const void *>cnp.PyArray_DATA(indptr),
+                <const void *>cnp.PyArray_DATA(col_indices),
+                <const void *>cnp.PyArray_DATA(data),
             ),
             "HYPREDRV_LinearSystemSetMatrixFromCSR",
         )
@@ -245,14 +238,12 @@ cdef class HypreDriveCore:
         if not self._alive:
             raise RuntimeError("HypreDriveCore is closed")
 
-        cdef const _c.HYPRE_Real *vals_ptr = \
-            <const _c.HYPRE_Real *>cnp.PyArray_DATA(values)
         _check(
-            _c.HYPREDRV_LinearSystemSetRHSFromArray(
+            _c.hypredrive_PythonSetRHSFromArray(
                 self._handle,
-                <_c.HYPRE_BigInt>row_start,
-                <_c.HYPRE_BigInt>row_end,
-                vals_ptr,
+                <int64_t>row_start,
+                <int64_t>row_end,
+                <const void *>cnp.PyArray_DATA(values),
             ),
             "HYPREDRV_LinearSystemSetRHSFromArray",
         )
@@ -310,15 +301,22 @@ cdef class HypreDriveCore:
         """
         if not self._alive:
             raise RuntimeError("HypreDriveCore is closed")
-        cdef _c.HYPRE_Complex *src = NULL
+        cdef const void *src = NULL
         _check(
-            _c.HYPREDRV_LinearSystemGetSolutionValues(self._handle, &src),
+            _c.hypredrive_PythonGetSolutionValues(self._handle, &src),
             "HYPREDRV_LinearSystemGetSolutionValues",
         )
         if src == NULL:
             raise RuntimeError("hypredrive returned a NULL solution pointer")
         cdef Py_ssize_t n = out.shape[0]
-        memcpy(cnp.PyArray_DATA(out), src, <size_t>n * sizeof(_c.HYPRE_Complex))
+        cdef size_t scalar_size = _c.hypredrive_PythonSolutionEntrySize()
+        if scalar_size != <size_t>cnp.PyArray_ITEMSIZE(out):
+            raise RuntimeError(
+                "complex-valued HYPRE builds are not supported by the "
+                "real-valued Python binding"
+            )
+        memcpy(cnp.PyArray_DATA(out), src,
+               <size_t>n * scalar_size)
 
     def solution_norm(self, str norm_type):
         if not self._alive:

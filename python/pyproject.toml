@@ -60,6 +60,7 @@ wheel.packages = ["src/hypredrive"]
 sdist.include = [
     "src/hypredrive/*.pyx",
     "src/hypredrive/*.pxd",
+    "src/hypredrive/*.h",
     "src/hypredrive/*.py",
     "CMakeLists.txt",
     "README.md",
