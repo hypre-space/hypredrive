@@ -347,7 +347,9 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       }
 #endif
 
-      HYPRE_IJVectorSetValues(vec, (HYPRE_BigInt)header[5], NULL, vals);
+      HYPRE_Int nvalues =
+         (HYPRE_Int)header[5]; /* NOLINT(cppcoreguidelines-narrowing-conversions) */
+      HYPRE_IJVectorSetValues(vec, nvalues, NULL, vals);
    }
 
    HYPRE_IJVectorAssemble(vec);

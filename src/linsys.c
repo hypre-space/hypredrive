@@ -27,25 +27,25 @@
 #include "internal/lsseq.h"
 #include "logging.h"
 
-static void
+static HYPRE_Int
 IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
 {
 #if HYPREDRV_HYPRE_RELEASE_NUMBER >= 22000
-   HYPRE_IJVectorInitialize_v2(vec, memory_location);
+   return HYPRE_IJVectorInitialize_v2(vec, memory_location);
 #else
    (void)memory_location;
-   HYPRE_IJVectorInitialize(vec);
+   return HYPRE_IJVectorInitialize(vec);
 #endif
 }
 
-static void
+static HYPRE_Int
 IJMatrixInitializeCompat(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_location)
 {
 #if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
-   HYPRE_IJMatrixInitialize_v2(mat, memory_location);
+   return HYPRE_IJMatrixInitialize_v2(mat, memory_location);
 #else
    (void)memory_location;
-   HYPRE_IJMatrixInitialize(mat);
+   return HYPRE_IJMatrixInitialize(mat);
 #endif
 }
 
@@ -758,6 +758,24 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
                                         const HYPRE_BigInt *col_indices,
                                         const HYPRE_Real *data, HYPRE_IJMatrix *mat_ptr)
 {
+   HYPRE_Int    *ncols_per_row = NULL;
+   HYPRE_BigInt *row_ids       = NULL;
+
+#define HYPREDRV_CSR_HYPRE_CALL(call)                                      \
+   do                                                                      \
+   {                                                                       \
+      HYPRE_Int hypre_ierr = (call);                                       \
+      if (hypre_ierr != 0)                                                 \
+      {                                                                    \
+         char hypre_err_msg[HYPRE_MAX_MSG_LEN];                            \
+         HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                   \
+         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                      \
+         hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: HYPRE call failed: %s", \
+                              hypre_err_msg);                              \
+         goto fail;                                                        \
+      }                                                                    \
+   } while (0)
+
    if (!mat_ptr || !indptr)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -773,7 +791,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
    }
 
    HYPRE_BigInt nrows_big = row_end - row_start + 1;
-   if (nrows_big > (HYPRE_BigInt)INT_MAX)
+   if ((HYPRE_BigInt)((HYPRE_Int)nrows_big) != nrows_big)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
@@ -799,7 +817,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
                            (long long)indptr[nrows], (long long)indptr[0]);
       return hypredrv_ErrorCodeGet();
    }
-   if (nnz_big > (HYPRE_BigInt)INT_MAX)
+   if ((HYPRE_BigInt)((HYPRE_Int)nnz_big) != nnz_big)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
@@ -829,25 +847,27 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
     * lower/upper bounds; HYPRE composes the global column partition from the
     * concatenation. This matches how matrices read from file are built (see
     * src/matrix.c) and gives standard ParCSR layout. */
-   HYPRE_IJMatrixCreate(comm, row_start, row_end, row_start, row_end, mat_ptr);
-   HYPRE_IJMatrixSetObjectType(*mat_ptr, HYPRE_PARCSR);
-   IJMatrixInitializeCompat(*mat_ptr, memory_location);
+   HYPREDRV_CSR_HYPRE_CALL(
+      HYPRE_IJMatrixCreate(comm, row_start, row_end, row_start, row_end, mat_ptr));
+   HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixSetObjectType(*mat_ptr, HYPRE_PARCSR));
+   HYPREDRV_CSR_HYPRE_CALL(IJMatrixInitializeCompat(*mat_ptr, memory_location));
 
    if (nrows == 0)
    {
-      HYPRE_IJMatrixAssemble(*mat_ptr);
+      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixAssemble(*mat_ptr));
       return hypredrv_ErrorCodeGet();
    }
    if (nnz == 0)
    {
-      HYPRE_IJMatrixAssemble(*mat_ptr);
+      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixAssemble(*mat_ptr));
       return hypredrv_ErrorCodeGet();
    }
 
-   /* HYPRE_IJMatrixSetValues consumes ncols_per_row/row_ids as host-side scratch
-    * even when matrix values are initialized for a device memory location. */
-   HYPRE_Int    *ncols_per_row = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
-   HYPRE_BigInt *row_ids       = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_HOST);
+   /* HYPRE_IJMatrixSetValues requires per-row counts and row ids on every call.
+    * These transient O(nrows) scratch arrays stay on the host even when matrix
+    * values are initialized for a device memory location. */
+   ncols_per_row = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
+   row_ids       = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_HOST);
    for (HYPRE_Int i = 0; i < nrows; i++)
    {
       HYPRE_BigInt row_nnz = indptr[i + 1] - indptr[i];
@@ -859,7 +879,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
                               (long long)i);
          goto fail;
       }
-      if (row_nnz > (HYPRE_BigInt)INT_MAX)
+      if ((HYPRE_BigInt)((HYPRE_Int)row_nnz) != row_nnz)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          hypredrv_ErrorMsgAdd(
@@ -871,6 +891,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       row_ids[i]       = row_start + (HYPRE_BigInt)i;
    }
 
+#ifdef HYPREDRV_USING_DEBUG
    for (HYPRE_Int k = 0; k < nnz; k++)
    {
       long long    col_index = (long long)indptr[0] + (long long)k;
@@ -884,20 +905,27 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
          goto fail;
       }
    }
+#endif
 
-   HYPRE_IJMatrixSetValues(*mat_ptr, nrows, ncols_per_row, row_ids,
-                           col_indices + indptr[0], data + indptr[0]);
-   HYPRE_IJMatrixAssemble(*mat_ptr);
+   HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixSetValues(*mat_ptr, nrows, ncols_per_row,
+                                                   row_ids, col_indices + indptr[0],
+                                                   data + indptr[0]));
+   HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixAssemble(*mat_ptr));
 
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
+#undef HYPREDRV_CSR_HYPRE_CALL
    return hypredrv_ErrorCodeGet();
 
 fail:
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
-   HYPRE_IJMatrixDestroy(*mat_ptr);
-   *mat_ptr = NULL;
+   if (mat_ptr && *mat_ptr)
+   {
+      HYPRE_IJMatrixDestroy(*mat_ptr);
+      *mat_ptr = NULL;
+   }
+#undef HYPREDRV_CSR_HYPRE_CALL
    return hypredrv_ErrorCodeGet();
 }
 
@@ -911,6 +939,21 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
                                        HYPRE_BigInt row_start, HYPRE_BigInt row_end,
                                        const HYPRE_Real *values, HYPRE_IJVector *rhs_ptr)
 {
+#define HYPREDRV_RHS_HYPRE_CALL(call)                                     \
+   do                                                                     \
+   {                                                                      \
+      HYPRE_Int hypre_ierr = (call);                                      \
+      if (hypre_ierr != 0)                                                \
+      {                                                                   \
+         char hypre_err_msg[HYPRE_MAX_MSG_LEN];                           \
+         HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                  \
+         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                     \
+         hypredrv_ErrorMsgAdd("BuildRHSFromArray: HYPRE call failed: %s", \
+                              hypre_err_msg);                             \
+         goto fail;                                                       \
+      }                                                                   \
+   } while (0)
+
    if (!rhs_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -949,16 +992,26 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
       *rhs_ptr = NULL;
    }
 
-   HYPRE_IJVectorCreate(comm, row_start, row_end, rhs_ptr);
-   HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
-   IJVectorInitializeCompat(*rhs_ptr, memory_location);
+   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorCreate(comm, row_start, row_end, rhs_ptr));
+   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR));
+   HYPREDRV_RHS_HYPRE_CALL(IJVectorInitializeCompat(*rhs_ptr, memory_location));
 
    if (nrows > 0)
    {
-      HYPRE_IJVectorSetValues(*rhs_ptr, nrows, NULL, values);
+      HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorSetValues(*rhs_ptr, nrows, NULL, values));
    }
-   HYPRE_IJVectorAssemble(*rhs_ptr);
+   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorAssemble(*rhs_ptr));
 
+#undef HYPREDRV_RHS_HYPRE_CALL
+   return hypredrv_ErrorCodeGet();
+
+fail:
+   if (rhs_ptr && *rhs_ptr)
+   {
+      HYPRE_IJVectorDestroy(*rhs_ptr);
+      *rhs_ptr = NULL;
+   }
+#undef HYPREDRV_RHS_HYPRE_CALL
    return hypredrv_ErrorCodeGet();
 }
 
@@ -1185,8 +1238,16 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
    HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
    IJVectorInitializeCompat(*rhs_ptr, memory_location);
 
-   HYPRE_BigInt local_size    = iupper - ilower + 1;
-   int          my_local_size = local_size;
+   HYPRE_BigInt local_size = iupper - ilower + 1;
+   if (local_size > (HYPRE_BigInt)INT_MAX)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Local RHS size (%lld) exceeds MPI int range",
+                           (long long)local_size);
+      return 0;
+   }
+   int my_local_size =
+      (int)local_size; /* NOLINT(cppcoreguidelines-narrowing-conversions) */
    /* GCOVR_EXCL_BR_START */
    if (myid == 0) /* GCOVR_EXCL_BR_STOP */
    {
@@ -1208,10 +1269,12 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
    }
 
    local_values = hypre_TAlloc(HYPRE_Complex, local_size, HYPRE_MEMORY_HOST);
-   MPI_Scatterv(all_values, counts, displs, MPI_DOUBLE, local_values, local_size,
+   MPI_Scatterv(all_values, counts, displs, MPI_DOUBLE, local_values, my_local_size,
                 MPI_DOUBLE, 0, comm);
 
-   HYPRE_IJVectorSetValues(*rhs_ptr, local_size, NULL, local_values);
+   HYPRE_Int local_size_hypre =
+      (HYPRE_Int)local_size; /* NOLINT(cppcoreguidelines-narrowing-conversions) */
+   HYPRE_IJVectorSetValues(*rhs_ptr, local_size_hypre, NULL, local_values);
    HYPRE_IJVectorAssemble(*rhs_ptr);
 
    hypre_TFree(local_values, HYPRE_MEMORY_HOST);

@@ -164,8 +164,9 @@ rank. ``indptr`` has length ``nrows + 1`` where
 indices; and all input buffers may be released after the call returns because HYPRE
 copies the data during IJ assembly.
 
-Passing a SciPy CSR matrix with no explicit row range means single-rank/full-local
-assembly. Passing a SciPy CSR matrix with ``row_start`` and ``row_end`` means the
+Passing a SciPy sparse matrix with no explicit row range means single-rank/full-local
+assembly. CSR inputs are used directly; other SciPy sparse formats are converted to
+CSR first. Passing a SciPy sparse matrix with ``row_start`` and ``row_end`` means the
 matrix is this rank's local slab and must have
 ``shape[0] == row_end - row_start + 1``.
 

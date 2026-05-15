@@ -92,6 +92,8 @@ mpirun -np 2 python -m pytest \
 ## Notes
 
 * `options` may be a Python `dict`, YAML string, YAML file path, or `None`.
+* SciPy sparse inputs are converted to CSR; pass CSR directly to avoid that
+  conversion.
 * Python arrays are copied/coerced to the HYPRE scalar and index types used by
   the linked C library.
 * GPU/device execution is not exposed as a Python-native data path yet.

@@ -107,6 +107,55 @@ def _format_scalar(value: Any) -> str:
     return text
 
 
+def _emit_value(
+    prefix: str,
+    key: str,
+    value: Any,
+    nested_indent: int,
+    lines: list[str],
+) -> None:
+    if isinstance(value, Mapping):
+        lines.append(f"{prefix}:")
+        _emit(value, nested_indent, lines)
+    elif isinstance(value, (list, tuple)):
+        if not value:
+            raise ValueError(f"option sequence for {key!r} must not be empty")
+        if value and all(isinstance(item, Mapping) for item in value):
+            lines.append(f"{prefix}:")
+            _emit_mapping_sequence(value, nested_indent, lines)
+        else:
+            joined = ",".join(_format_scalar(item) for item in value)
+            lines.append(f"{prefix}: {joined}")
+    else:
+        lines.append(f"{prefix}: {_format_scalar(value)}")
+
+
+def _emit_mapping_sequence(
+    items: list[Any] | tuple[Any, ...],
+    indent: int,
+    lines: list[str],
+) -> None:
+    item_pad = "  " * indent
+    child_pad = "  " * (indent + 1)
+    for item in items:
+        if not isinstance(item, Mapping):
+            raise TypeError("mapping sequence items must be mappings")
+        if not item:
+            raise ValueError("mapping sequence items must not be empty")
+        first = True
+        for key, value in item.items():
+            if not isinstance(key, str):
+                raise TypeError(
+                    f"options keys must be strings, got {type(key).__name__}: {key!r}"
+                )
+            if first:
+                prefix = f"{item_pad}- {key}"
+                first = False
+            else:
+                prefix = f"{child_pad}{key}"
+            _emit_value(prefix, key, value, indent + 2, lines)
+
+
 def _emit(node: Mapping[str, Any], indent: int, lines: list[str]) -> None:
     pad = "  " * indent
     for key, value in node.items():
@@ -114,25 +163,7 @@ def _emit(node: Mapping[str, Any], indent: int, lines: list[str]) -> None:
             raise TypeError(
                 f"options keys must be strings, got {type(key).__name__}: {key!r}"
             )
-        if isinstance(value, Mapping):
-            lines.append(f"{pad}{key}:")
-            _emit(value, indent + 1, lines)
-        elif isinstance(value, (list, tuple)):
-            if not value:
-                raise ValueError(f"option sequence for {key!r} must not be empty")
-            if value and all(isinstance(item, Mapping) for item in value):
-                lines.append(f"{pad}{key}:")
-                item_pad = "  " * (indent + 1)
-                for item in value:
-                    lines.append(f"{item_pad}-")
-                    _emit(item, indent + 2, lines)
-                continue
-            # Hypredrive uses comma-separated scalars rather than YAML
-            # sequences for fields like ``set_suffix``; mirror that.
-            joined = ",".join(_format_scalar(item) for item in value)
-            lines.append(f"{pad}{key}: {joined}")
-        else:
-            lines.append(f"{pad}{key}: {_format_scalar(value)}")
+        _emit_value(f"{pad}{key}", key, value, indent + 1, lines)
 
 
 def options_to_yaml(options: Mapping[str, Any]) -> str:

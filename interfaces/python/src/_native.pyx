@@ -23,11 +23,10 @@ The binding follows three principles:
 from libc.stdint cimport int64_t, uint32_t, intptr_t
 from libc.string cimport memcpy
 
-from cpython.mem cimport PyMem_Malloc, PyMem_Free
-
 cimport cython
 import numpy as np
 cimport numpy as cnp
+from hypredrive.errors import HypreDriveError
 
 # The source package is intentionally flattened under interfaces/python/src,
 # so _native.pxd is a sibling file at Cython time rather than under a physical
@@ -36,9 +35,9 @@ cimport _native as _c
 
 cnp.import_array()
 
-cdef size_t _HYPREDRIVE_PYTHON_REAL_SIZE = _c.hypredrive_PythonRealSize()
+cdef size_t _HYPREDRIVE_PYTHON_REAL_SIZE = _c.HYPREDRV_PythonRealSize()
 cdef size_t _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE = (
-    _c.hypredrive_PythonSolutionEntrySize()
+    _c.HYPREDRV_PythonSolutionEntrySize()
 )
 if _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE != _HYPREDRIVE_PYTHON_REAL_SIZE:
     raise ImportError(
@@ -53,30 +52,17 @@ if _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE != _HYPREDRIVE_PYTHON_REAL_SIZE:
 
 def _hypre_bigint_size():
     """Return ``sizeof(HYPRE_BigInt)`` as observed at native build time."""
-    return _c.hypredrive_PythonIndexSize()
+    return _c.HYPREDRV_PythonIndexSize()
 
 
 def _hypre_real_size():
     """Return ``sizeof(HYPRE_Real)`` as observed at native build time."""
-    return _c.hypredrive_PythonRealSize()
+    return _c.HYPREDRV_PythonRealSize()
 
 
 # ---------------------------------------------------------------------------
 # Error translation
 # ---------------------------------------------------------------------------
-
-class HypreDriveError(RuntimeError):
-    """Exception raised when a hypredrive C call returns a nonzero error code.
-
-    The ``code`` attribute carries the bitfield exactly as returned by the
-    library; ``HYPREDRV_ErrorCodeDescribe`` will have already printed a
-    human-readable description to stderr by the time this is raised.
-    """
-
-    def __init__(self, code, msg):
-        super().__init__(f"{msg} (code=0x{int(code):08x})")
-        self.code = int(code)
-
 
 cdef inline void _check(uint32_t code, str what):
     """Raise ``HypreDriveError`` if ``code`` is nonzero.
@@ -124,14 +110,14 @@ cdef uint32_t _create_driver(object comm, _c.HYPREDRV_t *handle) except? 1:
     """
     cdef int fortran_handle
     if comm is None:
-        return _c.hypredrive_PythonCreateWithSelf(handle)
+        return _c.HYPREDRV_PythonCreateWithSelf(handle)
     if not hasattr(comm, "py2f"):
         raise TypeError(
             "comm must be an mpi4py.MPI.Comm (or None for MPI_COMM_SELF); "
             f"got {type(comm).__name__}"
         )
     fortran_handle = int(comm.py2f())
-    return _c.hypredrive_PythonCreateFromFortranComm(fortran_handle, handle)
+    return _c.HYPREDRV_PythonCreateFromFortranComm(fortran_handle, handle)
 
 
 # ---------------------------------------------------------------------------
@@ -147,33 +133,40 @@ cdef class HypreDriveCore:
     """
 
     cdef _c.HYPREDRV_t _handle
-    cdef bint _alive
     cdef bint _solver_created
 
     def __cinit__(self, object comm=None, bint library_mode=True):
         self._handle = NULL
-        self._alive = False
         self._solver_created = False
 
         _check(_create_driver(comm, &self._handle), "HYPREDRV_Create")
-        self._alive = True
         if library_mode:
             _check(_c.HYPREDRV_SetLibraryMode(self._handle),
                    "HYPREDRV_SetLibraryMode")
 
     def __dealloc__(self):
-        self.close()
-
-    cpdef close(self):
-        """Tear down the underlying handle. Safe to call multiple times."""
-        if self._alive:
+        if self._handle != NULL:
             if self._solver_created:
-                # Best-effort cleanup; ignore errors at teardown.
                 _c.HYPREDRV_LinearSolverDestroy(self._handle)
                 self._solver_created = False
             _c.HYPREDRV_Destroy(&self._handle)
             self._handle = NULL
-            self._alive = False
+
+    cpdef close(self):
+        """Tear down the underlying handle. Safe to call multiple times."""
+        cdef uint32_t first_code = 0
+        cdef uint32_t code = 0
+        if self._handle != NULL:
+            if self._solver_created:
+                code = _c.HYPREDRV_LinearSolverDestroy(self._handle)
+                self._solver_created = False
+                if first_code == 0:
+                    first_code = code
+            code = _c.HYPREDRV_Destroy(&self._handle)
+            self._handle = NULL
+            if first_code == 0:
+                first_code = code
+            _check(first_code, "HypreDriveCore.close")
 
     # ------------------------------------------------------------------
     # Configuration: YAML in-memory
@@ -187,26 +180,17 @@ cdef class HypreDriveCore:
         not resolve), so we go through that same entry point and skip
         round-tripping through a temp file.
         """
-        if not self._alive:
+        if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
         cdef bytes payload = yaml_text  # keep a reference alive for the duration
-        cdef Py_ssize_t nbytes = len(payload)
         cdef const char *payload_data = payload
-        cdef char *payload_copy = <char *>PyMem_Malloc(<size_t>nbytes + 1)
         cdef char *argv[2]
-        if payload_copy == NULL:
-            raise MemoryError()
-        try:
-            memcpy(payload_copy, payload_data, <size_t>nbytes)
-            payload_copy[nbytes] = 0
-            argv[0] = payload_copy
-            argv[1] = NULL
-            _check(
-                _c.HYPREDRV_InputArgsParse(1, argv, self._handle),
-                "HYPREDRV_InputArgsParse",
-            )
-        finally:
-            PyMem_Free(payload_copy)
+        argv[0] = <char *>payload_data
+        argv[1] = NULL
+        _check(
+            _c.HYPREDRV_InputArgsParse(1, argv, self._handle),
+            "HYPREDRV_InputArgsParse",
+        )
 
     # ------------------------------------------------------------------
     # Linear-system data ingest
@@ -228,23 +212,25 @@ cdef class HypreDriveCore:
         Python-level ``HypreDrive.set_matrix_from_csr`` performs that
         normalization before calling here.
         """
-        if not self._alive:
+        if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
+        # These checks intentionally duplicate the high-level driver:
+        # HypreDriveCore is the trust boundary for direct _native callers.
         if not cnp.PyArray_IS_C_CONTIGUOUS(indptr):
             raise ValueError("indptr must be C-contiguous")
         if not cnp.PyArray_IS_C_CONTIGUOUS(col_indices):
             raise ValueError("col_indices must be C-contiguous")
         if not cnp.PyArray_IS_C_CONTIGUOUS(data):
             raise ValueError("data must be C-contiguous")
-        if <size_t>cnp.PyArray_ITEMSIZE(indptr) != _c.hypredrive_PythonIndexSize():
+        if <size_t>cnp.PyArray_ITEMSIZE(indptr) != _c.HYPREDRV_PythonIndexSize():
             raise ValueError("indptr dtype does not match HYPRE_BigInt")
-        if <size_t>cnp.PyArray_ITEMSIZE(col_indices) != _c.hypredrive_PythonIndexSize():
+        if <size_t>cnp.PyArray_ITEMSIZE(col_indices) != _c.HYPREDRV_PythonIndexSize():
             raise ValueError("col_indices dtype does not match HYPRE_BigInt")
         if <size_t>cnp.PyArray_ITEMSIZE(data) != _HYPREDRIVE_PYTHON_REAL_SIZE:
             raise ValueError("data dtype does not match HYPRE_Real")
 
         _check(
-            _c.hypredrive_PythonSetMatrixFromCSR(
+            _c.HYPREDRV_PythonSetMatrixFromCSR(
                 self._handle,
                 <int64_t>row_start,
                 <int64_t>row_end,
@@ -261,7 +247,7 @@ cdef class HypreDriveCore:
         cnp.npy_int64 row_end,
         cnp.ndarray values,
     ):
-        if not self._alive:
+        if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
         if not cnp.PyArray_IS_C_CONTIGUOUS(values):
             raise ValueError("values must be C-contiguous")
@@ -269,7 +255,7 @@ cdef class HypreDriveCore:
             raise ValueError("values dtype does not match HYPRE_Real")
 
         _check(
-            _c.hypredrive_PythonSetRHSFromArray(
+            _c.HYPREDRV_PythonSetRHSFromArray(
                 self._handle,
                 <int64_t>row_start,
                 <int64_t>row_end,
@@ -283,7 +269,7 @@ cdef class HypreDriveCore:
 
         Passing NULL delegates the actual initial-guess policy to the C layer.
         """
-        if not self._alive:
+        if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
         _check(
             _c.HYPREDRV_LinearSystemSetInitialGuess(self._handle, NULL),
@@ -295,26 +281,26 @@ cdef class HypreDriveCore:
     # ------------------------------------------------------------------
 
     def solver_create(self):
-        if not self._alive:
+        if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
         _check(_c.HYPREDRV_LinearSolverCreate(self._handle),
                "HYPREDRV_LinearSolverCreate")
         self._solver_created = True
 
     def solver_setup(self):
-        if not self._alive:
+        if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
         _check(_c.HYPREDRV_LinearSolverSetup(self._handle),
                "HYPREDRV_LinearSolverSetup")
 
     def solver_apply(self):
-        if not self._alive:
+        if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
         _check(_c.HYPREDRV_LinearSolverApply(self._handle),
                "HYPREDRV_LinearSolverApply")
 
     def solver_destroy(self):
-        if not self._alive:
+        if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
         if self._solver_created:
             _check(_c.HYPREDRV_LinearSolverDestroy(self._handle),
@@ -332,22 +318,29 @@ cdef class HypreDriveCore:
         may (e.g. on GPU builds) keep it in device memory; surfacing a
         device pointer to NumPy would be a footgun for v1.
         """
-        if not self._alive:
+        if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
         cdef const void *src = NULL
+        cdef size_t src_length = 0
         _check(
-            _c.hypredrive_PythonGetSolutionValues(self._handle, &src),
+            _c.HYPREDRV_PythonGetSolutionValues(self._handle, &src, &src_length),
             "HYPREDRV_LinearSystemGetSolutionValues",
         )
         if src == NULL:
             raise RuntimeError("hypredrive returned a NULL solution pointer")
         cdef Py_ssize_t n = out.shape[0]
+        if n < 0:
+            raise ValueError("output length must be nonnegative")
+        if <size_t>n > src_length:
+            raise ValueError(
+                f"output length {n} exceeds local solution length {src_length}"
+            )
         cdef size_t scalar_size = _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE
         memcpy(cnp.PyArray_DATA(out), src,
                <size_t>n * scalar_size)
 
     def solution_norm(self, str norm_type):
-        if not self._alive:
+        if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
         cdef bytes norm_bytes = norm_type.encode("ascii")
         cdef double value = 0.0

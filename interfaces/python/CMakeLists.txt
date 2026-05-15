@@ -63,7 +63,8 @@ set(_cython_exe "${Python_EXECUTABLE};-m;cython")
 # ---- Cython -> C compilation ----------------------------------------------
 set(_pyx_in  "${CMAKE_CURRENT_SOURCE_DIR}/src/_native.pyx")
 set(_pyx_out "${CMAKE_CURRENT_BINARY_DIR}/_native.c")
-set(_native_abi_h "${CMAKE_CURRENT_SOURCE_DIR}/src/_native_abi.h")
+set(_bridge_c "${CMAKE_CURRENT_SOURCE_DIR}/src/HYPREDRV_python.c")
+set(_bridge_h "${CMAKE_CURRENT_SOURCE_DIR}/src/HYPREDRV_python.h")
 
 add_custom_command(
     OUTPUT  "${_pyx_out}"
@@ -74,12 +75,12 @@ add_custom_command(
             "${_pyx_in}"
     DEPENDS "${_pyx_in}"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/_native.pxd"
-            "${_native_abi_h}"
+            "${_bridge_h}"
     COMMENT "Cythonizing _native.pyx -> _native.c"
     VERBATIM
 )
 
-python_add_library(_native MODULE WITH_SOABI "${_pyx_out}")
+python_add_library(_native MODULE WITH_SOABI "${_pyx_out}" "${_bridge_c}")
 set_target_properties(_native PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${_hypredrive_python_package_dir}"
 )

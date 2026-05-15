@@ -148,6 +148,18 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL void HYPREDRV_ErrorCodeDescribe(uint32_t error_code);
 
    /**
+    * @brief Record and return an invalid-value error with optional context.
+    *
+    * This helper is intended for thin language-interface shims that validate
+    * fixed-width ABI values before forwarding to the typed HYPREDRV C API.
+    *
+    * @param message Optional human-readable context for the error chain.
+    *
+    * @return Current HYPREDRV error code bitfield.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_ErrorInvalidValue(const char *message);
+
+   /**
     * @brief Create a HYPREDRV object.
     *
     * This function allocates memory for a HYPREDRV object and initializes it with the
@@ -701,9 +713,13 @@ extern "C"
     * @param row_start    First locally-owned global row index (inclusive).
     * @param row_end      Last locally-owned global row index (inclusive).
     * @param indptr       CSR row pointers, length nrows+1, where
-    *                     nrows = row_end - row_start + 1.
-    * @param col_indices  Global column indices, length indptr[nrows].
-    * @param data         Nonzero values, length indptr[nrows].
+    *                     nrows = row_end - row_start + 1. @p indptr[0] may be
+    *                     zero (standard CSR) or a nonnegative offset into
+    *                     @p col_indices / @p data.
+    * @param col_indices  Global column indices. The consumed entries are
+    *                     col_indices[indptr[0] ... indptr[nrows]-1].
+    * @param data         Nonzero values. The consumed entries are
+    *                     data[indptr[0] ... indptr[nrows]-1].
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -716,6 +732,14 @@ extern "C"
     *
     * @note Empty local row ranges are not currently supported by this API:
     * every participating rank must provide at least one local row.
+    *
+    * @note Offset CSR slabs are supported: callers may pass @p indptr arrays
+    * with @p indptr[0] > 0 when @p col_indices and @p data include leading
+    * padding or are views into a larger CSR storage block.
+    *
+    * @note This C API does not receive buffer lengths. When
+    * @p indptr[nrows] > @p indptr[0], callers must provide @p col_indices and
+    * @p data buffers valid through index @p indptr[nrows] - 1.
     *
     * Example Usage:
     * @code
@@ -751,9 +775,9 @@ extern "C"
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
     *
-    * @note Typically called after HYPREDRV_LinearSystemSetMatrixFromCSR with
-    * the same @p row_start / @p row_end, so the RHS partition matches the
-    * matrix row partition.
+    * @note Must be called after a system matrix has been installed. The
+    * @p row_start / @p row_end range must match the matrix row range owned by
+    * this rank.
     *
     * Example Usage:
     * @code
@@ -1160,6 +1184,19 @@ extern "C"
 
    HYPREDRV_EXPORT_SYMBOL uint32_t
    HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_data);
+
+   /**
+    * @brief Return the local solution-vector length.
+    *
+    * @param hypredrv The HYPREDRV_t object.
+    * @param length   Output local vector length on this rank.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemGetSolutionLength(HYPREDRV_t hypredrv, HYPRE_BigInt *length);
 
    /**
     * @brief Computes a norm of the solution vector from the linear system.

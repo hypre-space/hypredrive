@@ -46,6 +46,11 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
+set(HYPREDRV_USING_DEBUG OFF)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(HYPREDRV_USING_DEBUG ON)
+endif()
+
 # Testing implies data
 if(HYPREDRV_ENABLE_TESTING)
     set(HYPREDRV_ENABLE_DATA ON)

@@ -373,6 +373,10 @@ endif()
 # Option to specify HYPRE version/branch/tag for FetchContent
 set(HYPRE_VERSION "master" CACHE STRING "HYPRE version/branch/tag to fetch (e.g., master, v2.32.0)")
 
+if(HYPRE_ENABLE_MIXEDINT AND HYPRE_ENABLE_BIGINT)
+    message(FATAL_ERROR "HYPRE_ENABLE_MIXEDINT and HYPRE_ENABLE_BIGINT are mutually exclusive")
+endif()
+
 # Allow users to point to an autotools build by providing include/lib paths.
 # This bypasses find_package(CONFIG) which only works with CMake installs.
 if(NOT TARGET HYPRE::HYPRE AND DEFINED HYPRE_INCLUDE_DIRS AND
@@ -493,7 +497,9 @@ if(NOT HYPRE_FOUND)
         endif()
 
         set(_hypre_autotools_configure_extra "")
-        if(HYPRE_ENABLE_MIXEDINT)
+        if(HYPRE_ENABLE_BIGINT)
+            list(APPEND _hypre_autotools_configure_extra --enable-bigint)
+        elseif(HYPRE_ENABLE_MIXEDINT)
             if(DEFINED _hypre_release_number AND _hypre_release_number GREATER_EQUAL 22000)
                 list(APPEND _hypre_autotools_configure_extra --enable-mixedint)
             else()

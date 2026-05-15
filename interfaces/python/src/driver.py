@@ -177,7 +177,15 @@ class HypreDrive:
             if isinstance(matrix_or_indptr, tuple) and len(matrix_or_indptr) == 3:
                 indptr, indices, values = matrix_or_indptr
             elif hasattr(matrix_or_indptr, "tocsr"):
-                csr = matrix_or_indptr.tocsr()
+                if (row_start is None) != (row_end is None):
+                    raise TypeError(
+                        "row_start and row_end must be provided together "
+                        "when passing a SciPy sparse matrix"
+                    )
+                if getattr(matrix_or_indptr, "format", None) == "csr":
+                    csr = matrix_or_indptr
+                else:
+                    csr = matrix_or_indptr.tocsr()
                 indptr, indices, values = csr.indptr, csr.indices, csr.data
                 if row_start is None:
                     row_start = 0
@@ -204,6 +212,9 @@ class HypreDrive:
         row_start_i = _validate_bigint_scalar(row_start, "row_start")
         row_end_i = _validate_bigint_scalar(row_end, "row_end")
 
+        # Keep these checks even though the C builder repeats them. The Python
+        # layer gives users immediate shape/range errors, while the C layer
+        # remains the trust boundary for direct _native/C API callers.
         nrows = row_end_i - row_start_i + 1
         if nrows < 0:
             raise ValueError(
@@ -225,7 +236,7 @@ class HypreDrive:
                 f"indptr[-1] ({indptr_end}) must be >= indptr[0] "
                 f"({indptr_start})"
             )
-        if np.any(indptr_arr[1:] < indptr_arr[:-1]):
+        if (np.diff(indptr_arr) < 0).any():
             raise ValueError("indptr entries must be monotonically nondecreasing")
         required_entries = indptr_end
         if (

@@ -784,6 +784,20 @@ HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
    hypredrv_ErrorBacktracePrint();
 }
 
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_ErrorInvalidValue(const char *message)
+{
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   if (message)
+   {
+      hypredrv_ErrorMsgAdd("%s", message);
+   }
+   return hypredrv_ErrorCodeGet();
+}
+
 static uint32_t
 DestroyObjectInternal(HYPREDRV_t hypredrv)
 {
@@ -1867,6 +1881,10 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
       {
          hypredrv->vec_xref = NULL;
       }
+      if (hypredrv->vec_b && !hypredrv->owns_vec_b)
+      {
+         hypredrv->vec_b = NULL;
+      }
       hypredrv_LinearSystemSetRHS(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
                                   &hypredrv->vec_xref, &hypredrv->vec_b, hypredrv->stats);
       hypredrv->owns_vec_b    = (hypredrv->vec_b != NULL);
@@ -1890,6 +1908,73 @@ HYPREDRV_LinearSystemSetRHS(HYPREDRV_t hypredrv, HYPRE_Vector vec)
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
+static uint32_t
+LinearSystemValidateCSRPartitionDebug(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
+                                      HYPRE_BigInt row_end)
+{
+#ifdef HYPREDRV_USING_DEBUG
+   int comm_size = 1;
+   if (MPI_Comm_size(hypredrv->comm, &comm_size) != MPI_SUCCESS)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to query MPI communicator");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   const long long local_range[2] = {(long long)row_start, (long long)row_end};
+   long long      *all_ranges = hypre_TAlloc(long long, 2 * comm_size, HYPRE_MEMORY_HOST);
+   if (!all_ranges)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to allocate debug "
+         "partition scratch space");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   int mpi_ierr = MPI_Allgather(local_range, 2, MPI_LONG_LONG, all_ranges, 2,
+                                MPI_LONG_LONG, hypredrv->comm);
+   if (mpi_ierr != MPI_SUCCESS)
+   {
+      hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to gather debug row "
+         "partition");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   long long expected_start = 0;
+   for (int rank = 0; rank < comm_size; rank++)
+   {
+      long long start = all_ranges[2 * rank];
+      long long end   = all_ranges[2 * rank + 1];
+      if (end < start || start != expected_start)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
+            "HYPREDRV_LinearSystemSetMatrixFromCSR: rank %d row range [%lld, %lld] "
+            "does not continue the global partition at %lld",
+            rank, start, end, expected_start);
+         hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
+         return hypredrv_ErrorCodeGet();
+      }
+      expected_start = end + 1;
+   }
+
+   hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
+#else
+   (void)hypredrv;
+   (void)row_start;
+   (void)row_end;
+#endif
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
 uint32_t
 HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
                                       HYPRE_BigInt row_end, const HYPRE_BigInt *indptr,
@@ -1898,6 +1983,8 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_star
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
+   HYPREDRV_SAFE_CALL(
+      LinearSystemValidateCSRPartitionDebug(hypredrv, row_start, row_end));
 
    /* Replacing mat_A invalidates any preconditioner matrix derived from it. */
    LinearSystemDropOwnedPrecMatrix(hypredrv);
@@ -1932,21 +2019,36 @@ HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start
    HYPREDRV_CHECK_INIT_AND_OBJ();
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
-   if (hypredrv->mat_A)
+   if (!hypredrv->mat_A)
    {
-      HYPRE_BigInt ilower = 0, iupper = -1, jlower = 0, jupper = -1;
-      if (HYPRE_IJMatrixGetLocalRange(hypredrv->mat_A, &ilower, &iupper, &jlower,
-                                      &jupper) == 0 &&
-          (row_start != ilower || row_end != iupper))
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd(
-            "HYPREDRV_LinearSystemSetRHSFromArray: RHS row range [%lld, %lld] "
-            "does not match matrix row range [%lld, %lld]",
-            (long long)row_start, (long long)row_end, (long long)ilower,
-            (long long)iupper);
-         return hypredrv_ErrorCodeGet();
-      }
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetRHSFromArray: matrix must be set before RHS");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_BigInt ilower = 0, iupper = -1, jlower = 0, jupper = -1;
+   HYPRE_Int    get_range_ierr =
+      HYPRE_IJMatrixGetLocalRange(hypredrv->mat_A, &ilower, &iupper, &jlower, &jupper);
+   if (get_range_ierr != 0)
+   {
+      char hypre_err_msg[HYPRE_MAX_MSG_LEN];
+      HYPRE_DescribeError(get_range_ierr, hypre_err_msg);
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetRHSFromArray: failed to query matrix local "
+         "range: %s",
+         hypre_err_msg);
+      return hypredrv_ErrorCodeGet();
+   }
+   if (row_start != ilower || row_end != iupper)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetRHSFromArray: RHS row range [%lld, %lld] "
+         "does not match matrix row range [%lld, %lld]",
+         (long long)row_start, (long long)row_end, (long long)ilower, (long long)iupper);
+      return hypredrv_ErrorCodeGet();
    }
 
    if (hypredrv->vec_b && hypredrv->owns_vec_b)
@@ -2162,6 +2264,49 @@ HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_
 
    hypredrv_LinearSystemGetSolutionValues(hypredrv->vec_x, sol_data);
 
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemGetSolutionLength(HYPREDRV_t hypredrv, HYPRE_BigInt *length)
+{
+   HYPREDRV_CHECK_INIT_AND_OBJ();
+
+   if (!length)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemGetSolutionLength: length must be non-NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+   if (!hypredrv->vec_x)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemGetSolutionLength: no solution available; run "
+         "solve() first");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_BigInt ilower  = 0;
+   HYPRE_BigInt iupper  = -1;
+   HYPRE_Int hypre_ierr = HYPRE_IJVectorGetLocalRange(hypredrv->vec_x, &ilower, &iupper);
+   if (hypre_ierr != 0)
+   {
+      char hypre_err_msg[HYPRE_MAX_MSG_LEN];
+      HYPRE_DescribeError(hypre_ierr, hypre_err_msg);
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemGetSolutionLength: failed to query solution local "
+         "range: %s",
+         hypre_err_msg);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   *length = iupper - ilower + 1;
    return hypredrv_ErrorCodeGet();
 }
 

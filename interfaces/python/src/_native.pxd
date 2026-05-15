@@ -42,18 +42,18 @@ cdef extern from "HYPREDRV.h" nogil:
     void HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
 
 
-cdef extern from "_native_abi.h" nogil:
-    size_t hypredrive_PythonIndexSize()
-    size_t hypredrive_PythonRealSize()
-    size_t hypredrive_PythonSolutionEntrySize()
+cdef extern from "HYPREDRV_python.h" nogil:
+    size_t HYPREDRV_PythonIndexSize()
+    size_t HYPREDRV_PythonRealSize()
+    size_t HYPREDRV_PythonSolutionEntrySize()
 
-    uint32_t hypredrive_PythonCreateWithSelf(HYPREDRV_t *hypredrv_ptr)
-    uint32_t hypredrive_PythonCreateFromFortranComm(
+    uint32_t HYPREDRV_PythonCreateWithSelf(HYPREDRV_t *hypredrv_ptr)
+    uint32_t HYPREDRV_PythonCreateFromFortranComm(
         int fortran_comm,
         HYPREDRV_t *hypredrv_ptr)
-    uint32_t hypredrive_PythonCreateWithWorld(HYPREDRV_t *hypredrv_ptr)
+    uint32_t HYPREDRV_PythonCreateWithWorld(HYPREDRV_t *hypredrv_ptr)
 
-    uint32_t hypredrive_PythonSetMatrixFromCSR(
+    uint32_t HYPREDRV_PythonSetMatrixFromCSR(
         HYPREDRV_t hypredrv,
         int64_t row_start,
         int64_t row_end,
@@ -61,12 +61,13 @@ cdef extern from "_native_abi.h" nogil:
         const void *col_indices,
         const void *data)
 
-    uint32_t hypredrive_PythonSetRHSFromArray(
+    uint32_t HYPREDRV_PythonSetRHSFromArray(
         HYPREDRV_t hypredrv,
         int64_t row_start,
         int64_t row_end,
         const void *values)
 
-    uint32_t hypredrive_PythonGetSolutionValues(
+    uint32_t HYPREDRV_PythonGetSolutionValues(
         HYPREDRV_t hypredrv,
-        const void **sol_data)
+        const void **sol_data,
+        size_t *sol_length)

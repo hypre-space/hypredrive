@@ -17,7 +17,9 @@ from hypredrive.options import configure, normalize_options, options_to_yaml
 def test_package_import_does_not_eagerly_load_native_driver():
     code = (
         "import hypredrive, sys; "
+        "assert 'hypredrive._native' not in sys.modules; "
         "assert 'hypredrive.driver' not in sys.modules; "
+        "assert 'hypredrive.session' not in sys.modules; "
         "from hypredrive.options import configure; "
         "assert configure(solver='pcg')['solver'] == {'pcg': {}}"
     )
@@ -163,7 +165,7 @@ def test_configure_preserves_list_valued_amg_options():
     )
     assert options["preconditioner"]["amg"] == amg
     yaml = options_to_yaml(options)
-    assert "amg:\n    -" in yaml
+    assert "amg:\n    - coarsening:" in yaml
     assert "strong_th: 0.25" in yaml
     assert "prolongation_type: MM-ext+i" in yaml
 

@@ -11,7 +11,9 @@
  *-----------------------------------------------------------------------------*/
 
 #include <math.h>
+#include <limits.h>
 #include <mpi.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -190,6 +192,9 @@ test_setmatrix_from_csr_basic_solve(void)
    double sol_norm = 0.0;
    ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionNorm(obj, "l2", &sol_norm), ERROR_NONE);
    ASSERT_GT(sol_norm, 0.0);
+   HYPRE_BigInt sol_len = 0;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionLength(obj, &sol_len), ERROR_NONE);
+   ASSERT_EQ(sol_len, (HYPRE_BigInt)n);
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_NULL(obj);
@@ -273,7 +278,9 @@ test_setmatrix_from_csr_invalid_args(void)
                                                 cols_negative, data_negative);
    ASSERT_TRUE(code & ERROR_INVALID_VAL);
 
-   /* negative column index */
+   /* Negative column indices are checked only in debug builds because HYPRE
+    * already validates columns during assembly and this scan is O(nnz). */
+#ifdef HYPREDRV_USING_DEBUG
    HYPRE_BigInt indptr_col_negative[2] = {0, 1};
    HYPRE_BigInt cols_col_negative[1]   = {-1};
    HYPRE_Real   data_col_negative[1]   = {1.0};
@@ -281,6 +288,7 @@ test_setmatrix_from_csr_invalid_args(void)
    code = HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, indptr_col_negative,
                                                 cols_col_negative, data_col_negative);
    ASSERT_TRUE(code & ERROR_INVALID_VAL);
+#endif
 
    /* non-monotonic indptr */
    HYPRE_BigInt indptr_bad[4] = {0, 2, 1, 3};
@@ -337,6 +345,77 @@ test_setmatrix_from_csr_invalid_args(void)
 
    /* Tear down — destroy must not be confused by failed builds. */
    hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+/*-----------------------------------------------------------------------------
+ * test_setmatrix_from_csr_hypre_int_range_validation
+ *
+ * The builder must reject row/nnz counts that cannot be represented by the
+ * active HYPRE_Int type, without assuming HYPRE_Int is always C int.
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_setmatrix_from_csr_hypre_int_range_validation(void)
+{
+   HYPREDRV_t obj = create_lib_obj();
+
+   if (sizeof(HYPRE_BigInt) > sizeof(HYPRE_Int) && sizeof(HYPRE_Int) == sizeof(int))
+   {
+      long long int_max_ll = INT_MAX;
+      HYPRE_BigInt too_many = (HYPRE_BigInt)(int_max_ll + 1LL);
+      HYPRE_BigInt indptr_dummy[2] = {0, 0};
+      HYPRE_BigInt indptr_nnz[2] = {0, too_many};
+      uint32_t code = 0;
+
+      hypredrv_ErrorCodeResetAll();
+      code = HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, too_many - 1,
+                                                   indptr_dummy, NULL, NULL);
+      ASSERT_TRUE(code & ERROR_INVALID_VAL);
+
+      hypredrv_ErrorCodeResetAll();
+      code = HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, indptr_nnz, NULL,
+                                                   NULL);
+      ASSERT_TRUE(code & ERROR_INVALID_VAL);
+   }
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+/*-----------------------------------------------------------------------------
+ * test_setmatrix_from_csr_nonzero_indptr_start
+ *
+ * Offset CSR slabs are supported: indptr[0] may point into larger col/data
+ * buffers. The builder should consume [indptr[0], indptr[nrows]).
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_setmatrix_from_csr_nonzero_indptr_start(void)
+{
+   HYPRE_BigInt indptr[2] = {2, 3};
+   HYPRE_BigInt cols[3]   = {99, 99, 0};
+   HYPRE_Real   data[3]   = {-10.0, -10.0, 3.0};
+   HYPRE_Real   rhs[1]    = {6.0};
+
+   HYPREDRV_t obj = create_lib_obj();
+
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, indptr, cols, data),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 0, rhs), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
+
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+
+   double sol_norm = 0.0;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionNorm(obj, "l2", &sol_norm), ERROR_NONE);
+   ASSERT_EQ_DOUBLE(sol_norm, 2.0, 1e-6);
+
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
@@ -459,6 +538,8 @@ main(int argc, char **argv)
    RUN_TEST(test_setmatrix_from_csr_basic_solve);
    RUN_TEST(test_setmatrix_from_csr_rebuild_no_leak);
    RUN_TEST(test_setmatrix_from_csr_invalid_args);
+   RUN_TEST(test_setmatrix_from_csr_hypre_int_range_validation);
+   RUN_TEST(test_setmatrix_from_csr_nonzero_indptr_start);
    RUN_TEST(test_setmatrix_from_csr_ownership_transitions);
    RUN_TEST(test_setmatrix_from_csr_all_empty_rows);
    RUN_TEST(test_setmatrix_from_csr_single_row);

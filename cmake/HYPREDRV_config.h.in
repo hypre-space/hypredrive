@@ -87,6 +87,9 @@
 /* Define to 1 if Caliper instrumentation is enabled. */
 #cmakedefine HYPREDRV_USING_CALIPER
 
+/* Define to 1 when hypredrive is built in Debug mode. */
+#cmakedefine HYPREDRV_USING_DEBUG 1
+
 /* Define to 1 if zlib compression support is enabled. */
 #cmakedefine HYPREDRV_USING_ZLIB
 

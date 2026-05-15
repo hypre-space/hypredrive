@@ -775,7 +775,9 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 #endif
       /* GCOVR_EXCL_STOP */
 
-      HYPRE_IJMatrixSetValues(mat, (HYPRE_BigInt)header[6], NULL, rows, cols, vals);
+      HYPRE_Int nvalues =
+         (HYPRE_Int)header[6]; /* NOLINT(cppcoreguidelines-narrowing-conversions) */
+      HYPRE_IJMatrixSetValues(mat, nvalues, NULL, rows, cols, vals);
    }
 
    HYPRE_IJMatrixAssemble(mat);

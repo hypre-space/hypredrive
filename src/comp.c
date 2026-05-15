@@ -68,12 +68,16 @@ hypredrv_compression_get_name(comp_alg_t algo)
          return "zlib";
       case COMP_ZSTD:
          return "zstd";
+#ifdef HYPREDRV_USING_LZ4
       case COMP_LZ4:
          return "lz4";
       case COMP_LZ4HC:
          return "lz4hc";
+#endif
+#ifdef HYPREDRV_USING_BLOSC
       case COMP_BLOSC:
          return "blosc";
+#endif
       default:
          return "unknown";
    }
@@ -90,12 +94,16 @@ hypredrv_compression_get_extension(comp_alg_t algo)
          return ".zlib.bin";
       case COMP_ZSTD:
          return ".zst.bin";
+#ifdef HYPREDRV_USING_LZ4
       case COMP_LZ4:
          return ".lz4.bin";
       case COMP_LZ4HC:
          return ".lz4hc.bin";
+#endif
+#ifdef HYPREDRV_USING_BLOSC
       case COMP_BLOSC:
          return ".blosc.bin";
+#endif
       default:
          return ".bin";
    }

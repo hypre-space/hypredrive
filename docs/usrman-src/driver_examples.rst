@@ -5,7 +5,7 @@
 
 .. _DriverExamples:
 
-Driver Examples (hypredrive CLI)
+Driver Examples (hypredrive-cli)
 ================================
 
 This section provides several examples demonstrating how to set up input files and use
@@ -74,7 +74,7 @@ Example 1: Minimal configuration
 
 In this example, we solve a basic linear system using an `AMG-PCG` solver with default
 settings. This example showcases the minimum amount of information required in the input
-file to execute `hypredrive`.
+file to execute `hypredrive-cli`.
 
 We consider a linear system matrix arising from a seven-point finite-difference
 discretization of the Laplace equation on a 10×10×10 Cartesian grid. The right-hand side
@@ -91,7 +91,7 @@ this example must therefore be run on a single process.
 .. literalinclude:: ../../examples/ex1.yml
    :language: yaml
 
-3. Run `hypredrive` with the configuration file:
+3. Run `hypredrive-cli` with the configuration file:
 
 .. code-block:: bash
 
@@ -103,7 +103,7 @@ this example must therefore be run on a single process.
    :language: text
 
 .. warning::
-   Make sure that `hypredrive` is executed from the top level project folder in order for
+   Make sure that `hypredrive-cli` is executed from the top level project folder in order for
    the relative paths in ``matrix_filename`` and ``rhs_filename`` to be
    correct. Otherwise, adjust the relative paths for these entries accordingly.
 
@@ -127,7 +127,7 @@ configuration file.
 .. literalinclude:: ../../examples/ex2.yml
    :language: yaml
 
-3. Run `hypredrive` with the configuration file:
+3. Run `hypredrive-cli` with the configuration file:
 
 .. code-block:: bash
 
@@ -160,7 +160,7 @@ the multigrid reduction preconditioner for this particular kind of linear system
 .. literalinclude:: ../../examples/ex3.yml
    :language: yaml
 
-3. Run `hypredrive` with the configuration file:
+3. Run `hypredrive-cli` with the configuration file:
 
 .. code-block:: bash
 
@@ -188,7 +188,7 @@ processes. Here, we showcase a more advanced setup of `MGR` involving multiple o
 .. literalinclude:: ../../examples/ex4.yml
    :language: yaml
 
-3. Run `hypredrive` with the configuration file:
+3. Run `hypredrive-cli` with the configuration file:
 
 .. code-block:: bash
 
@@ -227,7 +227,7 @@ separate files, which are included in the main input file via the ``include`` ke
 .. literalinclude:: ../../examples/ex5.yml
    :language: yaml
 
-5. Run `hypredrive` with the configuration file:
+5. Run `hypredrive-cli` with the configuration file:
 
 .. code-block:: bash
 
@@ -260,7 +260,7 @@ small matrices and single-rank runs.
 .. literalinclude:: ../../examples/ex6.yml
    :language: yaml
 
-2. Run `hypredrive` with the configuration file (single rank):
+2. Run `hypredrive-cli` with the configuration file (single rank):
 
 .. code-block:: bash
 
@@ -296,7 +296,7 @@ See ``data/poromech2k/README.md`` for more details about the problem in GEOS.
 .. literalinclude:: ../../examples/ex7.yml
    :language: yaml
 
-2. Run `hypredrive` with the configuration file (single rank):
+2. Run `hypredrive-cli` with the configuration file (single rank):
 
 .. code-block:: bash
 
@@ -319,7 +319,7 @@ Example 8: Multiple preconditioner variants in one YAML
 -------------------------------------------------------
 
 This example demonstrates how to run several preconditioner variants defined as a
-YAML sequence under a single ``preconditioner`` block. `hypredrive` will loop over each
+YAML sequence under a single ``preconditioner`` block. `hypredrive-cli` will loop over each
 variant and report a separate stats entry per variant while reusing the same linear system.
 
 .. note::
@@ -331,7 +331,7 @@ variant and report a separate stats entry per variant while reusing the same lin
 .. literalinclude:: ../../examples/ex8.yml
    :language: yaml
 
-2. Run `hypredrive` with the configuration file (single rank):
+2. Run `hypredrive-cli` with the configuration file (single rank):
 
 .. code-block:: bash
 

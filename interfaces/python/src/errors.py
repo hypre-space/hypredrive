@@ -1,14 +1,23 @@
 """Error types for the hypredrive Python interface.
 
-We re-export the Cython-defined ``HypreDriveError`` so users can ``except``
-it without reaching into the private ``_native`` module. Keeping a single
-exception type avoids forcing user code to handle a sprawl of subclasses;
-the ``code`` attribute on the exception carries the original C error
-bitfield for callers that want to discriminate.
+This module is intentionally pure Python so ``import hypredrive`` does not
+eagerly import the native extension. The Cython layer imports and raises the
+same ``HypreDriveError`` class defined here.
 """
 
 from __future__ import annotations
 
-from ._native import HypreDriveError
+
+class HypreDriveError(RuntimeError):
+    """Exception raised when a hypredrive C call returns a nonzero error code.
+
+    The ``code`` attribute carries the bitfield exactly as returned by the
+    library; ``HYPREDRV_ErrorCodeDescribe`` will have already printed a
+    human-readable description to stderr by the time this is raised.
+    """
+
+    def __init__(self, code: int, msg: str):
+        super().__init__(f"{msg} (code=0x{int(code):08x})")
+        self.code = int(code)
 
 __all__ = ["HypreDriveError"]

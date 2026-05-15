@@ -60,6 +60,7 @@ wheel.packages = []
 sdist.include = [
     "src/*.pyx",
     "src/*.pxd",
+    "src/*.c",
     "src/*.h",
     "src/*.py",
     "CMakeLists.txt",
