@@ -7,13 +7,15 @@ developer tooling.
 ## Python
 
 The Python interface is in [`python/`](python/). It provides NumPy/SciPy input
-support, optional MPI usage through `mpi4py`, and developer benchmarks.
+support, optional MPI usage through `mpi4py`, developer benchmarks, and
+experimental Linux/macOS wheel artifacts.
 
-Start with:
+For source builds against an installed hypredrive:
 
 ```bash
-python -m pip install ./interfaces/python
+python -m pip install ./interfaces/python \
+  --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
 ```
 
-See [`python/README.md`](python/README.md) for build, test, MPI, and benchmark
-details.
+See [`python/README.md`](python/README.md) for wheel, source-build, in-tree
+CMake, test, MPI, and benchmark details.

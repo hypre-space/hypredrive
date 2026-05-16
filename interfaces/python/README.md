@@ -7,8 +7,12 @@ library used by the CLI.
 
 ## Install
 
-The portable developer path is still a source build against an installed
-hypredrive C library.
+There are three supported install paths.
+
+Use wheel artifacts for quick host-only installs when a compatible MPI runtime
+is already available. Use a source install when you need a custom HYPRE,
+BIGINT/MIXEDINT, GPU support, vendor MPI, or downstream control over shared
+libraries.
 
 Build against an installed hypredrive:
 
@@ -46,17 +50,35 @@ Each artifact is tied to an MPI flavor:
 * `mpich` wheels require an MPICH-compatible runtime.
 * `openmpi` wheels require an OpenMPI-compatible runtime.
 
-Install an artifact wheel into a virtual environment:
+Download the wheel artifact from the GitHub Actions `Python Wheels` workflow
+run first. GitHub stores artifacts as zip files, so unzip the artifact before
+installing the wheel:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install hypredrive-*.whl
+
+unzip hypredrive-wheels-*.zip -d wheelhouse
+python -m pip install wheelhouse/hypredrive-*.whl
 ```
 
 Use a source install instead when you need a custom HYPRE build, GPU support,
 BIGINT/MIXEDINT, vendor MPI, or downstream-packager control over shared
 libraries.
+
+## In-tree CMake build
+
+The top-level project can build and test the Python extension as a developer
+convenience:
+
+```bash
+cmake -S . -B build -DBUILD_SHARED_LIBS=ON -DHYPREDRV_ENABLE_PYTHON=ON
+cmake --build build --target _core --parallel
+cmake --build build --target python-test
+```
+
+This path does not replace Python packaging. It is useful for CI and local
+development where the C library and Python extension should be built together.
 
 ## Example
 

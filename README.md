@@ -20,7 +20,8 @@ cmake -DHYPREDRV_ENABLE_DATA=ON -S hypredrive -B build && cmake --build build -j
 
 - hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use an existing install.
 - Check [installation instructions](https://hypredrive.readthedocs.io/en/latest/installation.html) for details, including the available library options.
-- For language bindings (Python), see [`interfaces/`](interfaces)
+- For language bindings, including the Python interface and experimental wheel
+  artifacts, see [`interfaces/`](interfaces).
 
 ## Examples
 

@@ -29,9 +29,14 @@ Prerequisites
 Installation
 ------------
 
-The recommended package path is to build from ``interfaces/python`` with
-``scikit-build-core``. This keeps Python packaging independent from ordinary C builds
-while still linking against libHYPREDRV.
+There are three install modes:
+
+- wheel artifacts for quick host-only installs with a compatible MPI runtime;
+- source installs against an installed or build-tree libHYPREDRV;
+- in-tree CMake builds for developers and CI.
+
+Source builds keep Python packaging independent from ordinary C builds while still
+linking against libHYPREDRV.
 
 Against an installed hypredrive:
 
@@ -59,10 +64,38 @@ The top-level CMake build can also build the Python extension directly:
 .. code-block:: bash
 
    cmake -S . -B build -DHYPREDRV_ENABLE_PYTHON=ON
-   cmake --build build --target _native --parallel
+   cmake --build build --target _core --parallel
 
 This mode is intended for developer and CI builds. It requires Python, NumPy, and Cython
 at configure/build time, so ``HYPREDRV_ENABLE_PYTHON`` is disabled by default.
+
+Experimental wheel artifacts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The project CI can build experimental Python wheel artifacts for Linux and macOS.
+These wheels bundle host-only ``libHYPREDRV`` and ``libHYPRE`` inside the Python
+package, but they do not bundle MPI.
+
+Download a wheel artifact from the GitHub Actions ``Python Wheels`` workflow
+run first. GitHub stores artifacts as zip files, so unzip the artifact before
+installing the wheel into a virtual environment on a machine with a compatible
+MPI runtime:
+
+.. code-block:: bash
+
+   python -m venv .venv
+   source .venv/bin/activate
+
+   unzip hypredrive-wheels-*.zip -d wheelhouse
+   python -m pip install wheelhouse/hypredrive-*.whl
+
+Wheel artifacts are built by MPI flavor. Use an ``mpich`` wheel with an
+MPICH-compatible runtime and an ``openmpi`` wheel with an OpenMPI-compatible
+runtime.
+
+Use a source install instead for custom HYPRE builds, GPU support,
+BIGINT/MIXEDINT, vendor MPI stacks, or downstream-packager control over shared
+libraries.
 
 Optional dependencies can be installed through package extras:
 
