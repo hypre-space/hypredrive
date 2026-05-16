@@ -31,7 +31,12 @@ permissions:
 
 jobs:
   coverage:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: gcov
     runs-on: ubuntu-latest
     timeout-minutes: 10

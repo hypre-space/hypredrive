@@ -14,6 +14,15 @@ import pytest
 from hypredrive.options import configure, normalize_options, options_to_yaml
 
 
+def test_build_info_is_available_without_core_import():
+    import hypredrive
+
+    assert hypredrive.DISTRIBUTION_NAME
+    assert hypredrive.MPI_FLAVOR
+    assert isinstance(hypredrive.BUNDLED_CORE, bool)
+    assert hypredrive.BUILD_INFO["distribution_name"] == hypredrive.DISTRIBUTION_NAME
+
+
 def test_package_import_does_not_eagerly_load_core_or_driver():
     code = (
         "import hypredrive, sys; "

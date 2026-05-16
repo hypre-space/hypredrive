@@ -17,6 +17,18 @@ from __future__ import annotations
 
 import importlib
 
+try:
+    from ._build_info import BUILD_INFO, BUNDLED_CORE, DISTRIBUTION_NAME, MPI_FLAVOR
+except ImportError:  # pragma: no cover - only for direct source-tree imports
+    DISTRIBUTION_NAME = "hypredrive"
+    MPI_FLAVOR = "source"
+    BUNDLED_CORE = False
+    BUILD_INFO = {
+        "distribution_name": DISTRIBUTION_NAME,
+        "mpi_flavor": MPI_FLAVOR,
+        "bundled_core": BUNDLED_CORE,
+    }
+
 from .errors import HypreDriveError
 from .options import OptionsLike, configure, normalize_options, options_to_yaml
 from .result import SolveResult
@@ -26,8 +38,12 @@ _SESSION_EXPORTS = {"finalize", "initialize", "is_initialized"}
 
 __all__ = [
     "BIGINT_DTYPE",
+    "BUILD_INFO",
+    "BUNDLED_CORE",
+    "DISTRIBUTION_NAME",
     "HypreDrive",
     "HypreDriveError",
+    "MPI_FLAVOR",
     "OptionsLike",
     "REAL_DTYPE",
     "SolveResult",

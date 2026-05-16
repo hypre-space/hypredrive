@@ -7,30 +7,91 @@ library used by the CLI.
 
 ## Install
 
-Build against an installed hypredrive:
+From a full hypredrive checkout:
 
 ```bash
-cmake --install build --prefix $HOME/opt/hypredrive
-pip install ./interfaces/python \
-  --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
+cd interfaces/python
+python -m pip install .
 ```
 
-For in-tree development:
+This builds the Python extension and bundles the in-tree HYPREDRV/HYPRE
+libraries automatically.
+
+For editable development:
 
 ```bash
-cmake -S . -B build -DBUILD_SHARED_LIBS=ON -DHYPREDRV_ENABLE_PYTHON=ON
-cmake --build build --parallel
-python -m pip install -e ./interfaces/python \
-  --config-settings=cmake.define.HYPREDRV_DIR=$PWD/build
+python -m pip install -e .
 ```
 
 Optional extras:
 
 ```bash
-pip install ./interfaces/python[scipy]
-pip install ./interfaces/python[mpi]
-pip install -e ./interfaces/python[test]
+python -m pip install .[scipy]
+python -m pip install .[mpi]
+python -m pip install -e .[test]
 ```
+
+To build against an installed hypredrive instead of bundling the in-tree
+libraries:
+
+```bash
+cmake --install build --prefix $HOME/opt/hypredrive
+python -m pip install . \
+  --config-settings=cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=OFF \
+  --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
+```
+
+## Wheel artifacts
+
+GitHub Actions can build experimental MPI wheel artifacts for Linux and macOS.
+These wheels bundle host-only `libHYPREDRV` and `libHYPRE`, but they do not
+bundle an MPI runtime.
+
+On pull requests, the wheel workflow runs only when the PR has the
+`Run Python Wheels` label. It can also be started manually with
+`workflow_dispatch`.
+
+Each artifact is tied to an MPI flavor:
+
+* `mpich` wheels require an MPICH-compatible runtime.
+* `openmpi` wheels require an OpenMPI-compatible runtime.
+
+Download the wheel artifact from the GitHub Actions `Python Wheels` workflow
+run first. GitHub stores artifacts as zip files, so unzip the artifact before
+installing the wheel:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+
+unzip hypredrive-wheels-*.zip -d wheelhouse
+python -m pip install wheelhouse/hypredrive-*.whl
+```
+
+Use a source install instead when you need a custom HYPRE build, GPU support,
+BIGINT/MIXEDINT, vendor MPI, or downstream-packager control over shared
+libraries.
+
+At runtime, the package records how it was built:
+
+```python
+import hypredrive as hd
+print(hd.BUILD_INFO)
+```
+
+## In-tree CMake build
+
+The top-level project can build and test the Python extension as a developer
+convenience:
+
+```bash
+cmake -S . -B build -DBUILD_SHARED_LIBS=ON -DHYPREDRV_ENABLE_PYTHON=ON
+cmake --build build --target _core --parallel
+cmake --build build --target python-test
+```
+
+This path does not replace Python packaging. It is useful for CI and local
+development where the C library and Python extension should be built together.
 
 ## Example
 
