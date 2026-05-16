@@ -61,7 +61,8 @@ if(_hypredrive_python_bundle_mode STREQUAL "ON")
     set(_hypredrive_python_bundle_core ON)
 elseif(_hypredrive_python_bundle_mode STREQUAL "AUTO"
        AND _hypredrive_python_standalone_project
-       AND _hypredrive_python_has_repo_root)
+       AND _hypredrive_python_has_repo_root
+       AND NOT HYPREDRV_DIR)
     set(_hypredrive_python_bundle_core ON)
 endif()
 
