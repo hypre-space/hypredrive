@@ -49,7 +49,8 @@ bundle an MPI runtime.
 
 On pull requests, the wheel workflow runs only when the PR has the
 `Run Python Wheels` label. It can also be started manually with
-`workflow_dispatch`.
+`workflow_dispatch` from the
+[Python Wheels][python-wheels-workflow] workflow page.
 
 Each artifact is tied to an MPI flavor:
 
@@ -78,6 +79,8 @@ At runtime, the package records how it was built:
 import hypredrive as hd
 print(hd.BUILD_INFO)
 ```
+
+[python-wheels-workflow]: https://github.com/hypre-space/hypredrive/actions/workflows/python-wheels.yml
 
 ## In-tree CMake build
 
