@@ -7,49 +7,38 @@ library used by the CLI.
 
 ## Install
 
-There are three supported install paths.
-
-Use MPI-flavor wheel packages for quick host-only installs when a compatible MPI
-runtime is already available. Use a source install when you need a custom HYPRE,
-BIGINT/MIXEDINT, GPU support, vendor MPI, or downstream control over shared
-libraries.
-
-Source install:
+From a full hypredrive checkout:
 
 ```bash
-python -m pip install ./interfaces/python
+cd interfaces/python
+python -m pip install .
 ```
 
-When run from a full hypredrive checkout, this automatically builds and bundles
-the in-tree HYPREDRV/HYPRE libraries. When run from a standalone source
-distribution, CMake falls back to finding an installed MPI-enabled
-HYPREDRV/HYPRE stack. Binary MPI wheels are currently GitHub Actions artifacts,
-not PyPI or TestPyPI packages.
+This builds the Python extension and bundles the in-tree HYPREDRV/HYPRE
+libraries automatically.
 
-Build against an installed hypredrive:
+For editable development:
 
 ```bash
-cmake --install build --prefix $HOME/opt/hypredrive
-pip install ./interfaces/python \
-  --config-settings=cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=OFF \
-  --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
-```
-
-For in-tree development:
-
-```bash
-cmake -S . -B build -DBUILD_SHARED_LIBS=ON -DHYPREDRV_ENABLE_PYTHON=ON
-cmake --build build --parallel
-python -m pip install -e ./interfaces/python \
-  --config-settings=cmake.define.HYPREDRV_DIR=$PWD/build
+python -m pip install -e .
 ```
 
 Optional extras:
 
 ```bash
-pip install ./interfaces/python[scipy]
-pip install ./interfaces/python[mpi]
-pip install -e ./interfaces/python[test]
+python -m pip install .[scipy]
+python -m pip install .[mpi]
+python -m pip install -e .[test]
+```
+
+To build against an installed hypredrive instead of bundling the in-tree
+libraries:
+
+```bash
+cmake --install build --prefix $HOME/opt/hypredrive
+python -m pip install . \
+  --config-settings=cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=OFF \
+  --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
 ```
 
 ## Wheel artifacts
