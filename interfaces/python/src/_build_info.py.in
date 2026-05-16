@@ -1,0 +1,13 @@
+"""Build metadata for the installed hypredrive Python package."""
+
+from __future__ import annotations
+
+DISTRIBUTION_NAME = "@HYPREDRV_PYTHON_DIST_NAME@"
+MPI_FLAVOR = "@HYPREDRV_PYTHON_MPI_FLAVOR@"
+BUNDLED_CORE = @HYPREDRV_PYTHON_BUNDLED_CORE_PY@
+
+BUILD_INFO = {
+    "distribution_name": DISTRIBUTION_NAME,
+    "mpi_flavor": MPI_FLAVOR,
+    "bundled_core": BUNDLED_CORE,
+}

@@ -10,8 +10,10 @@
 #   2. In-tree dev: set HYPREDRV_DIR to a build-tree CMake config directory:
 #                   pip install -e ./interfaces/python \
 #                     --config-settings=cmake.define.HYPREDRV_DIR=$BUILD
-#   3. Wheel:       set HYPREDRV_PYTHON_BUNDLE_CORE=ON to build HYPREDRV/HYPRE
-#                   from the source tree and bundle the resulting shared libs.
+#   3. Local/wheel: HYPREDRV_PYTHON_BUNDLE_CORE=AUTO builds and bundles
+#                   HYPREDRV/HYPRE automatically when this package is built
+#                   from a full hypredrive source checkout. Set it to ON to
+#                   require bundling, or OFF to require find_package.
 #
 # We rely on hypredrive exporting a CMake package config (HYPREDRVConfig.cmake)
 # from its top-level CMakeLists.
@@ -20,8 +22,13 @@
 cmake_minimum_required(VERSION 3.23)
 project(hypredrive_python LANGUAGES C)
 
-option(HYPREDRV_PYTHON_BUNDLE_CORE
-       "Build and bundle in-tree HYPREDRV/HYPRE for Python wheels" OFF)
+set(HYPREDRV_PYTHON_BUNDLE_CORE "AUTO" CACHE STRING
+    "Build and bundle in-tree HYPREDRV/HYPRE for Python wheels (AUTO, ON, or OFF)")
+set_property(CACHE HYPREDRV_PYTHON_BUNDLE_CORE PROPERTY STRINGS AUTO ON OFF)
+set(HYPREDRV_PYTHON_DIST_NAME "" CACHE STRING
+    "Python distribution name recorded in package build metadata")
+set(HYPREDRV_PYTHON_MPI_FLAVOR "" CACHE STRING
+    "MPI flavor recorded in package build metadata")
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(_hypredrive_python_package_root "${CMAKE_CURRENT_BINARY_DIR}")
@@ -32,14 +39,56 @@ else()
 endif()
 set(_hypredrive_python_package_dir "${_hypredrive_python_package_root}/hypredrive")
 
+get_filename_component(_hypredrive_python_repo_root
+                       "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+                       ABSOLUTE)
+set(_hypredrive_python_has_repo_root OFF)
+if(EXISTS "${_hypredrive_python_repo_root}/CMakeLists.txt"
+   AND EXISTS "${_hypredrive_python_repo_root}/include/HYPREDRV.h")
+    set(_hypredrive_python_has_repo_root ON)
+endif()
+
+string(TOUPPER "${HYPREDRV_PYTHON_BUNDLE_CORE}" _hypredrive_python_bundle_mode)
+if(NOT _hypredrive_python_bundle_mode MATCHES "^(AUTO|ON|OFF)$")
+    message(FATAL_ERROR
+        "HYPREDRV_PYTHON_BUNDLE_CORE must be AUTO, ON, or OFF; got "
+        "'${HYPREDRV_PYTHON_BUNDLE_CORE}'")
+endif()
+set(_hypredrive_python_bundle_core OFF)
+if(_hypredrive_python_bundle_mode STREQUAL "ON")
+    set(_hypredrive_python_bundle_core ON)
+elseif(_hypredrive_python_bundle_mode STREQUAL "AUTO"
+       AND _hypredrive_python_has_repo_root)
+    set(_hypredrive_python_bundle_core ON)
+endif()
+
+if(NOT HYPREDRV_PYTHON_MPI_FLAVOR)
+    if(DEFINED ENV{HYPREDRV_WHEEL_MPI_FLAVOR} AND NOT "$ENV{HYPREDRV_WHEEL_MPI_FLAVOR}" STREQUAL "")
+        set(HYPREDRV_PYTHON_MPI_FLAVOR "$ENV{HYPREDRV_WHEEL_MPI_FLAVOR}")
+    else()
+        set(HYPREDRV_PYTHON_MPI_FLAVOR "source")
+    endif()
+endif()
+if(NOT HYPREDRV_PYTHON_DIST_NAME)
+    if(HYPREDRV_PYTHON_MPI_FLAVOR STREQUAL "mpich")
+        set(HYPREDRV_PYTHON_DIST_NAME "hypredrive-mpich")
+    elseif(HYPREDRV_PYTHON_MPI_FLAVOR STREQUAL "openmpi")
+        set(HYPREDRV_PYTHON_DIST_NAME "hypredrive-openmpi")
+    else()
+        set(HYPREDRV_PYTHON_DIST_NAME "hypredrive")
+    endif()
+endif()
+if(_hypredrive_python_bundle_core)
+    set(HYPREDRV_PYTHON_BUNDLED_CORE_PY "True")
+else()
+    set(HYPREDRV_PYTHON_BUNDLED_CORE_PY "False")
+endif()
+
 # ---- Find HYPREDRV ---------------------------------------------------------
-if(HYPREDRV_PYTHON_BUNDLE_CORE AND NOT TARGET HYPREDRV::HYPREDRV)
-    get_filename_component(_hypredrive_python_repo_root
-                           "${CMAKE_CURRENT_SOURCE_DIR}/../.."
-                           ABSOLUTE)
-    if(NOT EXISTS "${_hypredrive_python_repo_root}/CMakeLists.txt")
+if(_hypredrive_python_bundle_core AND NOT TARGET HYPREDRV::HYPREDRV)
+    if(NOT _hypredrive_python_has_repo_root)
         message(FATAL_ERROR
-            "HYPREDRV_PYTHON_BUNDLE_CORE=ON requires building from the "
+            "HYPREDRV_PYTHON_BUNDLE_CORE=${HYPREDRV_PYTHON_BUNDLE_CORE} requires building from the "
             "hypredrive source checkout, but ${_hypredrive_python_repo_root} "
             "does not look like the repository root")
     endif()
@@ -132,7 +181,7 @@ set_target_properties(_core PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${_hypredrive_python_package_dir}"
 )
 
-if(HYPREDRV_PYTHON_BUNDLE_CORE)
+if(_hypredrive_python_bundle_core)
     if(APPLE)
         set(_hypredrive_python_relative_rpath "@loader_path/.libs")
         set(_hypredrive_python_lib_relative_rpath "@loader_path")
@@ -182,6 +231,12 @@ set(_python_package_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/src/session.py"
 )
 
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/_build_info.py.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/_build_info.py"
+    @ONLY
+)
+
 set(_python_package_build_dir "${_hypredrive_python_package_dir}")
 set(_python_package_outputs)
 foreach(_python_package_source IN LISTS _python_package_sources)
@@ -198,6 +253,17 @@ foreach(_python_package_source IN LISTS _python_package_sources)
     )
     list(APPEND _python_package_outputs "${_python_package_output}")
 endforeach()
+set(_python_build_info_output "${_python_package_build_dir}/_build_info.py")
+add_custom_command(
+    OUTPUT "${_python_build_info_output}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${_python_package_build_dir}"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CMAKE_CURRENT_BINARY_DIR}/_build_info.py"
+            "${_python_build_info_output}"
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/_build_info.py"
+    VERBATIM
+)
+list(APPEND _python_package_outputs "${_python_build_info_output}")
 
 add_custom_target(hypredrive_python_sources
     DEPENDS ${_python_package_outputs}
@@ -207,14 +273,17 @@ add_custom_target(hypredrive_python_sources
 install(FILES ${_python_package_sources}
         DESTINATION "${_hypredrive_python_install_package_dir}"
 )
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/_build_info.py"
+        DESTINATION "${_hypredrive_python_install_package_dir}"
+)
 install(TARGETS _core
         LIBRARY DESTINATION "${_hypredrive_python_install_package_dir}"
 )
 
-if(HYPREDRV_PYTHON_BUNDLE_CORE)
+if(_hypredrive_python_bundle_core)
     if(NOT TARGET HYPREDRV)
         message(FATAL_ERROR
-            "HYPREDRV_PYTHON_BUNDLE_CORE=ON requires a concrete HYPREDRV target")
+            "HYPREDRV_PYTHON_BUNDLE_CORE=${HYPREDRV_PYTHON_BUNDLE_CORE} requires a concrete HYPREDRV target")
     endif()
     install(TARGETS HYPREDRV
             LIBRARY DESTINATION "${_hypredrive_python_install_package_dir}/.libs"
@@ -225,7 +294,7 @@ if(HYPREDRV_PYTHON_BUNDLE_CORE)
                 RUNTIME DESTINATION "${_hypredrive_python_install_package_dir}/.libs")
     else()
         message(FATAL_ERROR
-            "HYPREDRV_PYTHON_BUNDLE_CORE=ON requires auto-fetched/shared HYPRE")
+            "HYPREDRV_PYTHON_BUNDLE_CORE=${HYPREDRV_PYTHON_BUNDLE_CORE} requires auto-fetched/shared HYPRE")
     endif()
 
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

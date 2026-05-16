@@ -8,7 +8,7 @@ developer tooling.
 
 The Python interface is in [`python/`](python/). It provides NumPy/SciPy input
 support, optional MPI usage through `mpi4py`, developer benchmarks, and
-experimental Linux/macOS wheel artifacts.
+experimental Linux/macOS MPI wheel artifacts.
 
 For source builds against an installed hypredrive:
 

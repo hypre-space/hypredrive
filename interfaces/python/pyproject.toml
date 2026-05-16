@@ -73,6 +73,8 @@ sdist.include = [
     "src/*.c",
     "src/*.h",
     "src/*.py",
+    "src/*.py.in",
+    "tools/*.py",
     "CMakeLists.txt",
     "README.md",
 ]

@@ -9,16 +9,29 @@ library used by the CLI.
 
 There are three supported install paths.
 
-Use wheel artifacts for quick host-only installs when a compatible MPI runtime
-is already available. Use a source install when you need a custom HYPRE,
+Use MPI-flavor wheel packages for quick host-only installs when a compatible MPI
+runtime is already available. Use a source install when you need a custom HYPRE,
 BIGINT/MIXEDINT, GPU support, vendor MPI, or downstream control over shared
 libraries.
+
+Source install:
+
+```bash
+python -m pip install ./interfaces/python
+```
+
+When run from a full hypredrive checkout, this automatically builds and bundles
+the in-tree HYPREDRV/HYPRE libraries. When run from a standalone source
+distribution, CMake falls back to finding an installed MPI-enabled
+HYPREDRV/HYPRE stack. Binary MPI wheels are currently GitHub Actions artifacts,
+not PyPI or TestPyPI packages.
 
 Build against an installed hypredrive:
 
 ```bash
 cmake --install build --prefix $HOME/opt/hypredrive
 pip install ./interfaces/python \
+  --config-settings=cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=OFF \
   --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
 ```
 
@@ -65,6 +78,13 @@ python -m pip install wheelhouse/hypredrive-*.whl
 Use a source install instead when you need a custom HYPRE build, GPU support,
 BIGINT/MIXEDINT, vendor MPI, or downstream-packager control over shared
 libraries.
+
+At runtime, the package records how it was built:
+
+```python
+import hypredrive as hd
+print(hd.BUILD_INFO)
+```
 
 ## In-tree CMake build
 

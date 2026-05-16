@@ -62,6 +62,12 @@ jobs:
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==3.1.4
 
+      - name: Prepare flavor-specific source tree
+        run: >-
+          python interfaces/python/tools/prepare_flavor_build.py
+          --flavor ${{ matrix.mpi_flavor }}
+          --output build/python-wheel-src-${{ matrix.mpi_flavor }}
+
       - name: Configure Linux MPI environment
         if: startsWith(runner.os, 'Linux')
         run: |
@@ -90,7 +96,10 @@ jobs:
           fi
 
       - name: Build wheels
-        run: python -m cibuildwheel interfaces/python --output-dir wheelhouse
+        run: >-
+          python -m cibuildwheel
+          build/python-wheel-src-${{ matrix.mpi_flavor }}/interfaces/python
+          --output-dir wheelhouse
 
       - name: Inspect built wheels
         run: python -m pip install twine && python -m twine check wheelhouse/*.whl

@@ -31,12 +31,24 @@ Installation
 
 There are three install modes:
 
-- wheel artifacts for quick host-only installs with a compatible MPI runtime;
+- GitHub Actions wheel artifacts for quick host-only installs with a compatible MPI runtime;
 - source installs against an installed or build-tree libHYPREDRV;
 - in-tree CMake builds for developers and CI.
 
 Source builds keep Python packaging independent from ordinary C builds while still
 linking against libHYPREDRV.
+
+Source install:
+
+.. code-block:: bash
+
+   python -m pip install ./interfaces/python
+
+When run from a full hypredrive checkout, this automatically builds and bundles
+the in-tree HYPREDRV/HYPRE libraries. When run from a standalone source
+distribution, CMake falls back to finding an installed MPI-enabled
+HYPREDRV/HYPRE stack. Binary MPI wheels are currently GitHub Actions artifacts,
+not PyPI or TestPyPI packages.
 
 Against an installed hypredrive:
 
@@ -44,6 +56,7 @@ Against an installed hypredrive:
 
    cmake --install build --prefix $HOME/opt/hypredrive
    pip install ./interfaces/python \
+     --config-settings=cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=OFF \
      --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
 
 Python source distributions are intended for downstream packagers and developer
@@ -96,6 +109,13 @@ runtime.
 Use a source install instead for custom HYPRE builds, GPU support,
 BIGINT/MIXEDINT, vendor MPI stacks, or downstream-packager control over shared
 libraries.
+
+At runtime, the package records how it was built:
+
+.. code-block:: python
+
+   import hypredrive as hd
+   print(hd.BUILD_INFO)
 
 Optional dependencies can be installed through package extras:
 
