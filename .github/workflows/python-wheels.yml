@@ -1,0 +1,103 @@
+name: Python Wheels
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - 'include/**'
+      - 'src/**'
+      - 'cmake/**'
+      - 'interfaces/python/**'
+      - '.github/workflows/python-wheels.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  wheels:
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    name: ${{ matrix.os }} | ${{ matrix.mpi_flavor }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        mpi_flavor: [mpich, openmpi]
+
+    env:
+      CIBW_BUILD: cp310-* cp311-* cp312-*
+      CIBW_SKIP: "*-musllinux_* pp*"
+      CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+      CIBW_BUILD_VERBOSITY: "1"
+      CIBW_TEST_REQUIRES: pytest scipy
+      CIBW_BEFORE_TEST: MPICC=mpicc python -m pip install --no-binary=mpi4py mpi4py
+      CIBW_TEST_COMMAND: >-
+        python -c "import hypredrive as hd; print(hd.configure(solver='pcg'))" &&
+        python -m pytest -q --tb=short
+        {project}/interfaces/python/tests/test_options.py
+        {project}/interfaces/python/tests/test_solve_serial.py &&
+        mpiexec -n 2 python -m pytest -q --tb=short
+        {project}/interfaces/python/tests/test_solve_mpi.py
+        {project}/interfaces/python/tests/test_laplacian_example_mpi.py
+      CIBW_CONFIG_SETTINGS: >-
+        cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=ON
+        cmake.define.BUILD_SHARED_LIBS=ON
+        cmake.define.HYPRE_ENABLE_MPI=ON
+        cmake.define.HYPRE_ENABLE_FORTRAN=OFF
+        cmake.define.HYPRE_ENABLE_CUDA=OFF
+        cmake.define.HYPRE_ENABLE_HIP=OFF
+        cmake.define.HYPRE_ENABLE_SYCL=OFF
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel==3.1.4
+
+      - name: Configure Linux MPI environment
+        if: startsWith(runner.os, 'Linux')
+        run: |
+          set -euxo pipefail
+          if [ "${{ matrix.mpi_flavor }}" = "mpich" ]; then
+            echo "CIBW_BEFORE_ALL_LINUX=dnf install -y mpich-devel" >> "$GITHUB_ENV"
+            echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/mpich/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/mpich/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx HYPREDRV_WHEEL_MPI_FLAVOR=mpich OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
+            echo "CIBW_REPAIR_WHEEL_COMMAND_LINUX=auditwheel repair --exclude libmpi.so.12 --exclude libmpich.so.12 -w {dest_dir} {wheel}" >> "$GITHUB_ENV"
+          else
+            echo "CIBW_BEFORE_ALL_LINUX=dnf install -y openmpi-devel" >> "$GITHUB_ENV"
+            echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/openmpi/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/openmpi/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx HYPREDRV_WHEEL_MPI_FLAVOR=openmpi OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
+            echo "CIBW_REPAIR_WHEEL_COMMAND_LINUX=auditwheel repair --exclude libmpi.so.40 --exclude libopen-rte.so.40 --exclude libopen-pal.so.40 -w {dest_dir} {wheel}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Configure macOS MPI environment
+        if: startsWith(runner.os, 'macOS')
+        run: |
+          set -euxo pipefail
+          echo "CIBW_REPAIR_WHEEL_COMMAND_MACOS=cp {wheel} {dest_dir}" >> "$GITHUB_ENV"
+          if [ "${{ matrix.mpi_flavor }}" = "mpich" ]; then
+            echo "CIBW_BEFORE_ALL_MACOS=brew install mpich" >> "$GITHUB_ENV"
+            echo "CIBW_ENVIRONMENT_MACOS=CC=mpicc CXX=mpicxx HYPREDRV_WHEEL_MPI_FLAVOR=mpich OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
+          else
+            echo "CIBW_BEFORE_ALL_MACOS=brew install open-mpi" >> "$GITHUB_ENV"
+            echo "CIBW_ENVIRONMENT_MACOS=CC=mpicc CXX=mpicxx HYPREDRV_WHEEL_MPI_FLAVOR=openmpi OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build wheels
+        run: python -m cibuildwheel interfaces/python --output-dir wheelhouse
+
+      - name: Inspect built wheels
+        run: python -m pip install twine && python -m twine check wheelhouse/*.whl
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: hypredrive-wheels-${{ matrix.os }}-${{ matrix.mpi_flavor }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error

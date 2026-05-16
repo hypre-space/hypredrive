@@ -7,6 +7,9 @@ library used by the CLI.
 
 ## Install
 
+The portable developer path is still a source build against an installed
+hypredrive C library.
+
 Build against an installed hypredrive:
 
 ```bash
@@ -31,6 +34,29 @@ pip install ./interfaces/python[scipy]
 pip install ./interfaces/python[mpi]
 pip install -e ./interfaces/python[test]
 ```
+
+## Wheel artifacts
+
+GitHub Actions can build experimental MPI wheel artifacts for Linux and macOS.
+These wheels bundle host-only `libHYPREDRV` and `libHYPRE`, but they do not
+bundle an MPI runtime.
+
+Each artifact is tied to an MPI flavor:
+
+* `mpich` wheels require an MPICH-compatible runtime.
+* `openmpi` wheels require an OpenMPI-compatible runtime.
+
+Install an artifact wheel into a virtual environment:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install hypredrive-*.whl
+```
+
+Use a source install instead when you need a custom HYPRE build, GPU support,
+BIGINT/MIXEDINT, vendor MPI, or downstream-packager control over shared
+libraries.
 
 ## Example
 

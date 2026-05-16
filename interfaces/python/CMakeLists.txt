@@ -2,7 +2,7 @@
 # Python bindings for hypredrive (driven by scikit-build-core).
 #
 # This CMake project is invoked by `pip install ./interfaces/python`. It expects the
-# hypredrive C library (HYPREDRV) to be discoverable. Two modes are supported:
+# hypredrive C library (HYPREDRV) to be discoverable. Three modes are supported:
 #
 #   1. Installed:   set CMAKE_PREFIX_PATH to the hypredrive install root, e.g.
 #                   pip install ./interfaces/python \
@@ -10,6 +10,8 @@
 #   2. In-tree dev: set HYPREDRV_DIR to a build-tree CMake config directory:
 #                   pip install -e ./interfaces/python \
 #                     --config-settings=cmake.define.HYPREDRV_DIR=$BUILD
+#   3. Wheel:       set HYPREDRV_PYTHON_BUNDLE_CORE=ON to build HYPREDRV/HYPRE
+#                   from the source tree and bundle the resulting shared libs.
 #
 # We rely on hypredrive exporting a CMake package config (HYPREDRVConfig.cmake)
 # from its top-level CMakeLists.
@@ -17,6 +19,9 @@
 
 cmake_minimum_required(VERSION 3.23)
 project(hypredrive_python LANGUAGES C)
+
+option(HYPREDRV_PYTHON_BUNDLE_CORE
+       "Build and bundle in-tree HYPREDRV/HYPRE for Python wheels" OFF)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(_hypredrive_python_package_root "${CMAKE_CURRENT_BINARY_DIR}")
@@ -28,6 +33,43 @@ endif()
 set(_hypredrive_python_package_dir "${_hypredrive_python_package_root}/hypredrive")
 
 # ---- Find HYPREDRV ---------------------------------------------------------
+if(HYPREDRV_PYTHON_BUNDLE_CORE AND NOT TARGET HYPREDRV::HYPREDRV)
+    get_filename_component(_hypredrive_python_repo_root
+                           "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+                           ABSOLUTE)
+    if(NOT EXISTS "${_hypredrive_python_repo_root}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "HYPREDRV_PYTHON_BUNDLE_CORE=ON requires building from the "
+            "hypredrive source checkout, but ${_hypredrive_python_repo_root} "
+            "does not look like the repository root")
+    endif()
+
+    if(NOT DEFINED BUILD_SHARED_LIBS)
+        set(BUILD_SHARED_LIBS ON CACHE BOOL
+            "Build shared libraries for bundled Python wheels")
+    endif()
+    set(HYPREDRV_ENABLE_PYTHON OFF CACHE BOOL
+        "Disable nested Python interface while bundling core" FORCE)
+    set(HYPREDRV_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(HYPREDRV_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(HYPREDRV_ENABLE_DOCS OFF CACHE BOOL "" FORCE)
+    set(HYPREDRV_ENABLE_ANALYSIS OFF CACHE BOOL "" FORCE)
+    set(HYPREDRV_ENABLE_COVERAGE OFF CACHE BOOL "" FORCE)
+    set(HYPREDRV_ENABLE_DATA OFF CACHE BOOL "" FORCE)
+    set(HYPREDRV_ENABLE_COMPRESSION OFF CACHE BOOL "" FORCE)
+    set(HYPRE_ENABLE_FORTRAN OFF CACHE BOOL "" FORCE)
+    set(HYPRE_ENABLE_COMPLEX OFF CACHE BOOL "" FORCE)
+    set(HYPRE_ENABLE_SINGLE OFF CACHE BOOL "" FORCE)
+    set(HYPRE_ENABLE_LONG_DOUBLE OFF CACHE BOOL "" FORCE)
+    set(HYPRE_ENABLE_CUDA OFF CACHE BOOL "" FORCE)
+    set(HYPRE_ENABLE_HIP OFF CACHE BOOL "" FORCE)
+    set(HYPRE_ENABLE_SYCL OFF CACHE BOOL "" FORCE)
+
+    add_subdirectory("${_hypredrive_python_repo_root}"
+                     "${CMAKE_CURRENT_BINARY_DIR}/_hypredrive_core"
+                     EXCLUDE_FROM_ALL)
+endif()
+
 if(NOT TARGET HYPREDRV::HYPREDRV)
     find_package(HYPREDRV CONFIG REQUIRED)
 endif()
@@ -90,6 +132,34 @@ set_target_properties(_core PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${_hypredrive_python_package_dir}"
 )
 
+if(HYPREDRV_PYTHON_BUNDLE_CORE)
+    if(APPLE)
+        set(_hypredrive_python_relative_rpath "@loader_path/.libs")
+        set(_hypredrive_python_lib_relative_rpath "@loader_path")
+    else()
+        set(_hypredrive_python_relative_rpath "$ORIGIN/.libs")
+        set(_hypredrive_python_lib_relative_rpath "$ORIGIN")
+    endif()
+    set_target_properties(_core PROPERTIES
+        INSTALL_RPATH "${_hypredrive_python_relative_rpath}"
+        INSTALL_RPATH_USE_LINK_PATH FALSE
+    )
+    if(TARGET HYPREDRV)
+        set_target_properties(HYPREDRV PROPERTIES
+            PUBLIC_HEADER ""
+            INSTALL_RPATH "${_hypredrive_python_lib_relative_rpath}"
+            INSTALL_RPATH_USE_LINK_PATH FALSE
+        )
+    endif()
+    if(TARGET HYPRE)
+        set_target_properties(HYPRE PROPERTIES
+            INSTALL_RPATH "${_hypredrive_python_lib_relative_rpath}"
+            INSTALL_RPATH_USE_LINK_PATH FALSE
+        )
+    endif()
+
+endif()
+
 target_include_directories(_core PRIVATE
     "${_numpy_include}"
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -140,6 +210,61 @@ install(FILES ${_python_package_sources}
 install(TARGETS _core
         LIBRARY DESTINATION "${_hypredrive_python_install_package_dir}"
 )
+
+if(HYPREDRV_PYTHON_BUNDLE_CORE)
+    if(NOT TARGET HYPREDRV)
+        message(FATAL_ERROR
+            "HYPREDRV_PYTHON_BUNDLE_CORE=ON requires a concrete HYPREDRV target")
+    endif()
+    install(TARGETS HYPREDRV
+            LIBRARY DESTINATION "${_hypredrive_python_install_package_dir}/.libs"
+            RUNTIME DESTINATION "${_hypredrive_python_install_package_dir}/.libs")
+    if(TARGET HYPRE)
+        install(TARGETS HYPRE
+                LIBRARY DESTINATION "${_hypredrive_python_install_package_dir}/.libs"
+                RUNTIME DESTINATION "${_hypredrive_python_install_package_dir}/.libs")
+    else()
+        message(FATAL_ERROR
+            "HYPREDRV_PYTHON_BUNDLE_CORE=ON requires auto-fetched/shared HYPRE")
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        find_program(_hypredrive_python_patchelf patchelf)
+        if(_hypredrive_python_patchelf)
+            install(CODE "
+                set(_hypredrive_pkgdir \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${_hypredrive_python_install_package_dir}\")
+                file(GLOB _hypredrive_exts \"\${_hypredrive_pkgdir}/_core*.so\")
+                foreach(_hypredrive_file IN LISTS _hypredrive_exts)
+                    if(EXISTS \"\${_hypredrive_file}\" AND NOT IS_SYMLINK \"\${_hypredrive_file}\")
+                        execute_process(
+                            COMMAND \"${_hypredrive_python_patchelf}\" --set-rpath \"\\\$ORIGIN/.libs\" \"\${_hypredrive_file}\"
+                            RESULT_VARIABLE _hypredrive_patchelf_rc
+                        )
+                        if(NOT _hypredrive_patchelf_rc EQUAL 0)
+                            message(FATAL_ERROR \"patchelf failed for \${_hypredrive_file}\")
+                        endif()
+                    endif()
+                endforeach()
+                file(GLOB _hypredrive_libs \"\${_hypredrive_pkgdir}/.libs/*.so*\")
+                foreach(_hypredrive_file IN LISTS _hypredrive_libs)
+                    if(EXISTS \"\${_hypredrive_file}\" AND NOT IS_SYMLINK \"\${_hypredrive_file}\")
+                        execute_process(
+                            COMMAND \"${_hypredrive_python_patchelf}\" --set-rpath \"\\\$ORIGIN\" \"\${_hypredrive_file}\"
+                            RESULT_VARIABLE _hypredrive_patchelf_rc
+                        )
+                        if(NOT _hypredrive_patchelf_rc EQUAL 0)
+                            message(FATAL_ERROR \"patchelf failed for \${_hypredrive_file}\")
+                        endif()
+                    endif()
+                endforeach()
+            ")
+        else()
+            message(WARNING
+                "patchelf was not found; bundled Linux wheels may retain MPI "
+                "wrapper RPATH entries")
+        endif()
+    endif()
+endif()
 
 execute_process(
     COMMAND "${Python_EXECUTABLE}" -c "import mpi4py"
