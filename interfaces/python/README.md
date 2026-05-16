@@ -47,6 +47,10 @@ GitHub Actions can build experimental MPI wheel artifacts for Linux and macOS.
 These wheels bundle host-only `libHYPREDRV` and `libHYPRE`, but they do not
 bundle an MPI runtime.
 
+On pull requests, the wheel workflow runs only when the PR has the
+`Run Python Wheels` label. It can also be started manually with
+`workflow_dispatch`.
+
 Each artifact is tied to an MPI flavor:
 
 * `mpich` wheels require an MPICH-compatible runtime.

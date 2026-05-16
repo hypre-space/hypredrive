@@ -31,9 +31,11 @@ set(HYPREDRV_PYTHON_MPI_FLAVOR "" CACHE STRING
     "MPI flavor recorded in package build metadata")
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(_hypredrive_python_standalone_project ON)
     set(_hypredrive_python_package_root "${CMAKE_CURRENT_BINARY_DIR}")
     set(_hypredrive_python_install_package_dir "hypredrive")
 else()
+    set(_hypredrive_python_standalone_project OFF)
     set(_hypredrive_python_package_root "${CMAKE_CURRENT_BINARY_DIR}/python")
     set(_hypredrive_python_install_package_dir "python")
 endif()
@@ -58,6 +60,7 @@ set(_hypredrive_python_bundle_core OFF)
 if(_hypredrive_python_bundle_mode STREQUAL "ON")
     set(_hypredrive_python_bundle_core ON)
 elseif(_hypredrive_python_bundle_mode STREQUAL "AUTO"
+       AND _hypredrive_python_standalone_project
        AND _hypredrive_python_has_repo_root)
     set(_hypredrive_python_bundle_core ON)
 endif()

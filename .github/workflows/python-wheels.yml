@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   wheels:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'Run Python Wheels') }}
     name: ${{ matrix.os }} | ${{ matrix.mpi_flavor }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -29,9 +29,9 @@ jobs:
 
     env:
       CIBW_BUILD: cp310-* cp311-* cp312-*
-      CIBW_SKIP: "*-musllinux_* pp*"
+      CIBW_SKIP: "*-musllinux_*"
       CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
-      CIBW_BUILD_VERBOSITY: "1"
+      CIBW_BUILD_VERBOSITY: "2"
       CIBW_TEST_REQUIRES: pytest scipy
       CIBW_BEFORE_TEST: MPICC=mpicc python -m pip install --no-binary=mpi4py mpi4py
       CIBW_TEST_COMMAND: >-
@@ -50,6 +50,7 @@ jobs:
         cmake.define.HYPRE_ENABLE_CUDA=OFF
         cmake.define.HYPRE_ENABLE_HIP=OFF
         cmake.define.HYPRE_ENABLE_SYCL=OFF
+        build.verbose=true
 
     steps:
       - uses: actions/checkout@v6
@@ -73,12 +74,12 @@ jobs:
         run: |
           set -euxo pipefail
           if [ "${{ matrix.mpi_flavor }}" = "mpich" ]; then
-            echo "CIBW_BEFORE_ALL_LINUX=dnf install -y mpich-devel" >> "$GITHUB_ENV"
-            echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/mpich/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/mpich/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx HYPREDRV_WHEEL_MPI_FLAVOR=mpich OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
+            echo "CIBW_BEFORE_ALL_LINUX=dnf install -y git mpich-devel" >> "$GITHUB_ENV"
+            echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/mpich/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/mpich/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx CMAKE_BUILD_PARALLEL_LEVEL=2 HYPREDRV_WHEEL_MPI_FLAVOR=mpich OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
             echo "CIBW_REPAIR_WHEEL_COMMAND_LINUX=auditwheel repair --exclude libmpi.so.12 --exclude libmpich.so.12 -w {dest_dir} {wheel}" >> "$GITHUB_ENV"
           else
-            echo "CIBW_BEFORE_ALL_LINUX=dnf install -y openmpi-devel" >> "$GITHUB_ENV"
-            echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/openmpi/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/openmpi/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx HYPREDRV_WHEEL_MPI_FLAVOR=openmpi OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
+            echo "CIBW_BEFORE_ALL_LINUX=dnf install -y git openmpi-devel" >> "$GITHUB_ENV"
+            echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/openmpi/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/openmpi/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx CMAKE_BUILD_PARALLEL_LEVEL=2 HYPREDRV_WHEEL_MPI_FLAVOR=openmpi OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
             echo "CIBW_REPAIR_WHEEL_COMMAND_LINUX=auditwheel repair --exclude libmpi.so.40 --exclude libopen-rte.so.40 --exclude libopen-pal.so.40 -w {dest_dir} {wheel}" >> "$GITHUB_ENV"
           fi
 
@@ -89,10 +90,10 @@ jobs:
           echo "CIBW_REPAIR_WHEEL_COMMAND_MACOS=cp {wheel} {dest_dir}" >> "$GITHUB_ENV"
           if [ "${{ matrix.mpi_flavor }}" = "mpich" ]; then
             echo "CIBW_BEFORE_ALL_MACOS=brew install mpich" >> "$GITHUB_ENV"
-            echo "CIBW_ENVIRONMENT_MACOS=CC=mpicc CXX=mpicxx HYPREDRV_WHEEL_MPI_FLAVOR=mpich OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
+            echo "CIBW_ENVIRONMENT_MACOS=CC=mpicc CXX=mpicxx CMAKE_BUILD_PARALLEL_LEVEL=2 HYPREDRV_WHEEL_MPI_FLAVOR=mpich OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
           else
             echo "CIBW_BEFORE_ALL_MACOS=brew install open-mpi" >> "$GITHUB_ENV"
-            echo "CIBW_ENVIRONMENT_MACOS=CC=mpicc CXX=mpicxx HYPREDRV_WHEEL_MPI_FLAVOR=openmpi OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
+            echo "CIBW_ENVIRONMENT_MACOS=CC=mpicc CXX=mpicxx CMAKE_BUILD_PARALLEL_LEVEL=2 HYPREDRV_WHEEL_MPI_FLAVOR=openmpi OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
           fi
 
       - name: Build wheels

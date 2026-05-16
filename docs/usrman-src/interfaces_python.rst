@@ -89,6 +89,10 @@ The project CI can build experimental Python wheel artifacts for Linux and macOS
 These wheels bundle host-only ``libHYPREDRV`` and ``libHYPRE`` inside the Python
 package, but they do not bundle MPI.
 
+On pull requests, the wheel workflow runs only when the PR has the
+``Run Python Wheels`` label. It can also be started manually with
+``workflow_dispatch``.
+
 Download a wheel artifact from the GitHub Actions ``Python Wheels`` workflow
 run first. GitHub stores artifacts as zip files, so unzip the artifact before
 installing the wheel into a virtual environment on a machine with a compatible
