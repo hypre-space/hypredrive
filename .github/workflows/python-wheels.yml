@@ -17,7 +17,18 @@ permissions:
 
 jobs:
   wheels:
-    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'Run Python Wheels') }}
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.action == 'labeled' &&
+          github.event.label.name == 'Run Python Wheels'
+        ) ||
+        (
+          github.event.action != 'labeled' &&
+          contains(github.event.pull_request.labels.*.name, 'Run Python Wheels')
+        )
+      }}
     name: ${{ matrix.os }} | ${{ matrix.mpi_flavor }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -75,11 +86,11 @@ jobs:
           set -euxo pipefail
           if [ "${{ matrix.mpi_flavor }}" = "mpich" ]; then
             echo "CIBW_BEFORE_ALL_LINUX=dnf install -y git mpich-devel" >> "$GITHUB_ENV"
-            echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/mpich/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/mpich/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx CMAKE_BUILD_PARALLEL_LEVEL=2 HYPREDRV_WHEEL_MPI_FLAVOR=mpich OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
+            echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/mpich/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/mpich/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx MPICH_CC=/usr/bin/gcc MPICH_CXX=/usr/bin/g++ ANNOBIN_DISABLE=1 CMAKE_BUILD_PARALLEL_LEVEL=2 HYPREDRV_WHEEL_MPI_FLAVOR=mpich OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
             echo "CIBW_REPAIR_WHEEL_COMMAND_LINUX=auditwheel repair --exclude libmpi.so.12 --exclude libmpich.so.12 -w {dest_dir} {wheel}" >> "$GITHUB_ENV"
           else
             echo "CIBW_BEFORE_ALL_LINUX=dnf install -y git openmpi-devel" >> "$GITHUB_ENV"
-            echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/openmpi/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/openmpi/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx CMAKE_BUILD_PARALLEL_LEVEL=2 HYPREDRV_WHEEL_MPI_FLAVOR=openmpi OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
+            echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/openmpi/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/openmpi/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx OMPI_CC=/usr/bin/gcc OMPI_CXX=/usr/bin/g++ ANNOBIN_DISABLE=1 CMAKE_BUILD_PARALLEL_LEVEL=2 HYPREDRV_WHEEL_MPI_FLAVOR=openmpi OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
             echo "CIBW_REPAIR_WHEEL_COMMAND_LINUX=auditwheel repair --exclude libmpi.so.40 --exclude libopen-rte.so.40 --exclude libopen-pal.so.40 -w {dest_dir} {wheel}" >> "$GITHUB_ENV"
           fi
 

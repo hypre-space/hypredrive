@@ -29,7 +29,12 @@ permissions:
 
 jobs:
   source-list-sync:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: Source list sync
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -39,7 +44,12 @@ jobs:
         run: python3 scripts/check_source_sync.py
 
   python-interface:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: ${{ matrix.os }} | Python 3.12 | installed HYPRE
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -159,7 +169,12 @@ jobs:
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
 
   python-interface-autofetch:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: ubuntu-latest | Python 3.12 | auto-fetch HYPRE
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -218,7 +233,12 @@ jobs:
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
 
   build-and-test:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: ${{ matrix.os }} | ${{ matrix.compiler }} | ${{ matrix.build_type }} | ${{ matrix.hypre_version }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -424,7 +444,12 @@ jobs:
           retention-days: 1
 
   autotools-build-and-test:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: ubuntu-latest | autotools
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -475,7 +500,12 @@ jobs:
           make install
 
   build-and-test-caliper:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: ubuntu-latest | gcc | Caliper+Debug
     runs-on: ubuntu-latest
     timeout-minutes: 6
@@ -571,7 +601,12 @@ jobs:
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
 
   build-and-test-mixedint:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: ubuntu-latest | gcc | mixedint
     runs-on: ubuntu-latest
     timeout-minutes: 5

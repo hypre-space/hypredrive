@@ -29,7 +29,12 @@ permissions:
 
 jobs:
   format:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: clang-format
     runs-on: ubuntu-latest
     steps:
@@ -48,7 +53,12 @@ jobs:
             xargs clang-format -n --Werror
 
   private-prefix:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: private prefix
     runs-on: ubuntu-latest
     steps:
@@ -58,7 +68,12 @@ jobs:
         run: bash scripts/check_private_prefix.sh
 
   symbol-prefix:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: symbol prefix
     runs-on: ubuntu-latest
     env:
@@ -98,7 +113,12 @@ jobs:
         run: bash scripts/check_symbol_prefix.sh --build-dir $BUILD_DIR
 
   public-apis:
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
     name: public APIs
     runs-on: ubuntu-latest
     steps:
