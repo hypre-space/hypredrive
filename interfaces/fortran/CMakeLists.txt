@@ -3,6 +3,39 @@
 #
 # SPDX-License-Identifier: MIT
 
+include(CheckCSourceCompiles)
+
+set(_hypredrv_fortran_saved_try_compile_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
+set(_hypredrv_fortran_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+set(_hypredrv_fortran_hypre_includes ${HYPRE_INCLUDE_DIRS})
+if(NOT _hypredrv_fortran_hypre_includes AND TARGET HYPRE::HYPRE)
+    get_target_property(_hypredrv_fortran_hypre_includes
+                        HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+endif()
+if(_hypredrv_fortran_hypre_includes)
+    list(FILTER _hypredrv_fortran_hypre_includes EXCLUDE REGEX "^\\$<")
+endif()
+set(CMAKE_REQUIRED_INCLUDES
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_BINARY_DIR}"
+    ${_hypredrv_fortran_hypre_includes}
+    ${MPI_C_INCLUDE_DIRS})
+check_c_source_compiles("
+#include \"HYPREDRV.h\"
+typedef char hypredrv_fortran_requires_double_hypre_real[
+   (sizeof(HYPRE_Real) == sizeof(double)) ? 1 : -1];
+int main(void) { return 0; }
+" HYPREDRV_FORTRAN_HYPRE_REAL_IS_DOUBLE)
+set(CMAKE_REQUIRED_INCLUDES "${_hypredrv_fortran_saved_required_includes}")
+set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_hypredrv_fortran_saved_try_compile_target_type}")
+if(NOT HYPREDRV_FORTRAN_HYPRE_REAL_IS_DOUBLE)
+    message(FATAL_ERROR
+        "HYPREDRV_ENABLE_FORTRAN requires HYPRE_Real to have the C double ABI. "
+        "Disable HYPRE_ENABLE_SINGLE/HYPRE_ENABLE_LONG_DOUBLE or disable "
+        "HYPREDRV_ENABLE_FORTRAN.")
+endif()
+
 add_library(HYPREDRV_Fortran
     src/hypredrive.f90
     src/HYPREDRV_fortran.c

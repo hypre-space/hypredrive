@@ -17,8 +17,11 @@ Prerequisites
 
 Prerequisites are a C compiler, a Fortran 2003 compiler, MPI C and Fortran
 wrappers (``mpicc``/``mpifort`` or equivalents), CMake, and a HYPRE build
-compatible with hypredrive. The examples use ``mpif.h`` for broad compiler/MPI
-compatibility, but the build still requires an MPI Fortran wrapper and library.
+compatible with hypredrive. The current Fortran interface requires a real-valued
+HYPRE build where ``HYPRE_Real`` uses the C ``double`` ABI; single-precision and
+long-double HYPRE builds are rejected at configure time. The examples use
+``mpif.h`` for broad compiler/MPI compatibility, but the build still requires an
+MPI Fortran wrapper and library.
 
 Build
 -----
@@ -218,7 +221,7 @@ coverage.
 Limitations
 -----------
 
-- The first implementation targets real-valued HYPRE builds.
+- The first implementation targets real-valued, double-precision HYPRE builds.
 - CSR/RHS convenience helpers use ``integer(c_int64_t)`` and ``real(c_double)``
   on the Fortran side and convert through a small C bridge.
 - Empty local CSR slabs are rejected by the convenience helper.

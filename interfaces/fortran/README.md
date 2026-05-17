@@ -8,7 +8,9 @@ annotation routines keep the same names and ownership rules as the C library.
 
 Build prerequisites are a C compiler, a Fortran 2003 compiler, MPI C and
 Fortran wrappers (`mpicc`/`mpifort` or equivalents), CMake, and a HYPRE build
-compatible with hypredrive.
+compatible with hypredrive. The current Fortran interface requires a real-valued
+HYPRE build where `HYPRE_Real` uses the C `double` ABI; single-precision and
+long-double HYPRE builds are rejected at configure time.
 
 ## Build
 
@@ -231,7 +233,7 @@ as Intel, NVHPC, Cray, and macOS Fortran stacks are intended future CI coverage.
 
 ## Limitations
 
-- The first interface targets real-valued HYPRE builds.
+- The first interface targets real-valued, double-precision HYPRE builds.
 - Matrix and RHS convenience helpers use `integer(c_int64_t)` for global indices
   and `real(c_double)` for values, with conversion in the C bridge.
 - Empty local CSR slabs are rejected by the convenience helper.

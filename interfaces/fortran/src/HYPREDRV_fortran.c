@@ -15,6 +15,8 @@
 
 _Static_assert(((HYPRE_BigInt)-1) < (HYPRE_BigInt)0,
                "HYPREDRV Fortran bridge requires signed HYPRE_BigInt");
+_Static_assert(sizeof(HYPRE_Real) == sizeof(double),
+               "HYPREDRV Fortran bridge requires HYPRE_Real to use the C double ABI");
 
 static uint32_t
 hypredrv_fortran_bigint_from_i64(int64_t value, const char *name,
