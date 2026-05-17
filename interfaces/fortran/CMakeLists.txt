@@ -17,6 +17,7 @@ set_target_properties(HYPREDRV_Fortran PROPERTIES
 )
 
 target_link_libraries(HYPREDRV_Fortran PUBLIC HYPREDRV::HYPREDRV MPI::MPI_C MPI::MPI_Fortran)
+hypredrv_set_relative_install_rpath(HYPREDRV_Fortran)
 target_include_directories(HYPREDRV_Fortran
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/mod>
@@ -87,6 +88,7 @@ function(hypredrv_add_fortran_executable target source)
     if(APPLE)
         target_link_options(${target} PRIVATE "-Wl,-rpath,${CMAKE_BINARY_DIR}/lib")
     endif()
+    hypredrv_set_relative_install_rpath(${target})
 endfunction()
 
 hypredrv_add_fortran_executable(laplacian-fortran examples/laplacian/laplacian.f90)

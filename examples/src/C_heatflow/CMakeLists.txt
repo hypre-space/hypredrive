@@ -17,6 +17,9 @@ endif()
 # Common build configuration
 add_executable(heatflow heatflow.c)
 target_link_libraries(heatflow PRIVATE HYPREDRV::HYPREDRV m)
+if(COMMAND hypredrv_set_relative_install_rpath)
+    hypredrv_set_relative_install_rpath(heatflow)
+endif()
 
 # If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
 if(HYPREDRV_ENABLE_CALIPER)

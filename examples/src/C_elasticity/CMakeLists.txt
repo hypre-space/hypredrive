@@ -17,6 +17,9 @@ endif()
 # Common build configuration
 add_executable(elasticity elasticity.c)
 target_link_libraries(elasticity PRIVATE HYPREDRV::HYPREDRV)
+if(COMMAND hypredrv_set_relative_install_rpath)
+    hypredrv_set_relative_install_rpath(elasticity)
+endif()
 
 # If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
 if(HYPREDRV_ENABLE_CALIPER)
