@@ -36,7 +36,7 @@ extern "C"
 
 // Visibility control macros
 #define HYPREDRV_EXPORT_SYMBOL __attribute__((visibility("default")))
-#define HYPREDRV_SUCCESS ((uint32_t) 0u)
+#define HYPREDRV_SUCCESS ((uint32_t)0u)
 
    // HYPREDRV_SAFE_CALL and HYPREDRV_SAFE_CALL_COMM are defined in HYPREDRV_utils.h.
    // Include that header after this one when you need these macros.

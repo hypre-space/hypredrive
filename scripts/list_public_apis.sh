@@ -65,7 +65,8 @@ if [[ ! -f "$HEADER" ]]; then
   exit 2
 fi
 
-APIS=$(grep -oE 'HYPREDRV_[A-Za-z0-9_]+ *\(' "$HEADER" \
+APIS=$(grep -v -E '^[[:space:]]*#' "$HEADER" \
+  | grep -oE 'HYPREDRV_[A-Za-z0-9_]+ *\(' \
   | sed 's/ *($//' \
   | grep -v -E '^HYPREDRV_(SAFE_CALL|operation)$' \
   | sort -u)
