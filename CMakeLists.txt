@@ -367,7 +367,7 @@ endif()
 # Fortran interface (optional)
 if(HYPREDRV_ENABLE_FORTRAN)
     enable_language(Fortran)
-    find_package(MPI COMPONENTS Fortran REQUIRED)
+    find_package(MPI COMPONENTS C Fortran REQUIRED)
     add_subdirectory(interfaces/fortran)
 endif()
 

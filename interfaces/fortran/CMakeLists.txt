@@ -12,6 +12,8 @@ add_library(HYPREDRV::Fortran ALIAS HYPREDRV_Fortran)
 set_target_properties(HYPREDRV_Fortran PROPERTIES
     OUTPUT_NAME HYPREDRV_Fortran
     EXPORT_NAME Fortran
+    Fortran_STANDARD 2003
+    Fortran_STANDARD_REQUIRED ON
     Fortran_MODULE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mod"
     POSITION_INDEPENDENT_CODE ON
 )
@@ -47,7 +49,7 @@ endif()
 if(_hypredrv_fortran_long_line_check_flags)
     list(JOIN _hypredrv_fortran_long_line_check_flags " " _hypredrv_fortran_long_line_check_flags_text)
     string(MAKE_C_IDENTIFIER "${_hypredrv_fortran_long_line_check_flags_text}" _hypredrv_fortran_flag_id)
-    check_fortran_compiler_flag("${_hypredrv_fortran_long_line_check_flags_text}"
+    check_fortran_compiler_flag("${_hypredrv_fortran_long_line_check_flags}"
         HYPREDRV_HAVE_Fortran_${_hypredrv_fortran_flag_id})
     if(NOT HYPREDRV_HAVE_Fortran_${_hypredrv_fortran_flag_id})
         message(STATUS
@@ -78,6 +80,9 @@ install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mod/"
 
 function(hypredrv_add_fortran_executable target source)
     add_executable(${target} ${source})
+    set_target_properties(${target} PROPERTIES
+        Fortran_STANDARD 2003
+        Fortran_STANDARD_REQUIRED ON)
     target_link_libraries(${target} PRIVATE HYPREDRV::Fortran MPI::MPI_Fortran)
     target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/mod")
     if(_hypredrv_fortran_long_line_flags)
@@ -85,12 +90,12 @@ function(hypredrv_add_fortran_executable target source)
             $<$<COMPILE_LANGUAGE:Fortran>:${_hypredrv_fortran_long_line_flags}>
         )
     endif()
-    if(APPLE)
-        target_link_options(${target} PRIVATE "-Wl,-rpath,${CMAKE_BINARY_DIR}/lib")
-    endif()
     hypredrv_set_relative_install_rpath(${target})
 endfunction()
 
+# Build and install the Laplacian driver whenever the Fortran interface is
+# enabled. It is both the user-facing example and the reproducible smoke driver
+# used by the Fortran tests.
 hypredrv_add_fortran_executable(laplacian-fortran examples/laplacian/laplacian.f90)
 install(TARGETS laplacian-fortran
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -103,7 +108,6 @@ if(HYPREDRV_ENABLE_EXAMPLES)
 endif()
 
 if(HYPREDRV_ENABLE_TESTING)
-    enable_testing()
     hypredrv_add_fortran_executable(test_fortran_lifecycle tests/test_lifecycle.f90)
     hypredrv_add_fortran_executable(test_fortran_csr_mpi tests/test_csr_mpi.f90)
     hypredrv_add_fortran_executable(test_fortran_check_failure tests/test_check_failure.f90)
@@ -116,9 +120,7 @@ if(HYPREDRV_ENABLE_TESTING)
              COMMAND ${CMAKE_COMMAND}
                      -DTEST_EXE=$<TARGET_FILE:test_fortran_check_failure>
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_check_failure.cmake")
-    set_tests_properties(fortran_check_failure PROPERTIES
-        LABELS "unit;fortran"
-        PASS_REGULAR_EXPRESSION "HYPREDRV call failed")
+    set_tests_properties(fortran_check_failure PROPERTIES LABELS "unit;fortran")
 
     if(MPIEXEC_EXECUTABLE)
         add_test(NAME fortran_csr_mpi_2proc
@@ -129,7 +131,7 @@ if(HYPREDRV_ENABLE_TESTING)
         set_tests_properties(fortran_csr_mpi_2proc PROPERTIES LABELS "unit;fortran" RUN_SERIAL TRUE)
     endif()
 
-    set(_hypredrv_fortran_test_deps
+    set(_hypredrv_fortran_test_target_deps
         test_fortran_lifecycle
         test_fortran_csr_mpi
         test_fortran_check_failure)
@@ -179,11 +181,11 @@ if(HYPREDRV_ENABLE_TESTING)
                              ${MPIEXEC_POSTFLAGS})
             set_tests_properties(fortran_laplacian_mpi_xy_4proc PROPERTIES LABELS "fortran;example" RUN_SERIAL TRUE)
         endif()
-        list(APPEND _hypredrv_fortran_test_deps laplacian-fortran)
+        list(APPEND _hypredrv_fortran_test_target_deps laplacian-fortran)
     endif()
 
     add_custom_target(fortran-test
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L fortran
-        DEPENDS ${_hypredrv_fortran_test_deps}
+        DEPENDS ${_hypredrv_fortran_test_target_deps}
         COMMENT "Running hypredrive Fortran tests")
 endif()

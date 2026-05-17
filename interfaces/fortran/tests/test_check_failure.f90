@@ -3,5 +3,5 @@ program test_check_failure
    use hypredrive
    implicit none
 
-   call HYPREDRV_Check(HYPREDRV_ErrorInvalidValue('intentional Fortran check failure' // c_null_char))
+   call HYPREDRV_Check(HYPREDRV_ErrorInvalidValue('intentional Fortran check failure'//c_null_char))
 end program test_check_failure

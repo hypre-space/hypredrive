@@ -40,12 +40,12 @@ program test_csr_mpi
    call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
    call MPI_Comm_size(MPI_COMM_WORLD, nproc, ierr)
 
-   row_start = int((rank * n) / nproc, c_int64_t)
-   row_end = int(((rank + 1) * n) / nproc - 1, c_int64_t)
+   row_start = int((rank*n)/nproc, c_int64_t)
+   row_end = int(((rank + 1)*n)/nproc - 1, c_int64_t)
    local_n = int(row_end - row_start + 1, kind=kind(local_n))
-   if (local_n <= 0) error stop 'test requires at least one row per rank'
+   if (local_n <= 0) stop 'test requires at least one row per rank'
 
-   allocate(indptr(local_n + 1), cols(3 * local_n), data(3 * local_n), rhs(local_n))
+   allocate (indptr(local_n + 1), cols(3*local_n), data(3*local_n), rhs(local_n))
    pos = 0
    indptr(1) = 0_c_int64_t
    do i = 1, local_n
@@ -67,14 +67,14 @@ program test_csr_mpi
       rhs(i) = 1.0_c_double
    end do
 
-   yaml = 'solver:' // new_line('a') // &
-          '  pcg:' // new_line('a') // &
-          '    max_iter: 100' // new_line('a') // &
-          '    relative_tol: 1.0e-8' // new_line('a') // &
-          'preconditioner:' // new_line('a') // &
-          '  amg:' // new_line('a') // &
-          '    max_iter: 1' // new_line('a') // &
-          '    tolerance: 0.0' // new_line('a')
+   yaml = 'solver:'//new_line('a')// &
+          '  pcg:'//new_line('a')// &
+          '    max_iter: 100'//new_line('a')// &
+          '    relative_tol: 1.0e-8'//new_line('a')// &
+          'preconditioner:'//new_line('a')// &
+          '  amg:'//new_line('a')// &
+          '    max_iter: 1'//new_line('a')// &
+          '    tolerance: 0.0'//new_line('a')
 
    call HYPREDRV_Check(HYPREDRV_Initialize())
    call HYPREDRV_Check(HYPREDRV_Create(int(MPI_COMM_WORLD, c_int), drv))
@@ -83,16 +83,16 @@ program test_csr_mpi
    call HYPREDRV_Check(HYPREDRV_LinearSystemSetMatrixFromCSR(drv, row_start, row_end, indptr, cols(:pos), data(:pos)))
    call HYPREDRV_Check(HYPREDRV_LinearSystemSetRHSFromArray(drv, row_start, row_end, rhs))
    call HYPREDRV_Check(HYPREDRV_LinearSystemSetPrecMatrix(drv, c_null_ptr))
-   allocate(dofmap(local_n))
+   allocate (dofmap(local_n))
    dofmap = 0_c_int
    call HYPREDRV_Check(HYPREDRV_LinearSystemSetInterleavedDofmap(drv, int(local_n, c_int), 1_c_int))
    call HYPREDRV_Check(HYPREDRV_LinearSystemSetContiguousDofmap(drv, int(local_n, c_int), 1_c_int))
    call HYPREDRV_Check(HYPREDRV_LinearSystemSetDofmap(drv, int(local_n, c_int), dofmap))
-   call HYPREDRV_Check(HYPREDRV_LinearSystemPrintDofmap(drv, 'fortran_test_dofmap' // c_null_char))
-   allocate(near_null(local_n))
+   call HYPREDRV_Check(HYPREDRV_LinearSystemPrintDofmap(drv, 'fortran_test_dofmap'//c_null_char))
+   allocate (near_null(local_n))
    near_null = 1.0_c_double
    call HYPREDRV_Check(HYPREDRV_LinearSystemSetNearNullSpace(drv, int(local_n, c_int), 1_c_int, near_null))
-   deallocate(near_null)
+   deallocate (near_null)
    call HYPREDRV_Check(HYPREDRV_LinearSystemSetInitialGuess(drv, c_null_ptr))
    call HYPREDRV_Check(HYPREDRV_LinearSystemSetReferenceSolution(drv, c_null_ptr))
    call HYPREDRV_Check(HYPREDRV_LinearSystemGetMatrix(drv, mat))
@@ -101,15 +101,15 @@ program test_csr_mpi
    call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolution(drv, sol_vec))
    if (.not. c_associated(mat) .or. .not. c_associated(rhs_vec) .or. .not. c_associated(rhs_values) .or. &
        .not. c_associated(sol_vec)) then
-      error stop 'invalid matrix/vector accessor pointer'
+      stop 'invalid matrix/vector accessor pointer'
    end if
    call HYPREDRV_Check(HYPREDRV_FortranTestCreateVector(int(MPI_COMM_WORLD, c_int), &
-      row_start, row_end, 1.0_c_double, state_vecs(1)))
+                                                        row_start, row_end, 1.0_c_double, state_vecs(1)))
    call HYPREDRV_Check(HYPREDRV_FortranTestCreateVector(int(MPI_COMM_WORLD, c_int), &
-      row_start, row_end, 0.0_c_double, state_vecs(2)))
+                                                        row_start, row_end, 0.0_c_double, state_vecs(2)))
    call HYPREDRV_Check(HYPREDRV_StateVectorSet(drv, 2_c_int, state_vecs))
    call HYPREDRV_Check(HYPREDRV_StateVectorGetValues(drv, 0_c_int, state_values))
-   if (.not. c_associated(state_values)) error stop 'invalid state-vector values pointer'
+   if (.not. c_associated(state_values)) stop 'invalid state-vector values pointer'
    call HYPREDRV_Check(HYPREDRV_StateVectorCopy(drv, 0_c_int, 1_c_int))
    call HYPREDRV_Check(HYPREDRV_StateVectorUpdateAll(drv))
    call HYPREDRV_Check(HYPREDRV_PreconCreate(drv))
@@ -122,55 +122,58 @@ program test_csr_mpi
    call HYPREDRV_Check(HYPREDRV_StateVectorApplyCorrection(drv, 0_c_int))
    call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolution(drv, sol_vec))
    call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionValues(drv, sol_values))
-   if (.not. c_associated(sol_vec) .or. .not. c_associated(sol_values)) error stop 'invalid solution accessor pointer'
-   call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionNorm(drv, 'l2' // c_null_char, norm))
-   if (norm <= 0.0_c_double) error stop 'invalid solution norm'
+   if (.not. c_associated(sol_vec) .or. .not. c_associated(sol_values)) stop 'invalid solution accessor pointer'
+   call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionNorm(drv, 'l2'//c_null_char, norm))
+   if (norm <= 0.0_c_double) stop 'invalid solution norm'
    call HYPREDRV_Check(HYPREDRV_LinearSolverGetNumIter(drv, iters))
-   if (iters <= 0) error stop 'invalid iteration count'
+   if (iters <= 0) stop 'invalid iteration count'
    call HYPREDRV_Check(HYPREDRV_LinearSolverGetSetupTime(drv, setup_time))
    call HYPREDRV_Check(HYPREDRV_LinearSolverGetSolveTime(drv, solve_time))
-   if (setup_time < 0.0_c_double .or. solve_time < 0.0_c_double) error stop 'invalid solver timing'
+   if (setup_time < 0.0_c_double .or. solve_time < 0.0_c_double) stop 'invalid solver timing'
    call HYPREDRV_Check(HYPREDRV_StatsLevelGetCount(drv, 0_c_int, stats_count))
    if (stats_count > 0) then
       call HYPREDRV_Check(HYPREDRV_StatsLevelGetEntry(drv, 0_c_int, 0_c_int, stats_entry, &
-         stats_solves, stats_iters, stats_setup_time, stats_solve_time))
-      if (stats_entry < 0 .or. stats_solves < 0 .or. stats_iters < 0) error stop 'invalid stats entry'
+                                                      stats_solves, stats_iters, stats_setup_time, stats_solve_time))
+      if (stats_entry < 0 .or. stats_solves < 0 .or. stats_iters < 0) stop 'invalid stats entry'
    end if
    if (rank == 0) call HYPREDRV_Check(HYPREDRV_StatsLevelPrint(drv, 0_c_int))
    if (rank == 0) call HYPREDRV_Check(HYPREDRV_StatsPrint(drv))
    call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionLength(drv, solution_len))
-   if (solution_len /= int(local_n, c_int64_t)) error stop 'invalid solution length'
+   if (solution_len /= int(local_n, c_int64_t)) stop 'invalid solution length'
    call HYPREDRV_Check(HYPREDRV_LinearSystemComputeEigenspectrum(drv))
    call HYPREDRV_Check(HYPREDRV_LinearSolverDestroy(drv))
    call HYPREDRV_Check(HYPREDRV_LinearSystemResetInitialGuess(drv))
    call accept_success_or_error(HYPREDRV_LinearSystemReadDofmap(drv))
 
-   allocate(empty_indptr(1), empty_cols(0), empty_data(0))
+   allocate (empty_indptr(1), empty_cols(0), empty_data(0))
    empty_indptr = 0_c_int64_t
    call expect_error(HYPREDRV_LinearSystemSetMatrixFromCSR(drv, 0_c_int64_t, -1_c_int64_t, &
-      empty_indptr, empty_cols, empty_data), 'empty CSR slab')
-   deallocate(empty_indptr, empty_cols, empty_data)
+                                                           empty_indptr, empty_cols, empty_data), 'empty CSR slab')
+   deallocate (empty_indptr, empty_cols, empty_data)
 
-   allocate(bad_indptr(1), bad_cols(1), bad_data(1))
+   allocate (bad_indptr(1), bad_cols(1), bad_data(1))
    bad_indptr = 0_c_int64_t
    bad_cols = 0_c_int64_t
    bad_data = 1.0_c_double
    call expect_error(HYPREDRV_LinearSystemSetMatrixFromCSR(drv, 0_c_int64_t, 0_c_int64_t, &
-      bad_indptr, bad_cols, bad_data), 'malformed CSR length')
-   deallocate(bad_indptr, bad_cols, bad_data)
+                                                           bad_indptr, bad_cols, bad_data), 'malformed CSR length')
+   call expect_error(HYPREDRV_LinearSystemSetMatrixFromCSR(drv, 0_c_int64_t, 0_c_int64_t, &
+                                                           bad_indptr, bad_cols, bad_data, nnz=2_c_int64_t), &
+                     'oversized CSR nnz')
+   deallocate (bad_indptr, bad_cols, bad_data)
 
-   if (HYPREDRV_BigIntSize() < c_sizeof(row_start)) then
-      allocate(overflow_rhs(1))
+   if (HYPREDRV_BigIntSize() < int(bit_size(row_start)/8, c_size_t)) then
+      allocate (overflow_rhs(1))
       overflow_rhs = 1.0_c_double
       call expect_error(HYPREDRV_LinearSystemSetRHSFromArray(drv, huge(row_start), huge(row_start), &
-         overflow_rhs), 'BigInt overflow')
-      deallocate(overflow_rhs)
+                                                             overflow_rhs), 'BigInt overflow')
+      deallocate (overflow_rhs)
    end if
-   allocate(overflow_rhs(1))
+   allocate (overflow_rhs(1))
    overflow_rhs = 1.0_c_double
    call expect_error(HYPREDRV_LinearSystemSetRHSFromArray(drv, row_start, row_start - 1_c_int64_t, &
-      overflow_rhs), 'always-on invalid RHS range')
-   deallocate(overflow_rhs)
+                                                          overflow_rhs), 'always-on invalid RHS range')
+   deallocate (overflow_rhs)
 
    call HYPREDRV_Check(HYPREDRV_FortranTestDestroyVector(state_vecs(1)))
    call HYPREDRV_Check(HYPREDRV_FortranTestDestroyVector(state_vecs(2)))
@@ -182,7 +185,7 @@ contains
    subroutine accept_success_or_error(ierr)
       integer(c_int32_t), intent(in) :: ierr
 
-      if (ierr < 0_c_int32_t) error stop 'invalid HYPREDRV error code'
+      if (ierr < 0_c_int32_t) stop 'invalid HYPREDRV error code'
    end subroutine accept_success_or_error
 
    subroutine expect_error(ierr, label)
@@ -190,8 +193,8 @@ contains
       character(len=*), intent(in) :: label
 
       if (ierr == HYPREDRV_SUCCESS) then
-         write(*, '(a,a)') 'expected Fortran bridge error for ', trim(label)
-         error stop 'expected Fortran bridge error'
+         write (*, '(a,a)') 'expected Fortran bridge error for ', trim(label)
+         stop 'expected Fortran bridge error'
       end if
    end subroutine expect_error
 end program test_csr_mpi

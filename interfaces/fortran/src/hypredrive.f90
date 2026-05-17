@@ -76,6 +76,11 @@ module hypredrive
          integer(c_int32_t) :: ierr
       end function
 
+      subroutine c_exit(status) bind(C, name="exit")
+         import :: c_int
+         integer(c_int), value :: status
+      end subroutine c_exit
+
       function HYPREDRV_Create(fcomm, hypredrv) bind(C, name="HYPREDRV_FortranCreate") result(ierr)
          import :: c_int, c_int32_t, c_ptr
          integer(c_int), value :: fcomm
@@ -569,10 +574,10 @@ contains
 
    subroutine HYPREDRV_ToCString(text, c_text)
       character(len=*), intent(in) :: text
-      character(kind=c_char), allocatable, intent(out), target :: c_text(:)
+      character(kind=c_char), allocatable, intent(out) :: c_text(:)
       integer :: i, n
       n = len(text)
-      allocate(character(kind=c_char) :: c_text(n + 1))
+      allocate (character(kind=c_char) :: c_text(n + 1))
       do i = 1, n
          c_text(i) = text(i:i)
       end do
@@ -583,23 +588,32 @@ contains
       type(c_ptr), value :: hypredrv
       character(len=*), intent(in) :: yaml_text
       integer(c_int32_t) :: ierr
-      character(kind=c_char), allocatable, target :: c_yaml(:)
+      character(kind=c_char), allocatable :: c_yaml(:)
 
       call HYPREDRV_ToCString(yaml_text, c_yaml)
       ierr = c_HYPREDRV_InputArgsParseYaml(hypredrv, c_yaml)
    end function HYPREDRV_InputArgsParseYaml
 
+   ! These wrappers intentionally avoid the Fortran 2008 CONTIGUOUS attribute so
+   ! the public module remains Fortran 2003-compatible. For strided actual
+   ! arguments, compilers may pass a packed temporary; callers should pass
+   ! contiguous allocatable arrays for large systems to avoid that copy.
    function HYPREDRV_LinearSystemSetMatrixFromCSR(hypredrv, row_start, row_end, indptr, col_indices, data, nnz) result(ierr)
       type(c_ptr), value :: hypredrv
       integer(c_int64_t), value :: row_start, row_end
-      integer(c_int64_t), intent(in), target :: indptr(:), col_indices(:)
-      real(c_double), intent(in), target :: data(:)
+      integer(c_int64_t), intent(in) :: indptr(:), col_indices(:)
+      real(c_double), intent(in) :: data(:)
       integer(c_int64_t), intent(in), optional :: nnz
       integer(c_int32_t) :: ierr
       integer(c_int64_t) :: data_len
 
       data_len = int(size(data), c_int64_t)
       if (present(nnz)) data_len = nnz
+      if (data_len < 0_c_int64_t .or. data_len > int(size(col_indices), c_int64_t) .or. &
+          data_len > int(size(data), c_int64_t)) then
+         ierr = HYPREDRV_ErrorInvalidValue('Fortran CSR nnz exceeds col_indices/data length'//c_null_char)
+         return
+      end if
       ierr = c_HYPREDRV_LinearSystemSetMatrixFromCSR(hypredrv, row_start, row_end, &
                                                      indptr, int(size(indptr), c_int64_t), &
                                                      col_indices, data_len, data, data_len)
@@ -608,7 +622,7 @@ contains
    function HYPREDRV_LinearSystemSetRHSFromArray(hypredrv, row_start, row_end, values) result(ierr)
       type(c_ptr), value :: hypredrv
       integer(c_int64_t), value :: row_start, row_end
-      real(c_double), intent(in), target :: values(:)
+      real(c_double), intent(in) :: values(:)
       integer(c_int32_t) :: ierr
 
       ierr = c_HYPREDRV_LinearSystemSetRHSFromArray(hypredrv, row_start, row_end, &
@@ -626,11 +640,29 @@ contains
    subroutine HYPREDRV_Check(ierr, message)
       integer(c_int32_t), intent(in) :: ierr
       character(len=*), intent(in), optional :: message
+      character(len=32) :: rank_text
+      character(len=48) :: prefix
+      integer :: env_status
 
       if (ierr == HYPREDRV_SUCCESS) return
-      if (present(message)) write(*, '(a)') trim(message)
+      prefix = ''
+      call get_environment_variable('PMI_RANK', rank_text, status=env_status)
+      if (env_status /= 0) call get_environment_variable('OMPI_COMM_WORLD_RANK', rank_text, status=env_status)
+      if (env_status == 0) prefix = '[rank '//trim(rank_text)//']'
+      if (present(message)) then
+         if (len_trim(prefix) > 0) then
+            write (*, '(a,1x,a)') trim(prefix), trim(message)
+         else
+            write (*, '(a)') trim(message)
+         end if
+      end if
       call HYPREDRV_ErrorCodeDescribe(ierr)
-      error stop 'HYPREDRV call failed'
+      if (len_trim(prefix) > 0) then
+         write (*, '(a,1x,a)') trim(prefix), 'HYPREDRV call failed'
+      else
+         write (*, '(a)') 'HYPREDRV call failed'
+      end if
+      call c_exit(1_c_int)
    end subroutine HYPREDRV_Check
 
 end module hypredrive

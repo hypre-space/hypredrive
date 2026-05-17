@@ -12,13 +12,16 @@ The Fortran interface provides thin bindings to the public ``HYPREDRV_`` C API.
 It is intended for Fortran applications that already use MPI and want to drive
 hypredrive without writing C glue code.
 
+Prerequisites
+-------------
+
+Prerequisites are a C compiler, a Fortran 2003 compiler, MPI C and Fortran
+wrappers (``mpicc``/``mpifort`` or equivalents), CMake, and a HYPRE build
+compatible with hypredrive. The examples use ``mpif.h`` for broad compiler/MPI
+compatibility, but the build still requires an MPI Fortran wrapper and library.
+
 Build
 -----
-
-Prerequisites are a C compiler, a Fortran compiler, MPI C and Fortran wrappers
-(``mpicc``/``mpifort`` or equivalents), CMake, and a HYPRE build compatible with
-hypredrive. The examples use ``mpif.h`` for broad compiler/MPI compatibility,
-but the build still requires an MPI Fortran wrapper and library.
 
 The interface is optional and disabled by default:
 
@@ -30,23 +33,21 @@ The interface is optional and disabled by default:
      -DHYPREDRV_ENABLE_EXAMPLES=ON
    cmake --build build-fortran --parallel
 
-Run the Fortran tests:
-
-.. code-block:: bash
-
-   cmake --build build-fortran --target fortran-test
-
-The ``fortran-test`` target builds the Laplacian test driver even when
-``HYPREDRV_ENABLE_EXAMPLES=OFF``, so the core Fortran test coverage does not
-depend on user-facing examples being enabled. It runs small namelist-driven
-Laplacian smoke cases: serial, 2-rank x/z partitions, a 4-rank x/y partition,
-anisotropic coefficients, and external solver YAML.
+The ``laplacian-fortran`` driver is available whenever
+``HYPREDRV_ENABLE_FORTRAN=ON``, so the core Fortran test coverage does not
+depend on ``HYPREDRV_ENABLE_EXAMPLES``. The ``fortran-test`` target runs small
+namelist-driven Laplacian smoke cases: serial, 2-rank x/z partitions, a 4-rank
+x/y partition, anisotropic coefficients, and external solver YAML.
 
 Build only the examples:
 
 .. code-block:: bash
 
    cmake --build build-fortran --target fortran-examples
+
+The ``laplacian-fortran`` driver is installed whenever
+``HYPREDRV_ENABLE_FORTRAN=ON``. It is both a user-facing example and the
+reproducible smoke driver used by the Fortran tests.
 
 Installed use
 -------------
@@ -55,7 +56,7 @@ Installed Fortran consumers can use the exported CMake target:
 
 .. code-block:: cmake
 
-   find_package(MPI REQUIRED COMPONENTS Fortran)
+   find_package(MPI COMPONENTS Fortran REQUIRED)
    find_package(HYPREDRV REQUIRED)
    target_link_libraries(my_solver PRIVATE HYPREDRV::Fortran MPI::MPI_Fortran)
 
@@ -64,35 +65,38 @@ Fortran compiler family used to install hypredrive, otherwise the compiler may
 not be able to read ``hypredrive.mod``. The module is installed as
 ``include/hypredrive.mod`` under the installation prefix.
 
-For shared-library installs, make the install ``lib`` directory visible at
-runtime, for example:
-
-.. code-block:: bash
-
-   export LD_LIBRARY_PATH=/path/to/hypredrive/install/lib:${LD_LIBRARY_PATH}
+Installed executables use a relative runtime search path so prefix-local
+libraries in ``lib`` are found without setting ``LD_LIBRARY_PATH``.
 
 Usage model
 -----------
 
-Applications use the ``hypredrive`` module:
+Applications use the ``hypredrive`` module and opaque ``type(c_ptr)`` handles:
 
 .. code-block:: fortran
 
-   use, intrinsic :: iso_c_binding
-   use hypredrive
-   implicit none
-   include 'mpif.h'
+   program driver
+      use, intrinsic :: iso_c_binding
+      use hypredrive
+      implicit none
+      include 'mpif.h'
 
-Handles are represented as ``type(c_ptr)``. MPI communicators are passed as
-Fortran MPI handles and converted to C communicators inside the binding. The
-examples use ``mpif.h`` instead of ``use mpi`` for compatibility with MPI
-installations whose ``mpi.mod`` was built by another Fortran compiler:
+      integer :: ierr
+      type(c_ptr) :: drv
 
-.. code-block:: fortran
+      call MPI_Init(ierr)
+      call HYPREDRV_Check(HYPREDRV_Initialize())
+      call HYPREDRV_Check(HYPREDRV_Create(int(MPI_COMM_WORLD, c_int), drv))
+      ! Install matrix/RHS and solve here.
+      call HYPREDRV_Check(HYPREDRV_Destroy(drv))
+      call HYPREDRV_Check(HYPREDRV_Finalize())
+      call MPI_Finalize(ierr)
+   end program driver
 
-   type(c_ptr) :: drv
-
-   call HYPREDRV_Check(HYPREDRV_Create(int(MPI_COMM_WORLD, c_int), drv))
+MPI communicators are passed as Fortran MPI handles and converted to C
+communicators inside the binding. The examples use ``mpif.h`` instead of
+``use mpi`` for compatibility with MPI installations whose ``mpi.mod`` was built
+by another Fortran compiler.
 
 The helper ``HYPREDRV_InputArgsParseYaml`` accepts ordinary Fortran strings and
 parses them through the same YAML input path as the C API:
@@ -125,7 +129,9 @@ Fortran arrays for local CSR slabs:
 
 ``indptr`` must be normalized: ``indptr(1) == 0`` and the final entry must equal
 ``size(cols)`` and ``size(data)``. Empty local CSR slabs are rejected by the
-convenience helper.
+convenience helper. The Fortran 2003 binding accepts ordinary assumed-shape
+arrays; pass contiguous allocatable arrays for large systems to avoid
+compiler-generated packing copies for strided sections.
 
 Examples
 --------
@@ -150,10 +156,6 @@ The module exposes procedures for the public ``HYPREDRV_`` functions in
 presets, matrix/RHS setup, solver and preconditioner lifecycle, state vectors,
 statistics, annotations, timing accessors, and small Fortran helper routines
 such as ``HYPREDRV_Check`` and ``HYPREDRV_BigIntSize``.
-
-``HYPREDRV_SUCCESS`` is defined separately as a C macro and as a Fortran module
-parameter because Fortran ``bind(C)`` interfaces cannot import C preprocessor
-macros.
 
 The Fortran interface preserves the C API ownership rules. Borrowed HYPRE
 objects remain caller-owned unless the corresponding C function documents that
@@ -197,9 +199,21 @@ Use CMake's convenience target for local validation:
 
    cmake --build build-fortran --target fortran-test --parallel
 
-The test target includes lifecycle checks, full ``argv`` input parsing, expected
-``HYPREDRV_Check`` failure behavior, MPI CSR assembly/solve coverage, and the
+The test target includes lifecycle checks and full ``argv`` input parsing from
+``test_lifecycle.f90``, expected ``HYPREDRV_Check`` failure behavior from
+``test_check_failure.f90``, MPI CSR assembly/solve coverage, and the
 namelist-driven Laplacian cases.
+
+Notes
+-----
+
+``HYPREDRV_SUCCESS`` is defined separately as a C macro and as a Fortran module
+parameter because Fortran ``bind(C)`` interfaces cannot import C preprocessor
+macros.
+
+The current CI job exercises GNU Fortran on Ubuntu. Other compiler families
+such as Intel, NVHPC, Cray, and macOS Fortran stacks are intended future CI
+coverage.
 
 Limitations
 -----------

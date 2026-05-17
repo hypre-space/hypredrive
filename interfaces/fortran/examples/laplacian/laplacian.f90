@@ -64,7 +64,7 @@ program laplacian
       call HYPREDRV_Check(HYPREDRV_LinearSolverDestroy(drv))
    end do
 
-   call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionNorm(drv, 'l2' // c_null_char, norm))
+   call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionNorm(drv, 'l2'//c_null_char, norm))
    call HYPREDRV_Check(HYPREDRV_LinearSolverGetNumIter(drv, iters))
    if (rank == 0) print '(a,es12.5,a,i0)', 'Solution l2 norm: ', norm, ', iterations: ', iters
    if (rank == 0 .and. iand(verbose, 1) /= 0) call HYPREDRV_Check(HYPREDRV_StatsPrint(drv))
@@ -85,16 +85,17 @@ contains
       namelist /laplacian/ n, p, c, stencil, nsolve, verbose, solver_yaml
 
       if (len_trim(filename) == 0) return
-      open(newunit=unit, file=filename, status='old', action='read', iostat=ios)
+      unit = free_unit()
+      open (unit=unit, file=filename, status='old', action='read', iostat=ios)
       if (ios /= 0) then
          if (rank == 0) print '(a,a)', 'Could not open input file: ', trim(filename)
-         error stop 'failed to open namelist input'
+         stop 'failed to open namelist input'
       end if
-      read(unit, nml=laplacian, iostat=ios)
-      close(unit)
+      read (unit, nml=laplacian, iostat=ios)
+      close (unit)
       if (ios /= 0) then
          if (rank == 0) print '(a,a)', 'Could not parse namelist input: ', trim(filename)
-         error stop 'failed to parse namelist input'
+         stop 'failed to parse namelist input'
       end if
    end subroutine read_parameters
 
@@ -103,27 +104,27 @@ contains
 
       if (any(n < 2)) then
          if (rank == 0) print '(a)', 'Each grid dimension must be at least 2.'
-         error stop 'invalid grid dimensions'
+         stop 'invalid grid dimensions'
       end if
       if (any(p < 1)) then
          if (rank == 0) print '(a)', 'Each processor-grid dimension must be positive.'
-         error stop 'invalid processor grid'
+         stop 'invalid processor grid'
       end if
       if (product(p) /= nproc) then
          if (rank == 0) print '(a,i0,a,3(i0,1x),a,i0)', 'MPI ranks (', nproc, ') do not match p = ', p, 'product ', product(p)
-         error stop 'processor grid mismatch'
+         stop 'processor grid mismatch'
       end if
       if (any(n < p)) then
          if (rank == 0) print '(a)', 'This example requires at least one grid point per rank in each partitioned direction.'
-         error stop 'empty local block'
+         stop 'empty local block'
       end if
       if (stencil /= 7) then
          if (rank == 0) print '(a)', 'The Fortran Laplacian example currently supports stencil = 7.'
-         error stop 'unsupported stencil'
+         stop 'unsupported stencil'
       end if
       if (nsolve < 1) then
          if (rank == 0) print '(a)', 'nsolve must be positive.'
-         error stop 'invalid nsolve'
+         stop 'invalid nsolve'
       end if
    end subroutine validate_parameters
 
@@ -153,7 +154,7 @@ contains
       integer(c_int64_t), intent(out) :: row_start, row_end, nnz
       integer(c_int64_t), allocatable, intent(out) :: indptr(:), cols(:)
       real(c_double), allocatable, intent(out) :: data(:), rhs(:)
-      integer(c_int64_t), allocatable :: starts(:,:)
+      integer(c_int64_t), allocatable :: starts(:, :)
       integer :: coords(3), local_n(3), ix, iy, iz
       integer(c_int64_t) :: gx, gy, gz, row, pos, row_local
       integer(c_int64_t) :: local_size, max_nnz, global_size
@@ -163,14 +164,15 @@ contains
       local_n = [int(starts(coords(1) + 1, 1) - starts(coords(1), 1)), &
                  int(starts(coords(2) + 1, 2) - starts(coords(2), 2)), &
                  int(starts(coords(3) + 1, 3) - starts(coords(3), 3))]
-      local_size = int(local_n(1), c_int64_t) * int(local_n(2), c_int64_t) * &
+      local_size = int(local_n(1), c_int64_t)*int(local_n(2), c_int64_t)* &
                    int(local_n(3), c_int64_t)
-      max_nnz = 7_c_int64_t * local_size
-      global_size = int(n(1), c_int64_t) * int(n(2), c_int64_t) * int(n(3), c_int64_t)
+      max_nnz = 7_c_int64_t*local_size
+      global_size = int(n(1), c_int64_t)*int(n(2), c_int64_t)*int(n(3), c_int64_t)
       row_start = grid_to_index(starts(coords(1), 1), starts(coords(2), 2), starts(coords(3), 3), coords, n, starts)
       row_end = row_start + local_size - 1_c_int64_t
 
-      allocate(indptr(local_size + 1_c_int64_t), cols(max_nnz), data(max_nnz), rhs(local_size))
+      allocate (indptr(local_size + 1_c_int64_t), cols(max_nnz), data(max_nnz), rhs(local_size))
+      rhs = 0.0_c_double
       indptr(1) = 0_c_int64_t
       pos = 0
       row_local = 0
@@ -183,7 +185,7 @@ contains
                row = grid_to_index(gx, gy, gz, coords, n, starts)
                row_local = row_local + 1
 
-               call append_entry(pos, cols, data, row, 2.0_c_double * (c(1) + c(2) + c(3)))
+               call append_entry(pos, cols, data, row, 2.0_c_double*(c(1) + c(2) + c(3)))
                call add_neighbor(pos, cols, data, gx - 1_c_int64_t, gy, gz, n, p, starts, -c(1))
                call add_neighbor(pos, cols, data, gx + 1_c_int64_t, gy, gz, n, p, starts, -c(1))
                call add_neighbor(pos, cols, data, gx, gy - 1_c_int64_t, gz, n, p, starts, -c(2))
@@ -191,7 +193,6 @@ contains
                call add_neighbor(pos, cols, data, gx, gy, gz - 1_c_int64_t, n, p, starts, -c(3))
                call add_neighbor(pos, cols, data, gx, gy, gz + 1_c_int64_t, n, p, starts, -c(3))
 
-               rhs(row_local) = 0.0_c_double
                if (gy == 0_c_int64_t) rhs(row_local) = 1.0_c_double
                indptr(row_local + 1) = int(pos, c_int64_t)
             end do
@@ -201,23 +202,23 @@ contains
       if (any(cols(:pos) < 0_c_int64_t) .or. any(cols(:pos) >= global_size)) then
          print '(a,2(i0,1x),a,i0)', 'Invalid generated column range: ', minval(cols(:pos)), &
             maxval(cols(:pos)), 'global rows: ', global_size
-         error stop 'invalid generated column index'
+         stop 'invalid generated column index'
       end if
       nnz = pos
    end subroutine build_laplacian_7pt
 
    subroutine compute_starts(n, p, starts)
       integer, intent(in) :: n(3), p(3)
-      integer(c_int64_t), allocatable, intent(out) :: starts(:,:)
+      integer(c_int64_t), allocatable, intent(out) :: starts(:, :)
       integer :: dim, base, rem, coord
 
-      allocate(starts(0:maxval(p), 3))
+      allocate (starts(0:maxval(p), 3))
       starts = 0_c_int64_t
       do dim = 1, 3
-         base = n(dim) / p(dim)
-         rem = n(dim) - base * p(dim)
+         base = n(dim)/p(dim)
+         rem = n(dim) - base*p(dim)
          do coord = 0, p(dim)
-            starts(coord, dim) = int(base * coord + min(coord, rem), c_int64_t)
+            starts(coord, dim) = int(base*coord + min(coord, rem), c_int64_t)
          end do
       end do
    end subroutine compute_starts
@@ -227,8 +228,8 @@ contains
       integer, intent(out) :: coords(3)
 
       coords(1) = mod(rank, p(1))
-      coords(2) = mod(rank / p(1), p(2))
-      coords(3) = rank / (p(1) * p(2))
+      coords(2) = mod(rank/p(1), p(2))
+      coords(3) = rank/(p(1)*p(2))
    end subroutine rank_to_coords
 
    subroutine owner_coords(gx, gy, gz, p, starts, coords)
@@ -261,25 +262,25 @@ contains
       idx = 0_c_int64_t
       do rz = 0, coords(3) - 1
          nz = starts(rz + 1, 3) - starts(rz, 3)
-         idx = idx + int(n(1), c_int64_t) * int(n(2), c_int64_t) * nz
+         idx = idx + int(n(1), c_int64_t)*int(n(2), c_int64_t)*nz
       end do
       do ry = 0, coords(2) - 1
          ny = starts(ry + 1, 2) - starts(ry, 2)
          nz = starts(coords(3) + 1, 3) - starts(coords(3), 3)
-         idx = idx + int(n(1), c_int64_t) * ny * nz
+         idx = idx + int(n(1), c_int64_t)*ny*nz
       end do
       do rx = 0, coords(1) - 1
          nx = starts(rx + 1, 1) - starts(rx, 1)
          ny = starts(coords(2) + 1, 2) - starts(coords(2), 2)
          nz = starts(coords(3) + 1, 3) - starts(coords(3), 3)
-         idx = idx + nx * ny * nz
+         idx = idx + nx*ny*nz
       end do
 
       nx = starts(coords(1) + 1, 1) - starts(coords(1), 1)
       ny = starts(coords(2) + 1, 2) - starts(coords(2), 2)
-      idx = idx + ((gz - starts(coords(3), 3)) * ny + &
-                   (gy - starts(coords(2), 2))) * nx + &
-                  (gx - starts(coords(1), 1))
+      idx = idx + ((gz - starts(coords(3), 3))*ny + &
+                   (gy - starts(coords(2), 2)))*nx + &
+            (gx - starts(coords(1), 1))
    end function grid_to_index
 
    subroutine add_neighbor(pos, cols, data, gx, gy, gz, n, p, starts, value)
@@ -314,31 +315,60 @@ contains
    function default_yaml() result(text)
       character(len=:), allocatable :: text
 
-      text = 'solver:' // new_line('a') // &
-             '  pcg:' // new_line('a') // &
-             '    max_iter: 100' // new_line('a') // &
-             '    relative_tol: 1.0e-8' // new_line('a') // &
-             'preconditioner:' // new_line('a') // &
-             '  amg:' // new_line('a') // &
-             '    max_iter: 1' // new_line('a') // &
-             '    tolerance: 0.0' // new_line('a')
+      text = 'solver:'//new_line('a')// &
+             '  pcg:'//new_line('a')// &
+             '    max_iter: 100'//new_line('a')// &
+             '    relative_tol: 1.0e-8'//new_line('a')// &
+             'preconditioner:'//new_line('a')// &
+             '  amg:'//new_line('a')// &
+             '    max_iter: 1'//new_line('a')// &
+             '    tolerance: 0.0'//new_line('a')
    end function default_yaml
 
    subroutine read_text_file(filename, text)
       character(len=*), intent(in) :: filename
       character(len=:), allocatable, intent(out) :: text
       character(len=1024) :: line
-      integer :: unit, ios
+      integer :: unit, ios, line_len, total_len, used
 
-      text = ''
-      open(newunit=unit, file=filename, status='old', action='read', iostat=ios)
-      if (ios /= 0) error stop 'failed to open solver YAML file'
+      total_len = 0
+      unit = free_unit()
+      open (unit=unit, file=filename, status='old', action='read', iostat=ios)
+      if (ios /= 0) stop 'failed to open solver YAML file'
       do
-         read(unit, '(a)', iostat=ios) line
+         read (unit, '(a)', iostat=ios) line
          if (ios /= 0) exit
-         text = text // trim(line) // new_line('a')
+         total_len = total_len + len_trim(line) + 1
       end do
-      close(unit)
+      close (unit)
+
+      allocate (character(len=total_len) :: text)
+      if (total_len == 0) return
+
+      used = 0
+      unit = free_unit()
+      open (unit=unit, file=filename, status='old', action='read', iostat=ios)
+      if (ios /= 0) stop 'failed to open solver YAML file'
+      do
+         read (unit, '(a)', iostat=ios) line
+         if (ios /= 0) exit
+         line_len = len_trim(line)
+         if (line_len > 0) text(used + 1:used + line_len) = trim(line)
+         used = used + line_len
+         text(used + 1:used + 1) = new_line('a')
+         used = used + 1
+      end do
+      close (unit)
    end subroutine read_text_file
+
+   integer function free_unit() result(unit)
+      logical :: opened
+
+      do unit = 10, 999
+         inquire (unit=unit, opened=opened)
+         if (.not. opened) return
+      end do
+      stop 'no free Fortran I/O unit'
+   end function free_unit
 
 end program laplacian
