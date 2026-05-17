@@ -9,21 +9,27 @@
 Library Examples (libHYPREDRV)
 ==============================
 
-This section demonstrates how to use the ``libHYPREDRV`` library from application codes
-to assemble, configure, and solve linear systems with hypre. Unlike the :ref:`DriverExamples`
-that fully operate the ``hypredrive-cli`` executable via YAML input files, these examples embed the
-linear system assembly directly in your program and expose hooks for customizing discretizations,
-data layouts, MPI partitioning, and linear solver options via YAML configuration.
+This section demonstrates how to use the ``libHYPREDRV`` library from application
+codes that assemble their own linear systems. Unlike the :ref:`DriverExamples`,
+which drive the ``hypredrive-cli`` executable from YAML input files and
+file-based matrix/RHS data, these examples embed the matrix/vector assembly
+directly in the application. This is the right mode when the application owns the
+discretization, data layout, MPI partitioning, and solver lifecycle, but still
+wants hypredrive to configure and invoke HYPRE solvers and preconditioners.
 
 .. note::
-   Prefer the ``hypredrive-cli`` executable (driver) when working with file-based
-   matrices/vectors and you want to quickly experiment with solver/preconditioner
-   configurations. Prefer ``libHYPREDRV`` when your application assembles matrices
-   and vectors in memory and you need a lightweight API to invoke HYPRE solvers
-   and preconditioners programmatically.
+   Prefer the ``hypredrive-cli`` driver when working with matrices/vectors on
+   disk or when quickly comparing solver/preconditioner configurations. Prefer
+   ``libHYPREDRV`` when your application assembles matrices and vectors in
+   memory and needs a lightweight API to invoke HYPRE programmatically.
 
 Overview of Typical Steps
 -------------------------
+
+.. note::
+   This section focuses on the C/C++ library API. For language bindings, see
+   :ref:`Interfaces`, especially :ref:`PythonInterface` and
+   :ref:`FortranInterface`.
 
 The library-side workflow in C/C++ generally follows these steps:
 
@@ -34,16 +40,19 @@ The library-side workflow in C/C++ generally follows these steps:
 5. Assemble your matrix and vectors (``HYPRE_IJMatrix``/``HYPRE_IJVector``) in parallel.
 6. Tell hypredrive about your DOF layout (e.g., interleaved blocks).
 7. Attach matrix/RHS/initial guess/prec matrix to hypredrive.
-8. Create, setup, and apply the solver. In library mode, ``general.statistics`` is
-   flushed automatically when the ``HYPREDRV_t`` object is destroyed; call
-   ``HYPREDRV_StatsPrint`` yourself only if you want an extra snapshot earlier.
-   Set ``general.statistics_filename`` if you want those summaries appended to a file
+8. Create, set up, apply, and destroy the solver.
+9. Retrieve solution values or statistics if needed. In library mode,
+   ``general.statistics`` is flushed automatically when the ``HYPREDRV_t``
+   object is destroyed; call ``HYPREDRV_StatsPrint`` only if you want an earlier
+   snapshot. Set ``general.statistics_filename`` to append summaries to a file
    instead of ``stdout``.
-   If you manage multiple handles, set ``general.name`` in YAML or call
-   ``HYPREDRV_ObjectSetName`` so the summary can identify which object produced it.
-9. Retrieve solution values if needed; destroy handles explicitly when practical, then
-   finalize hypredrive. ``HYPREDRV_Finalize()`` will auto-destroy any remaining live
-   handles, but it cannot rewrite your local handle variables to ``NULL``.
+10. Destroy handles explicitly when practical, then finalize hypredrive.
+    ``HYPREDRV_Finalize()`` auto-destroys any remaining live handles, but it
+    cannot rewrite your local handle variables to ``NULL``.
+
+If you manage multiple handles, set ``general.name`` in YAML or call
+``HYPREDRV_ObjectSetName`` so statistics can identify which object produced each
+summary.
 
 If your application owns multiple ``HYPREDRV_t`` objects concurrently, or if you want
 preconditioner reuse to respect application-defined timestep / nonlinear-iteration boundaries,
@@ -72,8 +81,10 @@ A minimal skeleton of a program using the library is shown below.
      const char* yaml = "general:\n"
                         "  statistics: 1\n"
                         "  statistics_filename: stats.txt\n"
-                        "solver: pcg\n"
-                        "preconditioner: amg\n";
+                        "solver:\n"
+                        "  pcg: {}\n"
+                        "preconditioner:\n"
+                        "  amg: {}\n";
      char* args[1] = {(char*)yaml};
      HYPREDRV_InputArgsParse(1, args, h);
 
@@ -116,11 +127,15 @@ A minimal skeleton of a program using the library is shown below.
 - For block linear systems, set row mapping information via ``HYPREDRV_LinearSystemSetDofmap``.
 - If compiled with GPU support, you may migrate assembled IJ objects to device memory with
   ``HYPRE_IJMatrixMigrate(..., HYPRE_MEMORY_DEVICE)`` and analogous calls for vectors.
-- ``HYPREDRV_LinearSystemSetInitialGuess`` / ``HYPREDRV_LinearSystemSetReferenceSolution`` /
-  ``HYPREDRV_LinearSystemSetPrecMatrix`` accept optional external vectors/matrix. Passing
-  ``NULL`` keeps file/default behavior; passing non-``NULL`` uses the provided object.
-- Ownership of non-``NULL`` objects follows library mode:
-  ``HYPREDRV_SetLibraryMode`` ON -> borrowed by HYPREDRV; OFF -> ownership is transferred.
+- ``HYPREDRV_LinearSystemSetInitialGuess``,
+  ``HYPREDRV_LinearSystemSetReferenceSolution``, and
+  ``HYPREDRV_LinearSystemSetPrecMatrix`` accept optional external vectors/matrix.
+  Passing ``NULL`` asks hypredrive to use the configured/default behavior.
+  Passing non-``NULL`` uses the provided object.
+- Ownership follows library mode. After ``HYPREDRV_SetLibraryMode``, non-``NULL``
+  HYPRE objects supplied by the caller are borrowed and remain caller-owned.
+  Without library mode, non-``NULL`` objects passed through these setters are
+  treated as hypredrive-owned and destroyed with the ``HYPREDRV_t`` object.
 
 .. note::
    Preconditioner reuse across a sequence of linear systems (time steps, multiple RHS) is
@@ -193,14 +208,14 @@ accurate when weights are chosen consistently.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 With directional coefficients :math:`c_x,c_y,c_z` and spacings :math:`h_x,h_y,h_z`,
-the discrete operator at interior node :math:`(i,j,k)` is
+the discrete negative-Laplacian operator at interior node :math:`(i,j,k)` is
 
 .. math::
    \begin{aligned}
-   (L_h u)_{i,j,k}
-   &= \frac{c_x}{h_x^2}\,\big(u_{i+1,j,k} - 2u_{i,j,k} + u_{i-1,j,k}\big) + \\
-   &\quad \frac{c_y}{h_y^2}\,\big(u_{i,j+1,k} - 2u_{i,j,k} + u_{i,j-1,k}\big) + \\
-   &\quad \frac{c_z}{h_z^2}\,\big(u_{i,j,k+1} - 2u_{i,j,k} + u_{i,j,k-1}\big)
+   (A_h u)_{i,j,k}
+   &= \frac{c_x}{h_x^2}\,\big(2u_{i,j,k} - u_{i+1,j,k} - u_{i-1,j,k}\big) + \\
+   &\quad \frac{c_y}{h_y^2}\,\big(2u_{i,j,k} - u_{i,j+1,k} - u_{i,j-1,k}\big) + \\
+   &\quad \frac{c_z}{h_z^2}\,\big(2u_{i,j,k} - u_{i,j,k+1} - u_{i,j,k-1}\big)
    \end{aligned}
 
 19-point (faces + edges)
@@ -243,10 +258,11 @@ uses uniform small weights for far neighbors to illustrate wide stencils.
 Boundary Conditions and SPD Structure
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Dirichlet values are enforced during assembly: when a neighbor lies outside :math:`\Omega`,
-or when the face corresponds to :math:`y=0` with :math:`u=1`, the contribution is moved to
-the RHS. Rows for interior nodes use only valid neighbor columns; the diagonal entry is
-the negative sum of off-diagonals to maintain row-sum consistency and SPD structure.
+Dirichlet values are enforced during assembly. When a neighbor lies outside
+:math:`\Omega`, or when the face corresponds to :math:`y=0` with :math:`u=1`,
+the known-value contribution is moved to the RHS. Rows for interior nodes use
+only valid neighbor columns; the diagonal entry is the negative sum of
+off-diagonals to maintain row-sum consistency and the SPD structure.
 
 Linear System Creation (IJ interface)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -343,6 +359,11 @@ For a single-process run, the output should be similar to the following:
 
 .. literalinclude:: ../../examples/refOutput/laplacian.txt
    :language: text
+
+.. note::
+   Python examples live under ``interfaces/python/examples``; see
+   :ref:`PythonInterface`. The Fortran Laplacian example lives under
+   ``interfaces/fortran/examples/laplacian``; see :ref:`FortranInterface`.
 
 .. _LibraryExample2:
 
