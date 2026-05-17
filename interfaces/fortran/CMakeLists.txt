@@ -220,5 +220,6 @@ if(HYPREDRV_ENABLE_TESTING)
     add_custom_target(fortran-test
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L fortran
         DEPENDS ${_hypredrv_fortran_test_target_deps}
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         COMMENT "Running hypredrive Fortran tests")
 endif()

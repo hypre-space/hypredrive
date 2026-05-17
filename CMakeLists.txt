@@ -359,6 +359,12 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Format.cmake)
 # Platform-specific settings
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Platform.cmake)
 
+# Optional interfaces may register tests before the main testing module adds the
+# C test suite, so enable CTest before descending into those subdirectories.
+if(HYPREDRV_ENABLE_TESTING)
+    enable_testing()
+endif()
+
 # Python interface (optional)
 if(HYPREDRV_ENABLE_PYTHON)
     add_subdirectory(interfaces/python)
