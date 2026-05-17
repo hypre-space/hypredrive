@@ -1,0 +1,9 @@
+&laplacian
+  n = 10, 10, 10
+  p = 1, 1, 2
+  c = 1.0, 1.0, 1.0
+  stencil = 7
+  nsolve = 2
+  verbose = 0
+  solver_yaml = ''
+/

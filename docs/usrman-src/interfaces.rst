@@ -24,3 +24,4 @@ binding.
    :maxdepth: 2
 
    interfaces_python
+   interfaces_fortran

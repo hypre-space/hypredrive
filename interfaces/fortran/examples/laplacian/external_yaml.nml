@@ -1,0 +1,9 @@
+&laplacian
+  n = 8, 8, 8
+  p = 1, 1, 1
+  c = 1.0, 1.0, 1.0
+  stencil = 7
+  nsolve = 1
+  verbose = 0
+  solver_yaml = 'interfaces/fortran/examples/laplacian/solver.yml'
+/

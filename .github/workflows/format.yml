@@ -7,6 +7,9 @@ on:
       - 'include/**'
       - 'src/**'
       - 'examples/src/**'
+      - 'interfaces/fortran/**/*.f90'
+      - 'interfaces/fortran/CMakeLists.txt'
+      - 'cmake/HYPREDRV_Format.cmake'
       - 'scripts/check_private_prefix.sh'
       - 'scripts/check_symbol_prefix.sh'
       - 'scripts/list_public_apis.sh'
@@ -17,6 +20,9 @@ on:
       - 'include/**'
       - 'src/**'
       - 'examples/src/**'
+      - 'interfaces/fortran/**/*.f90'
+      - 'interfaces/fortran/CMakeLists.txt'
+      - 'cmake/HYPREDRV_Format.cmake'
       - 'scripts/check_private_prefix.sh'
       - 'scripts/check_symbol_prefix.sh'
       - 'scripts/list_public_apis.sh'
@@ -35,22 +41,29 @@ jobs:
         (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
         (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
       }}
-    name: clang-format
+    name: code format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install clang-format
+      - name: Install formatters
         timeout-minutes: 3
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-format
+          python -m pip install fprettify
 
       - name: clang-format check
         run: |
           set -euxo pipefail
           find include src examples/src -type f \( -name "*.c" -o -name "*.h" \) | \
             xargs clang-format -n --Werror
+
+      - name: fprettify check
+        run: |
+          set -euxo pipefail
+          find interfaces/fortran -type f -name "*.f90" | \
+            xargs fprettify -i 3 --diff
 
   private-prefix:
     if: >-

@@ -1,0 +1,8 @@
+solver:
+  pcg:
+    max_iter: 100
+    relative_tol: 1.0e-8
+preconditioner:
+  amg:
+    max_iter: 1
+    tolerance: 0.0
