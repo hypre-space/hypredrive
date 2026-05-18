@@ -13,20 +13,44 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import NamedTuple
 
 from mpi4py import MPI
 
 import numpy as np
 
 
-class Grid(NamedTuple):
+class Grid:
+    __slots__ = (
+        "comm",
+        "shape",
+        "proc_shape",
+        "proc_coords",
+        "starts",
+        "slices",
+        "rank_offsets",
+    )
+
+    def __init__(self, comm: MPI.Cartcomm, shape: tuple[int, int, int],
+                 proc_shape: tuple[int, int, int],
+                 proc_coords: tuple[int, int, int],
+                 starts: tuple[np.ndarray, np.ndarray, np.ndarray],
+                 slices: tuple[slice, slice, slice],
+                 rank_offsets: np.ndarray):
+        self.comm = comm
+        self.shape = shape
+        self.proc_shape = proc_shape
+        self.proc_coords = proc_coords
+        self.starts = starts
+        self.slices = slices
+        self.rank_offsets = rank_offsets
+
     comm: MPI.Cartcomm
     shape: tuple[int, int, int]
     proc_shape: tuple[int, int, int]
     proc_coords: tuple[int, int, int]
     starts: tuple[np.ndarray, np.ndarray, np.ndarray]
     slices: tuple[slice, slice, slice]
+    rank_offsets: np.ndarray
 
     @property
     def rank(self) -> int:
@@ -42,11 +66,14 @@ class Grid(NamedTuple):
 
     @property
     def row_start(self) -> int:
-        return block_offset(self.starts, self.proc_shape, self.proc_coords)
+        return self.block_offset(self.proc_coords)
 
     @property
     def row_end(self) -> int:
         return self.row_start + np.prod(self.local_shape) - 1
+
+    def block_offset(self, coords: tuple[int, int, int]) -> int:
+        return int(self.rank_offsets[self.comm.Get_cart_rank(coords)])
 
 
 def parse_args(comm: MPI.Comm):
@@ -92,7 +119,12 @@ def make_grid(comm: MPI.Comm, shape: tuple[int, int, int],
     starts = tuple(split_points(n, p) for n, p in zip(shape, proc_shape))
     slices = tuple(slice(int(starts[d][coords[d]]), int(starts[d][coords[d] + 1]))
                    for d in range(3))
-    return Grid(cart, shape, proc_shape, coords, starts, slices)
+    rank_sizes = np.empty(cart.Get_size(), dtype=np.int64)
+    for rank in range(cart.Get_size()):
+        rank_sizes[rank] = block_size(starts, tuple(cart.Get_coords(rank)))
+    rank_offsets = np.zeros(cart.Get_size(), dtype=np.int64)
+    rank_offsets[1:] = np.cumsum(rank_sizes[:-1])
+    return Grid(cart, shape, proc_shape, coords, starts, slices, rank_offsets)
 
 
 def block_for_coord(coord: int, starts: np.ndarray) -> int:
@@ -105,20 +137,6 @@ def block_size(starts: tuple[np.ndarray, np.ndarray, np.ndarray],
                         for d in range(3)]))
 
 
-def block_offset(starts: tuple[np.ndarray, np.ndarray, np.ndarray],
-                 proc_shape: tuple[int, int, int],
-                 coords: tuple[int, int, int]) -> int:
-    offset = 0
-    for bx in range(proc_shape[0]):
-        for by in range(proc_shape[1]):
-            for bz in range(proc_shape[2]):
-                block = (bx, by, bz)
-                if block == coords:
-                    return offset
-                offset += block_size(starts, block)
-    raise ValueError(f"invalid processor coordinates: {coords}")
-
-
 def gid(x: int, y: int, z: int, grid: Grid) -> int:
     block = tuple(block_for_coord(coord, starts)
                   for coord, starts in zip((x, y, z), grid.starts))
@@ -126,7 +144,7 @@ def gid(x: int, y: int, z: int, grid: Grid) -> int:
     nx, ny, _ = (int(grid.starts[d][block[d] + 1] - grid.starts[d][block[d]])
                  for d in range(3))
     local_id = ((z - z0) * ny + (y - y0)) * nx + (x - x0)
-    return block_offset(grid.starts, grid.proc_shape, block) + local_id
+    return grid.block_offset(block) + local_id
 
 
 def owned_points(grid: Grid):

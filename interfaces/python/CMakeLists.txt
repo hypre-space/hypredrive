@@ -401,6 +401,36 @@ if(MPIEXEC_EXECUTABLE AND _mpi4py_rc EQUAL 0)
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_laplacian_example_mpi.py"
                 ${MPIEXEC_POSTFLAGS}
     )
+    if(HYPREDRV_ENABLE_EXAMPLES)
+        set(_python_laplacian_example_partitions
+            "1,1,1,1"
+            "2,2,1,1"
+            "4,2,2,1"
+            "4,2,1,2"
+            "4,1,2,2"
+            "8,2,2,2")
+        foreach(_python_laplacian_example_partition IN LISTS _python_laplacian_example_partitions)
+            string(REPLACE "," ";" _python_laplacian_example_parts
+                   "${_python_laplacian_example_partition}")
+            list(GET _python_laplacian_example_parts 0 _python_laplacian_example_ranks)
+            list(GET _python_laplacian_example_parts 1 _python_laplacian_example_px)
+            list(GET _python_laplacian_example_parts 2 _python_laplacian_example_py)
+            list(GET _python_laplacian_example_parts 3 _python_laplacian_example_pz)
+            list(APPEND _python_test_commands
+                COMMAND "${CMAKE_COMMAND}" -E env
+                        ${_python_test_env}
+                        "${MPIEXEC_EXECUTABLE}" "${MPIEXEC_NUMPROC_FLAG}" "${_python_laplacian_example_ranks}"
+                        ${MPIEXEC_PREFLAGS}
+                        "${Python_EXECUTABLE}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/examples/laplacian.py"
+                        -n 8 8 8
+                        -P "${_python_laplacian_example_px}" "${_python_laplacian_example_py}" "${_python_laplacian_example_pz}"
+                        -s 7
+                        -v 0
+                        ${MPIEXEC_POSTFLAGS}
+            )
+        endforeach()
+    endif()
 else()
     message(STATUS "Python MPI tests are not attached to python-test because MPIEXEC or mpi4py was not found")
 endif()
