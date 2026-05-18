@@ -50,3 +50,20 @@ cmake --build build-matlab --parallel
 
 See [`matlab/README.md`](matlab/README.md) for build, usage, test, and install
 details.
+
+## Julia
+
+The Julia interface is in [`julia/`](julia/). It is an in-tree Julia package
+for source-tree and install-prefix use via `Pkg.develop(path="interfaces/julia")`.
+It builds a small ABI bridge library so Julia does not call HYPRE-width-dependent
+C entry points directly.
+
+Enable it with:
+
+```bash
+cmake -S . -B build-julia -DHYPREDRV_ENABLE_JULIA=ON -DHYPREDRV_ENABLE_TESTING=ON
+cmake --build build-julia --target julia-test --parallel
+```
+
+See [`julia/README.md`](julia/README.md) for package development, library discovery,
+options, tests, and example details.

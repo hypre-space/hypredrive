@@ -1,16 +1,16 @@
-function varargout = hypredrive(A, b, options, varargin)
-%HYPREDRIVE Solve a sparse linear system with hypredrive.
+function varargout = hypredrive_solve(A, b, options, varargin)
+%HYPREDRIVE_SOLVE Solve a sparse linear system with hypredrive.
 %
-%   x = HYPREDRIVE(A, b)
-%   [x, info] = HYPREDRIVE(A, b, options)
-%   [x, info] = HYPREDRIVE(A, b, "solver", "pcg", "preconditioner", "amg", ...)
+%   x = HYPREDRIVE_SOLVE(A, b)
+%   [x, info] = HYPREDRIVE_SOLVE(A, b, options)
+%   [x, info] = HYPREDRIVE_SOLVE(A, b, "solver", "pcg", "preconditioner", "amg", ...)
 %
 % A must be a real double sparse matrix and b must be a real double dense
 % vector. options may be a YAML character vector/string, a struct, or name-value
 % pairs accepted by HYPREDRIVE_OPTIONS.
 
 if nargin < 2
-    error('hypredrive:InvalidInput', 'usage: hypredrive(A, b, options)');
+    error('hypredrive:InvalidInput', 'usage: hypredrive_solve(A, b, options)');
 end
 
 if nargin < 3
@@ -33,7 +33,7 @@ if nargout <= 1
 elseif nargout == 2
     [varargout{1}, varargout{2}] = hypredrive_mex(A, b, yaml);
 else
-    error('hypredrive:InvalidOutput', 'hypredrive returns at most x and info');
+    error('hypredrive:InvalidOutput', 'hypredrive_solve returns at most x and info');
 end
 end
 

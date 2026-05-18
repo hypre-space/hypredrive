@@ -12,7 +12,7 @@ opts = hypredrive_options( ...
     'pcg', struct('max_iter', 100, 'relative_tol', 1.0e-8), ...
     'amg', struct('max_iter', 1, 'tolerance', 0.0, 'print_level', 0));
 
-[x, info] = hypredrive(A, b, opts);
+[x, info] = hypredrive_solve(A, b, opts);
 
 if ~iscolumn(x) || numel(x) ~= n
     error("hypredrive:test", "solution has the wrong shape");

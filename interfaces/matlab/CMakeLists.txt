@@ -93,7 +93,7 @@ if(NOT HYPREDRV_MATLAB_HYPRE_REAL_IS_DOUBLE)
 endif()
 
 set(_hypredrv_matlab_mfiles
-    src/hypredrive.m
+    src/hypredrive_solve.m
     src/hypredrive_options.m)
 
 set(_hypredrv_matlab_mpi_library_dirs)

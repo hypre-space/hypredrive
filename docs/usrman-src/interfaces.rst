@@ -26,3 +26,4 @@ binding.
    interfaces_python
    interfaces_fortran
    interfaces_matlab
+   interfaces_julia

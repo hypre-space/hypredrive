@@ -8,7 +8,7 @@
 MATLAB/Octave Interface
 =======================
 
-The MATLAB/Octave interface provides a portable ``hypredrive.m`` wrapper backed
+The MATLAB/Octave interface provides a portable ``hypredrive_solve.m`` wrapper backed
 by a compiled MEX entry point named ``hypredrive_mex``. It accepts a real double
 sparse matrix, a real double dense right-hand side, and optional solver options.
 It returns the dense solution vector and an optional information struct.
@@ -70,7 +70,7 @@ Solve a sparse system:
    A = spdiags([-e, 2*e, -e], -1:1, n, n);
    b = ones(n, 1);
 
-   [x, info] = hypredrive(A, b);
+   [x, info] = hypredrive_solve(A, b);
    relres = norm(b - A*x) / norm(b)
    info.iterations
 
@@ -84,7 +84,7 @@ Custom solver options should usually be built with ``hypredrive_options``:
        'pcg', struct('max_iter', 200, 'relative_tol', 1.0e-10), ...
        'amg', struct('print_level', 0));
 
-   [x, info] = hypredrive(A, b, opts);
+   [x, info] = hypredrive_solve(A, b, opts);
 
 The struct form mirrors hypredrive YAML:
 
@@ -95,7 +95,7 @@ The struct form mirrors hypredrive YAML:
    opts.solver.pcg.relative_tol = 1.0e-10;
    opts.preconditioner.amg.print_level = 0;
 
-   [x, info] = hypredrive(A, b, opts);
+   [x, info] = hypredrive_solve(A, b, opts);
 
 MATLAB/Octave usage is quiet by default: ``hypredrive_options`` adds
 ``general.statistics = 0``, and the no-options path uses the same policy.

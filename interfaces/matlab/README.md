@@ -1,7 +1,8 @@
 # hypredrive MATLAB/Octave interface
 
 This interface builds a MEX function for MATLAB and GNU Octave. Users call the
-portable `hypredrive.m` wrapper; the compiled entry point is `hypredrive_mex`.
+portable `hypredrive_solve.m` wrapper; the compiled entry point is
+`hypredrive_mex`.
 
 The first version is intentionally serial and one-shot:
 
@@ -67,7 +68,7 @@ e = ones(n, 1);
 A = spdiags([-e, 2*e, -e], -1:1, n, n);
 b = ones(n, 1);
 
-[x, info] = hypredrive(A, b);
+[x, info] = hypredrive_solve(A, b);
 norm(b - A*x) / norm(b)
 info.iterations
 ```
@@ -81,7 +82,7 @@ opts = hypredrive_options( ...
     'pcg', struct('max_iter', 200, 'relative_tol', 1.0e-10), ...
     'amg', struct('print_level', 0));
 
-[x, info] = hypredrive(A, b, opts);
+[x, info] = hypredrive_solve(A, b, opts);
 ```
 
 The struct form mirrors hypredrive YAML:
@@ -92,7 +93,7 @@ opts.solver.pcg.max_iter = 200;
 opts.solver.pcg.relative_tol = 1.0e-10;
 opts.preconditioner.amg.print_level = 0;
 
-[x, info] = hypredrive(A, b, opts);
+[x, info] = hypredrive_solve(A, b, opts);
 ```
 
 MATLAB/Octave usage is quiet by default: `hypredrive_options` adds

@@ -42,6 +42,7 @@ option(HYPREDRV_ENABLE_COMPRESSION  "Enable optional lossless compression backen
 option(HYPREDRV_ENABLE_PYTHON       "Enable the hypredrive Python interface" OFF)
 option(HYPREDRV_ENABLE_FORTRAN      "Enable the hypredrive Fortran interface" OFF)
 option(HYPREDRV_ENABLE_MATLAB       "Enable the hypredrive MATLAB/Octave MEX interface" OFF)
+option(HYPREDRV_ENABLE_JULIA        "Enable the hypredrive Julia interface" OFF)
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -94,6 +95,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Data.cmake)
 
 # Capture git version info for hypredrive
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Git.cmake)
+# Export helpers are included here before interface subdirectories so they can
+# share the same build-tree export decision used later by install packaging.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_ExportHelpers.cmake)
 hypredrv_setup_git_version_info(${CMAKE_CURRENT_SOURCE_DIR})
 if(HYPREDRV_GIT_FOUND)
     message(STATUS "HYPREDRV develop string: ${HYPREDRV_DEVELOP_STRING}")
@@ -175,7 +179,11 @@ target_include_directories(HYPREDRV
 )
 
 # Link HYPRE library to HYPREDRV
-target_link_libraries(HYPREDRV PUBLIC HYPRE::HYPRE)
+target_link_libraries(HYPREDRV
+    PUBLIC
+        $<BUILD_INTERFACE:HYPRE::HYPRE>
+    INTERFACE
+        $<INSTALL_INTERFACE:HYPRE::HYPRE>)
 
 if(HYPREDRV_INSTRUMENTATION_LINK_FLAGS)
     target_link_options(HYPREDRV PUBLIC ${HYPREDRV_INSTRUMENTATION_LINK_FLAGS})
@@ -366,6 +374,11 @@ if(HYPREDRV_ENABLE_TESTING)
     enable_testing()
 endif()
 
+hypredrv_compute_build_tree_export_available(_hypredrv_build_tree_export_available)
+set(HYPREDRV_BUILD_TREE_EXPORT_AVAILABLE
+    ${_hypredrv_build_tree_export_available}
+    CACHE INTERNAL "Whether HYPREDRV build-tree package export is safe" FORCE)
+
 # Python interface (optional)
 if(HYPREDRV_ENABLE_PYTHON)
     add_subdirectory(interfaces/python)
@@ -381,6 +394,11 @@ endif()
 # MATLAB/Octave interface (optional)
 if(HYPREDRV_ENABLE_MATLAB)
     add_subdirectory(interfaces/matlab)
+endif()
+
+# Julia interface (optional)
+if(HYPREDRV_ENABLE_JULIA)
+    add_subdirectory(interfaces/julia)
 endif()
 
 # Installation and package configuration
