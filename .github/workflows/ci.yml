@@ -320,7 +320,7 @@ jobs:
         timeout-minutes: 3
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin gcc g++ octave liboctave-dev
+          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin gcc g++ octave octave-dev
           echo "OMPI_CC=gcc" >> $GITHUB_ENV
           echo "OMPI_CXX=g++" >> $GITHUB_ENV
 
