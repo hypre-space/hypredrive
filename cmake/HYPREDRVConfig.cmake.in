@@ -8,7 +8,15 @@
 include(CMakeFindDependencyMacro)
 
 # Find dependencies
-find_dependency(MPI REQUIRED)
+set(_HYPREDRV_CONFIG_ENABLE_FORTRAN "@HYPREDRV_CONFIG_ENABLE_FORTRAN@")
+set(_HYPREDRV_CONFIG_NEEDS_MPI "@HYPREDRV_CONFIG_NEEDS_MPI@")
+if(_HYPREDRV_CONFIG_NEEDS_MPI)
+    if(_HYPREDRV_CONFIG_ENABLE_FORTRAN)
+        find_dependency(MPI COMPONENTS C Fortran REQUIRED)
+    else()
+        find_dependency(MPI COMPONENTS C REQUIRED)
+    endif()
+endif()
 
 set(_HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS "@HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS@")
 set(_HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES "@HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES@")
@@ -19,19 +27,148 @@ if(_HYPREDRV_CONFIG_NEEDS_ZLIB AND NOT TARGET ZLIB::ZLIB)
 endif()
 
 if(NOT TARGET HYPRE::HYPRE)
-    find_dependency(HYPRE QUIET)
+    find_package(HYPRE CONFIG QUIET)
+endif()
+if(NOT TARGET HYPRE::HYPRE AND TARGET HYPRE)
+    get_target_property(_hypredrv_config_bare_hypre_imported HYPRE IMPORTED)
+    if(_hypredrv_config_bare_hypre_imported)
+        add_library(HYPRE::HYPRE INTERFACE IMPORTED)
+        get_target_property(_hypredrv_config_hypre_includes HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+        get_target_property(_hypredrv_config_hypre_links HYPRE INTERFACE_LINK_LIBRARIES)
+        if(_hypredrv_config_hypre_includes)
+            set_target_properties(HYPRE::HYPRE PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${_hypredrv_config_hypre_includes}")
+        endif()
+        if(_hypredrv_config_hypre_links)
+            set_target_properties(HYPRE::HYPRE PROPERTIES
+                INTERFACE_LINK_LIBRARIES "${_hypredrv_config_hypre_links}")
+        endif()
+    endif()
 endif()
 
 if(NOT TARGET HYPRE::HYPRE AND _HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS AND _HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES)
+    if(NOT COMMAND _hypredrv_config_pkg_config_hints_from_includes)
+        function(_hypredrv_config_pkg_config_hints_from_includes out_var)
+            set(_hypredrv_config_pkg_config_path "")
+            foreach(_hypredrv_config_include_dir IN LISTS _HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS)
+                if(_hypredrv_config_include_dir MATCHES "/include$")
+                    get_filename_component(_hypredrv_config_prefix
+                                           "${_hypredrv_config_include_dir}" DIRECTORY)
+                    foreach(_hypredrv_config_pkgconfig_dir IN ITEMS
+                            "${_hypredrv_config_prefix}/lib/pkgconfig"
+                            "${_hypredrv_config_prefix}/lib64/pkgconfig")
+                        if(EXISTS "${_hypredrv_config_pkgconfig_dir}")
+                            if(_hypredrv_config_pkg_config_path)
+                                string(APPEND _hypredrv_config_pkg_config_path
+                                       ":${_hypredrv_config_pkgconfig_dir}")
+                            else()
+                                set(_hypredrv_config_pkg_config_path
+                                    "${_hypredrv_config_pkgconfig_dir}")
+                            endif()
+                        endif()
+                    endforeach()
+                endif()
+            endforeach()
+            set(${out_var} "${_hypredrv_config_pkg_config_path}" PARENT_SCOPE)
+        endfunction()
+    endif()
+
+    if(NOT COMMAND _hypredrv_config_strip_link_only)
+        function(_hypredrv_config_strip_link_only out_var link_item)
+            set(_hypredrv_config_stripped "${link_item}")
+            while(_hypredrv_config_stripped MATCHES "^\\$<LINK_ONLY:(.*)>$")
+                set(_hypredrv_config_stripped "${CMAKE_MATCH_1}")
+            endwhile()
+            if(_hypredrv_config_stripped MATCHES "^\\$<")
+                set(_hypredrv_config_stripped "")
+            endif()
+            set(${out_var} "${_hypredrv_config_stripped}" PARENT_SCOPE)
+        endfunction()
+    endif()
+
+    if(NOT COMMAND _hypredrv_config_find_namespaced_dependency)
+        function(_hypredrv_config_find_namespaced_dependency link_item)
+            _hypredrv_config_strip_link_only(_hypredrv_config_target "${link_item}")
+
+            if(NOT _hypredrv_config_target MATCHES "::")
+                return()
+            endif()
+            if(TARGET ${_hypredrv_config_target})
+                return()
+            endif()
+            if(_hypredrv_config_target MATCHES "^HYPRE::")
+                return()
+            endif()
+
+            if(_hypredrv_config_target MATCHES "^OpenMP::")
+                find_dependency(OpenMP COMPONENTS C REQUIRED)
+            elseif(_hypredrv_config_target MATCHES "^CUDA::")
+                find_dependency(CUDAToolkit REQUIRED)
+            elseif(_hypredrv_config_target MATCHES "^caliper::")
+                find_dependency(caliper CONFIG REQUIRED)
+            elseif(_hypredrv_config_target STREQUAL "PkgConfig::PC_DSUPERLU")
+                find_dependency(PkgConfig REQUIRED)
+                _hypredrv_config_pkg_config_hints_from_includes(_hypredrv_config_pkg_hints)
+                set(_hypredrv_config_old_pkg_config_path "$ENV{PKG_CONFIG_PATH}")
+                if(_hypredrv_config_pkg_hints)
+                    if(_hypredrv_config_old_pkg_config_path)
+                        set(ENV{PKG_CONFIG_PATH}
+                            "${_hypredrv_config_pkg_hints}:$ENV{PKG_CONFIG_PATH}")
+                    else()
+                        set(ENV{PKG_CONFIG_PATH} "${_hypredrv_config_pkg_hints}")
+                    endif()
+                endif()
+                pkg_check_modules(PC_DSUPERLU IMPORTED_TARGET superlu_dist)
+                set(ENV{PKG_CONFIG_PATH} "${_hypredrv_config_old_pkg_config_path}")
+                if(NOT TARGET PkgConfig::PC_DSUPERLU)
+                    message(FATAL_ERROR
+                        "HYPREDRVConfig.cmake could not resolve superlu_dist via pkg-config")
+                endif()
+            else()
+                string(REGEX REPLACE "::.*$" "" _hypredrv_config_package
+                       "${_hypredrv_config_target}")
+                string(TOLOWER "${_hypredrv_config_package}" _hypredrv_config_package_lower)
+                string(TOUPPER "${_hypredrv_config_package}" _hypredrv_config_package_upper)
+                foreach(_hypredrv_config_candidate IN ITEMS
+                        "${_hypredrv_config_package}"
+                        "${_hypredrv_config_package_lower}"
+                        "${_hypredrv_config_package_upper}")
+                    if(NOT TARGET ${_hypredrv_config_target})
+                        find_package(${_hypredrv_config_candidate} CONFIG QUIET)
+                    endif()
+                endforeach()
+                if(NOT TARGET ${_hypredrv_config_target})
+                    message(FATAL_ERROR
+                        "HYPREDRVConfig.cmake could not resolve captured dependency target "
+                        "${_hypredrv_config_target}. Provide a CMake config package that defines "
+                        "this target before calling find_package(HYPREDRV), or add explicit "
+                        "dependency handling to HYPREDRVConfig.cmake.in.")
+                endif()
+            endif()
+
+            if(NOT TARGET ${_hypredrv_config_target})
+                message(FATAL_ERROR
+                    "HYPREDRVConfig.cmake could not resolve captured dependency target ${_hypredrv_config_target}")
+            endif()
+        endfunction()
+    endif()
+
+    set(_HYPREDRV_CONFIG_HYPRE_RESOLVED_LINK_LIBRARIES "")
+    foreach(_hypredrv_config_hypre_link_item IN LISTS _HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES)
+        _hypredrv_config_find_namespaced_dependency("${_hypredrv_config_hypre_link_item}")
+        list(APPEND _HYPREDRV_CONFIG_HYPRE_RESOLVED_LINK_LIBRARIES
+             "${_hypredrv_config_hypre_link_item}")
+    endforeach()
+
     add_library(HYPRE::HYPRE INTERFACE IMPORTED)
     set_target_properties(HYPRE::HYPRE PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${_HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS}"
-        INTERFACE_LINK_LIBRARIES "${_HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES}"
+        INTERFACE_LINK_LIBRARIES "${_HYPREDRV_CONFIG_HYPRE_RESOLVED_LINK_LIBRARIES}"
     )
 endif()
 
 if(NOT TARGET HYPRE::HYPRE)
-    find_dependency(HYPRE REQUIRED)
+    find_dependency(HYPRE CONFIG REQUIRED)
 endif()
 
 # Include the exported targets

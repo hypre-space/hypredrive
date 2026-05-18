@@ -1,0 +1,20 @@
+name = "HypreDrive"
+uuid = "d275b7f7-7e7b-4b69-9e7f-7c4f4f9fdcc4"
+version = "0.2.0"
+
+[deps]
+LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
+Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MPItrampoline_jll = "f1f71cc9-e9ae-5b93-9b94-4fe0e1ad3748"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+
+[compat]
+MPItrampoline_jll = "5.5"
+julia = "1.9"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

@@ -1,0 +1,6 @@
+# This file is intentionally empty in source checkouts until release tarballs are bound.
+#
+# The expected artifact name is "hypredrive_mpi_trampoline". The artifact contains
+# the HYPREDRV Julia bridge built against MPItrampoline; MPItrampoline itself is
+# supplied by MPItrampoline_jll. Release tooling should bind platform-specific
+# tarballs with `interfaces/julia/binary/bind_artifact.jl`.
