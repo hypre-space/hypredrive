@@ -41,6 +41,7 @@ option(HYPREDRV_ENABLE_CALIPER      "Enable Caliper instrumentation support" OFF
 option(HYPREDRV_ENABLE_COMPRESSION  "Enable optional lossless compression backends" OFF)
 option(HYPREDRV_ENABLE_PYTHON       "Enable the hypredrive Python interface" OFF)
 option(HYPREDRV_ENABLE_FORTRAN      "Enable the hypredrive Fortran interface" OFF)
+option(HYPREDRV_ENABLE_MATLAB       "Enable the hypredrive MATLAB/Octave MEX interface" OFF)
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -375,6 +376,11 @@ if(HYPREDRV_ENABLE_FORTRAN)
     enable_language(Fortran)
     find_package(MPI COMPONENTS C Fortran REQUIRED)
     add_subdirectory(interfaces/fortran)
+endif()
+
+# MATLAB/Octave interface (optional)
+if(HYPREDRV_ENABLE_MATLAB)
+    add_subdirectory(interfaces/matlab)
 endif()
 
 # Installation and package configuration

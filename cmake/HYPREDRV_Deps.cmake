@@ -483,9 +483,10 @@ if(NOT HYPRE_FOUND)
         else()
             set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O3 -DNDEBUG")
         endif()
-        if(HYPREDRV_ENABLE_PYTHON AND NOT _hypre_autotools_cflags MATCHES "(^| )-fPIC($| )")
+        if((HYPREDRV_ENABLE_PYTHON OR HYPREDRV_ENABLE_MATLAB OR HYPREDRV_ENABLE_FORTRAN) AND
+           NOT _hypre_autotools_cflags MATCHES "(^| )-fPIC($| )")
             set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -fPIC")
-            message(STATUS "Python interface enabled: building auto-fetched HYPRE autotools static library with -fPIC")
+            message(STATUS "Language interface enabled: building auto-fetched HYPRE autotools static library with -fPIC")
         endif()
         if(HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS)
             string(JOIN " " _hypre_instrumentation_cflags ${HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS})
@@ -615,10 +616,10 @@ if(NOT HYPRE_FOUND)
     # Configure HYPRE-specific build options (override any user settings)
     set(HYPRE_BUILD_TESTS OFF CACHE BOOL "Build HYPRE tests" FORCE)
     set(HYPRE_BUILD_EXAMPLES OFF CACHE BOOL "Build HYPRE examples" FORCE)
-    if(HYPREDRV_ENABLE_PYTHON)
+    if(HYPREDRV_ENABLE_PYTHON OR HYPREDRV_ENABLE_MATLAB OR HYPREDRV_ENABLE_FORTRAN)
         set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL
             "Build position independent code for shared-library consumers" FORCE)
-        message(STATUS "Python interface enabled: building auto-fetched HYPRE CMake target with position-independent code")
+        message(STATUS "Language interface enabled: building auto-fetched HYPRE CMake target with position-independent code")
     endif()
 
     # Configure HYPRE to output libraries and headers in the same directories as main project
@@ -698,7 +699,11 @@ if(NOT HYPRE_FOUND)
     if(NOT TARGET HYPRE::HYPRE)
         message(STATUS "Configuring HYPRE build...")
         message(STATUS "  Libraries will be built to: ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
-        add_subdirectory(${hypre_SOURCE_DIR}/src ${hypre_BINARY_DIR})
+        set(_hypredrv_saved_install_prefix "${CMAKE_INSTALL_PREFIX}")
+        add_subdirectory(${hypre_SOURCE_DIR}/src ${hypre_BINARY_DIR} EXCLUDE_FROM_ALL)
+        set(CMAKE_INSTALL_PREFIX "${_hypredrv_saved_install_prefix}" CACHE PATH
+            "Install path prefix, prepended onto install directories." FORCE)
+        unset(_hypredrv_saved_install_prefix)
     endif()
 
     # Remove Caliper include directory from HYPRE's INTERFACE_INCLUDE_DIRECTORIES and re-add with BUILD_INTERFACE

@@ -32,12 +32,15 @@ if(TARGET hypredrive-lsseq)
     list(APPEND _hypredrive_executables hypredrive-lsseq)
 endif()
 
-install(TARGETS ${_hypredrive_executables} HYPREDRV ${_hypre_targets_to_install}
+install(TARGETS HYPREDRV ${_hypre_targets_to_install}
         EXPORT HYPREDRVTargets
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(TARGETS ${_hypredrive_executables}
+        OPTIONAL
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Create and install Config files
 include(CMakePackageConfigHelpers)

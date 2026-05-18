@@ -34,3 +34,19 @@ cmake --build build-fortran --parallel
 
 See [`fortran/README.md`](fortran/README.md) for API, build, test, and example
 details.
+
+## MATLAB/Octave
+
+The MATLAB/Octave interface is in [`matlab/`](matlab/). It provides a serial
+MEX function plus a portable `.m` wrapper that accepts MATLAB or Octave sparse
+matrices, converts them to hypredrive CSR, and solves on `MPI_COMM_SELF`.
+
+Enable it with:
+
+```bash
+cmake -S . -B build-matlab -DHYPREDRV_ENABLE_MATLAB=ON
+cmake --build build-matlab --parallel
+```
+
+See [`matlab/README.md`](matlab/README.md) for build, usage, test, and install
+details.
