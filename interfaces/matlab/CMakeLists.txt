@@ -266,15 +266,19 @@ if(OCTAVE_MKOCTFILE_EXECUTABLE)
             DESTINATION "${CMAKE_INSTALL_LIBDIR}/octave")
 endif()
 
-install(FILES examples/laplacian1d.m
+install(FILES examples/laplacian.m examples/build_laplacian.m
         DESTINATION "${CMAKE_INSTALL_DATADIR}/matlab/examples")
 
 if(HYPREDRV_ENABLE_TESTING)
     set(_hypredrv_matlab_test_deps)
+    set(_hypredrv_matlab_example_cases
+        "1d|laplacian(64)"
+        "2d|laplacian(32, 32)"
+        "3d|laplacian(16, 16, 16)")
     if(Matlab_FOUND)
         add_test(NAME matlab_laplacian_serial
                  COMMAND ${Matlab_MAIN_PROGRAM} -batch
-                         "addpath('$<TARGET_FILE_DIR:hypredrive_matlab_mex>'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex")
+                         "addpath('$<TARGET_FILE_DIR:hypredrive_matlab_mex>'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex")
         set_tests_properties(matlab_laplacian_serial PROPERTIES
             LABELS "matlab;interface"
             RUN_SERIAL TRUE)
@@ -282,12 +286,27 @@ if(HYPREDRV_ENABLE_TESTING)
             set_tests_properties(matlab_laplacian_serial PROPERTIES
                 ENVIRONMENT "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
         endif()
+        foreach(_case IN LISTS _hypredrv_matlab_example_cases)
+            string(REPLACE "|" ";" _case_parts "${_case}")
+            list(GET _case_parts 0 _case_tag)
+            list(GET _case_parts 1 _case_call)
+            add_test(NAME matlab_laplacian_example_${_case_tag}
+                     COMMAND ${Matlab_MAIN_PROGRAM} -batch
+                             "addpath('$<TARGET_FILE_DIR:hypredrive_matlab_mex>'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); ${_case_call}")
+            set_tests_properties(matlab_laplacian_example_${_case_tag} PROPERTIES
+                LABELS "matlab;interface;example"
+                RUN_SERIAL TRUE)
+            if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
+                set_tests_properties(matlab_laplacian_example_${_case_tag} PROPERTIES
+                    ENVIRONMENT "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
+            endif()
+        endforeach()
         list(APPEND _hypredrv_matlab_test_deps hypredrive_matlab_mex)
     endif()
     if(OCTAVE_EXECUTABLE AND OCTAVE_MKOCTFILE_EXECUTABLE)
         add_test(NAME octave_laplacian_serial
                  COMMAND ${OCTAVE_EXECUTABLE} --quiet --eval
-                         "addpath('${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/octave'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex")
+                         "addpath('${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/octave'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex")
         set_tests_properties(octave_laplacian_serial PROPERTIES
             LABELS "octave;matlab;interface"
             RUN_SERIAL TRUE)
@@ -295,6 +314,21 @@ if(HYPREDRV_ENABLE_TESTING)
             set_tests_properties(octave_laplacian_serial PROPERTIES
                 ENVIRONMENT "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
         endif()
+        foreach(_case IN LISTS _hypredrv_matlab_example_cases)
+            string(REPLACE "|" ";" _case_parts "${_case}")
+            list(GET _case_parts 0 _case_tag)
+            list(GET _case_parts 1 _case_call)
+            add_test(NAME octave_laplacian_example_${_case_tag}
+                     COMMAND ${OCTAVE_EXECUTABLE} --quiet --eval
+                             "addpath('${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/octave'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); ${_case_call}")
+            set_tests_properties(octave_laplacian_example_${_case_tag} PROPERTIES
+                LABELS "octave;matlab;interface;example"
+                RUN_SERIAL TRUE)
+            if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
+                set_tests_properties(octave_laplacian_example_${_case_tag} PROPERTIES
+                    ENVIRONMENT "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
+            endif()
+        endforeach()
         list(APPEND _hypredrv_matlab_test_deps hypredrive-octave)
     endif()
 
