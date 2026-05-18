@@ -1,9 +1,14 @@
+% Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+% HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+%
+% SPDX-License-Identifier: MIT
+
 function varargout = hypredrive_solve(A, b, options, varargin)
 %HYPREDRIVE_SOLVE Solve a sparse linear system with hypredrive.
 %
 %   x = HYPREDRIVE_SOLVE(A, b)
 %   [x, info] = HYPREDRIVE_SOLVE(A, b, options)
-%   [x, info] = HYPREDRIVE_SOLVE(A, b, "solver", "pcg", "preconditioner", "amg", ...)
+%   [x, info] = HYPREDRIVE_SOLVE(A, b, 'solver', 'pcg', 'preconditioner', 'amg', ...)
 %
 % A must be a real double sparse matrix and b must be a real double dense
 % vector. options may be a YAML character vector/string, a struct, or name-value
@@ -13,6 +18,23 @@ if nargin < 2
     error('hypredrive:InvalidInput', 'usage: hypredrive_solve(A, b, options)');
 end
 
+if ~issparse(A) || ~isa(A, 'double') || ~isreal(A)
+    error('hypredrive:InvalidMatrix', 'A must be a real double sparse matrix');
+end
+if size(A, 1) ~= size(A, 2)
+    error('hypredrive:InvalidMatrix', 'A must be square');
+end
+if isempty(A)
+    error('hypredrive:InvalidMatrix', 'A must be non-empty');
+end
+if issparse(b) || ~isa(b, 'double') || ~isreal(b) || ~isvector(b)
+    error('hypredrive:InvalidRHS', 'b must be a real dense double vector');
+end
+if numel(b) ~= size(A, 1)
+    error('hypredrive:InvalidRHS', 'numel(b) must match size(A,1)');
+end
+b = b(:);
+
 if nargin < 3
     yaml = '';
 elseif nargin == 3 && hypredrive_is_text(options)
@@ -20,11 +42,7 @@ elseif nargin == 3 && hypredrive_is_text(options)
 elseif nargin == 3 && isstruct(options)
     yaml = hypredrive_options(options);
 else
-    if nargin < 3
-        args = {};
-    else
-        args = [{options}, varargin];
-    end
+    args = [{options}, varargin];
     yaml = hypredrive_options(args{:});
 end
 
@@ -35,8 +53,4 @@ elseif nargout == 2
 else
     error('hypredrive:InvalidOutput', 'hypredrive_solve returns at most x and info');
 end
-end
-
-function tf = hypredrive_is_text(value)
-tf = ischar(value) || (exist('isstring', 'builtin') && isstring(value));
 end

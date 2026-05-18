@@ -21,6 +21,11 @@ Python interfaces for distributed-memory runs.
 - CMake with `FindMatlab` when building the MATLAB MEX.
 - A real-valued HYPRE build where `HYPRE_Real` uses the C `double` ABI.
 - Non-complex HYPRE. `HYPRE_ENABLE_SINGLE`, `HYPRE_ENABLE_LONG_DOUBLE`, and `HYPRE_ENABLE_COMPLEX` are rejected for this interface.
+- The MEX file links to the same MPI implementation used to build HYPRE and
+  hypredrive. MATLAB can ship or preload its own MPI runtime, so MPI ABI
+  mismatches are the most common runtime failure. Prefer launching MATLAB or
+  Octave from an environment where the intended MPI `bin` and `lib` directories
+  are first on `PATH` and the platform runtime library path.
 
 ## Build
 
@@ -57,7 +62,26 @@ For Octave, use the Octave MEX directory instead:
 
 ```matlab
 addpath("/path/to/source/interfaces/matlab/src")
-addpath("/path/to/build-matlab/interfaces/matlab/octave")
+addpath("/path/to/build-matlab/lib/octave")
+```
+
+The build-tree paths differ because MATLAB MEX files are produced by
+`FindMatlab`, while Octave MEX files are produced by `mkoctfile` into the common
+library tree.
+
+For an installed prefix, add `/path/to/install/lib/matlab` in MATLAB or
+`/path/to/install/lib/octave` in Octave. To make that persistent, put the
+corresponding `addpath` command in MATLAB's `startup.m` or Octave's startup
+file. As a one-step setup from an installed prefix, run:
+
+```matlab
+run("/path/to/install/lib/matlab/hypredrive_setup.m")
+```
+
+or, for Octave:
+
+```matlab
+run("/path/to/install/lib/octave/hypredrive_setup.m")
 ```
 
 Solve a sparse system:
@@ -107,6 +131,15 @@ opts = hypredrive_options(struct('general', struct('statistics', 1)));
 Raw YAML text is still accepted for advanced users. The default options are PCG
 with AMG preconditioning and statistics disabled.
 
+The optional `info` output has these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `iterations` | Solver iteration count reported by hypredrive. |
+| `setup_time` | Linear-solver setup time in seconds. |
+| `solve_time` | Linear-solver apply/solve time in seconds. |
+| `solution_norm` | L2 norm of the returned solution vector. |
+
 ## Test
 
 When `HYPREDRV_ENABLE_TESTING=ON`, the optional test target runs a small 1D
@@ -127,4 +160,16 @@ cmake --install build-matlab --prefix /path/to/install
 MATLAB files are installed under `lib/matlab`. Octave files are installed under
 `lib/octave`. Examples are installed under `share/matlab/examples`.
 On Unix-like systems, installed MEX files use a relative runtime search path
-back to the prefix-local `lib` directory.
+back to the prefix-local library directory. If you relocate the MEX file
+manually, keep it one directory below the installed library directory or set the
+platform runtime library path so `libHYPREDRV` and HYPRE are visible.
+
+## Troubleshooting
+
+- `libmpi` load errors usually mean MATLAB/Octave is not seeing the same MPI
+  runtime used by HYPRE. Start the runtime from a shell where the intended MPI
+  installation is active.
+- `Invalid MEX-file` errors usually mean a missing shared-library dependency.
+  Check the MEX file with `ldd` on Linux or `otool -L` on macOS.
+- If options fail to parse, build them with `hypredrive_options` first and print
+  the resulting YAML string before calling `hypredrive_solve`.

@@ -1,8 +1,13 @@
+% Copyright (c) 2024 Lawrence Livermore National Security, LLC and other
+% HYPRE Project Developers. See the top-level COPYRIGHT file for details.
+%
+% SPDX-License-Identifier: MIT
+%
 %LAPLACIAN1D Solve a small 1D Poisson problem with hypredrive.
 %
 % Run from a build tree containing the hypredrive MEX file:
 %
-%   addpath("/path/to/build");
+%   addpath('/path/to/build');
 %   laplacian1d
 
 n = 64;
@@ -18,8 +23,8 @@ opts = hypredrive_options( ...
 
 [x, info] = hypredrive_solve(A, b, opts);
 
-fprintf("iterations: %d\n", info.iterations);
-fprintf("setup time: %.6e s\n", info.setup_time);
-fprintf("solve time: %.6e s\n", info.solve_time);
-fprintf("solution l2 norm: %.6e\n", info.solution_norm);
-fprintf("relative residual: %.6e\n", norm(b - A * x) / norm(b));
+fprintf('iterations: %d\n', info.iterations);
+fprintf('setup time: %.6e s\n', info.setup_time);
+fprintf('solve time: %.6e s\n', info.solve_time);
+fprintf('solution l2 norm: %.6e\n', info.solution_norm);
+fprintf('relative residual: %.6e\n', norm(b - A * x) / norm(b));

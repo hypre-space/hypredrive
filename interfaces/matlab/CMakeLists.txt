@@ -15,65 +15,22 @@ if(NOT Matlab_FOUND AND NOT OCTAVE_MKOCTFILE_EXECUTABLE)
         "with mkoctfile. Set Matlab_ROOT_DIR for MATLAB or ensure mkoctfile is "
         "on PATH.")
 endif()
+if(NOT Matlab_FOUND AND OCTAVE_MKOCTFILE_EXECUTABLE)
+    message(WARNING
+        "HYPREDRV_ENABLE_MATLAB is ON but MATLAB was not found; building only "
+        "the GNU Octave MEX interface.")
+endif()
 
 set(_hypredrv_matlab_saved_try_compile_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
 set(_hypredrv_matlab_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-set(_hypredrv_matlab_hypre_includes ${HYPRE_INCLUDE_DIRS})
-if(NOT _hypredrv_matlab_hypre_includes AND TARGET HYPRE::HYPRE)
-    get_target_property(_hypredrv_matlab_hypre_includes
-                        HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
-endif()
-if(_hypredrv_matlab_hypre_includes)
-    list(FILTER _hypredrv_matlab_hypre_includes EXCLUDE REGEX "^\\$<")
-endif()
-set(_hypredrv_matlab_plain_hypre_includes ${_hypredrv_matlab_hypre_includes})
-foreach(_hypredrv_hypre_dir IN ITEMS
-        "${HYPRE_SOURCE_DIR}"
-        "${HYPRE_BINARY_DIR}"
-        "${CMAKE_BINARY_DIR}/_deps/hypre-src/src"
-        "${CMAKE_BINARY_DIR}/_deps/hypre-build")
-    if(_hypredrv_hypre_dir AND EXISTS "${_hypredrv_hypre_dir}")
-        list(APPEND _hypredrv_matlab_plain_hypre_includes "${_hypredrv_hypre_dir}")
-    endif()
-endforeach()
-set(_hypredrv_matlab_hypre_subdirs
-    blas
-    distributed_ls
-    distributed_matrix
-    IJ_mv
-    krylov
-    lapack
-    matrix_matrix
-    multivector
-    parcsr_block_mv
-    parcsr_ls
-    parcsr_mv
-    seq_block_mv
-    seq_mv
-    sstruct_ls
-    sstruct_mv
-    struct_ls
-    struct_mv
-    utilities)
-foreach(_hypredrv_hypre_root IN ITEMS
-        "${HYPRE_SOURCE_DIR}"
-        "${CMAKE_BINARY_DIR}/_deps/hypre-src/src")
-    foreach(_hypredrv_hypre_subdir IN LISTS _hypredrv_matlab_hypre_subdirs)
-        if(_hypredrv_hypre_root AND
-           EXISTS "${_hypredrv_hypre_root}/${_hypredrv_hypre_subdir}")
-            list(APPEND _hypredrv_matlab_plain_hypre_includes
-                 "${_hypredrv_hypre_root}/${_hypredrv_hypre_subdir}")
-        endif()
-    endforeach()
-endforeach()
-list(REMOVE_DUPLICATES _hypredrv_matlab_plain_hypre_includes)
+hypredrv_collect_hypre_include_dirs(_hypredrv_matlab_plain_hypre_includes
+                                    INCLUDE_SOURCE_SUBDIRS)
 set(CMAKE_REQUIRED_INCLUDES
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_BINARY_DIR}"
     ${_hypredrv_matlab_plain_hypre_includes}
     ${MPI_C_INCLUDE_DIRS})
-unset(HYPREDRV_MATLAB_HYPRE_REAL_IS_DOUBLE CACHE)
 check_c_source_compiles("
 #include \"HYPREDRV.h\"
 typedef char hypredrv_matlab_requires_double_hypre_real[
@@ -94,7 +51,9 @@ endif()
 
 set(_hypredrv_matlab_mfiles
     src/hypredrive_solve.m
-    src/hypredrive_options.m)
+    src/hypredrive_is_text.m
+    src/hypredrive_options.m
+    src/hypredrive_setup.m)
 
 set(_hypredrv_matlab_mpi_library_dirs)
 foreach(_mpi_library IN LISTS MPI_C_LIBRARIES)
@@ -120,6 +79,8 @@ if(Matlab_FOUND)
         "${CMAKE_SOURCE_DIR}/include"
         "${CMAKE_BINARY_DIR}"
     )
+    # Only relocate the target; do not override SUFFIX because FindMatlab owns
+    # the platform MEX extension (for example .mexmaca64 on Apple silicon).
     set_target_properties(hypredrive_matlab_mex PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/matlab"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/matlab")
@@ -152,14 +113,23 @@ if(Matlab_FOUND)
 endif()
 
 if(OCTAVE_MKOCTFILE_EXECUTABLE)
+    execute_process(
+        COMMAND ${OCTAVE_MKOCTFILE_EXECUTABLE} -p MEXEXT
+        OUTPUT_VARIABLE _hypredrv_octave_mexext
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(NOT _hypredrv_octave_mexext)
+        set(_hypredrv_octave_mexext mex)
+    endif()
     set(_hypredrv_octave_output
-        "${CMAKE_CURRENT_BINARY_DIR}/octave/hypredrive_mex.mex")
+        "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/octave/hypredrive_mex.${_hypredrv_octave_mexext}")
     set(_hypredrv_octave_rpath_flags)
     if(UNIX)
         if(APPLE)
             list(APPEND _hypredrv_octave_rpath_flags
                  "-Wl,-rpath,@loader_path/.."
-                 "-Wl,-rpath,$<TARGET_FILE_DIR:HYPREDRV>")
+                 "-Wl,-rpath,$<TARGET_FILE_DIR:HYPREDRV>"
+            )
         else()
             list(APPEND _hypredrv_octave_rpath_flags
                  "-Wl,-rpath,\\$ORIGIN/.."
@@ -182,13 +152,18 @@ if(OCTAVE_MKOCTFILE_EXECUTABLE)
         list(APPEND _hypredrv_octave_include_flags "-I${_mpi_include}")
     endforeach()
 
+    # mkoctfile rejects bare absolute shared-library paths. Use target-derived
+    # -L/-l flags instead of hard-coded library names or -Wl,<absolute-path>.
     set(_hypredrv_octave_link_inputs
-        "-L$<TARGET_FILE_DIR:HYPREDRV>"
-        "-lHYPREDRV")
+        "-L$<TARGET_LINKER_FILE_DIR:HYPREDRV>"
+        "-l$<TARGET_LINKER_FILE_BASE_NAME:HYPREDRV>")
     if(TARGET HYPRE::HYPRE)
-        list(APPEND _hypredrv_octave_link_inputs
-             "-L$<TARGET_FILE_DIR:HYPRE::HYPRE>"
-             "-lHYPRE")
+        get_target_property(_hypredrv_octave_hypre_type HYPRE::HYPRE TYPE)
+        if(NOT _hypredrv_octave_hypre_type STREQUAL "INTERFACE_LIBRARY")
+            list(APPEND _hypredrv_octave_link_inputs
+                 "-L$<TARGET_LINKER_FILE_DIR:HYPRE::HYPRE>"
+                 "-l$<TARGET_LINKER_FILE_BASE_NAME:HYPRE::HYPRE>")
+        endif()
     endif()
     foreach(_mpi_library IN LISTS MPI_C_LIBRARIES)
         if(_mpi_library MATCHES "^-")
@@ -211,7 +186,7 @@ if(OCTAVE_MKOCTFILE_EXECUTABLE)
     add_custom_command(
         OUTPUT "${_hypredrv_octave_output}"
         COMMAND ${CMAKE_COMMAND} -E make_directory
-                "${CMAKE_CURRENT_BINARY_DIR}/octave"
+                "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/octave"
         COMMAND ${OCTAVE_MKOCTFILE_EXECUTABLE} --mex
                 -o "${_hypredrv_octave_output}"
                 ${_hypredrv_octave_include_flags}
@@ -223,7 +198,7 @@ if(OCTAVE_MKOCTFILE_EXECUTABLE)
         COMMENT "Building hypredrive Octave MEX interface"
         VERBATIM
         COMMAND_EXPAND_LISTS)
-    add_custom_target(hypredrive-octave ALL
+    add_custom_target(hypredrive-octave
         DEPENDS "${_hypredrv_octave_output}")
 
     install(FILES "${_hypredrv_octave_output}" ${_hypredrv_matlab_mfiles}
@@ -251,7 +226,7 @@ if(HYPREDRV_ENABLE_TESTING)
     if(OCTAVE_EXECUTABLE AND OCTAVE_MKOCTFILE_EXECUTABLE)
         add_test(NAME octave_laplacian_serial
                  COMMAND ${OCTAVE_EXECUTABLE} --quiet --eval
-                         "addpath('${CMAKE_CURRENT_BINARY_DIR}/octave'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex")
+                         "addpath('${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/octave'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex")
         set_tests_properties(octave_laplacian_serial PROPERTIES
             LABELS "octave;matlab;interface"
             RUN_SERIAL TRUE)

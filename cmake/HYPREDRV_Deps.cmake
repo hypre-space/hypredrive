@@ -52,6 +52,67 @@ function(_hypredrv_collect_plain_include_dirs_for_deps out_var)
     set(${out_var} "${_plain_include_dirs}" PARENT_SCOPE)
 endfunction()
 
+function(hypredrv_collect_hypre_include_dirs out_var)
+    set(options INCLUDE_SOURCE_SUBDIRS)
+    cmake_parse_arguments(PARSE_ARGV 1 _hypredrv_hypre_includes
+                          "${options}" "" "")
+
+    set(_hypredrv_hypre_collected ${HYPRE_INCLUDE_DIRS})
+    if(NOT _hypredrv_hypre_collected AND TARGET HYPRE::HYPRE)
+        get_target_property(_hypredrv_hypre_collected
+                            HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+    endif()
+    if(_hypredrv_hypre_collected)
+        list(FILTER _hypredrv_hypre_collected EXCLUDE REGEX "^\\$<")
+    endif()
+
+    foreach(_hypredrv_hypre_dir IN ITEMS
+            "${HYPRE_SOURCE_DIR}"
+            "${HYPRE_BINARY_DIR}"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-src/src"
+            "${CMAKE_BINARY_DIR}/_deps/hypre-build")
+        if(_hypredrv_hypre_dir AND EXISTS "${_hypredrv_hypre_dir}")
+            list(APPEND _hypredrv_hypre_collected "${_hypredrv_hypre_dir}")
+        endif()
+    endforeach()
+
+    if(_hypredrv_hypre_includes_INCLUDE_SOURCE_SUBDIRS)
+        set(_hypredrv_hypre_subdirs
+            blas
+            distributed_ls
+            distributed_matrix
+            IJ_mv
+            krylov
+            lapack
+            matrix_matrix
+            multivector
+            parcsr_block_mv
+            parcsr_ls
+            parcsr_mv
+            seq_block_mv
+            seq_mv
+            sstruct_ls
+            sstruct_mv
+            struct_ls
+            struct_mv
+            utilities)
+        foreach(_hypredrv_hypre_root IN ITEMS
+                "${HYPRE_SOURCE_DIR}"
+                "${CMAKE_BINARY_DIR}/_deps/hypre-src/src")
+            foreach(_hypredrv_hypre_subdir IN LISTS _hypredrv_hypre_subdirs)
+                if(_hypredrv_hypre_root AND
+                   EXISTS "${_hypredrv_hypre_root}/${_hypredrv_hypre_subdir}")
+                    list(APPEND _hypredrv_hypre_collected
+                         "${_hypredrv_hypre_root}/${_hypredrv_hypre_subdir}")
+                endif()
+            endforeach()
+        endforeach()
+    endif()
+
+    list(REMOVE_DUPLICATES _hypredrv_hypre_collected)
+    set(${out_var} ${_hypredrv_hypre_collected} PARENT_SCOPE)
+endfunction()
+
 function(_hypredrv_detect_hypre_sycl_usage)
     set(HYPREDRV_HYPRE_USES_SYCL FALSE PARENT_SCOPE)
 
@@ -700,7 +761,7 @@ if(NOT HYPRE_FOUND)
         message(STATUS "Configuring HYPRE build...")
         message(STATUS "  Libraries will be built to: ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
         set(_hypredrv_saved_install_prefix "${CMAKE_INSTALL_PREFIX}")
-        add_subdirectory(${hypre_SOURCE_DIR}/src ${hypre_BINARY_DIR} EXCLUDE_FROM_ALL)
+        add_subdirectory(${hypre_SOURCE_DIR}/src ${hypre_BINARY_DIR})
         set(CMAKE_INSTALL_PREFIX "${_hypredrv_saved_install_prefix}" CACHE PATH
             "Install path prefix, prepended onto install directories." FORCE)
         unset(_hypredrv_saved_install_prefix)

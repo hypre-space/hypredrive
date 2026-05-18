@@ -8,14 +8,8 @@ include(CheckCSourceCompiles)
 set(_hypredrv_fortran_saved_try_compile_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
 set(_hypredrv_fortran_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-set(_hypredrv_fortran_hypre_includes ${HYPRE_INCLUDE_DIRS})
-if(NOT _hypredrv_fortran_hypre_includes AND TARGET HYPRE::HYPRE)
-    get_target_property(_hypredrv_fortran_hypre_includes
-                        HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
-endif()
-if(_hypredrv_fortran_hypre_includes)
-    list(FILTER _hypredrv_fortran_hypre_includes EXCLUDE REGEX "^\\$<")
-endif()
+hypredrv_collect_hypre_include_dirs(_hypredrv_fortran_hypre_includes
+                                    INCLUDE_SOURCE_SUBDIRS)
 set(CMAKE_REQUIRED_INCLUDES
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_BINARY_DIR}"

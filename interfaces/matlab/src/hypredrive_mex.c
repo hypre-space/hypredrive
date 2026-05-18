@@ -36,6 +36,7 @@ static const char *HYPREDRV_MATLAB_DEFAULT_YAML = "solver:\n"
 
 static int HYPREDRV_matlab_initialized     = 0;
 static int HYPREDRV_matlab_initialized_mpi = 0;
+static int HYPREDRV_matlab_atexit          = 0;
 
 typedef char HYPREDRV_matlab_requires_double_hypre_real
    [(sizeof(HYPRE_Real) == sizeof(double)) ? 1 : -1];
@@ -47,7 +48,13 @@ HYPREDRV_MatlabAtExit(void)
 {
    if (HYPREDRV_matlab_initialized)
    {
-      (void)HYPREDRV_Finalize();
+      uint32_t code = HYPREDRV_Finalize();
+      if (code != HYPREDRV_SUCCESS)
+      {
+         mexWarnMsgIdAndTxt("hypredrive:FinalizeFailed",
+                            "HYPREDRV_Finalize failed with code 0x%x",
+                            (unsigned int)code);
+      }
       HYPREDRV_matlab_initialized = 0;
    }
    if (HYPREDRV_matlab_initialized_mpi)
@@ -56,7 +63,12 @@ HYPREDRV_MatlabAtExit(void)
       MPI_Finalized(&mpi_finalized);
       if (!mpi_finalized)
       {
-         MPI_Finalize();
+         int mpi_code = MPI_Finalize();
+         if (mpi_code != MPI_SUCCESS)
+         {
+            mexWarnMsgIdAndTxt("hypredrive:MPIFinalizeFailed",
+                               "MPI_Finalize failed with code %d", mpi_code);
+         }
       }
       HYPREDRV_matlab_initialized_mpi = 0;
    }
@@ -102,15 +114,28 @@ HYPREDRV_MatlabEnsureInitialized(void)
             HYPREDRV_MatlabFail("hypredrive:MPIInitFailed", "MPI_Init_thread failed");
          }
          HYPREDRV_matlab_initialized_mpi = 1;
+         if (!HYPREDRV_matlab_atexit)
+         {
+            mexAtExit(HYPREDRV_MatlabAtExit);
+            HYPREDRV_matlab_atexit = 1;
+         }
+         if (provided < MPI_THREAD_SERIALIZED)
+         {
+            HYPREDRV_MatlabAtExit();
+            HYPREDRV_MatlabFail(
+               "hypredrive:MPIThreadLevel",
+               "MPI did not provide the MPI_THREAD_SERIALIZED level required by hypredrive");
+         }
       }
 
       uint32_t code = HYPREDRV_Initialize();
       if (code != HYPREDRV_SUCCESS)
       {
+         HYPREDRV_MatlabAtExit();
          HYPREDRV_MatlabFailCode(code, "HYPREDRV_Initialize");
       }
-      mexAtExit(HYPREDRV_MatlabAtExit);
       HYPREDRV_matlab_initialized = 1;
+      mexLock();
    }
 }
 
@@ -180,7 +205,7 @@ HYPREDRV_MatlabValidateInputs(int nrhs, const mxArray *prhs[])
    {
       HYPREDRV_MatlabFail(
          "hypredrive:InvalidNumInputs",
-         "usage: x = hypredrive_mex(A, b) or [x, info] = hypredrive_mex(A, b, yaml)");
+         "usage: x = hypredrive_solve(A, b) or [x, info] = hypredrive_solve(A, b, options)");
    }
    if (!mxIsSparse(prhs[0]) || !mxIsDouble(prhs[0]) || mxIsComplex(prhs[0]))
    {
@@ -265,24 +290,25 @@ HYPREDRV_MatlabConvertCscToCsr(const mxArray *A, HYPRE_BigInt **indptr_out,
 }
 
 static void
-HYPREDRV_MatlabDestroyDriver(HYPREDRV_t *drv, int *solver_created)
+HYPREDRV_MatlabDestroyDriver(HYPREDRV_t *drv)
 {
    if (drv && *drv)
    {
-      if (solver_created && *solver_created)
+      uint32_t code = HYPREDRV_Destroy(drv);
+      if (code != HYPREDRV_SUCCESS)
       {
-         (void)HYPREDRV_LinearSolverDestroy(*drv);
-         *solver_created = 0;
+         mexWarnMsgIdAndTxt("hypredrive:DestroyFailed",
+                            "HYPREDRV_Destroy failed with code 0x%x",
+                            (unsigned int)code);
       }
-      (void)HYPREDRV_Destroy(drv);
    }
 }
 
 static void
-HYPREDRV_MatlabCleanup(HYPREDRV_t *drv, int *solver_created, HYPRE_BigInt *indptr,
-                       HYPRE_BigInt *cols, HYPRE_Real *data, char *yaml)
+HYPREDRV_MatlabCleanup(HYPREDRV_t *drv, HYPRE_BigInt *indptr, HYPRE_BigInt *cols,
+                       HYPRE_Real *data, char *yaml)
 {
-   HYPREDRV_MatlabDestroyDriver(drv, solver_created);
+   HYPREDRV_MatlabDestroyDriver(drv);
    if (indptr)
    {
       mxFree(indptr);
@@ -303,10 +329,10 @@ HYPREDRV_MatlabCleanup(HYPREDRV_t *drv, int *solver_created, HYPRE_BigInt *indpt
 
 static void
 HYPREDRV_MatlabFailCodeWithCleanup(uint32_t code, const char *what, HYPREDRV_t *drv,
-                                   int *solver_created, HYPRE_BigInt *indptr,
-                                   HYPRE_BigInt *cols, HYPRE_Real *data, char *yaml)
+                                   HYPRE_BigInt *indptr, HYPRE_BigInt *cols,
+                                   HYPRE_Real *data, char *yaml)
 {
-   HYPREDRV_MatlabCleanup(drv, solver_created, indptr, cols, data, yaml);
+   HYPREDRV_MatlabCleanup(drv, indptr, cols, data, yaml);
    HYPREDRV_MatlabFailCode(code, what);
 }
 
@@ -329,7 +355,7 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
    if (nlhs < 1 || nlhs > 2)
    {
       HYPREDRV_MatlabFail("hypredrive:InvalidNumOutputs",
-                          "hypredrive returns x and optional info");
+                          "hypredrive_solve returns x and optional info");
    }
    HYPREDRV_MatlabValidateInputs(nrhs, prhs);
    HYPREDRV_MatlabEnsureInitialized();
@@ -341,7 +367,6 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
    mwSize        nnz            = 0;
    mwSize        n              = mxGetM(prhs[0]);
    HYPREDRV_t    drv            = NULL;
-   int           solver_created = 0;
 
    HYPREDRV_MatlabConvertCscToCsr(prhs[0], &indptr, &cols, &data, &nnz);
    HYPRE_BigInt row_start = 0;
@@ -351,22 +376,22 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
    uint32_t code = HYPREDRV_Create(MPI_COMM_SELF, &drv);
    if (code != HYPREDRV_SUCCESS)
    {
-      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_Create", &drv, &solver_created,
-                                         indptr, cols, data, yaml);
+      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_Create", &drv, indptr, cols,
+                                         data, yaml);
    }
    code = HYPREDRV_SetLibraryMode(drv);
    if (code != HYPREDRV_SUCCESS)
    {
-      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_SetLibraryMode", &drv,
-                                         &solver_created, indptr, cols, data, yaml);
+      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_SetLibraryMode", &drv, indptr,
+                                         cols, data, yaml);
    }
 
    char *argv[2] = {yaml, NULL};
    code          = HYPREDRV_InputArgsParse(1, argv, drv);
    if (code != HYPREDRV_SUCCESS)
    {
-      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_InputArgsParse", &drv,
-                                         &solver_created, indptr, cols, data, yaml);
+      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_InputArgsParse", &drv, indptr,
+                                         cols, data, yaml);
    }
 
    code =
@@ -374,7 +399,7 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSystemSetMatrixFromCSR",
-                                         &drv, &solver_created, indptr, cols, data, yaml);
+                                         &drv, indptr, cols, data, yaml);
    }
 
    const double *rhs = mxGetPr(prhs[1]);
@@ -383,35 +408,34 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSystemSetRHSFromArray",
-                                         &drv, &solver_created, indptr, cols, data, yaml);
+                                         &drv, indptr, cols, data, yaml);
    }
 
    code = HYPREDRV_LinearSystemSetInitialGuess(drv, NULL);
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSystemSetInitialGuess",
-                                         &drv, &solver_created, indptr, cols, data, yaml);
+                                         &drv, indptr, cols, data, yaml);
    }
 
    code = HYPREDRV_LinearSolverCreate(drv);
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverCreate", &drv,
-                                         &solver_created, indptr, cols, data, yaml);
+                                         indptr, cols, data, yaml);
    }
-   solver_created = 1;
 
    code = HYPREDRV_LinearSolverSetup(drv);
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverSetup", &drv,
-                                         &solver_created, indptr, cols, data, yaml);
+                                         indptr, cols, data, yaml);
    }
    code = HYPREDRV_LinearSolverApply(drv);
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverApply", &drv,
-                                         &solver_created, indptr, cols, data, yaml);
+                                         indptr, cols, data, yaml);
    }
 
    HYPRE_BigInt   solution_length = 0;
@@ -425,11 +449,11 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSystemGetSolutionLength",
-                                         &drv, &solver_created, indptr, cols, data, yaml);
+                                         &drv, indptr, cols, data, yaml);
    }
    if (solution_length != (HYPRE_BigInt)n)
    {
-      HYPREDRV_MatlabCleanup(&drv, &solver_created, indptr, cols, data, yaml);
+      HYPREDRV_MatlabCleanup(&drv, indptr, cols, data, yaml);
       mexErrMsgIdAndTxt("hypredrive:SolutionSizeMismatch",
                         "solution length does not match size(A,1)");
    }
@@ -437,39 +461,36 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSystemGetSolutionValues",
-                                         &drv, &solver_created, indptr, cols, data, yaml);
+                                         &drv, indptr, cols, data, yaml);
    }
 
    plhs[0]     = mxCreateDoubleMatrix(n, 1, mxREAL);
    double *out = mxGetPr(plhs[0]);
-   for (mwIndex i = 0; i < n; i++)
-   {
-      out[i] = (double)solution[i];
-   }
+   memcpy(out, solution, (size_t)n * sizeof(double));
 
    code = HYPREDRV_LinearSolverGetNumIter(drv, &iterations);
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverGetNumIter", &drv,
-                                         &solver_created, indptr, cols, data, yaml);
+                                         indptr, cols, data, yaml);
    }
    code = HYPREDRV_LinearSolverGetSetupTime(drv, &setup_time);
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverGetSetupTime", &drv,
-                                         &solver_created, indptr, cols, data, yaml);
+                                         indptr, cols, data, yaml);
    }
    code = HYPREDRV_LinearSolverGetSolveTime(drv, &solve_time);
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverGetSolveTime", &drv,
-                                         &solver_created, indptr, cols, data, yaml);
+                                         indptr, cols, data, yaml);
    }
    code = HYPREDRV_LinearSystemGetSolutionNorm(drv, "l2", &solution_norm);
    if (code != HYPREDRV_SUCCESS)
    {
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSystemGetSolutionNorm",
-                                         &drv, &solver_created, indptr, cols, data, yaml);
+                                         &drv, indptr, cols, data, yaml);
    }
 
    if (nlhs == 2)
@@ -478,5 +499,5 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
                                                 solution_norm);
    }
 
-   HYPREDRV_MatlabCleanup(&drv, &solver_created, indptr, cols, data, yaml);
+   HYPREDRV_MatlabCleanup(&drv, indptr, cols, data, yaml);
 }
