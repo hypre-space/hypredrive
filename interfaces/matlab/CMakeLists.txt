@@ -21,6 +21,38 @@ if(NOT Matlab_FOUND AND OCTAVE_MKOCTFILE_EXECUTABLE)
         "the GNU Octave MEX interface.")
 endif()
 
+set(_hypredrv_matlab_mpi_include_dirs ${MPI_C_INCLUDE_DIRS})
+if(NOT _hypredrv_matlab_mpi_include_dirs AND MPI_C_COMPILER)
+    execute_process(
+        COMMAND ${MPI_C_COMPILER} --showme:compile
+        OUTPUT_VARIABLE _hypredrv_matlab_mpi_show_compile
+        RESULT_VARIABLE _hypredrv_matlab_mpi_show_compile_result
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(NOT _hypredrv_matlab_mpi_show_compile_result EQUAL 0)
+        execute_process(
+            COMMAND ${MPI_C_COMPILER} -show
+            OUTPUT_VARIABLE _hypredrv_matlab_mpi_show_compile
+            RESULT_VARIABLE _hypredrv_matlab_mpi_show_compile_result
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+    endif()
+    if(_hypredrv_matlab_mpi_show_compile_result EQUAL 0)
+        separate_arguments(_hypredrv_matlab_mpi_show_compile_args
+                           UNIX_COMMAND "${_hypredrv_matlab_mpi_show_compile}")
+        foreach(_hypredrv_matlab_mpi_compile_arg IN LISTS
+                _hypredrv_matlab_mpi_show_compile_args)
+            if(_hypredrv_matlab_mpi_compile_arg MATCHES "^-I(.+)$")
+                list(APPEND _hypredrv_matlab_mpi_include_dirs
+                     "${CMAKE_MATCH_1}")
+            endif()
+        endforeach()
+    endif()
+endif()
+if(_hypredrv_matlab_mpi_include_dirs)
+    list(REMOVE_DUPLICATES _hypredrv_matlab_mpi_include_dirs)
+endif()
+
 set(_hypredrv_matlab_saved_try_compile_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
 set(_hypredrv_matlab_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
@@ -30,7 +62,7 @@ set(CMAKE_REQUIRED_INCLUDES
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_BINARY_DIR}"
     ${_hypredrv_matlab_plain_hypre_includes}
-    ${MPI_C_INCLUDE_DIRS})
+    ${_hypredrv_matlab_mpi_include_dirs})
 check_c_source_compiles("
 #include \"HYPREDRV.h\"
 typedef char hypredrv_matlab_requires_double_hypre_real[
@@ -148,7 +180,7 @@ if(OCTAVE_MKOCTFILE_EXECUTABLE)
     foreach(_hypredrv_hypre_include IN LISTS _hypredrv_matlab_plain_hypre_includes)
         list(APPEND _hypredrv_octave_include_flags "-I${_hypredrv_hypre_include}")
     endforeach()
-    foreach(_mpi_include IN LISTS MPI_C_INCLUDE_DIRS)
+    foreach(_mpi_include IN LISTS _hypredrv_matlab_mpi_include_dirs)
         list(APPEND _hypredrv_octave_include_flags "-I${_mpi_include}")
     endforeach()
 
@@ -160,9 +192,38 @@ if(OCTAVE_MKOCTFILE_EXECUTABLE)
     if(TARGET HYPRE::HYPRE)
         get_target_property(_hypredrv_octave_hypre_type HYPRE::HYPRE TYPE)
         if(NOT _hypredrv_octave_hypre_type STREQUAL "INTERFACE_LIBRARY")
-            list(APPEND _hypredrv_octave_link_inputs
-                 "-L$<TARGET_LINKER_FILE_DIR:HYPRE::HYPRE>"
-                 "-l$<TARGET_LINKER_FILE_BASE_NAME:HYPRE::HYPRE>")
+            set(_hypredrv_octave_hypre_location "")
+            foreach(_hypredrv_octave_hypre_config IN ITEMS RELEASE RELWITHDEBINFO DEBUG MINSIZEREL "")
+                if(_hypredrv_octave_hypre_config STREQUAL "")
+                    get_target_property(_hypredrv_octave_hypre_candidate
+                                        HYPRE::HYPRE IMPORTED_LOCATION)
+                else()
+                    get_target_property(_hypredrv_octave_hypre_candidate
+                                        HYPRE::HYPRE
+                                        IMPORTED_LOCATION_${_hypredrv_octave_hypre_config})
+                endif()
+                if(_hypredrv_octave_hypre_candidate)
+                    set(_hypredrv_octave_hypre_location
+                        "${_hypredrv_octave_hypre_candidate}")
+                    break()
+                endif()
+            endforeach()
+            if(_hypredrv_octave_hypre_location)
+                get_filename_component(_hypredrv_octave_hypre_library_dir
+                                       "${_hypredrv_octave_hypre_location}"
+                                       DIRECTORY)
+                get_filename_component(_hypredrv_octave_hypre_library_name
+                                       "${_hypredrv_octave_hypre_location}"
+                                       NAME)
+                if(_hypredrv_octave_hypre_library_name MATCHES "^lib(.+)\\.(a|so|dylib)(\\..*)?$")
+                    list(APPEND _hypredrv_octave_link_inputs
+                         "-L${_hypredrv_octave_hypre_library_dir}"
+                         "-l${CMAKE_MATCH_1}")
+                else()
+                    list(APPEND _hypredrv_octave_link_inputs
+                         "${_hypredrv_octave_hypre_location}")
+                endif()
+            endif()
         endif()
     endif()
     foreach(_mpi_library IN LISTS MPI_C_LIBRARIES)
