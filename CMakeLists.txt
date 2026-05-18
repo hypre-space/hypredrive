@@ -40,6 +40,7 @@ option(HYPREDRV_ENABLE_HWLOC        "Enable hwloc support for detailed system to
 option(HYPREDRV_ENABLE_CALIPER      "Enable Caliper instrumentation support" OFF)
 option(HYPREDRV_ENABLE_COMPRESSION  "Enable optional lossless compression backends" OFF)
 option(HYPREDRV_ENABLE_PYTHON       "Enable the hypredrive Python interface" OFF)
+option(HYPREDRV_ENABLE_FORTRAN      "Enable the hypredrive Fortran interface" OFF)
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -358,9 +359,22 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Format.cmake)
 # Platform-specific settings
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Platform.cmake)
 
+# Optional interfaces may register tests before the main testing module adds the
+# C test suite, so enable CTest before descending into those subdirectories.
+if(HYPREDRV_ENABLE_TESTING)
+    enable_testing()
+endif()
+
 # Python interface (optional)
 if(HYPREDRV_ENABLE_PYTHON)
     add_subdirectory(interfaces/python)
+endif()
+
+# Fortran interface (optional)
+if(HYPREDRV_ENABLE_FORTRAN)
+    enable_language(Fortran)
+    find_package(MPI COMPONENTS C Fortran REQUIRED)
+    add_subdirectory(interfaces/fortran)
 endif()
 
 # Installation and package configuration

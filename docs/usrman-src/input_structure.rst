@@ -5,8 +5,8 @@
 
 .. _InputFileStructure:
 
-Input File Structure
-====================
+Input Structure (YAML)
+======================
 
 `hypredrive` uses YAML to specify parameters and settings. The YAML content can be
 provided either as a **file on disk** (driver usage) or as an **in-memory string**

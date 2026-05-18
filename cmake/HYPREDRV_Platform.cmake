@@ -3,6 +3,38 @@
 #
 # SPDX-License-Identifier: MIT
 
+# Relative install RPATH helper. Installed executables live in bindir and
+# installed libraries live in libdir, so examples and tools should find
+# HYPREDRV/HYPRE from the same install prefix without LD_LIBRARY_PATH.
+function(hypredrv_set_relative_install_rpath target_name)
+    if(NOT TARGET ${target_name} OR NOT UNIX)
+        return()
+    endif()
+
+    if(APPLE)
+        set(_hypredrv_origin "@loader_path")
+    else()
+        set(_hypredrv_origin "$ORIGIN")
+    endif()
+
+    get_property(_hypredrv_target_type TARGET ${target_name} PROPERTY TYPE)
+    if(_hypredrv_target_type STREQUAL "EXECUTABLE")
+        file(RELATIVE_PATH _hypredrv_lib_from_bin
+             "/${CMAKE_INSTALL_BINDIR}" "/${CMAKE_INSTALL_LIBDIR}")
+        set(_hypredrv_install_rpath "${_hypredrv_origin}/${_hypredrv_lib_from_bin}")
+    else()
+        set(_hypredrv_install_rpath "${_hypredrv_origin}")
+    endif()
+
+    set_property(TARGET ${target_name} APPEND PROPERTY INSTALL_RPATH "${_hypredrv_install_rpath}")
+endfunction()
+
+hypredrv_set_relative_install_rpath(HYPREDRV)
+hypredrv_set_relative_install_rpath(hypredrive-cli)
+if(TARGET hypredrive-lsseq)
+    hypredrv_set_relative_install_rpath(hypredrive-lsseq)
+endif()
+
 # macOS RPATH settings
 if(APPLE)
     # Set library install name to use @rpath

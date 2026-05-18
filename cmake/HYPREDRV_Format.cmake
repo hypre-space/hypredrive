@@ -5,14 +5,40 @@
 
 # Formatting target
 find_program(CLANG_FORMAT "clang-format")
-if(NOT CLANG_FORMAT)
-    message(STATUS "clang-format not found, formatting targets will not be available")
-else()
-    add_custom_target(format
+set(_hypredrv_format_targets)
+
+if(CLANG_FORMAT)
+    add_custom_target(format-c
         COMMAND ${CMAKE_COMMAND} -E env find include src examples/src -type f -name "*.c" -exec ${CLANG_FORMAT} -i {} +
         COMMAND ${CMAKE_COMMAND} -E env find include src examples/src -type f -name "*.h" -exec ${CLANG_FORMAT} -i {} +
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         COMMENT "Running clang-format on include/, src/, and examples/src/..."
         VERBATIM
     )
+    list(APPEND _hypredrv_format_targets format-c)
+else()
+    message(STATUS "clang-format not found, C formatting target will not be available")
+endif()
+
+if(HYPREDRV_ENABLE_FORTRAN)
+    find_program(FPRETTIFY "fprettify"
+        HINTS
+            "$ENV{VIRTUAL_ENV}/bin"
+            "${CMAKE_SOURCE_DIR}/.venv/bin"
+            "$ENV{HOME}/.local/bin")
+    if(FPRETTIFY)
+        add_custom_target(format-fortran
+            COMMAND ${CMAKE_COMMAND} -E env find interfaces/fortran -type f -name "*.f90" -exec ${FPRETTIFY} -i 3 {} +
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Running fprettify on interfaces/fortran/..."
+            VERBATIM
+        )
+        list(APPEND _hypredrv_format_targets format-fortran)
+    else()
+        message(STATUS "fprettify not found, Fortran formatting target will not be available")
+    endif()
+endif()
+
+if(_hypredrv_format_targets)
+    add_custom_target(format DEPENDS ${_hypredrv_format_targets})
 endif()

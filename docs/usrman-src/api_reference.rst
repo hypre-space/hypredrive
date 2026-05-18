@@ -93,6 +93,7 @@ Linear System Setup
 ~~~~~~~~~~~~~~~~~~~
 
 - :cpp:func:`HYPREDRV_LinearSystemBuild` - Build the matrix and vectors from the parsed input configuration.
+- :cpp:func:`HYPREDRV_LinearSystemComputeEigenspectrum` - Compute the eigenspectrum of the current matrix when enabled.
 - :cpp:func:`HYPREDRV_LinearSystemReadMatrix` - Read the system matrix from file input.
 - :cpp:func:`HYPREDRV_LinearSystemSetMatrix` - Attach a user-provided system matrix.
 - :cpp:func:`HYPREDRV_LinearSystemSetRHS` - Attach a user-provided right-hand side vector.
@@ -143,18 +144,13 @@ Solver and Preconditioner
 Statistics and Timing
 ~~~~~~~~~~~~~~~~~~~~~
 
-- :cpp:func:`HYPREDRV_StatsPrint` - Print the collected statistics for the current object.
-  In library mode, ``general.statistics`` also prints the same summary automatically
-  when the object is destroyed. When ``general.name`` or ``HYPREDRV_ObjectSetName`` is
-  used, the banner includes that label. By default output goes to ``stdout``; set
-  ``general.statistics_filename`` to append summaries to a file instead.
-- :cpp:func:`HYPREDRV_LinearSystemComputeEigenspectrum` - Compute the eigenspectrum of the current matrix when enabled.
-- :cpp:func:`HYPREDRV_LinearSolverGetNumIter` - Get the iteration count from the last solve.
-- :cpp:func:`HYPREDRV_LinearSolverGetSetupTime` - Get the setup time from the last solve.
-- :cpp:func:`HYPREDRV_LinearSolverGetSolveTime` - Get the solve time from the last solve.
 - :cpp:func:`HYPREDRV_StatsLevelGetCount` - Get how many hierarchical stats entries exist at a level.
 - :cpp:func:`HYPREDRV_StatsLevelGetEntry` - Get one hierarchical stats entry by level and index.
 - :cpp:func:`HYPREDRV_StatsLevelPrint` - Print the hierarchical stats summary for a level.
+- :cpp:func:`HYPREDRV_StatsPrint` - Print the collected statistics for the current object.
+- :cpp:func:`HYPREDRV_LinearSolverGetNumIter` - Get the iteration count from the last solve.
+- :cpp:func:`HYPREDRV_LinearSolverGetSetupTime` - Get the setup time from the last solve.
+- :cpp:func:`HYPREDRV_LinearSolverGetSolveTime` - Get the solve time from the last solve.
 
 Annotation
 ~~~~~~~~~~
