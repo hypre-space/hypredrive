@@ -1,0 +1,232 @@
+name: Julia Artifacts
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - 'include/**'
+      - 'src/**'
+      - 'cmake/**'
+      - 'interfaces/julia/**'
+      - '.github/workflows/julia-artifacts.yml'
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag used when writing Artifacts.toml download URLs'
+        required: false
+        type: string
+      update_artifacts_toml:
+        description: 'Commit updated interfaces/julia/Artifacts.toml to the current branch'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: julia-artifacts-${{ github.ref }}-${{ github.event.inputs.release_tag || 'default' }}
+  cancel-in-progress: false
+
+jobs:
+  mpi-trampoline-artifact:
+    if: >-
+      ${{
+        (
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        ) &&
+        (
+          github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'push' ||
+          (
+            github.event.action == 'labeled' &&
+            github.event.label.name == 'Run Julia Artifacts'
+          ) ||
+          (
+            github.event.action != 'labeled' &&
+            contains(github.event.pull_request.labels.*.name, 'Run Julia Artifacts')
+          )
+        )
+      }}
+    name: x86_64-linux-gnu | MPItrampoline
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HYPREDRV_BINARY_GIT_SHA: ${{ github.sha }}
+      # Pin HYPRE for reproducible BinaryBuilder artifacts; bump this only when
+      # intentionally changing the bundled HYPRE ABI used by Julia artifacts.
+      HYPREDRV_BINARY_HYPRE_GIT_SHA: 341f9089807934407a52ea8324759f3af1e49a57
+      HYPREDRV_BINARY_REPOSITORY: https://github.com/${{ github.repository }}.git
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9 # v2
+        with:
+          version: '1.10'
+
+      - name: Install BinaryBuilder
+        run: julia -e 'using Pkg; Pkg.add("BinaryBuilder")'
+
+      - name: Build MPItrampoline artifact tarball
+        run: >-
+          julia interfaces/julia/binary/build_tarballs.jl
+          --verbose
+          --deploy=local
+
+      - name: Collect artifact tarballs
+        run: |
+          set -euxo pipefail
+          mkdir -p julia-artifacts
+          find products -type f \( -name '*.tar.gz' -o -name '*.tgz' \) -print -exec cp {} julia-artifacts/ \;
+          test -n "$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) -print -quit)"
+
+      - name: Validate artifact lookup and dlopen
+        run: |
+          set -euxo pipefail
+          cp -a interfaces/julia julia-artifact-test
+          tarball="$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) | head -n 1)"
+          url="file://$(realpath "$tarball")"
+          julia julia-artifact-test/binary/bind_artifact.jl "$tarball" "$url" julia-artifact-test/Artifacts.toml
+          tmpenv="$(mktemp -d)"
+          julia --project="$tmpenv" -e 'using Pkg; Pkg.develop(path="julia-artifact-test"); Pkg.instantiate(); using HypreDrive, SparseArrays, LinearAlgebra; A = spdiagm(0 => [2.0, 3.0]); b = [4.0, 9.0]; x, info = hypredrive_solve(A, b); @assert norm(x - [2.0, 3.0]) < 1e-10; println(hypredrive_library_path())'
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: hypredrive-julia-mpi-trampoline-x86_64-linux-gnu
+          path: |
+            julia-artifacts/*.tar.gz
+            julia-artifacts/*.tgz
+          if-no-files-found: error
+
+  release-assets:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: mpi-trampoline-artifact
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9 # v2
+        with:
+          version: '1.10'
+
+      - name: Download artifact tarballs
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: hypredrive-julia-mpi-trampoline-x86_64-linux-gnu
+          path: julia-artifacts
+
+      - name: Verify tag already carries artifact bindings
+        run: |
+          set -euxo pipefail
+          julia -e '
+          using TOML
+          tag = ENV["RELEASE_TAG"]
+          artifact = "hypredrive_mpi_trampoline"
+          table = TOML.parsefile("interfaces/julia/Artifacts.toml")
+          haskey(table, artifact) || error("missing artifact binding: $artifact")
+          entries = table[artifact]
+          entries = entries isa AbstractVector ? entries : Any[entries]
+          urls = String[]
+          for entry in entries
+              for download in get(entry, "download", Any[])
+                  push!(urls, String(download["url"]))
+              end
+          end
+          needle = "/releases/download/$tag/"
+          any(url -> occursin(needle, url), urls) ||
+              error("Artifacts.toml does not contain a release URL for exact tag $tag")
+          '
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: |
+            julia-artifacts/*.tar.gz
+            julia-artifacts/*.tgz
+
+      - name: Print Artifacts.toml binding commands
+        run: |
+          set -euxo pipefail
+          for tarball in julia-artifacts/*.tar.gz julia-artifacts/*.tgz; do
+            test -e "$tarball" || continue
+            name=$(basename "$tarball")
+            url="https://github.com/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}/${name}"
+            julia interfaces/julia/binary/bind_artifact.jl "$tarball" "$url" /tmp/Artifacts.toml
+          done
+          cat /tmp/Artifacts.toml
+
+  update-artifacts-toml:
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' &&
+        inputs.update_artifacts_toml &&
+        inputs.release_tag != ''
+      }}
+    needs: mpi-trampoline-artifact
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      RELEASE_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9 # v2
+        with:
+          version: '1.10'
+
+      - name: Download artifact tarballs
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: hypredrive-julia-mpi-trampoline-x86_64-linux-gnu
+          path: julia-artifacts
+
+      - name: Update Artifacts.toml
+        run: |
+          set -euxo pipefail
+          for tarball in julia-artifacts/*.tar.gz julia-artifacts/*.tgz; do
+            test -e "$tarball" || continue
+            name=$(basename "$tarball")
+            url="https://github.com/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}/${name}"
+            HYPREDRV_ARTIFACT_REPLACE=1 julia interfaces/julia/binary/bind_artifact.jl "$tarball" "$url" interfaces/julia/Artifacts.toml
+          done
+          git diff -- interfaces/julia/Artifacts.toml
+
+      - name: Commit Artifacts.toml
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add interfaces/julia/Artifacts.toml
+          git commit -m "Update Julia artifact bindings for ${RELEASE_TAG}"
+          for attempt in 1 2 3; do
+            if { git pull --rebase --autostash && git push; } 2>push.log; then
+              exit 0
+            fi
+            cat push.log >&2 || true
+            if grep -Eiq 'protected branch|GH006|permission|denied|CONFLICT|could not apply|Resolve all conflicts' push.log; then
+              echo "Push failed due to permissions, branch protection, or rebase conflicts; not retrying" >&2
+              exit 1
+            fi
+            git rebase --abort || true
+            sleep $((attempt * 5))
+          done
+          echo "Failed to push Artifacts.toml after retrying; check branch protection and concurrent commits" >&2
+          exit 1
