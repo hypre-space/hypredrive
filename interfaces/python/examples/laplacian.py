@@ -109,9 +109,9 @@ def block_offset(starts: tuple[np.ndarray, np.ndarray, np.ndarray],
                  proc_shape: tuple[int, int, int],
                  coords: tuple[int, int, int]) -> int:
     offset = 0
-    for bz in range(proc_shape[2]):
+    for bx in range(proc_shape[0]):
         for by in range(proc_shape[1]):
-            for bx in range(proc_shape[0]):
+            for bz in range(proc_shape[2]):
                 block = (bx, by, bz)
                 if block == coords:
                     return offset
