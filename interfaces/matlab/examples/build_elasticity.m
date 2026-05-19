@@ -195,7 +195,8 @@ function bf = body_force(ndim)
     elseif ndim == 2
         bf = [0.0, -1.0];
     else
-        bf = [0.0, -1.0, 0.0];
+        %bf = [0.0, -1.0, 0.0];
+        bf = [0.0, 0.0, -1.0];
     end
 end
 
