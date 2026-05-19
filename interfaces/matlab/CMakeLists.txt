@@ -193,36 +193,44 @@ if(OCTAVE_MKOCTFILE_EXECUTABLE)
         get_target_property(_hypredrv_octave_hypre_type HYPRE::HYPRE TYPE)
         if(NOT _hypredrv_octave_hypre_type STREQUAL "INTERFACE_LIBRARY")
             set(_hypredrv_octave_hypre_location "")
-            foreach(_hypredrv_octave_hypre_config IN ITEMS RELEASE RELWITHDEBINFO DEBUG MINSIZEREL "")
-                if(_hypredrv_octave_hypre_config STREQUAL "")
-                    get_target_property(_hypredrv_octave_hypre_candidate
-                                        HYPRE::HYPRE IMPORTED_LOCATION)
-                else()
-                    get_target_property(_hypredrv_octave_hypre_candidate
-                                        HYPRE::HYPRE
-                                        IMPORTED_LOCATION_${_hypredrv_octave_hypre_config})
+            get_target_property(_hypredrv_octave_hypre_imported
+                                HYPRE::HYPRE IMPORTED)
+            if(_hypredrv_octave_hypre_imported)
+                foreach(_hypredrv_octave_hypre_config IN ITEMS RELEASE RELWITHDEBINFO DEBUG MINSIZEREL "")
+                    if(_hypredrv_octave_hypre_config STREQUAL "")
+                        get_target_property(_hypredrv_octave_hypre_candidate
+                                            HYPRE::HYPRE IMPORTED_LOCATION)
+                    else()
+                        get_target_property(_hypredrv_octave_hypre_candidate
+                                            HYPRE::HYPRE
+                                            IMPORTED_LOCATION_${_hypredrv_octave_hypre_config})
+                    endif()
+                    if(_hypredrv_octave_hypre_candidate)
+                        set(_hypredrv_octave_hypre_location
+                            "${_hypredrv_octave_hypre_candidate}")
+                        break()
+                    endif()
+                endforeach()
+                if(_hypredrv_octave_hypre_location)
+                    get_filename_component(_hypredrv_octave_hypre_library_dir
+                                           "${_hypredrv_octave_hypre_location}"
+                                           DIRECTORY)
+                    get_filename_component(_hypredrv_octave_hypre_library_name
+                                           "${_hypredrv_octave_hypre_location}"
+                                           NAME)
+                    if(_hypredrv_octave_hypre_library_name MATCHES "^lib(.+)\\.(a|so|dylib)(\\..*)?$")
+                        list(APPEND _hypredrv_octave_link_inputs
+                             "-L${_hypredrv_octave_hypre_library_dir}"
+                             "-l${CMAKE_MATCH_1}")
+                    else()
+                        list(APPEND _hypredrv_octave_link_inputs
+                             "${_hypredrv_octave_hypre_location}")
+                    endif()
                 endif()
-                if(_hypredrv_octave_hypre_candidate)
-                    set(_hypredrv_octave_hypre_location
-                        "${_hypredrv_octave_hypre_candidate}")
-                    break()
-                endif()
-            endforeach()
-            if(_hypredrv_octave_hypre_location)
-                get_filename_component(_hypredrv_octave_hypre_library_dir
-                                       "${_hypredrv_octave_hypre_location}"
-                                       DIRECTORY)
-                get_filename_component(_hypredrv_octave_hypre_library_name
-                                       "${_hypredrv_octave_hypre_location}"
-                                       NAME)
-                if(_hypredrv_octave_hypre_library_name MATCHES "^lib(.+)\\.(a|so|dylib)(\\..*)?$")
-                    list(APPEND _hypredrv_octave_link_inputs
-                         "-L${_hypredrv_octave_hypre_library_dir}"
-                         "-l${CMAKE_MATCH_1}")
-                else()
-                    list(APPEND _hypredrv_octave_link_inputs
-                         "${_hypredrv_octave_hypre_location}")
-                endif()
+            else()
+                list(APPEND _hypredrv_octave_link_inputs
+                     "-L$<TARGET_LINKER_FILE_DIR:HYPRE::HYPRE>"
+                     "-l$<TARGET_LINKER_FILE_BASE_NAME:HYPRE::HYPRE>")
             endif()
         endif()
     endif()
