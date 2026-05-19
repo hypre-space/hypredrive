@@ -12,8 +12,8 @@
 %   * 8-node trilinear hex in 3D.
 % Material is isotropic with E = 1, nu = 0.3 (nu unused in 1D). The x = 0
 % face is clamped (all displacement components fixed to 0). Loading is a
-% unit body force along the last active axis (e.g., gravity in -y for 2D/3D,
-% along -x in 1D). The returned K is SPD after clamp application.
+% unit body force along the last active axis (-x in 1D, -y in 2D, -z in 3D).
+% The returned K is SPD after clamp application.
 %
 % Compatible with MATLAB and GNU Octave.
 
@@ -195,7 +195,6 @@ function bf = body_force(ndim)
     elseif ndim == 2
         bf = [0.0, -1.0];
     else
-        %bf = [0.0, -1.0, 0.0];
         bf = [0.0, 0.0, -1.0];
     end
 end
@@ -205,8 +204,7 @@ function elem_dofs = build_elem_dof_table(n, ndim)
     npe = 2 ^ ndim;
     if ndim == 1
         starts = (1:ne)';
-        [oa] = (0:1)';
-        offsets = oa;
+        offsets = (0:1)';
     elseif ndim == 2
         [si, sj] = ndgrid(1:ne(1), 1:ne(2));
         starts = [si(:), sj(:)];

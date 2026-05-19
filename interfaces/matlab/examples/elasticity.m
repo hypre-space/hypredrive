@@ -18,22 +18,30 @@
 %   elasticity(32, 32)                  % 2D plate, 32 x 32 nodes
 %   elasticity(16, 16, 8)               % 3D block, 16 x 16 x 8 nodes
 %
-% Optional VTI binary XML output (loadable in ParaView):
+% Optional VTI binary XML output (loadable in ParaView). A trailing char
+% argument is interpreted as the output path, so the dimensions can stay
+% as compact as in the calls above:
 %
 %   elasticity(16, 16, 16, 'block.vti') % 3D + VTI
-%   elasticity(32, 32, 1, 'plate.vti')  % 2D + VTI
-%   elasticity(64, 1, 1, 'bar.vti')     % 1D + VTI
+%   elasticity(32, 32, 'plate.vti')     % 2D + VTI
+%   elasticity(64, 'bar.vti')           % 1D + VTI
 %
 % Compatible with MATLAB and GNU Octave.
 
-function elasticity(nx, ny, nz, vti_path)
-    if nargin == 0
+function elasticity(varargin)
+    args = varargin;
+    vti_path = '';
+    if ~isempty(args) && ischar(args{end})
+        vti_path = args{end};
+        args = args(1:end - 1);
+    end
+    if isempty(args)
         nx = 16; ny = 16; nz = 16;
     else
-        if nargin < 2, ny = 1; end
-        if nargin < 3, nz = 1; end
+        nx = args{1};
+        if numel(args) >= 2, ny = args{2}; else, ny = 1; end
+        if numel(args) >= 3, nz = args{3}; else, nz = 1; end
     end
-    if nargin < 4, vti_path = ''; end
 
     [A, b] = build_elasticity(nx, ny, nz);
     n = size(A, 1);
@@ -56,14 +64,21 @@ function elasticity(nx, ny, nz, vti_path)
 
     [x, info] = hypredrive_solve(A, b, opts);
 
+    axis_names = 'xyz';
     fprintf('grid:              %s (%dD)\n', grid_str, ndim);
     fprintf('dofs per node:     %d\n', ndim);
+    fprintf('loading axis:      -%c\n', axis_names(ndim));
     fprintf('unknowns:          %d\n', n);
     fprintf('iterations:        %d\n', info.iterations);
     fprintf('setup time:        %.6e s\n', info.setup_time);
     fprintf('solve time:        %.6e s\n', info.solve_time);
     fprintf('solution l2 norm:  %.6e\n', info.solution_norm);
-    fprintf('relative residual: %.6e\n', norm(b - A * x) / norm(b));
+    relres = norm(b - A * x) / norm(b);
+    fprintf('relative residual: %.6e\n', relres);
+    if ~isfinite(relres) || relres > 1.0e-6
+        error('elasticity:convergence', ...
+              'relative residual %.3e exceeds 1e-6', relres);
+    end
 
     if ~isempty(vti_path)
         write_displacement_vti(vti_path, dims, ndim, x);
