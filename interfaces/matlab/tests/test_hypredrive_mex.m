@@ -7,8 +7,7 @@ function test_hypredrive_mex
 %TEST_HYPREDRIVE_MEX Smoke test for the hypredrive MATLAB MEX interface.
 
 n = 16;
-e = ones(n, 1);
-A = spdiags([-e, 2 * e, -e], -1:1, n, n);
+A = build_laplacian(n);
 b = ones(n, 1);
 
 opts = hypredrive_options( ...
