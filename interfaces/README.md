@@ -1,7 +1,8 @@
 # hypredrive interfaces
 
-Language interfaces for hypredrive live here. Each interface is kept separate
-from the core C library so it can own its packaging, examples, tests, and
+This folder houses the language bindings for hypredrive. These are thin interfaces, not
+full native ports or rewrites. We keep them separate from the core C library so each
+language can fully own its idiomatic packaging, examples, testing frameworks, and
 developer tooling.
 
 ## Fortran
