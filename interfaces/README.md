@@ -37,7 +37,7 @@ CMake, test, MPI, and benchmark details.
 
 ## MATLAB/Octave
 
-The MATLAB/Octave interface is in [`matlab/`](matlab/). It provides a serial
+The MATLAB/Octave interface is in [`matlab-octave/`](matlab-octave/). It provides a serial
 MEX function plus a portable `.m` wrapper that accepts MATLAB or Octave sparse
 matrices, converts them to hypredrive CSR, and solves on `MPI_COMM_SELF`.
 
@@ -48,8 +48,8 @@ cmake -S . -B build-matlab -DHYPREDRV_ENABLE_MATLAB=ON
 cmake --build build-matlab --parallel
 ```
 
-See [`matlab/README.md`](matlab/README.md) for build, usage, test, and install
-details.
+See [`matlab-octave/README.md`](matlab-octave/README.md) for build, usage,
+test, and install details.
 
 ## Julia
 

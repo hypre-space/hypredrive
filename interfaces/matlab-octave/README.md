@@ -54,14 +54,14 @@ cmake --build build-matlab --target hypredrive-octave
 Add the wrapper and the runtime-specific MEX directory to the MATLAB path:
 
 ```matlab
-addpath("/path/to/source/interfaces/matlab/src")
+addpath("/path/to/source/interfaces/matlab-octave/src")
 addpath("/path/to/build-matlab/interfaces/matlab/matlab")
 ```
 
 For Octave, use the Octave MEX directory instead:
 
 ```matlab
-addpath("/path/to/source/interfaces/matlab/src")
+addpath("/path/to/source/interfaces/matlab-octave/src")
 addpath("/path/to/build-matlab/lib/octave")
 ```
 
@@ -131,6 +131,23 @@ opts = hypredrive_options(struct('general', struct('statistics', 1)));
 Raw YAML text is still accepted for advanced users. The default options are PCG
 with AMG preconditioning and statistics disabled.
 
+## Examples
+
+The examples are regular MATLAB/Octave scripts that call `hypredrive_solve`:
+
+```matlab
+addpath("/path/to/source/interfaces/matlab-octave/examples")
+
+laplacian(16, 16, 16)
+elasticity(16, 16, 16)
+```
+
+`laplacian.m` assembles 1D, 2D, or 3D finite-difference Poisson problems.
+`elasticity.m` assembles 1D, 2D, or 3D linear-elasticity problems and uses the
+matching elasticity AMG preset. The helper files `build_laplacian.m` and
+`build_elasticity.m` can also be called directly when a test or script needs
+just the matrix and right-hand side.
+
 The optional `info` output has these fields:
 
 | Field | Meaning |
@@ -142,8 +159,9 @@ The optional `info` output has these fields:
 
 ## Test
 
-When `HYPREDRV_ENABLE_TESTING=ON`, the optional test target runs a small 1D
-Laplacian smoke test for each available runtime:
+When `HYPREDRV_ENABLE_TESTING=ON`, the optional test target runs the MEX wrapper
+smoke test plus small serial Laplacian and elasticity examples for each
+available runtime:
 
 ```bash
 cmake --build build-matlab --target matlab-test
@@ -158,7 +176,8 @@ cmake --install build-matlab --prefix /path/to/install
 ```
 
 MATLAB files are installed under `lib/matlab`. Octave files are installed under
-`lib/octave`. Examples are installed under `share/matlab/examples`.
+`lib/octave`. The example scripts and assembly helpers are installed under
+`share/matlab/examples`.
 On Unix-like systems, installed MEX files use a relative runtime search path
 back to the prefix-local library directory. If you relocate the MEX file
 manually, keep it one directory below the installed library directory or set the

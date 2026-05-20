@@ -134,6 +134,24 @@ Request the HYPREDRV statistics table explicitly when needed:
 Raw YAML text is still accepted for advanced users. The default options are PCG
 with AMG preconditioning and statistics disabled.
 
+Examples
+--------
+
+The examples are regular MATLAB/Octave scripts that call ``hypredrive_solve``:
+
+.. code-block:: matlab
+
+   addpath("/path/to/source/interfaces/matlab-octave/examples")
+
+   laplacian(16, 16, 16)
+   elasticity(16, 16, 16)
+
+``laplacian.m`` assembles 1D, 2D, or 3D finite-difference Poisson problems.
+``elasticity.m`` assembles 1D, 2D, or 3D linear-elasticity problems and uses
+the matching elasticity AMG preset. The helper files ``build_laplacian.m`` and
+``build_elasticity.m`` can also be called directly when a test or script needs
+just the matrix and right-hand side.
+
 Information struct
 ------------------
 
@@ -156,8 +174,9 @@ When requested, the second output is a struct with these fields:
 Testing
 -------
 
-When testing is enabled, the ``matlab-test`` target runs a small serial
-Laplacian smoke test for each available runtime:
+When testing is enabled, the ``matlab-test`` target runs the MEX wrapper smoke
+test plus small serial Laplacian and elasticity examples for each available
+runtime:
 
 .. code-block:: bash
 
@@ -181,8 +200,9 @@ back to the prefix-local library directory. If you relocate the MEX file
 manually, keep it one directory below the installed library directory or set the
 platform runtime library path so ``libHYPREDRV`` and HYPRE are visible.
 
-Installed examples are placed under ``share/matlab/examples``. For example,
-``share/matlab/examples/laplacian.m`` solves a serial Laplacian problem.
+Installed examples are placed under ``share/matlab/examples``. This includes
+``laplacian.m``, ``elasticity.m``, ``build_laplacian.m``, and
+``build_elasticity.m``.
 
 Troubleshooting
 ---------------
