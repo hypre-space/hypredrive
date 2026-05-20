@@ -56,14 +56,14 @@ Add the wrapper and the runtime-specific MEX directory to the MATLAB path:
 
 .. code-block:: matlab
 
-   addpath("/path/to/source/interfaces/matlab/src")
+   addpath("/path/to/source/interfaces/matlab-octave/src")
    addpath("/path/to/build-matlab/interfaces/matlab/matlab")
 
 For Octave, use the Octave MEX directory:
 
 .. code-block:: matlab
 
-   addpath("/path/to/source/interfaces/matlab/src")
+   addpath("/path/to/source/interfaces/matlab-octave/src")
    addpath("/path/to/build-matlab/lib/octave")
 
 The build-tree paths differ because MATLAB MEX files are produced by
@@ -182,7 +182,7 @@ manually, keep it one directory below the installed library directory or set the
 platform runtime library path so ``libHYPREDRV`` and HYPRE are visible.
 
 Installed examples are placed under ``share/matlab/examples``. For example,
-``share/matlab/examples/laplacian1d.m`` solves a small serial 1D Laplacian.
+``share/matlab/examples/laplacian.m`` solves a serial Laplacian problem.
 
 Troubleshooting
 ---------------

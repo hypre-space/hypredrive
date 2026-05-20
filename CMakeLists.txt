@@ -393,7 +393,7 @@ endif()
 
 # MATLAB/Octave interface (optional)
 if(HYPREDRV_ENABLE_MATLAB)
-    add_subdirectory(interfaces/matlab)
+    add_subdirectory(interfaces/matlab-octave)
 endif()
 
 # Julia interface (optional)
