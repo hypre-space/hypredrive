@@ -1,8 +1,24 @@
 # hypredrive interfaces
 
-Language interfaces for hypredrive live here. Each interface is kept separate
-from the core C library so it can own its packaging, examples, tests, and
+This folder houses the language bindings for hypredrive. These are thin interfaces, not
+full native ports or rewrites. We keep them separate from the core C library so each
+language can fully own its idiomatic packaging, examples, testing frameworks, and
 developer tooling.
+
+## Fortran
+
+The Fortran interface is in [`fortran/`](fortran/). It provides thin bindings to
+the public `HYPREDRV_` C API, MPI examples, and CTest smoke tests.
+
+Enable it with:
+
+```bash
+cmake -S . -B build-fortran -DHYPREDRV_ENABLE_FORTRAN=ON
+cmake --build build-fortran --parallel
+```
+
+See [`fortran/README.md`](fortran/README.md) for API, build, test, and example
+details.
 
 ## Python
 
@@ -20,20 +36,21 @@ python -m pip install ./interfaces/python \
 See [`python/README.md`](python/README.md) for wheel, source-build, in-tree
 CMake, test, MPI, and benchmark details.
 
-## Fortran
+## MATLAB/Octave
 
-The Fortran interface is in [`fortran/`](fortran/). It provides thin bindings to
-the public `HYPREDRV_` C API, MPI examples, and CTest smoke tests.
+The MATLAB/Octave interface is in [`matlab-octave/`](matlab-octave/). It provides a serial
+MEX function plus a portable `.m` wrapper that accepts MATLAB or Octave sparse
+matrices, converts them to hypredrive CSR, and solves on `MPI_COMM_SELF`.
 
 Enable it with:
 
 ```bash
-cmake -S . -B build-fortran -DHYPREDRV_ENABLE_FORTRAN=ON
-cmake --build build-fortran --parallel
+cmake -S . -B build-matlab -DHYPREDRV_ENABLE_MATLAB=ON
+cmake --build build-matlab --parallel
 ```
 
-See [`fortran/README.md`](fortran/README.md) for API, build, test, and example
-details.
+See [`matlab-octave/README.md`](matlab-octave/README.md) for build, usage,
+test, and install details.
 
 ## Julia
 

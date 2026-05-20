@@ -23,6 +23,7 @@ binding.
 .. toctree::
    :maxdepth: 2
 
-   interfaces_python
    interfaces_fortran
+   interfaces_python
+   interfaces_matlab
    interfaces_julia
