@@ -23,8 +23,8 @@ binding.
 .. toctree::
    :maxdepth: 2
 
+   interfaces_cpp
    interfaces_fortran
    interfaces_python
    interfaces_matlab
    interfaces_julia
-   interfaces_cpp
