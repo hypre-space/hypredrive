@@ -3,8 +3,11 @@
 #
 # SPDX-License-Identifier: MIT
 
-# Formatting target
-find_program(CLANG_FORMAT "clang-format")
+# Formatting target. Prefer clang-format-18 project-wide when available so C,
+# C++, and public headers are formatted with the same clang-format version in CI
+# and local validation. Fall back to clang-format for older developer machines.
+find_program(CLANG_FORMAT
+    NAMES clang-format-18 clang-format)
 set(_hypredrv_format_targets)
 
 if(CLANG_FORMAT)
@@ -18,6 +21,20 @@ if(CLANG_FORMAT)
     list(APPEND _hypredrv_format_targets format-c)
 else()
     message(STATUS "clang-format not found, C formatting target will not be available")
+endif()
+
+if(HYPREDRV_ENABLE_CPP)
+    if(CLANG_FORMAT)
+        add_custom_target(format-cpp
+            COMMAND ${CMAKE_COMMAND} -E env find interfaces/cpp -type f
+                    \( -name "*.cpp" -o -name "*.hpp" \)
+                    -exec ${CLANG_FORMAT} -i {} +
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Running clang-format on interfaces/cpp/..."
+            VERBATIM
+        )
+        list(APPEND _hypredrv_format_targets format-cpp)
+    endif()
 endif()
 
 if(HYPREDRV_ENABLE_FORTRAN)

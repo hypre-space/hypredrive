@@ -27,3 +27,4 @@ binding.
    interfaces_python
    interfaces_matlab
    interfaces_julia
+   interfaces_cpp

@@ -39,10 +39,12 @@ option(HYPREDRV_ENABLE_EXAMPLES     "Enable the HYPREDRV examples" OFF)
 option(HYPREDRV_ENABLE_HWLOC        "Enable hwloc support for detailed system topology information" OFF)
 option(HYPREDRV_ENABLE_CALIPER      "Enable Caliper instrumentation support" OFF)
 option(HYPREDRV_ENABLE_COMPRESSION  "Enable optional lossless compression backends" OFF)
-option(HYPREDRV_ENABLE_PYTHON       "Enable the hypredrive Python interface" OFF)
+option(HYPREDRV_ENABLE_CPP          "Enable the hypredrive C++ interface" OFF)
 option(HYPREDRV_ENABLE_FORTRAN      "Enable the hypredrive Fortran interface" OFF)
+option(HYPREDRV_ENABLE_PYTHON       "Enable the hypredrive Python interface" OFF)
 option(HYPREDRV_ENABLE_MATLAB       "Enable the hypredrive MATLAB/Octave MEX interface" OFF)
 option(HYPREDRV_ENABLE_JULIA        "Enable the hypredrive Julia interface" OFF)
+
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -399,6 +401,12 @@ endif()
 # Julia interface (optional)
 if(HYPREDRV_ENABLE_JULIA)
     add_subdirectory(interfaces/julia)
+endif()
+
+# C++ interface (optional)
+if(HYPREDRV_ENABLE_CPP)
+    enable_language(CXX)
+    add_subdirectory(interfaces/cpp)
 endif()
 
 # Installation and package configuration

@@ -68,3 +68,18 @@ cmake --build build-julia --target julia-test --parallel
 
 See [`julia/README.md`](julia/README.md) for package development, library discovery,
 options, tests, and example details.
+
+## C++
+
+The C++ interface is in [`cpp/`](cpp/). It provides a header-only C++17 RAII
+wrapper over the public `HYPREDRV_` C API, YAML-driven configuration, CTest
+coverage, and a distributed Laplacian example.
+
+Enable it with:
+
+```bash
+cmake -S . -B build-cpp -DHYPREDRV_ENABLE_CPP=ON -DHYPREDRV_ENABLE_TESTING=ON
+cmake --build build-cpp --target cpp-test --parallel
+```
+
+See [`cpp/README.md`](cpp/README.md) for API, build, test, and example details.
