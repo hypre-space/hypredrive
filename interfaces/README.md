@@ -5,6 +5,21 @@ full native ports or rewrites. We keep them separate from the core C library so 
 language can fully own its idiomatic packaging, examples, testing frameworks, and
 developer tooling.
 
+## C++
+
+The C++ interface is in [`cpp/`](cpp/). It provides a header-only C++17 RAII
+wrapper over the public `HYPREDRV_` C API, YAML-driven configuration, CTest
+coverage, and a distributed Laplacian example.
+
+Enable it with:
+
+```bash
+cmake -S . -B build-cpp -DHYPREDRV_ENABLE_CPP=ON -DHYPREDRV_ENABLE_TESTING=ON
+cmake --build build-cpp --target cpp-test --parallel
+```
+
+See [`cpp/README.md`](cpp/README.md) for API, build, test, and example details.
+
 ## Fortran
 
 The Fortran interface is in [`fortran/`](fortran/). It provides thin bindings to
