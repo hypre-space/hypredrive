@@ -372,7 +372,6 @@ test_InputArgsParsePrecon_mgr_flat_g_relaxation_ilu_defaults(void)
    hypredrv_InputArgsDestroy(&args);
 }
 
-#if HYPRE_CHECK_MIN_VERSION(30100, 50)
 static input_args *
 parse_mgr_cycle_config(const char *cycle)
 {
@@ -395,12 +394,13 @@ parse_mgr_cycle_config(const char *cycle)
 }
 
 static void
-assert_mgr_cycle_value(const char *cycle, int expected)
+assert_mgr_cycle_value(const char *cycle, int expected_cycle, int expected_smooth_pos)
 {
    input_args *args = parse_mgr_cycle_config(cycle);
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->precon_method, PRECON_MGR);
-   ASSERT_EQ(args->precon.mgr.cycle, expected);
+   ASSERT_EQ(args->precon.mgr.cycle, expected_cycle);
+   ASSERT_EQ(args->precon.mgr.cycle_smooth_pos, expected_smooth_pos);
    hypredrv_InputArgsDestroy(&args);
 }
 
@@ -415,20 +415,24 @@ assert_mgr_cycle_rejected(const char *cycle)
 static void
 test_InputArgsParsePrecon_mgr_cycle(void)
 {
-   assert_mgr_cycle_value("v", 1);
-   assert_mgr_cycle_value("v(1,0)", 1);
-   assert_mgr_cycle_value("v(0,1)", 2);
-   assert_mgr_cycle_value("v(1,1)", 3);
-   assert_mgr_cycle_value("w", 4);
-   assert_mgr_cycle_value("w(1,0)", 4);
-   assert_mgr_cycle_value("w(0,1)", 5);
-   assert_mgr_cycle_value("w(1,1)", 6);
-   assert_mgr_cycle_value("V", 1);
+   assert_mgr_cycle_value("1", 1, 1);
+   assert_mgr_cycle_value("2", 2, 1);
+   assert_mgr_cycle_value("v", 1, 1);
+   assert_mgr_cycle_value("v(1,0)", 1, 1);
+   assert_mgr_cycle_value("v(0,1)", 1, 2);
+   assert_mgr_cycle_value("v(1,1)", 1, 3);
+   assert_mgr_cycle_value("w", 2, 1);
+   assert_mgr_cycle_value("w(1,0)", 2, 1);
+   assert_mgr_cycle_value("w(0,1)", 2, 2);
+   assert_mgr_cycle_value("w(1,1)", 2, 3);
+   assert_mgr_cycle_value("V", 1, 1);
 
+   assert_mgr_cycle_rejected("0");
+   assert_mgr_cycle_rejected("-1");
+   assert_mgr_cycle_rejected("3");
    assert_mgr_cycle_rejected("x(1,1)");
    assert_mgr_cycle_rejected("\" v \"");
 }
-#endif
 
 static void
 test_InputArgsParsePrecon_mgr_component_reuse_blocks(void)
@@ -1982,9 +1986,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParsePrecon_variants);
    RUN_TEST(test_InputArgsParsePrecon_mgr_flat_g_relaxation_amg_defaults);
    RUN_TEST(test_InputArgsParsePrecon_mgr_flat_g_relaxation_ilu_defaults);
-#if HYPRE_CHECK_MIN_VERSION(30100, 50)
    RUN_TEST(test_InputArgsParsePrecon_mgr_cycle);
-#endif
    RUN_TEST(test_InputArgsParsePrecon_mgr_component_reuse_blocks);
    RUN_TEST(test_InputArgsParsePrecon_mgr_component_reuse_unknown_nested_key);
    RUN_TEST(test_InputArgsParsePrecon_mgr_component_reuse_always_alias);

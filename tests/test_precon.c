@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "HYPRE.h"
+#include "_hypre_utilities.h"
 #include "internal/amg.h"
 #include "internal/containers.h"
 #include "internal/error.h"
@@ -4183,6 +4184,30 @@ test_MGRRefreshComponentsForSetup_rebuilds_fsai_handles(void)
    ASSERT_NOT_NULL(args.mgr.frelax[0]);
    ASSERT_NOT_NULL(args.mgr.grelax[0]);
    ASSERT_NOT_NULL(args.mgr.csolver);
+
+#if HYPRE_CHECK_MIN_VERSION(30100, 38)
+   HYPRE_Solver old_frelax = args.mgr.frelax[0];
+   HYPRE_Solver old_grelax = args.mgr.grelax[0];
+   HYPRE_Solver old_coarse = args.mgr.csolver;
+
+   hypre_SolverSetIsSetup((hypre_Solver *)old_frelax);
+   hypre_SolverSetIsSetup((hypre_Solver *)old_grelax);
+   hypre_SolverSetIsSetup((hypre_Solver *)old_coarse);
+
+   precon_test_set_static_mgr_component_reuse(&args.mgr.level[0].f_relaxation.reuse, 1);
+   precon_test_set_static_mgr_component_reuse(&args.mgr.level[0].g_relaxation.reuse, 1);
+   precon_test_set_static_mgr_component_reuse(&args.mgr.coarsest_level.reuse, 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRRefreshComponentsForSetup(&args.mgr, precon->main, NULL, NULL, 1);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(args.mgr.frelax[0] == old_frelax);
+   ASSERT_TRUE(args.mgr.grelax[0] == old_grelax);
+   ASSERT_TRUE(args.mgr.csolver == old_coarse);
+   ASSERT_TRUE(hypre_SolverSetupReuseRequested((hypre_Solver *)args.mgr.frelax[0]));
+   ASSERT_TRUE(hypre_SolverSetupReuseRequested((hypre_Solver *)args.mgr.grelax[0]));
+   ASSERT_TRUE(hypre_SolverSetupReuseRequested((hypre_Solver *)args.mgr.csolver));
+#endif
 
    precon_test_set_static_mgr_component_reuse(&args.mgr.level[0].f_relaxation.reuse, 0);
    precon_test_set_static_mgr_component_reuse(&args.mgr.level[0].g_relaxation.reuse, 0);

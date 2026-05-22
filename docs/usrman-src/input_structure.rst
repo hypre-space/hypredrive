@@ -1392,6 +1392,13 @@ optional keywords:
   values are any non-negative floating point numbers. Default value is `0.0`, which means
   no dropping.
 
+- ``cycle`` - MGR traversal cycle. Numeric values preserve the legacy encoding:
+  `1` selects V-cycle and `2` selects W-cycle. Symbolic values ``v``, ``w``,
+  ``v(1,0)``, ``v(0,1)``, ``v(1,1)``, ``w(1,0)``, ``w(0,1)``, and ``w(1,1)``
+  may also be used; the tuple selects pre-, post-, or pre-and-post smoothing with
+  HYPRE ``>= 3.1.0`` develop number ``>= 50``. On older HYPRE versions, the key is
+  accepted for compatibility but ignored.
+
 - ``level`` - special keyword for defining specific parameters for each MGR level. Each
   level is identified by its numeric ID starting from `0` (finest) and placed in
   increasing order on the next indentation level of the YAML input.
