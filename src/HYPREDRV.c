@@ -2827,10 +2827,9 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
 
    if (rerun_mgr_component_setup)
    {
-      hypredrv_MGRRefreshComponentsForSetup(&hypredrv->iargs->precon.mgr,
-                                            hypredrv->precon->main,
-                                            hypredrv->precon_reuse_timesteps.starts,
-                                            hypredrv->stats, next_ls_id);
+      hypredrv_MGRRefreshComponentsForSetup(
+         &hypredrv->iargs->precon.mgr, hypredrv->precon->main,
+         hypredrv->precon_reuse_timesteps.starts, hypredrv->stats, next_ls_id);
       if (hypredrv_ErrorCodeGet())
       {
          return hypredrv_ErrorCodeGet();

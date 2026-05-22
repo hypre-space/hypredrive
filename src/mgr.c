@@ -11,13 +11,13 @@
 /* gcovr: branch-exclusion regions below narrow branch-count noise from YAML
  * helpers and MGR validation/dispatch; single-line exclusions flag allocator
  * and defensive branches that are impractical to fault-inject here. */
+#include "_hypre_utilities.h" // for hypre_Solver
 #include "internal/compatibility.h"
 #include "internal/error.h"
 #include "internal/gen_macros.h"
 #include "internal/krylov.h"
 #include "internal/stats.h"
 #include "logging.h"
-#include "_hypre_utilities.h" // for hypre_Solver
 
 typedef struct MGRFRelaxWrapper_struct
 {
@@ -32,9 +32,9 @@ typedef struct MGRFRelaxWrapper_struct
 
 enum
 {
-   MGR_HYPRE_SOLVER_IS_SETUP_OFFSET = sizeof(HYPRE_PtrToSolverFcn) +
-                                      sizeof(HYPRE_PtrToSolverFcn) +
-                                      sizeof(HYPRE_PtrToDestroyFcn),
+   MGR_HYPRE_SOLVER_IS_SETUP_OFFSET = sizeof(((NestedKrylov_args *)0)->setup) +
+                                      sizeof(((NestedKrylov_args *)0)->solve) +
+                                      sizeof(((NestedKrylov_args *)0)->destroy),
 };
 
 typedef char MGRNestedKrylovLayoutCheck
@@ -2144,6 +2144,7 @@ MGRComponentReuseShouldKeep(const MGRComponentReuse_args *reuse,
 static int
 MGRSetComponentSetupReuse(HYPRE_Solver solver, int set_reuse)
 {
+#if HYPRE_CHECK_MIN_VERSION(30100, 38)
    if (!solver)
    {
       return 0;
@@ -2167,6 +2168,11 @@ MGRSetComponentSetupReuse(HYPRE_Solver solver, int set_reuse)
     * normalizes any cached handle that was refreshed against a new matrix. */
    hypre_SolverResetIsSetup(base);
    return 0;
+#else
+   (void)solver;
+   (void)set_reuse;
+   return 0;
+#endif
 }
 
 static HYPRE_Solver
@@ -2591,7 +2597,7 @@ hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *args,
    {
       return 0;
    }
-#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
    return 0;
 #endif
 
@@ -2684,7 +2690,7 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
       return 0;
    }
 
-#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
    {
       char label[96];
       for (int active_lvl = 0; active_lvl < args->num_active_levels; active_lvl++)
@@ -2854,7 +2860,7 @@ hypredrv_MGRRefreshComponentsForSetup(MGR_args *args, HYPRE_Solver precon,
    {
       return;
    }
-#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
    (void)timestep_starts;
    (void)stats;
    (void)next_ls_id;
@@ -2911,8 +2917,8 @@ hypredrv_MGRRefreshComponentsForSetup(MGR_args *args, HYPRE_Solver precon,
 
    if (MGRCoarseUsesManagedHandle(&args->coarsest_level))
    {
-      int keep = MGRComponentReuseShouldKeep(&args->coarsest_level.reuse,
-                                             timestep_starts, stats, next_ls_id);
+      int keep = MGRComponentReuseShouldKeep(&args->coarsest_level.reuse, timestep_starts,
+                                             stats, next_ls_id);
       if (keep)
       {
          keep = MGRSetComponentSetupReuse(MGRCoarseSetupSolver(args), 1);
@@ -3088,7 +3094,7 @@ hypredrv_MGRSelectCachedSolversToKeep(MGR_args *args, const IntArray *timestep_s
    {
       return;
    }
-#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
    (void)timestep_starts;
    (void)stats;
    (void)next_ls_id;
