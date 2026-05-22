@@ -372,6 +372,68 @@ test_InputArgsParsePrecon_mgr_flat_g_relaxation_ilu_defaults(void)
    hypredrv_InputArgsDestroy(&args);
 }
 
+static input_args *
+parse_mgr_cycle_config(const char *cycle)
+{
+   char yaml_text[512];
+
+   snprintf(yaml_text, sizeof(yaml_text),
+            "solver:\n"
+            "  gmres:\n"
+            "    max_iter: 10\n"
+            "preconditioner:\n"
+            "  mgr:\n"
+            "    cycle: %s\n"
+            "    level:\n"
+            "      0:\n"
+            "        f_dofs: [2]\n"
+            "    coarsest_level: amg\n",
+            cycle);
+
+   return parse_config(yaml_text);
+}
+
+static void
+assert_mgr_cycle_value(const char *cycle, int expected_cycle, int expected_smooth_pos)
+{
+   input_args *args = parse_mgr_cycle_config(cycle);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon_method, PRECON_MGR);
+   ASSERT_EQ(args->precon.mgr.cycle, expected_cycle);
+   ASSERT_EQ(args->precon.mgr.cycle_smooth_pos, expected_smooth_pos);
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
+assert_mgr_cycle_rejected(const char *cycle)
+{
+   input_args *args = parse_mgr_cycle_config(cycle);
+   ASSERT_NULL(args);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+}
+
+static void
+test_InputArgsParsePrecon_mgr_cycle(void)
+{
+   assert_mgr_cycle_value("1", 1, 1);
+   assert_mgr_cycle_value("2", 2, 1);
+   assert_mgr_cycle_value("v", 1, 1);
+   assert_mgr_cycle_value("v(1,0)", 1, 1);
+   assert_mgr_cycle_value("v(0,1)", 1, 2);
+   assert_mgr_cycle_value("v(1,1)", 1, 3);
+   assert_mgr_cycle_value("w", 2, 1);
+   assert_mgr_cycle_value("w(1,0)", 2, 1);
+   assert_mgr_cycle_value("w(0,1)", 2, 2);
+   assert_mgr_cycle_value("w(1,1)", 2, 3);
+   assert_mgr_cycle_value("V", 1, 1);
+
+   assert_mgr_cycle_rejected("0");
+   assert_mgr_cycle_rejected("-1");
+   assert_mgr_cycle_rejected("3");
+   assert_mgr_cycle_rejected("x(1,1)");
+   assert_mgr_cycle_rejected("\" v \"");
+}
+
 static void
 test_InputArgsParsePrecon_mgr_component_reuse_blocks(void)
 {
@@ -1924,6 +1986,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParsePrecon_variants);
    RUN_TEST(test_InputArgsParsePrecon_mgr_flat_g_relaxation_amg_defaults);
    RUN_TEST(test_InputArgsParsePrecon_mgr_flat_g_relaxation_ilu_defaults);
+   RUN_TEST(test_InputArgsParsePrecon_mgr_cycle);
    RUN_TEST(test_InputArgsParsePrecon_mgr_component_reuse_blocks);
    RUN_TEST(test_InputArgsParsePrecon_mgr_component_reuse_unknown_nested_key);
    RUN_TEST(test_InputArgsParsePrecon_mgr_component_reuse_always_alias);

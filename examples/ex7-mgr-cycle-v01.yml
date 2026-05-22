@@ -26,13 +26,7 @@ preconditioner:
     level:
       0:
         f_dofs: [0, 1, 2]       # Eliminate displacement DOFs
-        f_relaxation:
-          amg:
-            coarsening:
-              type: pmis
-              strong_th: 0.5
-              num_functions: 3
-              filter_functions: on
+        f_relaxation: ilu
         g_relaxation: none
         restriction_type: injection
         prolongation_type: blk-jacobi
@@ -40,7 +34,7 @@ preconditioner:
 
       1:
         f_dofs: [5]             # Eliminate volume constraint DOFs
-        f_relaxation: jacobi
+        f_relaxation: ilu
         g_relaxation: none
         restriction_type: injection
         prolongation_type: jacobi
@@ -48,7 +42,7 @@ preconditioner:
 
       2:
         f_dofs: [4]             # Eliminate component density DOFs
-        f_relaxation: single
+        f_relaxation: ilu
         g_relaxation: ilu
         restriction_type: columped
         prolongation_type: injection

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "HYPRE.h"
+#include "_hypre_utilities.h"
 #include "internal/amg.h"
 #include "internal/containers.h"
 #include "internal/error.h"
@@ -4029,6 +4030,11 @@ test_MGRComponentReuseSetupMode_policy_shape_and_selector_paths(void)
    mgr.coarsest_level.type         = 0;
 
    precon_test_set_static_mgr_component_reuse(&mgr.level[0].f_relaxation.reuse, 1);
+#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+   ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 0);
+   ASSERT_EQ(mgr.level[0].f_relaxation.reuse.warned_runtime_unsupported, 1);
+   return;
+#endif
    ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 1);
 
    mgr.level[0].f_relaxation.reuse.args.policy = PRECON_REUSE_POLICY_ADAPTIVE;
@@ -4074,7 +4080,11 @@ test_MGRComponentReuseSetupMode_nested_shape_unsupported(void)
 
    precon_test_set_static_mgr_component_reuse(&mgr.level[0].f_relaxation.reuse, 1);
    ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 0);
+#if HYPRE_CHECK_MIN_VERSION(30100, 38)
    ASSERT_EQ(mgr.level[0].f_relaxation.reuse.warned_type_unsupported, 1);
+#else
+   ASSERT_EQ(mgr.level[0].f_relaxation.reuse.warned_runtime_unsupported, 1);
+#endif
 
    mgr.keep_frelax[0] = 1;
    mgr.keep_grelax[0] = 1;
@@ -4104,6 +4114,15 @@ test_MGRComponentReuseShouldKeepOuter_and_SelectKeepFlags(void)
    precon_test_set_static_mgr_component_reuse(&mgr.level[0].f_relaxation.reuse, 1);
    precon_test_set_static_mgr_component_reuse(&mgr.level[0].g_relaxation.reuse, 1);
    precon_test_set_static_mgr_component_reuse(&mgr.coarsest_level.reuse, 1);
+
+#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+   ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 1), 0);
+   hypredrv_MGRSelectCachedSolversToKeep(&mgr, NULL, NULL, 1);
+   ASSERT_EQ(mgr.keep_frelax[0], 0);
+   ASSERT_EQ(mgr.keep_grelax[0], 0);
+   ASSERT_EQ(mgr.keep_csolver, 0);
+   return;
+#endif
 
    ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 1), 1);
    ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 2), 0);
@@ -4165,6 +4184,30 @@ test_MGRRefreshComponentsForSetup_rebuilds_fsai_handles(void)
    ASSERT_NOT_NULL(args.mgr.frelax[0]);
    ASSERT_NOT_NULL(args.mgr.grelax[0]);
    ASSERT_NOT_NULL(args.mgr.csolver);
+
+#if HYPRE_CHECK_MIN_VERSION(30100, 38)
+   HYPRE_Solver old_frelax = args.mgr.frelax[0];
+   HYPRE_Solver old_grelax = args.mgr.grelax[0];
+   HYPRE_Solver old_coarse = args.mgr.csolver;
+
+   hypre_SolverSetIsSetup((hypre_Solver *)old_frelax);
+   hypre_SolverSetIsSetup((hypre_Solver *)old_grelax);
+   hypre_SolverSetIsSetup((hypre_Solver *)old_coarse);
+
+   precon_test_set_static_mgr_component_reuse(&args.mgr.level[0].f_relaxation.reuse, 1);
+   precon_test_set_static_mgr_component_reuse(&args.mgr.level[0].g_relaxation.reuse, 1);
+   precon_test_set_static_mgr_component_reuse(&args.mgr.coarsest_level.reuse, 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRRefreshComponentsForSetup(&args.mgr, precon->main, NULL, NULL, 1);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(args.mgr.frelax[0] == old_frelax);
+   ASSERT_TRUE(args.mgr.grelax[0] == old_grelax);
+   ASSERT_TRUE(args.mgr.csolver == old_coarse);
+   ASSERT_TRUE(hypre_SolverSetupReuseRequested((hypre_Solver *)args.mgr.frelax[0]));
+   ASSERT_TRUE(hypre_SolverSetupReuseRequested((hypre_Solver *)args.mgr.grelax[0]));
+   ASSERT_TRUE(hypre_SolverSetupReuseRequested((hypre_Solver *)args.mgr.csolver));
+#endif
 
    precon_test_set_static_mgr_component_reuse(&args.mgr.level[0].f_relaxation.reuse, 0);
    precon_test_set_static_mgr_component_reuse(&args.mgr.level[0].g_relaxation.reuse, 0);

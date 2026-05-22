@@ -817,6 +817,8 @@ test_mgr_MGRConvertArgInt_max_levels_guard_and_nested_mgr_remap(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
+   ASSERT_NULL(hypredrv_MGRConvertArgInt(&args, "f_relaxation:type"));
+
    args.num_levels = MAX_MGR_LEVELS - 1;
    ASSERT_NULL(hypredrv_MGRConvertArgInt(&args, "f_relaxation:type"));
    ASSERT_NULL(hypredrv_MGRConvertArgInt(&args, "prolongation_type"));

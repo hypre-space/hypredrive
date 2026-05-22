@@ -1047,7 +1047,7 @@ static void
 test_HYPREDRV_log_level_enabled_stays_off_stdout(void)
 {
    reset_state();
-   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+   setenv("HYPREDRV_LOG_LEVEL", "4", 1);
 
    char output[8192];
    capture_stdout_output(run_minimal_lifecycle_for_trace_capture, NULL, output,
@@ -2873,6 +2873,8 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
       "        g_relaxation:\n"
       "          ilu:\n"
       "            max_iter: 1\n"
+      "          reuse:\n"
+      "            linear_system_ids: [1]\n"
       "        restriction_type: injection\n"
       "        prolongation_type: injection\n"
       "        coarse_level_type: rap\n"
@@ -2900,9 +2902,12 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
    ASSERT_NOT_NULL(state->iargs->precon.mgr.frelax[0]);
    ASSERT_NOT_NULL(state->iargs->precon.mgr.grelax[0]);
    ASSERT_NOT_NULL(state->iargs->precon.mgr.csolver);
+   ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
 
    HYPRE_Solver outer0 = state->precon->main;
    HYPRE_Solver f0     = state->iargs->precon.mgr.frelax[0];
+   HYPRE_Solver g0     = state->iargs->precon.mgr.grelax[0];
    HYPRE_Solver c0     = state->iargs->precon.mgr.csolver;
 
    struct LinearSetupCaptureContext setup_context = {obj};
@@ -2914,9 +2919,12 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
    ASSERT_TRUE(state->precon_is_setup);
    ASSERT_PTR_EQ(state->precon->main, outer0);
    ASSERT_PTR_EQ(state->iargs->precon.mgr.frelax[0], f0);
+   ASSERT_PTR_EQ(state->iargs->precon.mgr.grelax[0], g0);
    ASSERT_PTR_EQ(state->iargs->precon.mgr.csolver, c0);
-   ASSERT_NOT_NULL(state->iargs->precon.mgr.grelax[0]);
    ASSERT_TRUE(strstr(output, "rerun_mgr_setup=1") != NULL);
+   ASSERT_TRUE(strstr(output, "MGR F-relax setup reuse at level 0: reuse=1") != NULL);
+   ASSERT_TRUE(strstr(output, "MGR G-relax setup reuse at level 0: reuse=1") != NULL);
+   ASSERT_TRUE(strstr(output, "MGR coarsest setup reuse: reuse=1") != NULL);
 
    ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
