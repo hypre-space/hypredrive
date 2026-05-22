@@ -24,7 +24,7 @@ install*/
 .vscode/
 .deps
 .dirstamp
-build.sh
+build*sh
 _build/
 perf-out/
 
@@ -100,5 +100,6 @@ docs/hypredrive.tag
 docs/usrman-hypredrive.pdf
 docs/devman-hypredrive.pdf
 plan.md
+review.md
 checklist.md
 CI.md
