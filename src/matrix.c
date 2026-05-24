@@ -138,6 +138,15 @@ IJMatrixValidateEntry(HYPRE_BigInt row, HYPRE_BigInt col, uint64_t nrows, uint64
    return 1;
 }
 
+static int
+IJMatrixRejectNonfiniteCoefficient(const char *filename)
+{
+   hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+   hypredrv_ErrorMsgAdd("Detected non-finite matrix coefficient while reading %s",
+                        filename ? filename : "(unknown)");
+   return 0;
+}
+
 void
 hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                                      uint64_t             g_nparts,
@@ -765,6 +774,13 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          /* GCOVR_EXCL_BR_START */
          for (size_t i = 0; h_vals && i < header[6]; i++) /* GCOVR_EXCL_BR_STOP */
          {
+            if (!hypredrv_FloatIsFinite(buffer[i]))
+            {
+               (void)IJMatrixRejectNonfiniteCoefficient(filename);
+               fclose(fp);
+               free(buffer);
+               goto cleanup;
+            }
             h_vals[i] = (HYPRE_Complex)buffer[i];
          }
 
@@ -793,6 +809,13 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          /* GCOVR_EXCL_BR_START */
          for (size_t i = 0; h_vals && i < header[6]; i++) /* GCOVR_EXCL_BR_STOP */
          {
+            if (!hypredrv_DoubleIsFinite(buffer[i]))
+            {
+               (void)IJMatrixRejectNonfiniteCoefficient(filename);
+               fclose(fp);
+               free(buffer);
+               goto cleanup;
+            }
             h_vals[i] = (HYPRE_Complex)buffer[i];
          }
 

@@ -42,7 +42,9 @@ typedef char hypredrv_fuzz_solve_argc_cap_matches_usage
 
 static int g_runtime_mode = FUZZ_MODE;
 
-static const uint8_t g_multipart_magic[8] = {'H', 'D', 'F', 'Z', 'M', 'P', '0', '1'};
+static const uint8_t g_multipart_magic[8]  = {'H', 'D', 'F', 'Z', 'M', 'P', '0', '1'};
+static int           g_finalize_registered = 0;
+static int           g_finalized           = 0;
 
 #if defined(HYPREDRV_FUZZ_ENGINE_AFL)
 __AFL_FUZZ_INIT();
@@ -93,6 +95,28 @@ fuzz_reset_error_state(void)
    hypredrv_ErrorStateReset();
 }
 
+static void
+fuzz_finalize_once(void)
+{
+   int initialized = 0;
+   int finalized   = 0;
+
+   if (g_finalized)
+   {
+      return;
+   }
+   g_finalized = 1;
+
+   (void)HYPREDRV_Finalize();
+
+   MPI_Initialized(&initialized);
+   MPI_Finalized(&finalized);
+   if (initialized && !finalized)
+   {
+      MPI_Finalize();
+   }
+}
+
 void
 fuzz_mpi_init_once(int *argc, char ***argv)
 {
@@ -105,6 +129,11 @@ fuzz_mpi_init_once(int *argc, char ***argv)
    }
 
    (void)HYPREDRV_Initialize();
+   if (!g_finalize_registered)
+   {
+      atexit(fuzz_finalize_once);
+      g_finalize_registered = 1;
+   }
 }
 
 void
@@ -1068,7 +1097,7 @@ main(int argc, char **argv)
       free(data);
    }
 
-   (void)HYPREDRV_Finalize();
+   fuzz_finalize_once();
    return status;
 }
 #endif

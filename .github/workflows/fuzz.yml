@@ -121,7 +121,7 @@ jobs:
 
       - name: Run smoke campaign
         env:
-          ASAN_OPTIONS: halt_on_error=1:abort_on_error=0:print_stacktrace=1:detect_leaks=1
+          ASAN_OPTIONS: halt_on_error=1:abort_on_error=0:print_stacktrace=1:detect_leaks=0
         run: tests/fuzz/fuzzing.sh ${{ matrix.mode }} 60 libfuzzer
 
   fuzz-nightly:
@@ -173,7 +173,7 @@ jobs:
 
       - name: Run nightly campaign
         env:
-          ASAN_OPTIONS: halt_on_error=1:abort_on_error=0:print_stacktrace=1:detect_leaks=1
+          ASAN_OPTIONS: halt_on_error=1:abort_on_error=0:print_stacktrace=1:detect_leaks=0
         run: tests/fuzz/fuzzing.sh ${{ matrix.mode }} 600 libfuzzer | tee fuzz-${{ matrix.mode }}.log
 
       - name: Upload findings

@@ -90,6 +90,15 @@ IJVectorPartRowsMatchesPrepass(uint64_t nrows_max, uint64_t part_rows,
    return 1;
 }
 
+static int
+IJVectorRejectNonfiniteCoefficient(const char *filename)
+{
+   hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+   hypredrv_ErrorMsgAdd("Detected non-finite vector coefficient while reading %s",
+                        filename ? filename : "(unknown)");
+   return 0;
+}
+
 void
 hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                                      uint64_t             g_nparts,
@@ -298,6 +307,14 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
          for (size_t i = 0; h_vals && i < header[5]; i++)
          {
+            if (!hypredrv_FloatIsFinite(buffer[i]))
+            {
+               (void)IJVectorRejectNonfiniteCoefficient(filename);
+               fclose(fp);
+               fp = NULL;
+               free(buffer);
+               goto cleanup;
+            }
             h_vals[i] = (HYPRE_Complex)buffer[i];
          }
 
@@ -322,6 +339,14 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
          for (size_t i = 0; h_vals && i < header[5]; i++)
          {
+            if (!hypredrv_DoubleIsFinite(buffer[i]))
+            {
+               (void)IJVectorRejectNonfiniteCoefficient(filename);
+               fclose(fp);
+               fp = NULL;
+               free(buffer);
+               goto cleanup;
+            }
             h_vals[i] = (HYPRE_Complex)buffer[i];
          }
 

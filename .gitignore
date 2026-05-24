@@ -68,7 +68,20 @@ HYPREDRV_config.h
 /HYPREDRV_config.h.in
 /HYPREDRV_config.h.in~
 /build*/
+/build-fuzz*/
 /install*/
+/fuzz/
+/AGENTS.md
+/PLAN.md
+/oldplan.md
+tests/fuzz/build*/
+tests/fuzz/findings*/
+tests/fuzz/fuzz-run/
+crash-*
+oom-*
+timeout-*
+leak-*
+slow-unit-*
 
 ###########
 # Libtools

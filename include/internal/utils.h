@@ -8,8 +8,10 @@
 #ifndef UTILS_HEADER
 #define UTILS_HEADER
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "HYPRE_utilities.h"
 #include "internal/compatibility.h"
 #include "internal/error.h"
@@ -57,6 +59,24 @@ int   hypredrv_ComputeNumberOfDigits(int);
 void  hypredrv_SplitFilename(const char *, char **, char **);
 void  hypredrv_CombineFilename(const char *, const char *, char **);
 bool  hypredrv_IsYAMLFilename(const char *);
+
+static inline int
+hypredrv_FloatIsFinite(float value)
+{
+   uint32_t bits = 0;
+
+   memcpy(&bits, &value, sizeof(bits));
+   return (bits & UINT32_C(0x7f800000)) != UINT32_C(0x7f800000);
+}
+
+static inline int
+hypredrv_DoubleIsFinite(double value)
+{
+   uint64_t bits = 0;
+
+   memcpy(&bits, &value, sizeof(bits));
+   return (bits & UINT64_C(0x7ff0000000000000)) != UINT64_C(0x7ff0000000000000);
+}
 
 /*******************************************************************************
  *******************************************************************************/
