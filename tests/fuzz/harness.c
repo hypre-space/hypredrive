@@ -46,9 +46,36 @@ static const uint8_t g_multipart_magic[8]  = {'H', 'D', 'F', 'Z', 'M', 'P', '0',
 static int           g_finalize_registered = 0;
 static int           g_finalized           = 0;
 
+#if defined(__GNUC__) || defined(__clang__)
+void __lsan_disable(void) __attribute__((weak));
+void __lsan_enable(void) __attribute__((weak));
+#endif
+
 #if defined(HYPREDRV_FUZZ_ENGINE_AFL)
 __AFL_FUZZ_INIT();
 #endif
+
+static void
+fuzz_lsan_disable(void)
+{
+#if defined(__GNUC__) || defined(__clang__)
+   if (__lsan_disable)
+   {
+      __lsan_disable();
+   }
+#endif
+}
+
+static void
+fuzz_lsan_enable(void)
+{
+#if defined(__GNUC__) || defined(__clang__)
+   if (__lsan_enable)
+   {
+      __lsan_enable();
+   }
+#endif
+}
 
 static const char *
 fuzz_mode_name(int mode)
@@ -107,6 +134,7 @@ fuzz_finalize_once(void)
    }
    g_finalized = 1;
 
+   fuzz_lsan_disable();
    (void)HYPREDRV_Finalize();
 
    MPI_Initialized(&initialized);
@@ -115,6 +143,7 @@ fuzz_finalize_once(void)
    {
       MPI_Finalize();
    }
+   fuzz_lsan_enable();
 }
 
 void
@@ -122,6 +151,7 @@ fuzz_mpi_init_once(int *argc, char ***argv)
 {
    int initialized = 0;
    MPI_Initialized(&initialized);
+   fuzz_lsan_disable();
    if (!initialized)
    {
       int provided = 0;
@@ -129,6 +159,7 @@ fuzz_mpi_init_once(int *argc, char ***argv)
    }
 
    (void)HYPREDRV_Initialize();
+   fuzz_lsan_enable();
    if (!g_finalize_registered)
    {
       atexit(fuzz_finalize_once);
