@@ -208,6 +208,21 @@ InputArgsFindUniqueRootSection(const YAMLtree *tree, const char *key)
    return match;
 }
 
+static void
+InputArgsReattachDetachedChild(YAMLnode *parent, YAMLnode **child_ptr)
+{
+   YAMLnode *child = child_ptr ? *child_ptr : NULL;
+
+   if (!parent || !child)
+   {
+      return;
+   }
+
+   child->next      = parent->children;
+   parent->children = child;
+   *child_ptr       = NULL;
+}
+
 /*-----------------------------------------------------------------------------
  * hypredrv_InputArgsParseGeneral
  *-----------------------------------------------------------------------------*/
@@ -328,6 +343,7 @@ hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
       if (!parent->children)
       {
          hypredrv_ErrorCodeSet(ERROR_MISSING_SOLVER);
+         InputArgsReattachDetachedChild(parent, &scaling_node);
          return;
       }
 
@@ -336,6 +352,7 @@ hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
       {
          hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
          hypredrv_ErrorMsgAddExtraKey(parent->children->next->key);
+         InputArgsReattachDetachedChild(parent, &scaling_node);
          return;
       }
 
@@ -380,8 +397,7 @@ hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
       /* Mark scaling node as valid to avoid validation errors */
       YAML_NODE_SET_VALID(scaling_node);
       /* Reattach to parent for tree validation (but after parsing) */
-      scaling_node->next = parent->children;
-      parent->children   = scaling_node;
+      InputArgsReattachDetachedChild(parent, &scaling_node);
    }
 }
 
