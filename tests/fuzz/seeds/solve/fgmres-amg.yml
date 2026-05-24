@@ -1,0 +1,5 @@
+solver:
+  fgmres:
+    max_iter: 3
+    tol: 1.0e-8
+preconditioner: amg

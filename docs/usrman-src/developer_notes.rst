@@ -8,6 +8,7 @@ This chapter collects practical guidance for contributing to hypredrive with a f
 - Continuous Integration (CI)
 - Static code analysis (cppcheck, clang-tidy)
 - Code coverage (gcov/gcovr, CTest)
+- Fuzzing replay and live fuzz campaigns
 
 It explains how the CI is structured, how to reproduce checks locally, and what
 options and targets are available in CMake to enable these workflows. New
@@ -213,6 +214,189 @@ Dynamic analysis (sanitizers):
    export ASAN_OPTIONS="detect_leaks=1:abort_on_error=1:print_stacktrace=1"
    export UBSAN_OPTIONS="print_stacktrace=1:abort_on_error=1"
    ctest --test-dir build-sanitizers --output-on-failure
+
+
+Fuzzing
+-------
+
+Overview
+~~~~~~~~
+
+Fuzzing is opt-in and is enabled with ``-DHYPREDRV_ENABLE_FUZZING=ON``. The fuzzing
+tree lives under ``tests/fuzz/`` and uses a single harness source,
+``tests/fuzz/harness.c``, compiled into mode-specific targets:
+
+- ``hypredrv-fuzz-parse``: parses YAML and CLI-style argument fragments
+- ``hypredrv-fuzz-solve``: parses YAML and exercises a small one-rank solve path
+- ``hypredrv-fuzz-lsseq``: reads compressed linear-system sequence files when
+  ``HYPREDRV_ENABLE_COMPRESSION=ON``
+- ``hypredrv-fuzz-matrix``: reads IJ matrix files and multipart matrix sequences
+- ``hypredrv-fuzz-vector``: reads IJ vector files and multipart vector sequences
+
+The supported engines are:
+
+- ``replay``: deterministic CTest replay of seeds and regressions
+- ``libfuzzer``: live in-process fuzzing with Clang's libFuzzer
+- ``afl``: AFL++ fuzzing with ``afl-clang-fast`` or ``afl-clang-lto``
+
+Enabling fuzzing also enables testing and analysis, disables shared libraries, and
+rejects coverage builds. Coverage and sanitizer/fuzzing instrumentation should stay in
+separate build trees.
+
+CMake options and targets
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Enable fuzzing: ``-DHYPREDRV_ENABLE_FUZZING=ON``.
+- Select an engine: ``-DHYPREDRV_FUZZ_ENGINE=replay|libfuzzer|afl``. The default is
+  ``replay``.
+- Enable MemorySanitizer for fuzzing builds: ``-DHYPREDRV_FUZZ_MSAN=ON``. This requires
+  Clang and a compatible dependency stack.
+- Replay tests are registered under the ``fuzz-replay`` CTest label.
+- The build targets are ``hypredrv-fuzz-parse``, ``hypredrv-fuzz-solve``,
+  ``hypredrv-fuzz-lsseq``, ``hypredrv-fuzz-matrix``, and ``hypredrv-fuzz-vector``.
+
+The solve replay tests require HYPRE APIs guarded by
+``HYPREDRV_HAVE_HYPRE_21900_DEV0``. When those APIs are unavailable, CMake prints a
+status message and skips solve replay registration.
+
+Replay builds
+~~~~~~~~~~~~~
+
+Replay is the CI-friendly mode. It builds normal executables that accept one or more
+input files and registers every seed and regression as a CTest test.
+
+.. code-block:: bash
+
+   cmake -S . -B build-fuzz -G Ninja \
+     -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+     -DHYPREDRV_ENABLE_FUZZING=ON \
+     -DHYPREDRV_ENABLE_TESTING=ON
+   cmake --build build-fuzz --parallel
+   ctest --test-dir build-fuzz -L fuzz-replay --output-on-failure
+
+To replay one mode:
+
+.. code-block:: bash
+
+   ctest --test-dir build-fuzz -L fuzz-replay -R "matrix" --output-on-failure
+
+Replay binaries are compiled with a mode-specific ``FUZZ_MODE`` definition. For manual
+debugging only, ``HYPREDRV_FUZZ_MODE=<mode>`` can override that baked-in mode in replay
+builds.
+
+Because parse replay uses ``examples/*.yml`` directly, checked-in example YAML files
+are part of the fuzz replay corpus. New examples should be valid parser inputs unless
+the fuzz CMake registration is updated to exclude or gate them explicitly.
+
+Live libFuzzer runs
+~~~~~~~~~~~~~~~~~~~
+
+Use a separate Clang build tree for live libFuzzer campaigns:
+
+.. code-block:: bash
+
+   cmake -S . -B build-fuzz -G Ninja \
+     -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+     -DHYPREDRV_ENABLE_FUZZING=ON \
+     -DHYPREDRV_FUZZ_ENGINE=libfuzzer \
+     -DHYPREDRV_ENABLE_TESTING=ON
+   cmake --build build-fuzz --target hypredrv-fuzz-parse --parallel
+   tests/fuzz/fuzzing.sh parse 300 libfuzzer
+
+The helper script accepts ``parse``, ``solve``, ``lsseq``, ``matrix``, or ``vector`` as
+the first argument and the run duration in seconds as the second argument:
+
+.. code-block:: bash
+
+   tests/fuzz/fuzzing.sh matrix 600 libfuzzer
+   tests/fuzz/fuzzing.sh vector 600 libfuzzer
+
+Set ``HYPREDRV_FUZZ_BUILD_DIR`` if the fuzz build tree is not ``build-fuzz``.
+
+AFL++ runs
+~~~~~~~~~~
+
+Configure AFL++ builds with the AFL compiler wrapper:
+
+.. code-block:: bash
+
+   CC=afl-clang-fast cmake -S . -B build-fuzz-afl -G Ninja \
+     -DHYPREDRV_ENABLE_FUZZING=ON \
+     -DHYPREDRV_FUZZ_ENGINE=afl \
+     -DHYPREDRV_ENABLE_TESTING=ON
+   cmake --build build-fuzz-afl --target hypredrv-fuzz-matrix --parallel
+   HYPREDRV_FUZZ_BUILD_DIR=$PWD/build-fuzz-afl tests/fuzz/fuzzing.sh matrix 600 afl
+
+The script chooses a default AFL timeout per mode. Override it with
+``HYPREDRV_FUZZ_AFL_TIMEOUT_MS`` when investigating slower paths, especially ``solve``.
+For parse and solve modes, the harness runs a small warmup input before starting the
+AFL forkserver. This intentionally pays setup cost once so HYPRE and hypredrive global
+state are initialized before AFL forks persistent children.
+
+Corpora, dictionaries, and generated seeds
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The versioned fuzz inputs are intentionally small and deterministic:
+
+- ``tests/fuzz/seeds/<mode>/`` contains mode-specific seed inputs that are not already
+  represented elsewhere in the repository.
+- ``tests/fuzz/regressions/<mode>/`` contains minimized inputs for fixed bugs.
+- ``tests/fuzz/dicts/`` contains dictionaries for YAML/CLI fragments and IJ-like binary
+  formats.
+- ``tests/fuzz/tools/`` contains seed generation helpers for IJ matrix, IJ vector, and
+  linear-system sequence inputs.
+
+Do not duplicate existing example YAML files under ``tests/fuzz/seeds``. Parse replay
+uses ``examples/*.yml`` directly, and solve replay uses ``examples/ex1.yml``,
+``examples/ex2.yml``, and ``examples/ex7.yml`` by path before adding the fuzz-specific
+solve seeds.
+
+The live fuzzing helper creates per-run corpora under ``build-fuzz/fuzz-run/<mode>-<time>``
+and copies in the checked-in seeds, regressions, and reused example YAML inputs. Those
+run directories, generated corpora, crashes, hangs, and minimization artifacts are local
+outputs and should not be committed.
+
+Regression workflow
+~~~~~~~~~~~~~~~~~~~
+
+When a live campaign finds a crash, leak, timeout, or sanitizer report:
+
+- Minimize the input with the engine that found it.
+- Add the minimized reproducer to ``tests/fuzz/regressions/<mode>/`` with a descriptive
+  filename.
+- Confirm the replay test fails before the code fix.
+- Fix the owning module rather than weakening the harness.
+- Re-run the relevant replay subset, then the full ``fuzz-replay`` label.
+
+Typical replay commands:
+
+.. code-block:: bash
+
+   ctest --test-dir build-fuzz -L fuzz-replay -R "solve" --output-on-failure
+   ctest --test-dir build-fuzz -L fuzz-replay --output-on-failure
+
+Mode ownership is a useful starting point for triage:
+
+- ``parse`` maps primarily to ``src/yaml.c`` and ``src/args.c``.
+- ``solve`` also reaches ``src/linsys.c``, ``src/solver.c``, ``src/precon.c``, and
+  related setup paths.
+- ``matrix`` maps to ``src/matrix.c``.
+- ``vector`` maps to vector input paths.
+- ``lsseq`` maps to ``src/lsseq.c`` and compression-dependent sequence handling.
+
+CI fuzzing
+~~~~~~~~~~
+
+The fuzzing workflow has three tiers:
+
+- Pull requests run replay tests for deterministic coverage of the checked-in corpus and
+  regressions.
+- Labeled pull requests can run short libFuzzer smoke jobs.
+- Scheduled runs execute longer nightly libFuzzer campaigns and upload run artifacts.
+
+Replay failures should be treated like normal test failures. Live fuzz failures should be
+minimized and promoted into ``tests/fuzz/regressions/<mode>/`` so future CI catches the
+same bug deterministically.
 
 
 Code Coverage

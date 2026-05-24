@@ -1,0 +1,17 @@
+general:
+  use_millisec: on
+  num_repetitions: 1
+
+solver:
+  gmres:
+    max_iter: 4
+    krylov_dim: 4
+    print_level: 0
+    relative_tol: 1.0e-4
+
+preconditioner:
+  ilu:
+    type: bj-iluk
+    max_iter: 1
+    print_level: 0
+

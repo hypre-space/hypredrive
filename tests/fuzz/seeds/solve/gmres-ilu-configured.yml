@@ -1,0 +1,8 @@
+solver:
+  gmres:
+    max_iter: 3
+    krylov_dim: 3
+preconditioner:
+  ilu:
+    type: iluk
+    level: 0
