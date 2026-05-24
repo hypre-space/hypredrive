@@ -1,0 +1,187 @@
+name: Fuzzing
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - '.github/actions/**'
+      - '.github/workflows/fuzz.yml'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'include/**'
+      - 'src/**'
+      - 'tests/**'
+  push:
+    branches: [ master ]
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  HYPRE_VERSION: master
+  OMPI_ALLOW_RUN_AS_ROOT: 1
+  OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+  OMPI_MCA_btl_vader_single_copy_mechanism: none
+  OMPI_MCA_rmaps_base_oversubscribe: 1
+  OMP_NUM_THREADS: 1
+  ASAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_stacktrace=1:detect_leaks=1
+  UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+
+jobs:
+  fuzz-replay:
+    name: fuzz replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Ubuntu environment
+        uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: clang
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: clang
+          build_type: Debug
+          hypre_shared_libs: 'OFF'
+          os: ubuntu-latest
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-fuzz -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHYPREDRV_ENABLE_FUZZING=ON \
+            -DHYPREDRV_ENABLE_TESTING=ON \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+
+      - name: Build
+        run: cmake --build build-fuzz --parallel
+
+      - name: Replay corpus
+        run: ctest --test-dir build-fuzz -L fuzz-replay --output-on-failure
+
+  fuzz-smoke:
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'pull_request' &&
+         ((github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+          (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))))
+      }}
+    name: fuzz smoke (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [parse, solve, lsseq, matrix, vector]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Ubuntu environment
+        uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: clang
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: clang
+          build_type: Debug
+          hypre_shared_libs: 'OFF'
+          os: ubuntu-latest
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-fuzz -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHYPREDRV_ENABLE_FUZZING=ON \
+            -DHYPREDRV_FUZZ_ENGINE=libfuzzer \
+            -DHYPREDRV_ENABLE_COMPRESSION=ON \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+
+      - name: Build target
+        run: cmake --build build-fuzz --target hypredrv-fuzz-${{ matrix.mode }} --parallel
+
+      - name: Run smoke campaign
+        env:
+          ASAN_OPTIONS: halt_on_error=1:abort_on_error=0:print_stacktrace=1:detect_leaks=0
+        run: tests/fuzz/fuzzing.sh ${{ matrix.mode }} 60 libfuzzer
+
+  fuzz-nightly:
+    if: github.event_name == 'schedule'
+    name: fuzz nightly (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [parse, solve, lsseq, matrix, vector]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Ubuntu environment
+        uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: clang
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: ${{ env.HYPRE_VERSION }}
+          compiler: clang
+          build_type: Debug
+          hypre_shared_libs: 'OFF'
+          os: ubuntu-latest
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-fuzz -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHYPREDRV_ENABLE_FUZZING=ON \
+            -DHYPREDRV_FUZZ_ENGINE=libfuzzer \
+            -DHYPREDRV_ENABLE_COMPRESSION=ON \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+
+      - name: Build target
+        run: cmake --build build-fuzz --target hypredrv-fuzz-${{ matrix.mode }} --parallel
+
+      - name: Restore evolved corpus
+        uses: actions/cache@v5
+        with:
+          path: build-fuzz/fuzz-run
+          key: fuzz-corpus-${{ matrix.mode }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.mode }}-
+
+      - name: Run nightly campaign
+        env:
+          ASAN_OPTIONS: halt_on_error=1:abort_on_error=0:print_stacktrace=1:detect_leaks=0
+        run: tests/fuzz/fuzzing.sh ${{ matrix.mode }} 600 libfuzzer | tee fuzz-${{ matrix.mode }}.log
+
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: fuzz-${{ matrix.mode }}-${{ github.run_id }}
+          path: |
+            build-fuzz/fuzz-run
+            fuzz-${{ matrix.mode }}.log
+          retention-days: 14

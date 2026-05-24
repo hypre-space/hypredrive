@@ -3968,6 +3968,16 @@ test_HYPREDRV_public_wrappers_and_getters(void)
    /* ErrorCodeDescribe(0) is a no-op */
    HYPREDRV_ErrorCodeDescribe(0);
 
+   uint32_t invalid_code = HYPREDRV_ErrorInvalidValue("unit invalid value");
+   ASSERT_TRUE(invalid_code & ERROR_INVALID_VAL);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+
+   invalid_code = HYPREDRV_ErrorInvalidValue(NULL);
+   ASSERT_TRUE(invalid_code & ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeResetAll();
+
    HYPREDRV_PrintSystemInfo(MPI_COMM_SELF);
 
    HYPREDRV_t obj = NULL;

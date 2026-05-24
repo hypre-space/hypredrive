@@ -3,7 +3,9 @@ leak:libmpi
 leak:ompi_
 leak:PMPI_
 leak:MPI_Init
+leak:openmpi3
 leak:mca_base_
+leak:mca_coll_
 leak:opal_
 leak:orte_
 leak:libopen-pal

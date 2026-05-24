@@ -2165,33 +2165,29 @@ hypredrv_YAMLnodeAddChild(YAMLnode *parent, YAMLnode *child)
 void
 hypredrv_YAMLnodeAppend(YAMLnode *node, YAMLnode **previous_ptr)
 {
-   YAMLnode *previous       = *previous_ptr;
-   int       previous_level = previous->level;
+   YAMLnode *previous = *previous_ptr;
+   YAMLnode *parent   = previous;
+   YAMLnode *root     = previous;
 
-   if (node->level > previous_level)
+   while (root && root->parent)
    {
-      /* Add child to current parent */
-      hypredrv_YAMLnodeAddChild(previous, node);
+      root = root->parent;
    }
-   else if (node->level == previous_level)
+
+   if (node->level <= previous->level)
    {
-      /* Add sibling to children's list and keep the current parent */
-      hypredrv_YAMLnodeAddChild(previous->parent, node);
-   }
-   else
-   {
-      while (previous_level > node->level)
+      while (parent && parent->level >= node->level)
       {
-         /* GCOVR_EXCL_BR_START */
-         if (!previous->parent) break;
-         /* GCOVR_EXCL_BR_STOP */
-         previous = previous->parent;
-         previous_level--;
+         parent = parent->parent;
       }
-
-      /* Add ancestor */
-      hypredrv_YAMLnodeAddChild(previous->parent, node);
    }
+
+   if (!parent)
+   {
+      parent = root;
+   }
+
+   hypredrv_YAMLnodeAddChild(parent, node);
 
    /* Update pointer to previous node */
    *previous_ptr = node;

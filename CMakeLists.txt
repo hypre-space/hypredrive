@@ -39,12 +39,14 @@ option(HYPREDRV_ENABLE_EXAMPLES     "Enable the HYPREDRV examples" OFF)
 option(HYPREDRV_ENABLE_HWLOC        "Enable hwloc support for detailed system topology information" OFF)
 option(HYPREDRV_ENABLE_CALIPER      "Enable Caliper instrumentation support" OFF)
 option(HYPREDRV_ENABLE_COMPRESSION  "Enable optional lossless compression backends" OFF)
+option(HYPREDRV_ENABLE_FUZZING      "Enable opt-in fuzzing harnesses and replay tests" OFF)
 option(HYPREDRV_ENABLE_CPP          "Enable the hypredrive C++ interface" OFF)
 option(HYPREDRV_ENABLE_FORTRAN      "Enable the hypredrive Fortran interface" OFF)
 option(HYPREDRV_ENABLE_PYTHON       "Enable the hypredrive Python interface" OFF)
 option(HYPREDRV_ENABLE_MATLAB       "Enable the hypredrive MATLAB/Octave MEX interface" OFF)
 option(HYPREDRV_ENABLE_JULIA        "Enable the hypredrive Julia interface" OFF)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Fuzzing.cmake)
 
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -421,6 +423,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Analysis.cmake)
 
 # Testing setup (optional)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
+
+if(HYPREDRV_ENABLE_FUZZING)
+    add_subdirectory(tests/fuzz)
+endif()
 
 # Documentation support (optional)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Docs.cmake)

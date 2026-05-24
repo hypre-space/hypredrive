@@ -1,0 +1,7 @@
+solver:
+  pcg:
+    max_iter: 3
+    tol: 1.0e-8
+    scaling:
+      type: rhs_l2
+preconditioner: amg

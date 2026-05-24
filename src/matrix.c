@@ -36,6 +36,11 @@ _Static_assert((size_t)IJMATRIX_MAX_PART_NNZ <= SIZE_MAX / sizeof(HYPRE_Complex)
                "IJ matrix part nnz fits HYPRE_Complex allocation");
 _Static_assert((size_t)IJMATRIX_MAX_PART_NROWS <= SIZE_MAX / sizeof(HYPRE_Int),
                "IJ matrix part nrows fits HYPRE_Int allocation");
+_Static_assert((HYPRE_BigInt)-1 < 0,
+               "IJ matrix index validation requires signed HYPRE_BigInt");
+#else
+typedef char
+   hypredrv_matrix_requires_signed_hypre_bigint[((HYPRE_BigInt)-1 < 0) ? 1 : -1];
 #endif
 
 static int
@@ -89,12 +94,59 @@ IJMatrixPartNnzMatchesPrepass(size_t nnzs_max, uint64_t part_nnz, const char *fi
 {
    if (part_nnz > (uint64_t)nnzs_max)
    {
+      /* GCOVR_EXCL_START */
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Matrix part nnz exceeds pre-scan maximum at %s",
                            filename ? filename : "(unknown)");
       return 0;
+      /* GCOVR_EXCL_STOP */
    }
    return 1;
+}
+
+static int
+IJMatrixValidateEntry(HYPRE_BigInt row, HYPRE_BigInt col, uint64_t nrows, uint64_t ncols,
+                      const char *filename)
+{
+   if (row < 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Detected negative matrix row %lld while reading %s",
+                           (long long)row, filename ? filename : "(unknown)");
+      return 0;
+   }
+   if (col < 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Detected negative matrix column %lld while reading %s",
+                           (long long)col, filename ? filename : "(unknown)");
+      return 0;
+   }
+   if ((uint64_t)row >= nrows)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Detected out-of-bounds matrix row %llu while reading %s",
+                           (unsigned long long)row, filename ? filename : "(unknown)");
+      return 0;
+   }
+   if ((uint64_t)col >= ncols)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Detected out-of-bounds matrix column %llu while reading %s",
+                           (unsigned long long)col, filename ? filename : "(unknown)");
+      return 0;
+   }
+
+   return 1;
+}
+
+static int
+IJMatrixRejectNonfiniteCoefficient(const char *filename)
+{
+   hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+   hypredrv_ErrorMsgAdd("Detected non-finite matrix coefficient while reading %s",
+                        filename ? filename : "(unknown)");
+   return 0;
 }
 
 void
@@ -157,10 +209,12 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    /* 1b) Compute partids array */
    if (nparts > (uint32_t)(SIZE_MAX / sizeof(uint32_t)))
    {
+      /* GCOVR_EXCL_START */
       *mat_ptr = NULL;
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Matrix part id count exceeds allocation bounds");
       return;
+      /* GCOVR_EXCL_STOP */
    }
    partids = (uint32_t *)malloc(nparts * sizeof(uint32_t));
    /* GCOVR_EXCL_START */
@@ -459,55 +513,46 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                break;
             }
             /* GCOVR_EXCL_STOP */
-            int64_t row = h_rows[i];
-            int64_t col = h_cols[i];
+            HYPRE_BigInt row = h_rows[i];
+            HYPRE_BigInt col = h_cols[i];
 
-            /* Check if (row, col) pair makes sense */
-            /* GCOVR_EXCL_START */
-            if (row < 0)
+            /* Multipart IJ matrices are created as square matrices in this reader. */
+            if (!IJMatrixValidateEntry(row, col, nrows, nrows, filename))
             {
-               printf("[%d]: Warning! Detected negative row: %llu\n", myid,
-                      (unsigned long long)row);
-               fflush(stdout);
+               free(dsizes);
+               free(osizes);
+               goto cleanup;
             }
-            else if (col < 0)
-            {
-               printf("[%d]: Warning! Detected negative column: %llu\n", myid,
-                      (unsigned long long)col);
-               fflush(stdout);
-            }
-            else if ((uint64_t)row >= nrows)
-            {
-               printf("[%d]: Warning! Detected out-of-bounds row: %llu\n", myid,
-                      (unsigned long long)row);
-               fflush(stdout);
-            }
-            else if ((uint64_t)col >= nrows)
-            {
-               printf("[%d]: Warning! Detected out-of-bounds column: %llu\n", myid,
-                      (unsigned long long)col);
-               fflush(stdout);
-            }
-            else if (row < ilower || row > iupper)
+            if (row < ilower || row > iupper)
             {
                /* This row does not belong to the current rank. Skipping it... */
                continue;
             }
-            /* GCOVR_EXCL_STOP */
 
-            /* GCOVR_EXCL_START */
             if (dsizes && osizes)
             {
+               size_t local_row = (size_t)(row - ilower);
+               /* GCOVR_EXCL_START */
+               if (local_row >= nrows_sum)
+               {
+                  hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+                  hypredrv_ErrorMsgAdd(
+                     "Matrix local row index exceeds precompute bounds while reading %s",
+                     filename);
+                  free(dsizes);
+                  free(osizes);
+                  goto cleanup;
+               }
+               /* GCOVR_EXCL_STOP */
                if (col >= ilower && col <= iupper)
                {
-                  dsizes[row - ilower]++;
+                  dsizes[local_row]++;
                }
                else
                {
-                  osizes[row - ilower]++;
+                  osizes[local_row]++;
                }
             }
-            /* GCOVR_EXCL_STOP */
          }
       }
 
@@ -682,6 +727,18 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          goto cleanup;
       }
 
+      /* Validate entries before reading values or passing indices to hypre.
+       * This reader currently constructs square IJ matrices, so the global
+       * row count is also the valid global column count. */
+      for (size_t i = 0; i < header[6]; i++)
+      {
+         if (!IJMatrixValidateEntry(h_rows[i], h_cols[i], nrows, nrows, filename))
+         {
+            fclose(fp);
+            goto cleanup;
+         }
+      }
+
       /* GCOVR_EXCL_START */
 #ifdef HYPRE_USING_GPU
       if (rows != h_rows)
@@ -721,6 +778,13 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          /* GCOVR_EXCL_BR_START */
          for (size_t i = 0; h_vals && i < header[6]; i++) /* GCOVR_EXCL_BR_STOP */
          {
+            if (!hypredrv_FloatIsFinite(buffer[i]))
+            {
+               (void)IJMatrixRejectNonfiniteCoefficient(filename);
+               fclose(fp);
+               free(buffer);
+               goto cleanup;
+            }
             h_vals[i] = (HYPRE_Complex)buffer[i];
          }
 
@@ -749,6 +813,13 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          /* GCOVR_EXCL_BR_START */
          for (size_t i = 0; h_vals && i < header[6]; i++) /* GCOVR_EXCL_BR_STOP */
          {
+            if (!hypredrv_DoubleIsFinite(buffer[i]))
+            {
+               (void)IJMatrixRejectNonfiniteCoefficient(filename);
+               fclose(fp);
+               free(buffer);
+               goto cleanup;
+            }
             h_vals[i] = (HYPRE_Complex)buffer[i];
          }
 

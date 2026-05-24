@@ -1806,6 +1806,24 @@ test_InputArgsRead_null_filename(void)
 }
 
 static void
+test_InputArgsRead_rejects_missing_and_unsafe_filename(void)
+{
+   int   base_indent = -1;
+   char *text        = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsRead(MPI_COMM_SELF, "/tmp/hypredrive_no_such_config.yml",
+                          &base_indent, &text);
+   ASSERT_NULL(text);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsRead(MPI_COMM_SELF, "../unsafe-config.yml", &base_indent, &text);
+   ASSERT_NULL(text);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+}
+
+static void
 test_InputArgsParse_solver_value_only_fgmres_and_bicgstab(void)
 {
    const char yaml_f[] = "solver: fgmres\n"
@@ -1916,6 +1934,61 @@ test_InputArgsParse_file_include_target_missing(void)
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
    unlink(path);
+}
+
+static void
+test_Scaling_error_paths_without_system_objects(void)
+{
+   Scaling_args     args;
+   Scaling_context *ctx = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ScalingCompute(MPI_COMM_SELF, NULL, NULL, NULL, NULL, NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_UNKNOWN);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ScalingSetDefaultArgs(&args);
+   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingCompute(MPI_COMM_SELF, &args, ctx, NULL, NULL, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(ctx->enabled, 0);
+
+   hypredrv_ErrorCodeResetAll();
+   args.enabled = 1;
+   args.type    = (scaling_type_t)999;
+   hypredrv_ScalingCompute(MPI_COMM_SELF, &args, ctx, NULL, NULL, NULL);
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_UNKNOWN);
+#else
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(ctx->enabled, 0);
+#endif
+
+   hypredrv_ErrorCodeResetAll();
+   ctx->enabled    = 1;
+   ctx->is_applied = 0;
+   ctx->type       = (scaling_type_t)999;
+   hypredrv_ScalingApplyToSystem(ctx, NULL, NULL, NULL, NULL);
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_UNKNOWN);
+#else
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+#endif
+
+   hypredrv_ErrorCodeResetAll();
+   ctx->enabled    = 1;
+   ctx->is_applied = 1;
+   ctx->type       = (scaling_type_t)999;
+   hypredrv_ScalingUndoOnSystem(ctx, NULL, NULL, NULL, NULL);
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_UNKNOWN);
+#else
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+#endif
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   ASSERT_NULL(ctx);
 }
 
 static void
@@ -2052,12 +2125,14 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParseWithObjectName_duplicate_solver_post_parse);
    RUN_TEST(test_InputArgsParse_general_exec_policy_mirrors_to_ls);
    RUN_TEST(test_InputArgsRead_null_filename);
+   RUN_TEST(test_InputArgsRead_rejects_missing_and_unsafe_filename);
    RUN_TEST(test_InputArgsParse_solver_value_only_fgmres_and_bicgstab);
    RUN_TEST(test_InputArgsParsePrecon_amg_typed_sequence_variants);
    RUN_TEST(test_InputArgsParsePrecon_root_sequence_unknown_type_rejected);
    RUN_TEST(test_InputArgsParse_driver_mode_missing_config_file);
    RUN_TEST(test_InputArgsParsePrecon_root_sequence_preset_invalid_rejected);
    RUN_TEST(test_InputArgsParse_file_include_target_missing);
+   RUN_TEST(test_Scaling_error_paths_without_system_objects);
    RUN_TEST(test_PreconPreset_user_registered_two_types_rejected);
    RUN_TEST(test_PreconPreset_user_registered_unknown_type_rejected);
 
