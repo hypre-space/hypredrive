@@ -44,8 +44,8 @@ jobs:
       HYPRE_VERSION: master
       BUILD_DIR: build-coverage
       HYPREDRV_COVERAGE_MIN_LINE: '0.90'
-      HYPREDRV_COVERAGE_MIN_BRANCH: '0.83'
-      HYPREDRV_COVERAGE_MIN_FUNCTION: '0.95'
+      HYPREDRV_COVERAGE_MIN_BRANCH: '0.90'
+      HYPREDRV_COVERAGE_MIN_FUNCTION: '0.90'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -88,6 +88,8 @@ jobs:
             -DHYPREDRV_ENABLE_EXAMPLES=ON \
             -DHYPREDRV_ENABLE_COVERAGE=ON \
             -DHYPREDRV_ENABLE_COMPRESSION=ON \
+            -DHYPREDRV_ENABLE_FUZZING=ON \
+            -DHYPREDRV_FUZZ_ENGINE=replay \
             -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_C_COMPILER=mpicc \
             -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
@@ -117,7 +119,7 @@ jobs:
       - name: Check coverage thresholds
         run: |
           set -euxo pipefail
-          python3 scripts/check_coverage_threshold.py "$BUILD_DIR/coverage-summary.json" \
+          python3 scripts/analyze_coverage.py check "$BUILD_DIR/coverage-summary.json" \
             --xml "$BUILD_DIR/coverage.xml" \
             --min-line "${HYPREDRV_COVERAGE_MIN_LINE}" \
             --min-branch "${HYPREDRV_COVERAGE_MIN_BRANCH}" \

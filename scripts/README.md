@@ -17,9 +17,8 @@ This directory contains utility scripts for validation, data preparation, plotti
 ## Python Scripts
 
 - [analyze_caliper.py](./analyze_caliper.py): Parses Caliper runtime reports and builds an interactive hierarchical timing visualization.
-- [analyze_coverage.py](./analyze_coverage.py): Summarizes a `gcovr` XML coverage report with low-coverage files and overall coverage statistics.
+- [analyze_coverage.py](./analyze_coverage.py): Summarizes, normalizes, and checks `gcovr` coverage reports.
 - [analyze_statistics.py](./analyze_statistics.py): Parses statistics outputs and generates plots for iterations, timings, and related solver metrics.
-- [check_coverage_threshold.py](./check_coverage_threshold.py): check if the current `gcovr` code coverage passes predefined thresholds.
 - [eigplot.py](./eigplot.py): Reads eigenvalue files and plots the spectrum with summary statistics and optional histogram or inset views.
 - [job_launcher.py](./job_launcher.py): Portable wrapper automating job submission across diverse HPC platforms.
 - [spmat_reorder.py](./spmat_reorder.py): Reorders HYPRE IJ matrices by dofmap index groups and can write reordered matrices and partition info.

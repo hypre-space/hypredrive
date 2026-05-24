@@ -11,15 +11,26 @@ option(HYPREDRV_FUZZ_MSAN "Enable MemorySanitizer for fuzzing builds" OFF)
 
 if(HYPREDRV_ENABLE_FUZZING)
     if(HYPREDRV_ENABLE_COVERAGE)
-        message(FATAL_ERROR
-            "HYPREDRV_ENABLE_FUZZING and HYPREDRV_ENABLE_COVERAGE are mutually exclusive")
+        if(NOT HYPREDRV_FUZZ_ENGINE STREQUAL "replay")
+            message(FATAL_ERROR
+                "HYPREDRV_ENABLE_COVERAGE only supports replay fuzzing; "
+                "set HYPREDRV_FUZZ_ENGINE=replay")
+        endif()
+        if(HYPREDRV_FUZZ_MSAN)
+            message(FATAL_ERROR
+                "HYPREDRV_FUZZ_MSAN is incompatible with HYPREDRV_ENABLE_COVERAGE")
+        endif()
+        message(STATUS
+            "HYPREDRV_ENABLE_FUZZING=ON with coverage enables replay corpus tests only")
     endif()
 
-    if(NOT HYPREDRV_ENABLE_ANALYSIS)
+    if(NOT HYPREDRV_ENABLE_ANALYSIS AND NOT HYPREDRV_ENABLE_COVERAGE)
         message(STATUS "HYPREDRV_ENABLE_FUZZING=ON forces HYPREDRV_ENABLE_ANALYSIS=ON")
     endif()
-    set(HYPREDRV_ENABLE_ANALYSIS ON CACHE BOOL
-        "Enable static code analysis (clang-tidy) and sanitizers (ASan/UBSan)" FORCE)
+    if(NOT HYPREDRV_ENABLE_COVERAGE)
+        set(HYPREDRV_ENABLE_ANALYSIS ON CACHE BOOL
+            "Enable static code analysis (clang-tidy) and sanitizers (ASan/UBSan)" FORCE)
+    endif()
 
     if(NOT HYPREDRV_ENABLE_TESTING)
         message(STATUS "HYPREDRV_ENABLE_FUZZING=ON forces HYPREDRV_ENABLE_TESTING=ON")
@@ -27,10 +38,12 @@ if(HYPREDRV_ENABLE_FUZZING)
     set(HYPREDRV_ENABLE_TESTING ON CACHE BOOL
         "Enable testing support and check target" FORCE)
 
-    if(BUILD_SHARED_LIBS)
+    if(BUILD_SHARED_LIBS AND NOT HYPREDRV_ENABLE_COVERAGE)
         message(STATUS "HYPREDRV_ENABLE_FUZZING=ON forces BUILD_SHARED_LIBS=OFF")
     endif()
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+    if(NOT HYPREDRV_ENABLE_COVERAGE)
+        set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+    endif()
 
     if(HYPREDRV_FUZZ_MSAN)
         if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")

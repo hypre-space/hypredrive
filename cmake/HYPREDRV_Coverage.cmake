@@ -142,6 +142,11 @@ if(HYPREDRV_ENABLE_COVERAGE)
         message(WARNING "Coverage executable not found; gcovr will fall back to default 'gcov'")
     endif()
     if(GCOVR_EXECUTABLE)
+        find_program(PYTHON3_EXECUTABLE NAMES python3 python)
+        if(NOT PYTHON3_EXECUTABLE)
+            message(FATAL_ERROR "Coverage report normalization requires python3")
+        endif()
+
         # Hypre version-gated (#if HYPRE_CHECK_MIN_VERSION) code is only exercised for the
         # linked Hypre; branch/line totals reflect that single configuration unless you run
         # additional coverage jobs per Hypre version.
@@ -179,6 +184,7 @@ if(HYPREDRV_ENABLE_COVERAGE)
             # contribute to the branch denominator in CI coverage checks.
             --exclude-branches-by-pattern ".*GCOVR_EXCL_BR_STOP.*"
             --exclude-branches-by-pattern ".*GCOVR_EXCL_BR_LINE.*"
+            --exclude-lines-by-pattern ".*GCOVR_EXCL_BR_(LINE|STOP).*"
             # MPI logging wrappers: hypredrv_LogEnabled branches are low signal.
             # Use a pattern that cannot match HYPREDRV_MALLOC_AND_CHECK (which contains "LOG").
             --exclude-branches-by-pattern ".*HYPREDRV_LOG_COMMF\\(.*"
@@ -238,6 +244,11 @@ if(HYPREDRV_ENABLE_COVERAGE)
 
         add_custom_target(coverage
             COMMAND ${GCOVR_EXECUTABLE} ${_gcovr_args}
+            COMMAND ${PYTHON3_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/scripts/analyze_coverage.py normalize
+                    --xml ${CMAKE_BINARY_DIR}/coverage.xml
+                    --summary ${CMAKE_BINARY_DIR}/coverage-summary.json
+                    --source-root ${CMAKE_SOURCE_DIR}
             WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
             COMMENT "Generating code coverage report with gcovr"
             VERBATIM

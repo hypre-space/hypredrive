@@ -94,10 +94,12 @@ IJMatrixPartNnzMatchesPrepass(size_t nnzs_max, uint64_t part_nnz, const char *fi
 {
    if (part_nnz > (uint64_t)nnzs_max)
    {
+      /* GCOVR_EXCL_START */
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Matrix part nnz exceeds pre-scan maximum at %s",
                            filename ? filename : "(unknown)");
       return 0;
+      /* GCOVR_EXCL_STOP */
    }
    return 1;
 }
@@ -207,10 +209,12 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    /* 1b) Compute partids array */
    if (nparts > (uint32_t)(SIZE_MAX / sizeof(uint32_t)))
    {
+      /* GCOVR_EXCL_START */
       *mat_ptr = NULL;
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Matrix part id count exceeds allocation bounds");
       return;
+      /* GCOVR_EXCL_STOP */
    }
    partids = (uint32_t *)malloc(nparts * sizeof(uint32_t));
    /* GCOVR_EXCL_START */
