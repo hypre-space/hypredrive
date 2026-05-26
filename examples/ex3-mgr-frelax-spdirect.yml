@@ -1,0 +1,34 @@
+general:
+  use_millisec: on
+
+linear_system:
+  rhs_filename: data/compflow6k/np1/IJ.out.b
+  matrix_filename: data/compflow6k/np1/IJ.out.A
+  dofmap_filename: data/compflow6k/np1/dofmap.out
+
+solver:
+  fgmres:
+    max_iter: 50
+    krylov_dim: 30
+    print_level: 0
+    relative_tol: 1.0e-6
+
+preconditioner:
+  mgr:
+    max_iter: 1
+    tolerance: 0.0
+    print_level: 0
+    level:
+      0:
+        f_dofs: [2]
+        f_relaxation: spdirect
+        g_relaxation: none
+        prolongation_type: jacobi
+
+      1:
+        f_dofs: [1]
+        f_relaxation: jacobi
+        g_relaxation: none
+        restriction_type: columped
+
+    coarsest_level: amg
