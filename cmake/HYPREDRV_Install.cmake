@@ -216,7 +216,7 @@ if(HYPREDRV_BUILD_TREE_EXPORT_AVAILABLE)
            FILE "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVTargets.cmake"
            NAMESPACE HYPREDRV::)
 else()
-    message(STATUS "Skipping build-tree export (HYPRE/Caliper built via FetchContent)")
+    message(STATUS "Skipping build-tree export (HYPRE/Caliper/SuperLU_DIST built via FetchContent)")
 endif()
 
 # Register package in user's package registry

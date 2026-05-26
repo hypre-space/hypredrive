@@ -33,7 +33,7 @@ function(hypredrv_compute_build_tree_export_available out_var)
 
     hypredrv_export_dependency_is_imported(
         _hypredrv_optional_dependencies_imported
-        caliper::caliper caliper)
+        caliper::caliper caliper superlu_dist)
     if(NOT _hypredrv_optional_dependencies_imported)
         set(_available FALSE)
     endif()
