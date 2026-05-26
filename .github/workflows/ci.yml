@@ -787,7 +787,7 @@ jobs:
         run: |
           set -euxo pipefail
           missing=0
-          for dataset in ${REQUIRED_DATASETS}; do
+          for dataset in ${REQUIRED_DATASETS//;/ }; do
             if [ ! -d "data/${dataset}" ] || [ -z "$(ls -A "data/${dataset}" 2>/dev/null)" ]; then
               missing=1
             fi

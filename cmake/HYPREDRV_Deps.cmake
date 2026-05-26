@@ -605,6 +605,11 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
             _hypredrv_set_cache_bool_default(TPL_ENABLE_INTERNAL_BLASLIB ON
                 "Build SuperLU_DIST internal BLAS")
         endif()
+        if(NOT enable_double)
+            message(WARNING
+                "HYPRE_ENABLE_DSUPERLU=ON needs SuperLU_DIST double-precision "
+                "support, but enable_double=OFF is set in the CMake cache")
+        endif()
 
         _hypredrv_set_common_output_directories()
 
