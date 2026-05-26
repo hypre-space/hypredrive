@@ -720,6 +720,7 @@ jobs:
             build_dir: build-caliper
             hypre_version: master
             cmake_options: -DHYPREDRV_ENABLE_CALIPER=ON
+            apt_packages: ''
             required_datasets: ps3d10pt7
             ctest_regex: ''
             runtime_env: CALI_CONFIG=runtime-report
@@ -728,6 +729,7 @@ jobs:
             build_dir: build-superlu-dist
             hypre_version: v3.1.0
             cmake_options: -DHYPRE_ENABLE_DSUPERLU=ON
+            apt_packages: libopenblas-dev
             required_datasets: compflow6k
             ctest_regex: hypredrive_test_ex3_mgr_(frelax|grelax|coarsest)_spdirect_1proc
             runtime_env: ''
@@ -741,7 +743,8 @@ jobs:
         timeout-minutes: 3
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake libopenmpi-dev openmpi-bin ccache gcc g++ make
+          sudo apt-get install -y cmake libopenmpi-dev openmpi-bin ccache gcc g++ make \
+            ${{ matrix.dependency.apt_packages }}
 
       - name: Setup compiler environment
         run: |
