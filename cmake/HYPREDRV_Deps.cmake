@@ -17,6 +17,13 @@ function(_hypredrv_set_common_output_directories)
         "Single output directory for all executables" FORCE)
 endfunction()
 
+function(_hypredrv_set_cache_bool_default var_name value doc)
+    get_property(_hypredrv_cache_var_exists CACHE "${var_name}" PROPERTY TYPE SET)
+    if(NOT _hypredrv_cache_var_exists)
+        set("${var_name}" "${value}" CACHE BOOL "${doc}")
+    endif()
+endfunction()
+
 function(_hypredrv_link_mpi_interface target_name)
     if(TARGET MPI::MPI_C)
         target_link_libraries(${target_name} INTERFACE MPI::MPI_C)
@@ -553,43 +560,56 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
 
         set(FETCHCONTENT_QUIET OFF)
 
-        # Build only the pieces HYPRE's DSUPERLU integration needs.
-        set(enable_doc OFF CACHE BOOL "Build SuperLU_DIST documentation" FORCE)
-        set(enable_single OFF CACHE BOOL "Build SuperLU_DIST single precision library" FORCE)
-        set(enable_double ON CACHE BOOL "Build SuperLU_DIST double precision library" FORCE)
-        set(enable_complex16 OFF CACHE BOOL "Build SuperLU_DIST complex16 precision library" FORCE)
-        set(enable_tests OFF CACHE BOOL "Build SuperLU_DIST tests" FORCE)
-        set(enable_examples OFF CACHE BOOL "Build SuperLU_DIST examples" FORCE)
-        set(enable_python OFF CACHE BOOL "Build SuperLU_DIST Python interface" FORCE)
-        set(enable_openmp OFF CACHE BOOL "Build SuperLU_DIST with OpenMP support" FORCE)
-        set(XSDK_ENABLE_Fortran OFF CACHE BOOL "Build SuperLU_DIST Fortran interface" FORCE)
-        set(TPL_ENABLE_PARMETISLIB OFF CACHE BOOL "Enable SuperLU_DIST ParMETIS support" FORCE)
-        set(TPL_ENABLE_COMBBLASLIB OFF CACHE BOOL "Enable SuperLU_DIST CombBLAS support" FORCE)
-        set(TPL_ENABLE_COLAMDLIB OFF CACHE BOOL "Enable SuperLU_DIST COLAMD support" FORCE)
-        set(TPL_ENABLE_LAPACKLIB OFF CACHE BOOL "Enable SuperLU_DIST LAPACK support" FORCE)
-        set(TPL_ENABLE_CUDALIB OFF CACHE BOOL "Enable SuperLU_DIST CUDA support" FORCE)
-        set(TPL_ENABLE_HIPLIB OFF CACHE BOOL "Enable SuperLU_DIST HIP support" FORCE)
-        set(TPL_ENABLE_NVSHMEM OFF CACHE BOOL "Enable SuperLU_DIST NVSHMEM support" FORCE)
-        set(TPL_ENABLE_ROCSHMEM OFF CACHE BOOL "Enable SuperLU_DIST ROCSHMEM support" FORCE)
-        set(TPL_ENABLE_MAGMALIB OFF CACHE BOOL "Enable SuperLU_DIST MAGMA support" FORCE)
+        # Default to the small CPU-only build HYPRE's DSUPERLU path needs, while
+        # preserving explicit user cache values such as -DTPL_ENABLE_PARMETISLIB=ON.
+        _hypredrv_set_cache_bool_default(enable_doc OFF
+            "Build SuperLU_DIST documentation")
+        _hypredrv_set_cache_bool_default(enable_single OFF
+            "Build SuperLU_DIST single precision library")
+        _hypredrv_set_cache_bool_default(enable_double ON
+            "Build SuperLU_DIST double precision library")
+        _hypredrv_set_cache_bool_default(enable_complex16 OFF
+            "Build SuperLU_DIST complex16 precision library")
+        _hypredrv_set_cache_bool_default(enable_tests OFF
+            "Build SuperLU_DIST tests")
+        _hypredrv_set_cache_bool_default(enable_examples OFF
+            "Build SuperLU_DIST examples")
+        _hypredrv_set_cache_bool_default(enable_python OFF
+            "Build SuperLU_DIST Python interface")
+        _hypredrv_set_cache_bool_default(enable_openmp OFF
+            "Build SuperLU_DIST with OpenMP support")
+        _hypredrv_set_cache_bool_default(XSDK_ENABLE_Fortran OFF
+            "Build SuperLU_DIST Fortran interface")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_PARMETISLIB OFF
+            "Enable SuperLU_DIST ParMETIS support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_COMBBLASLIB OFF
+            "Enable SuperLU_DIST CombBLAS support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_COLAMDLIB OFF
+            "Enable SuperLU_DIST COLAMD support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_LAPACKLIB OFF
+            "Enable SuperLU_DIST LAPACK support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_CUDALIB OFF
+            "Enable SuperLU_DIST CUDA support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_HIPLIB OFF
+            "Enable SuperLU_DIST HIP support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_NVSHMEM OFF
+            "Enable SuperLU_DIST NVSHMEM support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_ROCSHMEM OFF
+            "Enable SuperLU_DIST ROCSHMEM support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_MAGMALIB OFF
+            "Enable SuperLU_DIST MAGMA support")
         if(TPL_BLAS_LIBRARIES)
-            set(TPL_ENABLE_INTERNAL_BLASLIB OFF CACHE BOOL
-                "Build SuperLU_DIST internal BLAS" FORCE)
+            _hypredrv_set_cache_bool_default(TPL_ENABLE_INTERNAL_BLASLIB OFF
+                "Build SuperLU_DIST internal BLAS")
         else()
-            set(TPL_ENABLE_INTERNAL_BLASLIB ON CACHE BOOL
-                "Build SuperLU_DIST internal BLAS" FORCE)
+            _hypredrv_set_cache_bool_default(TPL_ENABLE_INTERNAL_BLASLIB ON
+                "Build SuperLU_DIST internal BLAS")
         endif()
 
         _hypredrv_set_common_output_directories()
 
-        get_property(BUILD_SHARED_LIBS_VALUE CACHE BUILD_SHARED_LIBS PROPERTY VALUE)
-        if(BUILD_SHARED_LIBS_VALUE)
-            set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
-        else()
-            set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
-        endif()
         message(STATUS
-            "  Propagating BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} to SuperLU_DIST build")
+            "  Using inherited BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} for SuperLU_DIST build")
 
         message(STATUS "Fetching SuperLU_DIST from GitHub (branch/tag: ${SUPERLU_DIST_VERSION})...")
         message(STATUS "  Repository: https://github.com/xiaoyeli/superlu_dist.git")
@@ -614,6 +634,8 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
                 $<BUILD_INTERFACE:${superlu_dist_BINARY_DIR}/SRC>)
         endif()
 
+        # HYPRE needs concrete library paths in TPL_DSUPERLU_LIBRARIES. These paths
+        # assume the project's single-config, unified output directories.
         if(BUILD_SHARED_LIBS)
             set(SUPERLU_DIST_LIBRARY_FILE
                 "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_SHARED_LIBRARY_PREFIX}superlu_dist${CMAKE_SHARED_LIBRARY_SUFFIX}")
@@ -939,18 +961,40 @@ if(NOT HYPRE_FOUND)
     # This must be done before add_subdirectory is called
     if((HYPRE_BUILD_CALIPER OR HYPRE_BUILD_DSUPERLU) AND EXISTS "${hypre_SOURCE_DIR}/src/CMakeLists.txt")
         file(READ "${hypre_SOURCE_DIR}/src/CMakeLists.txt" HYPRE_CMAKE_CONTENT)
-        if(HYPRE_CMAKE_CONTENT MATCHES "Export from build tree" AND NOT HYPRE_CMAKE_CONTENT MATCHES "HYPRE_BUILD_DSUPERLU")
-            string(REGEX REPLACE
-                "if\\(NOT \\(HYPRE_BUILD_UMPIRE AND TARGET umpire\\)\\)"
-                "if(NOT (HYPRE_BUILD_UMPIRE AND TARGET umpire) AND NOT (HYPRE_BUILD_CALIPER AND TARGET caliper) AND NOT (HYPRE_BUILD_DSUPERLU AND TARGET superlu_dist))"
+        set(_hypre_export_guard_old
+            "if(NOT (HYPRE_BUILD_UMPIRE AND TARGET umpire))")
+        set(_hypre_export_guard_new
+            "if(NOT (HYPRE_BUILD_UMPIRE AND TARGET umpire) AND NOT (HYPRE_BUILD_CALIPER AND TARGET caliper) AND NOT (HYPRE_BUILD_DSUPERLU AND TARGET superlu_dist))")
+        if(HYPRE_CMAKE_CONTENT MATCHES
+           "HYPRE_BUILD_DSUPERLU AND TARGET superlu_dist")
+            message(STATUS
+                "  HYPRE CMakeLists.txt already handles auto-built SuperLU_DIST exports")
+        elseif(HYPRE_CMAKE_CONTENT MATCHES "Export from build tree")
+            set(_hypre_cmake_original "${HYPRE_CMAKE_CONTENT}")
+            string(REPLACE "${_hypre_export_guard_old}" "${_hypre_export_guard_new}"
                 HYPRE_CMAKE_CONTENT "${HYPRE_CMAKE_CONTENT}")
-            string(REGEX REPLACE
+            string(REPLACE
                 "Skipping build-tree export of HYPRETargets due to auto-built Umpire dependency"
                 "Skipping build-tree export of HYPRETargets due to auto-built Umpire, Caliper, or SuperLU_DIST dependency"
                 HYPRE_CMAKE_CONTENT "${HYPRE_CMAKE_CONTENT}")
-            file(WRITE "${hypre_SOURCE_DIR}/src/CMakeLists.txt" "${HYPRE_CMAKE_CONTENT}")
-            message(STATUS "  HYPRE CMakeLists.txt patched to skip export when auto-built TPLs are used")
+            if("${HYPRE_CMAKE_CONTENT}" STREQUAL "${_hypre_cmake_original}")
+                message(WARNING
+                    "Could not patch HYPRE build-tree export guard for auto-built "
+                    "Caliper/SuperLU_DIST dependencies; upstream HYPRE may have "
+                    "changed src/CMakeLists.txt")
+            else()
+                file(WRITE "${hypre_SOURCE_DIR}/src/CMakeLists.txt" "${HYPRE_CMAKE_CONTENT}")
+                message(STATUS
+                    "  HYPRE CMakeLists.txt patched to skip export when auto-built TPLs are used")
+            endif()
+            unset(_hypre_cmake_original)
+        else()
+            message(WARNING
+                "Could not find HYPRE build-tree export section to patch for auto-built "
+                "Caliper/SuperLU_DIST dependencies")
         endif()
+        unset(_hypre_export_guard_old)
+        unset(_hypre_export_guard_new)
     endif()
 
     # Workaround: HYPRE's SYCL device enumeration constructs a single

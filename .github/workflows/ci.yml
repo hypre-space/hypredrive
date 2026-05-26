@@ -720,6 +720,7 @@ jobs:
             build_dir: build-caliper
             hypre_version: master
             cmake_options: -DHYPREDRV_ENABLE_CALIPER=ON
+            required_datasets: ps3d10pt7
             ctest_regex: ''
             runtime_env: CALI_CONFIG=runtime-report
           - name: SuperLU_DIST
@@ -727,6 +728,7 @@ jobs:
             build_dir: build-superlu-dist
             hypre_version: v3.1.0
             cmake_options: -DHYPRE_ENABLE_DSUPERLU=ON
+            required_datasets: compflow6k
             ctest_regex: hypredrive_test_ex3_mgr_(frelax|grelax|coarsest)_spdirect_1proc
             runtime_env: ''
     env:
@@ -771,6 +773,7 @@ jobs:
             -DHYPRE_VERSION=${HYPRE_VERSION} \
             -DHYPREDRV_ENABLE_TESTING=ON \
             -DHYPREDRV_ENABLE_EXAMPLES=ON \
+            "-DHYPREDRV_DATASETS=${{ matrix.dependency.required_datasets }}" \
             -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             ${{ matrix.dependency.cmake_options }}
@@ -779,15 +782,20 @@ jobs:
         run: cmake --build $BUILD_DIR --parallel
 
       - name: Fetch datasets (optional)
+        env:
+          REQUIRED_DATASETS: ${{ matrix.dependency.required_datasets }}
         run: |
           set -euxo pipefail
-          # Only download if datasets are not already cached
-          if [ ! -d "data/ps3d10pt7" ] || [ -z "$(ls -A data/ps3d10pt7 2>/dev/null)" ] || \
-             [ ! -d "data/compflow6k" ] || [ -z "$(ls -A data/compflow6k 2>/dev/null)" ] || \
-             [ ! -d "data/poromech2k" ] || [ -z "$(ls -A data/poromech2k 2>/dev/null)" ]; then
+          missing=0
+          for dataset in ${REQUIRED_DATASETS}; do
+            if [ ! -d "data/${dataset}" ] || [ -z "$(ls -A "data/${dataset}" 2>/dev/null)" ]; then
+              missing=1
+            fi
+          done
+          if [ "${missing}" -ne 0 ]; then
             cmake --build $BUILD_DIR --target data --parallel
           else
-            echo "Datasets already cached, skipping download"
+            echo "Required datasets already cached, skipping download"
           fi
 
       - name: Run tests with ${{ matrix.dependency.name }}
