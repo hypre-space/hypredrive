@@ -446,6 +446,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     hypredrv_check_hypre_version(23000 0)
     hypredrv_check_hypre_version(23300 0)
     hypredrv_check_hypre_version(30000 0)
+    hypredrv_check_hypre_version(30100 0)
     hypredrv_check_hypre_version(30100 5)
     hypredrv_check_hypre_version(30100 38)
     hypredrv_check_hypre_version(30100 50)
@@ -668,6 +669,24 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 ex7-mgr-grelax-spdirect.yml)
             add_hypredrive_test(ex7_mgr_coarsest_spdirect_1proc 1
                 ex7-mgr-coarsest-spdirect.yml)
+        endif()
+        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU AND
+           HYPREDRV_HAVE_HYPRE_30100_DEV0 AND
+           NOT HYPREDRV_ENABLE_ANALYSIS AND
+           NOT HYPREDRV_ENABLE_COVERAGE)
+            set(_hypredrv_superlu_dist_examples
+                "ex3_mgr_frelax_spdirect_1proc|1|ex3-mgr-frelax-spdirect.yml"
+                "ex3_mgr_grelax_spdirect_1proc|1|ex3-mgr-grelax-spdirect.yml"
+                "ex3_mgr_coarsest_spdirect_1proc|1|ex3-mgr-coarsest-spdirect.yml"
+            )
+            foreach(_case IN LISTS _hypredrv_superlu_dist_examples)
+                string(REPLACE "|" ";" _parts "${_case}")
+                list(GET _parts 0 _name)
+                list(GET _parts 1 _nprocs)
+                list(GET _parts 2 _config)
+                add_hypredrive_test(${_name} ${_nprocs} ${_config})
+            endforeach()
+            unset(_hypredrv_superlu_dist_examples)
         endif()
         if (HYPREDRV_HAVE_HYPRE_30100_DEV5)
             add_hypredrive_test(ex7_nested_mgr_1proc 1 ex7-nested-mgr.yml)

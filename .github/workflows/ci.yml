@@ -701,19 +701,41 @@ jobs:
           make check
           make install
 
-  build-and-test-caliper:
+  build-and-test-optional-deps:
     if: >-
       ${{
         github.event_name != 'pull_request' ||
         (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
         (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
       }}
-    name: ubuntu-latest | gcc | Caliper+Debug
+    name: ubuntu-latest | gcc | ${{ matrix.dependency.name }}+Debug
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        dependency:
+          - name: Caliper
+            cache_key: caliper
+            build_dir: build-caliper
+            hypre_version: master
+            cmake_options: -DHYPREDRV_ENABLE_CALIPER=ON
+            apt_packages: ''
+            required_datasets: ps3d10pt7
+            ctest_regex: ''
+            runtime_env: CALI_CONFIG=runtime-report
+          - name: SuperLU_DIST
+            cache_key: superlu-dist
+            build_dir: build-superlu-dist
+            hypre_version: v3.1.0
+            cmake_options: -DHYPRE_ENABLE_DSUPERLU=ON
+            apt_packages: libopenblas-dev
+            required_datasets: compflow6k
+            ctest_regex: hypredrive_test_ex3_mgr_(frelax|grelax|coarsest)_spdirect_1proc
+            runtime_env: ''
     env:
-      HYPRE_VERSION: master
-      BUILD_DIR: build-caliper
+      HYPRE_VERSION: ${{ matrix.dependency.hypre_version }}
+      BUILD_DIR: ${{ matrix.dependency.build_dir }}
     steps:
       - uses: actions/checkout@v6
 
@@ -721,7 +743,8 @@ jobs:
         timeout-minutes: 3
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake libopenmpi-dev openmpi-bin ccache gcc g++ make
+          sudo apt-get install -y cmake libopenmpi-dev openmpi-bin ccache gcc g++ make \
+            ${{ matrix.dependency.apt_packages }}
 
       - name: Setup compiler environment
         run: |
@@ -733,9 +756,9 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
         with:
-          key: ${{ runner.os }}-caliper-${{ github.sha }}
+          key: ${{ runner.os }}-${{ matrix.dependency.cache_key }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-caliper-
+            ${{ runner.os }}-${{ matrix.dependency.cache_key }}-
 
       - name: Cache datasets
         uses: actions/cache@v5
@@ -745,31 +768,40 @@ jobs:
           restore-keys: |
             datasets-v1
 
-      - name: Configure hypredrive with Caliper
+      - name: Configure hypredrive with ${{ matrix.dependency.name }}
         run: |
           set -euxo pipefail
           cmake -S . -B $BUILD_DIR \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DHYPREDRV_ENABLE_CALIPER=ON \
+            -DHYPRE_VERSION=${HYPRE_VERSION} \
             -DHYPREDRV_ENABLE_TESTING=ON \
             -DHYPREDRV_ENABLE_EXAMPLES=ON \
+            "-DHYPREDRV_DATASETS=${{ matrix.dependency.required_datasets }}" \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            ${{ matrix.dependency.cmake_options }}
 
       - name: Build
         run: cmake --build $BUILD_DIR --parallel
 
       - name: Fetch datasets (optional)
+        env:
+          REQUIRED_DATASETS: ${{ matrix.dependency.required_datasets }}
         run: |
           set -euxo pipefail
-          # Only download if datasets are not already cached
-          if [ ! -d "data/ps3d10pt7" ] || [ -z "$(ls -A data/ps3d10pt7 2>/dev/null)" ]; then
+          missing=0
+          for dataset in ${REQUIRED_DATASETS//;/ }; do
+            if [ ! -d "data/${dataset}" ] || [ -z "$(ls -A "data/${dataset}" 2>/dev/null)" ]; then
+              missing=1
+            fi
+          done
+          if [ "${missing}" -ne 0 ]; then
             cmake --build $BUILD_DIR --target data --parallel
           else
-            echo "Datasets already cached, skipping download"
+            echo "Required datasets already cached, skipping download"
           fi
 
-      - name: Run make check with Caliper
+      - name: Run tests with ${{ matrix.dependency.name }}
         timeout-minutes: 5
         env:
           # OpenMPI configuration for CI
@@ -778,16 +810,18 @@ jobs:
           OMPI_MCA_btl_vader_single_copy_mechanism: none
           OMPI_MCA_rmaps_base_oversubscribe: 1
           OMP_NUM_THREADS: 1
-          # Caliper configuration
-          CALI_CONFIG: runtime-report
+          OPTIONAL_DEP_RUNTIME_ENV: ${{ matrix.dependency.runtime_env }}
         run: |
           set -euxo pipefail
-          # Run make check with Caliper enabled
+          if [ -n "${OPTIONAL_DEP_RUNTIME_ENV}" ]; then
+            export "${OPTIONAL_DEP_RUNTIME_ENV}"
+          fi
           cd $BUILD_DIR
-          make check
-          # Verify Caliper output is generated (check for runtime-report output in stdout/stderr)
-          echo "Checking for Caliper output..."
-          # Caliper runtime-report outputs to stdout, so it should be visible in the logs
+          CTEST_ARGS=(--output-on-failure --timeout 60)
+          if [ -n "${{ matrix.dependency.ctest_regex }}" ]; then
+            CTEST_ARGS+=(-R "${{ matrix.dependency.ctest_regex }}")
+          fi
+          ctest "${CTEST_ARGS[@]}"
 
       - name: Cache ccache
         uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
@@ -796,7 +830,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: logs-caliper
+          name: logs-${{ matrix.dependency.cache_key }}
           path: |
             ${{ env.BUILD_DIR }}/Testing
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log

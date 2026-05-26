@@ -166,6 +166,14 @@ and standard ``CMAKE_*`` variables to the HYPRE build. Examples:
    Caliper auto-fetch is not supported with the Ninja generator. Use the default Makefile
    generator or point ``CALIPER_DIR`` at a pre-built installation.
 
+*SuperLU_DIST (optional HYPRE DSUPERLU support)*
+
+- ``-DHYPRE_ENABLE_DSUPERLU=ON`` — Enable HYPRE's SuperLU_DIST integration.
+- ``-DSUPERLU_DIST_VERSION=<version>`` — SuperLU_DIST revision to fetch if
+  ``superlu_dist`` is not found. Default: ``v9.2.1``.
+- ``DSUPERLU_DIR`` / ``DSUPERLU_ROOT`` / ``SUPERLU_DIST_ROOT`` — Pre-installed
+  SuperLU_DIST search hints.
+
 *Compression backends*
 
 ``HYPREDRV_ENABLE_COMPRESSION=ON`` probes for zlib, zstd, lz4, and blosc. Available

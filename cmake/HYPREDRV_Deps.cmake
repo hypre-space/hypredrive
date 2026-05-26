@@ -17,6 +17,13 @@ function(_hypredrv_set_common_output_directories)
         "Single output directory for all executables" FORCE)
 endfunction()
 
+function(_hypredrv_set_cache_bool_default var_name value doc)
+    get_property(_hypredrv_cache_var_exists CACHE "${var_name}" PROPERTY TYPE SET)
+    if(NOT _hypredrv_cache_var_exists)
+        set("${var_name}" "${value}" CACHE BOOL "${doc}")
+    endif()
+endfunction()
+
 function(_hypredrv_link_mpi_interface target_name)
     if(TARGET MPI::MPI_C)
         target_link_libraries(${target_name} INTERFACE MPI::MPI_C)
@@ -151,6 +158,45 @@ function(_hypredrv_set_using_caliper enabled)
         set(HYPREDRV_USING_CALIPER 0 PARENT_SCOPE)
         set(HYPREDRV_USING_CALIPER 0 CACHE INTERNAL "Not using Caliper")
     endif()
+endfunction()
+
+function(_hypredrv_collect_dsuperlu_pkg_config_hints out_var)
+    set(_hint_dirs "")
+    foreach(_var IN ITEMS
+            DSUPERLU_DIR
+            DSUPERLU_ROOT
+            SUPERLU_DIST_DIR
+            SUPERLU_DIST_ROOT
+            superlu_dist_DIR
+            superlu_dist_ROOT
+            TPL_DSUPERLU_DIR
+            TPL_DSUPERLU_ROOT)
+        if(NOT DEFINED ${_var})
+            continue()
+        endif()
+
+        set(_root "${${_var}}")
+        if(NOT EXISTS "${_root}")
+            continue()
+        endif()
+
+        list(APPEND _hint_dirs
+            "${_root}"
+            "${_root}/lib/pkgconfig"
+            "${_root}/lib64/pkgconfig"
+            "${_root}/share/pkgconfig")
+
+        get_filename_component(_root_parent "${_root}" DIRECTORY)
+        if(_root_parent AND EXISTS "${_root_parent}")
+            list(APPEND _hint_dirs
+                "${_root_parent}/lib/pkgconfig"
+                "${_root_parent}/lib64/pkgconfig"
+                "${_root_parent}/share/pkgconfig")
+        endif()
+    endforeach()
+
+    list(REMOVE_DUPLICATES _hint_dirs)
+    set(${out_var} "${_hint_dirs}" PARENT_SCOPE)
 endfunction()
 
 function(_hypredrv_append_runtime_dirs_from_dependency_roots target_name)
@@ -425,6 +471,217 @@ else()
     message(STATUS "Caliper support disabled (HYPREDRV_ENABLE_CALIPER=OFF)")
     set(CALIPER_FOUND FALSE)
     _hypredrv_set_using_caliper(FALSE)
+endif()
+
+############################################################
+# Find and configure SuperLU_DIST (must be before HYPRE)
+############################################################
+
+set(SUPERLU_DIST_VERSION "v9.2.1" CACHE STRING
+    "SuperLU_DIST version/branch/tag to fetch when HYPRE_ENABLE_DSUPERLU=ON (e.g., v9.2.1)")
+
+if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
+    set(SUPERLU_DIST_FOUND FALSE)
+
+    if(HYPRE_BUILD_DSUPERLU)
+        message(STATUS "Reconfiguring auto-built SuperLU_DIST dependency")
+    elseif(TPL_DSUPERLU_INCLUDE_DIRS AND TPL_DSUPERLU_LIBRARIES)
+        set(SUPERLU_DIST_FOUND TRUE)
+        message(STATUS "Using user-provided SuperLU_DIST include/lib paths for HYPRE")
+    elseif(TARGET superlu_dist)
+        set(SUPERLU_DIST_FOUND TRUE)
+        message(STATUS "Found existing SuperLU_DIST target: superlu_dist")
+    else()
+        find_package(PkgConfig QUIET)
+        if(PKG_CONFIG_FOUND)
+            _hypredrv_collect_dsuperlu_pkg_config_hints(_dsuperlu_pkg_hints)
+            set(_dsuperlu_old_pkg_config_path "$ENV{PKG_CONFIG_PATH}")
+            if(_dsuperlu_pkg_hints)
+                string(JOIN ":" _dsuperlu_pkg_hint_path ${_dsuperlu_pkg_hints})
+                if(_dsuperlu_old_pkg_config_path)
+                    set(ENV{PKG_CONFIG_PATH}
+                        "${_dsuperlu_pkg_hint_path}:$ENV{PKG_CONFIG_PATH}")
+                else()
+                    set(ENV{PKG_CONFIG_PATH} "${_dsuperlu_pkg_hint_path}")
+                endif()
+                message(STATUS
+                    "Augmented PKG_CONFIG_PATH with hints for SuperLU_DIST: ${_dsuperlu_pkg_hint_path}")
+            endif()
+
+            pkg_check_modules(PC_DSUPERLU QUIET IMPORTED_TARGET superlu_dist)
+            set(ENV{PKG_CONFIG_PATH} "${_dsuperlu_old_pkg_config_path}")
+
+            if(PC_DSUPERLU_FOUND)
+                set(SUPERLU_DIST_FOUND TRUE)
+                if(PC_DSUPERLU_INCLUDE_DIRS AND NOT TPL_DSUPERLU_INCLUDE_DIRS)
+                    set(TPL_DSUPERLU_INCLUDE_DIRS ${PC_DSUPERLU_INCLUDE_DIRS}
+                        CACHE PATH "SuperLU_DIST include directories for HYPRE" FORCE)
+                endif()
+                if(NOT TPL_DSUPERLU_LIBRARIES)
+                    if(PC_DSUPERLU_LINK_LIBRARIES)
+                        set(TPL_DSUPERLU_LIBRARIES ${PC_DSUPERLU_LINK_LIBRARIES}
+                            CACHE STRING "SuperLU_DIST libraries for HYPRE" FORCE)
+                    elseif(PC_DSUPERLU_LDFLAGS)
+                        set(TPL_DSUPERLU_LIBRARIES ${PC_DSUPERLU_LDFLAGS}
+                            CACHE STRING "SuperLU_DIST libraries for HYPRE" FORCE)
+                    endif()
+                endif()
+                if(PC_DSUPERLU_LIBRARY_DIRS)
+                    foreach(_dsuperlu_lib_dir IN LISTS PC_DSUPERLU_LIBRARY_DIRS)
+                        list(APPEND HYPRE_DEPENDENCY_DIRS "${_dsuperlu_lib_dir}")
+                        get_filename_component(_dsuperlu_prefix "${_dsuperlu_lib_dir}" DIRECTORY)
+                        list(APPEND HYPRE_DEPENDENCY_DIRS "${_dsuperlu_prefix}")
+                    endforeach()
+                    list(REMOVE_DUPLICATES HYPRE_DEPENDENCY_DIRS)
+                    set(HYPRE_DEPENDENCY_DIRS "${HYPRE_DEPENDENCY_DIRS}" CACHE INTERNAL "" FORCE)
+                endif()
+                message(STATUS "Found SuperLU_DIST via pkg-config:")
+                message(STATUS "  include directories: ${TPL_DSUPERLU_INCLUDE_DIRS}")
+                message(STATUS "  libraries: ${TPL_DSUPERLU_LIBRARIES}")
+            endif()
+        endif()
+    endif()
+
+    if(NOT SUPERLU_DIST_FOUND)
+        message(STATUS
+            "SuperLU_DIST not found. Fetching and building SuperLU_DIST from source (version: ${SUPERLU_DIST_VERSION})...")
+
+        include(FetchContent)
+
+        find_package(MPI REQUIRED COMPONENTS C CXX)
+
+        FetchContent_Declare(
+            superlu_dist
+            GIT_REPOSITORY https://github.com/xiaoyeli/superlu_dist.git
+            GIT_TAG        ${SUPERLU_DIST_VERSION}
+            GIT_SHALLOW    TRUE
+            GIT_PROGRESS   TRUE
+        )
+
+        set(FETCHCONTENT_QUIET OFF)
+
+        # Default to the small CPU-only build HYPRE's DSUPERLU path needs, while
+        # preserving explicit user cache values such as -DTPL_ENABLE_PARMETISLIB=ON.
+        _hypredrv_set_cache_bool_default(enable_doc OFF
+            "Build SuperLU_DIST documentation")
+        _hypredrv_set_cache_bool_default(enable_single OFF
+            "Build SuperLU_DIST single precision library")
+        _hypredrv_set_cache_bool_default(enable_double ON
+            "Build SuperLU_DIST double precision library")
+        _hypredrv_set_cache_bool_default(enable_complex16 OFF
+            "Build SuperLU_DIST complex16 precision library")
+        _hypredrv_set_cache_bool_default(enable_tests OFF
+            "Build SuperLU_DIST tests")
+        _hypredrv_set_cache_bool_default(enable_examples OFF
+            "Build SuperLU_DIST examples")
+        _hypredrv_set_cache_bool_default(enable_python OFF
+            "Build SuperLU_DIST Python interface")
+        _hypredrv_set_cache_bool_default(enable_openmp OFF
+            "Build SuperLU_DIST with OpenMP support")
+        _hypredrv_set_cache_bool_default(XSDK_ENABLE_Fortran OFF
+            "Build SuperLU_DIST Fortran interface")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_PARMETISLIB OFF
+            "Enable SuperLU_DIST ParMETIS support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_COMBBLASLIB OFF
+            "Enable SuperLU_DIST CombBLAS support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_COLAMDLIB OFF
+            "Enable SuperLU_DIST COLAMD support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_LAPACKLIB OFF
+            "Enable SuperLU_DIST LAPACK support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_CUDALIB OFF
+            "Enable SuperLU_DIST CUDA support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_HIPLIB OFF
+            "Enable SuperLU_DIST HIP support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_NVSHMEM OFF
+            "Enable SuperLU_DIST NVSHMEM support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_ROCSHMEM OFF
+            "Enable SuperLU_DIST ROCSHMEM support")
+        _hypredrv_set_cache_bool_default(TPL_ENABLE_MAGMALIB OFF
+            "Enable SuperLU_DIST MAGMA support")
+        if(TPL_BLAS_LIBRARIES)
+            _hypredrv_set_cache_bool_default(TPL_ENABLE_INTERNAL_BLASLIB OFF
+                "Build SuperLU_DIST internal BLAS")
+        else()
+            _hypredrv_set_cache_bool_default(TPL_ENABLE_INTERNAL_BLASLIB ON
+                "Build SuperLU_DIST internal BLAS")
+        endif()
+        if(NOT enable_double)
+            message(WARNING
+                "HYPRE_ENABLE_DSUPERLU=ON needs SuperLU_DIST double-precision "
+                "support, but enable_double=OFF is set in the CMake cache")
+        endif()
+
+        _hypredrv_set_common_output_directories()
+
+        message(STATUS
+            "  Using inherited BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} for SuperLU_DIST build")
+
+        message(STATUS "Fetching SuperLU_DIST from GitHub (branch/tag: ${SUPERLU_DIST_VERSION})...")
+        message(STATUS "  Repository: https://github.com/xiaoyeli/superlu_dist.git")
+
+        FetchContent_MakeAvailable(superlu_dist)
+
+        if(TARGET superlu_dist)
+            set_target_properties(superlu_dist PROPERTIES EXCLUDE_FROM_ALL FALSE)
+            target_include_directories(superlu_dist PUBLIC
+                $<BUILD_INTERFACE:${superlu_dist_SOURCE_DIR}/SRC/include>
+                $<BUILD_INTERFACE:${superlu_dist_SOURCE_DIR}/SRC>
+                $<BUILD_INTERFACE:${superlu_dist_SOURCE_DIR}/SRC/cuda>
+                $<BUILD_INTERFACE:${superlu_dist_SOURCE_DIR}/SRC/hip>
+                $<BUILD_INTERFACE:${superlu_dist_BINARY_DIR}/SRC>)
+        endif()
+        if(TARGET superlu_dist-static)
+            target_include_directories(superlu_dist-static PUBLIC
+                $<BUILD_INTERFACE:${superlu_dist_SOURCE_DIR}/SRC/include>
+                $<BUILD_INTERFACE:${superlu_dist_SOURCE_DIR}/SRC>
+                $<BUILD_INTERFACE:${superlu_dist_SOURCE_DIR}/SRC/cuda>
+                $<BUILD_INTERFACE:${superlu_dist_SOURCE_DIR}/SRC/hip>
+                $<BUILD_INTERFACE:${superlu_dist_BINARY_DIR}/SRC>)
+        endif()
+
+        # HYPRE needs concrete library paths in TPL_DSUPERLU_LIBRARIES. These paths
+        # assume the project's single-config, unified output directories.
+        if(BUILD_SHARED_LIBS)
+            set(SUPERLU_DIST_LIBRARY_FILE
+                "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_SHARED_LIBRARY_PREFIX}superlu_dist${CMAKE_SHARED_LIBRARY_SUFFIX}")
+        else()
+            set(SUPERLU_DIST_LIBRARY_FILE
+                "${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}/${CMAKE_STATIC_LIBRARY_PREFIX}superlu_dist${CMAKE_STATIC_LIBRARY_SUFFIX}")
+        endif()
+
+        set(_hypredrv_dsuperlu_libraries ${SUPERLU_DIST_LIBRARY_FILE})
+        if(TPL_ENABLE_INTERNAL_BLASLIB)
+            if(BUILD_SHARED_LIBS)
+                list(APPEND _hypredrv_dsuperlu_libraries
+                    "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_SHARED_LIBRARY_PREFIX}blas${CMAKE_SHARED_LIBRARY_SUFFIX}")
+            else()
+                list(APPEND _hypredrv_dsuperlu_libraries
+                    "${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}/${CMAKE_STATIC_LIBRARY_PREFIX}blas${CMAKE_STATIC_LIBRARY_SUFFIX}")
+            endif()
+        endif()
+        if(MPI_CXX_LIBRARIES)
+            list(APPEND _hypredrv_dsuperlu_libraries ${MPI_CXX_LIBRARIES})
+        endif()
+        if(TARGET OpenMP::OpenMP_C)
+            list(APPEND _hypredrv_dsuperlu_libraries OpenMP::OpenMP_C)
+        endif()
+
+        set(TPL_DSUPERLU_LIBRARIES ${_hypredrv_dsuperlu_libraries}
+            CACHE STRING "SuperLU_DIST libraries for HYPRE" FORCE)
+        set(TPL_DSUPERLU_INCLUDE_DIRS "${superlu_dist_SOURCE_DIR}/SRC/include"
+            CACHE PATH "SuperLU_DIST include directories for HYPRE" FORCE)
+
+        set(HYPRE_BUILD_DSUPERLU ON CACHE INTERNAL
+            "SuperLU_DIST is being built as part of this project" FORCE)
+        set(DSUPERLU_INCLUDE_DIR_FOR_HYPRE "${superlu_dist_SOURCE_DIR}/SRC/include"
+            CACHE INTERNAL "SuperLU_DIST include directory for manual addition to HYPRE" FORCE)
+        set(SUPERLU_DIST_FOUND TRUE)
+
+        message(STATUS "  Setting TPL_DSUPERLU_INCLUDE_DIRS: ${TPL_DSUPERLU_INCLUDE_DIRS}")
+        message(STATUS "  Setting TPL_DSUPERLU_LIBRARIES: ${TPL_DSUPERLU_LIBRARIES}")
+        message(STATUS "SuperLU_DIST configured and ready (built via FetchContent)")
+        unset(_hypredrv_dsuperlu_libraries)
+    endif()
 endif()
 
 ############################################################
@@ -705,22 +962,44 @@ if(NOT HYPRE_FOUND)
     message(STATUS "HYPRE source fetched successfully")
     message(STATUS "  Source directory: ${hypre_SOURCE_DIR}")
 
-    # Patch HYPRE's CMakeLists.txt to skip export when Caliper is auto-built
+    # Patch HYPRE's CMakeLists.txt to skip export when TPLs are auto-built
     # This must be done before add_subdirectory is called
-    if(HYPRE_BUILD_CALIPER AND EXISTS "${hypre_SOURCE_DIR}/src/CMakeLists.txt")
+    if((HYPRE_BUILD_CALIPER OR HYPRE_BUILD_DSUPERLU) AND EXISTS "${hypre_SOURCE_DIR}/src/CMakeLists.txt")
         file(READ "${hypre_SOURCE_DIR}/src/CMakeLists.txt" HYPRE_CMAKE_CONTENT)
-        if(HYPRE_CMAKE_CONTENT MATCHES "Export from build tree" AND NOT HYPRE_CMAKE_CONTENT MATCHES "HYPRE_BUILD_CALIPER")
-            string(REGEX REPLACE
-                "if\\(NOT \\(HYPRE_BUILD_UMPIRE AND TARGET umpire\\)\\)"
-                "if(NOT (HYPRE_BUILD_UMPIRE AND TARGET umpire) AND NOT (HYPRE_BUILD_CALIPER AND TARGET caliper))"
+        set(_hypre_export_guard_old
+            "if(NOT (HYPRE_BUILD_UMPIRE AND TARGET umpire))")
+        set(_hypre_export_guard_new
+            "if(NOT (HYPRE_BUILD_UMPIRE AND TARGET umpire) AND NOT (HYPRE_BUILD_CALIPER AND TARGET caliper) AND NOT (HYPRE_BUILD_DSUPERLU AND TARGET superlu_dist))")
+        if(HYPRE_CMAKE_CONTENT MATCHES
+           "HYPRE_BUILD_DSUPERLU AND TARGET superlu_dist")
+            message(STATUS
+                "  HYPRE CMakeLists.txt already handles auto-built SuperLU_DIST exports")
+        elseif(HYPRE_CMAKE_CONTENT MATCHES "Export from build tree")
+            set(_hypre_cmake_original "${HYPRE_CMAKE_CONTENT}")
+            string(REPLACE "${_hypre_export_guard_old}" "${_hypre_export_guard_new}"
                 HYPRE_CMAKE_CONTENT "${HYPRE_CMAKE_CONTENT}")
-            string(REGEX REPLACE
+            string(REPLACE
                 "Skipping build-tree export of HYPRETargets due to auto-built Umpire dependency"
-                "Skipping build-tree export of HYPRETargets due to auto-built Umpire or Caliper dependency"
+                "Skipping build-tree export of HYPRETargets due to auto-built Umpire, Caliper, or SuperLU_DIST dependency"
                 HYPRE_CMAKE_CONTENT "${HYPRE_CMAKE_CONTENT}")
-            file(WRITE "${hypre_SOURCE_DIR}/src/CMakeLists.txt" "${HYPRE_CMAKE_CONTENT}")
-            message(STATUS "  HYPRE CMakeLists.txt patched to skip export when Caliper is auto-built")
+            if("${HYPRE_CMAKE_CONTENT}" STREQUAL "${_hypre_cmake_original}")
+                message(WARNING
+                    "Could not patch HYPRE build-tree export guard for auto-built "
+                    "Caliper/SuperLU_DIST dependencies; upstream HYPRE may have "
+                    "changed src/CMakeLists.txt")
+            else()
+                file(WRITE "${hypre_SOURCE_DIR}/src/CMakeLists.txt" "${HYPRE_CMAKE_CONTENT}")
+                message(STATUS
+                    "  HYPRE CMakeLists.txt patched to skip export when auto-built TPLs are used")
+            endif()
+            unset(_hypre_cmake_original)
+        else()
+            message(WARNING
+                "Could not find HYPRE build-tree export section to patch for auto-built "
+                "Caliper/SuperLU_DIST dependencies")
         endif()
+        unset(_hypre_export_guard_old)
+        unset(_hypre_export_guard_new)
     endif()
 
     # Workaround: HYPRE's SYCL device enumeration constructs a single
@@ -787,6 +1066,30 @@ if(NOT HYPRE_FOUND)
         if(TARGET caliper)
             add_dependencies(HYPRE caliper)
             message(STATUS "  Added dependency: HYPRE -> caliper")
+        endif()
+    endif()
+
+    if(HYPRE_BUILD_DSUPERLU AND TARGET HYPRE)
+        if(DSUPERLU_INCLUDE_DIR_FOR_HYPRE)
+            get_target_property(HYPRE_INCLUDE_DIRS HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+            if(HYPRE_INCLUDE_DIRS)
+                list(REMOVE_ITEM HYPRE_INCLUDE_DIRS "${DSUPERLU_INCLUDE_DIR_FOR_HYPRE}")
+                set_target_properties(HYPRE PROPERTIES
+                    INTERFACE_INCLUDE_DIRECTORIES "${HYPRE_INCLUDE_DIRS}")
+                target_include_directories(HYPRE PUBLIC
+                    $<BUILD_INTERFACE:${DSUPERLU_INCLUDE_DIR_FOR_HYPRE}>)
+                message(STATUS "  Fixed SuperLU_DIST include directory in HYPRE target using BUILD_INTERFACE")
+            endif()
+        endif()
+
+        if(TARGET superlu_dist)
+            add_dependencies(HYPRE superlu_dist)
+            message(STATUS "  Added dependency: HYPRE -> superlu_dist")
+        endif()
+
+        if(TPL_ENABLE_INTERNAL_BLASLIB AND TARGET blas)
+            add_dependencies(HYPRE blas)
+            message(STATUS "  Added dependency: HYPRE -> blas")
         endif()
     endif()
 
