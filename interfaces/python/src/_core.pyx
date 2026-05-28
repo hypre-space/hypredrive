@@ -338,6 +338,22 @@ cdef class HypreDriveCore:
                "HYPREDRV_LinearSolverGetNumIter")
         return int(iters)
 
+    def solver_setup_time(self):
+        if self._handle == NULL:
+            raise RuntimeError("HypreDriveCore is closed")
+        cdef double seconds = 0.0
+        _check(_c.HYPREDRV_LinearSolverGetSetupTime(self._handle, &seconds),
+               "HYPREDRV_LinearSolverGetSetupTime")
+        return float(seconds)
+
+    def solver_solve_time(self):
+        if self._handle == NULL:
+            raise RuntimeError("HypreDriveCore is closed")
+        cdef double seconds = 0.0
+        _check(_c.HYPREDRV_LinearSolverGetSolveTime(self._handle, &seconds),
+               "HYPREDRV_LinearSolverGetSolveTime")
+        return float(seconds)
+
     def solver_destroy(self):
         if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")

@@ -45,6 +45,8 @@ Run as::
 from __future__ import annotations
 
 import argparse
+import struct
+import zlib
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -179,82 +181,41 @@ def local_face_is_low(dim: int) -> tuple[bool, ...]:
     return (True, False, True, False, True, False)
 
 
-def cell_mass_matrix(mesh: Mesh, K_inv_cell: np.ndarray) -> np.ndarray:
-    """RT0 cell-local mass matrix ``∫_cell K⁻¹ ψ_a · ψ_b dV``.
+def cell_mass_prefactor(mesh: Mesh) -> np.ndarray:
+    """Cell-local prefactor matrix ``V * coef[a, b] / (|F_a| · |F_b|)``.
 
-    The integrals are exact for affine basis functions in a Cartesian
-    cell. With the DOF convention "σ_F(v) = ∫_F v · n_F dS" (integrated
-    normal flux), the basis on cell K of size (hx, hy, hz) is, for the
-    low-side x-face,
+    The RT0 mass matrix factors cleanly: with the DOF convention
+    ``σ_F(v) = ∫_F v · n_F dS``, each pair of local faces (a, b) of
+    direction (d_a, d_b) contributes
 
-        ψ_W = ((h_x - x_loc) / (h_x · |F_W|),  0,  0)
+        M_local[a, b] = K⁻¹[d_a, d_b] · V · coef(a, b) / (|F_a| · |F_b|)
 
-    and similarly for the other faces. The volume integral splits into a
-    product of 1D integrals, giving the entries below. See the source
-    for the explicit derivation; coefficients are exact rationals.
+    where ``coef(a, b)`` is purely geometric:
 
-    Returned shape: (n_local, n_local) where n_local = 2·dim.
+      * ``1/3`` if ``d_a == d_b`` and both faces are on the same side
+        (low-low or high-high);
+      * ``1/6`` if ``d_a == d_b`` but opposite sides (low-high);
+      * ``1/4`` if ``d_a != d_b``.
+
+    Returning that prefactor lets us assemble all cells in one
+    broadcasted multiplication.
     """
     dim = mesh.dim
     n_local = 2 * dim
-    M = np.zeros((n_local, n_local), dtype=np.float64)
-    dirs = local_face_directions(dim)
-    is_low = local_face_is_low(dim)
-    ax, ay, az = mesh.face_areas
-    areas = (ax, ay, az)
-    V = mesh.cell_volume
+    dirs = np.asarray(local_face_directions(dim))
+    is_low = np.asarray(local_face_is_low(dim))
+    areas = np.asarray(mesh.face_areas)
 
-    # For two local faces a, b with normal directions d_a, d_b:
-    #  - if d_a == d_b: opposite or same face along that axis. Contribution
-    #    is (K⁻¹)[d,d] times a 1D mass-matrix entry of the linear "hat"
-    #    pair, integrated over the perpendicular face area, normalised by
-    #    |F_a| · |F_b|.
-    #  - if d_a != d_b: cross-direction. Contribution is (K⁻¹)[d_a, d_b]
-    #    times an integral that factors as (∫ hat_a) · (∫ hat_b) · (perp).
+    da = dirs[:, None]
+    db = dirs[None, :]
+    la = is_low[:, None]
+    lb = is_low[None, :]
 
-    h = (mesh.hx, mesh.hy, mesh.hz)
-    h_active = (
-        mesh.hx,
-        mesh.hy if mesh.ny > 1 else 1.0,
-        mesh.hz if mesh.nz > 1 else 1.0,
-    )
-
-    for a in range(n_local):
-        for b in range(n_local):
-            da, db = dirs[a], dirs[b]
-            la, lb = is_low[a], is_low[b]
-            if da == db:
-                # 1D mass-matrix entry over the normal direction.
-                # ∫_0^h ((h - t)/h)^2 dt = h/3      (low-low)
-                # ∫_0^h ((h - t)/h)(t/h) dt = h/6   (low-high)
-                # ∫_0^h (t/h)^2 dt = h/3            (high-high)
-                hd_ = h_active[da]
-                if la == lb:
-                    coef = hd_ / 3.0
-                else:
-                    coef = hd_ / 6.0
-                # Normalisation: ψ_F = (basis raw) / |F|, so two factors
-                # of 1/|F|; integration over the perpendicular plane
-                # contributes |F| (the cell volume V divided by the
-                # active spacing hd_). Net: V * coef / (|F_a| · |F_b|).
-                M[a, b] = K_inv_cell[da, db] * V * coef / (hd_ * areas[da] * areas[db])
-            else:
-                # ∫_0^{h_a} hat_a(t) dt = h_a / 2  (regardless of low/high)
-                # cross term factors as
-                #   (1/|F_a|) · (1/|F_b|) · (h_a/2) · (h_b/2) · (perp)
-                # where the "perpendicular" thickness is whatever
-                # direction is neither d_a nor d_b: V / (h_{d_a} · h_{d_b}).
-                ha = h_active[da]
-                hb = h_active[db]
-                perp = V / (ha * hb)
-                M[a, b] = (
-                    K_inv_cell[da, db]
-                    * (ha / 2.0)
-                    * (hb / 2.0)
-                    * perp
-                    / (areas[da] * areas[db])
-                )
-    return M
+    same_dir = da == db
+    same_low = la == lb
+    coef = np.where(same_dir, np.where(same_low, 1.0 / 3.0, 1.0 / 6.0), 0.25)
+    area_factor = 1.0 / (areas[da] * areas[db])
+    return mesh.cell_volume * coef * area_factor
 
 
 # ----------------------------------------------------------------------
@@ -262,80 +223,77 @@ def cell_mass_matrix(mesh: Mesh, K_inv_cell: np.ndarray) -> np.ndarray:
 # ----------------------------------------------------------------------
 
 
-def cell_face_indices(mesh: Mesh, i: int, j: int, k: int) -> tuple[int, ...]:
-    """Global face-DOF indices for the local faces of cell (i,j,k)."""
-    dim = mesh.dim
-    if dim == 1:
-        return (mesh.x_face_index(i, 0, 0), mesh.x_face_index(i + 1, 0, 0))
-    if dim == 2:
-        return (
-            mesh.x_face_index(i, j, 0),
-            mesh.x_face_index(i + 1, j, 0),
-            mesh.y_face_index(i, j, 0),
-            mesh.y_face_index(i, j + 1, 0),
-        )
-    return (
-        mesh.x_face_index(i, j, k),
-        mesh.x_face_index(i + 1, j, k),
-        mesh.y_face_index(i, j, k),
-        mesh.y_face_index(i, j + 1, k),
-        mesh.z_face_index(i, j, k),
-        mesh.z_face_index(i, j, k + 1),
-    )
-
-
 def local_face_signs(dim: int) -> tuple[int, ...]:
     """Sign of B[K, F]: + for the high-side face, - for the low-side."""
     return tuple(-1 if low else +1 for low in local_face_is_low(dim))
 
 
+def _cell_face_index_arrays(mesh: Mesh) -> np.ndarray:
+    """Return per-cell global face indices as an ``(n_cells, n_local)`` array.
+
+    Cells are listed in ``cell_index`` order (i fastest, then j, then k).
+    Local face order matches :func:`local_face_directions`: x-faces (W,E)
+    first, then y-faces (S,N) for 2D/3D, then z-faces (B,T) for 3D.
+    """
+    n_cells = mesh.n_cells
+    cells = np.arange(n_cells, dtype=np.int64)
+    nx, ny = mesh.nx, mesh.ny
+    i = cells % nx
+    j = (cells // nx) % ny
+    k = cells // (nx * ny)
+
+    blocks = [i + (nx + 1) * (j + ny * k),                 # W
+              (i + 1) + (nx + 1) * (j + ny * k)]           # E
+    if mesh.dim >= 2:
+        y_off = mesh.y_face_offset
+        blocks.append(y_off + i + nx * (j + (ny + 1) * k))         # S
+        blocks.append(y_off + i + nx * ((j + 1) + (ny + 1) * k))   # N
+    if mesh.dim >= 3:
+        z_off = mesh.z_face_offset
+        blocks.append(z_off + i + nx * (j + ny * k))               # B
+        blocks.append(z_off + i + nx * (j + ny * (k + 1)))         # T
+    return np.stack(blocks, axis=1)
+
+
 def assemble_system(
     mesh: Mesh, K_inv: np.ndarray
 ) -> tuple[sp.csr_matrix, sp.csr_matrix]:
-    """Assemble (M, B) over the whole mesh."""
-    n_local = 2 * mesh.dim
+    """Assemble (M, B) over the whole mesh, fully vectorised.
+
+    For every cell, M's local block is
+    ``M_local[c, a, b] = K⁻¹[c, d_a, d_b] · prefactor[a, b]``
+    where ``prefactor`` is the geometric factor returned by
+    :func:`cell_mass_prefactor`. Triplets are produced via broadcasting
+    and handed once to ``sp.coo_matrix``, which sums shared-face
+    contributions on the conversion to CSR.
+    """
+    dim = mesh.dim
+    n_local = 2 * dim
     n_cells = mesh.n_cells
 
-    # Triplet accumulators sized exactly: M has n_local² triplets per
-    # cell, B has n_local triplets per cell.
-    m_rows = np.empty(n_cells * n_local * n_local, dtype=np.int64)
-    m_cols = np.empty(n_cells * n_local * n_local, dtype=np.int64)
-    m_vals = np.empty(n_cells * n_local * n_local, dtype=np.float64)
-    b_rows = np.empty(n_cells * n_local, dtype=np.int64)
-    b_cols = np.empty(n_cells * n_local, dtype=np.int64)
-    b_vals = np.empty(n_cells * n_local, dtype=np.float64)
+    faces = _cell_face_index_arrays(mesh)            # (n_cells, n_local)
+    dirs = np.asarray(local_face_directions(dim))    # (n_local,)
+    prefactor = cell_mass_prefactor(mesh)            # (n_local, n_local)
 
-    signs = local_face_signs(mesh.dim)
-    m_ptr = 0
-    b_ptr = 0
-    for k in range(mesh.nz):
-        for j in range(mesh.ny):
-            for i in range(mesh.nx):
-                c = mesh.cell_index(i, j, k)
-                faces = cell_face_indices(mesh, i, j, k)
-                M_local = cell_mass_matrix(mesh, K_inv[c])
-                # M contributions
-                for a in range(n_local):
-                    fa = faces[a]
-                    for b in range(n_local):
-                        fb = faces[b]
-                        m_rows[m_ptr] = fa
-                        m_cols[m_ptr] = fb
-                        m_vals[m_ptr] = M_local[a, b]
-                        m_ptr += 1
-                # B contributions
-                for a in range(n_local):
-                    b_rows[b_ptr] = faces[a]
-                    b_cols[b_ptr] = c
-                    b_vals[b_ptr] = signs[a]
-                    b_ptr += 1
+    # K_inv_local[c, a, b] = K_inv[c, dirs[a], dirs[b]]
+    K_inv_local = K_inv[:, dirs[:, None], dirs[None, :]]
+    m_vals = (K_inv_local * prefactor[None, :, :]).reshape(-1)
 
-    M = sp.csr_matrix(
+    shape = (n_cells, n_local, n_local)
+    m_rows = np.broadcast_to(faces[:, :, None], shape).reshape(-1)
+    m_cols = np.broadcast_to(faces[:, None, :], shape).reshape(-1)
+
+    M = sp.coo_matrix(
         (m_vals, (m_rows, m_cols)), shape=(mesh.n_faces, mesh.n_faces)
-    )
-    B = sp.csr_matrix(
+    ).tocsr()
+
+    signs = np.asarray(local_face_signs(dim), dtype=np.float64)
+    b_rows = faces.reshape(-1)
+    b_cols = np.repeat(np.arange(n_cells, dtype=np.int64), n_local)
+    b_vals = np.tile(signs, n_cells)
+    B = sp.coo_matrix(
         (b_vals, (b_rows, b_cols)), shape=(mesh.n_faces, mesh.n_cells)
-    )
+    ).tocsr()
     return M, B
 
 
@@ -426,21 +384,24 @@ def apply_boundary_conditions(
     bd: BoundaryData,
     mesh: Mesh,
 ) -> tuple[sp.csr_matrix, np.ndarray]:
-    """Assemble the saddle-point system [[M, B],[Bᵀ, 0]] with BC applied.
+    """Assemble the saddle-point system with BC applied.
 
-    Returns the global CSR matrix and the right-hand side. Dirichlet BCs
-    enter as a flux RHS, Neumann BCs are enforced strongly (rows pinned
-    on the affected flux DOFs).
+    Symmetric saddle-point form ``[[M, -B], [-Bᵀ, 0]] (q; u) = (-f_D; 0)``
+    — matches the variational system
+        ``∫ K⁻¹ q · v - ∫ u div v = -∫_{Γ_D} u_D (v · n_out)``
+        ``∫ w div q = 0``
+    after negating the second equation to symmetrise.
+
+    Dirichlet BCs enter as a flux RHS. Neumann BCs are enforced strongly
+    via the standard "pinned DOF" pattern: zero the pinned rows and
+    columns, set 1 on their diagonal, and move the previously-coupled
+    column contributions onto the RHS so the surviving free equations
+    stay consistent.
     """
     n_f = mesh.n_faces
     n_c = mesh.n_cells
     n_total = n_f + n_c
 
-    # Symmetric saddle-point form: [[M, -B], [-Bᵀ, 0]] (q; u) = (-f_D; 0)
-    # — this matches the variational system
-    #   ∫ K⁻¹ q · v - ∫ u div v = -∫_{Γ_D} u_D (v · n_out)
-    #   ∫ w div q = 0
-    # after negating the second equation to symmetrise.
     rhs = np.zeros(n_total, dtype=np.float64)
     for face_idx, u_d in bd.dirichlet.items():
         rhs[face_idx] -= _face_outward_sign(mesh, face_idx) * u_d
@@ -451,43 +412,35 @@ def apply_boundary_conditions(
         format="csr",
     )
 
-    # Enforce Neumann (strong): pin q_F = g_N · |F| · outward_sign for
-    # each Neumann face. For the standard q · n_out = g_N condition, we
-    # have q_F (global-normal DOF) = (outward_sign) · g_N · |F|.
-    A = A.tolil()
-    pinned_values: dict[int, float] = {}
+    # Pack Neumann targets: q_F = sign · g_N · |F|.
+    pinned_mask = np.zeros(n_total, dtype=bool)
+    pinned_target = np.zeros(n_total, dtype=np.float64)
     for face_idx, g_n in bd.neumann.items():
         sign = _face_outward_sign(mesh, face_idx)
         if sign == 0:
             raise ValueError(
                 f"Neumann face {face_idx} is not on the domain boundary"
             )
-        target = sign * g_n * _face_area_of(mesh, face_idx)
-        pinned_values[face_idx] = target
+        pinned_mask[face_idx] = True
+        pinned_target[face_idx] = sign * g_n * _face_area_of(mesh, face_idx)
 
-    # Move pinned columns to the RHS, then zero the rows and columns.
-    for face_idx, target in pinned_values.items():
-        col_dense = A[:, face_idx].toarray().ravel()
-        # Skip the pinned row itself (we'll overwrite it below).
-        col_dense[face_idx] = 0.0
-        rhs -= col_dense * target
+    # Strong-enforcement, three sparse ops (mirrors the MATLAB pattern):
+    #   D       = diag(free)            keeps free rows/cols, zeros pinned ones
+    #   D_pin   = diag(pinned)          identity on pinned diagonal
+    #   A_freeR = D · A                 pinned rows zeroed
+    #   rhs    -= A_freeR · pinned_target   subtract pinned-col contributions
+    #                                       (zero on pinned rows by construction)
+    #   A_new   = A_freeR · D + D_pin    pinned cols zeroed; identity on pinned diag
+    keep = (~pinned_mask).astype(np.float64)
+    D = sp.diags(keep)
+    D_pinned = sp.diags(pinned_mask.astype(np.float64))
 
-    for face_idx, target in pinned_values.items():
-        A.rows[face_idx] = [face_idx]
-        A.data[face_idx] = [1.0]
-        rhs[face_idx] = target
-        # Zero the corresponding column.
-        for r in range(n_total):
-            if r == face_idx:
-                continue
-            try:
-                idx = A.rows[r].index(face_idx)
-            except ValueError:
-                continue
-            A.rows[r].pop(idx)
-            A.data[r].pop(idx)
+    A_free_rows = D @ A
+    rhs -= A_free_rows @ pinned_target
+    rhs[pinned_mask] = pinned_target[pinned_mask]
+    A_new = (A_free_rows @ D + D_pinned).tocsr()
 
-    return A.tocsr(), rhs
+    return A_new, rhs
 
 
 # ----------------------------------------------------------------------
@@ -578,17 +531,29 @@ def cell_centred_flux(mesh: Mesh, q: np.ndarray) -> np.ndarray:
     return out
 
 
+def _encode_appended(arr: np.ndarray) -> bytes:
+    """Encode one DataArray for VTK ``<AppendedData encoding="raw">``.
+
+    Single-block zlib compression. Header is four little-endian uint64s
+    (``num_blocks=1``, ``block_size``, ``last_block_size``, and the
+    compressed payload size), followed by the zlib bytes.
+    """
+    raw = np.ascontiguousarray(arr, dtype=np.float64).tobytes(order="C")
+    compressed = zlib.compress(raw)
+    header = struct.pack("<QQQQ", 1, len(raw), len(raw), len(compressed))
+    return header + compressed
+
+
 def write_vti(
     filename: str,
     mesh: Mesh,
     pressure: np.ndarray,
     flux_cell: np.ndarray,
 ) -> None:
-    """Hand-write an ASCII VTK ImageData file (.vti).
+    """Write a binary zlib-compressed appended VTK ImageData file (.vti).
 
-    Even in 1D / 2D we emit a 3-D ImageData with collapsed dimensions;
-    ParaView handles that without trouble. ASCII format keeps the file
-    human-readable for small examples.
+    Even in 1D / 2D the file is a 3-D ImageData with collapsed
+    dimensions; ParaView handles that without trouble.
     """
     # ImageData WholeExtent uses point indices. For Nx cells in x there
     # are Nx grid points spanning [0, Nx], etc. Inactive directions are
@@ -612,43 +577,40 @@ def write_vti(
         pressure = p_padded
         flux_cell = f_padded
 
-    with open(filename, "w", encoding="utf-8") as fh:
-        fh.write('<?xml version="1.0"?>\n')
-        fh.write(
-            '<VTKFile type="ImageData" version="1.0" byte_order="LittleEndian">\n'
-        )
-        fh.write(
-            f'  <ImageData WholeExtent="0 {ex_x} 0 {ex_y} 0 {ex_z}" '
-            f'Origin="0 0 0" Spacing="{sx} {sy} {sz}">\n'
-        )
-        fh.write(
-            f'    <Piece Extent="0 {ex_x} 0 {ex_y} 0 {ex_z}">\n'
-        )
-        fh.write('      <CellData Scalars="pressure" Vectors="flux">\n')
-        fh.write(
-            '        <DataArray type="Float64" Name="pressure" format="ascii">\n'
-        )
-        fh.write("          " + " ".join(f"{v:.10e}" for v in pressure) + "\n")
-        fh.write("        </DataArray>\n")
-        fh.write(
-            '        <DataArray type="Float64" Name="flux" '
-            'NumberOfComponents="3" format="ascii">\n'
-        )
-        fh.write(
-            "          "
-            + " ".join(
-                f"{v:.10e}"
-                for row in flux_cell
-                for v in row
-            )
-            + "\n"
-        )
-        fh.write("        </DataArray>\n")
-        fh.write("      </CellData>\n")
-        fh.write("      <PointData></PointData>\n")
-        fh.write("    </Piece>\n")
-        fh.write("  </ImageData>\n")
-        fh.write("</VTKFile>\n")
+    # Build the appended block first so we know the per-array offsets
+    # that go into the XML header.
+    pressure_bytes = _encode_appended(pressure)
+    flux_bytes = _encode_appended(flux_cell)
+    offset_pressure = 0
+    offset_flux = len(pressure_bytes)
+
+    header = (
+        '<?xml version="1.0"?>\n'
+        '<VTKFile type="ImageData" version="1.0" byte_order="LittleEndian" '
+        'header_type="UInt64" compressor="vtkZLibDataCompressor">\n'
+        f'  <ImageData WholeExtent="0 {ex_x} 0 {ex_y} 0 {ex_z}" '
+        f'Origin="0 0 0" Spacing="{sx} {sy} {sz}">\n'
+        f'    <Piece Extent="0 {ex_x} 0 {ex_y} 0 {ex_z}">\n'
+        '      <CellData Scalars="pressure" Vectors="flux">\n'
+        '        <DataArray type="Float64" Name="pressure" '
+        f'format="appended" offset="{offset_pressure}"/>\n'
+        '        <DataArray type="Float64" Name="flux" '
+        'NumberOfComponents="3" format="appended" '
+        f'offset="{offset_flux}"/>\n'
+        '      </CellData>\n'
+        '      <PointData></PointData>\n'
+        '    </Piece>\n'
+        '  </ImageData>\n'
+        '  <AppendedData encoding="raw">\n'
+        '   _'
+    )
+    footer = b"\n  </AppendedData>\n</VTKFile>\n"
+
+    with open(filename, "wb") as fh:
+        fh.write(header.encode("utf-8"))
+        fh.write(pressure_bytes)
+        fh.write(flux_bytes)
+        fh.write(footer)
 
 
 # ----------------------------------------------------------------------
@@ -766,6 +728,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         drv.set_dofmap(make_dofmap(mesh))
         drv.solve()
         iterations = drv.last_iterations
+        setup_time = drv.last_setup_time
+        solve_time = drv.last_solve_time
         x = drv.get_solution()
 
     q = x[: mesh.n_faces]
@@ -783,6 +747,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"total={mesh.n_faces + mesh.n_cells})"
     )
     print(f"GMRES iterations     : {iterations}")
+    print(f"setup time [s]       : {setup_time:.6e}")
+    print(f"solve time [s]       : {solve_time:.6e}")
+    print(f"total time [s]       : {setup_time + solve_time:.6e}")
     print(f"||b - A x||_2 / ||b||: {rel_res:.3e}")
     # The analytic reference u(x)=x/Lx is only correct for diagonal K
     # (off-diagonal K makes the no-flow BC inconsistent with a purely-x

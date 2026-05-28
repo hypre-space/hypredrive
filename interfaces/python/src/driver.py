@@ -125,6 +125,8 @@ class HypreDrive:
         self._rhs_set: bool = False
         self._dofmap_set: bool = False
         self._last_iterations: Optional[int] = None
+        self._last_setup_time: Optional[float] = None
+        self._last_solve_time: Optional[float] = None
 
         # Always parse a YAML configuration up front so the C side has a
         # solver/preconditioner method selected before we hand over data.
@@ -344,6 +346,8 @@ class HypreDrive:
             self._core.solver_setup()
             self._core.solver_apply()
             self._last_iterations = self._core.solver_iterations()
+            self._last_setup_time = self._core.solver_setup_time()
+            self._last_solve_time = self._core.solver_solve_time()
         finally:
             # Destroy the solver immediately so a subsequent solve cycle on the
             # same HypreDrive object starts from a clean slate, even if setup or
@@ -362,6 +366,25 @@ class HypreDrive:
         ``None`` until the first successful solve. Reset on each new solve.
         """
         return self._last_iterations
+
+    @property
+    def last_setup_time(self) -> Optional[float]:
+        """Solver/preconditioner setup time from the most recent :meth:`solve`.
+
+        Returned in seconds (or milliseconds when the YAML option
+        ``general.use_millisec`` is on). ``None`` until the first successful
+        solve.
+        """
+        return self._last_setup_time
+
+    @property
+    def last_solve_time(self) -> Optional[float]:
+        """Solver-apply (Krylov iteration) time from the most recent :meth:`solve`.
+
+        Returned in the same units as :attr:`last_setup_time`. ``None``
+        until the first successful solve.
+        """
+        return self._last_solve_time
 
     def get_solution(self) -> np.ndarray:
         """Return the local-rank solution slab as a NumPy array."""
