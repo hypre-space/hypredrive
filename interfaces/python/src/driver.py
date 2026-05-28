@@ -123,6 +123,8 @@ class HypreDrive:
         self._row_start: Optional[int] = None
         self._row_end: Optional[int] = None
         self._rhs_set: bool = False
+        self._dofmap_set: bool = False
+        self._last_iterations: Optional[int] = None
 
         # Always parse a YAML configuration up front so the C side has a
         # solver/preconditioner method selected before we hand over data.
@@ -291,6 +293,37 @@ class HypreDrive:
         self._core.set_rhs_from_array(row_start_i, row_end_i, values_arr)
         self._rhs_set = True
 
+    def set_dofmap(self, labels: Any) -> None:
+        """Install per-row DOF labels for MGR.
+
+        ``labels`` is a 1-D sequence (NumPy array, list, etc.) of small
+        non-negative integer codes — one per local row — telling MGR which
+        block each row belongs to. The length must match the local row
+        range previously registered by :meth:`set_matrix_from_csr`.
+
+        The dofmap is required when the configured preconditioner is MGR
+        and is otherwise ignored by the C layer. Calling this method
+        replaces any previously installed dofmap.
+        """
+        self._require_open()
+        if self._row_start is None or self._row_end is None:
+            raise RuntimeError(
+                "set_dofmap(): no matrix set; call set_matrix_from_csr first"
+            )
+        labels_arr = np.ascontiguousarray(labels, dtype=np.intc)
+        if labels_arr.ndim != 1:
+            raise ValueError(
+                f"labels must be a 1-D array, got shape {labels_arr.shape}"
+            )
+        nrows = self._row_end - self._row_start + 1
+        if labels_arr.shape[0] != nrows:
+            raise ValueError(
+                f"labels length {labels_arr.shape[0]} does not match local "
+                f"row count {nrows}"
+            )
+        self._core.set_dofmap(labels_arr)
+        self._dofmap_set = True
+
     # ------------------------------------------------------------------
     # Solve cycle
     # ------------------------------------------------------------------
@@ -310,6 +343,7 @@ class HypreDrive:
         try:
             self._core.solver_setup()
             self._core.solver_apply()
+            self._last_iterations = self._core.solver_iterations()
         finally:
             # Destroy the solver immediately so a subsequent solve cycle on the
             # same HypreDrive object starts from a clean slate, even if setup or
@@ -320,6 +354,14 @@ class HypreDrive:
     # ------------------------------------------------------------------
     # Result extraction
     # ------------------------------------------------------------------
+
+    @property
+    def last_iterations(self) -> Optional[int]:
+        """Number of iterations taken by the most recent :meth:`solve` call.
+
+        ``None`` until the first successful solve. Reset on each new solve.
+        """
+        return self._last_iterations
 
     def get_solution(self) -> np.ndarray:
         """Return the local-rank solution slab as a NumPy array."""

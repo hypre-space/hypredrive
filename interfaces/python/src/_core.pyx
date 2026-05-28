@@ -268,6 +268,33 @@ cdef class HypreDriveCore:
             "HYPREDRV_LinearSystemSetRHSFromArray",
         )
 
+    def set_dofmap(self, cnp.ndarray labels):
+        """Install per-row DOF labels for MGR.
+
+        ``labels`` must be a C-contiguous ``int32`` 1-D array whose length
+        equals the local row count of the linear system. The high-level
+        ``HypreDrive.set_dofmap`` performs that validation; here we only
+        enforce contiguity and dtype, since this layer is the trust
+        boundary for direct ``_core`` callers.
+        """
+        if self._handle == NULL:
+            raise RuntimeError("HypreDriveCore is closed")
+        if not cnp.PyArray_IS_C_CONTIGUOUS(labels):
+            raise ValueError("labels must be C-contiguous")
+        if cnp.PyArray_ITEMSIZE(labels) != sizeof(int):
+            raise ValueError("labels dtype must match C int (use np.intc)")
+        cdef Py_ssize_t n = labels.shape[0]
+        if n > <Py_ssize_t>0x7fffffff:
+            raise ValueError("dofmap length exceeds C int range")
+        _check(
+            _c.HYPREDRV_LinearSystemSetDofmap(
+                self._handle,
+                <int>n,
+                <const int *>cnp.PyArray_DATA(labels),
+            ),
+            "HYPREDRV_LinearSystemSetDofmap",
+        )
+
     def setup_initial_guess(self):
         """Set up x0 according to ``linear_system.init_guess_mode``.
 

@@ -386,6 +386,7 @@ set(_python_test_commands
             --tb=short
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_options.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_solve_serial.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dofmap_serial.py"
 )
 
 if(MPIEXEC_EXECUTABLE AND _mpi4py_rc EQUAL 0)
@@ -398,6 +399,7 @@ if(MPIEXEC_EXECUTABLE AND _mpi4py_rc EQUAL 0)
                 -q
                 --tb=short
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_solve_mpi.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dofmap_mpi.py"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_laplacian_example_mpi.py"
                 ${MPIEXEC_POSTFLAGS}
     )
