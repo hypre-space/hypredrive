@@ -31,20 +31,33 @@ Analytical solution: ``u(x) = x / L_x``, ``q = (-1/L_x, 0, 0)``. The
 script prints the relative residual plus the discrete L²-error of the
 computed cell pressures against this reference.
 
-VTI output (cell data): scalar ``pressure`` and 3-component ``flux``.
-Each ``flux`` cell-centre value is the per-direction average of the two
-opposite-face normal velocities (DOF divided by |F|), with the inactive
-components set to zero.
+VTI output (cell data): scalar ``pressure``, 3-component ``flux``, the
+symmetric ``permeability`` tensor, and a ``GlobalCellId`` (UInt32, or
+UInt64 when the global cell count reaches 2**32). Each ``flux`` cell-centre
+value is the per-direction average of the two opposite-face normal
+velocities (DOF divided by |F|), with inactive components set to zero.
+
+Runs serial or distributed. On >1 MPI rank the structured mesh is split
+into a balanced ``Px x Py x Pz`` Cartesian grid of subdomains (override
+with ``--procs``); each rank assembles its owned block plus the coupling to
+its Cartesian neighbours, the global system is solved with GMRES+MGR, and
+the result is written as a ``.pvti`` master plus one ``.vti`` piece per rank.
 
 Run as::
 
+    # serial -> darcy3d.vti
     mpirun -np 1 .venv/bin/python interfaces/python/examples/darcy_mixed.py \\
         --nx 16 --ny 16 --nz 16 --output darcy3d.vti
+
+    # parallel -> darcy3d.pvti + darcy3d_p{rank}.vti
+    mpirun -np 8 .venv/bin/python interfaces/python/examples/darcy_mixed.py \\
+        --nx 32 --ny 32 --nz 32 --output darcy3d.vti
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import struct
 import time
 import zlib
@@ -515,7 +528,7 @@ def mgr_options() -> dict:
                 "krylov_dim": 60,
                 "relative_tol": 1.0e-10,
                 "absolute_tol": 0.0,
-                "print_level": 0,
+                "print_level": 2,
             }
         },
         "preconditioner": {
@@ -1023,9 +1036,25 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--procs",
+        type=int,
+        nargs=3,
+        default=None,
+        metavar=("PX", "PY", "PZ"),
+        help=(
+            "explicit Cartesian process grid (product must equal the MPI "
+            "size); inactive dimensions must be 1. Default: balanced over "
+            "active dimensions. Only used when running on >1 rank."
+        ),
+    )
+    p.add_argument(
         "--output",
         default="darcy_mixed.vti",
-        help="VTI output filename (set to '' to skip writing)",
+        help=(
+            "output filename. On 1 rank a .vti is written; on >1 rank a "
+            ".pvti master plus one .vti piece per rank (the .vti suffix is "
+            "replaced). Set to '' to skip writing."
+        ),
     )
     p.add_argument(
         "--print-level",
@@ -1034,6 +1063,530 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="GMRES print_level (0 silent, 2 per-iter convergence)",
     )
     return p.parse_args(argv)
+
+
+# ----------------------------------------------------------------------
+# Parallel Cartesian decomposition
+# ----------------------------------------------------------------------
+#
+# The structured mesh is split into a Px x Py x Pz grid of subdomains, one
+# per MPI rank. Each rank owns a contiguous block of cells and a subset of
+# faces (low-side convention: a face is owned by the rank on its higher-
+# coordinate side, i.e. as the low-side face of that rank's first cell;
+# the global high-boundary face is owned by the last rank). DOFs are then
+# numbered rank-contiguously — every rank's owned DOFs form one contiguous
+# global range [offset_r, offset_{r+1}) — so the HYPRE IJ matrix row
+# partition follows the Cartesian decomposition. Within a rank the order is
+# [x-faces][y-faces][z-faces][cells], each I-fastest then J then K.
+
+
+def _axis_split(n: int, parts: int) -> list[tuple[int, int]]:
+    """Contiguous split of ``n`` cells into ``parts`` ``[start, end)`` ranges."""
+    base, rem = divmod(n, parts)
+    out = []
+    s = 0
+    for p in range(parts):
+        ln = base + (1 if p < rem else 0)
+        out.append((s, s + ln))
+        s += ln
+    return out
+
+
+def _part_of(splits: list[tuple[int, int]], n: int) -> np.ndarray:
+    """Map each index in ``[0, n)`` to its owning part number."""
+    arr = np.empty(n, dtype=np.int64)
+    for p, (s, e) in enumerate(splits):
+        arr[s:e] = p
+    return arr
+
+
+def factor_procs(mesh: Mesh, nprocs: int, override=None) -> tuple[int, int, int]:
+    """Return ``(Px, Py, Pz)`` with product ``nprocs``; inactive dims get 1."""
+    sizes = (mesh.nx, mesh.ny, mesh.nz)
+    if override is not None:
+        P = [int(v) for v in override]
+        if len(P) != 3 or P[0] * P[1] * P[2] != nprocs:
+            raise SystemExit(
+                f"--procs {tuple(P)} must multiply to nprocs={nprocs}"
+            )
+        for d in range(3):
+            if sizes[d] == 1 and P[d] != 1:
+                raise SystemExit(f"cannot partition inactive dimension {d}")
+        return tuple(P)
+    from mpi4py import MPI
+
+    dims = MPI.Compute_dims(nprocs, mesh.dim)  # balanced over active dims
+    P = [1, 1, 1]
+    for d in range(mesh.dim):
+        P[d] = int(dims[d])
+    return tuple(P)
+
+
+class ParallelLayout:
+    """Cartesian DOF ownership and rank-contiguous global numbering.
+
+    All lookups are vectorised over arrays of global ``(i, j, k)`` indices,
+    and computable on every rank without communication, so a rank can map
+    any DOF it references (its own or a neighbour's halo DOF) to a global
+    index purely from the partition description.
+    """
+
+    def __init__(self, mesh: Mesh, Px: int, Py: int, Pz: int):
+        self.mesh = mesh
+        self.Px, self.Py, self.Pz = Px, Py, Pz
+        self.nprocs = Px * Py * Pz
+        nx, ny, nz = mesh.nx, mesh.ny, mesh.nz
+        self.xs = _axis_split(nx, Px)
+        self.ys = _axis_split(ny, Py)
+        self.zs = _axis_split(nz, Pz)
+        self.part_x = _part_of(self.xs, nx)
+        self.part_y = _part_of(self.ys, ny)
+        self.part_z = _part_of(self.zs, nz)
+        self.x0 = np.array([s for s, _ in self.xs], dtype=np.int64)
+        self.xl = np.array([e - s for s, e in self.xs], dtype=np.int64)
+        self.y0 = np.array([s for s, _ in self.ys], dtype=np.int64)
+        self.yl = np.array([e - s for s, e in self.ys], dtype=np.int64)
+        self.z0 = np.array([s for s, _ in self.zs], dtype=np.int64)
+        self.zl = np.array([e - s for s, e in self.zs], dtype=np.int64)
+
+        dim = mesh.dim
+        nproc = self.nprocs
+        self.count_xf = np.zeros(nproc, dtype=np.int64)
+        self.count_yf = np.zeros(nproc, dtype=np.int64)
+        self.count_zf = np.zeros(nproc, dtype=np.int64)
+        self.count_c = np.zeros(nproc, dtype=np.int64)
+        for rz in range(Pz):
+            for ry in range(Py):
+                for rx in range(Px):
+                    r = self.rank_of(rx, ry, rz)
+                    nlx, nly, nlz = self.xl[rx], self.yl[ry], self.zl[rz]
+                    lx = 1 if rx == Px - 1 else 0
+                    ly = 1 if ry == Py - 1 else 0
+                    lz = 1 if rz == Pz - 1 else 0
+                    self.count_xf[r] = (nlx + lx) * nly * nlz
+                    self.count_yf[r] = nlx * (nly + ly) * nlz if dim >= 2 else 0
+                    self.count_zf[r] = nlx * nly * (nlz + lz) if dim >= 3 else 0
+                    self.count_c[r] = nlx * nly * nlz
+        self.total = (
+            self.count_xf + self.count_yf + self.count_zf + self.count_c
+        )
+        self.offset = np.zeros(nproc + 1, dtype=np.int64)
+        self.offset[1:] = np.cumsum(self.total)
+        self.N = int(self.offset[-1])
+
+    def rank_of(self, rx: int, ry: int, rz: int) -> int:
+        return rx + self.Px * (ry + self.Py * rz)
+
+    def cell_box(self, r: int) -> tuple[int, int, int, int, int, int]:
+        rx = r % self.Px
+        ry = (r // self.Px) % self.Py
+        rz = r // (self.Px * self.Py)
+        return (
+            int(self.x0[rx]), int(self.x0[rx] + self.xl[rx]),
+            int(self.y0[ry]), int(self.y0[ry] + self.yl[ry]),
+            int(self.z0[rz]), int(self.z0[rz] + self.zl[rz]),
+        )
+
+    # ---- vectorised global-index lookups (input arrays of i, j, k) ----
+
+    def gidx_cells(self, gi, gj, gk):
+        rx, ry, rz = self.part_x[gi], self.part_y[gj], self.part_z[gk]
+        r = rx + self.Px * (ry + self.Py * rz)
+        base = self.offset[r] + self.count_xf[r] + self.count_yf[r] + self.count_zf[r]
+        li = ((gi - self.x0[rx])
+              + self.xl[rx] * ((gj - self.y0[ry]) + self.yl[ry] * (gk - self.z0[rz])))
+        return base + li
+
+    def gidx_xfaces(self, gi, gj, gk):
+        nx = self.mesh.nx
+        rx = np.where(gi < nx, self.part_x[np.minimum(gi, nx - 1)], self.Px - 1)
+        ry, rz = self.part_y[gj], self.part_z[gk]
+        r = rx + self.Px * (ry + self.Py * rz)
+        last = (rx == self.Px - 1).astype(np.int64)
+        li = ((gi - self.x0[rx])
+              + (self.xl[rx] + last) * ((gj - self.y0[ry]) + self.yl[ry] * (gk - self.z0[rz])))
+        return self.offset[r] + li
+
+    def gidx_yfaces(self, gi, gj, gk):
+        ny = self.mesh.ny
+        rx = self.part_x[gi]
+        ry = np.where(gj < ny, self.part_y[np.minimum(gj, ny - 1)], self.Py - 1)
+        rz = self.part_z[gk]
+        r = rx + self.Px * (ry + self.Py * rz)
+        last = (ry == self.Py - 1).astype(np.int64)
+        li = ((gi - self.x0[rx])
+              + self.xl[rx] * ((gj - self.y0[ry]) + (self.yl[ry] + last) * (gk - self.z0[rz])))
+        return self.offset[r] + self.count_xf[r] + li
+
+    def gidx_zfaces(self, gi, gj, gk):
+        nz = self.mesh.nz
+        rx, ry = self.part_x[gi], self.part_y[gj]
+        rz = np.where(gk < nz, self.part_z[np.minimum(gk, nz - 1)], self.Pz - 1)
+        r = rx + self.Px * (ry + self.Py * rz)
+        li = ((gi - self.x0[rx])
+              + self.xl[rx] * ((gj - self.y0[ry]) + self.yl[ry] * (gk - self.z0[rz])))
+        return self.offset[r] + self.count_xf[r] + self.count_yf[r] + li
+
+
+def _ext_local_to_global(
+    ext_mesh: Mesh, ex0: int, ey0: int, ez0: int, lay: ParallelLayout
+) -> np.ndarray:
+    """Map each stacked ext-mesh DOF (faces then cells) to its global index.
+
+    The extended sub-mesh has origin ``(ex0, ey0, ez0)`` in global cell
+    coordinates; ext-local DOF ``(li, lj, lk)`` is global ``(ex0+li, ...)``.
+    """
+    nxe, nye, nze = ext_mesh.nx, ext_mesh.ny, ext_mesh.nz
+    nfe = ext_mesh.n_faces
+    e2g = np.empty(nfe + ext_mesh.n_cells, dtype=np.int64)
+
+    li, lj, lk = (a.ravel() for a in np.meshgrid(
+        np.arange(nxe + 1), np.arange(nye), np.arange(nze), indexing="ij"))
+    e2g[li + (nxe + 1) * (lj + nye * lk)] = lay.gidx_xfaces(ex0 + li, ey0 + lj, ez0 + lk)
+    if ext_mesh.dim >= 2:
+        yoff = ext_mesh.y_face_offset
+        li, lj, lk = (a.ravel() for a in np.meshgrid(
+            np.arange(nxe), np.arange(nye + 1), np.arange(nze), indexing="ij"))
+        e2g[yoff + li + nxe * (lj + (nye + 1) * lk)] = lay.gidx_yfaces(
+            ex0 + li, ey0 + lj, ez0 + lk)
+    if ext_mesh.dim >= 3:
+        zoff = ext_mesh.z_face_offset
+        li, lj, lk = (a.ravel() for a in np.meshgrid(
+            np.arange(nxe), np.arange(nye), np.arange(nze + 1), indexing="ij"))
+        e2g[zoff + li + nxe * (lj + nye * lk)] = lay.gidx_zfaces(
+            ex0 + li, ey0 + lj, ez0 + lk)
+    li, lj, lk = (a.ravel() for a in np.meshgrid(
+        np.arange(nxe), np.arange(nye), np.arange(nze), indexing="ij"))
+    e2g[nfe + li + nxe * (lj + nye * lk)] = lay.gidx_cells(
+        ex0 + li, ey0 + lj, ez0 + lk)
+    return e2g
+
+
+def _boundary_faces(
+    mesh: Mesh, lay: ParallelLayout, axis: int, high: bool
+) -> tuple[np.ndarray, int, float]:
+    """Global DOF indices of all faces on one global boundary, + sign + area.
+
+    ``sign`` is the outward normal sign (+1 high boundary, -1 low boundary).
+    """
+    nx, ny, nz = mesh.nx, mesh.ny, mesh.nz
+    ax, ay, az = mesh.face_areas
+    if axis == 0:
+        gi_v = nx if high else 0
+        gj, gk = (a.ravel() for a in np.meshgrid(
+            np.arange(ny), np.arange(nz), indexing="ij"))
+        gidx = lay.gidx_xfaces(np.full(gj.shape, gi_v), gj, gk)
+        area = ax
+    elif axis == 1:
+        gj_v = ny if high else 0
+        gi, gk = (a.ravel() for a in np.meshgrid(
+            np.arange(nx), np.arange(nz), indexing="ij"))
+        gidx = lay.gidx_yfaces(gi, np.full(gi.shape, gj_v), gk)
+        area = ay
+    else:
+        gk_v = nz if high else 0
+        gi, gj = (a.ravel() for a in np.meshgrid(
+            np.arange(nx), np.arange(ny), indexing="ij"))
+        gidx = lay.gidx_zfaces(gi, gj, np.full(gi.shape, gk_v))
+        area = az
+    return gidx, (1 if high else -1), area
+
+
+def _apply_parallel_bc(A_local, rhs, mesh, lay, off, total, axis):
+    """Non-symmetric strong enforcement on this rank's owned boundary faces.
+
+    Dirichlet pressure drop along ``axis`` (u=1 low, u=0 high) enters as a
+    flux RHS; no-flow Neumann on the other active boundaries pins the flux
+    DOF to 0 (zero the row, identity on the diagonal). Columns are left
+    untouched — parallel-safe, and since the pinned value is 0 the omitted
+    column-elimination changes nothing, so the solution matches the serial
+    (symmetric) enforcement.
+    """
+    for high, u_d in ((False, 1.0), (True, 0.0)):
+        gidx, sign, _ = _boundary_faces(mesh, lay, axis, high)
+        m = (gidx >= off) & (gidx < off + total)
+        rhs[gidx[m] - off] += -sign * u_d
+
+    pinned = []
+    for d in range(mesh.dim):
+        if d == axis:
+            continue
+        for high in (False, True):
+            gidx, _, _ = _boundary_faces(mesh, lay, d, high)
+            m = (gidx >= off) & (gidx < off + total)
+            pinned.append(gidx[m] - off)
+    pinned = (np.concatenate(pinned) if pinned else np.array([], dtype=np.int64))
+
+    keep = np.ones(total, dtype=np.float64)
+    keep[pinned] = 0.0
+    A_new = sp.diags(keep) @ A_local
+    if pinned.size:
+        P = sp.coo_matrix(
+            (np.ones(pinned.size), (pinned, off + pinned)), shape=A_local.shape
+        )
+        A_new = A_new + P
+    rhs[pinned] = 0.0
+    return A_new.tocsr(), rhs
+
+
+def assemble_parallel(mesh, K_inv_global, lay, rank, drive_axis):
+    """Assemble this rank's owned global rows of the mixed system.
+
+    Returns the local CSR block (``total`` rows × ``N`` global columns), the
+    RHS, the dofmap, the global row offset, and bookkeeping for the owned
+    cells (their local rows and global cell ids). Reuses the serial
+    assembler on an extended sub-mesh (owned cells + one-cell low-side halo),
+    which gives complete rows for every owned face, then extracts the owned
+    rows and remaps columns to global indices.
+    """
+    off = int(lay.offset[rank])
+    total = int(lay.total[rank])
+    cx0, cx1, cy0, cy1, cz0, cz1 = lay.cell_box(rank)
+    ex0 = cx0 - 1 if cx0 > 0 else cx0
+    ey0 = cy0 - 1 if cy0 > 0 else cy0
+    ez0 = cz0 - 1 if cz0 > 0 else cz0
+    ext_nx, ext_ny, ext_nz = cx1 - ex0, cy1 - ey0, cz1 - ez0
+    ext_mesh = Mesh(nx=ext_nx, ny=ext_ny, nz=ext_nz,
+                    hx=mesh.hx, hy=mesh.hy, hz=mesh.hz)
+    if ext_mesh.dim != mesh.dim:
+        raise SystemExit(
+            "partition too fine: every rank needs >= 2 cells along each "
+            "active dimension (reduce ranks or coarsen the partition)"
+        )
+
+    # K for the extended cells, in ext-mesh cell order.
+    li, lj, lk = (a.ravel() for a in np.meshgrid(
+        np.arange(ext_nx), np.arange(ext_ny), np.arange(ext_nz), indexing="ij"))
+    global_cell = (ex0 + li) + mesh.nx * ((ey0 + lj) + mesh.ny * (ez0 + lk))
+    ext_cell = li + ext_nx * (lj + ext_ny * lk)
+    K_ext = np.empty((ext_mesh.n_cells, 3, 3), dtype=np.float64)
+    K_ext[ext_cell] = K_inv_global[global_cell]
+
+    M_ext, B_ext = assemble_system(ext_mesh, K_ext)
+    nce = ext_mesh.n_cells
+    A_ext = sp.bmat(
+        [[M_ext, -B_ext], [-B_ext.T, sp.csr_matrix((nce, nce))]], format="csr"
+    )
+    nfe = ext_mesh.n_faces
+    e2g = _ext_local_to_global(ext_mesh, ex0, ey0, ez0, lay)
+
+    owned = np.where((e2g >= off) & (e2g < off + total))[0]
+    owned_sorted = owned[np.argsort(e2g[owned])]  # ext-local, in global-row order
+    A_owned = A_ext[owned_sorted].tocsr()
+    A_local = sp.csr_matrix(
+        (A_owned.data, e2g[A_owned.indices], A_owned.indptr),
+        shape=(total, lay.N),
+    )
+    dofmap = (owned_sorted < nfe).astype(np.intc)
+
+    rhs = np.zeros(total, dtype=np.float64)
+    A_local, rhs = _apply_parallel_bc(A_local, rhs, mesh, lay, off, total, drive_axis)
+
+    # Owned cells (every cell in the box) -> local rows + global cell ids.
+    cell_local_rows = np.where(owned_sorted >= nfe)[0]
+    ext_cell_to_global = np.empty(nce, dtype=np.int64)
+    ext_cell_to_global[ext_cell] = global_cell
+    owned_cell_global = ext_cell_to_global[owned_sorted[cell_local_rows] - nfe]
+    return A_local, rhs, dofmap, off, total, cell_local_rows, owned_cell_global
+
+
+def reconstruct_cell_flux_parallel(comm, lay, mesh, rank, x_local, off, total):
+    """Cell-centred flux for this rank's owned cells (piece I-fastest order).
+
+    A cell's high-side faces may be owned by the higher Cartesian
+    neighbour, so we first halo-exchange one layer of face values across
+    each partitioned interface (each rank sends its low-side boundary face
+    values to the lower neighbour and receives the higher neighbour's, which
+    are exactly its own high-side shared faces). Flux is then the average of
+    opposite-face velocities, as in the serial reconstruction.
+    """
+    from mpi4py import MPI
+
+    Px, Py, Pz = lay.Px, lay.Py, lay.Pz
+    rx, ry, rz = rank % Px, (rank // Px) % Py, rank // (Px * Py)
+    cx0, cx1, cy0, cy1, cz0, cz1 = lay.cell_box(rank)
+    nlx, nly, nlz = cx1 - cx0, cy1 - cy0, cz1 - cz0
+
+    halo_g, halo_v = [], []
+
+    def _exchange(P, lo_rank, hi_rank, gfunc, lo_args, hi_args):
+        send_idx = gfunc(*lo_args)
+        send = np.ascontiguousarray(x_local[send_idx - off], dtype=np.float64)
+        recv = np.empty(send.shape[0], dtype=np.float64)
+        comm.Sendrecv(send, dest=lo_rank, recvbuf=recv, source=hi_rank)
+        if hi_rank != MPI.PROC_NULL:
+            halo_g.append(gfunc(*hi_args))
+            halo_v.append(recv)
+
+    if Px > 1:
+        J, K = (a.ravel() for a in np.meshgrid(
+            np.arange(cy0, cy1), np.arange(cz0, cz1), indexing="ij"))
+        lo = lay.rank_of(rx - 1, ry, rz) if rx > 0 else MPI.PROC_NULL
+        hi = lay.rank_of(rx + 1, ry, rz) if rx < Px - 1 else MPI.PROC_NULL
+        _exchange(Px, lo, hi, lay.gidx_xfaces,
+                  (np.full(J.shape, cx0), J, K), (np.full(J.shape, cx1), J, K))
+    if Py > 1 and mesh.dim >= 2:
+        I, K = (a.ravel() for a in np.meshgrid(
+            np.arange(cx0, cx1), np.arange(cz0, cz1), indexing="ij"))
+        lo = lay.rank_of(rx, ry - 1, rz) if ry > 0 else MPI.PROC_NULL
+        hi = lay.rank_of(rx, ry + 1, rz) if ry < Py - 1 else MPI.PROC_NULL
+        _exchange(Py, lo, hi, lay.gidx_yfaces,
+                  (I, np.full(I.shape, cy0), K), (I, np.full(I.shape, cy1), K))
+    if Pz > 1 and mesh.dim >= 3:
+        I, J = (a.ravel() for a in np.meshgrid(
+            np.arange(cx0, cx1), np.arange(cy0, cy1), indexing="ij"))
+        lo = lay.rank_of(rx, ry, rz - 1) if rz > 0 else MPI.PROC_NULL
+        hi = lay.rank_of(rx, ry, rz + 1) if rz < Pz - 1 else MPI.PROC_NULL
+        _exchange(Pz, lo, hi, lay.gidx_zfaces,
+                  (I, J, np.full(I.shape, cz0)), (I, J, np.full(I.shape, cz1)))
+
+    if halo_g:
+        hg = np.concatenate(halo_g)
+        hv = np.concatenate(halo_v)
+        srt = np.argsort(hg)
+        hg, hv = hg[srt], hv[srt]
+    else:
+        hg = np.array([], dtype=np.int64)
+        hv = np.array([], dtype=np.float64)
+
+    # Owned cells in piece I-fastest order.
+    gi = cx0 + np.tile(np.arange(nlx), nly * nlz)
+    gj = cy0 + np.tile(np.repeat(np.arange(nly), nlx), nlz)
+    gk = cz0 + np.repeat(np.arange(nlz), nlx * nly)
+
+    def faceval(gfunc, fi, fj, fk):
+        g = gfunc(fi, fj, fk)
+        v = np.empty(g.shape[0], dtype=np.float64)
+        m = (g >= off) & (g < off + total)
+        v[m] = x_local[g[m] - off]
+        if (~m).any():
+            v[~m] = hv[np.searchsorted(hg, g[~m])]
+        return v
+
+    ax, ay, az = mesh.face_areas
+    flux = np.zeros((nlx * nly * nlz, 3), dtype=np.float64)
+    flux[:, 0] = 0.5 * (faceval(lay.gidx_xfaces, gi, gj, gk)
+                        + faceval(lay.gidx_xfaces, gi + 1, gj, gk)) / ax
+    if mesh.dim >= 2:
+        flux[:, 1] = 0.5 * (faceval(lay.gidx_yfaces, gi, gj, gk)
+                            + faceval(lay.gidx_yfaces, gi, gj + 1, gk)) / ay
+    if mesh.dim >= 3:
+        flux[:, 2] = 0.5 * (faceval(lay.gidx_zfaces, gi, gj, gk)
+                            + faceval(lay.gidx_zfaces, gi, gj, gk + 1)) / az
+    cell_ids = gi + mesh.nx * (gj + mesh.ny * gk)
+    return flux, cell_ids
+
+
+def _encode_appended_dtype(arr: np.ndarray, dtype) -> bytes:
+    """zlib-compressed single-block appended payload in the given dtype."""
+    raw = np.ascontiguousarray(arr, dtype=dtype).tobytes(order="C")
+    compressed = zlib.compress(raw)
+    return struct.pack("<QQQQ", 1, len(raw), len(raw), len(compressed)) + compressed
+
+
+def _global_id_dtype(n_cells_global: int):
+    """uint32 if the global cell count fits, else uint64 (+ VTK type name)."""
+    if n_cells_global < 2**32:
+        return np.uint32, "UInt32"
+    return np.uint64, "UInt64"
+
+
+def write_vti_piece(filename, mesh, extent, pressure, flux_cell,
+                    permeability, cell_ids, n_cells_global):
+    """Write one rank's VTK ImageData piece (.vti) over its sub-extent.
+
+    ``extent`` is ``(x0, x1, y0, y1, z0, z1)`` in global point indices; cell
+    data is in VTK order (I-fastest) over that extent. Adds a
+    ``GlobalCellId`` array (UInt32/UInt64 by global cell count).
+    """
+    x0, x1, y0, y1, z0, z1 = extent
+    sx = mesh.hx
+    sy = mesh.hy if mesh.ny > 1 else 1.0
+    sz = mesh.hz if mesh.nz > 1 else 1.0
+    id_dtype, id_vtk = _global_id_dtype(n_cells_global)
+
+    blocks = [
+        ("pressure", "Float64", 1, "", _encode_appended_dtype(pressure, np.float64)),
+        ("flux", "Float64", 3, "", _encode_appended_dtype(flux_cell, np.float64)),
+        ("permeability", "Float64", 6,
+         "".join(f'ComponentName{c}="{lbl}" '
+                 for c, lbl in enumerate(_SYM_TENSOR_LABELS)),
+         _encode_appended_dtype(permeability, np.float64)),
+        ("GlobalCellId", id_vtk, 1, "",
+         _encode_appended_dtype(cell_ids, id_dtype)),
+    ]
+    offsets = []
+    acc = 0
+    for *_meta, payload in blocks:
+        offsets.append(acc)
+        acc += len(payload)
+
+    arrays_xml = ""
+    for (name, vtype, ncomp, extra, _payload), off in zip(blocks, offsets):
+        ncomp_attr = f'NumberOfComponents="{ncomp}" ' if ncomp > 1 else ""
+        arrays_xml += (
+            f'        <DataArray type="{vtype}" Name="{name}" '
+            f'{ncomp_attr}{extra}format="appended" offset="{off}"/>\n'
+        )
+
+    header = (
+        '<?xml version="1.0"?>\n'
+        '<VTKFile type="ImageData" version="1.0" byte_order="LittleEndian" '
+        'header_type="UInt64" compressor="vtkZLibDataCompressor">\n'
+        f'  <ImageData WholeExtent="{x0} {x1} {y0} {y1} {z0} {z1}" '
+        f'Origin="0 0 0" Spacing="{sx} {sy} {sz}">\n'
+        f'    <Piece Extent="{x0} {x1} {y0} {y1} {z0} {z1}">\n'
+        '      <CellData Scalars="pressure" Vectors="flux" '
+        'Tensors="permeability">\n'
+        + arrays_xml +
+        '      </CellData>\n'
+        '      <PointData></PointData>\n'
+        '    </Piece>\n'
+        '  </ImageData>\n'
+        '  <AppendedData encoding="raw">\n'
+        '   _'
+    )
+    with open(filename, "wb") as fh:
+        fh.write(header.encode("utf-8"))
+        for *_meta, payload in blocks:
+            fh.write(payload)
+        fh.write(b"\n  </AppendedData>\n</VTKFile>\n")
+
+
+def write_pvti(filename, mesh, whole_extent, piece_extents, piece_files,
+               n_cells_global):
+    """Write the PVTI master referencing every rank's .vti piece."""
+    x0, x1, y0, y1, z0, z1 = whole_extent
+    sx = mesh.hx
+    sy = mesh.hy if mesh.ny > 1 else 1.0
+    sz = mesh.hz if mesh.nz > 1 else 1.0
+    _id_dtype, id_vtk = _global_id_dtype(n_cells_global)
+    comp_names = "".join(
+        f'ComponentName{c}="{lbl}" ' for c, lbl in enumerate(_SYM_TENSOR_LABELS)
+    )
+    lines = [
+        '<?xml version="1.0"?>',
+        '<VTKFile type="PImageData" version="1.0" byte_order="LittleEndian" '
+        'header_type="UInt64">',
+        f'  <PImageData WholeExtent="{x0} {x1} {y0} {y1} {z0} {z1}" '
+        f'GhostLevel="0" Origin="0 0 0" Spacing="{sx} {sy} {sz}">',
+        '    <PCellData Scalars="pressure" Vectors="flux" '
+        'Tensors="permeability">',
+        '      <PDataArray type="Float64" Name="pressure"/>',
+        '      <PDataArray type="Float64" Name="flux" NumberOfComponents="3"/>',
+        '      <PDataArray type="Float64" Name="permeability" '
+        f'NumberOfComponents="6" {comp_names}/>',
+        f'      <PDataArray type="{id_vtk}" Name="GlobalCellId"/>',
+        '    </PCellData>',
+        '    <PPointData></PPointData>',
+    ]
+    for ext, fname in zip(piece_extents, piece_files):
+        ex = " ".join(str(v) for v in ext)
+        lines.append(f'    <Piece Extent="{ex}" Source="{fname}"/>')
+    lines.append('  </PImageData>')
+    lines.append('</VTKFile>')
+    with open(filename, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
 
 
 # ----------------------------------------------------------------------
@@ -1049,6 +1602,87 @@ def analytic_cell_pressure(mesh: Mesh, axis: int, length: float) -> np.ndarray:
     and the lateral boundaries are no-flow.
     """
     return 1.0 - cell_centers(mesh)[:, axis] / length
+
+
+def _run_parallel(args, mesh, drive_axis, drive_length, K, K_inv, read_time, comm):
+    """Distributed assembly + solve + PVTI output on a Cartesian grid."""
+    rank = comm.Get_rank()
+    nprocs = comm.Get_size()
+    Px, Py, Pz = factor_procs(mesh, nprocs, args.procs)
+    lay = ParallelLayout(mesh, Px, Py, Pz)
+
+    t0 = time.perf_counter()
+    A_local, rhs, dofmap, off, total, cell_rows, cell_gids = assemble_parallel(
+        mesh, K_inv, lay, rank, drive_axis)
+    assemble_time = time.perf_counter() - t0
+
+    opts = mgr_options()
+    if args.print_level:
+        opts["solver"]["gmres"]["print_level"] = args.print_level
+    with hd.HypreDrive(options=opts, comm=comm) as drv:
+        drv.set_matrix_from_csr(A_local, row_start=off, row_end=off + total - 1)
+        drv.set_rhs(rhs)
+        drv.set_dofmap(dofmap)
+        drv.solve()
+        iterations = drv.last_iterations
+        setup_time = drv.last_setup_time
+        solve_time = drv.last_solve_time
+        sol_norm = drv.solution_norm("l2")
+        x_local = drv.get_solution()
+
+    pressure_piece = x_local[cell_rows]
+    flux_piece, _ = reconstruct_cell_flux_parallel(
+        comm, lay, mesh, rank, x_local, off, total)
+    if K.shape == (3, 3):
+        K_cells = np.broadcast_to(K, (mesh.n_cells, 3, 3))[cell_gids]
+    else:
+        K_cells = K[cell_gids]
+    perm6 = symmetric_tensor_components(K_cells)
+    n_cells_global = mesh.n_cells
+
+    output_time = 0.0
+    base = None
+    if args.output:
+        base = os.path.splitext(args.output)[0]
+        cx0, cx1, cy0, cy1, cz0, cz1 = lay.cell_box(rank)
+        ey0, ey1 = (cy0, cy1) if mesh.ny > 1 else (0, 1)
+        ez0, ez1 = (cz0, cz1) if mesh.nz > 1 else (0, 1)
+        extent = (cx0, cx1, ey0, ey1, ez0, ez1)
+        piece_name = f"{base}_p{rank}.vti"
+        t0 = time.perf_counter()
+        write_vti_piece(piece_name, mesh, extent, pressure_piece, flux_piece,
+                        perm6, cell_gids, n_cells_global)
+        all_info = comm.gather((extent, os.path.basename(piece_name)), root=0)
+        if rank == 0:
+            whole = (0, mesh.nx,
+                     0, mesh.ny if mesh.ny > 1 else 1,
+                     0, mesh.nz if mesh.nz > 1 else 1)
+            write_pvti(f"{base}.pvti", mesh, whole,
+                       [i[0] for i in all_info], [i[1] for i in all_info],
+                       n_cells_global)
+        output_time = time.perf_counter() - t0
+
+    if rank == 0:
+        print(f"dim                  : {mesh.dim}")
+        print(
+            f"grid                 : {mesh.nx} x {mesh.ny} x {mesh.nz}   "
+            f"(cells={mesh.n_cells}, flux DOFs={mesh.n_faces}, total={lay.N})"
+        )
+        print(f"partition            : {Px} x {Py} x {Pz} ({nprocs} ranks)")
+        print(f"gradient direction   : {args.gradient_direction}")
+        if args.K_file:
+            print(f"permeability         : file '{args.K_file}'")
+            if read_time is not None:
+                print(f"read time [s]        : {read_time:.6e}")
+        print(f"GMRES iterations     : {iterations}")
+        print(f"solution l2 norm     : {sol_norm:.6e}")
+        print(f"assemble time [s]    : {assemble_time:.6e}")
+        print(f"setup time [s]       : {setup_time:.6e}")
+        print(f"solve time [s]       : {solve_time:.6e}")
+        print(f"output time [s]      : {output_time:.6e}")
+        if args.output:
+            print(f"wrote                : {base}.pvti (+ {nprocs} piece(s))")
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1096,6 +1730,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         # with a purely-x gradient).
         analytic_valid = max(abs(K[0, 1]), abs(K[0, 2]), abs(K[1, 2])) < 1e-14
     K_inv = build_K_inv(mesh, K)
+
+    comm = mpi4py.MPI.COMM_WORLD
+    if comm.Get_size() > 1:
+        return _run_parallel(
+            args, mesh, drive_axis, drive_length, K, K_inv, read_time, comm
+        )
 
     t0 = time.perf_counter()
     M, B = assemble_system(mesh, K_inv)
