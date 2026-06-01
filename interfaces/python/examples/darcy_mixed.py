@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import struct
+import time
 import zlib
 from dataclasses import dataclass
 from typing import Sequence
@@ -145,17 +146,45 @@ class Mesh:
 def build_K_inv(mesh: Mesh, K: np.ndarray) -> np.ndarray:
     """Per-cell inverse permeability tensor, shape ``(n_cells, 3, 3)``.
 
-    ``K`` is the single 3x3 symmetric tensor used for every cell. We
-    invert once and broadcast — cell-varying K is a trivial extension
-    (build the (n_cells, 3, 3) array directly).
+    ``K`` may be either:
+
+    * a single ``(3, 3)`` symmetric tensor used for every cell, or
+    * a per-cell ``(n_cells, 3, 3)`` field (e.g. read from a tabulated
+      permeability file).
+
+    The assembly path consumes ``(n_cells, 3, 3)`` either way.
     """
-    if K.shape != (3, 3):
-        raise ValueError(f"K must be a 3x3 matrix, got shape {K.shape}")
-    if not np.allclose(K, K.T, atol=1e-12):
-        raise ValueError("K must be symmetric")
-    K_inv = np.linalg.inv(K)
-    out = np.broadcast_to(K_inv, (mesh.n_cells, 3, 3)).copy()
-    return out
+    K = np.asarray(K, dtype=np.float64)
+    if K.shape == (3, 3):
+        if not np.allclose(K, K.T, atol=1e-12):
+            raise ValueError("K must be symmetric")
+        K_inv = np.linalg.inv(K)
+        return np.broadcast_to(K_inv, (mesh.n_cells, 3, 3)).copy()
+    if K.shape == (mesh.n_cells, 3, 3):
+        if not np.allclose(K, np.transpose(K, (0, 2, 1)), atol=1e-12):
+            raise ValueError("per-cell K must be symmetric")
+        return np.linalg.inv(K)
+    raise ValueError(
+        f"K must have shape (3, 3) or ({mesh.n_cells}, 3, 3), got {K.shape}"
+    )
+
+
+def cell_centers(mesh: Mesh) -> np.ndarray:
+    """Physical coordinates of every cell centre, shape ``(n_cells, 3)``.
+
+    Cells are listed in ``cell_index`` order. Inactive directions use the
+    mesh's collapsed spacing, so the centre still has a well-defined
+    coordinate (e.g. ``0.5 * Ly`` for a 1D mesh).
+    """
+    cells = np.arange(mesh.n_cells, dtype=np.int64)
+    i = cells % mesh.nx
+    j = (cells // mesh.nx) % mesh.ny
+    k = cells // (mesh.nx * mesh.ny)
+    centers = np.empty((mesh.n_cells, 3), dtype=np.float64)
+    centers[:, 0] = (i + 0.5) * mesh.hx
+    centers[:, 1] = (j + 0.5) * mesh.hy
+    centers[:, 2] = (k + 0.5) * mesh.hz
+    return centers
 
 
 # ----------------------------------------------------------------------
@@ -310,31 +339,58 @@ class BoundaryData:
     neumann: dict[int, float]        # face_idx -> g_N (q · n_outward)
 
 
-def boundary_default_pressure_drop(mesh: Mesh) -> BoundaryData:
-    """u=0 on x=0, u=1 on x=L_x, no-flow on every other boundary face."""
+def _axis_boundary_faces(mesh: Mesh, axis: int, high: bool):
+    """Yield global face indices on the boundary perpendicular to ``axis``.
+
+    ``high=False`` selects the low-coordinate boundary (i/j/k = 0),
+    ``high=True`` the high-coordinate boundary (i/j/k = n_axis). ``axis``
+    must be an active direction (``axis < mesh.dim``).
+    """
+    nx, ny, nz = mesh.nx, mesh.ny, mesh.nz
+    if axis == 0:
+        i = nx if high else 0
+        for k in range(nz):
+            for j in range(ny):
+                yield mesh.x_face_index(i, j, k)
+    elif axis == 1:
+        j = ny if high else 0
+        for k in range(nz):
+            for i in range(nx):
+                yield mesh.y_face_index(i, j, k)
+    else:
+        k = nz if high else 0
+        for j in range(ny):
+            for i in range(nx):
+                yield mesh.z_face_index(i, j, k)
+
+
+def boundary_pressure_drop(mesh: Mesh, axis: int) -> BoundaryData:
+    """Unit pressure drop along ``axis``; no-flow on the other boundaries.
+
+    Sets ``u = 1`` on the low-coordinate boundary perpendicular to
+    ``axis`` and ``u = 0`` on the high-coordinate boundary, so the
+    pressure decreases along ``axis`` and the flux ``q = -K∇u`` points in
+    the positive ``axis`` direction. Every boundary perpendicular to the
+    other active directions is ``q · n = 0``. ``axis`` is 0/1/2 for x/y/z
+    and must satisfy ``axis < mesh.dim``.
+    """
+    if not 0 <= axis < mesh.dim:
+        raise ValueError(
+            f"drive axis {axis} is not an active direction for a "
+            f"{mesh.dim}-D mesh"
+        )
     bd = BoundaryData(dirichlet={}, neumann={})
-
-    # x = 0 (i = 0): Dirichlet u = 0
-    for k in range(mesh.nz):
-        for j in range(mesh.ny):
-            bd.dirichlet[mesh.x_face_index(0, j, k)] = 0.0
-    # x = L_x (i = nx): Dirichlet u = 1
-    for k in range(mesh.nz):
-        for j in range(mesh.ny):
-            bd.dirichlet[mesh.x_face_index(mesh.nx, j, k)] = 1.0
-
-    # y boundaries: no-flow
-    if mesh.dim >= 2:
-        for k in range(mesh.nz):
-            for i in range(mesh.nx):
-                bd.neumann[mesh.y_face_index(i, 0, k)] = 0.0
-                bd.neumann[mesh.y_face_index(i, mesh.ny, k)] = 0.0
-    # z boundaries: no-flow
-    if mesh.dim >= 3:
-        for j in range(mesh.ny):
-            for i in range(mesh.nx):
-                bd.neumann[mesh.z_face_index(i, j, 0)] = 0.0
-                bd.neumann[mesh.z_face_index(i, j, mesh.nz)] = 0.0
+    for f in _axis_boundary_faces(mesh, axis, high=False):
+        bd.dirichlet[f] = 1.0
+    for f in _axis_boundary_faces(mesh, axis, high=True):
+        bd.dirichlet[f] = 0.0
+    for other in range(mesh.dim):
+        if other == axis:
+            continue
+        for f in _axis_boundary_faces(mesh, other, high=False):
+            bd.neumann[f] = 0.0
+        for f in _axis_boundary_faces(mesh, other, high=True):
+            bd.neumann[f] = 0.0
     return bd
 
 
@@ -424,7 +480,7 @@ def apply_boundary_conditions(
         pinned_mask[face_idx] = True
         pinned_target[face_idx] = sign * g_n * _face_area_of(mesh, face_idx)
 
-    # Strong-enforcement, three sparse ops (mirrors the MATLAB pattern):
+    # Strong-enforcement via three sparse ops:
     #   D       = diag(free)            keeps free rows/cols, zeros pinned ones
     #   D_pin   = diag(pinned)          identity on pinned diagonal
     #   A_freeR = D · A                 pinned rows zeroed
@@ -531,6 +587,25 @@ def cell_centred_flux(mesh: Mesh, q: np.ndarray) -> np.ndarray:
     return out
 
 
+# VTK stores a symmetric second-order tensor as six components in the
+# order (xx, yy, zz, xy, yz, xz). The matching (row, col) index pairs:
+_SYM_TENSOR_INDICES = ((0, 0), (1, 1), (2, 2), (0, 1), (1, 2), (0, 2))
+_SYM_TENSOR_LABELS = ("xx", "yy", "zz", "xy", "yz", "xz")
+
+
+def symmetric_tensor_components(K_cells: np.ndarray) -> np.ndarray:
+    """Pack a per-cell ``(n_cells, 3, 3)`` symmetric tensor as ``(n_cells, 6)``.
+
+    Component order matches VTK's symmetric-tensor convention
+    (xx, yy, zz, xy, yz, xz), so ParaView reads the array back as a
+    symmetric tensor.
+    """
+    out = np.empty((K_cells.shape[0], 6), dtype=np.float64)
+    for c, (r, s) in enumerate(_SYM_TENSOR_INDICES):
+        out[:, c] = K_cells[:, r, s]
+    return out
+
+
 def _encode_appended(arr: np.ndarray) -> bytes:
     """Encode one DataArray for VTK ``<AppendedData encoding="raw">``.
 
@@ -544,16 +619,33 @@ def _encode_appended(arr: np.ndarray) -> bytes:
     return header + compressed
 
 
+def _pad_cell_array(arr: np.ndarray, n_cells_vtk: int, n_real: int) -> np.ndarray:
+    """Zero-pad a cell array up to the VTK cell count (collapsed dims)."""
+    if arr.shape[0] == n_cells_vtk:
+        return arr
+    shape = (n_cells_vtk,) + arr.shape[1:]
+    padded = np.zeros(shape, dtype=np.float64)
+    padded[:n_real] = arr
+    return padded
+
+
 def write_vti(
     filename: str,
     mesh: Mesh,
     pressure: np.ndarray,
     flux_cell: np.ndarray,
+    permeability: np.ndarray,
 ) -> None:
     """Write a binary zlib-compressed appended VTK ImageData file (.vti).
 
-    Even in 1D / 2D the file is a 3-D ImageData with collapsed
-    dimensions; ParaView handles that without trouble.
+    Cell data written: scalar ``pressure``, 3-vector ``flux``, and the
+    symmetric ``permeability`` tensor as a 6-component array with named
+    components (xx, yy, zz, xy, yz, xz).
+
+    ``permeability`` is the ``(n_cells, 6)`` packing produced by
+    :func:`symmetric_tensor_components`. Even in 1D / 2D the file is a
+    3-D ImageData with collapsed dimensions; ParaView handles that
+    without trouble.
     """
     # ImageData WholeExtent uses point indices. For Nx cells in x there
     # are Nx grid points spanning [0, Nx], etc. Inactive directions are
@@ -568,21 +660,24 @@ def write_vti(
     # Pressure cell order: cell_index(i,j,k) = i + nx*(j + ny*k).
     # That matches VTI's expected i-fastest-then-j-then-k ordering.
     n_cells_vtk = ex_x * ex_y * ex_z
-    if mesh.n_cells != n_cells_vtk:
-        # Pad with zeros if we collapsed a dimension to a single slab.
-        p_padded = np.zeros(n_cells_vtk, dtype=np.float64)
-        f_padded = np.zeros((n_cells_vtk, 3), dtype=np.float64)
-        p_padded[: mesh.n_cells] = pressure
-        f_padded[: mesh.n_cells] = flux_cell
-        pressure = p_padded
-        flux_cell = f_padded
+    n_real = mesh.n_cells
+    pressure = _pad_cell_array(pressure, n_cells_vtk, n_real)
+    flux_cell = _pad_cell_array(flux_cell, n_cells_vtk, n_real)
+    permeability = _pad_cell_array(permeability, n_cells_vtk, n_real)
 
-    # Build the appended block first so we know the per-array offsets
+    # Build the appended blocks first so we know the per-array offsets
     # that go into the XML header.
     pressure_bytes = _encode_appended(pressure)
     flux_bytes = _encode_appended(flux_cell)
+    perm_bytes = _encode_appended(permeability)
     offset_pressure = 0
     offset_flux = len(pressure_bytes)
+    offset_perm = offset_flux + len(flux_bytes)
+
+    perm_component_names = "".join(
+        f'ComponentName{c}="{label}" '
+        for c, label in enumerate(_SYM_TENSOR_LABELS)
+    )
 
     header = (
         '<?xml version="1.0"?>\n'
@@ -591,12 +686,16 @@ def write_vti(
         f'  <ImageData WholeExtent="0 {ex_x} 0 {ex_y} 0 {ex_z}" '
         f'Origin="0 0 0" Spacing="{sx} {sy} {sz}">\n'
         f'    <Piece Extent="0 {ex_x} 0 {ex_y} 0 {ex_z}">\n'
-        '      <CellData Scalars="pressure" Vectors="flux">\n'
+        '      <CellData Scalars="pressure" Vectors="flux" '
+        'Tensors="permeability">\n'
         '        <DataArray type="Float64" Name="pressure" '
         f'format="appended" offset="{offset_pressure}"/>\n'
         '        <DataArray type="Float64" Name="flux" '
         'NumberOfComponents="3" format="appended" '
         f'offset="{offset_flux}"/>\n'
+        '        <DataArray type="Float64" Name="permeability" '
+        f'NumberOfComponents="6" {perm_component_names}'
+        f'format="appended" offset="{offset_perm}"/>\n'
         '      </CellData>\n'
         '      <PointData></PointData>\n'
         '    </Piece>\n'
@@ -610,6 +709,7 @@ def write_vti(
         fh.write(header.encode("utf-8"))
         fh.write(pressure_bytes)
         fh.write(flux_bytes)
+        fh.write(perm_bytes)
         fh.write(footer)
 
 
@@ -647,6 +747,202 @@ def _parse_K(values: Sequence[float] | None) -> np.ndarray:
     )
 
 
+def _diagonal_K_from_components(
+    kx: np.ndarray, ky: np.ndarray, kz: np.ndarray
+) -> np.ndarray:
+    """Pack three per-cell permeability components into ``(n_cells, 3, 3)``.
+
+    The tabulated reader produces a diagonal (orthotropic) tensor; the
+    assembly path still treats it as a full symmetric tensor, so the
+    off-diagonal entries are simply left at zero.
+    """
+    n = kx.shape[0]
+    if np.any(kx <= 0) or np.any(ky <= 0) or np.any(kz <= 0):
+        raise SystemExit("permeability values must be strictly positive")
+    K = np.zeros((n, 3, 3), dtype=np.float64)
+    K[:, 0, 0] = kx
+    K[:, 1, 1] = ky
+    K[:, 2, 2] = kz
+    return K
+
+
+def _read_flat_components(
+    path: str, n_points: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Parse a flat permeability stream into ``(kx, ky, kz)`` components.
+
+    The file is a whitespace-separated stream of numbers. The total count
+    selects the layout, relative to the expected ``n_points``:
+
+    * ``n_points`` values     → isotropic (kx = ky = kz);
+    * ``3 * n_points`` values → three contiguous blocks
+      ``[kx ...][ky ...][kz ...]``.
+    """
+    with open(path, "r", encoding="utf-8") as fh:
+        values = np.array(fh.read().split(), dtype=np.float64)
+
+    if values.size == n_points:
+        return values, values, values
+    if values.size == 3 * n_points:
+        return (
+            values[:n_points],
+            values[n_points : 2 * n_points],
+            values[2 * n_points :],
+        )
+    raise SystemExit(
+        f"permeability file '{path}' has {values.size} values; expected "
+        f"{n_points} (isotropic) or {3 * n_points} (kx,ky,kz blocks)"
+    )
+
+
+def _read_perm_one_to_one(path: str, mesh: Mesh, k_order: str) -> np.ndarray:
+    """Read a flat SPE10-style permeability stream onto the internal mesh.
+
+    No coordinates: the stream maps one-to-one onto the mesh cells. Each
+    component block has ``n_cells`` values running with the I index
+    fastest, then J, then K (the reservoir-simulation convention).
+    ``k_order`` selects how the K layers map onto the mesh:
+
+    * ``"bottom-up"``: file layer 0 is the lowest-z layer (k = 0). No flip.
+    * ``"top-down"``:  file layer 0 is the highest-z layer (the common
+      SPE10 convention, ``Kmax:-1:Kmin``); the K axis is reversed so it
+      lands on the mesh with k = 0 at the bottom.
+    """
+    nx, ny, nz = mesh.nx, mesh.ny, mesh.nz
+    blocks = _read_flat_components(path, mesh.n_cells)
+
+    components = []
+    for block in blocks:
+        # I-fastest, then J, then K  →  reshape so [k, j, i] addresses it.
+        grid = block.reshape(nz, ny, nx)
+        if k_order == "top-down":
+            grid = grid[::-1]
+        components.append(np.ascontiguousarray(grid).reshape(-1))
+    return _diagonal_K_from_components(*components)
+
+
+def _read_separable_axes(
+    coords_path: str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Parse a separable (rectilinear) coordinate file.
+
+    Layout (whitespace-separated, ``#`` comment lines ignored):
+
+    * the three integer counts ``nX nY nZ``;
+    * ``nX`` X-coordinates, then ``nY`` Y-coordinates, then ``nZ``
+      Z-coordinates.
+
+    Storing the axes rather than the full ``nX*nY*nZ`` outer product keeps
+    the file compact and lets the reader use a fast tensor-product
+    interpolator.
+    """
+    tokens = [
+        tok
+        for line in open(coords_path, "r", encoding="utf-8")
+        if not line.lstrip().startswith("#")
+        for tok in line.split()
+    ]
+    vals = np.array(tokens, dtype=np.float64)
+    if vals.size < 3:
+        raise SystemExit(
+            f"coordinate file '{coords_path}' must start with the three "
+            "counts 'nX nY nZ'"
+        )
+    n_x, n_y, n_z = (int(vals[0]), int(vals[1]), int(vals[2]))
+    rest = vals[3:]
+    if rest.size != n_x + n_y + n_z:
+        raise SystemExit(
+            f"coordinate file '{coords_path}' declares counts "
+            f"{n_x} {n_y} {n_z} (sum {n_x + n_y + n_z}) but provides "
+            f"{rest.size} coordinate values"
+        )
+    x_axis = rest[:n_x]
+    y_axis = rest[n_x : n_x + n_y]
+    z_axis = rest[n_x + n_y :]
+    return x_axis, y_axis, z_axis
+
+
+def _read_perm_interpolated(
+    path: str, coords_path: str, mesh: Mesh, method: str
+) -> np.ndarray:
+    """Resample a tabulated permeability field onto the mesh cell centres.
+
+    The permeability values come from ``path`` as a flat stream (see
+    :func:`_read_flat_components`); the table grid comes from the separable
+    ``coords_path`` file (see :func:`_read_separable_axes`). The value
+    stream describes the ``nX * nY * nZ`` grid points with the I index
+    (X) fastest, then J (Y), then K (Z) — so it has ``n_points`` (isotropic)
+    or ``3 * n_points`` entries with ``n_points = nX * nY * nZ``.
+
+    The value stream's Z-block ``k`` is placed at the ``k``-th z-coordinate
+    listed in the coordinate file, so the *coordinate file's z-axis order*
+    selects the physical layering. For a top-down value stream (e.g. SPE10,
+    where the first block is the top layer) list the z-axis descending
+    (high z first); for a bottom-up stream list it ascending. Listed axes
+    are sorted ascending for the interpolator (the value grid is reordered
+    to match), so either direction is accepted.
+
+    ``method`` is the ``RegularGridInterpolator`` mode over the table axes
+    with more than one sample:
+
+    * ``"nearest"``: piecewise-constant — each cell takes the value of the
+      closest table point. The physically appropriate choice for a cell
+      property, and it keeps every value within the table's range (so it
+      stays positive and never extrapolates spuriously when the mesh is
+      finer/coarser than, or extends beyond, the table).
+    * ``"linear"``: tensor-product linear, extrapolating linearly outside
+      the table box (suitable for smooth fields).
+    """
+    from scipy.interpolate import RegularGridInterpolator
+
+    x_axis, y_axis, z_axis = _read_separable_axes(coords_path)
+    n_x, n_y, n_z = x_axis.size, y_axis.size, z_axis.size
+    n_points = n_x * n_y * n_z
+    kx, ky, kz = _read_flat_components(path, n_points)
+
+    # Grid arrays index as [k, j, i] = (z, y, x), matching the value stream.
+    grid_axes = (z_axis, y_axis, x_axis)
+    grid_shape = (n_z, n_y, n_x)
+    orders = tuple(np.argsort(ax) for ax in grid_axes)
+    sorted_axes = tuple(grid_axes[d][orders[d]] for d in range(3))
+    # Interpolate only over axes with more than one sample.
+    keep = [d for d in range(3) if grid_shape[d] > 1]
+
+    # Cell-centre coordinates in (z, y, x) order to match grid_axes.
+    dst_zyx = cell_centers(mesh)[:, [2, 1, 0]]
+    dst = dst_zyx[:, keep]
+    interp_axes = [sorted_axes[d] for d in keep]
+
+    components = []
+    for comp in (kx, ky, kz):
+        grid = comp.reshape(grid_shape)
+        grid = grid[np.ix_(*orders)]
+        # Drop degenerate (single-sample) axes.
+        grid = grid[tuple(slice(None) if grid_shape[d] > 1 else 0 for d in range(3))]
+        interp = RegularGridInterpolator(
+            interp_axes, grid, method=method,
+            bounds_error=False, fill_value=None,
+        )
+        components.append(interp(dst))
+    return _diagonal_K_from_components(*components)
+
+
+def read_permeability_field(
+    path: str, mesh: Mesh, coords_path: str | None, k_order: str, method: str
+) -> np.ndarray:
+    """Dispatch to the interpolated or one-to-one tabulated reader.
+
+    When ``coords_path`` is given, the value stream is resampled from the
+    table grid to the mesh cell centres with ``method`` ("nearest" or
+    "linear"); the physical layering is set by the z-axis order in the
+    coordinate file (``k_order`` is unused). Otherwise the stream maps
+    one-to-one onto the mesh and ``k_order`` selects the K-layer direction.
+    """
+    if coords_path:
+        return _read_perm_interpolated(path, coords_path, mesh, method)
+    return _read_perm_one_to_one(path, mesh, k_order)
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--nx", type=int, default=16, help="cells along x (default 16)")
@@ -656,13 +952,74 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p.add_argument("--Ly", type=float, default=1.0)
     p.add_argument("--Lz", type=float, default=1.0)
     p.add_argument(
+        "--gradient-direction",
+        dest="gradient_direction",
+        choices=("x", "y", "z"),
+        default="x",
+        help=(
+            "axis along which the unit pressure drop (u=0 to u=1) is "
+            "enforced; the other active boundaries are no-flow. Must be an "
+            "active direction (default x)"
+        ),
+    )
+    k_group = p.add_mutually_exclusive_group()
+    k_group.add_argument(
         "--K",
         type=float,
         nargs="+",
         default=None,
         help=(
-            "permeability tensor: one value (isotropic), three values "
-            "(diagonal), or six values [kxx,kyy,kzz,kxy,kxz,kyz]"
+            "constant permeability tensor: one value (isotropic), three "
+            "values (diagonal), or six values [kxx,kyy,kzz,kxy,kxz,kyz]"
+        ),
+    )
+    k_group.add_argument(
+        "--K-file",
+        dest="K_file",
+        default=None,
+        help=(
+            "read a tabulated permeability field from an ASCII file: a flat "
+            "SPE10-style value stream (n_points isotropic values, or kx/ky/kz "
+            "blocks of n_points each). Without --K-coords-file the stream maps "
+            "one-to-one onto the mesh (n_points = n_cells, I-fastest then J "
+            "then K). With --K-coords-file the values are interpolated to cell "
+            "centres."
+        ),
+    )
+    p.add_argument(
+        "--K-coords-file",
+        dest="K_coords_file",
+        default=None,
+        help=(
+            "ASCII separable grid for the --K-file table: the counts "
+            "'nX nY nZ' followed by nX X-coordinates, nY Y-coordinates and "
+            "nZ Z-coordinates. The value stream must list the nX*nY*nZ grid "
+            "points X-fastest then Y then Z. When given, the permeability is "
+            "interpolated from this grid onto the mesh cell centres."
+        ),
+    )
+    p.add_argument(
+        "--K-file-k-order",
+        dest="K_file_k_order",
+        choices=("bottom-up", "top-down"),
+        default="bottom-up",
+        help=(
+            "layer ordering of a one-to-one (no --K-coords-file) value "
+            "stream: 'bottom-up' (layer 0 = lowest z) or 'top-down' (layer 0 "
+            "= highest z, the SPE10 Kmax:-1:Kmin convention). Ignored when "
+            "--K-coords-file is set."
+        ),
+    )
+    p.add_argument(
+        "--K-interp",
+        dest="K_interp",
+        choices=("nearest", "linear"),
+        default="nearest",
+        help=(
+            "resampling mode for --K-coords-file: 'nearest' (piecewise "
+            "constant — each cell takes the closest table point; the right "
+            "choice for a cell property and robust to refining/coarsening) "
+            "or 'linear' (tensor-product, for smooth fields). Default nearest."
         ),
     )
     p.add_argument(
@@ -684,15 +1041,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 # ----------------------------------------------------------------------
 
 
-def analytic_cell_pressure(mesh: Mesh, Lx: float) -> np.ndarray:
-    """Cell-centered values of u(x) = x / L_x for the default BC problem."""
-    u = np.empty(mesh.n_cells, dtype=np.float64)
-    for k in range(mesh.nz):
-        for j in range(mesh.ny):
-            for i in range(mesh.nx):
-                x_centre = (i + 0.5) * mesh.hx
-                u[mesh.cell_index(i, j, k)] = x_centre / Lx
-    return u
+def analytic_cell_pressure(mesh: Mesh, axis: int, length: float) -> np.ndarray:
+    """Cell-centred ``u = 1 - coord_axis / length`` for the pressure-drop problem.
+
+    Exact solution when the drive is along ``axis`` (u=1 on the low
+    boundary, u=0 on the high boundary), K is homogeneous and diagonal,
+    and the lateral boundaries are no-flow.
+    """
+    return 1.0 - cell_centers(mesh)[:, axis] / length
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -710,12 +1066,45 @@ def main(argv: Sequence[str] | None = None) -> int:
         hy=args.Ly / max(args.ny, 1),
         hz=args.Lz / max(args.nz, 1),
     )
-    K = _parse_K(args.K)
+
+    drive_axis = {"x": 0, "y": 1, "z": 2}[args.gradient_direction]
+    if drive_axis >= mesh.dim:
+        active = ", ".join(["x", "y", "z"][: mesh.dim])
+        raise SystemExit(
+            f"--gradient-direction {args.gradient_direction} requires an "
+            f"active {args.gradient_direction} dimension; this "
+            f"{mesh.dim}-D mesh only drives along: {active}"
+        )
+    drive_length = (args.Lx, args.Ly, args.Lz)[drive_axis]
+
+    if args.K_coords_file and not args.K_file:
+        raise SystemExit("--K-coords-file requires --K-file")
+
+    read_time = None
+    if args.K_file:
+        t0 = time.perf_counter()
+        K = read_permeability_field(
+            args.K_file, mesh, args.K_coords_file, args.K_file_k_order,
+            args.K_interp,
+        )
+        read_time = time.perf_counter() - t0
+        analytic_valid = False
+    else:
+        K = _parse_K(args.K)
+        # The analytic reference u(x)=x/Lx holds only for a homogeneous
+        # diagonal tensor (off-diagonal K makes the no-flow BC inconsistent
+        # with a purely-x gradient).
+        analytic_valid = max(abs(K[0, 1]), abs(K[0, 2]), abs(K[1, 2])) < 1e-14
     K_inv = build_K_inv(mesh, K)
 
+    t0 = time.perf_counter()
     M, B = assemble_system(mesh, K_inv)
-    bd = boundary_default_pressure_drop(mesh)
+    assemble_time = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    bd = boundary_pressure_drop(mesh, drive_axis)
     A, rhs = apply_boundary_conditions(M, B, bd, mesh)
+    bc_time = time.perf_counter() - t0
 
     opts = mgr_options()
     if args.print_level:
@@ -746,25 +1135,52 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"(cells={mesh.n_cells}, flux DOFs={mesh.n_faces}, "
         f"total={mesh.n_faces + mesh.n_cells})"
     )
+    print(f"gradient direction   : {args.gradient_direction}")
+    if args.K_file:
+        diag = np.diagonal(K, axis1=1, axis2=2)
+        print(
+            f"permeability         : file '{args.K_file}' "
+            f"(diag range [{diag.min():.3e}, {diag.max():.3e}])"
+        )
+        print(f"read time [s]        : {read_time:.6e}")
     print(f"GMRES iterations     : {iterations}")
-    print(f"setup time [s]       : {setup_time:.6e}")
-    print(f"solve time [s]       : {solve_time:.6e}")
-    print(f"total time [s]       : {setup_time + solve_time:.6e}")
     print(f"||b - A x||_2 / ||b||: {rel_res:.3e}")
-    # The analytic reference u(x)=x/Lx is only correct for diagonal K
-    # (off-diagonal K makes the no-flow BC inconsistent with a purely-x
-    # gradient). Print it only in that case so the L²-error line stays
-    # meaningful.
-    off_diag = max(abs(K[0, 1]), abs(K[0, 2]), abs(K[1, 2]))
-    if off_diag < 1e-14:
-        u_ref = analytic_cell_pressure(mesh, args.Lx)
+    # Print the analytic L²-error only when the reference u(x)=x/Lx is
+    # valid: a homogeneous diagonal tensor. Heterogeneous (file-based) or
+    # full-tensor K do not admit this closed form.
+    if analytic_valid:
+        u_ref = analytic_cell_pressure(mesh, drive_axis, drive_length)
         err_l2 = float(np.linalg.norm(u - u_ref) / np.sqrt(mesh.n_cells))
         print(f"L2 error vs analytic : {err_l2:.3e}")
 
     flux_cell = cell_centred_flux(mesh, q)
+    output_time = 0.0
     if args.output:
-        write_vti(args.output, mesh, u, flux_cell)
+        if K.shape == (3, 3):
+            K_cells = np.broadcast_to(K, (mesh.n_cells, 3, 3))
+        else:
+            K_cells = K
+        perm_components = symmetric_tensor_components(K_cells)
+        t0 = time.perf_counter()
+        write_vti(args.output, mesh, u, flux_cell, perm_components)
+        output_time = time.perf_counter() - t0
         print(f"wrote                : {args.output}")
+
+    # Timing breakdown (host-side stages plus the HYPRE solver phases).
+    stages = [
+        ("read perm", read_time or 0.0),
+        ("assemble", assemble_time),
+        ("boundary cond", bc_time),
+        ("solver setup", setup_time),
+        ("solver solve", solve_time),
+        ("write vti", output_time),
+    ]
+    total = sum(t for _, t in stages)
+    print("timings [s]          :")
+    for name, t in stages:
+        pct = 100.0 * t / total if total > 0 else 0.0
+        print(f"  {name:<14}: {t:.6e}  ({pct:5.1f}%)")
+    print(f"  {'total':<14}: {total:.6e}")
     return 0
 
 
