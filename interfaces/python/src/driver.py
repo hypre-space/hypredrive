@@ -123,7 +123,6 @@ class HypreDrive:
         self._row_start: Optional[int] = None
         self._row_end: Optional[int] = None
         self._rhs_set: bool = False
-        self._dofmap_set: bool = False
         self._last_iterations: Optional[int] = None
         self._last_setup_time: Optional[float] = None
         self._last_solve_time: Optional[float] = None
@@ -312,7 +311,24 @@ class HypreDrive:
             raise RuntimeError(
                 "set_dofmap(): no matrix set; call set_matrix_from_csr first"
             )
-        labels_arr = np.ascontiguousarray(labels, dtype=np.intc)
+        # Range-check before the dtype cast: np.ascontiguousarray to intc
+        # silently wraps int64 values outside the int32 range and treats
+        # negative sentinels as valid labels, both of which produce
+        # nonsensical MGR partitions far away from this entry point.
+        labels_in = np.asarray(labels)
+        if labels_in.size:
+            info = np.iinfo(np.intc)
+            lo = int(labels_in.min())
+            hi = int(labels_in.max())
+            if lo < 0:
+                raise ValueError(
+                    f"labels must be non-negative; got minimum {lo}"
+                )
+            if hi > int(info.max):
+                raise ValueError(
+                    f"labels max ({hi}) exceeds C int range [0, {int(info.max)}]"
+                )
+        labels_arr = np.ascontiguousarray(labels_in, dtype=np.intc)
         if labels_arr.ndim != 1:
             raise ValueError(
                 f"labels must be a 1-D array, got shape {labels_arr.shape}"
@@ -324,7 +340,6 @@ class HypreDrive:
                 f"row count {nrows}"
             )
         self._core.set_dofmap(labels_arr)
-        self._dofmap_set = True
 
     # ------------------------------------------------------------------
     # Solve cycle
@@ -337,6 +352,12 @@ class HypreDrive:
             raise RuntimeError("solve(): no matrix set; call set_matrix_from_csr")
         if not self._rhs_set:
             raise RuntimeError("solve(): no RHS set; call set_rhs")
+
+        # Reset before we start so the last_* properties never report stale
+        # values from a previous successful solve when this one fails partway.
+        self._last_iterations = None
+        self._last_setup_time = None
+        self._last_solve_time = None
 
         # Build x0 (zeros by default, controlled by the YAML init_guess_mode).
         self._core.setup_initial_guess()
@@ -363,7 +384,9 @@ class HypreDrive:
     def last_iterations(self) -> Optional[int]:
         """Number of iterations taken by the most recent :meth:`solve` call.
 
-        ``None`` until the first successful solve. Reset on each new solve.
+        ``None`` until a successful solve. Reset to ``None`` at the start of
+        every :meth:`solve`, so a failed solve always reports ``None`` here
+        rather than the previous solve's count.
         """
         return self._last_iterations
 
@@ -371,9 +394,11 @@ class HypreDrive:
     def last_setup_time(self) -> Optional[float]:
         """Solver/preconditioner setup time from the most recent :meth:`solve`.
 
-        Returned in seconds (or milliseconds when the YAML option
-        ``general.use_millisec`` is on). ``None`` until the first successful
-        solve.
+        Unit matches whatever the C library was configured to report:
+        seconds by default, milliseconds when the YAML option
+        ``general.use_millisec`` is set to ``yes``. Callers that mix the two
+        modes must inspect their own YAML to label printouts correctly.
+        ``None`` until the first successful solve.
         """
         return self._last_setup_time
 
@@ -381,8 +406,9 @@ class HypreDrive:
     def last_solve_time(self) -> Optional[float]:
         """Solver-apply (Krylov iteration) time from the most recent :meth:`solve`.
 
-        Returned in the same units as :attr:`last_setup_time`. ``None``
-        until the first successful solve.
+        Returned in the same units as :attr:`last_setup_time` — see that
+        property for the unit/YAML coupling. ``None`` until the first
+        successful solve.
         """
         return self._last_solve_time
 

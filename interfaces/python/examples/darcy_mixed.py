@@ -619,14 +619,15 @@ def symmetric_tensor_components(K_cells: np.ndarray) -> np.ndarray:
     return out
 
 
-def _encode_appended(arr: np.ndarray) -> bytes:
+def _encode_appended(arr: np.ndarray, dtype=np.float64) -> bytes:
     """Encode one DataArray for VTK ``<AppendedData encoding="raw">``.
 
     Single-block zlib compression. Header is four little-endian uint64s
     (``num_blocks=1``, ``block_size``, ``last_block_size``, and the
-    compressed payload size), followed by the zlib bytes.
+    compressed payload size), followed by the zlib bytes. ``dtype`` selects
+    the on-disk element type (defaults to float64).
     """
-    raw = np.ascontiguousarray(arr, dtype=np.float64).tobytes(order="C")
+    raw = np.ascontiguousarray(arr, dtype=dtype).tobytes(order="C")
     compressed = zlib.compress(raw)
     header = struct.pack("<QQQQ", 1, len(raw), len(raw), len(compressed))
     return header + compressed
@@ -849,12 +850,13 @@ def _read_separable_axes(
     the file compact and lets the reader use a fast tensor-product
     interpolator.
     """
-    tokens = [
-        tok
-        for line in open(coords_path, "r", encoding="utf-8")
-        if not line.lstrip().startswith("#")
-        for tok in line.split()
-    ]
+    with open(coords_path, "r", encoding="utf-8") as fh:
+        tokens = [
+            tok
+            for line in fh
+            if not line.lstrip().startswith("#")
+            for tok in line.split()
+        ]
     vals = np.array(tokens, dtype=np.float64)
     if vals.size < 3:
         raise SystemExit(
@@ -1477,13 +1479,6 @@ def reconstruct_cell_flux_parallel(comm, lay, mesh, rank, x_local, off, total):
     return flux, cell_ids
 
 
-def _encode_appended_dtype(arr: np.ndarray, dtype) -> bytes:
-    """zlib-compressed single-block appended payload in the given dtype."""
-    raw = np.ascontiguousarray(arr, dtype=dtype).tobytes(order="C")
-    compressed = zlib.compress(raw)
-    return struct.pack("<QQQQ", 1, len(raw), len(raw), len(compressed)) + compressed
-
-
 def _global_id_dtype(n_cells_global: int):
     """uint32 if the global cell count fits, else uint64 (+ VTK type name)."""
     if n_cells_global < 2**32:
@@ -1506,14 +1501,14 @@ def write_vti_piece(filename, mesh, extent, pressure, flux_cell,
     id_dtype, id_vtk = _global_id_dtype(n_cells_global)
 
     blocks = [
-        ("pressure", "Float64", 1, "", _encode_appended_dtype(pressure, np.float64)),
-        ("flux", "Float64", 3, "", _encode_appended_dtype(flux_cell, np.float64)),
+        ("pressure", "Float64", 1, "", _encode_appended(pressure)),
+        ("flux", "Float64", 3, "", _encode_appended(flux_cell)),
         ("permeability", "Float64", 6,
          "".join(f'ComponentName{c}="{lbl}" '
                  for c, lbl in enumerate(_SYM_TENSOR_LABELS)),
-         _encode_appended_dtype(permeability, np.float64)),
+         _encode_appended(permeability)),
         ("GlobalCellId", id_vtk, 1, "",
-         _encode_appended_dtype(cell_ids, id_dtype)),
+         _encode_appended(cell_ids, id_dtype)),
     ]
     offsets = []
     acc = 0

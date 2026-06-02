@@ -25,9 +25,15 @@ from mpi4py import MPI  # noqa: E402
 from conftest import _block_2dof_csr_local, _block_2dof_dense_reference  # noqa: E402
 
 
-def _require_parallel_world():
-    if MPI.COMM_WORLD.Get_size() < 2:
+def _require_parallel_world(n_blocks_global: int | None = None):
+    size = MPI.COMM_WORLD.Get_size()
+    if size < 2:
         pytest.skip("MPI dofmap tests need at least 2 ranks (use mpirun -np 2 …)")
+    if n_blocks_global is not None and size > n_blocks_global:
+        pytest.skip(
+            f"MPI dofmap tests need nprocs <= n_blocks_global ({n_blocks_global}); "
+            f"got nprocs={size}"
+        )
 
 
 def _partition_blocks(n_blocks: int, nprocs: int, rank: int) -> tuple[int, int]:
@@ -47,12 +53,12 @@ def _gather_x_on_root(comm: MPI.Comm, local_x: np.ndarray) -> np.ndarray | None:
 
 
 def test_mgr_solve_explicit_dofmap_mpi(mgr_options):
-    _require_parallel_world()
+    n_blocks_global = 16
+    _require_parallel_world(n_blocks_global)
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     nprocs = comm.Get_size()
 
-    n_blocks_global = 16
     block_start, block_end = _partition_blocks(n_blocks_global, nprocs, rank)
     indptr, cols, data, labels, local_nrows = _block_2dof_csr_local(
         n_blocks_global=n_blocks_global,
@@ -83,12 +89,12 @@ def test_mgr_solve_explicit_dofmap_mpi(mgr_options):
 
 def test_mgr_driver_lifecycle_mpi(mgr_options):
     """Two consecutive solves on one driver in parallel; labels survive."""
-    _require_parallel_world()
+    n_blocks_global = 16
+    _require_parallel_world(n_blocks_global)
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     nprocs = comm.Get_size()
 
-    n_blocks_global = 16
     block_start, block_end = _partition_blocks(n_blocks_global, nprocs, rank)
     indptr, cols, data, labels, local_nrows = _block_2dof_csr_local(
         n_blocks_global=n_blocks_global,

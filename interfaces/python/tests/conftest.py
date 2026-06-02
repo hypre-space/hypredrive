@@ -6,12 +6,15 @@ import numpy as np
 import pytest
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def base_options() -> dict:
     """A minimal, deterministic PCG+AMG configuration.
 
     Used as the default for solve-cycle tests so we exercise a real solver
     rather than relying on hypredrive's silent defaults (which may change).
+
+    Function-scoped so a test that mutates a nested entry does not leak the
+    change into siblings via shared dict state.
     """
     return {
         "general": {"statistics": False, "exec_policy": "host"},
@@ -27,13 +30,16 @@ def base_options() -> dict:
     }
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def mgr_options() -> dict:
     """GMRES + MGR (1 level, jacobi F-relaxation, AMG coarse).
 
     Configured against the 2-DOF interleaved block system in
     :func:`block_2dof_csr`: F-points = label 1 (the ``v`` DOF), so MGR
     eliminates ``v`` and hands the Schur-complement system to AMG.
+
+    Function-scoped so a test that tweaks ``solver.gmres.max_iter`` (etc.)
+    does not poison sibling tests via the shared mutable dict.
     """
     return {
         "general": {"statistics": False, "exec_policy": "host"},

@@ -281,7 +281,7 @@ cdef class HypreDriveCore:
             raise RuntimeError("HypreDriveCore is closed")
         if not cnp.PyArray_IS_C_CONTIGUOUS(labels):
             raise ValueError("labels must be C-contiguous")
-        if cnp.PyArray_ITEMSIZE(labels) != sizeof(int):
+        if <size_t>cnp.PyArray_ITEMSIZE(labels) != <size_t>sizeof(int):
             raise ValueError("labels dtype must match C int (use np.intc)")
         cdef Py_ssize_t n = labels.shape[0]
         if n > <Py_ssize_t>0x7fffffff:
