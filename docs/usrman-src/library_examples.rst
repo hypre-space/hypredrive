@@ -367,7 +367,166 @@ For a single-process run, the output should be similar to the following:
 
 .. _LibraryExample2:
 
-Example 2: Linear Elasticity
+Example 2: Mixed Darcy Flow
+---------------------------
+
+This section documents the mixed Darcy driver implemented in
+``examples/src/C_darcy/darcy.c``. The example uses the standard C
+``libHYPREDRV`` interface: the application assembles ``HYPRE_IJMatrix`` and
+``HYPRE_IJVector`` objects, supplies a dofmap, and lets hypredrive configure GMRES
+with an MGR preconditioner. The current implementation provides an RT0/P0
+discretization descriptor; the assembly is organized so future mixed
+discretizations can replace the cell-local flux dofs and mass entries without
+changing the solver interface.
+
+Governing Equations
+~~~~~~~~~~~~~~~~~~~
+
+On a Cartesian domain :math:`\Omega=[0,L_x]\times[0,L_y]\times[0,L_z]`, Darcy
+flow is written in mixed first-order form
+
+.. math::
+
+   \mathbf{q} + K\nabla u = 0,\qquad
+   \nabla\!\cdot\mathbf{q} = f,
+
+with pressure :math:`u`, flux :math:`\mathbf{q}`, permeability tensor :math:`K`,
+Dirichlet pressure data on :math:`\Gamma_D`, and prescribed normal flux on
+:math:`\Gamma_N`. The example uses a homogeneous diagonal permeability and
+``f=0``. By default it imposes a unit pressure drop along the selected active
+axis: :math:`u=1` on the low boundary, :math:`u=0` on the high boundary, and
+no-flow boundaries on the remaining active axes.
+
+RT0/P0 Discretization
+~~~~~~~~~~~~~~~~~~~~~
+
+The implemented discretization uses lowest-order Raviart--Thomas fluxes (RT0)
+and cellwise constant pressures (P0). One pressure unknown is stored per cell.
+Flux unknowns live on mesh faces and represent integrated normal flux
+
+.. math::
+
+   q_F = \int_F \mathbf{q}\cdot\mathbf{n}_F\,dS,
+
+where :math:`\mathbf{n}_F` is the global positive coordinate normal of that face.
+For a cell :math:`K_c`, the local mixed blocks are
+
+.. math::
+
+   M_{ab}^{(c)} =
+   (K^{-1})_{d_a d_b}\,|K_c|\,\frac{\alpha_{ab}}{|F_a|\,|F_b|},
+   \qquad
+   B_{a,c}=\begin{cases}
+      -1 & F_a \text{ is the low face of } K_c,\\
+      +1 & F_a \text{ is the high face of } K_c,
+   \end{cases}
+
+where :math:`d_a` is the coordinate direction of local face :math:`F_a`. For the
+RT0 mass block, :math:`\alpha_{ab}=1/3` for same-direction same-side faces,
+:math:`\alpha_{ab}=1/6` for same-direction opposite-side faces, and
+:math:`\alpha_{ab}=1/4` for cross-direction faces. With diagonal permeability,
+the cross-direction entries vanish.
+
+After negating the continuity equation to get the symmetric saddle-point sign
+convention before boundary row pinning, the global system is
+
+.. math::
+
+   \begin{bmatrix}
+   M & -B\\
+   -B^T & 0
+   \end{bmatrix}
+   \begin{bmatrix}
+   \mathbf{q}\\
+   \mathbf{u}
+   \end{bmatrix}
+   =
+   \begin{bmatrix}
+   \mathbf{g}_D\\
+   0
+   \end{bmatrix}.
+
+Dirichlet pressure data enters the flux equations through
+:math:`-\int_{\Gamma_D}u_D\,\mathbf{v}\cdot\mathbf{n}_{out}\,dS`. No-flow
+Neumann faces are enforced as zero-valued pinned flux rows. Since the pinned
+value is zero, the example leaves columns intact; this is parallel-safe for an
+IJ row-partitioned assembly and preserves the intended solution.
+
+Parallel Numbering and C Interface Assembly
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The C example uses a simple global unknown ordering
+
+.. math::
+
+   [\,x\text{-faces}\,][\,y\text{-faces}\,][\,z\text{-faces}\,][\,cells\,],
+
+with inactive face blocks omitted for 1D/2D prefix-active meshes. MPI ranks own
+contiguous row ranges of this global ordering. Each rank creates IJ objects for
+its local row range, sets conservative row-size bounds, and inserts only owned
+rows. Off-rank columns are legal IJ columns and are resolved by
+``HYPRE_IJMatrixAssemble``.
+
+The dofmap is supplied explicitly:
+
+- label ``1`` for flux-face rows,
+- label ``0`` for cell-pressure rows.
+
+This is intentionally independent of the RT0 cell-local helper. A higher-order
+mixed method can keep the same solver-facing labels while replacing the
+discretization descriptor that enumerates cell dofs and local matrices.
+
+MGR Preconditioning
+~~~~~~~~~~~~~~~~~~~
+
+The mixed operator is indefinite, so the default configuration uses GMRES with a
+two-block MGR preconditioner. Flux rows are F-points and pressure rows are the
+coarse block:
+
+.. code-block:: yaml
+
+   solver:
+     gmres:
+       krylov_dim: 60
+       max_iter: 200
+       relative_tol: 1.0e-10
+   preconditioner:
+     mgr:
+       level:
+         0:
+           f_dofs: [1]
+           f_relaxation: jacobi
+           g_relaxation: none
+           restriction_type: injection
+           prolongation_type: jacobi
+           coarse_level_type: rap
+       coarsest_level:
+         amg:
+           max_iter: 1
+
+This corresponds to eliminating/relaxing the flux block and applying BoomerAMG
+to the pressure Schur complement approximation. The C driver passes the dofmap
+with ``HYPREDRV_LinearSystemSetDofmap`` before attaching the IJ matrix and RHS,
+so MGR can identify the two fields.
+
+Reproducible Run
+~~~~~~~~~~~~~~~~
+
+Build with examples enabled, then run:
+
+.. code-block:: bash
+
+   mpirun -np 1 /path/to/build/darcy -n 4 3 1 -g x -v 1
+   mpirun -np 2 /path/to/build/darcy -n 4 3 1 -g x -v 1
+
+The program prints the grid, unknown counts, drive direction, and relative
+cell-pressure L2 error against the analytic solution
+:math:`u=1-x_{\mathrm{axis}}/L_{\mathrm{axis}}`. The same executable accepts an
+external YAML file with ``-i`` to override the default GMRES+MGR options.
+
+.. _LibraryExample3:
+
+Example 3: Linear Elasticity
 -----------------------------
 
 This section documents the mathematical model, discretization, and hypre usage
@@ -841,9 +1000,9 @@ For a single-process run, the output should be similar to the following:
 .. literalinclude:: ../../examples/refOutput/elasticity.txt
    :language: text
 
-.. _LibraryExample3:
+.. _LibraryExample4:
 
-Example 3: Nonlinear Heat Flow
+Example 4: Nonlinear Heat Flow
 ------------------------------
 
 This section documents the transient nonlinear heat conduction driver implemented in
@@ -1015,9 +1174,9 @@ Reproducible Run
    # 2×2×2 parallel, transient MMS with insulated BCs, moderate nonlinearity
    mpirun -np 8 ./heatflow -n 33 33 33 -P 2 2 2 -beta 0.5 -dt 0.01 -tf 0.1 -v 1
 
-.. _LibraryExample4:
+.. _LibraryExample5:
 
-Example 4: Lid-Driven Cavity (Navier-Stokes)
+Example 5: Lid-Driven Cavity (Navier-Stokes)
 --------------------------------------------
 
 This section documents the mathematical model, discretization, and hypre usage
