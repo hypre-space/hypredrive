@@ -52,7 +52,7 @@ jobs:
         {project}/interfaces/python/tests/test_solve_serial.py &&
         mpiexec -n 2 python -m pytest -q --tb=short
         {project}/interfaces/python/tests/test_solve_mpi.py
-        {project}/interfaces/python/tests/test_laplacian_example_mpi.py
+        {project}/interfaces/python/tests/laplacian/test_example_mpi.py
       CIBW_CONFIG_SETTINGS: >-
         cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=ON
         cmake.define.BUILD_SHARED_LIBS=ON

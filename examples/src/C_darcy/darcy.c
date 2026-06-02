@@ -60,37 +60,61 @@ struct DarcyDiscretization
                             const HYPRE_Int *);
 };
 
-static const char *default_config = "general:\n"
-                                    "  statistics: 0\n"
-                                    "  exec_policy: host\n"
-                                    "linear_system:\n"
-                                    "  init_guess_mode: zeros\n"
-                                    "solver:\n"
-                                    "  gmres:\n"
-                                    "    max_iter: 200\n"
-                                    "    krylov_dim: 60\n"
-                                    "    relative_tol: 1.0e-10\n"
-                                    "    absolute_tol: 0.0\n"
-                                    "    print_level: 0\n"
-                                    "preconditioner:\n"
-                                    "  mgr:\n"
-                                    "    tolerance: 0.0\n"
-                                    "    max_iter: 1\n"
-                                    "    print_level: 0\n"
-                                    "    coarse_th: 0.0\n"
-                                    "    level:\n"
-                                    "      0:\n"
-                                    "        f_dofs: [1]\n"
-                                    "        f_relaxation: jacobi\n"
-                                    "        g_relaxation: none\n"
-                                    "        restriction_type: injection\n"
-                                    "        prolongation_type: jacobi\n"
-                                    "        coarse_level_type: rap\n"
-                                    "    coarsest_level:\n"
-                                    "      amg:\n"
-                                    "        tolerance: 0.0\n"
-                                    "        max_iter: 1\n"
-                                    "        print_level: 0\n";
+static const char *default_mgr_config = "general:\n"
+                                        "  statistics: 0\n"
+                                        "  exec_policy: host\n"
+                                        "linear_system:\n"
+                                        "  init_guess_mode: zeros\n"
+                                        "solver:\n"
+                                        "  gmres:\n"
+                                        "    max_iter: 200\n"
+                                        "    krylov_dim: 60\n"
+                                        "    relative_tol: 1.0e-10\n"
+                                        "    absolute_tol: 0.0\n"
+                                        "    print_level: 0\n"
+                                        "preconditioner:\n"
+                                        "  mgr:\n"
+                                        "    tolerance: 0.0\n"
+                                        "    max_iter: 1\n"
+                                        "    print_level: 0\n"
+                                        "    coarse_th: 0.0\n"
+                                        "    level:\n"
+                                        "      0:\n"
+                                        "        f_dofs: [1]\n"
+                                        "        f_relaxation: jacobi\n"
+                                        "        g_relaxation: none\n"
+                                        "        restriction_type: injection\n"
+                                        "        prolongation_type: jacobi\n"
+                                        "        coarse_level_type: rap\n"
+                                        "    coarsest_level:\n"
+                                        "      amg:\n"
+                                        "        tolerance: 0.0\n"
+                                        "        max_iter: 1\n"
+                                        "        print_level: 0\n";
+
+static const char *legacy_hypre_config = "general:\n"
+                                         "  statistics: 0\n"
+                                         "  exec_policy: host\n"
+                                         "linear_system:\n"
+                                         "  init_guess_mode: zeros\n"
+                                         "solver:\n"
+                                         "  gmres:\n"
+                                         "    max_iter: 200\n"
+                                         "    krylov_dim: 60\n"
+                                         "    relative_tol: 1.0e-10\n"
+                                         "    absolute_tol: 0.0\n"
+                                         "    print_level: 0\n"
+                                         "preconditioner: amg\n";
+
+static const char *
+default_config(void)
+{
+#if defined(HYPREDRV_HYPRE_RELEASE_NUMBER) && HYPREDRV_HYPRE_RELEASE_NUMBER < 30000
+   return legacy_hypre_config;
+#else
+   return default_mgr_config;
+#endif
+}
 
 static HYPRE_BigInt
 prod3(const HYPRE_Int n[3])
@@ -635,7 +659,7 @@ main(int argc, char **argv)
    HYPREDRV_t hypredrv;
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
-   char *args[1] = {params.yaml_file ? params.yaml_file : (char *)default_config};
+   char *args[1] = {params.yaml_file ? params.yaml_file : (char *)default_config()};
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
 
    if (!rank)
