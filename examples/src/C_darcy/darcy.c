@@ -25,12 +25,12 @@
 
 typedef struct
 {
-   HYPRE_Int  n[3];
-   HYPRE_Int  dim;
-   HYPRE_Real L[3];
-   HYPRE_Real h[3];
-   HYPRE_Real K[3];
-   HYPRE_Real Kinv[3];
+   HYPRE_Int    n[3];
+   HYPRE_Int    dim;
+   HYPRE_Real   L[3];
+   HYPRE_Real   h[3];
+   HYPRE_Real   K[3];
+   HYPRE_Real   Kinv[3];
    HYPRE_BigInt n_cells;
    HYPRE_BigInt n_x_faces;
    HYPRE_BigInt n_y_faces;
@@ -60,38 +60,37 @@ struct DarcyDiscretization
                             const HYPRE_Int *);
 };
 
-static const char *default_config =
-   "general:\n"
-   "  statistics: 0\n"
-   "  exec_policy: host\n"
-   "linear_system:\n"
-   "  init_guess_mode: zeros\n"
-   "solver:\n"
-   "  gmres:\n"
-   "    max_iter: 200\n"
-   "    krylov_dim: 60\n"
-   "    relative_tol: 1.0e-10\n"
-   "    absolute_tol: 0.0\n"
-   "    print_level: 0\n"
-   "preconditioner:\n"
-   "  mgr:\n"
-   "    tolerance: 0.0\n"
-   "    max_iter: 1\n"
-   "    print_level: 0\n"
-   "    coarse_th: 0.0\n"
-   "    level:\n"
-   "      0:\n"
-   "        f_dofs: [1]\n"
-   "        f_relaxation: jacobi\n"
-   "        g_relaxation: none\n"
-   "        restriction_type: injection\n"
-   "        prolongation_type: jacobi\n"
-   "        coarse_level_type: rap\n"
-   "    coarsest_level:\n"
-   "      amg:\n"
-   "        tolerance: 0.0\n"
-   "        max_iter: 1\n"
-   "        print_level: 0\n";
+static const char *default_config = "general:\n"
+                                    "  statistics: 0\n"
+                                    "  exec_policy: host\n"
+                                    "linear_system:\n"
+                                    "  init_guess_mode: zeros\n"
+                                    "solver:\n"
+                                    "  gmres:\n"
+                                    "    max_iter: 200\n"
+                                    "    krylov_dim: 60\n"
+                                    "    relative_tol: 1.0e-10\n"
+                                    "    absolute_tol: 0.0\n"
+                                    "    print_level: 0\n"
+                                    "preconditioner:\n"
+                                    "  mgr:\n"
+                                    "    tolerance: 0.0\n"
+                                    "    max_iter: 1\n"
+                                    "    print_level: 0\n"
+                                    "    coarse_th: 0.0\n"
+                                    "    level:\n"
+                                    "      0:\n"
+                                    "        f_dofs: [1]\n"
+                                    "        f_relaxation: jacobi\n"
+                                    "        g_relaxation: none\n"
+                                    "        restriction_type: injection\n"
+                                    "        prolongation_type: jacobi\n"
+                                    "        coarse_level_type: rap\n"
+                                    "    coarsest_level:\n"
+                                    "      amg:\n"
+                                    "        tolerance: 0.0\n"
+                                    "        max_iter: 1\n"
+                                    "        print_level: 0\n";
 
 static HYPRE_BigInt
 prod3(const HYPRE_Int n[3])
@@ -183,36 +182,36 @@ rt0_num_cell_flux_dofs(const DarcyMesh *mesh)
 }
 
 static void
-rt0_cell_flux_dofs(const DarcyMesh *mesh, HYPRE_BigInt i, HYPRE_BigInt j,
-                   HYPRE_BigInt k, HYPRE_BigInt *faces, HYPRE_Int *dirs,
-                   HYPRE_Int *is_low, HYPRE_Int *signs)
+rt0_cell_flux_dofs(const DarcyMesh *mesh, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k,
+                   HYPRE_BigInt *faces, HYPRE_Int *dirs, HYPRE_Int *is_low,
+                   HYPRE_Int *signs)
 {
-   faces[0]  = x_face_index(mesh, i, j, k);
-   faces[1]  = x_face_index(mesh, i + 1, j, k);
-   dirs[0]   = dirs[1] = 0;
-   is_low[0] = 1;
-   is_low[1] = 0;
-   signs[0]  = -1;
-   signs[1]  = +1;
+   faces[0] = x_face_index(mesh, i, j, k);
+   faces[1] = x_face_index(mesh, i + 1, j, k);
+   dirs[0] = dirs[1] = 0;
+   is_low[0]         = 1;
+   is_low[1]         = 0;
+   signs[0]          = -1;
+   signs[1]          = +1;
    if (mesh->dim >= 2)
    {
-      faces[2]  = y_face_index(mesh, i, j, k);
-      faces[3]  = y_face_index(mesh, i, j + 1, k);
-      dirs[2]   = dirs[3] = 1;
-      is_low[2] = 1;
-      is_low[3] = 0;
-      signs[2]  = -1;
-      signs[3]  = +1;
+      faces[2] = y_face_index(mesh, i, j, k);
+      faces[3] = y_face_index(mesh, i, j + 1, k);
+      dirs[2] = dirs[3] = 1;
+      is_low[2]         = 1;
+      is_low[3]         = 0;
+      signs[2]          = -1;
+      signs[3]          = +1;
    }
    if (mesh->dim >= 3)
    {
-      faces[4]  = z_face_index(mesh, i, j, k);
-      faces[5]  = z_face_index(mesh, i, j, k + 1);
-      dirs[4]   = dirs[5] = 2;
-      is_low[4] = 1;
-      is_low[5] = 0;
-      signs[4]  = -1;
-      signs[5]  = +1;
+      faces[4] = z_face_index(mesh, i, j, k);
+      faces[5] = z_face_index(mesh, i, j, k + 1);
+      dirs[4] = dirs[5] = 2;
+      is_low[4]         = 1;
+      is_low[5]         = 0;
+      signs[4]          = -1;
+      signs[5]          = +1;
    }
 }
 
@@ -335,11 +334,13 @@ print_usage(void)
    printf("Usage: ${MPIEXEC_COMMAND} <np> ./darcy [options]\n\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML solver/preconditioner file (optional)\n");
-   printf("  -n <nx> <ny> <nz> : Cell counts; active axes must be x, x-y, or x-y-z (8 8 1)\n");
+   printf("  -n <nx> <ny> <nz> : Cell counts; active axes must be x, x-y, or x-y-z (8 8 "
+          "1)\n");
    printf("  -L <Lx> <Ly> <Lz> : Domain lengths (1 1 1)\n");
    printf("  -K <Kx> <Ky> <Kz> : Constant diagonal permeability (1 1 1)\n");
    printf("  -g <x|y|z>        : Pressure-drop direction (x)\n");
-   printf("  -v <n>            : Verbosity bitset; 0x1 stats, 0x2 system info, 0x4 print system\n");
+   printf("  -v <n>            : Verbosity bitset; 0x1 stats, 0x2 system info, 0x4 print "
+          "system\n");
    printf("  -h|--help         : Print this message\n\n");
    return 0;
 }
@@ -389,8 +390,10 @@ parse_args(int argc, char **argv, DarcyParams *params, int rank, int nprocs)
             if (!rank) printf("Error: -g requires x, y, or z\n");
             return 1;
          }
-         params->drive_axis = (!strcmp(argv[i], "x")) ? 0 : (!strcmp(argv[i], "y")) ? 1 :
-                                                                    (!strcmp(argv[i], "z")) ? 2 : -1;
+         params->drive_axis = (!strcmp(argv[i], "x"))   ? 0
+                              : (!strcmp(argv[i], "y")) ? 1
+                              : (!strcmp(argv[i], "z")) ? 2
+                                                        : -1;
       }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
@@ -484,8 +487,9 @@ build_system(MPI_Comm comm, const DarcyMesh *mesh, const DarcyDiscretization *di
       HYPRE_BigInt row = ilower + lr;
       if (row < mesh->n_faces)
       {
-         row_sizes[lr] = is_pinned_neumann_face(mesh, row, drive_axis) ? 1 : 2 * (nloc + 1);
-         dofmap[lr]    = 1;
+         row_sizes[lr] =
+            is_pinned_neumann_face(mesh, row, drive_axis) ? 1 : 2 * (nloc + 1);
+         dofmap[lr] = 1;
       }
       else
       {
@@ -505,8 +509,8 @@ build_system(MPI_Comm comm, const DarcyMesh *mesh, const DarcyDiscretization *di
       HYPRE_IJVectorSetValues(b, 1, &row, &rhs);
       if (row < mesh->n_faces && is_pinned_neumann_face(mesh, row, drive_axis))
       {
-         HYPRE_Int    one = 1;
-         HYPRE_Real   val = 1.0;
+         HYPRE_Int  one = 1;
+         HYPRE_Real val = 1.0;
          HYPRE_IJMatrixAddToValues(A, 1, &one, &row, &row, &val);
       }
    }
@@ -559,11 +563,11 @@ build_system(MPI_Comm comm, const DarcyMesh *mesh, const DarcyDiscretization *di
    HYPRE_IJMatrixAssemble(A);
    HYPRE_IJVectorAssemble(b);
 
-   *A_ptr       = A;
-   *b_ptr       = b;
-   *dofmap_ptr  = dofmap;
-   *ilower_ptr  = ilower;
-   *iupper_ptr  = iupper;
+   *A_ptr      = A;
+   *b_ptr      = b;
+   *dofmap_ptr = dofmap;
+   *ilower_ptr = ilower;
+   *iupper_ptr = iupper;
    return 0;
 }
 
@@ -641,7 +645,8 @@ main(int argc, char **argv)
       printf("              Darcy Mixed Problem Setup\n");
       printf("=====================================================\n");
       printf("Discretization:       %s\n", rt0_discretization.name);
-      printf("Grid cells:           %d x %d x %d\n", params.n[0], params.n[1], params.n[2]);
+      printf("Grid cells:           %d x %d x %d\n", params.n[0], params.n[1],
+             params.n[2]);
       printf("Unknowns:             %lld flux + %lld pressure = %lld\n",
              (long long)mesh.n_faces, (long long)mesh.n_cells, (long long)mesh.n_total);
       printf("MPI ranks:            %d\n", nprocs);
@@ -651,8 +656,8 @@ main(int argc, char **argv)
       printf("=====================================================\n\n");
    }
 
-   HYPRE_IJMatrix A = NULL;
-   HYPRE_IJVector b = NULL;
+   HYPRE_IJMatrix A      = NULL;
+   HYPRE_IJVector b      = NULL;
    int           *dofmap = NULL;
    HYPRE_BigInt   ilower, iupper;
 
