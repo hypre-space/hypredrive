@@ -387,6 +387,7 @@ set(_python_test_commands
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_options.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_solve_serial.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dofmap_serial.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/darcy/test_mixed_validation.py"
 )
 
 if(MPIEXEC_EXECUTABLE AND _mpi4py_rc EQUAL 0)
@@ -400,7 +401,7 @@ if(MPIEXEC_EXECUTABLE AND _mpi4py_rc EQUAL 0)
                 --tb=short
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_solve_mpi.py"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dofmap_mpi.py"
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_laplacian_example_mpi.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/laplacian/test_example_mpi.py"
                 ${MPIEXEC_POSTFLAGS}
     )
     if(HYPREDRV_ENABLE_EXAMPLES)
@@ -424,7 +425,7 @@ if(MPIEXEC_EXECUTABLE AND _mpi4py_rc EQUAL 0)
                         "${MPIEXEC_EXECUTABLE}" "${MPIEXEC_NUMPROC_FLAG}" "${_python_laplacian_example_ranks}"
                         ${MPIEXEC_PREFLAGS}
                         "${Python_EXECUTABLE}"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/examples/laplacian.py"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/examples/laplacian/laplacian.py"
                         -n 8 8 8
                         -P "${_python_laplacian_example_px}" "${_python_laplacian_example_py}" "${_python_laplacian_example_pz}"
                         -s 7

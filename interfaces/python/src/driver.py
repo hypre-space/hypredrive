@@ -317,9 +317,23 @@ class HypreDrive:
         # nonsensical MGR partitions far away from this entry point.
         labels_in = np.asarray(labels)
         if labels_in.size:
+            labels_range = labels_in
+            if not (
+                np.issubdtype(labels_in.dtype, np.integer)
+                or np.issubdtype(labels_in.dtype, np.bool_)
+            ):
+                try:
+                    labels_float = np.asarray(labels_in, dtype=np.float64)
+                except (TypeError, ValueError):
+                    raise ValueError("labels must be integer codes") from None
+                if not np.isfinite(labels_float).all():
+                    raise ValueError("labels must be finite integer codes")
+                if not np.equal(labels_float, np.trunc(labels_float)).all():
+                    raise ValueError("labels must be integer codes")
+                labels_range = labels_float
             info = np.iinfo(np.intc)
-            lo = int(labels_in.min())
-            hi = int(labels_in.max())
+            lo = int(labels_range.min())
+            hi = int(labels_range.max())
             if lo < 0:
                 raise ValueError(
                     f"labels must be non-negative; got minimum {lo}"

@@ -87,6 +87,37 @@ def test_set_dofmap_dtype_coercion(block_2dof_system, mgr_options):
     np.testing.assert_allclose(x_from_int64, x_from_list, rtol=1e-12, atol=1e-14)
 
 
+def test_set_dofmap_integral_float_labels_accepted(block_2dof_system, mgr_options):
+    indptr, cols, data, labels, _rhs, n_blocks, _x_ref = block_2dof_system
+    nrows = 2 * n_blocks
+
+    with hd.HypreDrive(options=mgr_options) as drv:
+        drv.set_matrix_from_csr(indptr, cols, data, row_start=0, row_end=nrows - 1)
+        drv.set_dofmap(labels.astype(np.float64))
+
+
+@pytest.mark.parametrize(
+    "bad_labels",
+    [
+        np.array([0.0, 0.9], dtype=np.float64),
+        np.array([0.0, 0.9], dtype=object),
+        np.array([0.0, np.nan], dtype=np.float64),
+        np.array([0.0, np.inf], dtype=np.float64),
+    ],
+)
+def test_set_dofmap_non_integral_float_labels_rejected(
+    block_2dof_system, mgr_options, bad_labels
+):
+    indptr, cols, data, _labels, _rhs, n_blocks, _x_ref = block_2dof_system
+    nrows = 2 * n_blocks
+    labels = np.resize(bad_labels, nrows)
+
+    with hd.HypreDrive(options=mgr_options) as drv:
+        drv.set_matrix_from_csr(indptr, cols, data, row_start=0, row_end=nrows - 1)
+        with pytest.raises(ValueError, match="integer|finite"):
+            drv.set_dofmap(labels)
+
+
 def test_dofmap_repeated_solve_preserves_labels(block_2dof_system, mgr_options):
     indptr, cols, data, labels, rhs, n_blocks, x_ref = block_2dof_system
     nrows = 2 * n_blocks

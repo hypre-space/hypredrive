@@ -46,11 +46,11 @@ the result is written as a ``.pvti`` master plus one ``.vti`` piece per rank.
 Run as::
 
     # serial -> darcy3d.vti
-    mpirun -np 1 .venv/bin/python interfaces/python/examples/darcy_mixed.py \\
+    mpirun -np 1 .venv/bin/python interfaces/python/examples/darcy/darcy_mixed.py \\
         --nx 16 --ny 16 --nz 16 --output darcy3d.vti
 
     # parallel -> darcy3d.pvti + darcy3d_p{rank}.vti
-    mpirun -np 8 .venv/bin/python interfaces/python/examples/darcy_mixed.py \\
+    mpirun -np 8 .venv/bin/python interfaces/python/examples/darcy/darcy_mixed.py \\
         --nx 32 --ny 32 --nz 32 --output darcy3d.vti
 """
 
@@ -149,6 +149,20 @@ class Mesh:
 
     def z_face_index(self, i: int, j: int, k: int) -> int:
         return self.z_face_offset + i + self.nx * (j + self.ny * k)
+
+
+def validate_supported_mesh_axes(nx: int, ny: int, nz: int) -> None:
+    """Reject collapsed leading axes unsupported by this example assembler."""
+    if nx <= 1 and (ny > 1 or nz > 1):
+        raise SystemExit(
+            "active dimensions must be a prefix of x,y,z; valid meshes are "
+            "1D x, 2D x-y, or 3D x-y-z"
+        )
+    if ny <= 1 and nz > 1:
+        raise SystemExit(
+            "active dimensions must be a prefix of x,y,z; valid meshes are "
+            "1D x, 2D x-y, or 3D x-y-z"
+        )
 
 
 # ----------------------------------------------------------------------
@@ -1319,9 +1333,11 @@ def _apply_parallel_bc(A_local, rhs, mesh, lay, off, total, axis):
             pinned.append(gidx[m] - off)
     pinned = (np.concatenate(pinned) if pinned else np.array([], dtype=np.int64))
 
-    keep = np.ones(total, dtype=np.float64)
-    keep[pinned] = 0.0
-    A_new = sp.diags(keep) @ A_local
+    A_new = A_local.tocsr(copy=True)
+    for row in pinned:
+        start = A_new.indptr[row]
+        end = A_new.indptr[row + 1]
+        A_new.data[start:end] = 0.0
     if pinned.size:
         P = sp.coo_matrix(
             (np.ones(pinned.size), (pinned, off + pinned)), shape=A_local.shape
@@ -1686,6 +1702,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("nx, ny, nz must each be >= 1")
     if args.nx <= 1 and args.ny <= 1 and args.nz <= 1:
         raise SystemExit("at least one of nx/ny/nz must be > 1")
+    validate_supported_mesh_axes(args.nx, args.ny, args.nz)
 
     mesh = Mesh(
         nx=args.nx,

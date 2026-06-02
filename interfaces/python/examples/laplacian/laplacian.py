@@ -5,7 +5,7 @@ solve it, report a residual, and optionally write a VTK file.
 
 Run as:
 
-    mpiexec -n 4 python interfaces/python/examples/laplacian.py \
+    mpiexec -n 4 python interfaces/python/examples/laplacian/laplacian.py \
         -n 16 16 16 -P 2 2 1 -s 7
 """
 

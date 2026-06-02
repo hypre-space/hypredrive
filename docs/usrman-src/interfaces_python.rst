@@ -268,7 +268,7 @@ MPI tests must be launched under an MPI process manager:
 
    mpirun -np 2 python -m pytest \
      interfaces/python/tests/test_solve_mpi.py \
-     interfaces/python/tests/test_laplacian_example_mpi.py -v
+     interfaces/python/tests/laplacian/test_example_mpi.py -v
 
 Tests that require the native extension or ``mpi4py`` skip when those optional runtime
 components are unavailable.
@@ -283,5 +283,6 @@ Current limitations
   array and solution norm.
 - Distributed Python solves require ``mpi4py`` and use ``Comm.py2f()`` plus the
   C-side ``MPI_Comm_f2c`` bridge.
-- Python examples live under ``interfaces/python/examples``. ``laplacian.py`` is the
-  MPI-capable 3D example; ``laplacian2d_seq.py`` is the serial 2D example.
+- Python examples live under ``interfaces/python/examples``. ``laplacian/laplacian.py``
+  is the MPI-capable 3D example; ``laplacian/laplacian2d_seq.py`` is the serial
+  2D example; ``darcy/darcy_mixed.py`` is the mixed-form Darcy example.
