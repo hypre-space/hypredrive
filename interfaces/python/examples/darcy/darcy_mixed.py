@@ -257,7 +257,6 @@ def cell_mass_prefactor(mesh: Mesh) -> np.ndarray:
     broadcasted multiplication.
     """
     dim = mesh.dim
-    n_local = 2 * dim
     dirs = np.asarray(local_face_directions(dim))
     is_low = np.asarray(local_face_is_low(dim))
     areas = np.asarray(mesh.face_areas)
@@ -1578,15 +1577,14 @@ def write_pvti(filename, mesh, whole_extent, piece_extents, piece_files,
     lines = [
         '<?xml version="1.0"?>',
         '<VTKFile type="PImageData" version="1.0" byte_order="LittleEndian" '
-        'header_type="UInt64">',
+        + 'header_type="UInt64">',
         f'  <PImageData WholeExtent="{x0} {x1} {y0} {y1} {z0} {z1}" '
-        f'GhostLevel="0" Origin="0 0 0" Spacing="{sx} {sy} {sz}">',
-        '    <PCellData Scalars="pressure" Vectors="flux" '
-        'Tensors="permeability">',
+        + f'GhostLevel="0" Origin="0 0 0" Spacing="{sx} {sy} {sz}">',
+        '    <PCellData Scalars="pressure" Vectors="flux" Tensors="permeability">',
         '      <PDataArray type="Float64" Name="pressure"/>',
         '      <PDataArray type="Float64" Name="flux" NumberOfComponents="3"/>',
         '      <PDataArray type="Float64" Name="permeability" '
-        f'NumberOfComponents="6" {comp_names}/>',
+        + f'NumberOfComponents="6" {comp_names}/>',
         f'      <PDataArray type="{id_vtk}" Name="GlobalCellId"/>',
         '    </PCellData>',
         '    <PPointData></PPointData>',
