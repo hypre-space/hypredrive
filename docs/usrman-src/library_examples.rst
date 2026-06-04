@@ -392,8 +392,9 @@ flow is written in mixed first-order form
 
 with pressure :math:`u`, flux :math:`\mathbf{q}`, permeability tensor :math:`K`,
 Dirichlet pressure data on :math:`\Gamma_D`, and prescribed normal flux on
-:math:`\Gamma_N`. The example uses a homogeneous diagonal permeability and
-``f=0``. By default it imposes a unit pressure drop along the selected active
+:math:`\Gamma_N`. The example uses ``f=0`` and supports diagonal permeability
+fields, either constant over the domain or read as per-cell heterogeneous
+values. By default it imposes a unit pressure drop along the selected active
 axis: :math:`u=1` on the low boundary, :math:`u=0` on the high boundary, and
 no-flow boundaries on the remaining active axes.
 
@@ -421,11 +422,10 @@ For a cell :math:`K_c`, the local mixed blocks are
       +1 & F_a \text{ is the high face of } K_c,
    \end{cases}
 
-where :math:`d_a` is the coordinate direction of local face :math:`F_a`. For the
-RT0 mass block, :math:`\alpha_{ab}=1/3` for same-direction same-side faces,
-:math:`\alpha_{ab}=1/6` for same-direction opposite-side faces, and
-:math:`\alpha_{ab}=1/4` for cross-direction faces. With diagonal permeability,
-the cross-direction entries vanish.
+where :math:`d_a` is the coordinate direction of local face :math:`F_a`. For
+diagonal permeability, only same-direction face pairs contribute. The RT0 mass
+block uses :math:`\alpha_{ab}=1/3` for same-direction same-side faces and
+:math:`\alpha_{ab}=1/6` for same-direction opposite-side faces.
 
 After negating the continuity equation to get the symmetric saddle-point sign
 convention before boundary row pinning, the global system is
@@ -455,17 +455,23 @@ IJ row-partitioned assembly and preserves the intended solution.
 Parallel Numbering and C Interface Assembly
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The C example uses a simple global unknown ordering
+The C example uses a rank-contiguous global unknown ordering. Within each rank,
+owned unknowns are ordered
 
 .. math::
 
    [\,x\text{-faces}\,][\,y\text{-faces}\,][\,z\text{-faces}\,][\,cells\,],
 
-with inactive face blocks omitted for 1D/2D prefix-active meshes. MPI ranks own
-contiguous row ranges of this global ordering. Each rank creates IJ objects for
-its local row range, sets conservative row-size bounds, and inserts only owned
-rows. Off-rank columns are legal IJ columns and are resolved by
-``HYPRE_IJMatrixAssemble``.
+with inactive face blocks omitted for 1D/2D prefix-active meshes. The Cartesian
+rank grid is selected automatically by default and can be set explicitly with
+``-P``/``--procs <px> <py> <pz>``. The product must match the MPI size, and
+inactive dimensions must have partition count ``1``.
+
+Faces are owned by the rank on their high-coordinate side, with the global high
+boundary face owned by the last rank in that direction. Cells are owned by their
+Cartesian subdomain. Each rank builds a local CSR slab over its contiguous row
+range and passes it to hypredrive, with off-rank columns left as global column
+indices.
 
 The dofmap is supplied explicitly:
 
@@ -476,12 +482,46 @@ This is intentionally independent of the RT0 cell-local helper. A higher-order
 mixed method can keep the same solver-facing labels while replacing the
 discretization descriptor that enumerates cell dofs and local matrices.
 
+Heterogeneous Permeability Files
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``-K`` option sets a constant diagonal permeability
+:math:`(K_x,K_y,K_z)`. Alternatively, ``--K-file`` reads a whitespace-delimited
+text file containing either one scalar permeability per source cell or three
+component blocks ``Kx``, ``Ky``, and ``Kz``. If ``--K-file-grid`` is omitted,
+the source grid is assumed to match ``-n`` exactly. If a source grid is supplied,
+the example samples the source field at cell centers onto the requested mesh.
+This is useful for experiments on a coarser mesh than the input data.
+
+SPE10 model 2 permeability files use a ``60 x 220 x 85`` source grid with
+three component blocks. The helper script downloads and unpacks that dataset
+into an ignored directory:
+
+.. code-block:: bash
+
+   scripts/download_spe10_case2a.sh
+
+Then run a coarse heterogeneous solve, for example:
+
+.. code-block:: bash
+
+   mpirun -np 2 /path/to/build/darcy -n 8 8 4 \
+      -P 1 1 2 \
+      --K-file data/spe10_case2a/spe_perm.dat \
+      --K-file-grid 60 220 85 \
+      --K-file-k-order top-down \
+      -g x -v 0
+
+For heterogeneous inputs, the driver reports successful solver completion
+rather than an analytic pressure error because the default linear pressure
+profile is no longer the exact solution.
+
 MGR Preconditioning
 ~~~~~~~~~~~~~~~~~~~
 
-The mixed operator is indefinite, so the default configuration uses GMRES with a
-two-block MGR preconditioner. Flux rows are F-points and pressure rows are the
-coarse block:
+The mixed operator is indefinite, so with HYPRE 3.x and newer the default
+configuration uses GMRES with a two-block MGR preconditioner. Flux rows are
+F-points and pressure rows are the coarse block:
 
 .. code-block:: yaml
 
@@ -509,6 +549,18 @@ to the pressure Schur complement approximation. The C driver passes the dofmap
 with ``HYPREDRV_LinearSystemSetDofmap`` before attaching the IJ matrix and RHS,
 so MGR can identify the two fields.
 
+With older HYPRE releases, the example uses a GMRES+BoomerAMG compatibility
+configuration because the MGR options exercised here require newer HYPRE APIs.
+
+The driver also accepts hypredrive command-line overrides after ``-a`` or
+``--args`` using the same path syntax as ``hypredrive-cli``. Place these
+overrides after the Darcy-specific options:
+
+.. code-block:: bash
+
+   mpirun -np 2 /path/to/build/darcy -n 30 110 85 -g x -v 1 \
+      -a --solver:gmres:max_iter 100 --preconditioner:mgr:print_level 1
+
 Reproducible Run
 ~~~~~~~~~~~~~~~~
 
@@ -519,8 +571,8 @@ Build with examples enabled, then run:
    mpirun -np 1 /path/to/build/darcy -n 4 3 1 -g x -v 1
    mpirun -np 2 /path/to/build/darcy -n 4 3 1 -g x -v 1
 
-The program prints the grid, unknown counts, drive direction, and relative
-cell-pressure L2 error against the analytic solution
+The program prints the grid, unknown counts, MPI rank-grid and row-partition
+summary, drive direction, and relative cell-pressure L2 error against the analytic solution
 :math:`u=1-x_{\mathrm{axis}}/L_{\mathrm{axis}}`. The same executable accepts an
 external YAML file with ``-i`` to override the default GMRES+MGR options.
 

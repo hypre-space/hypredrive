@@ -48,16 +48,50 @@ endif()
 if(HYPREDRV_ENABLE_TESTING)
     include(${CMAKE_SOURCE_DIR}/cmake/HYPREDRV_Testing.cmake)
 
+    set(_darcy_heterogeneous_perm "${CMAKE_CURRENT_BINARY_DIR}/darcy_heterogeneous_perm.dat")
+    file(WRITE "${_darcy_heterogeneous_perm}"
+        "1.00 1.10 1.20 1.30 1.40 1.50 1.60 1.70 1.80 1.90 2.00 2.10\n"
+        "2.00 2.10 2.20 2.30 2.40 2.50 2.60 2.70 2.80 2.90 3.00 3.10\n"
+        "3.00 3.10 3.20 3.30 3.40 3.50 3.60 3.70 3.80 3.90 4.00 4.10\n")
+
     add_executable_test(darcy_rt0_1proc darcy 1
         ARGS -n 4 3 1 -g x -v 1
         RUN_SERIAL
         REQUIRE_CONTAINS
             "Darcy Mixed Problem Setup"
+            "MPI grid partition"
+            "Row partition"
             "relative pressure L2 error"
     )
     add_executable_test(darcy_rt0_2proc darcy 2
-        ARGS -n 4 3 1 -g x -v 1
+        ARGS -n 4 3 1 -P 1 2 1 -g x -v 1
         REQUIRE_CONTAINS
+            "MPI grid partition:   1 x 2 x 1 ranks"
             "relative pressure L2 error"
+    )
+    add_executable_test(darcy_rt0_heterogeneous_1proc darcy 1
+        ARGS -n 4 3 1 --K-file "${_darcy_heterogeneous_perm}" -g x -v 0
+        RUN_SERIAL
+        REQUIRE_CONTAINS
+            "heterogeneous pressure solve completed"
+    )
+    add_executable_test(darcy_hypredrive_args darcy 1
+        ARGS -n 4 3 1 -g x -v 0 -a
+             --general:statistics on
+             --solver:gmres:print_level 1
+        RUN_SERIAL
+        REQUIRE_CONTAINS
+            "STATISTICS SUMMARY"
+    )
+    add_executable_test(darcy_help darcy 1
+        ARGS --help
+        RUN_SERIAL
+        REQUIRE_CONTAINS
+            "Usage:"
+            "Active mesh examples:"
+            "--procs"
+            "--args"
+            "--K-file-grid"
+            "Verbosity bitset"
     )
 endif()
