@@ -491,7 +491,9 @@ text file containing either one scalar permeability per source cell or three
 component blocks ``Kx``, ``Ky``, and ``Kz``. If ``--K-file-grid`` is omitted,
 the source grid is assumed to match ``-n`` exactly. If a source grid is supplied,
 the example samples the source field at cell centers onto the requested mesh.
-This is useful for experiments on a coarser mesh than the input data.
+This is useful for experiments on a coarser mesh than the input data, and also
+for refinement studies that evaluate scalability across a sequence of mesh
+resolutions.
 
 SPE10 model 2 permeability files use a ``60 x 220 x 85`` source grid with
 three component blocks. The helper script downloads and unpacks that dataset
@@ -510,7 +512,10 @@ Then run a coarse heterogeneous solve, for example:
       --K-file data/spe10_case2a/spe_perm.dat \
       --K-file-grid 60 220 85 \
       --K-file-k-order top-down \
-      -g x -v 0
+      -g y -v 0
+
+The ``-g y`` option imposes the pressure gradient in the y-direction, which is
+the standard SPE10 setup.
 
 For heterogeneous inputs, the driver reports successful solver completion
 rather than an analytic pressure error because the default linear pressure
@@ -539,7 +544,8 @@ VTK results to ``examples/src/C_darcy/reproduce-out/darcy_spe10.pvti`` plus one
 
    SPE10 case 2a layer visualization. Left: ``log10(Kx)`` on one physical
    layer. Right: pressure-drop solution on the same layer with unit pressure on
-   the low-x side, zero pressure on the high-x side, and no-flow y boundaries.
+   the low-y side, zero pressure on the high-y side, and no-flow x/z
+   boundaries.
 
 Use ``--figure-mode 3d`` to generate a three-dimensional view of the full
 problem, or ``--figure-mode both`` to generate both figures:
@@ -564,8 +570,8 @@ also be run directly:
    Full-volume SPE10 case 2a visualization using full-resolution exterior
    surfaces from the C Darcy VTK results. Left: ``log10(Kx)`` from the
    ``60 x 220 x 85`` permeability field. Right: pressure-drop solution on the
-   same full-resolution grid, with unit pressure on the low-x side, zero
-   pressure on the high-x side, and no-flow y/z boundaries.
+   same full-resolution grid, with unit pressure on the low-y side, zero
+   pressure on the high-y side, and no-flow x/z boundaries.
 
 The performance run uses the C mixed RT0/P0 driver:
 
@@ -578,7 +584,7 @@ The performance run uses the C mixed RT0/P0 driver:
       --K-file-grid 60 220 85 \
       --K-file-k-order top-down \
       --output examples/src/C_darcy/reproduce-out/darcy_spe10.vti \
-      -g x -v 1
+      -g y -v 1
 
 The figures are generated from the C VTK output with NumPy and Matplotlib, so
 reproducing the images does not require VTK or ParaView. Set
