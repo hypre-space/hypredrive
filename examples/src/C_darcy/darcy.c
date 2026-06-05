@@ -61,13 +61,13 @@ typedef struct
 
 typedef struct
 {
-   HYPRE_Int    P[3];
-   HYPRE_Int   *x0, *x1, *y0, *y1, *z0, *z1;
-   HYPRE_Int   *xpart, *ypart, *zpart;
+   HYPRE_Int     P[3];
+   HYPRE_Int    *x0, *x1, *y0, *y1, *z0, *z1;
+   HYPRE_Int    *xpart, *ypart, *zpart;
    HYPRE_BigInt *offset;
    HYPRE_BigInt *count_xf, *count_yf, *count_zf, *count_cells, *total;
-   HYPRE_BigInt N;
-   int          nprocs;
+   HYPRE_BigInt  N;
+   int           nprocs;
 } DarcyLayout;
 
 typedef struct DarcyDiscretization DarcyDiscretization;
@@ -168,7 +168,7 @@ factor_mpi_grid(const DarcyMesh *mesh, int nprocs, HYPRE_Int parts[3])
    {
       while (remaining % factor == 0 &&
              nfactors < (int)(sizeof(factors) / sizeof(factors[0])))
-      {                                                                               \
+      {
          factors[nfactors++] = factor;
          remaining /= factor;
       }
@@ -183,13 +183,13 @@ factor_mpi_grid(const DarcyMesh *mesh, int nprocs, HYPRE_Int parts[3])
       HYPRE_Int best_dir       = 0;
       double    best_cell_span = -1.0;
       for (HYPRE_Int d = 0; d < mesh->dim; d++)
-      {                                                                               \
+      {
          double cell_span = (double)mesh->n[d] / (double)parts[d];
          if (cell_span > best_cell_span)
-         {                                                                            \
+         {
             best_cell_span = cell_span;
             best_dir       = d;
-         }                                                                            \
+         }
       }
       parts[best_dir] *= factors[f];
    }
@@ -278,9 +278,9 @@ static int
 init_layout(const DarcyMesh *mesh, const HYPRE_Int P[3], DarcyLayout *layout)
 {
    memset(layout, 0, sizeof(*layout));
-   layout->P[0]  = P[0];
-   layout->P[1]  = P[1];
-   layout->P[2]  = P[2];
+   layout->P[0]   = P[0];
+   layout->P[1]   = P[1];
+   layout->P[2]   = P[2];
    layout->nprocs = P[0] * P[1] * P[2];
 
    if (layout_alloc_axis(mesh->n[0], P[0], &layout->x0, &layout->x1, &layout->xpart) ||
@@ -291,7 +291,7 @@ init_layout(const DarcyMesh *mesh, const HYPRE_Int P[3], DarcyLayout *layout)
       return 1;
    }
 
-   size_t nprocs = (size_t)layout->nprocs;
+   size_t nprocs       = (size_t)layout->nprocs;
    layout->offset      = (HYPRE_BigInt *)calloc(nprocs + 1, sizeof(HYPRE_BigInt));
    layout->count_xf    = (HYPRE_BigInt *)calloc(nprocs, sizeof(HYPRE_BigInt));
    layout->count_yf    = (HYPRE_BigInt *)calloc(nprocs, sizeof(HYPRE_BigInt));
@@ -309,9 +309,9 @@ init_layout(const DarcyMesh *mesh, const HYPRE_Int P[3], DarcyLayout *layout)
    {
       HYPRE_Int rx, ry, rz;
       layout_rank_coords(layout, rank, &rx, &ry, &rz);
-      HYPRE_BigInt nx = layout->x1[rx] - layout->x0[rx];
-      HYPRE_BigInt ny = layout->y1[ry] - layout->y0[ry];
-      HYPRE_BigInt nz = layout->z1[rz] - layout->z0[rz];
+      HYPRE_BigInt nx        = layout->x1[rx] - layout->x0[rx];
+      HYPRE_BigInt ny        = layout->y1[ry] - layout->y0[ry];
+      HYPRE_BigInt nz        = layout->z1[rz] - layout->z0[rz];
       layout->count_xf[rank] = (nx + (rx == P[0] - 1 ? 1 : 0)) * ny * nz;
       if (mesh->dim >= 2)
       {
@@ -322,7 +322,7 @@ init_layout(const DarcyMesh *mesh, const HYPRE_Int P[3], DarcyLayout *layout)
          layout->count_zf[rank] = nx * ny * (nz + (rz == P[2] - 1 ? 1 : 0));
       }
       layout->count_cells[rank] = nx * ny * nz;
-      layout->total[rank] = layout->count_xf[rank] + layout->count_yf[rank] +
+      layout->total[rank]       = layout->count_xf[rank] + layout->count_yf[rank] +
                             layout->count_zf[rank] + layout->count_cells[rank];
       layout->offset[rank + 1] = layout->offset[rank] + layout->total[rank];
    }
@@ -334,10 +334,10 @@ static HYPRE_BigInt
 layout_xface(const DarcyLayout *layout, const DarcyMesh *mesh, HYPRE_BigInt i,
              HYPRE_BigInt j, HYPRE_BigInt k)
 {
-   HYPRE_Int rx = (i == mesh->n[0]) ? layout->P[0] - 1 : layout->xpart[i];
-   HYPRE_Int ry = layout->ypart[j];
-   HYPRE_Int rz = layout->zpart[k];
-   int       r  = layout_rank(layout, rx, ry, rz);
+   HYPRE_Int    rx = (i == mesh->n[0]) ? layout->P[0] - 1 : layout->xpart[i];
+   HYPRE_Int    ry = layout->ypart[j];
+   HYPRE_Int    rz = layout->zpart[k];
+   int          r  = layout_rank(layout, rx, ry, rz);
    HYPRE_BigInt nx = layout->x1[rx] - layout->x0[rx] + (rx == layout->P[0] - 1 ? 1 : 0);
    HYPRE_BigInt ny = layout->y1[ry] - layout->y0[ry];
    return layout->offset[r] + (i - layout->x0[rx]) +
@@ -348,10 +348,10 @@ static HYPRE_BigInt
 layout_yface(const DarcyLayout *layout, const DarcyMesh *mesh, HYPRE_BigInt i,
              HYPRE_BigInt j, HYPRE_BigInt k)
 {
-   HYPRE_Int rx = layout->xpart[i];
-   HYPRE_Int ry = (j == mesh->n[1]) ? layout->P[1] - 1 : layout->ypart[j];
-   HYPRE_Int rz = layout->zpart[k];
-   int       r  = layout_rank(layout, rx, ry, rz);
+   HYPRE_Int    rx = layout->xpart[i];
+   HYPRE_Int    ry = (j == mesh->n[1]) ? layout->P[1] - 1 : layout->ypart[j];
+   HYPRE_Int    rz = layout->zpart[k];
+   int          r  = layout_rank(layout, rx, ry, rz);
    HYPRE_BigInt nx = layout->x1[rx] - layout->x0[rx];
    HYPRE_BigInt ny = layout->y1[ry] - layout->y0[ry] + (ry == layout->P[1] - 1 ? 1 : 0);
    return layout->offset[r] + layout->count_xf[r] + (i - layout->x0[rx]) +
@@ -362,25 +362,24 @@ static HYPRE_BigInt
 layout_zface(const DarcyLayout *layout, const DarcyMesh *mesh, HYPRE_BigInt i,
              HYPRE_BigInt j, HYPRE_BigInt k)
 {
-   HYPRE_Int rx = layout->xpart[i];
-   HYPRE_Int ry = layout->ypart[j];
-   HYPRE_Int rz = (k == mesh->n[2]) ? layout->P[2] - 1 : layout->zpart[k];
-   int       r  = layout_rank(layout, rx, ry, rz);
+   HYPRE_Int    rx = layout->xpart[i];
+   HYPRE_Int    ry = layout->ypart[j];
+   HYPRE_Int    rz = (k == mesh->n[2]) ? layout->P[2] - 1 : layout->zpart[k];
+   int          r  = layout_rank(layout, rx, ry, rz);
    HYPRE_BigInt nx = layout->x1[rx] - layout->x0[rx];
    HYPRE_BigInt ny = layout->y1[ry] - layout->y0[ry];
    return layout->offset[r] + layout->count_xf[r] + layout->count_yf[r] +
-          (i - layout->x0[rx]) + nx * ((j - layout->y0[ry]) +
-                                       ny * (k - layout->z0[rz]));
+          (i - layout->x0[rx]) + nx * ((j - layout->y0[ry]) + ny * (k - layout->z0[rz]));
 }
 
 static HYPRE_BigInt
 layout_cell(const DarcyLayout *layout, const DarcyMesh *mesh, HYPRE_BigInt i,
             HYPRE_BigInt j, HYPRE_BigInt k)
 {
-   HYPRE_Int rx = layout->xpart[i];
-   HYPRE_Int ry = layout->ypart[j];
-   HYPRE_Int rz = layout->zpart[k];
-   int       r  = layout_rank(layout, rx, ry, rz);
+   HYPRE_Int    rx = layout->xpart[i];
+   HYPRE_Int    ry = layout->ypart[j];
+   HYPRE_Int    rz = layout->zpart[k];
+   int          r  = layout_rank(layout, rx, ry, rz);
    HYPRE_BigInt nx = layout->x1[rx] - layout->x0[rx];
    HYPRE_BigInt ny = layout->y1[ry] - layout->y0[ry];
    return layout->offset[r] + layout->count_xf[r] + layout->count_yf[r] +
@@ -608,8 +607,8 @@ append_or_accumulate_entry(HYPRE_BigInt *cols, HYPRE_Real *vals, HYPRE_Int *nent
          return;
       }
    }
-   cols[*nentries]   = col;
-   vals[*nentries]   = val;
+   cols[*nentries] = col;
+   vals[*nentries] = val;
    (*nentries)++;
 }
 
@@ -885,8 +884,7 @@ parse_args(int argc, char **argv, DarcyParams *params, int rank, int nprocs)
       if (!rank) printf("Error: pressure-drop direction is not active for this mesh\n");
       return 1;
    }
-   int has_mpi_grid =
-      params->mpi_grid[0] || params->mpi_grid[1] || params->mpi_grid[2];
+   int has_mpi_grid = params->mpi_grid[0] || params->mpi_grid[1] || params->mpi_grid[2];
    if (has_mpi_grid)
    {
       HYPRE_BigInt mpi_grid_product = 1;
@@ -899,7 +897,8 @@ parse_args(int argc, char **argv, DarcyParams *params, int rank, int nprocs)
          }
          if (params->n[d] == 1 && params->mpi_grid[d] != 1)
          {
-            if (!rank) printf("Error: cannot partition inactive dimension %c\n", "xyz"[d]);
+            if (!rank)
+               printf("Error: cannot partition inactive dimension %c\n", "xyz"[d]);
             return 1;
          }
          mpi_grid_product *= params->mpi_grid[d];
@@ -1150,10 +1149,9 @@ load_permeability_file(const DarcyParams *params, DarcyMesh *mesh, int rank)
 static int
 build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout,
                  const DarcyDiscretization *disc, HYPRE_Int drive_axis,
-                 HYPRE_BigInt **indptr_ptr,
-                 HYPRE_BigInt **col_indices_ptr, HYPRE_Real **data_ptr,
-                 HYPRE_Real **rhs_ptr, int **dofmap_ptr, HYPRE_BigInt *ilower_ptr,
-                 HYPRE_BigInt *iupper_ptr)
+                 HYPRE_BigInt **indptr_ptr, HYPRE_BigInt **col_indices_ptr,
+                 HYPRE_Real **data_ptr, HYPRE_Real **rhs_ptr, int **dofmap_ptr,
+                 HYPRE_BigInt *ilower_ptr, HYPRE_BigInt *iupper_ptr)
 {
    int rank, nprocs;
    MPI_Comm_rank(comm, &rank);
@@ -1173,8 +1171,8 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
       return 1;
    }
 
-   int        *dofmap   = (int *)calloc((size_t)local_rows, sizeof(int));
-   HYPRE_Real *rhs      = (HYPRE_Real *)calloc((size_t)local_rows, sizeof(HYPRE_Real));
+   int          *dofmap = (int *)calloc((size_t)local_rows, sizeof(int));
+   HYPRE_Real   *rhs    = (HYPRE_Real *)calloc((size_t)local_rows, sizeof(HYPRE_Real));
    HYPRE_BigInt *indptr =
       (HYPRE_BigInt *)calloc((size_t)local_rows + 1, sizeof(HYPRE_BigInt));
    if (!dofmap || !rhs || !indptr)
@@ -1185,7 +1183,7 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
       return 1;
    }
 
-   HYPRE_Int nloc = disc->num_cell_flux_dofs(mesh);
+   HYPRE_Int    nloc         = disc->num_cell_flux_dofs(mesh);
    HYPRE_BigInt nnz_capacity = local_rows * (2 * (nloc + 1));
    if (nnz_capacity < 0 || (HYPRE_BigInt)(size_t)nnz_capacity != nnz_capacity)
    {
@@ -1219,27 +1217,27 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
    HYPRE_Int    rx, ry, rz;
    layout_rank_coords(layout, rank, &rx, &ry, &rz);
 
-#define DARCY_APPEND_ROW()                                                     \
-   do                                                                          \
-   {                                                                           \
-      if (nnz + nentries > nnz_capacity)                                       \
-      {                                                                         \
-         if (!rank) printf("Error: local CSR capacity was underestimated\n");   \
-         free(dofmap);                                                         \
-         free(rhs);                                                            \
-         free(indptr);                                                         \
-         free(col_indices);                                                    \
-         free(data);                                                           \
-         return 1;                                                             \
-      }                                                                        \
-      for (HYPRE_Int entry = 0; entry < nentries; entry++)                     \
-      {                                                                         \
-         col_indices[nnz] = cols[entry];                                       \
-         data[nnz]        = vals[entry];                                       \
-         nnz++;                                                                \
-      }                                                                        \
-      indptr[lr + 1] = nnz;                                                    \
-      lr++;                                                                    \
+#define DARCY_APPEND_ROW()                                                    \
+   do                                                                         \
+   {                                                                          \
+      if (nnz + nentries > nnz_capacity)                                      \
+      {                                                                       \
+         if (!rank) printf("Error: local CSR capacity was underestimated\n"); \
+         free(dofmap);                                                        \
+         free(rhs);                                                           \
+         free(indptr);                                                        \
+         free(col_indices);                                                   \
+         free(data);                                                          \
+         return 1;                                                            \
+      }                                                                       \
+      for (HYPRE_Int entry = 0; entry < nentries; entry++)                    \
+      {                                                                       \
+         col_indices[nnz] = cols[entry];                                      \
+         data[nnz]        = vals[entry];                                      \
+         nnz++;                                                               \
+      }                                                                       \
+      indptr[lr + 1] = nnz;                                                   \
+      lr++;                                                                   \
    } while (0)
 
    HYPRE_Int x_start = layout->x0[rx];
@@ -1249,25 +1247,24 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
    HYPRE_Int z_start = layout->z0[rz];
    HYPRE_Int z_end   = layout->z1[rz];
 
-#define DARCY_ADD_FLUX_ADJ_CELL(cell_i, cell_j, cell_k, local_face)            \
-   do                                                                          \
-   {                                                                           \
-      HYPRE_BigInt c = cell_index(mesh, (cell_i), (cell_j), (cell_k));         \
-      rt0_cell_flux_dofs_layout(layout, mesh, (cell_i), (cell_j), (cell_k),    \
-                                faces, dirs, is_low, signs);                  \
-      HYPRE_Int a = (local_face);                                              \
-      for (HYPRE_Int bb = 0; bb < nloc; bb++)                                  \
-      {                                                                         \
-         HYPRE_Real m = disc->mass_entry(mesh, c, a, bb, dirs, is_low);        \
-         if (m != 0.0)                                                         \
-         {                                                                      \
-            append_or_accumulate_entry(cols, vals, &nentries, faces[bb], m);   \
-         }                                                                      \
-      }                                                                        \
-      append_or_accumulate_entry(cols, vals, &nentries,                        \
-                                 layout_cell(layout, mesh, (cell_i), (cell_j), \
-                                             (cell_k)),                        \
-                                 -(HYPRE_Real)signs[a]);                       \
+#define DARCY_ADD_FLUX_ADJ_CELL(cell_i, cell_j, cell_k, local_face)                      \
+   do                                                                                    \
+   {                                                                                     \
+      HYPRE_BigInt c = cell_index(mesh, (cell_i), (cell_j), (cell_k));                   \
+      rt0_cell_flux_dofs_layout(layout, mesh, (cell_i), (cell_j), (cell_k), faces, dirs, \
+                                is_low, signs);                                          \
+      HYPRE_Int a = (local_face);                                                        \
+      for (HYPRE_Int bb = 0; bb < nloc; bb++)                                            \
+      {                                                                                  \
+         HYPRE_Real m = disc->mass_entry(mesh, c, a, bb, dirs, is_low);                  \
+         if (m != 0.0)                                                                   \
+         {                                                                               \
+            append_or_accumulate_entry(cols, vals, &nentries, faces[bb], m);             \
+         }                                                                               \
+      }                                                                                  \
+      append_or_accumulate_entry(                                                        \
+         cols, vals, &nentries, layout_cell(layout, mesh, (cell_i), (cell_j), (cell_k)), \
+         -(HYPRE_Real)signs[a]);                                                         \
    } while (0)
 
    for (HYPRE_BigInt k = z_start; k < z_end; k++)
@@ -1277,10 +1274,10 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
          HYPRE_BigInt x_face_end = x_end + (rx == layout->P[0] - 1 ? 1 : 0);
          for (HYPRE_BigInt i = x_start; i < x_face_end; i++)
          {
-            HYPRE_BigInt row = layout_xface(layout, mesh, i, j, k);
+            HYPRE_BigInt row      = layout_xface(layout, mesh, i, j, k);
             HYPRE_Int    nentries = 0;
-            dofmap[lr] = 1;
-            rhs[lr]    = dirichlet_rhs_physical(mesh, 0, i, j, k, drive_axis);
+            dofmap[lr]            = 1;
+            rhs[lr]               = dirichlet_rhs_physical(mesh, 0, i, j, k, drive_axis);
             if (is_pinned_neumann_physical(mesh, 0, i, j, k, drive_axis))
             {
                cols[nentries]   = row;
@@ -1305,10 +1302,10 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
          {
             for (HYPRE_BigInt i = x_start; i < x_end; i++)
             {
-               HYPRE_BigInt row = layout_yface(layout, mesh, i, j, k);
+               HYPRE_BigInt row      = layout_yface(layout, mesh, i, j, k);
                HYPRE_Int    nentries = 0;
-               dofmap[lr] = 1;
-               rhs[lr]    = dirichlet_rhs_physical(mesh, 1, i, j, k, drive_axis);
+               dofmap[lr]            = 1;
+               rhs[lr] = dirichlet_rhs_physical(mesh, 1, i, j, k, drive_axis);
                if (is_pinned_neumann_physical(mesh, 1, i, j, k, drive_axis))
                {
                   cols[nentries]   = row;
@@ -1334,10 +1331,10 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
          {
             for (HYPRE_BigInt i = x_start; i < x_end; i++)
             {
-               HYPRE_BigInt row = layout_zface(layout, mesh, i, j, k);
+               HYPRE_BigInt row      = layout_zface(layout, mesh, i, j, k);
                HYPRE_Int    nentries = 0;
-               dofmap[lr] = 1;
-               rhs[lr]    = dirichlet_rhs_physical(mesh, 2, i, j, k, drive_axis);
+               dofmap[lr]            = 1;
+               rhs[lr] = dirichlet_rhs_physical(mesh, 2, i, j, k, drive_axis);
                if (is_pinned_neumann_physical(mesh, 2, i, j, k, drive_axis))
                {
                   cols[nentries]   = row;
@@ -1360,10 +1357,10 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
       {
          for (HYPRE_BigInt i = x_start; i < x_end; i++)
          {
-            HYPRE_BigInt c = cell_index(mesh, i, j, k);
+            HYPRE_BigInt c        = cell_index(mesh, i, j, k);
             HYPRE_Int    nentries = 0;
-            dofmap[lr] = 0;
-            rhs[lr]    = 0.0;
+            dofmap[lr]            = 0;
+            rhs[lr]               = 0.0;
             rt0_cell_flux_dofs_layout(layout, mesh, i, j, k, faces, dirs, is_low, signs);
             for (HYPRE_Int a = 0; a < nloc; a++)
             {
@@ -1426,8 +1423,8 @@ pressure_l2_error(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layou
             (void)c;
             HYPRE_Real coord[3] = {(i + 0.5) * mesh->h[0], (j + 0.5) * mesh->h[1],
                                    (k + 0.5) * mesh->h[2]};
-            HYPRE_Real u_ref = 1.0 - coord[drive_axis] / mesh->L[drive_axis];
-            HYPRE_Real diff  = x[row - ilower] - u_ref;
+            HYPRE_Real u_ref    = 1.0 - coord[drive_axis] / mesh->L[drive_axis];
+            HYPRE_Real diff     = x[row - ilower] - u_ref;
             local_err += diff * diff * cell_volume(mesh);
             local_ref += u_ref * u_ref * cell_volume(mesh);
          }
@@ -1488,7 +1485,7 @@ static int
 write_vtk_data_block(FILE *fp, const void *data, uint64_t nbytes)
 {
    return fwrite(&nbytes, sizeof(nbytes), 1, fp) == 1 &&
-          (nbytes == 0 || fwrite(data, 1, (size_t)nbytes, fp) == (size_t)nbytes)
+                (nbytes == 0 || fwrite(data, 1, (size_t)nbytes, fp) == (size_t)nbytes)
              ? 0
              : 1;
 }
@@ -1496,8 +1493,8 @@ write_vtk_data_block(FILE *fp, const void *data, uint64_t nbytes)
 static int
 write_vti_piece(const char *filename, const DarcyMesh *mesh, const HYPRE_Int extent[6],
                 const HYPRE_Real *pressure, const HYPRE_Real *flux,
-                const HYPRE_Real *permeability, const void *cell_ids,
-                size_t n_cells, int use_uint64_ids)
+                const HYPRE_Real *permeability, const void *cell_ids, size_t n_cells,
+                int use_uint64_ids)
 {
    FILE *fp = fopen(filename, "wb");
    if (!fp)
@@ -1515,26 +1512,24 @@ write_vti_piece(const char *filename, const DarcyMesh *mesh, const HYPRE_Int ext
    uint64_t perm_offset     = flux_offset + sizeof(uint64_t) + flux_bytes;
    uint64_t id_offset       = perm_offset + sizeof(uint64_t) + perm_bytes;
 
-   HYPRE_Real sx = mesh->h[0];
-   HYPRE_Real sy = mesh->n[1] > 1 ? mesh->h[1] : 1.0;
-   HYPRE_Real sz = mesh->n[2] > 1 ? mesh->h[2] : 1.0;
+   HYPRE_Real  sx      = mesh->h[0];
+   HYPRE_Real  sy      = mesh->n[1] > 1 ? mesh->h[1] : 1.0;
+   HYPRE_Real  sz      = mesh->n[2] > 1 ? mesh->h[2] : 1.0;
    const char *id_type = use_uint64_ids ? "UInt64" : "UInt32";
 
    int rc = 0;
    rc |= fprintf(fp, "<?xml version=\"1.0\"?>\n") < 0;
-   rc |= fprintf(fp,
-                 "<VTKFile type=\"ImageData\" version=\"1.0\" "
-                 "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n") < 0;
+   rc |= fprintf(fp, "<VTKFile type=\"ImageData\" version=\"1.0\" "
+                     "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n") < 0;
    rc |= fprintf(fp,
                  "  <ImageData WholeExtent=\"%d %d %d %d %d %d\" "
                  "Origin=\"0 0 0\" Spacing=\"%.17g %.17g %.17g\">\n",
-                 extent[0], extent[1], extent[2], extent[3], extent[4], extent[5],
-                 sx, sy, sz) < 0;
-   rc |= fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", extent[0],
-                 extent[1], extent[2], extent[3], extent[4], extent[5]) < 0;
-   rc |= fprintf(fp,
-                 "      <CellData Scalars=\"pressure\" Vectors=\"flux\" "
-                 "Tensors=\"permeability\">\n") < 0;
+                 extent[0], extent[1], extent[2], extent[3], extent[4], extent[5], sx, sy,
+                 sz) < 0;
+   rc |= fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", extent[0], extent[1],
+                 extent[2], extent[3], extent[4], extent[5]) < 0;
+   rc |= fprintf(fp, "      <CellData Scalars=\"pressure\" Vectors=\"flux\" "
+                     "Tensors=\"permeability\">\n") < 0;
    rc |= fprintf(fp,
                  "        <DataArray type=\"Float64\" Name=\"pressure\" "
                  "format=\"appended\" offset=\"%llu\"/>\n",
@@ -1554,13 +1549,12 @@ write_vti_piece(const char *filename, const DarcyMesh *mesh, const HYPRE_Int ext
                  "        <DataArray type=\"%s\" Name=\"GlobalCellId\" "
                  "format=\"appended\" offset=\"%llu\"/>\n",
                  id_type, (unsigned long long)id_offset) < 0;
-   rc |= fprintf(fp,
-                 "      </CellData>\n"
-                 "      <PointData></PointData>\n"
-                 "    </Piece>\n"
-                 "  </ImageData>\n"
-                 "  <AppendedData encoding=\"raw\">\n"
-                 "   _") < 0;
+   rc |= fprintf(fp, "      </CellData>\n"
+                     "      <PointData></PointData>\n"
+                     "    </Piece>\n"
+                     "  </ImageData>\n"
+                     "  <AppendedData encoding=\"raw\">\n"
+                     "   _") < 0;
 
    rc |= write_vtk_data_block(fp, pressure, pressure_bytes);
    rc |= write_vtk_data_block(fp, flux, flux_bytes);
@@ -1581,59 +1575,54 @@ write_pvti_master(const char *filename, const char *piece_base, const DarcyMesh 
       return 1;
    }
 
-   HYPRE_Int whole[6] = {0, mesh->n[0], 0, mesh->n[1] > 1 ? mesh->n[1] : 1,
-                         0, mesh->n[2] > 1 ? mesh->n[2] : 1};
-   HYPRE_Real sx = mesh->h[0];
-   HYPRE_Real sy = mesh->n[1] > 1 ? mesh->h[1] : 1.0;
-   HYPRE_Real sz = mesh->n[2] > 1 ? mesh->h[2] : 1.0;
-   const char *id_type = use_uint64_ids ? "UInt64" : "UInt32";
+   HYPRE_Int   whole[6] = {0, mesh->n[0],
+                           0, mesh->n[1] > 1 ? mesh->n[1] : 1,
+                           0, mesh->n[2] > 1 ? mesh->n[2] : 1};
+   HYPRE_Real  sx       = mesh->h[0];
+   HYPRE_Real  sy       = mesh->n[1] > 1 ? mesh->h[1] : 1.0;
+   HYPRE_Real  sz       = mesh->n[2] > 1 ? mesh->h[2] : 1.0;
+   const char *id_type  = use_uint64_ids ? "UInt64" : "UInt32";
 
    int rc = 0;
    rc |= fprintf(fp, "<?xml version=\"1.0\"?>\n") < 0;
-   rc |= fprintf(fp,
-                 "<VTKFile type=\"PImageData\" version=\"1.0\" "
-                 "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n") < 0;
-   rc |= fprintf(fp,
-                 "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" "
-                 "GhostLevel=\"0\" Origin=\"0 0 0\" "
-                 "Spacing=\"%.17g %.17g %.17g\">\n",
-                 whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sx,
-                 sy, sz) < 0;
-   rc |= fprintf(fp,
-                 "    <PCellData Scalars=\"pressure\" Vectors=\"flux\" "
-                 "Tensors=\"permeability\">\n") < 0;
+   rc |= fprintf(fp, "<VTKFile type=\"PImageData\" version=\"1.0\" "
+                     "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n") < 0;
+   rc |=
+      fprintf(fp,
+              "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" "
+              "GhostLevel=\"0\" Origin=\"0 0 0\" "
+              "Spacing=\"%.17g %.17g %.17g\">\n",
+              whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sx, sy, sz) < 0;
+   rc |= fprintf(fp, "    <PCellData Scalars=\"pressure\" Vectors=\"flux\" "
+                     "Tensors=\"permeability\">\n") < 0;
    rc |= fprintf(fp, "      <PDataArray type=\"Float64\" Name=\"pressure\"/>\n") < 0;
-   rc |= fprintf(fp,
-                 "      <PDataArray type=\"Float64\" Name=\"flux\" "
-                 "NumberOfComponents=\"3\"/>\n") < 0;
-   rc |= fprintf(fp,
-                 "      <PDataArray type=\"Float64\" Name=\"permeability\" "
-                 "NumberOfComponents=\"6\" ComponentName0=\"xx\" "
-                 "ComponentName1=\"yy\" ComponentName2=\"zz\" "
-                 "ComponentName3=\"xy\" ComponentName4=\"yz\" "
-                 "ComponentName5=\"xz\"/>\n") < 0;
-   rc |= fprintf(fp, "      <PDataArray type=\"%s\" Name=\"GlobalCellId\"/>\n",
-                 id_type) < 0;
-   rc |= fprintf(fp,
-                 "    </PCellData>\n"
-                 "    <PPointData></PPointData>\n") < 0;
+   rc |= fprintf(fp, "      <PDataArray type=\"Float64\" Name=\"flux\" "
+                     "NumberOfComponents=\"3\"/>\n") < 0;
+   rc |= fprintf(fp, "      <PDataArray type=\"Float64\" Name=\"permeability\" "
+                     "NumberOfComponents=\"6\" ComponentName0=\"xx\" "
+                     "ComponentName1=\"yy\" ComponentName2=\"zz\" "
+                     "ComponentName3=\"xy\" ComponentName4=\"yz\" "
+                     "ComponentName5=\"xz\"/>\n") < 0;
+   rc |=
+      fprintf(fp, "      <PDataArray type=\"%s\" Name=\"GlobalCellId\"/>\n", id_type) < 0;
+   rc |= fprintf(fp, "    </PCellData>\n"
+                     "    <PPointData></PPointData>\n") < 0;
 
    for (int r = 0; r < layout->nprocs; r++)
    {
       HYPRE_Int extent[6];
       vtk_extent_for_rank(mesh, layout, r, extent);
-      int  needed = snprintf(NULL, 0, "%s_p%d.vti", piece_base, r);
-      char *piece = (char *)malloc((size_t)needed + 1);
+      int   needed = snprintf(NULL, 0, "%s_p%d.vti", piece_base, r);
+      char *piece  = (char *)malloc((size_t)needed + 1);
       if (!piece)
       {
          fclose(fp);
          return 1;
       }
       snprintf(piece, (size_t)needed + 1, "%s_p%d.vti", piece_base, r);
-      rc |= fprintf(fp,
-                    "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s\"/>\n",
-                    extent[0], extent[1], extent[2], extent[3], extent[4],
-                    extent[5], path_basename(piece)) < 0;
+      rc |= fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s\"/>\n",
+                    extent[0], extent[1], extent[2], extent[3], extent[4], extent[5],
+                    path_basename(piece)) < 0;
       free(piece);
    }
 
@@ -1685,19 +1674,18 @@ write_vtk_output(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
    free(counts);
    free(displs);
 
-   if ((HYPRE_BigInt)(size_t)layout->count_cells[rank] !=
-       layout->count_cells[rank])
+   if ((HYPRE_BigInt)(size_t)layout->count_cells[rank] != layout->count_cells[rank])
    {
       free(solution);
       return 1;
    }
-   size_t n_cells = (size_t)layout->count_cells[rank];
-   HYPRE_Real *pressure = (HYPRE_Real *)malloc(n_cells * sizeof(HYPRE_Real));
-   HYPRE_Real *flux     = (HYPRE_Real *)calloc(3 * n_cells, sizeof(HYPRE_Real));
-   HYPRE_Real *perm     = (HYPRE_Real *)calloc(6 * n_cells, sizeof(HYPRE_Real));
-   int use_uint64_ids   = mesh->n_cells >= ((HYPRE_BigInt)1 << 32);
-   void *cell_ids = use_uint64_ids ? malloc(n_cells * sizeof(uint64_t))
-                                   : malloc(n_cells * sizeof(uint32_t));
+   size_t      n_cells        = (size_t)layout->count_cells[rank];
+   HYPRE_Real *pressure       = (HYPRE_Real *)malloc(n_cells * sizeof(HYPRE_Real));
+   HYPRE_Real *flux           = (HYPRE_Real *)calloc(3 * n_cells, sizeof(HYPRE_Real));
+   HYPRE_Real *perm           = (HYPRE_Real *)calloc(6 * n_cells, sizeof(HYPRE_Real));
+   int         use_uint64_ids = (double)mesh->n_cells > (double)UINT32_MAX;
+   void       *cell_ids       = use_uint64_ids ? malloc(n_cells * sizeof(uint64_t))
+                                               : malloc(n_cells * sizeof(uint32_t));
    if (!pressure || !flux || !perm || !cell_ids)
    {
       free(solution);
@@ -1722,33 +1710,31 @@ write_vtk_output(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
          {
             HYPRE_BigInt cell = cell_index(mesh, i, j, k);
             pressure[p]       = solution[layout_cell(layout, mesh, i, j, k)];
-            flux[3 * p] = 0.5 *
+            flux[3 * p]       = 0.5 *
                           (solution[layout_xface(layout, mesh, i, j, k)] +
                            solution[layout_xface(layout, mesh, i + 1, j, k)]) /
                           ax;
             if (mesh->dim >= 2)
             {
-               flux[3 * p + 1] =
-                  0.5 *
-                  (solution[layout_yface(layout, mesh, i, j, k)] +
-                   solution[layout_yface(layout, mesh, i, j + 1, k)]) /
-                  ay;
+               flux[3 * p + 1] = 0.5 *
+                                 (solution[layout_yface(layout, mesh, i, j, k)] +
+                                  solution[layout_yface(layout, mesh, i, j + 1, k)]) /
+                                 ay;
             }
             if (mesh->dim >= 3)
             {
-               flux[3 * p + 2] =
-                  0.5 *
-                  (solution[layout_zface(layout, mesh, i, j, k)] +
-                   solution[layout_zface(layout, mesh, i, j, k + 1)]) /
-                  az;
+               flux[3 * p + 2] = 0.5 *
+                                 (solution[layout_zface(layout, mesh, i, j, k)] +
+                                  solution[layout_zface(layout, mesh, i, j, k + 1)]) /
+                                 az;
             }
 
-            HYPRE_Real kx = mesh->Kinv_cells ? 1.0 / cell_Kinv(mesh, cell, 0)
-                                             : mesh->K[0];
-            HYPRE_Real ky = mesh->Kinv_cells ? 1.0 / cell_Kinv(mesh, cell, 1)
-                                             : mesh->K[1];
-            HYPRE_Real kz = mesh->Kinv_cells ? 1.0 / cell_Kinv(mesh, cell, 2)
-                                             : mesh->K[2];
+            HYPRE_Real kx =
+               mesh->Kinv_cells ? 1.0 / cell_Kinv(mesh, cell, 0) : mesh->K[0];
+            HYPRE_Real ky =
+               mesh->Kinv_cells ? 1.0 / cell_Kinv(mesh, cell, 1) : mesh->K[1];
+            HYPRE_Real kz =
+               mesh->Kinv_cells ? 1.0 / cell_Kinv(mesh, cell, 2) : mesh->K[2];
             perm[6 * p]     = kx;
             perm[6 * p + 1] = ky;
             perm[6 * p + 2] = kz;
@@ -1788,8 +1774,8 @@ write_vtk_output(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
       }
       else
       {
-         int  piece_needed = snprintf(NULL, 0, "%s_p%d.vti", base, rank);
-         char *piece_path  = (char *)malloc((size_t)piece_needed + 1);
+         int   piece_needed = snprintf(NULL, 0, "%s_p%d.vti", base, rank);
+         char *piece_path   = (char *)malloc((size_t)piece_needed + 1);
          if (!piece_path)
          {
             rc = 1;
@@ -1797,8 +1783,8 @@ write_vtk_output(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
          else
          {
             snprintf(piece_path, (size_t)piece_needed + 1, "%s_p%d.vti", base, rank);
-            rc = write_vti_piece(piece_path, mesh, extent, pressure, flux, perm,
-                                 cell_ids, n_cells, use_uint64_ids);
+            rc = write_vti_piece(piece_path, mesh, extent, pressure, flux, perm, cell_ids,
+                                 n_cells, use_uint64_ids);
             free(piece_path);
          }
          int any_rc = 0;
@@ -1806,8 +1792,8 @@ write_vtk_output(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
          rc = any_rc;
          if (!rank && !rc)
          {
-            int  master_needed = snprintf(NULL, 0, "%s.pvti", base);
-            char *master_path  = (char *)malloc((size_t)master_needed + 1);
+            int   master_needed = snprintf(NULL, 0, "%s.pvti", base);
+            char *master_path   = (char *)malloc((size_t)master_needed + 1);
             if (!master_path)
             {
                rc = 1;
@@ -1980,13 +1966,12 @@ main(int argc, char **argv)
 
    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(hypredrv, "system", -1));
    if (build_system_csr(comm, &mesh, &layout, &rt0_discretization, params.drive_axis,
-                        &indptr, &col_indices, &data, &rhs, &dofmap, &ilower,
-                        &iupper))
+                        &indptr, &col_indices, &data, &rhs, &dofmap, &ilower, &iupper))
    {
       MPI_Abort(comm, 1);
    }
-   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrixFromCSR(
-      hypredrv, ilower, iupper, indptr, col_indices, data));
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrixFromCSR(hypredrv, ilower, iupper,
+                                                            indptr, col_indices, data));
    HYPREDRV_SAFE_CALL(
       HYPREDRV_LinearSystemSetRHSFromArray(hypredrv, ilower, iupper, rhs));
    HYPREDRV_SAFE_CALL(
@@ -2016,8 +2001,8 @@ main(int argc, char **argv)
    HYPRE_Real rel_err = 0.0;
    if (!mesh.Kinv_cells)
    {
-      rel_err = pressure_l2_error(comm, &mesh, &layout, params.drive_axis, ilower,
-                                  sol_data);
+      rel_err =
+         pressure_l2_error(comm, &mesh, &layout, params.drive_axis, ilower, sol_data);
    }
    if (!rank)
    {
@@ -2033,7 +2018,8 @@ main(int argc, char **argv)
 
    if (params.output_file)
    {
-      int output_rc = write_vtk_output(comm, &mesh, &layout, params.output_file, sol_data);
+      int output_rc =
+         write_vtk_output(comm, &mesh, &layout, params.output_file, sol_data);
       if (output_rc)
       {
          if (!rank) printf("Error: failed to write VTK output\n");
