@@ -41,6 +41,8 @@ perf-out/
 #############
 data/*
 !data/README.md
+data/spe10_case2a/
+examples/src/C_darcy/reproduce-out/
 
 ###########
 # Autotools

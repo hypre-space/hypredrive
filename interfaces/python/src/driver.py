@@ -123,6 +123,9 @@ class HypreDrive:
         self._row_start: Optional[int] = None
         self._row_end: Optional[int] = None
         self._rhs_set: bool = False
+        self._last_iterations: Optional[int] = None
+        self._last_setup_time: Optional[float] = None
+        self._last_solve_time: Optional[float] = None
 
         # Always parse a YAML configuration up front so the C side has a
         # solver/preconditioner method selected before we hand over data.
@@ -291,6 +294,67 @@ class HypreDrive:
         self._core.set_rhs_from_array(row_start_i, row_end_i, values_arr)
         self._rhs_set = True
 
+    def set_dofmap(self, labels: Any) -> None:
+        """Install per-row DOF labels for MGR.
+
+        ``labels`` is a 1-D sequence (NumPy array, list, etc.) of small
+        non-negative integer codes — one per local row — telling MGR which
+        block each row belongs to. The length must match the local row
+        range previously registered by :meth:`set_matrix_from_csr`.
+
+        The dofmap is required when the configured preconditioner is MGR
+        and is otherwise ignored by the C layer. Calling this method
+        replaces any previously installed dofmap.
+        """
+        self._require_open()
+        if self._row_start is None or self._row_end is None:
+            raise RuntimeError(
+                "set_dofmap(): no matrix set; call set_matrix_from_csr first"
+            )
+        # Range-check before the dtype cast: np.ascontiguousarray to intc
+        # silently wraps int64 values outside the int32 range and treats
+        # negative sentinels as valid labels, both of which produce
+        # nonsensical MGR partitions far away from this entry point.
+        labels_in = np.asarray(labels)
+        if labels_in.size:
+            labels_range = labels_in
+            if not (
+                np.issubdtype(labels_in.dtype, np.integer)
+                or np.issubdtype(labels_in.dtype, np.bool_)
+            ):
+                try:
+                    labels_float = np.asarray(labels_in, dtype=np.float64)
+                except (TypeError, ValueError):
+                    raise ValueError("labels must be integer codes") from None
+                if not np.isfinite(labels_float).all():
+                    raise ValueError("labels must be finite integer codes")
+                if not np.equal(labels_float, np.trunc(labels_float)).all():
+                    raise ValueError("labels must be integer codes")
+                labels_range = labels_float
+            info = np.iinfo(np.intc)
+            lo = int(labels_range.min())
+            hi = int(labels_range.max())
+            if lo < 0:
+                raise ValueError(
+                    f"labels must be non-negative; got minimum {lo}"
+                )
+            if hi > int(info.max):
+                raise ValueError(
+                    f"labels max ({hi}) exceeds C int range [0, {int(info.max)}]"
+                )
+        labels_arr = np.ascontiguousarray(labels_in, dtype=np.intc)
+        if labels_arr.ndim != 1:
+            raise ValueError(
+                f"labels must be a 1-D array, got shape {labels_arr.shape}"
+            )
+        nrows = self._row_end - self._row_start + 1
+        if labels_arr.shape[0] != nrows:
+            raise ValueError(
+                f"labels length {labels_arr.shape[0]} does not match local "
+                f"row count {nrows}"
+            )
+        self._core.set_dofmap(labels_arr)
+
     # ------------------------------------------------------------------
     # Solve cycle
     # ------------------------------------------------------------------
@@ -303,6 +367,12 @@ class HypreDrive:
         if not self._rhs_set:
             raise RuntimeError("solve(): no RHS set; call set_rhs")
 
+        # Reset before we start so the last_* properties never report stale
+        # values from a previous successful solve when this one fails partway.
+        self._last_iterations = None
+        self._last_setup_time = None
+        self._last_solve_time = None
+
         # Build x0 (zeros by default, controlled by the YAML init_guess_mode).
         self._core.setup_initial_guess()
 
@@ -310,6 +380,9 @@ class HypreDrive:
         try:
             self._core.solver_setup()
             self._core.solver_apply()
+            self._last_iterations = self._core.solver_iterations()
+            self._last_setup_time = self._core.solver_setup_time()
+            self._last_solve_time = self._core.solver_solve_time()
         finally:
             # Destroy the solver immediately so a subsequent solve cycle on the
             # same HypreDrive object starts from a clean slate, even if setup or
@@ -320,6 +393,38 @@ class HypreDrive:
     # ------------------------------------------------------------------
     # Result extraction
     # ------------------------------------------------------------------
+
+    @property
+    def last_iterations(self) -> Optional[int]:
+        """Number of iterations taken by the most recent :meth:`solve` call.
+
+        ``None`` until a successful solve. Reset to ``None`` at the start of
+        every :meth:`solve`, so a failed solve always reports ``None`` here
+        rather than the previous solve's count.
+        """
+        return self._last_iterations
+
+    @property
+    def last_setup_time(self) -> Optional[float]:
+        """Solver/preconditioner setup time from the most recent :meth:`solve`.
+
+        Unit matches whatever the C library was configured to report:
+        seconds by default, milliseconds when the YAML option
+        ``general.use_millisec`` is set to ``yes``. Callers that mix the two
+        modes must inspect their own YAML to label printouts correctly.
+        ``None`` until the first successful solve.
+        """
+        return self._last_setup_time
+
+    @property
+    def last_solve_time(self) -> Optional[float]:
+        """Solver-apply (Krylov iteration) time from the most recent :meth:`solve`.
+
+        Returned in the same units as :attr:`last_setup_time` — see that
+        property for the unit/YAML coupling. ``None`` until the first
+        successful solve.
+        """
+        return self._last_solve_time
 
     def get_solution(self) -> np.ndarray:
         """Return the local-rank solution slab as a NumPy array."""

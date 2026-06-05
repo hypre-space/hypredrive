@@ -150,7 +150,7 @@ owned by the rank, and `cols` contains global column indices.
 python -m pytest interfaces/python/tests/test_solve_serial.py -v
 mpirun -np 2 python -m pytest \
   interfaces/python/tests/test_solve_mpi.py \
-  interfaces/python/tests/test_laplacian_example_mpi.py -v
+  interfaces/python/tests/laplacian/test_example_mpi.py -v
 ```
 
 ## Benchmarks
@@ -181,5 +181,5 @@ python interfaces/python/benchmarks/compare_laplacian.py
 * Python arrays are copied/coerced to the HYPRE scalar and index types used by
   the linked C library.
 * GPU/device execution is not exposed as a Python-native data path yet.
-* Examples live in `interfaces/python/examples`.
+* Examples live in `interfaces/python/examples/{laplacian,darcy}`.
 * Developer benchmarks live in `interfaces/python/benchmarks`.

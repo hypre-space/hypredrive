@@ -25,7 +25,12 @@ def _require_parallel_world() -> None:
 
 
 def _load_laplacian_example():
-    path = Path(__file__).resolve().parents[1] / "examples" / "laplacian.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "examples"
+        / "laplacian"
+        / "laplacian.py"
+    )
     spec = importlib.util.spec_from_file_location("hypredrive_laplacian_example", path)
     assert spec is not None
     assert spec.loader is not None
