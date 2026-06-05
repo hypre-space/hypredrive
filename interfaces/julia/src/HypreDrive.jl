@@ -269,6 +269,21 @@ function hypredrive_mpi_world_sum(value::Real)
     return Float64(total_ref[])
 end
 
+function _mpi_world_allgatherv(values::Vector{Float64}, counts::Vector{Cint},
+                               displs::Vector{Cint})
+    hypredrive_initialize()
+    length(counts) == length(displs) || throw(ArgumentError("counts and displacements differ"))
+    total = isempty(counts) ? 0 : Int(maximum(displs .+ counts))
+    gathered = Vector{Float64}(undef, total)
+    GC.@preserve values counts displs gathered begin
+        _check(ccall((:HYPREDRV_JuliaWorldAllgathervDouble, _lib()), UInt32,
+                     (Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cint}, Ptr{Cint}),
+                     pointer(values), Cint(length(values)), pointer(gathered),
+                     pointer(counts), pointer(displs)), "MPI allgatherv")
+    end
+    return gathered
+end
+
 function _index_type()
     lock(_state_lock)
     try
@@ -548,9 +563,34 @@ function _partition_rows(n::Int, rank::Int, size::Int)
     return start0, start0 + local_n - 1
 end
 
+function _parse_input_args!(drv::Ptr{Cvoid}, yaml::AbstractString,
+                            input_args::Union{Nothing,Vector{String}})
+    if input_args === nothing
+        _check(ccall((:HYPREDRV_JuliaInputArgsParseYaml, _lib()), UInt32,
+                     (Ptr{Cvoid}, Cstring), drv, yaml), "parse options")
+        return nothing
+    end
+
+    !isempty(input_args) || throw(ArgumentError("input_args must not be empty"))
+    cargs = Vector{Cstring}(undef, length(input_args))
+    GC.@preserve input_args begin
+        for i in eachindex(input_args)
+            cargs[i] = Base.unsafe_convert(Cstring, input_args[i])
+        end
+        GC.@preserve cargs begin
+            _check(ccall((:HYPREDRV_JuliaInputArgsParseArgv, _lib()), UInt32,
+                         (Ptr{Cvoid}, Cint, Ptr{Cstring}), drv, Cint(length(cargs)),
+                         pointer(cargs)), "parse options")
+        end
+    end
+    return nothing
+end
+
 function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector{Float64}, rhs::Vector{Float64},
                          row_start::Integer, row_end::Integer, yaml::AbstractString;
-                         comm::Symbol=:self, nsolve::Integer=1) where {T<:Union{Int32,Int64}}
+                         comm::Symbol=:self, nsolve::Integer=1,
+                         dofmap::Union{Nothing,Vector{Cint}}=nothing,
+                         input_args::Union{Nothing,Vector{String}}=nothing) where {T<:Union{Int32,Int64}}
     hypredrive_initialize()
     nsolve >= 1 || throw(ArgumentError("nsolve must be positive"))
     row_start >= 0 || throw(ArgumentError("row_start must be nonnegative"))
@@ -571,6 +611,9 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
     length(data) <= typemax(T) || throw(ArgumentError("nnz exceeds HYPRE_BigInt range"))
     indptr[1] == zero(T) || throw(ArgumentError("indptr must start at zero"))
     indptr[end] == T(length(data)) || throw(ArgumentError("indptr[end] must equal nnz"))
+    if dofmap !== nothing
+        length(dofmap) == length(rhs) || throw(ArgumentError("dofmap length does not match row range"))
+    end
 
     # Driver handles are intentionally scoped to this function and destroyed in
     # finally; no long-lived Julia wrapper is exposed that would need a finalizer.
@@ -586,7 +629,7 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
         end
         drv = drv_ref[]
         _check(ccall((:HYPREDRV_JuliaSetLibraryMode, _lib()), UInt32, (Ptr{Cvoid},), drv), "set library mode")
-        _check(ccall((:HYPREDRV_JuliaInputArgsParseYaml, _lib()), UInt32, (Ptr{Cvoid}, Cstring), drv, yaml), "parse options")
+        _parse_input_args!(drv, yaml, input_args)
         GC.@preserve indptr col_indices data rhs begin
             _check(ccall((:HYPREDRV_JuliaSetMatrixFromCSR, _lib()), UInt32,
                          (Ptr{Cvoid}, Int64, Int64, Ptr{T}, Ptr{T}, Ptr{Float64}),
@@ -595,6 +638,13 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
             _check(ccall((:HYPREDRV_JuliaSetRHSFromArray, _lib()), UInt32,
                          (Ptr{Cvoid}, Int64, Int64, Ptr{Float64}),
                          drv, Int64(row_start), Int64(row_end), pointer(rhs)), "set rhs")
+        end
+        if dofmap !== nothing
+            GC.@preserve dofmap begin
+                _check(ccall((:HYPREDRV_JuliaSetDofmap, _lib()), UInt32,
+                             (Ptr{Cvoid}, Cint, Ptr{Cint}), drv, Cint(length(dofmap)),
+                             pointer(dofmap)), "set dofmap")
+            end
         end
 
         local_n = length(rhs)
@@ -686,7 +736,9 @@ function hypredrive_solve_mpi(A::AbstractMatrix, b::AbstractVector; options=noth
 end
 
 function hypredrive_solve_mpi_csr(indptr, col_indices, data, rhs, row_start::Integer;
-                                  options=nothing, nsolve::Integer=1, comm::Symbol=:self)
+                                  options=nothing, nsolve::Integer=1, comm::Symbol=:self,
+                                  dofmap=nothing,
+                                  input_args::Union{Nothing,Vector{String}}=nothing)
     T = _index_type()
     comm in (:world, :self) || throw(ArgumentError("comm must be :world or :self"))
     row_start >= 0 || throw(ArgumentError("row_start must be nonnegative"))
@@ -694,10 +746,12 @@ function hypredrive_solve_mpi_csr(indptr, col_indices, data, rhs, row_start::Int
     cols_t = _as_vector(T, col_indices)
     data64 = _as_vector(Float64, data)
     rhs64 = _as_vector(Float64, rhs)
+    dofmap_cint = dofmap === nothing ? nothing : _as_vector(Cint, dofmap)
     row_end = Int(row_start) + length(rhs64) - 1
     yaml = options === nothing ? hypredrive_options() : hypredrive_options(options)
     return _solve_csr_impl(indptr_t, cols_t, data64, rhs64, row_start, row_end, yaml;
-                           comm=comm, nsolve=nsolve)
+                           comm=comm, nsolve=nsolve, dofmap=dofmap_cint,
+                           input_args=input_args)
 end
 
 # Qualified convenience aliases. They are intentionally not exported.

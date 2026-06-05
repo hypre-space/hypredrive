@@ -161,6 +161,72 @@ if(HYPREDRV_ENABLE_TESTING AND Julia_EXECUTABLE)
         )
     endif()
 
+    if(HYPREDRV_ENABLE_EXAMPLES)
+        set(_hypredrv_julia_darcy_perm
+            "${CMAKE_CURRENT_BINARY_DIR}/darcy_heterogeneous_perm.dat")
+        file(WRITE "${_hypredrv_julia_darcy_perm}"
+            "1.00 1.10 1.20 1.30 1.40 1.50 1.60 1.70 1.80 1.90 2.00 2.10\n"
+            "2.00 2.10 2.20 2.30 2.40 2.50 2.60 2.70 2.80 2.90 3.00 3.10\n"
+            "3.00 3.10 3.20 3.30 3.40 3.50 3.60 3.70 3.80 3.90 4.00 4.10\n")
+
+        set(_hypredrv_julia_darcy_compare_common
+            ${Julia_EXECUTABLE} --startup-file=no
+            --project=${_hypredrv_julia_test_project}
+            ${CMAKE_CURRENT_SOURCE_DIR}/test/darcy_compare.jl
+            --julia-exe ${Julia_EXECUTABLE}
+            --project ${_hypredrv_julia_test_project}
+            --example ${CMAKE_CURRENT_SOURCE_DIR}/examples/darcy.jl
+            --c-darcy $<TARGET_FILE:darcy>
+        )
+
+        add_test(NAME julia_darcy_help
+            COMMAND ${_hypredrv_julia_darcy_compare_common}
+                    --mode help
+        )
+        set_tests_properties(julia_darcy_help PROPERTIES
+            LABELS "julia;interface"
+            ENVIRONMENT "${_hypredrv_julia_test_env}"
+            FIXTURES_REQUIRED "julia_built;julia_project_instantiated"
+        )
+
+        add_test(NAME julia_darcy_serial_compare
+            COMMAND ${_hypredrv_julia_darcy_compare_common}
+                    --mode serial
+        )
+        set_tests_properties(julia_darcy_serial_compare PROPERTIES
+            LABELS "julia;interface"
+            ENVIRONMENT "${_hypredrv_julia_test_env}"
+            FIXTURES_REQUIRED "julia_built;julia_project_instantiated"
+            RUN_SERIAL TRUE
+        )
+
+        add_test(NAME julia_darcy_heterogeneous_compare
+            COMMAND ${_hypredrv_julia_darcy_compare_common}
+                    --mode heterogeneous
+                    --perm-file ${_hypredrv_julia_darcy_perm}
+        )
+        set_tests_properties(julia_darcy_heterogeneous_compare PROPERTIES
+            LABELS "julia;interface"
+            ENVIRONMENT "${_hypredrv_julia_test_env}"
+            FIXTURES_REQUIRED "julia_built;julia_project_instantiated"
+            RUN_SERIAL TRUE
+        )
+
+        if(MPI_C_FOUND AND MPIEXEC_EXECUTABLE)
+            add_test(NAME julia_darcy_mpi_compare
+                COMMAND ${_hypredrv_julia_darcy_compare_common}
+                        --mode mpi
+                        --mpiexec ${MPIEXEC_EXECUTABLE}
+                        --np-flag ${MPIEXEC_NUMPROC_FLAG}
+            )
+            set_tests_properties(julia_darcy_mpi_compare PROPERTIES
+                LABELS "julia;interface;mpi"
+                ENVIRONMENT "${_hypredrv_julia_test_env}"
+                FIXTURES_REQUIRED "julia_built;julia_project_instantiated"
+            )
+        endif()
+    endif()
+
     if(HYPREDRV_BUILD_TREE_EXPORT_AVAILABLE)
         add_test(NAME julia_cmake_consumer
             COMMAND ${CMAKE_COMMAND}
