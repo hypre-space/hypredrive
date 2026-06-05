@@ -516,6 +516,77 @@ For heterogeneous inputs, the driver reports successful solver completion
 rather than an analytic pressure error because the default linear pressure
 profile is no longer the exact solution.
 
+SPE10 Reproduction Script
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The C Darcy example directory includes a reproducibility script for the SPE10
+case:
+
+.. code-block:: bash
+
+   examples/src/C_darcy/reproduce.sh
+
+By default, the script downloads the ignored SPE10 data if needed, runs the
+full ``60 x 220 x 85`` heterogeneous C benchmark on 16 MPI ranks with a
+``1 x 4 x 4`` rank grid, writes the solver log to
+``examples/src/C_darcy/reproduce-out/darcy_spe10.log``, writes full-resolution
+VTK results to ``examples/src/C_darcy/reproduce-out/darcy_spe10.pvti`` plus one
+``.vti`` piece per rank, and regenerates the layer documentation figure below:
+
+.. figure:: figures/spe10_darcy_fields.png
+   :alt: SPE10 permeability and pressure fields on one layer
+   :align: center
+
+   SPE10 case 2a layer visualization. Left: ``log10(Kx)`` on one physical
+   layer. Right: pressure-drop solution on the same layer with unit pressure on
+   the low-x side, zero pressure on the high-x side, and no-flow y boundaries.
+
+Use ``--figure-mode 3d`` to generate a three-dimensional view of the full
+problem, or ``--figure-mode both`` to generate both figures:
+
+.. code-block:: bash
+
+   examples/src/C_darcy/reproduce.sh --skip-run --figure-mode both
+
+The figure generation lives in ``examples/src/C_darcy/postprocess.py`` and can
+also be run directly:
+
+.. code-block:: bash
+
+   examples/src/C_darcy/postprocess.py \
+      --result-file examples/src/C_darcy/reproduce-out/darcy_spe10.pvti \
+      --mode both
+
+.. figure:: figures/spe10_darcy_3d.png
+   :alt: SPE10 full-volume permeability and pressure fields
+   :align: center
+
+   Full-volume SPE10 case 2a visualization using full-resolution exterior
+   surfaces from the C Darcy VTK results. Left: ``log10(Kx)`` from the
+   ``60 x 220 x 85`` permeability field. Right: pressure-drop solution on the
+   same full-resolution grid, with unit pressure on the low-x side, zero
+   pressure on the high-x side, and no-flow y/z boundaries.
+
+The performance run uses the C mixed RT0/P0 driver:
+
+.. code-block:: bash
+
+   mpirun -np 16 /path/to/build/darcy \
+      -n 60 220 85 \
+      -P 1 4 4 \
+      --K-file data/spe10_case2a/spe_perm.dat \
+      --K-file-grid 60 220 85 \
+      --K-file-k-order top-down \
+      --output examples/src/C_darcy/reproduce-out/darcy_spe10.vti \
+      -g x -v 1
+
+The figures are generated from the C VTK output with NumPy and Matplotlib, so
+reproducing the images does not require VTK or ParaView. Set
+``SPE10_LAYER=<k>`` to choose a different physical layer for the layer figure.
+Set ``NP``, ``NXYZ``, ``PGRID``, ``RESULT_FILE``, ``BUILD_DIR``, or
+``DARCY_BIN`` to override the benchmark command. Use ``--skip-run`` or
+``--skip-figure`` to run only one part.
+
 MGR Preconditioning
 ~~~~~~~~~~~~~~~~~~~
 

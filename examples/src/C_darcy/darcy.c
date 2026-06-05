@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,6 +55,7 @@ typedef struct
    HYPRE_Int  hypredrv_argc;
    char      *yaml_file;
    char      *K_file;
+   char      *output_file;
    char     **hypredrv_argv;
 } DarcyParams;
 
@@ -667,6 +669,7 @@ set_default_params(DarcyParams *params)
    params->hypredrv_argc   = 0;
    params->yaml_file       = NULL;
    params->K_file          = NULL;
+   params->output_file     = NULL;
    params->hypredrv_argv   = NULL;
 }
 
@@ -702,6 +705,9 @@ print_usage(void)
    printf("                                   default: bottom-up\n");
    printf("  -g, --gradient-direction <axis>  Pressure-drop direction: x, y, or z;\n");
    printf("                                   default: x\n");
+   printf("  -o, --output <file>              Write VTK results. On 1 rank a .vti is\n");
+   printf("                                   written; on >1 rank a .pvti master plus\n");
+   printf("                                   one .vti piece per rank is written\n");
    printf("  -v, --verbose <bits>             Verbosity bitset; default: 1\n");
    printf(
       "                                     0x1  library info and solver statistics\n");
@@ -827,6 +833,15 @@ parse_args(int argc, char **argv, DarcyParams *params, int rank, int nprocs)
                               : (!strcmp(argv[i], "y")) ? 1
                               : (!strcmp(argv[i], "z")) ? 2
                                                         : -1;
+      }
+      else if (!strcmp(argv[i], "-o") || !strcmp(argv[i], "--output"))
+      {
+         if (++i >= argc)
+         {
+            if (!rank) printf("Error: --output requires a path\n");
+            return 1;
+         }
+         params->output_file = argv[i];
       }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
@@ -1426,6 +1441,402 @@ pressure_l2_error(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layou
    return sqrt(global_err / global_ref);
 }
 
+static const char *
+path_basename(const char *path)
+{
+   const char *slash = strrchr(path, '/');
+   return slash ? slash + 1 : path;
+}
+
+static int
+path_without_extension(const char *path, char **base_ptr)
+{
+   size_t      len   = strlen(path);
+   const char *slash = strrchr(path, '/');
+   const char *dot   = strrchr(path, '.');
+   if (dot && (!slash || dot > slash))
+   {
+      len = (size_t)(dot - path);
+   }
+
+   char *base = (char *)malloc(len + 1);
+   if (!base)
+   {
+      return 1;
+   }
+   memcpy(base, path, len);
+   base[len] = '\0';
+   *base_ptr = base;
+   return 0;
+}
+
+static void
+vtk_extent_for_rank(const DarcyMesh *mesh, const DarcyLayout *layout, int rank,
+                    HYPRE_Int extent[6])
+{
+   HYPRE_Int rx, ry, rz;
+   layout_rank_coords(layout, rank, &rx, &ry, &rz);
+   extent[0] = layout->x0[rx];
+   extent[1] = layout->x1[rx];
+   extent[2] = mesh->n[1] > 1 ? layout->y0[ry] : 0;
+   extent[3] = mesh->n[1] > 1 ? layout->y1[ry] : 1;
+   extent[4] = mesh->n[2] > 1 ? layout->z0[rz] : 0;
+   extent[5] = mesh->n[2] > 1 ? layout->z1[rz] : 1;
+}
+
+static int
+write_vtk_data_block(FILE *fp, const void *data, uint64_t nbytes)
+{
+   return fwrite(&nbytes, sizeof(nbytes), 1, fp) == 1 &&
+          (nbytes == 0 || fwrite(data, 1, (size_t)nbytes, fp) == (size_t)nbytes)
+             ? 0
+             : 1;
+}
+
+static int
+write_vti_piece(const char *filename, const DarcyMesh *mesh, const HYPRE_Int extent[6],
+                const HYPRE_Real *pressure, const HYPRE_Real *flux,
+                const HYPRE_Real *permeability, const void *cell_ids,
+                size_t n_cells, int use_uint64_ids)
+{
+   FILE *fp = fopen(filename, "wb");
+   if (!fp)
+   {
+      return 1;
+   }
+
+   uint64_t pressure_bytes = (uint64_t)n_cells * sizeof(HYPRE_Real);
+   uint64_t flux_bytes     = (uint64_t)n_cells * 3 * sizeof(HYPRE_Real);
+   uint64_t perm_bytes     = (uint64_t)n_cells * 6 * sizeof(HYPRE_Real);
+   uint64_t id_bytes =
+      (uint64_t)n_cells * (use_uint64_ids ? sizeof(uint64_t) : sizeof(uint32_t));
+   uint64_t pressure_offset = 0;
+   uint64_t flux_offset     = pressure_offset + sizeof(uint64_t) + pressure_bytes;
+   uint64_t perm_offset     = flux_offset + sizeof(uint64_t) + flux_bytes;
+   uint64_t id_offset       = perm_offset + sizeof(uint64_t) + perm_bytes;
+
+   HYPRE_Real sx = mesh->h[0];
+   HYPRE_Real sy = mesh->n[1] > 1 ? mesh->h[1] : 1.0;
+   HYPRE_Real sz = mesh->n[2] > 1 ? mesh->h[2] : 1.0;
+   const char *id_type = use_uint64_ids ? "UInt64" : "UInt32";
+
+   int rc = 0;
+   rc |= fprintf(fp, "<?xml version=\"1.0\"?>\n") < 0;
+   rc |= fprintf(fp,
+                 "<VTKFile type=\"ImageData\" version=\"1.0\" "
+                 "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n") < 0;
+   rc |= fprintf(fp,
+                 "  <ImageData WholeExtent=\"%d %d %d %d %d %d\" "
+                 "Origin=\"0 0 0\" Spacing=\"%.17g %.17g %.17g\">\n",
+                 extent[0], extent[1], extent[2], extent[3], extent[4], extent[5],
+                 sx, sy, sz) < 0;
+   rc |= fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", extent[0],
+                 extent[1], extent[2], extent[3], extent[4], extent[5]) < 0;
+   rc |= fprintf(fp,
+                 "      <CellData Scalars=\"pressure\" Vectors=\"flux\" "
+                 "Tensors=\"permeability\">\n") < 0;
+   rc |= fprintf(fp,
+                 "        <DataArray type=\"Float64\" Name=\"pressure\" "
+                 "format=\"appended\" offset=\"%llu\"/>\n",
+                 (unsigned long long)pressure_offset) < 0;
+   rc |= fprintf(fp,
+                 "        <DataArray type=\"Float64\" Name=\"flux\" "
+                 "NumberOfComponents=\"3\" format=\"appended\" offset=\"%llu\"/>\n",
+                 (unsigned long long)flux_offset) < 0;
+   rc |= fprintf(fp,
+                 "        <DataArray type=\"Float64\" Name=\"permeability\" "
+                 "NumberOfComponents=\"6\" ComponentName0=\"xx\" "
+                 "ComponentName1=\"yy\" ComponentName2=\"zz\" "
+                 "ComponentName3=\"xy\" ComponentName4=\"yz\" "
+                 "ComponentName5=\"xz\" format=\"appended\" offset=\"%llu\"/>\n",
+                 (unsigned long long)perm_offset) < 0;
+   rc |= fprintf(fp,
+                 "        <DataArray type=\"%s\" Name=\"GlobalCellId\" "
+                 "format=\"appended\" offset=\"%llu\"/>\n",
+                 id_type, (unsigned long long)id_offset) < 0;
+   rc |= fprintf(fp,
+                 "      </CellData>\n"
+                 "      <PointData></PointData>\n"
+                 "    </Piece>\n"
+                 "  </ImageData>\n"
+                 "  <AppendedData encoding=\"raw\">\n"
+                 "   _") < 0;
+
+   rc |= write_vtk_data_block(fp, pressure, pressure_bytes);
+   rc |= write_vtk_data_block(fp, flux, flux_bytes);
+   rc |= write_vtk_data_block(fp, permeability, perm_bytes);
+   rc |= write_vtk_data_block(fp, cell_ids, id_bytes);
+   rc |= fprintf(fp, "\n  </AppendedData>\n</VTKFile>\n") < 0;
+   rc |= fclose(fp) != 0;
+   return rc;
+}
+
+static int
+write_pvti_master(const char *filename, const char *piece_base, const DarcyMesh *mesh,
+                  const DarcyLayout *layout, int use_uint64_ids)
+{
+   FILE *fp = fopen(filename, "w");
+   if (!fp)
+   {
+      return 1;
+   }
+
+   HYPRE_Int whole[6] = {0, mesh->n[0], 0, mesh->n[1] > 1 ? mesh->n[1] : 1,
+                         0, mesh->n[2] > 1 ? mesh->n[2] : 1};
+   HYPRE_Real sx = mesh->h[0];
+   HYPRE_Real sy = mesh->n[1] > 1 ? mesh->h[1] : 1.0;
+   HYPRE_Real sz = mesh->n[2] > 1 ? mesh->h[2] : 1.0;
+   const char *id_type = use_uint64_ids ? "UInt64" : "UInt32";
+
+   int rc = 0;
+   rc |= fprintf(fp, "<?xml version=\"1.0\"?>\n") < 0;
+   rc |= fprintf(fp,
+                 "<VTKFile type=\"PImageData\" version=\"1.0\" "
+                 "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n") < 0;
+   rc |= fprintf(fp,
+                 "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" "
+                 "GhostLevel=\"0\" Origin=\"0 0 0\" "
+                 "Spacing=\"%.17g %.17g %.17g\">\n",
+                 whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sx,
+                 sy, sz) < 0;
+   rc |= fprintf(fp,
+                 "    <PCellData Scalars=\"pressure\" Vectors=\"flux\" "
+                 "Tensors=\"permeability\">\n") < 0;
+   rc |= fprintf(fp, "      <PDataArray type=\"Float64\" Name=\"pressure\"/>\n") < 0;
+   rc |= fprintf(fp,
+                 "      <PDataArray type=\"Float64\" Name=\"flux\" "
+                 "NumberOfComponents=\"3\"/>\n") < 0;
+   rc |= fprintf(fp,
+                 "      <PDataArray type=\"Float64\" Name=\"permeability\" "
+                 "NumberOfComponents=\"6\" ComponentName0=\"xx\" "
+                 "ComponentName1=\"yy\" ComponentName2=\"zz\" "
+                 "ComponentName3=\"xy\" ComponentName4=\"yz\" "
+                 "ComponentName5=\"xz\"/>\n") < 0;
+   rc |= fprintf(fp, "      <PDataArray type=\"%s\" Name=\"GlobalCellId\"/>\n",
+                 id_type) < 0;
+   rc |= fprintf(fp,
+                 "    </PCellData>\n"
+                 "    <PPointData></PPointData>\n") < 0;
+
+   for (int r = 0; r < layout->nprocs; r++)
+   {
+      HYPRE_Int extent[6];
+      vtk_extent_for_rank(mesh, layout, r, extent);
+      int  needed = snprintf(NULL, 0, "%s_p%d.vti", piece_base, r);
+      char *piece = (char *)malloc((size_t)needed + 1);
+      if (!piece)
+      {
+         fclose(fp);
+         return 1;
+      }
+      snprintf(piece, (size_t)needed + 1, "%s_p%d.vti", piece_base, r);
+      rc |= fprintf(fp,
+                    "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s\"/>\n",
+                    extent[0], extent[1], extent[2], extent[3], extent[4],
+                    extent[5], path_basename(piece)) < 0;
+      free(piece);
+   }
+
+   rc |= fprintf(fp, "  </PImageData>\n</VTKFile>\n") < 0;
+   rc |= fclose(fp) != 0;
+   return rc;
+}
+
+static int
+write_vtk_output(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout,
+                 const char *output_file, const HYPRE_Real *local_solution)
+{
+   int rank, nprocs;
+   MPI_Comm_rank(comm, &rank);
+   MPI_Comm_size(comm, &nprocs);
+
+   int *counts = (int *)calloc((size_t)nprocs, sizeof(int));
+   int *displs = (int *)calloc((size_t)nprocs, sizeof(int));
+   if (!counts || !displs)
+   {
+      free(counts);
+      free(displs);
+      return 1;
+   }
+   for (int r = 0; r < nprocs; r++)
+   {
+      if ((HYPRE_BigInt)(int)layout->total[r] != layout->total[r] ||
+          (HYPRE_BigInt)(int)layout->offset[r] != layout->offset[r])
+      {
+         if (!rank) printf("Error: VTK output is too large for MPI_Allgatherv\n");
+         free(counts);
+         free(displs);
+         return 1;
+      }
+      counts[r] = (int)layout->total[r];
+      displs[r] = (int)layout->offset[r];
+   }
+
+   HYPRE_Real *solution = (HYPRE_Real *)malloc((size_t)layout->N * sizeof(HYPRE_Real));
+   if (!solution)
+   {
+      free(counts);
+      free(displs);
+      return 1;
+   }
+
+   MPI_Allgatherv(local_solution, counts[rank], MPI_DOUBLE, solution, counts, displs,
+                  MPI_DOUBLE, comm);
+   free(counts);
+   free(displs);
+
+   if ((HYPRE_BigInt)(size_t)layout->count_cells[rank] !=
+       layout->count_cells[rank])
+   {
+      free(solution);
+      return 1;
+   }
+   size_t n_cells = (size_t)layout->count_cells[rank];
+   HYPRE_Real *pressure = (HYPRE_Real *)malloc(n_cells * sizeof(HYPRE_Real));
+   HYPRE_Real *flux     = (HYPRE_Real *)calloc(3 * n_cells, sizeof(HYPRE_Real));
+   HYPRE_Real *perm     = (HYPRE_Real *)calloc(6 * n_cells, sizeof(HYPRE_Real));
+   int use_uint64_ids   = mesh->n_cells >= ((HYPRE_BigInt)1 << 32);
+   void *cell_ids = use_uint64_ids ? malloc(n_cells * sizeof(uint64_t))
+                                   : malloc(n_cells * sizeof(uint32_t));
+   if (!pressure || !flux || !perm || !cell_ids)
+   {
+      free(solution);
+      free(pressure);
+      free(flux);
+      free(perm);
+      free(cell_ids);
+      return 1;
+   }
+
+   HYPRE_Int rx, ry, rz;
+   layout_rank_coords(layout, rank, &rx, &ry, &rz);
+   HYPRE_Real ax = face_area(mesh, 0);
+   HYPRE_Real ay = face_area(mesh, 1);
+   HYPRE_Real az = face_area(mesh, 2);
+   size_t     p  = 0;
+   for (HYPRE_BigInt k = layout->z0[rz]; k < layout->z1[rz]; k++)
+   {
+      for (HYPRE_BigInt j = layout->y0[ry]; j < layout->y1[ry]; j++)
+      {
+         for (HYPRE_BigInt i = layout->x0[rx]; i < layout->x1[rx]; i++)
+         {
+            HYPRE_BigInt cell = cell_index(mesh, i, j, k);
+            pressure[p]       = solution[layout_cell(layout, mesh, i, j, k)];
+            flux[3 * p] = 0.5 *
+                          (solution[layout_xface(layout, mesh, i, j, k)] +
+                           solution[layout_xface(layout, mesh, i + 1, j, k)]) /
+                          ax;
+            if (mesh->dim >= 2)
+            {
+               flux[3 * p + 1] =
+                  0.5 *
+                  (solution[layout_yface(layout, mesh, i, j, k)] +
+                   solution[layout_yface(layout, mesh, i, j + 1, k)]) /
+                  ay;
+            }
+            if (mesh->dim >= 3)
+            {
+               flux[3 * p + 2] =
+                  0.5 *
+                  (solution[layout_zface(layout, mesh, i, j, k)] +
+                   solution[layout_zface(layout, mesh, i, j, k + 1)]) /
+                  az;
+            }
+
+            HYPRE_Real kx = mesh->Kinv_cells ? 1.0 / cell_Kinv(mesh, cell, 0)
+                                             : mesh->K[0];
+            HYPRE_Real ky = mesh->Kinv_cells ? 1.0 / cell_Kinv(mesh, cell, 1)
+                                             : mesh->K[1];
+            HYPRE_Real kz = mesh->Kinv_cells ? 1.0 / cell_Kinv(mesh, cell, 2)
+                                             : mesh->K[2];
+            perm[6 * p]     = kx;
+            perm[6 * p + 1] = ky;
+            perm[6 * p + 2] = kz;
+            perm[6 * p + 3] = 0.0;
+            perm[6 * p + 4] = 0.0;
+            perm[6 * p + 5] = 0.0;
+
+            if (use_uint64_ids)
+            {
+               ((uint64_t *)cell_ids)[p] = (uint64_t)cell;
+            }
+            else
+            {
+               ((uint32_t *)cell_ids)[p] = (uint32_t)cell;
+            }
+            p++;
+         }
+      }
+   }
+
+   HYPRE_Int extent[6];
+   vtk_extent_for_rank(mesh, layout, rank, extent);
+
+   int   rc   = 0;
+   char *base = NULL;
+   if (nprocs == 1)
+   {
+      rc = write_vti_piece(output_file, mesh, extent, pressure, flux, perm, cell_ids,
+                           n_cells, use_uint64_ids);
+      if (!rank && !rc) printf("wrote                : %s\n", output_file);
+   }
+   else
+   {
+      if (path_without_extension(output_file, &base))
+      {
+         rc = 1;
+      }
+      else
+      {
+         int  piece_needed = snprintf(NULL, 0, "%s_p%d.vti", base, rank);
+         char *piece_path  = (char *)malloc((size_t)piece_needed + 1);
+         if (!piece_path)
+         {
+            rc = 1;
+         }
+         else
+         {
+            snprintf(piece_path, (size_t)piece_needed + 1, "%s_p%d.vti", base, rank);
+            rc = write_vti_piece(piece_path, mesh, extent, pressure, flux, perm,
+                                 cell_ids, n_cells, use_uint64_ids);
+            free(piece_path);
+         }
+         int any_rc = 0;
+         MPI_Allreduce(&rc, &any_rc, 1, MPI_INT, MPI_MAX, comm);
+         rc = any_rc;
+         if (!rank && !rc)
+         {
+            int  master_needed = snprintf(NULL, 0, "%s.pvti", base);
+            char *master_path  = (char *)malloc((size_t)master_needed + 1);
+            if (!master_path)
+            {
+               rc = 1;
+            }
+            else
+            {
+               snprintf(master_path, (size_t)master_needed + 1, "%s.pvti", base);
+               rc = write_pvti_master(master_path, path_basename(base), mesh, layout,
+                                      use_uint64_ids);
+               if (!rc)
+               {
+                  printf("wrote                : %s (+ %d piece(s))\n", master_path,
+                         nprocs);
+               }
+               free(master_path);
+            }
+         }
+         free(base);
+      }
+   }
+
+   free(solution);
+   free(pressure);
+   free(flux);
+   free(perm);
+   free(cell_ids);
+   return rc;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1553,6 +1964,10 @@ main(int argc, char **argv)
          printf("Permeability diag:    %.3e %.3e %.3e\n", params.K[0], params.K[1],
                 params.K[2]);
       }
+      if (params.output_file)
+      {
+         printf("VTK output:           %s\n", params.output_file);
+      }
       printf("=====================================================\n\n");
    }
 
@@ -1613,6 +2028,16 @@ main(int argc, char **argv)
       else
       {
          printf("relative pressure L2 error : %.6e\n", rel_err);
+      }
+   }
+
+   if (params.output_file)
+   {
+      int output_rc = write_vtk_output(comm, &mesh, &layout, params.output_file, sol_data);
+      if (output_rc)
+      {
+         if (!rank) printf("Error: failed to write VTK output\n");
+         MPI_Abort(comm, 1);
       }
    }
 
