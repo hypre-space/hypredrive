@@ -491,9 +491,9 @@ text file containing either one scalar permeability per source cell or three
 component blocks ``Kx``, ``Ky``, and ``Kz``. If ``--K-file-grid`` is omitted,
 the source grid is assumed to match ``-n`` exactly. If a source grid is supplied,
 the example samples the source field at cell centers onto the requested mesh.
-This is useful for experiments on a coarser mesh than the input data, and also
-for refinement studies that evaluate scalability across a sequence of mesh
-resolutions.
+This is useful for experiments on a coarser mesh than the input data, for
+refinement studies across a sequence of mesh resolutions, and for mesh-sequence
+scalability measurements.
 
 SPE10 model 2 permeability files use a ``60 x 220 x 85`` source grid with
 three component blocks. The helper script downloads and unpacks that dataset

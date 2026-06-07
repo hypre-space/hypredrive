@@ -171,7 +171,7 @@ the Julia MPI CSR interface with a field dofmap for MGR:
 
    mpiexec -n 2 julia --project=interfaces/julia \
      interfaces/julia/examples/darcy.jl \
-     -n 4 3 1 -P 1 2 1 -g x -v 1
+     -n 4 3 1 -P 1 2 1 -g y -v 1
 
 For constant permeability, the example reports the relative pressure L2 error
 against the analytic pressure-drop solution. It also accepts heterogeneous
@@ -191,7 +191,7 @@ SPE10-style permeability files and VTK output:
 Use ``-i options.yml`` to provide a solver configuration, or pass hypredrive
 command-line overrides after ``-a``/``--args``, for example
 ``-a --solver:gmres:max_iter 100``. The ``-P`` topology controls the Cartesian
-MPI rank grid and must multiply to the number of MPI ranks.
+MPI rank grid; the product of ``-P`` entries must equal MPI size.
 
 Scope
 -----
