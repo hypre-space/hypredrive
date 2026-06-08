@@ -116,7 +116,7 @@ if [[ "${skip_run}" -eq 0 ]]; then
         --K-file-grid 60 220 85 \
         --K-file-k-order top-down \
         --output "${result_file}" \
-        -g x -v 1 | tee "${log_path}"
+        -g y -v 1 | tee "${log_path}"
 fi
 
 if [[ "${skip_figure}" -eq 0 ]]; then

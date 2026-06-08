@@ -440,6 +440,24 @@ if(HYPREDRV_ENABLE_EXAMPLES)
     add_subdirectory(examples/src/C_lidcavity)
 endif()
 
+if(HYPREDRV_ENABLE_JULIA AND HYPREDRV_ENABLE_EXAMPLES)
+    set(_hypredrv_julia_example_targets
+        laplacian
+        darcy
+        elasticity
+        heatflow
+        lidcavity
+    )
+    foreach(_hypredrv_julia_example_target IN LISTS _hypredrv_julia_example_targets)
+        if(TARGET julia-test AND TARGET ${_hypredrv_julia_example_target})
+            add_dependencies(julia-test ${_hypredrv_julia_example_target})
+        endif()
+        if(TARGET julia-install-consumer-test AND TARGET ${_hypredrv_julia_example_target})
+            add_dependencies(julia-install-consumer-test ${_hypredrv_julia_example_target})
+        endif()
+    endforeach()
+endif()
+
 # Add a check target
 set(_hypredrv_smoke_check_args
     -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}

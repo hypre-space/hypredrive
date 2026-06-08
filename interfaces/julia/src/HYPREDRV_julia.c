@@ -262,6 +262,29 @@ HYPREDRV_JuliaWorldAllreduceDoubleSum(double value, double *sum)
    return HYPREDRV_SUCCESS;
 }
 
+/** @brief Gather variable-length double arrays on MPI_COMM_WORLD. */
+uint32_t
+HYPREDRV_JuliaWorldAllgathervDouble(const double *send, int send_count, double *recv,
+                                    const int *counts, const int *displs)
+{
+   if (send_count < 0)
+   {
+      return HYPREDRV_ErrorInvalidValue("send_count is negative");
+   }
+   if ((send_count > 0 && send == NULL) || recv == NULL || counts == NULL || displs == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("MPI allgatherv pointer is NULL");
+   }
+
+   int ierr = MPI_Allgatherv(send, send_count, MPI_DOUBLE, recv, counts, displs, MPI_DOUBLE,
+                             MPI_COMM_WORLD);
+   if (ierr != MPI_SUCCESS)
+   {
+      return HYPREDRV_ErrorInvalidValue("MPI_Allgatherv failed");
+   }
+   return HYPREDRV_SUCCESS;
+}
+
 /** @brief Destroy a HYPREDRV handle. */
 uint32_t
 HYPREDRV_JuliaDestroy(HYPREDRV_t *hypredrv_ptr)
@@ -308,6 +331,50 @@ HYPREDRV_JuliaInputArgsParseYaml(HYPREDRV_t hypredrv, const char *yaml_text)
    char    *argv[2] = {copy, NULL};
    uint32_t code    = HYPREDRV_InputArgsParse(1, argv, hypredrv);
    free(copy);
+   return code;
+}
+
+/** @brief Parse a full HYPREDRV argv vector for Julia callers. */
+uint32_t
+HYPREDRV_JuliaInputArgsParseArgv(HYPREDRV_t hypredrv, int argc, const char **argv)
+{
+   if (argc <= 0)
+   {
+      return HYPREDRV_ErrorInvalidValue("HYPREDRV argv is empty");
+   }
+   if (argv == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("HYPREDRV argv pointer is NULL");
+   }
+
+   char **copies = (char **)calloc((size_t)argc, sizeof(char *));
+   if (copies == NULL)
+   {
+      return HYPREDRV_JuliaErrorAllocation("failed to allocate HYPREDRV argv copies");
+   }
+
+   for (int i = 0; i < argc; i++)
+   {
+      if (argv[i] == NULL)
+      {
+         for (int j = 0; j < i; j++) free(copies[j]);
+         free(copies);
+         return HYPREDRV_ErrorInvalidValue("HYPREDRV argv entry is NULL");
+      }
+      size_t len = strlen(argv[i]);
+      copies[i]  = (char *)malloc(len + 1);
+      if (copies[i] == NULL)
+      {
+         for (int j = 0; j < i; j++) free(copies[j]);
+         free(copies);
+         return HYPREDRV_JuliaErrorAllocation("failed to allocate HYPREDRV argv entry");
+      }
+      memcpy(copies[i], argv[i], len + 1);
+   }
+
+   uint32_t code = HYPREDRV_InputArgsParse(argc, copies, hypredrv);
+   for (int i = 0; i < argc; i++) free(copies[i]);
+   free(copies);
    return code;
 }
 
@@ -375,6 +442,21 @@ HYPREDRV_JuliaSetRHSFromArray(HYPREDRV_t hypredrv, int64_t row_start_i64,
     */
    return HYPREDRV_LinearSystemSetRHSFromArray(hypredrv, row_start, row_end,
                                                (const HYPRE_Real *)data);
+}
+
+/** @brief Install a local integer dofmap. */
+uint32_t
+HYPREDRV_JuliaSetDofmap(HYPREDRV_t hypredrv, int size, const int *dofmap)
+{
+   if (size < 0)
+   {
+      return HYPREDRV_ErrorInvalidValue("dofmap size is negative");
+   }
+   if (size > 0 && dofmap == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("dofmap pointer is NULL");
+   }
+   return HYPREDRV_LinearSystemSetDofmap(hypredrv, size, dofmap);
 }
 
 /** @brief Request a zero initial guess through the HYPREDRV default path. */

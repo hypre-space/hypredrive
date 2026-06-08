@@ -161,6 +161,38 @@ Use ``-i options.yml`` to provide a hypredrive YAML solver configuration. Withou
 ``-i``, the example uses quiet PCG+AMG defaults. The ``-P`` topology controls the 3D
 block partition used to assemble local matrix rows.
 
+Standalone Darcy example
+------------------------
+
+The standalone Darcy example follows the C mixed RT0/P0 Darcy driver and uses
+the Julia MPI CSR interface with a field dofmap for MGR:
+
+.. code-block:: bash
+
+   mpiexec -n 2 julia --project=interfaces/julia \
+     interfaces/julia/examples/darcy.jl \
+     -n 4 3 1 -P 1 2 1 -g y -v 1
+
+For constant permeability, the example reports the relative pressure L2 error
+against the analytic pressure-drop solution. It also accepts heterogeneous
+SPE10-style permeability files and VTK output:
+
+.. code-block:: bash
+
+   mpiexec -n 2 julia --project=interfaces/julia \
+     interfaces/julia/examples/darcy.jl \
+     -n 8 8 4 -P 1 1 2 \
+     --K-file data/spe10_case2a/spe_perm.dat \
+     --K-file-grid 60 220 85 \
+     --K-file-k-order top-down \
+     -g y -v 1 \
+     --output darcy_spe10_julia.vti
+
+Use ``-i options.yml`` to provide a solver configuration, or pass hypredrive
+command-line overrides after ``-a``/``--args``, for example
+``-a --solver:gmres:max_iter 100``. The ``-P`` topology controls the Cartesian
+MPI rank grid; the product of ``-P`` entries must equal MPI size.
+
 Scope
 -----
 
