@@ -45,6 +45,13 @@ end
     @test info.setup_time >= 0.0
     @test info.solve_time >= 0.0
     @test info.solution_norm > 0.0
+
+    x_args, _ = hypredrive_solve(A, b; dofmap=zeros(Int, n),
+                                 input_args=[hypredrive_options(solver=:pcg,
+                                                                preconditioner=:amg,
+                                                                pcg=(max_iter=100, relative_tol=1.0e-10),
+                                                                amg=(print_level=0,))])
+    @test norm(A * x_args - b) / norm(b) < 1.0e-8
 end
 
 @testset "input validation" begin
@@ -69,4 +76,39 @@ end
                                        comm=:self)
     @test x ≈ [2.0, 3.0]
     @test info.iterations >= 0
+    @test_throws ArgumentError hypredrive_solve_mpi_csr(indptr, cols, data, rhs, 0;
+                                                        options=hypredrive_options(solver=:pcg,
+                                                                                   preconditioner=:amg),
+                                                        comm=:self,
+                                                        dofmap=[0, typemax(Int64)])
+end
+
+@testset "reusable session" begin
+    opts = hypredrive_options(solver=:pcg,
+                              preconditioner=:amg,
+                              pcg=(max_iter=30, relative_tol=1.0e-12),
+                              amg=(print_level=0,))
+    session = HypreDriveSession(options=opts)
+    try
+        indptr = [0, 1, 2]
+        cols = [0, 1]
+        data = [2.0, 3.0]
+        x = zeros(2)
+        set_matrix_csr!(session, indptr, cols, data, 0)
+        set_rhs!(session, [4.0, 9.0])
+        solve!(x, session)
+        @test x ≈ [2.0, 3.0]
+        @test info(session).iterations >= 0
+
+        set_rhs!(session, [8.0, 12.0])
+        solve!(x, session)
+        @test x ≈ [4.0, 4.0]
+
+        set_matrix_csr!(session, indptr, cols, [4.0, 6.0], 0)
+        set_rhs!(session, [8.0, 12.0])
+        solve!(x, session)
+        @test x ≈ [2.0, 2.0]
+    finally
+        HypreDrive.close(session)
+    end
 end

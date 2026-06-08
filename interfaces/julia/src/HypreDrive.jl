@@ -5,14 +5,15 @@ module HypreDrive
 
 using LazyArtifacts
 using Libdl
-using LinearAlgebra
 using SparseArrays
 
 export hypredrive_error, SolveInfo, hypredrive_initialize, hypredrive_library_path,
        hypredrive_comm_rank, hypredrive_comm_size,
        hypredrive_mpi_world_rank, hypredrive_mpi_world_size, hypredrive_mpi_world_sum,
        hypredrive_options, hypredrive_shutdown, hypredrive_solve,
-       hypredrive_solve_mpi, hypredrive_solve_mpi_csr
+       hypredrive_solve_mpi, hypredrive_solve_mpi_csr,
+       HypreDriveSession, set_matrix_csr!, update_matrix_csr!, set_rhs!, setup!, solve!,
+       info
 
 struct hypredrive_error <: Exception
     code::UInt32
@@ -27,6 +28,20 @@ struct SolveInfo
     setup_time::Float64
     solve_time::Float64
     solution_norm::Float64
+end
+
+mutable struct HypreDriveSession
+    drv_ref::Ref{Ptr{Cvoid}}
+    comm::Symbol
+    row_start::Int
+    row_end::Int
+    matrix_revision::Int
+    setup_revision::Int
+    matrix_set::Bool
+    rhs_set::Bool
+    solver_created::Bool
+    closed::Bool
+    last_info::SolveInfo
 end
 
 const _state_lock = ReentrantLock()
@@ -273,7 +288,11 @@ function _mpi_world_allgatherv(values::Vector{Float64}, counts::Vector{Cint},
                                displs::Vector{Cint})
     hypredrive_initialize()
     length(counts) == length(displs) || throw(ArgumentError("counts and displacements differ"))
-    total = isempty(counts) ? 0 : Int(maximum(displs .+ counts))
+    all(>=(0), counts) || throw(ArgumentError("counts must be nonnegative"))
+    all(>=(0), displs) || throw(ArgumentError("displacements must be nonnegative"))
+    length(values) <= typemax(Cint) ||
+        throw(ArgumentError("MPI allgatherv send count exceeds Cint range"))
+    total = isempty(counts) ? 0 : maximum(Int.(displs) .+ Int.(counts))
     gathered = Vector{Float64}(undef, total)
     GC.@preserve values counts displs gathered begin
         _check(ccall((:HYPREDRV_JuliaWorldAllgathervDouble, _lib()), UInt32,
@@ -555,6 +574,19 @@ end
 _as_vector(::Type{T}, data::Vector{T}) where {T} = data
 _as_vector(::Type{T}, data) where {T} = Vector{T}(data)
 
+function _checked_cint_vector(data, name::AbstractString)
+    length(data) <= typemax(Cint) || throw(ArgumentError("$name length exceeds Cint range"))
+    out = Vector{Cint}(undef, length(data))
+    for i in eachindex(data)
+        value = data[i]
+        value isa Integer || throw(ArgumentError("$name entries must be integers"))
+        typemin(Cint) <= value <= typemax(Cint) ||
+            throw(ArgumentError("$name entry $value exceeds Cint range"))
+        out[i] = Cint(value)
+    end
+    return out
+end
+
 function _partition_rows(n::Int, rank::Int, size::Int)
     base = div(n, size)
     extra = rem(n, size)
@@ -577,14 +609,235 @@ function _parse_input_args!(drv::Ptr{Cvoid}, yaml::AbstractString,
         for i in eachindex(input_args)
             cargs[i] = Base.unsafe_convert(Cstring, input_args[i])
         end
-        GC.@preserve cargs begin
-            _check(ccall((:HYPREDRV_JuliaInputArgsParseArgv, _lib()), UInt32,
-                         (Ptr{Cvoid}, Cint, Ptr{Cstring}), drv, Cint(length(cargs)),
-                         pointer(cargs)), "parse options")
+        _check(ccall((:HYPREDRV_JuliaInputArgsParseArgv, _lib()), UInt32,
+                     (Ptr{Cvoid}, Cint, Ptr{Cstring}), drv, Cint(length(cargs)),
+                     pointer(cargs)), "parse options")
+    end
+    return nothing
+end
+
+function _create_driver(comm::Symbol)
+    comm in (:world, :self) || throw(ArgumentError("comm must be :world or :self"))
+    hypredrive_initialize()
+    drv_ref = Ref{Ptr{Cvoid}}(C_NULL)
+    if comm === :world
+        _check(ccall((:HYPREDRV_JuliaCreateWithWorld, _lib()), UInt32,
+                     (Ref{Ptr{Cvoid}},), drv_ref), "create driver")
+    else
+        _check(ccall((:HYPREDRV_JuliaCreateWithSelf, _lib()), UInt32,
+                     (Ref{Ptr{Cvoid}},), drv_ref), "create driver")
+    end
+    _check(ccall((:HYPREDRV_JuliaSetLibraryMode, _lib()), UInt32, (Ptr{Cvoid},),
+                 drv_ref[]), "set library mode")
+    return drv_ref
+end
+
+function _destroy_solver!(session::HypreDriveSession; warn_only::Bool=false)
+    if session.solver_created && session.drv_ref[] != C_NULL
+        code = ccall((:HYPREDRV_JuliaLinearSolverDestroy, _lib()), UInt32,
+                     (Ptr{Cvoid},), session.drv_ref[])
+        session.solver_created = false
+        session.setup_revision = -1
+        if warn_only
+            _warn_shutdown_failure(code, "destroy solver")
+        else
+            _check(code, "destroy solver")
         end
     end
     return nothing
 end
+
+"""
+    HypreDriveSession(; comm=:self, options=nothing, input_args=nothing)
+
+Create a reusable HYPREDRV driver session. Matrix/RHS data are still copied into
+HYPREDRV on `set_matrix_csr!` and `set_rhs!`, but options and the driver handle
+are reused across solves.
+"""
+function HypreDriveSession(; comm::Symbol=:self, options=nothing,
+                           input_args::Union{Nothing,Vector{String}}=nothing)
+    yaml = options === nothing ? hypredrive_options() : hypredrive_options(options)
+    drv_ref = _create_driver(comm)
+    ok = false
+    try
+        _parse_input_args!(drv_ref[], yaml, input_args)
+        session = HypreDriveSession(drv_ref, comm, 0, -1, 0, -1, false, false,
+                                    false, false, SolveInfo(0, 0.0, 0.0, 0.0))
+        ok = true
+        return finalizer(Base.close, session)
+    finally
+        if !ok && drv_ref[] != C_NULL
+            code = ccall((:HYPREDRV_JuliaDestroy, _lib()), UInt32,
+                         (Ref{Ptr{Cvoid}},), drv_ref)
+            _warn_shutdown_failure(code, "destroy driver")
+        end
+    end
+end
+
+function Base.isopen(session::HypreDriveSession)
+    return !session.closed && session.drv_ref[] != C_NULL
+end
+
+function Base.close(session::HypreDriveSession)
+    if session.drv_ref[] != C_NULL
+        if _initialized[]
+            _destroy_solver!(session, warn_only=true)
+            code = ccall((:HYPREDRV_JuliaDestroy, _lib()), UInt32,
+                         (Ref{Ptr{Cvoid}},), session.drv_ref)
+            _warn_shutdown_failure(code, "destroy driver")
+        end
+        session.drv_ref[] = C_NULL
+    end
+    session.closed = true
+    return nothing
+end
+
+function _require_open(session::HypreDriveSession)
+    isopen(session) || throw(ArgumentError("HypreDriveSession is closed"))
+    return session.drv_ref[]::Ptr{Cvoid}
+end
+
+function _set_matrix_from_csr!(drv::Ptr{Cvoid}, row_start::Integer, row_end::Integer,
+                               indptr::Vector{T}, cols::Vector{T},
+                               data::Vector{Float64}) where {T<:Union{Int32,Int64}}
+    GC.@preserve indptr cols data begin
+        _check(ccall((:HYPREDRV_JuliaSetMatrixFromCSR, _lib()), UInt32,
+                     (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}),
+                     drv, Int64(row_start), Int64(row_end),
+                     Base.unsafe_convert(Ptr{Cvoid}, pointer(indptr)),
+                     Base.unsafe_convert(Ptr{Cvoid}, pointer(cols)),
+                     pointer(data)), "set matrix")
+    end
+end
+
+function set_matrix_csr!(session::HypreDriveSession, indptr, col_indices, data,
+                         row_start::Integer; dofmap=nothing)
+    drv = _require_open(session)
+    _destroy_solver!(session)
+    T = _index_type()
+    indptr_t = _as_vector(T, indptr)
+    cols_t = _as_vector(T, col_indices)
+    data64 = _as_vector(Float64, data)
+    length(indptr_t) >= 1 || throw(ArgumentError("indptr must not be empty"))
+    length(cols_t) == length(data64) || throw(ArgumentError("column and data lengths differ"))
+    indptr_t[1] == zero(T) || throw(ArgumentError("indptr must start at zero"))
+    indptr_t[end] == T(length(data64)) || throw(ArgumentError("indptr[end] must equal nnz"))
+    local_n = length(indptr_t) - 1
+    row_start >= 0 || throw(ArgumentError("row_start must be nonnegative"))
+    row_end = Int(row_start) + local_n - 1
+    if local_n == 0
+        throw(ArgumentError("empty row ranges are not supported by HypreDriveSession"))
+    end
+    dofmap_cint = dofmap === nothing ? nothing : _checked_cint_vector(dofmap, "dofmap")
+    if dofmap_cint !== nothing
+        length(dofmap_cint) == local_n || throw(ArgumentError("dofmap length does not match row range"))
+    end
+    _set_matrix_from_csr!(drv, row_start, row_end, indptr_t, cols_t, data64)
+    if dofmap_cint !== nothing
+        GC.@preserve dofmap_cint begin
+            _check(ccall((:HYPREDRV_JuliaSetDofmap, _lib()), UInt32,
+                         (Ptr{Cvoid}, Cint, Ptr{Cint}), drv,
+                         Cint(length(dofmap_cint)), pointer(dofmap_cint)),
+                   "set dofmap")
+        end
+    end
+    session.row_start = Int(row_start)
+    session.row_end = row_end
+    session.matrix_revision += 1
+    session.matrix_set = true
+    session.rhs_set = false
+    return session
+end
+
+function update_matrix_csr!(session::HypreDriveSession, indptr, col_indices, data,
+                            row_start::Integer; dofmap=nothing)
+    return set_matrix_csr!(session, indptr, col_indices, data, row_start; dofmap=dofmap)
+end
+
+function set_rhs!(session::HypreDriveSession, rhs, row_start::Integer=session.row_start)
+    drv = _require_open(session)
+    session.matrix_set || throw(ArgumentError("set_matrix_csr! must be called before set_rhs!"))
+    rhs64 = _as_vector(Float64, rhs)
+    length(rhs64) == session.row_end - session.row_start + 1 ||
+        throw(ArgumentError("rhs length does not match matrix row range"))
+    Int(row_start) == session.row_start ||
+        throw(ArgumentError("rhs row_start does not match matrix row_start"))
+    GC.@preserve rhs64 begin
+        _check(ccall((:HYPREDRV_JuliaSetRHSFromArray, _lib()), UInt32,
+                     (Ptr{Cvoid}, Int64, Int64, Ptr{Float64}), drv,
+                     Int64(session.row_start), Int64(session.row_end),
+                     pointer(rhs64)), "set rhs")
+    end
+    _check(ccall((:HYPREDRV_JuliaSetInitialGuessZero, _lib()), UInt32,
+                 (Ptr{Cvoid},), drv), "set initial guess")
+    session.rhs_set = true
+    return session
+end
+
+function setup!(session::HypreDriveSession)
+    drv = _require_open(session)
+    session.matrix_set || throw(ArgumentError("matrix has not been set"))
+    session.rhs_set || throw(ArgumentError("rhs has not been set"))
+    if !session.solver_created
+        _check(ccall((:HYPREDRV_JuliaLinearSolverCreate, _lib()), UInt32,
+                     (Ptr{Cvoid},), drv), "create solver")
+        session.solver_created = true
+    end
+    if session.setup_revision != session.matrix_revision
+        _check(ccall((:HYPREDRV_JuliaLinearSolverSetup, _lib()), UInt32,
+                     (Ptr{Cvoid},), drv), "setup solver")
+        session.setup_revision = session.matrix_revision
+    end
+    return session
+end
+
+function _read_solution!(x::AbstractVector{Float64}, session::HypreDriveSession)
+    drv = _require_open(session)
+    local_n = session.row_end - session.row_start + 1
+    length(x) == local_n || throw(ArgumentError("solution output length does not match row range"))
+    src = Ref{Ptr{Cvoid}}(C_NULL)
+    len = Ref{Int64}(0)
+    _check(ccall((:HYPREDRV_JuliaGetSolutionValues, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ref{Ptr{Cvoid}}, Ref{Int64}), drv, src, len),
+           "get solution")
+    len[] == local_n || error("solution length $(len[]) does not match local row count $local_n")
+    GC.@preserve x begin
+        unsafe_copyto!(pointer(x), Ptr{Float64}(src[]), local_n)
+    end
+    return x
+end
+
+function _get_info(session::HypreDriveSession)
+    drv = _require_open(session)
+    iterations = Ref{Cint}(0)
+    setup_time = Ref{Cdouble}(0)
+    solve_time = Ref{Cdouble}(0)
+    solution_norm = Ref{Cdouble}(0)
+    _check(ccall((:HYPREDRV_JuliaLinearSolverGetNumIter, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ref{Cint}), drv, iterations), "get iterations")
+    _check(ccall((:HYPREDRV_JuliaLinearSolverGetSetupTime, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ref{Cdouble}), drv, setup_time), "get setup time")
+    _check(ccall((:HYPREDRV_JuliaLinearSolverGetSolveTime, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ref{Cdouble}), drv, solve_time), "get solve time")
+    _check(ccall((:HYPREDRV_JuliaGetSolutionNorm, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cstring, Ref{Cdouble}), drv, "L2", solution_norm),
+           "get solution norm")
+    return SolveInfo(Int(iterations[]), setup_time[], solve_time[], solution_norm[])
+end
+
+function solve!(x::AbstractVector{Float64}, session::HypreDriveSession)
+    drv = _require_open(session)
+    setup!(session)
+    _check(ccall((:HYPREDRV_JuliaResetInitialGuess, _lib()), UInt32,
+                 (Ptr{Cvoid},), drv), "reset initial guess")
+    _check(ccall((:HYPREDRV_JuliaLinearSolverApply, _lib()), UInt32,
+                 (Ptr{Cvoid},), drv), "apply solver")
+    _read_solution!(x, session)
+    session.last_info = _get_info(session)
+    return x, session.last_info
+end
+
+info(session::HypreDriveSession) = session.last_info
 
 function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector{Float64}, rhs::Vector{Float64},
                          row_start::Integer, row_end::Integer, yaml::AbstractString;
@@ -613,6 +866,7 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
     indptr[end] == T(length(data)) || throw(ArgumentError("indptr[end] must equal nnz"))
     if dofmap !== nothing
         length(dofmap) == length(rhs) || throw(ArgumentError("dofmap length does not match row range"))
+        length(dofmap) <= typemax(Cint) || throw(ArgumentError("dofmap length exceeds Cint range"))
     end
 
     # Driver handles are intentionally scoped to this function and destroyed in
@@ -704,7 +958,9 @@ end
 
 function _solve_impl(A::SparseMatrixCSC, b::AbstractVector, yaml::AbstractString;
                      comm::Symbol=:self, row_start::Union{Nothing,Int}=nothing,
-                     row_end::Union{Nothing,Int}=nothing, nsolve::Integer=1)
+                     row_end::Union{Nothing,Int}=nothing, nsolve::Integer=1,
+                     dofmap=nothing,
+                     input_args::Union{Nothing,Vector{String}}=nothing)
     n = size(A, 1)
     length(b) == n || throw(ArgumentError("rhs length $(length(b)) does not match matrix size $n"))
     T = _index_type()
@@ -714,17 +970,28 @@ function _solve_impl(A::SparseMatrixCSC, b::AbstractVector, yaml::AbstractString
     end
     indptr, col_indices, data = _csr_rows_from_sparse(A, T, row_start + 1, row_end + 1)
     rhs = Vector{Float64}(@view b[row_start + 1:row_end + 1])
+    dofmap_cint = nothing
+    if dofmap !== nothing
+        length(dofmap) == n || throw(ArgumentError("dofmap length does not match matrix size"))
+        dofmap_cint = _checked_cint_vector(@view(dofmap[row_start + 1:row_end + 1]), "dofmap")
+    end
     return _solve_csr_impl(indptr, col_indices, data, rhs, row_start, row_end, yaml;
-                           comm=comm, nsolve=nsolve)
+                           comm=comm, nsolve=nsolve, dofmap=dofmap_cint,
+                           input_args=input_args)
 end
 
-function hypredrive_solve(A::AbstractMatrix, b::AbstractVector; options=nothing, nsolve::Integer=1)
+function hypredrive_solve(A::AbstractMatrix, b::AbstractVector; options=nothing,
+                          nsolve::Integer=1, dofmap=nothing,
+                          input_args::Union{Nothing,Vector{String}}=nothing)
     sparse_A = _as_sparse_float64(A)
     yaml = options === nothing ? hypredrive_options() : hypredrive_options(options)
-    return _solve_impl(sparse_A, b, yaml; nsolve=nsolve)
+    return _solve_impl(sparse_A, b, yaml; nsolve=nsolve, dofmap=dofmap,
+                       input_args=input_args)
 end
 
-function hypredrive_solve_mpi(A::AbstractMatrix, b::AbstractVector; options=nothing, nsolve::Integer=1)
+function hypredrive_solve_mpi(A::AbstractMatrix, b::AbstractVector; options=nothing,
+                              nsolve::Integer=1, dofmap=nothing,
+                              input_args::Union{Nothing,Vector{String}}=nothing)
     sparse_A = _as_sparse_float64(A)
     yaml = options === nothing ? hypredrive_options() : hypredrive_options(options)
     rank = hypredrive_mpi_world_rank()
@@ -732,7 +999,8 @@ function hypredrive_solve_mpi(A::AbstractMatrix, b::AbstractVector; options=noth
     nprocs <= size(sparse_A, 1) || throw(ArgumentError("hypredrive_solve_mpi requires at least one row per MPI rank"))
     row_start, row_end = _partition_rows(size(sparse_A, 1), rank, nprocs)
     return _solve_impl(sparse_A, b, yaml; comm=:world, row_start=row_start,
-                       row_end=row_end, nsolve=nsolve)
+                       row_end=row_end, nsolve=nsolve, dofmap=dofmap,
+                       input_args=input_args)
 end
 
 function hypredrive_solve_mpi_csr(indptr, col_indices, data, rhs, row_start::Integer;
@@ -746,7 +1014,7 @@ function hypredrive_solve_mpi_csr(indptr, col_indices, data, rhs, row_start::Int
     cols_t = _as_vector(T, col_indices)
     data64 = _as_vector(Float64, data)
     rhs64 = _as_vector(Float64, rhs)
-    dofmap_cint = dofmap === nothing ? nothing : _as_vector(Cint, dofmap)
+    dofmap_cint = dofmap === nothing ? nothing : _checked_cint_vector(dofmap, "dofmap")
     row_end = Int(row_start) + length(rhs64) - 1
     yaml = options === nothing ? hypredrive_options() : hypredrive_options(options)
     return _solve_csr_impl(indptr_t, cols_t, data64, rhs64, row_start, row_end, yaml;

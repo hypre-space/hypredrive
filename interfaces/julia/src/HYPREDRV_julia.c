@@ -338,9 +338,13 @@ HYPREDRV_JuliaInputArgsParseYaml(HYPREDRV_t hypredrv, const char *yaml_text)
 uint32_t
 HYPREDRV_JuliaInputArgsParseArgv(HYPREDRV_t hypredrv, int argc, const char **argv)
 {
-   if (argc <= 0 || argv == NULL)
+   if (argc <= 0)
    {
       return HYPREDRV_ErrorInvalidValue("HYPREDRV argv is empty");
+   }
+   if (argv == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("HYPREDRV argv pointer is NULL");
    }
 
    char **copies = (char **)calloc((size_t)argc, sizeof(char *));
