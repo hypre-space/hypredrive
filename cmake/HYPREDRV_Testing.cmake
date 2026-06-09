@@ -659,9 +659,21 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 REQUIRE_CONTAINS ${_cli_ex7_reps4_ls4_require_contains}
             )
         endif()
-        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU AND HYPREDRV_HAVE_HYPRE_30100_DEV55)
-            add_hypredrive_test(ex1_schwarz_spdirect_1proc 1
-                ex1-schwarz-spdirect.yml)
+        if(HYPREDRV_HAVE_HYPRE_30100_DEV55)
+            add_hypredrive_test(ex1_schwarz_1proc 1
+                ex1-schwarz.yml)
+            add_hypredrive_test(ex1_schwarz_4proc 4
+                ex1-schwarz-4proc.yml)
+            add_hypredrive_test(ex1_schwarz_ilut_1proc 1
+                ex1-schwarz-ilut.yml)
+            add_hypredrive_test(ex1_schwarz_ilut_4proc 4
+                ex1-schwarz-ilut-4proc.yml)
+            if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU)
+                add_hypredrive_test(ex1_schwarz_spdirect_1proc 1
+                    ex1-schwarz-spdirect.yml)
+                add_hypredrive_test(ex1_schwarz_spdirect_4proc 4
+                    ex1-schwarz-spdirect-4proc.yml)
+            endif()
         endif()
         if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU)
             add_hypredrive_test(ex7_mgr_frelax_spdirect_1proc 1
