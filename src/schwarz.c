@@ -5,9 +5,9 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "internal/compatibility.h"
+#include "internal/utils.h"
 
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
 
 #include "HYPRE_parcsr_ls.h"
 #include "internal/gen_macros.h"
@@ -121,4 +121,4 @@ hypredrv_SchwarzCreate(const Schwarz_args *args, HYPRE_Solver *precon_ptr)
    *precon_ptr = precon;
 }
 
-#endif /* HYPREDRV_HAVE_EXPERIMENTAL */
+#endif /* HYPRE_CHECK_MIN_VERSION(30100, 55) */

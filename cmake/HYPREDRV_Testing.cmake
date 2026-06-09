@@ -450,6 +450,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     hypredrv_check_hypre_version(30100 5)
     hypredrv_check_hypre_version(30100 38)
     hypredrv_check_hypre_version(30100 50)
+    hypredrv_check_hypre_version(30100 55)
 
     # Check for optional hypre features used to gate tests.
     hypredrv_check_hypre_symbol(HYPRE_DEVELOP_NUMBER)
@@ -658,11 +659,23 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 REQUIRE_CONTAINS ${_cli_ex7_reps4_ls4_require_contains}
             )
         endif()
-        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU AND HYPREDRV_ENABLE_EXPERIMENTAL AND NOT HYPREDRV_ENABLE_ANALYSIS)
-            add_hypredrive_test(ex1_schwarz_spdirect_1proc 1
-                ex1-schwarz-spdirect.yml)
+        if(HYPREDRV_HAVE_HYPRE_30100_DEV55)
+            add_hypredrive_test(ex1_schwarz_1proc 1
+                ex1-schwarz.yml)
+            add_hypredrive_test(ex1_schwarz_4proc 4
+                ex1-schwarz-4proc.yml)
+            add_hypredrive_test(ex1_schwarz_ilut_1proc 1
+                ex1-schwarz-ilut.yml)
+            add_hypredrive_test(ex1_schwarz_ilut_4proc 4
+                ex1-schwarz-ilut-4proc.yml)
+            if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU)
+                add_hypredrive_test(ex1_schwarz_spdirect_1proc 1
+                    ex1-schwarz-spdirect.yml)
+                add_hypredrive_test(ex1_schwarz_spdirect_4proc 4
+                    ex1-schwarz-spdirect-4proc.yml)
+            endif()
         endif()
-        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU AND NOT HYPREDRV_ENABLE_ANALYSIS AND NOT HYPREDRV_ENABLE_COVERAGE)
+        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU)
             add_hypredrive_test(ex7_mgr_frelax_spdirect_1proc 1
                 ex7-mgr-frelax-spdirect.yml)
             add_hypredrive_test(ex7_mgr_grelax_spdirect_1proc 1
@@ -670,10 +683,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             add_hypredrive_test(ex7_mgr_coarsest_spdirect_1proc 1
                 ex7-mgr-coarsest-spdirect.yml)
         endif()
-        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU AND
-           HYPREDRV_HAVE_HYPRE_30100_DEV0 AND
-           NOT HYPREDRV_ENABLE_ANALYSIS AND
-           NOT HYPREDRV_ENABLE_COVERAGE)
+        if(HYPREDRV_HAVE_HYPRE_USING_DSUPERLU AND HYPREDRV_HAVE_HYPRE_30100_DEV0)
             set(_hypredrv_superlu_dist_examples
                 "ex3_mgr_frelax_spdirect_1proc|1|ex3-mgr-frelax-spdirect.yml"
                 "ex3_mgr_grelax_spdirect_1proc|1|ex3-mgr-grelax-spdirect.yml"

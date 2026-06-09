@@ -250,13 +250,13 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
 
    HYPRE_PtrToParSolverFcn setup_ptrs[] = {
       HYPRE_BoomerAMGSetup, HYPRE_MGRSetup, LOCAL_ILU_SETUP, LOCAL_FSAI_SETUP,
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       HYPRE_SchwarzSetup,
 #endif
    };
    HYPRE_PtrToParSolverFcn solve_ptrs[] = {
       HYPRE_BoomerAMGSolve, HYPRE_MGRSolve, LOCAL_ILU_SOLVE, LOCAL_FSAI_SOLVE,
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       HYPRE_SchwarzSolve,
 #endif
    };

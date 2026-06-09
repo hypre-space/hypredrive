@@ -291,7 +291,7 @@ run_nested_lifecycle_precon_fsai(solver_t method)
 }
 #endif
 
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
 static void
 run_nested_lifecycle_precon_schwarz(solver_t method)
 {
@@ -370,7 +370,7 @@ test_nested_krylov_precon_fsai_matrix(void)
 static void
 test_nested_krylov_precon_schwarz_matrix(void)
 {
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
    run_nested_lifecycle_precon_schwarz(SOLVER_GMRES);
 #endif
 }

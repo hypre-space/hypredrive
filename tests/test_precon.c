@@ -37,7 +37,7 @@ void           hypredrv_FSAISetFieldByName(void *, const YAMLnode *);
 void           hypredrv_FSAISetDefaultArgs(FSAI_args *);
 StrArray       hypredrv_FSAIGetValidKeys(void);
 StrIntMapArray hypredrv_FSAIGetValidValues(const char *);
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
 void           hypredrv_SchwarzSetFieldByName(void *, const YAMLnode *);
 void           hypredrv_SchwarzSetDefaultArgs(Schwarz_args *);
 StrArray       hypredrv_SchwarzGetValidKeys(void);
@@ -153,7 +153,7 @@ test_PreconGetValidKeys_contains_expected(void)
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "mgr"));
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "ilu"));
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "fsai"));
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "schwarz"));
 #endif
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "reuse"));
@@ -169,7 +169,7 @@ test_PreconGetValidTypeIntMap_contains_known_types(void)
 
    ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mgr"));
    ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mgr"), PRECON_MGR);
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
    ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "schwarz"));
    ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "schwarz"), PRECON_SCHWARZ);
 #endif
@@ -3452,7 +3452,7 @@ test_Precon_lifecycle_fsai_1x1(void)
 }
 #endif
 
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
 static void
 test_Precon_lifecycle_schwarz_1x1(void)
 {
@@ -5445,7 +5445,7 @@ test_hypredrv_FSAIGetValidValues_unknown_key(void)
    ASSERT_EQ(map.size, 0);
 }
 
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
 static void
 test_hypredrv_SchwarzSetDefaultArgs(void)
 {
@@ -5902,7 +5902,7 @@ main(int argc, char **argv)
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
    RUN_TEST(test_Precon_lifecycle_fsai_1x1);
 #endif
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
    RUN_TEST(test_Precon_lifecycle_schwarz_1x1);
 #endif
    RUN_TEST(test_PreconDestroy_amg_rbms_loop);
@@ -5978,7 +5978,7 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_FSAISetFieldByName_unknown_key);
    RUN_TEST(test_hypredrv_FSAIGetValidValues_algo_type);
    RUN_TEST(test_hypredrv_FSAIGetValidValues_unknown_key);
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
    RUN_TEST(test_hypredrv_SchwarzSetDefaultArgs);
    RUN_TEST(test_hypredrv_SchwarzSetFieldByName_all_fields);
    RUN_TEST(test_hypredrv_SchwarzGetValidValues);

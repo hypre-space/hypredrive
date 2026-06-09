@@ -205,7 +205,7 @@ switch kind
     case 'solver'
         allowed = {'pcg', 'gmres', 'fgmres', 'bicgstab'};
     otherwise
-        allowed = {'amg', 'mgr', 'ilu', 'fsai', 'none'};
+        allowed = {'amg', 'mgr', 'ilu', 'fsai', 'schwarz', 'none'};
 end
 if ~any(strcmp(method, allowed))
     error('hypredrive:InvalidOptions', 'unsupported %s method: %s', kind, method);
@@ -213,7 +213,8 @@ end
 end
 
 function validate_method_block(method)
-allowed = {'pcg', 'gmres', 'fgmres', 'bicgstab', 'amg', 'mgr', 'ilu', 'fsai'};
+allowed = {'pcg', 'gmres', 'fgmres', 'bicgstab', 'amg', 'mgr', 'ilu', 'fsai', ...
+           'schwarz'};
 if ~any(strcmp(method, allowed))
     error('hypredrive:InvalidOptions', 'unsupported method options block: %s', method);
 end
