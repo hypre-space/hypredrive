@@ -45,8 +45,10 @@ check_solution(A, b, x, info);
 expect_error(@() hypredrive_solve(full(A), b, opts), 'hypredrive:InvalidMatrix');
 expect_error(@() hypredrive_solve(A, b(1:end - 1), opts), 'hypredrive:InvalidRHS');
 expect_error(@() hypredrive_options('solver', 'pcgg'), 'hypredrive:InvalidOptions');
-expect_error(@() hypredrive_options('preconditioner', 'schwarz'), ...
-             'hypredrive:InvalidOptions');
+yaml_schwarz = hypredrive_options('preconditioner', 'schwarz');
+if isempty(strfind(yaml_schwarz, 'schwarz: {}'))
+    error('hypredrive:test', 'Schwarz preconditioner options were not emitted');
+end
 
 yaml_none = hypredrive_options('solver', 'pcg', 'preconditioner', 'none');
 if ~isempty(strfind(yaml_none, 'preconditioner'))

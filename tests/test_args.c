@@ -176,7 +176,7 @@ test_InputArgsParsePrecon_value_only(void)
    hypredrv_InputArgsDestroy(&args);
 }
 
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
 static void
 test_InputArgsParsePrecon_schwarz_value_only(void)
 {
@@ -2048,7 +2048,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParseGeneral_use_millisec_sets_timer);
    RUN_TEST(test_InputArgsParseSolver_value_only);
    RUN_TEST(test_InputArgsParsePrecon_value_only);
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
    RUN_TEST(test_InputArgsParsePrecon_schwarz_value_only);
    RUN_TEST(test_InputArgsParsePrecon_schwarz_typed_block);
    RUN_TEST(test_InputArgsParsePrecon_schwarz_spdirect);

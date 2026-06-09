@@ -16,7 +16,8 @@
 #include "internal/ilu.h"
 #include "internal/mgr.h"
 #include "internal/precon_reuse.h"
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#include "internal/utils.h"
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
 #include "internal/schwarz.h"
 #endif
 #include "internal/stats.h"
@@ -32,7 +33,7 @@ typedef enum precon_type_enum
    PRECON_MGR,
    PRECON_ILU,
    PRECON_FSAI,
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
    PRECON_SCHWARZ,
 #endif
    PRECON_NONE,
@@ -50,7 +51,7 @@ typedef struct precon_args_struct
       MGR_args  mgr;
       ILU_args  ilu;
       FSAI_args fsai;
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       Schwarz_args schwarz;
 #endif
    };

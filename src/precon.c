@@ -11,7 +11,7 @@
 #include "internal/krylov.h"
 #include "logging.h"
 
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
 #define HYPREDRV_PRECON_SCHWARZ_FIELD(_prefix) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, schwarz, hypredrv_SchwarzSetArgs)
 #else
@@ -59,7 +59,7 @@ hypredrv_PreconGetValidTypeIntMap(void)
    static StrIntMap map[] = {
       {"amg", (int)PRECON_BOOMERAMG},   {"mgr", (int)PRECON_MGR},
       {"ilu", (int)PRECON_ILU},         {"fsai", (int)PRECON_FSAI},
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       {"schwarz", (int)PRECON_SCHWARZ},
 #endif
    };
@@ -101,7 +101,7 @@ hypredrv_PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
       case PRECON_FSAI:
          hypredrv_FSAISetDefaultArgs(&args->fsai);
          break;
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
          hypredrv_SchwarzSetDefaultArgs(&args->schwarz);
          break;
@@ -129,7 +129,7 @@ hypredrv_PreconArgsDestroyOwnedConfig(precon_t method, precon_args *args)
       case PRECON_BOOMERAMG:
       case PRECON_ILU:
       case PRECON_FSAI:
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
 #endif
       case PRECON_NONE:
@@ -156,7 +156,7 @@ hypredrv_PreconArgsDestroyRuntimeState(precon_t method, precon_args *args)
       case PRECON_BOOMERAMG:
       case PRECON_ILU:
       case PRECON_FSAI:
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
 #endif
       case PRECON_NONE:
@@ -246,7 +246,7 @@ PreconHasConfiguredComponentReuse(precon_t method, const precon_args *args)
       case PRECON_BOOMERAMG:
       case PRECON_ILU:
       case PRECON_FSAI:
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
 #endif
       case PRECON_NONE:
@@ -320,7 +320,7 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
          hypredrv_FSAICreate(&args->fsai, &precon->main);
          break;
 
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
          hypredrv_SchwarzCreate(&args->schwarz, &precon->main);
          break;
@@ -411,7 +411,7 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 #endif /* GCOVR_EXCL_STOP */
          break;
 
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
          HYPRE_SchwarzSetup(prec, par_A, par_b, par_x);
          precon->is_setup = 1;
@@ -480,7 +480,7 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 #endif /* GCOVR_EXCL_STOP */
          break;
 
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
          HYPRE_SchwarzSolve(prec, par_A, par_b, par_x);
          break;
@@ -638,7 +638,7 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
 #endif
             break;
 
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
          case PRECON_SCHWARZ:
             /* GCOVR_EXCL_START */
             HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,

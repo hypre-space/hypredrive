@@ -718,7 +718,7 @@ test_mgr_f_relaxation_ilu_nested_block(void)
    hypredrv_MGRDestroyNestedSolverArgs(&args);
 }
 
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
 static void
 test_mgr_schwarz_nested_blocks_for_f_g_and_coarsest(void)
 {
@@ -1131,7 +1131,7 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_f_dofs_block_sequence_symbolic_error_returns_early);
    RUN_TEST(test_mgr_explicit_type_key_triggers_apply_type_defaults);
    RUN_TEST(test_mgr_f_relaxation_ilu_nested_block);
-#if HYPREDRV_HAVE_EXPERIMENTAL
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
    RUN_TEST(test_mgr_schwarz_nested_blocks_for_f_g_and_coarsest);
 #endif
    RUN_TEST(test_mgr_cls_frxl_grlx_flat_scalar_branches);

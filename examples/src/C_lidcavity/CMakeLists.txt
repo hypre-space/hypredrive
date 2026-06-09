@@ -78,7 +78,7 @@ if(HYPREDRV_ENABLE_TESTING)
                 "Path"
                 "1.1.1"
         )
-        if(HYPREDRV_ENABLE_EXPERIMENTAL)
+        if(HYPREDRV_HAVE_HYPRE_30100_DEV55)
             add_executable_test(lidcavity_test_schwarz_ras_iluk_1proc lidcavity 1
                 ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
                      -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-schwarz-ras-iluk.yml
@@ -119,7 +119,7 @@ if(HYPREDRV_ENABLE_TESTING)
         )
         hypredrv_append_test_environment(lidcavity_test_adaptive_reuse_1proc
             "HYPREDRV_LOG_LEVEL=2")
-        if(HYPREDRV_ENABLE_EXPERIMENTAL)
+        if(HYPREDRV_HAVE_HYPRE_30100_DEV55)
             add_executable_test(lidcavity_test_mgr_schwarz_frelax_iluk_1proc lidcavity 1
                 ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
                      -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-schwarz-frelax-iluk.yml
