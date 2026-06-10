@@ -8,8 +8,8 @@
 
 *hypredrive* is a flexible framework for high-performance sparse linear algebra through [hypre](https://github.com/hypre-space/hypre). It can be used as:
 
-- **Driver**: `hypredrive-cli` command-line executable with YAML input files
-- **Library**: C API via [`include/HYPREDRV.h`](include/HYPREDRV.h) and other [`interfaces/`](interfaces) (C++, Fortran, Python, MATLAB/Octave, and Julia) with solver options configured via YAML input (file or in-memory) 
+- **Library**: C API via [`include/HYPREDRV.h`](include/HYPREDRV.h) and other [`interfaces/`](interfaces) (C++, Fortran, Python, MATLAB/Octave, and Julia) with solver options configured via YAML input (file or in-memory)
+- **Driver**: `hypredrive-cli` command-line tool for solving linear systems read from files, with solver options given by YAML input
 
 ## Build
 
