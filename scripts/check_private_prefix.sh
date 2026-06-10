@@ -23,9 +23,9 @@ Checks that libHYPREDRV private callable functions use the `hypredrv_` prefix.
 Validation rules:
   1) Internal header declarations (`include/*.h`, excluding `HYPREDRV.h`)
      must start with `hypredrv_`.
-  2) Non-static global function definitions in `src/*.c`:
+  2) Non-static global function definitions in `src/*.c` and `src/internal/*.c`:
      - `src/HYPREDRV.c`: must start with `HYPREDRV_` (public API implementation)
-     - `src/main.c`: `main` is allowed
+     - `src/internal/main.c`: `main` is allowed
      - all other files: must start with `hypredrv_`
 
 Exit status:
@@ -487,7 +487,7 @@ while IFS= read -r source; do
         ;;
     esac
   done < <(extract_source_global_defs "$source")
-done < <(LC_ALL=C find "$SRC_DIR" -maxdepth 1 -type f -name '*.c' | sort)
+done < <(LC_ALL=C find "$SRC_DIR" -type f -name '*.c' | LC_ALL=C sort)
 
 if [[ "$QUIET" -eq 0 ]]; then
   echo "Scanned ${header_checked} internal headers (${header_decl_count} declarations)"

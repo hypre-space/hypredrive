@@ -155,7 +155,7 @@ if(HYPREDRV_ENABLE_COVERAGE)
             --object-directory ${CMAKE_BINARY_DIR}
             --filter "${CMAKE_SOURCE_DIR}/src/.*"
             --exclude ".*\\.h$"
-            --exclude ".*/src/info\\.c$"
+            --exclude ".*/src/internal/info\\.c$"
             --exclude ".*(/|^)cmake/.*"
             --exclude ".*(/|^)examples/.*"
             --exclude ".*(/|^)install/.*"
