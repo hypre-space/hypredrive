@@ -14,8 +14,8 @@
 #include "object.h"
 
 /*
- * gcovr: branch sites wrapped with GCOVR_EXCL_BR_LINE / GCOVR_EXCL_BR_LINE are
- * defensive null checks, allocation failures, or Stats read fallbacks that are
+ * gcovr: branch sites wrapped with GCOVR_EXCL_BR_LINE are allocation-failure
+ * checks, Stats read fallbacks, or NULL-tolerant public entry points that are
  * impractical to saturate in unit tests without fault injection.
  */
 
@@ -46,24 +46,14 @@ static const double PRECON_REUSE_DEFAULT_MAX_ITERATION_RATIO = 3.0;
 
 static void
 PreconReuseMeanSetDefaults(PreconReuseMean_args *mean)
-{             /* GCOVR_EXCL_BR_LINE */
-   if (!mean) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
+{
    mean->kind  = PRECON_REUSE_MEAN_ARITHMETIC;
    mean->power = 1.0;
 }
 
 static void
 PreconReuseTransformSetDefaults(PreconReuseTransform_args *transform)
-{                  /* GCOVR_EXCL_BR_LINE */
-   if (!transform) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
+{
    transform->kind                = PRECON_REUSE_TRANSFORM_RATIO_TO_BASELINE;
    transform->baseline            = PRECON_REUSE_BASELINE_REBUILD;
    transform->amortization_window = 10;
@@ -71,12 +61,7 @@ PreconReuseTransformSetDefaults(PreconReuseTransform_args *transform)
 
 static void
 PreconReuseHistorySetDefaults(PreconReuseHistory_args *history)
-{                /* GCOVR_EXCL_BR_LINE */
-   if (!history) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
+{
    history->source     = PRECON_REUSE_HISTORY_LINEAR_SOLVES;
    history->level      = -1;
    history->max_points = 5;
@@ -85,12 +70,7 @@ PreconReuseHistorySetDefaults(PreconReuseHistory_args *history)
 
 static void
 PreconReuseScoreComponentSetDefaults(PreconReuseScoreComponent_args *component)
-{                  /* GCOVR_EXCL_BR_LINE */
-   if (!component) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
+{
    memset(component, 0, sizeof(*component));
    snprintf(component->name, sizeof(component->name), "%s", "component");
    component->enabled   = 1;
@@ -164,14 +144,9 @@ hypredrv_PreconReuseDestroyArgs(PreconReuse_args *args)
 }
 
 static int
-PreconReuseParseOnOff(const char *value, int *out)
-{                      /* GCOVR_EXCL_BR_LINE */
-   if (!value || !out) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
-   int result = hypredrv_StrIntMapArrayGetImage(hypredrv_OnOffMapArray, value);
+PreconReuseParseMapped(StrIntMapArray map, const char *value, int *out)
+{
+   int result = hypredrv_StrIntMapArrayGetImage(map, value);
    if (result == INT_MIN)
    {
       return 0;
@@ -180,10 +155,29 @@ PreconReuseParseOnOff(const char *value, int *out)
    return 1;
 }
 
+/* Generates a parser that maps a string value onto an enum via a StrIntMap table. */
+#define DEFINE_PRECON_REUSE_PARSE_ENUM(_name, _map, _type)                         \
+   static int _name(const char *value, _type *out)                                 \
+   {                                                                               \
+      int mapped;                                                                  \
+      if (!PreconReuseParseMapped(STR_INT_MAP_ARRAY_CREATE(_map), value, &mapped)) \
+      {                                                                            \
+         return 0;                                                                 \
+      }                                                                            \
+      *out = (_type)mapped;                                                        \
+      return 1;                                                                    \
+   }
+
+static int
+PreconReuseParseOnOff(const char *value, int *out)
+{
+   return PreconReuseParseMapped(hypredrv_OnOffMapArray, value, out);
+}
+
 static int
 PreconReuseParseInt(const char *value, int *out)
-{                      /* GCOVR_EXCL_BR_LINE */
-   if (!value || !out) /* GCOVR_EXCL_BR_LINE */
+{              /* GCOVR_EXCL_BR_LINE */
+   if (!value) /* GCOVR_EXCL_BR_LINE */
    {
       return 0;
    }
@@ -193,8 +187,8 @@ PreconReuseParseInt(const char *value, int *out)
 
 static int
 PreconReuseParseDouble(const char *value, double *out)
-{                      /* GCOVR_EXCL_BR_LINE */
-   if (!value || !out) /* GCOVR_EXCL_BR_LINE */
+{              /* GCOVR_EXCL_BR_LINE */
+   if (!value) /* GCOVR_EXCL_BR_LINE */
    {
       return 0;
    }
@@ -211,11 +205,6 @@ PreconReuseValueIsAlways(const char *value)
 static int
 PreconReuseSetAlwaysLinearSystemIDs(PreconReuse_args *args)
 {
-   if (!args)
-   {
-      return 0;
-   }
-
    IntArray *ids = hypredrv_IntArrayCreate(1);
    if (!ids || !ids->data)
    {
@@ -236,24 +225,11 @@ static const StrIntMap k_policy_map[] = {
    {"adaptive", PRECON_REUSE_POLICY_ADAPTIVE},
 };
 
-static int
-PreconReuseParsePolicy(const char *value, PreconReusePolicy *out)
-{                                /* GCOVR_EXCL_BR_LINE */
-   if (!value || !out) return 0; /* GCOVR_EXCL_BR_LINE */
-   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_policy_map), value);
-   if (r == INT_MIN) return 0;
-   *out = (PreconReusePolicy)r;
-   return 1;
-}
+DEFINE_PRECON_REUSE_PARSE_ENUM(PreconReuseParsePolicy, k_policy_map, PreconReusePolicy)
 
 static int
 PreconReuseInstallDefaultAdaptiveComponents(PreconReuseAdaptive_args *adaptive)
-{                 /* GCOVR_EXCL_BR_LINE */
-   if (!adaptive) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
+{
    PreconReuseScoreComponent_args *components = (PreconReuseScoreComponent_args *)calloc(
       2, sizeof(*components)); /* GCOVR_EXCL_BR_LINE */
    if (!components)            /* GCOVR_EXCL_BR_LINE */
@@ -304,12 +280,7 @@ PreconReuseApplyAdaptiveImplicitDefaults(PreconReuse_args *args,
                                          int               seen_min_history_points,
                                          int               seen_bad_decisions_to_rebuild,
                                          int               seen_max_iteration_ratio)
-{             /* GCOVR_EXCL_BR_LINE */
-   if (!args) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
+{
    if (!seen_min_history_points)
    {
       args->guards.min_history_points = PRECON_REUSE_BOOTSTRAP_SOLVES;
@@ -336,16 +307,8 @@ static const StrIntMap k_direction_map[] = {
    {"below", PRECON_REUSE_DIRECTION_BELOW},
 };
 
-static int
-PreconReuseParseDirection(const char *value, PreconReuseDirection *out)
-{                                /* GCOVR_EXCL_BR_LINE */
-   if (!value || !out) return 0; /* GCOVR_EXCL_BR_LINE */
-   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_direction_map),
-                                           value); /* GCOVR_EXCL_BR_LINE */
-   if (r == INT_MIN) return 0;                     /* GCOVR_EXCL_BR_LINE */
-   *out = (PreconReuseDirection)r;
-   return 1;
-}
+DEFINE_PRECON_REUSE_PARSE_ENUM(PreconReuseParseDirection, k_direction_map,
+                               PreconReuseDirection)
 
 static const StrIntMap k_mean_kind_map[] = {
    {"arithmetic", PRECON_REUSE_MEAN_ARITHMETIC},
@@ -357,16 +320,8 @@ static const StrIntMap k_mean_kind_map[] = {
    {"power", PRECON_REUSE_MEAN_POWER},
 };
 
-static int
-PreconReuseParseMeanKind(const char *value, PreconReuseMeanKind *out)
-{                                /* GCOVR_EXCL_BR_LINE */
-   if (!value || !out) return 0; /* GCOVR_EXCL_BR_LINE */
-   int r =
-      hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_mean_kind_map), value);
-   if (r == INT_MIN) return 0;
-   *out = (PreconReuseMeanKind)r;
-   return 1;
-}
+DEFINE_PRECON_REUSE_PARSE_ENUM(PreconReuseParseMeanKind, k_mean_kind_map,
+                               PreconReuseMeanKind)
 
 static const StrIntMap k_transform_kind_map[] = {
    {"raw", PRECON_REUSE_TRANSFORM_RAW},
@@ -375,32 +330,16 @@ static const StrIntMap k_transform_kind_map[] = {
    {"relative_increase", PRECON_REUSE_TRANSFORM_RELATIVE_INCREASE},
 };
 
-static int
-PreconReuseParseTransformKind(const char *value, PreconReuseTransformKind *out)
-{                                /* GCOVR_EXCL_BR_LINE */
-   if (!value || !out) return 0; /* GCOVR_EXCL_BR_LINE */
-   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_transform_kind_map),
-                                           value);
-   if (r == INT_MIN) return 0;
-   *out = (PreconReuseTransformKind)r;
-   return 1;
-}
+DEFINE_PRECON_REUSE_PARSE_ENUM(PreconReuseParseTransformKind, k_transform_kind_map,
+                               PreconReuseTransformKind)
 
 static const StrIntMap k_baseline_kind_map[] = {
    {"rebuild", PRECON_REUSE_BASELINE_REBUILD},
    {"window_mean", PRECON_REUSE_BASELINE_WINDOW_MEAN},
 };
 
-static int
-PreconReuseParseBaselineKind(const char *value, PreconReuseBaselineKind *out)
-{                                /* GCOVR_EXCL_BR_LINE */
-   if (!value || !out) return 0; /* GCOVR_EXCL_BR_LINE */
-   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_baseline_kind_map),
-                                           value);
-   if (r == INT_MIN) return 0;
-   *out = (PreconReuseBaselineKind)r;
-   return 1;
-}
+DEFINE_PRECON_REUSE_PARSE_ENUM(PreconReuseParseBaselineKind, k_baseline_kind_map,
+                               PreconReuseBaselineKind)
 
 static const StrIntMap k_metric_map[] = {
    {"iterations", PRECON_REUSE_METRIC_ITERATIONS},
@@ -410,15 +349,7 @@ static const StrIntMap k_metric_map[] = {
    {"solve_overhead_vs_setup", PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP},
 };
 
-static int
-PreconReuseParseMetric(const char *value, PreconReuseMetric *out)
-{                                /* GCOVR_EXCL_BR_LINE */
-   if (!value || !out) return 0; /* GCOVR_EXCL_BR_LINE */
-   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_metric_map), value);
-   if (r == INT_MIN) return 0;
-   *out = (PreconReuseMetric)r;
-   return 1;
-}
+DEFINE_PRECON_REUSE_PARSE_ENUM(PreconReuseParseMetric, k_metric_map, PreconReuseMetric)
 
 static const StrIntMap k_history_source_map[] = {
    {"linear_solves", PRECON_REUSE_HISTORY_LINEAR_SOLVES},
@@ -426,16 +357,8 @@ static const StrIntMap k_history_source_map[] = {
    {"completed_level", PRECON_REUSE_HISTORY_COMPLETED_LEVEL},
 };
 
-static int
-PreconReuseParseHistorySource(const char *value, PreconReuseHistorySource *out)
-{                                /* GCOVR_EXCL_BR_LINE */
-   if (!value || !out) return 0; /* GCOVR_EXCL_BR_LINE */
-   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_history_source_map),
-                                           value);
-   if (r == INT_MIN) return 0;
-   *out = (PreconReuseHistorySource)r;
-   return 1;
-}
+DEFINE_PRECON_REUSE_PARSE_ENUM(PreconReuseParseHistorySource, k_history_source_map,
+                               PreconReuseHistorySource)
 
 static const StrIntMap k_reduction_map[] = {
    {"none", PRECON_REUSE_REDUCTION_NONE},
@@ -443,16 +366,8 @@ static const StrIntMap k_reduction_map[] = {
    {"sum", PRECON_REUSE_REDUCTION_SUM},
 };
 
-static int
-PreconReuseParseReduction(const char *value, PreconReuseReduction *out)
-{                                /* GCOVR_EXCL_BR_LINE */
-   if (!value || !out) return 0; /* GCOVR_EXCL_BR_LINE */
-   int r = hypredrv_StrIntMapArrayGetImage(STR_INT_MAP_ARRAY_CREATE(k_reduction_map),
-                                           value); /* GCOVR_EXCL_BR_LINE */
-   if (r == INT_MIN) return 0;                     /* GCOVR_EXCL_BR_LINE */
-   *out = (PreconReuseReduction)r;
-   return 1;
-}
+DEFINE_PRECON_REUSE_PARSE_ENUM(PreconReuseParseReduction, k_reduction_map,
+                               PreconReuseReduction)
 
 static int
 PreconReuseFindTimestepIndex(const IntArray *starts, int ls_id)
@@ -512,12 +427,7 @@ PreconReuseGetEmbeddedTimestepIndex(const Stats *stats)
 static int
 PreconReuseResolveTimestepContext(const IntArray *starts, const Stats *stats, int ls_id,
                                   int *timestep_idx, int *timestep_start)
-{                                        /* GCOVR_EXCL_BR_LINE */
-   if (!timestep_idx || !timestep_start) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
+{
    *timestep_idx   = -1;
    *timestep_start = -1;
 
@@ -591,11 +501,7 @@ hypredrv_PreconReuseBuildObservation(HYPREDRV_t hypredrv, const IntArray *timest
 
 static void
 PreconReuseResolveBootstrapBaseline(PreconReuseState *state)
-{              /* GCOVR_EXCL_BR_LINE */
-   if (!state) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   } /* GCOVR_EXCL_BR_LINE */
+{
    if (state->count < PRECON_REUSE_BOOTSTRAP_SOLVES) /* GCOVR_EXCL_BR_LINE */
    {
       return;
@@ -624,12 +530,7 @@ PreconReuseResolveBootstrapBaseline(PreconReuseState *state)
 
 static int
 PreconReuseReuseAgeGet(const PreconReuseState *state)
-{              /* GCOVR_EXCL_BR_LINE */
-   if (!state) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
+{
    return (int)state->count;
 }
 
@@ -640,12 +541,7 @@ PreconReuseReuseAgeGet(const PreconReuseState *state)
  * evaluate the same linear-system ID. */
 static int
 PreconReuseUpdateBadDecisionStreak(PreconReuseState *state, int next_ls_id, int is_bad)
-{              /* GCOVR_EXCL_BR_LINE */
-   if (!state) /* GCOVR_EXCL_BR_LINE */
-   {
-      return is_bad ? 1 : 0;
-   }
-
+{
    if (state->last_decision_ls_id == next_ls_id)
    {
       return state->bad_decision_streak;
@@ -910,12 +806,7 @@ hypredrv_PreconReuseShouldRebuildStatic(const PreconReuse_args *args,
 static double
 PreconReuseSampleMetricGet(const PreconReuseSample *sample, PreconReuseMetric metric,
                            PreconReuseReduction reduction)
-{               /* GCOVR_EXCL_BR_LINE */
-   if (!sample) /* GCOVR_EXCL_BR_LINE */
-   {
-      return -1.0;
-   }
-
+{
    double value = -1.0; /* GCOVR_EXCL_BR_LINE */
    switch (metric)      /* GCOVR_EXCL_BR_LINE */
    {
@@ -969,12 +860,7 @@ static int
 PreconReuseCollectSamples(const PreconReuseScoreComponent_args *component,
                           const PreconReuseState *state, const Stats *stats,
                           PreconReuseSample *samples, int max_samples)
-{                                                            /* GCOVR_EXCL_BR_LINE */
-   if (!component || !state || !samples || max_samples <= 0) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
+{
    int count               = 0; /* GCOVR_EXCL_BR_LINE */
    int rebuild_start_ls_id = (state->baseline_valid &&
                               state->baseline.system_index >= 0) /* GCOVR_EXCL_BR_LINE */
@@ -1094,8 +980,8 @@ PreconReuseArithmeticMean(const double *values, int count)
 static double
 PreconReuseGeneralizedMean(const double *values, int count,
                            const PreconReuseMean_args *mean, double positive_floor)
-{                                      /* GCOVR_EXCL_BR_LINE */
-   if (!values || count <= 0 || !mean) /* GCOVR_EXCL_BR_LINE */
+{
+   if (count <= 0) /* GCOVR_EXCL_BR_LINE */
    {
       return -1.0;
    }
@@ -1190,12 +1076,7 @@ static double
 PreconReuseBaselineValue(const PreconReuseScoreComponent_args *component,
                          const PreconReuseState *state, const PreconReuseSample *samples,
                          int count, double positive_floor)
-{                            /* GCOVR_EXCL_BR_LINE */
-   if (!component || !state) /* GCOVR_EXCL_BR_LINE */
-   {
-      return -1.0;
-   }
-
+{
    if (component->metric == PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP)
    {
       return 1.0;
@@ -1245,12 +1126,7 @@ static double
 PreconReuseTransformSample(const PreconReuseScoreComponent_args *component,
                            const PreconReuseState *state, const PreconReuseSample *sample,
                            double baseline_value, double positive_floor)
-{                                       /* GCOVR_EXCL_BR_LINE */
-   if (!component || !state || !sample) /* GCOVR_EXCL_BR_LINE */
-   {
-      return -1.0;
-   }
-
+{
    if (component->metric == PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP)
    { /* GCOVR_EXCL_BR_LINE */
       double baseline_setup = state->baseline_valid ? state->baseline_setup_time : 0.0;
@@ -1294,12 +1170,7 @@ PreconReuseTransformSample(const PreconReuseScoreComponent_args *component,
 
 static void
 PreconReuseAppendSummary(char *summary, size_t summary_size, const char *text)
-{                                              /* GCOVR_EXCL_BR_LINE */
-   if (!summary || summary_size == 0 || !text) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
+{
    size_t used = strlen(summary); /* GCOVR_EXCL_BR_LINE */
    if (used >= summary_size - 1)  /* GCOVR_EXCL_BR_LINE */
    {
@@ -1350,8 +1221,8 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
                                  const IntArray *timestep_starts, const Stats *stats,
                                  PreconReuseState *state, int next_ls_id,
                                  PreconReuseDecision *decision)
-{                       /* GCOVR_EXCL_BR_LINE */
-   if (!args || !state) /* GCOVR_EXCL_BR_LINE */
+{
+   if (!state) /* GCOVR_EXCL_BR_LINE */
    {
       return 1;
    }
@@ -1672,12 +1543,7 @@ hypredrv_PreconReuseShouldRebuild(const PreconReuse_args *args,
 
 static int
 PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
-{                      /* GCOVR_EXCL_BR_LINE */
-   if (!node || !mean) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
+{
    if (!node->children)
    { /* GCOVR_EXCL_BR_LINE */
       const char *value = node->mapped_val ? node->mapped_val : node->val;
@@ -1744,12 +1610,7 @@ PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
 
 static int
 PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transform)
-{                           /* GCOVR_EXCL_BR_LINE */
-   if (!node || !transform) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
+{
    if (!node->children)
    { /* GCOVR_EXCL_BR_LINE */
       const char *value = node->mapped_val ? node->mapped_val : node->val;
@@ -1831,12 +1692,7 @@ PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transfo
 
 static int
 PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
-{                         /* GCOVR_EXCL_BR_LINE */
-   if (!node || !history) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
+{
    YAML_NODE_ITERATE(node, child)
    { /* GCOVR_EXCL_BR_LINE */
       const char *value =
@@ -1927,12 +1783,7 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
 static int
 PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *component,
                               int component_idx)
-{                           /* GCOVR_EXCL_BR_LINE */
-   if (!node || !component) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
+{
    PreconReuseScoreComponentSetDefaults(component);
    snprintf(component->name, sizeof(component->name), "component_%d", component_idx);
 
@@ -2082,12 +1933,7 @@ PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *co
 
 static int
 PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
-{                        /* GCOVR_EXCL_BR_LINE */
-   if (!node || !guards) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
+{
    YAML_NODE_ITERATE(node, child)
    { /* GCOVR_EXCL_BR_LINE */
       const char *value =
@@ -2319,12 +2165,7 @@ PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
 
 static int
 PreconReuseParseAdaptiveNode(YAMLnode *node, PreconReuseAdaptive_args *adaptive)
-{                          /* GCOVR_EXCL_BR_LINE */
-   if (!node || !adaptive) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
+{
    YAML_NODE_ITERATE(node, child)
    { /* GCOVR_EXCL_BR_LINE */
       const char *value =

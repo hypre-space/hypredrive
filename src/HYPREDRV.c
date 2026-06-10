@@ -125,13 +125,12 @@ ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
                      size_t default_object_name_size)
 {
    const char *object_name = NULL;
-   if (hypredrv && hypredrv->stats) /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv->stats) /* GCOVR_EXCL_BR_LINE */
    {
       object_name = hypredrv->stats->object_name;
    }
-   if ((!object_name || object_name[0] == '\0') && hypredrv &&   /* GCOVR_EXCL_BR_LINE */
-       hypredrv->runtime_object_id > 0 && default_object_name && /* GCOVR_EXCL_BR_LINE */
-       default_object_name_size > 0)
+   if ((!object_name || object_name[0] == '\0') && /* GCOVR_EXCL_BR_LINE */
+       hypredrv->runtime_object_id > 0)
    {
       snprintf(default_object_name, default_object_name_size, "obj-%d",
                hypredrv->runtime_object_id);
@@ -145,9 +144,8 @@ static bool
 PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
                          size_t default_object_name_size)
 {
-   if (!hypredrv || !hypredrv->stats ||
-       hypredrv->stats->object_name[0] != '\0' ||             /* GCOVR_EXCL_BR_LINE */
-       !default_object_name || default_object_name_size == 0) /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv->stats ||
+       hypredrv->stats->object_name[0] != '\0') /* GCOVR_EXCL_BR_LINE */
    {
       return false;
    }
@@ -168,9 +166,7 @@ static void
 PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_object_name,
                         bool pushed_default_name)
 {
-   if (!pushed_default_name || !hypredrv || !hypredrv->stats ||
-       !default_object_name ||         /* GCOVR_EXCL_BR_LINE */
-       default_object_name[0] == '\0') /* GCOVR_EXCL_BR_LINE */
+   if (!pushed_default_name)
    {
       return;
    }
@@ -186,26 +182,6 @@ static int
 PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
                                    PreconReuseDecision *decision)
 {
-   /* static helper: hypredrv always live */
-   if (!hypredrv)   /* GCOVR_EXCL_BR_LINE */
-   {                /* GCOVR_EXCL_BR_LINE */
-      if (decision) /* GCOVR_EXCL_BR_LINE */
-      {
-         memset(decision, 0, sizeof(*decision));
-         decision->should_rebuild = 1;
-         snprintf(decision->summary, sizeof(decision->summary), "%s",
-                  "collective reuse decision unavailable");
-      }
-      return 1;
-   }
-
-   PreconReuseDecision local_decision;
-   if (!decision) /* GCOVR_EXCL_BR_LINE */
-   {
-      memset(&local_decision, 0, sizeof(local_decision));
-      decision = &local_decision;
-   }
-
    int local_should_rebuild = hypredrv_PreconReuseShouldRebuild(
       &hypredrv->iargs->precon_reuse, hypredrv->precon_reuse_timesteps.starts,
       hypredrv->stats, &hypredrv->precon_reuse_state, next_ls_id, decision);

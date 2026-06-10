@@ -12,14 +12,14 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define FGMRES_FIELDS(_prefix)                                                \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, hypredrv_FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, hypredrv_FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, hypredrv_FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, hypredrv_FieldTypeDoubleSet)
+#define FGMRES_FIELDS(_X, _p)                                \
+   _X(_p, min_iter, hypredrv_FieldTypeIntSet, 0)             \
+   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 300)           \
+   _X(_p, krylov_dim, hypredrv_FieldTypeIntSet, 30)          \
+   _X(_p, logging, hypredrv_FieldTypeIntSet, 1)              \
+   _X(_p, print_level, hypredrv_FieldTypeIntSet, 1)          \
+   _X(_p, relative_tol, hypredrv_FieldTypeDoubleSet, 1.0e-6) \
+   _X(_p, absolute_tol, hypredrv_FieldTypeDoubleSet, 0.0)
 
 /* Define num_fields macro */
 #define FGMRES_NUM_FIELDS \
@@ -27,30 +27,15 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(FGMRES)                        // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(FGMRES)          // LCOV_EXCL_LINE
 hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_FGMRES) // LCOV_EXCL_LINE
 
    /*-----------------------------------------------------------------------------
-    * FGMRESSetDefaultArgs
+    * FGMRESCreate
     *-----------------------------------------------------------------------------*/
 
-   void hypredrv_FGMRESSetDefaultArgs(FGMRES_args *args)
-{
-   args->min_iter     = 0;
-   args->max_iter     = 300;
-   args->krylov_dim   = 30;
-   args->logging      = 1;
-   args->print_level  = 1;
-   args->relative_tol = 1.0e-6;
-   args->absolute_tol = 0.0;
-}
-
-/*-----------------------------------------------------------------------------
- * FGMRESCreate
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_FGMRESCreate(MPI_Comm comm, const FGMRES_args *args, HYPRE_Solver *solver_ptr)
+   void hypredrv_FGMRESCreate(MPI_Comm comm, const FGMRES_args *args,
+                              HYPRE_Solver *solver_ptr)
 {
    HYPRE_Solver solver = NULL;
 

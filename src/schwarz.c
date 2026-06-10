@@ -17,26 +17,26 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define Schwarz_FIELDS(_prefix)                                                  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, variant, hypredrv_FieldTypeIntSet)            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, overlap, hypredrv_FieldTypeIntSet)            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, domain_type, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_functions, hypredrv_FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, use_nonsymm, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, local_solver_type, hypredrv_FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, iluk_level_of_fill, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilut_max_nnz_row, hypredrv_FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, hypredrv_FieldTypeIntSet)            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relax_weight, hypredrv_FieldTypeDoubleSet)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ilut_droptol, hypredrv_FieldTypeDoubleSet)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, hypredrv_FieldTypeDoubleSet)
+#define Schwarz_FIELDS(_X, _p)                               \
+   _X(_p, variant, hypredrv_FieldTypeIntSet, 10)             \
+   _X(_p, overlap, hypredrv_FieldTypeIntSet, 1)              \
+   _X(_p, domain_type, hypredrv_FieldTypeIntSet, 2)          \
+   _X(_p, num_functions, hypredrv_FieldTypeIntSet, 1)        \
+   _X(_p, use_nonsymm, hypredrv_FieldTypeIntSet, 0)          \
+   _X(_p, local_solver_type, hypredrv_FieldTypeIntSet, 0)    \
+   _X(_p, iluk_level_of_fill, hypredrv_FieldTypeIntSet, 0)   \
+   _X(_p, ilut_max_nnz_row, hypredrv_FieldTypeIntSet, 1000)  \
+   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 1)             \
+   _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)          \
+   _X(_p, logging, hypredrv_FieldTypeIntSet, 0)              \
+   _X(_p, relax_weight, hypredrv_FieldTypeDoubleSet, 1.0)    \
+   _X(_p, ilut_droptol, hypredrv_FieldTypeDoubleSet, 1.0e-2) \
+   _X(_p, tolerance, hypredrv_FieldTypeDoubleSet, 0.0)
 
 #define Schwarz_NUM_FIELDS \
    (sizeof(Schwarz_field_offset_map) / sizeof(Schwarz_field_offset_map[0]))
 
-GENERATE_PREFIXED_COMPONENTS(Schwarz) // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(Schwarz) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * SchwarzGetValidValues
@@ -68,29 +68,6 @@ hypredrv_SchwarzGetValidValues(const char *key)
    {
       return STR_INT_MAP_ARRAY_VOID();
    }
-}
-
-/*-----------------------------------------------------------------------------
- * SchwarzSetDefaultArgs
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_SchwarzSetDefaultArgs(Schwarz_args *args)
-{
-   args->variant            = 10;
-   args->overlap            = 1;
-   args->domain_type        = 2;
-   args->num_functions      = 1;
-   args->use_nonsymm        = 0;
-   args->local_solver_type  = 0;
-   args->iluk_level_of_fill = 0;
-   args->ilut_max_nnz_row   = 1000;
-   args->max_iter           = 1;
-   args->print_level        = 0;
-   args->logging            = 0;
-   args->relax_weight       = 1.0;
-   args->ilut_droptol       = 1.0e-2;
-   args->tolerance          = 0.0;
 }
 
 /*-----------------------------------------------------------------------------

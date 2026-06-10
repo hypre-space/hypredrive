@@ -12,26 +12,26 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define FSAI_FIELDS(_prefix)                                                   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, algo_type, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, ls_type, hypredrv_FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_steps, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_step_size, hypredrv_FieldTypeIntSet)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, hypredrv_FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, hypredrv_FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, eig_max_iters, hypredrv_FieldTypeIntSet)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, threshold, hypredrv_FieldTypeDoubleSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, kap_tolerance, hypredrv_FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, hypredrv_FieldTypeDoubleSet)
+#define FSAI_FIELDS(_X, _p)                                   \
+   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 1)              \
+   _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)           \
+   _X(_p, algo_type, hypredrv_FieldTypeIntSet, 1)             \
+   _X(_p, ls_type, hypredrv_FieldTypeIntSet, 1)               \
+   _X(_p, max_steps, hypredrv_FieldTypeIntSet, 5)             \
+   _X(_p, max_step_size, hypredrv_FieldTypeIntSet, 3)         \
+   _X(_p, max_nnz_row, hypredrv_FieldTypeIntSet, 15)          \
+   _X(_p, num_levels, hypredrv_FieldTypeIntSet, 1)            \
+   _X(_p, eig_max_iters, hypredrv_FieldTypeIntSet, 5)         \
+   _X(_p, threshold, hypredrv_FieldTypeDoubleSet, 1.0e-3)     \
+   _X(_p, kap_tolerance, hypredrv_FieldTypeDoubleSet, 1.0e-3) \
+   _X(_p, tolerance, hypredrv_FieldTypeDoubleSet, 0.0)
 
 /* Define num_fields macro */
 #define FSAI_NUM_FIELDS (sizeof(FSAI_field_offset_map) / sizeof(FSAI_field_offset_map[0]))
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(FSAI) // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(FSAI) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * FSAIGetValidValues
@@ -50,27 +50,6 @@ hypredrv_FSAIGetValidValues(const char *key)
    {
       return STR_INT_MAP_ARRAY_VOID();
    }
-}
-
-/*-----------------------------------------------------------------------------
- * FSAISetDefaultArgs
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_FSAISetDefaultArgs(FSAI_args *args)
-{
-   args->max_iter      = 1;
-   args->print_level   = 0;
-   args->algo_type     = 1;
-   args->ls_type       = 1;
-   args->max_steps     = 5;
-   args->max_step_size = 3;
-   args->max_nnz_row   = 15;
-   args->num_levels    = 1;
-   args->eig_max_iters = 5;
-   args->threshold     = 1.0e-3;
-   args->kap_tolerance = 1.0e-3;
-   args->tolerance     = 0.0;
 }
 
 /*-----------------------------------------------------------------------------

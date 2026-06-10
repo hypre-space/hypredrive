@@ -1148,11 +1148,6 @@ MGRLevelInterpTypeCompat(HYPRE_Int interp_type, const Stats *stats, int next_ls_
 static void
 MGRComponentReuseSetDefaultArgs(MGRComponentReuse_args *reuse)
 {
-   if (!reuse)
-   {
-      return;
-   }
-
    memset(reuse, 0, sizeof(*reuse));
    hypredrv_PreconReuseSetDefaultArgs(&reuse->args);
 }
@@ -1160,11 +1155,6 @@ MGRComponentReuseSetDefaultArgs(MGRComponentReuse_args *reuse)
 static void
 MGRComponentReuseDestroyArgs(MGRComponentReuse_args *reuse)
 {
-   if (!reuse)
-   {
-      return;
-   }
-
    hypredrv_PreconReuseDestroyArgs(&reuse->args);
    reuse->present                    = 0;
    reuse->warned_runtime_unsupported = 0;
@@ -1177,7 +1167,7 @@ MGRComponentReuseLogWarning(const MGRComponentReuse_args *reuse, int *warned_fla
                             const Stats *stats, int next_ls_id, const char *label,
                             const char *detail)
 {
-   if (!reuse || !warned_flag || *warned_flag)
+   if (*warned_flag)
    {
       return;
    }
@@ -1350,11 +1340,6 @@ MGRfrlxMGRSetArgs(void *field, const YAMLnode *node)
 static void
 MGRComponentReuseSetArgsFromYAML(MGRComponentReuse_args *reuse, YAMLnode *node)
 {
-   if (!reuse || !node)
-   {
-      return;
-   }
-
    MGRComponentReuseDestroyArgs(reuse);
    MGRComponentReuseSetDefaultArgs(reuse);
    reuse->present = 1;

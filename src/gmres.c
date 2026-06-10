@@ -12,18 +12,18 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define GMRES_FIELDS(_prefix)                                                     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, min_iter, hypredrv_FieldTypeIntSet)            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, hypredrv_FieldTypeIntSet)           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, skip_real_res_check, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, krylov_dim, hypredrv_FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, hypredrv_FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, logging, hypredrv_FieldTypeIntSet)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, hypredrv_FieldTypeDoubleSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, hypredrv_FieldTypeDoubleSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, hypredrv_FieldTypeDoubleSet)
+#define GMRES_FIELDS(_X, _p)                                 \
+   _X(_p, min_iter, hypredrv_FieldTypeIntSet, 0)             \
+   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 300)           \
+   _X(_p, stop_crit, hypredrv_FieldTypeIntSet, 0)            \
+   _X(_p, skip_real_res_check, hypredrv_FieldTypeIntSet, 0)  \
+   _X(_p, krylov_dim, hypredrv_FieldTypeIntSet, 30)          \
+   _X(_p, rel_change, hypredrv_FieldTypeIntSet, 0)           \
+   _X(_p, logging, hypredrv_FieldTypeIntSet, 1)              \
+   _X(_p, print_level, hypredrv_FieldTypeIntSet, 1)          \
+   _X(_p, relative_tol, hypredrv_FieldTypeDoubleSet, 1.0e-6) \
+   _X(_p, absolute_tol, hypredrv_FieldTypeDoubleSet, 0.0)    \
+   _X(_p, conv_fac_tol, hypredrv_FieldTypeDoubleSet, 0.0)
 
 /* Define num_fields macro */
 #define GMRES_NUM_FIELDS \
@@ -31,7 +31,7 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(GMRES) // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(GMRES) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * GMRESGetValidValues
@@ -48,26 +48,6 @@ hypredrv_GMRESGetValidValues(const char *key)
    {
       return STR_INT_MAP_ARRAY_VOID();
    }
-}
-
-/*-----------------------------------------------------------------------------
- * GMRESSetDefaultArgs
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_GMRESSetDefaultArgs(GMRES_args *args)
-{
-   args->min_iter            = 0;
-   args->max_iter            = 300;
-   args->stop_crit           = 0;
-   args->skip_real_res_check = 0;
-   args->krylov_dim          = 30;
-   args->rel_change          = 0;
-   args->logging             = 1;
-   args->print_level         = 1;
-   args->relative_tol        = 1.0e-6;
-   args->absolute_tol        = 0.0;
-   args->conv_fac_tol        = 0.0;
 }
 
 /*-----------------------------------------------------------------------------
