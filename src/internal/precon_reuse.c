@@ -451,6 +451,26 @@ PreconReuseResolveTimestepContext(const IntArray *starts, const Stats *stats, in
    return 1;
 }
 
+/* Map a linear-system index onto a timestep index using the explicit schedule
+ * when available, falling back to the timestep counter embedded in Stats. */
+int
+hypredrv_PreconReuseResolveTimestepIndex(const IntArray *timestep_starts,
+                                         const Stats *stats, int system_index)
+{
+   if (system_index < 0) /* GCOVR_EXCL_BR_LINE */
+   {
+      return -1;
+   }
+
+   int found = PreconReuseFindTimestepIndex(timestep_starts, system_index);
+   if (found >= 0)
+   {
+      return found;
+   }
+
+   return PreconReuseGetEmbeddedTimestepIndex(stats);
+}
+
 void
 hypredrv_PreconReuseBuildObservation(HYPREDRV_t hypredrv, const IntArray *timestep_starts,
                                      PreconReuseObservation *obs)

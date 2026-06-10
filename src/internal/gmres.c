@@ -7,6 +7,7 @@
 
 #include "internal/gmres.h"
 #include "internal/gen_macros.h"
+#include "internal/utils.h"
 
 /*-----------------------------------------------------------------------------
  * Define Field/Offset/Setter mapping
@@ -73,4 +74,30 @@ hypredrv_GMRESCreate(MPI_Comm comm, const GMRES_args *args, HYPRE_Solver *solver
    HYPRE_GMRESSetConvergenceFactorTol(solver, args->conv_fac_tol);
 
    *solver_ptr = solver;
+}
+
+/*-----------------------------------------------------------------------------
+ * GMRESSetRefSolution
+ *-----------------------------------------------------------------------------*/
+
+/* Pass the reference solution (when one is set) to hypre's GMRES for error
+ * tracking; a no-op on hypre versions without HYPRE_ParCSRGMRESSetRefSolution. */
+void
+hypredrv_GMRESSetRefSolution(HYPRE_Solver solver, HYPRE_IJVector vec_xref)
+{
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   void           *obj_ref = NULL;
+   HYPRE_ParVector par_ref = NULL;
+
+   if (vec_xref)
+   {
+      HYPRE_IJVectorGetObject(vec_xref, &obj_ref);
+      par_ref = (HYPRE_ParVector)obj_ref;
+   }
+
+   HYPRE_ParCSRGMRESSetRefSolution(solver, par_ref);
+#else
+   (void)solver;
+   (void)vec_xref;
+#endif
 }
