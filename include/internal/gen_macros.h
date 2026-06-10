@@ -179,30 +179,6 @@
    static const FieldOffsetMap _prefix##_field_offset_map[] = {_prefix##_FIELDS(_prefix)};
 
 /**
- * @brief Calls a function to set default arguments.
- *
- * @details This macro abstracts the calling pattern of the function
- * that sets default arguments.
- *
- * @param _prefix Prefix used in the naming of the called function.
- * @param _args Pointer to the arguments structure.
- */
-#define CALL_SET_DEFAULT_ARGS_FUNC(_prefix, _args) _prefix##SetDefaultArgs(_args)
-
-/**
- * @brief Calls a function to set arguments from a YAML node.
- *
- * @details This macro abstracts the calling pattern of the function
- * that sets arguments based on a YAML node.
- *
- * @param _prefix Prefix used in the naming of the called function.
- * @param _args Pointer to the arguments structure.
- * @param _yaml Pointer to the YAML node structure.
- */
-#define CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, _args, _yaml) \
-   _prefix##SetArgsFromYAML(_args, _yaml)
-
-/**
  * @def GENERATE_PREFIXED_COMPONENTS(prefix)
  *
  * @brief An X-macro for generating a series of component definitions, declarations,
@@ -271,6 +247,10 @@
  * @brief Like GENERATE_PREFIXED_COMPONENTS, but for 4-column field lists carrying
  *        default values: SetDefaultArgs is generated from the list instead of
  *        being declared for manual implementation.
+ *
+ * Prefer this form for flat args structs whose defaults are plain constants.
+ * Use GENERATE_PREFIXED_COMPONENTS when defaults cannot live in a macro column
+ * (conditional on build flags, nested sub-struct initialization, or unions).
  */
 #define GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(prefix)                          \
    DEFINE_FIELD_OFFSET_MAP4(prefix);                                                \

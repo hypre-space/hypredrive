@@ -6,7 +6,6 @@
  ******************************************************************************/
 
 #include <errno.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -107,6 +106,19 @@ DestroyActiveSolver(HYPREDRV_t hypredrv)
    if (hypredrv && hypredrv->iargs && hypredrv->solver) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * Pass the reference solution to the active solver when the method supports it
+ *-----------------------------------------------------------------------------*/
+
+static void
+SetSolverRefSolution(HYPREDRV_t hypredrv)
+{
+   if (hypredrv->iargs->solver_method == SOLVER_GMRES)
+   {
+      hypredrv_GMRESSetRefSolution(hypredrv->solver, hypredrv->vec_xref);
    }
 }
 
@@ -2651,10 +2663,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
       }
    }
 
-   if (hypredrv->iargs->solver_method == SOLVER_GMRES)
-   {
-      hypredrv_GMRESSetRefSolution(hypredrv->solver, hypredrv->vec_xref);
-   }
+   SetSolverRefSolution(hypredrv);
 
    if (rerun_mgr_component_setup)
    {
@@ -2713,10 +2722,7 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 
    /* Ensure GMRES always sees the current reference solution, including on reused
     * preconditioner cycles where SolverSetup may be skipped. */
-   if (hypredrv->iargs->solver_method == SOLVER_GMRES)
-   {
-      hypredrv_GMRESSetRefSolution(hypredrv->solver, hypredrv->vec_xref);
-   }
+   SetSolverRefSolution(hypredrv);
 
    /* Apply scaling if enabled but not yet applied (e.g., when preconditioner is reused)
     */    /* GCOVR_EXCL_BR_LINE */

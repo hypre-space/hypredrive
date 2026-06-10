@@ -502,9 +502,8 @@ hypredrv_PreconReuseBuildObservation(HYPREDRV_t hypredrv, const IntArray *timest
          ? hypredrv->current_system_index                    /* GCOVR_EXCL_BR_LINE */
          : hypredrv_StatsGetLinearSystemID(hypredrv->stats); /* GCOVR_EXCL_BR_LINE */
 
-   int timestep_start = -1;
-   PreconReuseResolveTimestepContext(timestep_starts, hypredrv->stats, obs->system_index,
-                                     &obs->timestep_index, &timestep_start);
+   obs->timestep_index = hypredrv_PreconReuseResolveTimestepIndex(
+      timestep_starts, hypredrv->stats, obs->system_index);
 
    obs->iters      = hypredrv_StatsGetLastIter(hypredrv->stats);
    obs->setup_time = hypredrv_StatsGetLastSetupTime(hypredrv->stats);

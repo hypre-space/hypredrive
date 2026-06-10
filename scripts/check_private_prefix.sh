@@ -459,7 +459,7 @@ while IFS= read -r header; do
 done < <(LC_ALL=C find "$INCLUDE_DIR" -maxdepth 1 -type f -name '*.h' | sort)
 
 while IFS= read -r source; do
-  base="$(basename "$source")"
+  rel="${source#"${SRC_DIR}"/}"
   ((source_checked += 1))
 
   while IFS= read -r rec; do
@@ -468,13 +468,13 @@ while IFS= read -r source; do
     name="${rec#*:}"
     ((source_def_count += 1))
 
-    case "$base" in
+    case "$rel" in
       HYPREDRV.c)
         if [[ "$name" != HYPREDRV_* ]]; then
           VIOLATIONS+=("source:${source}:${line}: public implementation '${name}' must start with HYPREDRV_")
         fi
         ;;
-      main.c)
+      internal/main.c)
         if [[ "$name" != "main" ]]; then
           VIOLATIONS+=("source:${source}:${line}: entrypoint file should only expose 'main', found '${name}'")
         fi
