@@ -109,13 +109,6 @@ NestedKrylovDetachPrecon(YAMLnode *solver_node, YAMLnode **precon_node_out,
 {
    YAMLnode *prev  = NULL;
    YAMLnode *child = NULL;
-   /* GCOVR_EXCL_BR_LINE */
-   if (!solver_node || !precon_node_out || !precon_prev_out ||
-       !precon_next_out) /* GCOVR_EXCL_BR_LINE */ /* valid pointers from SetArgsFromYAML
-                                                   */
-   {
-      return;
-   }
 
    *precon_node_out = NULL;
    *precon_prev_out = NULL;
@@ -149,9 +142,8 @@ NestedKrylovDetachPrecon(YAMLnode *solver_node, YAMLnode **precon_node_out,
 static void
 NestedKrylovRestorePrecon(YAMLnode *solver_node, YAMLnode *precon_node,
                           YAMLnode *precon_prev, YAMLnode *precon_next)
-{                                                             /* GCOVR_EXCL_BR_LINE */
-   if (!solver_node || !precon_node) /* GCOVR_EXCL_BR_LINE */ /* !solver_node unreachable
-                                                                 after SetArgsFromYAML */
+{
+   if (!precon_node)
    {
       return;
    }
@@ -173,13 +165,7 @@ NestedKrylovRestorePrecon(YAMLnode *solver_node, YAMLnode *precon_node,
 
 static void
 NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
-{                                                      /* GCOVR_EXCL_BR_LINE */
-   if (!args || !precon_node) /* GCOVR_EXCL_BR_LINE */ /* only called with live args and
-                                                          precon node */
-   {
-      return;
-   }
-
+{
    YAML_NODE_SET_VALID(precon_node);
 
    if (strcmp(precon_node->val, "") != 0)

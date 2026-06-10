@@ -12,24 +12,24 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define PCG_FIELDS(_prefix)                                                   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, two_norm, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, stop_crit, hypredrv_FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, rel_change, hypredrv_FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, recompute_res, hypredrv_FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, relative_tol, hypredrv_FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, absolute_tol, hypredrv_FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, residual_tol, hypredrv_FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, conv_fac_tol, hypredrv_FieldTypeDoubleSet)
+#define PCG_FIELDS(_X, _p)                                   \
+   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 100)           \
+   _X(_p, two_norm, hypredrv_FieldTypeIntSet, 1)             \
+   _X(_p, stop_crit, hypredrv_FieldTypeIntSet, 0)            \
+   _X(_p, rel_change, hypredrv_FieldTypeIntSet, 0)           \
+   _X(_p, print_level, hypredrv_FieldTypeIntSet, 1)          \
+   _X(_p, recompute_res, hypredrv_FieldTypeIntSet, 0)        \
+   _X(_p, relative_tol, hypredrv_FieldTypeDoubleSet, 1.0e-6) \
+   _X(_p, absolute_tol, hypredrv_FieldTypeDoubleSet, 0.0)    \
+   _X(_p, residual_tol, hypredrv_FieldTypeDoubleSet, 0.0)    \
+   _X(_p, conv_fac_tol, hypredrv_FieldTypeDoubleSet, 0.0)
 
 /* Define num_fields macro */
 #define PCG_NUM_FIELDS (sizeof(PCG_field_offset_map) / sizeof(PCG_field_offset_map[0]))
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(PCG) // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(PCG) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * PCGGetValidValues
@@ -45,25 +45,6 @@ hypredrv_PCGGetValidValues(const char *key)
    }
 
    return STR_INT_MAP_ARRAY_VOID();
-}
-
-/*-----------------------------------------------------------------------------
- * PCGSetDefaultArgs
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_PCGSetDefaultArgs(PCG_args *args)
-{
-   args->max_iter      = 100;
-   args->two_norm      = 1;
-   args->stop_crit     = 0;
-   args->rel_change    = 0;
-   args->print_level   = 1;
-   args->recompute_res = 0;
-   args->relative_tol  = 1.0e-6;
-   args->absolute_tol  = 0.0;
-   args->residual_tol  = 0.0;
-   args->conv_fac_tol  = 0.0;
 }
 
 /*-----------------------------------------------------------------------------

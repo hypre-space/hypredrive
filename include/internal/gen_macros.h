@@ -179,30 +179,6 @@
    static const FieldOffsetMap _prefix##_field_offset_map[] = {_prefix##_FIELDS(_prefix)};
 
 /**
- * @brief Calls a function to set default arguments.
- *
- * @details This macro abstracts the calling pattern of the function
- * that sets default arguments.
- *
- * @param _prefix Prefix used in the naming of the called function.
- * @param _args Pointer to the arguments structure.
- */
-#define CALL_SET_DEFAULT_ARGS_FUNC(_prefix, _args) _prefix##SetDefaultArgs(_args)
-
-/**
- * @brief Calls a function to set arguments from a YAML node.
- *
- * @details This macro abstracts the calling pattern of the function
- * that sets arguments based on a YAML node.
- *
- * @param _prefix Prefix used in the naming of the called function.
- * @param _args Pointer to the arguments structure.
- * @param _yaml Pointer to the YAML node structure.
- */
-#define CALL_SET_ARGS_FROM_YAML_FUNC(_prefix, _args, _yaml) \
-   _prefix##SetArgsFromYAML(_args, _yaml)
-
-/**
  * @def GENERATE_PREFIXED_COMPONENTS(prefix)
  *
  * @brief An X-macro for generating a series of component definitions, declarations,
@@ -228,6 +204,62 @@
                               prefix##_field_offset_map);                           \
    DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix);                                \
    DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args);                 \
+   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix, hypredrv_##prefix);                       \
+   DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix);
+
+/**
+ * @brief Adds an entry in the field offset map from a 4-column field list.
+ *
+ * @details Applier for X-macro field lists of the form _X(_prefix, field, setter,
+ *          default). Generates the same map entry as ADD_FIELD_OFFSET_ENTRY,
+ *          ignoring the default value column.
+ */
+#define ADD_FIELD_OFFSET_ENTRY4(_prefix, _field, _setter, _default) \
+   FIELD_OFFSET_MAP_ENTRY(_prefix##_args, _field, _setter),
+
+/**
+ * @brief Generates a default-value assignment from a 4-column field list entry.
+ */
+#define ADD_FIELD_DEFAULT_ENTRY4(_prefix, _field, _setter, _default) \
+   _args->_field = (_default);
+
+/**
+ * @brief Defines a field offset map from a 4-column field list.
+ *
+ * @details Counterpart of DEFINE_FIELD_OFFSET_MAP for field lists that take an
+ *          applier macro as first argument: _prefix##_FIELDS(_X, _prefix).
+ */
+#define DEFINE_FIELD_OFFSET_MAP4(_prefix)                       \
+   static const FieldOffsetMap _prefix##_field_offset_map[] = { \
+      _prefix##_FIELDS(ADD_FIELD_OFFSET_ENTRY4, _prefix)}
+
+/**
+ * @brief Defines a SetDefaultArgs function generated from a 4-column field list,
+ *        assigning each field its default value column.
+ */
+#define DEFINE_SET_DEFAULT_ARGS_FROM_FIELDS(_prefix)              \
+   void hypredrv_##_prefix##SetDefaultArgs(_prefix##_args *_args) \
+   {                                                              \
+      _prefix##_FIELDS(ADD_FIELD_DEFAULT_ENTRY4, _prefix)         \
+   }
+
+/**
+ * @brief Like GENERATE_PREFIXED_COMPONENTS, but for 4-column field lists carrying
+ *        default values: SetDefaultArgs is generated from the list instead of
+ *        being declared for manual implementation.
+ *
+ * Prefer this form for flat args structs whose defaults are plain constants.
+ * Use GENERATE_PREFIXED_COMPONENTS when defaults cannot live in a macro column
+ * (conditional on build flags, nested sub-struct initialization, or unions).
+ */
+#define GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(prefix)                          \
+   DEFINE_FIELD_OFFSET_MAP4(prefix);                                                \
+   DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,  \
+                                 prefix##_field_offset_map, prefix##_NUM_FIELDS);   \
+   DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS, \
+                              prefix##_field_offset_map);                           \
+   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix);                                \
+   DEFINE_SET_DEFAULT_ARGS_FROM_FIELDS(prefix)                                      \
    DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix, hypredrv_##prefix);                       \
    DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix);
 

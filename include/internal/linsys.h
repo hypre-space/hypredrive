@@ -180,6 +180,7 @@ void hypredrv_LinearSystemSetDefaultArgs(LS_args *);
 void hypredrv_PrintSystemSetDefaultArgs(PrintSystem_args *);
 void hypredrv_PrintSystemDestroyArgs(PrintSystem_args *);
 void hypredrv_PrintSystemSetArgs(void *, const YAMLnode *);
+int  hypredrv_PrintSystemNeedsTimestepSchedule(const PrintSystem_args *);
 
 void hypredrv_LinearSystemSetNearNullSpace(MPI_Comm, const LS_args *, HYPRE_IJMatrix, int,
                                            int, const HYPRE_Complex *, HYPRE_IJVector *);
@@ -227,6 +228,11 @@ uint32_t hypredrv_LinearSystemDumpScheduled(MPI_Comm, const LS_args *, HYPRE_IJM
 
 long long int hypredrv_LinearSystemMatrixGetNumRows(HYPRE_IJMatrix);
 long long int hypredrv_LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix);
+
+uint32_t hypredrv_LinearSystemLoadTimestepSchedule(const char *, IntArray **,
+                                                   IntArray **);
+uint32_t hypredrv_LinearSystemValidateCSRPartitionDebug(MPI_Comm, HYPRE_BigInt,
+                                                        HYPRE_BigInt);
 
 void hypredrv_IJVectorReadMultipartBinary(const char *, MPI_Comm, uint64_t,
                                           HYPRE_MemoryLocation, HYPRE_IJVector *);

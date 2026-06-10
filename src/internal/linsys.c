@@ -2189,5 +2189,176 @@ hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector ve
 }
 
 /*-----------------------------------------------------------------------------
- * Print matrix/vector/dofmap with series directory logic
- *---------------------------------------------------------------------------*/
+ * Load a timestep schedule (timestep id, first linear-system id) from a file
+ *-----------------------------------------------------------------------------*/
+
+/* timestep_ids is optional: pass NULL to skip loading per-timestep IDs (caller
+ * then derives IDs from array position).  timestep_starts is required. */
+uint32_t
+hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **timestep_ids,
+                                          IntArray **timestep_starts)
+{
+   if (!timestep_starts) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid output pointer for timestep schedule");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (timestep_ids && *timestep_ids) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_IntArrayDestroy(timestep_ids);
+   }
+
+   if (*timestep_starts) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_IntArrayDestroy(timestep_starts);
+   }
+
+   if (!filename || filename[0] == '\0') /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Missing timestep schedule filename");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   FILE *fp = fopen(filename, "r");
+   if (!fp)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Could not open timestep file: '%s'", filename);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   int total = 0;
+   if (fscanf(fp, "%d", &total) != 1 || total <= 0)
+   {
+      fclose(fp);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid timestep file header in '%s'", filename);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   IntArray *ids = NULL;
+   if (timestep_ids) /* GCOVR_EXCL_BR_LINE */
+   {
+      ids = hypredrv_IntArrayCreate((size_t)total);
+      if (!ids) /* GCOVR_EXCL_BR_LINE */
+      {
+         fclose(fp);
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate timestep ids array");
+         return hypredrv_ErrorCodeGet();
+      }
+   }
+
+   IntArray *starts = hypredrv_IntArrayCreate((size_t)total);
+   if (!starts) /* GCOVR_EXCL_BR_LINE */
+   {
+      fclose(fp);
+      hypredrv_IntArrayDestroy(&ids);
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate timestep starts array");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   for (int i = 0; i < total; i++)
+   {
+      int timestep = 0;
+      int ls_start = 0;
+      if (fscanf(fp, "%d %d", &timestep, &ls_start) != 2 ||
+          ls_start < 0) /* GCOVR_EXCL_BR_LINE */
+      {
+         fclose(fp);
+         hypredrv_IntArrayDestroy(&ids);
+         hypredrv_IntArrayDestroy(&starts);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Invalid timestep entry in '%s' at line %d", filename,
+                              i + 2);
+         return hypredrv_ErrorCodeGet();
+      }
+
+      if (ids) /* GCOVR_EXCL_BR_LINE */
+      {
+         ids->data[i] = timestep;
+      }
+      starts->data[i] = ls_start;
+   }
+
+   fclose(fp);
+   if (timestep_ids) /* GCOVR_EXCL_BR_LINE */
+   {
+      *timestep_ids = ids;
+   }
+   *timestep_starts = starts;
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * Check (debug builds only) that CSR row ranges form a contiguous partition
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+hypredrv_LinearSystemValidateCSRPartitionDebug(MPI_Comm comm, HYPRE_BigInt row_start,
+                                               HYPRE_BigInt row_end)
+{
+#ifdef HYPREDRV_USING_DEBUG
+   int comm_size = 1;
+   if (MPI_Comm_size(comm, &comm_size) != MPI_SUCCESS)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to query MPI communicator");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   const long long local_range[2] = {(long long)row_start, (long long)row_end};
+   long long      *all_ranges = hypre_TAlloc(long long, 2 * comm_size, HYPRE_MEMORY_HOST);
+   if (!all_ranges)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to allocate debug "
+         "partition scratch space");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   int mpi_ierr =
+      MPI_Allgather(local_range, 2, MPI_LONG_LONG, all_ranges, 2, MPI_LONG_LONG, comm);
+   if (mpi_ierr != MPI_SUCCESS)
+   {
+      hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to gather debug row "
+         "partition");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   long long expected_start = 0;
+   for (int rank = 0; rank < comm_size; rank++)
+   {
+      size_t    range_idx = (size_t)2 * (size_t)rank;
+      long long start     = all_ranges[range_idx];
+      long long end       = all_ranges[range_idx + 1];
+      if (end < start || start != expected_start)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
+            "HYPREDRV_LinearSystemSetMatrixFromCSR: rank %d row range [%lld, %lld] "
+            "does not continue the global partition at %lld",
+            rank, start, end, expected_start);
+         hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
+         return hypredrv_ErrorCodeGet();
+      }
+      expected_start = end + 1;
+   }
+
+   hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
+#else
+   (void)comm;
+   (void)row_start;
+   (void)row_end;
+#endif
+   return hypredrv_ErrorCodeGet();
+}

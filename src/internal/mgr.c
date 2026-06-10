@@ -1148,11 +1148,6 @@ MGRLevelInterpTypeCompat(HYPRE_Int interp_type, const Stats *stats, int next_ls_
 static void
 MGRComponentReuseSetDefaultArgs(MGRComponentReuse_args *reuse)
 {
-   if (!reuse)
-   {
-      return;
-   }
-
    memset(reuse, 0, sizeof(*reuse));
    hypredrv_PreconReuseSetDefaultArgs(&reuse->args);
 }
@@ -1160,11 +1155,6 @@ MGRComponentReuseSetDefaultArgs(MGRComponentReuse_args *reuse)
 static void
 MGRComponentReuseDestroyArgs(MGRComponentReuse_args *reuse)
 {
-   if (!reuse)
-   {
-      return;
-   }
-
    hypredrv_PreconReuseDestroyArgs(&reuse->args);
    reuse->present                    = 0;
    reuse->warned_runtime_unsupported = 0;
@@ -1173,11 +1163,10 @@ MGRComponentReuseDestroyArgs(MGRComponentReuse_args *reuse)
 }
 
 static void
-MGRComponentReuseLogWarning(const MGRComponentReuse_args *reuse, int *warned_flag,
-                            const Stats *stats, int next_ls_id, const char *label,
-                            const char *detail)
+MGRComponentReuseLogWarning(int *warned_flag, const Stats *stats, int next_ls_id,
+                            const char *label, const char *detail)
 {
-   if (!reuse || !warned_flag || *warned_flag)
+   if (*warned_flag)
    {
       return;
    }
@@ -1350,11 +1339,6 @@ MGRfrlxMGRSetArgs(void *field, const YAMLnode *node)
 static void
 MGRComponentReuseSetArgsFromYAML(MGRComponentReuse_args *reuse, YAMLnode *node)
 {
-   if (!reuse || !node)
-   {
-      return;
-   }
-
    MGRComponentReuseDestroyArgs(reuse);
    MGRComponentReuseSetDefaultArgs(reuse);
    reuse->present = 1;
@@ -2751,7 +2735,6 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          {
             MGRFillLevelReuseLabel(label, sizeof(label), orig_lvl, "f_relaxation");
             MGRComponentReuseLogWarning(
-               &args->level[orig_lvl].f_relaxation.reuse,
                &args->level[orig_lvl].f_relaxation.reuse.warned_runtime_unsupported,
                stats, next_ls_id, label,
                "is ignored because the current hypre version does not support "
@@ -2761,7 +2744,6 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          {
             MGRFillLevelReuseLabel(label, sizeof(label), orig_lvl, "g_relaxation");
             MGRComponentReuseLogWarning(
-               &args->level[orig_lvl].g_relaxation.reuse,
                &args->level[orig_lvl].g_relaxation.reuse.warned_runtime_unsupported,
                stats, next_ls_id, label,
                "is ignored because the current hypre version does not support "
@@ -2771,7 +2753,6 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
       if (args->coarsest_level.reuse.present)
       {
          MGRComponentReuseLogWarning(
-            &args->coarsest_level.reuse,
             &args->coarsest_level.reuse.warned_runtime_unsupported, stats, next_ls_id,
             "coarsest_level.reuse",
             "is ignored because the current hypre version does not support "
@@ -2791,7 +2772,6 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          {
             MGRFillLevelReuseLabel(label, sizeof(label), orig_lvl, "f_relaxation");
             MGRComponentReuseLogWarning(
-               &args->level[orig_lvl].f_relaxation.reuse,
                &args->level[orig_lvl].f_relaxation.reuse.warned_type_unsupported, stats,
                next_ls_id, label,
                "is ignored because the current MGR configuration includes "
@@ -2801,7 +2781,6 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          {
             MGRFillLevelReuseLabel(label, sizeof(label), orig_lvl, "g_relaxation");
             MGRComponentReuseLogWarning(
-               &args->level[orig_lvl].g_relaxation.reuse,
                &args->level[orig_lvl].g_relaxation.reuse.warned_type_unsupported, stats,
                next_ls_id, label,
                "is ignored because the current MGR configuration includes "
@@ -2811,7 +2790,6 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
       if (args->coarsest_level.reuse.present)
       {
          MGRComponentReuseLogWarning(
-            &args->coarsest_level.reuse,
             &args->coarsest_level.reuse.warned_type_unsupported, stats, next_ls_id,
             "coarsest_level.reuse",
             "is ignored because the current MGR configuration includes solver handles "
@@ -2831,7 +2809,7 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          if (f_reuse->args.policy != PRECON_REUSE_POLICY_STATIC)
          {
             MGRComponentReuseLogWarning(
-               f_reuse, &f_reuse->warned_policy_unsupported, stats, next_ls_id, label,
+               &f_reuse->warned_policy_unsupported, stats, next_ls_id, label,
                "accepts adaptive reuse syntax, but only static/scheduled component "
                "reuse is supported today");
          }
@@ -2842,7 +2820,7 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          else
          {
             MGRComponentReuseLogWarning(
-               f_reuse, &f_reuse->warned_type_unsupported, stats, next_ls_id, label,
+               &f_reuse->warned_type_unsupported, stats, next_ls_id, label,
                "is ignored because this F-relaxation type does not expose a reusable "
                "hypredrive-managed handle");
          }
@@ -2855,7 +2833,7 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          if (g_reuse->args.policy != PRECON_REUSE_POLICY_STATIC)
          {
             MGRComponentReuseLogWarning(
-               g_reuse, &g_reuse->warned_policy_unsupported, stats, next_ls_id, label,
+               &g_reuse->warned_policy_unsupported, stats, next_ls_id, label,
                "accepts adaptive reuse syntax, but only static/scheduled component "
                "reuse is supported today");
          }
@@ -2866,7 +2844,7 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
          else
          {
             MGRComponentReuseLogWarning(
-               g_reuse, &g_reuse->warned_type_unsupported, stats, next_ls_id, label,
+               &g_reuse->warned_type_unsupported, stats, next_ls_id, label,
                "is ignored because this global smoother does not expose a reusable "
                "hypredrive-managed handle");
          }
@@ -2878,7 +2856,6 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
       if (args->coarsest_level.reuse.args.policy != PRECON_REUSE_POLICY_STATIC)
       {
          MGRComponentReuseLogWarning(
-            &args->coarsest_level.reuse,
             &args->coarsest_level.reuse.warned_policy_unsupported, stats, next_ls_id,
             "coarsest_level.reuse",
             "accepts adaptive reuse syntax, but only static/scheduled component reuse "
@@ -2891,7 +2868,6 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
       else
       {
          MGRComponentReuseLogWarning(
-            &args->coarsest_level.reuse,
             &args->coarsest_level.reuse.warned_type_unsupported, stats, next_ls_id,
             "coarsest_level.reuse",
             "is ignored because this coarsest solver does not expose a reusable "

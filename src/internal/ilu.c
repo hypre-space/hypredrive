@@ -12,27 +12,27 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define ILU_FIELDS(_prefix)                                                   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_iter, hypredrv_FieldTypeIntSet)        \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, print_level, hypredrv_FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, fill_level, hypredrv_FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, reordering, hypredrv_FieldTypeIntSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, tri_solve, hypredrv_FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, lower_jac_iters, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, upper_jac_iters, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_nnz, hypredrv_FieldTypeIntSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, schur_max_iter, hypredrv_FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, droptol, hypredrv_FieldTypeDoubleSet)      \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, nsh_droptol, hypredrv_FieldTypeDoubleSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, tolerance, hypredrv_FieldTypeDoubleSet)
+#define ILU_FIELDS(_X, _p)                                   \
+   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 1)             \
+   _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)          \
+   _X(_p, type, hypredrv_FieldTypeIntSet, 0)                 \
+   _X(_p, fill_level, hypredrv_FieldTypeIntSet, 0)           \
+   _X(_p, reordering, hypredrv_FieldTypeIntSet, 0)           \
+   _X(_p, tri_solve, hypredrv_FieldTypeIntSet, 1)            \
+   _X(_p, lower_jac_iters, hypredrv_FieldTypeIntSet, 5)      \
+   _X(_p, upper_jac_iters, hypredrv_FieldTypeIntSet, 5)      \
+   _X(_p, max_row_nnz, hypredrv_FieldTypeIntSet, 200)        \
+   _X(_p, schur_max_iter, hypredrv_FieldTypeIntSet, 3)       \
+   _X(_p, droptol, hypredrv_FieldTypeDoubleSet, 1.0e-02)     \
+   _X(_p, nsh_droptol, hypredrv_FieldTypeDoubleSet, 1.0e-02) \
+   _X(_p, tolerance, hypredrv_FieldTypeDoubleSet, 0.0)
 
 /* Define num_fields macro */
 #define ILU_NUM_FIELDS (sizeof(ILU_field_offset_map) / sizeof(ILU_field_offset_map[0]))
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
-GENERATE_PREFIXED_COMPONENTS(ILU) // LCOV_EXCL_LINE
+GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(ILU) // LCOV_EXCL_LINE
 
 /*-----------------------------------------------------------------------------
  * ILUGetValidValues
@@ -52,40 +52,8 @@ hypredrv_ILUGetValidValues(const char *key)
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
-#if 0
-   /* TODO: Fix these options */
-   else if (!strcmp(key, "reordering") ||
-            !strcmp(key, "tri_solve"))
-   {
-      return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
-   }
-#endif
-   else
-   {
-      return STR_INT_MAP_ARRAY_VOID();
-   }
-}
 
-/*-----------------------------------------------------------------------------
- * ILUSetDefaultArgs
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_ILUSetDefaultArgs(ILU_args *args)
-{
-   args->max_iter        = 1;
-   args->print_level     = 0;
-   args->type            = 0;
-   args->fill_level      = 0;
-   args->reordering      = 0;
-   args->tri_solve       = 1;
-   args->lower_jac_iters = 5;
-   args->upper_jac_iters = 5;
-   args->max_row_nnz     = 200;
-   args->schur_max_iter  = 3;
-   args->droptol         = 1.0e-02;
-   args->nsh_droptol     = 1.0e-02;
-   args->tolerance       = 0.0;
+   return STR_INT_MAP_ARRAY_VOID();
 }
 
 /*-----------------------------------------------------------------------------

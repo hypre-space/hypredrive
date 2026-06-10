@@ -2536,3 +2536,37 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, const LS_args *args,
 
    return hypredrv_ErrorCodeGet();
 }
+
+/*-----------------------------------------------------------------------------
+ * Report whether the print-system config requires a timestep schedule
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_PrintSystemNeedsTimestepSchedule(const PrintSystem_args *cfg)
+{
+   if (!cfg || !cfg->enabled)
+   {
+      return 0;
+   }
+
+   if (cfg->type == PRINT_SYSTEM_TYPE_EVERY_N_TIMESTEPS)
+   {
+      return 1;
+   }
+
+   if (cfg->type != PRINT_SYSTEM_TYPE_SELECTORS ||
+       !cfg->selectors) /* GCOVR_EXCL_BR_LINE */
+   {
+      return 0;
+   }
+
+   for (size_t i = 0; i < cfg->num_selectors; i++)
+   {
+      if (cfg->selectors[i].basis == PRINT_SYSTEM_BASIS_TIMESTEP)
+      {
+         return 1;
+      }
+   }
+
+   return 0;
+}

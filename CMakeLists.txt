@@ -124,39 +124,39 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # Explicit library source list (keep in sync with Makefile.am)
 set(SOURCE_FILES
-    src/error.c
-    src/eigspec.c
-    src/info.c
-    src/stats.c
-    src/utils.c
-    src/containers.c
-    src/yaml.c
-    src/field.c
-    src/vector.c
-    src/matrix.c
-    src/linsys.c
-    src/linsys_print.c
-    src/cheby.c
-    src/amg.c
-    src/fsai.c
-    src/ilu.c
-    src/schwarz.c
-    src/mgr.c
-    src/precon.c
-    src/precon_reuse.c
-    src/presets.c
-    src/krylov.c
-    src/pcg.c
-    src/gmres.c
-    src/fgmres.c
-    src/bicgstab.c
-    src/solver.c
-    src/args.c
-    src/comp.c
-    src/lsseq.c
-    src/scaling.c
-    src/runtime.c
-    src/logging.c
+    src/internal/error.c
+    src/internal/eigspec.c
+    src/internal/info.c
+    src/internal/stats.c
+    src/internal/utils.c
+    src/internal/containers.c
+    src/internal/yaml.c
+    src/internal/field.c
+    src/internal/vector.c
+    src/internal/matrix.c
+    src/internal/linsys.c
+    src/internal/linsys_print.c
+    src/internal/cheby.c
+    src/internal/amg.c
+    src/internal/fsai.c
+    src/internal/ilu.c
+    src/internal/schwarz.c
+    src/internal/mgr.c
+    src/internal/precon.c
+    src/internal/precon_reuse.c
+    src/internal/presets.c
+    src/internal/krylov.c
+    src/internal/pcg.c
+    src/internal/gmres.c
+    src/internal/fgmres.c
+    src/internal/bicgstab.c
+    src/internal/solver.c
+    src/internal/args.c
+    src/internal/comp.c
+    src/internal/lsseq.c
+    src/internal/scaling.c
+    src/internal/runtime.c
+    src/internal/logging.c
     src/HYPREDRV.c
 )
 
@@ -180,6 +180,7 @@ target_include_directories(HYPREDRV
         $<INSTALL_INTERFACE:include>
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/internal>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/internal>
 )
 
 # Link HYPRE library to HYPREDRV
@@ -303,7 +304,7 @@ if(HYPREDRV_ENABLE_EXPERIMENTAL)
 endif()
 
 # Define the main executable (hypredrive-cli)
-add_executable(hypredrive-cli src/main.c)
+add_executable(hypredrive-cli src/internal/main.c)
 target_link_libraries(hypredrive-cli PRIVATE HYPREDRV::HYPREDRV)
 
 if(HYPREDRV_ENABLE_COMPRESSION)

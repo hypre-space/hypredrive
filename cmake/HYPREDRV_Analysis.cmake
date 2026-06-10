@@ -344,7 +344,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
         # Paths to ignore (only add _deps when it exists, e.g. when HYPRE was fetched)
         set(CPPCHECK_IGNORE_PATHS
             -i${CMAKE_INSTALL_PREFIX}/include
-            -i${CMAKE_SOURCE_DIR}/src/info.c
+            -i${CMAKE_SOURCE_DIR}/src/internal/info.c
         )
         if(EXISTS "${CMAKE_BINARY_DIR}/_deps/hypre-src/src")
             list(APPEND CPPCHECK_IGNORE_PATHS -i${CMAKE_BINARY_DIR}/_deps/hypre-src/src)
@@ -367,7 +367,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
         # Format: [error id]:[filename]
         set(CPPCHECK_SUPPRESSIONS_FILE ${CMAKE_BINARY_DIR}/cppcheck-suppressions.txt)
         file(WRITE ${CPPCHECK_SUPPRESSIONS_FILE}
-            "unreachableCode:src/error.c\n"
+            "unreachableCode:src/internal/error.c\n"
             "*:*HYPRE*.h\n"
             "*:*_hypre*.h\n"
             "*:*/hypre*/include/*\n"
