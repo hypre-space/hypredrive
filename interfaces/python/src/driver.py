@@ -18,6 +18,7 @@ to internal naming choices and make later refactors painful.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any, Optional
 
 import numpy as np
@@ -251,9 +252,13 @@ class HypreDrive:
                 f"{required_entries} entries"
             )
 
-        self._core.set_matrix_from_csr(
-            row_start_i, row_end_i, indptr_arr, indices_arr, values_arr,
-        )
+        # "matrix" marks the start of a new linear system in the stats
+        # context (HYPREDRV_AnnotateBegin docs); without it every solve on
+        # a reused driver collapses into the first statistics entry.
+        with self._annotated("matrix"):
+            self._core.set_matrix_from_csr(
+                row_start_i, row_end_i, indptr_arr, indices_arr, values_arr,
+            )
         self._row_start = row_start_i
         self._row_end = row_end_i
 
@@ -291,7 +296,8 @@ class HypreDrive:
                 f"row range size {nrows}"
             )
 
-        self._core.set_rhs_from_array(row_start_i, row_end_i, values_arr)
+        with self._annotated("rhs"):
+            self._core.set_rhs_from_array(row_start_i, row_end_i, values_arr)
         self._rhs_set = True
 
     def set_dofmap(self, labels: Any) -> None:
@@ -353,11 +359,43 @@ class HypreDrive:
                 f"labels length {labels_arr.shape[0]} does not match local "
                 f"row count {nrows}"
             )
-        self._core.set_dofmap(labels_arr)
+        with self._annotated("dofmap"):
+            self._core.set_dofmap(labels_arr)
 
     # ------------------------------------------------------------------
     # Solve cycle
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Stats / Caliper annotations
+    # ------------------------------------------------------------------
+
+    def annotate_begin(self, name: str, id: int = -1) -> None:
+        """Begin a stats/Caliper annotation region.
+
+        Reserved names ("system"/"matrix", "rhs", "dofmap", "prec",
+        "solve", "reset_x0", ...) feed the statistics context directly;
+        see the ``HYPREDRV_AnnotateBegin`` C documentation. The driver
+        already emits "matrix"/"rhs"/"dofmap"/"reset_x0" from its data
+        ingest and solve methods, so manual annotation is only needed for
+        custom regions (e.g. Caliper-only "Run-*" spans).
+        """
+        self._require_open()
+        self._core.annotate_begin(name.encode("utf-8"), id)
+
+    def annotate_end(self, name: str, id: int = -1) -> None:
+        """End a stats/Caliper annotation region (pairs annotate_begin)."""
+        self._require_open()
+        self._core.annotate_end(name.encode("utf-8"), id)
+
+    @contextlib.contextmanager
+    def _annotated(self, name: str):
+        encoded = name.encode("utf-8")
+        self._core.annotate_begin(encoded, -1)
+        try:
+            yield
+        finally:
+            self._core.annotate_end(encoded, -1)
 
     def solve(self) -> None:
         """Run setup + apply on the configured solver/preconditioner."""
@@ -374,7 +412,11 @@ class HypreDrive:
         self._last_solve_time = None
 
         # Build x0 (zeros by default, controlled by the YAML init_guess_mode).
-        self._core.setup_initial_guess()
+        # "reset_x0" marks the start of a solve repetition in the stats
+        # context; together with the "matrix" annotation in
+        # set_matrix_from_csr it advances the per-system statistics entry.
+        with self._annotated("reset_x0"):
+            self._core.setup_initial_guess()
 
         self._core.solver_create()
         try:

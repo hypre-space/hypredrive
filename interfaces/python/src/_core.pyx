@@ -308,6 +308,28 @@ cdef class HypreDriveCore:
         )
 
     # ------------------------------------------------------------------
+    # Stats / Caliper annotations
+    # ------------------------------------------------------------------
+
+    def annotate_begin(self, bytes name, int id=-1):
+        """Begin a stats/Caliper annotation region (see HYPREDRV_AnnotateBegin)."""
+        if self._handle == NULL:
+            raise RuntimeError("HypreDriveCore is closed")
+        _check(
+            _c.HYPREDRV_AnnotateBegin(self._handle, <const char *>name, id),
+            "HYPREDRV_AnnotateBegin",
+        )
+
+    def annotate_end(self, bytes name, int id=-1):
+        """End a stats/Caliper annotation region (see HYPREDRV_AnnotateEnd)."""
+        if self._handle == NULL:
+            raise RuntimeError("HypreDriveCore is closed")
+        _check(
+            _c.HYPREDRV_AnnotateEnd(self._handle, <const char *>name, id),
+            "HYPREDRV_AnnotateEnd",
+        )
+
+    # ------------------------------------------------------------------
     # Solve cycle
     # ------------------------------------------------------------------
 
