@@ -1753,29 +1753,60 @@ extern "C"
     * This function marks the beginning of a code region for performance measurement.
     * It should be paired with HYPREDRV_AnnotateEnd to mark the end of the region.
     *
+    * For the reserved region names listed below, the annotation feeds the stats
+    * context directly: it starts the corresponding stats timer and updates the
+    * per-system bookkeeping used by statistics reporting and preconditioner reuse
+    * policies. In particular, "matrix" (or its alias "system") marks the beginning
+    * of a new linear system, "reset_x0" marks the beginning of a solve repetition,
+    * and the first "solve" region of the first repetition after a "matrix"
+    * annotation advances the linear-system counter. Note that an intervening
+    * "reset_x0" is required: a "solve" that follows "matrix" without one does not
+    * advance the counter.
+    *
+    * Library-mode callers that set matrices/vectors directly (instead of reading
+    * them from file) must annotate "matrix" themselves whenever a new system
+    * (e.g. a new Jacobian) is set, so that hypredrive can track time
+    * step/nonlinear iteration boundaries. The "reset_x0" region is annotated
+    * internally by HYPREDRV_LinearSystemResetInitialGuess(); annotate it manually
+    * only when resetting the initial guess by other means (annotating around that
+    * function would count the repetition twice). HYPREDRV_LinearSolverSetup() and
+    * HYPREDRV_LinearSolverApply() annotate the "prec" and "solve" regions
+    * internally, while HYPREDRV_PreconApply() does not, so standalone
+    * preconditioner applications should be wrapped in a "solve" region by the
+    * caller. Without the "matrix" and "reset_x0" annotations the linear-system
+    * counter never advances and per-system features (statistics breakdown,
+    * preconditioner reuse policies) treat all solves as belonging to the first
+    * system.
+    *
     * @param hypredrv The HYPREDRV_t object whose stats context should receive
     *                 the annotation.
-    * @param name The name of the region to annotate. Available names include: "system",
-    *             "matrix", "rhs", "dofmap", "prec", "solve", "reset_x0", "initialize",
-    *             "finalize", or custom names.
+    * @param name The name of the region to annotate. Reserved names recorded in the
+    *             stats context: "system", "matrix", "rhs", "dofmap", "prec",
+    *             "solve", "reset_x0", "initialize", "finalize". Names beginning
+    *             with "Run" are ignored by the stats context and can be used for
+    *             Caliper-only regions. Any other name (including id-suffixed
+    *             reserved names, see below) is flagged as an unknown timer key
+    *             and makes the call return a nonzero error code, which aborts
+    *             the program when wrapped in HYPREDRV_SAFE_CALL().
     * @param id An integer identifier for the region. If id >= 0, the region name will
     *           be formatted as "name-id" (e.g., "system-1"). If id < 0, the name is
     *           used as-is (e.g., "system").
     *
     * @return Returns an error code with 0 indicating success.
     *
-    * @note This function is **Caliper-only**: it does not record entries in the stats
-    * context and thus does not feed HYPREDRV_StatsLevelGetEntry(). Use
-    * HYPREDRV_AnnotateLevelBegin/End if you need both Caliper and stats recording.
+    * @note This function does not create hierarchical level entries and thus does
+    * not feed HYPREDRV_StatsLevelGetEntry(); use HYPREDRV_AnnotateLevelBegin/End
+    * if you need per-level stats recording.
     *
     * @note When Caliper is enabled (via HYPREDRV_ENABLE_CALIPER), this function also
     * creates Caliper regions that can be captured by Caliper profiling tools.
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(hypredrv, "system", -1));
-    *    // ... code to measure ...
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(hypredrv, "system", -1));
+    *    // New linear system (e.g. a new Jacobian in a Newton loop)
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(hypredrv, "matrix", -1));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(hypredrv, (HYPRE_Matrix) A));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(hypredrv, "matrix", -1));
     * @endcode
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_AnnotateBegin(HYPREDRV_t  hypredrv,
