@@ -19,6 +19,9 @@
 
 #include <limits.h>
 #include <math.h>
+
+/* Modes with a smaller norm after orthogonalization are considered linearly dependent */
+#define HYPREDRV_NULLSPACE_DEP_TOL 1.0e-12
 #include <stdio.h>
 #include <string.h>
 #include "internal/containers.h"
@@ -295,6 +298,156 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
 #endif
    }
    /* GCOVR_EXCL_STOP */
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_LinearSystemSetNullSpace
+ *
+ * Orthonormalize the input modes (modified Gram-Schmidt) and store them with
+ * the same multi-component vector builder used for the near null space modes
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_LinearSystemSetNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
+                                  int num_entries, int num_components,
+                                  const HYPRE_Complex *values, HYPRE_IJVector *vec_ns_ptr)
+{
+   size_t         total = (size_t)num_entries * (size_t)num_components;
+   HYPRE_Complex *modes = NULL;
+
+   if (!values || num_components < 1)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Null space modes input array must not be NULL");
+      return;
+   }
+
+   modes = (HYPRE_Complex *)malloc(total * sizeof(HYPRE_Complex));
+   if (total)
+   {
+      memcpy(modes, values, total * sizeof(HYPRE_Complex));
+   }
+
+   /* Modified Gram-Schmidt on the component blocks (component-major layout) */
+   for (int k = 0; k < num_components; k++)
+   {
+      HYPRE_Complex *zk = modes + ((size_t)k * (size_t)num_entries);
+      double         dots_local[2], dots[2];
+
+      for (int j = 0; j < k; j++)
+      {
+         const HYPRE_Complex *zj = modes + ((size_t)j * (size_t)num_entries);
+
+         dots_local[0] = 0.0;
+         for (int i = 0; i < num_entries; i++)
+         {
+            dots_local[0] += (double)(zk[i] * zj[i]);
+         }
+         MPI_Allreduce(dots_local, dots, 1, MPI_DOUBLE, MPI_SUM, comm);
+         for (int i = 0; i < num_entries; i++)
+         {
+            zk[i] -= (HYPRE_Complex)dots[0] * zj[i];
+         }
+      }
+
+      dots_local[0] = 0.0;
+      for (int i = 0; i < num_entries; i++)
+      {
+         dots_local[0] += (double)(zk[i] * zk[i]);
+      }
+      MPI_Allreduce(dots_local, dots, 1, MPI_DOUBLE, MPI_SUM, comm);
+      dots[0] = sqrt(dots[0]);
+      if (dots[0] < HYPREDRV_NULLSPACE_DEP_TOL)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Null space modes must be linearly independent "
+                              "(mode %d has norm %e after orthogonalization)",
+                              k, dots[0]);
+         free(modes);
+         return;
+      }
+      for (int i = 0; i < num_entries; i++)
+      {
+         zk[i] /= (HYPRE_Complex)dots[0];
+      }
+   }
+
+   /* Store via the same builder used for the near null space modes */
+   hypredrv_LinearSystemSetNearNullSpace(comm, args, mat, num_entries, num_components,
+                                         modes, vec_ns_ptr);
+
+   free(modes);
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_LinearSystemProjectOutNullSpace
+ *
+ * Remove the (orthonormalized) null space components from a vector, fixing
+ * the gauge of solutions that are defined up to a null space contribution
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_LinearSystemProjectOutNullSpace(HYPRE_IJVector vec_ns, int num_ns,
+                                         HYPRE_IJVector vec)
+{
+   HYPRE_BigInt   jlower = 0, jupper = 0;
+   HYPRE_BigInt  *indices = NULL;
+   HYPRE_Complex *xbuf = NULL, *zbuf = NULL;
+   double        *dots_local = NULL, *dots = NULL;
+   MPI_Comm       comm;
+   int            num_entries;
+
+   if (!vec_ns || num_ns < 1 || !vec)
+   {
+      return;
+   }
+
+   comm = hypre_ParVectorComm(vec_ns);
+   HYPRE_IJVectorGetLocalRange(vec_ns, &jlower, &jupper);
+   num_entries = (int)(jupper - jlower + 1);
+
+   xbuf       = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
+   zbuf       = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
+   indices    = (HYPRE_BigInt *)malloc((size_t)num_entries * sizeof(HYPRE_BigInt));
+   dots_local = (double *)calloc((size_t)num_ns, sizeof(double));
+   dots       = (double *)calloc((size_t)num_ns, sizeof(double));
+   for (int i = 0; i < num_entries; i++)
+   {
+      indices[i] = jlower + (HYPRE_BigInt)i;
+   }
+
+   HYPRE_IJVectorGetValues(vec, num_entries, NULL, xbuf);
+   for (int k = 0; k < num_ns; k++)
+   {
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+      HYPRE_IJVectorSetComponent(vec_ns, k);
+#endif
+      HYPRE_IJVectorGetValues(vec_ns, num_entries, NULL, zbuf);
+      for (int i = 0; i < num_entries; i++)
+      {
+         dots_local[k] += (double)(xbuf[i] * zbuf[i]);
+      }
+   }
+   MPI_Allreduce(dots_local, dots, num_ns, MPI_DOUBLE, MPI_SUM, comm);
+   for (int k = 0; k < num_ns; k++)
+   {
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+      HYPRE_IJVectorSetComponent(vec_ns, k);
+#endif
+      HYPRE_IJVectorGetValues(vec_ns, num_entries, NULL, zbuf);
+      for (int i = 0; i < num_entries; i++)
+      {
+         xbuf[i] -= (HYPRE_Complex)dots[k] * zbuf[i];
+      }
+   }
+   HYPRE_IJVectorSetValues(vec, num_entries, indices, xbuf);
+   HYPRE_IJVectorAssemble(vec);
+
+   free(xbuf);
+   free(zbuf);
+   free(indices);
+   free(dots_local);
+   free(dots);
 }
 
 /*-----------------------------------------------------------------------------

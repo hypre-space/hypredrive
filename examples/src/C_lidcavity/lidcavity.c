@@ -100,6 +100,37 @@ static const char *default_config = "solver:\n"
                                     "        droptol: 1e-2\n";
 
 /*--------------------------------------------------------------------------
+ * Default linear solver configuration for the Q2-Q1 discretization:
+ * two-level MGR with the velocities as F points and the pressure as C point
+ *--------------------------------------------------------------------------*/
+static const char *default_config_q2q1 = "solver:\n"
+                                         "  fgmres:\n"
+                                         "    krylov_dim: 100\n"
+                                         "    max_iter: 300\n"
+                                         "    print_level: 0\n"
+                                         "    relative_tol: 1.0e-6\n"
+                                         "preconditioner:\n"
+                                         "  mgr:\n"
+                                         "    max_iter: 1\n"
+                                         "    tolerance: 0.0\n"
+                                         "    print_level: 0\n"
+                                         "    level:\n"
+                                         "      0:\n"
+                                         "        f_dofs: [0, 1]\n"
+                                         "        f_relaxation:\n"
+                                         "          amg:\n"
+                                         "            max_iter: 1\n"
+                                         "            tolerance: 0.0\n"
+                                         "        g_relaxation: none\n"
+                                         "        restriction_type: injection\n"
+                                         "        prolongation_type: blk-absrowsum\n"
+                                         "        coarse_level_type: rap\n"
+                                         "    coarsest_level:\n"
+                                         "      amg:\n"
+                                         "        max_iter: 1\n"
+                                         "        tolerance: 0.0\n";
+
+/*--------------------------------------------------------------------------
  * Problem parameters struct
  *--------------------------------------------------------------------------*/
 typedef struct
@@ -117,6 +148,7 @@ typedef struct
    HYPRE_Int  adaptive_dt;       /* Adaptive time stepping flag */
    HYPRE_Real max_cfl;           /* Maximum CFL for adaptive time stepping (0=no limit) */
    HYPRE_Int  regularize_bc;     /* Use regularized lid BC (smooth corners) */
+   HYPRE_Int  disc;              /* Discretization: 0 = Q1-Q1 stabilized, 1 = Q2-Q1 (Taylor-Hood) */
    char      *yaml_file;         /* YAML configuration file */
 } LidCavityParams;
 
@@ -199,6 +231,11 @@ PrintUsage(void)
    printf("  -adt              : Enable simple adaptive time stepping\n");
    printf("  -cfl <val>        : Maximum CFL for adaptive time stepping (0=no limit)\n");
    printf("  -reg              : Use regularized lid BC (smooth corners)\n");
+   printf("  -disc <type>      : Discretization: q1q1 (stabilized, default) or\n");
+   printf("                      q2q1 (Taylor-Hood). With q2q1, -n gives the pressure\n");
+   printf("                      grid; the velocity grid is (2*nx - 1) x (2*ny - 1),\n");
+   printf("                      the pressure is not pinned, and its constant null\n");
+   printf("                      space mode is projected out by hypredrive\n");
    printf("  -br <n>           : Batch rows for matrix assembly (128)\n");
    printf("  -vis <m>          : Visualization mode bitset (0)\n");
    printf("                         Any nonzero value enables visualization\n");
@@ -238,6 +275,7 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
    params->adaptive_dt       = 0;
    params->max_cfl           = 0.0; /* 0 means no limit */
    params->regularize_bc     = 0;
+   params->disc              = 0;
    params->yaml_file         = NULL;
 
    for (int i = 1; i < argc; i++)
@@ -301,6 +339,25 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
       else if (!strcmp(argv[i], "-reg") || !strcmp(argv[i], "--regularize"))
       {
          params->regularize_bc = 1;
+      }
+      else if (!strcmp(argv[i], "-disc") || !strcmp(argv[i], "--discretization"))
+      {
+         if (++i < argc)
+         {
+            if (!strcmp(argv[i], "q1q1"))
+            {
+               params->disc = 0;
+            }
+            else if (!strcmp(argv[i], "q2q1"))
+            {
+               params->disc = 1;
+            }
+            else
+            {
+               if (!myid) printf("Error: unknown discretization '%s'\n", argv[i]);
+               return 1;
+            }
+         }
       }
       else if (!strcmp(argv[i], "-br") || !strcmp(argv[i], "--batch-rows"))
       {
@@ -719,6 +776,642 @@ q1_shape_ref_2d(const HYPRE_Real xi, const HYPRE_Real eta, HYPRE_Real N[4],
    }
 }
 
+/*--------------------------------------------------------------------------
+ * Q2-Q1 (Taylor-Hood) context: staggered velocity/pressure grids
+ *
+ * The pressure grid is the N[0] x N[1] grid partitioned by the mesh pstarts;
+ * the velocity grid has (2*N[0]-1) x (2*N[1]-1) nodes with pstarts equal to
+ * twice the pressure pstarts, so every rank owns contiguous node ranges on
+ * both grids. The global dof numbering assigns each rank a contiguous block
+ * holding its (u, v) pairs (interleaved over owned velocity nodes) followed
+ * by its pressure values. Elements are assembled by the owner of their
+ * lower-left pressure node, and hypre routes off-rank matrix/vector
+ * contributions during assembly, so only solution values at one halo line of
+ * velocity/pressure nodes from the right, top, and top-right neighbors need
+ * to be exchanged explicitly.
+ *--------------------------------------------------------------------------*/
+typedef struct
+{
+   HYPRE_Int    nvx, nvy;          /* global velocity grid dims */
+   HYPRE_BigInt nvel, npre, ndofs; /* global counts */
+   HYPRE_BigInt vps[2][64];        /* velocity grid pstarts (up to 63 ranks per dim) */
+   HYPRE_Int    wvx, wvy;          /* owned velocity node widths */
+   HYPRE_Int    wpx, wpy;          /* owned pressure node widths */
+   HYPRE_BigInt Wv, Wp;            /* owned node counts */
+   HYPRE_BigInt dof_ilower, dof_iupper;
+   /* halo values (right column, top row, top-right corner) for the current
+      Newton iterate (k) and the previous time step (n) */
+   double *halo_col_k, *halo_row_k;
+   double *halo_col_n, *halo_row_n;
+   double  halo_cor_k[3], halo_cor_n[3];
+   double *send_col, *send_row;
+   double  send_cor[3];
+} Q2Q1Ctx;
+
+/* Size of the dof block owned by the rank with block coordinates (bx, by) */
+static HYPRE_BigInt
+q2q1_block_ndofs(const DistMesh2D *mesh, const Q2Q1Ctx *ctx, HYPRE_Int bx, HYPRE_Int by)
+{
+   HYPRE_BigInt wv = (ctx->vps[0][bx + 1] - ctx->vps[0][bx]) *
+                     (ctx->vps[1][by + 1] - ctx->vps[1][by]);
+   HYPRE_BigInt wp = (mesh->pstarts[0][bx + 1] - mesh->pstarts[0][bx]) *
+                     (mesh->pstarts[1][by + 1] - mesh->pstarts[1][by]);
+   return 2 * wv + wp;
+}
+
+/* First global dof of the rank with block coordinates (bx, by); blocks are
+   numbered in (bx-major, by-minor) order so that the dof ranges are monotone
+   in the cartesian communicator rank order (rank = bx * pdims[1] + by), as
+   required by the off-rank contribution routing of the IJ assembly */
+static HYPRE_BigInt
+q2q1_block_offset(const DistMesh2D *mesh, const Q2Q1Ctx *ctx, HYPRE_Int bx, HYPRE_Int by)
+{
+   HYPRE_BigInt offset = 0;
+
+   for (HYPRE_Int b0 = 0; b0 < bx; b0++)
+   {
+      for (HYPRE_Int b1 = 0; b1 < mesh->pdims[1]; b1++)
+      {
+         offset += q2q1_block_ndofs(mesh, ctx, b0, b1);
+      }
+   }
+   for (HYPRE_Int b1 = 0; b1 < by; b1++)
+   {
+      offset += q2q1_block_ndofs(mesh, ctx, bx, b1);
+   }
+   return offset;
+}
+
+/* Locate the owner block of a grid index along dimension d */
+static HYPRE_Int
+q2q1_find_block(const HYPRE_BigInt *starts, HYPRE_Int nblocks, HYPRE_BigInt g)
+{
+   HYPRE_Int b = 0;
+   while ((b + 1) < nblocks && g >= starts[b + 1]) b++;
+   return b;
+}
+
+/* Global dof of velocity component c at velocity node (gvx, gvy) */
+static HYPRE_BigInt
+Q2Q1VelDof(const DistMesh2D *mesh, const Q2Q1Ctx *ctx, HYPRE_Int gvx, HYPRE_Int gvy,
+           int c)
+{
+   HYPRE_Int    bx  = q2q1_find_block(ctx->vps[0], mesh->pdims[0], gvx);
+   HYPRE_Int    by  = q2q1_find_block(ctx->vps[1], mesh->pdims[1], gvy);
+   HYPRE_BigInt wx  = ctx->vps[0][bx + 1] - ctx->vps[0][bx];
+   HYPRE_BigInt lvi = (gvy - ctx->vps[1][by]) * wx + (gvx - ctx->vps[0][bx]);
+   return q2q1_block_offset(mesh, ctx, bx, by) + 2 * lvi + c;
+}
+
+/* Global dof of the pressure at pressure node (gpx, gpy) */
+static HYPRE_BigInt
+Q2Q1PreDof(const DistMesh2D *mesh, const Q2Q1Ctx *ctx, HYPRE_Int gpx, HYPRE_Int gpy)
+{
+   HYPRE_Int    bx  = q2q1_find_block(mesh->pstarts[0], mesh->pdims[0], gpx);
+   HYPRE_Int    by  = q2q1_find_block(mesh->pstarts[1], mesh->pdims[1], gpy);
+   HYPRE_BigInt wvx = ctx->vps[0][bx + 1] - ctx->vps[0][bx];
+   HYPRE_BigInt wvy = ctx->vps[1][by + 1] - ctx->vps[1][by];
+   HYPRE_BigInt wpx = mesh->pstarts[0][bx + 1] - mesh->pstarts[0][bx];
+   HYPRE_BigInt lpi = (gpy - mesh->pstarts[1][by]) * wpx + (gpx - mesh->pstarts[0][bx]);
+   return q2q1_block_offset(mesh, ctx, bx, by) + 2 * wvx * wvy + lpi;
+}
+
+int
+CreateQ2Q1Ctx(DistMesh2D *mesh, LidCavityParams *params, Q2Q1Ctx **ctx_ptr)
+{
+   Q2Q1Ctx  *ctx = (Q2Q1Ctx *)calloc(1, sizeof(Q2Q1Ctx));
+   HYPRE_Int npx = params->N[0], npy = params->N[1];
+
+   if (mesh->pdims[0] >= 64 || mesh->pdims[1] >= 64)
+   {
+      printf("Error: the Q2-Q1 discretization supports at most 63 ranks per "
+             "dimension\n");
+      return 1;
+   }
+
+   ctx->nvx  = 2 * npx - 1;
+   ctx->nvy  = 2 * npy - 1;
+   ctx->nvel = (HYPRE_BigInt)ctx->nvx * (HYPRE_BigInt)ctx->nvy;
+   ctx->npre = (HYPRE_BigInt)npx * (HYPRE_BigInt)npy;
+   ctx->ndofs = 2 * ctx->nvel + ctx->npre;
+
+   /* Velocity grid pstarts: twice the pressure pstarts (last entry capped) */
+   for (int d = 0; d < 2; d++)
+   {
+      for (HYPRE_Int b = 0; b < mesh->pdims[d]; b++)
+      {
+         ctx->vps[d][b] = 2 * mesh->pstarts[d][b];
+      }
+      ctx->vps[d][mesh->pdims[d]] = (d == 0) ? ctx->nvx : ctx->nvy;
+   }
+
+   const HYPRE_Int bx = mesh->coords[0], by = mesh->coords[1];
+   ctx->wvx = (HYPRE_Int)(ctx->vps[0][bx + 1] - ctx->vps[0][bx]);
+   ctx->wvy = (HYPRE_Int)(ctx->vps[1][by + 1] - ctx->vps[1][by]);
+   ctx->wpx = (HYPRE_Int)(mesh->pstarts[0][bx + 1] - mesh->pstarts[0][bx]);
+   ctx->wpy = (HYPRE_Int)(mesh->pstarts[1][by + 1] - mesh->pstarts[1][by]);
+   ctx->Wv  = (HYPRE_BigInt)ctx->wvx * ctx->wvy;
+   ctx->Wp  = (HYPRE_BigInt)ctx->wpx * ctx->wpy;
+
+   ctx->dof_ilower = q2q1_block_offset(mesh, ctx, bx, by);
+   ctx->dof_iupper = ctx->dof_ilower + 2 * ctx->Wv + ctx->Wp - 1;
+
+   /* Halo buffers: one velocity (u, v) + one pressure line from right/top */
+   size_t col_len = 2 * (size_t)ctx->wvy + (size_t)ctx->wpy;
+   size_t row_len = 2 * (size_t)ctx->wvx + (size_t)ctx->wpx;
+   ctx->halo_col_k = (double *)calloc(col_len, sizeof(double));
+   ctx->halo_col_n = (double *)calloc(col_len, sizeof(double));
+   ctx->halo_row_k = (double *)calloc(row_len, sizeof(double));
+   ctx->halo_row_n = (double *)calloc(row_len, sizeof(double));
+   ctx->send_col   = (double *)calloc(col_len, sizeof(double));
+   ctx->send_row   = (double *)calloc(row_len, sizeof(double));
+
+   *ctx_ptr = ctx;
+   return 0;
+}
+
+int
+DestroyQ2Q1Ctx(Q2Q1Ctx **ctx_ptr)
+{
+   Q2Q1Ctx *ctx = *ctx_ptr;
+   if (!ctx) return 0;
+   free(ctx->halo_col_k);
+   free(ctx->halo_col_n);
+   free(ctx->halo_row_k);
+   free(ctx->halo_row_n);
+   free(ctx->send_col);
+   free(ctx->send_row);
+   free(ctx);
+   *ctx_ptr = NULL;
+   return 0;
+}
+
+/* Exchange the halo lines needed by the Q2-Q1 element loop: every rank sends
+   its first owned velocity/pressure column, row, and corner values to its
+   left, bottom, and bottom-left neighbors. MPI_PROC_NULL neighbors no-op. */
+int
+Q2Q1ExchangeHalo(DistMesh2D *mesh, Q2Q1Ctx *ctx, double *u, double *halo_col,
+                 double *halo_row, double halo_cor[3])
+{
+   const HYPRE_Int bx = mesh->coords[0], by = mesh->coords[1];
+   const size_t    col_len = 2 * (size_t)ctx->wvy + (size_t)ctx->wpy;
+   const size_t    row_len = 2 * (size_t)ctx->wvx + (size_t)ctx->wpx;
+   MPI_Request     reqs[6];
+
+   (void)bx;
+   (void)by;
+
+   /* Pack: first velocity column (u, v) then first pressure column */
+   for (HYPRE_Int j = 0; j < ctx->wvy; j++)
+   {
+      HYPRE_BigInt lvi      = (HYPRE_BigInt)j * ctx->wvx;
+      ctx->send_col[2 * j + 0] = u[2 * lvi + 0];
+      ctx->send_col[2 * j + 1] = u[2 * lvi + 1];
+   }
+   for (HYPRE_Int j = 0; j < ctx->wpy; j++)
+   {
+      HYPRE_BigInt lpi              = (HYPRE_BigInt)j * ctx->wpx;
+      ctx->send_col[2 * ctx->wvy + j] = u[2 * ctx->Wv + lpi];
+   }
+   /* Pack: first velocity row (u, v) then first pressure row */
+   for (HYPRE_Int i = 0; i < ctx->wvx; i++)
+   {
+      ctx->send_row[2 * i + 0] = u[2 * i + 0];
+      ctx->send_row[2 * i + 1] = u[2 * i + 1];
+   }
+   for (HYPRE_Int i = 0; i < ctx->wpx; i++)
+   {
+      ctx->send_row[2 * ctx->wvx + i] = u[2 * ctx->Wv + i];
+   }
+   /* Pack: corner (u, v, p) at the first owned nodes */
+   ctx->send_cor[0] = u[0];
+   ctx->send_cor[1] = u[1];
+   ctx->send_cor[2] = u[2 * ctx->Wv];
+
+   /* nbrs: 0:L, 1:R, 2:B, 3:T, 4:BL, 5:TR (MPI_PROC_NULL when absent) */
+   MPI_Irecv(halo_col, (int)col_len, MPI_DOUBLE, mesh->nbrs[1], 101, mesh->cart_comm,
+             &reqs[0]);
+   MPI_Irecv(halo_row, (int)row_len, MPI_DOUBLE, mesh->nbrs[3], 102, mesh->cart_comm,
+             &reqs[1]);
+   MPI_Irecv(halo_cor, 3, MPI_DOUBLE, mesh->nbrs[5], 103, mesh->cart_comm, &reqs[2]);
+   MPI_Isend(ctx->send_col, (int)col_len, MPI_DOUBLE, mesh->nbrs[0], 101, mesh->cart_comm,
+             &reqs[3]);
+   MPI_Isend(ctx->send_row, (int)row_len, MPI_DOUBLE, mesh->nbrs[2], 102, mesh->cart_comm,
+             &reqs[4]);
+   MPI_Isend(ctx->send_cor, 3, MPI_DOUBLE, mesh->nbrs[4], 103, mesh->cart_comm, &reqs[5]);
+   MPI_Waitall(6, reqs, MPI_STATUSES_IGNORE);
+
+   return 0;
+}
+
+/* Velocity component c at velocity node (gvx, gvy): owned value or halo */
+static double
+q2q1_vel_val(const DistMesh2D *mesh, const Q2Q1Ctx *ctx, const double *u,
+             const double *halo_col, const double *halo_row, const double halo_cor[3],
+             HYPRE_Int gvx, HYPRE_Int gvy, int c)
+{
+   const HYPRE_Int bx = mesh->coords[0], by = mesh->coords[1];
+   const HYPRE_Int lx = (HYPRE_Int)(gvx - ctx->vps[0][bx]);
+   const HYPRE_Int ly = (HYPRE_Int)(gvy - ctx->vps[1][by]);
+
+   if (lx >= 0 && lx < ctx->wvx && ly >= 0 && ly < ctx->wvy)
+   {
+      return u[2 * ((HYPRE_BigInt)ly * ctx->wvx + lx) + c];
+   }
+   if (lx == ctx->wvx && ly >= 0 && ly < ctx->wvy) /* right halo column */
+   {
+      return halo_col[2 * ly + c];
+   }
+   if (ly == ctx->wvy && lx >= 0 && lx < ctx->wvx) /* top halo row */
+   {
+      return halo_row[2 * lx + c];
+   }
+   return halo_cor[c]; /* top-right halo corner */
+}
+
+/* Pressure at pressure node (gpx, gpy): owned value or halo */
+static double
+q2q1_pre_val(const DistMesh2D *mesh, const Q2Q1Ctx *ctx, const double *u,
+             const double *halo_col, const double *halo_row, const double halo_cor[3],
+             HYPRE_Int gpx, HYPRE_Int gpy)
+{
+   const HYPRE_Int bx = mesh->coords[0], by = mesh->coords[1];
+   const HYPRE_Int lx = (HYPRE_Int)(gpx - mesh->pstarts[0][bx]);
+   const HYPRE_Int ly = (HYPRE_Int)(gpy - mesh->pstarts[1][by]);
+
+   if (lx >= 0 && lx < ctx->wpx && ly >= 0 && ly < ctx->wpy)
+   {
+      return u[2 * ctx->Wv + (HYPRE_BigInt)ly * ctx->wpx + lx];
+   }
+   if (lx == ctx->wpx && ly >= 0 && ly < ctx->wpy) /* right halo column */
+   {
+      return halo_col[2 * ctx->wvy + ly];
+   }
+   if (ly == ctx->wpy && lx >= 0 && lx < ctx->wpx) /* top halo row */
+   {
+      return halo_row[2 * ctx->wvx + lx];
+   }
+   return halo_cor[2]; /* top-right halo corner */
+}
+
+/*--------------------------------------------------------------------------
+ * 1D quadratic shape functions on [-1, 1] with nodes at {-1, 0, 1}
+ *--------------------------------------------------------------------------*/
+static void
+q2_shape_1d(const HYPRE_Real xi, HYPRE_Real L[3], HYPRE_Real dL[3])
+{
+   L[0]  = 0.5 * xi * (xi - 1.0);
+   L[1]  = 1.0 - xi * xi;
+   L[2]  = 0.5 * xi * (xi + 1.0);
+   dL[0] = xi - 0.5;
+   dL[1] = -2.0 * xi;
+   dL[2] = xi + 0.5;
+}
+
+/*--------------------------------------------------------------------------
+ * Q2-Q1 (Taylor-Hood) Newton system. Serial only.
+ *
+ * The pressure grid has N[0] x N[1] nodes (the -n option) and the velocity
+ * grid has (2*N[0]-1) x (2*N[1]-1) nodes. DOF ordering: (u, v) interleaved
+ * over the velocity nodes, followed by the pressure block. The discrete
+ * inf-sup stability of the Q2-Q1 pair makes stabilization unnecessary, and
+ * the pressure is NOT pinned: its constant null space mode is projected out
+ * by hypredrive via HYPREDRV_LinearSystemSetNullSpace().
+ *--------------------------------------------------------------------------*/
+static const HYPRE_Real gauss3_x[3] = {-0.7745966692414834, 0.0, 0.7745966692414834};
+static const HYPRE_Real gauss3_w[3] = {5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0};
+
+int
+BuildNewtonSystemQ2Q1(HYPREDRV_t hypredrv, DistMesh2D *mesh, Q2Q1Ctx *ctx,
+                      LidCavityParams *params, HYPRE_Real *u_prev_time,
+                      HYPRE_Real *u_current_iter, HYPRE_IJMatrix *J_ptr,
+                      HYPRE_IJVector *R_ptr, HYPRE_Real *res_norm)
+{
+   HYPRE_IJMatrix A;
+   HYPRE_IJVector b;
+
+   const HYPRE_Int npx = params->N[0];
+   const HYPRE_Int npy = params->N[1];
+   const HYPRE_Int nvx = ctx->nvx;
+   const HYPRE_Int nvy = ctx->nvy;
+   const HYPRE_Int bx  = mesh->coords[0];
+   const HYPRE_Int by  = mesh->coords[1];
+
+   const HYPRE_Real hxe = params->L[0] / (npx - 1); /* element (pressure cell) sizes */
+   const HYPRE_Real hye = params->L[1] / (npy - 1);
+   const HYPRE_Real Jinv[2] = {2.0 / hxe, 2.0 / hye};
+   const HYPRE_Real detJ    = (hxe * hye) / 4.0;
+   const HYPRE_Real nu      = 1.0 / params->Re;
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(hypredrv, "system", -1));
+
+   HYPRE_IJMatrixCreate(MPI_COMM_WORLD, ctx->dof_ilower, ctx->dof_iupper, ctx->dof_ilower,
+                        ctx->dof_iupper, &A);
+   HYPRE_IJVectorCreate(MPI_COMM_WORLD, ctx->dof_ilower, ctx->dof_iupper, &b);
+   HYPRE_IJMatrixSetObjectType(A, HYPRE_PARCSR);
+   HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
+
+   /* Conservative row size upper bound: a vertex velocity node couples with the
+      velocity (5 x 5 nodes x 2) and pressure (3 x 3 nodes) dofs of its four elements */
+   HYPRE_BigInt local_dofs = 2 * ctx->Wv + ctx->Wp;
+   HYPRE_Int   *nnzrow     = (HYPRE_Int *)malloc((size_t)local_dofs * sizeof(HYPRE_Int));
+   for (HYPRE_BigInt r = 0; r < local_dofs; r++) nnzrow[r] = 64;
+   HYPRE_IJMatrixSetRowSizes(A, nnzrow);
+   free(nnzrow);
+
+   HYPREDRV_IJ_MATRIX_INIT_HOST(A);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(b);
+
+   /* Elements are owned by the rank owning their lower-left pressure node */
+   const HYPRE_Int ex_lo = (HYPRE_Int)mesh->pstarts[0][bx];
+   const HYPRE_Int ex_hi = (bx == mesh->pdims[0] - 1) ? (npx - 1)
+                                                      : (HYPRE_Int)mesh->pstarts[0][bx + 1];
+   const HYPRE_Int ey_lo = (HYPRE_Int)mesh->pstarts[1][by];
+   const HYPRE_Int ey_hi = (by == mesh->pdims[1] - 1) ? (npy - 1)
+                                                      : (HYPRE_Int)mesh->pstarts[1][by + 1];
+
+   for (HYPRE_Int ey = ey_lo; ey < ey_hi; ey++)
+   {
+      for (HYPRE_Int ex = ex_lo; ex < ex_hi; ex++)
+      {
+         HYPRE_Real   K_elem[22][22] = {{0}};
+         HYPRE_Real   R_elem[22]     = {0};
+         HYPRE_Real   u_k_e[18], u_n_e[18], p_k_e[4];
+         HYPRE_BigInt dof_gid[22];
+         HYPRE_Int    is_dirichlet[22] = {0};
+
+         /* Gather element velocity (9 nodes) and pressure (4 nodes) data */
+         for (int a = 0; a < 9; a++)
+         {
+            const HYPRE_Int ax = a % 3;
+            const HYPRE_Int ay = a / 3;
+            const HYPRE_Int gx = 2 * ex + ax;
+            const HYPRE_Int gy = 2 * ey + ay;
+
+            dof_gid[2 * a + 0] = Q2Q1VelDof(mesh, ctx, gx, gy, 0);
+            dof_gid[2 * a + 1] = dof_gid[2 * a + 0] + 1;
+            u_k_e[2 * a + 0] = q2q1_vel_val(mesh, ctx, u_current_iter, ctx->halo_col_k,
+                                            ctx->halo_row_k, ctx->halo_cor_k, gx, gy, 0);
+            u_k_e[2 * a + 1] = q2q1_vel_val(mesh, ctx, u_current_iter, ctx->halo_col_k,
+                                            ctx->halo_row_k, ctx->halo_cor_k, gx, gy, 1);
+            u_n_e[2 * a + 0] = q2q1_vel_val(mesh, ctx, u_prev_time, ctx->halo_col_n,
+                                            ctx->halo_row_n, ctx->halo_cor_n, gx, gy, 0);
+            u_n_e[2 * a + 1] = q2q1_vel_val(mesh, ctx, u_prev_time, ctx->halo_col_n,
+                                            ctx->halo_row_n, ctx->halo_cor_n, gx, gy, 1);
+
+            /* Velocity Dirichlet nodes: walls (left/right/bottom and lid corners), lid */
+            if (gx == 0 || gx == nvx - 1 || gy == 0 || gy == nvy - 1)
+            {
+               is_dirichlet[2 * a + 0] = 1;
+               is_dirichlet[2 * a + 1] = 1;
+            }
+         }
+         for (int pa = 0; pa < 4; pa++)
+         {
+            const HYPRE_Int px = pa % 2;
+            const HYPRE_Int py = pa / 2;
+
+            dof_gid[18 + pa] = Q2Q1PreDof(mesh, ctx, ex + px, ey + py);
+            p_k_e[pa] = q2q1_pre_val(mesh, ctx, u_current_iter, ctx->halo_col_k,
+                                     ctx->halo_row_k, ctx->halo_cor_k, ex + px, ey + py);
+         }
+
+         /* Quadrature loop (3 x 3 Gauss, exact for the Q2-Q1 Galerkin terms) */
+         for (int iy = 0; iy < 3; iy++)
+         {
+            for (int ix = 0; ix < 3; ix++)
+            {
+               const HYPRE_Real xi  = gauss3_x[ix];
+               const HYPRE_Real eta = gauss3_x[iy];
+               const HYPRE_Real w   = gauss3_w[ix] * gauss3_w[iy] * detJ;
+
+               HYPRE_Real Lx[3], dLx[3], Ly[3], dLy[3];
+               q2_shape_1d(xi, Lx, dLx);
+               q2_shape_1d(eta, Ly, dLy);
+
+               HYPRE_Real N2[9], dN2_dx[9], dN2_dy[9];
+               for (int a = 0; a < 9; a++)
+               {
+                  const HYPRE_Int ax = a % 3;
+                  const HYPRE_Int ay = a / 3;
+                  N2[a]              = Lx[ax] * Ly[ay];
+                  dN2_dx[a]          = dLx[ax] * Ly[ay] * Jinv[0];
+                  dN2_dy[a]          = Lx[ax] * dLy[ay] * Jinv[1];
+               }
+               HYPRE_Real M4[4];
+               for (int pa = 0; pa < 4; pa++)
+               {
+                  const HYPRE_Real sx = 2.0 * (pa % 2) - 1.0;
+                  const HYPRE_Real sy = 2.0 * (pa / 2) - 1.0;
+                  M4[pa]              = 0.25 * (1.0 + sx * xi) * (1.0 + sy * eta);
+               }
+
+               /* Interpolate solution values at the quadrature point */
+               HYPRE_Real u_k = 0.0, v_k = 0.0, u_n = 0.0, v_n = 0.0, p_k = 0.0;
+               HYPRE_Real du_dx_k = 0.0, du_dy_k = 0.0, dv_dx_k = 0.0, dv_dy_k = 0.0;
+               for (int a = 0; a < 9; a++)
+               {
+                  u_k += N2[a] * u_k_e[2 * a + 0];
+                  v_k += N2[a] * u_k_e[2 * a + 1];
+                  u_n += N2[a] * u_n_e[2 * a + 0];
+                  v_n += N2[a] * u_n_e[2 * a + 1];
+                  du_dx_k += dN2_dx[a] * u_k_e[2 * a + 0];
+                  du_dy_k += dN2_dy[a] * u_k_e[2 * a + 0];
+                  dv_dx_k += dN2_dx[a] * u_k_e[2 * a + 1];
+                  dv_dy_k += dN2_dy[a] * u_k_e[2 * a + 1];
+               }
+               for (int pa = 0; pa < 4; pa++)
+               {
+                  p_k += M4[pa] * p_k_e[pa];
+               }
+
+               for (int a = 0; a < 9; a++)
+               {
+                  for (int b_idx = 0; b_idx < 9; b_idx++)
+                  {
+                     /* Time derivative + viscous + convection (Picard part) */
+                     const HYPRE_Real diag =
+                        w * (N2[a] * N2[b_idx] / params->dt +
+                             nu * (dN2_dx[a] * dN2_dx[b_idx] + dN2_dy[a] * dN2_dy[b_idx]) +
+                             (u_k * dN2_dx[b_idx] + v_k * dN2_dy[b_idx]) * N2[a]);
+                     K_elem[2 * a + 0][2 * b_idx + 0] += diag;
+                     K_elem[2 * a + 1][2 * b_idx + 1] += diag;
+
+                     /* Convection (Newton part) */
+                     K_elem[2 * a + 0][2 * b_idx + 0] += w * (N2[b_idx] * du_dx_k) * N2[a];
+                     K_elem[2 * a + 0][2 * b_idx + 1] += w * (N2[b_idx] * du_dy_k) * N2[a];
+                     K_elem[2 * a + 1][2 * b_idx + 0] += w * (N2[b_idx] * dv_dx_k) * N2[a];
+                     K_elem[2 * a + 1][2 * b_idx + 1] += w * (N2[b_idx] * dv_dy_k) * N2[a];
+                  }
+
+                  /* Pressure-velocity coupling (from -p div v and q div u) */
+                  for (int pb = 0; pb < 4; pb++)
+                  {
+                     K_elem[2 * a + 0][18 + pb] -= w * dN2_dx[a] * M4[pb];
+                     K_elem[2 * a + 1][18 + pb] -= w * dN2_dy[a] * M4[pb];
+                     K_elem[18 + pb][2 * a + 0] += w * M4[pb] * dN2_dx[a];
+                     K_elem[18 + pb][2 * a + 1] += w * M4[pb] * dN2_dy[a];
+                  }
+
+                  /* Galerkin residual: momentum */
+                  R_elem[2 * a + 0] +=
+                     w * (N2[a] * (u_k - u_n) / params->dt +
+                          N2[a] * (u_k * du_dx_k + v_k * du_dy_k) +
+                          nu * (dN2_dx[a] * du_dx_k + dN2_dy[a] * du_dy_k) -
+                          dN2_dx[a] * p_k);
+                  R_elem[2 * a + 1] +=
+                     w * (N2[a] * (v_k - v_n) / params->dt +
+                          N2[a] * (u_k * dv_dx_k + v_k * dv_dy_k) +
+                          nu * (dN2_dx[a] * dv_dx_k + dN2_dy[a] * dv_dy_k) -
+                          dN2_dy[a] * p_k);
+               }
+               /* Galerkin residual: continuity */
+               for (int pa = 0; pa < 4; pa++)
+               {
+                  R_elem[18 + pa] += w * M4[pa] * (du_dx_k + dv_dy_k);
+               }
+            }
+         }
+         /* Accumulate element contributions (skipping Dirichlet rows); hypre
+            routes contributions to rows owned by other ranks during assembly */
+         for (int i = 0; i < 22; i++)
+         {
+            if (is_dirichlet[i]) continue;
+
+            HYPRE_BigInt cols[22];
+            HYPRE_Real   vals[22];
+            HYPRE_Int    ncols = 0;
+
+            for (int j = 0; j < 22; j++)
+            {
+               if (K_elem[i][j] != 0.0)
+               {
+                  cols[ncols] = dof_gid[j];
+                  vals[ncols] = K_elem[i][j];
+                  ncols++;
+               }
+            }
+            if (ncols > 0)
+            {
+               HYPRE_IJMatrixAddToValues(A, 1, &ncols, &dof_gid[i], cols, vals);
+            }
+            if (R_elem[i] != 0.0)
+            {
+               HYPRE_Real rhs_val = -R_elem[i]; /* Newton RHS is -Residual */
+               HYPRE_IJVectorAddToValues(b, 1, &dof_gid[i], &rhs_val);
+            }
+         }
+      }
+   }
+
+   /* Apply velocity boundary conditions on locally owned nodes: identity rows
+      with residual-form RHS. The pressure is NOT pinned (hypredrive projects
+      out its constant mode). */
+   for (HYPRE_Int ly = 0; ly < ctx->wvy; ly++)
+   {
+      for (HYPRE_Int lx = 0; lx < ctx->wvx; lx++)
+      {
+         const HYPRE_Int gx            = (HYPRE_Int)ctx->vps[0][bx] + lx;
+         const HYPRE_Int gy            = (HYPRE_Int)ctx->vps[1][by] + ly;
+         HYPRE_Int       boundary_type = 0; /* 0: interior, 1: wall, 2: lid */
+
+         if (gy == nvy - 1 && gx != 0 && gx != nvx - 1)
+         {
+            boundary_type = 2;
+         }
+         else if (gx == 0 || gx == nvx - 1 || gy == 0 || gy == nvy - 1)
+         {
+            boundary_type = 1;
+         }
+         if (!boundary_type) continue;
+
+         const HYPRE_BigInt lvi = (HYPRE_BigInt)ly * ctx->wvx + lx;
+         for (int c = 0; c < 2; c++)
+         {
+            HYPRE_BigInt row        = ctx->dof_ilower + 2 * lvi + c;
+            HYPRE_Real   val_matrix = 1.0;
+            HYPRE_Real   u_bc       = 0.0;
+
+            if (boundary_type == 2 && c == 0)
+            {
+               if (params->regularize_bc)
+               {
+                  HYPRE_Real x_norm = (HYPRE_Real)gx / (nvx - 1);
+                  HYPRE_Real xi     = 2.0 * x_norm - 1.0;
+                  HYPRE_Real xi16   = xi * xi;
+                  xi16 *= xi16;
+                  xi16 *= xi16;
+                  xi16 *= xi16;
+                  u_bc = (1.0 - xi16) * (1.0 - xi16);
+               }
+               else
+               {
+                  u_bc = 1.0;
+               }
+            }
+
+            HYPRE_Real val_vector = u_bc - u_current_iter[2 * lvi + c];
+            HYPRE_Int  ncols      = 1;
+            HYPRE_IJMatrixSetValues(A, 1, &ncols, &row, &row, &val_matrix);
+            HYPRE_IJVectorSetValues(b, 1, &row, &val_vector);
+         }
+      }
+   }
+
+   HYPRE_IJMatrixAssemble(A);
+   HYPRE_IJVectorAssemble(b);
+
+#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 22600
+   HYPRE_IJVectorInnerProd(b, b, res_norm);
+#else
+   void           *b_obj = NULL;
+   HYPRE_ParVector b_par = NULL;
+   HYPRE_IJVectorGetObject(b, &b_obj);
+   b_par = (HYPRE_ParVector)b_obj;
+   HYPRE_ParVectorInnerProd(b_par, b_par, res_norm);
+#endif
+   *res_norm = sqrt(*res_norm);
+
+   *J_ptr = A;
+   *R_ptr = b;
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(hypredrv, "system", -1));
+
+   return 0;
+}
+
+/*--------------------------------------------------------------------------
+ * Component norms for the Q2-Q1 block dof layout
+ *--------------------------------------------------------------------------*/
+void
+ComputeComponentNormsQ2Q1(HYPRE_IJVector b, Q2Q1Ctx *ctx, double *norm_u, double *norm_v,
+                          double *norm_p)
+{
+   HYPRE_BigInt   local_dofs   = 2 * ctx->Wv + ctx->Wp;
+   double         local_sum[3] = {0.0, 0.0, 0.0};
+   double         global_sum[3];
+   HYPRE_Complex *val =
+      (HYPRE_Complex *)malloc((size_t)local_dofs * sizeof(HYPRE_Complex));
+
+   HYPRE_IJVectorGetValues(b, (HYPRE_Int)local_dofs, NULL, val);
+   for (HYPRE_BigInt i = 0; i < ctx->Wv; i++)
+   {
+      local_sum[0] += val[2 * i + 0] * val[2 * i + 0];
+      local_sum[1] += val[2 * i + 1] * val[2 * i + 1];
+   }
+   for (HYPRE_BigInt i = 2 * ctx->Wv; i < local_dofs; i++)
+   {
+      local_sum[2] += val[i] * val[i];
+   }
+   free(val);
+
+   MPI_Allreduce(local_sum, global_sum, 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+   *norm_u = sqrt(global_sum[0]);
+   *norm_v = sqrt(global_sum[1]);
+   *norm_p = sqrt(global_sum[2]);
+}
+
 static void
 get_global_coords(HYPRE_BigInt global_node_idx, DistMesh2D *mesh, HYPRE_BigInt gcoords[2])
 {
@@ -760,6 +1453,207 @@ ComputeComponentNorms(HYPRE_IJVector b, HYPRE_Int local_size, double *norm_u,
    *norm_u = sqrt(global_sum[0]);
    *norm_v = sqrt(global_sum[1]);
    *norm_p = sqrt(global_sum[2]);
+}
+
+/*--------------------------------------------------------------------------
+ * Discretization dispatch: routes the generic driver calls in main() to the
+ * Q1-Q1 (stabilized, interleaved dofs, ghost-node exchange) or Q2-Q1
+ * (Taylor-Hood, block dofs, halo-line exchange, pressure null space)
+ * specific implementations selected with params->disc
+ *--------------------------------------------------------------------------*/
+enum
+{
+   SOLUTION_CURRENT = 0, /* current Newton iterate (U^k)     */
+   SOLUTION_OLD     = 1  /* previous time step value (U^n-1) */
+};
+
+typedef struct
+{
+   LidCavityParams *params;
+   DistMesh2D      *mesh;
+   GhostData       *g_u_k; /* Q1-Q1: ghost data for the current iterate */
+   GhostData       *g_u_n; /* Q1-Q1: ghost data for the previous time step */
+   Q2Q1Ctx         *q2q1;      /* Q2-Q1: staggered grid context */
+   int             *dofmap;    /* Q2-Q1: dof type labels (u = 0, v = 1, p = 2) */
+   HYPRE_Complex   *nullspace; /* Q2-Q1: constant pressure null space mode */
+} Discretization;
+
+static const char *
+DiscretizationDefaultConfig(const LidCavityParams *params)
+{
+   return params->disc ? default_config_q2q1 : default_config;
+}
+
+int
+DiscretizationCreate(LidCavityParams *params, DistMesh2D *mesh,
+                     Discretization **disc_ptr)
+{
+   Discretization *disc = (Discretization *)calloc(1, sizeof(Discretization));
+
+   disc->params = params;
+   disc->mesh   = mesh;
+   if (params->disc)
+   {
+      if (CreateQ2Q1Ctx(mesh, params, &disc->q2q1))
+      {
+         free(disc);
+         return 1;
+      }
+      mesh->dof_ilower = disc->q2q1->dof_ilower;
+      mesh->dof_iupper = disc->q2q1->dof_iupper;
+
+      HYPRE_BigInt nloc = 2 * disc->q2q1->Wv + disc->q2q1->Wp;
+      disc->dofmap      = (int *)malloc((size_t)nloc * sizeof(int));
+      disc->nullspace   = (HYPRE_Complex *)calloc((size_t)nloc, sizeof(HYPRE_Complex));
+      for (HYPRE_BigInt i = 0; i < disc->q2q1->Wv; i++)
+      {
+         disc->dofmap[2 * i + 0] = 0;
+         disc->dofmap[2 * i + 1] = 1;
+      }
+      for (HYPRE_BigInt i = 2 * disc->q2q1->Wv; i < nloc; i++)
+      {
+         disc->dofmap[i]    = 2;
+         disc->nullspace[i] = 1.0;
+      }
+   }
+   else
+   {
+      CreateGhostData(mesh, &disc->g_u_k);
+      CreateGhostData(mesh, &disc->g_u_n);
+   }
+
+   *disc_ptr = disc;
+   return 0;
+}
+
+int
+DiscretizationDestroy(Discretization **disc_ptr)
+{
+   Discretization *disc = *disc_ptr;
+   if (!disc) return 0;
+   DestroyGhostData(&disc->g_u_k);
+   DestroyGhostData(&disc->g_u_n);
+   DestroyQ2Q1Ctx(&disc->q2q1);
+   free(disc->dofmap);
+   free(disc->nullspace);
+   free(disc);
+   *disc_ptr = NULL;
+   return 0;
+}
+
+/* Make the off-rank solution values needed by the element loops available */
+int
+DiscretizationExchangeGhosts(Discretization *disc, double *u, int which)
+{
+   if (disc->params->disc)
+   {
+      Q2Q1Ctx *ctx = disc->q2q1;
+
+      if (which == SOLUTION_OLD)
+      {
+         return Q2Q1ExchangeHalo(disc->mesh, ctx, u, ctx->halo_col_n, ctx->halo_row_n,
+                                 ctx->halo_cor_n);
+      }
+      return Q2Q1ExchangeHalo(disc->mesh, ctx, u, ctx->halo_col_k, ctx->halo_row_k,
+                              ctx->halo_cor_k);
+   }
+   return ExchangeVectorGhosts(disc->mesh, u,
+                               (which == SOLUTION_OLD) ? disc->g_u_n : disc->g_u_k);
+}
+
+/* Assemble the Newton system J ΔU = -R for the selected discretization */
+int
+DiscretizationBuildNewtonSystem(Discretization *disc, HYPREDRV_t hypredrv,
+                                HYPRE_Real *u_old, HYPRE_Real *u_now, HYPRE_IJMatrix *A,
+                                HYPRE_IJVector *b, HYPRE_Real *res_norm)
+{
+   if (disc->params->disc)
+   {
+      return BuildNewtonSystemQ2Q1(hypredrv, disc->mesh, disc->q2q1, disc->params, u_old,
+                                   u_now, A, b, res_norm);
+   }
+   return BuildNewtonSystem(hypredrv, disc->mesh, disc->params, u_old, u_now, A, b,
+                            res_norm, disc->g_u_n, disc->g_u_k);
+}
+
+/* Tell hypredrive about the dof types of the selected discretization */
+int
+DiscretizationSetDofData(Discretization *disc, HYPREDRV_t hypredrv)
+{
+   if (disc->params->disc)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetDofmap(
+         hypredrv, (int)(2 * disc->q2q1->Wv + disc->q2q1->Wp), disc->dofmap));
+   }
+   else
+   {
+      HYPREDRV_SAFE_CALL(
+         HYPREDRV_LinearSystemSetInterleavedDofmap(hypredrv, disc->mesh->local_size, 3));
+   }
+   return 0;
+}
+
+/* Register null space modes, if any; must be called after the matrix is set.
+   The Q2-Q1 pressure is not pinned, so hypredrive projects out its constant
+   mode, fixing the pressure gauge. Q1-Q1 pins the pressure instead. */
+int
+DiscretizationSetNullSpace(Discretization *disc, HYPREDRV_t hypredrv)
+{
+   if (disc->params->disc)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetNullSpace(
+         hypredrv, (int)(2 * disc->q2q1->Wv + disc->q2q1->Wp), 1, disc->nullspace));
+   }
+   return 0;
+}
+
+/* L2 norms of the (u, v, p) components of a vector */
+void
+DiscretizationComputeNorms(Discretization *disc, HYPRE_IJVector b, double *norm_u,
+                           double *norm_v, double *norm_p)
+{
+   if (disc->params->disc)
+   {
+      ComputeComponentNormsQ2Q1(b, disc->q2q1, norm_u, norm_v, norm_p);
+   }
+   else
+   {
+      ComputeComponentNorms(b, disc->mesh->local_size, norm_u, norm_v, norm_p);
+   }
+}
+
+/* Discrete kinetic energy (0.5 * sum |u_i|^2 * dV over the velocity nodes), a
+   solution observable comparable between discretizations at matched velocity
+   grids: Q2-Q1 with an N x N pressure grid and Q1-Q1 with (2N-1) x (2N-1)
+   nodes share the same velocity grid */
+double
+DiscretizationKineticEnergy(Discretization *disc, const double *u)
+{
+   DistMesh2D *mesh      = disc->mesh;
+   double      local_sum = 0.0, global_sum = 0.0;
+   double      dV;
+
+   if (disc->params->disc)
+   {
+      Q2Q1Ctx *ctx = disc->q2q1;
+
+      for (HYPRE_BigInt i = 0; i < ctx->Wv; i++)
+      {
+         local_sum += u[2 * i + 0] * u[2 * i + 0] + u[2 * i + 1] * u[2 * i + 1];
+      }
+      dV = 0.25 * mesh->h[0] * mesh->h[1]; /* the velocity node spacing is h / 2 */
+   }
+   else
+   {
+      for (HYPRE_Int i = 0; i < mesh->local_size; i++)
+      {
+         local_sum += u[3 * i + 0] * u[3 * i + 0] + u[3 * i + 1] * u[3 * i + 1];
+      }
+      dV = mesh->h[0] * mesh->h[1];
+   }
+   MPI_Allreduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+   return 0.5 * global_sum * dV;
 }
 
 /*--------------------------------------------------------------------------
@@ -1999,7 +2893,7 @@ main(int argc, char *argv[])
    HYPRE_Real      res_norm;
    LidCavityParams params;
    DistMesh2D     *mesh;
-   GhostData      *g_u_k = NULL, *g_u_n = NULL;
+   Discretization *disc = NULL;
    HYPRE_IJMatrix  A;
    HYPRE_IJVector  b;
    HYPRE_IJVector  vec_s[2];
@@ -2015,7 +2909,17 @@ main(int argc, char *argv[])
       MPI_Finalize();
       return 1;
    }
-   hypredrv_args[0] = params.yaml_file ? params.yaml_file : (char *)default_config;
+   hypredrv_args[0] =
+      params.yaml_file ? params.yaml_file : (char *)DiscretizationDefaultConfig(&params);
+
+   if (params.disc && params.visualize)
+   {
+      if (!myid)
+      {
+         printf("Warning: visualization is not supported with -disc q2q1; disabling\n");
+      }
+      params.visualize = 0;
+   }
 
    if (!myid)
    {
@@ -2034,6 +2938,8 @@ main(int argc, char *argv[])
          printf("Maximum CFL:             %.1f\n", params.max_cfl);
       }
       printf("Regularized lid BC:      %s\n", params.regularize_bc ? "true" : "false");
+      printf("Discretization:          %s\n",
+             params.disc ? "Q2-Q1 (Taylor-Hood)" : "Q1-Q1 stabilized");
       printf("Final time:              %.1e\n", params.final_time);
       if (params.visualize)
       {
@@ -2072,6 +2978,13 @@ main(int argc, char *argv[])
    CreateDistMesh2D(comm, params.L[0], params.L[1], params.N[0], params.N[1], params.P[0],
                     params.P[1], &mesh);
 
+   /* Create the discretization dispatch context (ghost data or Q2-Q1 grids) */
+   if (DiscretizationCreate(&params, mesh, &disc))
+   {
+      MPI_Finalize();
+      return 1;
+   }
+
    /* Create state vectors */
    for (int i = 0; i < 2; i++)
    {
@@ -2080,10 +2993,6 @@ main(int argc, char *argv[])
       HYPRE_IJVectorInitialize(vec_s[i]);
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorSet(hypredrv, 2, vec_s));
-
-   /* Create ghost exchange objects */
-   CreateGhostData(mesh, &g_u_k);
-   CreateGhostData(mesh, &g_u_n);
 
    double current_time = 0.0;
    int    newton_iter, t_step = 0;
@@ -2106,7 +3015,7 @@ main(int argc, char *argv[])
       /* Retrieve solution values from the old state (U^{n - 1}) and exchange ghost data
        */
       HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorGetValues(hypredrv, 1, &u_old));
-      ExchangeVectorGhosts(mesh, u_old, g_u_n);
+      DiscretizationExchangeGhosts(disc, u_old, SOLUTION_OLD);
 
       /* Non-linear solver loop */
       for (newton_iter = 0; newton_iter < 20; newton_iter++)
@@ -2118,11 +3027,10 @@ main(int argc, char *argv[])
          /* Retrieve solution values from the current state (U^{n}) and exchange ghost
           * data */
          HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorGetValues(hypredrv, 0, &u_now));
-         ExchangeVectorGhosts(mesh, u_now, g_u_k);
+         DiscretizationExchangeGhosts(disc, u_now, SOLUTION_CURRENT);
 
          /* Assemble linear system: J ΔU = -R */
-         BuildNewtonSystem(hypredrv, mesh, &params, u_old, u_now, &A, &b, &res_norm,
-                           g_u_n, g_u_k);
+         DiscretizationBuildNewtonSystem(disc, hypredrv, u_old, u_now, &A, &b, &res_norm);
 
          /* Check Newton convergence */
          if (newton_iter > 0 && res_norm < params.newton_tol)
@@ -2143,10 +3051,10 @@ main(int argc, char *argv[])
          if (!myid && (params.verbose > 0)) printf(" Done!\n");
 #endif
 
-         /* Tell hypredrv we have 3 interleaved dofs per node */
-         HYPREDRV_SAFE_CALL(
-            HYPREDRV_LinearSystemSetInterleavedDofmap(hypredrv, mesh->local_size, 3));
+         /* Tell hypredrv about the dof types and null space modes */
+         DiscretizationSetDofData(disc, hypredrv);
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(hypredrv, (HYPRE_Matrix)A));
+         DiscretizationSetNullSpace(disc, hypredrv);
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector)b));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv, NULL));
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv, NULL));
@@ -2177,7 +3085,7 @@ main(int argc, char *argv[])
 
             HYPREDRV_SAFE_CALL(
                HYPREDRV_LinearSolverGetNumIter(hypredrv, &num_iterations));
-            ComputeComponentNorms(b, mesh->local_size, &norm_u, &norm_v, &norm_p);
+            DiscretizationComputeNorms(disc, b, &norm_u, &norm_v, &norm_p);
             if (!myid)
             {
                printf(
@@ -2210,7 +3118,7 @@ main(int argc, char *argv[])
          int write_all        = (params.visualize & 0x4) != 0;
          if (write_all || is_last_timestep)
          {
-            WriteVTKsolutionVector(mesh, &params, u_now, g_u_k, t_step + 1);
+            WriteVTKsolutionVector(mesh, &params, u_now, disc->g_u_k, t_step + 1);
          }
       }
 
@@ -2218,10 +3126,17 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorUpdateAll(hypredrv));
    }
 
+   /* Report a solution observable that is comparable between discretizations */
+   if (params.verbose > 0)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorGetValues(hypredrv, 0, &u_now));
+      double ke = DiscretizationKineticEnergy(disc, u_now);
+      if (!myid) printf("\nFinal kinetic energy: %.6e\n", ke);
+   }
+
    /* Free memory */
    DestroyDistMesh2D(&mesh);
-   DestroyGhostData(&g_u_k);
-   DestroyGhostData(&g_u_n);
+   DiscretizationDestroy(&disc);
    for (int i = 0; i < 2; i++)
    {
       HYPRE_IJVectorDestroy(vec_s[i]);
