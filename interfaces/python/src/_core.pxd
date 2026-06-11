@@ -47,6 +47,11 @@ cdef extern from "HYPREDRV.h" nogil:
     uint32_t HYPREDRV_LinearSolverGetSolveTime(HYPREDRV_t hypredrv,
                                                double *seconds)
 
+    uint32_t HYPREDRV_AnnotateBegin(HYPREDRV_t hypredrv, const char *name,
+                                    int id)
+    uint32_t HYPREDRV_AnnotateEnd(HYPREDRV_t hypredrv, const char *name,
+                                  int id)
+
     void HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
 
 
