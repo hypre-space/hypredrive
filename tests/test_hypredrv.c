@@ -4113,6 +4113,7 @@ test_HYPREDRV_LinearSystemSetNullSpace_projection(void)
       modes[i]     = 1.0 + (HYPRE_Complex)(i % 2);
       modes[n + i] = (HYPRE_Complex)(i + 1);
    }
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
    ASSERT_EQ(HYPREDRV_LinearSystemSetNullSpace(obj, n, 2, modes), ERROR_NONE);
 
    run_library_linear_solve(obj, NULL);
@@ -4141,6 +4142,29 @@ test_HYPREDRV_LinearSystemSetNullSpace_projection(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
+#else
+   /* Multiple modes need multi-component IJVectors (hypre >= 2.26.0); the
+    * documented behavior below that is a clean ERROR_INVALID_VAL. */
+   ASSERT_TRUE(HYPREDRV_LinearSystemSetNullSpace(obj, n, 2, modes) & ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   HYPRE_ClearAllErrors();
+
+   /* A single mode remains supported on older hypre */
+   ASSERT_EQ(HYPREDRV_LinearSystemSetNullSpace(obj, n, 1, modes), ERROR_NONE);
+
+   run_library_linear_solve(obj, NULL);
+
+   /* The computed solution must be orthogonal to the (non-normalized) input mode */
+   HYPRE_Complex *sol = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &sol), ERROR_NONE);
+   double dot0 = 0.0;
+   for (int i = 0; i < n; i++)
+   {
+      dot0 += (double)(sol[i] * modes[i]);
+   }
+   ASSERT_EQ_DOUBLE(dot0, 0.0, 1.0e-9);
+#endif
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);

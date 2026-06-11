@@ -2968,7 +2968,7 @@ HYPREDRV_PreconApply(HYPREDRV_t hypredrv, HYPRE_Vector vec_b, HYPRE_Vector vec_x
 
    hypredrv_PreconApply(hypredrv->iargs->precon_method, hypredrv->precon, hypredrv->mat_A,
                         (HYPRE_IJVector)vec_b, (HYPRE_IJVector)vec_x);
-   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */  /* GCOVR_EXCL_BR_LINE */
+   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */ /* GCOVR_EXCL_BR_LINE */
    /* Fix the solution gauge when exact null space modes are set */
    if (hypredrv->vec_ns && hypredrv->num_ns > 0)
    {

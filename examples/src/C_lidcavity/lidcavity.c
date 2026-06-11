@@ -148,8 +148,8 @@ typedef struct
    HYPRE_Int  adaptive_dt;       /* Adaptive time stepping flag */
    HYPRE_Real max_cfl;           /* Maximum CFL for adaptive time stepping (0=no limit) */
    HYPRE_Int  regularize_bc;     /* Use regularized lid BC (smooth corners) */
-   HYPRE_Int  disc;              /* Discretization: 0 = Q1-Q1 stabilized, 1 = Q2-Q1 (Taylor-Hood) */
-   char      *yaml_file;         /* YAML configuration file */
+   HYPRE_Int  disc; /* Discretization: 0 = Q1-Q1 stabilized, 1 = Q2-Q1 (Taylor-Hood) */
+   char      *yaml_file; /* YAML configuration file */
 } LidCavityParams;
 
 /*--------------------------------------------------------------------------
@@ -812,8 +812,8 @@ typedef struct
 static HYPRE_BigInt
 q2q1_block_ndofs(const DistMesh2D *mesh, const Q2Q1Ctx *ctx, HYPRE_Int bx, HYPRE_Int by)
 {
-   HYPRE_BigInt wv = (ctx->vps[0][bx + 1] - ctx->vps[0][bx]) *
-                     (ctx->vps[1][by + 1] - ctx->vps[1][by]);
+   HYPRE_BigInt wv =
+      (ctx->vps[0][bx + 1] - ctx->vps[0][bx]) * (ctx->vps[1][by + 1] - ctx->vps[1][by]);
    HYPRE_BigInt wp = (mesh->pstarts[0][bx + 1] - mesh->pstarts[0][bx]) *
                      (mesh->pstarts[1][by + 1] - mesh->pstarts[1][by]);
    return 2 * wv + wp;
@@ -889,10 +889,10 @@ CreateQ2Q1Ctx(DistMesh2D *mesh, LidCavityParams *params, Q2Q1Ctx **ctx_ptr)
       return 1;
    }
 
-   ctx->nvx  = 2 * npx - 1;
-   ctx->nvy  = 2 * npy - 1;
-   ctx->nvel = (HYPRE_BigInt)ctx->nvx * (HYPRE_BigInt)ctx->nvy;
-   ctx->npre = (HYPRE_BigInt)npx * (HYPRE_BigInt)npy;
+   ctx->nvx   = 2 * npx - 1;
+   ctx->nvy   = 2 * npy - 1;
+   ctx->nvel  = (HYPRE_BigInt)ctx->nvx * (HYPRE_BigInt)ctx->nvy;
+   ctx->npre  = (HYPRE_BigInt)npx * (HYPRE_BigInt)npy;
    ctx->ndofs = 2 * ctx->nvel + ctx->npre;
 
    /* Velocity grid pstarts: twice the pressure pstarts (last entry capped) */
@@ -917,8 +917,8 @@ CreateQ2Q1Ctx(DistMesh2D *mesh, LidCavityParams *params, Q2Q1Ctx **ctx_ptr)
    ctx->dof_iupper = ctx->dof_ilower + 2 * ctx->Wv + ctx->Wp - 1;
 
    /* Halo buffers: one velocity (u, v) + one pressure line from right/top */
-   size_t col_len = 2 * (size_t)ctx->wvy + (size_t)ctx->wpy;
-   size_t row_len = 2 * (size_t)ctx->wvx + (size_t)ctx->wpx;
+   size_t col_len  = 2 * (size_t)ctx->wvy + (size_t)ctx->wpy;
+   size_t row_len  = 2 * (size_t)ctx->wvx + (size_t)ctx->wpx;
    ctx->halo_col_k = (double *)calloc(col_len, sizeof(double));
    ctx->halo_col_n = (double *)calloc(col_len, sizeof(double));
    ctx->halo_row_k = (double *)calloc(row_len, sizeof(double));
@@ -964,13 +964,13 @@ Q2Q1ExchangeHalo(DistMesh2D *mesh, Q2Q1Ctx *ctx, double *u, double *halo_col,
    /* Pack: first velocity column (u, v) then first pressure column */
    for (HYPRE_Int j = 0; j < ctx->wvy; j++)
    {
-      HYPRE_BigInt lvi      = (HYPRE_BigInt)j * ctx->wvx;
+      HYPRE_BigInt lvi         = (HYPRE_BigInt)j * ctx->wvx;
       ctx->send_col[2 * j + 0] = u[2 * lvi + 0];
       ctx->send_col[2 * j + 1] = u[2 * lvi + 1];
    }
    for (HYPRE_Int j = 0; j < ctx->wpy; j++)
    {
-      HYPRE_BigInt lpi              = (HYPRE_BigInt)j * ctx->wpx;
+      HYPRE_BigInt lpi                = (HYPRE_BigInt)j * ctx->wpx;
       ctx->send_col[2 * ctx->wvy + j] = u[2 * ctx->Wv + lpi];
    }
    /* Pack: first velocity row (u, v) then first pressure row */
@@ -1124,11 +1124,11 @@ BuildNewtonSystemQ2Q1(HYPREDRV_t hypredrv, DistMesh2D *mesh, Q2Q1Ctx *ctx,
 
    /* Elements are owned by the rank owning their lower-left pressure node */
    const HYPRE_Int ex_lo = (HYPRE_Int)mesh->pstarts[0][bx];
-   const HYPRE_Int ex_hi = (bx == mesh->pdims[0] - 1) ? (npx - 1)
-                                                      : (HYPRE_Int)mesh->pstarts[0][bx + 1];
+   const HYPRE_Int ex_hi =
+      (bx == mesh->pdims[0] - 1) ? (npx - 1) : (HYPRE_Int)mesh->pstarts[0][bx + 1];
    const HYPRE_Int ey_lo = (HYPRE_Int)mesh->pstarts[1][by];
-   const HYPRE_Int ey_hi = (by == mesh->pdims[1] - 1) ? (npy - 1)
-                                                      : (HYPRE_Int)mesh->pstarts[1][by + 1];
+   const HYPRE_Int ey_hi =
+      (by == mesh->pdims[1] - 1) ? (npy - 1) : (HYPRE_Int)mesh->pstarts[1][by + 1];
 
    for (HYPRE_Int ey = ey_lo; ey < ey_hi; ey++)
    {
@@ -1150,14 +1150,14 @@ BuildNewtonSystemQ2Q1(HYPREDRV_t hypredrv, DistMesh2D *mesh, Q2Q1Ctx *ctx,
 
             dof_gid[2 * a + 0] = Q2Q1VelDof(mesh, ctx, gx, gy, 0);
             dof_gid[2 * a + 1] = dof_gid[2 * a + 0] + 1;
-            u_k_e[2 * a + 0] = q2q1_vel_val(mesh, ctx, u_current_iter, ctx->halo_col_k,
-                                            ctx->halo_row_k, ctx->halo_cor_k, gx, gy, 0);
-            u_k_e[2 * a + 1] = q2q1_vel_val(mesh, ctx, u_current_iter, ctx->halo_col_k,
-                                            ctx->halo_row_k, ctx->halo_cor_k, gx, gy, 1);
-            u_n_e[2 * a + 0] = q2q1_vel_val(mesh, ctx, u_prev_time, ctx->halo_col_n,
-                                            ctx->halo_row_n, ctx->halo_cor_n, gx, gy, 0);
-            u_n_e[2 * a + 1] = q2q1_vel_val(mesh, ctx, u_prev_time, ctx->halo_col_n,
-                                            ctx->halo_row_n, ctx->halo_cor_n, gx, gy, 1);
+            u_k_e[2 * a + 0]   = q2q1_vel_val(mesh, ctx, u_current_iter, ctx->halo_col_k,
+                                              ctx->halo_row_k, ctx->halo_cor_k, gx, gy, 0);
+            u_k_e[2 * a + 1]   = q2q1_vel_val(mesh, ctx, u_current_iter, ctx->halo_col_k,
+                                              ctx->halo_row_k, ctx->halo_cor_k, gx, gy, 1);
+            u_n_e[2 * a + 0]   = q2q1_vel_val(mesh, ctx, u_prev_time, ctx->halo_col_n,
+                                              ctx->halo_row_n, ctx->halo_cor_n, gx, gy, 0);
+            u_n_e[2 * a + 1]   = q2q1_vel_val(mesh, ctx, u_prev_time, ctx->halo_col_n,
+                                              ctx->halo_row_n, ctx->halo_cor_n, gx, gy, 1);
 
             /* Velocity Dirichlet nodes: walls (left/right/bottom and lid corners), lid */
             if (gx == 0 || gx == nvx - 1 || gy == 0 || gy == nvy - 1)
@@ -1172,8 +1172,8 @@ BuildNewtonSystemQ2Q1(HYPREDRV_t hypredrv, DistMesh2D *mesh, Q2Q1Ctx *ctx,
             const HYPRE_Int py = pa / 2;
 
             dof_gid[18 + pa] = Q2Q1PreDof(mesh, ctx, ex + px, ey + py);
-            p_k_e[pa] = q2q1_pre_val(mesh, ctx, u_current_iter, ctx->halo_col_k,
-                                     ctx->halo_row_k, ctx->halo_cor_k, ex + px, ey + py);
+            p_k_e[pa]        = q2q1_pre_val(mesh, ctx, u_current_iter, ctx->halo_col_k,
+                                            ctx->halo_row_k, ctx->halo_cor_k, ex + px, ey + py);
          }
 
          /* Quadrature loop (3 x 3 Gauss, exact for the Q2-Q1 Galerkin terms) */
@@ -1231,17 +1231,22 @@ BuildNewtonSystemQ2Q1(HYPREDRV_t hypredrv, DistMesh2D *mesh, Q2Q1Ctx *ctx,
                   {
                      /* Time derivative + viscous + convection (Picard part) */
                      const HYPRE_Real diag =
-                        w * (N2[a] * N2[b_idx] / params->dt +
-                             nu * (dN2_dx[a] * dN2_dx[b_idx] + dN2_dy[a] * dN2_dy[b_idx]) +
-                             (u_k * dN2_dx[b_idx] + v_k * dN2_dy[b_idx]) * N2[a]);
+                        w *
+                        (N2[a] * N2[b_idx] / params->dt +
+                         nu * (dN2_dx[a] * dN2_dx[b_idx] + dN2_dy[a] * dN2_dy[b_idx]) +
+                         (u_k * dN2_dx[b_idx] + v_k * dN2_dy[b_idx]) * N2[a]);
                      K_elem[2 * a + 0][2 * b_idx + 0] += diag;
                      K_elem[2 * a + 1][2 * b_idx + 1] += diag;
 
                      /* Convection (Newton part) */
-                     K_elem[2 * a + 0][2 * b_idx + 0] += w * (N2[b_idx] * du_dx_k) * N2[a];
-                     K_elem[2 * a + 0][2 * b_idx + 1] += w * (N2[b_idx] * du_dy_k) * N2[a];
-                     K_elem[2 * a + 1][2 * b_idx + 0] += w * (N2[b_idx] * dv_dx_k) * N2[a];
-                     K_elem[2 * a + 1][2 * b_idx + 1] += w * (N2[b_idx] * dv_dy_k) * N2[a];
+                     K_elem[2 * a + 0][2 * b_idx + 0] +=
+                        w * (N2[b_idx] * du_dx_k) * N2[a];
+                     K_elem[2 * a + 0][2 * b_idx + 1] +=
+                        w * (N2[b_idx] * du_dy_k) * N2[a];
+                     K_elem[2 * a + 1][2 * b_idx + 0] +=
+                        w * (N2[b_idx] * dv_dx_k) * N2[a];
+                     K_elem[2 * a + 1][2 * b_idx + 1] +=
+                        w * (N2[b_idx] * dv_dy_k) * N2[a];
                   }
 
                   /* Pressure-velocity coupling (from -p div v and q div u) */
@@ -1255,15 +1260,15 @@ BuildNewtonSystemQ2Q1(HYPREDRV_t hypredrv, DistMesh2D *mesh, Q2Q1Ctx *ctx,
 
                   /* Galerkin residual: momentum */
                   R_elem[2 * a + 0] +=
-                     w * (N2[a] * (u_k - u_n) / params->dt +
-                          N2[a] * (u_k * du_dx_k + v_k * du_dy_k) +
-                          nu * (dN2_dx[a] * du_dx_k + dN2_dy[a] * du_dy_k) -
-                          dN2_dx[a] * p_k);
+                     w *
+                     (N2[a] * (u_k - u_n) / params->dt +
+                      N2[a] * (u_k * du_dx_k + v_k * du_dy_k) +
+                      nu * (dN2_dx[a] * du_dx_k + dN2_dy[a] * du_dy_k) - dN2_dx[a] * p_k);
                   R_elem[2 * a + 1] +=
-                     w * (N2[a] * (v_k - v_n) / params->dt +
-                          N2[a] * (u_k * dv_dx_k + v_k * dv_dy_k) +
-                          nu * (dN2_dx[a] * dv_dx_k + dN2_dy[a] * dv_dy_k) -
-                          dN2_dy[a] * p_k);
+                     w *
+                     (N2[a] * (v_k - v_n) / params->dt +
+                      N2[a] * (u_k * dv_dx_k + v_k * dv_dy_k) +
+                      nu * (dN2_dx[a] * dv_dx_k + dN2_dy[a] * dv_dy_k) - dN2_dy[a] * p_k);
                }
                /* Galerkin residual: continuity */
                for (int pa = 0; pa < 4; pa++)
@@ -1471,8 +1476,8 @@ typedef struct
 {
    LidCavityParams *params;
    DistMesh2D      *mesh;
-   GhostData       *g_u_k; /* Q1-Q1: ghost data for the current iterate */
-   GhostData       *g_u_n; /* Q1-Q1: ghost data for the previous time step */
+   GhostData       *g_u_k;     /* Q1-Q1: ghost data for the current iterate */
+   GhostData       *g_u_n;     /* Q1-Q1: ghost data for the previous time step */
    Q2Q1Ctx         *q2q1;      /* Q2-Q1: staggered grid context */
    int             *dofmap;    /* Q2-Q1: dof type labels (u = 0, v = 1, p = 2) */
    HYPRE_Complex   *nullspace; /* Q2-Q1: constant pressure null space mode */
@@ -1485,8 +1490,7 @@ DiscretizationDefaultConfig(const LidCavityParams *params)
 }
 
 int
-DiscretizationCreate(LidCavityParams *params, DistMesh2D *mesh,
-                     Discretization **disc_ptr)
+DiscretizationCreate(LidCavityParams *params, DistMesh2D *mesh, Discretization **disc_ptr)
 {
    Discretization *disc = (Discretization *)calloc(1, sizeof(Discretization));
 

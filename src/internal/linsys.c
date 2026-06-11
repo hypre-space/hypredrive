@@ -1663,15 +1663,9 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
       *x0_ptr = NULL;
    }
 
-   hypredrv_LinearSystemCreateWorkingSolution(comm, args, rhs, x_ptr);
-   /* GCOVR_EXCL_START */
-   if (hypredrv_ErrorCodeActive())
-   {
-      HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                         "initial guess setup failed: could not create working solution");
-      return;
-   }
-   /* GCOVR_EXCL_STOP */
+   /* The working solution (*x_ptr) is recreated only at the end of this
+    * function: init_guess_mode "previous" reads the previous solve's values
+    * from it while building x0. */
 
    if (args->x0_filename[0] == '\0')
    {
@@ -1713,14 +1707,30 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
             break;
 
          case 4:
+         {
             /* Use solution from previous linear solve */
+            HYPRE_BigInt xlower = 0, xupper = 0;
+
             HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                                "initial guess mode: previous");
-            HYPRE_IJVectorGetObject(*x_ptr, &obj);
-            par_x = (HYPRE_ParVector)obj;
+            if (*x_ptr)
+            {
+               HYPRE_IJVectorGetLocalRange(*x_ptr, &xlower, &xupper);
+            }
+            if (*x_ptr && xlower == jlower && xupper == jupper)
+            {
+               HYPRE_IJVectorGetObject(*x_ptr, &obj);
+               par_x = (HYPRE_ParVector)obj;
 
-            HYPRE_ParVectorCopy(par_x, par_x0);
+               HYPRE_ParVectorCopy(par_x, par_x0);
+            }
+            else
+            {
+               HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
+                                  "no compatible previous solution; using zeros");
+            }
             break;
+         }
 
          default:
             HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
@@ -1744,6 +1754,18 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
       }
       LinearSystemIJVectorMigrate(args, *x0_ptr);
    }
+
+   /* Recreate the working solution now that x0 has captured any previous
+    * solve's values. */
+   hypredrv_LinearSystemCreateWorkingSolution(comm, args, rhs, x_ptr);
+   /* GCOVR_EXCL_START */
+   if (hypredrv_ErrorCodeActive())
+   {
+      HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
+                         "initial guess setup failed: could not create working solution");
+      return;
+   }
+   /* GCOVR_EXCL_STOP */
 
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "initial guess setup end");
 }

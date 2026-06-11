@@ -20,14 +20,15 @@ typedef struct hypredrv_struct
 
    IntArray *dofmap;
 
-   HYPRE_IJMatrix  mat_A;
-   HYPRE_IJMatrix  mat_M;
-   HYPRE_IJVector  vec_b;
-   HYPRE_IJVector  vec_x;
-   HYPRE_IJVector  vec_x0;
-   HYPRE_IJVector  vec_xref;
-   HYPRE_IJVector  vec_nn;
-   HYPRE_IJVector  vec_ns; /* exact (orthonormalized) null space modes projected out of the solution */
+   HYPRE_IJMatrix mat_A;
+   HYPRE_IJMatrix mat_M;
+   HYPRE_IJVector vec_b;
+   HYPRE_IJVector vec_x;
+   HYPRE_IJVector vec_x0;
+   HYPRE_IJVector vec_xref;
+   HYPRE_IJVector vec_nn;
+   HYPRE_IJVector
+      vec_ns; /* exact (orthonormalized) null space modes projected out of the solution */
    int             num_ns;
    HYPRE_IJVector *vec_s;
    bool            owns_mat_A;

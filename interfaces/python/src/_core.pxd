@@ -30,6 +30,7 @@ cdef extern from "HYPREDRV.h" nogil:
 
     uint32_t HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv,
                                                   HYPRE_Vector vec)
+    uint32_t HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv)
     uint32_t HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t hypredrv,
                                             int size,
                                             const int *dofmap)

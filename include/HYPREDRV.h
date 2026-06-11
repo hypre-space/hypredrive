@@ -1190,10 +1190,9 @@ extern "C"
     * @return 0 on success; nonzero error code otherwise.
     */
 
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetNullSpace(HYPREDRV_t hypredrv,
-                                                                     int num_entries,
-                                                                     int num_components,
-                                                                     const HYPRE_Complex *values);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemSetNullSpace(HYPREDRV_t hypredrv, int num_entries,
+                                     int num_components, const HYPRE_Complex *values);
 
    /**
     * @brief Retrieves the solution values from the linear system of a HYPREDRV object.

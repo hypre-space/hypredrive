@@ -411,12 +411,13 @@ class HypreDrive:
         self._last_setup_time = None
         self._last_solve_time = None
 
-        # Build x0 (zeros by default, controlled by the YAML init_guess_mode).
-        # "reset_x0" marks the start of a solve repetition in the stats
-        # context; together with the "matrix" annotation in
-        # set_matrix_from_csr it advances the per-system statistics entry.
-        with self._annotated("reset_x0"):
-            self._core.setup_initial_guess()
+        # Build x0 (controlled by the YAML init_guess_mode), then copy it into
+        # the working solution — without the reset the solve always starts
+        # from the zeroed working vector regardless of mode. ResetInitialGuess
+        # annotates the "reset_x0" stats region internally (wrapping it
+        # manually would count the repetition twice).
+        self._core.setup_initial_guess()
+        self._core.reset_initial_guess()
 
         self._core.solver_create()
         try:
