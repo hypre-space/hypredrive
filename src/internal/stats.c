@@ -781,7 +781,8 @@ hypredrv_StatsDestroy(Stats **stats_ptr)
  *--------------------------------------------------------------------------*/
 
 static void
-AnnotateFormatted(Stats *stats, HYPREDRV_AnnotateAction action, const char *formatted_name)
+AnnotateFormatted(Stats *stats, HYPREDRV_AnnotateAction action,
+                  const char *formatted_name)
 {
    if (action == HYPREDRV_ANNOTATE_BEGIN)
    {
@@ -813,7 +814,7 @@ hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char
    }
 
    /* Format the name string with the variadic arguments */
-   char formatted_name[1024];
+   char    formatted_name[1024];
    va_list args_copy;
    va_copy(args_copy, args);
    vsnprintf(formatted_name, sizeof(formatted_name), name, args_copy);
