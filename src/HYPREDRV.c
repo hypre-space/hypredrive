@@ -717,6 +717,10 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    {
       HYPRE_IJVectorDestroy(hypredrv->vec_nn);
    }
+   if (hypredrv->vec_ns)
+   {
+      HYPRE_IJVectorDestroy(hypredrv->vec_ns);
+   }
    if (hypredrv->vec_xref && hypredrv->vec_xref != hypredrv->vec_b &&
        hypredrv->owns_vec_xref)
    {
@@ -884,6 +888,8 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->vec_x0        = NULL;
    hypredrv->vec_xref      = NULL;
    hypredrv->vec_nn        = NULL;
+   hypredrv->vec_ns        = NULL;
+   hypredrv->num_ns        = 0;
    hypredrv->vec_s         = NULL;
    hypredrv->dofmap        = NULL;
    hypredrv->owns_mat_A    = false;
@@ -1959,6 +1965,57 @@ HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
 }
 
 /*-----------------------------------------------------------------------------
+ * Set the exact null space modes of the linear system from a user-supplied array
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetNullSpace(HYPREDRV_t hypredrv, int num_entries,
+                                  int num_components, const HYPRE_Complex *values)
+{
+   HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
+
+   /* num_components == 0 clears previously set modes and disables the projection */
+   if (num_components == 0)
+   {
+      if (hypredrv->vec_ns)
+      {
+         HYPRE_IJVectorDestroy(hypredrv->vec_ns);
+         hypredrv->vec_ns = NULL;
+      }
+      hypredrv->num_ns = 0;
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (!hypredrv->mat_A)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("The matrix must be set before calling "
+                           "HYPREDRV_LinearSystemSetNullSpace");
+      return hypredrv_ErrorCodeGet();
+   }
+
+#if !HYPRE_CHECK_MIN_VERSION(22600, 0)
+   if (num_components > 1)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Multiple null space modes require hypre >= 2.26.0");
+      return hypredrv_ErrorCodeGet();
+   }
+#endif
+
+   hypredrv->num_ns = 0;
+   hypredrv_LinearSystemSetNullSpace(hypredrv->comm, hypredrv->mat_A, num_entries,
+                                     num_components, values, &hypredrv->vec_ns);
+   if (!hypredrv_ErrorCodeGet())
+   {
+      hypredrv->num_ns = num_components;
+   }
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * Set the initial guess for the solution vector of the linear system
  *-----------------------------------------------------------------------------*/
 
@@ -2853,6 +2910,13 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 
    HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
 
+   /* Fix the solution gauge when exact null space modes are set */
+   if (hypredrv->vec_ns && hypredrv->num_ns > 0)
+   {
+      hypredrv_LinearSystemProjectOutNullSpace(hypredrv->vec_ns, hypredrv->num_ns,
+                                               hypredrv->vec_x);
+   }
+
    if (hypredrv->vec_xref)
    {
       hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_xref, "L2", &xref_norm);
@@ -2923,7 +2987,13 @@ HYPREDRV_PreconApply(HYPREDRV_t hypredrv, HYPRE_Vector vec_b, HYPRE_Vector vec_x
 
    hypredrv_PreconApply(hypredrv->iargs->precon_method, hypredrv->precon, hypredrv->mat_A,
                         (HYPRE_IJVector)vec_b, (HYPRE_IJVector)vec_x);
-   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */  /* GCOVR_EXCL_BR_LINE */
+   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */ /* GCOVR_EXCL_BR_LINE */
+   /* Fix the solution gauge when exact null space modes are set */
+   if (hypredrv->vec_ns && hypredrv->num_ns > 0)
+   {
+      hypredrv_LinearSystemProjectOutNullSpace(hypredrv->vec_ns, hypredrv->num_ns,
+                                               (HYPRE_IJVector)vec_x);
+   }
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconApply end"); /* GCOVR_EXCL_BR_LINE */
 
    return hypredrv_ErrorCodeGet();

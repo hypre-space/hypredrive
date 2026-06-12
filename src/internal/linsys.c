@@ -27,6 +27,10 @@
 #include "internal/lsseq.h"
 #include "logging.h"
 
+/* Modes whose norm shrinks below this fraction of their input norm during
+   orthogonalization are considered linearly dependent */
+#define HYPREDRV_NULLSPACE_DEP_TOL 1.0e-12
+
 static HYPRE_Int
 IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
 {
@@ -295,6 +299,208 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
 #endif
    }
    /* GCOVR_EXCL_STOP */
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_LinearSystemSetNullSpace
+ *
+ * Orthonormalize the input modes (modified Gram-Schmidt) and store them with
+ * the same multi-component vector builder used for the near null space modes
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_LinearSystemSetNullSpace(MPI_Comm comm, HYPRE_IJMatrix mat, int num_entries,
+                                  int num_components, const HYPRE_Complex *values,
+                                  HYPRE_IJVector *vec_ns_ptr)
+{
+   size_t         total = (size_t)num_entries * (size_t)num_components;
+   HYPRE_Complex *modes = NULL;
+
+   /* values may be NULL on ranks that own no entries; num_entries and
+      num_components must be consistent across all ranks of comm */
+   if (num_components < 1 || num_entries < 0 || (!values && num_entries > 0))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid null space input: need num_components >= 1, "
+                           "num_entries >= 0, and non-NULL values when num_entries > 0");
+      return;
+   }
+
+   modes = (HYPRE_Complex *)malloc(total * sizeof(HYPRE_Complex));
+   if (total)
+   {
+      memcpy(modes, values, total * sizeof(HYPRE_Complex));
+   }
+
+   /* Modified Gram-Schmidt on the component blocks (component-major layout) */
+   for (int k = 0; k < num_components; k++)
+   {
+      HYPRE_Complex *zk = modes + ((size_t)k * (size_t)num_entries);
+      double         dot_local, dot, norm_orig;
+
+      /* Input norm of the mode, for the relative dependence check below */
+      dot_local = 0.0;
+      for (int i = 0; i < num_entries; i++)
+      {
+         dot_local += (double)(zk[i] * zk[i]);
+      }
+      MPI_Allreduce(&dot_local, &dot, 1, MPI_DOUBLE, MPI_SUM, comm);
+      norm_orig = sqrt(dot);
+
+      for (int j = 0; j < k; j++)
+      {
+         const HYPRE_Complex *zj = modes + ((size_t)j * (size_t)num_entries);
+
+         dot_local = 0.0;
+         for (int i = 0; i < num_entries; i++)
+         {
+            dot_local += (double)(zk[i] * zj[i]);
+         }
+         MPI_Allreduce(&dot_local, &dot, 1, MPI_DOUBLE, MPI_SUM, comm);
+         for (int i = 0; i < num_entries; i++)
+         {
+            zk[i] -= (HYPRE_Complex)dot * zj[i];
+         }
+      }
+
+      dot_local = 0.0;
+      for (int i = 0; i < num_entries; i++)
+      {
+         dot_local += (double)(zk[i] * zk[i]);
+      }
+      MPI_Allreduce(&dot_local, &dot, 1, MPI_DOUBLE, MPI_SUM, comm);
+      dot = sqrt(dot);
+      if (dot <= HYPREDRV_NULLSPACE_DEP_TOL * norm_orig)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Null space modes must be linearly independent "
+                              "(mode %d has relative norm %e after orthogonalization)",
+                              k, (norm_orig > 0.0) ? dot / norm_orig : 0.0);
+         free(modes);
+         return;
+      }
+      for (int i = 0; i < num_entries; i++)
+      {
+         zk[i] /= (HYPRE_Complex)dot;
+      }
+   }
+
+   /* Store via the same builder used for the near null space modes. The modes
+      are kept host-resident (NULL args skips the device migration): their only
+      consumer is the host-side projection in
+      hypredrv_LinearSystemProjectOutNullSpace(). */
+   hypredrv_LinearSystemSetNearNullSpace(comm, NULL, mat, num_entries, num_components,
+                                         modes, vec_ns_ptr);
+
+   free(modes);
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_LinearSystemProjectOutNullSpace
+ *
+ * Remove the (orthonormalized) null space components from a vector, fixing
+ * the gauge of solutions that are defined up to a null space contribution
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_LinearSystemProjectOutNullSpace(HYPRE_IJVector vec_ns, int num_ns,
+                                         HYPRE_IJVector vec)
+{
+   HYPRE_BigInt   jlower = 0, jupper = 0, xlower = 0, xupper = 0;
+   HYPRE_BigInt  *indices = NULL;
+   HYPRE_Complex *xbuf = NULL, *zbuf = NULL;
+   double        *dots_local = NULL, *dots = NULL;
+   MPI_Comm       comm;
+   int            num_entries, mismatch_local, mismatch;
+
+   if (!vec_ns || num_ns < 1 || !vec)
+   {
+      return;
+   }
+
+   comm = hypre_IJVectorComm((hypre_IJVector *)vec_ns);
+   HYPRE_IJVectorGetLocalRange(vec_ns, &jlower, &jupper);
+   HYPRE_IJVectorGetLocalRange(vec, &xlower, &xupper);
+   num_entries = (int)(jupper - jlower + 1);
+
+   /* The modes were built for the partitioning of the matrix that was set when
+      HYPREDRV_LinearSystemSetNullSpace() was called; refuse to project onto a
+      vector with a different distribution. The check is collective so that all
+      ranks agree before entering the reductions below. */
+   mismatch_local = (xlower != jlower || xupper != jupper);
+   MPI_Allreduce(&mismatch_local, &mismatch, 1, MPI_INT, MPI_MAX, comm);
+   if (mismatch)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Null space modes are incompatible with the current linear "
+                           "system; call HYPREDRV_LinearSystemSetNullSpace() again (or "
+                           "clear the modes with num_components = 0) after changing the "
+                           "system size or distribution");
+      return;
+   }
+
+#if defined(HYPRE_USING_GPU)
+   /* The dot/axpy loops below need host-accessible data; vec_ns is built
+      host-resident, but the solution may live on device */
+   void *obj = NULL;
+   HYPRE_IJVectorGetObject(vec, &obj);
+   HYPRE_MemoryLocation orig_memloc =
+      hypre_VectorMemoryLocation(hypre_ParVectorLocalVector((HYPRE_ParVector)obj));
+   if (orig_memloc != HYPRE_MEMORY_HOST)
+   {
+      HYPRE_IJVectorMigrate(vec, HYPRE_MEMORY_HOST);
+   }
+#endif
+
+   xbuf       = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
+   zbuf       = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
+   indices    = (HYPRE_BigInt *)malloc((size_t)num_entries * sizeof(HYPRE_BigInt));
+   dots_local = (double *)calloc((size_t)num_ns, sizeof(double));
+   dots       = (double *)calloc((size_t)num_ns, sizeof(double));
+   for (int i = 0; i < num_entries; i++)
+   {
+      indices[i] = jlower + (HYPRE_BigInt)i;
+   }
+
+   HYPRE_IJVectorGetValues(vec, num_entries, NULL, xbuf);
+   for (int k = 0; k < num_ns; k++)
+   {
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+      HYPRE_IJVectorSetComponent(vec_ns, k);
+#endif
+      HYPRE_IJVectorGetValues(vec_ns, num_entries, NULL, zbuf);
+      for (int i = 0; i < num_entries; i++)
+      {
+         dots_local[k] += (double)(xbuf[i] * zbuf[i]);
+      }
+   }
+   MPI_Allreduce(dots_local, dots, num_ns, MPI_DOUBLE, MPI_SUM, comm);
+   for (int k = 0; k < num_ns; k++)
+   {
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+      HYPRE_IJVectorSetComponent(vec_ns, k);
+#endif
+      HYPRE_IJVectorGetValues(vec_ns, num_entries, NULL, zbuf);
+      for (int i = 0; i < num_entries; i++)
+      {
+         xbuf[i] -= (HYPRE_Complex)dots[k] * zbuf[i];
+      }
+   }
+   HYPRE_IJVectorSetValues(vec, num_entries, indices, xbuf);
+   HYPRE_IJVectorAssemble(vec);
+
+#if defined(HYPRE_USING_GPU)
+   if (orig_memloc != HYPRE_MEMORY_HOST)
+   {
+      HYPRE_IJVectorMigrate(vec, orig_memloc);
+   }
+#endif
+
+   free(xbuf);
+   free(zbuf);
+   free(indices);
+   free(dots_local);
+   free(dots);
 }
 
 /*-----------------------------------------------------------------------------
@@ -1510,15 +1716,9 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
       *x0_ptr = NULL;
    }
 
-   hypredrv_LinearSystemCreateWorkingSolution(comm, args, rhs, x_ptr);
-   /* GCOVR_EXCL_START */
-   if (hypredrv_ErrorCodeActive())
-   {
-      HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                         "initial guess setup failed: could not create working solution");
-      return;
-   }
-   /* GCOVR_EXCL_STOP */
+   /* The working solution (*x_ptr) is recreated only at the end of this
+    * function: init_guess_mode "previous" reads the previous solve's values
+    * from it while building x0. */
 
    if (args->x0_filename[0] == '\0')
    {
@@ -1560,14 +1760,30 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
             break;
 
          case 4:
+         {
             /* Use solution from previous linear solve */
+            HYPRE_BigInt xlower = 0, xupper = 0;
+
             HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                                "initial guess mode: previous");
-            HYPRE_IJVectorGetObject(*x_ptr, &obj);
-            par_x = (HYPRE_ParVector)obj;
+            if (*x_ptr)
+            {
+               HYPRE_IJVectorGetLocalRange(*x_ptr, &xlower, &xupper);
+            }
+            if (*x_ptr && xlower == jlower && xupper == jupper)
+            {
+               HYPRE_IJVectorGetObject(*x_ptr, &obj);
+               par_x = (HYPRE_ParVector)obj;
 
-            HYPRE_ParVectorCopy(par_x, par_x0);
+               HYPRE_ParVectorCopy(par_x, par_x0);
+            }
+            else
+            {
+               HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
+                                  "no compatible previous solution; using zeros");
+            }
             break;
+         }
 
          default:
             HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
@@ -1591,6 +1807,18 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
       }
       LinearSystemIJVectorMigrate(args, *x0_ptr);
    }
+
+   /* Recreate the working solution now that x0 has captured any previous
+    * solve's values. */
+   hypredrv_LinearSystemCreateWorkingSolution(comm, args, rhs, x_ptr);
+   /* GCOVR_EXCL_START */
+   if (hypredrv_ErrorCodeActive())
+   {
+      HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
+                         "initial guess setup failed: could not create working solution");
+      return;
+   }
+   /* GCOVR_EXCL_STOP */
 
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "initial guess setup end");
 }

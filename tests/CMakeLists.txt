@@ -129,6 +129,7 @@ set(_hypredrv_unit_test_cases
     "test_presets|test_presets.c|FALSE"
     "test_dof_labels|test_dof_labels.c|TRUE"
     "test_setmatrix_from_csr|test_setmatrix_from_csr.c|TRUE"
+    "test_init_guess|test_init_guess.c|TRUE"
 )
 
 foreach(_case IN LISTS _hypredrv_unit_test_cases)

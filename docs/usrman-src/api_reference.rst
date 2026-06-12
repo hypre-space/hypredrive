@@ -109,6 +109,7 @@ Linear System Setup
 - :cpp:func:`HYPREDRV_LinearSystemPrintDofmap` - Write the current degree-of-freedom map to text output.
 - :cpp:func:`HYPREDRV_LinearSystemPrint` - Print the current matrix, RHS, and DOF map to files.
 - :cpp:func:`HYPREDRV_LinearSystemSetNearNullSpace` - Attach near-nullspace vectors such as rigid-body modes.
+- :cpp:func:`HYPREDRV_LinearSystemSetNullSpace` - Attach exact null space modes that are projected out of computed solutions.
 
 Linear System Accessors
 ~~~~~~~~~~~~~~~~~~~~~~~

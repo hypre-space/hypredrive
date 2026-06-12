@@ -98,6 +98,12 @@ if(HYPREDRV_ENABLE_TESTING)
             ARGS -v 1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3 -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr.yml
             RUN_SERIAL
         )
+        # Q2-Q1 (Taylor-Hood): unpinned pressure handled by the null space
+        # projection; uses the built-in two-level MGR default configuration
+        add_executable_test(lidcavity_test_q2q1_mgr_1proc lidcavity 1
+            ARGS -v 1 -disc q2q1 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
+            RUN_SERIAL
+        )
         add_executable_test(lidcavity_test_print_1proc lidcavity 1
             ARGS -v 0 -n 12 12 -ns 1 -dt 0.1 -tf 0.3
                  -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-print-system.yml
@@ -166,6 +172,9 @@ if(HYPREDRV_ENABLE_TESTING)
         if(HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER)
             add_executable_test(lidcavity_test_mgr_4proc lidcavity 4
               ARGS -v 1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3 -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr.yml
+            )
+            add_executable_test(lidcavity_test_q2q1_mgr_4proc lidcavity 4
+              ARGS -v 1 -disc q2q1 -n 12 12 -P 2 2 -ns 1 -dt 0.1 -tf 0.3
             )
         else()
             message(STATUS

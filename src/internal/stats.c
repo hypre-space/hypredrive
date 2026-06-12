@@ -774,34 +774,16 @@ hypredrv_StatsDestroy(Stats **stats_ptr)
 }
 
 /*--------------------------------------------------------------------------
- * hypredrv_StatsAnnotateV
+ * AnnotateFormatted
+ *
+ * Common implementation shared by hypredrv_StatsAnnotate{,V}. Takes a
+ * name that has already been formatted (no further printf processing).
  *--------------------------------------------------------------------------*/
 
-void
-hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char *name,
-                        va_list args)
+static void
+AnnotateFormatted(Stats *stats, HYPREDRV_AnnotateAction action,
+                  const char *formatted_name)
 {
-   if (!stats)
-   {
-      return;
-   }
-
-   /* Format the name string if variadic arguments are provided */
-   char formatted_name[1024];
-   if (args)
-   {
-      va_list args_copy;
-      va_copy(args_copy, args);
-      vsnprintf(formatted_name, sizeof(formatted_name), name, args_copy);
-      va_end(args_copy);
-   }
-   else
-   {
-      /* No variadic args - use name as-is */
-      strncpy(formatted_name, name, sizeof(formatted_name) - 1);
-      formatted_name[sizeof(formatted_name) - 1] = '\0';
-   }
-
    if (action == HYPREDRV_ANNOTATE_BEGIN)
    {
       HYPREDRV_ANNOTATE_REGION_BEGIN("HYPREDRV_%.1014s", formatted_name)
@@ -816,13 +798,49 @@ hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char
 }
 
 /*--------------------------------------------------------------------------
+ * hypredrv_StatsAnnotateV
+ *
+ * Note: "args" must be a valid va_list obtained via va_start; va_list is
+ * not a pointer type on all ABIs (e.g., AArch64), so it cannot be NULL.
+ *--------------------------------------------------------------------------*/
+
+void
+hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char *name,
+                        va_list args)
+{
+   if (!stats)
+   {
+      return;
+   }
+
+   /* Format the name string with the variadic arguments */
+   char    formatted_name[1024];
+   va_list args_copy;
+   va_copy(args_copy, args);
+   vsnprintf(formatted_name, sizeof(formatted_name), name, args_copy);
+   va_end(args_copy);
+
+   AnnotateFormatted(stats, action, formatted_name);
+}
+
+/*--------------------------------------------------------------------------
  * hypredrv_StatsAnnotate
  *--------------------------------------------------------------------------*/
 
 void
 hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char *name)
 {
-   hypredrv_StatsAnnotateV(stats, action, name, NULL);
+   if (!stats)
+   {
+      return;
+   }
+
+   /* No variadic args - use name as-is (do not interpret '%' in name) */
+   char formatted_name[1024];
+   strncpy(formatted_name, name, sizeof(formatted_name) - 1);
+   formatted_name[sizeof(formatted_name) - 1] = '\0';
+
+   AnnotateFormatted(stats, action, formatted_name);
 }
 
 /*--------------------------------------------------------------------------

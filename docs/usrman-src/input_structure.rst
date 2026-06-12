@@ -165,8 +165,12 @@ Degrees of Freedom Map
   - ``ones``: generates a vector of ones.
   - ``random``: generates a vector of random numbers between `0` and `1`.
   - ``file``: vector is read from file.
+  - ``previous``: reuses the solution of the previous linear solve. When no compatible
+    previous solution exists (first solve, or a system with a different size or
+    distribution), it falls back to a vector of zeros.
 
-  The default value for this parameter is ``file``.
+  The default value for this parameter is ``zeros``; when ``x0_filename`` is given, the
+  vector is read from file instead.
 
   .. note::
      In the library API, passing ``NULL`` to

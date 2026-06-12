@@ -307,6 +307,15 @@ cdef class HypreDriveCore:
             "HYPREDRV_LinearSystemSetInitialGuess",
         )
 
+    def reset_initial_guess(self):
+        """Copy x0 into the working solution (annotates "reset_x0" internally)."""
+        if self._handle == NULL:
+            raise RuntimeError("HypreDriveCore is closed")
+        _check(
+            _c.HYPREDRV_LinearSystemResetInitialGuess(self._handle),
+            "HYPREDRV_LinearSystemResetInitialGuess",
+        )
+
     # ------------------------------------------------------------------
     # Stats / Caliper annotations
     # ------------------------------------------------------------------

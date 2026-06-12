@@ -1156,6 +1156,55 @@ extern "C"
                                          int num_components, const HYPRE_Complex *values);
 
    /**
+    * @brief Set exact null space modes for the current linear system.
+    *
+    * The modes are orthonormalized and projected out of the computed solution at the
+    * end of every HYPREDRV_LinearSolverApply() and HYPREDRV_PreconApply() call. This
+    * fixes the gauge of solutions that are defined up to a null space contribution,
+    * such as the constant pressure mode of enclosed incompressible flows or the rigid
+    * body modes of floating elastic bodies.
+    *
+    * The input array must contain num_components contiguous blocks (component-major/SoA),
+    * each of length num_entries, stored back-to-back (not interleaved) — the same layout
+    * used by HYPREDRV_LinearSystemSetNearNullSpace(). The data is copied into internal
+    * storage owned and freed by HYPREDRV; the caller retains ownership of its input
+    * buffer. The modes must be linearly independent and the matrix must be set before
+    * calling this function.
+    *
+    * @note These modes are distinct from the near null space modes set with
+    * HYPREDRV_LinearSystemSetNearNullSpace(): near null space modes inform the
+    * preconditioner construction and are NOT projected out of the solution, while the
+    * exact null space modes set here are only used for the projection. For example,
+    * the rigid body modes of a clamped elastic body are near null space modes but not
+    * exact ones.
+    *
+    * @note The right hand side is not modified; it is the caller's responsibility to
+    * provide a consistent right hand side (orthogonal to the left null space).
+    *
+    * @note Calling this function again replaces any previously set modes. Passing
+    * num_components = 0 (with values = NULL) clears the modes and disables the
+    * projection. The modes persist across solves and matrix updates; if the size or
+    * parallel distribution of the linear system changes, subsequent solves fail with
+    * an error until the modes are set again or cleared. On ranks that own no entries,
+    * values may be NULL.
+    *
+    * @note Setting more than one mode requires hypre >= 2.26.0 (multi-component
+    * IJVector support); a single mode is supported with any hypre version.
+    *
+    * @param hypredrv        The HYPREDRV_t object.
+    * @param num_entries     Number of local entries.
+    * @param num_components  Number of components per entry (modes).
+    * @param values          Pointer to contiguous data (length = num_entries *
+    * num_components).
+    *
+    * @return 0 on success; nonzero error code otherwise.
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemSetNullSpace(HYPREDRV_t hypredrv, int num_entries,
+                                     int num_components, const HYPRE_Complex *values);
+
+   /**
     * @brief Retrieves the solution values from the linear system of a HYPREDRV object.
     *
     * This function provides access to the internal pointer where the solution vector of

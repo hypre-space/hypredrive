@@ -184,6 +184,9 @@ int  hypredrv_PrintSystemNeedsTimestepSchedule(const PrintSystem_args *);
 
 void hypredrv_LinearSystemSetNearNullSpace(MPI_Comm, const LS_args *, HYPRE_IJMatrix, int,
                                            int, const HYPRE_Complex *, HYPRE_IJVector *);
+void hypredrv_LinearSystemSetNullSpace(MPI_Comm, HYPRE_IJMatrix, int, int,
+                                       const HYPRE_Complex *, HYPRE_IJVector *);
+void hypredrv_LinearSystemProjectOutNullSpace(HYPRE_IJVector, int, HYPRE_IJVector);
 void hypredrv_LinearSystemSetNumSystems(LS_args *);
 int  hypredrv_LinearSystemGetSuffix(const LS_args *, int ls_id);
 void hypredrv_LinearSystemSetArgsFromYAML(LS_args *, YAMLnode *);

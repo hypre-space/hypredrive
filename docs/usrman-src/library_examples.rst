@@ -973,6 +973,14 @@ Using RBMs in libHYPREDRV
   - The call ``HYPREDRV_LinearSystemSetNearNullSpace(h, num_entries, num_components, values)`` expects the values in SoA layout: ``num_components`` contiguous blocks, each with ``num_entries`` degrees of freedom.
   - The buffer is copied into ``libHYPREDRV``-owned storage; the caller must free its buffer after the call returns.
 
+.. note::
+   Near null space modes are distinct from the *exact* null space modes set with
+   ``HYPREDRV_LinearSystemSetNullSpace()``: near null space modes inform the
+   preconditioner construction and are not projected out of the solution, while exact
+   null space modes are projected out of every computed solution to fix its gauge (see
+   the Q2-Q1 lid-driven cavity discretization below). The rigid body modes of a clamped
+   elastic body, as in this example, are near null space modes but not exact ones.
+
 Linear Solver Setup
 ~~~~~~~~~~~~~~~~~~~
 
@@ -1361,9 +1369,35 @@ This section describes the spatial and temporal discretization of the lid-driven
 Spatial Discretization
 ^^^^^^^^^^^^^^^^^^^^^^
 
-We use equal-order bilinear (Q1) finite elements for both velocity and pressure on a
-structured quadrilateral mesh. This violates the Ladyzhenskaya-Babuška-Brezzi (LBB)
-inf-sup condition, requiring stabilization to obtain a well-posed system.
+By default, we use equal-order bilinear (Q1) finite elements for both velocity and
+pressure on a structured quadrilateral mesh. This violates the
+Ladyzhenskaya-Babuška-Brezzi (LBB) inf-sup condition, requiring stabilization to obtain a
+well-posed system. In this discretization, the three degrees of freedom ``(u, v, p)``
+are interleaved at every node and the pressure is pinned at a reference node.
+
+Alternatively, the driver supports an inf-sup stable Q2-Q1 (Taylor-Hood) discretization
+via the ``-disc q2q1`` command line option, which requires no stabilization. The ``-n``
+option then gives the pressure (bilinear) grid, while the velocity (biquadratic) grid has
+``(2*nx - 1) x (2*ny - 1)`` nodes. Because the two fields live on staggered grids with
+different numbers of unknowns, the degrees of freedom are stored in a block layout —
+``(u, v)`` pairs interleaved over the velocity nodes followed by the pressure block — and
+the dof types are communicated to hypredrive with explicit labels
+(``HYPREDRV_LinearSystemSetDofmap()`` with ``u = 0``, ``v = 1``, ``p = 2``) instead of
+the interleaved dofmap helper. Moreover, the pressure is *not* pinned in this mode:
+since the enclosed flow determines the pressure only up to a constant, the example
+registers the constant pressure mode with
+``HYPREDRV_LinearSystemSetNullSpace()`` and hypredrive projects it out of the solution
+after every solve, fixing the pressure gauge. The default solver configuration for
+``-disc q2q1`` is a two-level MGR preconditioner with the velocity dof types as F points,
+the pressure as the C point, and ``blk-absrowsum`` prolongation. The Q2-Q1 path runs in
+serial and in parallel (``-P Px Py``); hypre requires at least version 3.1 for the MGR
+default configuration.
+
+The two discretizations can be compared side by side with
+``examples/src/C_lidcavity/compare.sh``, which sweeps Reynolds and CFL numbers at matched
+velocity resolution and reports time steps, nonlinear/linear iteration counts, the final
+kinetic energy (a solution observable printed by the driver and comparable between the
+discretizations), and wall times.
 
 Temporal Discretization
 ^^^^^^^^^^^^^^^^^^^^^^^
