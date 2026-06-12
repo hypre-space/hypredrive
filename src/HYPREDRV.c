@@ -2538,6 +2538,16 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
                             hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon,
                             hypredrv->stats, next_ls_id);
       hypredrv->precon_is_setup = false;
+      if (!hypredrv_ErrorCodeActive() && hypredrv->precon &&
+          hypredrv->iargs->precon_method == PRECON_BOOMERAMG)
+      {
+         /* Label the unknowns for systems AMG (no-op without a dofmap or with
+            num_functions <= 1). The preconditioner matrix is already bound to
+            the object at this point in both driver and library flows. */
+         hypredrv_AMGSetDofFunc(&hypredrv->iargs->precon.amg, hypredrv->dofmap,
+                                hypredrv->precon->main,
+                                hypredrv->mat_M ? hypredrv->mat_M : hypredrv->mat_A);
+      }
       if (hypredrv_ErrorCodeActive() && hypredrv_LogEnabled(2)) /* GCOVR_EXCL_BR_LINE */
       {
          HYPREDRV_LOG_OBJECTF(2, hypredrv, "preconditioner create failed (code=0x%x)",
@@ -3280,6 +3290,69 @@ HYPREDRV_LinearSolverGetNumIter(HYPREDRV_t hypredrv, int *iters)
    }
 
    *iters = hypredrv_StatsGetLastIter(hypredrv->stats);
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * Get the convergence flag from the last linear solve
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSolverGetConverged(HYPREDRV_t hypredrv, int *converged)
+{
+   HYPREDRV_CHECK_INIT_AND_OBJ();
+
+   if (!converged)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("converged pointer cannot be NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (!hypredrv->solver || !hypredrv->iargs)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+      hypredrv_ErrorMsgAdd("No linear solver is available; call"
+                           " HYPREDRV_LinearSolverApply first");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_Int flag = 0;
+   hypredrv_SolverGetConverged(hypredrv->iargs->solver_method, hypredrv->solver, &flag);
+   *converged = (int)flag;
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * Get the final relative residual norm from the last linear solve
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(HYPREDRV_t hypredrv, double *norm)
+{
+   HYPREDRV_CHECK_INIT_AND_OBJ();
+
+   if (!norm)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("norm pointer cannot be NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (!hypredrv->solver || !hypredrv->iargs)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+      hypredrv_ErrorMsgAdd("No linear solver is available; call"
+                           " HYPREDRV_LinearSolverApply first");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPRE_Real res = 0.0;
+   hypredrv_SolverGetFinalRelativeResidualNorm(hypredrv->iargs->solver_method,
+                                               hypredrv->solver, &res);
+   *norm = (double)res;
 
    return hypredrv_ErrorCodeGet();
 }

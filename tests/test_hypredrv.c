@@ -355,6 +355,15 @@ run_library_linear_solve(HYPREDRV_t obj, const char *newton_name)
    ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
 
+   /* Convergence info must be readable from the live solver after apply */
+   int    converged = -1;
+   double final_res = -1.0;
+   ASSERT_EQ(HYPREDRV_LinearSolverGetConverged(obj, &converged), ERROR_NONE);
+   ASSERT_TRUE(converged == 0 || converged == 1);
+   ASSERT_EQ(HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(obj, &final_res),
+             ERROR_NONE);
+   ASSERT_TRUE(final_res >= 0.0);
+
    if (newton_name)
    {
       ASSERT_EQ(HYPREDRV_AnnotateLevelEnd(obj, 1, newton_name, -1), ERROR_NONE);
@@ -763,6 +772,12 @@ test_HYPREDRV_all_api_obj_guard(void)
    double typed_t_null = -1.0;
    code = HYPREDRV_LinearSolverGetNumIter(NULL, &typed_iter_null);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
+   int    typed_conv_null = -1;
+   double typed_res_null  = -1.0;
+   code                   = HYPREDRV_LinearSolverGetConverged(NULL, &typed_conv_null);
+   ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
+   code = HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(NULL, &typed_res_null);
+   ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
    code = HYPREDRV_LinearSolverGetSetupTime(NULL, &typed_t_null);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
    code = HYPREDRV_LinearSolverGetSolveTime(NULL, &typed_t_null);
@@ -842,6 +857,44 @@ test_initialize_and_finalize_idempotent(void)
    ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE); /* second call should be no-op */
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE); /* already finalized */
+}
+
+static void
+test_IntArrayBuild_interleaved_and_contiguous_values(void)
+{
+   reset_state();
+
+   const int num_local_blocks = 3;
+   const int num_dof_types    = 2;
+   IntArray *ia               = NULL;
+
+   /* Interleaved: dof types cycle within each block: 0,1, 0,1, 0,1 */
+   hypredrv_IntArrayBuildInterleaved(MPI_COMM_SELF, num_local_blocks, num_dof_types, &ia);
+   ASSERT_NOT_NULL(ia);
+   ASSERT_EQ_SIZE(ia->size, (size_t)(num_local_blocks * num_dof_types));
+   for (int b = 0; b < num_local_blocks; b++)
+   {
+      for (int t = 0; t < num_dof_types; t++)
+      {
+         ASSERT_EQ(ia->data[b * num_dof_types + t], t);
+      }
+   }
+   ASSERT_EQ_SIZE(ia->unique_size, (size_t)num_dof_types);
+   hypredrv_IntArrayDestroy(&ia);
+
+   /* Contiguous: each dof type fills a contiguous range: 0,0,0, 1,1,1 */
+   hypredrv_IntArrayBuildContiguous(MPI_COMM_SELF, num_local_blocks, num_dof_types, &ia);
+   ASSERT_NOT_NULL(ia);
+   ASSERT_EQ_SIZE(ia->size, (size_t)(num_local_blocks * num_dof_types));
+   for (int t = 0; t < num_dof_types; t++)
+   {
+      for (int b = 0; b < num_local_blocks; b++)
+      {
+         ASSERT_EQ(ia->data[t * num_local_blocks + b], t);
+      }
+   }
+   ASSERT_EQ_SIZE(ia->unique_size, (size_t)num_dof_types);
+   hypredrv_IntArrayDestroy(&ia);
 }
 
 static void
@@ -1502,8 +1555,8 @@ test_create_parse_and_destroy(void)
    ASSERT_NOT_NULL(state->dofmap);
    ASSERT_EQ(state->dofmap->size, (size_t)(3 * 2));
    ASSERT_EQ(state->dofmap->data[0], 0);
-   ASSERT_EQ(state->dofmap->data[1], 1);
-   ASSERT_EQ(state->dofmap->data[2], 2);
+   ASSERT_EQ(state->dofmap->data[2], 0);
+   ASSERT_EQ(state->dofmap->data[3], 1);
 
    ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
    ASSERT_NOT_NULL(state->precon);
@@ -1652,6 +1705,16 @@ test_HYPREDRV_stats_level_apis(void)
    parse_yaml_into_obj(obj, yaml_config);
    ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
 
+   /* Convergence getters require a live solver */
+   int    conv_probe = -1;
+   double res_probe  = -1.0;
+   ASSERT_TRUE(HYPREDRV_LinearSolverGetConverged(obj, &conv_probe) &
+               ERROR_INVALID_SOLVER);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(obj, &res_probe) &
+               ERROR_INVALID_SOLVER);
+   hypredrv_ErrorCodeResetAll();
+
    ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
@@ -1673,6 +1736,9 @@ test_HYPREDRV_stats_level_apis(void)
    ASSERT_TRUE(HYPREDRV_LinearSolverGetNumIter(obj, NULL) & ERROR_UNKNOWN);
    ASSERT_TRUE(HYPREDRV_LinearSolverGetSetupTime(obj, NULL) & ERROR_UNKNOWN);
    ASSERT_TRUE(HYPREDRV_LinearSolverGetSolveTime(obj, NULL) & ERROR_UNKNOWN);
+   ASSERT_TRUE(HYPREDRV_LinearSolverGetConverged(obj, NULL) & ERROR_UNKNOWN);
+   ASSERT_TRUE(HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(obj, NULL) &
+               ERROR_UNKNOWN);
    hypredrv_ErrorCodeResetAll();
 
    hypredrv_ErrorCodeResetAll();
@@ -5315,6 +5381,7 @@ run_hypredrv_lifecycle_and_guards(void)
    RUN_TEST(test_HYPREDRV_all_api_obj_guard);
    RUN_TEST(test_requires_initialization_guard);
    RUN_TEST(test_initialize_and_finalize_idempotent);
+   RUN_TEST(test_IntArrayBuild_interleaved_and_contiguous_values);
    RUN_TEST(test_HYPREDRV_Create_null_output_pointer);
    RUN_TEST(test_HYPREDRV_default_object_names_are_sequential);
    RUN_TEST(test_HYPREDRV_default_object_name_persists_without_user_name);

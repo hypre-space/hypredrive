@@ -618,7 +618,7 @@ hypredrv_IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_do
    {
       for (int j = 0; j < num_local_blocks; j++)
       {
-         int_array->data[(i * num_local_blocks) + j] = j;
+         int_array->data[(i * num_local_blocks) + j] = i;
       }
    }
    hypredrv_IntArrayUnique(comm, int_array);

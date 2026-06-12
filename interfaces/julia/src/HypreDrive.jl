@@ -28,6 +28,8 @@ struct SolveInfo
     setup_time::Float64
     solve_time::Float64
     solution_norm::Float64
+    converged::Bool
+    final_res_norm::Float64
 end
 
 mutable struct HypreDriveSession
@@ -662,7 +664,7 @@ function HypreDriveSession(; comm::Symbol=:self, options=nothing,
     try
         _parse_input_args!(drv_ref[], yaml, input_args)
         session = HypreDriveSession(drv_ref, comm, 0, -1, 0, -1, false, false,
-                                    false, false, SolveInfo(0, 0.0, 0.0, 0.0))
+                                    false, false, SolveInfo(0, 0.0, 0.0, 0.0, false, 0.0))
         ok = true
         return finalizer(Base.close, session)
     finally
@@ -813,8 +815,15 @@ function _get_info(session::HypreDriveSession)
     setup_time = Ref{Cdouble}(0)
     solve_time = Ref{Cdouble}(0)
     solution_norm = Ref{Cdouble}(0)
+    converged = Ref{Cint}(0)
+    final_res_norm = Ref{Cdouble}(0)
     _check(ccall((:HYPREDRV_JuliaLinearSolverGetNumIter, _lib()), UInt32,
                  (Ptr{Cvoid}, Ref{Cint}), drv, iterations), "get iterations")
+    _check(ccall((:HYPREDRV_JuliaLinearSolverGetConverged, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ref{Cint}), drv, converged), "get convergence flag")
+    _check(ccall((:HYPREDRV_JuliaLinearSolverGetFinalRelativeResidualNorm, _lib()),
+                 UInt32, (Ptr{Cvoid}, Ref{Cdouble}), drv, final_res_norm),
+           "get final relative residual norm")
     _check(ccall((:HYPREDRV_JuliaLinearSolverGetSetupTime, _lib()), UInt32,
                  (Ptr{Cvoid}, Ref{Cdouble}), drv, setup_time), "get setup time")
     _check(ccall((:HYPREDRV_JuliaLinearSolverGetSolveTime, _lib()), UInt32,
@@ -822,7 +831,8 @@ function _get_info(session::HypreDriveSession)
     _check(ccall((:HYPREDRV_JuliaGetSolutionNorm, _lib()), UInt32,
                  (Ptr{Cvoid}, Cstring, Ref{Cdouble}), drv, "L2", solution_norm),
            "get solution norm")
-    return SolveInfo(Int(iterations[]), setup_time[], solve_time[], solution_norm[])
+    return SolveInfo(Int(iterations[]), setup_time[], solve_time[], solution_norm[],
+                     converged[] != 0, final_res_norm[])
 end
 
 function solve!(x::AbstractVector{Float64}, session::HypreDriveSession)
@@ -854,7 +864,7 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
         isempty(data) || throw(ArgumentError("empty row range requires empty data"))
         indptr[1] == zero(T) || throw(ArgumentError("indptr must start at zero"))
         if comm === :self
-            return Float64[], SolveInfo(0, 0.0, 0.0, 0.0)
+            return Float64[], SolveInfo(0, 0.0, 0.0, 0.0, false, 0.0)
         end
         throw(ArgumentError("empty MPI_COMM_WORLD row ranges are not supported by direct CSR solves; avoid launching more ranks than nonempty local CSR slabs"))
     end
@@ -903,7 +913,7 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
 
         local_n = length(rhs)
         x = Vector{Float64}(undef, local_n)
-        info = SolveInfo(0, 0.0, 0.0, 0.0)
+        info = SolveInfo(0, 0.0, 0.0, 0.0, false, 0.0)
         _check(ccall((:HYPREDRV_JuliaSetInitialGuessZero, _lib()), UInt32, (Ptr{Cvoid},), drv), "set initial guess")
         _check(ccall((:HYPREDRV_JuliaLinearSolverCreate, _lib()), UInt32, (Ptr{Cvoid},), drv), "create solver")
         solver_created = true
@@ -927,11 +937,15 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
             setup_time = Ref{Cdouble}(0)
             solve_time = Ref{Cdouble}(0)
             solution_norm = Ref{Cdouble}(0)
+            converged = Ref{Cint}(0)
+            final_res_norm = Ref{Cdouble}(0)
             _check(ccall((:HYPREDRV_JuliaLinearSolverGetNumIter, _lib()), UInt32, (Ptr{Cvoid}, Ref{Cint}), drv, iterations), "get iterations")
+            _check(ccall((:HYPREDRV_JuliaLinearSolverGetConverged, _lib()), UInt32, (Ptr{Cvoid}, Ref{Cint}), drv, converged), "get convergence flag")
+            _check(ccall((:HYPREDRV_JuliaLinearSolverGetFinalRelativeResidualNorm, _lib()), UInt32, (Ptr{Cvoid}, Ref{Cdouble}), drv, final_res_norm), "get final relative residual norm")
             _check(ccall((:HYPREDRV_JuliaLinearSolverGetSetupTime, _lib()), UInt32, (Ptr{Cvoid}, Ref{Cdouble}), drv, setup_time), "get setup time")
             _check(ccall((:HYPREDRV_JuliaLinearSolverGetSolveTime, _lib()), UInt32, (Ptr{Cvoid}, Ref{Cdouble}), drv, solve_time), "get solve time")
             _check(ccall((:HYPREDRV_JuliaGetSolutionNorm, _lib()), UInt32, (Ptr{Cvoid}, Cstring, Ref{Cdouble}), drv, "L2", solution_norm), "get solution norm")
-            info = SolveInfo(Int(iterations[]), setup_time[], solve_time[], solution_norm[])
+            info = SolveInfo(Int(iterations[]), setup_time[], solve_time[], solution_norm[], converged[] != 0, final_res_norm[])
 
         end
         _check(ccall((:HYPREDRV_JuliaLinearSolverDestroy, _lib()), UInt32, (Ptr{Cvoid},), drv), "destroy solver")

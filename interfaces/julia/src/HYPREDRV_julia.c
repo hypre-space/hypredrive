@@ -508,6 +508,20 @@ HYPREDRV_JuliaLinearSolverGetNumIter(HYPREDRV_t hypredrv, int *iters)
    return HYPREDRV_LinearSolverGetNumIter(hypredrv, iters);
 }
 
+/** @brief Return the convergence flag from the last solve. */
+uint32_t
+HYPREDRV_JuliaLinearSolverGetConverged(HYPREDRV_t hypredrv, int *converged)
+{
+   return HYPREDRV_LinearSolverGetConverged(hypredrv, converged);
+}
+
+/** @brief Return the final relative residual norm from the last solve. */
+uint32_t
+HYPREDRV_JuliaLinearSolverGetFinalRelativeResidualNorm(HYPREDRV_t hypredrv, double *norm)
+{
+   return HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(hypredrv, norm);
+}
+
 /** @brief Return setup time from the last solve. */
 uint32_t
 HYPREDRV_JuliaLinearSolverGetSetupTime(HYPREDRV_t hypredrv, double *seconds)

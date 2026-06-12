@@ -43,6 +43,10 @@ cdef extern from "HYPREDRV.h" nogil:
     uint32_t HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
     uint32_t HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
     uint32_t HYPREDRV_LinearSolverGetNumIter(HYPREDRV_t hypredrv, int *iters)
+    uint32_t HYPREDRV_LinearSolverGetConverged(HYPREDRV_t hypredrv,
+                                               int *converged)
+    uint32_t HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(
+        HYPREDRV_t hypredrv, double *norm)
     uint32_t HYPREDRV_LinearSolverGetSetupTime(HYPREDRV_t hypredrv,
                                                double *seconds)
     uint32_t HYPREDRV_LinearSolverGetSolveTime(HYPREDRV_t hypredrv,

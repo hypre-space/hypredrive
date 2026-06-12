@@ -59,6 +59,8 @@ void hypredrv_SolverSetupWithReuse(precon_t, solver_t, HYPRE_Precon, HYPRE_Solve
                                    Stats *, int);
 void hypredrv_SolverSetup(precon_t, solver_t, HYPRE_Precon, HYPRE_Solver, HYPRE_IJMatrix,
                           HYPRE_IJVector, HYPRE_IJVector, Stats *);
+void hypredrv_SolverGetConverged(solver_t, HYPRE_Solver, HYPRE_Int *);
+void hypredrv_SolverGetFinalRelativeResidualNorm(solver_t, HYPRE_Solver, HYPRE_Real *);
 void hypredrv_SolverApply(solver_t, HYPRE_Solver, HYPRE_IJMatrix, HYPRE_IJVector,
                           HYPRE_IJVector, Stats *);
 HYPRE_Int hypredrv_SolverSolveOnly(solver_t, HYPRE_Solver, HYPRE_IJMatrix, HYPRE_IJVector,

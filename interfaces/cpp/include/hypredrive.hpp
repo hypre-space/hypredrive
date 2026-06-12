@@ -739,6 +739,25 @@ class driver
       HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSolverGetNumIter(handle_, &v));
       return v;
    }
+   /// @brief C++ wrapper for HYPREDRV_LinearSolverGetConverged.
+   /// @see HYPREDRV_LinearSolverGetConverged
+   bool
+   get_linear_solver_converged()
+   {
+      int v = 0;
+      HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSolverGetConverged(handle_, &v));
+      return v != 0;
+   }
+   /// @brief C++ wrapper for HYPREDRV_LinearSolverGetFinalRelativeResidualNorm.
+   /// @see HYPREDRV_LinearSolverGetFinalRelativeResidualNorm
+   double
+   get_linear_solver_final_relative_residual_norm()
+   {
+      double v = 0.0;
+      HYPREDRIVE_CXX_CHECK(
+         HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(handle_, &v));
+      return v;
+   }
    /// @brief C++ wrapper for HYPREDRV_LinearSolverGetSetupTime.
    /// @see HYPREDRV_LinearSolverGetSetupTime
    double

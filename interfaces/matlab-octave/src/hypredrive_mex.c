@@ -337,12 +337,16 @@ HYPREDRV_MatlabFailCodeWithCleanup(uint32_t code, const char *what, HYPREDRV_t *
 }
 
 static mxArray *
-HYPREDRV_MatlabCreateInfoStruct(int iterations, double setup_time, double solve_time,
+HYPREDRV_MatlabCreateInfoStruct(int iterations, int converged, double final_res_norm,
+                                double setup_time, double solve_time,
                                 double solution_norm)
 {
-   const char *fields[] = {"iterations", "setup_time", "solve_time", "solution_norm"};
-   mxArray    *info     = mxCreateStructMatrix(1, 1, 4, fields);
+   const char *fields[] = {"iterations", "converged",  "final_res_norm",
+                           "setup_time", "solve_time", "solution_norm"};
+   mxArray    *info     = mxCreateStructMatrix(1, 1, 6, fields);
    mxSetField(info, 0, "iterations", mxCreateDoubleScalar((double)iterations));
+   mxSetField(info, 0, "converged", mxCreateLogicalScalar(converged != 0));
+   mxSetField(info, 0, "final_res_norm", mxCreateDoubleScalar(final_res_norm));
    mxSetField(info, 0, "setup_time", mxCreateDoubleScalar(setup_time));
    mxSetField(info, 0, "solve_time", mxCreateDoubleScalar(solve_time));
    mxSetField(info, 0, "solution_norm", mxCreateDoubleScalar(solution_norm));
@@ -441,6 +445,8 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
    HYPRE_BigInt   solution_length = 0;
    HYPRE_Complex *solution        = NULL;
    int            iterations      = 0;
+   int            converged       = 0;
+   double         final_res_norm  = 0.0;
    double         setup_time      = 0.0;
    double         solve_time      = 0.0;
    double         solution_norm   = 0.0;
@@ -474,6 +480,19 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
       HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverGetNumIter", &drv,
                                          indptr, cols, data, yaml);
    }
+   code = HYPREDRV_LinearSolverGetConverged(drv, &converged);
+   if (code != HYPREDRV_SUCCESS)
+   {
+      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverGetConverged", &drv,
+                                         indptr, cols, data, yaml);
+   }
+   code = HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(drv, &final_res_norm);
+   if (code != HYPREDRV_SUCCESS)
+   {
+      HYPREDRV_MatlabFailCodeWithCleanup(
+         code, "HYPREDRV_LinearSolverGetFinalRelativeResidualNorm", &drv, indptr, cols,
+         data, yaml);
+   }
    code = HYPREDRV_LinearSolverGetSetupTime(drv, &setup_time);
    if (code != HYPREDRV_SUCCESS)
    {
@@ -495,8 +514,8 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
    if (nlhs == 2)
    {
-      plhs[1] = HYPREDRV_MatlabCreateInfoStruct(iterations, setup_time, solve_time,
-                                                solution_norm);
+      plhs[1] = HYPREDRV_MatlabCreateInfoStruct(iterations, converged, final_res_norm,
+                                                setup_time, solve_time, solution_norm);
    }
 
    HYPREDRV_MatlabCleanup(&drv, indptr, cols, data, yaml);

@@ -983,6 +983,10 @@ extern "C"
     * valid pointer to an initialized HYPREDRV_t object. Passing a NULL or uninitialized
     * object will result in an error.
     *
+    * @note The dofmap labels the block structure used by MGR and, when BoomerAMG is
+    * configured with `num_functions > 1`, it is also passed to hypre as the AMG
+    * "dof_func" array provided that all labels fall inside [0, num_functions).
+    *
     * Example Usage:
     * @code
     *    HYPREDRV_t *hypredrv;
@@ -1990,6 +1994,49 @@ extern "C"
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverGetNumIter(HYPREDRV_t hypredrv,
                                                                    int       *iters);
+
+   /**
+    * @brief Get the convergence flag from the last linear solve.
+    *
+    * The flag is read from the live Krylov solver object, so this function must be
+    * called after HYPREDRV_LinearSolverApply and before the solver is destroyed.
+    * A zero value means the solver stopped without reaching its tolerance (e.g.,
+    * it hit the maximum number of iterations).
+    *
+    * @param hypredrv  The HYPREDRV_t object.
+    * @param converged Pointer to store the convergence flag (1 = converged).
+    *
+    * @return Returns an error code with 0 indicating success.
+    *
+    * Example Usage:
+    * @code
+    *    int converged;
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverGetConverged(hypredrv, &converged));
+    * @endcode
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverGetConverged(HYPREDRV_t hypredrv,
+                                                                     int *converged);
+
+   /**
+    * @brief Get the final relative residual norm from the last linear solve.
+    *
+    * The norm is read from the live Krylov solver object, so this function must be
+    * called after HYPREDRV_LinearSolverApply and before the solver is destroyed.
+    *
+    * @param hypredrv The HYPREDRV_t object.
+    * @param norm     Pointer to store the final relative residual norm.
+    *
+    * @return Returns an error code with 0 indicating success.
+    *
+    * Example Usage:
+    * @code
+    *    double norm;
+    *    HYPREDRV_SAFE_CALL(
+    *       HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(hypredrv, &norm));
+    * @endcode
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(HYPREDRV_t hypredrv, double *norm);
 
    /**
     * @brief Get the preconditioner setup time from the last linear solve.

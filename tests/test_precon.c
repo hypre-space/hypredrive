@@ -4,18 +4,19 @@
 #include <string.h>
 
 #include "HYPRE.h"
+#include "_hypre_parcsr_ls.h" // for hypre_ParAMGDataDofFunc
 #include "_hypre_utilities.h"
 #include "internal/amg.h"
 #include "internal/containers.h"
 #include "internal/error.h"
 #include "internal/fsai.h"
 #include "internal/ilu.h"
-#include "internal/mgr.h"
 #include "internal/krylov.h"
+#include "internal/mgr.h"
 #include "internal/precon.h"
-#include "test_helpers.h"
 #include "internal/yaml.h"
 #include "logging.h"
+#include "test_helpers.h"
 
 /* Forward declarations for internal AMG functions */
 void           hypredrv_AMGSetFieldByName(void *, const YAMLnode *);
@@ -3173,6 +3174,94 @@ test_PreconApply_default_case(void)
    TEST_HYPRE_FINALIZE();
 }
 
+static HYPRE_IJMatrix
+precon_test_ij_matrix_diag(HYPRE_Int n, double diag)
+{
+   HYPRE_IJMatrix mat = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, n - 1, 0, n - 1, &mat), 0);
+   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJMatrixInitialize(mat), 0);
+   for (HYPRE_Int i = 0; i < n; i++)
+   {
+      HYPRE_Int    ncols = 1;
+      HYPRE_BigInt row   = (HYPRE_BigInt)i;
+      HYPRE_BigInt col   = (HYPRE_BigInt)i;
+      double       value = diag;
+      ASSERT_EQ(HYPRE_IJMatrixSetValues(mat, 1, &ncols, &row, &col, &value), 0);
+   }
+   ASSERT_EQ(HYPRE_IJMatrixAssemble(mat), 0);
+   return mat;
+}
+
+static void
+test_AMGSetDofFunc_labels(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args.amg);
+   args.amg.coarsening.num_functions = 2;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
+   ASSERT_NOT_NULL(precon);
+
+   HYPRE_IJMatrix mat = precon_test_ij_matrix_diag(6, 2.0);
+
+   /* Valid labels: contiguous dofmap [0 0 0 1 1 1] is installed as dof_func */
+   IntArray *dofmap = NULL;
+   hypredrv_IntArrayBuildContiguous(MPI_COMM_SELF, 3, 2, &dofmap);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetDofFunc(&args.amg, dofmap, precon->main, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypre_ParAMGData *amg_data = (hypre_ParAMGData *)precon->main;
+#if HYPRE_CHECK_MIN_VERSION(22300, 0)
+   /* dof_func is a hypre_IntArray from hypre 2.23.0 onward */
+   hypre_IntArray *dof_func = hypre_ParAMGDataDofFunc(amg_data);
+   ASSERT_NOT_NULL(dof_func);
+   HYPRE_Int *dof_func_data = hypre_IntArrayData(dof_func);
+#else
+   HYPRE_Int *dof_func_data = hypre_ParAMGDataDofFunc(amg_data);
+#endif
+   ASSERT_NOT_NULL(dof_func_data);
+   ASSERT_EQ(dof_func_data[0], 0);
+   ASSERT_EQ(dof_func_data[2], 0);
+   ASSERT_EQ(dof_func_data[3], 1);
+   ASSERT_EQ(dof_func_data[5], 1);
+   hypredrv_IntArrayDestroy(&dofmap);
+
+   /* Out-of-range labels (max label 2 >= num_functions 2): skipped without
+      error, leaving no dof_func on a freshly created preconditioner */
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
+   ASSERT_NOT_NULL(precon);
+
+   int       bad_labels[6] = {0, 1, 2, 0, 1, 2};
+   IntArray *bad           = NULL;
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 6, bad_labels, &bad);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetDofFunc(&args.amg, bad, precon->main, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   amg_data = (hypre_ParAMGData *)precon->main;
+   ASSERT_NULL(hypre_ParAMGDataDofFunc(amg_data));
+   hypredrv_IntArrayDestroy(&bad);
+
+   /* Size mismatch with the local number of rows is an error */
+   IntArray *small = NULL;
+   hypredrv_IntArrayBuildContiguous(MPI_COMM_SELF, 2, 2, &small);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetDofFunc(&args.amg, small, precon->main, mat);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   hypredrv_IntArrayDestroy(&small);
+   hypredrv_ErrorCodeResetAll();
+
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon, NULL, 0);
+   HYPRE_IJMatrixDestroy(mat);
+   TEST_HYPRE_FINALIZE();
+}
+
 static void
 test_PreconApply_precon_none(void)
 {
@@ -5908,6 +5997,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconDestroy_amg_rbms_loop);
    RUN_TEST(test_PreconDestroy_none_with_main_logs);
    RUN_TEST(test_PreconSetup_default_case);
+   RUN_TEST(test_AMGSetDofFunc_labels);
    RUN_TEST(test_PreconApply_default_case);
    RUN_TEST(test_PreconApply_precon_none);
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
