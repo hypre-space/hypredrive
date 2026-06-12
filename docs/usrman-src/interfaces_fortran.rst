@@ -181,7 +181,7 @@ hypredrive takes ownership.
    * - Linear system
      - ``HYPREDRV_LinearSystemBuild``, ``HYPREDRV_LinearSystemReadMatrix``, ``HYPREDRV_LinearSystemSetMatrix*``, ``HYPREDRV_LinearSystemSetRHS*``, ``HYPREDRV_LinearSystemSetInitialGuess``, ``HYPREDRV_LinearSystemResetInitialGuess``, ``HYPREDRV_LinearSystemSetSolution``, ``HYPREDRV_LinearSystemSetReferenceSolution``, ``HYPREDRV_LinearSystemSetPrecMatrix``, ``HYPREDRV_LinearSystemPrint``
    * - Dofmaps/nullspace
-     - ``HYPREDRV_LinearSystemSetDofmap``, ``HYPREDRV_LinearSystemSetInterleavedDofmap``, ``HYPREDRV_LinearSystemSetContiguousDofmap``, ``HYPREDRV_LinearSystemReadDofmap``, ``HYPREDRV_LinearSystemPrintDofmap``, ``HYPREDRV_LinearSystemSetNearNullSpace``
+     - ``HYPREDRV_LinearSystemSetDofmap``, ``HYPREDRV_LinearSystemSetInterleavedDofmap``, ``HYPREDRV_LinearSystemSetContiguousDofmap``, ``HYPREDRV_LinearSystemReadDofmap``, ``HYPREDRV_LinearSystemPrintDofmap``, ``HYPREDRV_LinearSystemSetNearNullSpace``, ``HYPREDRV_LinearSystemSetNullSpace``
    * - Accessors
      - ``HYPREDRV_LinearSystemGetSolution*``, ``HYPREDRV_LinearSystemGetRHS*``, ``HYPREDRV_LinearSystemGetMatrix``, ``HYPREDRV_LinearSystemGetSolutionNorm``
    * - State vectors

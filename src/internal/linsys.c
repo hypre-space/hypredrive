@@ -19,9 +19,6 @@
 
 #include <limits.h>
 #include <math.h>
-
-/* Modes with a smaller norm after orthogonalization are considered linearly dependent */
-#define HYPREDRV_NULLSPACE_DEP_TOL 1.0e-12
 #include <stdio.h>
 #include <string.h>
 #include "internal/containers.h"
@@ -29,6 +26,10 @@
 #include "internal/linsys.h"
 #include "internal/lsseq.h"
 #include "logging.h"
+
+/* Modes whose norm shrinks below this fraction of their input norm during
+   orthogonalization are considered linearly dependent */
+#define HYPREDRV_NULLSPACE_DEP_TOL 1.0e-12
 
 static HYPRE_Int
 IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
@@ -308,17 +309,20 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_LinearSystemSetNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
-                                  int num_entries, int num_components,
-                                  const HYPRE_Complex *values, HYPRE_IJVector *vec_ns_ptr)
+hypredrv_LinearSystemSetNullSpace(MPI_Comm comm, HYPRE_IJMatrix mat, int num_entries,
+                                  int num_components, const HYPRE_Complex *values,
+                                  HYPRE_IJVector *vec_ns_ptr)
 {
    size_t         total = (size_t)num_entries * (size_t)num_components;
    HYPRE_Complex *modes = NULL;
 
-   if (!values || num_components < 1)
+   /* values may be NULL on ranks that own no entries; num_entries and
+      num_components must be consistent across all ranks of comm */
+   if (num_components < 1 || num_entries < 0 || (!values && num_entries > 0))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Null space modes input array must not be NULL");
+      hypredrv_ErrorMsgAdd("Invalid null space input: need num_components >= 1, "
+                           "num_entries >= 0, and non-NULL values when num_entries > 0");
       return;
    }
 
@@ -332,48 +336,60 @@ hypredrv_LinearSystemSetNullSpace(MPI_Comm comm, const LS_args *args, HYPRE_IJMa
    for (int k = 0; k < num_components; k++)
    {
       HYPRE_Complex *zk = modes + ((size_t)k * (size_t)num_entries);
-      double         dots_local[2], dots[2];
+      double         dot_local, dot, norm_orig;
+
+      /* Input norm of the mode, for the relative dependence check below */
+      dot_local = 0.0;
+      for (int i = 0; i < num_entries; i++)
+      {
+         dot_local += (double)(zk[i] * zk[i]);
+      }
+      MPI_Allreduce(&dot_local, &dot, 1, MPI_DOUBLE, MPI_SUM, comm);
+      norm_orig = sqrt(dot);
 
       for (int j = 0; j < k; j++)
       {
          const HYPRE_Complex *zj = modes + ((size_t)j * (size_t)num_entries);
 
-         dots_local[0] = 0.0;
+         dot_local = 0.0;
          for (int i = 0; i < num_entries; i++)
          {
-            dots_local[0] += (double)(zk[i] * zj[i]);
+            dot_local += (double)(zk[i] * zj[i]);
          }
-         MPI_Allreduce(dots_local, dots, 1, MPI_DOUBLE, MPI_SUM, comm);
+         MPI_Allreduce(&dot_local, &dot, 1, MPI_DOUBLE, MPI_SUM, comm);
          for (int i = 0; i < num_entries; i++)
          {
-            zk[i] -= (HYPRE_Complex)dots[0] * zj[i];
+            zk[i] -= (HYPRE_Complex)dot * zj[i];
          }
       }
 
-      dots_local[0] = 0.0;
+      dot_local = 0.0;
       for (int i = 0; i < num_entries; i++)
       {
-         dots_local[0] += (double)(zk[i] * zk[i]);
+         dot_local += (double)(zk[i] * zk[i]);
       }
-      MPI_Allreduce(dots_local, dots, 1, MPI_DOUBLE, MPI_SUM, comm);
-      dots[0] = sqrt(dots[0]);
-      if (dots[0] < HYPREDRV_NULLSPACE_DEP_TOL)
+      MPI_Allreduce(&dot_local, &dot, 1, MPI_DOUBLE, MPI_SUM, comm);
+      dot = sqrt(dot);
+      if (dot <= HYPREDRV_NULLSPACE_DEP_TOL * norm_orig)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          hypredrv_ErrorMsgAdd("Null space modes must be linearly independent "
-                              "(mode %d has norm %e after orthogonalization)",
-                              k, dots[0]);
+                              "(mode %d has relative norm %e after orthogonalization)",
+                              k, (norm_orig > 0.0) ? dot / norm_orig : 0.0);
          free(modes);
          return;
       }
       for (int i = 0; i < num_entries; i++)
       {
-         zk[i] /= (HYPRE_Complex)dots[0];
+         zk[i] /= (HYPRE_Complex)dot;
       }
    }
 
-   /* Store via the same builder used for the near null space modes */
-   hypredrv_LinearSystemSetNearNullSpace(comm, args, mat, num_entries, num_components,
+   /* Store via the same builder used for the near null space modes. The modes
+      are kept host-resident (NULL args skips the device migration): their only
+      consumer is the host-side projection in
+      hypredrv_LinearSystemProjectOutNullSpace(). */
+   hypredrv_LinearSystemSetNearNullSpace(comm, NULL, mat, num_entries, num_components,
                                          modes, vec_ns_ptr);
 
    free(modes);
@@ -390,21 +406,51 @@ void
 hypredrv_LinearSystemProjectOutNullSpace(HYPRE_IJVector vec_ns, int num_ns,
                                          HYPRE_IJVector vec)
 {
-   HYPRE_BigInt   jlower = 0, jupper = 0;
+   HYPRE_BigInt   jlower = 0, jupper = 0, xlower = 0, xupper = 0;
    HYPRE_BigInt  *indices = NULL;
    HYPRE_Complex *xbuf = NULL, *zbuf = NULL;
    double        *dots_local = NULL, *dots = NULL;
    MPI_Comm       comm;
-   int            num_entries;
+   int            num_entries, mismatch_local, mismatch;
 
    if (!vec_ns || num_ns < 1 || !vec)
    {
       return;
    }
 
-   comm = hypre_ParVectorComm(vec_ns);
+   comm = hypre_IJVectorComm((hypre_IJVector *)vec_ns);
    HYPRE_IJVectorGetLocalRange(vec_ns, &jlower, &jupper);
+   HYPRE_IJVectorGetLocalRange(vec, &xlower, &xupper);
    num_entries = (int)(jupper - jlower + 1);
+
+   /* The modes were built for the partitioning of the matrix that was set when
+      HYPREDRV_LinearSystemSetNullSpace() was called; refuse to project onto a
+      vector with a different distribution. The check is collective so that all
+      ranks agree before entering the reductions below. */
+   mismatch_local = (xlower != jlower || xupper != jupper);
+   MPI_Allreduce(&mismatch_local, &mismatch, 1, MPI_INT, MPI_MAX, comm);
+   if (mismatch)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Null space modes are incompatible with the current linear "
+                           "system; call HYPREDRV_LinearSystemSetNullSpace() again (or "
+                           "clear the modes with num_components = 0) after changing the "
+                           "system size or distribution");
+      return;
+   }
+
+#if defined(HYPRE_USING_GPU)
+   /* The dot/axpy loops below need host-accessible data; vec_ns is built
+      host-resident, but the solution may live on device */
+   void *obj = NULL;
+   HYPRE_IJVectorGetObject(vec, &obj);
+   HYPRE_MemoryLocation orig_memloc =
+      hypre_VectorMemoryLocation(hypre_ParVectorLocalVector((HYPRE_ParVector)obj));
+   if (orig_memloc != HYPRE_MEMORY_HOST)
+   {
+      HYPRE_IJVectorMigrate(vec, HYPRE_MEMORY_HOST);
+   }
+#endif
 
    xbuf       = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
    zbuf       = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
@@ -442,6 +488,13 @@ hypredrv_LinearSystemProjectOutNullSpace(HYPRE_IJVector vec_ns, int num_ns,
    }
    HYPRE_IJVectorSetValues(vec, num_entries, indices, xbuf);
    HYPRE_IJVectorAssemble(vec);
+
+#if defined(HYPRE_USING_GPU)
+   if (orig_memloc != HYPRE_MEMORY_HOST)
+   {
+      HYPRE_IJVectorMigrate(vec, orig_memloc);
+   }
+#endif
 
    free(xbuf);
    free(zbuf);

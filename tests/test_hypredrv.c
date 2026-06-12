@@ -4101,6 +4101,12 @@ test_HYPREDRV_LinearSystemSetNullSpace_projection(void)
    }
    indptr[n] = nnz;
 
+   /* Setting modes before the matrix must fail cleanly */
+   HYPRE_Complex dummy = 1.0;
+   ASSERT_TRUE(HYPREDRV_LinearSystemSetNullSpace(obj, 1, 1, &dummy) & ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+
    ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, n - 1, indptr, cols, data),
              ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, n - 1, rhs), ERROR_NONE);
@@ -4142,6 +4148,58 @@ test_HYPREDRV_LinearSystemSetNullSpace_projection(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
    HYPRE_ClearAllErrors();
+
+   /* Replacing the linear system with a different size must make solves fail
+    * cleanly (instead of silently corrupting the solution) until the modes are
+    * re-set or cleared */
+   for (int i = 0; i < n; i++)
+   {
+      modes[n + i] = (HYPRE_Complex)(i + 1); /* restore independent modes */
+   }
+   ASSERT_EQ(HYPREDRV_LinearSystemSetNullSpace(obj, n, 2, modes), ERROR_NONE);
+
+   enum { m = 4 };
+   HYPRE_BigInt indptr2[m + 1], cols2[3 * m];
+   HYPRE_Real   data2[3 * m], rhs2[m];
+   int          nnz2 = 0;
+   for (int i = 0; i < m; i++)
+   {
+      indptr2[i] = nnz2;
+      if (i > 0)
+      {
+         cols2[nnz2] = i - 1;
+         data2[nnz2] = -1.0;
+         nnz2++;
+      }
+      cols2[nnz2] = i;
+      data2[nnz2] = 2.0;
+      nnz2++;
+      if (i < m - 1)
+      {
+         cols2[nnz2] = i + 1;
+         data2[nnz2] = -1.0;
+         nnz2++;
+      }
+      rhs2[i] = 1.0;
+   }
+   indptr2[m] = nnz2;
+
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, m - 1, indptr2, cols2, data2),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, m - 1, rhs2), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+   ASSERT_TRUE(HYPREDRV_LinearSolverApply(obj) & ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   HYPRE_ClearAllErrors();
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+
+   /* Clearing the modes disables the projection and solves succeed again */
+   ASSERT_EQ(HYPREDRV_LinearSystemSetNullSpace(obj, 0, 0, NULL), ERROR_NONE);
+   run_library_linear_solve(obj, NULL);
 #else
    /* Multiple modes need multi-component IJVectors (hypre >= 2.26.0); the
     * documented behavior below that is a clean ERROR_INVALID_VAL. */
@@ -4164,6 +4222,9 @@ test_HYPREDRV_LinearSystemSetNullSpace_projection(void)
       dot0 += (double)(sol[i] * modes[i]);
    }
    ASSERT_EQ_DOUBLE(dot0, 0.0, 1.0e-9);
+
+   /* Clearing the modes disables the projection */
+   ASSERT_EQ(HYPREDRV_LinearSystemSetNullSpace(obj, 0, 0, NULL), ERROR_NONE);
 #endif
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);

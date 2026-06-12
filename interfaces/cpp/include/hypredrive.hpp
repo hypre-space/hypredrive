@@ -493,6 +493,13 @@ class driver
    {
       HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemSetNearNullSpace(handle_, n, c, values));
    }
+   /// @brief C++ wrapper for HYPREDRV_LinearSystemSetNullSpace.
+   /// @see HYPREDRV_LinearSystemSetNullSpace
+   void
+   set_null_space(int n, int c, const complex *values)
+   {
+      HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemSetNullSpace(handle_, n, c, values));
+   }
    /// @brief Return the HYPREDRV-owned raw solution buffer.
    /// @note The returned pointer is owned by this driver and remains valid until the
    /// next solve, linear-system rebuild, solution replacement, or driver destruction.

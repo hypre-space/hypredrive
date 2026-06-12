@@ -17,6 +17,16 @@
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
 
+/* HYPREDRV_HYPRE_RELEASE_NUMBER is provided by the internal hypredrive headers
+   only; examples see hypre's own HYPRE_RELEASE_NUMBER through HYPREDRV.h */
+#ifndef HYPREDRV_HYPRE_RELEASE_NUMBER
+#ifdef HYPRE_RELEASE_NUMBER
+#define HYPREDRV_HYPRE_RELEASE_NUMBER HYPRE_RELEASE_NUMBER
+#else
+#define HYPREDRV_HYPRE_RELEASE_NUMBER 0
+#endif
+#endif
+
 #if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900
 #define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) \
    HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
@@ -1069,7 +1079,7 @@ q2_shape_1d(const HYPRE_Real xi, HYPRE_Real L[3], HYPRE_Real dL[3])
 }
 
 /*--------------------------------------------------------------------------
- * Q2-Q1 (Taylor-Hood) Newton system. Serial only.
+ * Q2-Q1 (Taylor-Hood) Newton system.
  *
  * The pressure grid has N[0] x N[1] nodes (the -n option) and the velocity
  * grid has (2*N[0]-1) x (2*N[1]-1) nodes. DOF ordering: (u, v) interleaved
@@ -2913,6 +2923,22 @@ main(int argc, char *argv[])
       MPI_Finalize();
       return 1;
    }
+
+#if HYPREDRV_HYPRE_RELEASE_NUMBER < 30100
+   /* The blk-absrowsum MGR prolongation of the built-in Q2-Q1 configuration is
+      not functional in older hypre versions (crashes inside the MGR setup) */
+   if (params.disc && !params.yaml_file)
+   {
+      if (!myid)
+      {
+         printf("Error: the built-in Q2-Q1 solver configuration requires "
+                "hypre >= 3.1.0; provide a configuration file with -i instead\n");
+      }
+      MPI_Finalize();
+      return 1;
+   }
+#endif
+
    hypredrv_args[0] =
       params.yaml_file ? params.yaml_file : (char *)DiscretizationDefaultConfig(&params);
 

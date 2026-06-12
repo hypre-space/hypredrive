@@ -1181,6 +1181,16 @@ extern "C"
     * @note The right hand side is not modified; it is the caller's responsibility to
     * provide a consistent right hand side (orthogonal to the left null space).
     *
+    * @note Calling this function again replaces any previously set modes. Passing
+    * num_components = 0 (with values = NULL) clears the modes and disables the
+    * projection. The modes persist across solves and matrix updates; if the size or
+    * parallel distribution of the linear system changes, subsequent solves fail with
+    * an error until the modes are set again or cleared. On ranks that own no entries,
+    * values may be NULL.
+    *
+    * @note Setting more than one mode requires hypre >= 2.26.0 (multi-component
+    * IJVector support); a single mode is supported with any hypre version.
+    *
     * @param hypredrv        The HYPREDRV_t object.
     * @param num_entries     Number of local entries.
     * @param num_components  Number of components per entry (modes).

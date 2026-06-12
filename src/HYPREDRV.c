@@ -1975,6 +1975,26 @@ HYPREDRV_LinearSystemSetNullSpace(HYPREDRV_t hypredrv, int num_entries,
    HYPREDRV_CHECK_INIT_AND_OBJ();
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
+   /* num_components == 0 clears previously set modes and disables the projection */
+   if (num_components == 0)
+   {
+      if (hypredrv->vec_ns)
+      {
+         HYPRE_IJVectorDestroy(hypredrv->vec_ns);
+         hypredrv->vec_ns = NULL;
+      }
+      hypredrv->num_ns = 0;
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (!hypredrv->mat_A)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("The matrix must be set before calling "
+                           "HYPREDRV_LinearSystemSetNullSpace");
+      return hypredrv_ErrorCodeGet();
+   }
+
 #if !HYPRE_CHECK_MIN_VERSION(22600, 0)
    if (num_components > 1)
    {
@@ -1985,9 +2005,8 @@ HYPREDRV_LinearSystemSetNullSpace(HYPREDRV_t hypredrv, int num_entries,
 #endif
 
    hypredrv->num_ns = 0;
-   hypredrv_LinearSystemSetNullSpace(hypredrv->comm, &hypredrv->iargs->ls,
-                                     hypredrv->mat_A, num_entries, num_components, values,
-                                     &hypredrv->vec_ns);
+   hypredrv_LinearSystemSetNullSpace(hypredrv->comm, hypredrv->mat_A, num_entries,
+                                     num_components, values, &hypredrv->vec_ns);
    if (!hypredrv_ErrorCodeGet())
    {
       hypredrv->num_ns = num_components;

@@ -973,6 +973,14 @@ Using RBMs in libHYPREDRV
   - The call ``HYPREDRV_LinearSystemSetNearNullSpace(h, num_entries, num_components, values)`` expects the values in SoA layout: ``num_components`` contiguous blocks, each with ``num_entries`` degrees of freedom.
   - The buffer is copied into ``libHYPREDRV``-owned storage; the caller must free its buffer after the call returns.
 
+.. note::
+   Near null space modes are distinct from the *exact* null space modes set with
+   ``HYPREDRV_LinearSystemSetNullSpace()``: near null space modes inform the
+   preconditioner construction and are not projected out of the solution, while exact
+   null space modes are projected out of every computed solution to fix its gauge (see
+   the Q2-Q1 lid-driven cavity discretization below). The rigid body modes of a clamped
+   elastic body, as in this example, are near null space modes but not exact ones.
+
 Linear Solver Setup
 ~~~~~~~~~~~~~~~~~~~
 

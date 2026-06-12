@@ -182,6 +182,8 @@ to the generated API reference.
      - :cpp:func:`HYPREDRV_LinearSystemPrint`
    * - ``hypredrive::driver::set_near_null_space``
      - :cpp:func:`HYPREDRV_LinearSystemSetNearNullSpace`
+   * - ``hypredrive::driver::set_null_space``
+     - :cpp:func:`HYPREDRV_LinearSystemSetNullSpace`
    * - ``hypredrive::driver::get_solution_values_raw``
      - :cpp:func:`HYPREDRV_LinearSystemGetSolutionValues`
    * - ``hypredrive::driver::get_solution_length``

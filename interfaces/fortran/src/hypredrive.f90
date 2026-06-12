@@ -31,7 +31,8 @@ module hypredrive
    public :: HYPREDRV_LinearSystemSetDofmap, HYPREDRV_LinearSystemSetInterleavedDofmap
    public :: HYPREDRV_LinearSystemSetContiguousDofmap, HYPREDRV_LinearSystemReadDofmap
    public :: HYPREDRV_LinearSystemPrintDofmap, HYPREDRV_LinearSystemPrint
-   public :: HYPREDRV_LinearSystemSetNearNullSpace, HYPREDRV_LinearSystemGetSolutionValues
+   public :: HYPREDRV_LinearSystemSetNearNullSpace, HYPREDRV_LinearSystemSetNullSpace
+   public :: HYPREDRV_LinearSystemGetSolutionValues
    public :: HYPREDRV_LinearSystemGetSolutionLength, HYPREDRV_LinearSystemGetSolutionNorm
    public :: HYPREDRV_LinearSystemGetSolution, HYPREDRV_LinearSystemGetRHSValues
    public :: HYPREDRV_LinearSystemGetRHS, HYPREDRV_LinearSystemGetMatrix
@@ -332,6 +333,16 @@ module hypredrive
       function HYPREDRV_LinearSystemSetNearNullSpace(hypredrv, num_entries, &
                                                      num_components, values) &
          bind(C, name="HYPREDRV_LinearSystemSetNearNullSpace") result(ierr)
+         import :: c_double, c_int, c_int32_t, c_ptr
+         type(c_ptr), value :: hypredrv
+         integer(c_int), value :: num_entries, num_components
+         real(c_double), intent(in) :: values(*)
+         integer(c_int32_t) :: ierr
+      end function
+
+      function HYPREDRV_LinearSystemSetNullSpace(hypredrv, num_entries, &
+                                                 num_components, values) &
+         bind(C, name="HYPREDRV_LinearSystemSetNullSpace") result(ierr)
          import :: c_double, c_int, c_int32_t, c_ptr
          type(c_ptr), value :: hypredrv
          integer(c_int), value :: num_entries, num_components
