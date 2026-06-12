@@ -153,6 +153,8 @@ The optional `info` output has these fields:
 | Field | Meaning |
 | --- | --- |
 | `iterations` | Solver iteration count reported by hypredrive. |
+| `converged` | Logical convergence flag from the last solve (true when the solver reached its tolerance). |
+| `final_res_norm` | Final relative residual norm from the last solve. |
 | `setup_time` | Linear-solver setup time in seconds. |
 | `solve_time` | Linear-solver apply/solve time in seconds. |
 | `solution_norm` | L2 norm of the returned solution vector. |

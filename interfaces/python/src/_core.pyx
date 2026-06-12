@@ -369,6 +369,23 @@ cdef class HypreDriveCore:
                "HYPREDRV_LinearSolverGetNumIter")
         return int(iters)
 
+    def solver_converged(self):
+        if self._handle == NULL:
+            raise RuntimeError("HypreDriveCore is closed")
+        cdef int converged = 0
+        _check(_c.HYPREDRV_LinearSolverGetConverged(self._handle, &converged),
+               "HYPREDRV_LinearSolverGetConverged")
+        return bool(converged)
+
+    def solver_final_res_norm(self):
+        if self._handle == NULL:
+            raise RuntimeError("HypreDriveCore is closed")
+        cdef double norm = 0.0
+        _check(_c.HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(
+                   self._handle, &norm),
+               "HYPREDRV_LinearSolverGetFinalRelativeResidualNorm")
+        return float(norm)
+
     def solver_setup_time(self):
         if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")

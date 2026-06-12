@@ -88,6 +88,9 @@ def test_driver_lifecycle(laplacian_1d, base_options):
         drv.set_rhs(rhs)
         drv.solve()
         x1 = drv.get_solution()
+        assert drv.last_converged is True
+        assert drv.last_final_res_norm is not None
+        assert drv.last_final_res_norm >= 0.0
         with pytest.raises(ValueError, match="kind must be one of"):
             drv.solution_norm("bad")
         # A second solve on the same driver must succeed and produce the

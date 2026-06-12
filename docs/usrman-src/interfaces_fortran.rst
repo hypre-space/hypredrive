@@ -189,7 +189,7 @@ hypredrive takes ownership.
    * - Solver/preconditioner
      - ``HYPREDRV_PreconCreate``, ``HYPREDRV_PreconSetup``, ``HYPREDRV_PreconApply``, ``HYPREDRV_PreconDestroy``, ``HYPREDRV_LinearSolverCreate``, ``HYPREDRV_LinearSolverSetup``, ``HYPREDRV_LinearSolverApply``, ``HYPREDRV_LinearSolverDestroy``
    * - Stats/timing
-     - ``HYPREDRV_StatsPrint``, ``HYPREDRV_StatsLevelGetCount``, ``HYPREDRV_StatsLevelGetEntry``, ``HYPREDRV_StatsLevelPrint``, ``HYPREDRV_LinearSolverGetNumIter``, ``HYPREDRV_LinearSolverGetSetupTime``, ``HYPREDRV_LinearSolverGetSolveTime``
+     - ``HYPREDRV_StatsPrint``, ``HYPREDRV_StatsLevelGetCount``, ``HYPREDRV_StatsLevelGetEntry``, ``HYPREDRV_StatsLevelPrint``, ``HYPREDRV_LinearSolverGetNumIter``, ``HYPREDRV_LinearSolverGetConverged``, ``HYPREDRV_LinearSolverGetFinalRelativeResidualNorm``, ``HYPREDRV_LinearSolverGetSetupTime``, ``HYPREDRV_LinearSolverGetSolveTime``
    * - Annotations/eigenspectrum
      - ``HYPREDRV_Annotate*``, ``HYPREDRV_LinearSystemComputeEigenspectrum``
 

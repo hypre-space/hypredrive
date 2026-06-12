@@ -45,6 +45,8 @@ module hypredrive
    public :: HYPREDRV_StatsPrint, HYPREDRV_AnnotateBegin, HYPREDRV_AnnotateEnd
    public :: HYPREDRV_AnnotateLevelBegin, HYPREDRV_AnnotateLevelEnd
    public :: HYPREDRV_LinearSystemComputeEigenspectrum, HYPREDRV_LinearSolverGetNumIter
+   public :: HYPREDRV_LinearSolverGetConverged
+   public :: HYPREDRV_LinearSolverGetFinalRelativeResidualNorm
    public :: HYPREDRV_LinearSolverGetSetupTime, HYPREDRV_LinearSolverGetSolveTime
    public :: HYPREDRV_StatsLevelGetCount, HYPREDRV_StatsLevelGetEntry
    public :: HYPREDRV_StatsLevelPrint, HYPREDRV_BigIntSize, HYPREDRV_Check
@@ -537,6 +539,22 @@ module hypredrive
          import :: c_int, c_int32_t, c_ptr
          type(c_ptr), value :: hypredrv
          integer(c_int) :: iters
+         integer(c_int32_t) :: ierr
+      end function
+
+      function HYPREDRV_LinearSolverGetConverged(hypredrv, converged) &
+         bind(C, name="HYPREDRV_LinearSolverGetConverged") result(ierr)
+         import :: c_int, c_int32_t, c_ptr
+         type(c_ptr), value :: hypredrv
+         integer(c_int) :: converged
+         integer(c_int32_t) :: ierr
+      end function
+
+      function HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(hypredrv, norm) &
+         bind(C, name="HYPREDRV_LinearSolverGetFinalRelativeResidualNorm") result(ierr)
+         import :: c_double, c_int32_t, c_ptr
+         type(c_ptr), value :: hypredrv
+         real(c_double) :: norm
          integer(c_int32_t) :: ierr
       end function
 

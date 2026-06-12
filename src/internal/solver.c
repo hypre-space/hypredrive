@@ -9,9 +9,19 @@
 
 #include <math.h>
 #include "_hypre_IJ_mv.h"
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+#include "_hypre_krylov.h" // For hypre_BiCGSTABGetConverged
+#endif
 #include "_hypre_parcsr_mv.h"
 #include "internal/gen_macros.h"
 #include "logging.h"
+
+#if !HYPRE_CHECK_MIN_VERSION(30000, 0)
+/* Before hypre 3.0.0 this prototype lives in hypre's internal "krylov.h",
+   which is shadowed by this project's internal/krylov.h on the include
+   path, so declare it directly. */
+HYPRE_Int hypre_BiCGSTABGetConverged(void *bicgstab_vdata, HYPRE_Int *converged);
+#endif
 
 #if !HYPRE_CHECK_MIN_VERSION(22500, 0)
 static HYPRE_Int
@@ -756,4 +766,101 @@ hypredrv_SolverDestroy(solver_t solver_method, HYPRE_Solver *solver_ptr)
    {
       HYPREDRV_LOGF(3, log_rank, NULL, 0, "solver destroy skipped: solver already NULL");
    }
+}
+
+/*-----------------------------------------------------------------------------
+ * SolverGetConverged
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_SolverGetConverged(solver_t solver_method, HYPRE_Solver solver,
+                            HYPRE_Int *converged_ptr)
+{
+   HYPRE_Int converged = 0;
+
+   if (!solver || !converged_ptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("SolverGetConverged: solver and converged_ptr must be"
+                           " non-NULL");
+      return;
+   }
+
+   switch (solver_method)
+   {
+      case SOLVER_PCG:
+         HYPRE_PCGGetConverged(solver, &converged);
+         break;
+
+      case SOLVER_GMRES:
+         HYPRE_GMRESGetConverged(solver, &converged);
+         break;
+
+      case SOLVER_FGMRES:
+         HYPRE_FlexGMRESGetConverged(solver, &converged);
+         break;
+
+      case SOLVER_BICGSTAB:
+         /* hypre does not expose HYPRE_BiCGSTABGetConverged; use the internal
+            prototype from the krylov header. */
+         hypre_BiCGSTABGetConverged(solver, &converged);
+         break;
+
+      /* GCOVR_EXCL_BR_START */
+      default:
+         /* GCOVR_EXCL_BR_STOP */
+         hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+         hypredrv_ErrorMsgAdd("SolverGetConverged: invalid solver method");
+         return;
+   }
+
+   *converged_ptr = converged;
+}
+
+/*-----------------------------------------------------------------------------
+ * SolverGetFinalRelativeResidualNorm
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_SolverGetFinalRelativeResidualNorm(solver_t solver_method, HYPRE_Solver solver,
+                                            HYPRE_Real *norm_ptr)
+{
+   HYPRE_Real norm = 0.0;
+
+   if (!solver || !norm_ptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("SolverGetFinalRelativeResidualNorm: solver and norm_ptr"
+                           " must be non-NULL");
+      return;
+   }
+
+   switch (solver_method)
+   {
+      case SOLVER_PCG:
+         HYPRE_PCGGetFinalRelativeResidualNorm(solver, &norm);
+         break;
+
+      case SOLVER_GMRES:
+         HYPRE_GMRESGetFinalRelativeResidualNorm(solver, &norm);
+         break;
+
+      case SOLVER_FGMRES:
+         HYPRE_FlexGMRESGetFinalRelativeResidualNorm(solver, &norm);
+         break;
+
+      case SOLVER_BICGSTAB:
+         HYPRE_BiCGSTABGetFinalRelativeResidualNorm(solver, &norm);
+         break;
+
+      /* GCOVR_EXCL_BR_START */
+      default:
+         /* GCOVR_EXCL_BR_STOP */
+         hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+         hypredrv_ErrorMsgAdd("SolverGetFinalRelativeResidualNorm: invalid solver"
+                              " method");
+         return;
+   }
+
+   *norm_ptr = norm;
 }

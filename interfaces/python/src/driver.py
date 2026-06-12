@@ -125,6 +125,8 @@ class HypreDrive:
         self._row_end: Optional[int] = None
         self._rhs_set: bool = False
         self._last_iterations: Optional[int] = None
+        self._last_converged: Optional[bool] = None
+        self._last_final_res_norm: Optional[float] = None
         self._last_setup_time: Optional[float] = None
         self._last_solve_time: Optional[float] = None
 
@@ -408,6 +410,8 @@ class HypreDrive:
         # Reset before we start so the last_* properties never report stale
         # values from a previous successful solve when this one fails partway.
         self._last_iterations = None
+        self._last_converged = None
+        self._last_final_res_norm = None
         self._last_setup_time = None
         self._last_solve_time = None
 
@@ -424,6 +428,10 @@ class HypreDrive:
             self._core.solver_setup()
             self._core.solver_apply()
             self._last_iterations = self._core.solver_iterations()
+            # Convergence info is read from the live solver object, so it must
+            # be captured before solver_destroy runs in the finally block.
+            self._last_converged = self._core.solver_converged()
+            self._last_final_res_norm = self._core.solver_final_res_norm()
             self._last_setup_time = self._core.solver_setup_time()
             self._last_solve_time = self._core.solver_solve_time()
         finally:
@@ -446,6 +454,25 @@ class HypreDrive:
         rather than the previous solve's count.
         """
         return self._last_iterations
+
+    @property
+    def last_converged(self) -> Optional[bool]:
+        """Whether the most recent :meth:`solve` reached its tolerance.
+
+        ``False`` means the solver stopped without converging (e.g., it hit
+        the maximum number of iterations). ``None`` until a successful solve;
+        reset to ``None`` at the start of every :meth:`solve`.
+        """
+        return self._last_converged
+
+    @property
+    def last_final_res_norm(self) -> Optional[float]:
+        """Final relative residual norm from the most recent :meth:`solve`.
+
+        ``None`` until a successful solve; reset to ``None`` at the start of
+        every :meth:`solve`.
+        """
+        return self._last_final_res_norm
 
     @property
     def last_setup_time(self) -> Optional[float]:

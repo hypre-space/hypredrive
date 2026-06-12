@@ -212,7 +212,7 @@ otherwise.
 | Accessors | `HYPREDRV_LinearSystemGetSolution*`, `HYPREDRV_LinearSystemGetRHS*`, `HYPREDRV_LinearSystemGetMatrix`, `HYPREDRV_LinearSystemGetSolutionNorm` |
 | State vectors | `HYPREDRV_StateVectorSet`, `HYPREDRV_StateVectorGetValues`, `HYPREDRV_StateVectorCopy`, `HYPREDRV_StateVectorUpdateAll`, `HYPREDRV_StateVectorApplyCorrection` |
 | Solver/preconditioner | `HYPREDRV_PreconCreate`, `HYPREDRV_PreconSetup`, `HYPREDRV_PreconApply`, `HYPREDRV_PreconDestroy`, `HYPREDRV_LinearSolverCreate`, `HYPREDRV_LinearSolverSetup`, `HYPREDRV_LinearSolverApply`, `HYPREDRV_LinearSolverDestroy` |
-| Stats/timing | `HYPREDRV_StatsPrint`, `HYPREDRV_StatsLevelGetCount`, `HYPREDRV_StatsLevelGetEntry`, `HYPREDRV_StatsLevelPrint`, `HYPREDRV_LinearSolverGetNumIter`, `HYPREDRV_LinearSolverGetSetupTime`, `HYPREDRV_LinearSolverGetSolveTime` |
+| Stats/timing | `HYPREDRV_StatsPrint`, `HYPREDRV_StatsLevelGetCount`, `HYPREDRV_StatsLevelGetEntry`, `HYPREDRV_StatsLevelPrint`, `HYPREDRV_LinearSolverGetNumIter`, `HYPREDRV_LinearSolverGetConverged`, `HYPREDRV_LinearSolverGetFinalRelativeResidualNorm`, `HYPREDRV_LinearSolverGetSetupTime`, `HYPREDRV_LinearSolverGetSolveTime` |
 | Annotations/eigenspectrum | `HYPREDRV_Annotate*`, `HYPREDRV_LinearSystemComputeEigenspectrum` |
 
 ## Testing

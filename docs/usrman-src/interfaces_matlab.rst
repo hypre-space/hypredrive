@@ -164,6 +164,10 @@ When requested, the second output is a struct with these fields:
      - Meaning
    * - ``iterations``
      - Solver iteration count reported by hypredrive.
+   * - ``converged``
+     - Logical convergence flag from the last solve (true when the solver reached its tolerance).
+   * - ``final_res_norm``
+     - Final relative residual norm from the last solve.
    * - ``setup_time``
      - Linear-solver setup time in seconds.
    * - ``solve_time``

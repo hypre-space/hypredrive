@@ -9,7 +9,9 @@
 #include "HYPRE_parcsr_mv.h"
 #include "_hypre_IJ_mv.h"     // For hypre_IJVectorGlobalNumRows
 #include "_hypre_parcsr_mv.h" // For hypre_ParVectorComm, hypre_ParVectorInitialize_v2
+#include "_hypre_utilities.h" // For hypre_TAlloc, hypre_TMemcpy, hypre_TFree
 #include "internal/gen_macros.h"
+#include "logging.h"
 
 /*-----------------------------------------------------------------------------
  * Define Field/Offset/Setter mappings
@@ -499,6 +501,90 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    (void)vec_nn;
    return;
 #endif
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_AMGSetDofFunc
+ *
+ * Pass the user dofmap to BoomerAMG as the "dof_func" (unknown-to-function
+ * map) when systems AMG is active (num_functions > 1). Without an explicit
+ * dof_func, hypre assumes interleaved unknowns, i.e., dof_func[i] =
+ * (i + offset) % num_functions, which is wrong for other unknown orderings
+ * such as contiguous component blocks.
+ *
+ * hypre takes ownership of the array passed to HYPRE_BoomerAMGSetDofFunc.
+ * From hypre 2.23.0, dof_func is wrapped in a hypre_IntArray whose memory
+ * location is bound to the matrix's at setup time, so the copy of the dofmap
+ * is allocated accordingly. Older versions store and free dof_func as a host
+ * array, so the copy always lives on the host there.
+ *
+ * The dofmap is skipped (keeping hypre's default) when its labels do not form
+ * a valid function map, i.e., when any global label falls outside
+ * [0, num_functions). This can happen when a dofmap meant for MGR (more
+ * labels than functions) is combined with a systems AMG preconditioner. The
+ * check uses the global unique labels, which are identical on all ranks, so
+ * the decision is rank-consistent without extra communication.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_AMGSetDofFunc(const AMG_args *args, const IntArray *dofmap, HYPRE_Solver precon,
+                       HYPRE_IJMatrix ij_A)
+{
+   void     *vA            = NULL;
+   HYPRE_Int num_functions = args->coarsening.num_functions;
+
+   if (!precon || !ij_A || !dofmap || !dofmap->data || dofmap->size == 0 ||
+       num_functions <= 1)
+   {
+      return;
+   }
+
+   if (dofmap->g_unique_size == 0 || !dofmap->g_unique_data ||
+       dofmap->g_unique_data[0] < 0 ||
+       dofmap->g_unique_data[dofmap->g_unique_size - 1] >= (int)num_functions)
+   {
+      HYPREDRV_LOG_COMMF(2, hypre_IJMatrixComm((hypre_IJMatrix *)ij_A), NULL, 0,
+                         "dofmap labels do not fit in [0, num_functions=%d); "
+                         "keeping hypre's default (interleaved) dof_func",
+                         (int)num_functions);
+      return;
+   }
+
+   HYPRE_IJMatrixGetObject(ij_A, &vA);
+   hypre_ParCSRMatrix *par_A = (hypre_ParCSRMatrix *)vA;
+   if (!par_A)
+   {
+      return;
+   }
+
+   HYPRE_Int num_local_rows = hypre_ParCSRMatrixNumRows(par_A);
+   if ((size_t)num_local_rows != dofmap->size)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Dofmap size (%d) does not match the number of local"
+                           " matrix rows (%d)",
+                           (int)dofmap->size, (int)num_local_rows);
+      return;
+   }
+
+   HYPRE_Int *h_dof_func = hypre_TAlloc(HYPRE_Int, num_local_rows, HYPRE_MEMORY_HOST);
+   for (HYPRE_Int i = 0; i < num_local_rows; i++)
+   {
+      h_dof_func[i] = (HYPRE_Int)dofmap->data[i];
+   }
+
+   HYPRE_Int *dof_func = h_dof_func;
+#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22300, 0)
+   if (hypre_ParCSRMatrixMemoryLocation(par_A) == HYPRE_MEMORY_DEVICE)
+   {
+      dof_func = hypre_TAlloc(HYPRE_Int, num_local_rows, HYPRE_MEMORY_DEVICE);
+      hypre_TMemcpy(dof_func, h_dof_func, HYPRE_Int, num_local_rows, HYPRE_MEMORY_DEVICE,
+                    HYPRE_MEMORY_HOST);
+      hypre_TFree(h_dof_func, HYPRE_MEMORY_HOST);
+   }
+#endif
+
+   HYPRE_BoomerAMGSetDofFunc(precon, dof_func);
 }
 
 /*-----------------------------------------------------------------------------

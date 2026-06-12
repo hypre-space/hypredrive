@@ -242,6 +242,10 @@ to the generated API reference.
      - :cpp:func:`HYPREDRV_LinearSystemComputeEigenspectrum`
    * - ``hypredrive::driver::get_linear_solver_num_iter``
      - :cpp:func:`HYPREDRV_LinearSolverGetNumIter`
+   * - ``hypredrive::driver::get_linear_solver_converged``
+     - :cpp:func:`HYPREDRV_LinearSolverGetConverged`
+   * - ``hypredrive::driver::get_linear_solver_final_relative_residual_norm``
+     - :cpp:func:`HYPREDRV_LinearSolverGetFinalRelativeResidualNorm`
    * - ``hypredrive::driver::get_linear_solver_setup_time``
      - :cpp:func:`HYPREDRV_LinearSolverGetSetupTime`
    * - ``hypredrive::driver::get_linear_solver_solve_time``

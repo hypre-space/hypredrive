@@ -1932,7 +1932,15 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
    par_x0 = (HYPRE_ParVector)obj_x0;
    par_x  = (HYPRE_ParVector)obj_x;
 
-   HYPRE_ParVectorCopy(par_x0, par_x);
+   /* Skip the copy when x0 and x alias the same vector or the same data
+    * (e.g. library-mode callers that pass one vector as both initial guess
+    * and solution). */
+   if (par_x0 != par_x &&
+       hypre_VectorData(hypre_ParVectorLocalVector((hypre_ParVector *)par_x0)) !=
+          hypre_VectorData(hypre_ParVectorLocalVector((hypre_ParVector *)par_x)))
+   {
+      HYPRE_ParVectorCopy(par_x0, par_x);
+   }
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
    HYPREDRV_LOG_COMMF(3, log_comm, log_object_name, ls_id, "initial guess reset end");

@@ -150,6 +150,8 @@ Statistics and Timing
 - :cpp:func:`HYPREDRV_StatsLevelPrint` - Print the hierarchical stats summary for a level.
 - :cpp:func:`HYPREDRV_StatsPrint` - Print the collected statistics for the current object.
 - :cpp:func:`HYPREDRV_LinearSolverGetNumIter` - Get the iteration count from the last solve.
+- :cpp:func:`HYPREDRV_LinearSolverGetConverged` - Get the convergence flag from the last solve.
+- :cpp:func:`HYPREDRV_LinearSolverGetFinalRelativeResidualNorm` - Get the final relative residual norm from the last solve.
 - :cpp:func:`HYPREDRV_LinearSolverGetSetupTime` - Get the setup time from the last solve.
 - :cpp:func:`HYPREDRV_LinearSolverGetSolveTime` - Get the solve time from the last solve.
 

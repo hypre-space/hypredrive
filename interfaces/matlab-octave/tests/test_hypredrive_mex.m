@@ -74,6 +74,12 @@ end
 if ~isfield(info, 'iterations') || info.iterations < 0
     error('hypredrive:test', 'missing iteration count');
 end
+if ~isfield(info, 'converged') || ~info.converged
+    error('hypredrive:test', 'missing or false convergence flag');
+end
+if ~isfield(info, 'final_res_norm') || info.final_res_norm < 0
+    error('hypredrive:test', 'missing final relative residual norm');
+end
 if ~isfield(info, 'solution_norm') || info.solution_norm <= 0
     error('hypredrive:test', 'missing solution norm');
 end
