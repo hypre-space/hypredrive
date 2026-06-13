@@ -327,7 +327,17 @@ hypredrv_LinearSystemSetNullSpace(MPI_Comm comm, HYPRE_IJMatrix mat, int num_ent
    }
 
    modes = (HYPRE_Complex *)malloc(total * sizeof(HYPRE_Complex));
-   if (total)
+   /* GCOVR_EXCL_START */
+   if (num_entries > 0 && !modes)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate null space modes buffer");
+      return;
+   }
+   /* GCOVR_EXCL_STOP */
+   /* Guard on num_entries (not total) so it is provable that values is
+    * non-NULL here: NULL values is only accepted alongside num_entries == 0. */
+   if (num_entries > 0)
    {
       memcpy(modes, values, total * sizeof(HYPRE_Complex));
    }
