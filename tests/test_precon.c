@@ -3732,6 +3732,49 @@ test_MGRCreate_coarsest_level_branches(void)
 }
 
 static void
+test_MGRCreate_coarsest_level_fsai_destroyed(void)
+{
+   TEST_HYPRE_INIT();
+
+#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
+   fprintf(stderr, "SKIP: FSAI coarsest solver requires hypre >= 2.25.0\n");
+#else
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels = 1; /* minimal valid MGR setup (num_levels-1 == 0) */
+
+   IntArray *dofmap = NULL;
+   const int map[1] = {0};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+   hypredrv_MGRSetDofmap(&mgr, dofmap);
+
+   mgr.coarsest_level.type = 33;
+   hypredrv_FSAISetDefaultArgs(&mgr.coarsest_level.fsai);
+
+   HYPRE_Solver precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
+   ASSERT_NOT_NULL(precon);
+   ASSERT_NOT_NULL(mgr.csolver);
+   ASSERT_EQ(mgr.csolver_type, 33);
+   HYPRE_MGRDestroy(precon);
+
+   /* hypre never destroys user-installed coarse solvers, so dropping the
+    * cached handle must reclaim the FSAI solver (leaked before the fix). */
+   hypredrv_MGRDestroyCachedSolvers(&mgr, 1);
+   ASSERT_NULL(mgr.csolver);
+   ASSERT_EQ(mgr.csolver_type, -1);
+
+   free(mgr.point_marker_data);
+   mgr.point_marker_data = NULL;
+   hypredrv_IntArrayDestroy(&dofmap);
+#endif
+
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
 {
 #if !HYPRE_CHECK_MIN_VERSION(30100, 2)
@@ -6005,6 +6048,7 @@ main(int argc, char **argv)
 #endif
    RUN_TEST(test_PreconDestroy_amg_log_dispatch_no_rbms);
    RUN_TEST(test_MGRCreate_coarsest_level_branches);
+   RUN_TEST(test_MGRCreate_coarsest_level_fsai_destroyed);
    RUN_TEST(test_PreconCreate_mgr_coarsest_level_krylov_nested);
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
    RUN_TEST(test_PreconDestroy_mgr_coarsest_use_krylov_without_krylov_ptr);
