@@ -228,7 +228,7 @@ PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
 static uint32_t
 ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
 {
-   if (!hypredrv || !hypredrv->iargs || hypredrv->lib_mode) /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv || !hypredrv->iargs) /* GCOVR_EXCL_BR_LINE */
    {
       return ERROR_NONE;
    }
@@ -238,10 +238,11 @@ ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
 #if HYPRE_CHECK_MIN_VERSION(22100, 0)
       HYPRE_SetMemoryLocation(HYPRE_MEMORY_DEVICE);
       HYPRE_SetExecutionPolicy(HYPRE_EXEC_DEVICE);
+#endif
+
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
       HYPRE_SetSpGemmUseVendor(hypredrv->iargs->general.use_vendor_spgemm);
       HYPRE_SetSpMVUseVendor(hypredrv->iargs->general.use_vendor_spmv);
-#endif
 #endif
 
 #ifdef HYPRE_USING_UMPIRE
