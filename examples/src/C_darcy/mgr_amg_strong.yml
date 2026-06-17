@@ -1,0 +1,40 @@
+# Darcy preconditioner strategy: two-block MGR with a stronger coarse solve.
+#
+# Same flux/pressure splitting as mgr_jacobi.yml, but the pressure Schur
+# complement is solved with two BoomerAMG V-cycles using l1-hybrid-SGS
+# relaxation. Investing in the coarse (pressure) solve is the most effective
+# way to cut GMRES iterations on the RT0/P0 Darcy system.
+general:
+  statistics: 1
+  exec_policy: host
+linear_system:
+  init_guess_mode: zeros
+solver:
+  gmres:
+    max_iter: 200
+    krylov_dim: 60
+    relative_tol: 1.0e-10
+    absolute_tol: 0.0
+    print_level: 2
+preconditioner:
+  mgr:
+    tolerance: 0.0
+    max_iter: 1
+    print_level: 0
+    coarse_th: 0.0
+    level:
+      0:
+        f_dofs: [1]
+        f_relaxation: jacobi
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: rap
+    coarsest_level:
+      amg:
+        tolerance: 0.0
+        max_iter: 2
+        print_level: 0
+        relaxation:
+          down_type: l1-hsgs
+          up_type: l1-hsgs

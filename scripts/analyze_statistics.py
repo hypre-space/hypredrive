@@ -12,6 +12,7 @@ import pandas as pd
 import argparse
 import bisect
 import logging
+import textwrap
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
@@ -712,6 +713,26 @@ def plot_iters_total(df, cumulative, xtype, xlabel, time_unit, use_title=False, 
     )
 
 
+def _bar_geometry(n):
+    """Return ``(figsize, bar_width)`` for a bar chart with ``n`` bars.
+
+    The figure width scales with the number of bars and the bar width is kept
+    slim so that a handful of entries do not render as oversized blocks, while
+    many entries still fit within the default figure width.
+    """
+    bar_width = 0.55
+    fig_w = min(fgs[0] + 2.0, max(6.0, 1.6 * n + 2.0))
+    return (fig_w, fgs[1]), bar_width
+
+def _set_bar_xlim(n):
+    """Symmetric x-limits with a small, bar-count-independent margin."""
+    pad = 0.7
+    plt.xlim(-pad, (n - 1) + pad)
+
+def _bar_title(title):
+    """Wrap an over-long bar-chart title so it does not overflow the axes."""
+    return '\n'.join(textwrap.wrap(title, width=42)) if title else title
+
 def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig=None, title=None):
     """
     Plots a bar chart for a single metric (one of 'setup', 'solve', 'total', 'iters')
@@ -721,14 +742,16 @@ def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig
         raise ValueError(f"Unsupported metric: {metric}")
 
     logger.debug(f"Plotting bar chart for metric '{metric}'")
-    plt.figure(figsize=fgs)
 
     # Keep entry order stable (typically sorted by entry index)
     grp = df.sort_values(by='entry')
     y = grp[metric].tolist()
     x = list(range(len(y)))
 
-    plt.bar(x, y, color='#4C72B0', zorder=2)
+    fig_size, bar_width = _bar_geometry(len(x))
+    plt.figure(figsize=fig_size)
+    plt.bar(x, y, width=bar_width, color='#4C72B0', zorder=2)
+    _set_bar_xlim(len(x))
     plt.xticks(x, labels, fontsize=alfs, rotation=20, ha='right')
     if metric == 'iters':
         plt.ylabel("Iterations", fontsize=alfs)
@@ -737,7 +760,7 @@ def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig
     plt.xlabel("Solver", fontsize=alfs)
 
     if title:
-        plt.title(title, fontsize=tfs, fontweight='bold')
+        plt.title(_bar_title(title), fontsize=tfs, fontweight='bold')
     elif use_title:
         if metric == 'iters':
             plt.title("Iterations by solver", fontsize=tfs, fontweight='bold')
@@ -747,6 +770,51 @@ def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig
     plt.grid(True, axis='y', zorder=0)
     plt.tight_layout()
     save_and_show_plot(f"{metric}_bar_{savefig}")
+
+def plot_bar_stacked_time(df, metrics, time_unit, labels, use_title=False, savefig=None, title=None):
+    """
+    Plots a stacked bar chart of time metrics (e.g. ['setup', 'solve']) across
+    entries in a single log file, with one stacked bar per entry. Labels are
+    provided by the caller.
+    """
+    metric_styles = {
+        'setup': ('Setup', '#E69F00'),
+        'solve': ('Solve', '#009E73'),
+        'total': ('Total', '#4C72B0'),
+    }
+    for metric in metrics:
+        if metric not in metric_styles:
+            raise ValueError(f"Unsupported stacked metric: {metric}")
+
+    logger.debug(f"Plotting stacked bar chart for metrics {metrics}")
+
+    # Keep entry order stable (typically sorted by entry index)
+    grp = df.sort_values(by='entry')
+    x = list(range(len(grp)))
+
+    fig_size, bar_width = _bar_geometry(len(x))
+    plt.figure(figsize=fig_size)
+    bottom = [0.0] * len(grp)
+    for metric in metrics:
+        y = grp[metric].tolist()
+        label, color = metric_styles[metric]
+        plt.bar(x, y, width=bar_width, bottom=bottom, color=color, label=label, zorder=2)
+        bottom = [b + v for b, v in zip(bottom, y)]
+
+    _set_bar_xlim(len(x))
+    plt.xticks(x, labels, fontsize=alfs, rotation=20, ha='right')
+    plt.ylabel(f"Times {time_unit}", fontsize=alfs)
+    plt.xlabel("Solver", fontsize=alfs)
+    plt.legend(fontsize=lgfs)
+
+    if title:
+        plt.title(_bar_title(title), fontsize=tfs, fontweight='bold')
+    elif use_title:
+        plt.title("Setup/solve time by solver", fontsize=tfs, fontweight='bold')
+
+    plt.grid(True, axis='y', zorder=0)
+    plt.tight_layout()
+    save_and_show_plot(f"stacked_bar_{savefig}")
 
 def plot_throughput(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefig=None, linestyle='auto', markersize=None, title=None, log_x=False, log_y=False):
     """
@@ -1106,7 +1174,13 @@ def main():
         if parts[0] == 'bar':
             metrics = parts[1:]
             if len(metrics) > 1:
-                raise argparse.ArgumentTypeError("'bar' mode accepts at most one metric qualifier")
+                # Allow a stacked time breakdown: 'bar+setup+solve'
+                if sorted(metrics) != ['setup', 'solve']:
+                    raise argparse.ArgumentTypeError(
+                        "'bar' mode accepts a single metric, or 'setup+solve' "
+                        "for a stacked setup/solve breakdown"
+                    )
+                return '+'.join(['bar'] + metrics)
             if metrics and metrics[0] not in bar_metric_choices:
                 raise argparse.ArgumentTypeError(
                     f"Invalid bar metric: '{metrics[0]}'. "
@@ -1125,7 +1199,8 @@ def main():
     parser.add_argument("-m", "--mode", type=parse_modes, default='iters-and-times',
                         help="What to plot. Combine plain modes with '+' (e.g. 'setup+solve'). "
                              "For weak-scaling append metric qualifiers: 'weak-scaling+total+iter-times'. "
-                             "For bar append the metric: 'bar+iters'. "
+                             "For bar append the metric: 'bar+iters', or 'bar+setup+solve' for a "
+                             "stacked setup/solve breakdown. "
                              f"Plain modes: {', '.join(mode_choices)}.")
     parser.add_argument("-t", "--xtype", type=str, default='entry', choices=labels.keys(), help="Variable type for the abscissa")
     parser.add_argument("-l", "--xlabel", type=str, default=None, help="Label for the abscissa")
@@ -1430,8 +1505,14 @@ def main():
         if len(args.legend_names) != expected:
             raise ValueError(f"Number of legend names ({len(args.legend_names)}) must match number of entries ({expected}) after exclusions.")
         mode_parts = args.mode.split('+')
-        bar_metric = mode_parts[1] if len(mode_parts) > 1 else 'total'
-        plot_bar_time_metric(df, bar_metric, time_unit, args.legend_names, args.use_title, savefig, args.title)
+        bar_metrics = mode_parts[1:] if len(mode_parts) > 1 else ['total']
+        if len(bar_metrics) > 1:
+            # Stacked setup/solve breakdown (setup at the bottom).
+            plot_bar_stacked_time(df, ['setup', 'solve'], time_unit, args.legend_names,
+                                  args.use_title, savefig, args.title)
+        else:
+            plot_bar_time_metric(df, bar_metrics[0], time_unit, args.legend_names,
+                                 args.use_title, savefig, args.title)
         return
 
     log_x = args.log_x
