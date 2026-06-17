@@ -22,5 +22,6 @@ This directory contains utility scripts for validation, data preparation, plotti
 - [analyze_statistics.py](./analyze_statistics.py): Parses statistics outputs and generates plots for iterations, timings, and related solver metrics.
 - [eigplot.py](./eigplot.py): Reads eigenvalue files and plots the spectrum with summary statistics and optional histogram or inset views.
 - [job_launcher.py](./job_launcher.py): Portable wrapper automating job submission across diverse HPC platforms.
+- [plot_convergence.py](./plot_convergence.py): Parses solver convergence histories and plots residual-vs-iteration data for one or more runs.
 - [spmat_reorder.py](./spmat_reorder.py): Reorders HYPRE IJ matrices by dofmap index groups and can write reordered matrices and partition info.
 - [spyplot.py](./spyplot.py): Reads HYPRE matrix files and generates sparse matrix spy plots from text or binary matrix parts.

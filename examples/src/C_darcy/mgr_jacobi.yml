@@ -1,0 +1,37 @@
+# Darcy preconditioner strategy: two-block MGR, Jacobi F-relaxation.
+#
+# This reproduces the driver's default RT0/P0 configuration: flux rows (label 1)
+# are the MGR F-points relaxed with a single Jacobi sweep, and one BoomerAMG
+# V-cycle is applied to the pressure Schur-complement (the coarse block).
+# Baseline reference for the convergence comparison.
+general:
+  statistics: 1
+  exec_policy: host
+linear_system:
+  init_guess_mode: zeros
+solver:
+  gmres:
+    max_iter: 200
+    krylov_dim: 60
+    relative_tol: 1.0e-10
+    absolute_tol: 0.0
+    print_level: 2
+preconditioner:
+  mgr:
+    tolerance: 0.0
+    max_iter: 1
+    print_level: 0
+    coarse_th: 0.0
+    level:
+      0:
+        f_dofs: [1]
+        f_relaxation: jacobi
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: rap
+    coarsest_level:
+      amg:
+        tolerance: 0.0
+        max_iter: 1
+        print_level: 0

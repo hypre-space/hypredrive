@@ -1,0 +1,37 @@
+# Darcy preconditioner strategy: two-block MGR with BJ-ILU0 F-relaxation.
+#
+# Same splitting and coarse solve as mgr_jacobi.yml, but the flux block is
+# relaxed with block-Jacobi ILU(0) (BJ-ILU0) instead of a Jacobi sweep. The RT0
+# flux mass matrix is already well conditioned, so the stronger (and costlier)
+# flux relaxation does not reduce the GMRES iteration count here.
+general:
+  statistics: 1
+  exec_policy: host
+linear_system:
+  init_guess_mode: zeros
+solver:
+  gmres:
+    max_iter: 200
+    krylov_dim: 60
+    relative_tol: 1.0e-10
+    absolute_tol: 0.0
+    print_level: 2
+preconditioner:
+  mgr:
+    tolerance: 0.0
+    max_iter: 1
+    print_level: 0
+    coarse_th: 0.0
+    level:
+      0:
+        f_dofs: [1]
+        f_relaxation: ilu
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: rap
+    coarsest_level:
+      amg:
+        tolerance: 0.0
+        max_iter: 1
+        print_level: 0

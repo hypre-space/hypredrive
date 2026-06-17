@@ -1,0 +1,39 @@
+# Darcy preconditioner strategy: two-block MGR with a BJ-ILU0 global smoother.
+#
+# Same splitting and coarse solve as mgr_jacobi.yml, but an additional global
+# block-Jacobi ILU(0) smoothing sweep (BJ-ILU0 G-relaxation) is applied over the
+# full (flux + pressure) system on top of the Jacobi F-relaxation. For this
+# problem the global smoother adds work per iteration without improving the
+# Schur-complement approximation, so the GMRES iteration count grows relative
+# to the baseline.
+general:
+  statistics: 1
+  exec_policy: host
+linear_system:
+  init_guess_mode: zeros
+solver:
+  gmres:
+    max_iter: 200
+    krylov_dim: 60
+    relative_tol: 1.0e-10
+    absolute_tol: 0.0
+    print_level: 2
+preconditioner:
+  mgr:
+    tolerance: 0.0
+    max_iter: 1
+    print_level: 0
+    coarse_th: 0.0
+    level:
+      0:
+        f_dofs: [1]
+        f_relaxation: jacobi
+        g_relaxation: ilu
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: rap
+    coarsest_level:
+      amg:
+        tolerance: 0.0
+        max_iter: 1
+        print_level: 0

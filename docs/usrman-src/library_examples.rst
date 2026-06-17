@@ -641,6 +641,104 @@ overrides after the Darcy-specific options:
    mpirun -np 2 /path/to/build/darcy -n 30 110 85 -g x -v 1 \
       -a --solver:gmres:max_iter 100 --preconditioner:mgr:print_level 1
 
+Preconditioner Strategy Comparison
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Before comparing strategies, it helps to size the problem. On the full SPE10
+grid the assembled system has 4,525,000 rows and 23,471,400 nonzeros, roughly
+``5.2`` per row. It keeps the saddle-point block structure introduced above,
+with 3,403,000 flux rows and 1,122,000 pressure rows. The blocks are very
+different in density: the flux mass block :math:`M` holds 10,071,200 nonzeros
+(about ``2.96`` per row, coupling each face to the same-direction faces of its
+neighbouring cells), the flux--pressure block :math:`B` holds 6,668,200
+(about ``1.96`` per flux row, one entry per cell a face borders), and
+:math:`B^{\top}` holds 6,732,000 (exactly ``6`` per pressure row -- the six
+faces of every cell). The pressure--pressure block is empty, so the operator is
+indefinite; this is exactly the structure the MGR splitting below is designed to
+exploit.
+
+The flux/pressure splitting above leaves room for several preconditioner
+strategies. The example ships four MGR variants in ``examples/src/C_darcy/``
+that all converge on the SPE10 case but with different iteration counts:
+
+- ``mgr_jacobi.yml`` -- the default two-block MGR (Jacobi F-relaxation and a
+  single BoomerAMG V-cycle on the pressure Schur complement).
+- ``mgr_amg_strong.yml`` -- strengthens the coarse (pressure) solve to two
+  BoomerAMG V-cycles with l1-hybrid-SGS relaxation.
+- ``mgr_ilu.yml`` -- replaces the Jacobi flux relaxation with block-Jacobi
+  ILU(0) (BJ-ILU0 F-relaxation).
+- ``mgr_global_ilu.yml`` -- keeps Jacobi F-relaxation but adds a global
+  block-Jacobi ILU(0) smoother (BJ-ILU0 G-relaxation) over the full
+  flux+pressure system.
+
+Each strategy file sets ``print_level: 2`` on the GMRES solver and
+``statistics: 1``, so every log carries both the per-iteration residual history
+and a setup/solve timing summary. A single loop captures one log per strategy on
+the SPE10 case:
+
+.. code-block:: bash
+
+   cd examples/src/C_darcy
+   for s in mgr_jacobi mgr_amg_strong mgr_ilu mgr_global_ilu; do
+     mpirun -np 16 /path/to/build/darcy -n 60 220 85 -P 1 4 4 \
+        --K-file ../../../data/spe10_case2a/spe_perm.dat \
+        --K-file-grid 60 220 85 --K-file-k-order top-down \
+        -g y -v 1 -i ${s}.yml > ${s}.log
+   done
+
+Two helper scripts turn those logs into a side-by-side comparison.
+``scripts/plot_convergence.py`` (argparse-based; needs only the Python standard
+library and Matplotlib) parses the ``print_level: 2`` history and plots the
+relative residual against the Krylov iteration, while
+``scripts/analyze_statistics.py`` renders the setup/solve timing summary as a
+stacked bar chart (``-m bar+setup+solve``):
+
+.. code-block:: bash
+
+   # Left panel: GMRES convergence history
+   ../../../scripts/plot_convergence.py \
+      mgr_amg_strong.log mgr_jacobi.log mgr_ilu.log mgr_global_ilu.log \
+      --labels "MGR + strong coarse AMG" "MGR + Jacobi (default)" \
+               "MGR + BJ-ILU0 F-relax" "MGR + BJ-ILU0 G-relax" \
+      --title "SPE10 Darcy: GMRES convergence" -o convergence.png
+
+   # Right panel: stacked setup/solve time (HYPRE version read from the log)
+   cat mgr_amg_strong.log mgr_jacobi.log mgr_ilu.log mgr_global_ilu.log > combined.log
+   hv=$(grep -m1 HYPRE_RELEASE_VERSION combined.log | awk '{print $NF}')
+   ../../../scripts/analyze_statistics.py -f combined.log -m bar+setup+solve \
+      -ln "strong coarse AMG" "Jacobi (default)" "BJ-ILU0 F-relax" "BJ-ILU0 G-relax" \
+      -T "SPE10 Darcy setup/solve time (HYPRE ${hv})" -s panel.png
+
+   # Place the two panels side by side
+   convert convergence.png stacked_bar_panel.png -resize x1100 +append \
+      ../../../docs/usrman-src/figures/spe10_darcy_strategies.png
+
+.. figure:: figures/spe10_darcy_strategies.png
+   :alt: GMRES convergence and setup/solve time for four MGR strategies on SPE10
+   :align: center
+
+   Left: GMRES relative residual versus Krylov iteration. Right: stacked
+   setup/solve time per strategy. SPE10 case 2a Darcy problem (4.5M unknowns,
+   16 MPI ranks, ``relative_tol = 1e-10``, HYPRE 3.1.0).
+
+For this RT0/P0 system the flux mass block is well conditioned, so the cost is
+dominated by the quality of the pressure Schur-complement approximation.
+Strengthening the coarse pressure solve (``mgr_amg_strong.yml``) is the only
+change that lowers the iteration count, from 24 down to 19. Pouring more work
+into the flux block instead -- BJ-ILU0 F-relaxation or a global BJ-ILU0 smoother
+-- does not improve the Schur-complement approximation and only adds cost per
+iteration, so GMRES takes more iterations, not fewer.
+
+The timing panel adds an important caveat: fewest iterations is not the same as
+fastest wall-clock. Each ``mgr_amg_strong`` iteration runs two l1-hybrid-SGS AMG
+cycles, so even though it needs the fewest iterations its solve time is slightly
+higher than the much cheaper default ``mgr_jacobi``, which remains the best
+time-to-solution here. Setup time is small and nearly constant across
+strategies, so the solve phase dominates the total. For reference, a plain
+GMRES+BoomerAMG preconditioner without the MGR splitting stalls on the
+indefinite saddle-point system and fails to reach the tolerance within 200
+iterations, which is why MGR is the default.
+
 Reproducible Run
 ~~~~~~~~~~~~~~~~
 
