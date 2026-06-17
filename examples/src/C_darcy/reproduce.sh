@@ -7,19 +7,24 @@ Usage: examples/src/C_darcy/reproduce.sh [options]
 
 Reproduce the SPE10 mixed Darcy example:
   1. download/unpack the SPE10 case 2a data if needed,
-  2. run the 3D C Darcy benchmark,
-  3. generate SPE10 permeability/pressure figures.
+  2. build the darcy example if its executable is missing,
+  3. run the 3D C Darcy benchmark,
+  4. generate SPE10 permeability/pressure figures.
 
 Options:
   --figure-mode <layer|3d|both>
                    Figure(s) to generate (default: layer, or FIGURE_MODE)
-  --skip-run        Do not run the C benchmark.
+  --skip-run        Do not build or run the C benchmark.
   --skip-figure     Do not generate PNG figures.
   -h, --help        Print this help.
 
 Environment overrides:
-  BUILD_DIR        Build directory containing darcy (default: build-analysis-relwithdebinfo)
-  DARCY_BIN        Darcy executable path (default: ${BUILD_DIR}/darcy)
+  BUILD_DIR        Build directory for the auto-build (default: build)
+  DARCY_BIN        Prebuilt darcy executable to use instead of auto-building
+                   (default: ${BUILD_DIR}/darcy)
+  HYPRE_ROOT       Existing HYPRE install for the auto-build; if unset, hypre
+                   is fetched and built automatically by CMake.
+  CMAKE_BUILD_TYPE Build type for the auto-build (default: Release)
   MPIEXEC          MPI launcher (default: mpirun)
   NP               MPI ranks for the C benchmark (default: 16)
   NXYZ             C benchmark grid (default: "60 220 85")
@@ -71,8 +76,9 @@ done
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../../.." && pwd)"
 
-build_dir="${BUILD_DIR:-${repo_root}/build-analysis-relwithdebinfo}"
+build_dir="${BUILD_DIR:-${repo_root}/build}"
 darcy_bin="${DARCY_BIN:-${build_dir}/darcy}"
+build_type="${CMAKE_BUILD_TYPE:-Release}"
 mpiexec_cmd="${MPIEXEC:-mpirun}"
 np="${NP:-16}"
 nxyz="${NXYZ:-60 220 85}"
@@ -99,11 +105,38 @@ if [[ ! -s "${data_dir}/spe_perm.dat" ]]; then
     "${repo_root}/scripts/download_spe10_case2a.sh" "${data_dir}"
 fi
 
+build_darcy() {
+    if ! command -v cmake >/dev/null 2>&1; then
+        echo "Error: cmake is required to build the darcy example." >&2
+        echo "Install cmake, or set DARCY_BIN=/path/to/prebuilt/darcy." >&2
+        exit 1
+    fi
+
+    echo "Darcy executable not found; building it in ${build_dir}"
+    local -a cfg_args=(
+        -S "${repo_root}"
+        -B "${build_dir}"
+        -DCMAKE_BUILD_TYPE="${build_type}"
+        -DHYPREDRV_ENABLE_EXAMPLES=ON
+    )
+    if [[ -n "${HYPRE_ROOT:-}" ]]; then
+        cfg_args+=(-DHYPRE_ROOT="${HYPRE_ROOT}")
+    fi
+    cmake "${cfg_args[@]}"
+    cmake --build "${build_dir}" --target darcy --parallel
+}
+
 if [[ "${skip_run}" -eq 0 ]]; then
     if [[ ! -x "${darcy_bin}" ]]; then
-        echo "Error: Darcy executable not found or not executable: ${darcy_bin}" >&2
-        echo "Build it first, or set DARCY_BIN=/path/to/darcy." >&2
-        exit 1
+        if [[ -n "${DARCY_BIN:-}" ]]; then
+            echo "Error: DARCY_BIN is set but not executable: ${darcy_bin}" >&2
+            exit 1
+        fi
+        build_darcy
+        if [[ ! -x "${darcy_bin}" ]]; then
+            echo "Error: build did not produce an executable at ${darcy_bin}" >&2
+            exit 1
+        fi
     fi
 
     log_path="${out_dir}/darcy_spe10.log"

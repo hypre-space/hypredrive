@@ -531,7 +531,10 @@ case:
 
    examples/src/C_darcy/reproduce.sh
 
-By default, the script downloads the ignored SPE10 data if needed, runs the
+By default, the script downloads the ignored SPE10 data if needed, builds the
+``darcy`` example automatically when its executable is missing (set ``BUILD_DIR``
+to choose the build directory, ``HYPRE_ROOT`` to reuse an existing HYPRE install,
+or ``DARCY_BIN`` to point at a prebuilt binary), runs the
 full ``60 x 220 x 85`` heterogeneous C benchmark on 16 MPI ranks with a
 ``1 x 4 x 4`` rank grid, writes the solver log to
 ``examples/src/C_darcy/reproduce-out/darcy_spe10.log``, writes full-resolution
