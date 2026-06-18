@@ -654,6 +654,8 @@ configuration. Available options for the preconditioner type are:
 - ``ilu``: incomplete LU factorization.
 - ``fsai``: factorized sparse approximate inverse.
 - ``mgr``: multigrid reduction.
+- ``ams``: auxiliary-space Maxwell solver (for H(curl) / edge-element problems).
+- ``ads``: auxiliary-space divergence solver (for H(div) / face-element problems).
 
 The preconditioner type must be entered as a key in a new indentation level under
 ``preconditioner``.
@@ -1517,3 +1519,82 @@ code block below:
 
    Nested Krylov-in-MGR requires the vendored Hypre build in the ``hypre/`` folder. Make
    sure to build Hypre with ``hypre/build-hypre.sh`` before building HypreDrive.
+
+.. _ams:
+
+AMS
+~~~
+
+The auxiliary-space Maxwell solver (AMS) preconditioner targets definite Maxwell
+(curl-curl + mass) problems discretized with Nedelec (edge) elements in H(curl).
+In addition to the system matrix, AMS requires two operator inputs that must be
+provided through the programmatic API (they have no YAML keys):
+
+- the **discrete gradient** ``G`` via ``HYPREDRV_LinearSystemSetDiscreteGradient()``;
+- the **vertex coordinate vectors** via ``HYPREDRV_LinearSystemSetCoordinates()``.
+
+See the ``examples/src/C_maxwell`` driver for a complete usage example. The scalar
+options below map directly onto the corresponding ``HYPRE_AMSSet*`` routines;
+integer-valued options accept the raw Hypre values documented in the
+`Hypre AMS reference <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html>`_.
+
+- ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`amg` for a description of
+  these variables. As a preconditioner the defaults are ``max_iter = 1`` and
+  ``tolerance = 0.0``.
+
+- ``dimension`` - spatial dimension (``2`` or ``3``). Default value is ``3``.
+
+- ``cycle_type`` - AMS cycle type (multiplicative/additive variants). Default value is ``1``.
+
+- ``relax_type``, ``relax_times``, ``relax_weight``, ``omega`` - smoothing options on the
+  original matrix (``HYPRE_AMSSetSmoothingOptions``). Defaults are ``2`` (l1-scaled GS),
+  ``1``, ``1.0``, and ``1.0``.
+
+- ``proj_freq`` - subspace-projection frequency. Default value is ``5``.
+
+- ``alpha_coarsen_type``, ``alpha_agg_levels``, ``alpha_relax_type``,
+  ``alpha_strength_threshold``, ``alpha_interp_type``, ``alpha_Pmax``,
+  ``alpha_coarse_relax_type`` - BoomerAMG options for the vector Poisson (Pi-space)
+  problem (``HYPRE_AMSSetAlphaAMGOptions`` / ``...CoarseRelaxType``). Defaults are
+  ``10``, ``1``, ``3``, ``0.25``, ``0``, ``0``, and ``8``.
+
+- ``beta_coarsen_type``, ``beta_agg_levels``, ``beta_relax_type``,
+  ``beta_strength_threshold``, ``beta_interp_type``, ``beta_Pmax``,
+  ``beta_coarse_relax_type`` - BoomerAMG options for the scalar Poisson (G-space)
+  problem (``HYPRE_AMSSetBetaAMGOptions`` / ``...CoarseRelaxType``). Defaults match the
+  alpha options.
+
+.. _ads:
+
+ADS
+~~~
+
+The auxiliary-space divergence solver (ADS) preconditioner targets grad-div problems
+discretized with Raviart-Thomas (face) elements in H(div). In addition to the system
+matrix it requires three operator inputs provided through the programmatic API:
+
+- the **discrete gradient** ``G`` via ``HYPREDRV_LinearSystemSetDiscreteGradient()``;
+- the **discrete curl** ``C`` via ``HYPREDRV_LinearSystemSetDiscreteCurl()``;
+- the **vertex coordinate vectors** via ``HYPREDRV_LinearSystemSetCoordinates()``.
+
+The scalar options map onto the corresponding ``HYPRE_ADSSet*`` routines:
+
+- ``max_iter``, ``tolerance``, ``print_level`` - as for AMS (defaults ``1``, ``0.0``, ``0``).
+
+- ``cycle_type`` - ADS cycle type. Default value is ``1``.
+
+- ``relax_type``, ``relax_times``, ``relax_weight``, ``omega`` - smoothing options
+  (``HYPRE_ADSSetSmoothingOptions``). Defaults ``2``, ``1``, ``1.0``, ``1.0``.
+
+- ``cheby_order``, ``cheby_fraction`` - Chebyshev smoothing options
+  (``HYPRE_ADSSetChebySmoothingOptions``). Defaults ``2`` and ``0.3``.
+
+- ``ams_cycle_type``, ``ams_coarsen_type``, ``ams_agg_levels``, ``ams_relax_type``,
+  ``ams_strength_threshold``, ``ams_interp_type``, ``ams_Pmax`` - options for the
+  auxiliary AMS (curl-curl) solve (``HYPRE_ADSSetAMSOptions``). Defaults ``11``, ``10``,
+  ``1``, ``3``, ``0.25``, ``0``, ``0``.
+
+- ``amg_coarsen_type``, ``amg_agg_levels``, ``amg_relax_type``,
+  ``amg_strength_threshold``, ``amg_interp_type``, ``amg_Pmax`` - options for the
+  auxiliary vector-Poisson AMG solve (``HYPRE_ADSSetAMGOptions``). Defaults ``10``,
+  ``1``, ``3``, ``0.25``, ``0``, ``0``.

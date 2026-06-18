@@ -1,0 +1,9 @@
+solver:
+  pcg:
+    max_iter: 500
+    print_level: 0
+    relative_tol: 1.0e-8
+
+preconditioner:
+  amg:
+    max_iter: 1

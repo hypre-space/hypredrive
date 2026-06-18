@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,10 +59,14 @@ typedef struct
    HYPRE_Int  P[3];
    HYPRE_Real L[3];
    HYPRE_Real freq;
+   HYPRE_Real alpha; /* grad-div coefficient */
+   HYPRE_Real beta;  /* mass coefficient (beta >= 0 for ADS) */
    HYPRE_Int  nsolve;
    HYPRE_Int  verbose;
    char      *yaml_file;
    char      *solver_preset;
+   char      *name;     /* optional object name (labels the statistics table) */
+   char      *vtk_file; /* optional VTK output base name (parallel: .pvti + .vti) */
 } GradDivParams;
 
 /*--------------------------------------------------------------------------
@@ -257,12 +262,17 @@ PrintUsage(void)
    printf("\nUsage: ${MPIEXEC_COMMAND} <np> ./graddiv [options]\n\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file (Opt.)\n");
+   printf("  --name <str>      : Object name (labels the statistics table) (Opt.)\n");
    printf("  -n <nx> <ny> <nz> : Global grid dimensions in nodes (17 17 17)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (1 1 1)\n");
    printf("  -L <Lx> <Ly> <Lz> : Physical dimensions (1 1 1)\n");
    printf("  -freq <f>         : Manufactured frequency, kappa = f*pi (1.0)\n");
+   printf("  -alpha <val>      : grad-div coefficient (1.0)\n");
+   printf("  -beta <val>       : mass coefficient, >= 0 (1.0)\n");
    printf("  -ns|--nsolve <n>  : Number of solves (1)\n");
    printf("  -v|--verbose <n>  : Verbosity bitset (1)\n");
+   printf("  -vtk <base>       : Write the solution as VTK ImageData (cell-centered u +\n");
+   printf("                      magnitude); serial -> <base>.vti, parallel -> <base>.pvti\n");
    printf("  -h|--help         : Print this message\n\n");
    return 0;
 }
@@ -277,16 +287,24 @@ ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_
       params->L[i] = 1.0;
    }
    params->freq          = 1.0;
+   params->alpha         = 1.0;
+   params->beta          = 1.0;
    params->nsolve        = 1;
    params->verbose       = 1;
    params->yaml_file     = NULL;
    params->solver_preset = "pcg";
+   params->name          = NULL;
+   params->vtk_file      = NULL;
 
    for (int i = 1; i < argc; i++)
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
          if (++i < argc) params->yaml_file = argv[i];
+      }
+      else if (!strcmp(argv[i], "--name"))
+      {
+         if (++i < argc) params->name = argv[i];
       }
       else if (!strcmp(argv[i], "-n"))
       {
@@ -307,6 +325,14 @@ ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_
       {
          if (++i < argc) params->freq = atof(argv[i]);
       }
+      else if (!strcmp(argv[i], "-alpha"))
+      {
+         if (++i < argc) params->alpha = atof(argv[i]);
+      }
+      else if (!strcmp(argv[i], "-beta"))
+      {
+         if (++i < argc) params->beta = atof(argv[i]);
+      }
       else if (!strcmp(argv[i], "-ns") || !strcmp(argv[i], "--nsolve"))
       {
          if (++i < argc) params->nsolve = atoi(argv[i]);
@@ -314,6 +340,10 @@ ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
          if (++i < argc) params->verbose = atoi(argv[i]);
+      }
+      else if (!strcmp(argv[i], "-vtk") || !strcmp(argv[i], "--vtk"))
+      {
+         if (++i < argc) params->vtk_file = argv[i];
       }
       else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
       {
@@ -341,6 +371,16 @@ ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_
          if (!myid) printf("Error: too many ranks in dimension %d\n", d);
          return 1;
       }
+   }
+   if (params->alpha <= 0.0)
+   {
+      if (!myid) printf("Error: alpha must be positive\n");
+      return 1;
+   }
+   if (params->beta < 0.0)
+   {
+      if (!myid) printf("Error: beta must be >= 0 (required for ADS)\n");
+      return 1;
    }
    return 0;
 }
@@ -469,9 +509,10 @@ rt0_basis(int a, HYPRE_Real lx, HYPRE_Real ly, HYPRE_Real lz, const HYPRE_Real h
 static const HYPRE_Real g3_x[3] = {0.1127016653792583, 0.5, 0.8872983346207417};
 static const HYPRE_Real g3_w[3] = {0.2777777777777778, 0.4444444444444444, 0.2777777777777778};
 
-/* Precompute the (constant) 6x6 RT0 element matrix S = grad-div + mass. */
+/* Precompute the (constant) 6x6 RT0 element matrix S = alpha*(grad-div) + beta*(mass). */
 static void
-ComputeElementMatrix(const HYPRE_Real h[3], HYPRE_Real S[6][6])
+ComputeElementMatrix(const HYPRE_Real h[3], HYPRE_Real alpha, HYPRE_Real beta,
+                     HYPRE_Real S[6][6])
 {
    HYPRE_Real detJ = h[0] * h[1] * h[2];
    for (int a = 0; a < 6; a++)
@@ -489,7 +530,7 @@ ComputeElementMatrix(const HYPRE_Real h[3], HYPRE_Real S[6][6])
          for (int b = 0; b < 6; b++)
          {
             HYPRE_Real mass = v[a][0] * v[b][0] + v[a][1] * v[b][1] + v[a][2] * v[b][2];
-            S[a][b] += w * (dv[a] * dv[b] + mass); /* alpha = beta = 1 */
+            S[a][b] += w * (alpha * dv[a] * dv[b] + beta * mass);
          }
    }
 }
@@ -504,7 +545,8 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm, HYPRE_I
                    HYPRE_IJVector coord_ptr[3], HYPRE_Real **xref_ptr)
 {
    const HYPRE_Real kappa = params->freq * M_PI;
-   const HYPRE_Real fcoef = 1.0 + kappa * kappa;
+   /* grad(div u) = -kappa^2 u, so f = alpha*kappa^2*u + beta*u = (alpha*kappa^2 + beta) u */
+   const HYPRE_Real fcoef = params->alpha * kappa * kappa + params->beta;
    const HYPRE_Int  Nx = m->gdims[0], Ny = m->gdims[1], Nz = m->gdims[2];
 
    HYPRE_IJMatrix A, G, C;
@@ -535,7 +577,7 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm, HYPRE_I
    HYPRE_Real *xref = (HYPRE_Real *)calloc((size_t)(m->num_faces_local > 0 ? m->num_faces_local : 1),
                                            sizeof(HYPRE_Real));
    HYPRE_Real S[6][6];
-   ComputeElementMatrix(m->h, S);
+   ComputeElementMatrix(m->h, params->alpha, params->beta, S);
 
    /* ---- Assemble owned interior face rows of A and load b (ghost-cell loop) ---- */
    HYPRE_Int cx_lo = (m->pstarts[0][m->coords[0]] > 0) ? (HYPRE_Int)m->pstarts[0][m->coords[0]] - 1 : 0;
@@ -720,6 +762,156 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm, HYPRE_I
 }
 
 /*--------------------------------------------------------------------------
+ * VTK output: reconstruct the cell-centered field u (and its magnitude) from
+ * the face DOFs and write a parallel VTK ImageData dataset (one .vti piece per
+ * rank plus a .pvti master). The full face solution is gathered to every rank
+ * (rank-contiguous numbering), after which each rank reconstructs its own cell
+ * block locally.
+ *--------------------------------------------------------------------------*/
+static void
+vtk_cell_extent(const GradDivMesh *m, HYPRE_Int px, HYPRE_Int py, HYPRE_Int pz,
+                HYPRE_Int ext[6])
+{
+   HYPRE_BigInt x1 = m->pstarts[0][px + 1], y1 = m->pstarts[1][py + 1], z1 = m->pstarts[2][pz + 1];
+   ext[0] = (HYPRE_Int)m->pstarts[0][px];
+   ext[1] = (HYPRE_Int)(x1 < m->gdims[0] ? x1 : m->gdims[0] - 1);
+   ext[2] = (HYPRE_Int)m->pstarts[1][py];
+   ext[3] = (HYPRE_Int)(y1 < m->gdims[1] ? y1 : m->gdims[1] - 1);
+   ext[4] = (HYPRE_Int)m->pstarts[2][pz];
+   ext[5] = (HYPRE_Int)(z1 < m->gdims[2] ? z1 : m->gdims[2] - 1);
+}
+
+static void
+vtk_write_piece(const char *fname, const HYPRE_Int ext[6], const HYPRE_Real sp[3],
+                const double *uvec, const double *umag, size_t ncells)
+{
+   FILE *fp = fopen(fname, "wb");
+   if (!fp) return;
+   uint64_t ub = (uint64_t)ncells * 3 * sizeof(double);
+   uint64_t mb = (uint64_t)ncells * sizeof(double);
+   uint64_t uo = 0, mo = uo + sizeof(uint64_t) + ub;
+   fprintf(fp, "<?xml version=\"1.0\"?>\n");
+   fprintf(fp, "<VTKFile type=\"ImageData\" version=\"1.0\" byte_order=\"LittleEndian\" "
+               "header_type=\"UInt64\">\n");
+   fprintf(fp, "  <ImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+               "Spacing=\"%.17g %.17g %.17g\">\n",
+           ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], sp[0], sp[1], sp[2]);
+   fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", ext[0], ext[1], ext[2], ext[3],
+           ext[4], ext[5]);
+   fprintf(fp, "      <CellData Vectors=\"solution\" Scalars=\"magnitude\">\n");
+   fprintf(fp, "        <DataArray type=\"Float64\" Name=\"solution\" "
+               "NumberOfComponents=\"3\" format=\"appended\" offset=\"%llu\"/>\n",
+           (unsigned long long)uo);
+   fprintf(fp, "        <DataArray type=\"Float64\" Name=\"magnitude\" format=\"appended\" "
+               "offset=\"%llu\"/>\n",
+           (unsigned long long)mo);
+   fprintf(fp, "      </CellData>\n      <PointData></PointData>\n    </Piece>\n"
+               "  </ImageData>\n  <AppendedData encoding=\"raw\">\n   _");
+   fwrite(&ub, sizeof(uint64_t), 1, fp);
+   fwrite(uvec, 1, (size_t)ub, fp);
+   fwrite(&mb, sizeof(uint64_t), 1, fp);
+   fwrite(umag, 1, (size_t)mb, fp);
+   fprintf(fp, "\n  </AppendedData>\n</VTKFile>\n");
+   fclose(fp);
+}
+
+static void
+vtk_write_master(const char *fname, const char *piece_base, const GradDivMesh *m,
+                 const HYPRE_Real sp[3])
+{
+   FILE *fp = fopen(fname, "w");
+   if (!fp) return;
+   HYPRE_Int whole[6] = {0, m->gdims[0] - 1, 0, m->gdims[1] - 1, 0, m->gdims[2] - 1};
+   fprintf(fp, "<?xml version=\"1.0\"?>\n<VTKFile type=\"PImageData\" version=\"1.0\" "
+               "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n");
+   fprintf(fp, "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+               "Spacing=\"%.17g %.17g %.17g\" GhostLevel=\"0\">\n",
+           whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sp[0], sp[1], sp[2]);
+   fprintf(fp, "    <PCellData Vectors=\"solution\" Scalars=\"magnitude\">\n"
+               "      <PDataArray type=\"Float64\" Name=\"solution\" NumberOfComponents=\"3\"/>\n"
+               "      <PDataArray type=\"Float64\" Name=\"magnitude\"/>\n    </PCellData>\n");
+   for (int r = 0; r < m->nprocs; r++)
+   {
+      HYPRE_Int ext[6];
+      vtk_cell_extent(m, m->rank_coords[r][0], m->rank_coords[r][1], m->rank_coords[r][2], ext);
+      fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s_p%d.vti\"/>\n", ext[0],
+              ext[1], ext[2], ext[3], ext[4], ext[5], piece_base, r);
+   }
+   fprintf(fp, "  </PImageData>\n</VTKFile>\n");
+   fclose(fp);
+}
+
+static void
+WriteGradDivVTK(const GradDivMesh *m, const char *base, const HYPRE_Complex *sol_local)
+{
+   int *counts = (int *)malloc((size_t)m->nprocs * sizeof(int));
+   int *displs = (int *)malloc((size_t)m->nprocs * sizeof(int));
+   for (int r = 0; r < m->nprocs; r++)
+   {
+      counts[r] = (int)(m->rank_face_lower[r + 1] - m->rank_face_lower[r]);
+      displs[r] = (int)m->rank_face_lower[r];
+   }
+   double *gsol = (double *)malloc((size_t)m->num_faces_global * sizeof(double));
+   MPI_Allgatherv((const void *)sol_local, m->num_faces_local, HYPRE_MPI_REAL, gsol, counts,
+                  displs, HYPRE_MPI_REAL, m->cart_comm);
+
+   HYPRE_Int ext[6];
+   vtk_cell_extent(m, m->coords[0], m->coords[1], m->coords[2], ext);
+   HYPRE_Int ncx = ext[1] - ext[0], ncy = ext[3] - ext[2], ncz = ext[5] - ext[4];
+   size_t    ncells = (size_t)ncx * (size_t)ncy * (size_t)ncz;
+   double   *uvec = (double *)malloc((ncells ? ncells : 1) * 3 * sizeof(double));
+   double   *umag = (double *)malloc((ncells ? ncells : 1) * sizeof(double));
+   HYPRE_Real cc[3] = {0.5 * m->h[0], 0.5 * m->h[1], 0.5 * m->h[2]};
+
+   size_t idx = 0;
+   for (HYPRE_Int kc = ext[4]; kc < ext[5]; kc++)
+   for (HYPRE_Int jc = ext[2]; jc < ext[3]; jc++)
+   for (HYPRE_Int ic = ext[0]; ic < ext[1]; ic++)
+   {
+      HYPRE_Real U[3] = {0.0, 0.0, 0.0};
+      for (int a = 0; a < 6; a++)
+      {
+         HYPRE_BigInt gid = face_gid(m, face_dir6[a], ic + face_off6[a][0],
+                                     jc + face_off6[a][1], kc + face_off6[a][2]);
+         HYPRE_Real   v[3], div;
+         rt0_basis(a, cc[0], cc[1], cc[2], m->h, v, &div);
+         U[0] += gsol[gid] * v[0];
+         U[1] += gsol[gid] * v[1];
+         U[2] += gsol[gid] * v[2];
+      }
+      uvec[3 * idx + 0] = U[0];
+      uvec[3 * idx + 1] = U[1];
+      uvec[3 * idx + 2] = U[2];
+      umag[idx]         = sqrt(U[0] * U[0] + U[1] * U[1] + U[2] * U[2]);
+      idx++;
+   }
+
+   char fname[512];
+   const char *bn = strrchr(base, '/');
+   bn = bn ? bn + 1 : base;
+   if (m->nprocs == 1)
+   {
+      snprintf(fname, sizeof(fname), "%s.vti", base);
+   }
+   else
+   {
+      snprintf(fname, sizeof(fname), "%s_p%d.vti", base, m->mypid);
+   }
+   vtk_write_piece(fname, ext, m->h, uvec, umag, ncells);
+   if (m->mypid == 0 && m->nprocs > 1)
+   {
+      snprintf(fname, sizeof(fname), "%s.pvti", base);
+      vtk_write_master(fname, bn, m, m->h);
+   }
+
+   free(uvec);
+   free(umag);
+   free(gsol);
+   free(counts);
+   free(displs);
+}
+
+/*--------------------------------------------------------------------------
  * main
  *--------------------------------------------------------------------------*/
 int
@@ -770,6 +962,12 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "ads"));
    }
 
+   /* Name the object after parsing (input parsing re-initializes the stats). */
+   if (params.name)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_ObjectSetName(hypredrv, params.name));
+   }
+
    CreateMesh(comm, &params, &mesh);
 
    if (!myid && (params.verbose & 0x1))
@@ -778,7 +976,8 @@ main(int argc, char *argv[])
       printf("  grid (nodes) : %d x %d x %d\n", (int)params.N[0], (int)params.N[1], (int)params.N[2]);
       printf("  procs        : %d x %d x %d\n", (int)params.P[0], (int)params.P[1], (int)params.P[2]);
       printf("  global faces : %lld\n", (long long)mesh->num_faces_global);
-      printf("  frequency    : kappa = %g * pi\n\n", params.freq);
+      printf("  frequency    : kappa = %g * pi\n", params.freq);
+      printf("  coefficients : alpha = %g, beta = %g\n\n", params.alpha, params.beta);
    }
 
    BuildGradDivSystem(mesh, &params, comm, &A, &b, &G, &C, coord, &xref);
@@ -819,6 +1018,13 @@ main(int argc, char *argv[])
       HYPRE_Real rel = (glob[1] > 0.0) ? sqrt(glob[0] / glob[1]) : sqrt(glob[0]);
       if (!myid)
          printf("\nDiscretization error (relative l2 over face DOFs): %.6e\n", rel);
+
+      if (params.vtk_file)
+      {
+         WriteGradDivVTK(mesh, params.vtk_file, sol);
+         if (!myid) printf("Wrote VTK solution to %s%s\n", params.vtk_file,
+                           num_procs > 1 ? ".pvti" : ".vti");
+      }
    }
 
    HYPRE_IJMatrixDestroy(A);

@@ -1,0 +1,14 @@
+solver:
+  gmres:
+    max_iter: 500
+    krylov_dim: 100
+    print_level: 0
+    relative_tol: 1.0e-8
+
+preconditioner:
+  schwarz:
+    variant: ras-iluk
+    overlap: 1
+    iluk_level_of_fill: 0
+    max_iter: 1
+    print_level: 0

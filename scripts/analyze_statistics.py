@@ -733,7 +733,7 @@ def _bar_title(title):
     """Wrap an over-long bar-chart title so it does not overflow the axes."""
     return '\n'.join(textwrap.wrap(title, width=42)) if title else title
 
-def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig=None, title=None):
+def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig=None, title=None, xlabel=None):
     """
     Plots a bar chart for a single metric (one of 'setup', 'solve', 'total', 'iters')
     across entries in a single log file. Labels are provided by the caller.
@@ -757,7 +757,7 @@ def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig
         plt.ylabel("Iterations", fontsize=alfs)
     else:
         plt.ylabel(f"Times {time_unit}", fontsize=alfs)
-    plt.xlabel("Solver", fontsize=alfs)
+    plt.xlabel(xlabel if xlabel else "Solver", fontsize=alfs)
 
     if title:
         plt.title(_bar_title(title), fontsize=tfs, fontweight='bold')
@@ -771,7 +771,7 @@ def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig
     plt.tight_layout()
     save_and_show_plot(f"{metric}_bar_{savefig}")
 
-def plot_bar_stacked_time(df, metrics, time_unit, labels, use_title=False, savefig=None, title=None):
+def plot_bar_stacked_time(df, metrics, time_unit, labels, use_title=False, savefig=None, title=None, xlabel=None):
     """
     Plots a stacked bar chart of time metrics (e.g. ['setup', 'solve']) across
     entries in a single log file, with one stacked bar per entry. Labels are
@@ -804,7 +804,7 @@ def plot_bar_stacked_time(df, metrics, time_unit, labels, use_title=False, savef
     _set_bar_xlim(len(x))
     plt.xticks(x, labels, fontsize=alfs, rotation=20, ha='right')
     plt.ylabel(f"Times {time_unit}", fontsize=alfs)
-    plt.xlabel("Solver", fontsize=alfs)
+    plt.xlabel(xlabel if xlabel else "Solver", fontsize=alfs)
     plt.legend(fontsize=lgfs)
 
     if title:
@@ -1146,7 +1146,8 @@ def main():
               'timestep': "Timestep",
               'timestep_offset': "Timestep",
               'ls_id': "Linear system ID",
-              'nl_step': "Nonlinear step"}
+              'nl_step': "Nonlinear step",
+              'xval': "Parameter value"}
 
     # List of pre-defined modes:
     mode_choices = ('iters', 'times', 'iters-and-times', 'iters-and-total', 'setup', 'solve', 'total', 'throughput', 'bar', 'weak-scaling')
@@ -1204,6 +1205,9 @@ def main():
                              f"Plain modes: {', '.join(mode_choices)}.")
     parser.add_argument("-t", "--xtype", type=str, default='entry', choices=labels.keys(), help="Variable type for the abscissa")
     parser.add_argument("-l", "--xlabel", type=str, default=None, help="Label for the abscissa")
+    parser.add_argument("--xvalues", type=float, nargs="+", default=None,
+                        help="Explicit x-axis values (one per entry, repeated per source/file); "
+                             "use with '-t xval' for parameter sweeps")
     parser.add_argument("-s", "--savefig", default=None, help="Save figure(s) given this name suffix")
     parser.add_argument("-c", "--cumulative", action='store_true', help='Plot cumulative quantities')
     parser.add_argument("-u", "--use_title", action='store_true', help='Show title in plots')
@@ -1341,6 +1345,16 @@ def main():
 
     # Convert data types (only for columns that exist)
     df = df.astype({k: v for k, v in data_types.items() if k in df.columns})
+
+    # Explicit x-axis values for parameter sweeps: assign one value per entry,
+    # in file order, repeated within each source/file.
+    if args.xvalues is not None:
+        n = len(args.xvalues)
+        counts = df.groupby('source', sort=False).size()
+        if (counts != n).any():
+            sys.exit(f"Error: --xvalues provides {n} value(s) but a source has "
+                     f"{int(counts.max())} entries; the counts must match.")
+        df['xval'] = df.groupby('source', sort=False).cumcount().map(lambda p: args.xvalues[p])
 
     if args.tsteps:
         tsteps = read_timesteps_file(args.tsteps)
@@ -1509,10 +1523,10 @@ def main():
         if len(bar_metrics) > 1:
             # Stacked setup/solve breakdown (setup at the bottom).
             plot_bar_stacked_time(df, ['setup', 'solve'], time_unit, args.legend_names,
-                                  args.use_title, savefig, args.title)
+                                  args.use_title, savefig, args.title, xlabel=args.xlabel)
         else:
             plot_bar_time_metric(df, bar_metrics[0], time_unit, args.legend_names,
-                                 args.use_title, savefig, args.title)
+                                 args.use_title, savefig, args.title, xlabel=args.xlabel)
         return
 
     log_x = args.log_x

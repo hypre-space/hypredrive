@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -66,10 +67,14 @@ typedef struct
    HYPRE_Int  P[3];          /* processor grid dimensions */
    HYPRE_Real L[3];          /* physical domain dimensions */
    HYPRE_Real freq;          /* manufactured-solution frequency (kappa = freq*pi) */
+   HYPRE_Real muinv;         /* inverse magnetic permeability (curl-curl coefficient) */
+   HYPRE_Real sigma;         /* conductivity / mass coefficient (sigma >= 0 for AMS) */
    HYPRE_Int  nsolve;        /* number of solves */
    HYPRE_Int  verbose;       /* verbosity bitset */
    char      *yaml_file;     /* YAML configuration file */
    char      *solver_preset; /* preset selector when no YAML file is given */
+   char      *name;          /* optional object name (labels the statistics table) */
+   char      *vtk_file;      /* optional VTK output base name (parallel: .pvti + .vti) */
 } MaxwellParams;
 
 /*--------------------------------------------------------------------------
@@ -241,10 +246,15 @@ PrintUsage(void)
    printf("Usage: ${MPIEXEC_COMMAND} <np> ./maxwell [options]\n\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file (Opt.)\n");
+   printf("  --name <str>      : Object name (labels the statistics table) (Opt.)\n");
+   printf("  -vtk <base>       : Write the solution as VTK ImageData (cell-centered E +\n");
+   printf("                      magnitude); parallel runs write <base>.pvti + pieces (Opt.)\n");
    printf("  -n <nx> <ny> <nz> : Global grid dimensions in nodes (17 17 17)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (1 1 1)\n");
    printf("  -L <Lx> <Ly> <Lz> : Physical dimensions (1 1 1)\n");
    printf("  -freq <f>         : Manufactured frequency, kappa = f*pi (1.0)\n");
+   printf("  -muinv <val>      : Inverse permeability (curl-curl coefficient) (1.0)\n");
+   printf("  -sigma <val>      : Conductivity / mass coefficient, >= 0 (1.0)\n");
    printf("  -ns|--nsolve <n>  : Number of solves (1)\n");
    printf("  -v|--verbose <n>  : Verbosity bitset (1)\n");
    printf("  -h|--help         : Print this message\n\n");
@@ -264,16 +274,28 @@ ParseArguments(int argc, char *argv[], MaxwellParams *params, int myid, int num_
       params->L[i] = 1.0;
    }
    params->freq          = 1.0;
+   params->muinv         = 1.0;
+   params->sigma         = 1.0;
    params->nsolve        = 1;
    params->verbose       = 1;
    params->yaml_file     = NULL;
    params->solver_preset = "pcg";
+   params->name          = NULL;
+   params->vtk_file      = NULL;
 
    for (int i = 1; i < argc; i++)
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
          if (++i < argc) params->yaml_file = argv[i];
+      }
+      else if (!strcmp(argv[i], "--name"))
+      {
+         if (++i < argc) params->name = argv[i];
+      }
+      else if (!strcmp(argv[i], "-vtk") || !strcmp(argv[i], "--vtk"))
+      {
+         if (++i < argc) params->vtk_file = argv[i];
       }
       else if (!strcmp(argv[i], "-n"))
       {
@@ -305,6 +327,14 @@ ParseArguments(int argc, char *argv[], MaxwellParams *params, int myid, int num_
       else if (!strcmp(argv[i], "-freq"))
       {
          if (++i < argc) params->freq = atof(argv[i]);
+      }
+      else if (!strcmp(argv[i], "-muinv"))
+      {
+         if (++i < argc) params->muinv = atof(argv[i]);
+      }
+      else if (!strcmp(argv[i], "-sigma"))
+      {
+         if (++i < argc) params->sigma = atof(argv[i]);
       }
       else if (!strcmp(argv[i], "-ns") || !strcmp(argv[i], "--nsolve"))
       {
@@ -342,6 +372,16 @@ ParseArguments(int argc, char *argv[], MaxwellParams *params, int myid, int num_
          if (!myid) printf("Error: too many ranks in dimension %d\n", d);
          return 1;
       }
+   }
+   if (params->muinv <= 0.0)
+   {
+      if (!myid) printf("Error: muinv must be positive\n");
+      return 1;
+   }
+   if (params->sigma < 0.0)
+   {
+      if (!myid) printf("Error: sigma must be >= 0 (required for AMS)\n");
+      return 1;
    }
    return 0;
 }
@@ -505,9 +545,10 @@ static const HYPRE_Real g3_x[3] = {0.1127016653792583, 0.5, 0.8872983346207417};
 static const HYPRE_Real g3_w[3] = {0.2777777777777778, 0.4444444444444444,
                                    0.2777777777777778};
 
-/* Precompute the (constant) 12x12 element matrix S = curl-curl + mass. */
+/* Precompute the (constant) 12x12 element matrix S = muinv*(curl-curl) + sigma*(mass). */
 static void
-ComputeElementMatrix(const HYPRE_Real h[3], HYPRE_Real S[12][12])
+ComputeElementMatrix(const HYPRE_Real h[3], HYPRE_Real muinv, HYPRE_Real sigma,
+                     HYPRE_Real S[12][12])
 {
    HYPRE_Real detJ = h[0] * h[1] * h[2];
    for (int a = 0; a < 12; a++)
@@ -526,7 +567,7 @@ ComputeElementMatrix(const HYPRE_Real h[3], HYPRE_Real S[12][12])
                {
                   HYPRE_Real m = W[a][0] * W[b][0] + W[a][1] * W[b][1] + W[a][2] * W[b][2];
                   HYPRE_Real s = C[a][0] * C[b][0] + C[a][1] * C[b][1] + C[a][2] * C[b][2];
-                  S[a][b] += w * (s + m); /* muinv = sigma = 1 */
+                  S[a][b] += w * (muinv * s + sigma * m);
                }
          }
 }
@@ -541,7 +582,8 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm, HYPRE_I
                    HYPRE_Real **xref_ptr)
 {
    const HYPRE_Real kappa = params->freq * M_PI;
-   const HYPRE_Real fcoef = 1.0 + kappa * kappa;
+   /* curl curl E = kappa^2 E, so f = muinv*kappa^2*E + sigma*E = (muinv*kappa^2 + sigma) E */
+   const HYPRE_Real fcoef = params->muinv * kappa * kappa + params->sigma;
    const HYPRE_Int  Nx = m->gdims[0], Ny = m->gdims[1], Nz = m->gdims[2];
 
    HYPRE_IJMatrix A, G;
@@ -573,7 +615,7 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm, HYPRE_I
                                            sizeof(HYPRE_Real));
 
    HYPRE_Real S[12][12];
-   ComputeElementMatrix(m->h, S);
+   ComputeElementMatrix(m->h, params->muinv, params->sigma, S);
 
    /* ---- Assemble owned interior edge rows of A and the load b ----
     * Loop cells whose lower corner lies in an extended (ghost) range so that
@@ -728,6 +770,163 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm, HYPRE_I
 }
 
 /*--------------------------------------------------------------------------
+ * VTK output: reconstruct the cell-centered field E (and its magnitude) from
+ * the edge DOFs and write a parallel VTK ImageData dataset (one .vti piece per
+ * rank plus a .pvti master). The full edge solution is gathered to every rank
+ * (the numbering is rank-contiguous, so an Allgatherv suffices), after which
+ * each rank reconstructs its own cell block locally.
+ *--------------------------------------------------------------------------*/
+
+/* Point extent [x0 x1 y0 y1 z0 z1] of the cell block owned by Cartesian rank
+ * (px,py,pz): a rank owns the cells whose lower corner node it owns. */
+static void
+vtk_cell_extent(const MaxwellMesh *m, HYPRE_Int px, HYPRE_Int py, HYPRE_Int pz,
+                HYPRE_Int ext[6])
+{
+   HYPRE_BigInt x1 = m->pstarts[0][px + 1], y1 = m->pstarts[1][py + 1], z1 = m->pstarts[2][pz + 1];
+   ext[0] = (HYPRE_Int)m->pstarts[0][px];
+   ext[1] = (HYPRE_Int)(x1 < m->gdims[0] ? x1 : m->gdims[0] - 1);
+   ext[2] = (HYPRE_Int)m->pstarts[1][py];
+   ext[3] = (HYPRE_Int)(y1 < m->gdims[1] ? y1 : m->gdims[1] - 1);
+   ext[4] = (HYPRE_Int)m->pstarts[2][pz];
+   ext[5] = (HYPRE_Int)(z1 < m->gdims[2] ? z1 : m->gdims[2] - 1);
+}
+
+static void
+vtk_write_piece(const char *fname, const HYPRE_Int ext[6], const HYPRE_Real sp[3],
+                const double *evec, const double *emag, size_t ncells)
+{
+   FILE *fp = fopen(fname, "wb");
+   if (!fp) return;
+   uint64_t eb = (uint64_t)ncells * 3 * sizeof(double);
+   uint64_t mb = (uint64_t)ncells * sizeof(double);
+   uint64_t eo = 0, mo = eo + sizeof(uint64_t) + eb;
+   fprintf(fp, "<?xml version=\"1.0\"?>\n");
+   fprintf(fp, "<VTKFile type=\"ImageData\" version=\"1.0\" byte_order=\"LittleEndian\" "
+               "header_type=\"UInt64\">\n");
+   fprintf(fp, "  <ImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+               "Spacing=\"%.17g %.17g %.17g\">\n",
+           ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], sp[0], sp[1], sp[2]);
+   fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", ext[0], ext[1], ext[2], ext[3],
+           ext[4], ext[5]);
+   fprintf(fp, "      <CellData Vectors=\"solution\" Scalars=\"magnitude\">\n");
+   fprintf(fp, "        <DataArray type=\"Float64\" Name=\"solution\" "
+               "NumberOfComponents=\"3\" format=\"appended\" offset=\"%llu\"/>\n",
+           (unsigned long long)eo);
+   fprintf(fp, "        <DataArray type=\"Float64\" Name=\"magnitude\" format=\"appended\" "
+               "offset=\"%llu\"/>\n",
+           (unsigned long long)mo);
+   fprintf(fp, "      </CellData>\n      <PointData></PointData>\n    </Piece>\n"
+               "  </ImageData>\n  <AppendedData encoding=\"raw\">\n   _");
+   fwrite(&eb, sizeof(uint64_t), 1, fp);
+   fwrite(evec, 1, (size_t)eb, fp);
+   fwrite(&mb, sizeof(uint64_t), 1, fp);
+   fwrite(emag, 1, (size_t)mb, fp);
+   fprintf(fp, "\n  </AppendedData>\n</VTKFile>\n");
+   fclose(fp);
+}
+
+static void
+vtk_write_master(const char *fname, const char *piece_base, const MaxwellMesh *m,
+                 const HYPRE_Real sp[3])
+{
+   FILE *fp = fopen(fname, "w");
+   if (!fp) return;
+   HYPRE_Int whole[6] = {0, m->gdims[0] - 1, 0, m->gdims[1] - 1, 0, m->gdims[2] - 1};
+   fprintf(fp, "<?xml version=\"1.0\"?>\n<VTKFile type=\"PImageData\" version=\"1.0\" "
+               "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n");
+   fprintf(fp, "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+               "Spacing=\"%.17g %.17g %.17g\" GhostLevel=\"0\">\n",
+           whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sp[0], sp[1], sp[2]);
+   fprintf(fp, "    <PCellData Vectors=\"solution\" Scalars=\"magnitude\">\n"
+               "      <PDataArray type=\"Float64\" Name=\"solution\" NumberOfComponents=\"3\"/>\n"
+               "      <PDataArray type=\"Float64\" Name=\"magnitude\"/>\n    </PCellData>\n");
+   for (int r = 0; r < m->nprocs; r++)
+   {
+      HYPRE_Int ext[6];
+      vtk_cell_extent(m, m->rank_coords[r][0], m->rank_coords[r][1], m->rank_coords[r][2], ext);
+      fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s_p%d.vti\"/>\n", ext[0],
+              ext[1], ext[2], ext[3], ext[4], ext[5], piece_base, r);
+   }
+   fprintf(fp, "  </PImageData>\n</VTKFile>\n");
+   fclose(fp);
+}
+
+static void
+WriteMaxwellVTK(const MaxwellMesh *m, const char *base, const HYPRE_Complex *sol_local)
+{
+   /* Gather the full edge solution to every rank (rank-contiguous numbering). */
+   int *counts = (int *)malloc((size_t)m->nprocs * sizeof(int));
+   int *displs = (int *)malloc((size_t)m->nprocs * sizeof(int));
+   for (int r = 0; r < m->nprocs; r++)
+   {
+      counts[r] = (int)(m->rank_edge_lower[r + 1] - m->rank_edge_lower[r]);
+      displs[r] = (int)m->rank_edge_lower[r];
+   }
+   double *gsol = (double *)malloc((size_t)m->num_edges_global * sizeof(double));
+   MPI_Allgatherv((const void *)sol_local, m->num_edges_local, HYPRE_MPI_REAL, gsol, counts,
+                  displs, HYPRE_MPI_REAL, m->cart_comm);
+
+   /* Reconstruct E at the centers of this rank's cells (VTK order: x fastest). */
+   HYPRE_Int ext[6];
+   vtk_cell_extent(m, m->coords[0], m->coords[1], m->coords[2], ext);
+   HYPRE_Int ncx = ext[1] - ext[0], ncy = ext[3] - ext[2], ncz = ext[5] - ext[4];
+   size_t    ncells = (size_t)ncx * (size_t)ncy * (size_t)ncz;
+   double   *evec = (double *)malloc((ncells ? ncells : 1) * 3 * sizeof(double));
+   double   *emag = (double *)malloc((ncells ? ncells : 1) * sizeof(double));
+   HYPRE_Real cc[3] = {0.5 * m->h[0], 0.5 * m->h[1], 0.5 * m->h[2]};
+
+   size_t idx = 0;
+   for (HYPRE_Int kc = ext[4]; kc < ext[5]; kc++)
+   for (HYPRE_Int jc = ext[2]; jc < ext[3]; jc++)
+   for (HYPRE_Int ic = ext[0]; ic < ext[1]; ic++)
+   {
+      HYPRE_Real E[3] = {0.0, 0.0, 0.0};
+      for (int e = 0; e < 12; e++)
+      {
+         int off[3];
+         edge_lower_offset(e, off);
+         HYPRE_BigInt gid = edge_gid(m, edge_dir[e], ic + off[0], jc + off[1], kc + off[2]);
+         HYPRE_Real   W[3], C[3];
+         edge_basis(e, cc[0], cc[1], cc[2], m->h, W, C);
+         E[0] += gsol[gid] * W[0];
+         E[1] += gsol[gid] * W[1];
+         E[2] += gsol[gid] * W[2];
+      }
+      evec[3 * idx + 0] = E[0];
+      evec[3 * idx + 1] = E[1];
+      evec[3 * idx + 2] = E[2];
+      emag[idx]         = sqrt(E[0] * E[0] + E[1] * E[1] + E[2] * E[2]);
+      idx++;
+   }
+
+   /* Write this rank's piece, and the master on rank 0. */
+   char fname[512];
+   const char *bn = strrchr(base, '/');
+   bn = bn ? bn + 1 : base;
+   if (m->nprocs == 1)
+   {
+      snprintf(fname, sizeof(fname), "%s.vti", base);
+   }
+   else
+   {
+      snprintf(fname, sizeof(fname), "%s_p%d.vti", base, m->mypid);
+   }
+   vtk_write_piece(fname, ext, m->h, evec, emag, ncells);
+   if (m->mypid == 0 && m->nprocs > 1)
+   {
+      snprintf(fname, sizeof(fname), "%s.pvti", base);
+      vtk_write_master(fname, bn, m, m->h);
+   }
+
+   free(evec);
+   free(emag);
+   free(gsol);
+   free(counts);
+   free(displs);
+}
+
+/*--------------------------------------------------------------------------
  * main
  *--------------------------------------------------------------------------*/
 int
@@ -778,6 +977,12 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "ams"));
    }
 
+   /* Name the object after parsing (input parsing re-initializes the stats). */
+   if (params.name)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_ObjectSetName(hypredrv, params.name));
+   }
+
    CreateMesh(comm, &params, &mesh);
 
    if (!myid && (params.verbose & 0x1))
@@ -788,7 +993,8 @@ main(int argc, char *argv[])
       printf("  procs        : %d x %d x %d\n", (int)params.P[0], (int)params.P[1],
              (int)params.P[2]);
       printf("  global edges : %lld\n", (long long)mesh->num_edges_global);
-      printf("  frequency    : kappa = %g * pi\n\n", params.freq);
+      printf("  frequency    : kappa = %g * pi\n", params.freq);
+      printf("  coefficients : muinv = %g, sigma = %g\n\n", params.muinv, params.sigma);
    }
 
    BuildMaxwellSystem(mesh, &params, comm, &A, &b, &G, coord, &xref);
@@ -831,6 +1037,13 @@ main(int argc, char *argv[])
       if (!myid)
       {
          printf("\nDiscretization error (relative l2 over edge DOFs): %.6e\n", rel);
+      }
+
+      if (params.vtk_file)
+      {
+         WriteMaxwellVTK(mesh, params.vtk_file, sol);
+         if (!myid) printf("Wrote VTK solution to %s%s\n", params.vtk_file,
+                           num_procs > 1 ? ".pvti" : ".vti");
       }
    }
 
