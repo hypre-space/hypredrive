@@ -718,6 +718,24 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    {
       HYPRE_IJVectorDestroy(hypredrv->vec_nn);
    }
+   if (hypredrv->mat_G && hypredrv->owns_mat_G)
+   {
+      HYPRE_IJMatrixDestroy(hypredrv->mat_G);
+   }
+   if (hypredrv->mat_C && hypredrv->owns_mat_C)
+   {
+      HYPRE_IJMatrixDestroy(hypredrv->mat_C);
+   }
+   if (hypredrv->owns_vec_coord)
+   {
+      for (int i = 0; i < 3; i++)
+      {
+         if (hypredrv->vec_coord[i])
+         {
+            HYPRE_IJVectorDestroy(hypredrv->vec_coord[i]);
+         }
+      }
+   }
    if (hypredrv->vec_ns)
    {
       HYPRE_IJVectorDestroy(hypredrv->vec_ns);
@@ -893,6 +911,14 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->num_ns        = 0;
    hypredrv->vec_s         = NULL;
    hypredrv->dofmap        = NULL;
+   hypredrv->mat_G         = NULL;
+   hypredrv->mat_C         = NULL;
+   hypredrv->vec_coord[0]  = NULL;
+   hypredrv->vec_coord[1]  = NULL;
+   hypredrv->vec_coord[2]  = NULL;
+   hypredrv->owns_mat_G    = false;
+   hypredrv->owns_mat_C    = false;
+   hypredrv->owns_vec_coord = false;
    hypredrv->owns_mat_A    = false;
    hypredrv->owns_mat_M    = false;
    hypredrv->owns_vec_b    = false;
@@ -1804,6 +1830,83 @@ HYPREDRV_LinearSystemSetMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat_A)
 }
 
 /*-----------------------------------------------------------------------------
+ * Set the discrete gradient operator (G) used by AMS/ADS preconditioners
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetDiscreteGradient(HYPREDRV_t hypredrv, HYPRE_Matrix G)
+{
+   HYPREDRV_CHECK_INIT_AND_OBJ();
+   PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJMatrix)G, 1);
+
+   if (hypredrv->mat_G && hypredrv->owns_mat_G && hypredrv->mat_G != (HYPRE_IJMatrix)G)
+   {
+      HYPRE_IJMatrixDestroy(hypredrv->mat_G);
+   }
+
+   hypredrv->mat_G      = (HYPRE_IJMatrix)G;
+   hypredrv->owns_mat_G = (bool)(!hypredrv->lib_mode && G != NULL);
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * Set the discrete curl operator (C) used by the ADS preconditioner
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetDiscreteCurl(HYPREDRV_t hypredrv, HYPRE_Matrix C)
+{
+   HYPREDRV_CHECK_INIT_AND_OBJ();
+   PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJMatrix)C, 1);
+
+   if (hypredrv->mat_C && hypredrv->owns_mat_C && hypredrv->mat_C != (HYPRE_IJMatrix)C)
+   {
+      HYPRE_IJMatrixDestroy(hypredrv->mat_C);
+   }
+
+   hypredrv->mat_C      = (HYPRE_IJMatrix)C;
+   hypredrv->owns_mat_C = (bool)(!hypredrv->lib_mode && C != NULL);
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
+ * Set the vertex coordinate vectors used by AMS/ADS preconditioners
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetCoordinates(HYPREDRV_t hypredrv, HYPRE_Vector x, HYPRE_Vector y,
+                                    HYPRE_Vector z)
+{
+   HYPREDRV_CHECK_INIT_AND_OBJ();
+   PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)x, 0);
+   PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)y, 0);
+   PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)z, 0);
+
+   HYPRE_IJVector newv[3] = {(HYPRE_IJVector)x, (HYPRE_IJVector)y, (HYPRE_IJVector)z};
+
+   if (hypredrv->owns_vec_coord)
+   {
+      for (int i = 0; i < 3; i++)
+      {
+         HYPRE_IJVector old = hypredrv->vec_coord[i];
+         if (old && old != newv[0] && old != newv[1] && old != newv[2])
+         {
+            HYPRE_IJVectorDestroy(old);
+         }
+      }
+   }
+
+   hypredrv->vec_coord[0]   = newv[0];
+   hypredrv->vec_coord[1]   = newv[1];
+   hypredrv->vec_coord[2]   = newv[2];
+   hypredrv->owns_vec_coord = (bool)(!hypredrv->lib_mode && x != NULL);
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * Set the linear system right-hand side vector from a user-supplied handle
  *-----------------------------------------------------------------------------*/
 
@@ -2535,9 +2638,13 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
                                 hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
          hypredrv->precon_is_setup = false;
       }
+      PreconOperators precon_ops = {hypredrv->mat_G,
+                                    hypredrv->mat_C,
+                                    {hypredrv->vec_coord[0], hypredrv->vec_coord[1],
+                                     hypredrv->vec_coord[2]}};
       hypredrv_PreconCreate(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                             hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon,
-                            hypredrv->stats, next_ls_id);
+                            hypredrv->stats, next_ls_id, &precon_ops);
       hypredrv->precon_is_setup = false;
       if (!hypredrv_ErrorCodeActive() && hypredrv->precon &&
           hypredrv->iargs->precon_method == PRECON_BOOMERAMG)

@@ -10,6 +10,8 @@
 
 #include <stdint.h>
 #include "internal/amg.h"
+#include "internal/ads.h"
+#include "internal/ams.h"
 #include "internal/compatibility.h"
 #include "internal/field.h"
 #include "internal/fsai.h"
@@ -33,11 +35,25 @@ typedef enum precon_type_enum
    PRECON_MGR,
    PRECON_ILU,
    PRECON_FSAI,
+   PRECON_AMS,
+   PRECON_ADS,
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    PRECON_SCHWARZ,
 #endif
    PRECON_NONE,
 } precon_t;
+
+/*--------------------------------------------------------------------------
+ * Operator inputs required by AMS/ADS (discrete gradient, discrete curl, and
+ * vertex coordinate vectors). All handles are borrowed (owned by the caller).
+ *--------------------------------------------------------------------------*/
+
+typedef struct PreconOperators_struct
+{
+   HYPRE_IJMatrix G;        /* discrete gradient (AMS, ADS) */
+   HYPRE_IJMatrix C;        /* discrete curl (ADS) */
+   HYPRE_IJVector coord[3]; /* vertex coordinate vectors (AMS, ADS) */
+} PreconOperators;
 
 /*--------------------------------------------------------------------------
  * Generic preconditioner arguments struct
@@ -51,6 +67,8 @@ typedef struct precon_args_struct
       MGR_args  mgr;
       ILU_args  ilu;
       FSAI_args fsai;
+      AMS_args  ams;
+      ADS_args  ads;
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       Schwarz_args schwarz;
 #endif
@@ -87,7 +105,8 @@ void           hypredrv_PreconArgsDestroyRuntimeState(precon_t, precon_args *);
 void           hypredrv_PreconSetArgsFromYAML(precon_args *,
                                               YAMLnode *); /* TODO: change to PreconSetArgs */
 void           hypredrv_PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector,
-                                     HYPRE_Precon *, const Stats *, int);
+                                     HYPRE_Precon *, const Stats *, int,
+                                     const PreconOperators *);
 void           hypredrv_PreconSetup(precon_t, HYPRE_Precon, HYPRE_IJMatrix);
 void hypredrv_PreconApply(precon_t, HYPRE_Precon, HYPRE_IJMatrix, HYPRE_IJVector,
                           HYPRE_IJVector);

@@ -199,6 +199,16 @@ PreconSetupDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
          ierr = LOCAL_FSAI_SETUP(precon->main, A, b, x);
          break;
 
+      case PRECON_AMS:
+         ierr = HYPRE_AMSSetup(precon->main, A, b, x);
+         break;
+
+      case PRECON_ADS:
+#if HYPRE_CHECK_MIN_VERSION(20900, 0)
+         ierr = HYPRE_ADSSetup(precon->main, A, b, x);
+#endif
+         break;
+
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
          ierr = HYPRE_SchwarzSetup(precon->main, A, b, x);
@@ -249,6 +259,16 @@ PreconSolveDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
 
       case PRECON_FSAI:
          return LOCAL_FSAI_SOLVE(precon->main, A, b, x);
+
+      case PRECON_AMS:
+         return HYPRE_AMSSolve(precon->main, A, b, x);
+
+      case PRECON_ADS:
+#if HYPRE_CHECK_MIN_VERSION(20900, 0)
+         return HYPRE_ADSSolve(precon->main, A, b, x);
+#else
+         return 0;
+#endif
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:

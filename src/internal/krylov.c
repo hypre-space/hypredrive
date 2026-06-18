@@ -502,7 +502,7 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
    if (args->has_precon)
    {
       hypredrv_PreconCreate(args->precon_method, &args->precon, dofmap, vec_nn,
-                            &args->precon_obj, NULL, 0);       /* GCOVR_EXCL_BR_LINE */
+                            &args->precon_obj, NULL, 0, NULL); /* GCOVR_EXCL_BR_LINE */
       if (hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */ /* PreconCreate failure
                                                                   injection */
       {

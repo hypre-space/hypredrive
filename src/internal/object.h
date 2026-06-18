@@ -31,6 +31,16 @@ typedef struct hypredrv_struct
       vec_ns; /* exact (orthonormalized) null space modes projected out of the solution */
    int             num_ns;
    HYPRE_IJVector *vec_s;
+
+   /* Operator inputs for AMS/ADS (discrete gradient, discrete curl, vertex
+    * coordinate vectors). Borrowed in library mode, owned otherwise. */
+   HYPRE_IJMatrix mat_G;
+   HYPRE_IJMatrix mat_C;
+   HYPRE_IJVector vec_coord[3];
+   bool           owns_mat_G;
+   bool           owns_mat_C;
+   bool           owns_vec_coord;
+
    bool            owns_mat_A;
    bool            owns_mat_M;
    bool            owns_vec_b;

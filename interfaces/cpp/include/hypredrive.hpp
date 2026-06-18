@@ -442,6 +442,27 @@ class driver
    {
       HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemSetPrecMatrix(handle_, m));
    }
+   /// @brief C++ wrapper for HYPREDRV_LinearSystemSetDiscreteGradient.
+   /// @see HYPREDRV_LinearSystemSetDiscreteGradient
+   void
+   set_discrete_gradient(HYPRE_Matrix g)
+   {
+      HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemSetDiscreteGradient(handle_, g));
+   }
+   /// @brief C++ wrapper for HYPREDRV_LinearSystemSetDiscreteCurl.
+   /// @see HYPREDRV_LinearSystemSetDiscreteCurl
+   void
+   set_discrete_curl(HYPRE_Matrix c)
+   {
+      HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemSetDiscreteCurl(handle_, c));
+   }
+   /// @brief C++ wrapper for HYPREDRV_LinearSystemSetCoordinates.
+   /// @see HYPREDRV_LinearSystemSetCoordinates
+   void
+   set_coordinates(HYPRE_Vector x, HYPRE_Vector y, HYPRE_Vector z)
+   {
+      HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemSetCoordinates(handle_, x, y, z));
+   }
    /// @brief C++ wrapper for HYPREDRV_LinearSystemSetDofmap.
    /// @see HYPREDRV_LinearSystemSetDofmap
    void
