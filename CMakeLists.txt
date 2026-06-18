@@ -138,6 +138,8 @@ set(SOURCE_FILES
     src/internal/linsys_print.c
     src/internal/cheby.c
     src/internal/amg.c
+    src/internal/ams.c
+    src/internal/ads.c
     src/internal/fsai.c
     src/internal/ilu.c
     src/internal/schwarz.c
@@ -439,6 +441,8 @@ if(HYPREDRV_ENABLE_EXAMPLES)
     add_subdirectory(examples/src/C_elasticity)
     add_subdirectory(examples/src/C_heatflow)
     add_subdirectory(examples/src/C_lidcavity)
+    add_subdirectory(examples/src/C_maxwell)
+    add_subdirectory(examples/src/C_graddiv)
 endif()
 
 if(HYPREDRV_ENABLE_JULIA AND HYPREDRV_ENABLE_EXAMPLES)
