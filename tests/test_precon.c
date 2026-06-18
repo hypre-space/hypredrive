@@ -45,6 +45,14 @@ StrArray       hypredrv_SchwarzGetValidKeys(void);
 StrIntMapArray hypredrv_SchwarzGetValidValues(const char *);
 #endif
 
+/* AMS/ADS generated helpers not exposed in their headers */
+void           hypredrv_AMSSetFieldByName(void *, const YAMLnode *);
+StrArray       hypredrv_AMSGetValidKeys(void);
+StrIntMapArray hypredrv_AMSGetValidValues(const char *);
+void           hypredrv_ADSSetFieldByName(void *, const YAMLnode *);
+StrArray       hypredrv_ADSGetValidKeys(void);
+StrIntMapArray hypredrv_ADSGetValidValues(const char *);
+
 void hypredrv_MGRSetDefaultArgs(MGR_args *);
 
 static YAMLnode *
@@ -154,6 +162,8 @@ test_PreconGetValidKeys_contains_expected(void)
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "mgr"));
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "ilu"));
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "fsai"));
+   ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "ams"));
+   ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "ads"));
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    ASSERT_TRUE(hypredrv_StrArrayEntryExists(keys, "schwarz"));
 #endif
@@ -170,6 +180,12 @@ test_PreconGetValidTypeIntMap_contains_known_types(void)
 
    ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mgr"));
    ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mgr"), PRECON_MGR);
+
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "ams"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "ams"), PRECON_AMS);
+
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "ads"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "ads"), PRECON_ADS);
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "schwarz"));
    ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "schwarz"), PRECON_SCHWARZ);
@@ -355,6 +371,8 @@ test_hypredrv_PreconArgsSetDefaultsForMethod_and_GetValidValues(void)
    hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &args);
    hypredrv_PreconArgsSetDefaultsForMethod(PRECON_ILU, &args);
    hypredrv_PreconArgsSetDefaultsForMethod(PRECON_FSAI, &args);
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_AMS, &args);
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_ADS, &args);
    hypredrv_PreconArgsSetDefaultsForMethod(PRECON_NONE, &args);
    hypredrv_PreconArgsSetDefaultsForMethod((precon_t)999, &args);
 }
@@ -3128,7 +3146,7 @@ test_PreconSetup_default_case(void)
    hypredrv_AMGSetDefaultArgs(&args.amg);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat = precon_test_ij_matrix_1x1(1.0);
@@ -3152,7 +3170,7 @@ test_PreconApply_default_case(void)
    hypredrv_AMGSetDefaultArgs(&args.amg);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(1.0);
@@ -3204,7 +3222,7 @@ test_AMGSetDofFunc_labels(void)
    args.amg.coarsening.num_functions = 2;
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat = precon_test_ij_matrix_diag(6, 2.0);
@@ -3235,7 +3253,7 @@ test_AMGSetDofFunc_labels(void)
    /* Out-of-range labels (max label 2 >= num_functions 2): skipped without
       error, leaving no dof_func on a freshly created preconditioner */
    hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon, NULL, 0);
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    int       bad_labels[6] = {0, 1, 2, 0, 1, 2};
@@ -3271,7 +3289,7 @@ test_PreconApply_precon_none(void)
    hypredrv_PreconSetDefaultArgs(&args);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_NONE, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_NONE, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(1.0);
@@ -3312,7 +3330,7 @@ test_PreconApply_mgr_minimal(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(1.0);
@@ -3353,7 +3371,7 @@ test_PreconDestroy_amg_log_dispatch_no_rbms(void)
    args.amg.num_rbms = 0;
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon, NULL, 0);
@@ -3373,7 +3391,7 @@ test_PreconCreate_invalid_method(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_INVALID, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_INVALID, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NULL(precon);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_PRECON);
 }
@@ -3387,7 +3405,7 @@ test_PreconCreate_precon_none(void)
    hypredrv_PreconSetDefaultArgs(&args);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_NONE, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_NONE, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
    ASSERT_NULL(precon->main);
 
@@ -3422,7 +3440,7 @@ test_PreconSetup_null_A(void)
    hypredrv_AMGSetDefaultArgs(&args.amg);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -3444,7 +3462,7 @@ test_Precon_lifecycle_boomeramg_1x1(void)
    args.amg.max_iter = 1;
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(4.0);
@@ -3480,7 +3498,7 @@ test_Precon_lifecycle_ilu_1x1(void)
    args.ilu.max_iter = 1;
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_ILU, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_ILU, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(4.0);
@@ -3516,7 +3534,7 @@ test_Precon_lifecycle_fsai_1x1(void)
    hypredrv_FSAISetDefaultArgs(&args.fsai);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_FSAI, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_FSAI, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(4.0);
@@ -3552,7 +3570,7 @@ test_Precon_lifecycle_schwarz_1x1(void)
    hypredrv_SchwarzSetDefaultArgs(&args.schwarz);
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_SCHWARZ, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_SCHWARZ, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat    = precon_test_ij_matrix_1x1(4.0);
@@ -3578,6 +3596,218 @@ test_Precon_lifecycle_schwarz_1x1(void)
 #endif
 
 static void
+test_AMSSetArgs_defaults_and_yaml(void)
+{
+   AMS_args args;
+   hypredrv_AMSSetDefaultArgs(&args);
+
+   /* Preconditioner-oriented defaults */
+   ASSERT_EQ(args.dimension, 3);
+   ASSERT_EQ(args.max_iter, 1);
+   ASSERT_EQ(args.print_level, 0);
+   ASSERT_EQ(args.cycle_type, 1);
+   ASSERT_EQ_DOUBLE(args.tolerance, 0.0, 1.0e-12);
+   ASSERT_EQ(args.relax_type, 2);
+   ASSERT_EQ(args.proj_freq, 5);
+   /* Defaults mirror hypre's internal alpha/beta AMG defaults */
+   ASSERT_EQ(args.alpha_coarsen_type, 10);
+   ASSERT_EQ(args.alpha_relax_type, 3);
+   ASSERT_EQ(args.alpha_interp_type, 0);
+   ASSERT_EQ(args.alpha_coarse_relax_type, 8);
+   ASSERT_EQ(args.beta_relax_type, 3);
+   ASSERT_EQ_DOUBLE(args.beta_strength_threshold, 0.25, 1.0e-12);
+
+   /* GetValidValues accepts raw hypre integers (void map) */
+   StrIntMapArray vv = hypredrv_AMSGetValidValues("cycle_type");
+   ASSERT_EQ(vv.size, 0);
+
+   /* YAML overrides are applied */
+   YAMLnode *node = hypredrv_YAMLnodeCreate("ams", "", 0);
+   add_child(node, "cycle_type", "7", 1);
+   add_child(node, "dimension", "2", 1);
+   add_child(node, "relax_type", "16", 1);
+   add_child(node, "alpha_coarsen_type", "8", 1);
+   add_child(node, "beta_strength_threshold", "0.5", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMSSetArgs(&args, node);
+
+   ASSERT_EQ(args.cycle_type, 7);
+   ASSERT_EQ(args.dimension, 2);
+   ASSERT_EQ(args.relax_type, 16);
+   ASSERT_EQ(args.alpha_coarsen_type, 8);
+   ASSERT_EQ_DOUBLE(args.beta_strength_threshold, 0.5, 1.0e-12);
+
+   hypredrv_YAMLnodeDestroy(node);
+}
+
+static void
+test_ADSSetArgs_defaults_and_yaml(void)
+{
+   ADS_args args;
+   hypredrv_ADSSetDefaultArgs(&args);
+
+   ASSERT_EQ(args.max_iter, 1);
+   ASSERT_EQ(args.print_level, 0);
+   ASSERT_EQ(args.cycle_type, 1);
+   ASSERT_EQ_DOUBLE(args.tolerance, 0.0, 1.0e-12);
+   ASSERT_EQ(args.relax_type, 2);
+   ASSERT_EQ(args.cheby_order, 2);
+   ASSERT_EQ_DOUBLE(args.cheby_fraction, 0.3, 1.0e-12);
+   /* AMS/AMG block defaults mirror hypre's internal ADS defaults */
+   ASSERT_EQ(args.ams_cycle_type, 11);
+   ASSERT_EQ(args.ams_relax_type, 3);
+   ASSERT_EQ(args.amg_coarsen_type, 10);
+   ASSERT_EQ(args.amg_relax_type, 3);
+   ASSERT_EQ(args.amg_interp_type, 0);
+
+   StrIntMapArray vv = hypredrv_ADSGetValidValues("cycle_type");
+   ASSERT_EQ(vv.size, 0);
+
+   YAMLnode *node = hypredrv_YAMLnodeCreate("ads", "", 0);
+   add_child(node, "cycle_type", "14", 1);
+   add_child(node, "ams_relax_type", "2", 1);
+   add_child(node, "amg_coarsen_type", "8", 1);
+   add_child(node, "cheby_order", "3", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ADSSetArgs(&args, node);
+
+   ASSERT_EQ(args.cycle_type, 14);
+   ASSERT_EQ(args.ams_relax_type, 2);
+   ASSERT_EQ(args.amg_coarsen_type, 8);
+   ASSERT_EQ(args.cheby_order, 3);
+
+   hypredrv_YAMLnodeDestroy(node);
+}
+
+static void
+test_PreconSetArgsFromYAML_ams_ads_dispatch(void)
+{
+   /* The generic preconditioner parser routes the "ams"/"ads" keys to the
+    * corresponding args union members. */
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMSSetDefaultArgs(&args.ams);
+
+   YAMLnode *parent   = hypredrv_YAMLnodeCreate("preconditioner", "", 0);
+   YAMLnode *ams_node = add_child(parent, "ams", "", 1);
+   add_child(ams_node, "cycle_type", "5", 2);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetArgsFromYAML(&args, parent);
+   ASSERT_EQ(ams_node->valid, YAML_NODE_VALID);
+   ASSERT_EQ(args.ams.cycle_type, 5);
+   hypredrv_YAMLnodeDestroy(parent);
+
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_ADSSetDefaultArgs(&args.ads);
+
+   parent             = hypredrv_YAMLnodeCreate("preconditioner", "", 0);
+   YAMLnode *ads_node = add_child(parent, "ads", "", 1);
+   add_child(ads_node, "ams_cycle_type", "13", 2);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconSetArgsFromYAML(&args, parent);
+   ASSERT_EQ(ads_node->valid, YAML_NODE_VALID);
+   ASSERT_EQ(args.ads.ams_cycle_type, 13);
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+/* AMS create + operator injection + destroy (no setup: a 1x1 system has no
+ * meaningful auxiliary-space hierarchy, but this exercises the PreconCreate
+ * dispatch, hypredrv_AMSCreate, hypredrv_AMSSetOperators, and HYPRE_AMSDestroy). */
+static void
+test_Precon_lifecycle_ams_1x1(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMSSetDefaultArgs(&args.ams);
+
+   HYPRE_IJMatrix  G   = precon_test_ij_matrix_1x1(1.0);
+   HYPRE_IJVector  cx  = precon_test_ij_vector_1x1(0.0);
+   HYPRE_IJVector  cy  = precon_test_ij_vector_1x1(0.0);
+   HYPRE_IJVector  cz  = precon_test_ij_vector_1x1(0.0);
+   PreconOperators ops = {G, NULL, {cx, cy, cz}};
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_AMS, &args, NULL, NULL, &precon, NULL, 0, &ops);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   ASSERT_NOT_NULL(precon->main);
+   ASSERT_EQ(precon->method, PRECON_AMS);
+
+   hypredrv_PreconDestroy(PRECON_AMS, &args, &precon, NULL, 0);
+   ASSERT_NULL(precon);
+
+   HYPRE_IJVectorDestroy(cx);
+   HYPRE_IJVectorDestroy(cy);
+   HYPRE_IJVectorDestroy(cz);
+   HYPRE_IJMatrixDestroy(G);
+   TEST_HYPRE_FINALIZE();
+}
+
+/* AMS create with NULL operators must remain a no-op (covers the NULL guards). */
+static void
+test_Precon_create_ams_null_operators(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMSSetDefaultArgs(&args.ams);
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_AMS, &args, NULL, NULL, &precon, NULL, 0, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+
+   hypredrv_PreconDestroy(PRECON_AMS, &args, &precon, NULL, 0);
+   ASSERT_NULL(precon);
+   TEST_HYPRE_FINALIZE();
+}
+
+/* ADS create + operator injection (gradient, curl, coordinates) + destroy. */
+static void
+test_Precon_lifecycle_ads_1x1(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_ADSSetDefaultArgs(&args.ads);
+
+   HYPRE_IJMatrix  G   = precon_test_ij_matrix_1x1(1.0);
+   HYPRE_IJMatrix  C   = precon_test_ij_matrix_1x1(1.0);
+   HYPRE_IJVector  cx  = precon_test_ij_vector_1x1(0.0);
+   HYPRE_IJVector  cy  = precon_test_ij_vector_1x1(0.0);
+   HYPRE_IJVector  cz  = precon_test_ij_vector_1x1(0.0);
+   PreconOperators ops = {G, C, {cx, cy, cz}};
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_ADS, &args, NULL, NULL, &precon, NULL, 0, &ops);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   ASSERT_NOT_NULL(precon->main);
+   ASSERT_EQ(precon->method, PRECON_ADS);
+
+   hypredrv_PreconDestroy(PRECON_ADS, &args, &precon, NULL, 0);
+   ASSERT_NULL(precon);
+
+   HYPRE_IJVectorDestroy(cx);
+   HYPRE_IJVectorDestroy(cy);
+   HYPRE_IJVectorDestroy(cz);
+   HYPRE_IJMatrixDestroy(C);
+   HYPRE_IJMatrixDestroy(G);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_PreconDestroy_amg_rbms_loop(void)
 {
    TEST_HYPRE_INIT();
@@ -3596,7 +3826,7 @@ test_PreconDestroy_amg_rbms_loop(void)
    args.amg.rbms[0]  = pv;
 
    HYPRE_Precon precon = NULL;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon, NULL, 0);
@@ -3811,7 +4041,7 @@ test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -3848,7 +4078,7 @@ test_PreconDestroy_mgr_coarsest_use_krylov_without_krylov_ptr(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -3895,7 +4125,7 @@ test_PreconSetup_mgr_frelax_nested_mgr_dof_labels(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
 
@@ -3968,7 +4198,7 @@ test_PreconSetup_mgr_frelax_nested_mgr_body_split_labels(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
 
@@ -4058,7 +4288,7 @@ test_PreconCreate_mgr_nested_krylov_inner_mgr_recreate_without_reuse(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
    ASSERT_NOT_NULL(inner->frelax[0]);
@@ -4070,7 +4300,7 @@ test_PreconCreate_mgr_nested_krylov_inner_mgr_recreate_without_reuse(void)
    ASSERT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
 
@@ -4109,7 +4339,7 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
    args.mgr.coarsest_level.amg.max_iter = 1;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -4123,7 +4353,7 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
 
    precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -4135,7 +4365,7 @@ test_PreconDestroy_mgr_csolver_destroy_branches(void)
    args.mgr.coarsest_level.type = 29;
    precon                      = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
    hypredrv_ErrorCodeResetAll();
    hypredrv_PreconDestroy(PRECON_MGR, &args, &precon, NULL, 0);
@@ -4310,7 +4540,7 @@ test_MGRRefreshComponentsForSetup_rebuilds_fsai_handles(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(precon);
    ASSERT_NOT_NULL(args.mgr.frelax[0]);
@@ -4387,7 +4617,7 @@ test_PreconDestroy_mgr_frelax_amg_type2(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -4440,7 +4670,7 @@ test_PreconDestroy_mgr_grelax_krylov_nested(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -5160,7 +5390,7 @@ test_PreconCreate_mgr_with_near_null_vector(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, vec_nn, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, vec_nn, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_PreconDestroy(PRECON_MGR, &args, &precon, NULL, 0);
@@ -5213,7 +5443,7 @@ test_PreconDestroy_mgr_frelax_krylov_nested(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -5253,7 +5483,7 @@ test_PreconDestroy_mgr_frelax_ilu_type32(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -5290,7 +5520,7 @@ test_PreconDestroy_mgr_frelax_spdirect_type29(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    hypredrv_ErrorCodeResetAll();
@@ -5330,7 +5560,7 @@ test_PreconDestroy_mgr_grelax_amg_type20(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat = precon_test_ij_matrix_1x1(1.0);
@@ -5374,7 +5604,7 @@ test_PreconDestroy_mgr_grelax_ilu_type16(void)
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
 
    HYPRE_IJMatrix mat = precon_test_ij_matrix_1x1(1.0);
@@ -6037,6 +6267,12 @@ main(int argc, char **argv)
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    RUN_TEST(test_Precon_lifecycle_schwarz_1x1);
 #endif
+   RUN_TEST(test_AMSSetArgs_defaults_and_yaml);
+   RUN_TEST(test_ADSSetArgs_defaults_and_yaml);
+   RUN_TEST(test_PreconSetArgsFromYAML_ams_ads_dispatch);
+   RUN_TEST(test_Precon_lifecycle_ams_1x1);
+   RUN_TEST(test_Precon_create_ams_null_operators);
+   RUN_TEST(test_Precon_lifecycle_ads_1x1);
    RUN_TEST(test_PreconDestroy_amg_rbms_loop);
    RUN_TEST(test_PreconDestroy_none_with_main_logs);
    RUN_TEST(test_PreconSetup_default_case);
