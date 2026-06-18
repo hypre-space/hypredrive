@@ -204,9 +204,7 @@ PreconSetupDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
          break;
 
       case PRECON_ADS:
-#if HYPRE_CHECK_MIN_VERSION(20900, 0)
          ierr = HYPRE_ADSSetup(precon->main, A, b, x);
-#endif
          break;
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
@@ -264,11 +262,7 @@ PreconSolveDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
          return HYPRE_AMSSolve(precon->main, A, b, x);
 
       case PRECON_ADS:
-#if HYPRE_CHECK_MIN_VERSION(20900, 0)
          return HYPRE_ADSSolve(precon->main, A, b, x);
-#else
-         return 0;
-#endif
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:

@@ -6,9 +6,7 @@
  ******************************************************************************/
 
 #include "internal/ads.h"
-#include "internal/error.h"
 #include "internal/gen_macros.h"
-#include "internal/utils.h"
 
 /*-----------------------------------------------------------------------------
  * Define Field/Offset/Setter mapping (defaults match hypre, except
@@ -65,13 +63,6 @@ hypredrv_ADSGetValidValues(const char *key)
 void
 hypredrv_ADSCreate(const ADS_args *args, HYPRE_Solver *precon_ptr)
 {
-#if !HYPRE_CHECK_MIN_VERSION(20900, 0)
-   (void)args;
-   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-   hypredrv_ErrorMsgAdd("ADS requires hypre >= 2.9.0");
-   *precon_ptr = NULL;
-   return;
-#else
    HYPRE_Solver precon = NULL;
 
    HYPRE_ADSCreate(&precon);
@@ -92,7 +83,6 @@ hypredrv_ADSCreate(const ADS_args *args, HYPRE_Solver *precon_ptr)
                           args->amg_interp_type, args->amg_Pmax);
 
    *precon_ptr = precon;
-#endif
 }
 
 /*-----------------------------------------------------------------------------
@@ -103,14 +93,6 @@ void
 hypredrv_ADSSetOperators(HYPRE_Solver solver, HYPRE_IJMatrix G, HYPRE_IJMatrix C,
                         HYPRE_IJVector x, HYPRE_IJVector y, HYPRE_IJVector z)
 {
-#if !HYPRE_CHECK_MIN_VERSION(20900, 0)
-   (void)solver;
-   (void)G;
-   (void)C;
-   (void)x;
-   (void)y;
-   (void)z;
-#else
    void *obj = NULL;
 
    if (G)
@@ -138,5 +120,4 @@ hypredrv_ADSSetOperators(HYPRE_Solver solver, HYPRE_IJMatrix G, HYPRE_IJMatrix C
 
       HYPRE_ADSSetCoordinateVectors(solver, px, py, pz);
    }
-#endif
 }

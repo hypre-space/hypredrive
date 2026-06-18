@@ -450,13 +450,8 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
          break;
 
       case PRECON_ADS:
-#if HYPRE_CHECK_MIN_VERSION(20900, 0)
          HYPRE_ADSSetup(prec, par_A, par_b, par_x);
          precon->is_setup = 1;
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("ADS requires hypre >= 2.9.0");
-#endif /* GCOVR_EXCL_STOP */
          break;
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
@@ -533,12 +528,7 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
          break;
 
       case PRECON_ADS:
-#if HYPRE_CHECK_MIN_VERSION(20900, 0)
          HYPRE_ADSSolve(prec, par_A, par_b, par_x);
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("ADS requires hypre >= 2.9.0");
-#endif /* GCOVR_EXCL_STOP */
          break;
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
@@ -712,9 +702,7 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
             HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
                           "preconditioner destroy dispatch: method=ads");
             /* GCOVR_EXCL_STOP */
-#if HYPRE_CHECK_MIN_VERSION(20900, 0)
             HYPRE_ADSDestroy(precon->main);
-#endif
             break;
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
