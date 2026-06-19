@@ -150,7 +150,6 @@ def render(args: argparse.Namespace) -> None:
         gmin = min(gmin, float(arr.min()))
         gmax = max(gmax, float(arr.max()))
     clim = [max(0.0, gmin), gmax]
-    span = clim[1] - clim[0]
     # Fixed iso levels spanning ~[0.1, 0.95] of the global peak.
     levels = np.linspace(clim[1] * 0.10, clim[1] * 0.95, max(1, args.n_contours)).tolist()
 
