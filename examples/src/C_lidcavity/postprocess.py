@@ -821,6 +821,8 @@ def streamlines_pyvista(pvd_path, out_path, Re, animate=False, fps=8, sep=2.0,
     try:
         pl.enable_anti_aliasing("ssaa")
     except Exception:
+        # Anti-aliasing is an optional rendering enhancement that may be unsupported
+        # on some VTK/OpenGL or off-screen backends; let rendering continue without it.
         pass
 
     def draw(mesh, t=None):

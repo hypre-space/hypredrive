@@ -116,10 +116,14 @@ def render(args: argparse.Namespace) -> None:
     try:
         pl.enable_anti_aliasing("ssaa")
     except Exception:
+        # Anti-aliasing is a purely cosmetic enhancement; some VTK/OpenGL backends
+        # (notably headless/off-screen) do not support it, so just render without it.
         pass
     try:
         pl.enable_depth_peeling(10, 0.0)  # correct ordering for translucent surfaces
     except Exception:
+        # Depth peeling only improves translucent-surface ordering and may be
+        # unavailable on some backends; carry on with default rendering if so.
         pass
 
     # Original (undeformed) configuration as a light box outline for reference.

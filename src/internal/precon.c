@@ -312,7 +312,10 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
    precon->main     = NULL;
    precon->method   = precon_method;
    precon->is_setup = 0;
-   precon->stats    = NULL;
+   /* Methods that need no operator inputs are always ready for setup; AMS/ADS
+    * are only ready when every required operator was supplied (checked below). */
+   precon->operators_ok = hypredrv_PreconOperatorsComplete(precon_method, ops);
+   precon->stats        = NULL;
 
    switch (precon_method)
    {
@@ -373,6 +376,83 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
 }
 
 /*-----------------------------------------------------------------------------
+ * hypredrv_PreconMethodRequiresOperators
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_PreconMethodRequiresOperators(precon_t precon_method)
+{
+   return (precon_method == PRECON_AMS || precon_method == PRECON_ADS);
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_PreconOperatorsComplete
+ *
+ * AMS needs a discrete gradient and the three coordinate vectors; ADS needs all
+ * of that plus a discrete curl. These mirror the inputs hypredrv_AMSSetOperators
+ * / hypredrv_ADSSetOperators forward to HYPRE_*SetDiscreteGradient /
+ * HYPRE_*SetDiscreteCurl / HYPRE_*SetCoordinateVectors; if any is missing the
+ * hypre setup routine dereferences NULL.
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_PreconOperatorsComplete(precon_t precon_method, const PreconOperators *ops)
+{
+   if (!hypredrv_PreconMethodRequiresOperators(precon_method))
+   {
+      return 1;
+   }
+
+   if (!ops)
+   {
+      return 0;
+   }
+
+   int have_coords = (ops->coord[0] && ops->coord[1] && ops->coord[2]);
+
+   if (precon_method == PRECON_AMS)
+   {
+      return (ops->G && have_coords) ? 1 : 0;
+   }
+
+   /* PRECON_ADS */
+   return (ops->G && ops->C && have_coords) ? 1 : 0;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_PreconSetupOperatorGuard
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_PreconSetupOperatorGuard(HYPRE_Precon precon)
+{
+   if (!precon || precon->operators_ok)
+   {
+      return 0;
+   }
+
+   if (!hypredrv_PreconMethodRequiresOperators(precon->method))
+   {
+      return 0;
+   }
+
+   hypredrv_ErrorCodeSet(ERROR_MISSING_PRECON);
+   if (precon->method == PRECON_AMS)
+   {
+      hypredrv_ErrorMsgAdd("AMS setup requires a discrete gradient matrix and "
+                           "coordinate vectors, but they were not provided");
+   }
+   else
+   {
+      hypredrv_ErrorMsgAdd("ADS setup requires a discrete gradient matrix, a discrete "
+                           "curl matrix, and coordinate vectors, but they were not "
+                           "provided");
+   }
+
+   return 1;
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_PreconSetup
  *-----------------------------------------------------------------------------*/
 
@@ -399,6 +479,13 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Preconditioner setup requested with null matrix");
+      return;
+   }
+
+   /* Abort cleanly (instead of letting hypre dereference NULL) when an AMS/ADS
+    * preconditioner is set up without its required operator inputs. */
+   if (hypredrv_PreconSetupOperatorGuard(precon))
+   {
       return;
    }
 

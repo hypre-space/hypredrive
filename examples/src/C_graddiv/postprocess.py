@@ -91,10 +91,14 @@ def render(args: argparse.Namespace) -> None:
     try:
         pl.enable_anti_aliasing("ssaa")
     except Exception:
+        # Optional rendering enhancement: anti-aliasing can fail on certain
+        # VTK/OpenGL or off-screen backends, so we let rendering continue without it.
         pass
     try:
         pl.enable_depth_peeling(10, 0.0)  # correct ordering for translucent surfaces
     except Exception:
+        # Optional rendering enhancement: depth peeling may be unsupported on some
+        # backends; the plot is still produced (just without ordered transparency).
         pass
 
     # Scalar bar parked in the right margin (the camera zoom keeps the object clear of it).

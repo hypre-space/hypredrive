@@ -1887,7 +1887,7 @@ linear systems. In this example, we provide a comparison script to evaluate diff
 
    ./reproduce.sh --solvers
 
-This script runs the simulation with six different solver configurations and
+This script runs the simulation with five different solver configurations and
 generates performance comparison plots. The tested configurations are stored in
 the ``examples/src/C_lidcavity/`` directory and are listed below:
 
@@ -1895,11 +1895,10 @@ the ``examples/src/C_lidcavity/`` directory and are listed below:
 - **ILUK(1)**: Block Jacobi ILU with fill level 1 (``fgmres-ilu1.yml``)
 - **ILUT(1e-2)**: Block Jacobi ILUT with drop tolerance 1.0e-2 (``fgmres-ilut_1e-2.yml``)
 - **AMG**: Algebraic multigrid preconditioner (``fgmres-amg.yml``)
-- **AMG+ILUT(1e-2)**: AMG with block Jacobi ILUT smoothing (``fgmres-amg-ilut.yml``)
 - **MGR**: MGR with absolute block rowsum prolongation (``fgmres-mgr.yml``)
 
 All configurations use flexible GMRES (FGMRES) with a relative tolerance of
-1.0e-6. The comparison uses a 256×256 grid with 64 MPI ranks, running from
+1.0e-6. The comparison uses a 256×256 grid with 16 MPI ranks, running from
 t=0 to t=50 with adaptive time stepping.
 
 .. figure:: figures/lidcavity_256x256_Re0100_iters.png

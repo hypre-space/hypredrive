@@ -175,6 +175,14 @@ PreconSetupDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
       return 0;
    }
 
+   /* Abort cleanly (instead of letting hypre dereference NULL) when an AMS/ADS
+    * preconditioner is set up without its required operator inputs. This is the
+    * Krylov-embedded counterpart of the guard in hypredrv_PreconSetup. */
+   if (hypredrv_PreconSetupOperatorGuard(precon))
+   {
+      return 1;
+   }
+
    if (precon->stats)
    {
       hypredrv_StatsAnnotate(precon->stats, HYPREDRV_ANNOTATE_BEGIN, "prec");

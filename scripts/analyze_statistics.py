@@ -542,7 +542,7 @@ def plot_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefi
         prefix = 'Cumulative ' if cumulative else ''
         plt.title(f'{prefix}Linear solver times vs {xlabel}', fontsize=tfs, fontweight='bold')
     ax = plt.gca()
-    _setup_axes(ax, xlabel, f'Times {time_unit}', log_x=log_x, log_y=log_y, set_integer_x=True, set_y_bottom=0.0, safe_integer_locator=False)
+    _setup_axes(ax, xlabel, f'Time {time_unit}', log_x=log_x, log_y=log_y, set_integer_x=True, set_y_bottom=0.0, safe_integer_locator=False)
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"times_{agg_str}{savefig}")
@@ -584,7 +584,7 @@ def plot_time_metric(df, cumulative, xtype, xlabel, time_unit, metric, use_title
         prefix = 'Cumulative ' if cumulative else ''
         plt.title(f"{prefix}{metric.capitalize()} time vs {xlabel}", fontsize=tfs, fontweight='bold')
     ax = plt.gca()
-    _setup_axes(ax, xlabel, f'Times {time_unit}', log_x=log_x, log_y=log_y, set_integer_x=True, set_y_bottom=0.0, safe_integer_locator=False)
+    _setup_axes(ax, xlabel, f'Time {time_unit}', log_x=log_x, log_y=log_y, set_integer_x=True, set_y_bottom=0.0, safe_integer_locator=False)
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"{metric}_{agg_str}{savefig}")
@@ -612,7 +612,7 @@ def _plot_iters_with_time_metric(df, cumulative, xtype, xlabel, time_unit, time_
 
     # Time axis (left): setup/solve/total.
     ax1.set_xlabel(xlabel, fontsize=alfs)
-    ax1.set_ylabel(f'Times {time_unit}', fontsize=alfs)
+    ax1.set_ylabel(f'Time {time_unit}', fontsize=alfs)
     if log_x:
         ax1.set_xscale('log')
     if log_y:
@@ -828,7 +828,7 @@ def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig
     if metric == 'iters':
         plt.ylabel("Iterations", fontsize=alfs)
     else:
-        plt.ylabel(f"Times {time_unit}", fontsize=alfs)
+        plt.ylabel(f"Time {time_unit}", fontsize=alfs)
     plt.xlabel(xlabel if xlabel else "Solver", fontsize=alfs)
 
     if title:

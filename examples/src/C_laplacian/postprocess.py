@@ -112,10 +112,14 @@ def render(args: argparse.Namespace) -> None:
     try:
         pl.enable_anti_aliasing("ssaa")
     except Exception:
+        # SSAA anti-aliasing is an optional visual nicety that some VTK/OpenGL
+        # backends (especially headless ones) reject; proceed without it.
         pass
     try:
         pl.enable_depth_peeling(10, 0.0)  # correct ordering for translucent surfaces
     except Exception:
+        # Depth peeling is an optional rendering enhancement for translucency and is
+        # not supported on every backend; continue rendering without it.
         pass
 
     # Scalar bar parked in the right margin (the camera zoom keeps the object clear of it).
