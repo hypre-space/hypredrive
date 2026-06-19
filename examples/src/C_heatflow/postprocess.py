@@ -132,7 +132,7 @@ def render(args: argparse.Namespace) -> None:
             return mesh
         if field in mesh.cell_data:
             return mesh.cell_data_to_point_data()
-        sys.exit(f"{args.input} has no array named '{field}'")
+        raise SystemExit(f"{args.input} has no array named '{field}'")
 
     if not times:
         times = [None]  # single static frame (a lone .vtr or single-step .pvd)
