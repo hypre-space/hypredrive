@@ -9,8 +9,8 @@
 #define PRECON_HEADER
 
 #include <stdint.h>
-#include "internal/amg.h"
 #include "internal/ads.h"
+#include "internal/amg.h"
 #include "internal/ams.h"
 #include "internal/compatibility.h"
 #include "internal/field.h"
@@ -105,8 +105,7 @@ void           hypredrv_PreconArgsDestroyRuntimeState(precon_t, precon_args *);
 void           hypredrv_PreconSetArgsFromYAML(precon_args *,
                                               YAMLnode *); /* TODO: change to PreconSetArgs */
 void           hypredrv_PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector,
-                                     HYPRE_Precon *, const Stats *, int,
-                                     const PreconOperators *);
+                                     HYPRE_Precon *, const Stats *, int, const PreconOperators *);
 void           hypredrv_PreconSetup(precon_t, HYPRE_Precon, HYPRE_IJMatrix);
 void hypredrv_PreconApply(precon_t, HYPRE_Precon, HYPRE_IJMatrix, HYPRE_IJVector,
                           HYPRE_IJVector);

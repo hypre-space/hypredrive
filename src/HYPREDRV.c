@@ -896,35 +896,35 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    MPI_Comm_rank(comm, &hypredrv->mypid);
    MPI_Comm_size(comm, &hypredrv->nprocs);
 
-   hypredrv->comm          = comm;
-   hypredrv->nstates       = 0;
-   hypredrv->states        = NULL;
-   hypredrv->iargs         = NULL;
-   hypredrv->mat_A         = NULL;
-   hypredrv->mat_M         = NULL;
-   hypredrv->vec_b         = NULL;
-   hypredrv->vec_x         = NULL;
-   hypredrv->vec_x0        = NULL;
-   hypredrv->vec_xref      = NULL;
-   hypredrv->vec_nn        = NULL;
-   hypredrv->vec_ns        = NULL;
-   hypredrv->num_ns        = 0;
-   hypredrv->vec_s         = NULL;
-   hypredrv->dofmap        = NULL;
-   hypredrv->mat_G         = NULL;
-   hypredrv->mat_C         = NULL;
-   hypredrv->vec_coord[0]  = NULL;
-   hypredrv->vec_coord[1]  = NULL;
-   hypredrv->vec_coord[2]  = NULL;
-   hypredrv->owns_mat_G    = false;
-   hypredrv->owns_mat_C    = false;
+   hypredrv->comm           = comm;
+   hypredrv->nstates        = 0;
+   hypredrv->states         = NULL;
+   hypredrv->iargs          = NULL;
+   hypredrv->mat_A          = NULL;
+   hypredrv->mat_M          = NULL;
+   hypredrv->vec_b          = NULL;
+   hypredrv->vec_x          = NULL;
+   hypredrv->vec_x0         = NULL;
+   hypredrv->vec_xref       = NULL;
+   hypredrv->vec_nn         = NULL;
+   hypredrv->vec_ns         = NULL;
+   hypredrv->num_ns         = 0;
+   hypredrv->vec_s          = NULL;
+   hypredrv->dofmap         = NULL;
+   hypredrv->mat_G          = NULL;
+   hypredrv->mat_C          = NULL;
+   hypredrv->vec_coord[0]   = NULL;
+   hypredrv->vec_coord[1]   = NULL;
+   hypredrv->vec_coord[2]   = NULL;
+   hypredrv->owns_mat_G     = false;
+   hypredrv->owns_mat_C     = false;
    hypredrv->owns_vec_coord = false;
-   hypredrv->owns_mat_A    = false;
-   hypredrv->owns_mat_M    = false;
-   hypredrv->owns_vec_b    = false;
-   hypredrv->owns_vec_x    = false;
-   hypredrv->owns_vec_x0   = false;
-   hypredrv->owns_vec_xref = false;
+   hypredrv->owns_mat_A     = false;
+   hypredrv->owns_mat_M     = false;
+   hypredrv->owns_vec_b     = false;
+   hypredrv->owns_vec_x     = false;
+   hypredrv->owns_vec_x0    = false;
+   hypredrv->owns_vec_xref  = false;
 
    hypredrv->precon                        = NULL;
    hypredrv->solver                        = NULL;
@@ -2638,10 +2638,10 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
                                 hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
          hypredrv->precon_is_setup = false;
       }
-      PreconOperators precon_ops = {hypredrv->mat_G,
-                                    hypredrv->mat_C,
-                                    {hypredrv->vec_coord[0], hypredrv->vec_coord[1],
-                                     hypredrv->vec_coord[2]}};
+      PreconOperators precon_ops = {
+         hypredrv->mat_G,
+         hypredrv->mat_C,
+         {hypredrv->vec_coord[0], hypredrv->vec_coord[1], hypredrv->vec_coord[2]}};
       hypredrv_PreconCreate(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                             hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon,
                             hypredrv->stats, next_ls_id, &precon_ops);

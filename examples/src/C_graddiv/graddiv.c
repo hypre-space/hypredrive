@@ -95,7 +95,7 @@ typedef struct
    HYPRE_BigInt *rank_node_lower; /* size nprocs+1 */
    HYPRE_BigInt *rank_edge_lower;
    HYPRE_BigInt *rank_face_lower;
-   HYPRE_Int   (*rank_coords)[3];
+   HYPRE_Int (*rank_coords)[3];
 } GradDivMesh;
 
 enum
@@ -199,13 +199,14 @@ edge_gid(const GradDivMesh *m, int dir, HYPRE_BigInt gi, HYPRE_BigInt gj, HYPRE_
    HYPRE_Int pz = block_of(gk, m->pstarts[2], m->pdims[2]);
    HYPRE_Int nx, ny, nz, bx, by, bz;
    block_dims(m, px, py, pz, &nx, &ny, &nz, &bx, &by, &bz);
-   HYPRE_Int li = (HYPRE_Int)(gi - m->pstarts[0][px]);
-   HYPRE_Int lj = (HYPRE_Int)(gj - m->pstarts[1][py]);
-   HYPRE_Int lk = (HYPRE_Int)(gk - m->pstarts[2][pz]);
-   HYPRE_Int cntX = bx * ny * nz, cntY = nx * by * nz;
+   HYPRE_Int    li   = (HYPRE_Int)(gi - m->pstarts[0][px]);
+   HYPRE_Int    lj   = (HYPRE_Int)(gj - m->pstarts[1][py]);
+   HYPRE_Int    lk   = (HYPRE_Int)(gk - m->pstarts[2][pz]);
+   HYPRE_Int    cntX = bx * ny * nz, cntY = nx * by * nz;
    HYPRE_BigInt local;
    if (dir == DIR_X) local = (HYPRE_BigInt)((lk * ny + lj) * bx + li);
-   else if (dir == DIR_Y) local = (HYPRE_BigInt)cntX + (HYPRE_BigInt)((lk * by + lj) * nx + li);
+   else if (dir == DIR_Y)
+      local = (HYPRE_BigInt)cntX + (HYPRE_BigInt)((lk * by + lj) * nx + li);
    else local = (HYPRE_BigInt)(cntX + cntY) + (HYPRE_BigInt)((lk * ny + lj) * nx + li);
    return m->rank_edge_lower[o] + local;
 }
@@ -220,13 +221,14 @@ face_gid(const GradDivMesh *m, int dir, HYPRE_BigInt gi, HYPRE_BigInt gj, HYPRE_
    HYPRE_Int pz = block_of(gk, m->pstarts[2], m->pdims[2]);
    HYPRE_Int nx, ny, nz, bx, by, bz;
    block_dims(m, px, py, pz, &nx, &ny, &nz, &bx, &by, &bz);
-   HYPRE_Int li = (HYPRE_Int)(gi - m->pstarts[0][px]);
-   HYPRE_Int lj = (HYPRE_Int)(gj - m->pstarts[1][py]);
-   HYPRE_Int lk = (HYPRE_Int)(gk - m->pstarts[2][pz]);
-   HYPRE_Int cntX = nx * by * bz, cntY = bx * ny * bz;
+   HYPRE_Int    li   = (HYPRE_Int)(gi - m->pstarts[0][px]);
+   HYPRE_Int    lj   = (HYPRE_Int)(gj - m->pstarts[1][py]);
+   HYPRE_Int    lk   = (HYPRE_Int)(gk - m->pstarts[2][pz]);
+   HYPRE_Int    cntX = nx * by * bz, cntY = bx * ny * bz;
    HYPRE_BigInt local;
    if (dir == DIR_X) local = (HYPRE_BigInt)((lk * by + lj) * nx + li);
-   else if (dir == DIR_Y) local = (HYPRE_BigInt)cntX + (HYPRE_BigInt)((lk * ny + lj) * bx + li);
+   else if (dir == DIR_Y)
+      local = (HYPRE_BigInt)cntX + (HYPRE_BigInt)((lk * ny + lj) * bx + li);
    else local = (HYPRE_BigInt)(cntX + cntY) + (HYPRE_BigInt)((lk * by + lj) * bx + li);
    return m->rank_face_lower[o] + local;
 }
@@ -244,8 +246,8 @@ face_is_boundary(const GradDivMesh *m, int dir, HYPRE_BigInt gi, HYPRE_BigInt gj
 /* Exact (manufactured) reference value of a face DOF: integral of the normal
  * component of u through the face. */
 static HYPRE_Real
-face_exact(const GradDivMesh *m, HYPRE_Real kappa, int dir, HYPRE_BigInt gi, HYPRE_BigInt gj,
-           HYPRE_BigInt gk)
+face_exact(const GradDivMesh *m, HYPRE_Real kappa, int dir, HYPRE_BigInt gi,
+           HYPRE_BigInt gj, HYPRE_BigInt gk)
 {
    HYPRE_Real x = gi * m->h[0], y = gj * m->h[1], z = gk * m->h[2];
    if (dir == DIR_X) return m->h[1] * m->h[2] * sin(kappa * x); /* u_x = sin(k x) */
@@ -271,8 +273,10 @@ PrintUsage(void)
    printf("  -beta <val>       : mass coefficient, >= 0 (1.0)\n");
    printf("  -ns|--nsolve <n>  : Number of solves (1)\n");
    printf("  -v|--verbose <n>  : Verbosity bitset (1)\n");
-   printf("  -vtk <base>       : Write the solution as VTK ImageData (cell-centered u +\n");
-   printf("                      magnitude); serial -> <base>.vti, parallel -> <base>.pvti\n");
+   printf(
+      "  -vtk <base>       : Write the solution as VTK ImageData (cell-centered u +\n");
+   printf("                      magnitude); serial -> <base>.vti, parallel -> "
+          "<base>.pvti\n");
    printf("  -h|--help         : Print this message\n\n");
    return 0;
 }
@@ -308,17 +312,29 @@ ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "-n"))
       {
-         if (i + 3 >= argc) { if (!myid) printf("Error: -n requires three values\n"); return 1; }
+         if (i + 3 >= argc)
+         {
+            if (!myid) printf("Error: -n requires three values\n");
+            return 1;
+         }
          for (int j = 0; j < 3; j++) params->N[j] = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-P"))
       {
-         if (i + 3 >= argc) { if (!myid) printf("Error: -P requires three values\n"); return 1; }
+         if (i + 3 >= argc)
+         {
+            if (!myid) printf("Error: -P requires three values\n");
+            return 1;
+         }
          for (int j = 0; j < 3; j++) params->P[j] = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-L"))
       {
-         if (i + 3 >= argc) { if (!myid) printf("Error: -L requires three values\n"); return 1; }
+         if (i + 3 >= argc)
+         {
+            if (!myid) printf("Error: -L requires three values\n");
+            return 1;
+         }
          for (int j = 0; j < 3; j++) params->L[j] = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-freq"))
@@ -416,10 +432,12 @@ CreateMesh(MPI_Comm comm, GradDivParams *params, GradDivMesh **mesh_ptr)
    {
       HYPRE_Int size = m->gdims[d] / m->pdims[d];
       HYPRE_Int rest = m->gdims[d] - size * m->pdims[d];
-      m->pstarts[d]  = (HYPRE_BigInt *)calloc((size_t)(m->pdims[d] + 1), sizeof(HYPRE_BigInt));
+      m->pstarts[d] =
+         (HYPRE_BigInt *)calloc((size_t)(m->pdims[d] + 1), sizeof(HYPRE_BigInt));
       for (int j = 0; j < m->pdims[d] + 1; j++)
          m->pstarts[d][j] = (HYPRE_BigInt)(size * j + (j < rest ? j : rest));
-      m->nlocal[d] = (HYPRE_Int)(m->pstarts[d][m->coords[d] + 1] - m->pstarts[d][m->coords[d]]);
+      m->nlocal[d] =
+         (HYPRE_Int)(m->pstarts[d][m->coords[d] + 1] - m->pstarts[d][m->coords[d]]);
    }
 
    m->rank_coords     = malloc((size_t)m->nprocs * sizeof(*m->rank_coords));
@@ -437,22 +455,27 @@ CreateMesh(MPI_Comm comm, GradDivParams *params, GradDivMesh **mesh_ptr)
    m->rank_node_lower[0] = m->rank_edge_lower[0] = m->rank_face_lower[0] = 0;
    for (int r = 0; r < m->nprocs; r++)
    {
-      HYPRE_Int px = m->rank_coords[r][0], py = m->rank_coords[r][1], pz = m->rank_coords[r][2];
+      HYPRE_Int px = m->rank_coords[r][0], py = m->rank_coords[r][1],
+                pz              = m->rank_coords[r][2];
       m->rank_node_lower[r + 1] = m->rank_node_lower[r] + node_count(m, px, py, pz);
-      m->rank_edge_lower[r + 1] = m->rank_edge_lower[r] + edge_count(m, DIR_X, px, py, pz) +
-                                  edge_count(m, DIR_Y, px, py, pz) + edge_count(m, DIR_Z, px, py, pz);
-      m->rank_face_lower[r + 1] = m->rank_face_lower[r] + face_count(m, DIR_X, px, py, pz) +
-                                  face_count(m, DIR_Y, px, py, pz) + face_count(m, DIR_Z, px, py, pz);
+      m->rank_edge_lower[r + 1] =
+         m->rank_edge_lower[r] + edge_count(m, DIR_X, px, py, pz) +
+         edge_count(m, DIR_Y, px, py, pz) + edge_count(m, DIR_Z, px, py, pz);
+      m->rank_face_lower[r + 1] =
+         m->rank_face_lower[r] + face_count(m, DIR_X, px, py, pz) +
+         face_count(m, DIR_Y, px, py, pz) + face_count(m, DIR_Z, px, py, pz);
    }
    m->num_nodes_local = m->nlocal[0] * m->nlocal[1] * m->nlocal[2];
-   m->num_edges_local = (HYPRE_Int)(m->rank_edge_lower[myid + 1] - m->rank_edge_lower[myid]);
-   m->num_faces_local = (HYPRE_Int)(m->rank_face_lower[myid + 1] - m->rank_face_lower[myid]);
-   m->node_ilower     = m->rank_node_lower[myid];
-   m->node_iupper     = m->node_ilower + m->num_nodes_local - 1;
-   m->edge_ilower     = m->rank_edge_lower[myid];
-   m->edge_iupper     = m->edge_ilower + m->num_edges_local - 1;
-   m->face_ilower     = m->rank_face_lower[myid];
-   m->face_iupper     = m->face_ilower + m->num_faces_local - 1;
+   m->num_edges_local =
+      (HYPRE_Int)(m->rank_edge_lower[myid + 1] - m->rank_edge_lower[myid]);
+   m->num_faces_local =
+      (HYPRE_Int)(m->rank_face_lower[myid + 1] - m->rank_face_lower[myid]);
+   m->node_ilower      = m->rank_node_lower[myid];
+   m->node_iupper      = m->node_ilower + m->num_nodes_local - 1;
+   m->edge_ilower      = m->rank_edge_lower[myid];
+   m->edge_iupper      = m->edge_ilower + m->num_edges_local - 1;
+   m->face_ilower      = m->rank_face_lower[myid];
+   m->face_iupper      = m->face_ilower + m->num_faces_local - 1;
    m->num_faces_global = m->rank_face_lower[m->nprocs];
 
    *mesh_ptr = m;
@@ -493,21 +516,40 @@ rt0_basis(int a, HYPRE_Real lx, HYPRE_Real ly, HYPRE_Real lz, const HYPRE_Real h
 {
    HYPRE_Real V = h[0] * h[1] * h[2];
    v[0] = v[1] = v[2] = 0.0;
-   *div = 0.0;
+   *div               = 0.0;
    switch (a)
    {
-      case 0: v[0] = (1.0 - lx / h[0]) / (h[1] * h[2]); *div = -1.0 / V; break;
-      case 1: v[0] = (lx / h[0]) / (h[1] * h[2]);       *div = 1.0 / V;  break;
-      case 2: v[1] = (1.0 - ly / h[1]) / (h[0] * h[2]); *div = -1.0 / V; break;
-      case 3: v[1] = (ly / h[1]) / (h[0] * h[2]);       *div = 1.0 / V;  break;
-      case 4: v[2] = (1.0 - lz / h[2]) / (h[0] * h[1]); *div = -1.0 / V; break;
-      case 5: v[2] = (lz / h[2]) / (h[0] * h[1]);       *div = 1.0 / V;  break;
+      case 0:
+         v[0] = (1.0 - lx / h[0]) / (h[1] * h[2]);
+         *div = -1.0 / V;
+         break;
+      case 1:
+         v[0] = (lx / h[0]) / (h[1] * h[2]);
+         *div = 1.0 / V;
+         break;
+      case 2:
+         v[1] = (1.0 - ly / h[1]) / (h[0] * h[2]);
+         *div = -1.0 / V;
+         break;
+      case 3:
+         v[1] = (ly / h[1]) / (h[0] * h[2]);
+         *div = 1.0 / V;
+         break;
+      case 4:
+         v[2] = (1.0 - lz / h[2]) / (h[0] * h[1]);
+         *div = -1.0 / V;
+         break;
+      case 5:
+         v[2] = (lz / h[2]) / (h[0] * h[1]);
+         *div = 1.0 / V;
+         break;
    }
 }
 
 /* 3-point Gauss rule on [0,1]. */
 static const HYPRE_Real g3_x[3] = {0.1127016653792583, 0.5, 0.8872983346207417};
-static const HYPRE_Real g3_w[3] = {0.2777777777777778, 0.4444444444444444, 0.2777777777777778};
+static const HYPRE_Real g3_w[3] = {0.2777777777777778, 0.4444444444444444,
+                                   0.2777777777777778};
 
 /* Precompute the (constant) 6x6 RT0 element matrix S = alpha*(grad-div) + beta*(mass). */
 static void
@@ -519,20 +561,21 @@ ComputeElementMatrix(const HYPRE_Real h[3], HYPRE_Real alpha, HYPRE_Real beta,
       for (int b = 0; b < 6; b++) S[a][b] = 0.0;
 
    for (int qz = 0; qz < 3; qz++)
-   for (int qy = 0; qy < 3; qy++)
-   for (int qx = 0; qx < 3; qx++)
-   {
-      HYPRE_Real lx = g3_x[qx] * h[0], ly = g3_x[qy] * h[1], lz = g3_x[qz] * h[2];
-      HYPRE_Real w  = g3_w[qx] * g3_w[qy] * g3_w[qz] * detJ;
-      HYPRE_Real v[6][3], dv[6];
-      for (int a = 0; a < 6; a++) rt0_basis(a, lx, ly, lz, h, v[a], &dv[a]);
-      for (int a = 0; a < 6; a++)
-         for (int b = 0; b < 6; b++)
+      for (int qy = 0; qy < 3; qy++)
+         for (int qx = 0; qx < 3; qx++)
          {
-            HYPRE_Real mass = v[a][0] * v[b][0] + v[a][1] * v[b][1] + v[a][2] * v[b][2];
-            S[a][b] += w * (alpha * dv[a] * dv[b] + beta * mass);
+            HYPRE_Real lx = g3_x[qx] * h[0], ly = g3_x[qy] * h[1], lz = g3_x[qz] * h[2];
+            HYPRE_Real w = g3_w[qx] * g3_w[qy] * g3_w[qz] * detJ;
+            HYPRE_Real v[6][3], dv[6];
+            for (int a = 0; a < 6; a++) rt0_basis(a, lx, ly, lz, h, v[a], &dv[a]);
+            for (int a = 0; a < 6; a++)
+               for (int b = 0; b < 6; b++)
+               {
+                  HYPRE_Real mass =
+                     v[a][0] * v[b][0] + v[a][1] * v[b][1] + v[a][2] * v[b][2];
+                  S[a][b] += w * (alpha * dv[a] * dv[b] + beta * mass);
+               }
          }
-   }
 }
 
 /*--------------------------------------------------------------------------
@@ -540,25 +583,30 @@ ComputeElementMatrix(const HYPRE_Real h[3], HYPRE_Real alpha, HYPRE_Real beta,
  * discrete curl C (face x edge), vertex coordinates, and reference face DOFs.
  *--------------------------------------------------------------------------*/
 static int
-BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm, HYPRE_IJMatrix *A_ptr,
-                   HYPRE_IJVector *b_ptr, HYPRE_IJMatrix *G_ptr, HYPRE_IJMatrix *C_ptr,
-                   HYPRE_IJVector coord_ptr[3], HYPRE_Real **xref_ptr)
+BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm,
+                   HYPRE_IJMatrix *A_ptr, HYPRE_IJVector *b_ptr, HYPRE_IJMatrix *G_ptr,
+                   HYPRE_IJMatrix *C_ptr, HYPRE_IJVector coord_ptr[3],
+                   HYPRE_Real **xref_ptr)
 {
    const HYPRE_Real kappa = params->freq * M_PI;
-   /* grad(div u) = -kappa^2 u, so f = alpha*kappa^2*u + beta*u = (alpha*kappa^2 + beta) u */
+   /* grad(div u) = -kappa^2 u, so f = alpha*kappa^2*u + beta*u = (alpha*kappa^2 + beta) u
+    */
    const HYPRE_Real fcoef = params->alpha * kappa * kappa + params->beta;
    const HYPRE_Int  Nx = m->gdims[0], Ny = m->gdims[1], Nz = m->gdims[2];
 
    HYPRE_IJMatrix A, G, C;
    HYPRE_IJVector b, cx, cy, cz;
 
-   HYPRE_IJMatrixCreate(comm, m->face_ilower, m->face_iupper, m->face_ilower, m->face_iupper, &A);
+   HYPRE_IJMatrixCreate(comm, m->face_ilower, m->face_iupper, m->face_ilower,
+                        m->face_iupper, &A);
    HYPRE_IJMatrixSetObjectType(A, HYPRE_PARCSR);
    HYPRE_IJMatrixInitialize(A);
-   HYPRE_IJMatrixCreate(comm, m->edge_ilower, m->edge_iupper, m->node_ilower, m->node_iupper, &G);
+   HYPRE_IJMatrixCreate(comm, m->edge_ilower, m->edge_iupper, m->node_ilower,
+                        m->node_iupper, &G);
    HYPRE_IJMatrixSetObjectType(G, HYPRE_PARCSR);
    HYPRE_IJMatrixInitialize(G);
-   HYPRE_IJMatrixCreate(comm, m->face_ilower, m->face_iupper, m->edge_ilower, m->edge_iupper, &C);
+   HYPRE_IJMatrixCreate(comm, m->face_ilower, m->face_iupper, m->edge_ilower,
+                        m->edge_iupper, &C);
    HYPRE_IJMatrixSetObjectType(C, HYPRE_PARCSR);
    HYPRE_IJMatrixInitialize(C);
    HYPRE_IJVectorCreate(comm, m->face_ilower, m->face_iupper, &b);
@@ -574,173 +622,208 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm, HYPRE_I
    HYPRE_IJVectorInitialize(cy);
    HYPRE_IJVectorInitialize(cz);
 
-   HYPRE_Real *xref = (HYPRE_Real *)calloc((size_t)(m->num_faces_local > 0 ? m->num_faces_local : 1),
-                                           sizeof(HYPRE_Real));
+   HYPRE_Real *xref = (HYPRE_Real *)calloc(
+      (size_t)(m->num_faces_local > 0 ? m->num_faces_local : 1), sizeof(HYPRE_Real));
    HYPRE_Real S[6][6];
    ComputeElementMatrix(m->h, params->alpha, params->beta, S);
 
    /* ---- Assemble owned interior face rows of A and load b (ghost-cell loop) ---- */
-   HYPRE_Int cx_lo = (m->pstarts[0][m->coords[0]] > 0) ? (HYPRE_Int)m->pstarts[0][m->coords[0]] - 1 : 0;
-   HYPRE_Int cy_lo = (m->pstarts[1][m->coords[1]] > 0) ? (HYPRE_Int)m->pstarts[1][m->coords[1]] - 1 : 0;
-   HYPRE_Int cz_lo = (m->pstarts[2][m->coords[2]] > 0) ? (HYPRE_Int)m->pstarts[2][m->coords[2]] - 1 : 0;
-   HYPRE_Int cx_hi = (HYPRE_Int)((m->pstarts[0][m->coords[0] + 1] < Nx) ? m->pstarts[0][m->coords[0] + 1] : Nx - 1);
-   HYPRE_Int cy_hi = (HYPRE_Int)((m->pstarts[1][m->coords[1] + 1] < Ny) ? m->pstarts[1][m->coords[1] + 1] : Ny - 1);
-   HYPRE_Int cz_hi = (HYPRE_Int)((m->pstarts[2][m->coords[2] + 1] < Nz) ? m->pstarts[2][m->coords[2] + 1] : Nz - 1);
+   HYPRE_Int cx_lo =
+      (m->pstarts[0][m->coords[0]] > 0) ? (HYPRE_Int)m->pstarts[0][m->coords[0]] - 1 : 0;
+   HYPRE_Int cy_lo =
+      (m->pstarts[1][m->coords[1]] > 0) ? (HYPRE_Int)m->pstarts[1][m->coords[1]] - 1 : 0;
+   HYPRE_Int cz_lo =
+      (m->pstarts[2][m->coords[2]] > 0) ? (HYPRE_Int)m->pstarts[2][m->coords[2]] - 1 : 0;
+   HYPRE_Int cx_hi =
+      (HYPRE_Int)((m->pstarts[0][m->coords[0] + 1] < Nx) ? m->pstarts[0][m->coords[0] + 1]
+                                                         : Nx - 1);
+   HYPRE_Int cy_hi =
+      (HYPRE_Int)((m->pstarts[1][m->coords[1] + 1] < Ny) ? m->pstarts[1][m->coords[1] + 1]
+                                                         : Ny - 1);
+   HYPRE_Int cz_hi =
+      (HYPRE_Int)((m->pstarts[2][m->coords[2] + 1] < Nz) ? m->pstarts[2][m->coords[2] + 1]
+                                                         : Nz - 1);
 
    for (HYPRE_Int cz = cz_lo; cz < cz_hi; cz++)
-   for (HYPRE_Int cy = cy_lo; cy < cy_hi; cy++)
-   for (HYPRE_Int cx = cx_lo; cx < cx_hi; cx++)
-   {
-      HYPRE_BigInt fgid[6];
-      int          fbnd[6];
-      HYPRE_Real   fval[6], F[6];
-      for (int a = 0; a < 6; a++)
-      {
-         HYPRE_BigInt gi = cx + face_off6[a][0], gj = cy + face_off6[a][1], gk = cz + face_off6[a][2];
-         fgid[a] = face_gid(m, face_dir6[a], gi, gj, gk);
-         fbnd[a] = face_is_boundary(m, face_dir6[a], gi, gj, gk);
-         fval[a] = face_exact(m, kappa, face_dir6[a], gi, gj, gk);
-         F[a]    = 0.0;
-      }
-
-      for (int qz = 0; qz < 3; qz++)
-      for (int qy = 0; qy < 3; qy++)
-      for (int qx = 0; qx < 3; qx++)
-      {
-         HYPRE_Real lx = g3_x[qx] * m->h[0], ly = g3_x[qy] * m->h[1], lz = g3_x[qz] * m->h[2];
-         HYPRE_Real px = cx * m->h[0] + lx, py = cy * m->h[1] + ly, pz = cz * m->h[2] + lz;
-         HYPRE_Real wq = g3_w[qx] * g3_w[qy] * g3_w[qz] * (m->h[0] * m->h[1] * m->h[2]);
-         HYPRE_Real fx = fcoef * sin(kappa * px); /* f = (1+k^2) u */
-         HYPRE_Real fy = fcoef * sin(kappa * py);
-         HYPRE_Real fz = fcoef * sin(kappa * pz);
-         for (int a = 0; a < 6; a++)
+      for (HYPRE_Int cy = cy_lo; cy < cy_hi; cy++)
+         for (HYPRE_Int cx = cx_lo; cx < cx_hi; cx++)
          {
-            HYPRE_Real v[3], dv;
-            rt0_basis(a, lx, ly, lz, m->h, v, &dv);
-            F[a] += wq * (fx * v[0] + fy * v[1] + fz * v[2]);
-         }
-      }
+            HYPRE_BigInt fgid[6];
+            int          fbnd[6];
+            HYPRE_Real   fval[6], F[6];
+            for (int a = 0; a < 6; a++)
+            {
+               HYPRE_BigInt gi = cx + face_off6[a][0], gj = cy + face_off6[a][1],
+                            gk = cz + face_off6[a][2];
+               fgid[a]         = face_gid(m, face_dir6[a], gi, gj, gk);
+               fbnd[a]         = face_is_boundary(m, face_dir6[a], gi, gj, gk);
+               fval[a]         = face_exact(m, kappa, face_dir6[a], gi, gj, gk);
+               F[a]            = 0.0;
+            }
 
-      for (int a = 0; a < 6; a++)
-      {
-         if (fbnd[a]) continue;
-         if (fgid[a] < m->face_ilower || fgid[a] > m->face_iupper) continue; /* owned rows only */
+            for (int qz = 0; qz < 3; qz++)
+               for (int qy = 0; qy < 3; qy++)
+                  for (int qx = 0; qx < 3; qx++)
+                  {
+                     HYPRE_Real lx = g3_x[qx] * m->h[0], ly = g3_x[qy] * m->h[1],
+                                lz = g3_x[qz] * m->h[2];
+                     HYPRE_Real px = cx * m->h[0] + lx, py = cy * m->h[1] + ly,
+                                pz = cz * m->h[2] + lz;
+                     HYPRE_Real wq =
+                        g3_w[qx] * g3_w[qy] * g3_w[qz] * (m->h[0] * m->h[1] * m->h[2]);
+                     HYPRE_Real fx = fcoef * sin(kappa * px); /* f = (1+k^2) u */
+                     HYPRE_Real fy = fcoef * sin(kappa * py);
+                     HYPRE_Real fz = fcoef * sin(kappa * pz);
+                     for (int a = 0; a < 6; a++)
+                     {
+                        HYPRE_Real v[3], dv;
+                        rt0_basis(a, lx, ly, lz, m->h, v, &dv);
+                        F[a] += wq * (fx * v[0] + fy * v[1] + fz * v[2]);
+                     }
+                  }
 
-         HYPRE_BigInt row = fgid[a];
-         HYPRE_Int    ncols = 0;
-         HYPRE_BigInt cols[6];
-         HYPRE_Real   vals[6];
-         HYPRE_Real   rhs = F[a];
-         for (int bcol = 0; bcol < 6; bcol++)
-         {
-            if (fbnd[bcol]) { rhs -= S[a][bcol] * fval[bcol]; }
-            else { cols[ncols] = fgid[bcol]; vals[ncols] = S[a][bcol]; ncols++; }
+            for (int a = 0; a < 6; a++)
+            {
+               if (fbnd[a]) continue;
+               if (fgid[a] < m->face_ilower || fgid[a] > m->face_iupper)
+                  continue; /* owned rows only */
+
+               HYPRE_BigInt row   = fgid[a];
+               HYPRE_Int    ncols = 0;
+               HYPRE_BigInt cols[6];
+               HYPRE_Real   vals[6];
+               HYPRE_Real   rhs = F[a];
+               for (int bcol = 0; bcol < 6; bcol++)
+               {
+                  if (fbnd[bcol])
+                  {
+                     rhs -= S[a][bcol] * fval[bcol];
+                  }
+                  else
+                  {
+                     cols[ncols] = fgid[bcol];
+                     vals[ncols] = S[a][bcol];
+                     ncols++;
+                  }
+               }
+               HYPRE_IJMatrixAddToValues(A, 1, &ncols, &row, cols, vals);
+               HYPRE_IJVectorAddToValues(b, 1, &row, &rhs);
+            }
          }
-         HYPRE_IJMatrixAddToValues(A, 1, &ncols, &row, cols, vals);
-         HYPRE_IJVectorAddToValues(b, 1, &row, &rhs);
-      }
-   }
 
    /* ---- Owned-face pass: boundary identity rows, discrete-curl rows, xref ----
     * C[face][edge] is the signed incidence of the 4 boundary edges of the face,
     * oriented by the right-hand rule about the +axis face normal so that the
     * fundamental relation curl-of-grad (C G = 0) holds exactly. */
    for (HYPRE_Int lk = 0; lk < m->nlocal[2]; lk++)
-   for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
-   for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
-   {
-      HYPRE_BigInt gi = m->pstarts[0][m->coords[0]] + li;
-      HYPRE_BigInt gj = m->pstarts[1][m->coords[1]] + lj;
-      HYPRE_BigInt gk = m->pstarts[2][m->coords[2]] + lk;
-
-      for (int dir = 0; dir < 3; dir++)
-      {
-         /* A face's lower node may sit on the far boundary plane of its normal
-          * direction; it is invalid only when a tangential index hits N-1. */
-         if (dir == DIR_X && (gj >= Ny - 1 || gk >= Nz - 1)) continue;
-         if (dir == DIR_Y && (gi >= Nx - 1 || gk >= Nz - 1)) continue;
-         if (dir == DIR_Z && (gi >= Nx - 1 || gj >= Ny - 1)) continue;
-
-         HYPRE_BigInt row = face_gid(m, dir, gi, gj, gk);
-         if (row < m->face_ilower || row > m->face_iupper) continue;
-
-         xref[row - m->face_ilower] = face_exact(m, kappa, dir, gi, gj, gk);
-
-         /* Four boundary edges of the face with right-hand-rule signs. */
-         HYPRE_BigInt ec[4];
-         HYPRE_Real   es[4];
-         if (dir == DIR_X)
+      for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
+         for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
          {
-            ec[0] = edge_gid(m, DIR_Y, gi, gj, gk);     es[0] = 1.0;
-            ec[1] = edge_gid(m, DIR_Z, gi, gj + 1, gk); es[1] = 1.0;
-            ec[2] = edge_gid(m, DIR_Y, gi, gj, gk + 1); es[2] = -1.0;
-            ec[3] = edge_gid(m, DIR_Z, gi, gj, gk);     es[3] = -1.0;
-         }
-         else if (dir == DIR_Y)
-         {
-            ec[0] = edge_gid(m, DIR_Z, gi, gj, gk);     es[0] = 1.0;
-            ec[1] = edge_gid(m, DIR_X, gi, gj, gk + 1); es[1] = 1.0;
-            ec[2] = edge_gid(m, DIR_Z, gi + 1, gj, gk); es[2] = -1.0;
-            ec[3] = edge_gid(m, DIR_X, gi, gj, gk);     es[3] = -1.0;
-         }
-         else
-         {
-            ec[0] = edge_gid(m, DIR_X, gi, gj, gk);     es[0] = 1.0;
-            ec[1] = edge_gid(m, DIR_Y, gi + 1, gj, gk); es[1] = 1.0;
-            ec[2] = edge_gid(m, DIR_X, gi, gj + 1, gk); es[2] = -1.0;
-            ec[3] = edge_gid(m, DIR_Y, gi, gj, gk);     es[3] = -1.0;
-         }
-         HYPRE_Int cnc = 4;
-         HYPRE_IJMatrixSetValues(C, 1, &cnc, &row, ec, es);
+            HYPRE_BigInt gi = m->pstarts[0][m->coords[0]] + li;
+            HYPRE_BigInt gj = m->pstarts[1][m->coords[1]] + lj;
+            HYPRE_BigInt gk = m->pstarts[2][m->coords[2]] + lk;
 
-         if (face_is_boundary(m, dir, gi, gj, gk))
-         {
-            HYPRE_Int  one = 1;
-            HYPRE_Real diag = 1.0, val = xref[row - m->face_ilower];
-            HYPRE_IJMatrixSetValues(A, 1, &one, &row, &row, &diag);
-            HYPRE_IJVectorSetValues(b, 1, &row, &val);
+            for (int dir = 0; dir < 3; dir++)
+            {
+               /* A face's lower node may sit on the far boundary plane of its normal
+                * direction; it is invalid only when a tangential index hits N-1. */
+               if (dir == DIR_X && (gj >= Ny - 1 || gk >= Nz - 1)) continue;
+               if (dir == DIR_Y && (gi >= Nx - 1 || gk >= Nz - 1)) continue;
+               if (dir == DIR_Z && (gi >= Nx - 1 || gj >= Ny - 1)) continue;
+
+               HYPRE_BigInt row = face_gid(m, dir, gi, gj, gk);
+               if (row < m->face_ilower || row > m->face_iupper) continue;
+
+               xref[row - m->face_ilower] = face_exact(m, kappa, dir, gi, gj, gk);
+
+               /* Four boundary edges of the face with right-hand-rule signs. */
+               HYPRE_BigInt ec[4];
+               HYPRE_Real   es[4];
+               if (dir == DIR_X)
+               {
+                  ec[0] = edge_gid(m, DIR_Y, gi, gj, gk);
+                  es[0] = 1.0;
+                  ec[1] = edge_gid(m, DIR_Z, gi, gj + 1, gk);
+                  es[1] = 1.0;
+                  ec[2] = edge_gid(m, DIR_Y, gi, gj, gk + 1);
+                  es[2] = -1.0;
+                  ec[3] = edge_gid(m, DIR_Z, gi, gj, gk);
+                  es[3] = -1.0;
+               }
+               else if (dir == DIR_Y)
+               {
+                  ec[0] = edge_gid(m, DIR_Z, gi, gj, gk);
+                  es[0] = 1.0;
+                  ec[1] = edge_gid(m, DIR_X, gi, gj, gk + 1);
+                  es[1] = 1.0;
+                  ec[2] = edge_gid(m, DIR_Z, gi + 1, gj, gk);
+                  es[2] = -1.0;
+                  ec[3] = edge_gid(m, DIR_X, gi, gj, gk);
+                  es[3] = -1.0;
+               }
+               else
+               {
+                  ec[0] = edge_gid(m, DIR_X, gi, gj, gk);
+                  es[0] = 1.0;
+                  ec[1] = edge_gid(m, DIR_Y, gi + 1, gj, gk);
+                  es[1] = 1.0;
+                  ec[2] = edge_gid(m, DIR_X, gi, gj + 1, gk);
+                  es[2] = -1.0;
+                  ec[3] = edge_gid(m, DIR_Y, gi, gj, gk);
+                  es[3] = -1.0;
+               }
+               HYPRE_Int cnc = 4;
+               HYPRE_IJMatrixSetValues(C, 1, &cnc, &row, ec, es);
+
+               if (face_is_boundary(m, dir, gi, gj, gk))
+               {
+                  HYPRE_Int  one  = 1;
+                  HYPRE_Real diag = 1.0, val = xref[row - m->face_ilower];
+                  HYPRE_IJMatrixSetValues(A, 1, &one, &row, &row, &diag);
+                  HYPRE_IJVectorSetValues(b, 1, &row, &val);
+               }
+            }
          }
-      }
-   }
 
    /* ---- Owned-edge pass: discrete gradient G (-1 lower node, +1 upper node) ---- */
    for (HYPRE_Int lk = 0; lk < m->nlocal[2]; lk++)
-   for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
-   for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
-   {
-      HYPRE_BigInt gi = m->pstarts[0][m->coords[0]] + li;
-      HYPRE_BigInt gj = m->pstarts[1][m->coords[1]] + lj;
-      HYPRE_BigInt gk = m->pstarts[2][m->coords[2]] + lk;
-      for (int dir = 0; dir < 3; dir++)
-      {
-         if (dir == DIR_X && gi >= Nx - 1) continue;
-         if (dir == DIR_Y && gj >= Ny - 1) continue;
-         if (dir == DIR_Z && gk >= Nz - 1) continue;
-         HYPRE_BigInt row = edge_gid(m, dir, gi, gj, gk);
-         if (row < m->edge_ilower || row > m->edge_iupper) continue;
-         HYPRE_BigInt up[3] = {gi, gj, gk};
-         up[dir] += 1;
-         HYPRE_BigInt gcols[2] = {node_gid(m, gi, gj, gk), node_gid(m, up[0], up[1], up[2])};
-         HYPRE_Real   gvals[2] = {-1.0, 1.0};
-         HYPRE_Int    gnc      = 2;
-         HYPRE_IJMatrixSetValues(G, 1, &gnc, &row, gcols, gvals);
-      }
-   }
+      for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
+         for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
+         {
+            HYPRE_BigInt gi = m->pstarts[0][m->coords[0]] + li;
+            HYPRE_BigInt gj = m->pstarts[1][m->coords[1]] + lj;
+            HYPRE_BigInt gk = m->pstarts[2][m->coords[2]] + lk;
+            for (int dir = 0; dir < 3; dir++)
+            {
+               if (dir == DIR_X && gi >= Nx - 1) continue;
+               if (dir == DIR_Y && gj >= Ny - 1) continue;
+               if (dir == DIR_Z && gk >= Nz - 1) continue;
+               HYPRE_BigInt row = edge_gid(m, dir, gi, gj, gk);
+               if (row < m->edge_ilower || row > m->edge_iupper) continue;
+               HYPRE_BigInt up[3] = {gi, gj, gk};
+               up[dir] += 1;
+               HYPRE_BigInt gcols[2] = {node_gid(m, gi, gj, gk),
+                                        node_gid(m, up[0], up[1], up[2])};
+               HYPRE_Real   gvals[2] = {-1.0, 1.0};
+               HYPRE_Int    gnc      = 2;
+               HYPRE_IJMatrixSetValues(G, 1, &gnc, &row, gcols, gvals);
+            }
+         }
 
    /* ---- Nodal coordinate vectors ---- */
    for (HYPRE_Int lk = 0; lk < m->nlocal[2]; lk++)
-   for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
-   for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
-   {
-      HYPRE_BigInt gi  = m->pstarts[0][m->coords[0]] + li;
-      HYPRE_BigInt gj  = m->pstarts[1][m->coords[1]] + lj;
-      HYPRE_BigInt gk  = m->pstarts[2][m->coords[2]] + lk;
-      HYPRE_BigInt nid = node_gid(m, gi, gj, gk);
-      HYPRE_Real   vx = gi * m->h[0], vy = gj * m->h[1], vz = gk * m->h[2];
-      HYPRE_IJVectorSetValues(cx, 1, &nid, &vx);
-      HYPRE_IJVectorSetValues(cy, 1, &nid, &vy);
-      HYPRE_IJVectorSetValues(cz, 1, &nid, &vz);
-   }
+      for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
+         for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
+         {
+            HYPRE_BigInt gi  = m->pstarts[0][m->coords[0]] + li;
+            HYPRE_BigInt gj  = m->pstarts[1][m->coords[1]] + lj;
+            HYPRE_BigInt gk  = m->pstarts[2][m->coords[2]] + lk;
+            HYPRE_BigInt nid = node_gid(m, gi, gj, gk);
+            HYPRE_Real   vx = gi * m->h[0], vy = gj * m->h[1], vz = gk * m->h[2];
+            HYPRE_IJVectorSetValues(cx, 1, &nid, &vx);
+            HYPRE_IJVectorSetValues(cy, 1, &nid, &vy);
+            HYPRE_IJVectorSetValues(cz, 1, &nid, &vz);
+         }
 
    HYPRE_IJMatrixAssemble(A);
    HYPRE_IJMatrixAssemble(G);
@@ -750,14 +833,14 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm, HYPRE_I
    HYPRE_IJVectorAssemble(cy);
    HYPRE_IJVectorAssemble(cz);
 
-   *A_ptr = A;
-   *b_ptr = b;
-   *G_ptr = G;
-   *C_ptr = C;
+   *A_ptr       = A;
+   *b_ptr       = b;
+   *G_ptr       = G;
+   *C_ptr       = C;
    coord_ptr[0] = cx;
    coord_ptr[1] = cy;
    coord_ptr[2] = cz;
-   *xref_ptr = xref;
+   *xref_ptr    = xref;
    return 0;
 }
 
@@ -772,13 +855,14 @@ static void
 vtk_cell_extent(const GradDivMesh *m, HYPRE_Int px, HYPRE_Int py, HYPRE_Int pz,
                 HYPRE_Int ext[6])
 {
-   HYPRE_BigInt x1 = m->pstarts[0][px + 1], y1 = m->pstarts[1][py + 1], z1 = m->pstarts[2][pz + 1];
-   ext[0] = (HYPRE_Int)m->pstarts[0][px];
-   ext[1] = (HYPRE_Int)(x1 < m->gdims[0] ? x1 : m->gdims[0] - 1);
-   ext[2] = (HYPRE_Int)m->pstarts[1][py];
-   ext[3] = (HYPRE_Int)(y1 < m->gdims[1] ? y1 : m->gdims[1] - 1);
-   ext[4] = (HYPRE_Int)m->pstarts[2][pz];
-   ext[5] = (HYPRE_Int)(z1 < m->gdims[2] ? z1 : m->gdims[2] - 1);
+   HYPRE_BigInt x1 = m->pstarts[0][px + 1], y1 = m->pstarts[1][py + 1],
+                z1 = m->pstarts[2][pz + 1];
+   ext[0]          = (HYPRE_Int)m->pstarts[0][px];
+   ext[1]          = (HYPRE_Int)(x1 < m->gdims[0] ? x1 : m->gdims[0] - 1);
+   ext[2]          = (HYPRE_Int)m->pstarts[1][py];
+   ext[3]          = (HYPRE_Int)(y1 < m->gdims[1] ? y1 : m->gdims[1] - 1);
+   ext[4]          = (HYPRE_Int)m->pstarts[2][pz];
+   ext[5]          = (HYPRE_Int)(z1 < m->gdims[2] ? z1 : m->gdims[2] - 1);
 }
 
 static void
@@ -793,17 +877,20 @@ vtk_write_piece(const char *fname, const HYPRE_Int ext[6], const HYPRE_Real sp[3
    fprintf(fp, "<?xml version=\"1.0\"?>\n");
    fprintf(fp, "<VTKFile type=\"ImageData\" version=\"1.0\" byte_order=\"LittleEndian\" "
                "header_type=\"UInt64\">\n");
-   fprintf(fp, "  <ImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
-               "Spacing=\"%.17g %.17g %.17g\">\n",
+   fprintf(fp,
+           "  <ImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+           "Spacing=\"%.17g %.17g %.17g\">\n",
            ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], sp[0], sp[1], sp[2]);
-   fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", ext[0], ext[1], ext[2], ext[3],
-           ext[4], ext[5]);
+   fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", ext[0], ext[1], ext[2],
+           ext[3], ext[4], ext[5]);
    fprintf(fp, "      <CellData Vectors=\"solution\" Scalars=\"magnitude\">\n");
-   fprintf(fp, "        <DataArray type=\"Float64\" Name=\"solution\" "
-               "NumberOfComponents=\"3\" format=\"appended\" offset=\"%llu\"/>\n",
+   fprintf(fp,
+           "        <DataArray type=\"Float64\" Name=\"solution\" "
+           "NumberOfComponents=\"3\" format=\"appended\" offset=\"%llu\"/>\n",
            (unsigned long long)uo);
-   fprintf(fp, "        <DataArray type=\"Float64\" Name=\"magnitude\" format=\"appended\" "
-               "offset=\"%llu\"/>\n",
+   fprintf(fp,
+           "        <DataArray type=\"Float64\" Name=\"magnitude\" format=\"appended\" "
+           "offset=\"%llu\"/>\n",
            (unsigned long long)mo);
    fprintf(fp, "      </CellData>\n      <PointData></PointData>\n    </Piece>\n"
                "  </ImageData>\n  <AppendedData encoding=\"raw\">\n   _");
@@ -824,18 +911,23 @@ vtk_write_master(const char *fname, const char *piece_base, const GradDivMesh *m
    HYPRE_Int whole[6] = {0, m->gdims[0] - 1, 0, m->gdims[1] - 1, 0, m->gdims[2] - 1};
    fprintf(fp, "<?xml version=\"1.0\"?>\n<VTKFile type=\"PImageData\" version=\"1.0\" "
                "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n");
-   fprintf(fp, "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
-               "Spacing=\"%.17g %.17g %.17g\" GhostLevel=\"0\">\n",
-           whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sp[0], sp[1], sp[2]);
-   fprintf(fp, "    <PCellData Vectors=\"solution\" Scalars=\"magnitude\">\n"
-               "      <PDataArray type=\"Float64\" Name=\"solution\" NumberOfComponents=\"3\"/>\n"
-               "      <PDataArray type=\"Float64\" Name=\"magnitude\"/>\n    </PCellData>\n");
+   fprintf(fp,
+           "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+           "Spacing=\"%.17g %.17g %.17g\" GhostLevel=\"0\">\n",
+           whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sp[0], sp[1],
+           sp[2]);
+   fprintf(
+      fp,
+      "    <PCellData Vectors=\"solution\" Scalars=\"magnitude\">\n"
+      "      <PDataArray type=\"Float64\" Name=\"solution\" NumberOfComponents=\"3\"/>\n"
+      "      <PDataArray type=\"Float64\" Name=\"magnitude\"/>\n    </PCellData>\n");
    for (int r = 0; r < m->nprocs; r++)
    {
       HYPRE_Int ext[6];
-      vtk_cell_extent(m, m->rank_coords[r][0], m->rank_coords[r][1], m->rank_coords[r][2], ext);
-      fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s_p%d.vti\"/>\n", ext[0],
-              ext[1], ext[2], ext[3], ext[4], ext[5], piece_base, r);
+      vtk_cell_extent(m, m->rank_coords[r][0], m->rank_coords[r][1], m->rank_coords[r][2],
+                      ext);
+      fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s_p%d.vti\"/>\n",
+              ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], piece_base, r);
    }
    fprintf(fp, "  </PImageData>\n</VTKFile>\n");
    fclose(fp);
@@ -852,43 +944,43 @@ WriteGradDivVTK(const GradDivMesh *m, const char *base, const HYPRE_Complex *sol
       displs[r] = (int)m->rank_face_lower[r];
    }
    double *gsol = (double *)malloc((size_t)m->num_faces_global * sizeof(double));
-   MPI_Allgatherv((const void *)sol_local, m->num_faces_local, HYPRE_MPI_REAL, gsol, counts,
-                  displs, HYPRE_MPI_REAL, m->cart_comm);
+   MPI_Allgatherv((const void *)sol_local, m->num_faces_local, HYPRE_MPI_REAL, gsol,
+                  counts, displs, HYPRE_MPI_REAL, m->cart_comm);
 
    HYPRE_Int ext[6];
    vtk_cell_extent(m, m->coords[0], m->coords[1], m->coords[2], ext);
-   HYPRE_Int ncx = ext[1] - ext[0], ncy = ext[3] - ext[2], ncz = ext[5] - ext[4];
-   size_t    ncells = (size_t)ncx * (size_t)ncy * (size_t)ncz;
-   double   *uvec = (double *)malloc((ncells ? ncells : 1) * 3 * sizeof(double));
-   double   *umag = (double *)malloc((ncells ? ncells : 1) * sizeof(double));
-   HYPRE_Real cc[3] = {0.5 * m->h[0], 0.5 * m->h[1], 0.5 * m->h[2]};
+   HYPRE_Int  ncx = ext[1] - ext[0], ncy = ext[3] - ext[2], ncz = ext[5] - ext[4];
+   size_t     ncells = (size_t)ncx * (size_t)ncy * (size_t)ncz;
+   double    *uvec   = (double *)malloc((ncells ? ncells : 1) * 3 * sizeof(double));
+   double    *umag   = (double *)malloc((ncells ? ncells : 1) * sizeof(double));
+   HYPRE_Real cc[3]  = {0.5 * m->h[0], 0.5 * m->h[1], 0.5 * m->h[2]};
 
    size_t idx = 0;
    for (HYPRE_Int kc = ext[4]; kc < ext[5]; kc++)
-   for (HYPRE_Int jc = ext[2]; jc < ext[3]; jc++)
-   for (HYPRE_Int ic = ext[0]; ic < ext[1]; ic++)
-   {
-      HYPRE_Real U[3] = {0.0, 0.0, 0.0};
-      for (int a = 0; a < 6; a++)
-      {
-         HYPRE_BigInt gid = face_gid(m, face_dir6[a], ic + face_off6[a][0],
-                                     jc + face_off6[a][1], kc + face_off6[a][2]);
-         HYPRE_Real   v[3], div;
-         rt0_basis(a, cc[0], cc[1], cc[2], m->h, v, &div);
-         U[0] += gsol[gid] * v[0];
-         U[1] += gsol[gid] * v[1];
-         U[2] += gsol[gid] * v[2];
-      }
-      uvec[3 * idx + 0] = U[0];
-      uvec[3 * idx + 1] = U[1];
-      uvec[3 * idx + 2] = U[2];
-      umag[idx]         = sqrt(U[0] * U[0] + U[1] * U[1] + U[2] * U[2]);
-      idx++;
-   }
+      for (HYPRE_Int jc = ext[2]; jc < ext[3]; jc++)
+         for (HYPRE_Int ic = ext[0]; ic < ext[1]; ic++)
+         {
+            HYPRE_Real U[3] = {0.0, 0.0, 0.0};
+            for (int a = 0; a < 6; a++)
+            {
+               HYPRE_BigInt gid = face_gid(m, face_dir6[a], ic + face_off6[a][0],
+                                           jc + face_off6[a][1], kc + face_off6[a][2]);
+               HYPRE_Real   v[3], div;
+               rt0_basis(a, cc[0], cc[1], cc[2], m->h, v, &div);
+               U[0] += gsol[gid] * v[0];
+               U[1] += gsol[gid] * v[1];
+               U[2] += gsol[gid] * v[2];
+            }
+            uvec[3 * idx + 0] = U[0];
+            uvec[3 * idx + 1] = U[1];
+            uvec[3 * idx + 2] = U[2];
+            umag[idx]         = sqrt(U[0] * U[0] + U[1] * U[1] + U[2] * U[2]);
+            idx++;
+         }
 
-   char fname[512];
+   char        fname[512];
    const char *bn = strrchr(base, '/');
-   bn = bn ? bn + 1 : base;
+   bn             = bn ? bn + 1 : base;
    if (m->nprocs == 1)
    {
       snprintf(fname, sizeof(fname), "%s.vti", base);
@@ -958,7 +1050,8 @@ main(int argc, char *argv[])
    }
    else
    {
-      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, params.solver_preset));
+      HYPREDRV_SAFE_CALL(
+         HYPREDRV_InputArgsSetSolverPreset(hypredrv, params.solver_preset));
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "ads"));
    }
 
@@ -973,8 +1066,10 @@ main(int argc, char *argv[])
    if (!myid && (params.verbose & 0x1))
    {
       printf("\nDefinite grad-div (grad-div + mass), RT0 face elements + ADS\n");
-      printf("  grid (nodes) : %d x %d x %d\n", (int)params.N[0], (int)params.N[1], (int)params.N[2]);
-      printf("  procs        : %d x %d x %d\n", (int)params.P[0], (int)params.P[1], (int)params.P[2]);
+      printf("  grid (nodes) : %d x %d x %d\n", (int)params.N[0], (int)params.N[1],
+             (int)params.N[2]);
+      printf("  procs        : %d x %d x %d\n", (int)params.P[0], (int)params.P[1],
+             (int)params.P[2]);
       printf("  global faces : %lld\n", (long long)mesh->num_faces_global);
       printf("  frequency    : kappa = %g * pi\n", params.freq);
       printf("  coefficients : alpha = %g, beta = %g\n\n", params.alpha, params.beta);
@@ -986,7 +1081,8 @@ main(int argc, char *argv[])
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector)b));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv, NULL));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv, NULL));
-   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetDiscreteGradient(hypredrv, (HYPRE_Matrix)G));
+   HYPREDRV_SAFE_CALL(
+      HYPREDRV_LinearSystemSetDiscreteGradient(hypredrv, (HYPRE_Matrix)G));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetDiscreteCurl(hypredrv, (HYPRE_Matrix)C));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetCoordinates(
       hypredrv, (HYPRE_Vector)coord[0], (HYPRE_Vector)coord[1], (HYPRE_Vector)coord[2]));
@@ -1022,8 +1118,9 @@ main(int argc, char *argv[])
       if (params.vtk_file)
       {
          WriteGradDivVTK(mesh, params.vtk_file, sol);
-         if (!myid) printf("Wrote VTK solution to %s%s\n", params.vtk_file,
-                           num_procs > 1 ? ".pvti" : ".vti");
+         if (!myid)
+            printf("Wrote VTK solution to %s%s\n", params.vtk_file,
+                   num_procs > 1 ? ".pvti" : ".vti");
       }
    }
 

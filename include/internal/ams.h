@@ -8,8 +8,8 @@
 #ifndef AMS_HEADER
 #define AMS_HEADER
 
-#include "HYPRE_parcsr_ls.h"
 #include "HYPRE_IJ_mv.h"
+#include "HYPRE_parcsr_ls.h"
 #include "internal/field.h"
 #include "internal/yaml.h"
 
@@ -74,6 +74,6 @@ void hypredrv_AMSCreate(const AMS_args *, HYPRE_Solver *);
  * objects are extracted internally. Must be called after AMSCreate and before
  * setup. */
 void hypredrv_AMSSetOperators(HYPRE_Solver, HYPRE_IJMatrix G, HYPRE_IJVector x,
-                             HYPRE_IJVector y, HYPRE_IJVector z);
+                              HYPRE_IJVector y, HYPRE_IJVector z);
 
 #endif /* AMS_HEADER */

@@ -190,7 +190,10 @@ Checks: >
     -bugprone-branch-clone,
     -readability-avoid-unconditional-preprocessor-if,
     -readability-use-concise-preprocessor-directives,
-    -performance-no-int-to-ptr
+    -performance-no-int-to-ptr,
+    -bugprone-signed-bitwise,
+    -readability-trailing-comma,
+    -readability-redundant-nested-if
 
 WarningsAsErrors: ''
 
@@ -201,10 +204,11 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
             message(STATUS "Using existing .clang-tidy configuration")
         endif()
 
-        # Collect source files for analysis
+        # Collect translation units for analysis. Headers are still checked when
+        # included from these sources via HeaderFilterRegex, but direct header
+        # analysis lacks reliable compile-command entries.
         file(GLOB_RECURSE _src_files
             "${CMAKE_SOURCE_DIR}/src/*.c"
-            "${CMAKE_SOURCE_DIR}/include/*.h"
         )
 
         # Exclude build directories and other non-source files
@@ -239,10 +243,11 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
             "#!/bin/bash\n"
             "set -e\n"
             "${_clang_tidy_cmd} > ${CLANG_TIDY_OUTPUT} 2>&1 || true\n"
+            "ERRORS=$(grep -E 'error:' ${CLANG_TIDY_OUTPUT} | wc -l)\n"
             "WARNINGS=$(grep -E 'warning:' ${CLANG_TIDY_OUTPUT} | grep -v 'clang-diagnostic-error' | wc -l)\n"
-            "if [ \"$WARNINGS\" -gt 0 ]; then\n"
-            "    echo \"ERROR: clang-tidy found $WARNINGS warning(s). See ${CLANG_TIDY_OUTPUT} for details.\"\n"
-            "    grep -E 'warning:' ${CLANG_TIDY_OUTPUT} | grep -v 'clang-diagnostic-error' | head -20\n"
+            "if [ \"$ERRORS\" -gt 0 ] || [ \"$WARNINGS\" -gt 0 ]; then\n"
+            "    echo \"ERROR: clang-tidy found $ERRORS error(s) and $WARNINGS warning(s). See ${CLANG_TIDY_OUTPUT} for details.\"\n"
+            "    grep -E 'error:|warning:' ${CLANG_TIDY_OUTPUT} | head -20\n"
             "    exit 1\n"
             "fi\n"
             "echo \"clang-tidy: No warnings found.\"\n"

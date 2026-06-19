@@ -48,6 +48,11 @@ option(HYPREDRV_ENABLE_JULIA        "Enable the hypredrive Julia interface" OFF)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Fuzzing.cmake)
 
+if(HYPREDRV_ENABLE_ANALYSIS)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL
+        "Export compile commands for static analysis" FORCE)
+endif()
+
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)

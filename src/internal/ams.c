@@ -13,30 +13,30 @@
  * max_iter/tolerance/print_level tuned for preconditioner use)
  *-----------------------------------------------------------------------------*/
 
-#define AMS_FIELDS(_X, _p)                                              \
-   _X(_p, dimension, hypredrv_FieldTypeIntSet, 3)                       \
-   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 1)                        \
-   _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)                     \
-   _X(_p, cycle_type, hypredrv_FieldTypeIntSet, 1)                      \
-   _X(_p, tolerance, hypredrv_FieldTypeDoubleSet, 0.0)                  \
-   _X(_p, relax_type, hypredrv_FieldTypeIntSet, 2)                      \
-   _X(_p, relax_times, hypredrv_FieldTypeIntSet, 1)                     \
+#define AMS_FIELDS(_X, _p)                                             \
+   _X(_p, dimension, hypredrv_FieldTypeIntSet, 3)                      \
+   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 1)                       \
+   _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)                    \
+   _X(_p, cycle_type, hypredrv_FieldTypeIntSet, 1)                     \
+   _X(_p, tolerance, hypredrv_FieldTypeDoubleSet, 0.0)                 \
+   _X(_p, relax_type, hypredrv_FieldTypeIntSet, 2)                     \
+   _X(_p, relax_times, hypredrv_FieldTypeIntSet, 1)                    \
    _X(_p, relax_weight, hypredrv_FieldTypeDoubleSet, 1.0)              \
-   _X(_p, omega, hypredrv_FieldTypeDoubleSet, 1.0)                      \
-   _X(_p, proj_freq, hypredrv_FieldTypeIntSet, 5)                       \
-   _X(_p, alpha_coarsen_type, hypredrv_FieldTypeIntSet, 10)             \
+   _X(_p, omega, hypredrv_FieldTypeDoubleSet, 1.0)                     \
+   _X(_p, proj_freq, hypredrv_FieldTypeIntSet, 5)                      \
+   _X(_p, alpha_coarsen_type, hypredrv_FieldTypeIntSet, 10)            \
    _X(_p, alpha_agg_levels, hypredrv_FieldTypeIntSet, 1)               \
-   _X(_p, alpha_relax_type, hypredrv_FieldTypeIntSet, 3)                \
+   _X(_p, alpha_relax_type, hypredrv_FieldTypeIntSet, 3)               \
    _X(_p, alpha_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25) \
    _X(_p, alpha_interp_type, hypredrv_FieldTypeIntSet, 0)              \
-   _X(_p, alpha_Pmax, hypredrv_FieldTypeIntSet, 0)                      \
-   _X(_p, alpha_coarse_relax_type, hypredrv_FieldTypeIntSet, 8)         \
+   _X(_p, alpha_Pmax, hypredrv_FieldTypeIntSet, 0)                     \
+   _X(_p, alpha_coarse_relax_type, hypredrv_FieldTypeIntSet, 8)        \
    _X(_p, beta_coarsen_type, hypredrv_FieldTypeIntSet, 10)             \
-   _X(_p, beta_agg_levels, hypredrv_FieldTypeIntSet, 1)                 \
-   _X(_p, beta_relax_type, hypredrv_FieldTypeIntSet, 3)                 \
+   _X(_p, beta_agg_levels, hypredrv_FieldTypeIntSet, 1)                \
+   _X(_p, beta_relax_type, hypredrv_FieldTypeIntSet, 3)                \
    _X(_p, beta_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25)  \
    _X(_p, beta_interp_type, hypredrv_FieldTypeIntSet, 0)               \
-   _X(_p, beta_Pmax, hypredrv_FieldTypeIntSet, 0)                       \
+   _X(_p, beta_Pmax, hypredrv_FieldTypeIntSet, 0)                      \
    _X(_p, beta_coarse_relax_type, hypredrv_FieldTypeIntSet, 8)
 
 /* Define num_fields macro */
@@ -94,7 +94,7 @@ hypredrv_AMSCreate(const AMS_args *args, HYPRE_Solver *precon_ptr)
 
 void
 hypredrv_AMSSetOperators(HYPRE_Solver solver, HYPRE_IJMatrix G, HYPRE_IJVector x,
-                        HYPRE_IJVector y, HYPRE_IJVector z)
+                         HYPRE_IJVector y, HYPRE_IJVector z)
 {
    void *obj = NULL;
 

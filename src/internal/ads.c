@@ -20,22 +20,22 @@
    _X(_p, tolerance, hypredrv_FieldTypeDoubleSet, 0.0)               \
    _X(_p, relax_type, hypredrv_FieldTypeIntSet, 2)                   \
    _X(_p, relax_times, hypredrv_FieldTypeIntSet, 1)                  \
-   _X(_p, relax_weight, hypredrv_FieldTypeDoubleSet, 1.0)           \
+   _X(_p, relax_weight, hypredrv_FieldTypeDoubleSet, 1.0)            \
    _X(_p, omega, hypredrv_FieldTypeDoubleSet, 1.0)                   \
    _X(_p, cheby_order, hypredrv_FieldTypeIntSet, 2)                  \
-   _X(_p, cheby_fraction, hypredrv_FieldTypeDoubleSet, 0.3)         \
-   _X(_p, ams_cycle_type, hypredrv_FieldTypeIntSet, 11)             \
-   _X(_p, ams_coarsen_type, hypredrv_FieldTypeIntSet, 10)           \
-   _X(_p, ams_agg_levels, hypredrv_FieldTypeIntSet, 1)              \
-   _X(_p, ams_relax_type, hypredrv_FieldTypeIntSet, 3)              \
+   _X(_p, cheby_fraction, hypredrv_FieldTypeDoubleSet, 0.3)          \
+   _X(_p, ams_cycle_type, hypredrv_FieldTypeIntSet, 11)              \
+   _X(_p, ams_coarsen_type, hypredrv_FieldTypeIntSet, 10)            \
+   _X(_p, ams_agg_levels, hypredrv_FieldTypeIntSet, 1)               \
+   _X(_p, ams_relax_type, hypredrv_FieldTypeIntSet, 3)               \
    _X(_p, ams_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25) \
-   _X(_p, ams_interp_type, hypredrv_FieldTypeIntSet, 0)             \
-   _X(_p, ams_Pmax, hypredrv_FieldTypeIntSet, 0)                    \
-   _X(_p, amg_coarsen_type, hypredrv_FieldTypeIntSet, 10)           \
-   _X(_p, amg_agg_levels, hypredrv_FieldTypeIntSet, 1)              \
-   _X(_p, amg_relax_type, hypredrv_FieldTypeIntSet, 3)             \
+   _X(_p, ams_interp_type, hypredrv_FieldTypeIntSet, 0)              \
+   _X(_p, ams_Pmax, hypredrv_FieldTypeIntSet, 0)                     \
+   _X(_p, amg_coarsen_type, hypredrv_FieldTypeIntSet, 10)            \
+   _X(_p, amg_agg_levels, hypredrv_FieldTypeIntSet, 1)               \
+   _X(_p, amg_relax_type, hypredrv_FieldTypeIntSet, 3)               \
    _X(_p, amg_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25) \
-   _X(_p, amg_interp_type, hypredrv_FieldTypeIntSet, 0)            \
+   _X(_p, amg_interp_type, hypredrv_FieldTypeIntSet, 0)              \
    _X(_p, amg_Pmax, hypredrv_FieldTypeIntSet, 0)
 
 /* Define num_fields macro */
@@ -91,7 +91,7 @@ hypredrv_ADSCreate(const ADS_args *args, HYPRE_Solver *precon_ptr)
 
 void
 hypredrv_ADSSetOperators(HYPRE_Solver solver, HYPRE_IJMatrix G, HYPRE_IJMatrix C,
-                        HYPRE_IJVector x, HYPRE_IJVector y, HYPRE_IJVector z)
+                         HYPRE_IJVector x, HYPRE_IJVector y, HYPRE_IJVector z)
 {
    void *obj = NULL;
 

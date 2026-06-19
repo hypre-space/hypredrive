@@ -104,7 +104,7 @@ typedef struct
    HYPRE_BigInt  num_edges_global;
    HYPRE_BigInt *rank_edge_lower; /* global edge start per MPI rank (size nprocs+1) */
    HYPRE_BigInt *rank_node_lower; /* global node start per MPI rank (size nprocs+1) */
-   HYPRE_Int   (*rank_coords)[3]; /* Cartesian coords per MPI rank */
+   HYPRE_Int (*rank_coords)[3];   /* Cartesian coords per MPI rank */
 } MaxwellMesh;
 
 enum
@@ -150,7 +150,8 @@ node_gid(const MaxwellMesh *m, HYPRE_BigInt gi, HYPRE_BigInt gj, HYPRE_BigInt gk
  * An edge is owned by the rank owning its lower-index node; it exists only if
  * the upper node is inside the domain (lower index < N-1 in the edge direction). */
 static HYPRE_Int
-block_edge_count(const MaxwellMesh *m, int family, HYPRE_Int px, HYPRE_Int py, HYPRE_Int pz)
+block_edge_count(const MaxwellMesh *m, int family, HYPRE_Int px, HYPRE_Int py,
+                 HYPRE_Int pz)
 {
    HYPRE_Int nx = (HYPRE_Int)(m->pstarts[0][px + 1] - m->pstarts[0][px]);
    HYPRE_Int ny = (HYPRE_Int)(m->pstarts[1][py + 1] - m->pstarts[1][py]);
@@ -172,7 +173,8 @@ block_edge_count(const MaxwellMesh *m, int family, HYPRE_Int px, HYPRE_Int py, H
 
 /* Global edge id of the family-edge whose lower node is (gi,gj,gk). */
 static HYPRE_BigInt
-edge_gid(const MaxwellMesh *m, int family, HYPRE_BigInt gi, HYPRE_BigInt gj, HYPRE_BigInt gk)
+edge_gid(const MaxwellMesh *m, int family, HYPRE_BigInt gi, HYPRE_BigInt gj,
+         HYPRE_BigInt gk)
 {
    HYPRE_Int px = block_of(gi, m->pstarts[0], m->pdims[0]);
    HYPRE_Int py = block_of(gj, m->pstarts[1], m->pdims[1]);
@@ -247,8 +249,10 @@ PrintUsage(void)
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file (Opt.)\n");
    printf("  --name <str>      : Object name (labels the statistics table) (Opt.)\n");
-   printf("  -vtk <base>       : Write the solution as VTK ImageData (cell-centered E +\n");
-   printf("                      magnitude); parallel runs write <base>.pvti + pieces (Opt.)\n");
+   printf(
+      "  -vtk <base>       : Write the solution as VTK ImageData (cell-centered E +\n");
+   printf("                      magnitude); parallel runs write <base>.pvti + pieces "
+          "(Opt.)\n");
    printf("  -n <nx> <ny> <nz> : Global grid dimensions in nodes (17 17 17)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (1 1 1)\n");
    printf("  -L <Lx> <Ly> <Lz> : Physical dimensions (1 1 1)\n");
@@ -415,14 +419,16 @@ CreateMesh(MPI_Comm comm, MaxwellParams *params, MaxwellMesh **mesh_ptr)
 
    for (int d = 0; d < 3; d++)
    {
-      HYPRE_Int size  = m->gdims[d] / m->pdims[d];
-      HYPRE_Int rest  = m->gdims[d] - size * m->pdims[d];
-      m->pstarts[d]   = (HYPRE_BigInt *)calloc((size_t)(m->pdims[d] + 1), sizeof(HYPRE_BigInt));
+      HYPRE_Int size = m->gdims[d] / m->pdims[d];
+      HYPRE_Int rest = m->gdims[d] - size * m->pdims[d];
+      m->pstarts[d] =
+         (HYPRE_BigInt *)calloc((size_t)(m->pdims[d] + 1), sizeof(HYPRE_BigInt));
       for (int j = 0; j < m->pdims[d] + 1; j++)
       {
          m->pstarts[d][j] = (HYPRE_BigInt)(size * j + (j < rest ? j : rest));
       }
-      m->nlocal[d] = (HYPRE_Int)(m->pstarts[d][m->coords[d] + 1] - m->pstarts[d][m->coords[d]]);
+      m->nlocal[d] =
+         (HYPRE_Int)(m->pstarts[d][m->coords[d] + 1] - m->pstarts[d][m->coords[d]]);
    }
 
    m->num_nodes_local = m->nlocal[0] * m->nlocal[1] * m->nlocal[2];
@@ -447,10 +453,11 @@ CreateMesh(MPI_Comm comm, MaxwellParams *params, MaxwellMesh **mesh_ptr)
    m->rank_node_lower[0] = 0;
    for (int r = 0; r < m->nprocs; r++)
    {
-      HYPRE_Int px = m->rank_coords[r][0], py = m->rank_coords[r][1], pz = m->rank_coords[r][2];
-      HYPRE_Int rnx = (HYPRE_Int)(m->pstarts[0][px + 1] - m->pstarts[0][px]);
-      HYPRE_Int rny = (HYPRE_Int)(m->pstarts[1][py + 1] - m->pstarts[1][py]);
-      HYPRE_Int rnz = (HYPRE_Int)(m->pstarts[2][pz + 1] - m->pstarts[2][pz]);
+      HYPRE_Int px = m->rank_coords[r][0], py = m->rank_coords[r][1],
+                pz   = m->rank_coords[r][2];
+      HYPRE_Int rnx  = (HYPRE_Int)(m->pstarts[0][px + 1] - m->pstarts[0][px]);
+      HYPRE_Int rny  = (HYPRE_Int)(m->pstarts[1][py + 1] - m->pstarts[1][py]);
+      HYPRE_Int rnz  = (HYPRE_Int)(m->pstarts[2][pz + 1] - m->pstarts[2][pz]);
       HYPRE_Int ecnt = block_edge_count(m, EDGE_X, px, py, pz) +
                        block_edge_count(m, EDGE_Y, px, py, pz) +
                        block_edge_count(m, EDGE_Z, px, py, pz);
@@ -458,11 +465,12 @@ CreateMesh(MPI_Comm comm, MaxwellParams *params, MaxwellMesh **mesh_ptr)
       m->rank_node_lower[r + 1] = m->rank_node_lower[r] + (HYPRE_BigInt)(rnx * rny * rnz);
    }
    m->num_edges_global = m->rank_edge_lower[m->nprocs];
-   m->num_edges_local  = (HYPRE_Int)(m->rank_edge_lower[m->mypid + 1] - m->rank_edge_lower[m->mypid]);
-   m->edge_ilower      = m->rank_edge_lower[m->mypid];
-   m->edge_iupper      = m->edge_ilower + m->num_edges_local - 1;
-   m->node_ilower      = m->rank_node_lower[m->mypid];
-   m->node_iupper      = m->node_ilower + m->num_nodes_local - 1;
+   m->num_edges_local =
+      (HYPRE_Int)(m->rank_edge_lower[m->mypid + 1] - m->rank_edge_lower[m->mypid]);
+   m->edge_ilower = m->rank_edge_lower[m->mypid];
+   m->edge_iupper = m->edge_ilower + m->num_edges_local - 1;
+   m->node_ilower = m->rank_node_lower[m->mypid];
+   m->node_iupper = m->node_ilower + m->num_nodes_local - 1;
 
    *mesh_ptr = m;
    return 0;
@@ -535,9 +543,24 @@ static void
 edge_lower_offset(int e, int off[3])
 {
    int c1 = edge_c1[e], c2 = edge_c2[e];
-   if (edge_dir[e] == EDGE_X) { off[0] = 0; off[1] = c1; off[2] = c2; }
-   else if (edge_dir[e] == EDGE_Y) { off[0] = c1; off[1] = 0; off[2] = c2; }
-   else { off[0] = c1; off[1] = c2; off[2] = 0; }
+   if (edge_dir[e] == EDGE_X)
+   {
+      off[0] = 0;
+      off[1] = c1;
+      off[2] = c2;
+   }
+   else if (edge_dir[e] == EDGE_Y)
+   {
+      off[0] = c1;
+      off[1] = 0;
+      off[2] = c2;
+   }
+   else
+   {
+      off[0] = c1;
+      off[1] = c2;
+      off[2] = 0;
+   }
 }
 
 /* 3-point Gauss rule on [0,1] (mapped to [0,h]). */
@@ -559,14 +582,16 @@ ComputeElementMatrix(const HYPRE_Real h[3], HYPRE_Real muinv, HYPRE_Real sigma,
          for (int qx = 0; qx < 3; qx++)
          {
             HYPRE_Real lx = g3_x[qx] * h[0], ly = g3_x[qy] * h[1], lz = g3_x[qz] * h[2];
-            HYPRE_Real w  = g3_w[qx] * g3_w[qy] * g3_w[qz] * detJ;
+            HYPRE_Real w = g3_w[qx] * g3_w[qy] * g3_w[qz] * detJ;
             HYPRE_Real W[12][3], C[12][3];
             for (int e = 0; e < 12; e++) edge_basis(e, lx, ly, lz, h, W[e], C[e]);
             for (int a = 0; a < 12; a++)
                for (int b = 0; b < 12; b++)
                {
-                  HYPRE_Real m = W[a][0] * W[b][0] + W[a][1] * W[b][1] + W[a][2] * W[b][2];
-                  HYPRE_Real s = C[a][0] * C[b][0] + C[a][1] * C[b][1] + C[a][2] * C[b][2];
+                  HYPRE_Real m =
+                     W[a][0] * W[b][0] + W[a][1] * W[b][1] + W[a][2] * W[b][2];
+                  HYPRE_Real s =
+                     C[a][0] * C[b][0] + C[a][1] * C[b][1] + C[a][2] * C[b][2];
                   S[a][b] += w * (muinv * s + sigma * m);
                }
          }
@@ -577,23 +602,26 @@ ComputeElementMatrix(const HYPRE_Real h[3], HYPRE_Real muinv, HYPRE_Real sigma,
  * coordinates, and the reference (exact) edge DOFs.
  *--------------------------------------------------------------------------*/
 static int
-BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm, HYPRE_IJMatrix *A_ptr,
-                   HYPRE_IJVector *b_ptr, HYPRE_IJMatrix *G_ptr, HYPRE_IJVector coord_ptr[3],
-                   HYPRE_Real **xref_ptr)
+BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm,
+                   HYPRE_IJMatrix *A_ptr, HYPRE_IJVector *b_ptr, HYPRE_IJMatrix *G_ptr,
+                   HYPRE_IJVector coord_ptr[3], HYPRE_Real **xref_ptr)
 {
    const HYPRE_Real kappa = params->freq * M_PI;
-   /* curl curl E = kappa^2 E, so f = muinv*kappa^2*E + sigma*E = (muinv*kappa^2 + sigma) E */
+   /* curl curl E = kappa^2 E, so f = muinv*kappa^2*E + sigma*E = (muinv*kappa^2 + sigma)
+    * E */
    const HYPRE_Real fcoef = params->muinv * kappa * kappa + params->sigma;
    const HYPRE_Int  Nx = m->gdims[0], Ny = m->gdims[1], Nz = m->gdims[2];
 
    HYPRE_IJMatrix A, G;
    HYPRE_IJVector b, cx, cy, cz;
 
-   HYPRE_IJMatrixCreate(comm, m->edge_ilower, m->edge_iupper, m->edge_ilower, m->edge_iupper, &A);
+   HYPRE_IJMatrixCreate(comm, m->edge_ilower, m->edge_iupper, m->edge_ilower,
+                        m->edge_iupper, &A);
    HYPRE_IJMatrixSetObjectType(A, HYPRE_PARCSR);
    HYPRE_IJMatrixInitialize(A);
 
-   HYPRE_IJMatrixCreate(comm, m->edge_ilower, m->edge_iupper, m->node_ilower, m->node_iupper, &G);
+   HYPRE_IJMatrixCreate(comm, m->edge_ilower, m->edge_iupper, m->node_ilower,
+                        m->node_iupper, &G);
    HYPRE_IJMatrixSetObjectType(G, HYPRE_PARCSR);
    HYPRE_IJMatrixInitialize(G);
 
@@ -611,8 +639,8 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm, HYPRE_I
    HYPRE_IJVectorInitialize(cy);
    HYPRE_IJVectorInitialize(cz);
 
-   HYPRE_Real *xref = (HYPRE_Real *)calloc((size_t)(m->num_edges_local > 0 ? m->num_edges_local : 1),
-                                           sizeof(HYPRE_Real));
+   HYPRE_Real *xref = (HYPRE_Real *)calloc(
+      (size_t)(m->num_edges_local > 0 ? m->num_edges_local : 1), sizeof(HYPRE_Real));
 
    HYPRE_Real S[12][12];
    ComputeElementMatrix(m->h, params->muinv, params->sigma, S);
@@ -621,136 +649,151 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm, HYPRE_I
     * Loop cells whose lower corner lies in an extended (ghost) range so that
     * every owned edge receives contributions from all incident cells. Only
     * rows owned by this rank are added (AddToValues accumulates correctly). */
-   HYPRE_Int cx_lo = (m->pstarts[0][m->coords[0]] > 0) ? (HYPRE_Int)m->pstarts[0][m->coords[0]] - 1 : 0;
-   HYPRE_Int cy_lo = (m->pstarts[1][m->coords[1]] > 0) ? (HYPRE_Int)m->pstarts[1][m->coords[1]] - 1 : 0;
-   HYPRE_Int cz_lo = (m->pstarts[2][m->coords[2]] > 0) ? (HYPRE_Int)m->pstarts[2][m->coords[2]] - 1 : 0;
-   HYPRE_Int cx_hi = (HYPRE_Int)((m->pstarts[0][m->coords[0] + 1] < Nx) ? m->pstarts[0][m->coords[0] + 1] : Nx - 1);
-   HYPRE_Int cy_hi = (HYPRE_Int)((m->pstarts[1][m->coords[1] + 1] < Ny) ? m->pstarts[1][m->coords[1] + 1] : Ny - 1);
-   HYPRE_Int cz_hi = (HYPRE_Int)((m->pstarts[2][m->coords[2] + 1] < Nz) ? m->pstarts[2][m->coords[2] + 1] : Nz - 1);
+   HYPRE_Int cx_lo =
+      (m->pstarts[0][m->coords[0]] > 0) ? (HYPRE_Int)m->pstarts[0][m->coords[0]] - 1 : 0;
+   HYPRE_Int cy_lo =
+      (m->pstarts[1][m->coords[1]] > 0) ? (HYPRE_Int)m->pstarts[1][m->coords[1]] - 1 : 0;
+   HYPRE_Int cz_lo =
+      (m->pstarts[2][m->coords[2]] > 0) ? (HYPRE_Int)m->pstarts[2][m->coords[2]] - 1 : 0;
+   HYPRE_Int cx_hi =
+      (HYPRE_Int)((m->pstarts[0][m->coords[0] + 1] < Nx) ? m->pstarts[0][m->coords[0] + 1]
+                                                         : Nx - 1);
+   HYPRE_Int cy_hi =
+      (HYPRE_Int)((m->pstarts[1][m->coords[1] + 1] < Ny) ? m->pstarts[1][m->coords[1] + 1]
+                                                         : Ny - 1);
+   HYPRE_Int cz_hi =
+      (HYPRE_Int)((m->pstarts[2][m->coords[2] + 1] < Nz) ? m->pstarts[2][m->coords[2] + 1]
+                                                         : Nz - 1);
 
    for (HYPRE_Int cz = cz_lo; cz < cz_hi; cz++)
-   for (HYPRE_Int cy = cy_lo; cy < cy_hi; cy++)
-   for (HYPRE_Int cx = cx_lo; cx < cx_hi; cx++)
-   {
-      /* Global edge ids, boundary flags, exact values, and element load. */
-      HYPRE_BigInt egid[12];
-      int          ebnd[12];
-      HYPRE_Real   eval[12];
-      HYPRE_Real   F[12];
-      for (int e = 0; e < 12; e++)
-      {
-         int off[3];
-         edge_lower_offset(e, off);
-         HYPRE_BigInt gi = cx + off[0], gj = cy + off[1], gk = cz + off[2];
-         egid[e] = edge_gid(m, edge_dir[e], gi, gj, gk);
-         ebnd[e] = edge_is_boundary(m, edge_dir[e], gi, gj, gk);
-         eval[e] = edge_exact(m, kappa, edge_dir[e], gi, gj, gk);
-         F[e]    = 0.0;
-      }
-
-      /* Element load F_e = integral of f . W_e over the cell, f = fcoef * E. */
-      for (int qz = 0; qz < 3; qz++)
-      for (int qy = 0; qy < 3; qy++)
-      for (int qx = 0; qx < 3; qx++)
-      {
-         HYPRE_Real lx = g3_x[qx] * m->h[0], ly = g3_x[qy] * m->h[1], lz = g3_x[qz] * m->h[2];
-         HYPRE_Real px = cx * m->h[0] + lx, py = cy * m->h[1] + ly, pz = cz * m->h[2] + lz;
-         HYPRE_Real wq = g3_w[qx] * g3_w[qy] * g3_w[qz] * (m->h[0] * m->h[1] * m->h[2]);
-         HYPRE_Real fx = fcoef * sin(kappa * py); /* f = (1+k^2) E */
-         HYPRE_Real fy = fcoef * sin(kappa * pz);
-         HYPRE_Real fz = fcoef * sin(kappa * px);
-         for (int e = 0; e < 12; e++)
+      for (HYPRE_Int cy = cy_lo; cy < cy_hi; cy++)
+         for (HYPRE_Int cx = cx_lo; cx < cx_hi; cx++)
          {
-            HYPRE_Real W[3], C[3];
-            edge_basis(e, lx, ly, lz, m->h, W, C);
-            F[e] += wq * (fx * W[0] + fy * W[1] + fz * W[2]);
-         }
-      }
-
-      /* Add owned interior rows; lift inhomogeneous Dirichlet columns to RHS. */
-      for (int a = 0; a < 12; a++)
-      {
-         if (ebnd[a]) continue; /* boundary rows handled separately */
-         /* Only add contributions to rows this rank owns. */
-         if (egid[a] < m->edge_ilower || egid[a] > m->edge_iupper) continue;
-
-         HYPRE_BigInt row = egid[a];
-         HYPRE_Int    ncols = 0;
-         HYPRE_BigInt cols[12];
-         HYPRE_Real   vals[12];
-         HYPRE_Real   rhs = F[a];
-         for (int bcol = 0; bcol < 12; bcol++)
-         {
-            if (ebnd[bcol])
+            /* Global edge ids, boundary flags, exact values, and element load. */
+            HYPRE_BigInt egid[12];
+            int          ebnd[12];
+            HYPRE_Real   eval[12];
+            HYPRE_Real   F[12];
+            for (int e = 0; e < 12; e++)
             {
-               rhs -= S[a][bcol] * eval[bcol]; /* move known boundary value to RHS */
+               int off[3];
+               edge_lower_offset(e, off);
+               HYPRE_BigInt gi = cx + off[0], gj = cy + off[1], gk = cz + off[2];
+               egid[e] = edge_gid(m, edge_dir[e], gi, gj, gk);
+               ebnd[e] = edge_is_boundary(m, edge_dir[e], gi, gj, gk);
+               eval[e] = edge_exact(m, kappa, edge_dir[e], gi, gj, gk);
+               F[e]    = 0.0;
             }
-            else
+
+            /* Element load F_e = integral of f . W_e over the cell, f = fcoef * E. */
+            for (int qz = 0; qz < 3; qz++)
+               for (int qy = 0; qy < 3; qy++)
+                  for (int qx = 0; qx < 3; qx++)
+                  {
+                     HYPRE_Real lx = g3_x[qx] * m->h[0], ly = g3_x[qy] * m->h[1],
+                                lz = g3_x[qz] * m->h[2];
+                     HYPRE_Real px = cx * m->h[0] + lx, py = cy * m->h[1] + ly,
+                                pz = cz * m->h[2] + lz;
+                     HYPRE_Real wq =
+                        g3_w[qx] * g3_w[qy] * g3_w[qz] * (m->h[0] * m->h[1] * m->h[2]);
+                     HYPRE_Real fx = fcoef * sin(kappa * py); /* f = (1+k^2) E */
+                     HYPRE_Real fy = fcoef * sin(kappa * pz);
+                     HYPRE_Real fz = fcoef * sin(kappa * px);
+                     for (int e = 0; e < 12; e++)
+                     {
+                        HYPRE_Real W[3], C[3];
+                        edge_basis(e, lx, ly, lz, m->h, W, C);
+                        F[e] += wq * (fx * W[0] + fy * W[1] + fz * W[2]);
+                     }
+                  }
+
+            /* Add owned interior rows; lift inhomogeneous Dirichlet columns to RHS. */
+            for (int a = 0; a < 12; a++)
             {
-               cols[ncols] = egid[bcol];
-               vals[ncols] = S[a][bcol];
-               ncols++;
+               if (ebnd[a]) continue; /* boundary rows handled separately */
+               /* Only add contributions to rows this rank owns. */
+               if (egid[a] < m->edge_ilower || egid[a] > m->edge_iupper) continue;
+
+               HYPRE_BigInt row   = egid[a];
+               HYPRE_Int    ncols = 0;
+               HYPRE_BigInt cols[12];
+               HYPRE_Real   vals[12];
+               HYPRE_Real   rhs = F[a];
+               for (int bcol = 0; bcol < 12; bcol++)
+               {
+                  if (ebnd[bcol])
+                  {
+                     rhs -=
+                        S[a][bcol] * eval[bcol]; /* move known boundary value to RHS */
+                  }
+                  else
+                  {
+                     cols[ncols] = egid[bcol];
+                     vals[ncols] = S[a][bcol];
+                     ncols++;
+                  }
+               }
+               HYPRE_IJMatrixAddToValues(A, 1, &ncols, &row, cols, vals);
+               HYPRE_IJVectorAddToValues(b, 1, &row, &rhs);
             }
          }
-         HYPRE_IJMatrixAddToValues(A, 1, &ncols, &row, cols, vals);
-         HYPRE_IJVectorAddToValues(b, 1, &row, &rhs);
-      }
-   }
 
    /* ---- Owned-edge pass: boundary identity rows, G rows, xref ---- */
    for (HYPRE_Int lk = 0; lk < m->nlocal[2]; lk++)
-   for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
-   for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
-   {
-      HYPRE_BigInt gi = m->pstarts[0][m->coords[0]] + li;
-      HYPRE_BigInt gj = m->pstarts[1][m->coords[1]] + lj;
-      HYPRE_BigInt gk = m->pstarts[2][m->coords[2]] + lk;
-
-      for (int fam = 0; fam < 3; fam++)
-      {
-         /* Edge exists if the upper node is inside the domain. */
-         if (fam == EDGE_X && gi >= Nx - 1) continue;
-         if (fam == EDGE_Y && gj >= Ny - 1) continue;
-         if (fam == EDGE_Z && gk >= Nz - 1) continue;
-
-         HYPRE_BigInt row = edge_gid(m, fam, gi, gj, gk);
-         if (row < m->edge_ilower || row > m->edge_iupper) continue; /* owned by us */
-
-         HYPRE_Real exact = edge_exact(m, kappa, fam, gi, gj, gk);
-         xref[row - m->edge_ilower] = exact;
-
-         /* Discrete gradient row: -1 at lower node, +1 at upper node. */
-         HYPRE_BigInt up[3] = {gi, gj, gk};
-         up[fam] += 1;
-         HYPRE_BigInt gcols[2] = {node_gid(m, gi, gj, gk), node_gid(m, up[0], up[1], up[2])};
-         HYPRE_Real   gvals[2] = {-1.0, 1.0};
-         HYPRE_Int    gnc      = 2;
-         HYPRE_IJMatrixSetValues(G, 1, &gnc, &row, gcols, gvals);
-
-         if (edge_is_boundary(m, fam, gi, gj, gk))
+      for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
+         for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
          {
-            HYPRE_Int  one = 1;
-            HYPRE_Real diag = 1.0;
-            HYPRE_IJMatrixSetValues(A, 1, &one, &row, &row, &diag);
-            HYPRE_IJVectorSetValues(b, 1, &row, &exact);
+            HYPRE_BigInt gi = m->pstarts[0][m->coords[0]] + li;
+            HYPRE_BigInt gj = m->pstarts[1][m->coords[1]] + lj;
+            HYPRE_BigInt gk = m->pstarts[2][m->coords[2]] + lk;
+
+            for (int fam = 0; fam < 3; fam++)
+            {
+               /* Edge exists if the upper node is inside the domain. */
+               if (fam == EDGE_X && gi >= Nx - 1) continue;
+               if (fam == EDGE_Y && gj >= Ny - 1) continue;
+               if (fam == EDGE_Z && gk >= Nz - 1) continue;
+
+               HYPRE_BigInt row = edge_gid(m, fam, gi, gj, gk);
+               if (row < m->edge_ilower || row > m->edge_iupper)
+                  continue; /* owned by us */
+
+               HYPRE_Real exact           = edge_exact(m, kappa, fam, gi, gj, gk);
+               xref[row - m->edge_ilower] = exact;
+
+               /* Discrete gradient row: -1 at lower node, +1 at upper node. */
+               HYPRE_BigInt up[3] = {gi, gj, gk};
+               up[fam] += 1;
+               HYPRE_BigInt gcols[2] = {node_gid(m, gi, gj, gk),
+                                        node_gid(m, up[0], up[1], up[2])};
+               HYPRE_Real   gvals[2] = {-1.0, 1.0};
+               HYPRE_Int    gnc      = 2;
+               HYPRE_IJMatrixSetValues(G, 1, &gnc, &row, gcols, gvals);
+
+               if (edge_is_boundary(m, fam, gi, gj, gk))
+               {
+                  HYPRE_Int  one  = 1;
+                  HYPRE_Real diag = 1.0;
+                  HYPRE_IJMatrixSetValues(A, 1, &one, &row, &row, &diag);
+                  HYPRE_IJVectorSetValues(b, 1, &row, &exact);
+               }
+            }
          }
-      }
-   }
 
    /* ---- Nodal coordinate vectors ---- */
    for (HYPRE_Int lk = 0; lk < m->nlocal[2]; lk++)
-   for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
-   for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
-   {
-      HYPRE_BigInt gi  = m->pstarts[0][m->coords[0]] + li;
-      HYPRE_BigInt gj  = m->pstarts[1][m->coords[1]] + lj;
-      HYPRE_BigInt gk  = m->pstarts[2][m->coords[2]] + lk;
-      HYPRE_BigInt nid = node_gid(m, gi, gj, gk);
-      HYPRE_Real   vx = gi * m->h[0], vy = gj * m->h[1], vz = gk * m->h[2];
-      HYPRE_IJVectorSetValues(cx, 1, &nid, &vx);
-      HYPRE_IJVectorSetValues(cy, 1, &nid, &vy);
-      HYPRE_IJVectorSetValues(cz, 1, &nid, &vz);
-   }
+      for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
+         for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
+         {
+            HYPRE_BigInt gi  = m->pstarts[0][m->coords[0]] + li;
+            HYPRE_BigInt gj  = m->pstarts[1][m->coords[1]] + lj;
+            HYPRE_BigInt gk  = m->pstarts[2][m->coords[2]] + lk;
+            HYPRE_BigInt nid = node_gid(m, gi, gj, gk);
+            HYPRE_Real   vx = gi * m->h[0], vy = gj * m->h[1], vz = gk * m->h[2];
+            HYPRE_IJVectorSetValues(cx, 1, &nid, &vx);
+            HYPRE_IJVectorSetValues(cy, 1, &nid, &vy);
+            HYPRE_IJVectorSetValues(cz, 1, &nid, &vz);
+         }
 
    HYPRE_IJMatrixAssemble(A);
    HYPRE_IJMatrixAssemble(G);
@@ -759,13 +802,13 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm, HYPRE_I
    HYPRE_IJVectorAssemble(cy);
    HYPRE_IJVectorAssemble(cz);
 
-   *A_ptr        = A;
-   *b_ptr        = b;
-   *G_ptr        = G;
-   coord_ptr[0]  = cx;
-   coord_ptr[1]  = cy;
-   coord_ptr[2]  = cz;
-   *xref_ptr     = xref;
+   *A_ptr       = A;
+   *b_ptr       = b;
+   *G_ptr       = G;
+   coord_ptr[0] = cx;
+   coord_ptr[1] = cy;
+   coord_ptr[2] = cz;
+   *xref_ptr    = xref;
    return 0;
 }
 
@@ -783,13 +826,14 @@ static void
 vtk_cell_extent(const MaxwellMesh *m, HYPRE_Int px, HYPRE_Int py, HYPRE_Int pz,
                 HYPRE_Int ext[6])
 {
-   HYPRE_BigInt x1 = m->pstarts[0][px + 1], y1 = m->pstarts[1][py + 1], z1 = m->pstarts[2][pz + 1];
-   ext[0] = (HYPRE_Int)m->pstarts[0][px];
-   ext[1] = (HYPRE_Int)(x1 < m->gdims[0] ? x1 : m->gdims[0] - 1);
-   ext[2] = (HYPRE_Int)m->pstarts[1][py];
-   ext[3] = (HYPRE_Int)(y1 < m->gdims[1] ? y1 : m->gdims[1] - 1);
-   ext[4] = (HYPRE_Int)m->pstarts[2][pz];
-   ext[5] = (HYPRE_Int)(z1 < m->gdims[2] ? z1 : m->gdims[2] - 1);
+   HYPRE_BigInt x1 = m->pstarts[0][px + 1], y1 = m->pstarts[1][py + 1],
+                z1 = m->pstarts[2][pz + 1];
+   ext[0]          = (HYPRE_Int)m->pstarts[0][px];
+   ext[1]          = (HYPRE_Int)(x1 < m->gdims[0] ? x1 : m->gdims[0] - 1);
+   ext[2]          = (HYPRE_Int)m->pstarts[1][py];
+   ext[3]          = (HYPRE_Int)(y1 < m->gdims[1] ? y1 : m->gdims[1] - 1);
+   ext[4]          = (HYPRE_Int)m->pstarts[2][pz];
+   ext[5]          = (HYPRE_Int)(z1 < m->gdims[2] ? z1 : m->gdims[2] - 1);
 }
 
 static void
@@ -804,17 +848,20 @@ vtk_write_piece(const char *fname, const HYPRE_Int ext[6], const HYPRE_Real sp[3
    fprintf(fp, "<?xml version=\"1.0\"?>\n");
    fprintf(fp, "<VTKFile type=\"ImageData\" version=\"1.0\" byte_order=\"LittleEndian\" "
                "header_type=\"UInt64\">\n");
-   fprintf(fp, "  <ImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
-               "Spacing=\"%.17g %.17g %.17g\">\n",
+   fprintf(fp,
+           "  <ImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+           "Spacing=\"%.17g %.17g %.17g\">\n",
            ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], sp[0], sp[1], sp[2]);
-   fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", ext[0], ext[1], ext[2], ext[3],
-           ext[4], ext[5]);
+   fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", ext[0], ext[1], ext[2],
+           ext[3], ext[4], ext[5]);
    fprintf(fp, "      <CellData Vectors=\"solution\" Scalars=\"magnitude\">\n");
-   fprintf(fp, "        <DataArray type=\"Float64\" Name=\"solution\" "
-               "NumberOfComponents=\"3\" format=\"appended\" offset=\"%llu\"/>\n",
+   fprintf(fp,
+           "        <DataArray type=\"Float64\" Name=\"solution\" "
+           "NumberOfComponents=\"3\" format=\"appended\" offset=\"%llu\"/>\n",
            (unsigned long long)eo);
-   fprintf(fp, "        <DataArray type=\"Float64\" Name=\"magnitude\" format=\"appended\" "
-               "offset=\"%llu\"/>\n",
+   fprintf(fp,
+           "        <DataArray type=\"Float64\" Name=\"magnitude\" format=\"appended\" "
+           "offset=\"%llu\"/>\n",
            (unsigned long long)mo);
    fprintf(fp, "      </CellData>\n      <PointData></PointData>\n    </Piece>\n"
                "  </ImageData>\n  <AppendedData encoding=\"raw\">\n   _");
@@ -835,18 +882,23 @@ vtk_write_master(const char *fname, const char *piece_base, const MaxwellMesh *m
    HYPRE_Int whole[6] = {0, m->gdims[0] - 1, 0, m->gdims[1] - 1, 0, m->gdims[2] - 1};
    fprintf(fp, "<?xml version=\"1.0\"?>\n<VTKFile type=\"PImageData\" version=\"1.0\" "
                "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n");
-   fprintf(fp, "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
-               "Spacing=\"%.17g %.17g %.17g\" GhostLevel=\"0\">\n",
-           whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sp[0], sp[1], sp[2]);
-   fprintf(fp, "    <PCellData Vectors=\"solution\" Scalars=\"magnitude\">\n"
-               "      <PDataArray type=\"Float64\" Name=\"solution\" NumberOfComponents=\"3\"/>\n"
-               "      <PDataArray type=\"Float64\" Name=\"magnitude\"/>\n    </PCellData>\n");
+   fprintf(fp,
+           "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+           "Spacing=\"%.17g %.17g %.17g\" GhostLevel=\"0\">\n",
+           whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sp[0], sp[1],
+           sp[2]);
+   fprintf(
+      fp,
+      "    <PCellData Vectors=\"solution\" Scalars=\"magnitude\">\n"
+      "      <PDataArray type=\"Float64\" Name=\"solution\" NumberOfComponents=\"3\"/>\n"
+      "      <PDataArray type=\"Float64\" Name=\"magnitude\"/>\n    </PCellData>\n");
    for (int r = 0; r < m->nprocs; r++)
    {
       HYPRE_Int ext[6];
-      vtk_cell_extent(m, m->rank_coords[r][0], m->rank_coords[r][1], m->rank_coords[r][2], ext);
-      fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s_p%d.vti\"/>\n", ext[0],
-              ext[1], ext[2], ext[3], ext[4], ext[5], piece_base, r);
+      vtk_cell_extent(m, m->rank_coords[r][0], m->rank_coords[r][1], m->rank_coords[r][2],
+                      ext);
+      fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s_p%d.vti\"/>\n",
+              ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], piece_base, r);
    }
    fprintf(fp, "  </PImageData>\n</VTKFile>\n");
    fclose(fp);
@@ -864,46 +916,47 @@ WriteMaxwellVTK(const MaxwellMesh *m, const char *base, const HYPRE_Complex *sol
       displs[r] = (int)m->rank_edge_lower[r];
    }
    double *gsol = (double *)malloc((size_t)m->num_edges_global * sizeof(double));
-   MPI_Allgatherv((const void *)sol_local, m->num_edges_local, HYPRE_MPI_REAL, gsol, counts,
-                  displs, HYPRE_MPI_REAL, m->cart_comm);
+   MPI_Allgatherv((const void *)sol_local, m->num_edges_local, HYPRE_MPI_REAL, gsol,
+                  counts, displs, HYPRE_MPI_REAL, m->cart_comm);
 
    /* Reconstruct E at the centers of this rank's cells (VTK order: x fastest). */
    HYPRE_Int ext[6];
    vtk_cell_extent(m, m->coords[0], m->coords[1], m->coords[2], ext);
-   HYPRE_Int ncx = ext[1] - ext[0], ncy = ext[3] - ext[2], ncz = ext[5] - ext[4];
-   size_t    ncells = (size_t)ncx * (size_t)ncy * (size_t)ncz;
-   double   *evec = (double *)malloc((ncells ? ncells : 1) * 3 * sizeof(double));
-   double   *emag = (double *)malloc((ncells ? ncells : 1) * sizeof(double));
-   HYPRE_Real cc[3] = {0.5 * m->h[0], 0.5 * m->h[1], 0.5 * m->h[2]};
+   HYPRE_Int  ncx = ext[1] - ext[0], ncy = ext[3] - ext[2], ncz = ext[5] - ext[4];
+   size_t     ncells = (size_t)ncx * (size_t)ncy * (size_t)ncz;
+   double    *evec   = (double *)malloc((ncells ? ncells : 1) * 3 * sizeof(double));
+   double    *emag   = (double *)malloc((ncells ? ncells : 1) * sizeof(double));
+   HYPRE_Real cc[3]  = {0.5 * m->h[0], 0.5 * m->h[1], 0.5 * m->h[2]};
 
    size_t idx = 0;
    for (HYPRE_Int kc = ext[4]; kc < ext[5]; kc++)
-   for (HYPRE_Int jc = ext[2]; jc < ext[3]; jc++)
-   for (HYPRE_Int ic = ext[0]; ic < ext[1]; ic++)
-   {
-      HYPRE_Real E[3] = {0.0, 0.0, 0.0};
-      for (int e = 0; e < 12; e++)
-      {
-         int off[3];
-         edge_lower_offset(e, off);
-         HYPRE_BigInt gid = edge_gid(m, edge_dir[e], ic + off[0], jc + off[1], kc + off[2]);
-         HYPRE_Real   W[3], C[3];
-         edge_basis(e, cc[0], cc[1], cc[2], m->h, W, C);
-         E[0] += gsol[gid] * W[0];
-         E[1] += gsol[gid] * W[1];
-         E[2] += gsol[gid] * W[2];
-      }
-      evec[3 * idx + 0] = E[0];
-      evec[3 * idx + 1] = E[1];
-      evec[3 * idx + 2] = E[2];
-      emag[idx]         = sqrt(E[0] * E[0] + E[1] * E[1] + E[2] * E[2]);
-      idx++;
-   }
+      for (HYPRE_Int jc = ext[2]; jc < ext[3]; jc++)
+         for (HYPRE_Int ic = ext[0]; ic < ext[1]; ic++)
+         {
+            HYPRE_Real E[3] = {0.0, 0.0, 0.0};
+            for (int e = 0; e < 12; e++)
+            {
+               int off[3];
+               edge_lower_offset(e, off);
+               HYPRE_BigInt gid =
+                  edge_gid(m, edge_dir[e], ic + off[0], jc + off[1], kc + off[2]);
+               HYPRE_Real W[3], C[3];
+               edge_basis(e, cc[0], cc[1], cc[2], m->h, W, C);
+               E[0] += gsol[gid] * W[0];
+               E[1] += gsol[gid] * W[1];
+               E[2] += gsol[gid] * W[2];
+            }
+            evec[3 * idx + 0] = E[0];
+            evec[3 * idx + 1] = E[1];
+            evec[3 * idx + 2] = E[2];
+            emag[idx]         = sqrt(E[0] * E[0] + E[1] * E[1] + E[2] * E[2]);
+            idx++;
+         }
 
    /* Write this rank's piece, and the master on rank 0. */
-   char fname[512];
+   char        fname[512];
    const char *bn = strrchr(base, '/');
-   bn = bn ? bn + 1 : base;
+   bn             = bn ? bn + 1 : base;
    if (m->nprocs == 1)
    {
       snprintf(fname, sizeof(fname), "%s.vti", base);
@@ -932,11 +985,11 @@ WriteMaxwellVTK(const MaxwellMesh *m, const char *base, const HYPRE_Complex *sol
 int
 main(int argc, char *argv[])
 {
-   MPI_Comm      comm = MPI_COMM_WORLD;
-   int           myid, num_procs;
-   MaxwellParams params;
-   MaxwellMesh  *mesh = NULL;
-   HYPREDRV_t    hypredrv;
+   MPI_Comm       comm = MPI_COMM_WORLD;
+   int            myid, num_procs;
+   MaxwellParams  params;
+   MaxwellMesh   *mesh = NULL;
+   HYPREDRV_t     hypredrv;
    HYPRE_IJMatrix A, G;
    HYPRE_IJVector b, coord[3];
    HYPRE_Real    *xref = NULL;
@@ -973,7 +1026,8 @@ main(int argc, char *argv[])
    }
    else
    {
-      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, params.solver_preset));
+      HYPREDRV_SAFE_CALL(
+         HYPREDRV_InputArgsSetSolverPreset(hypredrv, params.solver_preset));
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "ams"));
    }
 
@@ -1003,7 +1057,8 @@ main(int argc, char *argv[])
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector)b));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv, NULL));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv, NULL));
-   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetDiscreteGradient(hypredrv, (HYPRE_Matrix)G));
+   HYPREDRV_SAFE_CALL(
+      HYPREDRV_LinearSystemSetDiscreteGradient(hypredrv, (HYPRE_Matrix)G));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetCoordinates(
       hypredrv, (HYPRE_Vector)coord[0], (HYPRE_Vector)coord[1], (HYPRE_Vector)coord[2]));
 
@@ -1042,8 +1097,9 @@ main(int argc, char *argv[])
       if (params.vtk_file)
       {
          WriteMaxwellVTK(mesh, params.vtk_file, sol);
-         if (!myid) printf("Wrote VTK solution to %s%s\n", params.vtk_file,
-                           num_procs > 1 ? ".pvti" : ".vti");
+         if (!myid)
+            printf("Wrote VTK solution to %s%s\n", params.vtk_file,
+                   num_procs > 1 ? ".pvti" : ".vti");
       }
    }
 

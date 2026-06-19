@@ -20,15 +20,14 @@ typedef struct hypredrv_struct
 
    IntArray *dofmap;
 
-   HYPRE_IJMatrix mat_A;
-   HYPRE_IJMatrix mat_M;
-   HYPRE_IJVector vec_b;
-   HYPRE_IJVector vec_x;
-   HYPRE_IJVector vec_x0;
-   HYPRE_IJVector vec_xref;
-   HYPRE_IJVector vec_nn;
-   HYPRE_IJVector
-      vec_ns; /* exact (orthonormalized) null space modes projected out of the solution */
+   HYPRE_IJMatrix  mat_A;
+   HYPRE_IJMatrix  mat_M;
+   HYPRE_IJVector  vec_b;
+   HYPRE_IJVector  vec_x;
+   HYPRE_IJVector  vec_x0;
+   HYPRE_IJVector  vec_xref;
+   HYPRE_IJVector  vec_nn;
+   HYPRE_IJVector  vec_ns; /* orthonormalized null space modes projected out of sol. */
    int             num_ns;
    HYPRE_IJVector *vec_s;
 
@@ -37,16 +36,6 @@ typedef struct hypredrv_struct
    HYPRE_IJMatrix mat_G;
    HYPRE_IJMatrix mat_C;
    HYPRE_IJVector vec_coord[3];
-   bool           owns_mat_G;
-   bool           owns_mat_C;
-   bool           owns_vec_coord;
-
-   bool            owns_mat_A;
-   bool            owns_mat_M;
-   bool            owns_vec_b;
-   bool            owns_vec_x;
-   bool            owns_vec_x0;
-   bool            owns_vec_xref;
 
    HYPRE_Precon precon;
    HYPRE_Solver solver;
@@ -61,6 +50,17 @@ typedef struct hypredrv_struct
    int    runtime_object_id;
    int    current_system_index;
    int    preferred_exec_policy;
+
+   /* Ownership flags */
+   bool owns_mat_G;
+   bool owns_mat_C;
+   bool owns_vec_coord;
+   bool owns_mat_A;
+   bool owns_mat_M;
+   bool owns_vec_b;
+   bool owns_vec_x;
+   bool owns_vec_x0;
+   bool owns_vec_xref;
 
    /* Linked-list hook used by the internal runtime registry. */
    struct hypredrv_struct *next_live;

@@ -8,8 +8,8 @@
 #ifndef ADS_HEADER
 #define ADS_HEADER
 
-#include "HYPRE_parcsr_ls.h"
 #include "HYPRE_IJ_mv.h"
+#include "HYPRE_parcsr_ls.h"
 #include "internal/field.h"
 #include "internal/yaml.h"
 
@@ -69,6 +69,6 @@ void hypredrv_ADSCreate(const ADS_args *, HYPRE_Solver *);
  * underlying ParCSR/ParVector objects are extracted internally. Must be called
  * after ADSCreate and before setup. */
 void hypredrv_ADSSetOperators(HYPRE_Solver, HYPRE_IJMatrix G, HYPRE_IJMatrix C,
-                             HYPRE_IJVector x, HYPRE_IJVector y, HYPRE_IJVector z);
+                              HYPRE_IJVector x, HYPRE_IJVector y, HYPRE_IJVector z);
 
 #endif /* ADS_HEADER */
