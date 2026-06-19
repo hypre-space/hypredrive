@@ -43,3 +43,13 @@ leak:_dl_catch_error
 
 # Cleanup phase leaks (often benign infrastructure noise)
 leak:__cxa_finalize
+
+# hypre-internal ADS leak (not fixable from hypredrive):
+# hypre_ADSComputePi() allocates an 8-byte col_starts array
+# (hypre_TAlloc(HYPRE_BigInt, 2, ...)) and passes it to
+# hypre_ParCSRMatrixCreate(), which *copies* the two values into the matrix's
+# inline col_starts[2] field rather than adopting the pointer. The heap array
+# is never freed by hypre and is unreachable to HYPRE_ADSDestroy (which only
+# destroys the Pi matrix, not the orphaned col_starts buffer). graddiv destroys
+# its solver/preconditioner correctly, so this is purely a hypre defect.
+leak:hypre_ADSComputePi

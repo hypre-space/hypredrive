@@ -1,0 +1,15 @@
+solver:
+  pcg:
+    max_iter: 500
+    print_level: 1
+    relative_tol: 1.0e-8
+
+preconditioner:
+  ads:
+    max_iter: 1
+    cycle_type: 1
+    print_level: 0
+    relax_type: 2
+    ams_relax_type: 2
+    amg_coarsen_type: 10
+    amg_relax_type: 8

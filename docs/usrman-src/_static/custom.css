@@ -1,0 +1,13 @@
+/* Custom styles for the hypredrive user manual. */
+
+/* "Examples at a Glance" panel: keep every tile the same size by framing each
+   image in a fixed 4:3 box. Figures that are not 4:3 (e.g. the heat-flow video
+   and the elasticity render) are letterboxed instead of stretched, so the panel
+   reuses the canonical example figures directly without separate thumbnails. */
+img.gallery-thumb {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    height: auto;
+    object-fit: contain;
+    background: #ffffff;
+}

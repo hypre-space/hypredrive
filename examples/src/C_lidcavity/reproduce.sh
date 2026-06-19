@@ -47,7 +47,22 @@ fi
 # Allow override from environment variables
 MPIEXEC_EXECUTABLE="${MPIEXEC_EXECUTABLE:-mpirun}"
 MPIEXEC_NUMPROC_FLAG="${MPIEXEC_NUMPROC_FLAG:--np}"
-EXEC="${EXEC:-./lidcavity}"
+EXEC="${EXEC:-../../../build/lidcavity}"
+
+# Fail fast if the launch prerequisites are missing, rather than firing every
+# configuration at a non-existent binary (which floods the terminal with launcher
+# errors and leaves empty output files behind).
+if ! command -v "$MPIEXEC_EXECUTABLE" >/dev/null 2>&1; then
+    echo "Error: MPI launcher not found: '$MPIEXEC_EXECUTABLE'." >&2
+    echo "       Set MPIEXEC_EXECUTABLE=/path/to/mpirun." >&2
+    exit 1
+fi
+if ! command -v "$EXEC" >/dev/null 2>&1; then
+    echo "Error: lidcavity executable not found: '$EXEC'." >&2
+    echo "       Build the example first, then run from its build directory, or set" >&2
+    echo "       EXEC=/path/to/lidcavity (e.g. EXEC=../../../build/lidcavity)." >&2
+    exit 1
+fi
 
 # ============================================================================
 # CENTERLINES MODE: Validation with different Reynolds numbers
@@ -71,7 +86,10 @@ if [[ "$MODE" == "centerlines" ]]; then
 
         # Run driver
         echo "Running: Re=${RE} (${resfile})"
-        $MPIEXEC_EXECUTABLE $MPIEXEC_NUMPROC_FLAG $MPI_RANKS $EXEC $ARGS -Re $RE 2>&1 > "$outfile"
+        if ! $MPIEXEC_EXECUTABLE $MPIEXEC_NUMPROC_FLAG $MPI_RANKS $EXEC $ARGS -Re $RE 2>&1 > "$outfile"; then
+            echo "Error: run failed for Re=${RE}; aborting (remaining cases skipped)." >&2
+            exit 1
+        fi
 
         # Plot centerline results
         $POSTPROCESS ${resfile} -c --plot --save lidcavity_128x128 --Re ${RE}
@@ -81,11 +99,13 @@ if [[ "$MODE" == "centerlines" ]]; then
 # SOLVERS MODE: Different solver configurations
 # ============================================================================
 elif [[ "$MODE" == "solvers" ]]; then
-    MPI_RANKS="${MPI_RANKS:-64}"
+    MPI_RANKS="${MPI_RANKS:-16}"
     STATS="${STATS:-../../../scripts/analyze_statistics.py}"
 
-    # Common arguments shared by all runs
-    ARGS="-P 8 8 -dt 0.01 -tf 50 -n 256 256 -v 1 -adt -reg"
+    # Common arguments shared by all runs. A 4x4 = 16-rank grid; the per-timestep
+    # iteration counts are partition-independent (only absolute times scale with the
+    # rank count). Override with MPI_RANKS / the -P grid for other machines.
+    ARGS="-P 4 4 -dt 0.01 -tf 50 -n 256 256 -v 1 -adt -reg"
 
     # List of input files (with extensions)
     CONFIG_FILES=(
@@ -93,7 +113,6 @@ elif [[ "$MODE" == "solvers" ]]; then
         "fgmres-ilu1.yml"
         "fgmres-ilut_1e-2.yml"
         "fgmres-amg.yml"
-        "fgmres-amg-ilut.yml"
         "fgmres-mgr.yml"
     )
 
@@ -103,7 +122,6 @@ elif [[ "$MODE" == "solvers" ]]; then
         "ILUK(1)"
         "ILUT(1e-2)"
         "AMG"
-        "AMG-ILUT(1e-2)"
         "MGR"
     )
 
@@ -120,11 +138,15 @@ elif [[ "$MODE" == "solvers" ]]; then
 
         # Run driver
         echo "Running: $config -> $outfile"
-        $MPIEXEC_EXECUTABLE $MPIEXEC_NUMPROC_FLAG $MPI_RANKS $EXEC $ARGS -i "$config" 2>&1 > "$outfile"
+        if ! $MPIEXEC_EXECUTABLE $MPIEXEC_NUMPROC_FLAG $MPI_RANKS $EXEC $ARGS -i "$config" 2>&1 > "$outfile"; then
+            echo "Error: run failed for $config (see $outfile); aborting (remaining cases skipped)." >&2
+            exit 1
+        fi
     done
 
     # Post process (iteration and execution time plots)
-    python3 "$STATS" -f "${OUT_FILES[@]}" -ln "${METHODS[@]}" -m "iters+total" -s lidcavity
+    # MPLBACKEND=Agg avoids a hang on plt.show() when running headless.
+    MPLBACKEND=Agg python3 "$STATS" -f "${OUT_FILES[@]}" -ln "${METHODS[@]}" -m "iters+total" -s lidcavity --style docs
 else
     echo "Error: Unknown mode: $MODE"
     exit 1

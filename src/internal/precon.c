@@ -23,6 +23,8 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, hypredrv_MGRSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, hypredrv_ILUSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, hypredrv_FSAISetArgs) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ams, hypredrv_AMSSetArgs)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ads, hypredrv_ADSSetArgs)   \
    HYPREDRV_PRECON_SCHWARZ_FIELD(_prefix)                      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, reuse, hypredrv_FieldTypeIntSet)
 
@@ -59,6 +61,7 @@ hypredrv_PreconGetValidTypeIntMap(void)
    static StrIntMap map[] = {
       {"amg", (int)PRECON_BOOMERAMG},   {"mgr", (int)PRECON_MGR},
       {"ilu", (int)PRECON_ILU},         {"fsai", (int)PRECON_FSAI},
+      {"ams", (int)PRECON_AMS},         {"ads", (int)PRECON_ADS},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       {"schwarz", (int)PRECON_SCHWARZ},
 #endif
@@ -101,6 +104,12 @@ hypredrv_PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
       case PRECON_FSAI:
          hypredrv_FSAISetDefaultArgs(&args->fsai);
          break;
+      case PRECON_AMS:
+         hypredrv_AMSSetDefaultArgs(&args->ams);
+         break;
+      case PRECON_ADS:
+         hypredrv_ADSSetDefaultArgs(&args->ads);
+         break;
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
          hypredrv_SchwarzSetDefaultArgs(&args->schwarz);
@@ -129,6 +138,8 @@ hypredrv_PreconArgsDestroyOwnedConfig(precon_t method, precon_args *args)
       case PRECON_BOOMERAMG:
       case PRECON_ILU:
       case PRECON_FSAI:
+      case PRECON_AMS:
+      case PRECON_ADS:
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
 #endif
@@ -156,6 +167,8 @@ hypredrv_PreconArgsDestroyRuntimeState(precon_t method, precon_args *args)
       case PRECON_BOOMERAMG:
       case PRECON_ILU:
       case PRECON_FSAI:
+      case PRECON_AMS:
+      case PRECON_ADS:
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
 #endif
@@ -246,6 +259,8 @@ PreconHasConfiguredComponentReuse(precon_t method, const precon_args *args)
       case PRECON_BOOMERAMG:
       case PRECON_ILU:
       case PRECON_FSAI:
+      case PRECON_AMS:
+      case PRECON_ADS:
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
 #endif
@@ -279,7 +294,7 @@ hypredrv_PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 void
 hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
                       HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr, const Stats *stats,
-                      int next_ls_id)
+                      int next_ls_id, const PreconOperators *ops)
 {
    if (!PreconHasConfiguredComponentReuse(precon_method, args))
    {
@@ -297,7 +312,10 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
    precon->main     = NULL;
    precon->method   = precon_method;
    precon->is_setup = 0;
-   precon->stats    = NULL;
+   /* Methods that need no operator inputs are always ready for setup; AMS/ADS
+    * are only ready when every required operator was supplied (checked below). */
+   precon->operators_ok = hypredrv_PreconOperatorsComplete(precon_method, ops);
+   precon->stats        = NULL;
 
    switch (precon_method)
    {
@@ -320,6 +338,24 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
          hypredrv_FSAICreate(&args->fsai, &precon->main);
          break;
 
+      case PRECON_AMS:
+         hypredrv_AMSCreate(&args->ams, &precon->main);
+         if (ops)
+         {
+            hypredrv_AMSSetOperators(precon->main, ops->G, ops->coord[0], ops->coord[1],
+                                     ops->coord[2]);
+         }
+         break;
+
+      case PRECON_ADS:
+         hypredrv_ADSCreate(&args->ads, &precon->main);
+         if (ops)
+         {
+            hypredrv_ADSSetOperators(precon->main, ops->G, ops->C, ops->coord[0],
+                                     ops->coord[1], ops->coord[2]);
+         }
+         break;
+
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:
          hypredrv_SchwarzCreate(&args->schwarz, &precon->main);
@@ -337,6 +373,83 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
    }
 
    *precon_ptr = precon;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_PreconMethodRequiresOperators
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_PreconMethodRequiresOperators(precon_t precon_method)
+{
+   return (precon_method == PRECON_AMS || precon_method == PRECON_ADS);
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_PreconOperatorsComplete
+ *
+ * AMS needs a discrete gradient and the three coordinate vectors; ADS needs all
+ * of that plus a discrete curl. These mirror the inputs hypredrv_AMSSetOperators
+ * / hypredrv_ADSSetOperators forward to HYPRE_*SetDiscreteGradient /
+ * HYPRE_*SetDiscreteCurl / HYPRE_*SetCoordinateVectors; if any is missing the
+ * hypre setup routine dereferences NULL.
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_PreconOperatorsComplete(precon_t precon_method, const PreconOperators *ops)
+{
+   if (!hypredrv_PreconMethodRequiresOperators(precon_method))
+   {
+      return 1;
+   }
+
+   if (!ops)
+   {
+      return 0;
+   }
+
+   int have_coords = (ops->coord[0] && ops->coord[1] && ops->coord[2]);
+
+   if (precon_method == PRECON_AMS)
+   {
+      return (ops->G && have_coords) ? 1 : 0;
+   }
+
+   /* PRECON_ADS */
+   return (ops->G && ops->C && have_coords) ? 1 : 0;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_PreconSetupOperatorGuard
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_PreconSetupOperatorGuard(HYPRE_Precon precon)
+{
+   if (!precon || precon->operators_ok)
+   {
+      return 0;
+   }
+
+   if (!hypredrv_PreconMethodRequiresOperators(precon->method))
+   {
+      return 0;
+   }
+
+   hypredrv_ErrorCodeSet(ERROR_MISSING_PRECON);
+   if (precon->method == PRECON_AMS)
+   {
+      hypredrv_ErrorMsgAdd("AMS setup requires a discrete gradient matrix and "
+                           "coordinate vectors, but they were not provided");
+   }
+   else
+   {
+      hypredrv_ErrorMsgAdd("ADS setup requires a discrete gradient matrix, a discrete "
+                           "curl matrix, and coordinate vectors, but they were not "
+                           "provided");
+   }
+
+   return 1;
 }
 
 /*-----------------------------------------------------------------------------
@@ -366,6 +479,13 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Preconditioner setup requested with null matrix");
+      return;
+   }
+
+   /* Abort cleanly (instead of letting hypre dereference NULL) when an AMS/ADS
+    * preconditioner is set up without its required operator inputs. */
+   if (hypredrv_PreconSetupOperatorGuard(precon))
+   {
       return;
    }
 
@@ -409,6 +529,16 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
 #endif /* GCOVR_EXCL_STOP */
+         break;
+
+      case PRECON_AMS:
+         HYPRE_AMSSetup(prec, par_A, par_b, par_x);
+         precon->is_setup = 1;
+         break;
+
+      case PRECON_ADS:
+         HYPRE_ADSSetup(prec, par_A, par_b, par_x);
+         precon->is_setup = 1;
          break;
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
@@ -478,6 +608,14 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
 #endif /* GCOVR_EXCL_STOP */
+         break;
+
+      case PRECON_AMS:
+         HYPRE_AMSSolve(prec, par_A, par_b, par_x);
+         break;
+
+      case PRECON_ADS:
+         HYPRE_ADSSolve(prec, par_A, par_b, par_x);
          break;
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
@@ -636,6 +774,22 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
             HYPRE_FSAIDestroy(precon->main);
 #endif
+            break;
+
+         case PRECON_AMS:
+            /* GCOVR_EXCL_START */
+            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
+                          "preconditioner destroy dispatch: method=ams");
+            /* GCOVR_EXCL_STOP */
+            HYPRE_AMSDestroy(precon->main);
+            break;
+
+         case PRECON_ADS:
+            /* GCOVR_EXCL_START */
+            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
+                          "preconditioner destroy dispatch: method=ads");
+            /* GCOVR_EXCL_STOP */
+            HYPRE_ADSDestroy(precon->main);
             break;
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)

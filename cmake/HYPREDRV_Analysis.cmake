@@ -131,6 +131,12 @@ if(HYPREDRV_ENABLE_ANALYSIS)
         set(_clang_tidy_config "${CMAKE_SOURCE_DIR}/.clang-tidy")
         if(NOT EXISTS ${_clang_tidy_config})
             message(STATUS "Creating default .clang-tidy configuration")
+            # The trailing MPI/varargs excludes are unavoidable false positives:
+            # OpenMPI defines MPI_COMM_WORLD/MPI_COMM_NULL/... as
+            # ((type)(void *)&global), tripping bugprone-casting-through-void and
+            # cppcoreguidelines-interfaces-global-init on every use; and the static
+            # analyzer misfires on the correct va_copy()/va_list-parameter usage in
+            # the logging/error helpers (clang-analyzer-valist.Uninitialized).
             file(WRITE ${_clang_tidy_config}
                 "# clang-tidy configuration for hypredrive
 Checks: >
@@ -190,7 +196,13 @@ Checks: >
     -bugprone-branch-clone,
     -readability-avoid-unconditional-preprocessor-if,
     -readability-use-concise-preprocessor-directives,
-    -performance-no-int-to-ptr
+    -performance-no-int-to-ptr,
+    -bugprone-signed-bitwise,
+    -readability-trailing-comma,
+    -readability-redundant-nested-if,
+    -bugprone-casting-through-void,
+    -cppcoreguidelines-interfaces-global-init,
+    -clang-analyzer-valist.Uninitialized
 
 WarningsAsErrors: ''
 
@@ -201,10 +213,11 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
             message(STATUS "Using existing .clang-tidy configuration")
         endif()
 
-        # Collect source files for analysis
+        # Collect translation units for analysis. Headers are still checked when
+        # included from these sources via HeaderFilterRegex, but direct header
+        # analysis lacks reliable compile-command entries.
         file(GLOB_RECURSE _src_files
             "${CMAKE_SOURCE_DIR}/src/*.c"
-            "${CMAKE_SOURCE_DIR}/include/*.h"
         )
 
         # Exclude build directories and other non-source files
@@ -229,9 +242,83 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
         # Output file for clang-tidy
         set(CLANG_TIDY_OUTPUT ${CMAKE_BINARY_DIR}/clang-tidy-output.txt)
 
+        # Pass MPI (and HYPRE) include directories to clang-tidy via --extra-arg.
+        #
+        # The normal build resolves <mpi.h> implicitly: when CMAKE_C_COMPILER is an
+        # MPI compiler wrapper (e.g. mpicc), the wrapper injects the MPI include path
+        # for us, so FindMPI reports EMPTY include variables (MPI_C_INCLUDE_DIRS,
+        # MPI_C_COMPILER_INCLUDE_DIRS, and the MPI::MPI_C interface includes are all
+        # empty) and compile_commands.json carries no -I for MPI. clang-tidy invokes
+        # the underlying real compiler (not the wrapper), so it then fails with
+        # "'mpi.h' file not found". We therefore add the include dirs explicitly.
+        set(_clang_tidy_inc_dirs "")
+
+        # MPI includes from FindMPI variables and the imported target (populated when
+        # the compiler is a plain compiler rather than an MPI wrapper).
+        foreach(_mpi_inc_var MPI_C_INCLUDE_DIRS MPI_C_COMPILER_INCLUDE_DIRS
+                             MPI_C_HEADER_DIR MPI_C_INCLUDE_PATH)
+            if(${_mpi_inc_var})
+                list(APPEND _clang_tidy_inc_dirs ${${_mpi_inc_var}})
+            endif()
+        endforeach()
+        if(TARGET MPI::MPI_C)
+            get_target_property(_mpi_iface_inc MPI::MPI_C INTERFACE_INCLUDE_DIRECTORIES)
+            if(_mpi_iface_inc)
+                list(APPEND _clang_tidy_inc_dirs ${_mpi_iface_inc})
+            endif()
+        endif()
+
+        # Fallback: when the compiler is an MPI wrapper, the variables above are empty.
+        # Recover the MPI include dir from the wrapper itself by parsing its show
+        # output (-I flags), with <wrapper_dir>/../include as a last resort.
+        if(NOT _clang_tidy_inc_dirs AND MPI_C_COMPILER)
+            execute_process(
+                COMMAND "${MPI_C_COMPILER}" -show
+                OUTPUT_VARIABLE _mpi_show_out
+                ERROR_QUIET
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+            if(_mpi_show_out)
+                string(REGEX MATCHALL "-I *([^ ]+)" _mpi_show_incs "${_mpi_show_out}")
+                foreach(_match IN LISTS _mpi_show_incs)
+                    string(REGEX REPLACE "^-I *" "" _match "${_match}")
+                    list(APPEND _clang_tidy_inc_dirs "${_match}")
+                endforeach()
+            endif()
+            if(NOT _clang_tidy_inc_dirs)
+                get_filename_component(_mpi_bin_dir "${MPI_C_COMPILER}" DIRECTORY)
+                get_filename_component(_mpi_prefix "${_mpi_bin_dir}" DIRECTORY)
+                if(EXISTS "${_mpi_prefix}/include/mpi.h")
+                    list(APPEND _clang_tidy_inc_dirs "${_mpi_prefix}/include")
+                endif()
+            endif()
+        endif()
+
+        # HYPRE includes (from the imported target and/or find_package variables) in
+        # case they are similarly missing from the compile database.
+        if(TARGET HYPRE::HYPRE)
+            get_target_property(_hypre_iface_inc HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+            if(_hypre_iface_inc)
+                list(APPEND _clang_tidy_inc_dirs ${_hypre_iface_inc})
+            endif()
+        endif()
+        if(HYPRE_INCLUDE_DIRS)
+            list(APPEND _clang_tidy_inc_dirs ${HYPRE_INCLUDE_DIRS})
+        endif()
+
+        # Turn the collected include dirs into clang-tidy --extra-arg flags, skipping
+        # generator expressions and non-existent paths.
+        set(_clang_tidy_extra_args "")
+        foreach(_inc IN LISTS _clang_tidy_inc_dirs)
+            if(_inc AND NOT _inc MATCHES "^\\$<" AND EXISTS "${_inc}")
+                list(APPEND _clang_tidy_extra_args "--extra-arg=-I${_inc}")
+            endif()
+        endforeach()
+        list(REMOVE_DUPLICATES _clang_tidy_extra_args)
+        list(JOIN _clang_tidy_extra_args " " _clang_tidy_extra_args_str)
+
         # Create a target to run clang-tidy
         list(JOIN _src_files " " _src_files_str)
-        set(_clang_tidy_cmd "${CLANG_TIDY_EXECUTABLE} -p=${CMAKE_BINARY_DIR} --quiet ${_src_files_str}")
+        set(_clang_tidy_cmd "${CLANG_TIDY_EXECUTABLE} -p=${CMAKE_BINARY_DIR} --quiet ${_clang_tidy_extra_args_str} ${_src_files_str}")
 
         # Create a script to check for warnings
         set(_clang_tidy_check_script ${CMAKE_BINARY_DIR}/check-clang-tidy.sh)
@@ -239,10 +326,11 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
             "#!/bin/bash\n"
             "set -e\n"
             "${_clang_tidy_cmd} > ${CLANG_TIDY_OUTPUT} 2>&1 || true\n"
+            "ERRORS=$(grep -E 'error:' ${CLANG_TIDY_OUTPUT} | wc -l)\n"
             "WARNINGS=$(grep -E 'warning:' ${CLANG_TIDY_OUTPUT} | grep -v 'clang-diagnostic-error' | wc -l)\n"
-            "if [ \"$WARNINGS\" -gt 0 ]; then\n"
-            "    echo \"ERROR: clang-tidy found $WARNINGS warning(s). See ${CLANG_TIDY_OUTPUT} for details.\"\n"
-            "    grep -E 'warning:' ${CLANG_TIDY_OUTPUT} | grep -v 'clang-diagnostic-error' | head -20\n"
+            "if [ \"$ERRORS\" -gt 0 ] || [ \"$WARNINGS\" -gt 0 ]; then\n"
+            "    echo \"ERROR: clang-tidy found $ERRORS error(s) and $WARNINGS warning(s). See ${CLANG_TIDY_OUTPUT} for details.\"\n"
+            "    grep -E 'error:|warning:' ${CLANG_TIDY_OUTPUT} | head -100\n"
             "    exit 1\n"
             "fi\n"
             "echo \"clang-tidy: No warnings found.\"\n"

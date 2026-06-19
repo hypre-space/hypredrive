@@ -666,6 +666,71 @@ extern "C"
                                                                   HYPRE_Matrix mat_A);
 
    /**
+    * @brief Set the discrete gradient operator (G) for the AMS/ADS preconditioners.
+    *
+    * AMS and ADS require the discrete gradient matrix (mapping the nodal/vertex space
+    * to the edge space) in addition to the system matrix. This operator must be set
+    * before the preconditioner setup.
+    *
+    * @param hypredrv The HYPREDRV_t object.
+    * @param G The HYPRE_Matrix object for the discrete gradient.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note Ownership for non-NULL \e G: borrowed in library mode
+    * (HYPREDRV_SetLibraryMode), transferred to HYPREDRV otherwise.
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemSetDiscreteGradient(HYPREDRV_t hypredrv, HYPRE_Matrix G);
+
+   /**
+    * @brief Set the discrete curl operator (C) for the ADS preconditioner.
+    *
+    * ADS requires the discrete curl matrix (mapping the edge space to the face space)
+    * in addition to the discrete gradient. This operator must be set before the
+    * preconditioner setup.
+    *
+    * @param hypredrv The HYPREDRV_t object.
+    * @param C The HYPRE_Matrix object for the discrete curl.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note Ownership for non-NULL \e C: borrowed in library mode, transferred to
+    * HYPREDRV otherwise.
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSystemSetDiscreteCurl(HYPREDRV_t hypredrv, HYPRE_Matrix C);
+
+   /**
+    * @brief Set the vertex coordinate vectors for the AMS/ADS preconditioners.
+    *
+    * AMS and ADS use the vertex (nodal) coordinate vectors to build their auxiliary
+    * space hierarchy. The three vectors hold the x, y, and z coordinates of the mesh
+    * vertices. They must be set before the preconditioner setup.
+    *
+    * @param hypredrv The HYPREDRV_t object.
+    * @param x The HYPRE_Vector with the x coordinates of the vertices.
+    * @param y The HYPRE_Vector with the y coordinates of the vertices.
+    * @param z The HYPRE_Vector with the z coordinates of the vertices.
+    *
+    * @return Returns an error code with 0 indicating success. Any non-zero value
+    * indicates a failure, and the error code can be further described using
+    * HYPREDRV_ErrorCodeDescribe(error_code).
+    *
+    * @note Ownership for non-NULL vectors: borrowed in library mode, transferred to
+    * HYPREDRV otherwise.
+    */
+
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetCoordinates(
+      HYPREDRV_t hypredrv, HYPRE_Vector x, HYPRE_Vector y, HYPRE_Vector z);
+
+   /**
     * @brief Set the linear system right-hand side (RHS) vector for a HYPREDRV object.
     *
     * @param hypredrv The HYPREDRV_t object for which the RHS vector of the linear system

@@ -717,6 +717,156 @@ def extract_full_velocity_field(vtk_files):
     return x_coords, y_coords, u_field, v_field
 
 
+# ==========================================================================
+# PyVista streamlines: static image or transient animation (GIF)
+# ==========================================================================
+
+def _optimize_gif(path):
+    """Shrink a GIF losslessly: crop static white margins, share one palette across
+    frames, and store only the pixels that change (fixed camera => large,
+    quality-preserving reduction). Best-effort; skipped if Pillow is unavailable."""
+    try:
+        from PIL import Image, ImageSequence
+    except Exception:
+        return
+    im = Image.open(str(path))
+    dur = im.info.get("duration", 125)
+    loop = im.info.get("loop", 0)
+    frames = [np.asarray(f.convert("RGB")) for f in ImageSequence.Iterator(im)]
+    if len(frames) < 2:
+        return
+    # Keep full frames (no bounding-box crop) so the aspect ratio is preserved for
+    # uniform gallery tiles; the white margins compress to almost nothing anyway.
+    crop = frames
+    stack = Image.fromarray(np.concatenate(crop, axis=0))
+    pal = stack.quantize(colors=255, method=Image.MEDIANCUT, dither=Image.NONE)
+    idx = [np.asarray(Image.fromarray(c).quantize(palette=pal, dither=Image.NONE)) for c in crop]
+    trans = 255
+    first = Image.fromarray(idx[0], mode="P")
+    first.putpalette(pal.getpalette())
+    out = [first]
+    prev = idx[0]
+    for cur in idx[1:]:
+        d = cur.copy()
+        d[cur == prev] = trans
+        f = Image.fromarray(d, mode="P")
+        f.putpalette(pal.getpalette())
+        out.append(f)
+        prev = cur
+    out[0].save(str(path), save_all=True, append_images=out[1:], duration=dur, loop=loop,
+                disposal=1, transparency=trans, optimize=True)
+
+
+def _pv_streamlines(mesh):
+    """Streamlines traced from seeds along the vertical centreline plus the bottom
+    corners, giving the classic nested vortex loops + corner eddies. Uses the robust
+    vtkStreamTracer (``streamlines_from_source``); the evenly-spaced 2D filter is
+    avoided because it crashes after repeated renders in this VTK build."""
+    import pyvista as pv
+    ys = np.linspace(0.12, 0.92, 18)
+    center = np.c_[np.full(ys.size, 0.5), ys, np.zeros(ys.size)]
+    # Dense seeds in the two bottom corners to resolve the secondary (corner) eddies.
+    blx, bly = np.meshgrid(np.linspace(0.02, 0.30, 7), np.linspace(0.02, 0.30, 7))
+    brx, bry = np.meshgrid(np.linspace(0.70, 0.98, 7), np.linspace(0.02, 0.30, 7))
+    bl = np.c_[blx.ravel(), bly.ravel(), np.zeros(blx.size)]
+    br = np.c_[brx.ravel(), bry.ravel(), np.zeros(brx.size)]
+    src = pv.PolyData(np.vstack([center, bl, br]))
+    try:
+        sl = mesh.streamlines_from_source(
+            src, vectors="velocity", integration_direction="both",
+            max_step_length=0.5, max_steps=3000, terminal_speed=1e-7,
+            surface_streamlines=True)
+        return sl if sl.n_points > 0 else None
+    except Exception:
+        return None
+
+
+def streamlines_pyvista(pvd_path, out_path, Re, animate=False, fps=8, sep=2.0,
+                        window=(800, 600), max_frames=20):
+    """Render lid-driven cavity streamlines with PyVista, colored by speed |U|.
+
+    animate=False -> a single still PNG of the steady state (last timestep).
+    animate=True  -> an animated GIF over the whole transient, subsampled to at most
+                     ``max_frames`` and shrunk to stay small. Requires PyVista
+                     (``pip install pyvista``); the animation also needs imageio.
+    """
+    try:
+        import pyvista as pv
+    except ImportError:
+        sys.exit("PyVista is required for the streamlines: pip install pyvista\n"
+                 "(Alternatively, open the .pvd/.vtr files in ParaView.)")
+
+    pv.OFF_SCREEN = True
+    reader = pv.get_reader(str(pvd_path))
+    times = list(getattr(reader, "time_values", []) or [])
+    if animate and max_frames and len(times) > max_frames:
+        idx = np.unique(np.linspace(0, len(times) - 1, max_frames).round().astype(int))
+        times = [times[i] for i in idx]
+    box = pv.Box(bounds=(0, 1, 0, 1, 0, 0)).extract_all_edges()
+    sbar = dict(title="|U|", color="black", vertical=True, position_x=0.86, position_y=0.2,
+                height=0.6, width=0.05, title_font_size=24, label_font_size=18,
+                n_labels=5, fmt="%.2f")
+
+    def load(t):
+        if t is not None:
+            reader.set_active_time_value(t)
+        obj = reader.read()
+        mesh = obj.combine() if isinstance(obj, pv.MultiBlock) else obj
+        mesh.point_data["speed"] = np.linalg.norm(np.asarray(mesh.point_data["velocity"]), axis=1)
+        return mesh
+
+    pl = pv.Plotter(off_screen=True, window_size=list(window))
+    pl.background_color = "white"
+    try:
+        pl.enable_anti_aliasing("ssaa")
+    except Exception:
+        # Anti-aliasing is an optional rendering enhancement that may be unsupported
+        # on some VTK/OpenGL or off-screen backends; let rendering continue without it.
+        pass
+
+    def draw(mesh, t=None):
+        pl.clear()
+        sl = _pv_streamlines(mesh)
+        if sl is not None:
+            pl.add_mesh(sl, scalars="speed", cmap="plasma", clim=[0.0, 1.0],
+                        line_width=2.0, scalar_bar_args=sbar)
+        pl.add_mesh(box, color="black", line_width=3)
+        pl.add_text(f"Lid-driven cavity (Re={int(Re)})", position="upper_edge",
+                    color="black", font_size=13)
+        if t is not None:
+            pl.add_text(f"t = {t:.1f}", position="lower_left", color="black", font_size=11)
+        # Fixed 2D (parallel) camera framing the unit cavity identically on every frame.
+        # Avoids the per-frame auto-refit of camera_position="xy", which made the first
+        # (sparse, early-flow) frame zoom differently and "jump".
+        pl.enable_parallel_projection()
+        pl.camera.focal_point = (0.5, 0.5, 0.0)
+        pl.camera.position = (0.5, 0.5, 2.0)
+        pl.camera.up = (0.0, 1.0, 0.0)
+        pl.camera.parallel_scale = 0.62
+
+    if animate and len(times) > 1:
+        try:
+            import imageio.v2 as imageio
+        except Exception:
+            import imageio
+        frames = []
+        for t in times:
+            draw(load(t), t)
+            frames.append(np.asarray(pl.screenshot(return_img=True)))
+        pl.close()
+        imageio.mimsave(str(out_path), frames, fps=fps, loop=0)
+        _optimize_gif(out_path)
+    else:
+        draw(load(times[-1] if times else None))
+        pl.screenshot(str(out_path))
+        pl.close()
+    try:
+        mb = Path(out_path).stat().st_size / 1e6
+        print(f"Wrote {out_path} ({len(times) if animate else 1} frame(s), {mb:.2f} MB)")
+    except OSError:
+        print(f"Wrote {out_path}")
+
+
 def plot_streamlines(vtk_files, Re, save_path=None):
     """Plot streamlines from the steady-state velocity field.
 
@@ -922,20 +1072,36 @@ def main():
     parser.add_argument('-c', '--compact', action='store_true',
                        help='Create a compact single plot with both u and v centerlines')
     parser.add_argument('-s', '--streamline', action='store_true',
-                       help='Plot streamlines from steady-state result (last time step)')
+                       help='Plot streamlines from steady-state result (PyVista, last time step)')
+    parser.add_argument('--video', metavar='OUT',
+                       help='Render an animated streamlines GIF over the transient (PyVista)')
+    parser.add_argument('--fps', type=int, default=8, help='GIF frames per second (default: 8)')
+    parser.add_argument('--max-frames', type=int, default=20,
+                       help='Max frames in the animated GIF (subsampled; default: 20)')
+    parser.add_argument('--sep', type=float, default=2.0,
+                       help='Streamline separating distance (default: 2.0; smaller = denser)')
+    parser.add_argument('--window', type=int, nargs=2, default=[800, 600], metavar=('W', 'H'),
+                       help='PyVista render window size in pixels (default: 800 600)')
 
     args = parser.parse_args()
+
+    # Animated streamlines video (PyVista) -- independent of the centerline validation.
+    if args.video:
+        streamlines_pyvista(args.pvd_file, args.video, args.Re, animate=True,
+                            fps=args.fps, sep=args.sep, window=tuple(args.window),
+                            max_frames=args.max_frames)
+        return 0
 
     # Read simulation data
     print(f"Reading PVD collection: {args.pvd_file}")
     vtk_files = read_pvd_collection(args.pvd_file)
     print(f"Found {len(vtk_files)} VTK files")
 
-    # Handle streamline plot (can be done independently)
+    # Static streamlines image (PyVista, steady state).
     if args.streamline:
-        Re_int = int(args.Re)
-        plot_streamlines(vtk_files, Re_int, args.save)
-        # If only streamline was requested, return early
+        out = args.save if args.save else f"lidcavity_Re{int(args.Re)}_streamlines.png"
+        streamlines_pyvista(args.pvd_file, out, args.Re, animate=False,
+                            sep=args.sep, window=tuple(args.window))
         if not args.plot and not args.save:
             return 0
 

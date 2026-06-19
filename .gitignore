@@ -104,6 +104,9 @@ m4/lt~obsolete.m4
 Doxyfile
 TAGS
 docs/usrman-src/_*
+# ...but keep custom Sphinx static sources (stylesheets, JS) under version control.
+!docs/usrman-src/_static/
+!docs/usrman-src/_static/**
 docs/usrman-build
 docs/html
 docs/latex
