@@ -131,6 +131,12 @@ if(HYPREDRV_ENABLE_ANALYSIS)
         set(_clang_tidy_config "${CMAKE_SOURCE_DIR}/.clang-tidy")
         if(NOT EXISTS ${_clang_tidy_config})
             message(STATUS "Creating default .clang-tidy configuration")
+            # The trailing MPI/varargs excludes are unavoidable false positives:
+            # OpenMPI defines MPI_COMM_WORLD/MPI_COMM_NULL/... as
+            # ((type)(void *)&global), tripping bugprone-casting-through-void and
+            # cppcoreguidelines-interfaces-global-init on every use; and the static
+            # analyzer misfires on the correct va_copy()/va_list-parameter usage in
+            # the logging/error helpers (clang-analyzer-valist.Uninitialized).
             file(WRITE ${_clang_tidy_config}
                 "# clang-tidy configuration for hypredrive
 Checks: >
@@ -193,7 +199,10 @@ Checks: >
     -performance-no-int-to-ptr,
     -bugprone-signed-bitwise,
     -readability-trailing-comma,
-    -readability-redundant-nested-if
+    -readability-redundant-nested-if,
+    -bugprone-casting-through-void,
+    -cppcoreguidelines-interfaces-global-init,
+    -clang-analyzer-valist.Uninitialized
 
 WarningsAsErrors: ''
 
@@ -321,7 +330,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
             "WARNINGS=$(grep -E 'warning:' ${CLANG_TIDY_OUTPUT} | grep -v 'clang-diagnostic-error' | wc -l)\n"
             "if [ \"$ERRORS\" -gt 0 ] || [ \"$WARNINGS\" -gt 0 ]; then\n"
             "    echo \"ERROR: clang-tidy found $ERRORS error(s) and $WARNINGS warning(s). See ${CLANG_TIDY_OUTPUT} for details.\"\n"
-            "    grep -E 'error:|warning:' ${CLANG_TIDY_OUTPUT} | head -20\n"
+            "    grep -E 'error:|warning:' ${CLANG_TIDY_OUTPUT} | head -100\n"
             "    exit 1\n"
             "fi\n"
             "echo \"clang-tidy: No warnings found.\"\n"
