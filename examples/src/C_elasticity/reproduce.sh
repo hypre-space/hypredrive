@@ -97,6 +97,51 @@ METHODS=(
     "elasticity_nodal_3D"
 )
 
+# Each variant is a separate executable run, so a raw '.out' log holds one
+# standalone STATISTICS SUMMARY table (single entry) per size variant. The
+# statistics script treats every table as a distinct data series, which would
+# turn a single preset's size sweep into many one-point series. Collapse each
+# raw log into one combined STATISTICS SUMMARY table whose entries are the
+# per-variant rows, so the sweep plots as a single curve per preset. The
+# 'Solving linear system #N' markers (carrying rows/nonzeros) are preserved so
+# the script can map each entry to its DOF count for the '-t rows' abscissa.
+build_combined_log() {
+    local src="$1"
+    local dst="$2"
+    awk '
+        BEGIN { nmark = 0; ndata = 0 }
+        /^Solving linear system #[0-9]+ with [0-9]+ rows and [0-9]+ nonzeros/ {
+            markers[nmark++] = $0
+            next
+        }
+        # Data rows inside a STATISTICS SUMMARY table start with "| <entry> |".
+        /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
+            n = split($0, c, "|")
+            # c[2]=entry c[3]=build c[4]=setup c[5]=solve c[6]=r0 c[7]=relres c[8]=iters
+            build[ndata]  = c[3]; setup[ndata] = c[4]; solve[ndata] = c[5]
+            r0[ndata]     = c[6]; rr[ndata]    = c[7]; it[ndata]    = c[8]
+            ndata++
+            next
+        }
+        END {
+            print "Using HYPRE_RELEASE_VERSION: combined"
+            for (i = 0; i < nmark; i++) print markers[i]
+            print ""
+            print "STATISTICS SUMMARY:"
+            print ""
+            div = "+------------+-------------+-------------+-------------+------------+------------+--------+"
+            print div
+            print "|            |    LS build |       setup |       solve |    initial |   relative |        |"
+            print "|      Entry |   times [s] |   times [s] |   times [s] |  res. norm |  res. norm |  iters |"
+            print div
+            for (i = 0; i < ndata; i++) {
+                printf "|%11d |%s|%s|%s|%s|%s|%s|\n", i, build[i], setup[i], solve[i], r0[i], rr[i], it[i]
+            }
+            print div
+        }
+    ' "${src}" > "${dst}"
+}
+
 plot_results() {
     for f in "${OUT_FILES[@]}"; do
         if [[ ! -f "${f}" ]]; then
@@ -118,19 +163,29 @@ plot_results() {
         fi
     done
 
+    # Collapse each raw per-variant log into a single combined table so each
+    # preset plots as one curve over the DOF sweep.
+    local combined_files=()
+    local cf
+    for f in "${OUT_FILES[@]}"; do
+        cf="${f%.out}.combined.out"
+        build_combined_log "${f}" "${cf}"
+        combined_files+=("${cf}")
+    done
+
     echo "Generating plots (log-scale X axis, DOFs)..."
 
     echo "  Plotting: iterations vs DOFs -> iters_elasticity_presets_dofs.png"
-    PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 "${STATS}" -f "${OUT_FILES[@]}" -ln "${METHODS[@]}" -m "iters" \
-        -t rows -l "DOFs (rows)" -s "elasticity_presets_dofs.png" --log-x -T "Linear solver iterations"
+    PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 "${STATS}" -f "${combined_files[@]}" -ln "${METHODS[@]}" -m "iters" \
+        --style docs -t rows -l "DOFs (rows)" -s "elasticity_presets_dofs.png" --log-x -T "Linear solver iterations"
 
     echo "  Plotting: setup time vs DOFs -> setup_elasticity_presets_dofs.png"
-    PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 "${STATS}" -f "${OUT_FILES[@]}" -ln "${METHODS[@]}" -m "setup" \
-        -t rows -l "DOFs (rows)" -s "elasticity_presets_dofs.png" --log-x --log-y -T "Linear solver setup time [s]"
+    PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 "${STATS}" -f "${combined_files[@]}" -ln "${METHODS[@]}" -m "setup" \
+        --style docs -t rows -l "DOFs (rows)" -s "elasticity_presets_dofs.png" --log-x --log-y -T "Linear solver setup time [s]"
 
     echo "  Plotting: solve time vs DOFs -> solve_elasticity_presets_dofs.png"
-    PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 "${STATS}" -f "${OUT_FILES[@]}" -ln "${METHODS[@]}" -m "solve" \
-        -t rows -l "DOFs (rows)" -s "elasticity_presets_dofs.png" --log-x --log-y -T "Linear solver solve time [s]"
+    PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 "${STATS}" -f "${combined_files[@]}" -ln "${METHODS[@]}" -m "solve" \
+        --style docs -t rows -l "DOFs (rows)" -s "elasticity_presets_dofs.png" --log-x --log-y -T "Linear solver solve time [s]"
 
     echo "Done. Plots saved in current directory."
 }

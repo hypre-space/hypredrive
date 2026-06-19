@@ -81,11 +81,13 @@ if [[ "$MODE" == "centerlines" ]]; then
 # SOLVERS MODE: Different solver configurations
 # ============================================================================
 elif [[ "$MODE" == "solvers" ]]; then
-    MPI_RANKS="${MPI_RANKS:-64}"
+    MPI_RANKS="${MPI_RANKS:-16}"
     STATS="${STATS:-../../../scripts/analyze_statistics.py}"
 
-    # Common arguments shared by all runs
-    ARGS="-P 8 8 -dt 0.01 -tf 50 -n 256 256 -v 1 -adt -reg"
+    # Common arguments shared by all runs. A 4x4 = 16-rank grid; the per-timestep
+    # iteration counts are partition-independent (only absolute times scale with the
+    # rank count). Override with MPI_RANKS / the -P grid for other machines.
+    ARGS="-P 4 4 -dt 0.01 -tf 50 -n 256 256 -v 1 -adt -reg"
 
     # List of input files (with extensions)
     CONFIG_FILES=(
@@ -124,7 +126,8 @@ elif [[ "$MODE" == "solvers" ]]; then
     done
 
     # Post process (iteration and execution time plots)
-    python3 "$STATS" -f "${OUT_FILES[@]}" -ln "${METHODS[@]}" -m "iters+total" -s lidcavity
+    # MPLBACKEND=Agg avoids a hang on plt.show() when running headless.
+    MPLBACKEND=Agg python3 "$STATS" -f "${OUT_FILES[@]}" -ln "${METHODS[@]}" -m "iters+total" -s lidcavity --style docs
 else
     echo "Error: Unknown mode: $MODE"
     exit 1

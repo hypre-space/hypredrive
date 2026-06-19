@@ -74,12 +74,16 @@ html_logo = '../hypredrive-logo.png'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-if os.path.exists('_static'):
+_static_dir = Path(__file__).resolve().parent / '_static'
+if _static_dir.is_dir():
     html_static_path = ['_static']
-    # Ensure Sphinx includes custom JavaScript files
-    html_js_files = ['remove-dollar.js']
+    # Custom stylesheet (e.g. uniform "Examples at a Glance" panel tiles).
+    html_css_files = ['custom.css'] if (_static_dir / 'custom.css').exists() else []
+    # Ensure Sphinx includes custom JavaScript files when present.
+    html_js_files = ['remove-dollar.js'] if (_static_dir / 'remove-dollar.js').exists() else []
 else:
     html_static_path = []
+    html_css_files = []
     html_js_files = []
 
 _docs_src_dir = Path(__file__).resolve().parent

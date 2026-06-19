@@ -125,15 +125,15 @@ echo "Generating figures via analyze_statistics.py ..."
 MPLBACKEND=Agg python3 "${STATS}" -f "${ITER_LOGS[@]}" -m iters -t xval --log-x --log-y \
     --xvalues "${BETA_VALUES[@]}" -l '$\beta$  ($\alpha=1$)' \
     -T 'Iterations vs $\beta$: ADS vs generic preconditioners' \
-    -s "${OUT_PREFIX}.png" >/dev/null 2>&1
+    --style docs -s "${OUT_PREFIX}.png" >/dev/null 2>&1
 # Right: stacked setup/solve time bar for the native ADS solver.
 MPLBACKEND=Agg python3 "${STATS}" -f "${NATIVE_LOG}" -m bar+setup+solve \
     -ln "${BETA_VALUES[@]}" -l '$\beta$  ($\alpha=1$)' \
-    -T 'ADS setup/solve time vs $\beta$' -s "${OUT_PREFIX}.png" >/dev/null 2>&1
+    -T 'ADS setup/solve time vs $\beta$' --style docs -s "${OUT_PREFIX}.png" >/dev/null 2>&1
 
 if command -v convert >/dev/null 2>&1; then
     convert "iters_${OUT_PREFIX}.png" "stacked_bar_${OUT_PREFIX}.png" \
-        -resize x600 +append "${OUT_PREFIX}_panel.png"
+        -resize x900 +append "${OUT_PREFIX}_panel.png"
     echo "Wrote side-by-side panel: ${OUT_PREFIX}_panel.png"
 else
     echo "ImageMagick 'convert' not found; wrote iters_${OUT_PREFIX}.png and stacked_bar_${OUT_PREFIX}.png"

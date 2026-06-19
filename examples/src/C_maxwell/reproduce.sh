@@ -122,18 +122,18 @@ fi
 
 echo "Generating figures via analyze_statistics.py ..."
 # Left: iteration counts vs sigma, one line per solver (log-y spans the range).
-MPLBACKEND=Agg python3 "${STATS}" -f "${ITER_LOGS[@]}" -m iters -t xval --log-x --log-y \
+MPLBACKEND=Agg python3 "${STATS}" --style docs -f "${ITER_LOGS[@]}" -m iters -t xval --log-x --log-y \
     --xvalues "${SIGMA_VALUES[@]}" -l '$\sigma$  ($\mu^{-1}=1$)' \
     -T 'Iterations vs $\sigma$: AMS vs generic preconditioners' \
     -s "${OUT_PREFIX}.png" >/dev/null 2>&1
 # Right: stacked setup/solve time bar for the native AMS solver.
-MPLBACKEND=Agg python3 "${STATS}" -f "${NATIVE_LOG}" -m bar+setup+solve \
+MPLBACKEND=Agg python3 "${STATS}" --style docs -f "${NATIVE_LOG}" -m bar+setup+solve \
     -ln "${SIGMA_VALUES[@]}" -l '$\sigma$  ($\mu^{-1}=1$)' \
     -T 'AMS setup/solve time vs $\sigma$' -s "${OUT_PREFIX}.png" >/dev/null 2>&1
 
 if command -v convert >/dev/null 2>&1; then
     convert "iters_${OUT_PREFIX}.png" "stacked_bar_${OUT_PREFIX}.png" \
-        -resize x600 +append "${OUT_PREFIX}_panel.png"
+        -resize x900 +append "${OUT_PREFIX}_panel.png"
     echo "Wrote side-by-side panel: ${OUT_PREFIX}_panel.png"
 else
     echo "ImageMagick 'convert' not found; wrote iters_${OUT_PREFIX}.png and stacked_bar_${OUT_PREFIX}.png"

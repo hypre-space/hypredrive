@@ -16,13 +16,85 @@ import textwrap
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
-# Global variables
+# Global variables (mutated by apply_style())
 fgs  = (10, 6)       # Figure size
 tfs  = 18            # Title font size
 alfs = 14            # Axis label font size
 lgfs = 14            # Legends font size
+sdpi = 600           # Save DPI for bitmap outputs
 
 logger = logging.getLogger(__name__)
+
+
+# Named style presets selected with --style. Each preset sets the figure size and the
+# font sizes used throughout, plus a block of Matplotlib rcParams (line/marker weight,
+# grid, color cycle, ...). "docs" is tuned for embedding in the documentation: larger
+# fonts, thicker lines, a light dashed grid, a colorblind-friendly palette and a sharp
+# but reasonably sized PNG. "default" preserves the historical look.
+_OKABE_ITO = ['#0072B2', '#D55E00', '#009E73', '#E69F00',
+              '#CC79A7', '#56B4E9', '#000000', '#F0E442']
+
+STYLE_PRESETS = {
+    'default': {
+        'fgs': (10, 6), 'tfs': 18, 'alfs': 14, 'lgfs': 14, 'sdpi': 600, 'rc': {},
+    },
+    'docs': {
+        'fgs': (9.0, 5.6), 'tfs': 22, 'alfs': 18, 'lgfs': 16, 'sdpi': 170,
+        'rc': {
+            'figure.facecolor': 'white',
+            'savefig.facecolor': 'white',
+            'savefig.bbox': 'tight',
+            'savefig.pad_inches': 0.06,
+            'font.family': 'sans-serif',
+            'font.sans-serif': ['DejaVu Sans'],
+            'lines.linewidth': 2.6,
+            'lines.markersize': 9,
+            'lines.markeredgewidth': 1.0,
+            'axes.linewidth': 1.2,
+            'axes.edgecolor': '#333333',
+            'axes.axisbelow': True,
+            'axes.prop_cycle': plt.cycler(color=_OKABE_ITO),
+            'grid.color': '#b0b0b0',
+            'grid.linestyle': '--',
+            'grid.linewidth': 0.7,
+            'grid.alpha': 0.7,
+            'legend.frameon': True,
+            'legend.framealpha': 0.92,
+            'legend.edgecolor': '#cccccc',
+            'legend.fancybox': True,
+        },
+    },
+    'paper': {
+        'fgs': (8.0, 5.2), 'tfs': 20, 'alfs': 17, 'lgfs': 14, 'sdpi': 300,
+        'rc': {
+            'savefig.bbox': 'tight', 'font.family': 'serif',
+            'lines.linewidth': 2.2, 'lines.markersize': 7, 'axes.axisbelow': True,
+            'axes.prop_cycle': plt.cycler(color=_OKABE_ITO),
+            'grid.linestyle': '--', 'grid.linewidth': 0.6, 'grid.alpha': 0.6,
+        },
+    },
+    'talk': {
+        'fgs': (10.0, 6.2), 'tfs': 26, 'alfs': 22, 'lgfs': 19, 'sdpi': 150,
+        'rc': {
+            'savefig.bbox': 'tight', 'font.family': 'sans-serif',
+            'lines.linewidth': 3.4, 'lines.markersize': 12, 'axes.linewidth': 1.4,
+            'axes.axisbelow': True, 'axes.prop_cycle': plt.cycler(color=_OKABE_ITO),
+            'grid.linestyle': '--', 'grid.linewidth': 0.9, 'grid.alpha': 0.75,
+        },
+    },
+}
+
+
+def apply_style(name):
+    """Apply a named style preset: set the global font/figure sizes + Matplotlib rcParams."""
+    global fgs, tfs, alfs, lgfs, sdpi
+    preset = STYLE_PRESETS.get(name, STYLE_PRESETS['default'])
+    fgs, tfs, alfs, lgfs, sdpi = (preset['fgs'], preset['tfs'], preset['alfs'],
+                                  preset['lgfs'], preset['sdpi'])
+    if preset.get('rc'):
+        plt.rcParams.update(preset['rc'])
+    logger.debug("Applied style '%s' (fgs=%s tfs=%s alfs=%s lgfs=%s sdpi=%s)",
+                 name, fgs, tfs, alfs, lgfs, sdpi)
 
 
 def _resolve_linestyle(user_linestyle, default_ls='-'):
@@ -330,7 +402,7 @@ def save_and_show_plot(savefig=None):
         # Determine the format from the file extension
         file_extension = savefig.split('.')[-1].lower()
         if file_extension in ['png', 'jpg', 'jpeg', 'bmp']:
-            dpi = 600
+            dpi = sdpi
         else:
             dpi = None  # Use default for non-bitmap formats or vector graphics
 
@@ -1240,6 +1312,9 @@ def main():
                              "iteration count (only effective when iter-times is plotted)")
     parser.add_argument("--log-x", action="store_true", help="Use log scale for X axis")
     parser.add_argument("--log-y", action="store_true", help="Use log scale for Y axis")
+    parser.add_argument("--style", type=str, default='default', choices=list(STYLE_PRESETS.keys()),
+                        help="Plot style preset (default: 'default'; use 'docs' for the "
+                             "documentation figures, 'paper'/'talk' for other contexts)")
     parser.add_argument("-v", "--verbose", action='count', default=0, help='Increase verbosity (-v=INFO, -vv=DEBUG)')
 
     # Parse arguments
@@ -1262,6 +1337,8 @@ def main():
     ):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
     logger.debug(f"Arguments parsed: {vars(args) = }")
+
+    apply_style(args.style)
 
     bar_mode = check_mode_exact_match(args.mode, 'bar')
     show_nl_iters = args.nl_iters if args.nl_iters is not None else (len(args.filename) == 1)

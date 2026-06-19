@@ -23,6 +23,108 @@ wants hypredrive to configure and invoke HYPRE solvers and preconditioners.
    ``libHYPREDRV`` when your application assembles matrices and vectors in
    memory and needs a lightweight API to invoke HYPRE programmatically.
 
+Examples at a Glance
+--------------------
+
+Click any panel (image or title) to jump to the full example.
+
+.. |gl_laplace| image:: figures/laplacian_solution_3d.png
+   :target: LibraryExample1_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_darcy| image:: figures/spe10_darcy_pressure.png
+   :target: LibraryExample2_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_elasticity| image:: figures/elasticity_solution_3d.png
+   :target: LibraryExample3_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_maxwell| image:: figures/maxwell_solution_3d.png
+   :target: maxwell_example_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_graddiv| image:: figures/graddiv_solution_3d.png
+   :target: graddiv_example_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_heatflow_v| image:: figures/heatflow_transient.gif
+   :target: LibraryExample4_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_lidcavity_v| image:: figures/lidcavity_streamlines.gif
+   :target: LibraryExample5_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_heatflow_s| image:: figures/heatflow_transient.png
+   :target: LibraryExample4_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_lidcavity_s| image:: figures/lidcavity_streamlines.png
+   :target: LibraryExample5_
+   :width: 100%
+   :class: gallery-thumb
+
+.. only:: html
+
+   .. list-table::
+      :widths: 1 1 1
+      :align: center
+
+      * - |gl_laplace|
+
+          :ref:`1. Laplace's equation <LibraryExample1>`
+        - |gl_darcy|
+
+          :ref:`2. Mixed Darcy Flow <LibraryExample2>`
+        - |gl_elasticity|
+
+          :ref:`3. Linear Elasticity <LibraryExample3>`
+      * - |gl_heatflow_v|
+
+          :ref:`4. Nonlinear Heat Flow <LibraryExample4>`
+        - |gl_lidcavity_v|
+
+          :ref:`5. Navier-Stokes <LibraryExample5>`
+        - |gl_maxwell|
+
+          :ref:`6. Definite curl-curl (AMS) <maxwell_example>`
+      * - |gl_graddiv|
+
+          :ref:`7. Definite grad-div (ADS) <graddiv_example>`
+        -
+        -
+
+.. only:: latex
+
+   .. list-table::
+      :widths: 1 1 1
+      :align: center
+
+      * - |gl_laplace|
+
+          :ref:`1. Laplace's equation <LibraryExample1>`
+        - |gl_darcy|
+
+          :ref:`2. Mixed Darcy Flow <LibraryExample2>`
+        - |gl_elasticity|
+
+          :ref:`3. Linear Elasticity <LibraryExample3>`
+      * - |gl_heatflow_s|
+
+          :ref:`4. Nonlinear Heat Flow <LibraryExample4>`
+        - |gl_lidcavity_s|
+
+          :ref:`5. Navier-Stokes <LibraryExample5>`
+        - |gl_maxwell|
+
+          :ref:`6. Definite curl-curl (AMS) <maxwell_example>`
+      * - |gl_graddiv|
+
+          :ref:`7. Definite grad-div (ADS) <graddiv_example>`
+        -
+        -
+
 Overview of Typical Steps
 -------------------------
 
@@ -307,19 +409,28 @@ the YAML configuration.
 Visualizing the Solution
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-The example can write per-rank ``RectilinearGrid`` VTK with a scalar point field
-``solution``. Ghost exchanges (faces/edges/corners) assemble an overlapped piece on
-negative faces to avoid cracks at partition boundaries. Use ``-vis 1`` (ASCII) or
-``-vis 2`` (appended binary). Open the collection ``.pvd`` in ParaView and display
-the ``solution`` scalar with a suitable colormap; consider “Contour” for isosurfaces.
+With ``-vis`` the example writes the solution as VTK ``RectilinearGrid`` -- a per-rank
+``.vtr`` plus a ``.pvd`` collection -- with the scalar point field ``solution``. Ghost
+exchanges (faces/edges/corners) assemble an overlapped piece on negative faces to avoid
+cracks at partition boundaries. The bundled ``postprocess.py`` renders the field with
+`PyVista <https://pyvista.org>`_; by default it draws nested translucent isosurfaces
+(``--style`` also offers ``clip``, ``volume``, and ``slices``), matching the Maxwell and
+grad-div examples:
 
-.. figure:: figures/laplacian_7pt_10x10x10_1x1x1_solution.png
-   :alt: Solution field
+.. code-block:: bash
+
+   mpirun -np 4 /path/to/build/laplacian -n 65 65 65 -P 2 2 1 -vis
+   python3 postprocess.py laplacian_7pt_65x65x65_2x2x1.pvd -o laplacian_solution_3d.png   # needs: pip install pyvista
+
+.. figure:: figures/laplacian_solution_3d.png
+   :alt: Laplace solution isosurfaces
+   :width: 70%
    :align: center
-   :scale: 70%
 
-   Single-rank result in ParaView: solution field visualized with “Contour”
-   (clipped at (0.5, 0.5, 0.5) with normal (1, 0, 1)).
+   Solution :math:`u` on a :math:`64^3` grid, shown as nested isosurfaces with a
+   logarithmic color scale. The Dirichlet datum :math:`u=1` on the :math:`y=0` face
+   diffuses into the domain and decays by orders of magnitude toward the far boundaries.
+   The same ``.pvd``/``.vtr`` files can also be opened directly in ParaView.
 
 
 Reproducible Run
@@ -1013,10 +1124,10 @@ Near-Nullspace and Rigid Body Modes (RBMs)
 For linear elasticity, the near-nullspace of the operator (particularly under weak constraints)
 is spanned by the six rigid body modes (RBMs):
 
-- three translations: \(t_x=(1,0,0)\), \(t_y=(0,1,0)\), \(t_z=(0,0,1)\)
-- three rotations about the domain center \(\mathbf{c}=(L_x/2, L_y/2, L_z/2)\):
-  \(\mathbf{u}(\mathbf{x})=\boldsymbol{\omega}\times(\mathbf{x}-\mathbf{c})\) with
-  \(\boldsymbol{\omega}\in\{(1,0,0),(0,1,0),(0,0,1)\}\)
+- three translations: :math:`t_x=(1,0,0)`, :math:`t_y=(0,1,0)`, :math:`t_z=(0,0,1)`
+- three rotations about the domain center :math:`\mathbf{c}=(L_x/2, L_y/2, L_z/2)`:
+  :math:`\mathbf{u}(\mathbf{x})=\boldsymbol{\omega}\times(\mathbf{x}-\mathbf{c})` with
+  :math:`\boldsymbol{\omega}\in\{(1,0,0),(0,1,0),(0,0,1)\}`
 
 Supplying RBMs to the preconditioner (e.g., BoomerAMG) may improve robustness and convergence,
 especially when using nodal coarsening for vector-valued problems. From the HYPREDRV perspective:
@@ -1032,7 +1143,7 @@ Driver-side mode computation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 In the example driver, a helper computes the six RBMs using physical coordinates scaled by
-the input dimensions \(L=(L_x, L_y, L_z)\) and zeros clamped DOFs:
+the input dimensions :math:`L=(L_x, L_y, L_z)` and zeros clamped DOFs:
 
 .. code-block:: c
 
@@ -1181,14 +1292,24 @@ Output artifacts:
 To visualize, open the ``.pvd`` in ParaView. Display the ``displacement`` vector and,
 optionally, use “Warp By Vector” or “Glyph” filters to view deformations or vectors.
 
-.. figure:: figures/elasticity_30x10x10_1x1x1_solution.png
-   :alt: Displacement field (Warp By Vector, colored by |u|)
+.. figure:: figures/elasticity_solution_3d.png
+   :alt: Deformed cantilever colored by |u| with the undeformed reference
    :align: center
-   :scale: 70%
+   :width: 70%
 
-   Single-rank result in ParaView: displacement field visualized with “Warp By Vector”
-   (modest scale) and colored by magnitude
-   :math:`\|\mathbf{u}\|_2 = \sqrt{u_x^2 + u_y^2 + u_z^2}`.
+   Displacement field rendered with PyVista. The deformed (warped) configuration is
+   colored by magnitude
+   :math:`\|\mathbf{u}\|_2 = \sqrt{u_x^2 + u_y^2 + u_z^2}` (modest warp scale) and shown
+   together with the original (undeformed) configuration as a light box outline. The red
+   arrows on the free-end top surface mark the downward load that bends the cantilever.
+
+The bundled ``postprocess.py`` (`PyVista <https://pyvista.org>`_) generates this from the
+``-vis`` output:
+
+.. code-block:: bash
+
+   mpirun -np 4 /path/to/build/elasticity -P 2 2 1 -vis 2
+   python3 postprocess.py elasticity_30x10x10_2x2x1.pvd -o elasticity_solution_3d.png   # needs: pip install pyvista
 
 Reproducible Run
 ~~~~~~~~~~~~~~~~
@@ -1411,6 +1532,44 @@ Reproducible Run
 
    # 2×2×2 parallel, transient MMS with insulated BCs, moderate nonlinearity
    mpirun -np 8 ./heatflow -n 33 33 33 -P 2 2 2 -beta 0.5 -dt 0.01 -tf 0.1 -v 1
+
+Transient Visualization
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Enabling all-timestep VTK output (``-vis 4``) writes a ``.pvd`` time-series collection
+that the bundled ``postprocess.py`` renders into an animated GIF of the temperature
+isosurfaces with `PyVista <https://pyvista.org>`_. The ``-cfl 1.0`` flag caps the
+time-step size so the frames are uniformly spaced across the transient (otherwise the
+driver grows ``dt`` and only a handful of frames are produced).
+
+.. code-block:: bash
+
+   mpirun -np 4 /path/to/build/heatflow -n 49 49 49 -P 2 2 1 -dt 0.005 -tf 0.6 -cfl 1.0 -vis 4
+   python3 postprocess.py heatflow_49x49x49_2x2x1.pvd -o heatflow_transient.gif   # needs: pip install pyvista imageio
+
+.. only:: html
+
+   .. figure:: figures/heatflow_transient.gif
+      :width: 70%
+      :align: center
+      :alt: Animated temperature isosurfaces decaying over the transient
+
+      Nested translucent isosurfaces of the temperature field over the transient. The hot
+      cores at the insulated corners gradually shrink and cool as heat diffuses out through
+      the isothermal cold base at :math:`y = 0`; the isosurface levels and color scale are
+      held fixed so the decay is apparent.
+
+.. only:: latex
+
+   .. figure:: figures/heatflow_transient.png
+      :width: 70%
+      :align: center
+      :alt: Temperature isosurfaces decaying over the transient
+
+      Nested translucent isosurfaces of the temperature field over the transient. The hot
+      cores at the insulated corners gradually shrink and cool as heat diffuses out through
+      the isothermal cold base at :math:`y = 0`; the isosurface levels and color scale are
+      held fixed so the decay is apparent.
 
 .. _LibraryExample5:
 
@@ -1924,21 +2083,41 @@ Example run for Re=100 with visualization:
 .. literalinclude:: ../../examples/src/C_lidcavity/refOutput/default_Re100.out
    :language: text
 
-Resulting streamlines can be plot via the ``postprocess.py`` script in the following way:
+The transient streamlines can be rendered as an animated GIF with the ``postprocess.py``
+script, which traces the velocity field at each timestep using
+`PyVista <https://pyvista.org>`_ (write all timesteps with ``-vis 4``):
 
 .. code-block:: bash
 
-   ./postprocess.py lidcavity_Re100_32x32_1x1.pvd -s --Re 100 --save lidcavity_32x32.png
+   mpirun -np 4 /path/to/build/lidcavity -n 96 96 -P 2 2 -Re 100 -dt 0.05 -tf 50 -adt -reg -vis 4 -i fgmres-ilu0.yml
+   python3 postprocess.py lidcavity_Re100_96x96_2x2.pvd --Re 100 --video lidcavity_streamlines.gif   # needs: pip install pyvista imageio
 
-.. figure:: figures/lidcavity_32x32_Re100_streamlines.png
-   :alt: Streamlines for Re = 100 at T = 50s
-   :width: 70%
-   :align: center
+.. only:: html
+
+   .. figure:: figures/lidcavity_streamlines.gif
+      :alt: Animated streamlines of the lid-driven cavity (Re=100) as the vortex develops
+      :width: 70%
+      :align: center
+
+      Streamlines of the lid-driven cavity flow (Re=100) over the transient, colored by the
+      velocity magnitude. The primary vortex forms and the two secondary corner eddies emerge
+      as the flow approaches steady state.
+
+.. only:: latex
+
+   .. figure:: figures/lidcavity_streamlines.png
+      :alt: Streamlines of the lid-driven cavity (Re=100) as the vortex develops
+      :width: 70%
+      :align: center
+
+      Streamlines of the lid-driven cavity flow (Re=100) over the transient, colored by the
+      velocity magnitude. The primary vortex forms and the two secondary corner eddies emerge
+      as the flow approaches steady state.
 
 .. _maxwell_example:
 
-Example 6: Definite Maxwell (AMS)
----------------------------------
+Example 6: Definite curl-curl (AMS)
+-----------------------------------
 
 This example, implemented in ``examples/src/C_maxwell/maxwell.c``, is an
 electromagnetic benchmark for the **Auxiliary-space Maxwell Solver (AMS)**. It pairs a
@@ -2306,7 +2485,7 @@ the same isosurface default (and the same ``--style`` options) as the Maxwell ex
 
 .. code-block:: bash
 
-   mpirun -np 4 /path/to/build/graddiv -i pcg-ads.yml -n 65 65 65 -P 2 2 1 -vtk graddiv
+   mpirun -np 4 /path/to/build/graddiv -i pcg-ads.yml -n 65 65 65 -P 2 2 1 -freq 2 -vtk graddiv
    python3 postprocess.py graddiv.pvti -o graddiv_solution_3d.png   # needs: pip install pyvista
 
 .. figure:: figures/graddiv_solution_3d.png
@@ -2315,8 +2494,10 @@ the same isosurface default (and the same ``--style`` options) as the Maxwell ex
    :align: center
 
    Computed flux magnitude :math:`\|u\|_2` on a :math:`64^3` mesh (4 MPI ranks) for the
-   default manufactured solution, shown as nested isosurfaces. As with Maxwell, the
-   field is smooth and peaks at the cube center.
+   manufactured solution at frequency ``-freq 2`` (:math:`\kappa = 2\pi`), shown as nested
+   isosurfaces. The higher frequency produces a periodic lattice of peaks throughout the
+   domain, so the field looks visibly different from the single central peak of the Maxwell
+   example (which uses the default ``-freq 1``).
 
 Mesh Refinement (Discretization Accuracy)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
