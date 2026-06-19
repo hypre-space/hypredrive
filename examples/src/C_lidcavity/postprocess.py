@@ -19,7 +19,6 @@ Options:
 """
 
 import sys
-import os
 import argparse
 import contextlib
 import xml.etree.ElementTree as ET
