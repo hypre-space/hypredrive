@@ -162,7 +162,10 @@ such as ``HYPREDRV_Check`` and ``HYPREDRV_BigIntSize``.
 
 The Fortran interface preserves the C API ownership rules. Borrowed HYPRE
 objects remain caller-owned unless the corresponding C function documents that
-hypredrive takes ownership.
+hypredrive takes ownership. Raw array accessors such as
+``HYPREDRV_LinearSystemGetSolutionValues`` return C-owned host pointers; convert
+them with ``c_f_pointer`` if you need a Fortran view, and do not free them from
+Fortran.
 
 .. list-table::
    :header-rows: 1

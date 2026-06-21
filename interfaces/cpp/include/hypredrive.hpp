@@ -521,9 +521,11 @@ class driver
    {
       HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemSetNullSpace(handle_, n, c, values));
    }
-   /// @brief Return the HYPREDRV-owned raw solution buffer.
+   /// @brief Return the HYPREDRV-owned raw host solution buffer.
    /// @note The returned pointer is owned by this driver and remains valid until the
    /// next solve, linear-system rebuild, solution replacement, or driver destruction.
+   /// On GPU builds, this call migrates/synchronizes the solution to host memory before
+   /// returning the pointer.
    /// @see HYPREDRV_LinearSystemGetSolutionValues
    complex *
    get_solution_values_raw()
@@ -542,8 +544,9 @@ class driver
       return n;
    }
    /// @brief Return a copied solution vector.
-   /// @note Allocates and copies the full solution. Use get_solution_values_raw() and
-   /// get_solution_length() to access the HYPREDRV-owned buffer in place.
+   /// @note Allocates and copies the full solution from the HYPREDRV-owned host buffer.
+   /// Use get_solution_values_raw() and get_solution_length() to access that buffer in
+   /// place.
    /// @see HYPREDRV_LinearSystemGetSolutionValues
    std::vector<complex>
    get_solution_values()

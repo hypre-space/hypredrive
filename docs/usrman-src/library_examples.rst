@@ -143,7 +143,7 @@ The library-side workflow in C/C++ generally follows these steps:
 6. Tell hypredrive about your DOF layout (e.g., interleaved blocks).
 7. Attach matrix/RHS/initial guess/prec matrix to hypredrive.
 8. Create, set up, apply, and destroy the solver.
-9. Retrieve solution values or statistics if needed. In library mode,
+9. Retrieve host-accessible solution values or statistics if needed. In library mode,
    ``general.statistics`` is flushed automatically when the ``HYPREDRV_t``
    object is destroyed; call ``HYPREDRV_StatsPrint`` only if you want an earlier
    snapshot. Set ``general.statistics_filename`` to append summaries to a file
@@ -208,7 +208,7 @@ A minimal skeleton of a program using the library is shown below.
      HYPREDRV_LinearSolverApply(h);
      HYPREDRV_LinearSolverDestroy(h);
 
-     // (Optional) Query statistics early and retrieve solution values
+     // (Optional) Query statistics early and retrieve host solution values
      // (general.statistics also prints automatically on destroy in library mode)
      HYPREDRV_StatsPrint(h);
      HYPRE_Real* xvals = NULL;

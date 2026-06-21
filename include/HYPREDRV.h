@@ -1276,16 +1276,18 @@ extern "C"
    /**
     * @brief Retrieves the solution values from the linear system of a HYPREDRV object.
     *
-    * This function provides access to the internal pointer where the solution vector of
-    * the linear system associated with the given HYPREDRV_t object is stored. It does not
-    * copy the solution values; instead, it assigns the internal pointer to the
-    * user-provided pointer @p sol_data.
+    * This function provides access to the internal host pointer where the solution
+    * vector of the linear system associated with the given HYPREDRV_t object is stored.
+    * It does not make a separate caller-owned copy of the solution values; instead, it
+    * assigns the internal pointer to the user-provided pointer @p sol_data. In GPU
+    * builds, the solution vector is migrated/synchronized to host memory before the
+    * pointer is returned.
     *
     * @param hypredrv A valid HYPREDRV_t object from which the internal solution pointer
     * is to be retrieved.
-    * @param sol_data A pointer to a HYPRE_Complex pointer, which will be set to point to
-    * the internal solution data array. The user must not free or modify the internal
-    * array.
+    * @param sol_data A pointer to a HYPRE_Complex pointer, which will be set to a host
+    * pointer to the internal solution data array. The user must not free or modify the
+    * internal array.
     *
     * @return Returns an error code, with 0 indicating success. If the @p hypredrv
     * parameter is invalid (e.g., NULL or uninitialized), an error code is returned, and

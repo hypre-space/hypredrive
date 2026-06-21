@@ -199,7 +199,10 @@ The module exposes Fortran procedures for the public `HYPREDRV_` APIs in
 
 The Fortran procedures intentionally preserve C ownership semantics. Objects
 borrowed from HYPRE remain caller-owned unless the corresponding C API says
-otherwise.
+otherwise. Raw array accessors such as
+`HYPREDRV_LinearSystemGetSolutionValues` return C-owned host pointers; convert
+them with `c_f_pointer` if you need a Fortran view, and do not free them from
+Fortran.
 
 | C API group | Fortran module procedures |
 | --- | --- |
