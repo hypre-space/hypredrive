@@ -595,6 +595,19 @@ LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv)
       return hypredrv_ErrorCodeGet();
    }
 
+   /* Vector tags drive hypre's *tagged* Krylov inner product, which only feeds the
+    * optional per-block residual-norm diagnostic (emitted at high solver print
+    * levels); MGR and scaling derive their block structure from the dofmap
+    * directly, not from these tags. hypre has no device implementation of the
+    * tagged inner product yet (hypre_SeqVectorInnerProdTagged deep-clones both
+    * vectors to the host on every call), so tagging vectors under device execution
+    * turns each Krylov inner product into a full host round-trip. Skip tagging on
+    * device so the solve stays fully on the GPU. */
+   if (hypredrv->iargs->general.exec_policy) /* nonzero == device */
+   {
+      return hypredrv_ErrorCodeGet();
+   }
+
    hypredrv_LinearSystemSetVectorTags(hypredrv->vec_b, hypredrv->dofmap);
    hypredrv_LinearSystemSetVectorTags(hypredrv->vec_x, hypredrv->dofmap);
    hypredrv_LinearSystemSetVectorTags(hypredrv->vec_x0, hypredrv->dofmap);
@@ -1874,15 +1887,28 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_star
    hypredrv->mat_A      = NULL;
    hypredrv->owns_mat_A = false;
 
-   /* Caller-provided CSR buffers are host pointers, so the builder runs on host
-    * regardless of the configured execution policy. */
-   (void)hypredrv_LinearSystemBuildMatrixFromCSR(hypredrv->comm, HYPRE_MEMORY_HOST,
+   /* The caller's CSR buffers are host pointers, but we build the matrix directly
+    * in the configured execution space: under device execution hypre assembles the
+    * ParCSR on the GPU (staging the host CSR once), which is far cheaper than host
+    * assembly of millions of nonzeros followed by a ParCSR migration. */
+   HYPRE_MemoryLocation build_memloc = HYPRE_MEMORY_HOST;
+#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22000, 0)
+   if (hypredrv->iargs->ls.exec_policy) /* nonzero == device */
+   {
+      build_memloc = HYPRE_MEMORY_DEVICE;
+   }
+#endif
+   (void)hypredrv_LinearSystemBuildMatrixFromCSR(hypredrv->comm, build_memloc,
                                                  row_start, row_end, indptr, col_indices,
                                                  data, &hypredrv->mat_A);
 
    hypredrv->owns_mat_A = (hypredrv->mat_A != NULL);
    hypredrv->mat_M      = hypredrv->mat_A;
    hypredrv->owns_mat_M = false;
+
+   /* Safety net: ensure the matrix matches the configured execution space (no-op
+    * when already built there). mat_M aliases mat_A here. */
+   PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_A, 1);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1943,6 +1969,10 @@ HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start
       hypredrv->comm, HYPRE_MEMORY_HOST, row_start, row_end, values, &hypredrv->vec_b);
 
    hypredrv->owns_vec_b = (hypredrv->vec_b != NULL);
+
+   /* The RHS was built on host above; migrate it to the configured execution
+    * space (e.g. device) to match the global memory/execution policy. */
+   PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_b, 0);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2177,6 +2207,10 @@ HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_
       return hypredrv_ErrorCodeGet();
    }
 
+#if defined(HYPRE_USING_GPU)
+   /* Ensure data is accessible on host before returning the pointer */
+   HYPRE_IJVectorMigrate(hypredrv->vec_x, HYPRE_MEMORY_HOST);
+#endif
    hypredrv_LinearSystemGetSolutionValues(hypredrv->vec_x, sol_data);
 
    return hypredrv_ErrorCodeGet();

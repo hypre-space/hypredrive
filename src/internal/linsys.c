@@ -1123,10 +1123,46 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
    }
 #endif
 
-   HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixSetValues(*mat_ptr, nrows, ncols_per_row,
-                                                   row_ids, col_indices + indptr[0],
-                                                   data + indptr[0]));
-   HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixAssemble(*mat_ptr));
+#if defined(HYPRE_USING_GPU)
+   if (hypre_GetActualMemLocation(memory_location) == hypre_MEMORY_DEVICE)
+   {
+      /* hypre's device IJ assembly path requires all SetValues inputs to live in
+       * device memory. Stage the caller's host CSR (and the transient per-row
+       * arrays) on the device once and assemble the matrix on the GPU. For large
+       * matrices this is dramatically faster than assembling on the host and then
+       * migrating the ParCSR (host assembly of millions of nonzeros dominates). */
+      HYPRE_Int     *d_ncols = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE);
+      HYPRE_BigInt  *d_rows  = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE);
+      HYPRE_BigInt  *d_cols  = hypre_TAlloc(HYPRE_BigInt, nnz, HYPRE_MEMORY_DEVICE);
+      HYPRE_Complex *d_data  = hypre_TAlloc(HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE);
+
+      hypre_TMemcpy(d_ncols, ncols_per_row, HYPRE_Int, nrows,
+                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(d_rows, row_ids, HYPRE_BigInt, nrows,
+                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(d_cols, col_indices + indptr[0], HYPRE_BigInt, nnz,
+                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(d_data, data + indptr[0], HYPRE_Complex, nnz,
+                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+
+      HYPRE_Int ierr = HYPRE_IJMatrixSetValues(*mat_ptr, nrows, d_ncols, d_rows,
+                                               d_cols, d_data);
+      if (!ierr) { ierr = HYPRE_IJMatrixAssemble(*mat_ptr); }
+
+      hypre_TFree(d_ncols, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_rows, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_cols, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_data, HYPRE_MEMORY_DEVICE);
+      HYPREDRV_CSR_HYPRE_CALL(ierr);
+   }
+   else
+#endif
+   {
+      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixSetValues(*mat_ptr, nrows, ncols_per_row,
+                                                      row_ids, col_indices + indptr[0],
+                                                      data + indptr[0]));
+      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixAssemble(*mat_ptr));
+   }
 
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
