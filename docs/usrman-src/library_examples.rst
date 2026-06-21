@@ -23,6 +23,108 @@ wants hypredrive to configure and invoke HYPRE solvers and preconditioners.
    ``libHYPREDRV`` when your application assembles matrices and vectors in
    memory and needs a lightweight API to invoke HYPRE programmatically.
 
+Examples at a Glance
+--------------------
+
+Click any panel (image or title) to jump to the full example.
+
+.. |gl_laplace| image:: figures/laplacian_solution_3d.png
+   :target: LibraryExample1_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_darcy| image:: figures/spe10_darcy_pressure.png
+   :target: LibraryExample2_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_elasticity| image:: figures/elasticity_solution_3d.png
+   :target: LibraryExample3_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_maxwell| image:: figures/maxwell_solution_3d.png
+   :target: maxwell_example_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_graddiv| image:: figures/graddiv_solution_3d.png
+   :target: graddiv_example_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_heatflow_v| image:: figures/heatflow_transient.gif
+   :target: LibraryExample4_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_lidcavity_v| image:: figures/lidcavity_streamlines.gif
+   :target: LibraryExample5_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_heatflow_s| image:: figures/heatflow_transient.png
+   :target: LibraryExample4_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_lidcavity_s| image:: figures/lidcavity_streamlines.png
+   :target: LibraryExample5_
+   :width: 100%
+   :class: gallery-thumb
+
+.. only:: html
+
+   .. list-table::
+      :widths: 1 1 1
+      :align: center
+
+      * - |gl_laplace|
+
+          :ref:`1. Laplace's equation <LibraryExample1>`
+        - |gl_darcy|
+
+          :ref:`2. Mixed Darcy Flow <LibraryExample2>`
+        - |gl_elasticity|
+
+          :ref:`3. Linear Elasticity <LibraryExample3>`
+      * - |gl_heatflow_v|
+
+          :ref:`4. Nonlinear Heat Flow <LibraryExample4>`
+        - |gl_lidcavity_v|
+
+          :ref:`5. Navier-Stokes <LibraryExample5>`
+        - |gl_maxwell|
+
+          :ref:`6. Definite curl-curl (AMS) <maxwell_example>`
+      * - |gl_graddiv|
+
+          :ref:`7. Definite grad-div (ADS) <graddiv_example>`
+        -
+        -
+
+.. only:: latex
+
+   .. list-table::
+      :widths: 1 1 1
+      :align: center
+
+      * - |gl_laplace|
+
+          :ref:`1. Laplace's equation <LibraryExample1>`
+        - |gl_darcy|
+
+          :ref:`2. Mixed Darcy Flow <LibraryExample2>`
+        - |gl_elasticity|
+
+          :ref:`3. Linear Elasticity <LibraryExample3>`
+      * - |gl_heatflow_s|
+
+          :ref:`4. Nonlinear Heat Flow <LibraryExample4>`
+        - |gl_lidcavity_s|
+
+          :ref:`5. Navier-Stokes <LibraryExample5>`
+        - |gl_maxwell|
+
+          :ref:`6. Definite curl-curl (AMS) <maxwell_example>`
+      * - |gl_graddiv|
+
+          :ref:`7. Definite grad-div (ADS) <graddiv_example>`
+        -
+        -
+
 Overview of Typical Steps
 -------------------------
 
@@ -307,19 +409,28 @@ the YAML configuration.
 Visualizing the Solution
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-The example can write per-rank ``RectilinearGrid`` VTK with a scalar point field
-``solution``. Ghost exchanges (faces/edges/corners) assemble an overlapped piece on
-negative faces to avoid cracks at partition boundaries. Use ``-vis 1`` (ASCII) or
-``-vis 2`` (appended binary). Open the collection ``.pvd`` in ParaView and display
-the ``solution`` scalar with a suitable colormap; consider “Contour” for isosurfaces.
+With ``-vis`` the example writes the solution as VTK ``RectilinearGrid`` -- a per-rank
+``.vtr`` plus a ``.pvd`` collection -- with the scalar point field ``solution``. Ghost
+exchanges (faces/edges/corners) assemble an overlapped piece on negative faces to avoid
+cracks at partition boundaries. The bundled ``postprocess.py`` renders the field with
+`PyVista <https://pyvista.org>`_; by default it draws nested translucent isosurfaces
+(``--style`` also offers ``clip``, ``volume``, and ``slices``), matching the Maxwell and
+grad-div examples:
 
-.. figure:: figures/laplacian_7pt_10x10x10_1x1x1_solution.png
-   :alt: Solution field
+.. code-block:: bash
+
+   mpirun -np 4 /path/to/build/laplacian -n 65 65 65 -P 2 2 1 -vis
+   python3 postprocess.py laplacian_7pt_65x65x65_2x2x1.pvd -o laplacian_solution_3d.png   # needs: pip install pyvista
+
+.. figure:: figures/laplacian_solution_3d.png
+   :alt: Laplace solution isosurfaces
+   :width: 70%
    :align: center
-   :scale: 70%
 
-   Single-rank result in ParaView: solution field visualized with “Contour”
-   (clipped at (0.5, 0.5, 0.5) with normal (1, 0, 1)).
+   Solution :math:`u` on a :math:`64^3` grid, shown as nested isosurfaces with a
+   logarithmic color scale. The Dirichlet datum :math:`u=1` on the :math:`y=0` face
+   diffuses into the domain and decays by orders of magnitude toward the far boundaries.
+   The same ``.pvd``/``.vtr`` files can also be opened directly in ParaView.
 
 
 Reproducible Run
@@ -1013,10 +1124,10 @@ Near-Nullspace and Rigid Body Modes (RBMs)
 For linear elasticity, the near-nullspace of the operator (particularly under weak constraints)
 is spanned by the six rigid body modes (RBMs):
 
-- three translations: \(t_x=(1,0,0)\), \(t_y=(0,1,0)\), \(t_z=(0,0,1)\)
-- three rotations about the domain center \(\mathbf{c}=(L_x/2, L_y/2, L_z/2)\):
-  \(\mathbf{u}(\mathbf{x})=\boldsymbol{\omega}\times(\mathbf{x}-\mathbf{c})\) with
-  \(\boldsymbol{\omega}\in\{(1,0,0),(0,1,0),(0,0,1)\}\)
+- three translations: :math:`t_x=(1,0,0)`, :math:`t_y=(0,1,0)`, :math:`t_z=(0,0,1)`
+- three rotations about the domain center :math:`\mathbf{c}=(L_x/2, L_y/2, L_z/2)`:
+  :math:`\mathbf{u}(\mathbf{x})=\boldsymbol{\omega}\times(\mathbf{x}-\mathbf{c})` with
+  :math:`\boldsymbol{\omega}\in\{(1,0,0),(0,1,0),(0,0,1)\}`
 
 Supplying RBMs to the preconditioner (e.g., BoomerAMG) may improve robustness and convergence,
 especially when using nodal coarsening for vector-valued problems. From the HYPREDRV perspective:
@@ -1032,7 +1143,7 @@ Driver-side mode computation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 In the example driver, a helper computes the six RBMs using physical coordinates scaled by
-the input dimensions \(L=(L_x, L_y, L_z)\) and zeros clamped DOFs:
+the input dimensions :math:`L=(L_x, L_y, L_z)` and zeros clamped DOFs:
 
 .. code-block:: c
 
@@ -1181,14 +1292,24 @@ Output artifacts:
 To visualize, open the ``.pvd`` in ParaView. Display the ``displacement`` vector and,
 optionally, use “Warp By Vector” or “Glyph” filters to view deformations or vectors.
 
-.. figure:: figures/elasticity_30x10x10_1x1x1_solution.png
-   :alt: Displacement field (Warp By Vector, colored by |u|)
+.. figure:: figures/elasticity_solution_3d.png
+   :alt: Deformed cantilever colored by |u| with the undeformed reference
    :align: center
-   :scale: 70%
+   :width: 70%
 
-   Single-rank result in ParaView: displacement field visualized with “Warp By Vector”
-   (modest scale) and colored by magnitude
-   :math:`\|\mathbf{u}\|_2 = \sqrt{u_x^2 + u_y^2 + u_z^2}`.
+   Displacement field rendered with PyVista. The deformed (warped) configuration is
+   colored by magnitude
+   :math:`\|\mathbf{u}\|_2 = \sqrt{u_x^2 + u_y^2 + u_z^2}` (modest warp scale) and shown
+   together with the original (undeformed) configuration as a light box outline. The red
+   arrows on the free-end top surface mark the downward load that bends the cantilever.
+
+The bundled ``postprocess.py`` (`PyVista <https://pyvista.org>`_) generates this from the
+``-vis`` output:
+
+.. code-block:: bash
+
+   mpirun -np 4 /path/to/build/elasticity -P 2 2 1 -vis 2
+   python3 postprocess.py elasticity_30x10x10_2x2x1.pvd -o elasticity_solution_3d.png   # needs: pip install pyvista
 
 Reproducible Run
 ~~~~~~~~~~~~~~~~
@@ -1411,6 +1532,44 @@ Reproducible Run
 
    # 2×2×2 parallel, transient MMS with insulated BCs, moderate nonlinearity
    mpirun -np 8 ./heatflow -n 33 33 33 -P 2 2 2 -beta 0.5 -dt 0.01 -tf 0.1 -v 1
+
+Transient Visualization
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Enabling all-timestep VTK output (``-vis 4``) writes a ``.pvd`` time-series collection
+that the bundled ``postprocess.py`` renders into an animated GIF of the temperature
+isosurfaces with `PyVista <https://pyvista.org>`_. The ``-cfl 1.0`` flag caps the
+time-step size so the frames are uniformly spaced across the transient (otherwise the
+driver grows ``dt`` and only a handful of frames are produced).
+
+.. code-block:: bash
+
+   mpirun -np 4 /path/to/build/heatflow -n 49 49 49 -P 2 2 1 -dt 0.005 -tf 0.6 -cfl 1.0 -vis 4
+   python3 postprocess.py heatflow_49x49x49_2x2x1.pvd -o heatflow_transient.gif   # needs: pip install pyvista imageio
+
+.. only:: html
+
+   .. figure:: figures/heatflow_transient.gif
+      :width: 70%
+      :align: center
+      :alt: Animated temperature isosurfaces decaying over the transient
+
+      Nested translucent isosurfaces of the temperature field over the transient. The hot
+      cores at the insulated corners gradually shrink and cool as heat diffuses out through
+      the isothermal cold base at :math:`y = 0`; the isosurface levels and color scale are
+      held fixed so the decay is apparent.
+
+.. only:: latex
+
+   .. figure:: figures/heatflow_transient.png
+      :width: 70%
+      :align: center
+      :alt: Temperature isosurfaces decaying over the transient
+
+      Nested translucent isosurfaces of the temperature field over the transient. The hot
+      cores at the insulated corners gradually shrink and cool as heat diffuses out through
+      the isothermal cold base at :math:`y = 0`; the isosurface levels and color scale are
+      held fixed so the decay is apparent.
 
 .. _LibraryExample5:
 
@@ -1728,7 +1887,7 @@ linear systems. In this example, we provide a comparison script to evaluate diff
 
    ./reproduce.sh --solvers
 
-This script runs the simulation with six different solver configurations and
+This script runs the simulation with five different solver configurations and
 generates performance comparison plots. The tested configurations are stored in
 the ``examples/src/C_lidcavity/`` directory and are listed below:
 
@@ -1736,11 +1895,10 @@ the ``examples/src/C_lidcavity/`` directory and are listed below:
 - **ILUK(1)**: Block Jacobi ILU with fill level 1 (``fgmres-ilu1.yml``)
 - **ILUT(1e-2)**: Block Jacobi ILUT with drop tolerance 1.0e-2 (``fgmres-ilut_1e-2.yml``)
 - **AMG**: Algebraic multigrid preconditioner (``fgmres-amg.yml``)
-- **AMG+ILUT(1e-2)**: AMG with block Jacobi ILUT smoothing (``fgmres-amg-ilut.yml``)
 - **MGR**: MGR with absolute block rowsum prolongation (``fgmres-mgr.yml``)
 
 All configurations use flexible GMRES (FGMRES) with a relative tolerance of
-1.0e-6. The comparison uses a 256×256 grid with 64 MPI ranks, running from
+1.0e-6. The comparison uses a 256×256 grid with 16 MPI ranks, running from
 t=0 to t=50 with adaptive time stepping.
 
 .. figure:: figures/lidcavity_256x256_Re0100_iters.png
@@ -1924,13 +2082,466 @@ Example run for Re=100 with visualization:
 .. literalinclude:: ../../examples/src/C_lidcavity/refOutput/default_Re100.out
    :language: text
 
-Resulting streamlines can be plot via the ``postprocess.py`` script in the following way:
+The transient streamlines can be rendered as an animated GIF with the ``postprocess.py``
+script, which traces the velocity field at each timestep using
+`PyVista <https://pyvista.org>`_ (write all timesteps with ``-vis 4``):
 
 .. code-block:: bash
 
-   ./postprocess.py lidcavity_Re100_32x32_1x1.pvd -s --Re 100 --save lidcavity_32x32.png
+   mpirun -np 4 /path/to/build/lidcavity -n 96 96 -P 2 2 -Re 100 -dt 0.05 -tf 50 -adt -reg -vis 4 -i fgmres-ilu0.yml
+   python3 postprocess.py lidcavity_Re100_96x96_2x2.pvd --Re 100 --video lidcavity_streamlines.gif   # needs: pip install pyvista imageio
 
-.. figure:: figures/lidcavity_32x32_Re100_streamlines.png
-   :alt: Streamlines for Re = 100 at T = 50s
+.. only:: html
+
+   .. figure:: figures/lidcavity_streamlines.gif
+      :alt: Animated streamlines of the lid-driven cavity (Re=100) as the vortex develops
+      :width: 70%
+      :align: center
+
+      Streamlines of the lid-driven cavity flow (Re=100) over the transient, colored by the
+      velocity magnitude. The primary vortex forms and the two secondary corner eddies emerge
+      as the flow approaches steady state.
+
+.. only:: latex
+
+   .. figure:: figures/lidcavity_streamlines.png
+      :alt: Streamlines of the lid-driven cavity (Re=100) as the vortex develops
+      :width: 70%
+      :align: center
+
+      Streamlines of the lid-driven cavity flow (Re=100) over the transient, colored by the
+      velocity magnitude. The primary vortex forms and the two secondary corner eddies emerge
+      as the flow approaches steady state.
+
+.. _maxwell_example:
+
+Example 6: Definite curl-curl (AMS)
+-----------------------------------
+
+This example, implemented in ``examples/src/C_maxwell/maxwell.c``, is an
+electromagnetic benchmark for the **Auxiliary-space Maxwell Solver (AMS)**. It pairs a
+lowest-order edge-element discretization of a definite Maxwell problem with a
+manufactured solution, so that both the *algebraic* performance (iteration counts,
+timings) and the *discretization* accuracy can be measured directly.
+
+Governing Equations (Definite Maxwell)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+On a box :math:`\Omega=[0,L_x]\times[0,L_y]\times[0,L_z]` we solve the
+curl-curl + mass (also called *definite Maxwell*) problem for the electric field
+:math:`E`:
+
+.. math::
+
+   \nabla\times\!\big(\mu^{-1}\,\nabla\times E\big) + \sigma\,E = f
+   \quad\text{in } \Omega,
+   \qquad
+   E\times n = (E\times n)_D \quad\text{on } \partial\Omega ,
+
+where :math:`\mu^{-1}` is the inverse magnetic permeability (the curl-curl coefficient)
+and :math:`\sigma\ge 0` is the conductivity / mass coefficient. Both default to
+:math:`1` and are configurable with the ``-muinv`` and ``-sigma`` flags. The essential
+boundary condition prescribes the **tangential trace** :math:`E\times n`, which is the
+natural Dirichlet datum for fields in :math:`H(\mathrm{curl})`.
+
+The mass term is what makes the operator definite: for :math:`\sigma>0` the bilinear
+form is coercive on all of :math:`H(\mathrm{curl})` (the gradient fields, which lie in
+the kernel of the curl, are controlled by the :math:`\sigma\,E` term). This is exactly
+the regime AMS is designed for, and AMS remains robust across the whole range from
+curl-dominated (:math:`\sigma\ll\mu^{-1}`) to mass-dominated (:math:`\sigma\gg\mu^{-1}`)
+as long as :math:`\sigma\ge 0`.
+
+Variational Formulation
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Let :math:`V=\{v\in H(\mathrm{curl};\Omega): v\times n=0 \text{ on }\partial\Omega\}`.
+The weak problem reads: find :math:`E\in E_D+V` such that for all :math:`v\in V`,
+
+.. math::
+
+   \int_\Omega \mu^{-1}\,(\nabla\times E)\cdot(\nabla\times v)\,d\Omega
+   \;+\;
+   \int_\Omega \sigma\,E\cdot v\,d\Omega
+   \;=\;
+   \int_\Omega f\cdot v\,d\Omega .
+
+The two volume integrals give, after discretization, a **stiffness (curl-curl)** matrix
+weighted by :math:`\mu^{-1}` and a **mass** matrix weighted by :math:`\sigma`; the
+system matrix is their sum.
+
+Discretization: Lowest-Order Nedelec (Edge) Elements
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The field is discretized with the lowest-order Nedelec (Whitney) edge elements on a
+structured hexahedral mesh. The degrees of freedom live on **edges**: the DOF of edge
+:math:`e` is the integral of the tangential component of :math:`E` along it,
+
+.. math::
+
+   \mathrm{dof}_e(E) \;=\; \int_e E\cdot \tau \, ds ,
+
+with every edge oriented in the :math:`+`-axis direction. Each hexahedron carries 12
+edge DOFs (four per axis direction). The example builds the :math:`12\times12` element
+matrix :math:`S_K = \mu^{-1}\,K_K + \sigma\,M_K` by integrating the Whitney basis with a
+:math:`3`-point Gauss rule per direction, where :math:`(K_K)_{ab}=\int_K(\nabla\times
+W_a)\cdot(\nabla\times W_b)` and :math:`(M_K)_{ab}=\int_K W_a\cdot W_b`. The essential
+boundary condition is imposed by element-level static condensation: boundary-edge rows
+become identity rows whose right-hand side is the prescribed tangential value, and their
+columns are lifted to the load of the interior rows.
+
+Nodes, edges, and (for the H(div) example below) faces are numbered with a single
+**rank-monotonic** scheme so that the node, edge, and face partitions are mutually
+consistent -- a requirement for the auxiliary-space products formed internally by AMS
+and ADS.
+
+Manufactured Solution and Error Measurement
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The benchmark uses the smooth field
+
+.. math::
+
+   E=(\sin\kappa y,\ \sin\kappa z,\ \sin\kappa x),\qquad \kappa=\text{freq}\cdot\pi
+   \ \ (\texttt{-freq}, \text{ default } 1),
+
+which is an eigenfunction of the curl-curl operator: a short computation gives
+:math:`\nabla\times E=(-\kappa\cos\kappa z,-\kappa\cos\kappa x,-\kappa\cos\kappa y)` and
+hence :math:`\nabla\times\nabla\times E=\kappa^2 E`. The forcing is therefore available
+in closed form,
+
+.. math::
+
+   f \;=\; \mu^{-1}\,\nabla\times\nabla\times E + \sigma\,E
+       \;=\; (\mu^{-1}\kappa^2+\sigma)\,E ,
+
+and the exact edge DOFs reduce to one-dimensional integrals, e.g. for an
+:math:`x`-edge at nodal height :math:`y` the DOF is :math:`h_x\sin(\kappa y)`. After the
+solve the example compares the computed edge DOFs to this reference field and reports
+the relative discrete :math:`\ell_2` error, which confirms the solver converges to the
+*correct* field rather than merely to a small residual.
+
+Auxiliary-Space Inputs: the Discrete de Rham Complex
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+AMS accelerates the edge system by mapping curl-free error components into nodal
+(:math:`H^1`) auxiliary spaces, where standard AMG is effective. This requires two
+*operator inputs* beyond the system matrix, both reflecting the de Rham complex
+:math:`H^1 \xrightarrow{\nabla} H(\mathrm{curl}) \xrightarrow{\nabla\times} H(\mathrm{div})`:
+
+- the **discrete gradient** :math:`G` (an edge :math:`\times` node incidence matrix with
+  entries :math:`-1` at the tail node and :math:`+1` at the head node of each edge),
+  passed with ``HYPREDRV_LinearSystemSetDiscreteGradient()``; and
+- the **vertex coordinate vectors** :math:`x,y,z`, passed with
+  ``HYPREDRV_LinearSystemSetCoordinates()``.
+
+The example assembles :math:`G` as an ``HYPRE_IJMatrix`` (edges :math:`\times` nodes) and
+the coordinates as three nodal ``HYPRE_IJVector`` objects. Note that these inputs are
+purely topological/geometric: they do **not** depend on :math:`\mu^{-1}` or
+:math:`\sigma`.
+
+Linear System Creation
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The driver builds the IJ objects itself and hands them to HYPREDRV in library mode:
+
+.. code-block:: c
+
+   HYPREDRV_LinearSystemSetMatrix(hypredrv, (HYPRE_Matrix) A);
+   HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector) b);
+   HYPREDRV_LinearSystemSetDiscreteGradient(hypredrv, (HYPRE_Matrix) G);
+   HYPREDRV_LinearSystemSetCoordinates(hypredrv,
+                                       (HYPRE_Vector) xcoord,
+                                       (HYPRE_Vector) ycoord,
+                                       (HYPRE_Vector) zcoord);
+
+The solver and preconditioner are configured from
+``examples/src/C_maxwell/pcg-ams.yml`` (PCG + AMS). A typical run:
+
+.. code-block:: bash
+
+   mpirun -np 4 /path/to/build/maxwell -i pcg-ams.yml -n 33 33 33 -P 2 2 1
+
+Solution Visualization
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Passing ``-vtk <base>`` writes the computed field as VTK ImageData -- a single
+``<base>.vti`` on one rank, or a ``<base>.pvti`` master plus per-rank ``<base>_pN.vti``
+pieces in parallel. The driver reconstructs the cell-centered electric field from the
+edge DOFs (Whitney basis) and stores both the vector and its magnitude. The bundled
+``postprocess.py`` renders the magnitude with `PyVista <https://pyvista.org>`_; by
+default it draws nested translucent isosurfaces (level sets) that show the 3D structure
+of the field. The ``--style`` flag also offers ``clip`` (octant cutaway), ``volume``
+(volume rendering), and ``slices``:
+
+.. code-block:: bash
+
+   mpirun -np 4 /path/to/build/maxwell -i pcg-ams.yml -n 65 65 65 -P 2 2 1 -vtk maxwell
+   python3 postprocess.py maxwell.pvti -o maxwell_solution_3d.png   # needs: pip install pyvista
+
+.. figure:: figures/maxwell_solution_3d.png
+   :alt: Maxwell electric-field magnitude isosurfaces
    :width: 70%
    :align: center
+
+   Computed electric-field magnitude :math:`\|E\|_2` on a :math:`64^3` mesh (4 MPI
+   ranks) for the default manufactured solution (:math:`\text{freq}=1`), shown as nested
+   isosurfaces. The field is smooth and peaks at the cube center. The same
+   ``.vti``/``.pvti`` files can also be opened directly in ParaView.
+
+Mesh Refinement (Discretization Accuracy)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``./reproduce.sh`` (the default ``refine`` mode) confirms convergence to the
+manufactured field. AMS keeps the iteration count nearly mesh independent while the
+discrete :math:`\ell_2` error drops like :math:`O(h^2)`:
+
+.. code-block:: text
+
+   grid       iters        rel. error
+   9^3        4            5.302372e-04
+   17^3       7            1.358464e-04
+   33^3       9            3.443534e-05
+   65^3       10           8.673237e-06
+
+Coefficient Robustness
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``./reproduce.sh sweep`` mode probes robustness with respect to the coefficients on
+the :math:`64^3` mesh (~0.8M edge unknowns). Because the discrete operator is
+:math:`\mu^{-1}K+\sigma M`, what matters is the **curl-to-mass ratio**
+:math:`\sigma/\mu^{-1}`, so it suffices to fix :math:`\mu^{-1}=1` and sweep
+:math:`\sigma` over six orders of magnitude, :math:`\sigma\in\{10^{-3},\dots,10^{3}\}`:
+values below 1 are curl-dominated and values above 1 are mass-dominated. The iteration
+plot compares AMS against two generic preconditioners that are *not* tailored to
+:math:`H(\mathrm{curl})` -- BoomerAMG (``pcg-amg.yml``) and restricted additive Schwarz
+with one level of overlap and ILU(0) subdomain solves (``gmres-ras1-ilu0.yml``) -- all
+driven to ``relative_tol = 1e-8`` with a cap of 500 iterations.
+
+.. code-block:: bash
+
+   cd /path/to/build/examples/src/C_maxwell
+   MPI_RANKS=4 PGRID="2 2 1" ./reproduce.sh sweep
+
+.. figure:: figures/maxwell_sigma_sweep.png
+   :alt: AMS vs AMG vs RAS-ILU0 iterations and AMS setup/solve time versus sigma
+   :align: center
+
+   Definite Maxwell problem on a :math:`64^3` mesh (4 MPI ranks). Left: iteration count
+   versus :math:`\sigma` (log-log) for AMS, BoomerAMG, and RAS(1)-ILU0. Right: stacked
+   AMS setup/solve time versus :math:`\sigma`.
+
+The contrast is stark. **AMS is flat and robust**: 12 iterations in the curl-dominated
+regime, easing to 7 as the mass term makes the system better conditioned -- essentially
+independent of :math:`\sigma`. The generic preconditioners, by contrast, **fail in the
+curl-dominated regime**: both BoomerAMG and RAS(1)-ILU0 hit the 500-iteration cap for
+small :math:`\sigma` (BoomerAMG for :math:`\sigma\le 1`, RAS for :math:`\sigma\le 10`),
+and recover only once the mass term dominates (:math:`\sigma\gtrsim 100`), where the
+matrix approaches a well-conditioned mass matrix and any reasonable smoother works. This
+is exactly why an auxiliary-space solver is needed: only AMS handles the large
+near-kernel of the curl operator. Finally, the **AMS setup time is independent of**
+:math:`\sigma` (~2 s throughout), because the auxiliary-space hierarchy is built from the
+discrete gradient and the vertex coordinates -- the problem topology and geometry -- not
+from the coefficient values; the solve time simply tracks the iteration count.
+
+.. note::
+
+   The comparison uses 4 MPI ranks because, in the bundled HYPRE build, the overlapping
+   Schwarz (RAS) setup aborts at higher rank counts on this :math:`64^3` system; AMS,
+   ADS, and BoomerAMG run at any rank count.
+
+.. _graddiv_example:
+
+Example 7: Definite grad-div (ADS)
+----------------------------------
+
+This example, in ``examples/src/C_graddiv/graddiv.c``, is the :math:`H(\mathrm{div})`
+counterpart of the Maxwell benchmark and targets the **Auxiliary-space Divergence
+Solver (ADS)**. It mirrors Example 6 one step down the de Rham complex: edges become
+faces, the curl-curl operator becomes grad-div, and Nedelec elements become
+Raviart-Thomas elements.
+
+Governing Equations (Definite grad-div)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+On a box :math:`\Omega` we solve the grad-div + mass problem for a vector field
+:math:`u` (a flux/velocity):
+
+.. math::
+
+   -\alpha\,\nabla(\nabla\cdot u) + \beta\,u = f \quad\text{in } \Omega,
+   \qquad
+   u\cdot n = (u\cdot n)_D \quad\text{on } \partial\Omega ,
+
+where :math:`\alpha` weights the grad-div (divergence-stiffness) term and
+:math:`\beta\ge 0` is the mass coefficient; both default to :math:`1` and are set with
+``-alpha`` and ``-beta``. The essential boundary condition prescribes the **normal
+trace** :math:`u\cdot n`, the natural Dirichlet datum in :math:`H(\mathrm{div})`. As
+before the mass term makes the operator definite (it controls the divergence-free fields
+that lie in the kernel of the divergence), which is the regime ADS is built for.
+
+Variational Formulation
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+With :math:`W=\{v\in H(\mathrm{div};\Omega): v\cdot n=0\text{ on }\partial\Omega\}`, the
+weak form is: find :math:`u\in u_D+W` such that for all :math:`v\in W`,
+
+.. math::
+
+   \int_\Omega \alpha\,(\nabla\cdot u)(\nabla\cdot v)\,d\Omega
+   \;+\;
+   \int_\Omega \beta\,u\cdot v\,d\Omega
+   \;=\;
+   \int_\Omega f\cdot v\,d\Omega ,
+
+giving a **divergence-stiffness** matrix weighted by :math:`\alpha` plus a **mass**
+matrix weighted by :math:`\beta`.
+
+Discretization: Lowest-Order Raviart-Thomas (Face) Elements
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The flux is discretized with lowest-order Raviart-Thomas (RT0) face elements. The
+degrees of freedom live on **faces**: the DOF of face :math:`F` is the integral of the
+normal flux through it,
+
+.. math::
+
+   \mathrm{dof}_F(u) \;=\; \int_F u\cdot n \, dA ,
+
+with every face normal oriented in the :math:`+`-axis direction. Each hexahedron carries
+6 face DOFs. The :math:`6\times6` element matrix :math:`S_K=\alpha\,K^{\mathrm{div}}_K
++ \beta\,M_K` is integrated from the RT0 basis, with
+:math:`(K^{\mathrm{div}}_K)_{ab}=\int_K(\nabla\cdot v_a)(\nabla\cdot v_b)` and
+:math:`(M_K)_{ab}=\int_K v_a\cdot v_b`. The normal-trace boundary condition is imposed by
+the same element-level static condensation used in the Maxwell example.
+
+Manufactured Solution and Error Measurement
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The benchmark uses
+
+.. math::
+
+   u=(\sin\kappa x,\ \sin\kappa y,\ \sin\kappa z),\qquad \kappa=\text{freq}\cdot\pi .
+
+Here :math:`\nabla\cdot u=\kappa(\cos\kappa x+\cos\kappa y+\cos\kappa z)` and
+:math:`\nabla(\nabla\cdot u)=-\kappa^2 u`, so the forcing is again closed-form,
+
+.. math::
+
+   f \;=\; -\alpha\,\nabla(\nabla\cdot u)+\beta\,u \;=\; (\alpha\kappa^2+\beta)\,u ,
+
+and the exact face DOFs reduce to surface integrals such as
+:math:`h_y h_z\sin(\kappa x)` for an :math:`x`-face. The example reports the relative
+discrete :math:`\ell_2` error of the computed face DOFs against this reference.
+
+Auxiliary-Space Inputs: the Full de Rham Complex
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ADS reduces the face system through the *edge* space (where it applies AMS) and then to
+the *nodal* space. It therefore needs the **whole discrete de Rham sequence**
+:math:`\text{nodes}\xrightarrow{G}\text{edges}\xrightarrow{C}\text{faces}`, i.e. three
+operator inputs in addition to the system matrix:
+
+- the **discrete gradient** :math:`G` (edge :math:`\times` node), via
+  ``HYPREDRV_LinearSystemSetDiscreteGradient()``;
+- the **discrete curl** :math:`C` (face :math:`\times` edge incidence, with right-hand-rule
+  signs around each face), via ``HYPREDRV_LinearSystemSetDiscreteCurl()``; and
+- the **vertex coordinate vectors**, via ``HYPREDRV_LinearSystemSetCoordinates()``.
+
+The example constructs :math:`G` and :math:`C` so that the fundamental identity
+:math:`C\,G=0` (the discrete *curl of a gradient is zero*) holds exactly -- a property
+ADS relies on. As in the Maxwell case these inputs are purely topological/geometric and
+independent of :math:`\alpha` and :math:`\beta`.
+
+Linear System Creation
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: c
+
+   HYPREDRV_LinearSystemSetMatrix(hypredrv, (HYPRE_Matrix) A);
+   HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector) b);
+   HYPREDRV_LinearSystemSetDiscreteGradient(hypredrv, (HYPRE_Matrix) G);
+   HYPREDRV_LinearSystemSetDiscreteCurl(hypredrv, (HYPRE_Matrix) C);
+   HYPREDRV_LinearSystemSetCoordinates(hypredrv,
+                                       (HYPRE_Vector) xcoord,
+                                       (HYPRE_Vector) ycoord,
+                                       (HYPRE_Vector) zcoord);
+
+The solver/preconditioner come from ``examples/src/C_graddiv/pcg-ads.yml`` (PCG + ADS):
+
+.. code-block:: bash
+
+   mpirun -np 4 /path/to/build/graddiv -i pcg-ads.yml -n 33 33 33 -P 2 2 1
+
+Solution Visualization
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+As in the Maxwell example, ``-vtk <base>`` writes the solution as VTK ImageData
+(serial ``<base>.vti`` or parallel ``<base>.pvti`` plus per-rank pieces); here the
+cell-centered flux is reconstructed from the face DOFs using the RT0 basis. The bundled
+``postprocess.py`` renders the magnitude with `PyVista <https://pyvista.org>`_, using
+the same isosurface default (and the same ``--style`` options) as the Maxwell example:
+
+.. code-block:: bash
+
+   mpirun -np 4 /path/to/build/graddiv -i pcg-ads.yml -n 65 65 65 -P 2 2 1 -freq 2 -vtk graddiv
+   python3 postprocess.py graddiv.pvti -o graddiv_solution_3d.png   # needs: pip install pyvista
+
+.. figure:: figures/graddiv_solution_3d.png
+   :alt: grad-div flux magnitude isosurfaces
+   :width: 70%
+   :align: center
+
+   Computed flux magnitude :math:`\|u\|_2` on a :math:`64^3` mesh (4 MPI ranks) for the
+   manufactured solution at frequency ``-freq 2`` (:math:`\kappa = 2\pi`), shown as nested
+   isosurfaces. The higher frequency produces a periodic lattice of peaks throughout the
+   domain, so the field looks visibly different from the single central peak of the Maxwell
+   example (which uses the default ``-freq 1``).
+
+Mesh Refinement (Discretization Accuracy)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``./reproduce.sh`` shows ADS behaving like AMS -- nearly mesh independent with
+:math:`O(h^2)` error decay:
+
+.. code-block:: text
+
+   grid       iters        rel. error
+   9^3        5            1.174488e-03
+   17^3       8            2.950893e-04
+   33^3       10           7.386281e-05
+   65^3       13           1.847132e-05
+
+Coefficient Robustness
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+As for Maxwell, what matters is the **div-to-mass ratio** :math:`\beta/\alpha`, so
+``./reproduce.sh sweep`` fixes :math:`\alpha=1` and sweeps :math:`\beta` over six orders
+of magnitude (:math:`\{10^{-3},\dots,10^{3}\}`, crossing from div-dominated to
+mass-dominated) on the :math:`64^3` mesh, comparing ADS against BoomerAMG and
+RAS(1)-ILU0.
+
+.. code-block:: bash
+
+   cd /path/to/build/examples/src/C_graddiv
+   MPI_RANKS=4 PGRID="2 2 1" ./reproduce.sh sweep
+
+.. figure:: figures/graddiv_beta_sweep.png
+   :alt: ADS vs AMG vs RAS-ILU0 iterations and ADS setup/solve time versus beta
+   :align: center
+
+   Definite grad-div problem on a :math:`64^3` mesh (4 MPI ranks). Left: iteration count
+   versus :math:`\beta` (log-log) for ADS, BoomerAMG, and RAS(1)-ILU0. Right: stacked
+   ADS setup/solve time versus :math:`\beta`.
+
+ADS behaves exactly like its :math:`H(\mathrm{curl})` counterpart: it is flat and robust
+(14 iterations in the div-dominated regime, easing to 7 when the mass term dominates),
+while BoomerAMG and RAS(1)-ILU0 hit the 500-iteration cap for small :math:`\beta`,
+recovering only once the mass term dominates. The ADS setup time is again independent of
+the coefficients, since the face-edge-node auxiliary hierarchy is built only from the
+discrete curl :math:`C`, the discrete gradient :math:`G`, and the coordinates; the solve
+time tracks the iteration count. The shared auxiliary-space machinery makes both solvers
+robust to the relative weight of the differential and mass terms, where generic
+algebraic preconditioners are not. (As in the Maxwell example, the comparison uses
+4 MPI ranks because the bundled HYPRE's overlapping-Schwarz setup aborts at higher rank
+counts on this :math:`64^3` system.)

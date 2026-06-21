@@ -65,11 +65,14 @@ if [[ ! -f "$HEADER" ]]; then
   exit 2
 fi
 
+# LC_ALL=C keeps the sort byte-ordered and locale-independent, so the output order
+# matches interfaces/cpp/tests/api_coverage.txt (generated under the C locale in CI)
+# regardless of the caller's locale (e.g. en_US.UTF-8 orders mixed-case names differently).
 APIS=$(grep -v -E '^[[:space:]]*#' "$HEADER" \
   | grep -oE 'HYPREDRV_[A-Za-z0-9_]+ *\(' \
   | sed 's/ *($//' \
   | grep -v -E '^HYPREDRV_(SAFE_CALL|operation)$' \
-  | sort -u)
+  | LC_ALL=C sort -u)
 
 if [[ $CHECK_MODE -eq 1 ]]; then
   VIOLATIONS=0

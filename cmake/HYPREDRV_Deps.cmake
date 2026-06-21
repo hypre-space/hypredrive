@@ -24,6 +24,68 @@ function(_hypredrv_set_cache_bool_default var_name value doc)
     endif()
 endfunction()
 
+function(_hypredrv_patch_hypre_ads_pi_col_starts_leak hypre_source_dir)
+    set(_hypredrv_hypre_ads_file "${hypre_source_dir}/src/parcsr_ls/ads.c")
+    if(NOT EXISTS "${_hypredrv_hypre_ads_file}")
+        return()
+    endif()
+
+    file(READ "${_hypredrv_hypre_ads_file}" _hypredrv_hypre_ads_content)
+    if(_hypredrv_hypre_ads_content MATCHES
+       "hypre_TFree\\(col_starts,[ \t]*HYPRE_MEMORY_HOST\\);")
+        message(STATUS "  HYPRE ads.c already frees ADS scalar Pi column-start workspace")
+        return()
+    endif()
+
+    set(_hypredrv_hypre_ads_old [=[
+         Pi = hypre_ParCSRMatrixCreate(comm,
+                                       global_num_rows,
+                                       global_num_cols,
+                                       row_starts,
+                                       col_starts,
+                                       num_cols_offd,
+                                       num_nonzeros_diag,
+                                       num_nonzeros_offd);
+
+         hypre_ParCSRMatrixOwnsData(Pi) = 1;
+]=])
+    set(_hypredrv_hypre_ads_new [=[
+         Pi = hypre_ParCSRMatrixCreate(comm,
+                                       global_num_rows,
+                                       global_num_cols,
+                                       row_starts,
+                                       col_starts,
+                                       num_cols_offd,
+                                       num_nonzeros_diag,
+                                       num_nonzeros_offd);
+
+         hypre_TFree(col_starts, HYPRE_MEMORY_HOST);
+
+         hypre_ParCSRMatrixOwnsData(Pi) = 1;
+]=])
+    set(_hypredrv_hypre_ads_original "${_hypredrv_hypre_ads_content}")
+    string(REPLACE "${_hypredrv_hypre_ads_old}" "${_hypredrv_hypre_ads_new}"
+        _hypredrv_hypre_ads_content "${_hypredrv_hypre_ads_content}")
+
+    if("${_hypredrv_hypre_ads_content}" STREQUAL "${_hypredrv_hypre_ads_original}")
+        if(_hypredrv_hypre_ads_content MATCHES
+           "col_starts = hypre_TAlloc\\(HYPRE_BigInt,[^\n]*HYPRE_MEMORY_HOST\\)")
+            message(WARNING
+                "Could not patch HYPRE ADS scalar Pi column-start leak; "
+                "upstream HYPRE may have changed src/parcsr_ls/ads.c")
+        endif()
+    else()
+        file(WRITE "${_hypredrv_hypre_ads_file}" "${_hypredrv_hypre_ads_content}")
+        message(STATUS "  HYPRE ads.c patched to free ADS scalar Pi column-start workspace")
+    endif()
+
+    unset(_hypredrv_hypre_ads_file)
+    unset(_hypredrv_hypre_ads_content)
+    unset(_hypredrv_hypre_ads_original)
+    unset(_hypredrv_hypre_ads_old)
+    unset(_hypredrv_hypre_ads_new)
+endfunction()
+
 function(_hypredrv_link_mpi_interface target_name)
     if(TARGET MPI::MPI_C)
         target_link_libraries(${target_name} INTERFACE MPI::MPI_C)
@@ -785,6 +847,7 @@ if(NOT HYPRE_FOUND)
         if(NOT hypre_POPULATED)
             FetchContent_Populate(hypre)
         endif()
+        _hypredrv_patch_hypre_ads_pi_col_starts_leak("${hypre_SOURCE_DIR}")
 
         include(ExternalProject)
 
@@ -961,6 +1024,7 @@ if(NOT HYPRE_FOUND)
 
     message(STATUS "HYPRE source fetched successfully")
     message(STATUS "  Source directory: ${hypre_SOURCE_DIR}")
+    _hypredrv_patch_hypre_ads_pi_col_starts_leak("${hypre_SOURCE_DIR}")
 
     # Patch HYPRE's CMakeLists.txt to skip export when TPLs are auto-built
     # This must be done before add_subdirectory is called

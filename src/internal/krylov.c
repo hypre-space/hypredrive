@@ -227,6 +227,9 @@ static void
 NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
                        precon_t precon_method, HYPRE_Precon precon)
 { /* GCOVR_EXCL_BR_LINE */
+   HYPRE_PtrToParSolverFcn setup = NULL;
+   HYPRE_PtrToParSolverFcn solve = NULL;
+
    if (!precon ||
        precon_method ==
           PRECON_NONE) /* GCOVR_EXCL_BR_LINE */ /* precon live when has_precon */
@@ -234,36 +237,66 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
       return;
    }
 
-   HYPRE_PtrToParSolverFcn setup_ptrs[] = {
-      HYPRE_BoomerAMGSetup, HYPRE_MGRSetup, LOCAL_ILU_SETUP, LOCAL_FSAI_SETUP,
+   switch (precon_method)
+   {
+      case PRECON_BOOMERAMG:
+         setup = HYPRE_BoomerAMGSetup;
+         solve = HYPRE_BoomerAMGSolve;
+         break;
+
+      case PRECON_MGR:
+         setup = HYPRE_MGRSetup;
+         solve = HYPRE_MGRSolve;
+         break;
+
+      case PRECON_ILU:
+         setup = LOCAL_ILU_SETUP;
+         solve = LOCAL_ILU_SOLVE;
+         break;
+
+      case PRECON_FSAI:
+         setup = LOCAL_FSAI_SETUP;
+         solve = LOCAL_FSAI_SOLVE;
+         break;
+
+      case PRECON_AMS:
+         setup = HYPRE_AMSSetup;
+         solve = HYPRE_AMSSolve;
+         break;
+
+      case PRECON_ADS:
+         setup = HYPRE_ADSSetup;
+         solve = HYPRE_ADSSolve;
+         break;
+
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      HYPRE_SchwarzSetup,
+      case PRECON_SCHWARZ:
+         setup = HYPRE_SchwarzSetup;
+         solve = HYPRE_SchwarzSolve;
+         break;
 #endif
-   };
-   HYPRE_PtrToParSolverFcn solve_ptrs[] = {
-      HYPRE_BoomerAMGSolve, HYPRE_MGRSolve, LOCAL_ILU_SOLVE, LOCAL_FSAI_SOLVE,
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      HYPRE_SchwarzSolve,
-#endif
-   };
+
+      case PRECON_NONE:
+      default:
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("Nested Krylov preconditioner method not supported");
+         return;
+   }
+
    /* GCOVR_EXCL_BR_LINE */
    switch (solver_method) /* GCOVR_EXCL_BR_LINE */ /* default arm excluded below */
    {
       case SOLVER_PCG:
-         HYPRE_ParCSRPCGSetPrecond(solver, solve_ptrs[precon_method],
-                                   setup_ptrs[precon_method], precon->main);
+         HYPRE_ParCSRPCGSetPrecond(solver, solve, setup, precon->main);
          break;
       case SOLVER_GMRES:
-         HYPRE_ParCSRGMRESSetPrecond(solver, solve_ptrs[precon_method],
-                                     setup_ptrs[precon_method], precon->main);
+         HYPRE_ParCSRGMRESSetPrecond(solver, solve, setup, precon->main);
          break;
       case SOLVER_FGMRES:
-         HYPRE_ParCSRFlexGMRESSetPrecond(solver, solve_ptrs[precon_method],
-                                         setup_ptrs[precon_method], precon->main);
+         HYPRE_ParCSRFlexGMRESSetPrecond(solver, solve, setup, precon->main);
          break;
       case SOLVER_BICGSTAB:
-         HYPRE_ParCSRBiCGSTABSetPrecond(solver, solve_ptrs[precon_method],
-                                        setup_ptrs[precon_method], precon->main);
+         HYPRE_ParCSRBiCGSTABSetPrecond(solver, solve, setup, precon->main);
          break; /* GCOVR_EXCL_BR_LINE */ /* invalid solver_t without memory corruption */
       default:
          hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
@@ -502,7 +535,7 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
    if (args->has_precon)
    {
       hypredrv_PreconCreate(args->precon_method, &args->precon, dofmap, vec_nn,
-                            &args->precon_obj, NULL, 0);       /* GCOVR_EXCL_BR_LINE */
+                            &args->precon_obj, NULL, 0, NULL); /* GCOVR_EXCL_BR_LINE */
       if (hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */ /* PreconCreate failure
                                                                   injection */
       {

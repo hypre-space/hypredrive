@@ -1,0 +1,62 @@
+name: Code Portability
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'COPYRIGHT'
+  push:
+    branches: [ master ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'COPYRIGHT'
+  schedule:
+    - cron: '0 3 * * 0' # Runs at 03:00 UTC every Sunday
+  workflow_dispatch:    # Allow manual triggering
+
+concurrency:
+  group: portability-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dryrun:
+    # Job name is kept to the OS label so the check renders as
+    # "Code Portability / Linux" and "Code Portability / MacOS".
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux
+          - os: macos-latest
+            label: MacOS
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Lightweight deps so the Python CLIs' --help can import and parse args.
+      # The example postprocess scripts import pyvista/imageio lazily, so VTK is
+      # intentionally not installed here.
+      - name: Install dry-run dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install numpy matplotlib pandas plotly anytree pyyaml
+
+      - name: Dry-run all repository scripts
+        run: bash scripts/check_portability.sh

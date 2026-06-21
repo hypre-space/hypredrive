@@ -48,6 +48,11 @@ option(HYPREDRV_ENABLE_JULIA        "Enable the hypredrive Julia interface" OFF)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Fuzzing.cmake)
 
+if(HYPREDRV_ENABLE_ANALYSIS)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL
+        "Export compile commands for static analysis" FORCE)
+endif()
+
 # Optionally set the build type to Release by default
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
@@ -138,6 +143,8 @@ set(SOURCE_FILES
     src/internal/linsys_print.c
     src/internal/cheby.c
     src/internal/amg.c
+    src/internal/ams.c
+    src/internal/ads.c
     src/internal/fsai.c
     src/internal/ilu.c
     src/internal/schwarz.c
@@ -439,6 +446,8 @@ if(HYPREDRV_ENABLE_EXAMPLES)
     add_subdirectory(examples/src/C_elasticity)
     add_subdirectory(examples/src/C_heatflow)
     add_subdirectory(examples/src/C_lidcavity)
+    add_subdirectory(examples/src/C_maxwell)
+    add_subdirectory(examples/src/C_graddiv)
 endif()
 
 if(HYPREDRV_ENABLE_JULIA AND HYPREDRV_ENABLE_EXAMPLES)

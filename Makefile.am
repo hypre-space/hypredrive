@@ -12,15 +12,17 @@ hypredrive_lsseq_LDADD = libHYPREDRV.la
 lib_LTLIBRARIES = libHYPREDRV.la
 libHYPREDRV_la_SOURCES = src/internal/error.c src/internal/eigspec.c src/internal/info.c src/internal/stats.c src/internal/utils.c src/internal/containers.c src/internal/yaml.c\
                          src/internal/field.c src/internal/vector.c src/internal/matrix.c src/internal/linsys.c src/internal/linsys_print.c src/internal/cheby.c src/internal/amg.c\
-                         src/internal/fsai.c src/internal/ilu.c src/internal/schwarz.c src/internal/mgr.c src/internal/precon.c src/internal/precon_reuse.c src/internal/presets.c src/internal/krylov.c\
-			 src/internal/pcg.c src/internal/gmres.c src/internal/fgmres.c src/internal/bicgstab.c src/internal/solver.c src/internal/args.c \
-                         src/internal/comp.c src/internal/lsseq.c src/internal/scaling.c src/internal/runtime.c src/internal/logging.c src/HYPREDRV.c
+                         src/internal/ams.c src/internal/ads.c src/internal/fsai.c src/internal/ilu.c src/internal/schwarz.c src/internal/mgr.c src/internal/precon.c \
+			 src/internal/precon_reuse.c src/internal/presets.c src/internal/krylov.c src/internal/pcg.c src/internal/gmres.c src/internal/fgmres.c \
+			 src/internal/bicgstab.c src/internal/solver.c src/internal/args.c src/internal/comp.c src/internal/lsseq.c src/internal/scaling.c src/internal/runtime.c \
+			 src/internal/logging.c src/HYPREDRV.c
 libHYPREDRV_la_CFLAGS = $(AM_CPPFLAGS) -fvisibility=hidden
 libHYPREDRV_la_LDFLAGS = -version-info 0:1:0
 
 include_HEADERS = include/HYPREDRV.h include/HYPREDRV_utils.h
 nodist_include_HEADERS = HYPREDRV_config.h
 INTERNAL_HEADER_FILES = include/internal/amg.h include/internal/args.h \
+			include/internal/ads.h include/internal/ams.h \
 			include/internal/bicgstab.h include/internal/cheby.h \
 			include/internal/compatibility.h include/internal/comp.h \
 			include/internal/containers.h include/internal/eigspec.h \

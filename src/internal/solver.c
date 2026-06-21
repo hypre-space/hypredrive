@@ -175,6 +175,14 @@ PreconSetupDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
       return 0;
    }
 
+   /* Abort cleanly (instead of letting hypre dereference NULL) when an AMS/ADS
+    * preconditioner is set up without its required operator inputs. This is the
+    * Krylov-embedded counterpart of the guard in hypredrv_PreconSetup. */
+   if (hypredrv_PreconSetupOperatorGuard(precon))
+   {
+      return 1;
+   }
+
    if (precon->stats)
    {
       hypredrv_StatsAnnotate(precon->stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
@@ -197,6 +205,14 @@ PreconSetupDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
 
       case PRECON_FSAI:
          ierr = LOCAL_FSAI_SETUP(precon->main, A, b, x);
+         break;
+
+      case PRECON_AMS:
+         ierr = HYPRE_AMSSetup(precon->main, A, b, x);
+         break;
+
+      case PRECON_ADS:
+         ierr = HYPRE_ADSSetup(precon->main, A, b, x);
          break;
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
@@ -249,6 +265,12 @@ PreconSolveDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
 
       case PRECON_FSAI:
          return LOCAL_FSAI_SOLVE(precon->main, A, b, x);
+
+      case PRECON_AMS:
+         return HYPRE_AMSSolve(precon->main, A, b, x);
+
+      case PRECON_ADS:
+         return HYPRE_ADSSolve(precon->main, A, b, x);
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       case PRECON_SCHWARZ:

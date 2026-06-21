@@ -16,13 +16,85 @@ import textwrap
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
-# Global variables
+# Global variables (mutated by apply_style())
 fgs  = (10, 6)       # Figure size
 tfs  = 18            # Title font size
 alfs = 14            # Axis label font size
 lgfs = 14            # Legends font size
+sdpi = 600           # Save DPI for bitmap outputs
 
 logger = logging.getLogger(__name__)
+
+
+# Named style presets selected with --style. Each preset sets the figure size and the
+# font sizes used throughout, plus a block of Matplotlib rcParams (line/marker weight,
+# grid, color cycle, ...). "docs" is tuned for embedding in the documentation: larger
+# fonts, thicker lines, a light dashed grid, a colorblind-friendly palette and a sharp
+# but reasonably sized PNG. "default" preserves the historical look.
+_OKABE_ITO = ['#0072B2', '#D55E00', '#009E73', '#E69F00',
+              '#CC79A7', '#56B4E9', '#000000', '#F0E442']
+
+STYLE_PRESETS = {
+    'default': {
+        'fgs': (10, 6), 'tfs': 18, 'alfs': 14, 'lgfs': 14, 'sdpi': 600, 'rc': {},
+    },
+    'docs': {
+        'fgs': (9.0, 5.6), 'tfs': 22, 'alfs': 18, 'lgfs': 16, 'sdpi': 170,
+        'rc': {
+            'figure.facecolor': 'white',
+            'savefig.facecolor': 'white',
+            'savefig.bbox': 'tight',
+            'savefig.pad_inches': 0.06,
+            'font.family': 'sans-serif',
+            'font.sans-serif': ['DejaVu Sans'],
+            'lines.linewidth': 2.6,
+            'lines.markersize': 9,
+            'lines.markeredgewidth': 1.0,
+            'axes.linewidth': 1.2,
+            'axes.edgecolor': '#333333',
+            'axes.axisbelow': True,
+            'axes.prop_cycle': plt.cycler(color=_OKABE_ITO),
+            'grid.color': '#b0b0b0',
+            'grid.linestyle': '--',
+            'grid.linewidth': 0.7,
+            'grid.alpha': 0.7,
+            'legend.frameon': True,
+            'legend.framealpha': 0.92,
+            'legend.edgecolor': '#cccccc',
+            'legend.fancybox': True,
+        },
+    },
+    'paper': {
+        'fgs': (8.0, 5.2), 'tfs': 20, 'alfs': 17, 'lgfs': 14, 'sdpi': 300,
+        'rc': {
+            'savefig.bbox': 'tight', 'font.family': 'serif',
+            'lines.linewidth': 2.2, 'lines.markersize': 7, 'axes.axisbelow': True,
+            'axes.prop_cycle': plt.cycler(color=_OKABE_ITO),
+            'grid.linestyle': '--', 'grid.linewidth': 0.6, 'grid.alpha': 0.6,
+        },
+    },
+    'talk': {
+        'fgs': (10.0, 6.2), 'tfs': 26, 'alfs': 22, 'lgfs': 19, 'sdpi': 150,
+        'rc': {
+            'savefig.bbox': 'tight', 'font.family': 'sans-serif',
+            'lines.linewidth': 3.4, 'lines.markersize': 12, 'axes.linewidth': 1.4,
+            'axes.axisbelow': True, 'axes.prop_cycle': plt.cycler(color=_OKABE_ITO),
+            'grid.linestyle': '--', 'grid.linewidth': 0.9, 'grid.alpha': 0.75,
+        },
+    },
+}
+
+
+def apply_style(name):
+    """Apply a named style preset: set the global font/figure sizes + Matplotlib rcParams."""
+    global fgs, tfs, alfs, lgfs, sdpi
+    preset = STYLE_PRESETS.get(name, STYLE_PRESETS['default'])
+    fgs, tfs, alfs, lgfs, sdpi = (preset['fgs'], preset['tfs'], preset['alfs'],
+                                  preset['lgfs'], preset['sdpi'])
+    if preset.get('rc'):
+        plt.rcParams.update(preset['rc'])
+    logger.debug("Applied style '%s' (fgs=%s tfs=%s alfs=%s lgfs=%s sdpi=%s)",
+                 name, fgs, tfs, alfs, lgfs, sdpi)
 
 
 def _resolve_linestyle(user_linestyle, default_ls='-'):
@@ -330,7 +402,7 @@ def save_and_show_plot(savefig=None):
         # Determine the format from the file extension
         file_extension = savefig.split('.')[-1].lower()
         if file_extension in ['png', 'jpg', 'jpeg', 'bmp']:
-            dpi = 600
+            dpi = sdpi
         else:
             dpi = None  # Use default for non-bitmap formats or vector graphics
 
@@ -470,7 +542,7 @@ def plot_times(df, cumulative, xtype, xlabel, time_unit, use_title=False, savefi
         prefix = 'Cumulative ' if cumulative else ''
         plt.title(f'{prefix}Linear solver times vs {xlabel}', fontsize=tfs, fontweight='bold')
     ax = plt.gca()
-    _setup_axes(ax, xlabel, f'Times {time_unit}', log_x=log_x, log_y=log_y, set_integer_x=True, set_y_bottom=0.0, safe_integer_locator=False)
+    _setup_axes(ax, xlabel, f'Time {time_unit}', log_x=log_x, log_y=log_y, set_integer_x=True, set_y_bottom=0.0, safe_integer_locator=False)
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"times_{agg_str}{savefig}")
@@ -512,7 +584,7 @@ def plot_time_metric(df, cumulative, xtype, xlabel, time_unit, metric, use_title
         prefix = 'Cumulative ' if cumulative else ''
         plt.title(f"{prefix}{metric.capitalize()} time vs {xlabel}", fontsize=tfs, fontweight='bold')
     ax = plt.gca()
-    _setup_axes(ax, xlabel, f'Times {time_unit}', log_x=log_x, log_y=log_y, set_integer_x=True, set_y_bottom=0.0, safe_integer_locator=False)
+    _setup_axes(ax, xlabel, f'Time {time_unit}', log_x=log_x, log_y=log_y, set_integer_x=True, set_y_bottom=0.0, safe_integer_locator=False)
     plt.grid(True)
     plt.tight_layout()
     save_and_show_plot(f"{metric}_{agg_str}{savefig}")
@@ -540,7 +612,7 @@ def _plot_iters_with_time_metric(df, cumulative, xtype, xlabel, time_unit, time_
 
     # Time axis (left): setup/solve/total.
     ax1.set_xlabel(xlabel, fontsize=alfs)
-    ax1.set_ylabel(f'Times {time_unit}', fontsize=alfs)
+    ax1.set_ylabel(f'Time {time_unit}', fontsize=alfs)
     if log_x:
         ax1.set_xscale('log')
     if log_y:
@@ -733,7 +805,7 @@ def _bar_title(title):
     """Wrap an over-long bar-chart title so it does not overflow the axes."""
     return '\n'.join(textwrap.wrap(title, width=42)) if title else title
 
-def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig=None, title=None):
+def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig=None, title=None, xlabel=None):
     """
     Plots a bar chart for a single metric (one of 'setup', 'solve', 'total', 'iters')
     across entries in a single log file. Labels are provided by the caller.
@@ -756,8 +828,8 @@ def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig
     if metric == 'iters':
         plt.ylabel("Iterations", fontsize=alfs)
     else:
-        plt.ylabel(f"Times {time_unit}", fontsize=alfs)
-    plt.xlabel("Solver", fontsize=alfs)
+        plt.ylabel(f"Time {time_unit}", fontsize=alfs)
+    plt.xlabel(xlabel if xlabel else "Solver", fontsize=alfs)
 
     if title:
         plt.title(_bar_title(title), fontsize=tfs, fontweight='bold')
@@ -771,7 +843,7 @@ def plot_bar_time_metric(df, metric, time_unit, labels, use_title=False, savefig
     plt.tight_layout()
     save_and_show_plot(f"{metric}_bar_{savefig}")
 
-def plot_bar_stacked_time(df, metrics, time_unit, labels, use_title=False, savefig=None, title=None):
+def plot_bar_stacked_time(df, metrics, time_unit, labels, use_title=False, savefig=None, title=None, xlabel=None):
     """
     Plots a stacked bar chart of time metrics (e.g. ['setup', 'solve']) across
     entries in a single log file, with one stacked bar per entry. Labels are
@@ -804,7 +876,7 @@ def plot_bar_stacked_time(df, metrics, time_unit, labels, use_title=False, savef
     _set_bar_xlim(len(x))
     plt.xticks(x, labels, fontsize=alfs, rotation=20, ha='right')
     plt.ylabel(f"Times {time_unit}", fontsize=alfs)
-    plt.xlabel("Solver", fontsize=alfs)
+    plt.xlabel(xlabel if xlabel else "Solver", fontsize=alfs)
     plt.legend(fontsize=lgfs)
 
     if title:
@@ -1146,7 +1218,8 @@ def main():
               'timestep': "Timestep",
               'timestep_offset': "Timestep",
               'ls_id': "Linear system ID",
-              'nl_step': "Nonlinear step"}
+              'nl_step': "Nonlinear step",
+              'xval': "Parameter value"}
 
     # List of pre-defined modes:
     mode_choices = ('iters', 'times', 'iters-and-times', 'iters-and-total', 'setup', 'solve', 'total', 'throughput', 'bar', 'weak-scaling')
@@ -1204,6 +1277,9 @@ def main():
                              f"Plain modes: {', '.join(mode_choices)}.")
     parser.add_argument("-t", "--xtype", type=str, default='entry', choices=labels.keys(), help="Variable type for the abscissa")
     parser.add_argument("-l", "--xlabel", type=str, default=None, help="Label for the abscissa")
+    parser.add_argument("--xvalues", type=float, nargs="+", default=None,
+                        help="Explicit x-axis values (one per entry, repeated per source/file); "
+                             "use with '-t xval' for parameter sweeps")
     parser.add_argument("-s", "--savefig", default=None, help="Save figure(s) given this name suffix")
     parser.add_argument("-c", "--cumulative", action='store_true', help='Plot cumulative quantities')
     parser.add_argument("-u", "--use_title", action='store_true', help='Show title in plots')
@@ -1236,6 +1312,9 @@ def main():
                              "iteration count (only effective when iter-times is plotted)")
     parser.add_argument("--log-x", action="store_true", help="Use log scale for X axis")
     parser.add_argument("--log-y", action="store_true", help="Use log scale for Y axis")
+    parser.add_argument("--style", type=str, default='default', choices=list(STYLE_PRESETS.keys()),
+                        help="Plot style preset (default: 'default'; use 'docs' for the "
+                             "documentation figures, 'paper'/'talk' for other contexts)")
     parser.add_argument("-v", "--verbose", action='count', default=0, help='Increase verbosity (-v=INFO, -vv=DEBUG)')
 
     # Parse arguments
@@ -1258,6 +1337,8 @@ def main():
     ):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
     logger.debug(f"Arguments parsed: {vars(args) = }")
+
+    apply_style(args.style)
 
     bar_mode = check_mode_exact_match(args.mode, 'bar')
     show_nl_iters = args.nl_iters if args.nl_iters is not None else (len(args.filename) == 1)
@@ -1341,6 +1422,16 @@ def main():
 
     # Convert data types (only for columns that exist)
     df = df.astype({k: v for k, v in data_types.items() if k in df.columns})
+
+    # Explicit x-axis values for parameter sweeps: assign one value per entry,
+    # in file order, repeated within each source/file.
+    if args.xvalues is not None:
+        n = len(args.xvalues)
+        counts = df.groupby('source', sort=False).size()
+        if (counts != n).any():
+            sys.exit(f"Error: --xvalues provides {n} value(s) but a source has "
+                     f"{int(counts.max())} entries; the counts must match.")
+        df['xval'] = df.groupby('source', sort=False).cumcount().map(lambda p: args.xvalues[p])
 
     if args.tsteps:
         tsteps = read_timesteps_file(args.tsteps)
@@ -1509,10 +1600,10 @@ def main():
         if len(bar_metrics) > 1:
             # Stacked setup/solve breakdown (setup at the bottom).
             plot_bar_stacked_time(df, ['setup', 'solve'], time_unit, args.legend_names,
-                                  args.use_title, savefig, args.title)
+                                  args.use_title, savefig, args.title, xlabel=args.xlabel)
         else:
             plot_bar_time_metric(df, bar_metrics[0], time_unit, args.legend_names,
-                                 args.use_title, savefig, args.title)
+                                 args.use_title, savefig, args.title, xlabel=args.xlabel)
         return
 
     log_x = args.log_x
