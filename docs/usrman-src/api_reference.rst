@@ -114,7 +114,7 @@ Linear System Setup
 Linear System Accessors
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-- :cpp:func:`HYPREDRV_LinearSystemGetSolutionValues` - Get a pointer to the local solution values array.
+- :cpp:func:`HYPREDRV_LinearSystemGetSolutionValues` - Get a host pointer to the local solution values array.
 - :cpp:func:`HYPREDRV_LinearSystemGetSolutionNorm` - Compute a named norm of the current solution vector.
 - :cpp:func:`HYPREDRV_LinearSystemGetSolution` - Get the solution vector object.
 - :cpp:func:`HYPREDRV_LinearSystemGetRHSValues` - Get a pointer to the local RHS values array.

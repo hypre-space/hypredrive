@@ -259,6 +259,11 @@ to the generated API reference.
 
 .. END CXX API TABLE
 
+``hypredrive::driver::get_solution_values_raw`` returns the same
+HYPREDRV-owned host pointer as ``HYPREDRV_LinearSystemGetSolutionValues``. On
+GPU builds, calling it migrates/synchronizes the solution to host memory before
+the pointer is returned.
+
 Installation
 ------------
 
