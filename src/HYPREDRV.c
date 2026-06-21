@@ -2001,9 +2001,9 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_star
       build_memloc = HYPRE_MEMORY_DEVICE;
    }
 #endif
-   (void)hypredrv_LinearSystemBuildMatrixFromCSR(hypredrv->comm, build_memloc,
-                                                 row_start, row_end, indptr, col_indices,
-                                                 data, &hypredrv->mat_A);
+   (void)hypredrv_LinearSystemBuildMatrixFromCSR(hypredrv->comm, build_memloc, row_start,
+                                                 row_end, indptr, col_indices, data,
+                                                 &hypredrv->mat_A);
 
    hypredrv->owns_mat_A = (hypredrv->mat_A != NULL);
    hypredrv->mat_M      = hypredrv->mat_A;

@@ -1136,18 +1136,21 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       HYPRE_BigInt  *d_cols  = hypre_TAlloc(HYPRE_BigInt, nnz, HYPRE_MEMORY_DEVICE);
       HYPRE_Complex *d_data  = hypre_TAlloc(HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE);
 
-      hypre_TMemcpy(d_ncols, ncols_per_row, HYPRE_Int, nrows,
-                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
-      hypre_TMemcpy(d_rows, row_ids, HYPRE_BigInt, nrows,
-                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(d_ncols, ncols_per_row, HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE,
+                    HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(d_rows, row_ids, HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE,
+                    HYPRE_MEMORY_HOST);
       hypre_TMemcpy(d_cols, col_indices + indptr[0], HYPRE_BigInt, nnz,
                     HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
-      hypre_TMemcpy(d_data, data + indptr[0], HYPRE_Complex, nnz,
-                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(d_data, data + indptr[0], HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE,
+                    HYPRE_MEMORY_HOST);
 
-      HYPRE_Int ierr = HYPRE_IJMatrixSetValues(*mat_ptr, nrows, d_ncols, d_rows,
-                                               d_cols, d_data);
-      if (!ierr) { ierr = HYPRE_IJMatrixAssemble(*mat_ptr); }
+      HYPRE_Int ierr =
+         HYPRE_IJMatrixSetValues(*mat_ptr, nrows, d_ncols, d_rows, d_cols, d_data);
+      if (!ierr)
+      {
+         ierr = HYPRE_IJMatrixAssemble(*mat_ptr);
+      }
 
       hypre_TFree(d_ncols, HYPRE_MEMORY_DEVICE);
       hypre_TFree(d_rows, HYPRE_MEMORY_DEVICE);
