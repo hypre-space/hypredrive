@@ -1167,19 +1167,26 @@ Using RBMs in libHYPREDRV
 
 - Provide the six-mode buffer as above before creating the preconditioner and solver.
 - Hypredrive stores the near-nullspace vector internally and can pass it to the
-  configured preconditioner. For BoomerAMG nodal coarsening, typical settings involve:
+  configured preconditioner. For BoomerAMG nodal coarsening with rigid-body-mode
+  (GM2) interpolation -- the effective combination for 3D elasticity -- the settings
+  are:
 
   .. code-block:: yaml
 
      preconditioner:
        amg:
          coarsening:
-           nodal: 1   # Nodal coarsening based on row-sum norm (default)
-         # optional advanced controls (implementation-dependent):
-         # interpolation:
-         #   ...
-         # relaxation:
-         #   ...
+           num_functions: 3
+           nodal: 1               # nodal (block) coarsening -- required for GM2
+           nodal_type: 2          # block sum-of-abs strength: coarsens cleanly
+           strong_th: 0.25        # nodal strength matrices need a LOW threshold
+           interp_vec_variant: 2  # GM2 rigid-body-mode interpolation (default)
+
+  The rotational rigid-body modes are then interpolated exactly on each level, so the
+  AMG resolves the elasticity near-null space. Note the low ``strong_th``: the nodal
+  (block-norm) strength matrix is much denser than the pointwise one, so the ``0.8``
+  threshold that suits scalar/unknown coarsening barely coarsens here and bloats the
+  hierarchy.
 
 - Memory and layout:
   - The call ``HYPREDRV_LinearSystemSetNearNullSpace(h, num_entries, num_components, values)`` expects the values in SoA layout: ``num_components`` contiguous blocks, each with ``num_entries`` degrees of freedom.
@@ -1222,8 +1229,10 @@ The available values are:
 - ``elasticity_3D``: built-in BoomerAMG elasticity preset.
 - ``elasticity_sdc_3D``: application-registered preset that matches ``elasticity_3D``
   and additionally sets ``coarsening.filter_functions: on``.
-- ``elasticity_nodal_3D``: application-registered preset that matches ``elasticity_3D``
-  and additionally sets ``coarsening.nodal: 1``.
+- ``elasticity_nodal_3D``: application-registered preset that switches to
+  rigid-body-aware nodal/GM2 coarsening (``coarsening.nodal: 1``, ``nodal_type: 2``,
+  ``strong_th: 0.25``). On this 3D elasticity problem it is the fastest of the three
+  and the most mesh-robust.
 
 The two custom presets are registered at runtime by the application via
 ``HYPREDRV_PreconPresetRegister`` before parsing YAML or applying command-line overrides.
@@ -1239,29 +1248,37 @@ To compare all three configurations over a DOF sweep (8 variants from about
 The script runs each preset across all size variants, stores outputs in
 ``elasticity_builtin.out``, ``elasticity_sdc.out``, and ``elasticity_nodal.out``,
 and then always generates plots by default. It calls ``scripts/analyze_statistics.py``
-with ``-t rows`` and ``--log-x`` to produce separate comparison figures with a
-log-scale X axis (DOFs):
+with ``-t rows`` and ``--log-x`` to produce two side-by-side comparison figures with a
+log-scale X axis (DOFs) -- linear solver iterations and total (setup + solve) time:
 
-.. figure:: figures/elasticity_dofs_iters.png
-   :alt: Iterations versus DOFs for elasticity presets
-   :width: 80%
-   :align: center
+.. list-table::
+   :widths: 50 50
+   :class: borderless
 
-   Linear solver iterations vs DOFs.
+   * - .. image:: figures/elasticity_dofs_iters.png
+          :alt: Iterations versus DOFs for elasticity presets
+          :width: 100%
+     - .. image:: figures/elasticity_dofs_total.png
+          :alt: Total (setup + solve) time versus DOFs for elasticity presets
+          :width: 100%
+   * - Linear solver iterations vs DOFs.
+     - Total (setup + solve) time vs DOFs.
 
-.. figure:: figures/elasticity_dofs_setup.png
-   :alt: Setup time versus DOFs for elasticity presets
-   :width: 80%
-   :align: center
+The ``elasticity_nodal_3D`` preset (rigid-body-aware nodal/GM2 AMG) converges in the
+**fewest iterations at every size** -- the rotational rigid-body modes resolve the
+elasticity near-null space that the plain unknown-based AMG handles only slowly -- and
+it has the fastest *solve* time. Its **total** (setup + solve) time, however, is only
+comparable to the plain preset: GM2's richer setup (nodal coarsening plus rigid-body
+interpolation) is roughly twice as costly to build, which for a *single* solve offsets
+the faster, fewer-iteration solves (at the largest size the setup cost even makes its
+total slightly higher). The iteration and solve-time advantage therefore pays off most
+when the setup is **reused across many solves** -- nonlinear or time-stepping loops via
+preconditioner reuse -- where the one-time setup is amortized.
 
-   Preconditioner setup time vs DOFs.
-
-.. figure:: figures/elasticity_dofs_solve.png
-   :alt: Solve time versus DOFs for elasticity presets
-   :width: 80%
-   :align: center
-
-   Solve time vs DOFs.
+This all hinges on nodal coarsening at a **low** strength threshold
+(``strong_th: 0.25``) and ``nodal_type: 2``; the high threshold (``0.8``) suited to
+the scalar/unknown presets barely coarsens the nodal strength matrix, bloats the
+hierarchy, and would make the nodal preset far *slower* than plain.
 
 The script prints verbose messages indicating which plot is being generated.
 
@@ -1339,6 +1356,19 @@ figure above and the reference output included below.
     -rho <val>        : Density rho (1.0)
     --solver-preset <name>
                      : Solver preset selector (elasticity_3D | elasticity_sdc_3D | elasticity_nodal_3D)
+                       (ignored when --problem two-material)
+    --problem <name>  : Problem configuration: single | two-material (single)
+                        two-material splits the bar at y=Ly/2 into a bottom half
+                        and a near-incompressible top half;
+                        requires (ny-1) even so a node layer sits at y=Ly/2
+    --discretization <name>
+                      : discretization: mixed | standard | bbar (mixed)
+                        mixed    = u-p (Q1-Q1) top + CG bottom (saddle point)
+                        standard = standard CG Q1 displacement everywhere
+                        bbar     = Q1-P0 mean-dilatation (B-bar), locking-free,
+                                   displacement-only, SPD (PCG + AMG)
+    --E-top <val>     : Top-material Young's modulus (defaults to -E)
+    --nu-top <val>    : Top-material Poisson ratio (0.4999)
     -ns|--nsolve <n>  : Number of solves (5)
     -vis <m>          : Visualization mode (0)
         0: none
@@ -1358,6 +1388,218 @@ For a single-process run, the output should be similar to the following:
 
 .. literalinclude:: ../../examples/refOutput/elasticity.txt
    :language: text
+
+Two-Material Bar (Mixed u-p, Near-Incompressible Top)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Passing ``--problem two-material`` splits the bar at the mid-height plane
+:math:`y = L_y/2` into two materials joined by a continuous displacement field. The
+**bottom** half (:math:`y < L_y/2`) keeps the standard CG displacement
+discretization described above. The **top** half (:math:`y > L_y/2`) uses a mixed
+displacement-pressure (:math:`u`-:math:`p`) formulation that stays stable in the
+near-incompressible limit, where the pure-displacement formulation locks. The top
+material defaults to a near-incompressible Poisson ratio; use ``--E-top`` /
+``--nu-top`` for its moduli (the bottom uses ``-E`` / ``-nu``).
+
+Mixed formulation (top half)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The hydrostatic pressure :math:`p = \lambda\,\nabla\!\cdot\mathbf{u}` is introduced
+as an independent unknown, so that
+:math:`\sigma = 2G\,\mathrm{dev}(\varepsilon) + p\,I`. The element saddle-point
+block is
+
+.. math::
+   \begin{bmatrix} A & B^\top \\ B & -C \end{bmatrix}
+   \begin{bmatrix} \mathbf{u} \\ p \end{bmatrix}
+   = \begin{bmatrix} \mathbf{f} \\ \mathbf{0} \end{bmatrix},
+
+with :math:`A = \int 2G\,\varepsilon(\mathbf{u}):\varepsilon(\mathbf{v})`,
+:math:`B = \int q\,\nabla\!\cdot\mathbf{u}`, and
+:math:`C = \tfrac{1}{\lambda}M + S`. The pressure uses equal-order :math:`Q_1`
+interpolation, so :math:`S` is a Bochev-Dohrmann polynomial-projection
+stabilization, :math:`S_{ab} = \tfrac{1}{2G}\,(M_{ab} - m_a m_b/|\Omega_e|)` with
+:math:`m_a = \int_{\Omega_e} N_a`. Because :math:`A` and :math:`S` depend only on
+the shear modulus :math:`G`, while :math:`\tfrac{1}{\lambda}M \to 0` as
+:math:`\nu \to 1/2`, the system stays well posed (locking-free) in the
+incompressible limit. The assembled global operator is symmetric **indefinite**.
+
+Parallel layout and dofmap
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Both halves are distributed over **all** ranks with the Cartesian
+:math:`P_x \times P_y \times P_z` grid; the :math:`y` partitions of the two halves
+are flipped so that their interface slabs meet on the same rank layer
+(:math:`c_y = 0`). The shared interface nodes are then rank-local and every rank
+owns part of both halves. This requires the interface to fall on a node layer, so
+``(ny-1)`` must be even and :math:`P_y \le (n_y-1)/2`.
+
+Each rank owns one contiguous global row block ordered
+``[ bottom-u ][ top-u ][ pressure ]``, attached with an explicit seven-label dofmap
+via ``HYPREDRV_LinearSystemSetDofmap``:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 14 60
+
+   * - Label
+     - Degrees of freedom
+   * - 0, 1, 2
+     - bottom-material displacement (:math:`u_x, u_y, u_z`)
+   * - 3, 4, 5
+     - top-material displacement (:math:`u_x, u_y, u_z`)
+   * - 6
+     - top-material pressure
+
+Solver
+^^^^^^
+
+The indefinite saddle point is solved with FGMRES preconditioned by a 2-level MGR
+split of the dofmap: the displacements (labels 0-5) are the F-block and the pressure
+(label 6) is the coarse block. The displacement F-block is relaxed by two V-cycles of
+a *rigid-body-aware* BoomerAMG: nodal coarsening (``nodal_type: 2``,
+``strong_th: 0.25``) with GM2 interpolation of the three rotational rigid-body modes,
+which MGR supplies automatically, restricted to the F-points. The block uses the
+:math:`\lambda{=}0` (shear) constitutive law, so it is Korn-coercive and
+:math:`\lambda`-independent; the rigid-body modes keep the AMG hierarchy cheap
+(operator complexity :math:`\approx 2`) *and* make it nearly mesh-independent, so the
+outer FGMRES count grows only mildly with mesh size -- at below-baseline cost (at
+:math:`10^6` DOFs, :math:`\nu_{\text{top}}{=}0.4999`: 42 iterations / 19 s, versus a
+single plain V-cycle's 83 / 26). For the coarse
+(pressure) block, MGR is handed the scaled pressure-mass Schur
+:math:`\hat S = (\tfrac{1}{2\mu}+\tfrac{1}{\lambda})\,M_p` via
+``coarse_level_type: user`` (``HYPRE_MGRSetCoarseGridMatrixAtLevel``) instead of forming
+the Galerkin RAP product. :math:`\hat S` is spectrally equivalent to the exact
+pressure Schur uniformly in :math:`h` and :math:`\lambda` (the Bochev--Dohrmann
+pressure stabilization makes this hold for equal-order Q1--Q1), so the outer FGMRES
+count stays bounded as :math:`\nu_{\text{top}} \to 1/2`; the well-conditioned mass
+matrix needs only one cheap coarse cycle. The driver assembles :math:`\hat S` (over
+MGR's compressed coarse numbering) and supplies it automatically for this built-in
+recipe. The built-in configuration is selected automatically (the single-material
+``--solver-preset`` is ignored); pass ``-i <file>`` to override it (add
+``--coarse-schur`` if the file uses ``coarse_level_type: user``). A plain PCG/AMG
+configuration stalls on the indefinite operator, which is why MGR is used here. The
+built-in configuration requires hypre :math:`\ge` 3.1.0 with MGR
+``coarse_grid_method`` 6 (user); on older releases pass a configuration file with
+``-i``.
+
+Reproducible run
+^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+   mpirun -np 1 /path/to/build/elasticity --problem two-material -n 31 11 11 --nu-top 0.4999 -v 1
+   mpirun -np 4 /path/to/build/elasticity --problem two-material -n 31 11 11 -P 2 2 1 --nu-top 0.4999 -v 1
+
+The single-rank output is:
+
+.. literalinclude:: ../../examples/refOutput/elasticity_two_material.txt
+   :language: text
+
+.. note::
+   ``-vis`` works for all discretizations and writes the same ``displacement``
+   point field as the single-material case. The displacement-only discretizations
+   (``standard`` and ``bbar``) store the solution in the structured per-node layout
+   the VTK writer expects, so it is written directly; the mixed discretization stores
+   it in the combined two-field layout, so the displacement components are first
+   scattered into a standard
+   interleaved vector (via the ordinary node numbering, letting HYPRE redistribute)
+   and then written. Pressure is not exported.
+
+B-bar vs Mixed u-p: Solvability at the Near-Incompressible Limit
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The same two-material bar can be discretized three ways via ``--discretization``,
+which split along *two* axes -- accuracy (does it lock?) and solvability (does the
+linear solve stay cheap as :math:`\nu \to 1/2`?):
+
+- ``standard``: standard CG Q1 displacement everywhere (PCG + BoomerAMG,
+  ``amg-pcg.yml``). It **locks** as :math:`\nu \to 1/2`: fully integrating the
+  volumetric energy :math:`\lambda\,(\nabla\cdot u)^2` with
+  :math:`\lambda \sim 1/(1-2\nu)` imposes one volumetric constraint per Gauss point,
+  over-constraining the element so the displacement is artificially stiff -- the
+  *wrong* answer. We therefore drop it from the solver comparison below: there is
+  little point comparing the solve cost of a discretization that locks.
+- ``bbar``: Q1--P0 mean-dilatation (B-bar) everywhere (PCG + BoomerAMG,
+  ``amg-pcg.yml``). The element-constant pressure is statically condensed out,
+  leaving a *displacement-only* SPD system in which the volumetric strain is
+  element-wise constant. Relaxing the spurious volumetric constraint to one per
+  element, it does **not** lock.
+- ``mixed`` (default): mixed u-p (Q1--Q1) on the top half, CG on the bottom -- a
+  symmetric indefinite saddle point (FGMRES + MGR, ``mgr2-gmres.yml``). It keeps the
+  pressure as an explicit unknown, so it does not lock either.
+
+Both *locking-free* options recover the correct tip deflection (0.144 at
+:math:`\nu_{\text{top}}=0.4999`, against standard CG's locked 0.101, ~30% too
+stiff), so the question that remains is purely solvability. The three options land
+in three different places:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 10 26 24
+
+   * - discretization
+     - locks?
+     - tip deflection, :math:`\nu_{\text{top}}=0.4999`
+     - linear solve as :math:`\nu \to 1/2`
+   * - standard CG *(excluded)*
+     - yes
+     - 0.101 (~30% too stiff)
+     - PCG + AMG, ill-conditioned
+   * - B-bar (Q1--P0)
+     - no
+     - 0.144
+     - PCG + AMG, **ill-conditioned** (grows / caps)
+   * - mixed u-p
+     - no
+     - 0.144
+     - FGMRES + MGR (mass-Schur), **bounded**
+
+Run the study (to about :math:`10^6` displacement DOFs on 16 MPI ranks). A single
+invocation sweeps :math:`\nu_{\text{top}} \in \{0.49, 0.499, 0.4999\}` over all five
+mesh sizes for the two locking-free discretizations, collecting the iteration counts
+in ``two_material_iters.csv`` and rendering ``iters_two_material_bars.png``:
+
+.. code-block:: bash
+
+   cd examples/src/C_elasticity
+   EXEC=/path/to/build/elasticity MPI_RANKS_TM=16 PGRID_TM="4 2 2" \
+      ./reproduce.sh --two-material
+
+The figure plots the Krylov iterations to ``relative_tol = 1e-6`` (16 ranks,
+``-P 4 2 2``); a hatched bar marks a run that exhausted the iteration cap without
+converging.
+
+.. figure:: figures/iters_two_material_bars.png
+   :alt: Grouped-bar iteration counts for B-bar and mixed u-p
+   :width: 85%
+   :align: center
+
+   Krylov iterations vs mesh resolution, one bar per :math:`\nu_{\text{top}}`.
+   *Left:* B-bar (PCG + AMG) is locking-free but its condensed operator still carries
+   the :math:`\lambda` penalty, so it is ill-conditioned -- iteration counts climb
+   with both refinement and :math:`\nu_{\text{top}}`, capping out at the tighter
+   ratios. *Right:* mixed u-p (FGMRES + MGR with the scaled pressure-mass Schur as
+   MGR's coarse operator) converges at every ratio and size, essentially independent
+   of :math:`\nu_{\text{top}}`.
+
+The lesson is that **removing locking is not the same as making the system cheap to
+solve.** Both discretizations recover the correct displacement (0.144), but B-bar's
+static condensation leaves the :math:`\lambda` penalty inside the displacement
+operator, so it is as ill-conditioned as standard CG: where it converges
+(:math:`\nu_{\text{top}}=0.49`) it already needs many PCG iterations, and at the
+tighter ratios PCG breaks down and hits the cap. The mixed u-p formulation exposes
+the pressure, so MGR can precondition the saddle point as the textbook block
+factorization: the displacement F-block uses the :math:`\lambda`-independent shear
+operator (two rigid-body-aware GM2 AMG V-cycles, nearly mesh-independent), and the
+pressure C-block is driven by the scaled pressure-mass Schur
+:math:`\hat S = (\tfrac{1}{2\mu}+\tfrac{1}{\lambda})\,M_p`, supplied to MGR via
+``coarse_level_type: user``. :math:`\hat S` is spectrally equivalent to the exact
+pressure Schur uniformly in :math:`h` and :math:`\lambda` (Mardal--Winther; the
+Bochev--Dohrmann pressure stabilization makes this hold for equal-order Q1--Q1), and
+a mass matrix is perfectly conditioned, so one cheap coarse cycle suffices. The
+mixed discretization is thus the only option here that is both locking-free **and**
+efficiently solvable as :math:`\nu \to 1/2`.
 
 .. _LibraryExample4:
 

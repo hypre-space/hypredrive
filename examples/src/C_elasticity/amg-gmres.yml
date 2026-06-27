@@ -1,0 +1,22 @@
+solver:
+  fgmres:
+    max_iter: 300
+    krylov_dim: 300
+    print_level: 0
+    relative_tol: 1.0e-6
+    absolute_tol: 0.0
+
+preconditioner:
+  amg:
+    max_iter: 1
+    print_level: 0
+    interpolation:
+      prolongation_type: extended+i
+    coarsening:
+      type: hmis
+      strong_th: 0.5
+      num_functions: 3
+    relaxation:
+      down_type: forward-hl1gs
+      up_type: backward-hl1gs
+      coarse_type: ge

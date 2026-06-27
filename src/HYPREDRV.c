@@ -718,6 +718,14 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    {
       HYPRE_IJVectorDestroy(hypredrv->vec_nn);
    }
+   for (int i = 0; i < HYPREDRV_MGR_MAX_LEVELS; i++)
+   {
+      if (hypredrv->mat_coarse_schur[i])
+      {
+         HYPRE_IJMatrixDestroy(hypredrv->mat_coarse_schur[i]);
+         hypredrv->mat_coarse_schur[i] = NULL;
+      }
+   }
    if (hypredrv->mat_G && hypredrv->owns_mat_G)
    {
       HYPRE_IJMatrixDestroy(hypredrv->mat_G);
@@ -907,6 +915,10 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->vec_x0         = NULL;
    hypredrv->vec_xref       = NULL;
    hypredrv->vec_nn         = NULL;
+   for (int i = 0; i < HYPREDRV_MGR_MAX_LEVELS; i++)
+   {
+      hypredrv->mat_coarse_schur[i] = NULL;
+   }
    hypredrv->vec_ns         = NULL;
    hypredrv->num_ns         = 0;
    hypredrv->vec_s          = NULL;
@@ -2069,6 +2081,36 @@ HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
 }
 
 /*-----------------------------------------------------------------------------
+ * Provide an application-assembled coarse (Schur-complement) operator for MGR.
+ * Used when the MGR coarse_level_type is "user"; the matrix must be sized to the
+ * coarse (C-point) DOF set. The handle is borrowed (the application owns it).
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemSetCoarseSchur(HYPREDRV_t hypredrv, int level, HYPRE_Matrix mat_S)
+{
+   HYPREDRV_CHECK_INIT_AND_OBJ();
+
+   if (level < 0 || level >= HYPREDRV_MGR_MAX_LEVELS)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   /* Ownership transfers to the linear system: freed at teardown (the MGR
+    * preconditioner is destroyed/recreated every solve, so it cannot own a
+    * matrix that must persist across solves). The application must not free it. */
+   if (hypredrv->mat_coarse_schur[level] &&
+       hypredrv->mat_coarse_schur[level] != (HYPRE_IJMatrix) mat_S)
+   {
+      HYPRE_IJMatrixDestroy(hypredrv->mat_coarse_schur[level]);
+   }
+   hypredrv->mat_coarse_schur[level] = (HYPRE_IJMatrix) mat_S;
+
+   return hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * Set the exact null space modes of the linear system from a user-supplied array
  *-----------------------------------------------------------------------------*/
 
@@ -2641,7 +2683,8 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
       PreconOperators precon_ops = {
          hypredrv->mat_G,
          hypredrv->mat_C,
-         {hypredrv->vec_coord[0], hypredrv->vec_coord[1], hypredrv->vec_coord[2]}};
+         {hypredrv->vec_coord[0], hypredrv->vec_coord[1], hypredrv->vec_coord[2]},
+         hypredrv->mat_coarse_schur};
       hypredrv_PreconCreate(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                             hypredrv->dofmap, hypredrv->vec_nn, &hypredrv->precon,
                             hypredrv->stats, next_ls_id, &precon_ops);

@@ -50,9 +50,10 @@ typedef enum precon_type_enum
 
 typedef struct PreconOperators_struct
 {
-   HYPRE_IJMatrix G;        /* discrete gradient (AMS, ADS) */
-   HYPRE_IJMatrix C;        /* discrete curl (ADS) */
-   HYPRE_IJVector coord[3]; /* vertex coordinate vectors (AMS, ADS) */
+   HYPRE_IJMatrix G;            /* discrete gradient (AMS, ADS) */
+   HYPRE_IJMatrix C;            /* discrete curl (ADS) */
+   HYPRE_IJVector coord[3];             /* vertex coordinate vectors (AMS, ADS) */
+   const HYPRE_IJMatrix *coarse_schur;  /* per-level app-provided MGR coarse operators */
 } PreconOperators;
 
 /*--------------------------------------------------------------------------

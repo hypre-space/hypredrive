@@ -1,6 +1,9 @@
 #ifndef HYPREDRV_OBJECT_HEADER_
 #define HYPREDRV_OBJECT_HEADER_
 
+/* Matches hypre's MAX_MGR_LEVELS; per-level coarse Schur operator slots. */
+#define HYPREDRV_MGR_MAX_LEVELS 32
+
 #include "HYPREDRV.h"
 #include "internal/args.h"
 #include "internal/containers.h"
@@ -26,6 +29,10 @@ typedef struct hypredrv_struct
    HYPRE_IJVector  *vec_s;    /* Array of vector states */
    HYPRE_IJMatrix   mat_G;    /* Discrete gradient */
    HYPRE_IJMatrix   mat_C;    /* Discrete curl */
+   /* Per-MGR-level app-provided coarse (Schur) operators. Owned by the linear
+    * system (freed at teardown); MGR borrows the ParCSR each setup. Size matches
+    * hypre's MAX_MGR_LEVELS (32). */
+   HYPRE_IJMatrix   mat_coarse_schur[HYPREDRV_MGR_MAX_LEVELS];
    HYPRE_Precon     precon;   /* Preconditioner object */
    HYPRE_Solver     solver;   /* Solver object */
    Scaling_context *scaling_ctx;      /* Scaling context */

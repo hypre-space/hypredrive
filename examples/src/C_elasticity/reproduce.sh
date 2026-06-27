@@ -9,11 +9,15 @@
 set -euo pipefail
 
 MODE="run-and-plot"
+STUDY="presets"
 
 for arg in "$@"; do
     case "${arg}" in
         --plot-only)
             MODE="plot-only"
+            ;;
+        --two-material)
+            STUDY="two-material"
             ;;
         -h|--help)
             MODE="help"
@@ -29,13 +33,22 @@ done
 if [[ "${MODE}" == "help" ]]; then
     echo "Usage: $0"
     echo ""
-    echo "Runs three elasticity solver preset configurations across"
-    echo "8 mesh-size variants (~1e4 to ~1e6 DOFs) and produces"
-    echo "separate iteration/setup/solve plots using scripts/analyze_statistics.py."
+    echo "Runs three elasticity solver preset configurations -- plain unknown-based"
+    echo "AMG (elasticity_3D), function-filtered AMG (elasticity_sdc_3D), and the"
+    echo "rigid-body-aware nodal/GM2 AMG (elasticity_nodal_3D) -- across 8 mesh-size"
+    echo "variants (~1e4 to ~1e6 DOFs) and produces iterations and total (setup+solve)"
+    echo "time plots using scripts/analyze_statistics.py. This is the rigid-body-modes"
+    echo "(RBM) study: it shows the nodal/GM2 preset converging in the fewest iterations"
+    echo "and the least time."
     echo ""
     echo "Modes:"
-    echo "  (default)   Run all variants and generate plots"
-    echo "  --plot-only Skip runs and only generate plots from existing output logs"
+    echo "  (default)       Run the single-material preset sweep and generate plots"
+    echo "  --two-material  Two-material bar: the two locking-free discretizations,"
+    echo "                  B-bar (Q1-P0) and mixed u-p, sweeping nu_top in"
+    echo "                  {0.49,0.499,0.4999} over 5 mesh sizes (to ~1e6 DOFs);"
+    echo "                  writes two_material_iters.csv and the two-panel grouped-bar"
+    echo "                  figure iters_two_material_bars.png"
+    echo "  --plot-only     Skip runs and only generate plots from existing output logs"
     echo ""
     echo "Environment overrides:"
     echo "  MPIEXEC_EXECUTABLE   MPI launcher executable (default: mpirun)"
@@ -47,13 +60,18 @@ if [[ "${MODE}" == "help" ]]; then
     echo "  ARGS                 Common elasticity arguments (without -n/-P)"
     echo "  MAX_VARIANTS         Limit number of size variants (default: 8)"
     echo ""
+    echo "  Two-material study (--two-material) overrides:"
+    echo "  MPI_RANKS_TM         MPI ranks for the two-material study (default: 16)"
+    echo "  PGRID_TM             Processor grid 'Px Py Pz' (default: 4 2 2)"
+    echo "  NU_BOTTOM            Bottom-material Poisson ratio (default: 0.3)"
+    echo "  CONFIG_DIR           Directory holding the .yml configs + plot script (default: .)"
+    echo ""
     echo "Outputs:"
     echo "  elasticity_builtin.out"
     echo "  elasticity_sdc.out"
     echo "  elasticity_nodal.out"
     echo "  iters_elasticity_presets_dofs.png"
-    echo "  setup_elasticity_presets_dofs.png"
-    echo "  solve_elasticity_presets_dofs.png"
+    echo "  total_elasticity_presets_dofs.png"
     exit 0
 fi
 
@@ -179,16 +197,81 @@ plot_results() {
     PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 "${STATS}" -f "${combined_files[@]}" -ln "${METHODS[@]}" -m "iters" \
         --style docs -t rows -l "DOFs (rows)" -s "elasticity_presets_dofs.png" --log-x -T "Linear solver iterations"
 
-    echo "  Plotting: setup time vs DOFs -> setup_elasticity_presets_dofs.png"
-    PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 "${STATS}" -f "${combined_files[@]}" -ln "${METHODS[@]}" -m "setup" \
-        --style docs -t rows -l "DOFs (rows)" -s "elasticity_presets_dofs.png" --log-x --log-y -T "Linear solver setup time [s]"
-
-    echo "  Plotting: solve time vs DOFs -> solve_elasticity_presets_dofs.png"
-    PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 "${STATS}" -f "${combined_files[@]}" -ln "${METHODS[@]}" -m "solve" \
-        --style docs -t rows -l "DOFs (rows)" -s "elasticity_presets_dofs.png" --log-x --log-y -T "Linear solver solve time [s]"
+    echo "  Plotting: total (setup+solve) time vs DOFs -> total_elasticity_presets_dofs.png"
+    PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 "${STATS}" -f "${combined_files[@]}" -ln "${METHODS[@]}" -m "total" \
+        --style docs -t rows -l "DOFs (rows)" -s "elasticity_presets_dofs.png" --log-x --log-y -T "Linear solver total (setup + solve) time [s]"
 
     echo "Done. Plots saved in current directory."
 }
+
+# Two-material bar: the two LOCKING-FREE discretizations of the SAME problem
+# (bottom NU_BOTTOM, top nu_top) on the same meshes and rank grid, sweeping nu_top
+# across {0.49, 0.499, 0.4999} and each mesh size:
+#   bbar  = Q1-P0 mean-dilatation (PCG + AMG, amg-pcg.yml) -- locking-free but the
+#           condensed operator keeps the lambda penalty, so it stays
+#           ill-conditioned and PCG iterations grow / cap out as nu -> 1/2.
+#   mixed = u-p saddle point (FGMRES + MGR, mgr2-gmres.yml + --coarse-schur) --
+#           locking-free AND, with the scaled pressure-mass Schur as MGR's coarse
+#           operator, the iteration count stays bounded as nu -> 1/2 (lambda-robust);
+#           the displacement F-block uses a rigid-body-aware GM2 AMG (2 V-cycles),
+#           so the count is also nearly mesh-independent (h-robust).
+# (Standard CG Q1 is omitted: it locks, so its solution is wrong -- the comparison
+# of interest is between the two locking-free options.) Iterations are collected
+# into two_material_iters.csv and rendered as two side-by-side grouped bar charts
+# (x = mesh resolution, one bar per nu_top) by plot_two_material.py. Configs and
+# the plot script live in this directory; set CONFIG_DIR to relocate.
+run_two_material_study() {
+    local ranks="${MPI_RANKS_TM:-16}"
+    local pgrid="${PGRID_TM:-4 2 2}"
+    local cfgdir="${CONFIG_DIR:-.}"
+    local nu_bottom="${NU_BOTTOM:-0.3}"
+    local csv="two_material_iters.csv"
+    # (Nx, Ny, Nz) with Ny odd (interface node layer); ~4e4 .. ~1e6 displacement DOFs.
+    local sizes=("31 21 21" "45 31 31" "61 41 41" "81 51 51" "91 61 61")
+    # Top-material Poisson ratios: mild -> strongly near-incompressible.
+    local nus=("0.49" "0.499" "0.4999")
+
+    if [[ "${MODE}" != "plot-only" ]]; then
+        echo "disc,nu,nx,ny,nz,dofs,iters,relres" > "${csv}"
+        local s nx ny nz dofs nu spec disc yml row
+        for s in "${sizes[@]}"; do
+            read -r nx ny nz <<< "${s}"
+            dofs=$((3 * nx * ny * nz))
+            for nu in "${nus[@]}"; do
+                # bbar = displacement-only PCG+AMG; mixed = FGMRES+MGR with a
+                # rigid-body-aware GM2 displacement F-block and the mass-Schur coarse
+                # operator (needs --coarse-schur so the driver assembles/supplies it).
+                for spec in "bbar amg-pcg.yml" "mixed mgr2-gmres.yml"; do
+                    read -r disc yml <<< "${spec}"
+                    local extra=""
+                    if [[ "${disc}" == "mixed" ]]; then extra="--coarse-schur"; fi
+                    echo "N=${nx}x${ny}x${nz} (DOFs=${dofs}) nu_top=${nu} ${disc} ..."
+                    # Pull the single STATISTICS SUMMARY data row and keep its last
+                    # two columns: relative residual ($7) and iteration count ($8).
+                    row=$(${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${ranks} ${EXEC} \
+                            --problem two-material --discretization "${disc}" \
+                            -n "${nx}" "${ny}" "${nz}" -P ${pgrid} -nu "${nu_bottom}" \
+                            --nu-top "${nu}" -ns 1 -v 1 ${extra} -i "${cfgdir}/${yml}" 2>&1 \
+                        | awk -F'|' '/^\|[[:space:]]*[0-9]+[[:space:]]*\|/ \
+                                     { gsub(/ /,"",$7); gsub(/ /,"",$8); rr=$7; it=$8 } \
+                                     END { print it","rr }')
+                    echo "${disc},${nu},${nx},${ny},${nz},${dofs},${row}" >> "${csv}"
+                    echo "    -> iters,relres = ${row}"
+                done
+            done
+        done
+    fi
+
+    echo "Plotting grouped iteration bars -> iters_two_material_bars.png"
+    PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 \
+        "${cfgdir}/plot_two_material.py" "${csv}" "iters_two_material_bars.png"
+    echo "Done. Plot: iters_two_material_bars.png (data: ${csv})"
+}
+
+if [[ "${STUDY}" == "two-material" ]]; then
+    run_two_material_study
+    exit 0
+fi
 
 if [[ "${MODE}" == "plot-only" ]]; then
     echo "Plot-only mode: using existing output logs."

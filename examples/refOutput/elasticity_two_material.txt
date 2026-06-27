@@ -1,0 +1,45 @@
+Date and time: YYYY-MM-DD HH:MM:SS
+
+Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
+Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
+
+=====================================================
+          Linear Elasticity Problem Setup
+=====================================================
+Physical dimensions:     3 x 1 x 1
+Grid dimensions (nodes): 31 x 11 x 11
+Processor topology:      1 x 1 x 1
+Problem:                 Two-Material Bar (interface at y=Ly/2)
+Discretization:          mixed u-p (Q1-Q1) top + CG bottom
+Bottom material:         E=1.0e+05, nu=0.3000
+Top material:            E=1.0e+05, nu=0.4999
+Body force:              rho=1.0e+00, g=(0.0, -9.8, 0.0)
+Solver:                  FGMRES + MGR (u-p saddle point)
+Top traction:            t=(0.0e+00, -1.0e+02, 0.0e+00)
+Visualization:           false
+Verbosity level:         0x1
+Number of solves:        5
+=====================================================
+
+Assembling linear system... Done!
+Solve 1/5...
+Solve 2/5...
+Solve 3/5...
+Solve 4/5...
+Solve 5/5...
+=======================================================================================
+
+
+STATISTICS SUMMARY:
+
++------------+-------------+-------------+-------------+------------+------------+--------+
+|            |    LS build |       setup |       solve |    initial |   relative |        |
+|      Entry |   times [s] |   times [s] |   times [s] |  res. norm |  res. norm |  iters |
++------------+-------------+-------------+-------------+------------+------------+--------+
+|          0 |       0.086 |       0.127 |       0.474 |   1.68e+01 |   5.41e-07 |     20 |
+|          1 |             |       0.135 |       0.206 |   1.68e+01 |   5.41e-07 |     20 |
+|          2 |             |       0.084 |       0.149 |   1.68e+01 |   5.41e-07 |     20 |
+|          3 |             |       0.095 |       0.220 |   1.68e+01 |   5.41e-07 |     20 |
+|          4 |             |       0.090 |       0.177 |   1.68e+01 |   5.41e-07 |     20 |
++------------+-------------+-------------+-------------+------------+------------+--------+
+

@@ -678,7 +678,11 @@ MGRGetOrCreateNestedKrylov(NestedKrylov_args **ptr)
 
    if (!*ptr)
    {
-      *ptr = (NestedKrylov_args *)malloc(sizeof(NestedKrylov_args));
+      /* calloc (not malloc): zero-initialize the embedded solver/precon parameter
+         unions. They are otherwise read as garbage when MGR treats this object as
+         its F-relaxation solver (it mirrors the hypre_Solver layout), e.g. in
+         hypre_MGRSetupStats. */
+      *ptr = (NestedKrylov_args *)calloc(1, sizeof(NestedKrylov_args));
       if (*ptr)
       {
          hypredrv_NestedKrylovSetDefaultArgs(*ptr);
@@ -1289,6 +1293,7 @@ hypredrv_MGRSetDefaultArgs(MGR_args *args)
    args->num_active_levels = 0;
    memset(args->active_level_map, 0, sizeof(args->active_level_map));
    args->vec_nn            = NULL;
+   args->coarse_schur      = NULL;
    args->point_marker_data = NULL;
 }
 
@@ -1638,7 +1643,7 @@ hypredrv_MGRlvlGetValidValues(const char *key)
       static StrIntMap map[] = {
          {"rap", 0},           {"galerkin", 0},       {"non-galerkin", 1},
          {"cpr-like-diag", 2}, {"cpr-like-bdiag", 3}, {"approx-inv", 4},
-         {"acc", 5},
+         {"acc", 5},           {"user", 6},
       };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
@@ -1828,6 +1833,12 @@ void
 hypredrv_MGRSetNearNullSpace(MGR_args *args, HYPRE_IJVector vec_nn)
 {
    args->vec_nn = vec_nn;
+}
+
+void
+hypredrv_MGRSetCoarseSchur(MGR_args *args, const HYPRE_IJMatrix *coarse_schur)
+{
+   args->coarse_schur = coarse_schur;
 }
 
 /* GCOVR_EXCL_BR_START */
@@ -3303,6 +3314,35 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
       if (drop_frelax)
       {
          args->frelax[i] = NULL;
+
+         /* Free the rotational rigid-body interpolation vectors injected into the
+          * F-relaxation AMG by MGRInjectFRelaxRBMs. hypre's BoomerAMG borrows these
+          * (HYPRE_BoomerAMGSetInterpVectors does not take ownership), so we own them
+          * and must free them here -- after the AMG solver above has been destroyed.
+          * Covers both the directly-managed AMG and a nested-Krylov AMG precon;
+          * ParVectorDestroy(NULL) is a no-op, so this is safe even when the nested
+          * precon teardown already released them. */
+         MGRfrlx_args *fr          = &args->level[i].f_relaxation;
+         AMG_args     *frelax_amg  = NULL;
+         if (fr->use_krylov && fr->krylov && fr->krylov->has_precon &&
+             fr->krylov->precon_method == PRECON_BOOMERAMG)
+         {
+            frelax_amg = &fr->krylov->precon.amg;
+         }
+         else if (fr->type == 2)
+         {
+            frelax_amg = &fr->amg;
+         }
+         if (frelax_amg)
+         {
+            for (int r = 0; r < frelax_amg->num_rbms; r++)
+            {
+               HYPRE_ParVectorDestroy(frelax_amg->rbms[r]);
+               frelax_amg->rbms[r] = NULL;
+            }
+            frelax_amg->num_rbms         = 0;
+            frelax_amg->frelax_nullspace = 0;
+         }
       }
 
       if (args->level[i].g_relaxation.use_krylov && args->level[i].g_relaxation.krylov)
@@ -3774,6 +3814,22 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
    HYPRE_MGRSetLevelInterpType(precon, level_interp_type);
    HYPRE_MGRSetLevelRestrictType(precon, level_restrict_type);
    HYPRE_MGRSetCoarseGridMethod(precon, level_coarse_type);
+
+   /* coarse_level_type: user (=6) -- hand MGR the application-assembled coarse
+    * (Schur) operator for each level that provides one, so MGR skips the Galerkin
+    * RAP product there. MGR borrows the matrix (the linear system owns it). */
+   if (args->coarse_schur)
+   {
+      for (HYPRE_Int i = 0; i < plan->num_levels - 1; i++)
+      {
+         if (args->coarse_schur[i])
+         {
+            HYPRE_ParCSRMatrix coarse_par = NULL;
+            HYPRE_IJMatrixGetObject(args->coarse_schur[i], (void **) &coarse_par);
+            HYPRE_MGRSetCoarseGridMatrixAtLevel(precon, i, coarse_par);
+         }
+      }
+   }
 #else
    (void)precon;
    (void)args;
@@ -3781,6 +3837,48 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
    (void)stats;
    (void)next_ls_id;
 #endif
+}
+
+/*-----------------------------------------------------------------------------
+ * Feed the rotational rigid-body modes (components 3,4,5 of the supplied near-
+ * null space, restricted to this level's F-points) to a nodal-coarsening
+ * BoomerAMG that acts as the displacement F-relaxation. The modes match hypre's
+ * extracted A_FF row ordering, so GM interpolation resolves the elasticity
+ * rotation modes and a single F-block V-cycle does far more work per cycle.
+ *
+ * Works for either flavour of F-relaxation AMG: the directly-managed AMG
+ * (target_amg = &f_relaxation.amg) or the BoomerAMG preconditioner of a nested-
+ * Krylov F-relaxation (target_amg = &f_relaxation.krylov->precon.amg). Without
+ * this, setting interp_vec_variant on an AMG that has no interpolation vectors
+ * makes hypre build GM interpolation from an empty vector set (heap corruption).
+ *-----------------------------------------------------------------------------*/
+
+static void
+MGRInjectFRelaxRBMs(MGR_args *args, MGRlvl_args *level_args, AMG_args *target_amg)
+{
+   if (!target_amg || !target_amg->coarsening.nodal || !args->vec_nn || !args->dofmap ||
+       !args->dofmap->data)
+   {
+      return;
+   }
+
+   const StackIntArray *fd    = &level_args->f_dofs;
+   int                  nloc  = (int)args->dofmap->size;
+   int                 *fmask = (int *)calloc((size_t)(nloc > 0 ? nloc : 1), sizeof(int));
+   for (int j = 0; j < nloc; j++)
+   {
+      int lbl = args->dofmap->data[j];
+      for (size_t t = 0; t < fd->size; t++)
+      {
+         if (lbl == fd->data[t])
+         {
+            fmask[j] = 1;
+            break;
+         }
+      }
+   }
+   hypredrv_AMGSetRBMsFRestricted(target_amg, args->vec_nn, fmask, nloc);
+   free(fmask);
 }
 
 /*-----------------------------------------------------------------------------
@@ -3794,6 +3892,13 @@ MGRConfigManagedFRelax(MGR_args *args, HYPRE_Solver precon, HYPRE_Int active_lvl
 {
    MGRlvl_args *level_args = &args->level[orig_lvl];
    HYPRE_Solver frelax     = args->frelax[orig_lvl];
+
+   /* Directly-managed nodal AMG F-relaxation: inject the rotational RBMs before
+    * the solver is built (only on first build, when there is no cached handle). */
+   if (!frelax && level_args->f_relaxation.type == 2)
+   {
+      MGRInjectFRelaxRBMs(args, level_args, &level_args->f_relaxation.amg);
+   }
 
    if (!frelax)
    {
@@ -3833,6 +3938,15 @@ MGRConfigFRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan 
          int krylov_was_cached = (level_args->f_relaxation.krylov->base_solver != NULL);
          if (!krylov_was_cached)
          {
+            /* Nested-Krylov F-relaxation whose preconditioner is a nodal AMG:
+             * inject the rotational RBMs into that AMG before it is built, so its
+             * GM interpolation resolves the elasticity rotation modes. */
+            if (level_args->f_relaxation.krylov->has_precon &&
+                level_args->f_relaxation.krylov->precon_method == PRECON_BOOMERAMG)
+            {
+               MGRInjectFRelaxRBMs(args, level_args,
+                                   &level_args->f_relaxation.krylov->precon.amg);
+            }
             hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, level_args->f_relaxation.krylov,
                                         args->dofmap, args->vec_nn,
                                         &level_args->f_relaxation.krylov->base_solver);
@@ -4296,6 +4410,28 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
    MGRApplyBaseSettings(precon, args, &plan, stats, next_ls_id);
    /* GCOVR_EXCL_BR_START */
    MGRApplyLevelSettings(precon, args, &plan, stats, next_ls_id);
+
+   /* coarse_level_type 'user' (=6) requires an application-provided coarse matrix
+    * for that level. Reject a recipe that selects it without one here, where the
+    * failure surfaces as a clear hypredrive error. Otherwise hypre's MGRSetup
+    * rejects it, but that hypre error is cleared downstream (see HYPRE_ClearAllErrors
+    * in the solve path) and the solve would crash on the half-built hierarchy. The
+    * method lives on the original level (active_level_map[i]); the borrowed matrix
+    * is indexed by the active level i, matching MGRApplyLevelSettings. */
+   for (HYPRE_Int i = 0; i < plan.num_levels - 1; i++)
+   {
+      HYPRE_Int orig_lvl = plan.active_level_map[i];
+      if (args->level[orig_lvl].coarse_level_type == 6 &&
+          !(args->coarse_schur && args->coarse_schur[i]))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR coarse_level_type 'user' requires an "
+                              "application-provided coarse matrix for that level "
+                              "(set it via HYPREDRV_LinearSystemSetCoarseSchur, e.g. "
+                              "the elasticity driver's --coarse-schur flag)");
+         goto cleanup;
+      }
+   }
 
    if (!MGRConfigFRelaxSolvers(args, precon, &plan, stats, next_ls_id) ||
        !MGRConfigGRelaxSolvers(args, precon, &plan, stats, next_ls_id) ||

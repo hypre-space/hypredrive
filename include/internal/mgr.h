@@ -148,6 +148,7 @@ struct MGR_args_struct
 {
    IntArray      *dofmap;
    HYPRE_IJVector vec_nn;
+   const HYPRE_IJMatrix *coarse_schur; /* per-level app coarse (Schur) operators (coarse_level_type: user) */
 
    HYPRE_Int  non_c_to_f;
    HYPRE_Int  pmax;
@@ -185,6 +186,7 @@ void hypredrv_MGRSetArgs(void *, const YAMLnode *);
 void hypredrv_MGRSetDofmap(MGR_args *, IntArray *);
 void hypredrv_MGRSetDofLabels(const DofLabelMap *);
 void hypredrv_MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
+void hypredrv_MGRSetCoarseSchur(MGR_args *, const HYPRE_IJMatrix *);
 void hypredrv_MGRCreate(MGR_args *, HYPRE_Solver *, const struct Stats_struct *, int);
 int  hypredrv_MGRComponentReuseSetupMode(MGR_args *, const struct Stats_struct *, int);
 int  hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *, const IntArray *,

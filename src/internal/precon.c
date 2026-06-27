@@ -320,13 +320,22 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
    switch (precon_method)
    {
       case PRECON_BOOMERAMG:
-         hypredrv_AMGSetRBMs(&args->amg, vec_nn);
+         /* Skip deriving full-system RBMs when F-restricted rotational modes were
+          * already injected for an MGR F-block AMG (frelax_nullspace == 1). Those
+          * modes match the extracted A_FF partitioning; full-system RBMs would be
+          * sized to the whole saddle-point system and overrun A_FF during GM
+          * interpolation setup. */
+         if (!args->amg.frelax_nullspace)
+         {
+            hypredrv_AMGSetRBMs(&args->amg, vec_nn);
+         }
          hypredrv_AMGCreate(&args->amg, &precon->main);
          break;
 
       case PRECON_MGR:
          hypredrv_MGRSetDofmap(&args->mgr, dofmap);
          hypredrv_MGRSetNearNullSpace(&args->mgr, vec_nn);
+         hypredrv_MGRSetCoarseSchur(&args->mgr, ops ? ops->coarse_schur : NULL);
          hypredrv_MGRCreate(&args->mgr, &precon->main, stats, next_ls_id);
          break;
 

@@ -76,6 +76,11 @@ typedef struct AMGcsn_args_struct
    HYPRE_Int  num_functions;
    HYPRE_Int  filter_functions;
    HYPRE_Int  nodal;
+   HYPRE_Int  nodal_type;          /* HYPRE_BoomerAMGSetNodal mode for GM/LN interp */
+   HYPRE_Int  interp_vec_variant;  /* 1=GM1, 2=GM2, 3+=LN rigid-body-mode interp */
+   HYPRE_Int  smooth_interp_vecs;  /* smooth the interp (rigid-body) vectors */
+   HYPRE_Int  interp_vec_qmax;     /* max nnz per row added by GM/LN expansion */
+   HYPRE_Real interp_vec_abs_q_trunc; /* drop GM/LN Q entries below this magnitude */
    HYPRE_Int  seq_amg_th;
    HYPRE_Int  min_coarse_size;
    HYPRE_Int  max_coarse_size;
@@ -114,6 +119,7 @@ typedef struct AMG_args_struct
 
    HYPRE_Int       num_rbms;
    HYPRE_ParVector rbms[3];
+   HYPRE_Int       frelax_nullspace; /* GM interp vectors live on an MGR F-block */
 } AMG_args;
 
 /*--------------------------------------------------------------------------
@@ -124,6 +130,7 @@ void hypredrv_AMGSetDefaultArgs(AMG_args *);
 void hypredrv_AMGSetArgs(void *, const YAMLnode *);
 void hypredrv_AMGCreate(const AMG_args *, HYPRE_Solver *);
 void hypredrv_AMGSetRBMs(AMG_args *, HYPRE_IJVector);
+void hypredrv_AMGSetRBMsFRestricted(AMG_args *, HYPRE_IJVector, const int *, int);
 void hypredrv_AMGSetDofFunc(const AMG_args *, const IntArray *, HYPRE_Solver,
                             HYPRE_IJMatrix);
 

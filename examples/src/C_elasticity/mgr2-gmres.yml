@@ -1,0 +1,79 @@
+# Two-material elasticity (mixed u-p): FGMRES + 2-level MGR with the scaled
+# pressure-mass Schur as the coarse operator. This is the explicit form of the
+# driver's built-in recipe; run it with the --coarse-schur flag so the driver
+# assembles and supplies Mhat = (1/(2mu)+1/lambda) M_p.
+#
+#   F-block (displacements 0-5): two V-cycles of a RIGID-BODY-AWARE (GM2) BoomerAMG.
+#     Nodal coarsening (nodal_type 2, strong_th 0.25) keeps the hierarchy cheap
+#     (operator complexity ~2.0) while the three rotational rigid-body modes --
+#     supplied automatically by MGR, restricted to this level's F-points -- make
+#     each cycle resolve the elasticity rotation modes. This gives NEARLY
+#     MESH-INDEPENDENT outer iterations at below-baseline cost: vs a single plain
+#     V-cycle it cuts iterations ~1.5x and runs faster (lower complexity), e.g. at
+#     1M DOFs / nu_top=0.4999, 42 iters / 19s vs 83 iters / 26s. See
+#     reports/mixed_up_preconditioner.tex, Sec. 11.2.
+#   C-block (pressure 6): coarse_level_type: user hands MGR the assembled mass
+#     Schur Mhat instead of the Galerkin RAP product. Mhat is spectrally
+#     equivalent to the exact pressure Schur uniformly in h and lambda (the
+#     Bochev-Dohrmann pressure stabilization makes this hold for equal-order
+#     Q1-Q1), so the outer FGMRES count stays bounded as nu_top -> 1/2. The mass
+#     matrix is well conditioned, so one coarse cycle suffices.
+
+solver:
+  fgmres:
+    krylov_dim: 100
+    max_iter: 300
+    print_level: 0
+    relative_tol: 1.0e-6
+    absolute_tol: 0.0
+
+preconditioner:
+  mgr:
+    max_iter: 1
+    tolerance: 0.0
+    print_level: 0
+    coarse_th: 0.0
+    level:
+      0:
+        f_dofs: [0, 1, 2, 3, 4, 5]
+        f_relaxation:
+          amg:
+            max_iter: 2
+            tolerance: 0.0
+            interpolation:
+              prolongation_type: extended+i
+            coarsening:
+              type: hmis
+              strong_th: 0.25
+              num_functions: 3
+              nodal: 1
+              nodal_type: 2
+              interp_vec_variant: 2
+              smooth_interp_vecs: 0
+            relaxation:
+              down_type: forward-hl1gs
+              up_type: backward-hl1gs
+              coarse_type: ge
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: user
+
+    coarsest_level:
+      gmres:
+        max_iter: 1
+        print_level: 0
+        preconditioner:
+          amg:
+            max_iter: 1
+            tolerance: 0.0
+            interpolation:
+              prolongation_type: extended+i
+            coarsening:
+              type: hmis
+              strong_th: 0.3
+              num_functions: 1
+            relaxation:
+              down_type: forward-hl1gs
+              up_type: backward-hl1gs
+              coarse_type: ge
