@@ -24,6 +24,12 @@ depending on the value of other keywords.
    regardless of the presence of lower-case, upper-case, or a mixture of both when
    defining keys and values.
 
+.. tip::
+
+   You can browse this schema interactively from the command line with the driver's
+   ``-h``/``--help`` flag, which prints the valid keys, accepted values, and nested
+   topics for any section without running a solve. See :ref:`CLIHelp`.
+
 General Settings
 ----------------
 

@@ -31,6 +31,97 @@ All example inputs can be found in the ``examples`` folder and reference outputs
    Alternatively, you can download the datasets manually from the Zenodo record and extract
    them into the ``data/`` directory. See ``data/README.md`` for more details.
 
+.. _CLIHelp:
+
+Exploring the Input Schema (``-h/--help``)
+------------------------------------------
+
+The driver can describe its own YAML input schema from the command line. Passing
+``-h`` or ``--help`` prints an overview of the top-level sections and exits without
+running a solve:
+
+.. code-block:: bash
+
+   mpirun -np 1 ./hypredrive-cli --help
+
+.. code-block:: text
+
+   Usage: ./hypredrive-cli [options] <input.yml>
+
+   List of valid sections for input.yml:
+
+   Valid keys:
+     general         <section>  Global configuration settings
+     linear_system   <section>  Linear system settings
+     solver          <section>  Linear solver settings
+     preconditioner  <section>  Preconditioner settings
+
+   Nested topics:
+     general
+     linear_system
+     solver
+     preconditioner
+
+To inspect a specific section, append a *topic path* after ``--help``. Nested blocks
+are separated by ``:`` (the same path syntax used by the :ref:`CLIOverrides`). For
+example, ``--help solver`` lists the available solver types, the keys each accepts, and
+the nested topics you can explore further:
+
+.. code-block:: bash
+
+   mpirun -np 1 ./hypredrive-cli --help solver
+
+.. code-block:: text
+
+   Help for solver
+   Linear solver settings
+
+   Accepted values:
+     pcg (0)
+     gmres (1)
+     fgmres (2)
+     bicgstab (3)
+
+   Valid keys:
+     pcg       <solver-type>  Preconditioned Conjugate Gradient solver block
+     gmres     <solver-type>  Generalized Minimal RESidual solver block
+     fgmres    <solver-type>  Flexible Generalized Minimal RESidual solver block
+     bicgstab  <solver-type>  Bi-Conjugate Gradient Stabilized solver block
+
+   Nested topics:
+     pcg
+     gmres
+     fgmres
+     bicgstab
+
+You can descend as far as the schema goes, down to an individual key:
+
+.. code-block:: bash
+
+   mpirun -np 1 ./hypredrive-cli --help solver:gmres:max_iter
+
+.. code-block:: text
+
+   Help for solver:gmres:max_iter
+   max_iter  <value>  Maximum number of iterations
+
+A few conventions appear in the output:
+
+- ``<one of>`` marks a key that takes an enumerated value; the accepted spellings are
+  listed beneath it. The integer in parentheses (for example ``gmres (1)``) is the
+  numeric code used internally by hypre, which may also be supplied as the value.
+- Sections that are *sequences* (such as ``preconditioner:mgr:level`` or
+  ``preconditioner:reuse:adaptive:components``) accept a numeric item index, shown as
+  ``<index>`` under *Nested topics*. Use any non-negative integer in the path to inspect
+  an item, for example ``--help preconditioner:mgr:level:0:f_relaxation``.
+- The topic path is case-insensitive and accepts either ``:`` or ``.`` as the separator.
+
+.. note::
+
+   ``--help`` reflects the schema compiled into your build, so version-gated options
+   (for example those requiring a newer hypre) are listed only when they are actually
+   available.
+
 .. _CLIOverrides:
 
 CLI Overrides (``-a/--args``)
