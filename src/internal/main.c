@@ -10,6 +10,7 @@
 #include <string.h>
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
+#include "internal/help.h"
 
 static bool
 LooksLikeYAMLFilename(const char *str)
@@ -109,19 +110,6 @@ PrintBanner(void)
 // clang-format on
 
 static int
-HelpRequested(int argc, char **argv)
-{
-   for (int i = 1; i < argc; i++)
-   {
-      if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
-      {
-         return 1;
-      }
-   }
-   return 0;
-}
-
-static int
 QuietModeRequested(int argc, char **argv)
 {
    for (int i = 1; i < argc; i++)
@@ -183,6 +171,7 @@ main(int argc, char **argv)
    MPI_Comm   comm = MPI_COMM_WORLD;
    int        myid = 0;
    HYPREDRV_t obj  = NULL;
+   char       help_topic[512];
 
    /*-----------------------------------------------------------
     * Initialize driver
@@ -196,15 +185,16 @@ main(int argc, char **argv)
    }
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
-   if (HelpRequested(argc, argv))
+   if (hypredrv_HelpRequested(argc, argv, help_topic, sizeof(help_topic)))
    {
+      int help_status = 0;
       if (!myid)
       {
-         PrintUsage(argv[0]);
+         help_status = hypredrv_HelpPrint(stdout, argv[0], help_topic);
       }
       HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
       MPI_Finalize();
-      return 0;
+      return help_status;
    }
    if (!RequireConfigArgument(argc, argv, myid))
    {

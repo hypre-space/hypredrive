@@ -111,6 +111,7 @@ set(_hypredrv_unit_test_cases
     "test_error|test_error.c|FALSE"
     "test_logging|test_logging.c|FALSE"
     "test_field|test_field.c|FALSE"
+    "test_help|test_help.c|FALSE"
     "test_runtime|test_runtime.c|FALSE"
     "test_args|test_args.c|FALSE"
     "test_precon|test_precon.c|TRUE"

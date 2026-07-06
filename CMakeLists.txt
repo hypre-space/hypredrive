@@ -164,6 +164,7 @@ set(SOURCE_FILES
     src/internal/scaling.c
     src/internal/runtime.c
     src/internal/logging.c
+    src/internal/help.c
     src/HYPREDRV.c
 )
 
