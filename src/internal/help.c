@@ -32,14 +32,14 @@ typedef struct HelpKeyDoc_struct
 
 struct HelpNode_struct
 {
-   const char        *name;
-   const char        *title;
-   const char        *value_hint;
-   HelpGetKeysFunc    get_keys;
-   HelpGetValuesFunc  get_values;
-   const HelpChild   *children;
-   size_t             num_children;
-   int                allow_numeric_index;
+   const char       *name;
+   const char       *title;
+   const char       *value_hint;
+   HelpGetKeysFunc   get_keys;
+   HelpGetValuesFunc get_values;
+   const HelpChild  *children;
+   size_t            num_children;
+   int               allow_numeric_index;
 };
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
@@ -137,9 +137,8 @@ HelpMGRCycleValues(const char *key)
    if (!strcmp(key, "cycle"))
    {
       static StrIntMap map[] = {
-         {"v", 1},      {"w", 2},      {"v(1,0)", 1}, {"v(0,1)", 1},
-         {"v(1,1)", 1}, {"w(1,0)", 2}, {"w(0,1)", 2}, {"w(1,1)", 2},
-         {"1", 1},      {"2", 2},
+         {"v", 1},      {"w", 2},      {"v(1,0)", 1}, {"v(0,1)", 1}, {"v(1,1)", 1},
+         {"w(1,0)", 2}, {"w(0,1)", 2}, {"w(1,1)", 2}, {"1", 1},      {"2", 2},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -156,25 +155,33 @@ HelpPrintSystemValues(const char *key)
    if (!strcmp(key, "type"))
    {
       static StrIntMap map[] = {
-         {"all", 0},             {"every_n_systems", 1}, {"every_n_timesteps", 2},
-         {"ids", 3},             {"ranges", 4},          {"iterations_over", 5},
-         {"setup_time_over", 6}, {"solve_time_over", 7}, {"selectors", 8},
+         {"all", 0},
+         {"every_n_systems", 1},
+         {"every_n_timesteps", 2},
+         {"ids", 3},
+         {"ranges", 4},
+         {"iterations_over", 5},
+         {"setup_time_over", 6},
+         {"solve_time_over", 7},
+         {"selectors", 8},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "stage"))
    {
       static StrIntMap map[] = {
-         {"build", 1}, {"setup", 2}, {"apply", 4}, {"all", 7},
+         {"build", 1},
+         {"setup", 2},
+         {"apply", 4},
+         {"all", 7},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "artifacts"))
    {
       static StrIntMap map[] = {
-         {"matrix", 1}, {"precmat", 2}, {"rhs", 4},     {"x0", 8},
-         {"xref", 16},  {"solution", 32}, {"dofmap", 64}, {"metadata", 128},
-         {"all", 255},
+         {"matrix", 1},    {"precmat", 2}, {"rhs", 4},        {"x0", 8},    {"xref", 16},
+         {"solution", 32}, {"dofmap", 64}, {"metadata", 128}, {"all", 255},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -182,7 +189,7 @@ HelpPrintSystemValues(const char *key)
    {
       static StrIntMap map[] = {
          {"linear_system", 0}, {"timestep", 1},   {"level", 2},
-         {"iterations", 3},   {"setup_time", 4}, {"solve_time", 5},
+         {"iterations", 3},    {"setup_time", 4}, {"solve_time", 5},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -201,43 +208,54 @@ HelpPreconReuseValues(const char *key)
    if (!strcmp(key, "type") || !strcmp(key, "policy"))
    {
       static StrIntMap map[] = {
-         {"static", 0}, {"adaptive", 1}, {"always", 0},
+         {"static", 0},
+         {"adaptive", 1},
+         {"always", 0},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "metric"))
    {
       static StrIntMap map[] = {
-         {"iterations", 0}, {"solve_time", 1}, {"setup_time", 2},
-         {"total_time", 3}, {"solve_overhead_vs_setup", 4},
+         {"iterations", 0},
+         {"solve_time", 1},
+         {"setup_time", 2},
+         {"total_time", 3},
+         {"solve_overhead_vs_setup", 4},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "direction"))
    {
       static StrIntMap map[] = {
-         {"above", 0}, {"below", 1},
+         {"above", 0},
+         {"below", 1},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "baseline"))
    {
       static StrIntMap map[] = {
-         {"rebuild", 0}, {"window_mean", 1},
+         {"rebuild", 0},
+         {"window_mean", 1},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "source"))
    {
       static StrIntMap map[] = {
-         {"linear_solves", 0}, {"active_level", 1}, {"completed_level", 2},
+         {"linear_solves", 0},
+         {"active_level", 1},
+         {"completed_level", 2},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    if (!strcmp(key, "reduction"))
    {
       static StrIntMap map[] = {
-         {"none", 0}, {"mean", 1}, {"sum", 2},
+         {"none", 0},
+         {"mean", 1},
+         {"sum", 2},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -267,90 +285,105 @@ HelpReuseTransformValues(const char *key)
    if (key && !strcmp(key, "kind"))
    {
       static StrIntMap map[] = {
-         {"raw", 0},               {"delta_from_baseline", 1},
-         {"ratio_to_baseline", 2}, {"relative_increase", 3},
+         {"raw", 0},
+         {"delta_from_baseline", 1},
+         {"ratio_to_baseline", 2},
+         {"relative_increase", 3},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
    return HelpPreconReuseValues(key);
 }
 
-static StrArray HelpKeys(const char **keys, size_t size)
+static StrArray
+HelpKeys(const char **keys, size_t size)
 {
    return (StrArray){.data = keys, .size = size};
 }
 
-static StrArray HelpRootKeys(void)
+static StrArray
+HelpRootKeys(void)
 {
-   static const char *keys[] = {"general", "linear_system", "solver",
-                                "preconditioner"};
+   static const char *keys[] = {"general", "linear_system", "solver", "preconditioner"};
    return HelpKeys(keys, ARRAY_SIZE(keys));
 }
 
-static StrArray HelpPrintSystemKeys(void)
+static StrArray
+HelpPrintSystemKeys(void)
 {
    static const char *keys[] = {
-      "enabled", "type", "stage", "artifacts", "output_dir", "overwrite",
+      "enabled", "type", "stage",  "artifacts", "output_dir", "overwrite",
       "every",   "ids",  "ranges", "threshold", "selectors",
    };
    return HelpKeys(keys, ARRAY_SIZE(keys));
 }
 
-static StrArray HelpPrintSystemSelectorKeys(void)
+static StrArray
+HelpPrintSystemSelectorKeys(void)
 {
-   static const char *keys[] = {"basis", "level", "every", "ids", "ranges",
-                                "threshold"};
+   static const char *keys[] = {"basis", "level", "every", "ids", "ranges", "threshold"};
    return HelpKeys(keys, ARRAY_SIZE(keys));
 }
 
-static StrArray HelpPreconReuseKeys(void)
+static StrArray
+HelpPreconReuseKeys(void)
 {
    static const char *keys[] = {
-      "enabled",           "frequency",             "linear_system_ids",
-      "linear_solver_ids", "per_timestep",          "type",
-      "policy",            "guards",                "adaptive",
+      "enabled",
+      "frequency",
+      "linear_system_ids",
+      "linear_solver_ids",
+      "per_timestep",
+      "type",
+      "policy",
+      "guards",
+      "adaptive",
    };
    return HelpKeys(keys, ARRAY_SIZE(keys));
 }
 
-static StrArray HelpPreconReuseGuardsKeys(void)
+static StrArray
+HelpPreconReuseGuardsKeys(void)
 {
    static const char *keys[] = {
-      "min_reuse_solves",        "max_reuse_solves",
-      "min_history_points",      "bad_decisions_to_rebuild",
-      "max_iteration_ratio",     "max_solve_time_ratio",
-      "rebuild_on_new_timestep", "rebuild_on_solver_failure",
-      "rebuild_on_new_level",
+      "min_reuse_solves",         "max_reuse_solves",          "min_history_points",
+      "bad_decisions_to_rebuild", "max_iteration_ratio",       "max_solve_time_ratio",
+      "rebuild_on_new_timestep",  "rebuild_on_solver_failure", "rebuild_on_new_level",
    };
    return HelpKeys(keys, ARRAY_SIZE(keys));
 }
 
-static StrArray HelpPreconReuseAdaptiveKeys(void)
+static StrArray
+HelpPreconReuseAdaptiveKeys(void)
 {
    static const char *keys[] = {"rebuild_threshold", "positive_floor", "components"};
    return HelpKeys(keys, ARRAY_SIZE(keys));
 }
 
-static StrArray HelpPreconReuseScoreKeys(void)
+static StrArray
+HelpPreconReuseScoreKeys(void)
 {
-   static const char *keys[] = {"name", "enabled", "metric", "weight", "direction",
-                                "target", "scale", "mean", "transform", "history"};
+   static const char *keys[] = {"name",   "enabled", "metric", "weight",    "direction",
+                                "target", "scale",   "mean",   "transform", "history"};
    return HelpKeys(keys, ARRAY_SIZE(keys));
 }
 
-static StrArray HelpPreconReuseMeanKeys(void)
+static StrArray
+HelpPreconReuseMeanKeys(void)
 {
    static const char *keys[] = {"kind", "power"};
    return HelpKeys(keys, ARRAY_SIZE(keys));
 }
 
-static StrArray HelpPreconReuseTransformKeys(void)
+static StrArray
+HelpPreconReuseTransformKeys(void)
 {
    static const char *keys[] = {"kind", "baseline", "amortization_window"};
    return HelpKeys(keys, ARRAY_SIZE(keys));
 }
 
-static StrArray HelpPreconReuseHistoryKeys(void)
+static StrArray
+HelpPreconReuseHistoryKeys(void)
 {
    static const char *keys[] = {"source", "level", "max_points", "reduction"};
    return HelpKeys(keys, ARRAY_SIZE(keys));
@@ -437,12 +470,8 @@ static const HelpChild NestedKrylovBiCGSTABChildren[] = {
 };
 
 static const HelpChild PreconChildren[] = {
-   {"amg", &NodeAMG},
-   {"mgr", &NodeMGR},
-   {"ilu", &NodeILU},
-   {"fsai", &NodeFSAI},
-   {"ams", &NodeAMS},
-   {"ads", &NodeADS},
+   {"amg", &NodeAMG},         {"mgr", &NodeMGR}, {"ilu", &NodeILU},
+   {"fsai", &NodeFSAI},       {"ams", &NodeAMS}, {"ads", &NodeADS},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    {"schwarz", &NodeSchwarz},
 #endif
@@ -450,10 +479,8 @@ static const HelpChild PreconChildren[] = {
 };
 
 static const HelpChild AMGChildren[] = {
-   {"interpolation", &NodeAMGInterpolation},
-   {"aggressive", &NodeAMGAggressive},
-   {"coarsening", &NodeAMGCoarsening},
-   {"relaxation", &NodeAMGRelaxation},
+   {"interpolation", &NodeAMGInterpolation}, {"aggressive", &NodeAMGAggressive},
+   {"coarsening", &NodeAMGCoarsening},       {"relaxation", &NodeAMGRelaxation},
    {"smoother", &NodeAMGSmoother},
 };
 
@@ -477,12 +504,8 @@ static const HelpChild MGRLevelChildren[] = {
 };
 
 static const HelpChild MGRCoarsestChildren[] = {
-   {"amg", &NodeAMG},
-   {"ilu", &NodeILU},
-   {"fsai", &NodeFSAI},
-   {"pcg", &NodePCG},
-   {"gmres", &NodeGMRES},
-   {"fgmres", &NodeFGMRES},
+   {"amg", &NodeAMG},           {"ilu", &NodeILU},     {"fsai", &NodeFSAI},
+   {"pcg", &NodePCG},           {"gmres", &NodeGMRES}, {"fgmres", &NodeFGMRES},
    {"bicgstab", &NodeBiCGSTAB},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    {"schwarz", &NodeSchwarz},
@@ -491,14 +514,9 @@ static const HelpChild MGRCoarsestChildren[] = {
 };
 
 static const HelpChild MGRFRelaxChildren[] = {
-   {"mgr", &NodeMGR},
-   {"amg", &NodeAMG},
-   {"ilu", &NodeILU},
-   {"fsai", &NodeFSAI},
-   {"pcg", &NodePCG},
-   {"gmres", &NodeGMRES},
-   {"fgmres", &NodeFGMRES},
-   {"bicgstab", &NodeBiCGSTAB},
+   {"mgr", &NodeMGR},         {"amg", &NodeAMG},           {"ilu", &NodeILU},
+   {"fsai", &NodeFSAI},       {"pcg", &NodePCG},           {"gmres", &NodeGMRES},
+   {"fgmres", &NodeFGMRES},   {"bicgstab", &NodeBiCGSTAB},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    {"schwarz", &NodeSchwarz},
 #endif
@@ -506,12 +524,8 @@ static const HelpChild MGRFRelaxChildren[] = {
 };
 
 static const HelpChild MGRGRelaxChildren[] = {
-   {"amg", &NodeAMG},
-   {"ilu", &NodeILU},
-   {"fsai", &NodeFSAI},
-   {"pcg", &NodePCG},
-   {"gmres", &NodeGMRES},
-   {"fgmres", &NodeFGMRES},
+   {"amg", &NodeAMG},           {"ilu", &NodeILU},     {"fsai", &NodeFSAI},
+   {"pcg", &NodePCG},           {"gmres", &NodeGMRES}, {"fgmres", &NodeFGMRES},
    {"bicgstab", &NodeBiCGSTAB},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    {"schwarz", &NodeSchwarz},
@@ -534,130 +548,301 @@ static const HelpChild ReuseScoreChildren[] = {
    {"history", &NodeReuseHistory},
 };
 
-static const HelpNode NodeRoot = {
-   "root", "YAML input", "<section>", HelpRootKeys, HelpVoidValues, RootChildren,
-   ARRAY_SIZE(RootChildren), 0};
-static const HelpNode NodeGeneral = {
-   "general", "Global configuration settings", "<value>", hypredrv_GeneralGetValidKeys,
-   hypredrv_GeneralGetValidValues, NULL, 0, 0};
-static const HelpNode NodeLinearSystem = {
-   "linear_system", "Linear system settings", "<value>",
-   hypredrv_LinearSystemGetValidKeys, hypredrv_LinearSystemGetValidValues,
-   LinearSystemChildren, ARRAY_SIZE(LinearSystemChildren), 0};
-static const HelpNode NodePrintSystem = {
-   "print_system", "linear_system.print_system section", "<value>",
-   HelpPrintSystemKeys, HelpPrintSystemValues, PrintSystemChildren,
-   ARRAY_SIZE(PrintSystemChildren), 0};
+static const HelpNode NodeRoot                = {"root",
+                                                 "YAML input",
+                                                 "<section>",
+                                                 HelpRootKeys,
+                                                 HelpVoidValues,
+                                                 RootChildren,
+                                                 ARRAY_SIZE(RootChildren),
+                                                 0};
+static const HelpNode NodeGeneral             = {"general",
+                                                 "Global configuration settings",
+                                                 "<value>",
+                                                 hypredrv_GeneralGetValidKeys,
+                                                 hypredrv_GeneralGetValidValues,
+                                                 NULL,
+                                                 0,
+                                                 0};
+static const HelpNode NodeLinearSystem        = {"linear_system",
+                                                 "Linear system settings",
+                                                 "<value>",
+                                                 hypredrv_LinearSystemGetValidKeys,
+                                                 hypredrv_LinearSystemGetValidValues,
+                                                 LinearSystemChildren,
+                                                 ARRAY_SIZE(LinearSystemChildren),
+                                                 0};
+static const HelpNode NodePrintSystem         = {"print_system",
+                                                 "linear_system.print_system section",
+                                                 "<value>",
+                                                 HelpPrintSystemKeys,
+                                                 HelpPrintSystemValues,
+                                                 PrintSystemChildren,
+                                                 ARRAY_SIZE(PrintSystemChildren),
+                                                 0};
 static const HelpNode NodePrintSystemSelector = {
-   "selectors", "linear_system.print_system.selectors item", "<value>",
-   HelpPrintSystemSelectorKeys, HelpPrintSystemValues, NULL, 0, 1};
-static const HelpNode NodeEigSpec = {
-   "eigspec", "linear_system.eigspec section", "<value>", hypredrv_EigSpecGetValidKeys,
-   hypredrv_EigSpecGetValidValues, NULL, 0, 0};
-static const HelpNode NodeScaling = {
-   "scaling", "solver.scaling section", "<value>", hypredrv_ScalingGetValidKeys,
-   hypredrv_ScalingGetValidValues, NULL, 0, 0};
-static const HelpNode NodeSolver = {
-   "solver", "Linear solver settings", "<solver-type>", hypredrv_SolverGetValidKeys,
-   HelpSolverTypeValues, SolverChildren, ARRAY_SIZE(SolverChildren), 0};
-static const HelpNode NodePCG = {
-   "pcg", "PCG solver", "<value>", hypredrv_PCGGetValidKeys, hypredrv_PCGGetValidValues,
-   NestedKrylovPCGChildren, ARRAY_SIZE(NestedKrylovPCGChildren), 0};
-static const HelpNode NodeGMRES = {
-   "gmres", "GMRES solver", "<value>", hypredrv_GMRESGetValidKeys,
-   hypredrv_GMRESGetValidValues, NestedKrylovGMRESChildren,
-   ARRAY_SIZE(NestedKrylovGMRESChildren), 0};
-static const HelpNode NodeFGMRES = {
-   "fgmres", "FGMRES solver", "<value>", hypredrv_FGMRESGetValidKeys,
-   hypredrv_FGMRESGetValidValues, NestedKrylovFGMRESChildren,
-   ARRAY_SIZE(NestedKrylovFGMRESChildren), 0};
-static const HelpNode NodeBiCGSTAB = {
-   "bicgstab", "BiCGSTAB solver", "<value>", hypredrv_BiCGSTABGetValidKeys,
-   hypredrv_BiCGSTABGetValidValues, NestedKrylovBiCGSTABChildren,
-   ARRAY_SIZE(NestedKrylovBiCGSTABChildren), 0};
-static const HelpNode NodePrecon = {
-   "preconditioner", "Preconditioner settings", "<preconditioner-type>",
-   hypredrv_PreconGetValidKeys, HelpPreconTypeValues, PreconChildren,
+   "selectors",
+   "linear_system.print_system.selectors item",
+   "<value>",
+   HelpPrintSystemSelectorKeys,
+   HelpPrintSystemValues,
+   NULL,
+   0,
+   1};
+static const HelpNode NodeEigSpec  = {"eigspec",
+                                      "linear_system.eigspec section",
+                                      "<value>",
+                                      hypredrv_EigSpecGetValidKeys,
+                                      hypredrv_EigSpecGetValidValues,
+                                      NULL,
+                                      0,
+                                      0};
+static const HelpNode NodeScaling  = {"scaling",
+                                      "solver.scaling section",
+                                      "<value>",
+                                      hypredrv_ScalingGetValidKeys,
+                                      hypredrv_ScalingGetValidValues,
+                                      NULL,
+                                      0,
+                                      0};
+static const HelpNode NodeSolver   = {"solver",
+                                      "Linear solver settings",
+                                      "<solver-type>",
+                                      hypredrv_SolverGetValidKeys,
+                                      HelpSolverTypeValues,
+                                      SolverChildren,
+                                      ARRAY_SIZE(SolverChildren),
+                                      0};
+static const HelpNode NodePCG      = {"pcg",
+                                      "PCG solver",
+                                      "<value>",
+                                      hypredrv_PCGGetValidKeys,
+                                      hypredrv_PCGGetValidValues,
+                                      NestedKrylovPCGChildren,
+                                      ARRAY_SIZE(NestedKrylovPCGChildren),
+                                      0};
+static const HelpNode NodeGMRES    = {"gmres",
+                                      "GMRES solver",
+                                      "<value>",
+                                      hypredrv_GMRESGetValidKeys,
+                                      hypredrv_GMRESGetValidValues,
+                                      NestedKrylovGMRESChildren,
+                                      ARRAY_SIZE(NestedKrylovGMRESChildren),
+                                      0};
+static const HelpNode NodeFGMRES   = {"fgmres",
+                                      "FGMRES solver",
+                                      "<value>",
+                                      hypredrv_FGMRESGetValidKeys,
+                                      hypredrv_FGMRESGetValidValues,
+                                      NestedKrylovFGMRESChildren,
+                                      ARRAY_SIZE(NestedKrylovFGMRESChildren),
+                                      0};
+static const HelpNode NodeBiCGSTAB = {"bicgstab",
+                                      "BiCGSTAB solver",
+                                      "<value>",
+                                      hypredrv_BiCGSTABGetValidKeys,
+                                      hypredrv_BiCGSTABGetValidValues,
+                                      NestedKrylovBiCGSTABChildren,
+                                      ARRAY_SIZE(NestedKrylovBiCGSTABChildren),
+                                      0};
+static const HelpNode NodePrecon   = {
+   "preconditioner",           "Preconditioner settings",
+   "<preconditioner-type>",    hypredrv_PreconGetValidKeys,
+   HelpPreconTypeValues,       PreconChildren,
    ARRAY_SIZE(PreconChildren), 0};
-static const HelpNode NodeAMG = {
-   "amg", "AMG preconditioner", "<value>", hypredrv_AMGGetValidKeys,
-   hypredrv_AMGGetValidValues, AMGChildren, ARRAY_SIZE(AMGChildren), 0};
-static const HelpNode NodeAMGInterpolation = {
-   "interpolation", "AMG interpolation section", "<value>",
-   hypredrv_AMGintGetValidKeys, hypredrv_AMGintGetValidValues, NULL, 0, 0};
-static const HelpNode NodeAMGAggressive = {
-   "aggressive", "AMG aggressive section", "<value>", hypredrv_AMGaggGetValidKeys,
-   hypredrv_AMGaggGetValidValues, NULL, 0, 0};
-static const HelpNode NodeAMGCoarsening = {
-   "coarsening", "AMG coarsening section", "<value>", hypredrv_AMGcsnGetValidKeys,
-   hypredrv_AMGcsnGetValidValues, NULL, 0, 0};
-static const HelpNode NodeAMGRelaxation = {
-   "relaxation", "AMG relaxation section", "<value>", hypredrv_AMGrlxGetValidKeys,
-   hypredrv_AMGrlxGetValidValues, AMGRelaxationChildren,
-   ARRAY_SIZE(AMGRelaxationChildren), 0};
-static const HelpNode NodeAMGSmoother = {
-   "smoother", "AMG smoother section", "<value>", hypredrv_AMGsmtGetValidKeys,
-   hypredrv_AMGsmtGetValidValues, AMGSmootherChildren, ARRAY_SIZE(AMGSmootherChildren),
-   0};
-static const HelpNode NodeCheby = {
-   "chebyshev", "Chebyshev smoother section", "<value>", hypredrv_ChebyGetValidKeys,
-   hypredrv_ChebyGetValidValues, NULL, 0, 0};
-static const HelpNode NodeILU = {
-   "ilu", "ILU preconditioner", "<value>", hypredrv_ILUGetValidKeys,
-   hypredrv_ILUGetValidValues, NULL, 0, 0};
-static const HelpNode NodeFSAI = {
-   "fsai", "FSAI preconditioner", "<value>", hypredrv_FSAIGetValidKeys,
-   hypredrv_FSAIGetValidValues, NULL, 0, 0};
-static const HelpNode NodeAMS = {
-   "ams", "AMS preconditioner", "<value>", hypredrv_AMSGetValidKeys,
-   hypredrv_AMSGetValidValues, NULL, 0, 0};
-static const HelpNode NodeADS = {
-   "ads", "ADS preconditioner", "<value>", hypredrv_ADSGetValidKeys,
-   hypredrv_ADSGetValidValues, NULL, 0, 0};
-static const HelpNode NodeMGR = {
-   "mgr", "MGR preconditioner", "<value>", hypredrv_MGRGetValidKeys,
-   HelpMGRCycleValues, MGRChildren, ARRAY_SIZE(MGRChildren), 0};
-static const HelpNode NodeMGRLevel = {
-   "level", "MGR level item", "<value>", hypredrv_MGRlvlGetValidKeys,
-   hypredrv_MGRlvlGetValidValues, MGRLevelChildren, ARRAY_SIZE(MGRLevelChildren), 1};
-static const HelpNode NodeMGRCoarsest = {
-   "coarsest_level", "MGR coarsest_level section", "<value>",
-   hypredrv_MGRclsGetValidKeys, hypredrv_MGRclsGetValidValues, MGRCoarsestChildren,
-   ARRAY_SIZE(MGRCoarsestChildren), 0};
-static const HelpNode NodeMGRFRelax = {
-   "f_relaxation", "MGR f_relaxation section", "<value>",
-   hypredrv_MGRfrlxGetValidKeys, hypredrv_MGRfrlxGetValidValues, MGRFRelaxChildren,
-   ARRAY_SIZE(MGRFRelaxChildren), 0};
-static const HelpNode NodeMGRGRelax = {
-   "g_relaxation", "MGR g_relaxation section", "<value>",
-   hypredrv_MGRgrlxGetValidKeys, hypredrv_MGRgrlxGetValidValues, MGRGRelaxChildren,
-   ARRAY_SIZE(MGRGRelaxChildren), 0};
-static const HelpNode NodeReuse = {
-   "reuse", "preconditioner reuse section", "<value>", HelpPreconReuseKeys,
-   HelpPreconReuseValues, ReuseChildren, ARRAY_SIZE(ReuseChildren), 0};
-static const HelpNode NodeReuseGuards = {
-   "guards", "preconditioner reuse guards section", "<value>",
-   HelpPreconReuseGuardsKeys, HelpPreconReuseValues, NULL, 0, 0};
-static const HelpNode NodeReuseAdaptive = {
-   "adaptive", "adaptive preconditioner reuse section", "<value>",
-   HelpPreconReuseAdaptiveKeys, HelpPreconReuseValues, ReuseAdaptiveChildren,
-   ARRAY_SIZE(ReuseAdaptiveChildren), 0};
-static const HelpNode NodeReuseScore = {
-   "score", "adaptive reuse score component", "<value>", HelpPreconReuseScoreKeys,
-   HelpPreconReuseValues, ReuseScoreChildren, ARRAY_SIZE(ReuseScoreChildren), 1};
-static const HelpNode NodeReuseMean = {
-   "mean", "adaptive reuse score mean section", "<value>", HelpPreconReuseMeanKeys,
-   HelpReuseMeanValues, NULL, 0, 0};
-static const HelpNode NodeReuseTransform = {
-   "transform", "adaptive reuse score transform section", "<value>",
-   HelpPreconReuseTransformKeys, HelpReuseTransformValues, NULL, 0, 0};
-static const HelpNode NodeReuseHistory = {
-   "history", "adaptive reuse score history section", "<value>",
-   HelpPreconReuseHistoryKeys, HelpPreconReuseValues, NULL, 0, 0};
+static const HelpNode NodeAMG              = {"amg",
+                                              "AMG preconditioner",
+                                              "<value>",
+                                              hypredrv_AMGGetValidKeys,
+                                              hypredrv_AMGGetValidValues,
+                                              AMGChildren,
+                                              ARRAY_SIZE(AMGChildren),
+                                              0};
+static const HelpNode NodeAMGInterpolation = {"interpolation",
+                                              "AMG interpolation section",
+                                              "<value>",
+                                              hypredrv_AMGintGetValidKeys,
+                                              hypredrv_AMGintGetValidValues,
+                                              NULL,
+                                              0,
+                                              0};
+static const HelpNode NodeAMGAggressive    = {"aggressive",
+                                              "AMG aggressive section",
+                                              "<value>",
+                                              hypredrv_AMGaggGetValidKeys,
+                                              hypredrv_AMGaggGetValidValues,
+                                              NULL,
+                                              0,
+                                              0};
+static const HelpNode NodeAMGCoarsening    = {"coarsening",
+                                              "AMG coarsening section",
+                                              "<value>",
+                                              hypredrv_AMGcsnGetValidKeys,
+                                              hypredrv_AMGcsnGetValidValues,
+                                              NULL,
+                                              0,
+                                              0};
+static const HelpNode NodeAMGRelaxation    = {"relaxation",
+                                              "AMG relaxation section",
+                                              "<value>",
+                                              hypredrv_AMGrlxGetValidKeys,
+                                              hypredrv_AMGrlxGetValidValues,
+                                              AMGRelaxationChildren,
+                                              ARRAY_SIZE(AMGRelaxationChildren),
+                                              0};
+static const HelpNode NodeAMGSmoother      = {"smoother",
+                                              "AMG smoother section",
+                                              "<value>",
+                                              hypredrv_AMGsmtGetValidKeys,
+                                              hypredrv_AMGsmtGetValidValues,
+                                              AMGSmootherChildren,
+                                              ARRAY_SIZE(AMGSmootherChildren),
+                                              0};
+static const HelpNode NodeCheby            = {"chebyshev",
+                                              "Chebyshev smoother section",
+                                              "<value>",
+                                              hypredrv_ChebyGetValidKeys,
+                                              hypredrv_ChebyGetValidValues,
+                                              NULL,
+                                              0,
+                                              0};
+static const HelpNode NodeILU              = {"ilu",
+                                              "ILU preconditioner",
+                                              "<value>",
+                                              hypredrv_ILUGetValidKeys,
+                                              hypredrv_ILUGetValidValues,
+                                              NULL,
+                                              0,
+                                              0};
+static const HelpNode NodeFSAI             = {"fsai",
+                                              "FSAI preconditioner",
+                                              "<value>",
+                                              hypredrv_FSAIGetValidKeys,
+                                              hypredrv_FSAIGetValidValues,
+                                              NULL,
+                                              0,
+                                              0};
+static const HelpNode NodeAMS              = {"ams",
+                                              "AMS preconditioner",
+                                              "<value>",
+                                              hypredrv_AMSGetValidKeys,
+                                              hypredrv_AMSGetValidValues,
+                                              NULL,
+                                              0,
+                                              0};
+static const HelpNode NodeADS              = {"ads",
+                                              "ADS preconditioner",
+                                              "<value>",
+                                              hypredrv_ADSGetValidKeys,
+                                              hypredrv_ADSGetValidValues,
+                                              NULL,
+                                              0,
+                                              0};
+static const HelpNode NodeMGR              = {"mgr",
+                                              "MGR preconditioner",
+                                              "<value>",
+                                              hypredrv_MGRGetValidKeys,
+                                              HelpMGRCycleValues,
+                                              MGRChildren,
+                                              ARRAY_SIZE(MGRChildren),
+                                              0};
+static const HelpNode NodeMGRLevel         = {"level",
+                                              "MGR level item",
+                                              "<value>",
+                                              hypredrv_MGRlvlGetValidKeys,
+                                              hypredrv_MGRlvlGetValidValues,
+                                              MGRLevelChildren,
+                                              ARRAY_SIZE(MGRLevelChildren),
+                                              1};
+static const HelpNode NodeMGRCoarsest      = {"coarsest_level",
+                                              "MGR coarsest_level section",
+                                              "<value>",
+                                              hypredrv_MGRclsGetValidKeys,
+                                              hypredrv_MGRclsGetValidValues,
+                                              MGRCoarsestChildren,
+                                              ARRAY_SIZE(MGRCoarsestChildren),
+                                              0};
+static const HelpNode NodeMGRFRelax        = {"f_relaxation",
+                                              "MGR f_relaxation section",
+                                              "<value>",
+                                              hypredrv_MGRfrlxGetValidKeys,
+                                              hypredrv_MGRfrlxGetValidValues,
+                                              MGRFRelaxChildren,
+                                              ARRAY_SIZE(MGRFRelaxChildren),
+                                              0};
+static const HelpNode NodeMGRGRelax        = {"g_relaxation",
+                                              "MGR g_relaxation section",
+                                              "<value>",
+                                              hypredrv_MGRgrlxGetValidKeys,
+                                              hypredrv_MGRgrlxGetValidValues,
+                                              MGRGRelaxChildren,
+                                              ARRAY_SIZE(MGRGRelaxChildren),
+                                              0};
+static const HelpNode NodeReuse            = {"reuse",
+                                              "preconditioner reuse section",
+                                              "<value>",
+                                              HelpPreconReuseKeys,
+                                              HelpPreconReuseValues,
+                                              ReuseChildren,
+                                              ARRAY_SIZE(ReuseChildren),
+                                              0};
+static const HelpNode NodeReuseGuards      = {"guards",
+                                              "preconditioner reuse guards section",
+                                              "<value>",
+                                              HelpPreconReuseGuardsKeys,
+                                              HelpPreconReuseValues,
+                                              NULL,
+                                              0,
+                                              0};
+static const HelpNode NodeReuseAdaptive    = {"adaptive",
+                                              "adaptive preconditioner reuse section",
+                                              "<value>",
+                                              HelpPreconReuseAdaptiveKeys,
+                                              HelpPreconReuseValues,
+                                              ReuseAdaptiveChildren,
+                                              ARRAY_SIZE(ReuseAdaptiveChildren),
+                                              0};
+static const HelpNode NodeReuseScore       = {"score",
+                                              "adaptive reuse score component",
+                                              "<value>",
+                                              HelpPreconReuseScoreKeys,
+                                              HelpPreconReuseValues,
+                                              ReuseScoreChildren,
+                                              ARRAY_SIZE(ReuseScoreChildren),
+                                              1};
+static const HelpNode NodeReuseMean        = {"mean",
+                                              "adaptive reuse score mean section",
+                                              "<value>",
+                                              HelpPreconReuseMeanKeys,
+                                              HelpReuseMeanValues,
+                                              NULL,
+                                              0,
+                                              0};
+static const HelpNode NodeReuseTransform   = {"transform",
+                                              "adaptive reuse score transform section",
+                                              "<value>",
+                                              HelpPreconReuseTransformKeys,
+                                              HelpReuseTransformValues,
+                                              NULL,
+                                              0,
+                                              0};
+static const HelpNode NodeReuseHistory     = {"history",
+                                              "adaptive reuse score history section",
+                                              "<value>",
+                                              HelpPreconReuseHistoryKeys,
+                                              HelpPreconReuseValues,
+                                              NULL,
+                                              0,
+                                              0};
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
-static const HelpNode NodeSchwarz = {
-   "schwarz", "Schwarz preconditioner", "<value>", hypredrv_SchwarzGetValidKeys,
-   hypredrv_SchwarzGetValidValues, NULL, 0, 0};
+static const HelpNode NodeSchwarz = {"schwarz",
+                                     "Schwarz preconditioner",
+                                     "<value>",
+                                     hypredrv_SchwarzGetValidKeys,
+                                     hypredrv_SchwarzGetValidValues,
+                                     NULL,
+                                     0,
+                                     0};
 #endif
 
 static const HelpKeyDoc CommonKeyDocs[] = {
@@ -878,7 +1063,8 @@ static const HelpKeyDoc AMSKeyDocs[] = {
    {"alpha_strength_threshold", "Strength threshold for the alpha-space AMG solver"},
    {"alpha_interp_type", "Interpolation type for the alpha-space AMG solver"},
    {"alpha_Pmax", "Interpolation stencil cap for the alpha-space AMG solver"},
-   {"alpha_coarse_relax_type", "Coarsest-level relaxation for the alpha-space AMG solver"},
+   {"alpha_coarse_relax_type",
+    "Coarsest-level relaxation for the alpha-space AMG solver"},
    {"beta_coarsen_type", "Coarsening type for the beta-space AMG solver"},
    {"beta_agg_levels", "Aggressive-coarsening levels for the beta-space AMG solver"},
    {"beta_relax_type", "Relaxation type for the beta-space AMG solver"},
@@ -998,14 +1184,14 @@ HelpFindDoc(const HelpNode *node, const char *key)
 {
    const char *doc = NULL;
 
-#define HELP_TRY_DOCS(_node, _docs)                                                \
-   do                                                                              \
-   {                                                                               \
-      if ((node) == &(_node) &&                                                     \
-          (doc = HelpFindDocIn((_docs), ARRAY_SIZE(_docs), (key))) != NULL)        \
-      {                                                                            \
-         return doc;                                                               \
-      }                                                                            \
+#define HELP_TRY_DOCS(_node, _docs)                                         \
+   do                                                                       \
+   {                                                                        \
+      if ((node) == &(_node) &&                                             \
+          (doc = HelpFindDocIn((_docs), ARRAY_SIZE(_docs), (key))) != NULL) \
+      {                                                                     \
+         return doc;                                                        \
+      }                                                                     \
    } while (0)
 
    HELP_TRY_DOCS(NodeGeneral, GeneralKeyDocs);
@@ -1158,11 +1344,11 @@ HelpPrintKeys(FILE *out, const HelpNode *node)
    size_t max_hint_len = 0;
    for (size_t i = 0; i < keys.size; i++)
    {
-      const char     *key = keys.data[i];
+      const char    *key = keys.data[i];
       StrIntMapArray vals =
          node->get_values ? node->get_values(key) : STR_INT_MAP_ARRAY_VOID();
-      const char *hint = vals.size ? "<one of>" : node->value_hint;
-      size_t      key_len = strlen(key);
+      const char *hint     = vals.size ? "<one of>" : node->value_hint;
+      size_t      key_len  = strlen(key);
       size_t      hint_len = strlen(hint);
 
       if (key_len > max_key_len)
@@ -1178,12 +1364,12 @@ HelpPrintKeys(FILE *out, const HelpNode *node)
    fprintf(out, "\nValid keys:\n");
    for (size_t i = 0; i < keys.size; i++)
    {
-      const char     *key = keys.data[i];
+      const char    *key = keys.data[i];
       StrIntMapArray vals =
          node->get_values ? node->get_values(key) : STR_INT_MAP_ARRAY_VOID();
       const char *hint = vals.size ? "<one of>" : node->value_hint;
-      fprintf(out, "  %-*s  %-*s  %s\n", (int)max_key_len, key, (int)max_hint_len,
-              hint, HelpFindDoc(node, key));
+      fprintf(out, "  %-*s  %-*s  %s\n", (int)max_key_len, key, (int)max_hint_len, hint,
+              HelpFindDoc(node, key));
       if (vals.size)
       {
          HelpPrintMap(out, vals, 6);
@@ -1259,7 +1445,7 @@ static int
 HelpResolve(const char *topic, const HelpNode **node_out, const HelpNode **nearest_out,
             char *normalized, size_t normalized_size, const char **key_out)
 {
-   const HelpNode *node = &NodeRoot;
+   const HelpNode *node    = &NodeRoot;
    const HelpNode *nearest = node;
    static char     key_buf[128];
 
@@ -1269,7 +1455,7 @@ HelpResolve(const char *topic, const HelpNode **node_out, const HelpNode **neare
    }
    if (key_out)
    {
-      *key_out = NULL;
+      *key_out   = NULL;
       key_buf[0] = '\0';
    }
    if (!topic || *topic == '\0')
@@ -1300,7 +1486,7 @@ HelpResolve(const char *topic, const HelpNode **node_out, const HelpNode **neare
    char *tokens[64];
    int   ntokens = 0;
    for (char *tok = strtok_r(buf, ":", &save); tok && ntokens < 64;
-        tok = strtok_r(NULL, ":", &save))
+        tok       = strtok_r(NULL, ":", &save))
    {
       tokens[ntokens++] = tok;
    }
@@ -1331,7 +1517,7 @@ HelpResolve(const char *topic, const HelpNode **node_out, const HelpNode **neare
          }
          return 0;
       }
-      node = child;
+      node    = child;
       nearest = node;
       if (normalized && normalized_size > 0)
       {

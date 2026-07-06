@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
-int  hypredrv_HelpRequested(int argc, char **argv, char *topic, size_t topic_size);
-int  hypredrv_HelpPrint(FILE *out, const char *argv0, const char *topic);
+int hypredrv_HelpRequested(int argc, char **argv, char *topic, size_t topic_size);
+int hypredrv_HelpPrint(FILE *out, const char *argv0, const char *topic);
 
 #endif /* HELP_HEADER */
