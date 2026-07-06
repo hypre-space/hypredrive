@@ -134,6 +134,11 @@ HelpPreconTypeValues(const char *key)
 static StrIntMapArray
 HelpMGRCycleValues(const char *key)
 {
+   if (!key)
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+
    if (!strcmp(key, "cycle"))
    {
       static StrIntMap map[] = {
@@ -148,6 +153,11 @@ HelpMGRCycleValues(const char *key)
 static StrIntMapArray
 HelpPrintSystemValues(const char *key)
 {
+   if (!key)
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+
    if (!strcmp(key, "enabled") || !strcmp(key, "overwrite"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
@@ -199,6 +209,11 @@ HelpPrintSystemValues(const char *key)
 static StrIntMapArray
 HelpPreconReuseValues(const char *key)
 {
+   if (!key)
+   {
+      return STR_INT_MAP_ARRAY_VOID();
+   }
+
    if (!strcmp(key, "enabled") || !strcmp(key, "per_timestep") ||
        !strcmp(key, "rebuild_on_new_timestep") ||
        !strcmp(key, "rebuild_on_solver_failure"))
