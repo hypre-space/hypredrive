@@ -15,7 +15,7 @@ libHYPREDRV_la_SOURCES = src/internal/error.c src/internal/eigspec.c src/interna
                          src/internal/ams.c src/internal/ads.c src/internal/fsai.c src/internal/ilu.c src/internal/schwarz.c src/internal/mgr.c src/internal/precon.c \
 			 src/internal/precon_reuse.c src/internal/presets.c src/internal/krylov.c src/internal/pcg.c src/internal/gmres.c src/internal/fgmres.c \
 			 src/internal/bicgstab.c src/internal/solver.c src/internal/args.c src/internal/comp.c src/internal/lsseq.c src/internal/scaling.c src/internal/runtime.c \
-			 src/internal/logging.c src/HYPREDRV.c
+			 src/internal/logging.c src/internal/help.c src/HYPREDRV.c
 libHYPREDRV_la_CFLAGS = $(AM_CPPFLAGS) -fvisibility=hidden
 libHYPREDRV_la_LDFLAGS = -version-info 0:1:0
 
@@ -30,6 +30,7 @@ INTERNAL_HEADER_FILES = include/internal/amg.h include/internal/args.h \
 			include/internal/field.h include/internal/fsai.h \
 			include/internal/gen_macros.h include/internal/gmres.h \
 			include/internal/ilu.h include/internal/info.h \
+			include/internal/help.h \
 			include/internal/krylov.h include/internal/linsys.h \
 			include/internal/lsseq.h include/internal/mgr.h \
 			include/internal/pcg.h include/internal/precon.h \
