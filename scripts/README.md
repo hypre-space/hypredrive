@@ -9,6 +9,7 @@ This directory contains utility scripts for validation, data preparation, plotti
 - [compare_output.sh](./compare_output.sh): Normalizes timestamps, versions, and paths before diffing an output file against a reference output.
 - [download_and_extract.sh](./download_and_extract.sh): Downloads a tarball, verifies its MD5 checksum, and extracts it into a destination directory.
 - [download_spe10_case2a.sh](./download_spe10_case2a.sh): Downloads and unpacks the SPE10 model 2 dataset into `data/spe10_case2a`.
+- [fetch_suitesparse_matrix.sh](./fetch_suitesparse_matrix.sh): Downloads and unpacks SuiteSparse Collection matrices by `ID`, `Group/Name`, or `URL`.
 - [fetch_build_test.sh](./fetch_build_test.sh): Fetch, build, and test hypredrive on different machines.
 - [generate_example_output.sh](./generate_example_output.sh): Runs the example YAML inputs and regenerates normalized reference outputs for the examples.
 - [generate_release.sh](./generate_release.sh): Bumps version strings in `CMakeLists.txt` and `conf.py` for a new release.
