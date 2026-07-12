@@ -32,6 +32,26 @@ function(_hypredrv_patch_hypre_ads_pi_col_starts_leak hypre_source_dir)
 
     file(READ "${_hypredrv_hypre_ads_file}" _hypredrv_hypre_ads_content)
     if(_hypredrv_hypre_ads_content MATCHES
+       "HYPRE_BigInt[ \t]+col_starts\\[[^]]+\\]")
+        if(_hypredrv_hypre_ads_content MATCHES
+           "hypre_TFree\\(col_starts,[ \t]*HYPRE_MEMORY_HOST\\);")
+            string(REPLACE
+                "\n         hypre_TFree(col_starts, HYPRE_MEMORY_HOST);\n"
+                "\n"
+                _hypredrv_hypre_ads_content
+                "${_hypredrv_hypre_ads_content}")
+            file(WRITE "${_hypredrv_hypre_ads_file}"
+                "${_hypredrv_hypre_ads_content}")
+            message(STATUS
+                "  HYPRE ads.c patched to keep stack column starts unfreed")
+        else()
+            message(STATUS
+                "  HYPRE ads.c uses stack column starts; no leak patch needed")
+        endif()
+        return()
+    endif()
+
+    if(_hypredrv_hypre_ads_content MATCHES
        "hypre_TFree\\(col_starts,[ \t]*HYPRE_MEMORY_HOST\\);")
         message(STATUS "  HYPRE ads.c already frees ADS scalar Pi column-start workspace")
         return()

@@ -327,6 +327,14 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
       case PRECON_MGR:
          hypredrv_MGRSetDofmap(&args->mgr, dofmap);
          hypredrv_MGRSetNearNullSpace(&args->mgr, vec_nn);
+         if (ops)
+         {
+            args->mgr.op_G        = ops->G;
+            args->mgr.op_C        = ops->C;
+            args->mgr.op_coord[0] = ops->coord[0];
+            args->mgr.op_coord[1] = ops->coord[1];
+            args->mgr.op_coord[2] = ops->coord[2];
+         }
          hypredrv_MGRCreate(&args->mgr, &precon->main, stats, next_ls_id);
          break;
 

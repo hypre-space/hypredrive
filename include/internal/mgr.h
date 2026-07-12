@@ -8,7 +8,10 @@
 #ifndef MGR_HEADER
 #define MGR_HEADER
 
+#include "HYPRE_IJ_mv.h"
+#include "internal/ads.h"
 #include "internal/amg.h"
+#include "internal/ams.h"
 #include "internal/compatibility.h"
 #include "internal/containers.h"
 #include "internal/fsai.h"
@@ -37,6 +40,8 @@ enum
     * installed via HYPRE_MGRSetGlobalSmootherAtLevel. */
    MGR_GRLX_TYPE_USER_SMOOTHER = -1,
    MGR_SOLVER_TYPE_SCHWARZ     = 34,
+   MGR_SOLVER_TYPE_AMS         = 35,
+   MGR_SOLVER_TYPE_ADS         = 36,
 };
 
 typedef struct MGRComponentReuse_args_struct
@@ -93,6 +98,8 @@ typedef struct MGRfrlx_args_struct
       AMG_args  amg;
       ILU_args  ilu;
       FSAI_args fsai;
+      AMS_args  ams;
+      ADS_args  ads;
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       Schwarz_args schwarz;
 #endif
@@ -148,6 +155,9 @@ struct MGR_args_struct
 {
    IntArray      *dofmap;
    HYPRE_IJVector vec_nn;
+   HYPRE_IJMatrix op_G;
+   HYPRE_IJMatrix op_C;
+   HYPRE_IJVector op_coord[3];
 
    HYPRE_Int  non_c_to_f;
    HYPRE_Int  pmax;

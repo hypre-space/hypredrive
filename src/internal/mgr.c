@@ -477,6 +477,10 @@ DEFINE_TYPED_SETTER(MGRclsFSAISetArgs, MGRcls_args, fsai, 33, hypredrv_FSAISetAr
 DEFINE_TYPED_SETTER(MGRfrlxAMGSetArgs, MGRfrlx_args, amg, 2, hypredrv_AMGSetArgs)
 DEFINE_TYPED_SETTER(MGRfrlxILUSetArgs, MGRfrlx_args, ilu, 32, hypredrv_ILUSetArgs)
 DEFINE_TYPED_SETTER(MGRfrlxFSAISetArgs, MGRfrlx_args, fsai, 33, hypredrv_FSAISetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxAMSSetArgs, MGRfrlx_args, ams, MGR_SOLVER_TYPE_AMS,
+                    hypredrv_AMSSetArgs)
+DEFINE_TYPED_SETTER(MGRfrlxADSSetArgs, MGRfrlx_args, ads, MGR_SOLVER_TYPE_ADS,
+                    hypredrv_ADSSetArgs)
 DEFINE_TYPED_SETTER(MGRgrlxAMGSetArgs, MGRgrlx_args, amg, 20, hypredrv_AMGSetArgs)
 DEFINE_TYPED_SETTER(MGRgrlxILUSetArgs, MGRgrlx_args, ilu, 16, hypredrv_ILUSetArgs)
 DEFINE_TYPED_SETTER(MGRgrlxFSAISetArgs, MGRgrlx_args, fsai, 33, hypredrv_FSAISetArgs)
@@ -519,6 +523,8 @@ void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, MGRfrlxAMGSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, MGRfrlxILUSetArgs)               \
    ADD_FIELD_OFFSET_ENTRY(_prefix, fsai, MGRfrlxFSAISetArgs)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ams, MGRfrlxAMSSetArgs)               \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, ads, MGRfrlxADSSetArgs)               \
    MGRfrlx_SCHWARZ_FIELD(_prefix)
 
 #define MGRgrlx_FIELDS(_prefix)                                          \
@@ -1048,6 +1054,14 @@ MGRUnionApplyTypeDefaults(void *union_base, HYPRE_Int type, HYPRE_Int old_type,
    {
       hypredrv_FSAISetDefaultArgs((FSAI_args *)union_base);
    }
+   else if (type == MGR_SOLVER_TYPE_AMS)
+   {
+      hypredrv_AMSSetDefaultArgs((AMS_args *)union_base);
+   }
+   else if (type == MGR_SOLVER_TYPE_ADS)
+   {
+      hypredrv_ADSSetDefaultArgs((ADS_args *)union_base);
+   }
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    else if (type == MGR_SOLVER_TYPE_SCHWARZ)
    {
@@ -1273,6 +1287,11 @@ hypredrv_MGRSetDefaultArgs(MGR_args *args)
    args->relax_type       = 7;
    args->cycle            = 1;
    args->cycle_smooth_pos = 1;
+   args->op_G             = NULL;
+   args->op_C             = NULL;
+   args->op_coord[0]      = NULL;
+   args->op_coord[1]      = NULL;
+   args->op_coord[2]      = NULL;
 
    for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
    {
@@ -1544,7 +1563,9 @@ hypredrv_MGRfrlxGetValidValues(const char *key)
          {"chebyshev", 16}, {"ilu", 32},
          {"ge", 9},         {"spdirect", 29},
          {"ge-piv", 99},    {"ge-inv", 199},
-         {"fsai", 33},      {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
+         {"fsai", 33},      {"ams", MGR_SOLVER_TYPE_AMS},
+         {"ads", MGR_SOLVER_TYPE_ADS},
+         {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
       };
 #else
       static StrIntMap map[] = {
@@ -1555,7 +1576,8 @@ hypredrv_MGRfrlxGetValidValues(const char *key)
          {"chebyshev", 16}, {"ilu", 32},
          {"ge", 9},         {"spdirect", 29},
          {"ge-piv", 99},    {"ge-inv", 199},
-         {"fsai", 33},
+         {"fsai", 33},      {"ams", MGR_SOLVER_TYPE_AMS},
+         {"ads", MGR_SOLVER_TYPE_ADS},
       };
 #endif
 
@@ -1945,6 +1967,8 @@ MGRFRelaxUsesManagedHandle(const MGRfrlx_args *args)
    }
 
    return args->type == 2 || args->type == 29 || args->type == 32 || args->type == 33
+          || args->type == MGR_SOLVER_TYPE_AMS
+          || args->type == MGR_SOLVER_TYPE_ADS
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
           || args->type == MGR_SOLVER_TYPE_SCHWARZ
 #endif
@@ -2360,6 +2384,14 @@ MGRDestroyDetachedFSolver(const MGRfrlx_args *f_relaxation, HYPRE_Solver *solver
       HYPRE_FSAIDestroy(*solver_ptr);
    }
 #endif
+   else if (f_relaxation->type == MGR_SOLVER_TYPE_AMS)
+   {
+      HYPRE_AMSDestroy(*solver_ptr);
+   }
+   else if (f_relaxation->type == MGR_SOLVER_TYPE_ADS)
+   {
+      HYPRE_ADSDestroy(*solver_ptr);
+   }
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    else if (f_relaxation->type == MGR_SOLVER_TYPE_SCHWARZ)
    {
@@ -2435,8 +2467,43 @@ MGRRebuildNestedKrylovSolver(NestedKrylov_args *krylov, MGR_args *mgr_args)
  * invalid configurations additionally set the error state.
  *-----------------------------------------------------------------------------*/
 
+static int
+MGRFRelaxAuxOperatorsComplete(const MGR_args *args, HYPRE_Int type)
+{
+   if (type == MGR_SOLVER_TYPE_AMS)
+   {
+      return args && args->op_G && args->op_coord[0] && args->op_coord[1] &&
+             args->op_coord[2];
+   }
+
+   if (type == MGR_SOLVER_TYPE_ADS)
+   {
+      return args && args->op_G && args->op_C && args->op_coord[0] &&
+             args->op_coord[1] && args->op_coord[2];
+   }
+
+   return 1;
+}
+
+static void
+MGRFRelaxAuxOperatorsMissingError(HYPRE_Int type)
+{
+   hypredrv_ErrorCodeSet(ERROR_MISSING_PRECON);
+   if (type == MGR_SOLVER_TYPE_AMS)
+   {
+      hypredrv_ErrorMsgAdd("MGR F-relaxation 'ams' requires a discrete gradient "
+                           "matrix and coordinate vectors");
+   }
+   else
+   {
+      hypredrv_ErrorMsgAdd("MGR F-relaxation 'ads' requires a discrete gradient "
+                           "matrix, a discrete curl matrix, and coordinate vectors");
+   }
+}
+
 static HYPRE_Solver
-MGRFRelaxSolverCreateByType(MGRfrlx_args *f_relaxation, int active_lvl)
+MGRFRelaxSolverCreateByType(MGR_args *args, MGRfrlx_args *f_relaxation,
+                            int active_lvl)
 {
    HYPRE_Solver solver = NULL;
 
@@ -2474,6 +2541,34 @@ MGRFRelaxSolverCreateByType(MGRfrlx_args *f_relaxation, int active_lvl)
       hypredrv_FSAICreate(&f_relaxation->fsai, &solver);
    }
 #endif
+   else if (f_relaxation->type == MGR_SOLVER_TYPE_AMS)
+   {
+      if (!MGRFRelaxAuxOperatorsComplete(args, f_relaxation->type))
+      {
+         MGRFRelaxAuxOperatorsMissingError(f_relaxation->type);
+         return NULL;
+      }
+      hypredrv_AMSCreate(&f_relaxation->ams, &solver);
+      if (solver)
+      {
+         hypredrv_AMSSetOperators(solver, args->op_G, args->op_coord[0],
+                                  args->op_coord[1], args->op_coord[2]);
+      }
+   }
+   else if (f_relaxation->type == MGR_SOLVER_TYPE_ADS)
+   {
+      if (!MGRFRelaxAuxOperatorsComplete(args, f_relaxation->type))
+      {
+         MGRFRelaxAuxOperatorsMissingError(f_relaxation->type);
+         return NULL;
+      }
+      hypredrv_ADSCreate(&f_relaxation->ads, &solver);
+      if (solver)
+      {
+         hypredrv_ADSSetOperators(solver, args->op_G, args->op_C, args->op_coord[0],
+                                  args->op_coord[1], args->op_coord[2]);
+      }
+   }
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    else if (f_relaxation->type == MGR_SOLVER_TYPE_SCHWARZ)
    {
@@ -2504,6 +2599,13 @@ MGRFRelaxInstall(HYPRE_Solver precon, const MGRfrlx_args *f_relaxation,
       return;
    }
 #endif
+   if (f_relaxation->type == MGR_SOLVER_TYPE_AMS ||
+       f_relaxation->type == MGR_SOLVER_TYPE_ADS)
+   {
+      hypredrv_MGRSetFSolverAtLevel(precon, frelax, active_lvl,
+                                    MGR_FRLX_TYPE_CUSTOM_SOLVER_CB, NULL, NULL);
+      return;
+   }
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
    hypredrv_MGRSetFSolverAtLevel(precon, frelax, active_lvl, f_relaxation->type, NULL,
                                  NULL);
@@ -2719,7 +2821,7 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
 
    HYPRE_Solver old_fsolver = args->frelax[orig_lvl];
    HYPRE_Solver fsolver =
-      MGRFRelaxSolverCreateByType(&level_args->f_relaxation, active_lvl);
+      MGRFRelaxSolverCreateByType(args, &level_args->f_relaxation, active_lvl);
 
    if (hypredrv_ErrorCodeActive() || !fsolver)
    {
@@ -3742,6 +3844,10 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
       {
          level_frelax_type[i] = 7;
       }
+      else if (type == MGR_SOLVER_TYPE_AMS || type == MGR_SOLVER_TYPE_ADS)
+      {
+         level_frelax_type[i] = MGR_FRLX_TYPE_CUSTOM_SOLVER_CB;
+      }
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       else if (type == MGR_SOLVER_TYPE_SCHWARZ)
       {
@@ -3797,7 +3903,7 @@ MGRConfigManagedFRelax(MGR_args *args, HYPRE_Solver precon, HYPRE_Int active_lvl
 
    if (!frelax)
    {
-      frelax = MGRFRelaxSolverCreateByType(&level_args->f_relaxation, active_lvl);
+      frelax = MGRFRelaxSolverCreateByType(args, &level_args->f_relaxation, active_lvl);
       if (hypredrv_ErrorCodeActive() || !frelax)
       {
          return 0;
@@ -3981,6 +4087,21 @@ MGRConfigFRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan 
 #else
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd("MGR F-relaxation 'fsai' requires hypre >= 2.31.0");
+         return 0;
+#endif
+      }
+      else if (level_args->f_relaxation.type == MGR_SOLVER_TYPE_AMS ||
+               level_args->f_relaxation.type == MGR_SOLVER_TYPE_ADS)
+      {
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+         if (!MGRConfigManagedFRelax(args, precon, i, orig_lvl, stats, next_ls_id))
+         {
+            return 0;
+         }
+#else
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR F-relaxation 'ams'/'ads' requires hypre >= 2.31.0");
          return 0;
 #endif
       }
