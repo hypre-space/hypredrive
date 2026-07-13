@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "HYPREDRV_utils.h"
 #include "internal/error.h"
 #include <limits.h>
 #include <signal.h>
@@ -13,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "HYPREDRV_utils.h"
 
 #ifdef __linux__
 
