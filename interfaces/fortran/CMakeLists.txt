@@ -139,9 +139,16 @@ endif()
 if(HYPREDRV_ENABLE_TESTING)
     set(_hypredrv_fortran_failure_regex
         "HYPREDRIVE Failure!!!|BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES|Segmentation fault|Abort\\(")
+    function(hypredrv_set_fortran_test_runtime test_name)
+        if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
+            set_property(TEST ${test_name} PROPERTY
+                ENVIRONMENT "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
+        endif()
+    endfunction()
     function(hypredrv_enable_fortran_failure_detection test_name)
         set_property(TEST ${test_name} PROPERTY
             FAIL_REGULAR_EXPRESSION "${_hypredrv_fortran_failure_regex}")
+        hypredrv_set_fortran_test_runtime(${test_name})
     endfunction()
 
     hypredrv_add_fortran_executable(test_fortran_lifecycle tests/test_lifecycle.f90)
@@ -158,6 +165,7 @@ if(HYPREDRV_ENABLE_TESTING)
                      -DTEST_EXE=$<TARGET_FILE:test_fortran_check_failure>
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_check_failure.cmake")
     set_tests_properties(fortran_check_failure PROPERTIES LABELS "unit;fortran")
+    hypredrv_set_fortran_test_runtime(fortran_check_failure)
 
     if(MPIEXEC_EXECUTABLE)
         add_test(NAME fortran_csr_mpi_2proc

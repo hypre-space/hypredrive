@@ -364,6 +364,9 @@ execute_process(
 set(_python_test_env
     "PYTHONPATH=${_hypredrive_python_package_root}"
 )
+if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
+    list(APPEND _python_test_env "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
+endif()
 
 if(HYPREDRV_SANITIZER_ENABLED AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     execute_process(
