@@ -21,6 +21,7 @@
 
 struct NestedKrylov_args_struct;
 struct Stats_struct;
+struct YAMLnode_struct;
 typedef struct MGR_args_struct MGR_args;
 
 enum
@@ -181,7 +182,7 @@ struct MGR_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_MGRSetDefaultArgs(MGR_args *);
-void hypredrv_MGRSetArgs(void *, const YAMLnode *);
+void hypredrv_MGRSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_MGRSetDofmap(MGR_args *, IntArray *);
 void hypredrv_MGRSetDofLabels(const DofLabelMap *);
 void hypredrv_MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
@@ -269,27 +270,6 @@ void         hypredrv_MGRNestedFRelaxWrapperFree(HYPRE_Solver *);
          }                                                                            \
          return _buffer;                                                              \
       }                                                                               \
-   }
-
-/*-----------------------------------------------------------------------------
- * Type-setting wrapper macro for union fields.
- *
- * For structs with unions (MGRcls, MGRfrlx, MGRgrlx), when we parse a nested
- * block like `ilu: {...}`, we need to also set the `type` field. This macro
- * generates a wrapper that recovers the parent struct and sets type before
- * calling the real setter.
- *
- * @param _func_name Desired generated wrapper name (e.g., MGRclsILUSetArgs)
- * @param _parent    Parent struct type (e.g., MGRcls_args)
- * @param _field     Union field name (e.g., amg, ilu)
- * @param _type      Type value to set (e.g., 0, 32)
- * @param _setter    Real setter function (e.g., AMGSetArgs)
- *-----------------------------------------------------------------------------*/
-#define DEFINE_TYPED_SETTER(_func_name, _parent, _field, _type, _setter)    \
-   static void _func_name(void *v, const YAMLnode *n)                       \
-   {                                                                        \
-      ((_parent *)((char *)v - offsetof(_parent, _field)))->type = (_type); \
-      _setter(v, n);                                                        \
    }
 
 #endif /* MGR_HEADER */

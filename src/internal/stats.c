@@ -1359,6 +1359,23 @@ hypredrv_StatsGetLinearSystemID(const Stats *stats)
    return stats->ls_counter - 1;
 }
 
+const char *
+hypredrv_StatsGetLogObjectName(const Stats *stats, char *buffer, size_t buffer_size)
+{
+   if (stats && stats->object_name[0] != '\0')
+   {
+      return stats->object_name;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (stats && stats->runtime_object_id > 0 && buffer && buffer_size > 0)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      snprintf(buffer, buffer_size, "obj-%d", stats->runtime_object_id);
+      return buffer;
+   }
+   return NULL;
+}
+
 /*--------------------------------------------------------------------------
  * hypredrv_StatsSetNumReps
  *--------------------------------------------------------------------------*/

@@ -31,28 +31,6 @@
    orthogonalization are considered linearly dependent */
 #define HYPREDRV_NULLSPACE_DEP_TOL 1.0e-12
 
-static HYPRE_Int
-IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
-{
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 22000
-   return HYPRE_IJVectorInitialize_v2(vec, memory_location);
-#else
-   (void)memory_location;
-   return HYPRE_IJVectorInitialize(vec);
-#endif
-}
-
-static HYPRE_Int
-IJMatrixInitializeCompat(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_location)
-{
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
-   return HYPRE_IJMatrixInitialize_v2(mat, memory_location);
-#else
-   (void)memory_location;
-   return HYPRE_IJMatrixInitialize(mat);
-#endif
-}
-
 #define HYPREDRV_HAVE_MEMORY_APIS (HYPREDRV_HYPRE_RELEASE_NUMBER >= 22000)
 
 /* TODO: implement IJVectorClone/Copy and IJVectorMigrate/IJMatrix in hypre*/
@@ -256,7 +234,7 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_IJVectorSetNumComponents(*vec_nn_ptr, num_components);
 #endif
-   IJVectorInitializeCompat(*vec_nn_ptr, HYPRE_MEMORY_HOST);
+   HYPRE_IJVectorInitialize_v2(*vec_nn_ptr, HYPRE_MEMORY_HOST);
 
    HYPRE_BigInt  *indices = NULL;
    HYPRE_Complex *zeros   = NULL;
@@ -581,23 +559,6 @@ LinearSystemStatsIDGet(const Stats *stats)
    return stats ? hypredrv_StatsGetLinearSystemID(stats) : 0;
 }
 
-static const char *
-LinearSystemLogObjectName(const Stats *stats, char *buf, size_t buf_size)
-{
-   if (stats && stats->object_name[0] != '\0')
-   {
-      return stats->object_name;
-   }
-   /* GCOVR_EXCL_BR_START */
-   if (stats && stats->runtime_object_id > 0 && buf && buf_size > 0)
-   /* GCOVR_EXCL_BR_STOP */
-   {
-      snprintf(buf, buf_size, "obj-%d", stats->runtime_object_id);
-      return buf;
-   }
-   return NULL;
-}
-
 static MPI_Comm
 LinearSystemCommFromVector(HYPRE_IJVector vec)
 {
@@ -905,7 +866,7 @@ hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
 {
    char        log_name_buf[32];
    const char *log_object_name =
-      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
+      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "matrix");
 
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
@@ -1066,7 +1027,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
    HYPREDRV_CSR_HYPRE_CALL(
       HYPRE_IJMatrixCreate(comm, row_start, row_end, row_start, row_end, mat_ptr));
    HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixSetObjectType(*mat_ptr, HYPRE_PARCSR));
-   HYPREDRV_CSR_HYPRE_CALL(IJMatrixInitializeCompat(*mat_ptr, memory_location));
+   HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
 
    if (nrows == 0)
    {
@@ -1249,7 +1210,7 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
 
    HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorCreate(comm, row_start, row_end, rhs_ptr));
    HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR));
-   HYPREDRV_RHS_HYPRE_CALL(IJVectorInitializeCompat(*rhs_ptr, memory_location));
+   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location));
 
    if (nrows > 0)
    {
@@ -1491,7 +1452,7 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
    HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
    HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
    HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
-   IJVectorInitializeCompat(*rhs_ptr, memory_location);
+   HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location);
 
    HYPRE_BigInt local_size = iupper - ilower + 1;
    if (local_size > (HYPRE_BigInt)INT_MAX)
@@ -1555,7 +1516,7 @@ LinearSystemRHSGeneratedSet(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
    HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
    HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
    HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
-   IJVectorInitializeCompat(*rhs_ptr, memory_location);
+   HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location);
 
    void           *obj   = NULL;
    HYPRE_ParVector par_b = NULL;
@@ -1579,7 +1540,7 @@ LinearSystemRHSGeneratedSet(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
          HYPRE_IJVector xref = NULL;
          HYPRE_IJVectorCreate(comm, ilower, iupper, &xref);
          HYPRE_IJVectorSetObjectType(xref, HYPRE_PARCSR);
-         IJVectorInitializeCompat(xref, memory_location);
+         HYPRE_IJVectorInitialize_v2(xref, memory_location);
 
          HYPRE_ParVector par_x = NULL;
          HYPRE_IJVectorGetObject(xref, &obj);
@@ -1645,7 +1606,7 @@ hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
    int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
    char        log_name_buf[32];
    const char *log_object_name =
-      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
+      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "rhs");
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "rhs setup begin (rhs_mode=%d)",
@@ -1736,7 +1697,7 @@ hypredrv_LinearSystemCreateWorkingSolution(MPI_Comm comm, const LS_args *args,
    HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
    HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
    HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
-   IJVectorInitializeCompat(*x_ptr, memloc);
+   HYPRE_IJVectorInitialize_v2(*x_ptr, memloc);
 }
 
 void
@@ -1748,7 +1709,7 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
    int         ls_id = LinearSystemStatsIDGet(stats) + 1;
    char        log_name_buf[32];
    const char *log_object_name =
-      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
+      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    HYPRE_BigInt         jlower = 0, jupper = 0;
    HYPRE_MemoryLocation memloc =
       /* GCOVR_EXCL_BR_START */
@@ -1777,7 +1738,7 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
       HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
       HYPRE_IJVectorCreate(comm, jlower, jupper, x0_ptr);
       HYPRE_IJVectorSetObjectType(*x0_ptr, HYPRE_PARCSR);
-      IJVectorInitializeCompat(*x0_ptr, memloc);
+      HYPRE_IJVectorInitialize_v2(*x0_ptr, memloc);
 
       /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
       void           *obj    = NULL;
@@ -1884,7 +1845,7 @@ hypredrv_LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
    int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
    char        log_name_buf[32];
    const char *log_object_name =
-      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
+      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "reference solution setup begin");
 
    /* Keep the existing reference solution (e.g., rhs_mode = randsol) unless a file is
@@ -1960,7 +1921,7 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
    int             ls_id    = LinearSystemStatsIDGet(stats);
    char            log_name_buf[32];
    const char     *log_object_name =
-      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
+      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
    HYPREDRV_LOG_COMMF(3, log_comm, log_object_name, ls_id, "initial guess reset begin");
@@ -2072,7 +2033,7 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
    int         ls_id                                = LinearSystemStatsIDGet(stats) + 1;
    char        log_name_buf[32];
    const char *log_object_name =
-      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
+      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                       "preconditioner matrix setup begin");
 
@@ -2141,7 +2102,7 @@ hypredrv_LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **d
    int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
    char        log_name_buf[32];
    const char *log_object_name =
-      LinearSystemLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
+      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap read begin");
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
 
@@ -2399,9 +2360,9 @@ hypredrv_LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector ve
    HYPRE_IJVectorCreate(hypre_IJVectorComm(vec_x), jlower, jupper, &vec_e);
    HYPRE_IJVectorSetObjectType(vec_e, HYPRE_PARCSR);
 #if HYPREDRV_HAVE_MEMORY_APIS
-   IJVectorInitializeCompat(vec_e, hypre_IJVectorMemoryLocation(vec_x));
+   HYPRE_IJVectorInitialize_v2(vec_e, hypre_IJVectorMemoryLocation(vec_x));
 #else
-   IJVectorInitializeCompat(vec_e, HYPRE_MEMORY_HOST);
+   HYPRE_IJVectorInitialize_v2(vec_e, HYPRE_MEMORY_HOST);
 #endif
    HYPRE_IJVectorGetObject(vec_e, &obj_e);
    par_e = (HYPRE_ParVector)obj_e;
@@ -2455,9 +2416,9 @@ hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector ve
    HYPRE_IJVectorCreate(hypre_IJVectorComm(vec_b), jlower, jupper, &vec_r);
    HYPRE_IJVectorSetObjectType(vec_r, HYPRE_PARCSR);
 #if HYPREDRV_HAVE_MEMORY_APIS
-   IJVectorInitializeCompat(vec_r, hypre_IJVectorMemoryLocation(vec_b));
+   HYPRE_IJVectorInitialize_v2(vec_r, hypre_IJVectorMemoryLocation(vec_b));
 #else
-   IJVectorInitializeCompat(vec_r, HYPRE_MEMORY_HOST);
+   HYPRE_IJVectorInitialize_v2(vec_r, HYPRE_MEMORY_HOST);
 #endif
    HYPRE_IJVectorGetObject(vec_r, &obj_r);
    par_r = (HYPRE_ParVector)obj_r;

@@ -45,23 +45,13 @@
  */
 GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(ADS) // LCOV_EXCL_LINE
 
-/*-----------------------------------------------------------------------------
- * ADSGetValidValues (accept raw hypre integers)
- *-----------------------------------------------------------------------------*/
+hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_ADS) // LCOV_EXCL_LINE
 
-StrIntMapArray
-hypredrv_ADSGetValidValues(const char *key)
-{
-   (void)key;
-   return STR_INT_MAP_ARRAY_VOID();
-}
+   /*-----------------------------------------------------------------------------
+    * hypredrv_ADSCreate
+    *-----------------------------------------------------------------------------*/
 
-/*-----------------------------------------------------------------------------
- * hypredrv_ADSCreate
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_ADSCreate(const ADS_args *args, HYPRE_Solver *precon_ptr)
+   void hypredrv_ADSCreate(const ADS_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver precon = NULL;
 

@@ -12,17 +12,6 @@
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
 #include "internal/utils.h"
 
-static void
-IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
-{
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
-   HYPRE_IJVectorInitialize_v2(vec, memory_location);
-#else
-   (void)memory_location;
-   HYPRE_IJVectorInitialize(vec);
-#endif
-}
-
 enum
 {
    IJVECTOR_MAX_PART_NROWS = 200u * 1000u * 1000u,
@@ -222,7 +211,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
    HYPRE_IJVectorCreate(comm, ilower, iupper, &vec);
    HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR);
-   IJVectorInitializeCompat(vec, memory_location);
+   HYPRE_IJVectorInitialize_v2(vec, memory_location);
 
    /* Allocate variables */
    h_vals =

@@ -30,6 +30,9 @@ add_library(HYPREDRV_Julia SHARED
     src/HYPREDRV_julia.c
 )
 add_library(HYPREDRV::Julia ALIAS HYPREDRV_Julia)
+hypredrv_hide_static_archive_symbols(HYPREDRV_Julia APPLE_EXPORTS
+    "_HYPREDRV_Julia*")
+hypredrv_add_dynamic_export_test(HYPREDRV_Julia JULIA)
 
 target_link_libraries(HYPREDRV_Julia
     PUBLIC

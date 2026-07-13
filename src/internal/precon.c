@@ -11,6 +11,19 @@
 #include "internal/krylov.h"
 #include "logging.h"
 
+#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
+static HYPRE_Int
+PreconUnavailable(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                  HYPRE_ParVector x)
+{
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
+}
+#endif
+
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
 #define HYPREDRV_PRECON_SCHWARZ_FIELD(_prefix) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, schwarz, hypredrv_SchwarzSetArgs)
@@ -18,7 +31,7 @@
 #define HYPREDRV_PRECON_SCHWARZ_FIELD(_prefix)
 #endif
 
-#define Precon_FIELDS(_prefix)                                 \
+#define precon_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, hypredrv_AMGSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, hypredrv_MGRSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, hypredrv_ILUSetArgs)   \
@@ -29,14 +42,14 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, reuse, hypredrv_FieldTypeIntSet)
 
 /* GCOVR_EXCL_START */
-DEFINE_FIELD_OFFSET_MAP(Precon)
-#define Precon_NUM_FIELDS \
-   (sizeof(Precon_field_offset_map) / sizeof(Precon_field_offset_map[0]))
+DEFINE_FIELD_OFFSET_MAP(precon)
+#define precon_NUM_FIELDS \
+   (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
 
-DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_PreconSetFieldByName, Precon_args,
-                              Precon_field_offset_map, Precon_NUM_FIELDS)
-DEFINE_GET_VALID_KEYS_FUNC(hypredrv_PreconGetValidKeys, Precon_NUM_FIELDS,
-                           Precon_field_offset_map)
+DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_PreconSetFieldByName, precon_args,
+                              precon_field_offset_map, precon_NUM_FIELDS)
+DEFINE_GET_VALID_KEYS_FUNC(hypredrv_PreconGetValidKeys, precon_NUM_FIELDS,
+                           precon_field_offset_map)
 /* GCOVR_EXCL_STOP */
 
 /*-----------------------------------------------------------------------------
@@ -68,6 +81,70 @@ hypredrv_PreconGetValidTypeIntMap(void)
    };
 
    return STR_INT_MAP_ARRAY_CREATE(map);
+}
+
+void
+hypredrv_PreconGetCallbacks(precon_t method, HYPRE_PtrToParSolverFcn *setup,
+                            HYPRE_PtrToParSolverFcn *solve)
+{
+   HYPRE_PtrToParSolverFcn setup_fn = NULL;
+   HYPRE_PtrToParSolverFcn solve_fn = NULL;
+
+   switch (method)
+   {
+      case PRECON_BOOMERAMG:
+         setup_fn = HYPRE_BoomerAMGSetup;
+         solve_fn = HYPRE_BoomerAMGSolve;
+         break;
+      case PRECON_MGR:
+         setup_fn = HYPRE_MGRSetup;
+         solve_fn = HYPRE_MGRSolve;
+         break;
+      case PRECON_ILU:
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+         setup_fn = HYPRE_ILUSetup;
+         solve_fn = HYPRE_ILUSolve;
+#else
+         setup_fn = PreconUnavailable;
+         solve_fn = PreconUnavailable;
+#endif
+         break;
+      case PRECON_FSAI:
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+         setup_fn = HYPRE_FSAISetup;
+         solve_fn = HYPRE_FSAISolve;
+#else
+         setup_fn = PreconUnavailable;
+         solve_fn = PreconUnavailable;
+#endif
+         break;
+      case PRECON_AMS:
+         setup_fn = HYPRE_AMSSetup;
+         solve_fn = HYPRE_AMSSolve;
+         break;
+      case PRECON_ADS:
+         setup_fn = HYPRE_ADSSetup;
+         solve_fn = HYPRE_ADSSolve;
+         break;
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+      case PRECON_SCHWARZ:
+         setup_fn = HYPRE_SchwarzSetup;
+         solve_fn = HYPRE_SchwarzSolve;
+         break;
+#endif
+      case PRECON_NONE:
+      default:
+         break;
+   }
+
+   if (setup)
+   {
+      *setup = setup_fn;
+   }
+   if (solve)
+   {
+      *solve = solve_fn;
+   }
 }
 
 /*-----------------------------------------------------------------------------

@@ -5,9 +5,11 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include "HYPREDRV_utils.h"
 #include "internal/error.h"
 #include <limits.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -854,11 +856,7 @@ hypredrv_DistributedErrorStateSync(MPI_Comm comm)
          int    chunk = (int)((rem > sizeof(sink)) ? sizeof(sink) : rem);
          char  *buf   = sink;
 
-         if (myid == root && text)
-         {
-            buf = text + offset;
-         }
-         else if (text)
+         if (text)
          {
             buf = text + offset;
          }

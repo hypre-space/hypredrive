@@ -12,7 +12,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <istream>
@@ -20,7 +19,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 namespace hypredrive

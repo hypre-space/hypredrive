@@ -1246,24 +1246,6 @@ FindConfigIndex(int argc, char **argv)
    return -1;
 }
 
-static int
-ConfigPathIsUnderRoot(const char *path, const char *root)
-{
-   size_t root_len;
-
-   if (!path || !root)
-   {
-      return 0;
-   }
-   root_len = strlen(root);
-   if (root_len == 0 || strncmp(path, root, root_len) != 0)
-   {
-      return 0;
-   }
-
-   return ((path[root_len] == '\0') || (path[root_len] == '/')) != 0;
-}
-
 static bool
 LoadResolvedConfigPath(const char *candidate, char *cfg_path, size_t cfg_path_size)
 {
@@ -1302,7 +1284,7 @@ LoadResolvedConfigPath(const char *candidate, char *cfg_path, size_t cfg_path_si
       hypredrv_ErrorMsgAdd("Configuration file not found: '%s'", candidate);
       goto cleanup;
    }
-   if (!ConfigPathIsUnderRoot(resolved, root_dir) ||
+   if (!hypredrv_PathIsUnderRoot(resolved, root_dir) ||
        !hypredrv_BinaryPathPrefixIsSafe(resolved) || strstr(resolved, "..") != NULL)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);

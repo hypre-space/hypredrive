@@ -18,6 +18,7 @@
 #include <string.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 #include "HYPREDRV_config.h"
 #include "HYPRE_config.h"
@@ -1771,7 +1772,7 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
 
       char next_prefix[4096];
       int  written = snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix,
-                             is_last ? "    " : "|   ");
+                              is_last ? "    " : "|   ");
       if (written < 0 || (size_t)written >= sizeof(next_prefix))
       {
          continue;
@@ -3917,7 +3918,7 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
       printf("hwloc Information\n");
       printf("-----------------\n");
       unsigned version = hwloc_get_api_version();
-      printf("hwloc API version    : %d.%d.%d\n", (version >> 16) & 0xff,
+      printf("hwloc API version    : %u.%u.%u\n", (version >> 16) & 0xff,
              (version >> 8) & 0xff, version & 0xff);
       printf("\n");
 

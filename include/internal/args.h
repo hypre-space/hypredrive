@@ -9,7 +9,6 @@
 #define ARGS_HEADER
 
 #include <HYPRE_utilities.h>
-#include <stdint.h>
 #include "internal/linsys.h"
 #include "internal/precon.h"
 #include "internal/scaling.h"

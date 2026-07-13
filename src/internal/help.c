@@ -10,8 +10,8 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
-#include "internal/compatibility.h"
 #include "internal/containers.h"
+#include "internal/utils.h"
 
 typedef StrArray (*HelpGetKeysFunc)(void);
 typedef StrIntMapArray (*HelpGetValuesFunc)(const char *);

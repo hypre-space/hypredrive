@@ -10,8 +10,8 @@
 
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "internal/field.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * FGMRES solver arguments struct
@@ -33,7 +33,7 @@ typedef struct FGMRES_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_FGMRESSetDefaultArgs(FGMRES_args *);
-void hypredrv_FGMRESSetArgs(void *, const YAMLnode *);
+void hypredrv_FGMRESSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_FGMRESCreate(MPI_Comm, const FGMRES_args *, HYPRE_Solver *);
 
 #endif /* FGMRES_HEADER */

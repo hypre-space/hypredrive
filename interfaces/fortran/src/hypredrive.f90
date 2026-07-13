@@ -125,13 +125,6 @@ module hypredrive
          integer(c_int32_t) :: ierr
       end function
 
-      function c_HYPREDRV_InputArgsParseYaml(hypredrv, yaml_text) bind(C, name="HYPREDRV_FortranInputArgsParseYaml") result(ierr)
-         import :: c_char, c_int32_t, c_ptr
-         type(c_ptr), value :: hypredrv
-         character(kind=c_char), intent(in) :: yaml_text(*)
-         integer(c_int32_t) :: ierr
-      end function
-
       function HYPREDRV_SetLibraryMode(hypredrv) bind(C, name="HYPREDRV_SetLibraryMode") result(ierr)
          import :: c_int32_t, c_ptr
          type(c_ptr), value :: hypredrv
@@ -617,10 +610,12 @@ contains
       type(c_ptr), value :: hypredrv
       character(len=*), intent(in) :: yaml_text
       integer(c_int32_t) :: ierr
-      character(kind=c_char), allocatable :: c_yaml(:)
+      character(kind=c_char), allocatable, target :: c_yaml(:)
+      type(c_ptr) :: argv(1)
 
       call HYPREDRV_ToCString(yaml_text, c_yaml)
-      ierr = c_HYPREDRV_InputArgsParseYaml(hypredrv, c_yaml)
+      argv(1) = c_loc(c_yaml(1))
+      ierr = HYPREDRV_InputArgsParse(1_c_int, argv, hypredrv)
    end function HYPREDRV_InputArgsParseYaml
 
    ! These wrappers intentionally avoid the Fortran 2008 CONTIGUOUS attribute so

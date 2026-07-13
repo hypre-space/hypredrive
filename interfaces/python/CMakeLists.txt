@@ -22,6 +22,12 @@
 cmake_minimum_required(VERSION 3.23)
 project(hypredrive_python LANGUAGES C)
 
+set(_hypredrive_visibility_module
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/HYPREDRV_Visibility.cmake")
+if(EXISTS "${_hypredrive_visibility_module}")
+    include("${_hypredrive_visibility_module}")
+endif()
+
 set(HYPREDRV_PYTHON_BUNDLE_CORE "AUTO" CACHE STRING
     "Build and bundle in-tree HYPREDRV/HYPRE for Python wheels (AUTO, ON, or OFF)")
 set_property(CACHE HYPREDRV_PYTHON_BUNDLE_CORE PROPERTY STRINGS AUTO ON OFF)
@@ -183,7 +189,18 @@ add_custom_command(
 python_add_library(_core MODULE WITH_SOABI "${_pyx_out}" "${_bridge_c}")
 set_target_properties(_core PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${_hypredrive_python_package_dir}"
+    C_VISIBILITY_PRESET hidden
 )
+if(COMMAND hypredrv_hide_static_archive_symbols)
+    hypredrv_hide_static_archive_symbols(_core APPLE_EXPORTS "_PyInit__core")
+elseif(APPLE)
+    target_link_options(_core PRIVATE "LINKER:-exported_symbol,_PyInit__core")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(_core PRIVATE "LINKER:--exclude-libs,ALL")
+endif()
+if(COMMAND hypredrv_add_dynamic_export_test)
+    hypredrv_add_dynamic_export_test(_core PYTHON)
+endif()
 
 if(_hypredrive_python_bundle_core)
     if(APPLE)

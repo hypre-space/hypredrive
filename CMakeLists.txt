@@ -168,8 +168,10 @@ set(SOURCE_FILES
     src/HYPREDRV.c
 )
 
-# Define the library
-add_library(HYPREDRV ${SOURCE_FILES})
+# Compile the implementation once so shared builds can also provide a private,
+# non-installed static link path to bundled tools and white-box tests.
+add_library(HYPREDRV_objects OBJECT ${SOURCE_FILES})
+add_library(HYPREDRV $<TARGET_OBJECTS:HYPREDRV_objects>)
 add_library(HYPREDRV::HYPREDRV ALIAS HYPREDRV)
 
 # Set library properties
@@ -177,8 +179,21 @@ set_target_properties(HYPREDRV PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
     POSITION_INDEPENDENT_CODE ON
+    C_VISIBILITY_PRESET hidden
+    DEFINE_SYMBOL HYPREDRV_EXPORTS
     PUBLIC_HEADER "${PROJECT_SOURCE_DIR}/include/HYPREDRV.h;${PROJECT_SOURCE_DIR}/include/HYPREDRV_utils.h;${CMAKE_CURRENT_BINARY_DIR}/HYPREDRV_config.h"
 )
+set_target_properties(HYPREDRV_objects PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    C_VISIBILITY_PRESET hidden
+)
+
+# HYPREDRV_EXPORT_SYMBOL must be empty for static-library consumers on Windows.
+# PUBLIC ensures the definition is also present on the installed CMake target.
+get_target_property(_hypredrv_library_type HYPREDRV TYPE)
+if(_hypredrv_library_type STREQUAL "STATIC_LIBRARY")
+    target_compile_definitions(HYPREDRV PUBLIC HYPREDRV_STATIC_DEFINE)
+endif()
 
 # Include directories for HYPREDRV
 target_include_directories(HYPREDRV
@@ -311,13 +326,76 @@ if(HYPREDRV_ENABLE_EXPERIMENTAL)
     target_compile_definitions(HYPREDRV PUBLIC HYPREDRV_ENABLE_EXPERIMENTAL=1)
 endif()
 
+# Transfer the public library's accumulated compile requirements to the object
+# target. Link requirements are attached as usage requirements so dependency
+# include paths and compile definitions also reach the implementation sources.
+foreach(_property IN ITEMS
+        INCLUDE_DIRECTORIES
+        COMPILE_DEFINITIONS
+        COMPILE_OPTIONS
+        COMPILE_FEATURES)
+    get_target_property(_value HYPREDRV ${_property})
+    if(_value AND NOT _value MATCHES "-NOTFOUND$")
+        set_property(TARGET HYPREDRV_objects PROPERTY ${_property} "${_value}")
+    endif()
+endforeach()
+get_target_property(_hypredrv_object_link_libraries HYPREDRV LINK_LIBRARIES)
+if(_hypredrv_object_link_libraries AND
+   NOT _hypredrv_object_link_libraries MATCHES "-NOTFOUND$")
+    target_link_libraries(HYPREDRV_objects
+        PRIVATE ${_hypredrv_object_link_libraries})
+endif()
+if(_hypredrv_library_type STREQUAL "SHARED_LIBRARY")
+    target_compile_definitions(HYPREDRV_objects PRIVATE HYPREDRV_EXPORTS)
+else()
+    target_compile_definitions(HYPREDRV_objects PRIVATE HYPREDRV_STATIC_DEFINE)
+endif()
+
+# The installed shared library intentionally hides implementation symbols.  The
+# bundled command-line tools and the white-box test/fuzz targets use some of
+# those internals, so shared builds get a non-installed static implementation
+# library for build-tree consumers.  Keeping this target separate avoids
+# widening the shared-library ABI solely for in-tree programs.
+set(HYPREDRV_INTERNAL_LINK_TARGET HYPREDRV)
+if(_hypredrv_library_type STREQUAL "SHARED_LIBRARY")
+    add_library(HYPREDRV_internal STATIC EXCLUDE_FROM_ALL
+        $<TARGET_OBJECTS:HYPREDRV_objects>)
+    set_target_properties(HYPREDRV_internal PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+    )
+
+    foreach(_property IN ITEMS
+            LINK_DIRECTORIES
+            LINK_OPTIONS
+            INTERFACE_INCLUDE_DIRECTORIES
+            INTERFACE_COMPILE_DEFINITIONS
+            INTERFACE_COMPILE_OPTIONS
+            INTERFACE_COMPILE_FEATURES
+            INTERFACE_LINK_DIRECTORIES
+            INTERFACE_LINK_LIBRARIES
+            INTERFACE_LINK_OPTIONS)
+        get_target_property(_value HYPREDRV ${_property})
+        if(_value AND NOT _value MATCHES "-NOTFOUND$")
+            set_property(TARGET HYPREDRV_internal PROPERTY ${_property} "${_value}")
+        endif()
+    endforeach()
+    get_target_property(_hypredrv_private_link_libraries HYPREDRV LINK_LIBRARIES)
+    if(_hypredrv_private_link_libraries AND
+       NOT _hypredrv_private_link_libraries MATCHES "-NOTFOUND$")
+        target_link_libraries(HYPREDRV_internal
+            PRIVATE ${_hypredrv_private_link_libraries})
+    endif()
+    target_compile_definitions(HYPREDRV_internal PUBLIC HYPREDRV_STATIC_DEFINE)
+    set(HYPREDRV_INTERNAL_LINK_TARGET HYPREDRV_internal)
+endif()
+
 # Define the main executable (hypredrive-cli)
 add_executable(hypredrive-cli src/internal/main.c)
-target_link_libraries(hypredrive-cli PRIVATE HYPREDRV::HYPREDRV)
+target_link_libraries(hypredrive-cli PRIVATE ${HYPREDRV_INTERNAL_LINK_TARGET})
 
 if(HYPREDRV_ENABLE_COMPRESSION)
     add_executable(hypredrive-lsseq utils/lsseq_driver.c)
-    target_link_libraries(hypredrive-lsseq PRIVATE HYPREDRV::HYPREDRV)
+    target_link_libraries(hypredrive-lsseq PRIVATE ${HYPREDRV_INTERNAL_LINK_TARGET})
 endif()
 
 # Ensure dataset-driven examples/tests have data available before running hypredrive-cli.
@@ -368,6 +446,9 @@ if(CALIPER_FOUND)
         add_dependencies(hypredrive-cli caliper)
         # Also add to HYPREDRV to ensure it's available when linking
         add_dependencies(HYPREDRV caliper)
+        if(TARGET HYPREDRV_internal)
+            add_dependencies(HYPREDRV_internal caliper)
+        endif()
     endif()
     # Ensure HYPRE is built (which transitively ensures Caliper is built)
     if(TARGET HYPRE::HYPRE)
@@ -381,10 +462,15 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Format.cmake)
 # Platform-specific settings
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Platform.cmake)
 
+# Keep symbols pulled from static dependencies out of language-module ABIs.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Visibility.cmake)
+hypredrv_hide_static_archive_symbols(HYPREDRV)
+
 # Optional interfaces may register tests before the main testing module adds the
 # C test suite, so enable CTest before descending into those subdirectories.
 if(HYPREDRV_ENABLE_TESTING)
     enable_testing()
+    hypredrv_add_dynamic_export_test(HYPREDRV CORE)
 endif()
 
 hypredrv_compute_build_tree_export_available(_hypredrv_build_tree_export_available)

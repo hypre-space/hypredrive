@@ -257,10 +257,7 @@ end
 function hypredrive_comm_rank(comm::Symbol=:world)
     if comm === :self
         hypredrive_initialize()
-        rank = Ref{Cint}(0)
-        _check(ccall((:HYPREDRV_JuliaSelfCommRank, _lib()), UInt32, (Ref{Cint},), rank),
-               "MPI self rank")
-        return Int(rank[])
+        return 0
     end
     comm === :world && return hypredrive_mpi_world_rank()
     throw(ArgumentError("comm must be :world or :self"))
@@ -269,10 +266,7 @@ end
 function hypredrive_comm_size(comm::Symbol=:world)
     if comm === :self
         hypredrive_initialize()
-        size = Ref{Cint}(1)
-        _check(ccall((:HYPREDRV_JuliaSelfCommSize, _lib()), UInt32, (Ref{Cint},), size),
-               "MPI self size")
-        return Int(size[])
+        return 1
     end
     comm === :world && return hypredrive_mpi_world_size()
     throw(ArgumentError("comm must be :world or :self"))

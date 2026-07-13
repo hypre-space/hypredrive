@@ -8,13 +8,10 @@
 #ifndef ERROR_H
 #define ERROR_H
 
-#include <HYPRE_utilities.h>
-#include <stdarg.h>
+#include <mpi.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 typedef enum hypredrv_error_enum
 {
@@ -49,9 +46,6 @@ typedef enum hypredrv_error_enum
    ERROR_OUT_OF_BOUNDS            = 0x40000000, // 29th bit
    ERROR_UNKNOWN                  = 0x80000000, // 30th bit
 } hypredrv_error_t;
-
-/* Backward-compatible alias; prefer hypredrv_error_t in new code. */
-typedef hypredrv_error_t ErrorCode;
 
 /*
  * THREAD SAFETY

@@ -35,6 +35,8 @@ add_library(HYPREDRV_Fortran
     src/HYPREDRV_fortran.c
 )
 add_library(HYPREDRV::Fortran ALIAS HYPREDRV_Fortran)
+hypredrv_hide_static_archive_symbols(HYPREDRV_Fortran)
+hypredrv_add_dynamic_export_test(HYPREDRV_Fortran FORTRAN)
 
 set_target_properties(HYPREDRV_Fortran PROPERTIES
     OUTPUT_NAME HYPREDRV_Fortran
@@ -135,6 +137,13 @@ if(HYPREDRV_ENABLE_EXAMPLES)
 endif()
 
 if(HYPREDRV_ENABLE_TESTING)
+    set(_hypredrv_fortran_failure_regex
+        "HYPREDRIVE Failure!!!|BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES|Segmentation fault|Abort\\(")
+    function(hypredrv_enable_fortran_failure_detection test_name)
+        set_property(TEST ${test_name} PROPERTY
+            FAIL_REGULAR_EXPRESSION "${_hypredrv_fortran_failure_regex}")
+    endfunction()
+
     hypredrv_add_fortran_executable(test_fortran_lifecycle tests/test_lifecycle.f90)
     hypredrv_add_fortran_executable(test_fortran_csr_mpi tests/test_csr_mpi.f90)
     hypredrv_add_fortran_executable(test_fortran_check_failure tests/test_check_failure.f90)
@@ -142,6 +151,7 @@ if(HYPREDRV_ENABLE_TESTING)
 
     add_test(NAME fortran_lifecycle COMMAND test_fortran_lifecycle)
     set_tests_properties(fortran_lifecycle PROPERTIES LABELS "unit;fortran")
+    hypredrv_enable_fortran_failure_detection(fortran_lifecycle)
 
     add_test(NAME fortran_check_failure
              COMMAND ${CMAKE_COMMAND}
@@ -155,7 +165,10 @@ if(HYPREDRV_ENABLE_TESTING)
                          ${MPIEXEC_PREFLAGS}
                          $<TARGET_FILE:test_fortran_csr_mpi>
                          ${MPIEXEC_POSTFLAGS})
-        set_tests_properties(fortran_csr_mpi_2proc PROPERTIES LABELS "unit;fortran" RUN_SERIAL TRUE)
+        set_tests_properties(fortran_csr_mpi_2proc PROPERTIES
+            LABELS "unit;fortran"
+            RUN_SERIAL TRUE)
+        hypredrv_enable_fortran_failure_detection(fortran_csr_mpi_2proc)
     endif()
 
     set(_hypredrv_fortran_test_target_deps
@@ -168,12 +181,18 @@ if(HYPREDRV_ENABLE_TESTING)
         add_test(NAME fortran_laplacian_serial
                  COMMAND $<TARGET_FILE:laplacian-fortran>
                          "${_fortran_laplacian_dir}/default.nml")
-        set_tests_properties(fortran_laplacian_serial PROPERTIES LABELS "fortran;example" RUN_SERIAL TRUE)
+        set_tests_properties(fortran_laplacian_serial PROPERTIES
+            LABELS "fortran;example"
+            RUN_SERIAL TRUE)
+        hypredrv_enable_fortran_failure_detection(fortran_laplacian_serial)
 
         add_test(NAME fortran_laplacian_anisotropic
                  COMMAND $<TARGET_FILE:laplacian-fortran>
                          "${_fortran_laplacian_dir}/anisotropic.nml")
-        set_tests_properties(fortran_laplacian_anisotropic PROPERTIES LABELS "fortran;example" RUN_SERIAL TRUE)
+        set_tests_properties(fortran_laplacian_anisotropic PROPERTIES
+            LABELS "fortran;example"
+            RUN_SERIAL TRUE)
+        hypredrv_enable_fortran_failure_detection(fortran_laplacian_anisotropic)
 
         add_test(NAME fortran_laplacian_external_yaml
                  COMMAND $<TARGET_FILE:laplacian-fortran>
@@ -182,6 +201,7 @@ if(HYPREDRV_ENABLE_TESTING)
             LABELS "fortran;example"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
             RUN_SERIAL TRUE)
+        hypredrv_enable_fortran_failure_detection(fortran_laplacian_external_yaml)
 
         if(MPIEXEC_EXECUTABLE)
             add_test(NAME fortran_laplacian_mpi_x_2proc
@@ -190,7 +210,10 @@ if(HYPREDRV_ENABLE_TESTING)
                              $<TARGET_FILE:laplacian-fortran>
                              "${_fortran_laplacian_dir}/x_2proc.nml"
                              ${MPIEXEC_POSTFLAGS})
-            set_tests_properties(fortran_laplacian_mpi_x_2proc PROPERTIES LABELS "fortran;example" RUN_SERIAL TRUE)
+            set_tests_properties(fortran_laplacian_mpi_x_2proc PROPERTIES
+                LABELS "fortran;example"
+                RUN_SERIAL TRUE)
+            hypredrv_enable_fortran_failure_detection(fortran_laplacian_mpi_x_2proc)
 
             add_test(NAME fortran_laplacian_mpi_z_2proc
                      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
@@ -198,7 +221,10 @@ if(HYPREDRV_ENABLE_TESTING)
                              $<TARGET_FILE:laplacian-fortran>
                              "${_fortran_laplacian_dir}/z_2proc.nml"
                              ${MPIEXEC_POSTFLAGS})
-            set_tests_properties(fortran_laplacian_mpi_z_2proc PROPERTIES LABELS "fortran;example" RUN_SERIAL TRUE)
+            set_tests_properties(fortran_laplacian_mpi_z_2proc PROPERTIES
+                LABELS "fortran;example"
+                RUN_SERIAL TRUE)
+            hypredrv_enable_fortran_failure_detection(fortran_laplacian_mpi_z_2proc)
 
             add_test(NAME fortran_laplacian_mpi_xy_4proc
                      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4
@@ -206,7 +232,10 @@ if(HYPREDRV_ENABLE_TESTING)
                              $<TARGET_FILE:laplacian-fortran>
                              "${_fortran_laplacian_dir}/xy_4proc.nml"
                              ${MPIEXEC_POSTFLAGS})
-            set_tests_properties(fortran_laplacian_mpi_xy_4proc PROPERTIES LABELS "fortran;example" RUN_SERIAL TRUE)
+            set_tests_properties(fortran_laplacian_mpi_xy_4proc PROPERTIES
+                LABELS "fortran;example"
+                RUN_SERIAL TRUE)
+            hypredrv_enable_fortran_failure_detection(fortran_laplacian_mpi_xy_4proc)
         endif()
         list(APPEND _hypredrv_fortran_test_target_deps laplacian-fortran)
     endif()

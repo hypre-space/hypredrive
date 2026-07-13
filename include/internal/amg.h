@@ -11,10 +11,10 @@
 #include "HYPRE_parcsr_ls.h"
 #include "internal/cheby.h"
 #include "internal/containers.h"
-#include "internal/field.h"
 #include "internal/fsai.h"
 #include "internal/ilu.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * AMG complex smoother arguments struct
@@ -121,7 +121,7 @@ typedef struct AMG_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_AMGSetDefaultArgs(AMG_args *);
-void hypredrv_AMGSetArgs(void *, const YAMLnode *);
+void hypredrv_AMGSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_AMGCreate(const AMG_args *, HYPRE_Solver *);
 void hypredrv_AMGSetRBMs(AMG_args *, HYPRE_IJVector);
 void hypredrv_AMGSetDofFunc(const AMG_args *, const IntArray *, HYPRE_Solver,

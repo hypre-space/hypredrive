@@ -56,7 +56,6 @@ if(HYPREDRV_ENABLE_TESTING)
     add_test(NAME cpp_api_coverage
              COMMAND ${CMAKE_COMMAND}
                      -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
-                     -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/tests/api_coverage.txt
                      -DHEADER=${CMAKE_CURRENT_SOURCE_DIR}/include/hypredrive.hpp
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_api_coverage.cmake)
     set_tests_properties(cpp_api_coverage PROPERTIES LABELS "cpp;interface")

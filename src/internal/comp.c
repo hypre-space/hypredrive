@@ -255,11 +255,11 @@ compress_zstd(size_t isize, const void *input, size_t header_size, void **output
 #endif
 }
 
+#ifdef HYPREDRV_USING_LZ4
 static int
 compress_lz4(size_t isize, const void *input, size_t header_size, void **output_ptr,
              size_t *comp_size)
 {
-#ifdef HYPREDRV_USING_LZ4
    /* GCOVR_EXCL_START */
    if (isize > (size_t)INT_MAX)
    {
@@ -296,25 +296,12 @@ compress_lz4(size_t isize, const void *input, size_t header_size, void **output_
       *comp_size = (size_t)lz4_ret;
    }
    return 1;
-#else
-   /* GCOVR_EXCL_START */
-   (void)isize;
-   (void)input;
-   (void)header_size;
-   (void)output_ptr;
-   (void)comp_size;
-   hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-   hypredrv_ErrorMsgAdd("LZ4 compression not enabled during build time!");
-   return 0;
-   /* GCOVR_EXCL_STOP */
-#endif
 }
 
 static int
 compress_lz4hc(size_t isize, const void *input, size_t header_size, void **output_ptr,
                size_t *comp_size)
 {
-#ifdef HYPREDRV_USING_LZ4
    /* GCOVR_EXCL_START */
    if (isize > (size_t)INT_MAX)
    {
@@ -352,25 +339,14 @@ compress_lz4hc(size_t isize, const void *input, size_t header_size, void **outpu
       *comp_size = (size_t)lz4hc_ret;
    }
    return 1;
-#else
-   /* GCOVR_EXCL_START */
-   (void)isize;
-   (void)input;
-   (void)header_size;
-   (void)output_ptr;
-   (void)comp_size;
-   hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-   hypredrv_ErrorMsgAdd("LZ4 compression not enabled during build time!");
-   return 0;
-   /* GCOVR_EXCL_STOP */
-#endif
 }
+#endif
 
+#ifdef HYPREDRV_USING_BLOSC
 static int
 compress_blosc(size_t isize, const void *input, size_t header_size, void **output_ptr,
                size_t *comp_size)
 {
-#ifdef HYPREDRV_USING_BLOSC
    blosc_init();
    blosc_set_compressor("blosclz");
 
@@ -404,19 +380,8 @@ compress_blosc(size_t isize, const void *input, size_t header_size, void **outpu
       *comp_size = (size_t)blosc_ret;
    }
    return 1;
-#else
-   /* GCOVR_EXCL_START */
-   (void)isize;
-   (void)input;
-   (void)header_size;
-   (void)output_ptr;
-   (void)comp_size;
-   hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-   hypredrv_ErrorMsgAdd("BLOSC compression not enabled during build time!");
-   return 0;
-   /* GCOVR_EXCL_STOP */
-#endif
 }
+#endif
 
 /*-----------------------------------------------------------------------------
  * hypredrv_compress
@@ -607,11 +572,11 @@ decompress_zstd(size_t isize, const void *input, size_t header_size, size_t orig
 #endif
 }
 
+#ifdef HYPREDRV_USING_LZ4
 static int
 decompress_lz4(size_t isize, const void *input, size_t header_size, size_t orig_size,
                void **output_ptr)
 {
-#ifdef HYPREDRV_USING_LZ4
    /* GCOVR_EXCL_START */
    if ((isize - header_size) > (size_t)INT_MAX || orig_size > (size_t)INT_MAX)
    {
@@ -637,25 +602,14 @@ decompress_lz4(size_t isize, const void *input, size_t header_size, size_t orig_
    /* GCOVR_EXCL_STOP */
    (void)result;
    return 1;
-#else
-   /* GCOVR_EXCL_START */
-   (void)isize;
-   (void)input;
-   (void)header_size;
-   (void)orig_size;
-   (void)output_ptr;
-   hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-   hypredrv_ErrorMsgAdd("LZ4 decompression not enabled during build time!");
-   return 0;
-   /* GCOVR_EXCL_STOP */
-#endif
 }
+#endif
 
+#ifdef HYPREDRV_USING_BLOSC
 static int
 decompress_blosc(size_t isize, const void *input, size_t header_size, size_t orig_size,
                  void **output_ptr)
 {
-#ifdef HYPREDRV_USING_BLOSC
    (void)isize;
    blosc_init();
 
@@ -674,19 +628,8 @@ decompress_blosc(size_t isize, const void *input, size_t header_size, size_t ori
    /* GCOVR_EXCL_STOP */
    (void)result;
    return 1;
-#else
-   /* GCOVR_EXCL_START */
-   (void)isize;
-   (void)input;
-   (void)header_size;
-   (void)orig_size;
-   (void)output_ptr;
-   hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-   hypredrv_ErrorMsgAdd("BLOSC decompression not enabled during build time!");
-   return 0;
-   /* GCOVR_EXCL_STOP */
-#endif
 }
+#endif
 
 /*-----------------------------------------------------------------------------
  * hypredrv_decompress

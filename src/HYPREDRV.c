@@ -803,7 +803,7 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_Initialize()
+HYPREDRV_Initialize(void)
 {
    hypredrv_LogInitializeFromEnv();
    HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "HYPREDRV_Initialize begin");
@@ -818,7 +818,7 @@ HYPREDRV_Initialize()
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_Finalize()
+HYPREDRV_Finalize(void)
 {
    HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "HYPREDRV_Finalize begin");
    if (hypredrv_RuntimeIsInitialized())
