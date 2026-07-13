@@ -129,20 +129,11 @@ static int
 FormatPartitionFilename(char *filename, size_t filename_size, const char *prefix,
                         int partition, int binary)
 {
-   const char *extension     = binary ? ".bin" : "";
-   size_t      prefix_length = strlen(prefix);
-   int         suffix_length = snprintf(NULL, 0, ".%05d%s", partition, extension);
+   const char *extension = binary ? ".bin" : "";
+   int         written =
+      snprintf(filename, filename_size, "%s.%05d%s", prefix, partition, extension);
 
-   if (suffix_length < 0 || prefix_length >= filename_size ||
-       (size_t)suffix_length >= filename_size - prefix_length)
-   {
-      return 0;
-   }
-
-   memcpy(filename, prefix, prefix_length);
-   int written = snprintf(filename + prefix_length, filename_size - prefix_length,
-                          ".%05d%s", partition, extension);
-   return written == suffix_length;
+   return written >= 0 && (size_t)written < filename_size;
 }
 
 /*-----------------------------------------------------------------------------
@@ -454,5 +445,5 @@ hypredrv_PathIsUnderRoot(const char *path, const char *root)
       return false;
    }
 
-   return path[root_len] == '\0' || path[root_len] == '/';
+   return (path[root_len] == '\0' || path[root_len] == '/') != 0;
 }

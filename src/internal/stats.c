@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "internal/stats.h"
+#include <limits.h>
 #include <math.h>
 #include <mpi.h>
 #include <stdarg.h>

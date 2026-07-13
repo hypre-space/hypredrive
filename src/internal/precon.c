@@ -7,6 +7,7 @@
 
 #include "internal/precon.h"
 #include "HYPRE_parcsr_mv.h"
+#include "_hypre_parcsr_mv.h"
 #include "internal/gen_macros.h"
 #include "internal/krylov.h"
 #include "logging.h"
@@ -590,7 +591,19 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 
       case PRECON_ILU:
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
+         /* hypre 2.28.0 unconditionally reads the RHS vector's component
+          * count during ILU setup, although setup otherwise accepts NULL
+          * vectors. Supply a compatible throwaway vector for that release. */
+         HYPRE_ParVectorCreate(hypre_ParCSRMatrixComm(par_A),
+                               hypre_ParCSRMatrixGlobalNumRows(par_A), NULL, &par_b);
+         HYPRE_ParVectorInitialize(par_b);
+         par_x = par_b;
+#endif
          HYPRE_ILUSetup(prec, par_A, par_b, par_x);
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
+         HYPRE_ParVectorDestroy(par_b);
+#endif
          precon->is_setup = 1;
 #else  /* GCOVR_EXCL_START */
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
@@ -600,7 +613,17 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 
       case PRECON_FSAI:
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
+         /* FSAI has the same unconditional RHS dereference in hypre 2.28.0. */
+         HYPRE_ParVectorCreate(hypre_ParCSRMatrixComm(par_A),
+                               hypre_ParCSRMatrixGlobalNumRows(par_A), NULL, &par_b);
+         HYPRE_ParVectorInitialize(par_b);
+         par_x = par_b;
+#endif
          HYPRE_FSAISetup(prec, par_A, par_b, par_x);
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
+         HYPRE_ParVectorDestroy(par_b);
+#endif
          precon->is_setup = 1;
 #else  /* GCOVR_EXCL_START */
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);

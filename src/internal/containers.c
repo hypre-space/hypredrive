@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "internal/containers.h"
+#include <limits.h>
 #include "internal/error.h"
 #include "internal/utils.h"
 /*-----------------------------------------------------------------------------
