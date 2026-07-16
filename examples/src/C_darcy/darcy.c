@@ -1362,15 +1362,15 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
             dofmap[lr]            = 0;
             rhs[lr]               = 0.0;
             rt0_cell_flux_dofs_layout(layout, mesh, i, j, k, faces, dirs, is_low, signs);
-#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22600 && \
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 30000 && \
    HYPRE_RELEASE_NUMBER < 30100
             /* Store an explicit zero diagonal (first, per the ParCSR convention)
                in the otherwise diagonal-free continuity rows: the FF/FC block
-               extraction used by MGR in hypre [2.26.0, 3.1.0) reads the first
+               extraction used by the default MGR in hypre 3.0.x reads the first
                stored entry of each row as the diagonal, producing corrupted
-               coarse grids (heap corruption) without it. Fixed in hypre 3.1.0;
-               MGR in hypre < 2.26.0 instead misuses a stored zero diagonal in
-               its relaxation, so the entry is added only for the broken range. */
+               coarse grids (heap corruption) without it. Fixed in hypre 3.1.0.
+               Older releases use the legacy AMG default, whose relaxation must
+               not see this explicit zero diagonal. */
             cols[nentries]   = layout_cell(layout, mesh, i, j, k);
             vals[nentries++] = 0.0;
 #endif

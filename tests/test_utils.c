@@ -10,8 +10,9 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include "test_helpers.h"
+#include "internal/containers.h"
 #include "internal/utils.h"
+#include "test_helpers.h"
 
 /*-----------------------------------------------------------------------------
  * Test hypredrv_StrToLowerCase
@@ -236,12 +237,12 @@ test_CombineFilename_empty_dir(void)
 static void
 test_IsYAMLFilename_valid(void)
 {
-   ASSERT_TRUE(hypredrv_IsYAMLFilename("file.yml"));         /* .yml extension */
-   ASSERT_TRUE(hypredrv_IsYAMLFilename("file.yaml"));        /* .yaml extension */
+   ASSERT_TRUE(hypredrv_IsYAMLFilename("file.yml"));          /* .yml extension */
+   ASSERT_TRUE(hypredrv_IsYAMLFilename("file.yaml"));         /* .yaml extension */
    ASSERT_TRUE(hypredrv_IsYAMLFilename("path/to/file.yml"));  /* .yml with path */
    ASSERT_TRUE(hypredrv_IsYAMLFilename("path/to/file.yaml")); /* .yaml with path */
    ASSERT_FALSE(hypredrv_IsYAMLFilename("file.txt"));         /* wrong extension */
-   ASSERT_FALSE(hypredrv_IsYAMLFilename("file.c"));          /* wrong extension */
+   ASSERT_FALSE(hypredrv_IsYAMLFilename("file.c"));           /* wrong extension */
 }
 
 static void
@@ -262,8 +263,8 @@ test_IsYAMLFilename_leading_dot(void)
 static void
 test_IsYAMLFilename_with_spaces(void)
 {
-   ASSERT_FALSE(hypredrv_IsYAMLFilename("file name.yml"));    /* space in filename */
-   ASSERT_FALSE(hypredrv_IsYAMLFilename("file name.yaml"));   /* space in filename */
+   ASSERT_FALSE(hypredrv_IsYAMLFilename("file name.yml"));         /* space in filename */
+   ASSERT_FALSE(hypredrv_IsYAMLFilename("file name.yaml"));        /* space in filename */
    ASSERT_FALSE(hypredrv_IsYAMLFilename("path/to/file name.yml")); /* space in filename */
 }
 
@@ -379,6 +380,18 @@ test_CountNumberOfPartitions_null_prefix(void)
    ASSERT_EQ(hypredrv_CountNumberOfPartitions(NULL), 0);
 }
 
+static void
+test_PartitionFilename_too_long(void)
+{
+   char prefix[MAX_FILENAME_LENGTH];
+   memset(prefix, 'x', sizeof(prefix) - 1);
+   prefix[sizeof(prefix) - 1] = '\0';
+
+   ASSERT_EQ(hypredrv_CheckBinaryDataExists(prefix), 0);
+   ASSERT_EQ(hypredrv_CheckASCIIDataExists(prefix), 0);
+   ASSERT_EQ(hypredrv_CountNumberOfPartitions(prefix), 0);
+}
+
 /*-----------------------------------------------------------------------------
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
@@ -425,6 +438,7 @@ main(void)
    RUN_TEST(test_CountNumberOfPartitions_ascii);
    RUN_TEST(test_CountNumberOfPartitions_empty);
    RUN_TEST(test_CountNumberOfPartitions_null_prefix);
+   RUN_TEST(test_PartitionFilename_too_long);
 
    cleanup_temp_files();
 

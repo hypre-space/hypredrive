@@ -12,17 +12,6 @@
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
 #include "internal/utils.h"
 
-static void
-IJMatrixInitializeCompat(HYPRE_IJMatrix mat, HYPRE_MemoryLocation memory_location)
-{
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
-   HYPRE_IJMatrixInitialize_v2(mat, memory_location);
-#else
-   (void)memory_location;
-   HYPRE_IJMatrixInitialize(mat);
-#endif
-}
-
 enum
 {
    IJMATRIX_MAX_PART_NNZ   = 200u * 1000u * 1000u,
@@ -563,7 +552,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    }
 
    /* Allocate matrix on the final memory */
-   IJMatrixInitializeCompat(mat, memory_location);
+   HYPRE_IJMatrixInitialize_v2(mat, memory_location);
 
    /* Allocate device variables */
    /* GCOVR_EXCL_START */

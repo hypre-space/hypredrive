@@ -96,6 +96,7 @@ write_basic_package_version_file(
 
 set(HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS "")
 set(HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES "")
+set(HYPREDRV_CONFIG_CALIPER_DIR "")
 set(HYPREDRV_CONFIG_NEEDS_ZLIB OFF)
 set(HYPREDRV_CONFIG_NEEDS_MPI OFF)
 set(HYPREDRV_CONFIG_ENABLE_FORTRAN ${HYPREDRV_ENABLE_FORTRAN})
@@ -183,6 +184,10 @@ if(TARGET HYPRE::HYPRE AND _hypredrv_config_hypre_imported)
 endif()
 if(TARGET ZLIB::ZLIB)
     set(HYPREDRV_CONFIG_NEEDS_ZLIB ON)
+endif()
+if(TARGET caliper AND caliper_DIR)
+    _hypredrv_make_package_relative_list(
+        HYPREDRV_CONFIG_CALIPER_DIR "${caliper_DIR}")
 endif()
 _hypredrv_target_links_mpi(_hypredrv_hypredrv_links_mpi HYPREDRV)
 _hypredrv_target_links_mpi(_hypredrv_hypre_links_mpi HYPRE::HYPRE)

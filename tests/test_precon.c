@@ -3817,9 +3817,8 @@ test_PreconDestroy_amg_rbms_loop(void)
    hypredrv_AMGSetDefaultArgs(&args.amg);
    args.amg.max_iter = 1;
 
-   HYPRE_BigInt    part[2] = {0, 1};
-   HYPRE_ParVector pv      = NULL;
-   ASSERT_EQ(HYPRE_ParVectorCreate(MPI_COMM_SELF, 1, part, &pv), 0);
+   HYPRE_ParVector pv = NULL;
+   ASSERT_EQ(HYPRE_ParVectorCreate(MPI_COMM_SELF, 1, NULL, &pv), 0);
    ASSERT_EQ(HYPRE_ParVectorInitialize(pv), 0);
 
    args.amg.num_rbms = 1;

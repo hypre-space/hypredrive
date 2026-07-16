@@ -34,8 +34,23 @@ extern "C"
 {
 #endif
 
-// Visibility control macros
+// Public-library visibility. CMake defines HYPREDRV_EXPORTS while building a
+// shared HYPREDRV library and propagates HYPREDRV_STATIC_DEFINE to consumers of
+// a static HYPREDRV library. Non-CMake static consumers on Windows should also
+// define HYPREDRV_STATIC_DEFINE before including this header.
+#if defined(_WIN32) || defined(__CYGWIN__)
+#if defined(HYPREDRV_STATIC_DEFINE)
+#define HYPREDRV_EXPORT_SYMBOL
+#elif defined(HYPREDRV_EXPORTS)
+#define HYPREDRV_EXPORT_SYMBOL __declspec(dllexport)
+#else
+#define HYPREDRV_EXPORT_SYMBOL __declspec(dllimport)
+#endif
+#elif defined(__GNUC__) || defined(__clang__)
 #define HYPREDRV_EXPORT_SYMBOL __attribute__((visibility("default")))
+#else
+#define HYPREDRV_EXPORT_SYMBOL
+#endif
 #define HYPREDRV_SUCCESS ((uint32_t)0u)
 
    // HYPREDRV_SAFE_CALL and HYPREDRV_SAFE_CALL_COMM are defined in HYPREDRV_utils.h.

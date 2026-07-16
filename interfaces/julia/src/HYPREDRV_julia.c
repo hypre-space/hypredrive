@@ -6,7 +6,6 @@
  ******************************************************************************/
 
 #include "HYPREDRV.h"
-#include "error.h"
 
 #include <mpi.h>
 
@@ -14,8 +13,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 /* Process-global MPI ownership matches the current Python bridge policy. It is
  * suitable for one Julia runtime per process; do not mix independent MPI owners
@@ -29,17 +26,6 @@ _Static_assert(sizeof(HYPRE_Real) == sizeof(double),
                "Julia bridge requires double-precision HYPRE_Real");
 _Static_assert(sizeof(HYPRE_Complex) == sizeof(double),
                "Julia bridge does not support complex HYPRE builds");
-
-static uint32_t
-HYPREDRV_JuliaErrorAllocation(const char *message)
-{
-   hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-   if (message)
-   {
-      hypredrv_ErrorMsgAdd("%s", message);
-   }
-   return hypredrv_ErrorCodeGet();
-}
 
 static uint32_t
 HYPREDRV_JuliaBigIntFromI64(const char *name, int64_t value, HYPRE_BigInt *out)
@@ -214,38 +200,6 @@ HYPREDRV_JuliaWorldCommSize(int *size)
    return HYPREDRV_SUCCESS;
 }
 
-/** @brief Return the MPI_COMM_SELF rank. */
-uint32_t
-HYPREDRV_JuliaSelfCommRank(int *rank)
-{
-   if (rank == NULL)
-   {
-      return HYPREDRV_ErrorInvalidValue("MPI rank output pointer is NULL");
-   }
-   int ierr = MPI_Comm_rank(MPI_COMM_SELF, rank);
-   if (ierr != MPI_SUCCESS)
-   {
-      return HYPREDRV_ErrorInvalidValue("MPI_Comm_rank failed");
-   }
-   return HYPREDRV_SUCCESS;
-}
-
-/** @brief Return the MPI_COMM_SELF size. */
-uint32_t
-HYPREDRV_JuliaSelfCommSize(int *size)
-{
-   if (size == NULL)
-   {
-      return HYPREDRV_ErrorInvalidValue("MPI size output pointer is NULL");
-   }
-   int ierr = MPI_Comm_size(MPI_COMM_SELF, size);
-   if (ierr != MPI_SUCCESS)
-   {
-      return HYPREDRV_ErrorInvalidValue("MPI_Comm_size failed");
-   }
-   return HYPREDRV_SUCCESS;
-}
-
 /** @brief Allreduce a double value with SUM over MPI_COMM_WORLD. */
 uint32_t
 HYPREDRV_JuliaWorldAllreduceDoubleSum(double value, double *sum)
@@ -271,13 +225,14 @@ HYPREDRV_JuliaWorldAllgathervDouble(const double *send, int send_count, double *
    {
       return HYPREDRV_ErrorInvalidValue("send_count is negative");
    }
-   if ((send_count > 0 && send == NULL) || recv == NULL || counts == NULL || displs == NULL)
+   if ((send_count > 0 && send == NULL) || recv == NULL || counts == NULL ||
+       displs == NULL)
    {
       return HYPREDRV_ErrorInvalidValue("MPI allgatherv pointer is NULL");
    }
 
-   int ierr = MPI_Allgatherv(send, send_count, MPI_DOUBLE, recv, counts, displs, MPI_DOUBLE,
-                             MPI_COMM_WORLD);
+   int ierr = MPI_Allgatherv(send, send_count, MPI_DOUBLE, recv, counts, displs,
+                             MPI_DOUBLE, MPI_COMM_WORLD);
    if (ierr != MPI_SUCCESS)
    {
       return HYPREDRV_ErrorInvalidValue("MPI_Allgatherv failed");
@@ -316,22 +271,8 @@ HYPREDRV_JuliaInputArgsParseYaml(HYPREDRV_t hypredrv, const char *yaml_text)
       return HYPREDRV_ErrorInvalidValue("YAML text pointer is NULL");
    }
 
-   size_t len  = strlen(yaml_text);
-   char  *copy = (char *)malloc(len + 1);
-   if (copy == NULL)
-   {
-      return HYPREDRV_JuliaErrorAllocation("failed to allocate writable YAML buffer");
-   }
-   memcpy(copy, yaml_text, len + 1);
-
-   /* HYPREDRV_InputArgsParse accepts a one-element argv containing in-memory
-    * YAML text. It may tokenize its argv buffers, so pass a writable copy even
-    * though Julia strings are immutable.
-    */
-   char    *argv[2] = {copy, NULL};
-   uint32_t code    = HYPREDRV_InputArgsParse(1, argv, hypredrv);
-   free(copy);
-   return code;
+   char *argv[1] = {(char *)yaml_text};
+   return HYPREDRV_InputArgsParse(1, argv, hypredrv);
 }
 
 /** @brief Parse a full HYPREDRV argv vector for Julia callers. */
@@ -347,35 +288,17 @@ HYPREDRV_JuliaInputArgsParseArgv(HYPREDRV_t hypredrv, int argc, const char **arg
       return HYPREDRV_ErrorInvalidValue("HYPREDRV argv pointer is NULL");
    }
 
-   char **copies = (char **)calloc((size_t)argc, sizeof(char *));
-   if (copies == NULL)
-   {
-      return HYPREDRV_JuliaErrorAllocation("failed to allocate HYPREDRV argv copies");
-   }
-
+   char *parse_argv[argc];
    for (int i = 0; i < argc; i++)
    {
       if (argv[i] == NULL)
       {
-         for (int j = 0; j < i; j++) free(copies[j]);
-         free(copies);
          return HYPREDRV_ErrorInvalidValue("HYPREDRV argv entry is NULL");
       }
-      size_t len = strlen(argv[i]);
-      copies[i]  = (char *)malloc(len + 1);
-      if (copies[i] == NULL)
-      {
-         for (int j = 0; j < i; j++) free(copies[j]);
-         free(copies);
-         return HYPREDRV_JuliaErrorAllocation("failed to allocate HYPREDRV argv entry");
-      }
-      memcpy(copies[i], argv[i], len + 1);
+      parse_argv[i] = (char *)argv[i];
    }
 
-   uint32_t code = HYPREDRV_InputArgsParse(argc, copies, hypredrv);
-   for (int i = 0; i < argc; i++) free(copies[i]);
-   free(copies);
-   return code;
+   return HYPREDRV_InputArgsParse(argc, parse_argv, hypredrv);
 }
 
 /** @brief Install a CSR matrix slab from int64 row bounds and HYPRE_BigInt arrays. */

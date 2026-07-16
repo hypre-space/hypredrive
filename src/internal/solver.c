@@ -14,6 +14,7 @@
 #endif
 #include "_hypre_parcsr_mv.h"
 #include "internal/gen_macros.h"
+#include "internal/linsys.h"
 #include "logging.h"
 
 #if !HYPRE_CHECK_MIN_VERSION(30000, 0)
@@ -21,66 +22,6 @@
    which is shadowed by this project's internal/krylov.h on the include
    path, so declare it directly. */
 HYPRE_Int hypre_BiCGSTABGetConverged(void *bicgstab_vdata, HYPRE_Int *converged);
-#endif
-
-#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
-static HYPRE_Int
-FSAISetupStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-              HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-static HYPRE_Int
-FSAISolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-              HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-#define LOCAL_FSAI_SETUP FSAISetupStub
-#define LOCAL_FSAI_SOLVE FSAISolveStub
-#else
-#define LOCAL_FSAI_SETUP HYPRE_FSAISetup
-#define LOCAL_FSAI_SOLVE HYPRE_FSAISolve
-#endif
-
-#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
-static HYPRE_Int
-ILUSetupStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-             HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-static HYPRE_Int
-ILUSolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-             HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-#define LOCAL_ILU_SETUP ILUSetupStub
-#define LOCAL_ILU_SOLVE ILUSolveStub
-#else
-#define LOCAL_ILU_SETUP HYPRE_ILUSetup
-#define LOCAL_ILU_SOLVE HYPRE_ILUSolve
 #endif
 
 static HYPRE_Int
@@ -148,21 +89,6 @@ SolverLinearSystemID(const Stats *stats)
    return stats ? hypredrv_StatsGetLinearSystemID(stats) : 0;
 }
 
-static const char *
-SolverLogObjectName(const Stats *stats, char *buf, size_t buf_size)
-{
-   if (stats && stats->object_name[0] != '\0')
-   {
-      return stats->object_name;
-   }
-   if (stats && stats->runtime_object_id > 0 && buf && buf_size > 0)
-   {
-      snprintf(buf, buf_size, "obj-%d", stats->runtime_object_id);
-      return buf;
-   }
-   return NULL;
-}
-
 static HYPRE_Int
 PreconSetupDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
                     HYPRE_ParVector x)
@@ -188,43 +114,12 @@ PreconSetupDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
       hypredrv_StatsAnnotate(precon->stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
    }
 
-   HYPRE_Int ierr = 0;
-   switch (precon->method)
+   HYPRE_Int               ierr  = 0;
+   HYPRE_PtrToParSolverFcn setup = NULL;
+   hypredrv_PreconGetCallbacks(precon->method, &setup, NULL);
+   if (setup)
    {
-      case PRECON_BOOMERAMG:
-         ierr = HYPRE_BoomerAMGSetup(precon->main, A, b, x);
-         break;
-
-      case PRECON_MGR:
-         ierr = HYPRE_MGRSetup(precon->main, A, b, x);
-         break;
-
-      case PRECON_ILU:
-         ierr = LOCAL_ILU_SETUP(precon->main, A, b, x);
-         break;
-
-      case PRECON_FSAI:
-         ierr = LOCAL_FSAI_SETUP(precon->main, A, b, x);
-         break;
-
-      case PRECON_AMS:
-         ierr = HYPRE_AMSSetup(precon->main, A, b, x);
-         break;
-
-      case PRECON_ADS:
-         ierr = HYPRE_ADSSetup(precon->main, A, b, x);
-         break;
-
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-         ierr = HYPRE_SchwarzSetup(precon->main, A, b, x);
-         break;
-#endif
-
-      /* GCOVR_EXCL_BR_START */
-      case PRECON_NONE:
-         /* GCOVR_EXCL_BR_STOP */
-         break;
+      ierr = setup(precon->main, A, b, x);
    }
 
    if (precon->stats)
@@ -252,56 +147,25 @@ PreconSolveDispatch(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b
       return 0;
    }
 
-   switch (precon->method)
-   {
-      case PRECON_BOOMERAMG:
-         return HYPRE_BoomerAMGSolve(precon->main, A, b, x);
-
-      case PRECON_MGR:
-         return HYPRE_MGRSolve(precon->main, A, b, x);
-
-      case PRECON_ILU:
-         return LOCAL_ILU_SOLVE(precon->main, A, b, x);
-
-      case PRECON_FSAI:
-         return LOCAL_FSAI_SOLVE(precon->main, A, b, x);
-
-      case PRECON_AMS:
-         return HYPRE_AMSSolve(precon->main, A, b, x);
-
-      case PRECON_ADS:
-         return HYPRE_ADSSolve(precon->main, A, b, x);
-
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-         return HYPRE_SchwarzSolve(precon->main, A, b, x);
-#endif
-
-      /* GCOVR_EXCL_BR_START */
-      case PRECON_NONE:
-         /* GCOVR_EXCL_BR_STOP */
-         return 0;
-   }
-
-   /* GCOVR_EXCL_BR_START */
-   return 0;
-   /* GCOVR_EXCL_BR_STOP */
+   HYPRE_PtrToParSolverFcn solve = NULL;
+   hypredrv_PreconGetCallbacks(precon->method, NULL, &solve);
+   return solve ? solve(precon->main, A, b, x) : 0;
 }
 
-#define Solver_FIELDS(_prefix)                                     \
+#define solver_FIELDS(_prefix)                                     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, pcg, hypredrv_PCGSetArgs)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, gmres, hypredrv_GMRESSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, fgmres, hypredrv_FGMRESSetArgs) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, bicgstab, hypredrv_BiCGSTABSetArgs)
 
-DEFINE_FIELD_OFFSET_MAP(Solver)
-#define Solver_NUM_FIELDS \
-   (sizeof(Solver_field_offset_map) / sizeof(Solver_field_offset_map[0]))
+DEFINE_FIELD_OFFSET_MAP(solver)
+#define solver_NUM_FIELDS \
+   (sizeof(solver_field_offset_map) / sizeof(solver_field_offset_map[0]))
 
-DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_SolverSetFieldByName, Solver_args,
-                              Solver_field_offset_map, Solver_NUM_FIELDS)
-DEFINE_GET_VALID_KEYS_FUNC(hypredrv_SolverGetValidKeys, Solver_NUM_FIELDS,
-                           Solver_field_offset_map)
+DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_SolverSetFieldByName, solver_args,
+                              solver_field_offset_map, solver_NUM_FIELDS)
+DEFINE_GET_VALID_KEYS_FUNC(hypredrv_SolverGetValidKeys, solver_NUM_FIELDS,
+                           solver_field_offset_map)
 
 /*-----------------------------------------------------------------------------
  * SolverGetValidTypeIntMap
@@ -375,7 +239,7 @@ hypredrv_SolverArgsSetDefaultsForMethod(solver_t method, solver_args *args)
  * SolverSetArgsFromYAML
  *-----------------------------------------------------------------------------*/
 
-DEFINE_SET_ARGS_FROM_YAML_FUNC(Solver, hypredrv_Solver)
+DEFINE_SET_ARGS_FROM_YAML_FUNC(solver, hypredrv_Solver)
 
 /*-----------------------------------------------------------------------------
  * SolverCreate
@@ -446,7 +310,7 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
    int         log_rank = -1;
    char        log_name_buf[32];
    const char *log_object_name =
-      SolverLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
+      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    /* GCOVR_EXCL_BR_START */
    if (hypredrv_LogEnabled(2)) /* GCOVR_EXCL_BR_STOP */
    {
@@ -673,7 +537,7 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
    int         log_rank = -1;
    char        log_name_buf[32];
    const char *log_object_name =
-      SolverLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
+      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
    /* GCOVR_EXCL_BR_START */
    if (hypredrv_LogEnabled(2)) /* GCOVR_EXCL_BR_STOP */
    {

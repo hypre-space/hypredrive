@@ -125,6 +125,17 @@ hypredrv_BinaryPathPrefixIsSafe(const char *prefix)
    return 1;
 }
 
+static int
+FormatPartitionFilename(char *filename, size_t filename_size, const char *prefix,
+                        int partition, int binary)
+{
+   const char *extension = binary ? ".bin" : "";
+   int         written =
+      snprintf(filename, filename_size, "%s.%05d%s", prefix, partition, extension);
+
+   return written >= 0 && (size_t)written < filename_size;
+}
+
 /*-----------------------------------------------------------------------------
  * hypredrv_FopenCreateRestricted
  *
@@ -192,7 +203,10 @@ hypredrv_CheckBinaryDataExists(const char *prefix)
    }
 
    /* Check if binary data exist */
-   snprintf(filename, sizeof(filename), "%*s.00000.bin", (int)strlen(prefix), prefix);
+   if (!FormatPartitionFilename(filename, sizeof(filename), prefix, 0, 1))
+   {
+      return 0;
+   }
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp)
    {
@@ -220,7 +234,10 @@ hypredrv_CheckASCIIDataExists(const char *prefix)
    }
 
    /* Check if ASCII data exist */
-   snprintf(filename, sizeof(filename), "%*s.00000", (int)strlen(prefix), prefix);
+   if (!FormatPartitionFilename(filename, sizeof(filename), prefix, 0, 0))
+   {
+      return 0;
+   }
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp)
    {
@@ -254,8 +271,10 @@ hypredrv_CountNumberOfPartitions(const char *prefix)
       FILE *fp = NULL;
       int   file_exists;
 
-      snprintf(filename, sizeof(filename), "%*s.%05d.bin", (int)strlen(prefix), prefix,
-               num_files);
+      if (!FormatPartitionFilename(filename, sizeof(filename), prefix, num_files, 1))
+      {
+         break;
+      }
       fp          = fopen(filename, "r");
       file_exists = (fp == NULL) ? 0 : 1;
       if (fp)
@@ -264,8 +283,10 @@ hypredrv_CountNumberOfPartitions(const char *prefix)
       }
       if (!file_exists)
       {
-         snprintf(filename, sizeof(filename), "%*s.%05d", (int)strlen(prefix), prefix,
-                  num_files);
+         if (!FormatPartitionFilename(filename, sizeof(filename), prefix, num_files, 0))
+         {
+            break;
+         }
          fp          = fopen(filename, "r");
          file_exists = (fp == NULL) ? 0 : 1;
          if (fp)
@@ -408,4 +429,21 @@ hypredrv_IsYAMLFilename(const char *str)
    /* Check for .yaml or .yml extension */
    const char *ext = dot + 1;
    return (strcmp(ext, "yaml") == 0 || strcmp(ext, "yml") == 0) != 0;
+}
+
+bool
+hypredrv_PathIsUnderRoot(const char *path, const char *root)
+{
+   if (!path || !root)
+   {
+      return false;
+   }
+
+   size_t root_len = strlen(root);
+   if (root_len == 0 || strncmp(path, root, root_len) != 0)
+   {
+      return false;
+   }
+
+   return (path[root_len] == '\0' || path[root_len] == '/') != 0;
 }

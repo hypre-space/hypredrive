@@ -5,36 +5,12 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
 #include "internal/help.h"
-
-static bool
-LooksLikeYAMLFilename(const char *str)
-{
-   if (!str || *str == '\0')
-   {
-      return false;
-   }
-
-   /* Filenames should not contain spaces */
-   if (strchr(str, ' ') != NULL)
-   {
-      return false;
-   }
-
-   const char *dot = strrchr(str, '.');
-   if (!dot || dot == str)
-   {
-      return false;
-   }
-
-   const char *ext = dot + 1;
-   return (strcmp(ext, "yaml") == 0 || strcmp(ext, "yml") == 0) != 0;
-}
+#include "internal/utils.h"
 
 static void
 PrintUsage(const char *argv0)
@@ -142,7 +118,7 @@ FindConfigFile(int argc, char **argv)
     * This avoids mis-detecting override values as the config file. */
    for (int i = 1; i < argc; i++)
    {
-      if (LooksLikeYAMLFilename(argv[i]))
+      if (hypredrv_IsYAMLFilename(argv[i]))
       {
          return argv[i];
       }
@@ -220,13 +196,6 @@ main(int argc, char **argv)
     * Parse input parameters
     *-----------------------------------------------------------*/
 
-   if (!RequireConfigArgument(argc, argv, myid))
-   {
-      HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&obj));
-      HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
-      MPI_Finalize();
-      return 1;
-   }
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, obj));
 
    /* If --precon-preset was given, override the preconditioner */
@@ -235,13 +204,6 @@ main(int argc, char **argv)
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(obj, preset_name));
    }
-
-   /*-----------------------------------------------------------
-    * Apply YAML configuration to HYPRE's global runtime settings
-    *-----------------------------------------------------------*/
-
-   int warmup = 0;
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetWarmup(obj, &warmup));
 
    /*-----------------------------------------------------------
     * Build and solve linear system(s)

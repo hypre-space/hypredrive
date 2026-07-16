@@ -20,7 +20,7 @@ function(setup_test_executable target_name source_file)
     target_compile_definitions(${target_name} PRIVATE HYPREDRIVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
     # Link to both HYPREDRV and HYPRE, same as hypredrive executable does
-    target_link_libraries(${target_name} PRIVATE HYPREDRV::HYPREDRV)
+    target_link_libraries(${target_name} PRIVATE ${HYPREDRV_INTERNAL_LINK_TARGET})
 
     # If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
     if(HYPREDRV_ENABLE_CALIPER)

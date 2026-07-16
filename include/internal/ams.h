@@ -10,8 +10,8 @@
 
 #include "HYPRE_IJ_mv.h"
 #include "HYPRE_parcsr_ls.h"
-#include "internal/field.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * AMS (auxiliary-space Maxwell solver) preconditioner arguments struct
@@ -66,7 +66,7 @@ typedef struct AMS_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_AMSSetDefaultArgs(AMS_args *);
-void hypredrv_AMSSetArgs(void *, const YAMLnode *);
+void hypredrv_AMSSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_AMSCreate(const AMS_args *, HYPRE_Solver *);
 
 /* Inject the operator inputs AMS requires (discrete gradient + vertex

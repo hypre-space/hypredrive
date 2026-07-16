@@ -13,7 +13,6 @@
 #include "internal/bicgstab.h"
 #include "internal/fgmres.h"
 #include "internal/gmres.h"
-#include "internal/linsys.h"
 #include "internal/pcg.h"
 #include "internal/precon.h"
 
@@ -40,8 +39,6 @@ typedef union solver_args_union
    FGMRES_args   fgmres;
    BiCGSTAB_args bicgstab;
 } solver_args;
-
-typedef solver_args Solver_args;
 
 /*--------------------------------------------------------------------------
  * Public prototypes

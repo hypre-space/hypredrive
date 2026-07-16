@@ -475,7 +475,10 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    for (HYPRE_Int i = 0; i < args->num_rbms; i++)
    {
       /* Allocate single-component parallel vector for this RBM */
-      HYPRE_BigInt partitioning[2] = {jlower, jupper + 1};
+      /* HYPRE_ParVectorCreate takes ownership of the partitioning array. */
+      HYPRE_BigInt *partitioning = hypre_TAlloc(HYPRE_BigInt, 2, HYPRE_MEMORY_HOST);
+      partitioning[0]            = jlower;
+      partitioning[1]            = jupper + 1;
 
       HYPRE_ParVectorCreate(hypre_ParVectorComm(vec_nn),
                             hypre_IJVectorGlobalNumRows(vec_nn), partitioning,
@@ -625,7 +628,12 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetILUType(precon, args->smoother.ilu.type);
 #endif
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22900
+   HYPRE_BoomerAMGSetILULocalReordering(
+      precon, args->smoother.ilu.reordering ? args->smoother.ilu.reordering : 1);
+#else
    HYPRE_BoomerAMGSetILULocalReordering(precon, args->smoother.ilu.reordering);
+#endif
    HYPRE_BoomerAMGSetILUTriSolve(precon, args->smoother.ilu.tri_solve);
    HYPRE_BoomerAMGSetILULowerJacobiIters(precon, args->smoother.ilu.lower_jac_iters);
    HYPRE_BoomerAMGSetILUUpperJacobiIters(precon, args->smoother.ilu.upper_jac_iters);

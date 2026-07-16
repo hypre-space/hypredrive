@@ -10,8 +10,8 @@
 
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "internal/field.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * BiCGSTAB solver arguments struct
@@ -34,7 +34,7 @@ typedef struct BiCGSTAB_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
-void hypredrv_BiCGSTABSetArgs(void *, const YAMLnode *);
+void hypredrv_BiCGSTABSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_BiCGSTABCreate(MPI_Comm, const BiCGSTAB_args *, HYPRE_Solver *);
 
 #endif /* BICGSTAB_HEADER */

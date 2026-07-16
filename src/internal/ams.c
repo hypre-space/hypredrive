@@ -46,23 +46,13 @@
  */
 GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(AMS) // LCOV_EXCL_LINE
 
-/*-----------------------------------------------------------------------------
- * AMSGetValidValues (accept raw hypre integers)
- *-----------------------------------------------------------------------------*/
+hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_AMS) // LCOV_EXCL_LINE
 
-StrIntMapArray
-hypredrv_AMSGetValidValues(const char *key)
-{
-   (void)key;
-   return STR_INT_MAP_ARRAY_VOID();
-}
+   /*-----------------------------------------------------------------------------
+    * hypredrv_AMSCreate
+    *-----------------------------------------------------------------------------*/
 
-/*-----------------------------------------------------------------------------
- * hypredrv_AMSCreate
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_AMSCreate(const AMS_args *args, HYPRE_Solver *precon_ptr)
+   void hypredrv_AMSCreate(const AMS_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver precon = NULL;
 

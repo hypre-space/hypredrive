@@ -190,10 +190,12 @@ void hypredrv_StatsSetObjectName(Stats *stats, const char *name);
 void hypredrv_StatsSetPendingTimestepContext(Stats *stats, int timestep_id);
 
 /* Statistics getters */
-int    hypredrv_StatsGetLinearSystemID(const Stats *stats);
-int    hypredrv_StatsGetLastIter(const Stats *stats);
-double hypredrv_StatsGetLastSetupTime(const Stats *stats);
-double hypredrv_StatsGetLastSolveTime(const Stats *stats);
+int         hypredrv_StatsGetLinearSystemID(const Stats *stats);
+const char *hypredrv_StatsGetLogObjectName(const Stats *stats, char *buffer,
+                                           size_t buffer_size);
+int         hypredrv_StatsGetLastIter(const Stats *stats);
+double      hypredrv_StatsGetLastSetupTime(const Stats *stats);
+double      hypredrv_StatsGetLastSolveTime(const Stats *stats);
 
 /* Level statistics (populated automatically from level annotations) */
 int      hypredrv_StatsLevelGetCount(const Stats *stats, int level);

@@ -6,10 +6,12 @@
 #ifndef EIGSPEC_HEADER
 #define EIGSPEC_HEADER
 
+#include <stdint.h>
+#include "HYPRE_utilities.h"
 #include "internal/containers.h"
-#include "internal/field.h"
-#include "internal/stats.h"
-#include "internal/yaml.h"
+
+struct Stats_struct;
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * Eigenspectrum arguments struct
@@ -29,13 +31,13 @@ typedef struct EigSpec_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_EigSpecSetDefaultArgs(EigSpec_args *);
-void hypredrv_EigSpecSetArgs(void *, const YAMLnode *);
+void hypredrv_EigSpecSetArgs(void *, const struct YAMLnode_struct *);
 
 /* Internal helpers */
 #ifdef HYPREDRV_ENABLE_EIGSPEC
 typedef void (*hypredrv_PreconApplyFn)(void *ctx, void *b, void *x);
 uint32_t hypredrv_EigSpecCompute(const EigSpec_args *, void *, void *,
-                                 hypredrv_PreconApplyFn, Stats *);
+                                 hypredrv_PreconApplyFn, struct Stats_struct *);
 #endif
 
 #endif /* EIGSPEC_HEADER */

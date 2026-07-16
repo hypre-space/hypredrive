@@ -9,8 +9,8 @@
 #define ILU_HEADER
 
 #include "HYPRE_parcsr_ls.h"
-#include "internal/field.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * ILU preconditioner arguments struct
@@ -38,7 +38,7 @@ typedef struct ILU_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_ILUSetDefaultArgs(ILU_args *);
-void hypredrv_ILUSetArgs(void *, const YAMLnode *);
+void hypredrv_ILUSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_ILUCreate(const ILU_args *, HYPRE_Solver *);
 
 #endif /* ILU_HEADER */

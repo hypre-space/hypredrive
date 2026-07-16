@@ -8,23 +8,9 @@
 #ifndef CONTAINERS_HEADER
 #define CONTAINERS_HEADER
 
-#include "HYPRE.h"
-#include "HYPRE_utilities.h"
-
-/* Undefine autotools package macros from hypre */
-#undef PACKAGE_NAME
-#undef PACKAGE_BUGREPORT
-#undef PACKAGE_STRING
-#undef PACKAGE_TARNAME
-#undef PACKAGE_URL
-#undef PACKAGE_VERSION
-
-#include <limits.h>
+#include <mpi.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "internal/utils.h"
+#include <stddef.h>
 
 enum
 {
@@ -42,7 +28,6 @@ typedef struct StackIntArray_struct
    size_t size;
 } StackIntArray;
 
-void hypredrv_StackIntArrayRead(StackIntArray *);
 #define STACK_INTARRAY_CREATE() ((StackIntArray){.data = {0}, .size = 0})
 
 /*--------------------------------------------------------------------------
@@ -134,17 +119,6 @@ extern const StrIntMapArray hypredrv_OnOffMapArray;
 
 int  hypredrv_StrIntMapArrayGetImage(StrIntMapArray, const char *);
 bool hypredrv_StrIntMapArrayDomainEntryExists(StrIntMapArray, const char *);
-
-/*--------------------------------------------------------------------------
- * StrStrIntMap struct (strA,strB <-> num)
- *--------------------------------------------------------------------------*/
-
-typedef struct StrStrIntMap_struct
-{
-   const char *strA;
-   const char *strB;
-   int         num;
-} StrStrIntMap;
 
 /*--------------------------------------------------------------------------
  * DofLabelMap struct (name <-> integer dof type)

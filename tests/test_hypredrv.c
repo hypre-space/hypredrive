@@ -2726,9 +2726,9 @@ test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep(void)
 {
    reset_state();
 
-   /* MGR with AMG f-relaxation + filter_functions crashes in hypre < 2.21.0 */
-#if HYPREDRV_HYPRE_RELEASE_NUMBER < 22100
-   printf("SKIP: MGR AMG f-relaxation requires hypre >= 2.21.0\n");
+   /* This advanced MGR configuration crashes inside hypre before 2.30.0. */
+#if HYPREDRV_HYPRE_RELEASE_NUMBER < 23000
+   printf("SKIP: advanced MGR AMG f-relaxation requires hypre >= 2.30.0\n");
    return;
 #endif
 

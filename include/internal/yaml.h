@@ -130,31 +130,6 @@ void      hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir);
  * Public macros
  *-----------------------------------------------------------------------------*/
 
-#define YAML_NODE_VALIDATE_HELPER(_node, _map_array)                               \
-   do                                                                              \
-   {                                                                               \
-      if (hypredrv_StrIntMapArrayDomainEntryExists(_map_array, _node->val))        \
-      {                                                                            \
-         int _mapped = hypredrv_StrIntMapArrayGetImage(_map_array, _node->val);    \
-         int _length = snprintf(NULL, 0, "%d", _mapped) + 1;                       \
-         if (!_node->mapped_val)                                                   \
-         {                                                                         \
-            _node->mapped_val = (char *)malloc((size_t)_length * sizeof(char));    \
-         }                                                                         \
-         else if (_length > (int)strlen(_node->mapped_val))                        \
-         {                                                                         \
-            _node->mapped_val =                                                    \
-               (char *)realloc(_node->mapped_val, (size_t)_length * sizeof(char)); \
-         }                                                                         \
-         snprintf(_node->mapped_val, (size_t)_length, "%d", _mapped);              \
-         _node->valid = YAML_NODE_VALID;                                           \
-      }                                                                            \
-      else                                                                         \
-      {                                                                            \
-         _node->valid = YAML_NODE_INVALID_VAL;                                     \
-      }                                                                            \
-   } while (0);
-
 #define YAML_NODE_VALIDATE(_node, _callA, _callB)                   \
    do                                                               \
    {                                                                \
@@ -179,16 +154,5 @@ void      hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir);
 #define YAML_NODE_ITERATE(_parent, _child)                           \
    for (YAMLnode * (_child) = (_parent)->children; (_child) != NULL; \
         (_child)            = (_child)->next)
-
-#define YAML_NODE_DEBUG(_node)                                                           \
-   do                                                                                    \
-   {                                                                                     \
-      printf("YAMLnode address = %p, {key = %s (%p), val = %s, mapped_val = %s, ",       \
-             (void *)_node, _node->key, (void *)_node->key, _node->val,                  \
-             _node->mapped_val);                                                         \
-      printf("level = %d, valid = %d, parent = %p, children = %p, next = %p}\n",         \
-             _node->level, _node->valid, (void *)_node->parent, (void *)_node->children, \
-             (void *)_node->next);                                                       \
-   } while (0)
 
 #endif /* YAML_HEADER */

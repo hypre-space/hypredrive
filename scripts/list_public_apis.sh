@@ -66,8 +66,8 @@ if [[ ! -f "$HEADER" ]]; then
 fi
 
 # LC_ALL=C keeps the sort byte-ordered and locale-independent, so the output order
-# matches interfaces/cpp/tests/api_coverage.txt (generated under the C locale in CI)
-# regardless of the caller's locale (e.g. en_US.UTF-8 orders mixed-case names differently).
+# remains stable regardless of the caller's locale (e.g. en_US.UTF-8 orders
+# mixed-case names differently).
 APIS=$(grep -v -E '^[[:space:]]*#' "$HEADER" \
   | grep -oE 'HYPREDRV_[A-Za-z0-9_]+ *\(' \
   | sed 's/ *($//' \

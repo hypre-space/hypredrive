@@ -38,27 +38,6 @@ typedef struct YAMLincludeContext_struct
 } YAMLincludeContext;
 
 static bool
-YAMLpathIsUnderRoot(const char *path, const char *root)
-{
-   /* GCOVR_EXCL_BR_START */
-   if (!path || !root) /* GCOVR_EXCL_BR_STOP */
-   {
-      return false; /* GCOVR_EXCL_LINE */
-   }
-
-   size_t root_len = strlen(root);
-   /* GCOVR_EXCL_BR_START */
-   if (root_len == 0 || strncmp(path, root, root_len) != 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      return false;
-   }
-
-   /* GCOVR_EXCL_BR_START */
-   return ((path[root_len] == '\0') || (path[root_len] == '/')) != 0;
-   /* GCOVR_EXCL_BR_STOP */
-}
-
-static bool
 YAMLpathStackReserve(char ***stack_ptr, int *capacity_ptr, int min_capacity)
 {
    /* GCOVR_EXCL_BR_START */
@@ -383,7 +362,7 @@ YAMLincludeResolvePath(const YAMLincludeContext *ctx, const char *dirname,
    }
    free(combined);
 
-   if (!YAMLpathIsUnderRoot(resolved, ctx->root_dir))
+   if (!hypredrv_PathIsUnderRoot(resolved, ctx->root_dir))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Include path escapes YAML root: '%s'", resolved);

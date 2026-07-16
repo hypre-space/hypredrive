@@ -59,6 +59,7 @@ AC_PROG_CC([mpicc])
 AM_PROG_CC_C_O()
 AM_PROG_AR
 LT_INIT([disable-shared])
+AM_CONDITIONAL([HYPREDRV_BUILD_SHARED], [test "x$enable_shared" = "xyes"])
 
 dnl Check for --with-hypre-dir first
 AC_ARG_WITH([hypre-dir],

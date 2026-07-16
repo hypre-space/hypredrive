@@ -9,8 +9,8 @@
 #define FSAI_HEADER
 
 #include "HYPRE_parcsr_ls.h"
-#include "internal/field.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * FSAI preconditioner arguments struct
@@ -37,7 +37,7 @@ typedef struct FSAI_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_FSAISetDefaultArgs(FSAI_args *);
-void hypredrv_FSAISetArgs(void *, const YAMLnode *);
+void hypredrv_FSAISetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_FSAICreate(const FSAI_args *, HYPRE_Solver *);
 
 #endif /* FSAI_HEADER */

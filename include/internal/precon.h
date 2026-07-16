@@ -76,7 +76,6 @@ typedef struct precon_args_struct
    int reuse;
 } precon_args;
 
-typedef precon_args Precon_args;
 /*--------------------------------------------------------------------------
  * Generic preconditioner struct
  *--------------------------------------------------------------------------*/
@@ -124,7 +123,9 @@ int hypredrv_PreconOperatorsComplete(precon_t, const PreconOperators *);
  * Returns nonzero (after raising an ERROR_MISSING_PRECON HYPREDRV error) when
  * the preconditioner must not be set up because its required operators are
  * missing; returns 0 when setup may proceed. */
-int hypredrv_PreconSetupOperatorGuard(HYPRE_Precon);
+int  hypredrv_PreconSetupOperatorGuard(HYPRE_Precon);
+void hypredrv_PreconGetCallbacks(precon_t, HYPRE_PtrToParSolverFcn *,
+                                 HYPRE_PtrToParSolverFcn *);
 
 void hypredrv_PreconSetup(precon_t, HYPRE_Precon, HYPRE_IJMatrix);
 void hypredrv_PreconApply(precon_t, HYPRE_Precon, HYPRE_IJMatrix, HYPRE_IJVector,

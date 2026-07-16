@@ -34,7 +34,6 @@ from .options import OptionsLike, configure, normalize_options, options_to_yaml
 from .result import SolveResult
 
 _DRIVER_EXPORTS = {"BIGINT_DTYPE", "HypreDrive", "REAL_DTYPE", "solve"}
-_SESSION_EXPORTS = {"finalize", "initialize", "is_initialized"}
 
 __all__ = [
     "BIGINT_DTYPE",
@@ -78,9 +77,6 @@ def __getattr__(name: str):
     if name in _DRIVER_EXPORTS:
         driver = importlib.import_module(".driver", __name__)
         value = getattr(driver, name)
-    elif name in _SESSION_EXPORTS:
-        session = importlib.import_module(".session", __name__)
-        value = getattr(session, name)
     else:
         raise AttributeError(f"module 'hypredrive' has no attribute {name!r}")
     globals()[name] = value

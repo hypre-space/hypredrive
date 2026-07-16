@@ -16,66 +16,6 @@
 #include "_hypre_utilities.h" // for hypre_Solver
 #endif
 
-#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
-static HYPRE_Int
-FSAISetupStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-              HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-static HYPRE_Int
-FSAISolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-              HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-#define LOCAL_FSAI_SETUP FSAISetupStub
-#define LOCAL_FSAI_SOLVE FSAISolveStub
-#else
-#define LOCAL_FSAI_SETUP HYPRE_FSAISetup
-#define LOCAL_FSAI_SOLVE HYPRE_FSAISolve
-#endif
-
-#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
-static HYPRE_Int
-ILUSetupStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-             HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-static HYPRE_Int
-ILUSolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-             HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-#define LOCAL_ILU_SETUP ILUSetupStub
-#define LOCAL_ILU_SOLVE ILUSolveStub
-#else
-#define LOCAL_ILU_SETUP HYPRE_ILUSetup
-#define LOCAL_ILU_SOLVE HYPRE_ILUSolve
-#endif
-
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
@@ -237,50 +177,12 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
       return;
    }
 
-   switch (precon_method)
+   hypredrv_PreconGetCallbacks(precon_method, &setup, &solve);
+   if (!setup || !solve)
    {
-      case PRECON_BOOMERAMG:
-         setup = HYPRE_BoomerAMGSetup;
-         solve = HYPRE_BoomerAMGSolve;
-         break;
-
-      case PRECON_MGR:
-         setup = HYPRE_MGRSetup;
-         solve = HYPRE_MGRSolve;
-         break;
-
-      case PRECON_ILU:
-         setup = LOCAL_ILU_SETUP;
-         solve = LOCAL_ILU_SOLVE;
-         break;
-
-      case PRECON_FSAI:
-         setup = LOCAL_FSAI_SETUP;
-         solve = LOCAL_FSAI_SOLVE;
-         break;
-
-      case PRECON_AMS:
-         setup = HYPRE_AMSSetup;
-         solve = HYPRE_AMSSolve;
-         break;
-
-      case PRECON_ADS:
-         setup = HYPRE_ADSSetup;
-         solve = HYPRE_ADSSolve;
-         break;
-
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-         setup = HYPRE_SchwarzSetup;
-         solve = HYPRE_SchwarzSolve;
-         break;
-#endif
-
-      case PRECON_NONE:
-      default:
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("Nested Krylov preconditioner method not supported");
-         return;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Nested Krylov preconditioner method not supported");
+      return;
    }
 
    /* GCOVR_EXCL_BR_LINE */

@@ -10,8 +10,8 @@
 
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "internal/field.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * GMRES solver arguments struct
@@ -37,7 +37,7 @@ typedef struct GMRES_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_GMRESSetDefaultArgs(GMRES_args *);
-void hypredrv_GMRESSetArgs(void *, const YAMLnode *);
+void hypredrv_GMRESSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_GMRESCreate(MPI_Comm, const GMRES_args *, HYPRE_Solver *);
 void hypredrv_GMRESSetRefSolution(HYPRE_Solver, HYPRE_IJVector);
 
