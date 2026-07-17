@@ -17,6 +17,7 @@ module hypredrive
    public :: HYPREDRV_ErrorInvalidValue, HYPREDRV_Create, HYPREDRV_Destroy
    public :: HYPREDRV_PrintLibInfo, HYPREDRV_PrintSystemInfo, HYPREDRV_PrintExitInfo
    public :: HYPREDRV_InputArgsParse, HYPREDRV_InputArgsParseYaml
+   public :: HYPREDRV_InputArgsParseYamlArgs
    public :: HYPREDRV_SetLibraryMode, HYPREDRV_ObjectSetName
    public :: HYPREDRV_InputArgsGetWarmup, HYPREDRV_InputArgsGetNumRepetitions
    public :: HYPREDRV_InputArgsGetNumLinearSystems, HYPREDRV_InputArgsGetNumPreconVariants
@@ -617,6 +618,45 @@ contains
       argv(1) = c_loc(c_yaml(1))
       ierr = HYPREDRV_InputArgsParse(1_c_int, argv, hypredrv)
    end function HYPREDRV_InputArgsParseYaml
+
+   ! Parse a YAML configuration plus CLI-style override tokens, e.g.
+   ! args = ["--solver:pcg:max_iter", "100"] (a leading "-a" token is accepted).
+   function HYPREDRV_InputArgsParseYamlArgs(hypredrv, yaml_text, args) result(ierr)
+      type(c_ptr), value :: hypredrv
+      character(len=*), intent(in) :: yaml_text
+      character(len=*), intent(in) :: args(:)
+      integer(c_int32_t) :: ierr
+      character(kind=c_char), allocatable, target :: c_yaml(:)
+      character(kind=c_char), allocatable, target :: c_args(:, :)
+      type(c_ptr), allocatable :: argv(:)
+      integer :: i, j, n, maxlen
+
+      n = size(args)
+      if (n == 0) then
+         ierr = HYPREDRV_InputArgsParseYaml(hypredrv, yaml_text)
+         return
+      end if
+
+      call HYPREDRV_ToCString(yaml_text, c_yaml)
+      maxlen = 0
+      do i = 1, n
+         maxlen = max(maxlen, len_trim(args(i)))
+      end do
+      allocate (c_args(maxlen + 1, n))
+      c_args = c_null_char
+      do i = 1, n
+         do j = 1, len_trim(args(i))
+            c_args(j, i) = args(i)(j:j)
+         end do
+      end do
+
+      allocate (argv(n + 1))
+      argv(1) = c_loc(c_yaml(1))
+      do i = 1, n
+         argv(i + 1) = c_loc(c_args(1, i))
+      end do
+      ierr = HYPREDRV_InputArgsParse(int(n + 1, c_int), argv, hypredrv)
+   end function HYPREDRV_InputArgsParseYamlArgs
 
    ! These wrappers intentionally avoid the Fortran 2008 CONTIGUOUS attribute so
    ! the public module remains Fortran 2003-compatible. For strided actual

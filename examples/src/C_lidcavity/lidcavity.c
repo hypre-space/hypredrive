@@ -160,6 +160,8 @@ typedef struct
    HYPRE_Int  regularize_bc;     /* Use regularized lid BC (smooth corners) */
    HYPRE_Int  disc; /* Discretization: 0 = Q1-Q1 stabilized, 1 = Q2-Q1 (Taylor-Hood) */
    char      *yaml_file; /* YAML configuration file */
+   HYPRE_Int  hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
+   char     **hypredrv_argv; /* Hypredrive override args, starting at -a */
 } LidCavityParams;
 
 /*--------------------------------------------------------------------------
@@ -231,6 +233,9 @@ PrintUsage(void)
    printf("\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file for solver settings (Opt.)\n");
+   printf(
+      "  -a|--args ...     : Hypredrive YAML overrides, e.g. -a --solver:gmres:max_iter 100\n");
+   printf("                      (applies to -i file or built-in config; must come last)\n");
    printf("  -n <nx> <ny>      : Global grid dimensions in nodes (32 32)\n");
    printf("  -P <Px> <Py>      : Processor grid dimensions (1 1)\n");
    printf("  -L <Lx> <Ly>      : Physical dimensions (1 1)\n");
@@ -287,12 +292,20 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
    params->regularize_bc     = 0;
    params->disc              = 0;
    params->yaml_file         = NULL;
+   params->hypredrv_argc     = 0;
+   params->hypredrv_argv     = NULL;
 
    for (int i = 1; i < argc; i++)
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
          if (++i < argc) params->yaml_file = argv[i];
+      }
+      else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
+      {
+         params->hypredrv_argc = argc - i;
+         params->hypredrv_argv = argv + i;
+         break;
       }
       else if (!strcmp(argv[i], "-n"))
       {
@@ -2901,7 +2914,7 @@ int
 main(int argc, char *argv[])
 {
    MPI_Comm        comm = MPI_COMM_WORLD;
-   char           *hypredrv_args[2];
+   char           *config_arg;
    HYPREDRV_t      hypredrv;
    int             myid, num_procs;
    HYPRE_Real      res_norm;
@@ -2939,7 +2952,7 @@ main(int argc, char *argv[])
    }
 #endif
 
-   hypredrv_args[0] =
+   config_arg =
       params.yaml_file ? params.yaml_file : (char *)DiscretizationDefaultConfig(&params);
 
    if (params.disc && params.visualize)
@@ -3001,7 +3014,14 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, hypredrv_args, hypredrv));
+   HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc;
+   char     *hypredrv_argv[hypredrv_argc];
+   hypredrv_argv[0] = config_arg;
+   for (HYPRE_Int k = 0; k < params.hypredrv_argc; k++)
+   {
+      hypredrv_argv[k + 1] = params.hypredrv_argv[k];
+   }
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
 
    /* Create distributed mesh object */

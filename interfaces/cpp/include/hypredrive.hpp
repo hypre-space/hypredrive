@@ -235,6 +235,63 @@ class driver
       char *argv[] = {text.data()};
       HYPREDRIVE_CXX_CHECK(HYPREDRV_InputArgsParse(1, argv, handle_));
    }
+   /// @brief Parse YAML options plus CLI-style override tokens, e.g.
+   ///        {"--solver:pcg:max_iter", "100"}. The YAML source may be a file
+   ///        path or inline text, resolved with the same heuristic as
+   ///        parse_yaml(std::string_view); a leading "-a"/"--args" token in
+   ///        @p args is dropped so the C side receives an unambiguous
+   ///        "--path:to:key value" pair list.
+   /// @see HYPREDRV_InputArgsParse
+   void
+   parse_yaml(std::string_view yaml, const std::vector<std::string> &args)
+   {
+      if (args.empty())
+      {
+         parse_yaml(yaml);
+         return;
+      }
+      if (yaml.find('\0') != std::string_view::npos)
+      {
+         throw std::invalid_argument(
+            "hypredrive YAML text must not contain embedded NUL bytes");
+      }
+      std::string text;
+      if (detail::looks_like_yaml_file_path(yaml))
+      {
+         const std::filesystem::path path{std::string(yaml)};
+         std::ifstream               file(path);
+         if (!file)
+         {
+            throw std::runtime_error("failed to open hypredrive YAML file: " +
+                                     path.string());
+         }
+         std::ostringstream buffer;
+         buffer << file.rdbuf();
+         if (file.bad())
+         {
+            throw std::runtime_error("failed to read hypredrive YAML file: " +
+                                     path.string());
+         }
+         text = buffer.str();
+      }
+      else
+      {
+         text.assign(yaml);
+      }
+      const std::size_t first =
+         (args.front() == "-a" || args.front() == "--args") ? 1 : 0;
+      std::vector<std::string> tokens(args.begin() +
+                                         static_cast<std::ptrdiff_t>(first),
+                                      args.end());
+      std::vector<char *>      argv;
+      argv.reserve(tokens.size() + 1);
+      argv.push_back(text.data());
+      for (auto &token : tokens)
+      {
+         argv.push_back(token.data());
+      }
+      parse_args(static_cast<int>(argv.size()), argv.data());
+   }
    /// @brief Parse YAML options from a string.
    /// @see HYPREDRV_InputArgsParse
    void

@@ -11,11 +11,17 @@ function laplacian1d(n::Integer)
     return spdiagm(-1 => off, 0 => main, 1 => off)
 end
 
-n = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 128
+# Hypredrive YAML overrides given after -a/--args, e.g.
+# julia laplacian1d.jl 64 -a --solver:pcg:max_iter 100
+overrides_at = findfirst(a -> a in ("-a", "--args"), ARGS)
+positional = overrides_at === nothing ? ARGS : ARGS[1:overrides_at - 1]
+n = length(positional) >= 1 ? parse(Int, positional[1]) : 128
 A = laplacian1d(n)
 b = ones(n)
 
-x, info = hypredrive_solve(A, b)
+input_args = overrides_at === nothing ? nothing :
+             vcat(String[hypredrive_options()], ARGS[overrides_at:end])
+x, info = hypredrive_solve(A, b; input_args=input_args)
 relres = norm(A * x - b) / norm(b)
 
 println("unknowns: ", n)

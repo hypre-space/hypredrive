@@ -24,16 +24,19 @@ struct params
 {
    std::array<int, 3> n{16, 16, 16};
    std::array<int, 3> p{1, 1, 1};
-   int                stencil = 7;
-   int                verbose = 1;
+   int                stencil       = 7;
+   int                verbose       = 1;
    std::string        input_file{};
+   int                hypredrv_argc = 0;       /* override args (incl. -a) */
+   char             **hypredrv_argv = nullptr; /* override args, starting at -a */
 };
 
 void
 usage(const char *argv0)
 {
    std::cerr << "Usage: mpiexec -n <np> " << argv0
-             << " [-n NX NY NZ] [-P PX PY PZ] [-s 7] [-v LEVEL] [-i YAML]\n";
+             << " [-n NX NY NZ] [-P PX PY PZ] [-s 7] [-v LEVEL] [-i YAML]"
+                " [-a --path:to:key value ...]\n";
 }
 
 params
@@ -67,6 +70,12 @@ parse_args(int argc, char **argv)
       else if ((arg == "-i" || arg == "--input") && i + 1 < argc)
       {
          out.input_file = argv[++i];
+      }
+      else if (arg == "-a" || arg == "--args")
+      {
+         out.hypredrv_argc = argc - i;
+         out.hypredrv_argv = argv + i;
+         break;
       }
       else
       {
@@ -303,7 +312,9 @@ main(int argc, char **argv)
       drv.set_library_mode();
       const auto solver_options =
          par.input_file.empty() ? std::string(default_options_yaml) : par.input_file;
-      drv.parse_yaml(solver_options);
+      const std::vector<std::string> overrides(
+         par.hypredrv_argv, par.hypredrv_argv + par.hypredrv_argc);
+      drv.parse_yaml(solver_options, overrides);
       drv.set_matrix_from_csr(g.row_start(), g.row_end(), indptr.data(), cols.data(),
                               vals.data());
       drv.set_rhs_from_array(g.row_start(), g.row_end(), rhs.data());

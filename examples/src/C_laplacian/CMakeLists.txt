@@ -104,6 +104,17 @@ if(HYPREDRV_ENABLE_TESTING)
     add_executable_test(laplacian_125pt_test_4proc laplacian 4
         ARGS -n 6 6 6 -P 2 2 1 -s 125 -ns 1 -v 1
     )
+
+    # Hypredrive CLI override pass-through test (-a requires -i)
+    set(_laplacian_args_yaml "${CMAKE_CURRENT_BINARY_DIR}/laplacian_args.yml")
+    file(WRITE "${_laplacian_args_yaml}" "solver: pcg\npreconditioner: amg\n")
+    add_executable_test(laplacian_hypredrive_args laplacian 1
+        ARGS -n 6 6 6 -s 7 -ns 1 -v 0 -i "${_laplacian_args_yaml}"
+             -a --general:statistics on --solver:pcg:print_level 1
+        RUN_SERIAL
+        REQUIRE_CONTAINS
+            "STATISTICS SUMMARY"
+    )
 endif()
 
 # Install the laplacian example binary when examples are built

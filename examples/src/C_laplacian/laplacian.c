@@ -78,6 +78,8 @@ typedef struct
    HYPRE_Real c[6];      /* Diffusion coefficients */
    HYPRE_Int  stencil;   /* Stencil type (7 or 27) */
    char      *yaml_file; /* YAML configuration file */
+   HYPRE_Int  hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
+   char     **hypredrv_argv; /* Hypredrive override args, starting at -a */
 } ProblemParams;
 
 /*--------------------------------------------------------------------------
@@ -130,6 +132,9 @@ PrintUsage(void)
    printf("Options:\n");
    printf(
       "  -i <file>         : YAML configuration file for solver settings (Optional)\n");
+   printf(
+      "  -a|--args ...     : Hypredrive YAML overrides, e.g. -a --solver:pcg:max_iter 100\n");
+   printf("                      (requires -i; must come last)\n");
    printf("  -n <nx> <ny> <nz> : Global grid dimensions (default: 10 10 10)\n");
    printf("  -c <cx> <cy> <cz> : Diffusion coefficients (default: 1.0 1.0 1.0)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (1 1 1)\n");
@@ -169,6 +174,8 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
    }
    params->stencil   = 7;
    params->yaml_file = NULL;
+   params->hypredrv_argc = 0;
+   params->hypredrv_argv = NULL;
 
    /* Parse command line */
    for (int i = 1; i < argc; i++)
@@ -176,6 +183,12 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
          if (++i < argc) params->yaml_file = argv[i];
+      }
+      else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
+      {
+         params->hypredrv_argc = argc - i;
+         params->hypredrv_argv = argv + i;
+         break;
       }
       else if (!strcmp(argv[i], "-n"))
       {
@@ -246,6 +259,13 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
          if (!myid) PrintUsage();
          return 2;
       }
+   }
+
+   /* Overrides need a YAML configuration to apply to */
+   if (params->hypredrv_argc && !params->yaml_file)
+   {
+      if (!myid) printf("Error: -a/--args requires a YAML configuration file (-i)\n");
+      return 1;
    }
 
    /* Verify processor grid matches total number of processes */
@@ -329,8 +349,14 @@ main(int argc, char *argv[])
    /* Configure solver using YAML input or default presets */
    if (params.yaml_file)
    {
-      char *args[2] = {params.yaml_file, NULL};
-      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
+      HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc;
+      char     *hypredrv_argv[hypredrv_argc];
+      hypredrv_argv[0] = params.yaml_file;
+      for (HYPRE_Int k = 0; k < params.hypredrv_argc; k++)
+      {
+         hypredrv_argv[k + 1] = params.hypredrv_argv[k];
+      }
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
    }
    else
    {

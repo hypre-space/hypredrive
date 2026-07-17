@@ -194,6 +194,15 @@ if(HYPREDRV_ENABLE_TESTING)
             RUN_SERIAL TRUE)
         hypredrv_enable_fortran_failure_detection(fortran_laplacian_serial)
 
+        add_test(NAME fortran_laplacian_args
+                 COMMAND $<TARGET_FILE:laplacian-fortran>
+                         "${_fortran_laplacian_dir}/default.nml"
+                         -a --solver:pcg:relative_tol 1.0e-2)
+        set_tests_properties(fortran_laplacian_args PROPERTIES
+            LABELS "fortran;example"
+            RUN_SERIAL TRUE)
+        hypredrv_enable_fortran_failure_detection(fortran_laplacian_args)
+
         add_test(NAME fortran_laplacian_anisotropic
                  COMMAND $<TARGET_FILE:laplacian-fortran>
                          "${_fortran_laplacian_dir}/anisotropic.nml")

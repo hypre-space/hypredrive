@@ -14,6 +14,8 @@ Run as:
 
 from __future__ import annotations
 
+import sys
+
 import mpi4py.MPI  # noqa: F401  -- side effect: calls MPI_Init
 
 import numpy as np
@@ -34,6 +36,14 @@ def main() -> None:
     A = build_laplacian_2d(n)
     b = np.ones(A.shape[0])
 
+    # Hypredrive YAML overrides given after -a/--args, e.g.
+    # python laplacian2d_seq.py -a --solver:pcg:max_iter 100
+    input_args = None
+    for flag in ("-a", "--args"):
+        if flag in sys.argv:
+            input_args = sys.argv[sys.argv.index(flag) + 1:]
+            break
+
     result = hd.solve(
         A,
         b,
@@ -45,6 +55,7 @@ def main() -> None:
             },
             "preconditioner": {"amg": {"print_level": 0}},
         },
+        input_args=input_args,
     )
 
     residual_norm = float(np.linalg.norm(b - A @ result.x))

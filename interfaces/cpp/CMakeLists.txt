@@ -60,6 +60,16 @@ if(HYPREDRV_ENABLE_TESTING)
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_api_coverage.cmake)
     set_tests_properties(cpp_api_coverage PROPERTIES LABELS "cpp;interface")
 
+    if(TARGET laplacian-cpp)
+        add_test(NAME cpp_laplacian_args
+                 COMMAND laplacian-cpp -n 8 8 8 -a --solver:pcg:relative_tol 1.0e-2)
+        set_tests_properties(cpp_laplacian_args PROPERTIES
+            LABELS "cpp;example")
+        if(COMMAND hypredrv_append_test_environment)
+            hypredrv_append_test_environment(cpp_laplacian_args)
+        endif()
+    endif()
+
     set(_hypredrv_cpp_test_deps test_cpp_interface)
     if(TARGET laplacian-cpp)
         list(APPEND _hypredrv_cpp_test_deps laplacian-cpp)
