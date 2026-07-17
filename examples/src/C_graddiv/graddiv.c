@@ -65,8 +65,8 @@ typedef struct
    HYPRE_Int  verbose;
    char      *yaml_file;
    char      *solver_preset;
-   char      *name;     /* optional object name (labels the statistics table) */
-   char      *vtk_file; /* optional VTK output base name (parallel: .pvti + .vti) */
+   char      *name;          /* optional object name (labels the statistics table) */
+   char      *vtk_file;      /* optional VTK output base name (parallel: .pvti + .vti) */
    HYPRE_Int  hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
    char     **hypredrv_argv; /* Hypredrive override args, starting at -a */
 } GradDivParams;
@@ -266,8 +266,8 @@ PrintUsage(void)
    printf("\nUsage: ${MPIEXEC_COMMAND} <np> ./graddiv [options]\n\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file (Opt.)\n");
-   printf(
-      "  -a|--args ...     : Hypredrive YAML overrides, e.g. -a --solver:pcg:max_iter 100\n");
+   printf("  -a|--args ...     : Hypredrive YAML overrides, e.g. -a "
+          "--solver:pcg:max_iter 100\n");
    printf("                      (requires -i; must come last)\n");
    printf("  --name <str>      : Object name (labels the statistics table) (Opt.)\n");
    printf("  -n <nx> <ny> <nz> : Global grid dimensions in nodes (17 17 17)\n");

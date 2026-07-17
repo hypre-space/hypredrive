@@ -243,8 +243,8 @@ PrintUsage(void)
       "Usage: ${MPIEXEC_COMMAND} ${MPIEXEC_NUMPROC_FLAG} <np> ./heatflow [options]\n\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file for solver settings\n");
-   printf(
-      "  -a|--args ...     : Hypredrive YAML overrides, e.g. -a --solver:gmres:max_iter 100\n");
+   printf("  -a|--args ...     : Hypredrive YAML overrides, e.g. -a "
+          "--solver:gmres:max_iter 100\n");
    printf("                      (requires -i; must come last)\n");
    printf("  -n <nx> <ny> <nz> : Global grid nodes (default: 17 17 17)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid (default: 1 1 1)\n");

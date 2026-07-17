@@ -148,8 +148,8 @@ PrintUsage(void)
    printf("\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file for solver settings (Opt.)\n");
-   printf(
-      "  -a|--args ...     : Hypredrive YAML overrides, e.g. -a --solver:pcg:max_iter 100\n");
+   printf("  -a|--args ...     : Hypredrive YAML overrides, e.g. -a "
+          "--solver:pcg:max_iter 100\n");
    printf("                      (requires -i; must come last)\n");
    printf("  -n <nx> <ny> <nz> : Global grid dimensions in nodes (30 10 10)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (1 1 1)\n");

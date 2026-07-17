@@ -24,8 +24,8 @@ struct params
 {
    std::array<int, 3> n{16, 16, 16};
    std::array<int, 3> p{1, 1, 1};
-   int                stencil       = 7;
-   int                verbose       = 1;
+   int                stencil = 7;
+   int                verbose = 1;
    std::string        input_file{};
    int                hypredrv_argc = 0;       /* override args (incl. -a) */
    char             **hypredrv_argv = nullptr; /* override args, starting at -a */
@@ -312,8 +312,8 @@ main(int argc, char **argv)
       drv.set_library_mode();
       const auto solver_options =
          par.input_file.empty() ? std::string(default_options_yaml) : par.input_file;
-      const std::vector<std::string> overrides(
-         par.hypredrv_argv, par.hypredrv_argv + par.hypredrv_argc);
+      const std::vector<std::string> overrides(par.hypredrv_argv,
+                                               par.hypredrv_argv + par.hypredrv_argc);
       drv.parse_yaml(solver_options, overrides);
       drv.set_matrix_from_csr(g.row_start(), g.row_end(), indptr.data(), cols.data(),
                               vals.data());

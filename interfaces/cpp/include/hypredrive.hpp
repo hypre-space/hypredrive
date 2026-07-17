@@ -280,8 +280,7 @@ class driver
       }
       const std::size_t first =
          (args.front() == "-a" || args.front() == "--args") ? 1 : 0;
-      std::vector<std::string> tokens(args.begin() +
-                                         static_cast<std::ptrdiff_t>(first),
+      std::vector<std::string> tokens(args.begin() + static_cast<std::ptrdiff_t>(first),
                                       args.end());
       std::vector<char *>      argv;
       argv.reserve(tokens.size() + 1);

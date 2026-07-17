@@ -69,15 +69,15 @@
  *--------------------------------------------------------------------------*/
 typedef struct
 {
-   HYPRE_Int  visualize; /* Visualize solution in VTK format */
-   HYPRE_Int  print;     /* Print matrices/vectors to file */
-   HYPRE_Int  verbose;   /* Verbosity level bitset */
-   HYPRE_Int  nsolve;    /* Number of times to solve the system */
-   HYPRE_Int  N[3];      /* Grid dimensions */
-   HYPRE_Int  P[3];      /* Processor grid dimensions */
-   HYPRE_Real c[6];      /* Diffusion coefficients */
-   HYPRE_Int  stencil;   /* Stencil type (7 or 27) */
-   char      *yaml_file; /* YAML configuration file */
+   HYPRE_Int  visualize;     /* Visualize solution in VTK format */
+   HYPRE_Int  print;         /* Print matrices/vectors to file */
+   HYPRE_Int  verbose;       /* Verbosity level bitset */
+   HYPRE_Int  nsolve;        /* Number of times to solve the system */
+   HYPRE_Int  N[3];          /* Grid dimensions */
+   HYPRE_Int  P[3];          /* Processor grid dimensions */
+   HYPRE_Real c[6];          /* Diffusion coefficients */
+   HYPRE_Int  stencil;       /* Stencil type (7 or 27) */
+   char      *yaml_file;     /* YAML configuration file */
    HYPRE_Int  hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
    char     **hypredrv_argv; /* Hypredrive override args, starting at -a */
 } ProblemParams;
@@ -132,8 +132,8 @@ PrintUsage(void)
    printf("Options:\n");
    printf(
       "  -i <file>         : YAML configuration file for solver settings (Optional)\n");
-   printf(
-      "  -a|--args ...     : Hypredrive YAML overrides, e.g. -a --solver:pcg:max_iter 100\n");
+   printf("  -a|--args ...     : Hypredrive YAML overrides, e.g. -a "
+          "--solver:pcg:max_iter 100\n");
    printf("                      (requires -i; must come last)\n");
    printf("  -n <nx> <ny> <nz> : Global grid dimensions (default: 10 10 10)\n");
    printf("  -c <cx> <cy> <cz> : Diffusion coefficients (default: 1.0 1.0 1.0)\n");
@@ -172,8 +172,8 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       params->c[i]     = 1.0;
       params->c[i + 3] = 1.0;
    }
-   params->stencil   = 7;
-   params->yaml_file = NULL;
+   params->stencil       = 7;
+   params->yaml_file     = NULL;
    params->hypredrv_argc = 0;
    params->hypredrv_argv = NULL;
 

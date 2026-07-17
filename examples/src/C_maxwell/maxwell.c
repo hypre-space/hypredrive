@@ -250,8 +250,8 @@ PrintUsage(void)
    printf("Usage: ${MPIEXEC_COMMAND} <np> ./maxwell [options]\n\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file (Opt.)\n");
-   printf(
-      "  -a|--args ...     : Hypredrive YAML overrides, e.g. -a --solver:pcg:max_iter 100\n");
+   printf("  -a|--args ...     : Hypredrive YAML overrides, e.g. -a "
+          "--solver:pcg:max_iter 100\n");
    printf("                      (requires -i; must come last)\n");
    printf("  --name <str>      : Object name (labels the statistics table) (Opt.)\n");
    printf(

@@ -159,7 +159,7 @@ typedef struct
    HYPRE_Real max_cfl;           /* Maximum CFL for adaptive time stepping (0=no limit) */
    HYPRE_Int  regularize_bc;     /* Use regularized lid BC (smooth corners) */
    HYPRE_Int  disc; /* Discretization: 0 = Q1-Q1 stabilized, 1 = Q2-Q1 (Taylor-Hood) */
-   char      *yaml_file; /* YAML configuration file */
+   char      *yaml_file;     /* YAML configuration file */
    HYPRE_Int  hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
    char     **hypredrv_argv; /* Hypredrive override args, starting at -a */
 } LidCavityParams;
@@ -233,9 +233,10 @@ PrintUsage(void)
    printf("\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file for solver settings (Opt.)\n");
+   printf("  -a|--args ...     : Hypredrive YAML overrides, e.g. -a "
+          "--solver:gmres:max_iter 100\n");
    printf(
-      "  -a|--args ...     : Hypredrive YAML overrides, e.g. -a --solver:gmres:max_iter 100\n");
-   printf("                      (applies to -i file or built-in config; must come last)\n");
+      "                      (applies to -i file or built-in config; must come last)\n");
    printf("  -n <nx> <ny>      : Global grid dimensions in nodes (32 32)\n");
    printf("  -P <Px> <Py>      : Processor grid dimensions (1 1)\n");
    printf("  -L <Lx> <Ly>      : Physical dimensions (1 1)\n");
