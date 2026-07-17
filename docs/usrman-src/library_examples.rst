@@ -156,6 +156,14 @@ If you manage multiple handles, set ``general.name`` in YAML or call
 ``HYPREDRV_ObjectSetName`` so statistics can identify which object produced each
 summary.
 
+All example drivers in ``examples/src`` accept hypredrive command-line overrides
+after ``-a``/``--args``, using the same ``--path:to:key value`` syntax as
+``hypredrive-cli`` (for example, ``-a --solver:pcg:max_iter 100``). Overrides
+must come last on the command line. Drivers that fall back to built-in presets
+when no ``-i`` file is given (``laplacian``, ``elasticity``, ``graddiv``,
+``heatflow``, ``maxwell``) require ``-i`` together with ``-a``, while ``darcy``
+and ``lidcavity`` apply overrides on top of their built-in configuration.
+
 If your application owns multiple ``HYPREDRV_t`` objects concurrently, or if you want
 preconditioner reuse to respect application-defined timestep / nonlinear-iteration boundaries,
 use the annotation APIs (``HYPREDRV_AnnotateBegin`` / ``HYPREDRV_AnnotateEnd`` and

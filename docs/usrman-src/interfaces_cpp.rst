@@ -81,7 +81,9 @@ solves it through the wrapper:
 
    mpiexec -n 4 ./build-cpp/laplacian-cpp -n 16 16 16 -P 2 2 1 -s 7
 
-Pass a custom YAML file with ``-i/--input options.yml``.
+Pass a custom YAML file with ``-i/--input options.yml``. Hypredrive
+command-line overrides can be appended after ``-a``/``--args``, for example
+``-a --solver:pcg:max_iter 50``.
 
 API correspondence
 ------------------

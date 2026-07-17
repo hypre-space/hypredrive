@@ -181,6 +181,11 @@ driver lifecycle.
            drv.solve()
            x = drv.get_solution()
 
+Both ``HypreDrive`` and ``hd.solve`` accept an ``input_args`` keyword with
+CLI-style override tokens applied on top of ``options``, e.g.
+``input_args=["--solver:pcg:max_iter", "100"]``. The bundled examples expose
+this via ``-a``/``--args`` on their command line.
+
 Distributed solve with MPI
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 

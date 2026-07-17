@@ -190,8 +190,10 @@ SPE10-style permeability files and VTK output:
 
 Use ``-i options.yml`` to provide a solver configuration, or pass hypredrive
 command-line overrides after ``-a``/``--args``, for example
-``-a --solver:gmres:max_iter 100``. The ``-P`` topology controls the Cartesian
-MPI rank grid; the product of ``-P`` entries must equal MPI size.
+``-a --solver:gmres:max_iter 100``. The ``laplacian.jl`` and ``laplacian1d.jl``
+examples accept the same ``-a``/``--args`` overrides. The ``-P`` topology
+controls the Cartesian MPI rank grid; the product of ``-P`` entries must equal
+MPI size.
 
 Scope
 -----

@@ -21,12 +21,37 @@ program laplacian
    real(c_double) :: c(3) = [1.0_c_double, 1.0_c_double, 1.0_c_double]
    character(len=256) :: solver_yaml = ''
    character(len=256) :: input_file = ''
+   character(len=512) :: cli_arg
+   character(len=512), allocatable :: hypredrv_args(:)
+   integer :: nargs, iarg, tail_start
 
    call MPI_Init(ierr)
    call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
    call MPI_Comm_size(MPI_COMM_WORLD, nproc, ierr)
 
    call get_command_argument(1, input_file)
+   if (trim(input_file) == '-a' .or. trim(input_file) == '--args') input_file = ''
+
+   ! Collect hypredrive YAML overrides given after -a/--args, e.g.
+   ! ./laplacian-fortran input.nml -a --solver:pcg:max_iter 100
+   nargs = command_argument_count()
+   tail_start = 0
+   do iarg = 1, nargs
+      call get_command_argument(iarg, cli_arg)
+      if (trim(cli_arg) == '-a' .or. trim(cli_arg) == '--args') then
+         tail_start = iarg + 1
+         exit
+      end if
+   end do
+   if (tail_start > 0 .and. tail_start <= nargs) then
+      allocate (hypredrv_args(nargs - tail_start + 1))
+      do iarg = tail_start, nargs
+         call get_command_argument(iarg, hypredrv_args(iarg - tail_start + 1))
+      end do
+   else
+      allocate (hypredrv_args(0))
+   end if
+
    call read_parameters(trim(input_file), rank, n, p, c, stencil, nsolve, verbose, solver_yaml)
    call validate_parameters(rank, nproc, n, p, stencil, nsolve)
 
@@ -42,7 +67,7 @@ program laplacian
    else
       yaml = default_yaml()
    end if
-   call HYPREDRV_Check(HYPREDRV_InputArgsParseYaml(drv, yaml))
+   call HYPREDRV_Check(HYPREDRV_InputArgsParseYamlArgs(drv, yaml, hypredrv_args))
 
    if (rank == 0) call print_setup(n, p, c, stencil, nsolve, verbose, solver_yaml)
    if (rank == 0 .and. verbose > 0) print '(a)', 'Assembling 3D Laplacian system...'

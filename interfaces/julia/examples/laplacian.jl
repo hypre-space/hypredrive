@@ -13,6 +13,7 @@ mutable struct Params
     stencil::Int
     nsolve::Int
     verbose::Int
+    hypredrv_args::Vector{String}
 end
 
 function usage()
@@ -21,6 +22,8 @@ Usage: mpiexec -n <np> julia --project=interfaces/julia interfaces/julia/example
 
 Options:
   -i, --input <file>       YAML configuration file for solver settings
+  -a, --args <key value>...  Hypredrive YAML overrides, e.g.
+                             -a --solver:pcg:max_iter 100 (must come last)
   -n <nx> <ny> <nz>        Global grid dimensions (default: 10 10 10)
   -c <cx> <cy> <cz>        Diffusion coefficients (default: 1.0 1.0 1.0)
   -P <px> <py> <pz>        Processor grid dimensions (default: 1 1 1)
@@ -33,7 +36,7 @@ Options:
 end
 
 function parse_args(args)
-    params = Params(nothing, (10, 10, 10), (1.0, 1.0, 1.0), (1, 1, 1), 7, 5, 1)
+    params = Params(nothing, (10, 10, 10), (1.0, 1.0, 1.0), (1, 1, 1), 7, 5, 1, String[])
     i = 1
     while i <= length(args)
         arg = args[i]
@@ -44,6 +47,9 @@ function parse_args(args)
             i += 1
             i <= length(args) || error("$arg requires a file")
             params.input = args[i]
+        elseif arg in ("-a", "--args")
+            params.hypredrv_args = args[i:end]
+            break
         elseif arg == "-n"
             i + 3 <= length(args) || error("-n requires three values")
             params.n = (parse(Int, args[i + 1]), parse(Int, args[i + 2]), parse(Int, args[i + 3]))
@@ -261,9 +267,19 @@ function main()
     end
 
     row_start, indptr, cols, vals, rhs = build_local_laplacian(params, rank)
-    local_x, info = hypredrive_solve_mpi_csr(indptr, cols, vals, rhs, row_start;
-                                             options=options_from(params),
-                                             nsolve=params.nsolve, comm=:world)
+    if isempty(params.hypredrv_args)
+        local_x, info = hypredrive_solve_mpi_csr(indptr, cols, vals, rhs, row_start;
+                                                 options=options_from(params),
+                                                 nsolve=params.nsolve, comm=:world)
+    else
+        # input_args[1] carries the configuration; normalize it the same way the
+        # options= path does (e.g. inject a quiet general.statistics default).
+        input_args = String[hypredrive_options(options_from(params))]
+        append!(input_args, params.hypredrv_args)
+        local_x, info = hypredrive_solve_mpi_csr(indptr, cols, vals, rhs, row_start;
+                                                 options="", input_args=input_args,
+                                                 nsolve=params.nsolve, comm=:world)
+    end
     local_norm2 = dot(local_x, local_x)
     global_norm = sqrt(hypredrive_mpi_world_sum(local_norm2))
 
