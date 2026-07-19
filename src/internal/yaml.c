@@ -381,6 +381,8 @@ YAMLincludeResolvePath(const YAMLincludeContext *ctx, const char *dirname,
 static void
 YAMLnodeValidateMap(YAMLnode *node, StrIntMapArray map_array)
 {
+   node->avail_vals = map_array;
+
    if (hypredrv_StrIntMapArrayDomainEntryExists(map_array, node->val))
    {
       int mapped = hypredrv_StrIntMapArrayGetImage(map_array, node->val);
@@ -455,7 +457,10 @@ hypredrv_YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
       return;
    }
 
-   node->valid = YAML_NODE_INVALID_KEY;
+   /* Record the valid-key list so tree validation can report it. Safe because
+    * every get_keys() returns a StrArray over static, call-stable storage. */
+   node->avail_keys = keys;
+   node->valid      = YAML_NODE_INVALID_KEY;
 }
 
 void
@@ -2045,6 +2050,8 @@ hypredrv_YAMLnodeCreate(const char *key, const char *val, int level)
    node->level      = level;
    node->key        = hypredrv_StrTrim(strdup((char *)key));
    node->mapped_val = NULL;
+   node->avail_vals = STR_INT_MAP_ARRAY_VOID();
+   node->avail_keys = STR_ARRAY_VOID();
    node->valid      = YAML_NODE_UNKNOWN;
    node->parent     = NULL;
    node->children   = NULL;
@@ -2221,10 +2228,30 @@ hypredrv_YAMLnodeValidate(YAMLnode *node)
       case YAML_NODE_INVALID_KEY:
          hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
          hypredrv_ErrorCodeSet(ERROR_MAYBE_INVALID_VAL);
+         if (node->avail_keys.size > 0)
+         {
+            char *avail = hypredrv_StrArrayToString(node->avail_keys);
+            if (avail)
+            {
+               hypredrv_ErrorMsgAddUnique("Unknown key \"%s\". Available keys: %s",
+                                          node->key, avail);
+               free(avail);
+            }
+         }
          break;
 
       case YAML_NODE_INVALID_VAL:
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         if (node->avail_vals.size > 0)
+         {
+            char *avail = hypredrv_StrIntMapArrayDomainToString(node->avail_vals);
+            if (avail)
+            {
+               hypredrv_ErrorMsgAddUnique("Available values for \"%s\": %s", node->key,
+                                          avail);
+               free(avail);
+            }
+         }
          break;
 
       case YAML_NODE_UNEXPECTED_VAL:

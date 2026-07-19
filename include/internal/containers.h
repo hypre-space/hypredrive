@@ -83,11 +83,15 @@ typedef struct StrArray_struct
    {                                                       \
       .data = _str, .size = sizeof(_str) / sizeof(_str[0]) \
    }
+// clang-format off
+#define STR_ARRAY_VOID() (StrArray){.data = NULL, .size = 0}
+// clang-format on
 
-bool hypredrv_StrArrayEntryExists(StrArray, const char *);
-void hypredrv_StrToIntArray(const char *, IntArray **);
-void hypredrv_StrToDoubleArray(const char *, DoubleArray **);
-void hypredrv_StrToStackIntArray(const char *, StackIntArray *);
+bool  hypredrv_StrArrayEntryExists(StrArray, const char *);
+char *hypredrv_StrArrayToString(StrArray);
+void  hypredrv_StrToIntArray(const char *, IntArray **);
+void  hypredrv_StrToDoubleArray(const char *, DoubleArray **);
+void  hypredrv_StrToStackIntArray(const char *, StackIntArray *);
 
 /*--------------------------------------------------------------------------
  * StrIntMap struct (str <-> num)
@@ -117,8 +121,9 @@ typedef struct StrIntMapArray_struct
 
 extern const StrIntMapArray hypredrv_OnOffMapArray;
 
-int  hypredrv_StrIntMapArrayGetImage(StrIntMapArray, const char *);
-bool hypredrv_StrIntMapArrayDomainEntryExists(StrIntMapArray, const char *);
+int   hypredrv_StrIntMapArrayGetImage(StrIntMapArray, const char *);
+bool  hypredrv_StrIntMapArrayDomainEntryExists(StrIntMapArray, const char *);
+char *hypredrv_StrIntMapArrayDomainToString(StrIntMapArray);
 
 /*--------------------------------------------------------------------------
  * DofLabelMap struct (name <-> integer dof type)

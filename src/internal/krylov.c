@@ -116,6 +116,7 @@ NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          hypredrv_ErrorMsgAdd("Unknown nested preconditioner type: '%s'",
                               precon_node->val);
+         precon_node->avail_vals = hypredrv_PreconGetValidTypeIntMap();
          YAML_NODE_SET_INVALID_VAL(precon_node);
          return;
       }

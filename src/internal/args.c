@@ -336,6 +336,8 @@ hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
       }
    }
 
+   StrIntMapArray solver_type_map = hypredrv_SolverGetValidTypeIntMap();
+
    /* Check if the solver type was set with a single (key, val) pair */
    if (!strcmp(parent->val, ""))
    {
@@ -357,14 +359,20 @@ hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
       }
 
       iargs->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
-         hypredrv_SolverGetValidTypeIntMap(), parent->children->key);
+         solver_type_map, parent->children->key);
 
       hypredrv_SolverSetArgsFromYAML(&iargs->solver, parent);
    }
+   else if (!hypredrv_StrIntMapArrayDomainEntryExists(solver_type_map, parent->val))
+   {
+      /* Unknown value-only solver type: defer reporting to tree validation */
+      parent->avail_vals = solver_type_map;
+      YAML_NODE_SET_INVALID_VAL(parent);
+   }
    else
    {
-      iargs->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
-         hypredrv_SolverGetValidTypeIntMap(), parent->val);
+      iargs->solver_method =
+         (solver_t)hypredrv_StrIntMapArrayGetImage(solver_type_map, parent->val);
 
       /* Value-only form (e.g., `solver: gmres`): use per-method defaults. */
       hypredrv_SolverArgsSetDefaultsForMethod(iargs->solver_method, &iargs->solver);
@@ -718,6 +726,14 @@ PreconParseMethodResolve(const char *name, hypredrv_error_t error_code,
                                                  name))
    {
       hypredrv_ErrorCodeSet(error_code);
+      char *avail =
+         hypredrv_StrIntMapArrayDomainToString(hypredrv_PreconGetValidTypeIntMap());
+      if (avail)
+      {
+         /* Added first so it prints after the message below (LIFO order) */
+         hypredrv_ErrorMsgAddUnique("Available values for \"preconditioner\": %s", avail);
+         free(avail);
+      }
       hypredrv_ErrorMsgAdd("Unknown preconditioner type: '%s'", name);
       return 0;
    }

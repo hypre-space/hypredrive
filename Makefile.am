@@ -29,7 +29,7 @@ endif
 libHYPREDRV_la_SOURCES =
 libHYPREDRV_la_LIBADD = libHYPREDRV_internal.la
 libHYPREDRV_la_LDFLAGS = -version-info 0:1:0 \
-	-export-symbols-regex '^(HYPREDRV_.*|hypredrv_SafeCallHandleError)$$'
+	-export-symbols-regex '^HYPREDRV_.*$$'
 
 include_HEADERS = include/HYPREDRV.h include/HYPREDRV_utils.h
 nodist_include_HEADERS = HYPREDRV_config.h

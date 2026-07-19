@@ -69,6 +69,7 @@ bool     hypredrv_DistributedErrorStateSync(MPI_Comm);
  *******************************************************************************/
 
 void hypredrv_ErrorMsgAdd(const char *, ...);
+void hypredrv_ErrorMsgAddUnique(const char *, ...);
 void hypredrv_ErrorMsgAddCodeWithCount(hypredrv_error_t, const char *);
 void hypredrv_ErrorMsgAddMissingKey(const char *);
 void hypredrv_ErrorMsgAddExtraKey(const char *);

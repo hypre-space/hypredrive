@@ -601,11 +601,11 @@ hypredrv_ErrorReportIsCollective(void)
 }
 
 /*-----------------------------------------------------------------------------
- * hypredrv_SafeCallHandleError
+ * HYPREDRV_SafeCallHandleError
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *file,
+HYPREDRV_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *file,
                              int line, const char *func)
 {
    /* GCOVR_EXCL_BR_START */
@@ -1038,6 +1038,66 @@ hypredrv_ErrorMsgAdd(const char *format, ...)
 
    node->next      = state->msg_head;
    state->msg_head = node;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_ErrorMsgAddUnique
+ *
+ * Adds a formatted error message unless an identical message is already
+ * queued. Used for advisory messages that several invalid nodes may repeat.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_ErrorMsgAddUnique(const char *format, ...)
+{
+   ErrorState *state = ErrorStateGet();
+   const char *fmt   = format ? format : "(null format)";
+   char       *msg   = NULL;
+   va_list     args;
+   va_list     args_copy;
+   int         length = 0;
+
+   va_start(args, format);
+   va_copy(args_copy, args);
+   length = vsnprintf(NULL, 0, fmt, args_copy);
+   va_end(args_copy);
+
+   /* GCOVR_EXCL_START */
+   if (length < 0)
+   {
+      va_end(args);
+      hypredrv_ErrorMsgAdd("%s", "(error formatting message)");
+      return;
+   }
+
+   /* GCOVR_EXCL_STOP */
+
+   msg = (char *)malloc((size_t)length + 1);
+   if (!msg)
+   {
+      va_end(args);                       /* GCOVR_EXCL_LINE */
+      ErrorStateRecordMessageDrop(state); /* GCOVR_EXCL_LINE */
+      return;                             /* GCOVR_EXCL_LINE */
+   }
+
+   if (vsnprintf(msg, (size_t)length + 1, fmt, args) < 0)
+   {
+      snprintf(msg, (size_t)length + 1, "%s",
+               "(error formatting message)"); /* GCOVR_EXCL_LINE */
+   }
+   va_end(args);
+
+   for (const ErrorMsgNode *node = state->msg_head; node; node = node->next)
+   {
+      if (!strcmp(node->message, msg))
+      {
+         free(msg);
+         return;
+      }
+   }
+
+   hypredrv_ErrorMsgAdd("%s", msg);
+   free(msg);
 }
 
 static void
