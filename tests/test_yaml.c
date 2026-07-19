@@ -1782,6 +1782,43 @@ test_YAMLSetArgsGeneric_flat_rewrites_key_to_type(void)
    hypredrv_YAMLnodeDestroy(node);
 }
 
+static void
+test_YAMLnodeValidateSchema_records_avail_vals_and_keys(void)
+{
+   /* Invalid value against a schema map records the map for error reporting */
+   YAMLnode *bad = hypredrv_YAMLnodeCreate("solver", "bogus", 0);
+   hypredrv_YAMLnodeValidateSchema(bad, stub_schema_keys, stub_schema_vals);
+   ASSERT_EQ(bad->valid, YAML_NODE_INVALID_VAL);
+   ASSERT_EQ(bad->avail_vals.size, 2);
+   ASSERT_EQ(bad->avail_keys.size, 0);
+   hypredrv_YAMLnodeDestroy(bad);
+
+   /* Keys accepting free-form values record no map */
+   YAMLnode *freeform = hypredrv_YAMLnodeCreate("k_empty", "anything", 0);
+   hypredrv_YAMLnodeValidateSchema(freeform, stub_schema_keys, stub_schema_vals);
+   ASSERT_EQ(freeform->valid, YAML_NODE_VALID);
+   ASSERT_EQ(freeform->avail_vals.size, 0);
+   hypredrv_YAMLnodeDestroy(freeform);
+
+   /* Unknown key records the valid-keys list */
+   YAMLnode *badkey = hypredrv_YAMLnodeCreate("unknown", "x", 0);
+   hypredrv_YAMLnodeValidateSchema(badkey, stub_schema_keys, stub_schema_vals);
+   ASSERT_EQ(badkey->valid, YAML_NODE_INVALID_KEY);
+   ASSERT_EQ(badkey->avail_keys.size, 3);
+   hypredrv_YAMLnodeDestroy(badkey);
+
+   /* Flat form: map recorded and original key restored for error reporting */
+   YAMLnode *flat  = hypredrv_YAMLnodeCreate("mypre", "bogus", 0);
+   int       calls = 0;
+   hypredrv_YAMLSetArgsGeneric(&calls, flat, stub_keys_flat_only_type, stub_vals_flat,
+                               stub_schema_set_field);
+   ASSERT_EQ(flat->valid, YAML_NODE_INVALID_VAL);
+   ASSERT_EQ(calls, 0);
+   ASSERT_EQ(flat->avail_vals.size, 2);
+   ASSERT_STREQ(flat->key, "mypre");
+   hypredrv_YAMLnodeDestroy(flat);
+}
+
 /*-----------------------------------------------------------------------------
  * Reader / include: bad root, scalar include, comments, fopen failure, cleanup
  *-----------------------------------------------------------------------------*/
@@ -2346,6 +2383,7 @@ main(void)
    RUN_TEST(test_YAMLnodeValidateSchema_type_fallback_when_key_not_in_list);
    RUN_TEST(test_YAMLSetArgsGeneric_nested_children);
    RUN_TEST(test_YAMLSetArgsGeneric_flat_rewrites_key_to_type);
+   RUN_TEST(test_YAMLnodeValidateSchema_records_avail_vals_and_keys);
 
    RUN_TEST(test_YAMLtextRead_bad_root_directory);
    RUN_TEST(test_YAMLtextRead_scalar_include_success);

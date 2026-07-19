@@ -29,10 +29,6 @@
 
 #include "HYPREDRV.h"
 
-HYPREDRV_EXPORT_SYMBOL void hypredrv_SafeCallHandleError(uint32_t error_code,
-                                                         MPI_Comm comm, const char *file,
-                                                         int line, const char *func);
-
 /**
  * @brief Safely call a HYPREDRV function; abort on error via MPI_COMM_WORLD.
  *
@@ -53,7 +49,7 @@ HYPREDRV_EXPORT_SYMBOL void hypredrv_SafeCallHandleError(uint32_t error_code,
 #define HYPREDRV_SAFE_CALL(call)                                               \
    do                                                                          \
    {                                                                           \
-      hypredrv_SafeCallHandleError((call), MPI_COMM_WORLD, __FILE__, __LINE__, \
+      HYPREDRV_SafeCallHandleError((call), MPI_COMM_WORLD, __FILE__, __LINE__, \
                                    __func__);                                  \
    } while (0)
 #endif
@@ -78,7 +74,7 @@ HYPREDRV_EXPORT_SYMBOL void hypredrv_SafeCallHandleError(uint32_t error_code,
 #define HYPREDRV_SAFE_CALL_COMM(comm, call)                                       \
    do                                                                             \
    {                                                                              \
-      hypredrv_SafeCallHandleError((call), (comm), __FILE__, __LINE__, __func__); \
+      HYPREDRV_SafeCallHandleError((call), (comm), __FILE__, __LINE__, __func__); \
    } while (0)
 #endif
 

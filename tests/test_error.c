@@ -11,7 +11,14 @@
 #include <string.h>
 #include <unistd.h>
 #include "internal/error.h"
+#include "internal/mgr.h"
+#include "internal/yaml.h"
 #include "test_helpers.h"
+
+/* Generated MGR parsing functions used by the available-values test (these are
+ * defined in mgr.c but not exposed in mgr.h; see tests/test_parser.c) */
+void hypredrv_MGRfrlxSetDefaultArgs(MGRfrlx_args *);
+void hypredrv_MGRfrlxSetArgsFromYAML(void *, YAMLnode *);
 
 static void
 capture_error_output(void (*print_fn)(void), char *buffer, size_t buf_len);
@@ -359,6 +366,63 @@ test_ErrorMsgAddCodeWithCount_null_suffix(void)
 }
 
 static void
+test_ErrorMsgAddUnique_deduplicates(void)
+{
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+
+   hypredrv_ErrorMsgAddUnique("Available values for \"%s\": %s", "k", "a (0), b (1)");
+   hypredrv_ErrorMsgAddUnique("Available values for \"%s\": %s", "k", "a (0), b (1)");
+   hypredrv_ErrorMsgAddUnique("some other message");
+
+   char buffer[2048];
+   capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
+   char *first = strstr(buffer, "Available values for \"k\": a (0), b (1)");
+   ASSERT_NOT_NULL(first);
+   ASSERT_NULL(strstr(first + 1, "Available values for \"k\"")); /* no duplicate */
+   ASSERT_NOT_NULL(strstr(buffer, "some other message"));
+
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
+test_ErrorMsg_available_values_for_invalid_value(void)
+{
+   MGRfrlx_args frlx;
+   hypredrv_MGRfrlxSetDefaultArgs(&frlx);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+
+   /* Flat form: the parser temporarily renames the key to "type" during schema
+    * validation and must restore it before tree validation emits messages */
+   YAMLnode *node = hypredrv_YAMLnodeCreate("f_relaxation", "not_a_relax_type", 0);
+   hypredrv_MGRfrlxSetArgsFromYAML(&frlx, node);
+   ASSERT_EQ(node->valid, YAML_NODE_INVALID_VAL);
+   ASSERT_STREQ(node->key, "f_relaxation");
+   ASSERT_TRUE(node->avail_vals.size > 0);
+
+   hypredrv_YAMLnodeValidate(node);
+   hypredrv_YAMLnodeValidate(node); /* repeat: dedup must hold */
+   hypredrv_ErrorCodeDescribe(hypredrv_ErrorCodeGet());
+
+   char buffer[4096];
+   capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
+   char *found = strstr(
+      buffer, "Available values for \"f_relaxation\": none (-1), single/jacobi (7)");
+   ASSERT_NOT_NULL(found);
+   ASSERT_NULL(strstr(found + 1, "Available values for \"f_relaxation\""));
+   char *count_line = strstr(buffer, "invalid value");
+   ASSERT_NOT_NULL(count_line);
+   ASSERT_TRUE(count_line < found); /* "Found N..." prints first (LIFO order) */
+
+   hypredrv_YAMLnodeDestroy(node);
+   hypredrv_ErrorMsgClear();
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
 test_DistributedErrorCodeActive(void)
 {
    hypredrv_ErrorCodeResetAll();
@@ -589,6 +653,8 @@ main(int argc, char **argv)
    RUN_TEST(test_ErrorMsgAddInvalidFilename);
    RUN_TEST(test_ErrorCodeDescribe_comprehensive_table);
    RUN_TEST(test_ErrorMsgAddCodeWithCount_null_suffix);
+   RUN_TEST(test_ErrorMsgAddUnique_deduplicates);
+   RUN_TEST(test_ErrorMsg_available_values_for_invalid_value);
    RUN_TEST(test_DistributedErrorCodeActive);
    RUN_TEST(test_DistributedErrorStateSync_self_preserves_code_and_messages);
    RUN_TEST(test_DistributedErrorStateSync_world_preserves_nonroot_descriptions);

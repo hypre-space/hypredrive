@@ -76,7 +76,6 @@ if(DEFINED CMAKE_SCRIPT_MODE_FILE AND
     if(MODE STREQUAL "CORE")
         hypredrv_collect_public_api_names(
             _expected_exports "${_source_dir}/include/HYPREDRV.h")
-        list(APPEND _expected_exports hypredrv_SafeCallHandleError)
     elseif(MODE STREQUAL "PYTHON")
         set(_expected_exports PyInit__core)
     elseif(MODE STREQUAL "JULIA")
@@ -154,8 +153,6 @@ function(_hypredrv_generate_darwin_core_export_list out_var)
     foreach(_api_name IN LISTS _api_names)
         file(APPEND "${_export_list}" "_${_api_name}\n")
     endforeach()
-    # This lowercase helper is part of the installed HYPREDRV_utils.h API.
-    file(APPEND "${_export_list}" "_hypredrv_SafeCallHandleError\n")
 
     set(${out_var} "${_export_list}" PARENT_SCOPE)
 endfunction()

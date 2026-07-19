@@ -7,6 +7,7 @@
 
 #include "internal/containers.h"
 #include <limits.h>
+#include <stdarg.h>
 #include "internal/error.h"
 #include "internal/utils.h"
 /*-----------------------------------------------------------------------------
@@ -744,6 +745,165 @@ bool
 hypredrv_StrIntMapArrayDomainEntryExists(const StrIntMapArray valid, const char *string)
 {
    return (hypredrv_StrIntMapArrayGetImage(valid, string) > INT_MIN) != 0;
+}
+
+/*--------------------------------------------------------------------------
+ * StrBufferAppend
+ *--------------------------------------------------------------------------*/
+
+static void
+StrBufferAppend(char **pos, size_t *remaining, const char *format, ...)
+{
+   va_list args;
+   int     written = 0;
+
+   va_start(args, format);
+   written = vsnprintf(*pos, *remaining, format, args);
+   va_end(args);
+
+   /* GCOVR_EXCL_BR_START */
+   if (written < 0 || (size_t)written >= *remaining) /* GCOVR_EXCL_BR_STOP */
+   {
+      *remaining = 0; /* GCOVR_EXCL_LINE */
+      return;         /* GCOVR_EXCL_LINE */
+   }
+
+   *pos += written;
+   *remaining -= (size_t)written;
+}
+
+/*--------------------------------------------------------------------------
+ * hypredrv_StrIntMapArrayDomainToString
+ *
+ * Builds a comma-separated list of the printable domain entries of a map,
+ * grouping aliases that share the same numeric image with a slash, e.g.:
+ * "none (-1), single/jacobi (7)". Returns a heap string owned by the
+ * caller, or NULL when the map has no printable entry.
+ *--------------------------------------------------------------------------*/
+
+char *
+hypredrv_StrIntMapArrayDomainToString(const StrIntMapArray valid)
+{
+   size_t length = 1;
+   size_t count  = 0;
+
+   for (size_t i = 0; i < valid.size; i++)
+   {
+      if (!valid.data[i].str || valid.data[i].str[0] == '\0')
+      {
+         continue;
+      }
+      length += strlen(valid.data[i].str) + 16; /* separators plus " (num)" */
+      count++;
+   }
+
+   if (count == 0)
+   {
+      return NULL;
+   }
+
+   char *buffer = (char *)malloc(length);
+   /* GCOVR_EXCL_BR_START */
+   if (!buffer) /* GCOVR_EXCL_BR_STOP */
+   {
+      return NULL; /* GCOVR_EXCL_LINE */
+   }
+
+   char  *pos       = buffer;
+   size_t remaining = length;
+   for (size_t i = 0; i < valid.size; i++)
+   {
+      const char *str          = valid.data[i].str;
+      int         num          = valid.data[i].num;
+      bool        already_seen = false;
+
+      if (!str || str[0] == '\0')
+      {
+         continue;
+      }
+
+      /* Skip entries whose alias group has already been emitted */
+      for (size_t j = 0; j < i; j++)
+      {
+         if (valid.data[j].num == num && valid.data[j].str &&
+             valid.data[j].str[0] != '\0')
+         {
+            already_seen = true;
+            break;
+         }
+      }
+      if (already_seen)
+      {
+         continue;
+      }
+
+      StrBufferAppend(&pos, &remaining, "%s%s", (pos == buffer) ? "" : ", ", str);
+
+      /* Join the remaining aliases mapping to the same numeric image */
+      for (size_t j = i + 1; j < valid.size; j++)
+      {
+         if (valid.data[j].num == num && valid.data[j].str &&
+             valid.data[j].str[0] != '\0')
+         {
+            StrBufferAppend(&pos, &remaining, "/%s", valid.data[j].str);
+         }
+      }
+
+      StrBufferAppend(&pos, &remaining, " (%d)", num);
+   }
+
+   return buffer;
+}
+
+/*--------------------------------------------------------------------------
+ * hypredrv_StrArrayToString
+ *
+ * Builds a comma-separated list of the entries of a string array, e.g.:
+ * "max_iter, tolerance". Returns a heap string owned by the caller, or
+ * NULL when the array has no printable entry.
+ *--------------------------------------------------------------------------*/
+
+char *
+hypredrv_StrArrayToString(const StrArray valid)
+{
+   size_t length = 1;
+   size_t count  = 0;
+
+   for (size_t i = 0; i < valid.size; i++)
+   {
+      if (!valid.data[i] || valid.data[i][0] == '\0')
+      {
+         continue;
+      }
+      length += strlen(valid.data[i]) + 2; /* ", " separator */
+      count++;
+   }
+
+   if (count == 0)
+   {
+      return NULL;
+   }
+
+   char *buffer = (char *)malloc(length);
+   /* GCOVR_EXCL_BR_START */
+   if (!buffer) /* GCOVR_EXCL_BR_STOP */
+   {
+      return NULL; /* GCOVR_EXCL_LINE */
+   }
+
+   char  *pos       = buffer;
+   size_t remaining = length;
+   for (size_t i = 0; i < valid.size; i++)
+   {
+      if (!valid.data[i] || valid.data[i][0] == '\0')
+      {
+         continue;
+      }
+      StrBufferAppend(&pos, &remaining, "%s%s", (pos == buffer) ? "" : ", ",
+                      valid.data[i]);
+   }
+
+   return buffer;
 }
 
 /*-----------------------------------------------------------------------------

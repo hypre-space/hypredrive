@@ -69,6 +69,7 @@ bool     hypredrv_DistributedErrorStateSync(MPI_Comm);
  *******************************************************************************/
 
 void hypredrv_ErrorMsgAdd(const char *, ...);
+void hypredrv_ErrorMsgAddUnique(const char *, ...);
 void hypredrv_ErrorMsgAddCodeWithCount(hypredrv_error_t, const char *);
 void hypredrv_ErrorMsgAddMissingKey(const char *);
 void hypredrv_ErrorMsgAddExtraKey(const char *);
@@ -77,6 +78,10 @@ void hypredrv_ErrorMsgAddInvalidFilename(const char *);
 void hypredrv_ErrorMsgPrint(void);
 void hypredrv_ErrorMsgClear(void);
 void hypredrv_ErrorBacktracePrint(void);
+
+/* Internal implementation behind the public HYPREDRV_SafeCallHandleError()
+   wrapper and the HYPREDRV_SAFE_CALL* macros. */
+void hypredrv_SafeCallHandleError(uint32_t, MPI_Comm, const char *, int, const char *);
 
 /*******************************************************************************
  *******************************************************************************/

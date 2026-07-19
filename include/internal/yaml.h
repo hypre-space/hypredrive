@@ -70,6 +70,8 @@ typedef struct YAMLnode_struct
    char                   *key;
    char                   *val;
    char                   *mapped_val;
+   StrIntMapArray          avail_vals; /* valid values recorded at validation time */
+   StrArray                avail_keys; /* valid keys recorded at validation time */
    int                     level;
    YAMLvalidity            valid;
    struct YAMLnode_struct *parent;
