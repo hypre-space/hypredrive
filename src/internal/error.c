@@ -601,11 +601,11 @@ hypredrv_ErrorReportIsCollective(void)
 }
 
 /*-----------------------------------------------------------------------------
- * HYPREDRV_SafeCallHandleError
+ * hypredrv_SafeCallHandleError
  *-----------------------------------------------------------------------------*/
 
 void
-HYPREDRV_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *file,
+hypredrv_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *file,
                              int line, const char *func)
 {
    /* GCOVR_EXCL_BR_START */

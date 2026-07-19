@@ -861,6 +861,17 @@ HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
 }
 
 /*-----------------------------------------------------------------------------
+ * Public wrapper backing the HYPREDRV_SAFE_CALL* macros
+ *-----------------------------------------------------------------------------*/
+
+void
+HYPREDRV_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *file,
+                             int line, const char *func)
+{
+   hypredrv_SafeCallHandleError(error_code, comm, file, line, func);
+}
+
+/*-----------------------------------------------------------------------------
  * Record and return an invalid-value error with optional context
  *-----------------------------------------------------------------------------*/
 
