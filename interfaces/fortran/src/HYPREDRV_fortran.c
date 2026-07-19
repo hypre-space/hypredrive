@@ -98,6 +98,18 @@ HYPREDRV_FortranLinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, int64_t row_st
       return HYPREDRV_ErrorInvalidValue("invalid Fortran CSR buffer lengths");
    }
 
+   /* Validate pointers before dereferencing indptr below. */
+   if (indptr_in == NULL || (col_indices_len > 0 && (col_indices_in == NULL || data == NULL)))
+   {
+      return HYPREDRV_ErrorInvalidValue("Fortran CSR input pointer is NULL");
+   }
+
+   /* Guard the subtraction against overflow before computing nrows. */
+   if (row_end_in < row_start_in)
+   {
+      return HYPREDRV_ErrorInvalidValue(
+         "Fortran CSR row_end must be >= row_start");
+   }
    int64_t nrows = row_end_in - row_start_in + 1;
    if (nrows <= 0 || indptr_len != nrows + 1)
    {

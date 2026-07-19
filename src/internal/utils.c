@@ -19,6 +19,10 @@
 char *
 hypredrv_StrToLowerCase(char *str)
 {
+   if (!str)
+   {
+      return str;
+   }
    for (int i = 0; str[i]; i++)
    {
       str[i] = (char)tolower((unsigned char)str[i]);

@@ -1717,13 +1717,39 @@ hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
    {
       if (!strcmp(child->key, "level"))
       {
+         uint32_t seen_levels = 0;
+         int      max_lvl     = -1;
          YAML_NODE_SET_VALID(child);
          YAML_NODE_ITERATE(child, grandchild)
          {
-            int lvl = (int)strtol(grandchild->key, NULL, 10);
+            char *lvl_end = NULL;
+            long  lvl_l   = strtol(grandchild->key, &lvl_end, 10);
+            int   lvl     = (int)lvl_l;
+
+            /* Reject non-numeric level keys (e.g. "lvl0"): strtol would otherwise
+             * silently map them to 0 and overwrite a real level's configuration. */
+            if (grandchild->key[0] == '\0' || !lvl_end || *lvl_end != '\0')
+            {
+               YAML_NODE_SET_INVALID_KEY(grandchild);
+               continue;
+            }
+            /* Reject duplicate level indices, which would double-count num_levels. */
+            if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1 &&
+                (seen_levels & (1u << (unsigned)lvl)))
+            {
+               hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+               hypredrv_ErrorMsgAdd("Duplicate MGR level index %d", lvl);
+               YAML_NODE_SET_INVALID_KEY(grandchild);
+               continue;
+            }
 
             if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1)
             {
+               seen_levels |= (1u << (unsigned)lvl);
+               if (lvl > max_lvl)
+               {
+                  max_lvl = lvl;
+               }
                YAML_NODE_ITERATE(grandchild, great_grandchild)
                {
                   if ((!strcmp(great_grandchild->key, "f_relaxation") ||
@@ -1752,6 +1778,24 @@ hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
             else
             {
                YAML_NODE_SET_INVALID_KEY(grandchild);
+            }
+         }
+
+         /* Consumption iterates fine levels densely over [0, num_levels-1), so the
+          * configured level indices must be contiguous starting at 0. Reject gaps
+          * (e.g. "0:" and "5:") which would otherwise silently process
+          * default-initialized levels in place of the intended configuration. */
+         if (max_lvl >= 0)
+         {
+            uint32_t expected = (max_lvl >= 31) ? 0xFFFFFFFFu
+                                                : ((1u << (unsigned)(max_lvl + 1)) - 1u);
+            if (seen_levels != expected)
+            {
+               hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+               hypredrv_ErrorMsgAdd(
+                  "MGR level indices must be contiguous starting at 0 (found "
+                  "non-contiguous set up to level %d)",
+                  max_lvl);
             }
          }
       }
@@ -3617,14 +3661,14 @@ MGRPlanPointMarkers(MGR_args *args, MGRCreatePlan *plan, const Stats *stats,
                       "MGR stage after c-point assembly: code=0x%x num_dofs_hypre=%d",
                       hypredrv_ErrorCodeGet(), (int)plan->num_dofs_hypre);
 
-   /* Set dofmap_data */
-   if (!plan->label_to_dense && TYPES_MATCH(HYPRE_Int, int))
+   /* Set dofmap_data. Always take an owned copy rather than aliasing dofmap->data:
+    * hypre reads this point-marker array during MGRSetup (after this function
+    * returns), so aliasing the caller's dofmap makes hypre read freed memory if the
+    * caller rebuilds/destroys the dofmap between PreconCreate and PreconSetup. The
+    * copy is O(local rows), negligible next to MGR setup. */
    {
-      plan->dofmap_data = (HYPRE_Int *)dofmap->data;
-   }
-   else
-   {
-      plan->dofmap_data = (HYPRE_Int *)malloc(dofmap->size * sizeof(HYPRE_Int));
+      plan->dofmap_data =
+         (HYPRE_Int *)malloc((dofmap->size ? dofmap->size : 1) * sizeof(HYPRE_Int));
       /* GCOVR_EXCL_START */
       if (!plan->dofmap_data)
       {

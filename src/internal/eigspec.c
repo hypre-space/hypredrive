@@ -162,6 +162,12 @@ hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
 
    /* Gather on a single rank */
    seq_A = hypre_ParCSRMatrixToCSRMatrixAll(par_A);
+   if (!seq_A)
+   {
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd("Failed to gather sequential CSR matrix for eigenspectrum");
+      return hypredrv_ErrorCodeGet();
+   }
 
    const int     n  = hypre_CSRMatrixNumRows(seq_A);
    const int    *di = hypre_CSRMatrixI(seq_A);
@@ -174,6 +180,7 @@ hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Requested dense allocation would overflow size_t for n=%d",
                            n);
+      hypre_CSRMatrixDestroy(seq_A);
       return hypredrv_ErrorCodeGet();
    }
    elems = (size_t)n * (size_t)n;
@@ -185,6 +192,7 @@ hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd("Failed to allocate %zu bytes for dense matrix",
                            elems * sizeof(double));
+      hypre_CSRMatrixDestroy(seq_A);
       return hypredrv_ErrorCodeGet();
    }
 
@@ -196,6 +204,9 @@ hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
          A_cm[i + dj[p] * n] = da[p];
       }
    }
+
+   /* Release the gathered sequential matrix; the caller only needs the dense copy. */
+   hypre_CSRMatrixDestroy(seq_A);
 
    *n_ptr    = n;
    *A_cm_ptr = A_cm;
@@ -472,6 +483,8 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
       return hypredrv_ErrorCodeGet();
    }
    MPI_Comm comm = hypre_IJMatrixComm((hypre_IJMatrix *)mat_A);
+   int      myid = 0;
+   MPI_Comm_rank(comm, &myid);
 
    /* Use "solve" timer bucket */
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
@@ -502,13 +515,9 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
    if (eargs->preconditioned)
    {
       HYPRE_BigInt   jlower, jupper;
-      HYPRE_IJVector e_i = NULL, t = NULL, col = NULL;
+      HYPRE_IJVector t = NULL, col = NULL;
 
       HYPRE_IJMatrixGetLocalRange(mat_A, &jlower, &jupper, &jlower, &jupper);
-      HYPRE_IJVectorCreate(comm, jlower, jupper, &e_i);
-      HYPRE_IJVectorSetObjectType(e_i, HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize_v2(e_i, HYPRE_MEMORY_HOST);
-      HYPRE_IJVectorAssemble(e_i);
       HYPRE_IJVectorCreate(comm, jlower, jupper, &t);
       HYPRE_IJVectorSetObjectType(t, HYPRE_PARCSR);
       HYPRE_IJVectorInitialize_v2(t, HYPRE_MEMORY_HOST);
@@ -518,8 +527,20 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
       HYPRE_IJVectorInitialize_v2(col, HYPRE_MEMORY_HOST);
       HYPRE_IJVectorAssemble(col);
 
-      double *B_cm  = (double *)calloc((size_t)n * (size_t)n, sizeof(double));
-      int     loc_n = (int)(jupper - jlower + 1);
+      double *B_cm = (double *)calloc((size_t)n * (size_t)n, sizeof(double));
+      if (!B_cm)
+      {
+         HYPRE_IJVectorDestroy(t);
+         HYPRE_IJVectorDestroy(col);
+         free(A_cm);
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate %zu bytes for preconditioned dense "
+                              "matrix",
+                              (size_t)n * (size_t)n * sizeof(double));
+         hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
+         return hypredrv_ErrorCodeGet();
+      }
+      int loc_n = (int)(jupper - jlower + 1);
       for (int i = 0; i < n; i++)
       {
          /* Set t to A(:,i) using A_cm and apply preconditioner solve: col = M^{-1} t */
@@ -549,10 +570,15 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
          }
       }
 
+      /* Each rank filled only the rows it owns (disjoint ranges), so a SUM reduction
+       * assembles the full preconditioned operator on every rank. Without this, each
+       * rank would run LAPACK on a matrix whose non-local rows are zero, producing
+       * silently wrong eigenvalues in parallel. */
+      MPI_Allreduce(MPI_IN_PLACE, B_cm, n * n, MPI_DOUBLE, MPI_SUM, comm);
+
       free(A_cm);
       A_cm = B_cm;
 
-      HYPRE_IJVectorDestroy(e_i);
       HYPRE_IJVectorDestroy(t);
       HYPRE_IJVectorDestroy(col);
    }
@@ -562,7 +588,7 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
       double *w    = NULL; /* eigenvalues */
       double *Z_cm = NULL; /* eigenvectors in column-major (returned in A_cm) */
       hypredrv_EigSpecComputeSymmetric(n, A_cm, eargs->vectors, &w, &Z_cm);
-      if (!hypredrv_ErrorCodeActive())
+      if (!hypredrv_ErrorCodeActive() && myid == 0)
       {
          const char *prefix = eargs->output_prefix[0] ? eargs->output_prefix : "eig";
          hypredrv_WriteValuesASCII(prefix, n, w, NULL);
@@ -580,7 +606,7 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
       double *wi    = NULL; /* imaginary parts */
       double *VR_cm = NULL; /* right eigenvectors in column-major */
       hypredrv_EigSpecComputeGeneral(n, A_cm, eargs->vectors, &wr, &wi, &VR_cm);
-      if (!hypredrv_ErrorCodeActive())
+      if (!hypredrv_ErrorCodeActive() && myid == 0)
       {
          const char *prefix = eargs->output_prefix[0] ? eargs->output_prefix : "eig";
          hypredrv_WriteValuesASCII(prefix, n, wr, wi);

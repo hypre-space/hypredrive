@@ -234,8 +234,9 @@ main(int argc, char **argv)
          HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetNumRepetitions(obj, &num_reps));
          for (int i = 0; i < num_reps; i++)
          {
-            /* (Optional) Annotate the entire solve iteration */
-            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(obj, "Run-%d", i));
+            /* (Optional) Annotate the entire solve iteration. The id is appended by
+             * the annotation API, so the name is a plain literal (not a format). */
+            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(obj, "Run", i));
 
             /* Reset initial guess */
             HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(obj));
@@ -255,7 +256,7 @@ main(int argc, char **argv)
             HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(obj));
 
             /* (Optional) Annotate the entire solve iteration */
-            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(obj, "Run-%d", i));
+            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(obj, "Run", i));
          }
       }
    }

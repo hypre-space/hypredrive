@@ -462,6 +462,13 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
    num_entries = (HYPRE_Int)(jupper - jlower + 1);
    values      = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
+   if (!values)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate near-null-space read buffer (%d entries)",
+                           (int)num_entries);
+      return;
+   }
 
    /* Reset any previous RBMs */
    for (HYPRE_Int i = 0; i < args->num_rbms; i++)

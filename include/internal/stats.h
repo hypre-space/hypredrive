@@ -144,8 +144,9 @@ typedef struct Stats_struct
    char   object_name[MAX_FILENAME_LENGTH];
 
    /* Per-level statistics (stats computed on-demand from solve index range) */
-   int         level_count[STATS_MAX_LEVELS];   /* Number of entries per level */
-   LevelEntry *level_entries[STATS_MAX_LEVELS]; /* Array of entries per level */
+   int         level_count[STATS_MAX_LEVELS];    /* Number of entries per level */
+   int         level_capacity[STATS_MAX_LEVELS]; /* Allocated entries per level */
+   LevelEntry *level_entries[STATS_MAX_LEVELS];  /* Array of entries per level */
 
    /* Current state per level */
    int level_active;                        /* Bitmask: which levels are active */

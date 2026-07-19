@@ -1919,8 +1919,14 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
 
-   /* Get the hostname for this process */
-   gethostname(hostname, sizeof(hostname));
+   /* Get the hostname for this process. POSIX may leave the buffer unterminated if
+    * the hostname is too long, so zero-fill and force a terminator. */
+   memset(hostname, 0, sizeof(hostname));
+   if (gethostname(hostname, sizeof(hostname)) != 0)
+   {
+      hostname[0] = '\0';
+   }
+   hostname[sizeof(hostname) - 1] = '\0';
 
    /* Gather hostnames on all ranks (needed for unique counts, avoids huge stack VLAs) */
    char *allHostnames = NULL;
@@ -1957,8 +1963,8 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
       // 1. CPU cores and model
       int  numPhysicalCPUs = 0;
       int  numCPUs         = 0;
-      char cpuModels[8][256];
-      char gpuInfo[256] = "Unknown";
+      char cpuModels[8][256] = {{0}};
+      char gpuInfo[256]      = "Unknown";
 
       /* Count unique hostnames */
       int numNodes = 0;
@@ -1987,7 +1993,9 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
       msize = sizeof(numPhysicalCPUs);
       sysctlbyname("hw.packages", &numPhysicalCPUs, &msize, NULL, 0);
 
-      for (int i = 0; i < numPhysicalCPUs; i++)
+      /* Clamp to the fixed cpuModels capacity to avoid a stack overflow when the
+       * system reports more than 8 packages. */
+      for (int i = 0; i < numPhysicalCPUs && i < 8; i++)
       {
          msize = sizeof(cpuModels[i]);
          sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &msize, NULL, 0);
@@ -2001,7 +2009,12 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
          {
             if (strncmp(buffer, "physical id", 11) == 0)
             {
-               int physicalID = atoi(strchr(buffer, ':') + 2);
+               const char *colon = strchr(buffer, ':');
+               if (!colon)
+               {
+                  continue;
+               }
+               int physicalID = atoi(colon + 1);
                if (physicalID >= 0 && physicalID < 8)
                {
                   unsigned long long mask = 1ULL << (unsigned)physicalID;
@@ -2018,7 +2031,16 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
                int physicalID = numPhysicalCPUs - 1;
                if (physicalID >= 0 && physicalID < 8)
                {
-                  const char *model = strchr(buffer, ':') + 2;
+                  const char *colon = strchr(buffer, ':');
+                  if (!colon)
+                  {
+                     continue;
+                  }
+                  const char *model = colon + 1;
+                  while (*model == ' ')
+                  {
+                     model++;
+                  }
                   strncpy(cpuModels[physicalID], model,
                           sizeof(cpuModels[physicalID]) - 1);
                   cpuModels[physicalID][sizeof(cpuModels[physicalID]) - 1] = '\0';
@@ -2817,7 +2839,12 @@ PrintCpuTopologyInfo(MPI_Comm comm)
 
    // Gather hostnames for multi-node information
    char hostname[HYPRE_MAX_HOSTNAME];
-   gethostname(hostname, sizeof(hostname));
+   memset(hostname, 0, sizeof(hostname));
+   if (gethostname(hostname, sizeof(hostname)) != 0)
+   {
+      hostname[0] = '\0';
+   }
+   hostname[sizeof(hostname) - 1] = '\0';
    char *allHostnames = NULL;
    if (nprocs > 0)
    {
@@ -3299,7 +3326,7 @@ PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count)
       unsigned long long total_mem = numa->attr->numanode.local_memory;
       int                pu_count  = hwloc_bitmap_weight(numa->cpuset);
 
-      printf("NUMA node %d\n", numa->os_index);
+      printf("NUMA node %u\n", numa->os_index);
       printf("  CPUs                 : %s (%d PUs)\n", cpuset_str, pu_count);
       printf("  Memory (GiB)         : %.2f\n", total_mem / bytes_to_gib);
 
@@ -3534,8 +3561,19 @@ static void
 PrintTopologyTreeCompact(hwloc_obj_t obj, int depth)
 {
    char indent[32];
-   memset(indent, ' ', depth * 2);
-   indent[depth * 2] = '\0';
+   /* Clamp the indent width to the buffer size; deep or synthetic hwloc topologies
+    * can exceed depth 15 and would otherwise overflow this stack buffer. */
+   int indent_len = depth * 2;
+   if (indent_len < 0)
+   {
+      indent_len = 0;
+   }
+   if (indent_len > (int)sizeof(indent) - 1)
+   {
+      indent_len = (int)sizeof(indent) - 1;
+   }
+   memset(indent, ' ', (size_t)indent_len);
+   indent[indent_len] = '\0';
 
    char type_str[32];
    hwloc_obj_type_snprintf(type_str, sizeof(type_str), obj, 1);
@@ -3841,17 +3879,34 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
    {
       gpuBindingAll = (char *)malloc((size_t)nprocs * HYPRE_MAX_GPU_BINDING);
    }
-   MPI_Gather(gpuBindingLocal, HYPRE_MAX_GPU_BINDING, MPI_CHAR, gpuBindingAll,
-              HYPRE_MAX_GPU_BINDING, MPI_CHAR, 0, comm);
+   /* Ensure the root receive buffer allocation succeeded on all ranks before the
+    * collective; passing a NULL recvbuf on the root is erroneous per the MPI
+    * standard. */
+   int gpu_gather_ok = (myid || gpuBindingAll) ? 1 : 0;
+   MPI_Allreduce(MPI_IN_PLACE, &gpu_gather_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (gpu_gather_ok)
+   {
+      MPI_Gather(gpuBindingLocal, HYPRE_MAX_GPU_BINDING, MPI_CHAR, gpuBindingAll,
+                 HYPRE_MAX_GPU_BINDING, MPI_CHAR, 0, comm);
+   }
+   else
+   {
+      free(gpuBindingAll);
+      gpuBindingAll = NULL;
+   }
 
    if (!myid)
    {
       printf("================================ System Information (hwloc) "
              "================================\n\n");
+   }
 
-      // 1. CPU Topology (includes multi-node summary and detailed info)
-      PrintCpuTopologyInfo(comm);
+   /* CPU Topology performs MPI collectives (Allreduce/Allgather) and must be
+    * entered by every rank; it prints on rank 0 internally. */
+   PrintCpuTopologyInfo(comm);
 
+   if (!myid)
+   {
       // 3. GPU Information
       PrintGpuInfo(gpus, gpu_count);
 
@@ -3884,10 +3939,14 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
 
       // 9. Process Binding
       PrintProcessBinding();
+   }
 
-      // 10. Thread Affinity (if OpenMP is enabled)
-      PrintThreadAffinity(comm, gpus, gpu_count);
+   /* Thread Affinity uses MPI_Barrier and reports per-rank data, so every rank
+    * must enter it; it gates its banner on rank 0 internally. */
+   PrintThreadAffinity(comm, gpus, gpu_count);
 
+   if (!myid)
+   {
       // 11. Topology Tree
       PrintTopologyTree();
 

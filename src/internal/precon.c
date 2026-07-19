@@ -450,6 +450,25 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
          return;
    }
 
+   /* If a sub-create failed, do not publish a half-built wrapper whose main handle
+    * is NULL: a later PreconSetup/PreconApply would otherwise pass NULL straight
+    * into hypre and crash. A NULL main for any method other than PRECON_NONE is the
+    * reliable failure signal here (the process-global error state is sticky and may
+    * reflect an unrelated earlier failure, so it must not be used for this check). */
+   if (precon_method != PRECON_NONE && !precon->main)
+   {
+      if (!hypredrv_ErrorCodeActive())
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("Preconditioner creation failed (method=%d)",
+                              (int)precon_method);
+      }
+      hypredrv_PreconArgsDestroyRuntimeState(precon_method, args);
+      free(precon);
+      *precon_ptr = NULL;
+      return;
+   }
+
    *precon_ptr = precon;
 }
 
@@ -546,7 +565,7 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
       return;
    }
 
-   if (!precon)
+   if (!precon || !precon->main)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
       hypredrv_ErrorMsgAdd("Preconditioner setup requested with null preconditioner");
@@ -668,7 +687,19 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    void              *vA = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
-   HYPRE_Solver       prec = precon->main;
+
+   if (precon_method == PRECON_NONE)
+   {
+      return;
+   }
+   if (!precon || !precon->main)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Preconditioner apply requested with null preconditioner");
+      return;
+   }
+
+   HYPRE_Solver prec = precon->main;
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;
@@ -831,7 +862,10 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
       return;
    }
 
-   if (precon->main)
+   /* Enter the dispatch when a main handle exists, and also for MGR even without a
+    * main handle: PreconDestroyMGRSolver cleans up component solvers cached before
+    * an outer-MGR create failure, which would otherwise leak. */
+   if (precon->main || precon_method == PRECON_MGR)
    {
       switch (precon_method)
       {

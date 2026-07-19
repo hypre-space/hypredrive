@@ -62,6 +62,12 @@ extern "C"
    /**
     * @defgroup HYPREDRV HYPREDRV Public API
     * @brief Public APIs to solve linear systems with hypre through hypredrive.
+    *
+    * @note Thread safety: HYPREDRV keeps process-global state (an error state, a
+    * live-object registry, logging configuration, and a user-preset registry) that
+    * is not internally synchronized. All HYPREDRV_* calls, including operations on
+    * distinct HYPREDRV_t objects, must be made from a single thread or serialized
+    * externally by the caller.
     * @{
     **/
 
@@ -164,6 +170,23 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL void HYPREDRV_ErrorCodeDescribe(uint32_t error_code);
 
    /**
+    * @brief Clear the process-global HYPREDRV error state.
+    *
+    * HYPREDRV accumulates error codes and messages in a process-global, sticky
+    * state that most API calls return via HYPREDRV_ErrorCodeGet(). Because the
+    * state is sticky, a failure left unhandled by one call can be observed as a
+    * (spurious) non-zero return by a later, otherwise-successful call, and
+    * failures are shared across all HYPREDRV_t objects in the process. This
+    * routine resets both the accumulated error code and the queued messages so a
+    * consumer can recover after inspecting/handling an error, without needing the
+    * internal error headers.
+    *
+    * @note Thread safety: the error state is process-global and not thread-safe;
+    * call this from a single thread or provide external synchronization.
+    */
+   HYPREDRV_EXPORT_SYMBOL void HYPREDRV_ErrorCodeClear(void);
+
+   /**
     * @brief Record and return an invalid-value error with optional context.
     *
     * This helper is intended for thin language-interface shims that validate
@@ -224,7 +247,7 @@ extern "C"
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_t *hypredrv;
+    *    HYPREDRV_t hypredrv = NULL;
     *    MPI_Comm comm = MPI_COMM_WORLD; // or any other valid MPI_Comm
     *    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
     * @endcode

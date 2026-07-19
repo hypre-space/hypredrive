@@ -471,6 +471,13 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
          return;
    }
 
+   /* Do not proceed to SetPrecond with a NULL base solver: a failed create would
+    * otherwise pass NULL into hypre's SetPrecond. */
+   if (hypredrv_ErrorCodeActive() || !base_solver)
+   {
+      return;
+   }
+
    /* Attach preconditioner to the solver object */
    if (args->has_precon)
    {
@@ -478,6 +485,9 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
                              args->precon_obj);                /* GCOVR_EXCL_BR_LINE */
       if (hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */ /* SetPrecond error path */
       {
+         /* Reclaim the base solver we just created so it does not leak (args->base_solver
+          * is not set on this path, so destroy it directly). */
+         NestedKrylovBaseSolverDestroy(args->solver_method, base_solver);
          return;
       }
    }
@@ -608,7 +618,11 @@ hypredrv_NestedKrylovDestroy(NestedKrylov_args *args)
 
    if (args->precon_obj)
    {
-      args->precon_obj->is_setup = 1;
+      /* Pass the preconditioner's real setup state. Forcing is_setup=1 here made
+       * PreconDestroy take the "was setup" branch even when the nested (e.g. MGR)
+       * preconditioner was created but never set up, which skips reclamation of
+       * still-hypredrive-owned detached component handles and leaks them. When the
+       * precon truly was set up, is_setup is already 1, so behavior is unchanged. */
       hypredrv_PreconDestroy(args->precon_method, &args->precon, &args->precon_obj, NULL,
                              0);
       args->precon_obj = NULL;

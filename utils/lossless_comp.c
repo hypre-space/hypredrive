@@ -35,6 +35,12 @@
       }                                                                            \
    } while (0)
 
+/* Upper bound on a decompressed payload declared in a file header, guarding
+ * against decompression-bomb allocations (mirrors src/internal/comp.c). */
+#ifndef HYPREDRV_MAX_DECOMPRESSED_BYTES
+#define HYPREDRV_MAX_DECOMPRESSED_BYTES ((size_t)16ULL * 1024ULL * 1024ULL * 1024ULL)
+#endif
+
 /*-----------------------------------------------------------------------------
  * comp_alg_t: enum to identify the compression algorithm
  *-----------------------------------------------------------------------------*/
@@ -189,19 +195,39 @@ lossless_decompress(comp_alg_t  algo,
                     void      **output_ptr)
 {
    size_t  header_size = sizeof(size_t);
-   size_t  orig_size = *(size_t *)input;
+   size_t  orig_size;
+
+   *output_ptr = NULL;
+   *osize_ptr  = 0;
+
+   /* COMP_NONE stores raw bytes with no size header. */
+   if (algo == COMP_NONE)
+   {
+      *osize_ptr = isize;
+      MALLOC_AND_CHECK(*output_ptr, isize);
+      memcpy(*output_ptr, input, isize);
+      return;
+   }
+
+   /* All compressed formats prefix the payload with an 8-byte original size. */
+   if (isize < header_size)
+   {
+      fprintf(stderr, "Compressed input too small to contain a size header\n");
+      return;
+   }
+   memcpy(&orig_size, input, sizeof(orig_size));
+   if (orig_size > HYPREDRV_MAX_DECOMPRESSED_BYTES)
+   {
+      fprintf(stderr,
+              "Declared decompressed size (%zu bytes) exceeds the maximum allowed\n",
+              orig_size);
+      return;
+   }
 
    MALLOC_AND_CHECK(*output_ptr, orig_size);
 
    switch (algo)
    {
-      case COMP_NONE:
-      {
-         *osize_ptr = isize;
-         MALLOC_AND_CHECK(*output_ptr, isize);
-         memcpy(*output_ptr, input, isize);
-         return;
-      }
       case COMP_ZLIB:
       {
          int ierr = uncompress((unsigned char *)(*output_ptr), &orig_size,
@@ -257,6 +283,7 @@ lossless_decompress(comp_alg_t  algo,
       default:
       {
          fprintf(stderr, "Unknown or unsupported decompression algorithm: %d", algo);
+         free(*output_ptr); *output_ptr = NULL;
          return;
       }
    }

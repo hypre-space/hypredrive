@@ -242,6 +242,12 @@ HYPREDRV_MatlabConvertCscToCsr(const mxArray *A, HYPRE_BigInt **indptr_out,
    const double  *values = mxGetPr(A);
    mwSize         nnz    = jc[n];
 
+   /* Validate that the dimensions and non-zero count fit in HYPRE_BigInt before any
+    * counting/indexing: with a 32-bit HYPRE_BigInt build and nnz > INT32_MAX the
+    * running index computations below would overflow and write out of bounds. */
+   (void)HYPREDRV_MatlabBigIntFromMwSize(n, "row count");
+   (void)HYPREDRV_MatlabBigIntFromMwSize(nnz, "nnz");
+
    HYPRE_BigInt *indptr = (HYPRE_BigInt *)mxCalloc((size_t)n + 1, sizeof(HYPRE_BigInt));
    HYPRE_BigInt *cols =
       (HYPRE_BigInt *)mxCalloc((size_t)(nnz > 0 ? nnz : 1), sizeof(HYPRE_BigInt));

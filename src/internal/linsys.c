@@ -246,6 +246,14 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
       {
          zeros = (HYPRE_Complex *)calloc((size_t)num_entries, sizeof(HYPRE_Complex));
       }
+      if (!indices || (values == NULL && !zeros))
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate near-null-space index/value buffers");
+         free(indices);
+         free(zeros);
+         return;
+      }
       for (int i = 0; i < num_entries; i++)
       {
          indices[i] = jlower + (HYPRE_BigInt)i;
@@ -445,6 +453,22 @@ hypredrv_LinearSystemProjectOutNullSpace(HYPRE_IJVector vec_ns, int num_ns,
    indices    = (HYPRE_BigInt *)malloc((size_t)num_entries * sizeof(HYPRE_BigInt));
    dots_local = (double *)calloc((size_t)num_ns, sizeof(double));
    dots       = (double *)calloc((size_t)num_ns, sizeof(double));
+
+   /* Allocation must be agreed collectively: this routine performs an MPI_Allreduce
+    * below, so a per-rank early return on failure would deadlock the others. */
+   int alloc_ok = (xbuf && zbuf && indices && dots_local && dots) ? 1 : 0;
+   MPI_Allreduce(MPI_IN_PLACE, &alloc_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!alloc_ok)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate null-space projection buffers");
+      free(xbuf);
+      free(zbuf);
+      free(indices);
+      free(dots_local);
+      free(dots);
+      return;
+   }
    for (int i = 0; i < num_entries; i++)
    {
       indices[i] = jlower + (HYPRE_BigInt)i;
@@ -1455,11 +1479,20 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
    HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location);
 
    HYPRE_BigInt local_size = iupper - ilower + 1;
-   if (local_size > (HYPRE_BigInt)INT_MAX)
+   /* Decide the overflow condition collectively: a per-rank early return here would
+    * leave peers blocked in the MPI_Gather/MPI_Scatterv collectives below. */
+   int local_overflow  = (local_size > (HYPRE_BigInt)INT_MAX) ? 1 : 0;
+   int global_overflow = local_overflow;
+   MPI_Allreduce(&local_overflow, &global_overflow, 1, MPI_INT, MPI_MAX, comm);
+   if (global_overflow)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Local RHS size (%lld) exceeds MPI int range",
+      hypredrv_ErrorMsgAdd("Local RHS size (%lld) exceeds MPI int range on some rank",
                            (long long)local_size);
+      if (myid == 0 && all_values)
+      {
+         hypre_TFree(all_values, HYPRE_MEMORY_HOST);
+      }
       return 0;
    }
    int my_local_size =
@@ -1485,8 +1518,10 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
    }
 
    local_values = hypre_TAlloc(HYPRE_Complex, local_size, HYPRE_MEMORY_HOST);
-   MPI_Scatterv(all_values, counts, displs, MPI_DOUBLE, local_values, my_local_size,
-                MPI_DOUBLE, 0, comm);
+   /* Use the MPI datatype that matches HYPRE_Complex; hard-coding MPI_DOUBLE would
+    * corrupt data on single-precision or complex hypre builds. */
+   MPI_Scatterv(all_values, counts, displs, HYPRE_MPI_COMPLEX, local_values,
+                my_local_size, HYPRE_MPI_COMPLEX, 0, comm);
 
    HYPRE_Int local_size_hypre =
       (HYPRE_Int)local_size; /* NOLINT(cppcoreguidelines-narrowing-conversions) */

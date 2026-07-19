@@ -91,8 +91,18 @@ hypredrv_RuntimeInitialize(void)
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 16)
       const char *env_log_level = getenv("HYPRE_LOG_LEVEL");
-      HYPRE_Int   log_level =
-         (env_log_level) ? (HYPRE_Int)strtol(env_log_level, NULL, 10) : 0;
+      HYPRE_Int   log_level     = 0;
+      if (env_log_level)
+      {
+         char *end = NULL;
+         long  v   = strtol(env_log_level, &end, 10);
+         /* Validate and clamp: ignore garbage and out-of-range values rather than
+          * forwarding them verbatim to hypre. */
+         if (end != env_log_level && *end == '\0' && v >= 0 && v <= 4)
+         {
+            log_level = (HYPRE_Int)v;
+         }
+      }
 
       HYPRE_SetLogLevel(log_level);
       HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, NULL, 0,

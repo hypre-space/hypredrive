@@ -516,8 +516,18 @@ hypredrv_YAMLtreeCreate(int base_indent)
 {
    YAMLtree *tree = NULL;
 
-   tree               = malloc(sizeof(YAMLtree));
-   tree->root         = hypredrv_YAMLnodeCreate("", "", -1);
+   tree = malloc(sizeof(YAMLtree));
+   if (!tree)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      return NULL;
+   }
+   tree->root = hypredrv_YAMLnodeCreate("", "", -1);
+   if (!tree->root)
+   {
+      free(tree);
+      return NULL;
+   }
    tree->base_indent  = base_indent;
    tree->is_validated = false; // Initialize validation flag
 
@@ -1509,9 +1519,17 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
          /* GCOVR_EXCL_BR_START */
          if (child->val && strlen(child->val) > 0) /* GCOVR_EXCL_BR_STOP */
          {
-            paths    = (char **)malloc(sizeof(char *));
-            paths[0] = strdup(child->val);
-            n_paths  = 1;
+            paths = (char **)malloc(sizeof(char *));
+            /* GCOVR_EXCL_BR_START */
+            if (!paths || !(paths[0] = strdup(child->val)))
+            /* GCOVR_EXCL_BR_STOP */
+            {
+               free(paths);
+               hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+               hypredrv_ErrorMsgAdd("Failed to allocate memory for include paths");
+               return;
+            }
+            n_paths = 1;
          }
 
          YAML_NODE_ITERATE(child, inc_item)
@@ -2046,9 +2064,14 @@ hypredrv_YAMLnodeCreate(const char *key, const char *val, int level)
 {
    YAMLnode *node = NULL;
 
-   node             = (YAMLnode *)malloc(sizeof(YAMLnode));
+   node = (YAMLnode *)malloc(sizeof(YAMLnode));
+   if (!node)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      return NULL;
+   }
    node->level      = level;
-   node->key        = hypredrv_StrTrim(strdup((char *)key));
+   node->key        = hypredrv_StrTrim(strdup(key ? key : ""));
    node->mapped_val = NULL;
    node->avail_vals = STR_INT_MAP_ARRAY_VOID();
    node->avail_keys = STR_ARRAY_VOID();
@@ -2059,22 +2082,36 @@ hypredrv_YAMLnodeCreate(const char *key, const char *val, int level)
 
    /* If the key contains "name", "node->val" will be the same as "val".
       Otherwise, "node->val" will be set as "val" with all lowercase letters */
-   if (strstr(key, "name"))
+   if (key && strstr(key, "name"))
    {
-      node->val = hypredrv_StrTrim(strdup((char *)val));
+      node->val = hypredrv_StrTrim(strdup(val ? val : ""));
    }
    else
    {
-      node->val = hypredrv_StrToLowerCase(hypredrv_StrTrim(strdup((char *)val)));
+      node->val = hypredrv_StrToLowerCase(hypredrv_StrTrim(strdup(val ? val : "")));
       /* Strip surrounding double quotes if present */
-      size_t len = strlen(node->val);
       /* GCOVR_EXCL_BR_START */
-      if (len >= 2 && node->val[0] == '\"' && node->val[len - 1] == '\"')
-      /* GCOVR_EXCL_BR_STOP */
+      if (node->val) /* GCOVR_EXCL_BR_STOP */
       {
-         node->val[len - 1] = '\0';
-         memmove(node->val, node->val + 1, len - 1);
+         size_t len = strlen(node->val);
+         /* GCOVR_EXCL_BR_START */
+         if (len >= 2 && node->val[0] == '\"' && node->val[len - 1] == '\"')
+         /* GCOVR_EXCL_BR_STOP */
+         {
+            node->val[len - 1] = '\0';
+            memmove(node->val, node->val + 1, len - 1);
+         }
       }
+   }
+
+   /* Propagate allocation failure of the key/val strings. */
+   if (!node->key || !node->val)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      free(node->key);
+      free(node->val);
+      free(node);
+      return NULL;
    }
 
    return node;

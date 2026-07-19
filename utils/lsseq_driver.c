@@ -1416,6 +1416,15 @@ ReadMatrixPart(const char *prefix, int part_id, MatrixPartRaw *raw)
    row_bytes = (size_t)raw->row_index_size;
    val_bytes = (size_t)raw->value_size;
 
+   /* Validate on-disk index/value widths and guard the allocation-size products
+    * against overflow before trusting the header-declared nnz. */
+   if ((row_bytes != 4 && row_bytes != 8) || (val_bytes != 4 && val_bytes != 8) ||
+       (nnz != 0 && (nnz > SIZE_MAX / row_bytes || nnz > SIZE_MAX / val_bytes)))
+   {
+      fclose(fp);
+      return 0;
+   }
+
    if (nnz > 0)
    {
       raw->rows = malloc(nnz * row_bytes);
@@ -1477,6 +1486,16 @@ ReadRHSPart(const char *prefix, int part_id, RHSPartRaw *raw)
 
    raw->value_size = header[1];
    raw->nrows      = header[5];
+
+   {
+      size_t vb = (size_t)raw->value_size;
+      if ((vb != 4 && vb != 8) ||
+          (raw->nrows != 0 && (size_t)raw->nrows > SIZE_MAX / vb))
+      {
+         fclose(fp);
+         return 0;
+      }
+   }
 
    if (raw->nrows > 0)
    {
@@ -3111,7 +3130,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
       {
          fprintf(stderr, "Could not load sequence file '%s'\n", args->input_filename);
       }
-      return EXIT_FAILURE;
+      MPI_Abort(comm, EXIT_FAILURE);
    }
 
    if (!EnsureDirectoryExists(args->output_dir))
@@ -3121,7 +3140,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
          fprintf(stderr, "Could not create output directory '%s'\n", args->output_dir);
       }
       SeqPackedDataDestroy(&seq);
-      return EXIT_FAILURE;
+      MPI_Abort(comm, EXIT_FAILURE);
    }
 
    snprintf(matrix_filename, sizeof(matrix_filename), "IJ.out.A");
@@ -3194,7 +3213,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
          {
             fprintf(stderr, "Could not create system directory '%s'\n", dirpath);
             SeqPackedDataDestroy(&seq);
-            return EXIT_FAILURE;
+            MPI_Abort(comm, EXIT_FAILURE);
          }
       }
       if ((seq.header.flags & LSSEQ_FLAG_HAS_TIMESTEPS) && seq.header.num_timesteps > 0)
@@ -3209,7 +3228,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
          {
             fprintf(stderr, "Could not write timesteps file '%s'\n", tfile);
             SeqPackedDataDestroy(&seq);
-            return EXIT_FAILURE;
+            MPI_Abort(comm, EXIT_FAILURE);
          }
       }
    }
@@ -3219,7 +3238,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
    if (!fp)
    {
       SeqPackedDataDestroy(&seq);
-      return EXIT_FAILURE;
+      MPI_Abort(comm, EXIT_FAILURE);
    }
 
    for (uint32_t p = 0; p < seq.header.num_parts; p++)
@@ -3270,14 +3289,14 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
          {
             fclose(fp);
             SeqPackedDataDestroy(&seq);
-            return EXIT_FAILURE;
+            MPI_Abort(comm, EXIT_FAILURE);
          }
          pat = &seq.patterns[sp->pattern_id];
          if (pat->part_id != part_id)
          {
             fclose(fp);
             SeqPackedDataDestroy(&seq);
-            return EXIT_FAILURE;
+            MPI_Abort(comm, EXIT_FAILURE);
          }
 
          if (!DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->rows_blob_offset, pat->rows_blob_size,
@@ -3294,7 +3313,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
             free(rows); free(cols); free(vals); free(rhs); free(dof);
             fclose(fp);
             SeqPackedDataDestroy(&seq);
-            return EXIT_FAILURE;
+            MPI_Abort(comm, EXIT_FAILURE);
          }
 
          {
@@ -3306,7 +3325,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                free(rows); free(cols); free(vals); free(rhs); free(dof);
                fclose(fp);
                SeqPackedDataDestroy(&seq);
-               return EXIT_FAILURE;
+               MPI_Abort(comm, EXIT_FAILURE);
             }
          }
          if ((args->format == UNPACK_FORMAT_MATRIX_MARKET &&
@@ -3320,7 +3339,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
             free(rows); free(cols); free(vals); free(rhs); free(dof);
             fclose(fp);
             SeqPackedDataDestroy(&seq);
-            return EXIT_FAILURE;
+            MPI_Abort(comm, EXIT_FAILURE);
          }
 
          if ((seq.header.flags & LSSEQ_FLAG_HAS_DOFMAP) && dofmap_filename[0] != '\0')
@@ -3333,7 +3352,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                free(rows); free(cols); free(vals); free(rhs); free(dof);
                fclose(fp);
                SeqPackedDataDestroy(&seq);
-               return EXIT_FAILURE;
+               MPI_Abort(comm, EXIT_FAILURE);
             }
             {
                if (!FormatOutputPartFilename(dfile, sizeof(dfile), system_dir, dofmap_filename,
@@ -3342,7 +3361,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                   free(rows); free(cols); free(vals); free(rhs); free(dof);
                   fclose(fp);
                   SeqPackedDataDestroy(&seq);
-                  return EXIT_FAILURE;
+                  MPI_Abort(comm, EXIT_FAILURE);
                }
             }
             if ((args->format == UNPACK_FORMAT_MATRIX_MARKET &&
@@ -3354,7 +3373,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                free(rows); free(cols); free(vals); free(rhs); free(dof);
                fclose(fp);
                SeqPackedDataDestroy(&seq);
-               return EXIT_FAILURE;
+               MPI_Abort(comm, EXIT_FAILURE);
             }
          }
 
