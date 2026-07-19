@@ -68,10 +68,16 @@ fi
 # LC_ALL=C keeps the sort byte-ordered and locale-independent, so the output order
 # remains stable regardless of the caller's locale (e.g. en_US.UTF-8 orders
 # mixed-case names differently).
+#
+# The final grep drops names that are not part of the bindable API surface:
+#   - SAFE_CALL / SAFE_CALL_COMM: abort-on-error convenience macros.
+#   - SafeCallHandleError: the exported helper those macros expand to (plumbing,
+#     not a HYPREDRV_t operation that language bindings need to wrap).
+#   - operation: an artifact of the phrase "some_HYPREDRV_operation()" in comments.
 APIS=$(grep -v -E '^[[:space:]]*#' "$HEADER" \
   | grep -oE 'HYPREDRV_[A-Za-z0-9_]+ *\(' \
   | sed 's/ *($//' \
-  | grep -v -E '^HYPREDRV_(SAFE_CALL|operation)$' \
+  | grep -v -E '^HYPREDRV_(SAFE_CALL|SAFE_CALL_COMM|SafeCallHandleError|operation)$' \
   | LC_ALL=C sort -u)
 
 if [[ $CHECK_MODE -eq 1 ]]; then
