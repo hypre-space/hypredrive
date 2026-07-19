@@ -79,6 +79,10 @@ class Grid:
 def parse_args(comm: MPI.Comm):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-i", "--input", help="YAML solver options")
+    parser.add_argument("-a", "--args", dest="input_args", nargs=argparse.REMAINDER,
+                        default=None, metavar="KEY VALUE",
+                        help="hypredrive YAML overrides, e.g. "
+                             "-a --solver:pcg:max_iter 100 (must come last)")
     parser.add_argument("-n", nargs=3, type=int, default=(10, 10, 10),
                         metavar=("NX", "NY", "NZ"))
     parser.add_argument("-P", nargs=3, type=int, default=(1, 1, 1),
@@ -313,7 +317,8 @@ def main() -> None:
     indptr, cols, data, rhs = build_csr(grid, args.stencil, tuple(args.c), tuple(args.c2))
     options = args.input if args.input else default_options()
 
-    with hd.HypreDrive(options=options, comm=grid.comm) as drv:
+    with hd.HypreDrive(options=options, comm=grid.comm,
+                       input_args=args.input_args) as drv:
         drv.set_matrix_from_csr(indptr, cols, data,
                                 row_start=grid.row_start, row_end=grid.row_end)
         drv.set_rhs(rhs)

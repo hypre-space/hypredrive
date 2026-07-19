@@ -121,6 +121,8 @@ typedef struct
    HYPRE_Real   max_cfl;     /* Maximum CFL for adaptive time stepping (0=no limit) */
    NewtonParams newton;
    char        *yaml_file;
+   HYPRE_Int    hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
+   char       **hypredrv_argv; /* Hypredrive override args, starting at -a */
 } HeatParams;
 
 /*--------------------------------------------------------------------------
@@ -241,6 +243,9 @@ PrintUsage(void)
       "Usage: ${MPIEXEC_COMMAND} ${MPIEXEC_NUMPROC_FLAG} <np> ./heatflow [options]\n\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file for solver settings\n");
+   printf("  -a|--args ...     : Hypredrive YAML overrides, e.g. -a "
+          "--solver:gmres:max_iter 100\n");
+   printf("                      (requires -i; must come last)\n");
    printf("  -n <nx> <ny> <nz> : Global grid nodes (default: 17 17 17)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid (default: 1 1 1)\n");
    printf("  -L <Lx> <Ly> <Lz> : Domain lengths (default: 1 1 1)\n");
@@ -304,12 +309,20 @@ ParseArguments(int argc, char *argv[], HeatParams *p, int myid, int nprocs)
    p->newton.ls_min     = 1e-2;
    p->newton.ls_max     = 1.0;
    p->yaml_file         = NULL;
+   p->hypredrv_argc     = 0;
+   p->hypredrv_argv     = NULL;
 
    for (int i = 1; i < argc; i++)
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
          if (++i < argc) p->yaml_file = argv[i];
+      }
+      else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
+      {
+         p->hypredrv_argc = argc - i;
+         p->hypredrv_argv = argv + i;
+         break;
       }
       else if (!strcmp(argv[i], "-n"))
       {
@@ -403,6 +416,12 @@ ParseArguments(int argc, char *argv[], HeatParams *p, int myid, int nprocs)
          if (!myid) PrintUsage();
          return 2;
       }
+   }
+
+   if (p->hypredrv_argc && !p->yaml_file)
+   {
+      if (!myid) printf("Error: -a/--args requires a YAML configuration file (-i)\n");
+      return 1;
    }
 
    if (p->P[0] * p->P[1] * p->P[2] != nprocs)
@@ -2687,8 +2706,14 @@ main(int argc, char *argv[])
    /* Configure solver using YAML input or default presets */
    if (params.yaml_file)
    {
-      char *args[2] = {params.yaml_file, NULL};
-      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
+      HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc;
+      char     *hypredrv_argv[hypredrv_argc];
+      hypredrv_argv[0] = params.yaml_file;
+      for (HYPRE_Int k = 0; k < params.hypredrv_argc; k++)
+      {
+         hypredrv_argv[k + 1] = params.hypredrv_argv[k];
+      }
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
    }
    else
    {

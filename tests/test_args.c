@@ -1030,6 +1030,24 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
 }
 
 static void
+test_YAMLtreeUpdate_override_value_with_yaml_suffix(void)
+{
+   /* An override value that looks like a YAML filename must not be
+      rediscovered as the configuration file when argv[0] is inline YAML. */
+   const char yaml_text[] = "solver: pcg\n"
+                            "preconditioner: amg\n";
+
+   char *overrides[] = {"--general:name", "run.yml"};
+
+   input_args *args = parse_config_with_overrides(yaml_text, 2, overrides);
+   ASSERT_NOT_NULL(args);
+   ASSERT_STREQ(args->general.name, "run.yml");
+   ASSERT_EQ(args->solver_method, SOLVER_PCG);
+
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
 test_InputArgsParse_driver_mode_with_config_file(void)
 {
    /* Test the branch where config file is found anywhere in argv (driver mode) */
@@ -2086,6 +2104,7 @@ main(int argc, char **argv)
    RUN_TEST(test_YAMLtreeBuild_inconsistent_indent);
    RUN_TEST(test_YAMLtextRead_missing_file);
    RUN_TEST(test_YAMLtreeUpdate_overrides_solver_and_precon);
+   RUN_TEST(test_YAMLtreeUpdate_override_value_with_yaml_suffix);
    RUN_TEST(test_InputArgsParse_driver_mode_with_config_file);
    RUN_TEST(test_InputArgsParse_null_argv0_error);
    RUN_TEST(test_InputArgsParse_file_not_found_error);

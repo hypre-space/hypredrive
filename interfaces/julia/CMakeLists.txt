@@ -150,6 +150,18 @@ if(HYPREDRV_ENABLE_TESTING AND Julia_EXECUTABLE)
         FIXTURES_REQUIRED "julia_built;julia_project_instantiated"
     )
 
+    add_test(NAME julia_laplacian1d_args
+        COMMAND ${Julia_EXECUTABLE} --startup-file=no
+                --project=${_hypredrv_julia_test_project}
+                ${CMAKE_CURRENT_SOURCE_DIR}/examples/laplacian1d.jl
+                64 -a --solver:pcg:relative_tol 1.0e-2
+    )
+    set_tests_properties(julia_laplacian1d_args PROPERTIES
+        LABELS "julia;interface"
+        ENVIRONMENT "${_hypredrv_julia_test_env}"
+        FIXTURES_REQUIRED "julia_built;julia_project_instantiated"
+    )
+
     if(MPI_C_FOUND AND MPIEXEC_EXECUTABLE)
         add_test(NAME julia_laplacian_mpi
             COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2

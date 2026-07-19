@@ -116,6 +116,10 @@ parses them through the same YAML input path as the C API:
 
    call HYPREDRV_Check(HYPREDRV_InputArgsParseYaml(drv, yaml))
 
+The companion helper ``HYPREDRV_InputArgsParseYamlArgs`` additionally accepts an
+array of CLI-style override tokens applied on top of the YAML configuration,
+e.g. ``args = [character(len=32) :: '--solver:pcg:max_iter', '100']``.
+
 CSR assembly
 ------------
 
@@ -151,6 +155,9 @@ Run the Laplacian example with MPI:
 
    mpiexec -n 2 ./build-fortran/laplacian-fortran interfaces/fortran/examples/laplacian/default.nml
 
+Both examples accept hypredrive command-line overrides after ``-a``/``--args``,
+for example ``-a --solver:pcg:max_iter 50``.
+
 API coverage
 ------------
 
@@ -178,7 +185,7 @@ Fortran.
    * - Errors/helpers
      - ``HYPREDRV_ErrorCodeDescribe``, ``HYPREDRV_ErrorInvalidValue``, ``HYPREDRV_BigIntSize``, ``HYPREDRV_Check``, ``HYPREDRV_ToCString``
    * - Object/input/options
-     - ``HYPREDRV_SetLibraryMode``, ``HYPREDRV_ObjectSetName``, ``HYPREDRV_InputArgsParse``, ``HYPREDRV_InputArgsParseYaml``, ``HYPREDRV_InputArgsGet*``, ``HYPREDRV_InputArgsSet*``
+     - ``HYPREDRV_SetLibraryMode``, ``HYPREDRV_ObjectSetName``, ``HYPREDRV_InputArgsParse``, ``HYPREDRV_InputArgsParseYaml``, ``HYPREDRV_InputArgsParseYamlArgs``, ``HYPREDRV_InputArgsGet*``, ``HYPREDRV_InputArgsSet*``
    * - Presets
      - ``HYPREDRV_SolverPresetRegister``, ``HYPREDRV_PreconPresetRegister``, ``HYPREDRV_InputArgsSetSolverPreset``, ``HYPREDRV_InputArgsSetPreconPreset``
    * - Linear system

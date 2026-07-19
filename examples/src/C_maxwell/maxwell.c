@@ -75,6 +75,8 @@ typedef struct
    char      *solver_preset; /* preset selector when no YAML file is given */
    char      *name;          /* optional object name (labels the statistics table) */
    char      *vtk_file;      /* optional VTK output base name (parallel: .pvti + .vti) */
+   HYPRE_Int  hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
+   char     **hypredrv_argv; /* Hypredrive override args, starting at -a */
 } MaxwellParams;
 
 /*--------------------------------------------------------------------------
@@ -248,6 +250,9 @@ PrintUsage(void)
    printf("Usage: ${MPIEXEC_COMMAND} <np> ./maxwell [options]\n\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file (Opt.)\n");
+   printf("  -a|--args ...     : Hypredrive YAML overrides, e.g. -a "
+          "--solver:pcg:max_iter 100\n");
+   printf("                      (requires -i; must come last)\n");
    printf("  --name <str>      : Object name (labels the statistics table) (Opt.)\n");
    printf(
       "  -vtk <base>       : Write the solution as VTK ImageData (cell-centered E +\n");
@@ -286,12 +291,20 @@ ParseArguments(int argc, char *argv[], MaxwellParams *params, int myid, int num_
    params->solver_preset = "pcg";
    params->name          = NULL;
    params->vtk_file      = NULL;
+   params->hypredrv_argc = 0;
+   params->hypredrv_argv = NULL;
 
    for (int i = 1; i < argc; i++)
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
          if (++i < argc) params->yaml_file = argv[i];
+      }
+      else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
+      {
+         params->hypredrv_argc = argc - i;
+         params->hypredrv_argv = argv + i;
+         break;
       }
       else if (!strcmp(argv[i], "--name"))
       {
@@ -376,6 +389,11 @@ ParseArguments(int argc, char *argv[], MaxwellParams *params, int myid, int num_
          if (!myid) printf("Error: too many ranks in dimension %d\n", d);
          return 1;
       }
+   }
+   if (params->hypredrv_argc && !params->yaml_file)
+   {
+      if (!myid) printf("Error: -a/--args requires a YAML configuration file (-i)\n");
+      return 1;
    }
    if (params->muinv <= 0.0)
    {
@@ -1021,8 +1039,14 @@ main(int argc, char *argv[])
 
    if (params.yaml_file)
    {
-      char *args[2] = {params.yaml_file, NULL};
-      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
+      HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc;
+      char     *hypredrv_argv[hypredrv_argc];
+      hypredrv_argv[0] = params.yaml_file;
+      for (HYPRE_Int k = 0; k < params.hypredrv_argc; k++)
+      {
+         hypredrv_argv[k + 1] = params.hypredrv_argv[k];
+      }
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
    }
    else
    {

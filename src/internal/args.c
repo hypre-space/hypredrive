@@ -1262,6 +1262,33 @@ FindConfigIndex(int argc, char **argv)
    return -1;
 }
 
+/* Distinguish inline YAML text from a program or file path in argv[0]: a YAML
+ * mapping document contains a newline or a "key:" separator (colon followed by
+ * whitespace or end of string), which paths do not. When argv[0] is inline
+ * YAML, it is the configuration source and the remaining argv entries are
+ * override tokens, so they must not be rediscovered as configuration files
+ * (e.g. an override value that happens to end in ".yml"). */
+static bool
+ArgLooksLikeYAMLText(const char *arg)
+{
+   if (!arg)
+   {
+      return false;
+   }
+   if (strchr(arg, '\n') != NULL)
+   {
+      return true;
+   }
+   for (const char *colon = strchr(arg, ':'); colon; colon = strchr(colon + 1, ':'))
+   {
+      if (colon[1] == '\0' || colon[1] == ' ' || colon[1] == '\t')
+      {
+         return true;
+      }
+   }
+   return false;
+}
+
 static bool
 LoadResolvedConfigPath(const char *candidate, char *cfg_path, size_t cfg_path_size)
 {
@@ -1351,7 +1378,7 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
       return true;
    }
 
-   if (config_idx >= 0)
+   if (config_idx >= 0 && !ArgLooksLikeYAMLText(argv[0]))
    {
       char cfg_path[MAX_FILENAME_LENGTH];
 
@@ -1394,7 +1421,7 @@ ApplyCLIOverrides(int argc, char **argv, int config_idx, YAMLtree *tree)
       /* Legacy: overrides are in argv[1..] */
       hypredrv_YAMLtreeUpdate(argc - 1, argv + 1, tree);
    }
-   else if (config_idx >= 0)
+   else if (config_idx >= 0 && !ArgLooksLikeYAMLText(argv[0]))
    {
       /* Driver: allow hypredrv_YAMLtreeUpdate to parse -a/--args inside full argv */
       hypredrv_YAMLtreeUpdate(argc, argv, tree);
