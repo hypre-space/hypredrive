@@ -101,6 +101,13 @@ describe_error(status code)
 {
    HYPREDRV_ErrorCodeDescribe(code);
 }
+/// @brief C++ wrapper for HYPREDRV_ErrorCodeClear.
+/// @see HYPREDRV_ErrorCodeClear
+inline void
+clear_error()
+{
+   HYPREDRV_ErrorCodeClear();
+}
 /// @brief C++ wrapper for HYPREDRV_ErrorInvalidValue.
 /// @see HYPREDRV_ErrorInvalidValue
 inline void
