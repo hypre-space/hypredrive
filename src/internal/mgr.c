@@ -26,10 +26,10 @@ typedef struct MGRFRelaxWrapper_struct
    HYPRE_Int (*setup)(void *, void *, void *, void *);
    HYPRE_Int (*solve)(void *, void *, void *, void *);
    HYPRE_Int (*destroy)(void *);
-   HYPRE_Int                       is_setup; /* offset 24: mirrors hypre_Solver layout */
-   HYPRE_Solver                    inner_mgr;
-   MGR_args                       *nested_args; /* borrowed; owned by parent f_relaxation */
-   IntArray                       *owned_dofmap;
+   HYPRE_Int    is_setup; /* offset 24: mirrors hypre_Solver layout */
+   HYPRE_Solver inner_mgr;
+   MGR_args    *nested_args; /* borrowed; owned by parent f_relaxation */
+   IntArray    *owned_dofmap;
    struct MGRFRelaxWrapper_struct *next_live;
 } MGRFRelaxWrapper;
 
@@ -142,8 +142,8 @@ MGRFRelaxWrapperDestroy(void *wrapper_v)
    /* hypre marks user-set F-solvers as OWNER_USER and does not destroy them.
     * Own the full nested-MGR teardown here (inner handle + its cached user
     * component solvers), mirroring PreconDestroyMGRSolver ownership rules. */
-   inner     = wrapper->inner_mgr;
-   was_setup = wrapper->is_setup;
+   inner              = wrapper->inner_mgr;
+   was_setup          = wrapper->is_setup;
    wrapper->inner_mgr = NULL;
    if (inner)
    {
@@ -1822,8 +1822,8 @@ hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
           * default-initialized levels in place of the intended configuration. */
          if (max_lvl >= 0)
          {
-            uint32_t expected = (max_lvl >= 31) ? 0xFFFFFFFFu
-                                                : ((1u << (unsigned)(max_lvl + 1)) - 1u);
+            uint32_t expected =
+               (max_lvl >= 31) ? 0xFFFFFFFFu : ((1u << (unsigned)(max_lvl + 1)) - 1u);
             if (seen_levels != expected)
             {
                hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);

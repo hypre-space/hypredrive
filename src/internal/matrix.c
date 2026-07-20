@@ -157,8 +157,8 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    uint64_t nrows_offset = 0;
    size_t   nnzs_max     = 0;
 
-   uint32_t *partids = NULL;
-   FILE     *fp      = NULL;
+   uint32_t *partids  = NULL;
+   FILE     *fp       = NULL;
    int       local_ok = 1;
 
    HYPRE_Int *dsizes = NULL;
@@ -535,7 +535,7 @@ after_precompute:
     * a per-rank failure in the host precompute pass above cannot leave peers
     * blocked in the collective Initialize/Assemble below. */
    free(dsizes);
-   dsizes   = NULL;
+   dsizes = NULL;
    free(osizes);
    osizes   = NULL;
    local_ok = hypredrv_ErrorCodeActive() ? 0 : 1;

@@ -173,13 +173,13 @@ extern "C"
     * @brief Clear the process-global HYPREDRV error state.
     *
     * HYPREDRV accumulates error codes and messages in a process-global, sticky
-    * state that most API calls return via HYPREDRV_ErrorCodeGet(). Because the
-    * state is sticky, a failure left unhandled by one call can be observed as a
-    * (spurious) non-zero return by a later, otherwise-successful call, and
-    * failures are shared across all HYPREDRV_t objects in the process. This
-    * routine resets both the accumulated error code and the queued messages so a
-    * consumer can recover after inspecting/handling an error, without needing the
-    * internal error headers.
+    * state that most API calls expose through their uint32_t return value.
+    * Because the state is sticky, a failure left unhandled by one call can be
+    * observed as a (spurious) non-zero return by a later, otherwise-successful
+    * call, and failures are shared across all HYPREDRV_t objects in the process.
+    * This routine resets both the accumulated error code and the queued messages
+    * so a consumer can recover after inspecting/handling an error, without
+    * needing the internal error headers.
     *
     * @note Thread safety: the error state is process-global and not thread-safe;
     * call this from a single thread or provide external synchronization.

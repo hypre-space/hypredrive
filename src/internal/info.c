@@ -1961,8 +1961,8 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
              "=================================\n\n");
 
       // 1. CPU cores and model
-      int  numPhysicalCPUs = 0;
-      int  numCPUs         = 0;
+      int  numPhysicalCPUs   = 0;
+      int  numCPUs           = 0;
       char cpuModels[8][256] = {{0}};
       char gpuInfo[256]      = "Unknown";
 
@@ -2845,7 +2845,7 @@ PrintCpuTopologyInfo(MPI_Comm comm)
       hostname[0] = '\0';
    }
    hostname[sizeof(hostname) - 1] = '\0';
-   char *allHostnames = NULL;
+   char *allHostnames             = NULL;
    if (nprocs > 0)
    {
       allHostnames = (char *)malloc((size_t)nprocs * HYPRE_MAX_HOSTNAME);

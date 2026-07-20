@@ -314,8 +314,14 @@ AssignCurrentSolveEntryPath(Stats *stats)
 static void
 HandleAnnotationBegin(Stats *stats, const char *name)
 {
+   /* GCOVR_EXCL_BR_START */
+   if (!name) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+
    /* Ignore the top-level iteration annotation (any "Run"-prefixed name). */
-   if (name && strncmp(name, "Run", 3) == 0)
+   if (strncmp(name, "Run", 3) == 0)
    {
       return;
    }
@@ -465,8 +471,14 @@ HandleAnnotationBegin(Stats *stats, const char *name)
 static void
 HandleAnnotationEnd(Stats *stats, const char *name)
 {
+   /* GCOVR_EXCL_BR_START */
+   if (!name) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+
    /* Ignore the top-level iteration annotation (any "Run"-prefixed name). */
-   if (name && strncmp(name, "Run", 3) == 0)
+   if (strncmp(name, "Run", 3) == 0)
    {
       return;
    }
@@ -1020,22 +1032,23 @@ EnsureLevelCapacity(Stats *stats, int level)
 
    /* Grow geometrically. Report allocation failure so the caller can skip the
     * write instead of overrunning the old buffer. */
-   int new_capacity = (stats->level_capacity[level] > 0) ? stats->level_capacity[level] * 2
-                                                         : STATS_TIMESTEP_CAPACITY;
+   int new_capacity = (stats->level_capacity[level] > 0)
+                         ? stats->level_capacity[level] * 2
+                         : STATS_TIMESTEP_CAPACITY;
    while (new_capacity <= count)
    {
       new_capacity *= 2;
    }
 
-   LevelEntry *new_ptr = (LevelEntry *)realloc(
-      stats->level_entries[level], (size_t)new_capacity * sizeof(LevelEntry));
+   LevelEntry *new_ptr = (LevelEntry *)realloc(stats->level_entries[level],
+                                               (size_t)new_capacity * sizeof(LevelEntry));
    /* GCOVR_EXCL_BR_START */
    if (!new_ptr) /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       return 0;
    }
-   stats->level_entries[level] = new_ptr;
+   stats->level_entries[level]  = new_ptr;
    stats->level_capacity[level] = new_capacity;
    return 1;
 }

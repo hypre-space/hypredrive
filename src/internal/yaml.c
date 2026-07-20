@@ -1521,8 +1521,7 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
          {
             paths = (char **)malloc(sizeof(char *));
             /* GCOVR_EXCL_BR_START */
-            if (!paths || !(paths[0] = strdup(child->val)))
-            /* GCOVR_EXCL_BR_STOP */
+            if (!paths || !(paths[0] = strdup(child->val))) /* GCOVR_EXCL_BR_STOP */
             {
                free(paths);
                hypredrv_ErrorCodeSet(ERROR_ALLOCATION);

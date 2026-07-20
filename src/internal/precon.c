@@ -118,7 +118,9 @@ static const PreconOps precon_ops[] = {
          .solve   = HYPRE_ILUSolve,
          .destroy = HYPRE_ILUDestroy,
 #else
-         .setup = NULL, .solve = NULL, .destroy = NULL,
+         .setup   = NULL,
+         .solve   = NULL,
+         .destroy = NULL,
 #endif
       },
    [PRECON_FSAI] =
@@ -128,15 +130,17 @@ static const PreconOps precon_ops[] = {
          .solve   = HYPRE_FSAISolve,
          .destroy = HYPRE_FSAIDestroy,
 #else
-         .setup = NULL, .solve = NULL, .destroy = NULL,
+         .setup   = NULL,
+         .solve   = NULL,
+         .destroy = NULL,
 #endif
       },
-   [PRECON_AMS]   = {.setup   = HYPRE_AMSSetup,
-                     .solve   = HYPRE_AMSSolve,
-                     .destroy = HYPRE_AMSDestroy},
-   [PRECON_ADS]   = {.setup   = HYPRE_ADSSetup,
-                     .solve   = HYPRE_ADSSolve,
-                     .destroy = HYPRE_ADSDestroy},
+   [PRECON_AMS] = {.setup   = HYPRE_AMSSetup,
+                   .solve   = HYPRE_AMSSolve,
+                   .destroy = HYPRE_AMSDestroy},
+   [PRECON_ADS] = {.setup   = HYPRE_ADSSetup,
+                   .solve   = HYPRE_ADSSolve,
+                   .destroy = HYPRE_ADSDestroy},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    [PRECON_SCHWARZ] = {.setup   = HYPRE_SchwarzSetup,
                        .solve   = HYPRE_SchwarzSolve,
@@ -173,8 +177,7 @@ hypredrv_PreconGetCallbacks(precon_t method, HYPRE_PtrToParSolverFcn *setup,
 #if !HYPRE_CHECK_MIN_VERSION(22500, 0)
    /* Nested Krylov SetPrecond needs non-NULL callbacks even when the method is
     * unavailable on this hypre build; the stub returns an error at call time. */
-   if ((!setup_fn || !solve_fn) &&
-       (method == PRECON_ILU || method == PRECON_FSAI))
+   if ((!setup_fn || !solve_fn) && (method == PRECON_ILU || method == PRECON_FSAI))
    {
       setup_fn = PreconUnavailable;
       solve_fn = PreconUnavailable;
@@ -629,8 +632,8 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
       return;
    }
 
-   HYPRE_Solver       prec = precon->main;
-   const PreconOps   *ops  = PreconOpsLookup(precon_method);
+   HYPRE_Solver     prec = precon->main;
+   const PreconOps *ops  = PreconOpsLookup(precon_method);
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;

@@ -104,8 +104,8 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
    uint64_t nrows_sum = 0, nrows_max = 0, nrows_offset = 0;
 
-   uint32_t *partids = NULL;
-   FILE     *fp      = NULL;
+   uint32_t *partids  = NULL;
+   FILE     *fp       = NULL;
    int       local_ok = 1;
 
    HYPRE_BigInt         ilower = 0, iupper = 0;

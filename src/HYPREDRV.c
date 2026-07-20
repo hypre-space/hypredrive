@@ -99,14 +99,14 @@ hypredrv_CheckInitAndObj(HYPREDRV_t hypredrv)
 // Macro to check that input arguments have been parsed (iargs is non-NULL).
 // iargs is NULL before HYPREDRV_InputArgsParse and is reset to NULL if parsing
 // fails, so every API that dereferences it must guard first.
-#define HYPREDRV_CHECK_ARGS()                                                  \
-   if (!hypredrv->iargs)                                                       \
-   {                                                                           \
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);                               \
-      hypredrv_ErrorMsgAdd("%s: input arguments not parsed (call "            \
-                           "HYPREDRV_InputArgsParse first)",                   \
-                           __func__);                                          \
-      return hypredrv_ErrorCodeGet();                                          \
+#define HYPREDRV_CHECK_ARGS()                                      \
+   if (!hypredrv->iargs)                                           \
+   {                                                               \
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);                    \
+      hypredrv_ErrorMsgAdd("%s: input arguments not parsed (call " \
+                           "HYPREDRV_InputArgsParse first)",       \
+                           __func__);                              \
+      return hypredrv_ErrorCodeGet();                              \
    }
 
 /*-----------------------------------------------------------------------------
@@ -1638,7 +1638,8 @@ HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv, int nstates, HYPRE_IJVector *vecs)
       if (!vecs[i])
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("HYPREDRV_StateVectorSet: NULL state vector at index %d", i);
+         hypredrv_ErrorMsgAdd("HYPREDRV_StateVectorSet: NULL state vector at index %d",
+                              i);
          return hypredrv_ErrorCodeGet();
       }
    }
@@ -1682,8 +1683,8 @@ HYPREDRV_StateVectorGetValues(HYPREDRV_t hypredrv, int index, HYPRE_Complex **da
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_StateVectorGetValues begin (index=%d)",
                         index);
 
-   if (!hypredrv->states || !hypredrv->vec_s || index < 0 ||
-       index >= hypredrv->nstates || !data_ptr)
+   if (!hypredrv->states || !hypredrv->vec_s || index < 0 || index >= hypredrv->nstates ||
+       !data_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("HYPREDRV_StateVectorGetValues: invalid index %d or output "
@@ -2892,7 +2893,7 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
    hypredrv_PreconSetup(hypredrv->iargs->precon_method, hypredrv->precon,
                         hypredrv->mat_A);
    hypredrv_HypreConsumeErrors();
-   if (hypredrv->precon)   /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv->precon) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv->precon_is_setup = true;
    }
