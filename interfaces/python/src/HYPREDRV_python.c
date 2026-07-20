@@ -22,6 +22,7 @@
 #include <stdio.h>
 
 #include "HYPREDRV_python.h"
+#include "internal/compatibility.h"
 
 static int HYPREDRV_python_mpi_owned = 0;
 
@@ -38,8 +39,7 @@ static int HYPREDRV_python_mpi_owned = 0;
 static uint32_t
 HYPREDRV_PythonBigIntFromInt64(int64_t value, const char *name, HYPRE_BigInt *converted)
 {
-   HYPRE_BigInt tmp = (HYPRE_BigInt)value;
-   if ((int64_t)tmp != value)
+   if (!hypredrv_BigIntFromI64(value, converted))
    {
       char message[256];
       int  written = snprintf(message, sizeof(message),
@@ -53,7 +53,6 @@ HYPREDRV_PythonBigIntFromInt64(int64_t value, const char *name, HYPRE_BigInt *co
       return HYPREDRV_ErrorInvalidValue(message);
    }
 
-   *converted = tmp;
    return 0;
 }
 

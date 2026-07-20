@@ -1879,7 +1879,7 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
              hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
       printf("with %lld rows and %lld nonzeros...\n", num_rows, num_nonzeros);
    }
-   HYPRE_ClearAllErrors();
+   hypredrv_HypreConsumeErrors();
    MaybeDumpLinearSystem(hypredrv, PRINT_SYSTEM_STAGE_BUILD);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSystemBuild end");
 
@@ -2891,7 +2891,7 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
 
    hypredrv_PreconSetup(hypredrv->iargs->precon_method, hypredrv->precon,
                         hypredrv->mat_A);
-   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
+   hypredrv_HypreConsumeErrors();
    if (hypredrv->precon)   /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv->precon_is_setup = true;
@@ -2991,7 +2991,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
                                  hypredrv->vec_x, hypredrv->stats, skip_precon_setup);
    PopDefaultLogObjectName(hypredrv, default_object_name, pushed_default_name);
 
-   HYPRE_ClearAllErrors();
+   hypredrv_HypreConsumeErrors();
    if (hypredrv->precon && !skip_precon_setup)
    {
       hypredrv->precon_is_setup = true;
@@ -3158,7 +3158,7 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       /* hypredrv_SolverApply already computed and set all stats */
    }
 
-   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
+   hypredrv_HypreConsumeErrors();
 
    /* Fix the solution gauge when exact null space modes are set */
    if (hypredrv->vec_ns && hypredrv->num_ns > 0)
@@ -3238,7 +3238,7 @@ HYPREDRV_PreconApply(HYPREDRV_t hypredrv, HYPRE_Vector vec_b, HYPRE_Vector vec_x
 
    hypredrv_PreconApply(hypredrv->iargs->precon_method, hypredrv->precon, hypredrv->mat_A,
                         (HYPRE_IJVector)vec_b, (HYPRE_IJVector)vec_x);
-   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */ /* GCOVR_EXCL_BR_LINE */
+   hypredrv_HypreConsumeErrors(); /* GCOVR_EXCL_BR_LINE */
    /* Fix the solution gauge when exact null space modes are set */
    if (hypredrv->vec_ns && hypredrv->num_ns > 0)
    {

@@ -84,59 +84,102 @@ hypredrv_PreconGetValidTypeIntMap(void)
    return STR_INT_MAP_ARRAY_CREATE(map);
 }
 
+/* Per-method hypre entry points. Index by precon_t; keep in sync with the enum. */
+typedef HYPRE_Int (*PreconParFn)(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector,
+                                 HYPRE_ParVector);
+typedef HYPRE_Int (*PreconDestroyFn)(HYPRE_Solver);
+
+typedef struct PreconOps_struct
+{
+   PreconParFn     setup;
+   PreconParFn     solve;
+   PreconDestroyFn destroy;
+} PreconOps;
+
+static const PreconOps precon_ops[] = {
+   [PRECON_BOOMERAMG] = {.setup   = HYPRE_BoomerAMGSetup,
+                         .solve   = HYPRE_BoomerAMGSolve,
+                         .destroy = HYPRE_BoomerAMGDestroy},
+   [PRECON_MGR] =
+      {
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+         .setup = HYPRE_MGRSetup,
+         .solve = HYPRE_MGRSolve,
+#else
+         .setup = NULL,
+         .solve = NULL,
+#endif
+         .destroy = NULL, /* MGR teardown is handled by PreconDestroyMGRSolver */
+      },
+   [PRECON_ILU] =
+      {
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+         .setup   = HYPRE_ILUSetup,
+         .solve   = HYPRE_ILUSolve,
+         .destroy = HYPRE_ILUDestroy,
+#else
+         .setup = NULL, .solve = NULL, .destroy = NULL,
+#endif
+      },
+   [PRECON_FSAI] =
+      {
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+         .setup   = HYPRE_FSAISetup,
+         .solve   = HYPRE_FSAISolve,
+         .destroy = HYPRE_FSAIDestroy,
+#else
+         .setup = NULL, .solve = NULL, .destroy = NULL,
+#endif
+      },
+   [PRECON_AMS]   = {.setup   = HYPRE_AMSSetup,
+                     .solve   = HYPRE_AMSSolve,
+                     .destroy = HYPRE_AMSDestroy},
+   [PRECON_ADS]   = {.setup   = HYPRE_ADSSetup,
+                     .solve   = HYPRE_ADSSolve,
+                     .destroy = HYPRE_ADSDestroy},
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+   [PRECON_SCHWARZ] = {.setup   = HYPRE_SchwarzSetup,
+                       .solve   = HYPRE_SchwarzSolve,
+                       .destroy = HYPRE_SchwarzDestroy},
+#endif
+   [PRECON_NONE] = {.setup = NULL, .solve = NULL, .destroy = NULL},
+};
+
+static const PreconOps *
+PreconOpsLookup(precon_t method)
+{
+   if ((unsigned)method >= (unsigned)(sizeof(precon_ops) / sizeof(precon_ops[0])))
+   {
+      return NULL;
+   }
+
+   return &precon_ops[method];
+}
+
 void
 hypredrv_PreconGetCallbacks(precon_t method, HYPRE_PtrToParSolverFcn *setup,
                             HYPRE_PtrToParSolverFcn *solve)
 {
+   const PreconOps        *ops      = PreconOpsLookup(method);
    HYPRE_PtrToParSolverFcn setup_fn = NULL;
    HYPRE_PtrToParSolverFcn solve_fn = NULL;
 
-   switch (method)
+   if (ops)
    {
-      case PRECON_BOOMERAMG:
-         setup_fn = HYPRE_BoomerAMGSetup;
-         solve_fn = HYPRE_BoomerAMGSolve;
-         break;
-      case PRECON_MGR:
-         setup_fn = HYPRE_MGRSetup;
-         solve_fn = HYPRE_MGRSolve;
-         break;
-      case PRECON_ILU:
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-         setup_fn = HYPRE_ILUSetup;
-         solve_fn = HYPRE_ILUSolve;
-#else
-         setup_fn = PreconUnavailable;
-         solve_fn = PreconUnavailable;
-#endif
-         break;
-      case PRECON_FSAI:
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-         setup_fn = HYPRE_FSAISetup;
-         solve_fn = HYPRE_FSAISolve;
-#else
-         setup_fn = PreconUnavailable;
-         solve_fn = PreconUnavailable;
-#endif
-         break;
-      case PRECON_AMS:
-         setup_fn = HYPRE_AMSSetup;
-         solve_fn = HYPRE_AMSSolve;
-         break;
-      case PRECON_ADS:
-         setup_fn = HYPRE_ADSSetup;
-         solve_fn = HYPRE_ADSSolve;
-         break;
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-         setup_fn = HYPRE_SchwarzSetup;
-         solve_fn = HYPRE_SchwarzSolve;
-         break;
-#endif
-      case PRECON_NONE:
-      default:
-         break;
+      setup_fn = ops->setup;
+      solve_fn = ops->solve;
    }
+
+#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
+   /* Nested Krylov SetPrecond needs non-NULL callbacks even when the method is
+    * unavailable on this hypre build; the stub returns an error at call time. */
+   if ((!setup_fn || !solve_fn) &&
+       (method == PRECON_ILU || method == PRECON_FSAI))
+   {
+      setup_fn = PreconUnavailable;
+      solve_fn = PreconUnavailable;
+   }
+#endif
 
    if (setup)
    {
@@ -586,91 +629,52 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
       return;
    }
 
-   HYPRE_Solver prec = precon->main;
+   HYPRE_Solver       prec = precon->main;
+   const PreconOps   *ops  = PreconOpsLookup(precon_method);
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;
 
-   switch (precon_method)
+   if (!ops || !ops->setup)
    {
-      case PRECON_BOOMERAMG:
-         HYPRE_BoomerAMGSetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-         break;
-
-      case PRECON_MGR:
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-         HYPRE_MGRSetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      if (precon_method == PRECON_MGR)
+      {
          hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
-
-      case PRECON_ILU:
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
-         /* hypre 2.28.0 unconditionally reads the RHS vector's component
-          * count during ILU setup, although setup otherwise accepts NULL
-          * vectors. Supply a compatible throwaway vector for that release. */
-         HYPRE_ParVectorCreate(hypre_ParCSRMatrixComm(par_A),
-                               hypre_ParCSRMatrixGlobalNumRows(par_A), NULL, &par_b);
-         HYPRE_ParVectorInitialize(par_b);
-         par_x = par_b;
-#endif
-         HYPRE_ILUSetup(prec, par_A, par_b, par_x);
-#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
-         HYPRE_ParVectorDestroy(par_b);
-#endif
-         precon->is_setup = 1;
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      }
+      else if (precon_method == PRECON_ILU)
+      {
          hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
-
-      case PRECON_FSAI:
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
-         /* FSAI has the same unconditional RHS dereference in hypre 2.28.0. */
-         HYPRE_ParVectorCreate(hypre_ParCSRMatrixComm(par_A),
-                               hypre_ParCSRMatrixGlobalNumRows(par_A), NULL, &par_b);
-         HYPRE_ParVectorInitialize(par_b);
-         par_x = par_b;
-#endif
-         HYPRE_FSAISetup(prec, par_A, par_b, par_x);
-#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
-         HYPRE_ParVectorDestroy(par_b);
-#endif
-         precon->is_setup = 1;
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      }
+      else if (precon_method == PRECON_FSAI)
+      {
          hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
+      }
+      return;
+   }
 
-      case PRECON_AMS:
-         HYPRE_AMSSetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-         break;
-
-      case PRECON_ADS:
-         HYPRE_ADSSetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-         break;
-
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-         HYPRE_SchwarzSetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-         break;
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
+   /* hypre 2.28.0 unconditionally reads the RHS vector's component count during
+    * ILU/FSAI setup, although setup otherwise accepts NULL vectors. */
+   if (precon_method == PRECON_ILU || precon_method == PRECON_FSAI)
+   {
+      HYPRE_ParVectorCreate(hypre_ParCSRMatrixComm(par_A),
+                            hypre_ParCSRMatrixGlobalNumRows(par_A), NULL, &par_b);
+      HYPRE_ParVectorInitialize(par_b);
+      par_x = par_b;
+   }
 #endif
 
-      default:
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         break;
+   ops->setup(prec, par_A, par_b, par_x);
+
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
+   if (par_b)
+   {
+      HYPRE_ParVectorDestroy(par_b);
    }
+#endif
+
+   precon->is_setup = 1;
 
    // TODO: fix timing. Adjust LinearSolverSetup.
    // StatsTimerStop("prec");
@@ -699,7 +703,8 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
       return;
    }
 
-   HYPRE_Solver prec = precon->main;
+   HYPRE_Solver     prec = precon->main;
+   const PreconOps *ops  = PreconOpsLookup(precon_method);
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;
@@ -708,60 +713,25 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    HYPRE_IJVectorGetObject(x, &vx);
    par_x = (HYPRE_ParVector)vx;
 
-   switch (precon_method)
+   if (!ops || !ops->solve)
    {
-      case PRECON_BOOMERAMG:
-         HYPRE_BoomerAMGSolve(prec, par_A, par_b, par_x);
-         break;
-
-      case PRECON_MGR:
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-         HYPRE_MGRSolve(prec, par_A, par_b, par_x);
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      if (precon_method == PRECON_MGR)
+      {
          hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
-
-      case PRECON_ILU:
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-         HYPRE_ILUSolve(prec, par_A, par_b, par_x);
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      }
+      else if (precon_method == PRECON_ILU)
+      {
          hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
-
-      case PRECON_FSAI:
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-         HYPRE_FSAISolve(prec, par_A, par_b, par_x);
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      }
+      else if (precon_method == PRECON_FSAI)
+      {
          hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
-
-      case PRECON_AMS:
-         HYPRE_AMSSolve(prec, par_A, par_b, par_x);
-         break;
-
-      case PRECON_ADS:
-         HYPRE_ADSSolve(prec, par_A, par_b, par_x);
-         break;
-
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-         HYPRE_SchwarzSolve(prec, par_A, par_b, par_x);
-         break;
-#endif
-
-      case PRECON_NONE:
-         break;
-
-      default:
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         break;
+      }
+      return;
    }
+
+   ops->solve(prec, par_A, par_b, par_x);
 
    // StatsTimerStop("prec_apply");
 }

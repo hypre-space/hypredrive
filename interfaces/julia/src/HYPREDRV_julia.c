@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "HYPREDRV.h"
+#include "internal/compatibility.h"
 
 #include <mpi.h>
 
@@ -30,8 +31,7 @@ _Static_assert(sizeof(HYPRE_Complex) == sizeof(double),
 static uint32_t
 HYPREDRV_JuliaBigIntFromI64(const char *name, int64_t value, HYPRE_BigInt *out)
 {
-   HYPRE_BigInt converted = (HYPRE_BigInt)value;
-   if ((int64_t)converted != value)
+   if (!hypredrv_BigIntFromI64(value, out))
    {
       char msg[256];
       int  nwritten = snprintf(
@@ -43,7 +43,6 @@ HYPREDRV_JuliaBigIntFromI64(const char *name, int64_t value, HYPRE_BigInt *out)
       return HYPREDRV_ErrorInvalidValue(msg);
    }
 
-   *out = converted;
    return HYPREDRV_SUCCESS;
 }
 

@@ -590,7 +590,7 @@ hypredrv_NestedKrylovSolve(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
          ~HYPRE_ERROR_CONV)) /* GCOVR_EXCL_BR_LINE */ /* HYPRE conv flags hard to
                                                          stabilize in unit tests */
    {
-      HYPRE_ClearAllErrors();
+      hypredrv_HypreClearConvergenceErrors();
       return 0;
    }
 

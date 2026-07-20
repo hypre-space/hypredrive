@@ -28,6 +28,7 @@ typedef struct MGRFRelaxWrapper_struct
    HYPRE_Int (*destroy)(void *);
    HYPRE_Int                       is_setup; /* offset 24: mirrors hypre_Solver layout */
    HYPRE_Solver                    inner_mgr;
+   MGR_args                       *nested_args; /* borrowed; owned by parent f_relaxation */
    IntArray                       *owned_dofmap;
    struct MGRFRelaxWrapper_struct *next_live;
 } MGRFRelaxWrapper;
@@ -128,12 +129,44 @@ static HYPRE_Int
 MGRFRelaxWrapperDestroy(void *wrapper_v)
 {
    MGRFRelaxWrapper *wrapper = (MGRFRelaxWrapper *)wrapper_v;
+   HYPRE_Solver      inner;
+   int               was_setup;
+
    if (!wrapper)
    {
       return 0;
    }
 
    MGRFRelaxWrapperUnregister(wrapper);
+
+   /* hypre marks user-set F-solvers as OWNER_USER and does not destroy them.
+    * Own the full nested-MGR teardown here (inner handle + its cached user
+    * component solvers), mirroring PreconDestroyMGRSolver ownership rules. */
+   inner     = wrapper->inner_mgr;
+   was_setup = wrapper->is_setup;
+   wrapper->inner_mgr = NULL;
+   if (inner)
+   {
+      if (wrapper->nested_args && !was_setup)
+      {
+         hypredrv_MGRDestroyCachedSolvers(wrapper->nested_args, 0);
+      }
+      HYPRE_MGRDestroy(inner);
+      if (wrapper->nested_args && was_setup)
+      {
+         hypredrv_MGRDestroyCachedSolvers(wrapper->nested_args, 1);
+      }
+   }
+
+   /* Match PreconDestroyMGRSolver: the owned point-marker buffer outlives
+    * HYPRE_MGRDestroy and must be released with the nested args. */
+   if (wrapper->nested_args && wrapper->nested_args->point_marker_data)
+   {
+      free(wrapper->nested_args->point_marker_data);
+      wrapper->nested_args->point_marker_data = NULL;
+   }
+
+   wrapper->nested_args = NULL;
    hypredrv_IntArrayDestroy(&wrapper->owned_dofmap);
    free(wrapper);
    return 0;
@@ -182,7 +215,8 @@ hypredrv_MGRSetFSolverAtLevel(HYPRE_Solver precon, HYPRE_Solver fsolver, HYPRE_I
 }
 
 static HYPRE_Solver
-MGRNestedFRelaxWrapperCreate(HYPRE_Solver inner_mgr, IntArray *owned_dofmap)
+MGRNestedFRelaxWrapperCreate(HYPRE_Solver inner_mgr, MGR_args *nested_args,
+                             IntArray *owned_dofmap)
 {
    MGRFRelaxWrapper *wrapper = (MGRFRelaxWrapper *)calloc(1, sizeof(*wrapper));
    if (!wrapper)
@@ -196,6 +230,7 @@ MGRNestedFRelaxWrapperCreate(HYPRE_Solver inner_mgr, IntArray *owned_dofmap)
    wrapper->solve        = MGRFRelaxWrapperSolve;
    wrapper->destroy      = MGRFRelaxWrapperDestroy;
    wrapper->inner_mgr    = inner_mgr;
+   wrapper->nested_args  = nested_args;
    wrapper->owned_dofmap = owned_dofmap;
    MGRFRelaxWrapperRegister(wrapper);
    return (HYPRE_Solver)wrapper;
@@ -1813,49 +1848,6 @@ hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
    }
 }
 
-/*-----------------------------------------------------------------------------
- * hypredrv_MGRConvertArgInt
- *-----------------------------------------------------------------------------*/
-
-HYPRE_Int *
-hypredrv_MGRConvertArgInt(MGR_args *args, const char *name)
-{
-   static HYPRE_Int buf[MAX_MGR_LEVELS - 1] = {-1};
-
-   /* Sanity check */
-   if (args->num_levels == 0 || args->num_levels >= (MAX_MGR_LEVELS - 1))
-   {
-      return NULL;
-   }
-
-   /* hypre MGR SetLevel* setters copy arrays up to their internal
-    * max_num_coarse_levels. Always clear the full buffer so unused entries do
-    * not retain stale values from previous conversions. */
-   for (size_t i = 0; i < (size_t)(MAX_MGR_LEVELS - 1); i++)
-   {
-      buf[i] = 0;
-   }
-
-   if (!strcmp(name, "f_relaxation:type"))
-   {
-      for (size_t i = 0; i < (size_t)(args->num_levels - 1); i++)
-      {
-         HYPRE_Int type = args->level[i].f_relaxation.type;
-         buf[i]         = (type == MGR_FRLX_TYPE_NESTED_MGR) ? 7 : type;
-      }
-      return buf;
-   }
-
-   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, prolongation_type)
-   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, f_relaxation.num_sweeps)
-   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, g_relaxation.type)
-   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, g_relaxation.num_sweeps)
-   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, restriction_type)
-   HANDLE_MGR_LEVEL_ATTRIBUTE(buf, coarse_level_type)
-
-   /* If we haven't returned yet, return a NULL pointer */
-   return NULL;
-}
 /* GCOVR_EXCL_BR_STOP */
 
 /*-----------------------------------------------------------------------------
@@ -2408,6 +2400,17 @@ MGRDestroyDetachedFSolver(const MGRfrlx_args *f_relaxation, HYPRE_Solver *solver
    else if (f_relaxation->type == MGR_SOLVER_TYPE_SCHWARZ)
    {
       MGRSchwarzWrapperDestroy(*solver_ptr);
+   }
+#endif
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
+   else if (f_relaxation->type == MGR_FRLX_TYPE_NESTED_MGR)
+   {
+      /* Only destroy live wrappers: a prior reclaim (or failed create cleanup)
+       * may already have freed the object while leaving a stale cache slot. */
+      if (hypredrv_MGRNestedFRelaxWrapperIsLive(*solver_ptr))
+      {
+         MGRFRelaxWrapperDestroy((void *)(*solver_ptr));
+      }
    }
 #endif
 
@@ -3963,7 +3966,8 @@ MGRConfigFRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan 
             return 0;
          }
 
-         frelax_wrapper = MGRNestedFRelaxWrapperCreate(frelax, nested_dofmap);
+         frelax_wrapper =
+            MGRNestedFRelaxWrapperCreate(frelax, nested_args, nested_dofmap);
          if (hypredrv_ErrorCodeActive() || !frelax_wrapper)
          {
             HYPRE_MGRDestroy(frelax);
@@ -4371,7 +4375,7 @@ cleanup:
    {
       HYPRE_MGRDestroy(precon);
    }
-   /* Silence any hypre errors. TODO: improve error handling */
-   HYPRE_ClearAllErrors();
+   /* Soft hypre convergence leftovers should not poison later calls. */
+   hypredrv_HypreConsumeErrors();
 #endif /* !HYPRE_CHECK_MIN_VERSION(21900, 0) */
 }

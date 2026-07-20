@@ -230,9 +230,22 @@ if(_hypredrive_python_bundle_core)
 
 endif()
 
+if(_hypredrive_python_has_repo_root)
+    set(_hypredrive_python_compatibility_include
+        "${_hypredrive_python_repo_root}/include")
+else()
+    # Source distributions vendor the compatibility header beside the extension.
+    set(_hypredrive_python_compatibility_include "${CMAKE_CURRENT_SOURCE_DIR}/src")
+endif()
+if(NOT EXISTS
+   "${_hypredrive_python_compatibility_include}/internal/compatibility.h")
+    message(FATAL_ERROR "Python binding requires internal/compatibility.h")
+endif()
+
 target_include_directories(_core PRIVATE
     "${_numpy_include}"
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${_hypredrive_python_compatibility_include}"
 )
 
 target_link_libraries(_core PRIVATE
