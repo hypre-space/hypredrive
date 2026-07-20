@@ -684,7 +684,14 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
       return;
    }
 
-   orig_size = (size_t)(*((const uint64_t *)input));
+   /* Read the 8-byte size header via memcpy rather than a pointer cast: the input
+    * buffer is not guaranteed to be 8-byte aligned, and a misaligned load is
+    * undefined behavior on strict-alignment targets. */
+   {
+      uint64_t hdr = 0;
+      memcpy(&hdr, input, sizeof(hdr));
+      orig_size = (size_t)hdr;
+   }
    if (orig_size > HYPREDRV_MAX_DECOMPRESSED_BYTES)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);

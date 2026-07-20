@@ -22,6 +22,7 @@
 #include <stdio.h>
 
 #include "HYPREDRV_python.h"
+#include "internal/compatibility.h"
 
 static int HYPREDRV_python_mpi_owned = 0;
 
@@ -38,8 +39,7 @@ static int HYPREDRV_python_mpi_owned = 0;
 static uint32_t
 HYPREDRV_PythonBigIntFromInt64(int64_t value, const char *name, HYPRE_BigInt *converted)
 {
-   HYPRE_BigInt tmp = (HYPRE_BigInt)value;
-   if ((int64_t)tmp != value)
+   if (!hypredrv_BigIntFromI64(value, converted))
    {
       char message[256];
       int  written = snprintf(message, sizeof(message),
@@ -53,7 +53,6 @@ HYPREDRV_PythonBigIntFromInt64(int64_t value, const char *name, HYPRE_BigInt *co
       return HYPREDRV_ErrorInvalidValue(message);
    }
 
-   *converted = tmp;
    return 0;
 }
 
@@ -110,6 +109,12 @@ HYPREDRV_PythonMPIInitialize(void)
    {
       return HYPREDRV_ErrorInvalidValue(
          "HYPREDRV_PythonMPIInitialize: MPI_Init_thread failed");
+   }
+   if (provided < MPI_THREAD_SERIALIZED)
+   {
+      return HYPREDRV_ErrorInvalidValue(
+         "HYPREDRV_PythonMPIInitialize: MPI implementation did not provide the "
+         "requested MPI_THREAD_SERIALIZED thread level");
    }
    HYPREDRV_python_mpi_owned = 1;
    return 0;

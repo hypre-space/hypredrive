@@ -40,11 +40,25 @@ ReallocateArray(void **ptr, size_t elem_size, int old_capacity, int new_capacity
       return 0;
    }
 
-   /* Zero out the newly allocated portion */
-   memset((char *)new_ptr + ((size_t)old_capacity * elem_size), 0,
-          REALLOC_EXPAND_FACTOR * elem_size);
+   /* Zero out the newly allocated tail. Compute the size from the actual growth
+    * delta rather than a hard-coded factor, so this stays correct if the growth
+    * policy ever changes. */
+   if (new_capacity > old_capacity)
+   {
+      memset((char *)new_ptr + ((size_t)old_capacity * elem_size), 0,
+             (size_t)(new_capacity - old_capacity) * elem_size);
+   }
    *ptr = new_ptr;
    return 1;
+}
+
+/* Sample variance (Bessel-corrected) from one-pass accumulators, clamped at zero
+ * to avoid NaN from floating-point cancellation when all samples are equal. */
+static double
+StatsVarianceClamp(double sum_sq, double n, double mean)
+{
+   double var = (n > 1.0) ? (sum_sq - (n * mean * mean)) / (n - 1.0) : 0.0;
+   return (var > 0.0) ? var : 0.0;
 }
 
 /*--------------------------------------------------------------------------
@@ -300,7 +314,13 @@ AssignCurrentSolveEntryPath(Stats *stats)
 static void
 HandleAnnotationBegin(Stats *stats, const char *name)
 {
-   /* Ignore "Run" annotation */
+   /* GCOVR_EXCL_BR_START */
+   if (!name) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+
+   /* Ignore the top-level iteration annotation (any "Run"-prefixed name). */
    if (strncmp(name, "Run", 3) == 0)
    {
       return;
@@ -451,7 +471,13 @@ HandleAnnotationBegin(Stats *stats, const char *name)
 static void
 HandleAnnotationEnd(Stats *stats, const char *name)
 {
-   /* Ignore "Run" annotation */
+   /* GCOVR_EXCL_BR_START */
+   if (!name) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+
+   /* Ignore the top-level iteration annotation (any "Run"-prefixed name). */
    if (strncmp(name, "Run", 3) == 0)
    {
       return;
@@ -686,6 +712,11 @@ hypredrv_StatsCreate(void)
    int capacity = REALLOC_EXPAND_FACTOR;
 
    Stats *stats = (Stats *)malloc(sizeof(Stats));
+   if (!stats)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      return NULL;
+   }
    memset(stats, 0, sizeof(Stats));
 
    stats->capacity = capacity;
@@ -730,8 +761,25 @@ hypredrv_StatsCreate(void)
       stats->level_count[i] = 0;
       stats->level_entries[i] =
          (LevelEntry *)calloc(STATS_TIMESTEP_CAPACITY, sizeof(LevelEntry));
+      stats->level_capacity[i]    = stats->level_entries[i] ? STATS_TIMESTEP_CAPACITY : 0;
       stats->level_current_id[i]  = 0;
       stats->level_solve_start[i] = 0;
+   }
+
+   /* Bail out cleanly if any allocation above failed, rather than dereferencing a
+    * NULL array later. StatsDestroy is NULL-safe for the partially built object. */
+   int alloc_ok = stats->dofmap && stats->matrix && stats->rhs && stats->iters &&
+                  stats->prec && stats->solve && stats->rrnorms && stats->r0norms &&
+                  stats->entry_ls_id && stats->entry_paths;
+   for (int i = 0; i < STATS_MAX_LEVELS; i++)
+   {
+      alloc_ok = alloc_ok && stats->level_entries[i];
+   }
+   if (!alloc_ok)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_StatsDestroy(&stats);
+      return NULL;
    }
 
    return stats;
@@ -971,31 +1019,38 @@ hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
  * Helper: Ensure level array capacity (uses fixed capacity, reallocates if needed)
  *--------------------------------------------------------------------------*/
 
-static void
+static int
 EnsureLevelCapacity(Stats *stats, int level)
 {
-   /* Simple approach: reallocate if count reaches capacity */
-   int count    = stats->level_count[level];
-   int capacity = STATS_TIMESTEP_CAPACITY;
+   /* The next write goes to index level_count[level]; ensure it is in bounds. */
+   int count = stats->level_count[level];
 
-   /* Check if we need more space (count is power-of-2 threshold) */
-   while (capacity <= count)
+   if (count < stats->level_capacity[level])
    {
-      capacity *= 2;
+      return 1;
    }
 
-   if (count > 0 && (count & (count - 1)) == 0 && count >= STATS_TIMESTEP_CAPACITY)
+   /* Grow geometrically. Report allocation failure so the caller can skip the
+    * write instead of overrunning the old buffer. */
+   int new_capacity = (stats->level_capacity[level] > 0)
+                         ? stats->level_capacity[level] * 2
+                         : STATS_TIMESTEP_CAPACITY;
+   while (new_capacity <= count)
    {
-      /* count is a power of 2 and >= initial capacity, time to grow */
-      int         new_capacity = count * 2;
-      LevelEntry *new_ptr      = (LevelEntry *)realloc(
-         stats->level_entries[level], (size_t)new_capacity * sizeof(LevelEntry));
-      /* GCOVR_EXCL_BR_START */
-      if (new_ptr) /* GCOVR_EXCL_BR_STOP */
-      {
-         stats->level_entries[level] = new_ptr;
-      }
+      new_capacity *= 2;
    }
+
+   LevelEntry *new_ptr = (LevelEntry *)realloc(stats->level_entries[level],
+                                               (size_t)new_capacity * sizeof(LevelEntry));
+   /* GCOVR_EXCL_BR_START */
+   if (!new_ptr) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      return 0;
+   }
+   stats->level_entries[level]  = new_ptr;
+   stats->level_capacity[level] = new_capacity;
+   return 1;
 }
 
 /*--------------------------------------------------------------------------
@@ -1043,14 +1098,15 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
    /* GCOVR_EXCL_BR_START */
    if (stats->level_active & (1 << level)) /* GCOVR_EXCL_BR_STOP */
    {
-      EnsureLevelCapacity(stats, level);
+      if (EnsureLevelCapacity(stats, level))
+      {
+         int idx                                      = stats->level_count[level];
+         stats->level_entries[level][idx].id          = stats->level_current_id[level];
+         stats->level_entries[level][idx].solve_start = stats->level_solve_start[level];
+         stats->level_entries[level][idx].solve_end   = stats->ls_counter;
 
-      int idx                                      = stats->level_count[level];
-      stats->level_entries[level][idx].id          = stats->level_current_id[level];
-      stats->level_entries[level][idx].solve_start = stats->level_solve_start[level];
-      stats->level_entries[level][idx].solve_end   = stats->ls_counter;
-
-      stats->level_count[level]++;
+         stats->level_count[level]++;
+      }
       stats->level_active &= ~(1 << level);
    }
 
@@ -1111,10 +1167,19 @@ hypredrv_StatsTimerSetSeconds(Stats *stats)
  * hypredrv_StatsIterSet
  *--------------------------------------------------------------------------*/
 
+/* The entry counter starts at -1 and only becomes a valid index after the first
+ * "matrix"/"system" annotation. Guard every counter-indexed access so a caller
+ * that queries statistics before the first solve cannot read/write out of bounds. */
+static int
+StatsCounterValid(const Stats *stats)
+{
+   return stats && stats->counter >= 0 && stats->counter < stats->capacity;
+}
+
 void
 hypredrv_StatsIterSet(Stats *stats, int num_iters)
 {
-   if (!stats)
+   if (!StatsCounterValid(stats))
    {
       return;
    }
@@ -1128,7 +1193,7 @@ hypredrv_StatsIterSet(Stats *stats, int num_iters)
 void
 hypredrv_StatsInitialResNormSet(Stats *stats, double r0norm)
 {
-   if (!stats)
+   if (!StatsCounterValid(stats))
    {
       return;
    }
@@ -1142,7 +1207,7 @@ hypredrv_StatsInitialResNormSet(Stats *stats, double r0norm)
 void
 hypredrv_StatsRelativeResNormSet(Stats *stats, double rrnorm)
 {
-   if (!stats)
+   if (!StatsCounterValid(stats))
    {
       return;
    }
@@ -1259,12 +1324,15 @@ StatsPrintImpl(const Stats *stats, int print_level)
       double avg_rr    = sum_rr / n;
       double avg_iters = (double)sum_iters / n;
 
-      double std_build = sqrt((ssq_build - (n * avg_build * avg_build)) / (n - 1));
-      double std_setup = sqrt((ssq_setup - (n * avg_setup * avg_setup)) / (n - 1));
-      double std_solve = sqrt((ssq_solve - (n * avg_solve * avg_solve)) / (n - 1));
-      double std_r0    = sqrt((ssq_r0 - (n * avg_r0 * avg_r0)) / (n - 1));
-      double std_rr    = sqrt((ssq_rr - (n * avg_rr * avg_rr)) / (n - 1));
-      double std_iters = sqrt((ssq_iters - (n * avg_iters * avg_iters)) / (n - 1));
+      /* One-pass variance can go slightly negative from floating-point
+       * cancellation when samples are near-identical (common for repeated-solve
+       * timings); clamp at zero so the reported std-dev is never NaN. */
+      double std_build = sqrt(StatsVarianceClamp(ssq_build, n, avg_build));
+      double std_setup = sqrt(StatsVarianceClamp(ssq_setup, n, avg_setup));
+      double std_solve = sqrt(StatsVarianceClamp(ssq_solve, n, avg_solve));
+      double std_r0    = sqrt(StatsVarianceClamp(ssq_r0, n, avg_r0));
+      double std_rr    = sqrt(StatsVarianceClamp(ssq_rr, n, avg_rr));
+      double std_iters = sqrt(StatsVarianceClamp(ssq_iters, n, avg_iters));
 
       PrintDivisor();
       printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
@@ -1438,7 +1506,7 @@ hypredrv_StatsSetPendingTimestepContext(Stats *stats, int timestep_id)
 int
 hypredrv_StatsGetLastIter(const Stats *stats)
 {
-   if (!stats)
+   if (!StatsCounterValid(stats))
    {
       return -1;
    }
@@ -1452,7 +1520,7 @@ hypredrv_StatsGetLastIter(const Stats *stats)
 double
 hypredrv_StatsGetLastSetupTime(const Stats *stats)
 {
-   if (!stats)
+   if (!StatsCounterValid(stats))
    {
       return 0.0;
    }
@@ -1466,7 +1534,7 @@ hypredrv_StatsGetLastSetupTime(const Stats *stats)
 double
 hypredrv_StatsGetLastSolveTime(const Stats *stats)
 {
-   if (!stats)
+   if (!StatsCounterValid(stats))
    {
       return 0.0;
    }
@@ -1560,13 +1628,19 @@ ComputeLevelStats(const Stats *stats, const LevelEntry *entry, int *num_solves,
    double s_time   = 0.0;
    double p_time   = 0.0;
 
-   for (int i = entry->solve_start; i < entry->solve_end; i++)
+   /* Clamp the index range to the allocated capacity so a malformed entry cannot
+    * read out of bounds. */
+   int lo = entry->solve_start;
+   int hi = entry->solve_end;
+   if (lo < 0) lo = 0;
+   if (hi > stats->capacity) hi = stats->capacity;
+   for (int i = lo; i < hi; i++)
    {
       l_iters += stats->iters[i];
       p_time += stats->prec[i];
       s_time += stats->solve[i];
    }
-   n_solves = entry->solve_end - entry->solve_start;
+   n_solves = (hi > lo) ? (hi - lo) : 0;
 
    if (num_solves) *num_solves = n_solves;
    if (linear_iters) *linear_iters = l_iters;
@@ -1583,8 +1657,8 @@ hypredrv_StatsLevelGetEntrySummary(const Stats *stats, int level, int index,
                                    int *entry_id, int *num_solves, int *linear_iters,
                                    double *setup_time, double *solve_time)
 {
-   hypredrv_ErrorCodeResetAll();
-
+   /* Do not reset the global error state here: doing so would silently discard
+    * diagnostics accumulated by earlier calls before the caller can inspect them. */
    if (!stats)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);

@@ -9,6 +9,8 @@
  * Includes
  *-----------------------------------------------------------------------------*/
 
+#include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,14 +22,39 @@
 
 #define MALLOC_AND_CHECK(ptr, num_entries, type)                                   \
    do {                                                                            \
-      (ptr) = (type*) malloc(num_entries * sizeof(type));                          \
+      (ptr) = (type*) malloc((size_t)(num_entries) * sizeof(type));               \
       if ((ptr) == NULL)                                                           \
       {                                                                            \
          fprintf(stderr, "Failed while trying to allocate %zu bytes at line %d\n", \
-                 num_entries * sizeof(type), __LINE__);                            \
+                 (size_t)(num_entries) * sizeof(type), __LINE__);                  \
          exit(1);                                                                  \
       }                                                                            \
    } while (0)
+
+/* Validate a file-declared non-zero count and return the number of slots to
+ * allocate (optionally doubled for symmetric expansion). Rejects non-positive
+ * values and guards the allocation-size multiply against overflow. */
+static int64_t
+validate_nnz(int64_t nnz, int expand2, const char *filename)
+{
+   int64_t factor = expand2 ? 2 : 1;
+
+   if (nnz <= 0)
+   {
+      fprintf(stderr, "Invalid non-zero count (%" PRId64 ") in file: %s\n", nnz,
+              filename);
+      exit(EXIT_FAILURE);
+   }
+   /* Largest per-entry footprint is 3 int64_t (sort index) or 2*double; bound by
+    * the 3*int64_t case so every later allocation cannot overflow size_t. */
+   if (nnz > (int64_t)(INT64_MAX / (factor * 3 * (int64_t)sizeof(int64_t))))
+   {
+      fprintf(stderr, "Non-zero count (%" PRId64 ") too large in file: %s\n", nnz,
+              filename);
+      exit(EXIT_FAILURE);
+   }
+   return nnz * factor;
+}
 
 /*-----------------------------------------------------------------------------
  * coomat_t: data structure for sparse matrices in COO format
@@ -64,13 +91,14 @@ coomat_t* read_coomat_file(const char* filename)
    MALLOC_AND_CHECK(mat, 1, coomat_t);
 
    // Read header
-   if (fscanf(file, "%d %ld", &mat->num_rows, &mat->num_nonzeros) != 2)
+   if (fscanf(file, "%d %" SCNd64, &mat->num_rows, &mat->num_nonzeros) != 2)
    {
       fprintf(stderr, "Failed to read header from file: %s\n", filename);
       fclose(file);
       free(mat);
       exit(EXIT_FAILURE);
    }
+   (void)validate_nnz(mat->num_nonzeros, 0, filename);
 
    // Allocate memory for arrays
    MALLOC_AND_CHECK(mat->rows, mat->num_nonzeros, int32_t);
@@ -83,8 +111,11 @@ coomat_t* read_coomat_file(const char* filename)
    {
       if (fscanf(file, "%d %d %lf", &row, &col, &coef) != 3)
       {
-         fprintf(stderr, "Failed to read header from file: %s\n", filename);
+         fprintf(stderr, "Failed to read entry %" PRId64 " from file: %s\n", i, filename);
          fclose(file);
+         free(mat->rows);
+         free(mat->cols);
+         free(mat->coefs);
          free(mat);
          exit(EXIT_FAILURE);
       }
@@ -185,6 +216,9 @@ coomat_t* read_mtx_file(const char* filename)
    }
 
    // Read header to check for symmetry and size
+   int header_parsed = 0;
+   num_rows = num_cols = 0;
+   num_nonzeros = 0;
    while (fgets(line, sizeof(line), file))
    {
       if (line[0] == '%') // Comment or header line
@@ -197,19 +231,32 @@ coomat_t* read_mtx_file(const char* filename)
       }
       else
       {
-         sscanf(line, "%d %d %ld", &num_rows, &num_cols, &num_nonzeros);
+         if (sscanf(line, "%d %d %" SCNd64, &num_rows, &num_cols, &num_nonzeros) == 3)
+         {
+            header_parsed = 1;
+         }
          break;
       }
    }
+   if (!header_parsed)
+   {
+      fprintf(stderr, "Failed to read size header from file: %s\n", filename);
+      fclose(file);
+      free(mat);
+      exit(EXIT_FAILURE);
+   }
+
+   // Number of slots, doubled for symmetric expansion, with overflow validation.
+   int64_t capacity = validate_nnz(num_nonzeros, symmetric ? 1 : 0, filename);
 
    mat->num_rows = num_rows;
    mat->num_nonzeros = num_nonzeros;
    mat->base = 1; // Assume 1-based indexing from MTX format
 
    // Allocate memory for arrays
-   mat->rows = (int32_t*) malloc(2 * num_nonzeros * sizeof(int32_t));
-   mat->cols = (int32_t*) malloc(2 * num_nonzeros * sizeof(int32_t));
-   mat->coefs = (double*) malloc(2 * num_nonzeros * sizeof(double));
+   mat->rows = (int32_t*) malloc((size_t)capacity * sizeof(int32_t));
+   mat->cols = (int32_t*) malloc((size_t)capacity * sizeof(int32_t));
+   mat->coefs = (double*) malloc((size_t)capacity * sizeof(double));
 
    if (mat->rows == NULL || mat->cols == NULL || mat->coefs == NULL)
    {
@@ -222,17 +269,28 @@ coomat_t* read_mtx_file(const char* filename)
       exit(EXIT_FAILURE);
    }
 
-   // Read the data entries
+   // Read the data entries. Never write past the allocated capacity even if the
+   // file body contains more coordinate lines than the header declared.
    while (fgets(line, sizeof(line), file))
    {
       if (sscanf(line, "%d %d %lf", &row, &col, &coef) == 3)
       {
+         if (count >= capacity)
+         {
+            fprintf(stderr,
+                    "File %s declares %" PRId64
+                    " non-zeros but contains more entries\n",
+                    filename, num_nonzeros);
+            fclose(file);
+            free_coomat(&mat);
+            exit(EXIT_FAILURE);
+         }
          mat->rows[count] = row;
          mat->cols[count] = col;
          mat->coefs[count] = coef;
          count++;
 
-         if (symmetric && row != col)
+         if (symmetric && row != col && count < capacity)
          {
             mat->rows[count] = col;
             mat->cols[count] = row;
@@ -333,6 +391,8 @@ read_ijbin(const char *filename)
       fclose(fp);
       exit(EXIT_FAILURE);
    }
+
+   (void)validate_nnz(header[5], 0, filename);
 
    MALLOC_AND_CHECK(mat, 1, coomat_t);
    mat->base         = 0;

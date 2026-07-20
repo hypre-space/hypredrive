@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "HYPREDRV.h"
+#include "internal/compatibility.h"
 
 static const char *HYPREDRV_MATLAB_DEFAULT_YAML = "solver:\n"
                                                   "  pcg:\n"
@@ -142,8 +143,8 @@ HYPREDRV_MatlabEnsureInitialized(void)
 static HYPRE_BigInt
 HYPREDRV_MatlabBigIntFromMwSize(mwSize value, const char *name)
 {
-   HYPRE_BigInt converted = (HYPRE_BigInt)value;
-   if (converted < 0 || (mwSize)converted != value)
+   HYPRE_BigInt converted = 0;
+   if (!hypredrv_BigIntFromU64((uint64_t)value, &converted) || (mwSize)converted != value)
    {
       mexErrMsgIdAndTxt("hypredrive:IndexOverflow",
                         "%s is outside the active HYPRE_BigInt range", name);
@@ -154,8 +155,9 @@ HYPREDRV_MatlabBigIntFromMwSize(mwSize value, const char *name)
 static HYPRE_BigInt
 HYPREDRV_MatlabBigIntFromMwIndex(mwIndex value, const char *name)
 {
-   HYPRE_BigInt converted = (HYPRE_BigInt)value;
-   if (converted < 0 || (mwIndex)converted != value)
+   HYPRE_BigInt converted = 0;
+   if (!hypredrv_BigIntFromU64((uint64_t)value, &converted) ||
+       (mwIndex)converted != value)
    {
       mexErrMsgIdAndTxt("hypredrive:IndexOverflow",
                         "%s is outside the active HYPRE_BigInt range", name);
@@ -241,6 +243,12 @@ HYPREDRV_MatlabConvertCscToCsr(const mxArray *A, HYPRE_BigInt **indptr_out,
    const mwIndex *ir     = mxGetIr(A);
    const double  *values = mxGetPr(A);
    mwSize         nnz    = jc[n];
+
+   /* Validate that the dimensions and non-zero count fit in HYPRE_BigInt before any
+    * counting/indexing: with a 32-bit HYPRE_BigInt build and nnz > INT32_MAX the
+    * running index computations below would overflow and write out of bounds. */
+   (void)HYPREDRV_MatlabBigIntFromMwSize(n, "row count");
+   (void)HYPREDRV_MatlabBigIntFromMwSize(nnz, "nnz");
 
    HYPRE_BigInt *indptr = (HYPRE_BigInt *)mxCalloc((size_t)n + 1, sizeof(HYPRE_BigInt));
    HYPRE_BigInt *cols =

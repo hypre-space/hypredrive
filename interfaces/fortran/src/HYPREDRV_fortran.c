@@ -12,6 +12,7 @@
 #include <stdlib.h>
 
 #include "HYPREDRV.h"
+#include "internal/compatibility.h"
 
 _Static_assert(((HYPRE_BigInt)-1) < (HYPRE_BigInt)0,
                "HYPREDRV Fortran bridge requires signed HYPRE_BigInt");
@@ -21,8 +22,7 @@ _Static_assert(sizeof(HYPRE_Real) == sizeof(double),
 static uint32_t
 hypredrv_fortran_bigint_from_i64(int64_t value, const char *name, HYPRE_BigInt *out)
 {
-   HYPRE_BigInt converted = (HYPRE_BigInt)value;
-   if ((int64_t)converted != value)
+   if (!hypredrv_BigIntFromI64(value, out))
    {
       char message[256];
       int  n = snprintf(message, sizeof(message),
@@ -35,7 +35,6 @@ hypredrv_fortran_bigint_from_i64(int64_t value, const char *name, HYPRE_BigInt *
       }
       return HYPREDRV_ErrorInvalidValue(message);
    }
-   *out = converted;
    return HYPREDRV_SUCCESS;
 }
 
@@ -98,6 +97,18 @@ HYPREDRV_FortranLinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, int64_t row_st
       return HYPREDRV_ErrorInvalidValue("invalid Fortran CSR buffer lengths");
    }
 
+   /* Validate pointers before dereferencing indptr below. */
+   if (indptr_in == NULL ||
+       (col_indices_len > 0 && (col_indices_in == NULL || data == NULL)))
+   {
+      return HYPREDRV_ErrorInvalidValue("Fortran CSR input pointer is NULL");
+   }
+
+   /* Guard the subtraction against overflow before computing nrows. */
+   if (row_end_in < row_start_in)
+   {
+      return HYPREDRV_ErrorInvalidValue("Fortran CSR row_end must be >= row_start");
+   }
    int64_t nrows = row_end_in - row_start_in + 1;
    if (nrows <= 0 || indptr_len != nrows + 1)
    {

@@ -1171,30 +1171,33 @@ hypredrv_InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr,
 
    MPI_Comm_rank(comm, &myid);
 
-   /* Rank 0: Check if file exists */
+   /* Rank 0: Check if file exists. Do not return early from this rank-0-only
+    * block: every rank must reach the collective hypredrv_DistributedErrorCodeActive
+    * below, otherwise rank 0 desynchronizes and the job deadlocks. */
    if (!myid)
    {
       if (filename == NULL)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          hypredrv_ErrorMsgAdd("Configuration filename is NULL");
-         return;
       }
-      if (!hypredrv_BinaryPathPrefixIsSafe(filename))
+      else if (!hypredrv_BinaryPathPrefixIsSafe(filename))
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid configuration file path");
-         return;
-      }
-      FILE *fp = fopen(filename, "r");
-      if (!fp)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAdd("Configuration file not found: '%s'", filename);
       }
       else
       {
-         fclose(fp);
+         FILE *fp = fopen(filename, "r");
+         if (!fp)
+         {
+            hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+            hypredrv_ErrorMsgAdd("Configuration file not found: '%s'", filename);
+         }
+         else
+         {
+            fclose(fp);
+         }
       }
    }
 
@@ -1220,16 +1223,34 @@ hypredrv_InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr,
       return;
    }
 
-   /* Broadcast the text size and base indentation */
+   /* Broadcast the text size and base indentation. Use a fixed-width type for the
+    * size so the broadcast is correct on LLP64 platforms where sizeof(size_t) !=
+    * sizeof(unsigned long). */
+   uint64_t text_size_u64 = (uint64_t)text_size;
    MPI_Bcast(&base_indent, 1, MPI_INT, 0, comm);
-   MPI_Bcast(&text_size, 1, MPI_UNSIGNED_LONG, 0, comm);
+   MPI_Bcast(&text_size_u64, 1, MPI_UINT64_T, 0, comm);
+   text_size = (size_t)text_size_u64;
 
    /* Broadcast the text */
    MPI_Comm_rank(comm, &myid);
    if (myid)
    {
-      text = (char *)malloc(text_size + 1);
-   } /* +1: for null terminator */
+      text = (char *)malloc(text_size + 1); /* +1: for null terminator */
+   }
+   /* If a non-root rank failed to allocate, all ranks must bail together to avoid
+    * a NULL receive buffer and a desynchronized collective. */
+   int bcast_ok = (myid && !text) ? 0 : 1;
+   MPI_Allreduce(MPI_IN_PLACE, &bcast_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!bcast_ok)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate configuration text buffer (%zu bytes)",
+                           text_size + 1);
+      free(text);
+      free(dirname);
+      free(basename);
+      return;
+   }
    MPI_Bcast(text, (int)text_size, MPI_CHAR, 0, comm);
 
    /* Make sure null terminator is in the right place */

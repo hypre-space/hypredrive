@@ -61,6 +61,17 @@ void  hypredrv_CombineFilename(const char *, const char *, char **);
 bool  hypredrv_IsYAMLFilename(const char *);
 bool  hypredrv_PathIsUnderRoot(const char *, const char *);
 
+/* Clear hypre's sticky error flag after a public setup/solve boundary call.
+ * Use this at API edges that previously called HYPRE_ClearAllErrors(). For
+ * nested/inexact solvers that should only discard HYPRE_ERROR_CONV, call
+ * hypredrv_HypreClearConvergenceErrors() instead. */
+void hypredrv_HypreConsumeErrors(void);
+
+/* Clear hypre's sticky error flag only when it is exclusively HYPRE_ERROR_CONV.
+ * Harder hypre failures are left intact. Prefer hypredrv_HypreConsumeErrors() at
+ * public API boundaries. */
+void hypredrv_HypreClearConvergenceErrors(void);
+
 static inline int
 hypredrv_FloatIsFinite(float value)
 {

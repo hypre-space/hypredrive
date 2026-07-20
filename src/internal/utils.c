@@ -13,12 +13,52 @@
 #include "internal/containers.h"
 
 /*-----------------------------------------------------------------------------
+ * hypredrv_HypreClearConvergenceErrors / hypredrv_HypreConsumeErrors
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_HypreClearConvergenceErrors(void)
+{
+   HYPRE_Int hypre_error = HYPRE_GetError();
+
+   /* Nested / inexact solvers often leave HYPRE_ERROR_CONV sticky. Clear that
+    * soft failure so it does not poison later hypre calls, but keep any harder
+    * error bits for the caller. */
+   if (hypre_error && !(hypre_error & ~HYPRE_ERROR_CONV))
+   {
+      HYPRE_ClearAllErrors();
+   }
+}
+
+void
+hypredrv_HypreConsumeErrors(void)
+{
+   HYPRE_Int hypre_error = HYPRE_GetError();
+
+   if (!hypre_error)
+   {
+      return;
+   }
+
+   /* Public setup/solve boundaries historically cleared hypre's sticky flag
+    * unconditionally so a prior soft failure could not poison the next call.
+    * Prefer hypredrv_HypreClearConvergenceErrors() when only HYPRE_ERROR_CONV
+    * should be discarded and harder bits must remain visible. */
+   (void)hypre_error;
+   HYPRE_ClearAllErrors();
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_StrToLowerCase
  *-----------------------------------------------------------------------------*/
 
 char *
 hypredrv_StrToLowerCase(char *str)
 {
+   if (!str)
+   {
+      return str;
+   }
    for (int i = 0; str[i]; i++)
    {
       str[i] = (char)tolower((unsigned char)str[i]);
