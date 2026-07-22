@@ -17,61 +17,69 @@ Overview
 The sequence-compression workflow has two components:
 
 - ``hypredrive-lsseq`` (offline utility):
+
   - Reads a sequence of IJ multipart files from a directory-based layout.
   - Packs the sequence into one lossless binary container.
 - Runtime decompressor (inside hypredrive):
-  - Triggered by ``linear_system.sequence_filename`` in YAML.
-  - Reconstructs matrix/RHS/(optional) dofmap for each linear-system step.
 
-This split keeps the heavy, one-time packaging step outside the core solver loop, while
-making decompression available directly in the main executable/library.
+  - The ``linear_system.sequence_filename`` YAML key starts the decompressor.
+  - The decompressor reconstructs the matrix, right-hand side, and optional degree-of-freedom map.
+
+This design keeps the one-time packaging work outside the core solver loop. The main
+executable and library perform the decompression.
 
 Philosophy Behind the Compressed Binary File
 --------------------------------------------
 
-The container is designed around five principles:
+The container design follows five principles:
 
 1. **Lossless by construction**
-   - Matrix indices and numeric values are stored as raw bytes after compression.
-   - No quantization, truncation, or value transformations are applied.
+
+   - The utility stores matrix indices and numeric values as raw bytes after compression.
+   - The utility does not apply quantization, truncation, or value transformations.
 
 2. **One file per sequence**
+
    - A single file stores all timesteps/systems in the selected suffix range.
    - The extension encodes the low-level codec (for example ``.zst.bin`` or ``.zlib.bin``).
 
 3. **Sparsity-pattern deduplication**
-   - Repeated matrix sparsity patterns are detected and stored only once.
+
+   - The utility detects and stores each repeated matrix sparsity pattern only once.
    - Each system/part references the appropriate stored pattern by ``pattern_id``.
 
 4. **Portable metadata, explicit structure**
-   - Fixed-width metadata fields are used in the top-level format.
+
+   - The top-level format uses fixed-width metadata fields.
    - Internal offsets/sizes define all sections explicitly, so readers can validate layout.
 
 5. **Runtime alignment with existing multipart readers**
-   - Decompressed data is fed through existing matrix/vector/dofmap read paths.
+
+   - The runtime sends decompressed data through the existing data readers.
    - This minimizes behavioral drift between directory mode and sequence-container mode.
 
 
 Internal Container Structure
 ----------------------------
 
-The format is a chunked binary container with an uncompressed metadata front matter and
-compressed payload blobs. Values, RHS, and dofmap are stored as *batched* blobs: one
-compressed blob per part for all systems’ values, one per part for RHS, one per part for
-dofmap. This yields better compression than per-system-part blobs. The part blob table
-gives file offsets and sizes for each part’s batched blobs; ``LSSeqSystemPartMeta`` stores
-*decompressed* byte offset and size within that part’s blob for each system.
+The format is a chunked binary container. It has uncompressed metadata followed by
+compressed data blobs. Each part has one batched blob for all system values. Each part
+also has one blob for right-hand sides and one for the degree-of-freedom map. These
+batches compress better than separate blobs for each system and part.
+
+The part blob table gives the file offset and size of each batched blob.
+``LSSeqSystemPartMeta`` gives the decompressed offset and size for each system in the blob.
 
 High-level sections:
 
 - ``LSSeqHeader`` (fixed-size)
-- mandatory ``LSSeqInfoHeader`` + UTF-8 manifest payload (provenance/debug block)
+- Mandatory ``LSSeqInfoHeader`` + UTF-8 manifest payload (provenance/debug block)
 - ``LSSeqPartMeta[]`` (one entry per global part)
 - ``LSSeqPatternMeta[]`` (one entry per unique sparsity pattern)
 - ``LSSeqSystemPartMeta[]`` (one entry per ``(system, part)`` pair)
 - Part blob table: ``6 * num_parts`` ``uint64_t`` (offset and size for values, RHS, dof per part)
-- optional ``LSSeqTimestepEntry[]``
-- blob area (compressed payloads)
+- Optional ``LSSeqTimestepEntry[]``
+- Blob area (compressed payloads)
 
 Compact Offset Map
 ~~~~~~~~~~~~~~~~~~
@@ -112,7 +120,7 @@ Field-By-Field Reference
      - Meaning
    * - ``magic``
      - ``uint64_t``
-     - File signature. Must equal ``LSSEQ_MAGIC``.
+     - The writer sets the file signature to ``LSSEQ_MAGIC``.
    * - ``version``
      - ``uint32_t``
      - Format version. Current value is ``1`` (batched per-part blobs).
@@ -155,10 +163,10 @@ Field-By-Field Reference
 
 ``LSSeqInfoHeader`` (mandatory)
 
-For ``LSSEQ_VERSION=1``, ``LSSEQ_FLAG_HAS_INFO`` must be set in ``LSSeqHeader.flags`` and the
-file must store an ``LSSeqInfoHeader`` immediately after ``LSSeqHeader``. It is followed by a
-small, uncompressed UTF-8 manifest payload that records provenance/debug information (resolved
-input paths, suffix range, codec, build metadata, etc).
+``LSSEQ_VERSION=1`` requires ``LSSEQ_FLAG_HAS_INFO`` in ``LSSeqHeader.flags``. It also
+requires an ``LSSeqInfoHeader`` immediately after ``LSSeqHeader``. A small,
+uncompressed UTF-8 manifest follows the information header. The manifest records
+input paths, the suffix range, the codec, and build metadata.
 
 The manifest payload format is a sequence of ``key=value`` lines (one per line).
 
@@ -171,7 +179,7 @@ The manifest payload format is a sequence of ``key=value`` lines (one per line).
      - Meaning
    * - ``magic``
      - ``uint64_t``
-     - Must equal ``LSSEQ_INFO_MAGIC``.
+     - The writer sets this field to ``LSSEQ_INFO_MAGIC``.
    * - ``version``
      - ``uint32_t``
      - Info header version (current: ``1``).
@@ -319,42 +327,42 @@ Programmatic access:
 
 Header fields include:
 
-- magic and version
-- codec id
-- section counts (systems, parts, patterns, timesteps)
-- section offsets
-- flags (dofmap present, timesteps present)
+- Magic and version
+- Codec ID
+- Section counts (systems, parts, patterns, timesteps)
+- Section offsets
+- Flags (dofmap present, timesteps present)
 
 Part metadata (``LSSeqPartMeta``) stores static part properties:
 
-- row bounds and row count
-- row-index byte width
-- value byte width
+- Row bounds and row count
+- Row-index byte width
+- Value byte width
 
 Pattern metadata (``LSSeqPatternMeta``) stores deduplicated sparsity descriptors:
 
-- owning ``part_id``
+- Owning ``part_id``
 - ``nnz``
-- offsets/sizes for compressed ``rows`` and ``cols`` arrays
+- Offsets and sizes for compressed ``rows`` and ``cols`` arrays
 
 System/part metadata (``LSSeqSystemPartMeta``) stores per-step payload references:
 
 - ``pattern_id`` to recover sparsity
 - ``nnz``
-- offsets/sizes for compressed matrix value chunk
-- offsets/sizes for compressed RHS value chunk
-- optional dofmap chunk metadata
+- Offsets and sizes for the compressed matrix value chunk
+- Offsets and sizes for the compressed RHS value chunk
+- Optional DOF map chunk metadata
 
 Optional timesteps section (``LSSeqTimestepEntry``):
 
-- stores ``(timestep, ls_start)`` pairs
-- consumed by preconditioner-reuse-by-timestep when external timestep file is absent
+- Stores ``(timestep, ls_start)`` pairs
+- Supplies time-step groups for preconditioner reuse when an external time-step file is absent
 
 How decompression works at runtime:
 
 1. Read and validate metadata sections.
 2. For the current ``ls_id``, resolve local part ids.
-3. Load referenced blobs (pattern chunks and value chunks), decompress, and validate size.
+3. Load the referenced blobs, decompress them, and validate their sizes.
 4. Rebuild temporary multipart files and reuse standard IJ readers.
 5. Continue solver execution as if data came from directory mode.
 
@@ -362,26 +370,26 @@ Binary Compatibility Notes
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - Metadata uses fixed-width integer types.
-- Payload arrays (indices/values/dofmap) are stored as raw bytes before compression.
-- Current implementation writes/reads metadata and payloads with host-native layout and is
-  intended for homogeneous environments (same ABI and endianness across writer/reader).
+- The writer stores payload arrays as raw bytes before compression.
+- The implementation reads and writes metadata and payloads with the host-native layout.
+  Use the same ABI and byte order for the writer and reader.
 
 
 Why and When to Use This Capability
 -----------------------------------
 
-Use sequence containers when:
+Use sequence containers in these cases:
 
-- running many linear systems with repeated sparsity structure
-- reducing filesystem metadata traffic from many small files
-- shipping or archiving a sequence as one artifact
-- preserving optional timestep grouping metadata in-band
+- You run many linear systems with a repeated sparsity structure.
+- Many small files cause excessive file-system metadata traffic.
+- You distribute or archive a sequence as one artifact.
+- You preserve optional time-step group metadata in the container.
 
 Benefits:
 
-- less on-disk duplication for repeated patterns
-- simpler distribution (single artifact)
-- YAML-level switch between directory and sequence modes
+- Less on-disk duplication for repeated patterns
+- Simpler distribution as one artifact
+- YAML-level selection of directory or sequence mode
 
 
 How to Use
@@ -452,8 +460,9 @@ Use in YAML:
 
 Notes:
 
-- ``rhs_mode`` remains authoritative. Container RHS is used only when ``rhs_mode: file``.
-- If ``timestep_filename`` is omitted, embedded timesteps are used when available.
+- ``rhs_mode`` remains authoritative. The runtime reads the container right-hand side
+  only when ``rhs_mode: file``.
+- If you omit ``timestep_filename``, the runtime uses available embedded timesteps.
 - ``LSSeqInfoHeader`` + manifest payload are mandatory for ``LSSEQ_VERSION=1`` files.
 - Extensions map to codec: ``.bin`` (none), ``.zlib.bin``, ``.zst.bin``, ``.lz4.bin``,
   ``.lz4hc.bin``, ``.blosc.bin``.
@@ -462,8 +471,8 @@ Notes:
 Current Scope and Limitations
 -----------------------------
 
-- Input is expected in binary IJ multipart format.
+- The utility accepts input in binary IJ multipart format.
 - Sequence container path currently targets matrix, RHS, and optional dofmap data.
 - Initial guess and explicit reference-solution files remain separate inputs.
-- For compatibility with older hypre releases, some sequence regression coverage is gated by
-  hypre version in test registration.
+- Test registration selects some sequence tests according to the hypre version.
+  This selection maintains compatibility with older hypre releases.

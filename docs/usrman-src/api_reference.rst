@@ -8,28 +8,27 @@
 API Reference
 =============
 
-This chapter documents every public function exported by ``libHYPREDRV``. The reference
-below is generated directly from the Doxygen comments in ``include/HYPREDRV.h``.
+This chapter documents every public function that ``libHYPREDRV`` exports. Doxygen
+comments in ``include/HYPREDRV.h`` generate the detailed reference.
 
 Why use ``libHYPREDRV``?
 ------------------------
 
-The ``hypredrive`` executable is well-suited for file-based workflows: provide a matrix, a
-YAML configuration, and get a solution. ``libHYPREDRV`` serves the complementary use case:
-your application already has an assembled ``HYPRE_IJMatrix``/``HYPRE_IJVector`` in memory
-and needs a low-overhead path to HYPRE's solver stack, configurable at runtime from a YAML
-string or file.
+The ``hypredrive-cli`` executable supports file-based workflows. It reads a matrix and a
+YAML configuration, and then it calculates a solution. ``libHYPREDRV`` supports applications
+that already have HYPRE matrices and vectors in memory. A YAML string or file configures
+the HYPRE solver stack at run time.
 
 Typical benefits:
 
-- **Runtime configurability** — swap solvers and preconditioners without recompiling; pass
-  different YAML strings in different code paths.
-- **Minimal boilerplate** — three to five ``HYPREDRV_*`` calls replace dozens of direct
-  HYPRE API calls for common solver setups.
-- **Statistics and timing** — built-in timing infrastructure produces structured output for
-  benchmarking; reuse statistics across repetitions.
-- **Preconditioner reuse** — attach a long-lived preconditioner object across multiple
-  right-hand sides or timesteps without rebuilding the setup phase.
+- **Run-time configuration.** Change solvers and preconditioners without compilation.
+  Different code paths can use different YAML strings.
+- **Small integration layer.** Three to five ``HYPREDRV_*`` calls replace many direct HYPRE
+  calls for common solver setups.
+- **Statistics and timing.** The library produces structured timing data and keeps
+  statistics across repetitions.
+- **Preconditioner reuse.** Keep one preconditioner for multiple right-hand sides or time
+  steps without another setup phase.
 
 Usage Notes
 -----------
@@ -37,24 +36,23 @@ Usage Notes
 For a full library-mode walkthrough and complete code examples, see
 :ref:`LibraryExamples`.
 
-Two rules matter most when using the API directly:
+Follow these two rules when you use the application programming interface (API) directly:
 
-- ``HYPREDRV_SetLibraryMode`` must be called before ``HYPREDRV_InputArgsParse`` when your
-  application owns the HYPRE matrices and vectors passed through ``LinearSystemSet*``.
-- ``HYPREDRV_LinearSolverDestroy`` also destroys the associated preconditioner, so there
-  is no need to call ``HYPREDRV_PreconDestroy`` afterward unless you are managing the
-  preconditioner separately.
+- Call ``HYPREDRV_SetLibraryMode`` before ``HYPREDRV_InputArgsParse`` when your application
+  owns the HYPRE matrices and vectors.
+- Do not call ``HYPREDRV_PreconDestroy`` after ``HYPREDRV_LinearSolverDestroy`` unless you
+  manage the preconditioner separately. The solver destroy function also destroys its
+  preconditioner.
 
-For embedded applications that keep multiple ``HYPREDRV_t`` objects alive at once, use the
-object-bound annotation and hierarchical-stats APIs directly on the relevant handle. In the
-current API, ``HYPREDRV_Annotate*`` and ``HYPREDRV_StatsLevel*`` all take a ``HYPREDRV_t``
-argument and record/query state for that specific object.
+An embedded application can keep multiple ``HYPREDRV_t`` objects active. Use the applicable
+handle with the annotation and hierarchical statistics APIs. The ``HYPREDRV_Annotate*`` and
+``HYPREDRV_StatsLevel*`` functions record or query state for that handle.
 
 Reference by Topic
 ------------------
 
-The public API is organized below by workflow stage. The detailed per-function
-documentation remains in the generated Doxygen section that follows.
+The following groups organize the public API by workflow stage. The generated
+Doxygen section contains detailed documentation for each function.
 
 Core Type
 ~~~~~~~~~
@@ -79,10 +77,10 @@ Input Parsing and Presets
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - :cpp:func:`HYPREDRV_InputArgsParse` - Parse YAML or argv-style input and apply the resulting configuration.
-- :cpp:func:`HYPREDRV_InputArgsGetWarmup` - Get whether warmup execution is enabled.
+- :cpp:func:`HYPREDRV_InputArgsGetWarmup` - Get the warmup setting.
 - :cpp:func:`HYPREDRV_InputArgsGetNumRepetitions` - Get the configured number of repetitions.
 - :cpp:func:`HYPREDRV_InputArgsGetNumLinearSystems` - Get the configured number of linear systems.
-- :cpp:func:`HYPREDRV_InputArgsGetNumPreconVariants` - Get how many preconditioner variants are configured.
+- :cpp:func:`HYPREDRV_InputArgsGetNumPreconVariants` - Get the number of preconditioner variants.
 - :cpp:func:`HYPREDRV_InputArgsSetPreconVariant` - Select the active preconditioner variant by index.
 - :cpp:func:`HYPREDRV_InputArgsSetPreconPreset` - Apply a named preconditioner preset to the active variant.
 - :cpp:func:`HYPREDRV_InputArgsSetSolverPreset` - Apply a named solver preset without reparsing YAML.
@@ -109,7 +107,8 @@ Linear System Setup
 - :cpp:func:`HYPREDRV_LinearSystemPrintDofmap` - Write the current degree-of-freedom map to text output.
 - :cpp:func:`HYPREDRV_LinearSystemPrint` - Print the current matrix, RHS, and DOF map to files.
 - :cpp:func:`HYPREDRV_LinearSystemSetNearNullSpace` - Attach near-nullspace vectors such as rigid-body modes.
-- :cpp:func:`HYPREDRV_LinearSystemSetNullSpace` - Attach exact null space modes that are projected out of computed solutions.
+- :cpp:func:`HYPREDRV_LinearSystemSetNullSpace` - Attach exact null space modes that
+  hypredrive projects out of computed solutions.
 
 Linear System Accessors
 ~~~~~~~~~~~~~~~~~~~~~~~

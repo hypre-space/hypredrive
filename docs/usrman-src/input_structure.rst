@@ -8,27 +8,23 @@
 Input Structure (YAML)
 ======================
 
-`hypredrive` uses YAML to specify parameters and settings. The YAML content can be
-provided either as a **file on disk** (driver usage) or as an **in-memory string**
-passed directly to ``HYPREDRV_InputArgsParse`` from application code. The structure
-of the YAML is the same in both cases.
+`hypredrive` uses YAML for its parameters and settings. The driver reads YAML from a
+file. Application code can pass a YAML string to ``HYPREDRV_InputArgsParse``. Both forms
+use the same YAML structure.
 
-In general, the various keywords are optional and, if not explicitly defined by the
-user, default values are used for them. Some keywords such as ``linear_system`` are
-mandatory for driver use and are marked with `required` or `possibly required`,
-depending on the value of other keywords.
+Most keywords are optional and have default values. The driver requires some keywords,
+such as ``linear_system``. The reference marks these keywords as `required` or
+`possibly required`, based on other settings.
 
 .. note::
 
-   The YAML parser in `hypredrive` is case-insensitive, meaning that it works
-   regardless of the presence of lower-case, upper-case, or a mixture of both when
-   defining keys and values.
+   The `hypredrive` YAML parser is not case-sensitive. Keys and values can use lowercase,
+   uppercase, or mixed-case text.
 
 .. tip::
 
-   You can browse this schema interactively from the command line with the driver's
-   ``-h``/``--help`` flag, which prints the valid keys, accepted values, and nested
-   topics for any section without running a solve. See :ref:`CLIHelp`.
+   Use the driver option ``-h`` or ``--help`` to browse the schema. It prints valid keys,
+   accepted values, and nested topics without a solve. See :ref:`CLIHelp`.
 
 General Settings
 ----------------
@@ -36,9 +32,9 @@ General Settings
 The ``general`` section contains global settings that apply to the entire execution of
 `hypredrive`. This section is optional.
 
-- ``warmup`` - If set to `yes`, `hypredrive` will perform a warmup execution to
-  ensure more accurate timing measurements. If `no`, no warmup is performed. The default
-  value for this parameter is `no`.
+- ``warmup`` - A value of `yes` runs a warmup before the timed operation. This
+  gives more accurate timing measurements. A value of `no` skips the warmup.
+  The default is `no`.
 
 - ``name`` - Optional display label for the current ``HYPREDRV_t`` object. When set,
   statistics banners use it in messages such as ``STATISTICS SUMMARY for flow-solver:``.
@@ -51,20 +47,18 @@ The ``general`` section contains global settings that apply to the entire execut
   - ``0`` (or `no`/`off`/`false`) - No statistics reporting.
   - ``1`` (or `yes`/`on`/`true`) - Display the basic statistics summary table with
     execution times, residual norms, and iteration counts for each solve entry.
-  - ``2`` - Display the basic statistics summary table plus an aggregate summary table
-    showing min, max, average, standard deviation, and total values for build, setup,
-    and solve times, as well as iteration counts. The aggregate table is only shown when
-    there are multiple entries (e.g., when using ``num_repetitions > 1``).
+  - ``2`` - Display the basic summary and an aggregate table. The aggregate includes the
+    minimum, maximum, average, standard deviation, and total. It covers build, setup, and
+    solve times, plus iteration counts. Multiple entries, such as repetitions, are required.
 
-  In library mode, the configured statistics summary is printed automatically on rank 0
-  when the owning ``HYPREDRV_t`` object is destroyed. Applications can still call
-  ``HYPREDRV_StatsPrint`` earlier if they want an additional snapshot before teardown.
+  In library mode, hypredrive prints the configured summary on rank 0 when the
+  application destroys the owning ``HYPREDRV_t`` object. Applications can call
+  ``HYPREDRV_StatsPrint`` earlier for an additional snapshot.
 
-- ``statistics_filename`` - Optional file path for statistics output. Default is empty,
-  which keeps writing to ``stdout``. When set, hypredrive appends each statistics
-  snapshot to that file (for example, both explicit ``HYPREDRV_StatsPrint`` calls and
-  library-mode auto-print on destroy). If the file cannot be opened, hypredrive emits a
-  warning on ``stderr`` and falls back to ``stdout`` for that print.
+- ``statistics_filename`` - Optional file path for statistics output. An empty path
+  sends output to ``stdout`` and is the default. A file path makes hypredrive append
+  each statistics snapshot to that file. If hypredrive cannot open the file, it
+  writes a warning to ``stderr`` and sends that snapshot to ``stdout``.
 
 - ``use_millisec`` - Show timings on the statistics summary table in milliseconds. The
   default value is `no`, which uses seconds instead.
@@ -73,29 +67,24 @@ The ``general`` section contains global settings that apply to the entire execut
   parsing. Values: ``yes`` / ``no``. Default: ``yes`` in driver mode and ``no`` in
   library mode.
 
-- ``num_repetitions`` - Specifies the number of times the operation should be
-  repeated. Useful for benchmarking and profiling. The default value for this parameter is
-  `1`.
+- ``num_repetitions`` - Number of times that hypredrive repeats the operation.
+  Use repetitions for benchmarks and profiles. The default is `1`.
 
-- ``dev_pool_size`` - Initial size of the umpire's device memory pool. This parameter is
-  neglected when hypre is *not* configured with umpire support. The default value for this
-  parameter is `8 GB`.
+- ``dev_pool_size`` - Initial size of the umpire device memory pool. hypre ignores
+  this parameter without umpire support. The default is `8 GB`.
 
-- ``uvm_pool_size`` - Initial size of the umpire's unified virtual memory pool. This
-  parameter is neglected when hypre is *not* configured with umpire support. The default
-  value for this parameter is `8 GB`.
+- ``uvm_pool_size`` - Initial size of the umpire unified virtual memory pool. hypre
+  ignores this parameter without umpire support. The default is `8 GB`.
 
-- ``host_pool_size`` - Initial size of the umpire's host memory pool. This parameter is
-  neglected when hypre is *not* configured with umpire support. The default value for this
-  parameter is `8 GB`.
+- ``host_pool_size`` - Initial size of the umpire host memory pool. hypre ignores
+  this parameter without umpire support. The default is `8 GB`.
 
-- ``pinned_pool_size`` - Initial size of the umpire's host memory pool. This parameter is
-  neglected when hypre is *not* configured with umpire support. The default value for this
-  parameter is `512 MB`.
+- ``pinned_pool_size`` - Initial size of the umpire pinned host memory pool. hypre
+  ignores this parameter without umpire support. The default is `512 MB`.
 
-- ``exec_policy`` - Determines whether computations are performed on the ``host`` (CPU) or
-  ``device`` (GPU). When hypre is built without GPU support the only valid value is ``host``;
-  otherwise the default is ``device``.
+- ``exec_policy`` - Selects the ``host`` (CPU) or ``device`` (GPU) for computations.
+  Without GPU support, ``host`` is the only valid value. Otherwise, the default is
+  ``device``.
 
 - ``use_vendor_spgemm`` - Use vendor-optimized sparse matrix-matrix multiplication (SpGEMM)
   kernels when available. Values: ``yes`` / ``no``. Default: ``yes`` on GPU-enabled builds
@@ -106,7 +95,7 @@ The ``general`` section contains global settings that apply to the entire execut
   and ``no`` otherwise.
 
 
-An example code block for the ``general`` section is given below:
+This example shows the ``general`` section:
 
 .. code-block:: yaml
 
@@ -127,8 +116,8 @@ An example code block for the ``general`` section is given below:
 Linear System
 -------------
 
-The ``linear_system`` section describes the linear system that `hypredrive` will solve. This
-section is required.
+The required ``linear_system`` section describes the linear system that
+`hypredrive` solves.
 
 - ``type`` - The format of the linear system matrix. Available options are ``ij`` and
   ``mtx``. The default value for this parameter is ``ij``.
@@ -136,18 +125,17 @@ section is required.
 - ``matrix_filename`` - (Required) The filename of the linear system matrix. This
   parameter does not have a default value.
 
-- ``precmat_filename`` - The filename of the linear system matrix used for computing the
-  preconditioner, which, by default, is set to the original linear system matrix.
+- ``precmat_filename`` - Filename of the matrix that hypredrive uses to compute the
+  preconditioner. The original system matrix is the default.
   In the C API, ``HYPREDRV_LinearSystemSetPrecMatrix(h, mat)`` overrides this file-based
   path when ``mat`` is non-NULL.
 
-- ``rhs_filename`` - (Possibly required) The filename of the linear system right hand side
-  vector. This parameter does not have a default value and it is required when the
-  ``rhs_mode`` is set to ``file``.
+- ``rhs_filename`` - (Possibly required) Filename of the right-hand side vector.
+  This parameter has no default and is required when ``rhs_mode`` is ``file``.
 
-- ``x0_filename`` - (Possibly required) The filename of the initial guess for the linear
-  system left hand side vector. This parameter does not have a default value and it is
-  required when the ``init_guess_mode`` is set to ``file``.
+- ``x0_filename`` - (Possibly required) Filename of the initial guess for the
+  left-hand side vector. This parameter has no default and is required when
+  ``init_guess_mode`` is ``file``.
   In the C API, ``HYPREDRV_LinearSystemSetInitialGuess(h, vec)`` overrides this
   file/default path when ``vec`` is non-NULL.
 
@@ -161,22 +149,22 @@ section is required.
 Degrees of Freedom Map
 ~~~~~~~~~~~~~~~~~~~~~~
 
-- ``dofmap_filename`` - (Possibly required) The filename of the degrees of freedom maping
-  array (`dofmap`) for the linear system. This parameter does not have a default value and it is
-  required when the ``mgr`` preconditioner is used.
+- ``dofmap_filename`` - (Possibly required) Filename of the degree-of-freedom
+  mapping array (`dofmap`). This parameter has no default and is required for
+  the ``mgr`` preconditioner.
 
 - ``init_guess_mode`` - Choice of initial guess vector. Available options are:
 
-  - ``zeros``: generates a vector of zeros.
-  - ``ones``: generates a vector of ones.
-  - ``random``: generates a vector of random numbers between `0` and `1`.
-  - ``file``: vector is read from file.
-  - ``previous``: reuses the solution of the previous linear solve. When no compatible
+  - ``zeros``: Generates a vector of zeros.
+  - ``ones``: Generates a vector of ones.
+  - ``random``: Generates a vector of random numbers between `0` and `1`.
+  - ``file``: Reads the vector from a file.
+  - ``previous``: Reuses the solution of the previous linear solve. When no compatible
     previous solution exists (first solve, or a system with a different size or
     distribution), it falls back to a vector of zeros.
 
-  The default value for this parameter is ``zeros``; when ``x0_filename`` is given, the
-  vector is read from file instead.
+  The default value is ``zeros``. When ``x0_filename`` is present, `hypredrive` reads the
+  vector from that file.
 
   .. note::
      In the library API, passing ``NULL`` to
@@ -185,37 +173,37 @@ Degrees of Freedom Map
      ``HYPREDRV_LinearSystemSetPrecMatrix`` preserves the file/default behavior described
      in this section.
 
-- ``rhs_mode`` - Determines how the right-hand side vector is provided. Available options
-  are the same as for ``init_guess_mode``.
+- ``rhs_mode`` - Selects the source of the right-hand side vector. It accepts the
+  same options as ``init_guess_mode``.
 
-- ``dirname`` - (Possibly required) Name of the top-level directory storing the linear
-  system data. This option helps remove possible redundancies when informing filenames
-  for the linear system data. This parameter does not have a default value.
+- ``dirname`` - (Possibly required) Name of the top-level data directory. Use this
+  parameter to remove repeated directory names from file paths. This parameter
+  has no default.
 
-- ``sequence_filename`` - (Optional) Path to a lossless-compressed sequence container
-  produced by ``hypredrive-lsseq``. When set, matrix/RHS/(optional) dofmap are read
-  from the container instead of ``dirname``/``*_filename``/``*_basename`` fields. The
-  number of systems is inferred from the container metadata.
+- ``sequence_filename`` - (Optional) Path to a lossless compressed sequence
+  container from ``hypredrive-lsseq``. When set, hypredrive reads the matrix,
+  right-hand side, and optional dofmap from the container. It does not use the
+  directory, filename, or basename fields. Container metadata gives the number
+  of systems.
 
-- ``matrix_basename`` - (Possibly required) Common prefix used for the filenames of linear
-  system matrices. It can be used to solve multiple matrices stored in a shared
-  directory. This parameter does not have a default value.
+- ``matrix_basename`` - (Possibly required) Common prefix for matrix filenames.
+  Use it to solve multiple matrices in a shared directory. This parameter has
+  no default.
 
-- ``precmat_basename`` - (Possibly required) Common prefix used for the filenames of
-  linear system matrices employed in the computation of the preconditioner. If not specified,
-  the matrices used for preconditioning purposes are set to the original linear system
-  matrices formed with `matrix_basename`.
+- ``precmat_basename`` - (Possibly required) Common prefix for the filenames of
+  preconditioner matrices. By default, hypredrive uses the original system
+  matrices that ``matrix_basename`` identifies.
 
-- ``rhs_basename`` - (Possibly required) Common prefix used for the filenames of linear
-  system right hand sides. It can be used to solve multiple RHS stored in a shared
-  directory. This parameter does not have a default value.
+- ``rhs_basename`` - (Possibly required) Common prefix for right-hand side
+  filenames. Use it for multiple right-hand sides in a shared directory. This
+  parameter has no default.
 
-- ``dofmap_basename`` - (Possibly required) Common prefix used for the filenames of
-  `dofmap` arrays. This parameter does not have a default value.
+- ``dofmap_basename`` - (Possibly required) Common prefix for `dofmap` array
+  filenames. This parameter has no default.
 
-- ``timestep_filename`` - (Optional) File that maps timesteps to linear-system ids for
-  preconditioner reuse-by-timestep. When using ``sequence_filename``, this can be omitted
-  if timestep metadata is embedded in the compressed container.
+- ``timestep_filename`` - (Optional) File that maps timesteps to linear-system IDs
+  for preconditioner reuse. You can omit this file when the sequence container
+  includes timestep metadata.
 
 - ``init_suffix`` - (Possibly required) Suffix number of the first linear system of a
   sequence of systems to be solved. Cannot be used together with ``set_suffix``.
@@ -223,11 +211,9 @@ Degrees of Freedom Map
 - ``last_suffix`` - (Possibly required) Suffix number of the last linear system of a
   sequence of systems to be solved. Cannot be used together with ``set_suffix``.
 
-- ``set_suffix`` - (Optional) A list of suffix numbers for each linear system in the
-  sequence (e.g. ``set_suffix: [0, 2, 5]``). Use this when the sequence of systems does
-  not use consecutive suffixes. Cannot be used together with ``init_suffix`` or
-  ``last_suffix``; if ``set_suffix`` is set, the number of systems is the length of the
-  list.
+- ``set_suffix`` - (Optional) A list of suffix numbers for the linear systems. One example
+  is ``set_suffix: [0, 2, 5]``. Use this key for nonconsecutive suffixes. Do not combine
+  it with ``init_suffix`` or ``last_suffix``. Its list length sets the number of systems.
 
 - ``digits_suffix`` - (Optional) Number of digits used to build complete filenames when
   using the ``basename`` or ``dirname`` options. This parameter has a default value of 5.
@@ -274,9 +260,10 @@ Supported artifact names are ``matrix``, ``precmat``, ``rhs``, ``x0``, ``xref``,
 
 Dump layout:
 
-- Dumps are written under ``output_dir/<object_name>/`` (no stage subdirectory).
-- Each dumped system gets a continuous folder index: ``ls_00000``, ``ls_00001``, ...
-  in dump creation order.
+- The driver writes dumps under ``output_dir/<object_name>/`` without a stage
+  subdirectory.
+- The driver assigns each system a continuous folder index in creation order:
+  ``ls_00000``, ``ls_00001``, and subsequent values.
 - ``systems_index.txt`` maps each ``ls_*`` folder to detailed context (stage,
   original linear-system id, timestep, variant, repetition, object name).
 
@@ -356,7 +343,7 @@ CLI overrides can target nested keys, for example:
     hypredrive-cli --config input.yml --linear_system:print_system:enabled on
 
 
-An example code block for the ``linear_system`` section is given below:
+This example shows the ``linear_system`` section:
 
 .. code-block:: yaml
 
@@ -420,52 +407,62 @@ Example use in YAML:
       sequence_filename: poromech2k_np1_lsseq.zst.bin
       rhs_mode: file
 
-When ``sequence_filename`` is present, hypredrive reads matrix/RHS/(optional) dofmap from
-the container. If timestep metadata is embedded in the container, preconditioner reuse by
-timestep can use it when ``timestep_filename`` is omitted.
+When ``sequence_filename`` is present, hypredrive reads the matrix, right-hand
+side, and optional dofmap from the container. If the container includes timestep
+metadata, reuse can use it when you omit ``timestep_filename``.
 
-Packed sequence files use batched compression per part (one compressed blob per part for
-values, RHS, and dofmap across all systems), which yields good compression ratios. They
-embed a mandatory small manifest block (uncompressed) with provenance/debug information
-(resolved suffix range, input paths, codec, build metadata). This does not affect runtime
-reconstruction, but is useful when inspecting packed artifacts. See :ref:`utilities` for
-the internal container structure.
+Packed sequence files use batched compression for each part. Separate blobs contain
+values, right-hand sides, and degree-of-freedom maps across all systems. A small,
+uncompressed manifest contains provenance and debug information. This includes the suffix
+range, input paths, codec, and build metadata. The manifest does not affect run-time
+reconstruction. See :ref:`utilities` for the container structure.
 
 Solver
 ------
 
-The ``solver`` section is mandatory and it specifies the Krylov solver configuration. The
-available options for the Krylov solver type are:
+The mandatory ``solver`` section specifies the Krylov solver configuration. These
+solver types are available:
 
-- ``pcg`` - preconditioned conjugate gradient.
-- ``bicgstab`` - bi-conjugate gradient stabilized.
-- ``gmres`` - generalized minimal residual.
-- ``fgmres`` - flexible generalized minimal residual.
+- ``pcg`` - Preconditioned conjugate gradient.
+- ``bicgstab`` - Bi-conjugate gradient stabilized.
+- ``gmres`` - Generalized minimal residual.
+- ``fgmres`` - Flexible generalized minimal residual.
 
-The solver type must be entered as a key in a new indentation level under ``solver``.
+Put the solver type on a new indentation level under ``solver``.
 
 Scaling
 ~~~~~~~
 
-The ``scaling`` subsection under ``solver`` enables optional diagonal scaling of the linear system before preconditioner setup and Krylov solve. When enabled, the system is transformed as :math:`B = M A M`, :math:`c = M b`, solved as :math:`B y = c`, and the solution is recovered as :math:`x = M y`.
+The ``scaling`` subsection enables optional diagonal scaling before setup and
+solve. hypredrive transforms the system as :math:`B = M A M` and
+:math:`c = M b`. It solves :math:`B y = c` and recovers the solution as
+:math:`x = M y`.
 
 Available keywords:
 
-- ``enabled`` - Turn on/off scaling. Available values are ``yes`` or ``no``. Default value is ``no``.
+- ``enabled`` - Turns scaling on or off. Values are ``yes`` and ``no``. The default
+  is ``no``.
 
 - ``type`` - Scaling strategy. Available values are:
 
   - ``rhs_l2`` - Scalar scaling based on the L2 norm of the RHS vector :math:`b`. Computes :math:`s = 1/\sqrt{\|b\|_2}` and applies uniform scaling :math:`M = s I`.
 
-  - ``dofmap_mag`` - Vector scaling computed using Hypre's tagged scaling API. Requires a dofmap to be provided (see :ref:`linear_system_dofmap`). Uses ``HYPRE_ParCSRMatrixComputeScalingTagged`` with scaling type 1 to compute per-DOF-type scaling weights based on matrix magnitude.
+  - ``dofmap_mag`` - Uses hypre's tagged scaling API for vector scaling. This type
+    requires a dofmap. It calls ``HYPRE_ParCSRMatrixComputeScalingTagged`` with
+    scaling type 1. The call computes weights for each degree-of-freedom type
+    from the matrix magnitude. See :ref:`linear_system_dofmap`.
 
-  - ``dofmap_custom`` - Vector scaling using user-provided custom scaling values. Requires a dofmap to be provided (see :ref:`linear_system_dofmap`). The number of custom values must match the number of unique DOF types in the dofmap. Each DOF type is scaled by the corresponding value in the ``custom_values`` array.
+  - ``dofmap_custom`` - Uses custom values for vector scaling. This type requires
+    a dofmap. Provide one value for each unique degree-of-freedom type. Each
+    value in ``custom_values`` scales the corresponding type. See
+    :ref:`linear_system_dofmap`.
 
-- ``custom_values`` - (Required for ``dofmap_custom``) Array of scaling values, one per unique DOF type in the dofmap. Must be provided as a YAML sequence. The number of entries must match the number of unique tags in the dofmap (e.g., if dofmap has tags 0, 1, 2, then ``custom_values`` must have 3 entries).
+- ``custom_values`` - (Required for ``dofmap_custom``) Scaling values for each unique DOF
+  type. Provide these values as a YAML sequence. Provide one entry for each
+  unique tag. For tags 0, 1, and 2, provide three entries.
 
-.. note::
-   Scaling requires hypre >= 3.0.0. If scaling is enabled on an older build, YAML parsing
-   succeeds but scaling is silently disabled at runtime.
+Scaling requires hypre 3.0.0 or newer. On older builds, YAML parsing succeeds,
+but hypredrive disables scaling at run time without a message.
 
 Example configuration with RHS L2 scaling:
 
@@ -665,19 +662,18 @@ configuration. Available options for the preconditioner type are:
 - ``ams``: auxiliary-space Maxwell solver (for H(curl) / edge-element problems).
 - ``ads``: auxiliary-space divergence solver (for H(div) / face-element problems).
 
-The configurable preconditioner types may be entered as a key in a new indentation
-level under ``preconditioner``. The fixed ``jacobi`` and ``gauss-seidel`` convenience
-types use the scalar forms ``preconditioner: jacobi`` and
-``preconditioner: gauss-seidel``. Internally, both limit BoomerAMG to one level and
-configure a V(1,0) cycle; BoomerAMG's global relaxation type is also set because its
-single-level execution path does not use the cycle-specific relaxation type.
+Put a configurable preconditioner type at a new indentation level below
+``preconditioner``. The fixed ``jacobi`` and ``gauss-seidel`` types use scalar forms.
+These forms are ``preconditioner: jacobi`` and ``preconditioner: gauss-seidel``.
+Internally, both forms limit BoomerAMG to one level and configure a V(1,0) cycle.
+They also set the global relaxation type for the single-level execution path.
 
 Preconditioner presets
 ~~~~~~~~~~~~~~~~~~~~~~
 
-Presets are named default configurations that select a preconditioner and apply
-a small set of tuned settings. They are useful when you want a reasonable
-default without enumerating all options.
+Presets are named default configurations. Each preset selects a preconditioner
+and applies a small set of tuned settings. A preset supplies a default
+without a full option list.
 
 .. code-block:: yaml
 
@@ -701,10 +697,10 @@ Applications can also register additional preset names at runtime with
 Preconditioner reuse
 ~~~~~~~~~~~~~~~~~~~~
 
-When solving a **sequence of linear systems** (e.g. multiple right-hand sides or time
-steps), you can reuse the same preconditioner across several systems to avoid repeated setup
-cost. The preconditioner is rebuilt only at chosen linear-system indices; for the rest, the
-previous factorization is applied as-is.
+For a **sequence of linear systems**, you can reuse one preconditioner across multiple
+systems. Examples include multiple right-hand sides and time steps. This reuse reduces
+setup work. `hypredrive` rebuilds the preconditioner only at selected system indices. At
+other indices, it applies the previous factorization.
 
 A ``reuse`` subsection under ``preconditioner`` configures this behavior.
 
@@ -713,25 +709,26 @@ Static reuse
 
 The default policy is ``static``. It rebuilds on a fixed schedule:
 
-- **``enabled``** – Turn reuse logic on or off. Values: ``yes`` / ``no``. Default: ``no``.
+- **``enabled``** – Turns reuse logic on or off. Values: ``yes`` / ``no``. Default: ``no``.
 - **``policy``** – ``static`` or ``adaptive``. Default: ``static`` unless an
   ``adaptive`` subsection is present.
-- **``frequency``** – Nonnegative integer. Rebuild when ``(linear_system_index) mod
-  (frequency + 1) == 0``. So ``0`` = rebuild every system, ``1`` = rebuild every other, etc.
-- **``linear_system_ids``** – Explicit list of **0-based** linear-system indices at which to
-  rebuild (e.g. ``[0, 5, 10]``). Alias: ``linear_solver_ids``. Cannot be combined with
-  ``frequency`` or ``per_timestep``.
-- **``per_timestep``** – If ``yes``, ``frequency`` is applied **per timestep**: rebuild at
-  the first system of each timestep, then every ``(frequency+1)``-th system within that
-  timestep. In file/driver workflows this requires ``linear_system.timestep_filename`` to point
-  to a timestep file. In embedded library-mode workflows, the same behavior can be driven by
-  object-scoped level-0 timestep annotations on the active ``HYPREDRV_t`` object.
-  Values: ``yes`` / ``no``. Cannot be combined with ``linear_system_ids``.
+- **``frequency``** – Nonnegative integer. hypredrive rebuilds when
+  ``(linear_system_index) mod (frequency + 1) == 0``. A value of ``0`` rebuilds
+  every system. A value of ``1`` rebuilds every other system.
+- **``linear_system_ids``** – Explicit list of **0-based** system indices for
+  rebuilds, such as ``[0, 5, 10]``. Alias: ``linear_solver_ids``. Do not combine
+  this key with ``frequency`` or ``per_timestep``.
+- **``per_timestep``** – A value of ``yes`` applies ``frequency`` to each timestep.
+  hypredrive rebuilds at the first system. It then rebuilds at every
+  ``(frequency + 1)``-th system in that timestep.
+  Driver workflows require a timestep file in
+  ``linear_system.timestep_filename``. In library workflows, level-0 timestep
+  annotations on the active ``HYPREDRV_t`` object supply the same information.
+  Values: ``yes`` / ``no``. Do not combine this key with ``linear_system_ids``.
 
-The timestep file (used in driver / file-based workflows when ``per_timestep: yes``) must list
-how linear systems map to timesteps. First line: total number of timesteps. Each following line:
-``timestep_id ls_start``, where ``ls_start`` is the 0-based index of the first linear system for
-that timestep.
+The timestep file maps linear systems to timesteps. Put the total number of
+timesteps on the first line. Put ``timestep_id ls_start`` on each subsequent
+line. ``ls_start`` is the zero-based index of the first system for that timestep.
 
 Example: frequency-based reuse (rebuild every 3rd system):
 
@@ -753,8 +750,8 @@ Example: explicit list of systems at which to rebuild:
        enabled: yes
        linear_system_ids: [0, 10, 20, 30]
 
-Example: reuse per timestep (rebuild at the first system of each timestep; requires
-``linear_system.timestep_filename``):
+Example: Reuse for each time step. This form rebuilds at the first system and requires
+``linear_system.timestep_filename``:
 
 .. code-block:: yaml
 
@@ -767,16 +764,16 @@ Example: reuse per timestep (rebuild at the first system of each timestep; requi
        per_timestep: yes
        frequency: 0
 
-In embedded library mode, the same YAML block can be paired with object-scoped annotations such
-as ``HYPREDRV_AnnotateLevelBegin(h, 0, "timestep-3", -1)`` /
+In embedded library mode, pair the same YAML block with object-scoped annotations.
+For example, use ``HYPREDRV_AnnotateLevelBegin(h, 0, "timestep-3", -1)`` and
 ``HYPREDRV_AnnotateLevelEnd(h, 0, "timestep-3", -1)`` instead of a timestep file.
 
 Adaptive reuse
 ^^^^^^^^^^^^^^
 
-Set ``type: adaptive`` to let HYPREDRV score recent solver behavior and rebuild when the
-score crosses a threshold. This mode is separate from the static schedule above; combining it
-with ``frequency``, ``linear_system_ids``, or ``per_timestep`` produces a parse-time error.
+Set ``type: adaptive`` to score recent solver behavior. HYPREDRV rebuilds when the score
+crosses a threshold. Adaptive mode is separate from the static schedule. Do not combine
+it with ``frequency``, ``linear_system_ids``, or ``per_timestep``.
 
 For the simplest opt-in, ``reuse: adaptive`` is valid shorthand. That form enables adaptive
 reuse with HYPREDRV's built-in default score model plus default guardrails:
@@ -791,12 +788,12 @@ reuse with HYPREDRV's built-in default score model plus default guardrails:
 
 Top-level adaptive keys:
 
-- **``guards.min_reuse_solves``** – Force reuse until this many solves have completed after a
-  rebuild.
-- **``guards.max_reuse_solves``** – Force rebuild once the current preconditioner has been
-  reused this many times. ``-1`` disables the guard.
-- **``guards.min_history_points``** – Minimum number of samples a score component needs before
-  it can trigger a rebuild.
+- **``guards.min_reuse_solves``** – Requires this number of reuse solves before
+  another rebuild.
+- **``guards.max_reuse_solves``** – Rebuilds after this number of preconditioner
+  reuses. ``-1`` disables the guard.
+- **``guards.min_history_points``** – Minimum number of samples that a score
+  component requires before it triggers a rebuild.
 - **``guards.bad_decisions_to_rebuild``** – Number of consecutive score-threshold breaches
   required before adaptive scoring triggers a rebuild.
 - **``guards.max_iteration_ratio``** – Immediate hard guard. Rebuild when the most recent
@@ -812,7 +809,7 @@ Top-level adaptive keys:
 - **``adaptive.components``** – Optional sequence of score components. If omitted,
   HYPREDRV installs a built-in default component set.
 
-Adaptive decisions are reported through HYPREDRV's existing internal logging framework when
+The HYPREDRV logging framework reports adaptive decisions when
 ``HYPREDRV_LOG_LEVEL >= 2``.
 
 Each component contributes a nonnegative term to the total score. The current formula is:
@@ -837,8 +834,8 @@ component. HYPREDRV rebuilds when ``score >= adaptive.rebuild_threshold``.
 Default adaptive components
 """""""""""""""""""""""""""
 
-If ``type: adaptive`` is selected and no explicit ``adaptive.components`` list is provided,
-HYPREDRV uses the following built-in components:
+If you select ``type: adaptive`` and omit ``adaptive.components``, HYPREDRV uses
+these built-in components:
 
 - **``efficiency``** – ``metric: solve_overhead_vs_setup``, arithmetic mean, ``target: 1.0``,
   ``scale: 1.0``, ``transform.kind: raw``, ``transform.amortization_window: 10``,
@@ -847,12 +844,11 @@ HYPREDRV uses the following built-in components:
   ``scale: 0.5``, ``transform.kind: ratio_to_baseline``, ``transform.baseline: rebuild``,
   ``history.source: linear_solves``, ``history.max_points: 5``.
 
-The default model intentionally mixes one efficiency term and one iteration-stability term so
-``reuse: adaptive`` works out of the box without level annotations or a hand-built component
-list. The built-in ``guards.max_iteration_ratio: 3.0`` catches severe one-step spikes even
-when ``guards.bad_decisions_to_rebuild: 2`` keeps ordinary adaptive scoring from rebuilding on
-the first bad sample. Users can still override any part of the model by providing
-``adaptive.components`` or explicit ``guards`` entries.
+The default model has one efficiency term and one iteration-stability term. Thus,
+``reuse: adaptive`` does not require level annotations or a component list. The default
+``guards.max_iteration_ratio: 3.0`` detects large one-step increases. The default
+``guards.bad_decisions_to_rebuild: 2`` prevents a rebuild after one ordinary bad sample.
+You can override the model with ``adaptive.components`` or explicit ``guards`` entries.
 
 Fields available per component:
 
@@ -929,27 +925,25 @@ Level-based history uses the same object-scoped annotation API described above. 
 timestep, while ``history.source: completed_level`` evaluates the summaries produced by
 completed level entries.
 
-   MGR cannot be fully defined by the ``mgr`` keyword only. Instead, it is also necessary
-   to specify which types of degrees of freedom are treated as F points in each MGR level,
-   i.e., the last level where a degree of freedom of a given type is present. This is done
-   via the ``f_dofs`` keyword. For a minimal MGR configuration input example, see
-   :ref:`Example3`.
+The ``mgr`` keyword does not fully define an MGR preconditioner. Use ``f_dofs`` to select
+the degree-of-freedom types that are F points at each level. This selection identifies the
+last level that contains each type. See :ref:`Example3` for a minimal MGR configuration.
 
 .. _amg:
 
 AMG
 ~~~
 
-The algebraic multigrid (BoomerAMG) preconditioner can be further configured by the
-following optional keywords:
+Use these optional keywords to configure the algebraic multigrid (BoomerAMG)
+preconditioner:
 
-- ``max_iter`` - number of times the preconditioner is applied when it is
-  called. Available values are any positive integer. Default value is `1`.
+- ``max_iter`` - Number of preconditioner applications for each call. Use a
+  positive integer. The default is `1`.
 
 - ``tolerance`` - convergence tolerance of AMG when applied multiple times. Available
   values are any positive floating point number. Default value is `0.0`.
 
-- ``print_level`` - Verbosity level for the preconditioner. Default value is `0`
+- ``print_level`` - Verbosity level for the preconditioner. Default value is `0`.
 
   - ``0`` - no printout.
   - ``1`` - print setup statistics.
@@ -1020,9 +1014,9 @@ following optional keywords:
     matrix. Available values are any non-negative floating point number. Default value is
     `0.25`.
 
-  - ``seq_amg_th`` - maximum size for agglomeration or redundant coarse grid
-    solve. Smaller system are then solved with a sequential AMG. Available values are any
-    non-negative integer. Default value is `0`.
+  - ``seq_amg_th`` - Maximum size for an agglomeration or redundant coarse-grid
+    solve. hypre then solves smaller systems with sequential AMG. Use a
+    nonnegative integer. The default is `0`.
 
   - ``max_coarse_size`` - maximum size of the coarsest grid. Available values are any
     non-negative integer. Default value is `64`.
@@ -1084,20 +1078,20 @@ following optional keywords:
     number. Default value is `0.0`.
 
   - ``max_nnz_row`` - maximum number of elements per row for computing interpolation in
-    aggressive caorsening levels. Available values are any non-negative integer. Default
+    aggressive coarsening levels. Available values are any non-negative integer. Default
     value is `4`.
 
-  - ``P12_trunc_factor`` - truncation factor for matrices P1 and P2 which are used to
-    build 2-stage interpolation. Available values are any non-negative floating point
-    number. Default value is `0.0`.
+  - ``P12_trunc_factor`` - Truncation factor for the P1 and P2 matrices. These
+    matrices build two-stage interpolation. Use a nonnegative floating-point
+    number. The default is `0.0`.
 
-  - ``P12_max_elements`` - maximum number of elements per row for matrices P1 and P2 which
-    are used to build 2-stage interpolation. Available values are any non-negative
-    integer. Default value is `0`, meaning there is no maximum number of elements per row.
+  - ``P12_max_elements`` - Maximum number of elements in each P1 and P2 matrix row.
+    These matrices build two-stage interpolation. Use a nonnegative integer. The
+    default of `0` removes the limit.
 
 - ``relaxation`` - subsection detailing relaxation options:
 
-  - ``down_type`` - relaxation method used in the pre-smoothing stage. For detailed
+  - ``down_type`` - Relaxation method for the pre-smoothing stage. For detailed
     information, see `HYPRE_BoomerAMGSetRelaxType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_BoomerAMGSetRelaxType12HYPRE_Solver9HYPRE_Int>`_. Available
     options are:
@@ -1114,11 +1108,11 @@ following optional keywords:
     - ``forward-hl1gs``: forward hybrid L1-scaled Gauss-Seidel (default).
     - ``backward-hl1gs``: backward hybrid L1-scaled Gauss-Seidel.
     - ``cg``: conjugate gradient.
-    - ``chebyshev``: chebyshev polinomial.
+    - ``chebyshev``: Chebyshev polynomial.
     - ``l1-jacobi``: L1-scaled Jacobi.
     - ``l1sym-hgs``: L1-scaled symmetric hybrid Gauss-Seidel (with convergent L1 factor).
 
-  - ``up_type`` - relaxation method used in the post-smoothing stage. For detailed
+  - ``up_type`` - Relaxation method for the post-smoothing stage. For detailed
     information, see `HYPRE_BoomerAMGSetRelaxType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_BoomerAMGSetRelaxType12HYPRE_Solver9HYPRE_Int>`_. Available
     options are:
@@ -1135,11 +1129,11 @@ following optional keywords:
     - ``forward-hl1gs``: forward hybrid L1-scaled Gauss-Seidel.
     - ``backward-hl1gs``: backward hybrid L1-scaled Gauss-Seidel (default).
     - ``cg``: conjugate gradient.
-    - ``chebyshev``: chebyshev polinomial.
+    - ``chebyshev``: Chebyshev polynomial.
     - ``l1-jacobi``: L1-scaled Jacobi.
     - ``l1sym-hgs``: L1-scaled symmetric hybrid Gauss-Seidel (with convergent L1 factor).
 
-  - ``coarse_type`` - relaxation method used in the coarsest levels. For detailed
+  - ``coarse_type`` - Relaxation method for the coarsest levels. For detailed
     information, see `HYPRE_BoomerAMGSetRelaxType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_BoomerAMGSetRelaxType12HYPRE_Solver9HYPRE_Int>`_. Available
     options are:
@@ -1152,7 +1146,7 @@ following optional keywords:
     - ``2gs-it1``: single iteration two stage Gauss-Seidel.
     - ``2gs-it2``: double iteration two stage Gauss-Seidel.
     - ``cg``: conjugate gradient.
-    - ``chebyshev``: chebyshev polinomial.
+    - ``chebyshev``: Chebyshev polynomial.
     - ``l1-jacobi``: L1-scaled Jacobi.
     - ``l1sym-hgs``: L1-scaled symmetric hybrid Gauss-Seidel (with convergent L1 factor).
     - ``lu_piv``: LU factorization with pivoting.
@@ -1173,7 +1167,7 @@ following optional keywords:
   - ``num_sweeps`` - number of pre and post-smoothing sweeps. Available values are any
     non-negative integer. Default value is `1`.
 
-  - ``order`` - order in which the points are relaxed. For available
+  - ``order`` - Order in which hypre relaxes the points. For available
     options, see `HYPRE_BoomerAMGSetRelaxOrder
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv428HYPRE_BoomerAMGSetRelaxOrder12HYPRE_Solver9HYPRE_Int>`_. Default value is `0`.
 
@@ -1194,18 +1188,17 @@ following optional keywords:
     - ``fsai``: factorized sparse approximate inverse.
     - ``ilu``: incomplete LU factorization.
     - ``schwarz``: Additive/Multiplicative overlapping Schwarz.
-    - ``pilut``: incomplete LU factorization via PILUT.
-    - ``parasails``: sparse approximate inverse via Parasails.
-    - ``euclid``: incomplete LU factorization via Euclid.
+    - ``pilut``: Incomplete LU factorization from PILUT.
+    - ``parasails``: Sparse approximate inverse from Parasails.
+    - ``euclid``: Incomplete LU factorization from Euclid.
 
-  - ``num_levels`` - number of levels starting from the finest one where complex smoothers
-    are used. Available values are any non-negative integer. Default value is `0`.
+  - ``num_levels`` - Number of levels that use complex smoothers, starting at the
+    finest level. Use a nonnegative integer. The default is `0`.
 
   - ``num_sweeps`` - number of pre and post-smoothing sweeps used for the complex
     smoother. Available values are any non-negative integer. Default value is `1`.
 
-The default parameter values for the ``preconditioner:amg`` section are represented in the
-code block below:
+This example shows the default values for ``preconditioner:amg``:
 
 .. code-block:: yaml
 
@@ -1261,8 +1254,8 @@ code block below:
 ILU
 ~~~
 
-The incomplete LU factorization (ILU) preconditioner can be further configured by the
-following optional keywords:
+Use these optional keywords to configure the incomplete LU factorization (ILU)
+preconditioner:
 
 - ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`amg` for a description of
   these variables.
@@ -1288,7 +1281,7 @@ following optional keywords:
   integer. Default value is `5`. This option has effect only when ``tri_solve`` is set to
   zero.
 
-- ``lower_jac_iters`` - Number of iterations for solving the upper triangular system
+- ``upper_jac_iters`` - Number of iterations for solving the upper triangular system
   during the preconditioner's application phase. Available values are any positive
   integer. Default value is `5`. This option has effect only when ``tri_solve`` is set to
   zero.
@@ -1308,8 +1301,7 @@ following optional keywords:
   NSH. Available values are any non-negative floating point numbers. Default value is
   `1.0e-2`.
 
-The default parameter values for the ``preconditioner:ilu`` section are represented in the
-code block below:
+This example shows the default values for ``preconditioner:ilu``:
 
 .. code-block:: yaml
 
@@ -1334,8 +1326,8 @@ code block below:
 FSAI
 ~~~~
 
-The factorized sparse approximate inverse (FSAI) preconditioner can be further configured by the
-following optional keywords:
+Use these optional keywords to configure the factorized sparse approximate
+inverse (FSAI) preconditioner:
 
 - ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`amg` for a description of
   these variables.
@@ -1365,14 +1357,13 @@ following optional keywords:
 - ``eig_max_iters`` - number of iterations for estimating the largest eigenvalue of G. Available
   values are any positive integer. Default value is `5`.
 
-- ``threshold`` - Dropping tolerance for building the canditate pattern matrix. Available
+- ``threshold`` - Dropping tolerance for building the candidate pattern matrix. Available
   values are any non-negative floating point numbers. Default value is `1.0e-3`.
 
 - ``kap_tolerance`` - Kaporin reduction factor. Available values are any non-negative
   floating point numbers. Default value is `1.0e-3`.
 
-The default parameter values for the ``preconditioner:fsai`` section are represented in
-the code block below:
+This example shows the default values for ``preconditioner:fsai``:
 
 .. code-block:: yaml
 
@@ -1396,8 +1387,8 @@ the code block below:
 MGR
 ~~~
 
-The multigrid reduction (MGR) preconditioner can be further configured by the following
-optional keywords:
+Use these optional keywords to configure the multigrid reduction (MGR)
+preconditioner:
 
 - ``max_iter`` and ``tolerance`` - See :ref:`amg` for a description of these variables.
 
@@ -1410,16 +1401,16 @@ optional keywords:
   values are any non-negative floating point numbers. Default value is `0.0`, which means
   no dropping.
 
-- ``cycle`` - MGR traversal cycle. Numeric values preserve the legacy encoding:
-  `1` selects V-cycle and `2` selects W-cycle. Symbolic values ``v``, ``w``,
+- ``cycle`` - MGR traversal cycle. Numeric values preserve the legacy encoding.
+  `1` selects a V-cycle and `2` selects a W-cycle. Symbolic values ``v``, ``w``,
   ``v(1,0)``, ``v(0,1)``, ``v(1,1)``, ``w(1,0)``, ``w(0,1)``, and ``w(1,1)``
-  may also be used; the tuple selects pre-, post-, or pre-and-post smoothing with
+  are also valid. The tuple selects pre-smoothing, post-smoothing, or both with
   HYPRE ``>= 3.1.0`` develop number ``>= 50``. On older HYPRE versions, the key is
   accepted for compatibility but ignored.
 
-- ``level`` - special keyword for defining specific parameters for each MGR level. Each
-  level is identified by its numeric ID starting from `0` (finest) and placed in
-  increasing order on the next indentation level of the YAML input.
+- ``level`` - Defines parameters for each MGR level. A numeric identifier selects each
+  level. The finest level has identifier `0`. Put the levels in increasing order at the
+  next YAML indentation level.
 
   - ``f_dofs`` - (Mandatory) Array containing the identifiers of F (fine) degrees of
     freedom to be treated in the current level. Available values are any integer numbers
@@ -1454,10 +1445,9 @@ optional keywords:
                 coarsening:
                   num_levels: 1
 
-  - ``f_relaxation`` also supports a nested ``mgr`` block (MGR-inside-MGR). When using
-    nested MGR (requires Hypre ``>= 3.1.0`` with develop number ``>= 5``), the nested
-    ``f_dofs`` labels are not re-labeled: nested levels continue to use the same
-    DOF labels as the parent MGR dofmap (restricted to the parent level's F-block).
+  - ``f_relaxation`` also supports a nested ``mgr`` block. Nested MGR requires `hypre`
+    3.1.0 or newer with development number 5 or newer. Nested levels use the parent
+    degree-of-freedom labels. Only labels in the parent F-block remain available.
 
     Example:
 
@@ -1494,8 +1484,7 @@ optional keywords:
 
   ``coarsest_level`` also supports the same nested Krylov solver block described above.
 
-The default parameter values for the ``preconditioner:mgr`` section are represented in the
-code block below:
+This example shows the default values for ``preconditioner:mgr``:
 
 .. code-block:: yaml
 
@@ -1527,10 +1516,8 @@ code block below:
         coarsest_level:
           amg: # AMG parameters can be specified with a new indentation level
 
-.. warning::
-
-   Nested Krylov-in-MGR requires the vendored Hypre build in the ``hypre/`` folder. Make
-   sure to build Hypre with ``hypre/build-hypre.sh`` before building HypreDrive.
+Nested Krylov-in-MGR requires the vendored `hypre` build in ``hypre/``. Build `hypre`
+with ``hypre/build-hypre.sh`` before you build `hypredrive`.
 
 .. _ams:
 
@@ -1539,16 +1526,16 @@ AMS
 
 The auxiliary-space Maxwell solver (AMS) preconditioner targets definite Maxwell
 (curl-curl + mass) problems discretized with Nedelec (edge) elements in H(curl).
-In addition to the system matrix, AMS requires two operator inputs that must be
-provided through the programmatic API (they have no YAML keys):
+In addition to the system matrix, AMS requires two operator inputs from the
+programmatic API. These inputs do not have YAML keys:
 
-- the **discrete gradient** ``G`` via ``HYPREDRV_LinearSystemSetDiscreteGradient()``;
-- the **vertex coordinate vectors** via ``HYPREDRV_LinearSystemSetCoordinates()``.
+- The **discrete gradient** ``G`` through ``HYPREDRV_LinearSystemSetDiscreteGradient()``.
+- The **vertex coordinate vectors** through ``HYPREDRV_LinearSystemSetCoordinates()``.
 
 See the ``examples/src/C_maxwell`` driver for a complete usage example. The scalar
-options below map directly onto the corresponding ``HYPRE_AMSSet*`` routines;
-integer-valued options accept the raw Hypre values documented in the
-`Hypre AMS reference <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html>`_.
+options below map directly to the corresponding ``HYPRE_AMSSet*`` routines.
+Integer-valued options accept the raw `hypre` values in the
+`hypre AMS reference <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html>`_.
 
 - ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`amg` for a description of
   these variables. As a preconditioner the defaults are ``max_iter = 1`` and
@@ -1585,9 +1572,9 @@ The auxiliary-space divergence solver (ADS) preconditioner targets grad-div prob
 discretized with Raviart-Thomas (face) elements in H(div). In addition to the system
 matrix it requires three operator inputs provided through the programmatic API:
 
-- the **discrete gradient** ``G`` via ``HYPREDRV_LinearSystemSetDiscreteGradient()``;
-- the **discrete curl** ``C`` via ``HYPREDRV_LinearSystemSetDiscreteCurl()``;
-- the **vertex coordinate vectors** via ``HYPREDRV_LinearSystemSetCoordinates()``.
+- The **discrete gradient** ``G`` through ``HYPREDRV_LinearSystemSetDiscreteGradient()``.
+- The **discrete curl** ``C`` through ``HYPREDRV_LinearSystemSetDiscreteCurl()``.
+- The **vertex coordinate vectors** through ``HYPREDRV_LinearSystemSetCoordinates()``.
 
 The scalar options map onto the corresponding ``HYPRE_ADSSet*`` routines:
 
