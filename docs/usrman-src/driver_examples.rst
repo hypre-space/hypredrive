@@ -8,28 +8,24 @@
 Driver Examples (hypredrive-cli)
 ================================
 
-This section provides several examples demonstrating how to set up input files and use
-the ``hypredrive-cli`` executable (driver) to solve different types of linear-system problems.
-All example inputs can be found in the ``examples`` folder and reference outputs at
-``examples/refOutput``.
+This section shows how to prepare input files and use the ``hypredrive-cli`` driver.
+The examples solve different linear systems. Input files are in ``examples``. Reference
+output is in ``examples/refOutput``.
 
 .. note::
-   These examples exercise hypredrive as a standalone driver using YAML input files.
-   If you are looking for application-side usage of the library API (``libHYPREDRV``),
-   see :ref:`LibraryExamples`.
+   These examples use `hypredrive` as a standalone driver with YAML input files.
+   :ref:`LibraryExamples` shows how an application uses the ``libHYPREDRV`` API.
 
-.. note::
-   Many examples require datasets that are not included in the repository. These datasets
-   must be downloaded from Zenodo at https://zenodo.org/records/17471036 before running
-   the examples. The most convenient way to download and extract all datasets is using
-   the CMake ``data`` target:
+Some examples require data from https://zenodo.org/records/17471036. The repository
+does not contain these data files. Download and extract the data with the CMake
+``data`` target:
 
-   .. code-block:: bash
+.. code-block:: bash
 
-      $ cmake --build <build-dir> --target data
+   $ cmake --build <build-dir> --target data
 
-   Alternatively, you can download the datasets manually from the Zenodo record and extract
-   them into the ``data/`` directory. See ``data/README.md`` for more details.
+For a manual download, extract the data into ``data/``. Read ``data/README.md`` for
+more information.
 
 .. _CLIHelp:
 
@@ -62,8 +58,8 @@ running a solve:
      solver
      preconditioner
 
-To inspect a specific section, append a *topic path* after ``--help``. Nested blocks
-are separated by ``:`` (the same path syntax used by the :ref:`CLIOverrides`). For
+To inspect a specific section, append a *topic path* after ``--help``. Use ``:``
+to separate nested blocks, as in the :ref:`CLIOverrides`. For
 example, ``--help solver`` lists the available solver types, the keys each accepts, and
 the nested topics you can explore further:
 
@@ -107,9 +103,9 @@ You can descend as far as the schema goes, down to an individual key:
 
 A few conventions appear in the output:
 
-- ``<one of>`` marks a key that takes an enumerated value; the accepted spellings are
-  listed beneath it. The integer in parentheses (for example ``gmres (1)``) is the
-  numeric code used internally by hypre, which may also be supplied as the value.
+- ``<one of>`` marks a key that takes an enumerated value. The output lists the accepted
+  values below the key. The parenthetical integer is the internal `hypre` code. You can
+  also supply this code as the value.
 - Sections that are *sequences* (such as ``preconditioner:mgr:level`` or
   ``preconditioner:reuse:adaptive:components``) accept a numeric item index, shown as
   ``<index>`` under *Nested topics*. Use any non-negative integer in the path to inspect
@@ -118,26 +114,24 @@ A few conventions appear in the output:
 
 .. note::
 
-   ``--help`` reflects the schema compiled into your build, so version-gated options
-   (for example those requiring a newer hypre) are listed only when they are actually
-   available.
+   ``--help`` shows the schema in your build. It shows version-dependent options only
+   when the current `hypre` version supports them.
 
 .. _CLIOverrides:
 
 CLI Overrides (``-a/--args``)
 -----------------------------
 
-When running the ``hypredrive-cli`` driver, it is often convenient to keep a base YAML file
-and override a few parameters from the command line.
+You can keep a base YAML file and override selected parameters from the command
+line.
 
-The driver supports this via the ``-a`` / ``--args`` flag, followed by key/value pairs in
-the form:
+The ``-a`` or ``--args`` option introduces command-line key/value pairs in this form:
 
 - ``--path:to:key <value>``
 
-The ``path:to:key`` is interpreted as a YAML path where ``:`` separates nested blocks.
-Overrides are applied after reading the YAML file, so the command line takes precedence
-over the file.
+The driver interprets ``path:to:key`` as a YAML path. The ``:`` character
+separates nested blocks. The driver applies overrides after it reads the YAML
+file. Thus, the command line takes precedence.
 
 Examples (based on ``examples/ex1.yml``):
 
@@ -151,12 +145,12 @@ Examples (based on ``examples/ex1.yml``):
    # Switch solver type and set a nested option
    mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver gmres --solver:gmres:max_iter 30
 
-.. note::
+Use these override rules:
 
-   - Overrides must be provided as key/value pairs after ``-a``.
-   - Key/value pairs may introduce settings not present in the base YAML file.
-   - Keys and values must be separated by a space, for example ``--solver:pcg:max_iter 50``.
-   - Values containing spaces or YAML syntax such as ``[1, 2]`` should be quoted for your shell.
+- Put each key/value pair after ``-a``.
+- Add settings that do not occur in the base YAML file when necessary.
+- Separate each key and value with a space, for example ``--solver:pcg:max_iter 50``.
+- Quote values that contain spaces or YAML syntax, such as ``[1, 2]``.
 
 .. _Example1:
 
@@ -164,17 +158,15 @@ Example 1: Minimal configuration
 --------------------------------
 
 In this example, we solve a basic linear system using an `AMG-PCG` solver with default
-settings. This example showcases the minimum amount of information required in the input
-file to execute `hypredrive-cli`.
+settings. The input file contains only the information that `hypredrive-cli`
+requires.
 
-We consider a linear system matrix arising from a seven-point finite-difference
-discretization of the Laplace equation on a 10×10×10 Cartesian grid. The right-hand side
-is the vector of ones. Both are read from file and partitioned for a single MPI rank;
-this example must therefore be run on a single process.
+The matrix comes from a seven-point finite-difference form of the Laplace equation on a
+10×10×10 Cartesian grid. The right-hand side is a vector of ones. The files contain one
+MPI partition. Thus, this example requires one process.
 
-.. note::
-   This example requires the ``ps3d10pt7`` dataset. Make sure you have downloaded the
-   datasets from Zenodo (see the note at the beginning of this section).
+This example requires the ``ps3d10pt7`` dataset. The data instructions at the start
+of this page explain how to retrieve it.
 
 1. Prepare your linear system files (``matrix_filename`` and ``rhs_filename``).
 2. Use the YAML configuration file ``ex1.yml``:
@@ -188,15 +180,13 @@ this example must therefore be run on a single process.
 
     $ mpirun -np 1 ./hypredrive-cli examples/ex1.yml
 
-4. Your output should look like:
+4. Compare your output with this reference:
 
 .. literalinclude:: ../../examples/refOutput/ex1.txt
    :language: text
 
-.. warning::
-   Make sure that `hypredrive-cli` is executed from the top level project folder in order for
-   the relative paths in ``matrix_filename`` and ``rhs_filename`` to be
-   correct. Otherwise, adjust the relative paths for these entries accordingly.
+Run `hypredrive-cli` from the top project directory. Otherwise, set
+``matrix_filename`` and ``rhs_filename`` relative to the current directory.
 
 .. _Example2:
 
@@ -204,12 +194,11 @@ Example 2: Parallel run with full AMG configuration
 ---------------------------------------------------
 
 In this example, we solve the same problem as in the previous example, but partitioned for
-`4` processes. We also showcase all available input options for `PCG` and `AMG` in the
-configuration file.
+`4` processes. The configuration file shows all available `PCG` and `AMG`
+input options.
 
-.. note::
-   This example requires the ``ps3d10pt7`` dataset. Make sure you have downloaded the
-   datasets from Zenodo (see the note at the beginning of this section).
+This example requires the ``ps3d10pt7`` dataset. The data instructions at the start
+of this page explain how to retrieve it.
 
 1. Prepare your linear system files.
 
@@ -224,7 +213,7 @@ configuration file.
 
     $ mpirun -np 4 ./hypredrive-cli examples/ex2.yml
 
-4. Your output should look like:
+4. Compare your output with this reference:
 
 .. literalinclude:: ../../examples/refOutput/ex2.txt
    :language: text
@@ -236,13 +225,12 @@ Example 3: Minimal multigrid reduction strategy
 
 In this example, we solve a linear system derived from the discretization of a
 compositional flow problem from `GEOS <https://github.com/GEOS-DEV/GEOS>`_. Details about
-how this linear system was generated can be found at ``data/compflow6k/README.md``. This
-example uses a `MGR-GMRES` solver and showcases the minimal configuration for setting up
-the multigrid reduction preconditioner for this particular kind of linear system.
+the generation process are in ``data/compflow6k/README.md``. This
+example uses a `MGR-GMRES` solver. It shows the minimum configuration for the
+multigrid reduction preconditioner in this linear system.
 
-.. note::
-   This example requires the ``compflow6k`` dataset. Make sure you have downloaded the
-   datasets from Zenodo (see the note at the beginning of this section).
+This example requires the ``compflow6k`` dataset. The data instructions at the start
+of this page explain how to retrieve it.
 
 1. Prepare your linear system files.
 
@@ -257,7 +245,7 @@ the multigrid reduction preconditioner for this particular kind of linear system
 
     $ mpirun -np 1 ./hypredrive-cli examples/ex3.yml
 
-4. Your output should look like:
+4. Compare your output with this reference:
 
 .. literalinclude:: ../../examples/refOutput/ex3.txt
    :language: text
@@ -266,11 +254,10 @@ Example 4: Advanced multigrid reduction strategy
 ------------------------------------------------
 
 In this example, we solve the same problem as before, but partitioned for 4
-processes. Here, we showcase a more advanced setup of `MGR` involving multiple options.
+processes. This example shows an advanced `MGR` setup with multiple options.
 
-.. note::
-   This example requires the ``compflow6k`` dataset. Make sure you have downloaded the
-   datasets from Zenodo (see the note at the beginning of this section).
+This example requires the ``compflow6k`` dataset. The data instructions at the start
+of this page explain how to retrieve it.
 
 1. Prepare your linear system files.
 
@@ -285,7 +272,7 @@ processes. Here, we showcase a more advanced setup of `MGR` involving multiple o
 
     $ mpirun -np 4 ./hypredrive-cli examples/ex4.yml
 
-4. Your output should look like:
+4. Compare your output with this reference:
 
 .. literalinclude:: ../../examples/refOutput/ex4.txt
    :language: text
@@ -295,11 +282,10 @@ Example 5: Spreading input parameters in multiple files
 
 In this example, we solve the same problem as in example 3, but using the same solver and
 preconditioner parameters as in example 4. In addition, we define these parameters in
-separate files, which are included in the main input file via the ``include`` keyword.
+separate files. The ``include`` keyword adds these files to the main input file.
 
-.. note::
-   This example requires the ``compflow6k`` dataset. Make sure you have downloaded the
-   datasets from Zenodo (see the note at the beginning of this section).
+This example requires the ``compflow6k`` dataset. The data instructions at the start
+of this page explain how to retrieve it.
 
 1. Prepare your linear system files.
 
@@ -324,7 +310,7 @@ separate files, which are included in the main input file via the ``include`` ke
 
     $ mpirun -np 1 ./hypredrive-cli examples/ex5.yml
 
-6. Your output should look like:
+6. Compare your output with this reference:
 
 .. literalinclude:: ../../examples/refOutput/ex5.txt
    :language: text
@@ -335,16 +321,14 @@ Example 6: Full eigenspectrum computation (single rank)
 -------------------------------------------------------
 
 In this example, we enable the debug/analysis eigenspectrum capability to compute the
-full eigenspectrum of the matrix using dense LAPACK routines. This path is intended for
+full eigenspectrum of the matrix with dense LAPACK routines. Use this path for
 small matrices and single-rank runs.
 
-.. note::
-   You must build `hypredrive` with eigenspectrum support enabled, e.g. configure with
-   ``-DHYPREDRV_ENABLE_EIGSPEC=ON``.
+This example requires eigenspectrum support. Configure `hypredrive` with
+``-DHYPREDRV_ENABLE_EIGSPEC=ON``.
 
-.. note::
-   This example requires the ``compflow6k`` dataset. Make sure you have downloaded the
-   datasets from Zenodo (see the note at the beginning of this section).
+This example requires the ``compflow6k`` dataset. The data instructions at the start
+of this page explain how to retrieve it.
 
 1. Use the YAML configuration file ``ex6.yml``:
 
@@ -357,7 +341,7 @@ small matrices and single-rank runs.
 
    $ mpirun -np 1 ./hypredrive-cli examples/ex6.yml
 
-3. Your output should look like:
+3. Compare your output with this reference:
 
 .. literalinclude:: ../../examples/refOutput/ex6.txt
    :language: text
@@ -378,9 +362,8 @@ The systems originate from a single-rank (np1) GEOS multiphase poromechanics ben
 We use MGR-preconditioned FGMRES (MGR-FGMRES) as the linear solver.
 See ``data/poromech2k/README.md`` for more details about the problem in GEOS.
 
-.. note::
-   This example requires the ``poromech2k`` dataset. Make sure you have downloaded the
-   datasets from Zenodo (see the note at the beginning of this section).
+This example requires the ``poromech2k`` dataset. The data instructions at the start
+of this page explain how to retrieve it.
 
 1. Use the YAML configuration file ``ex7.yml``:
 
@@ -393,7 +376,7 @@ See ``data/poromech2k/README.md`` for more details about the problem in GEOS.
 
    $ mpirun -np 1 ./hypredrive-cli examples/ex7.yml
 
-3. Your output should look like (truncated):
+3. Compare your output with this shortened reference:
 
 .. literalinclude:: ../../examples/refOutput/ex7.txt
    :language: text
@@ -413,9 +396,8 @@ This example demonstrates how to run several preconditioner variants defined as 
 YAML sequence under a single ``preconditioner`` block. `hypredrive-cli` will loop over each
 variant and report a separate stats entry per variant while reusing the same linear system.
 
-.. note::
-   This example uses the ``ps3d10pt7`` dataset (multiple ranks). Ensure the dataset is
-   available (see the note at the top of this page).
+This example uses the ``ps3d10pt7`` dataset for multiple ranks. The data instructions
+at the start of this page explain how to retrieve it.
 
 1. Use the YAML configuration file ``ex8.yml``:
 
@@ -428,13 +410,13 @@ variant and report a separate stats entry per variant while reusing the same lin
 
    $ mpirun -np 1 ./hypredrive-cli examples/ex8.yml -q
 
-3. Your output should look like:
+3. Compare your output with this reference:
 
 .. literalinclude:: ../../examples/refOutput/ex8.txt
    :language: text
 
-4. (Optional) Plot per-variant timing or iteration bars using ``scripts/analyze_statistics.py``.
-   Provide one label per table entry via ``-ln`` (order matches the stats table):
+4. (Optional) Plot the timing or iteration bars with ``scripts/analyze_statistics.py``.
+   Use ``-ln`` to provide one label for each table entry in table order:
 
 .. code-block:: bash
 
@@ -459,8 +441,7 @@ variant and report a separate stats entry per variant while reusing the same lin
    it because the source asset is SVG-only.
 
 .. note::
-   A multi-file version of this input is also provided as ``examples/ex8-multi-1.yml``,
-   where the individual preconditioner variants are split into separate YAML files and
-   pulled in via ``include``. The solver configuration and per-variant iteration
-   counts/residuals should match the single-file version. Minor differences in reported
-   timings are expected.
+   ``examples/ex8-multi-1.yml`` provides the same input in multiple files. Each YAML file
+   contains one preconditioner variant. The ``include`` key combines the files. The solver
+   settings, iteration counts, and residuals match the single-file version. Reported times
+   can have small differences.

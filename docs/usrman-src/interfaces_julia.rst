@@ -8,11 +8,10 @@
 Julia Interface
 ===============
 
-The Julia interface is an in-tree package under ``interfaces/julia``. It supports
-source-tree and install-prefix use today and can be registered from this monorepo
-subdirectory later; a separate Julia-package repository is not required. Julia 1.9
-or newer is required. The package and module name follow Julia convention: use
-``using HypreDrive``.
+The Julia interface is an in-tree package under ``interfaces/julia``. It supports source
+trees and installation prefixes. A separate Julia package repository is not required.
+The interface requires Julia 1.9 or newer. The package and module use the Julia name
+``HypreDrive``.
 
 Build
 -----
@@ -32,15 +31,16 @@ To validate that an installed HYPREDRV tree exports a usable Julia bridge target
 
    cmake --build build-julia --target julia-install-consumer-test --parallel
 
-The CMake build creates a small ``libHYPREDRV_Julia`` bridge library. The bridge keeps
-Julia away from HYPRE ABI details such as ``HYPRE_BigInt`` width and real precision.
-Because Julia loads this bridge with ``Libdl``, it is always built as a shared library.
-External static HYPRE archives must therefore be compiled with ``-fPIC``. Auto-fetched
-HYPRE builds are configured with position-independent code when the Julia interface is
-enabled.
+The CMake build creates a small ``libHYPREDRV_Julia`` bridge library. The bridge hides
+HYPRE application binary interface (ABI) details from Julia. These details include the
+``HYPRE_BigInt`` width and real precision. Julia loads this bridge with ``Libdl``. Thus,
+CMake always builds the bridge as a shared library.
 
-The bridge is installed under ``lib/julia`` so language-specific shared libraries do
-not pollute the top-level library directory. Its install RPATH includes both that
+External static HYPRE archives require
+``-fPIC``. Automatically retrieved HYPRE builds use position-independent code.
+
+CMake installs the bridge under ``lib/julia``. Thus, language-specific shared libraries
+do not add files to the top-level library directory. Its install RPATH includes that
 directory and the parent ``lib`` directory so it can find ``libHYPREDRV`` from the
 same prefix without ``LD_LIBRARY_PATH``.
 
@@ -77,20 +77,20 @@ Point the package at the CMake-built bridge library:
 
 On macOS, use the ``.dylib`` extension instead of ``.so``.
 
-After installing hypredrive, ``HYPREDRV_DIR`` may be set instead:
+After you install hypredrive, you can set ``HYPREDRV_DIR`` instead:
 
 .. code-block:: bash
 
    export HYPREDRV_DIR=/path/to/hypredrive/install
 
-For the Julia package, ``HYPREDRV_DIR`` means the HYPREDRV install prefix, not the
-CMake package directory containing ``HYPREDRVConfig.cmake``. The Julia package
-searches ``lib/julia``, ``lib``, ``lib64/julia``, and ``lib64`` under that prefix.
-If neither environment variable is set, it falls back to the Julia artifact named
-``hypredrive_mpi_trampoline`` in ``Artifacts.toml``, then the source-tree build
-search, and finally ``Libdl.find_library``. The artifact contains the HYPREDRV
-Julia bridge built against MPItrampoline; MPItrampoline itself comes from
-``MPItrampoline_jll``.
+For Julia, ``HYPREDRV_DIR`` identifies the HYPREDRV installation prefix. It does not
+identify the CMake package directory that contains ``HYPREDRVConfig.cmake``. The package
+searches ``lib/julia``, ``lib``, ``lib64/julia``, and ``lib64`` below that prefix.
+
+Without these environment variables, the package first searches ``Artifacts.toml`` for
+``hypredrive_mpi_trampoline``. It then searches the source tree and calls
+``Libdl.find_library``. The artifact contains the HYPREDRV Julia bridge for MPItrampoline.
+The ``MPItrampoline_jll`` package supplies MPItrampoline.
 
 Example
 -------
@@ -107,7 +107,7 @@ Example
    x, info = hypredrive_solve(A, b)
    println(info.iterations)
 
-Options can be constructed as Julia keyword arguments instead of hand-written YAML:
+Use Julia keyword arguments to construct options instead of hand-written YAML:
 
 .. code-block:: julia
 
@@ -121,8 +121,8 @@ Options can be constructed as Julia keyword arguments instead of hand-written YA
    x, info = hypredrive_solve(A, b; options=opts)
 
 The generic aliases ``solve``, ``solve_mpi``, ``initialize``, and ``shutdown`` remain
-available for qualified calls such as ``HypreDrive.solve(...)``, but they are
-intentionally not exported.
+available for qualified calls such as ``HypreDrive.solve(...)``. The package does
+not export them.
 
 MPI
 ---
@@ -142,8 +142,8 @@ The explicit MPI helper names ``hypredrive_mpi_world_rank``,
 ``hypredrive_mpi_world_size``, and ``hypredrive_mpi_world_sum`` operate on
 ``MPI_COMM_WORLD``. The older qualified aliases remain available but are not exported.
 
-``Pkg.test()`` runs the serial package tests only. The MPI test is wired through
-CMake/CTest because it requires ``mpiexec``.
+``Pkg.test()`` runs only the serial package tests. CMake and CTest run the MPI
+test because it requires ``mpiexec``.
 
 Standalone Laplacian example
 ----------------------------
@@ -188,42 +188,43 @@ SPE10-style permeability files and VTK output:
      -g y -v 1 \
      --output darcy_spe10_julia.vti
 
-Use ``-i options.yml`` to provide a solver configuration, or pass hypredrive
-command-line overrides after ``-a``/``--args``, for example
+Use ``-i options.yml`` to provide a solver configuration. Alternatively, put
+`hypredrive` command-line overrides after ``-a`` or ``--args``. For example, use
 ``-a --solver:gmres:max_iter 100``. The ``laplacian.jl`` and ``laplacian1d.jl``
-examples accept the same ``-a``/``--args`` overrides. The ``-P`` topology
-controls the Cartesian MPI rank grid; the product of ``-P`` entries must equal
-MPI size.
+examples accept the same overrides. The ``-P`` topology controls the Cartesian MPI
+rank grid. Set the product of its entries to the MPI size.
 
 Scope
 -----
 
-The interface supports serial solves via ``MPI_COMM_SELF`` and MPI solves via
-``MPI_COMM_WORLD``. It supports standard double-precision, real-valued HYPRE builds.
-Complex, single-precision, and long-double HYPRE builds are rejected at runtime with a
-clear error. The package uses process-global MPI state; do not mix multiple independent
-MPI owners inside one Julia process.
+The interface uses ``MPI_COMM_SELF`` for serial solves and ``MPI_COMM_WORLD`` for MPI
+solves. It supports real-valued, double-precision HYPRE builds. The interface rejects
+complex, single-precision, and long-double builds at run time. One Julia process cannot
+safely contain multiple independent owners of the process-wide MPI state.
 
-The package can be registered in Julia's General registry from ``interfaces/julia``.
-Registry releases should use normal Julia semver such as ``0.2.0``, not development
-version strings. The fallback distribution model is source/install-prefix based:
-users build HYPREDRV from this checkout or install HYPREDRV separately and set
+Release maintainers can register the package in Julia's General registry from
+``interfaces/julia``. Use a normal Julia semantic version such as ``0.2.0`` for a
+registry release. Do not use a development version string. The fallback distribution
+model uses a source tree or installation prefix. Users build HYPREDRV from this
+checkout or install HYPREDRV separately and set
 ``HYPREDRV_DIR`` or ``HYPREDRV_LIBRARY``.
 
-Binary releases can be distributed from this monorepo through Julia artifacts without
-moving the package to a separate repository. The first artifact policy is
-MPItrampoline: Linux x86_64 glibc release tarballs are hosted on GitHub Releases and bound into
-``interfaces/julia/Artifacts.toml`` under the artifact name
-``hypredrive_mpi_trampoline``. Release maintainers should run the ``Julia
-Artifacts`` workflow manually on the release branch with ``update_artifacts_toml``
-enabled and ``release_tag`` set to the future tag name, then create the tag from
-the resulting commit. The tag workflow verifies that ``Artifacts.toml`` already
-contains URLs for that tag before publishing release assets. The release recipe
-lives in the Julia interface's ``binary`` tooling. Local BinaryBuilder runs require a working container runner;
-if Docker cleanup fails at a ``sudo chown`` step, use the GitHub ``Julia
-Artifacts`` workflow or run on a machine with passwordless sudo/unprivileged
-container support. macOS, Linux aarch64, musl, Windows, OpenMPI, and custom-MPI
-artifacts are not shipped until explicit additional artifact flavors are added;
-those users should continue to use source/install-prefix mode.
-``MPItrampoline_jll`` is a normal dependency, not a weak dependency, so artifact
-preloading works in a clean Julia environment without extension activation.
+Julia artifacts permit binary releases from this repository. The initial policy uses
+MPItrampoline. GitHub Releases stores the Linux x86_64 glibc archives. The
+``hypredrive_mpi_trampoline`` entry in ``interfaces/julia/Artifacts.toml`` identifies
+these archives.
+
+Release maintainers run the ``Julia Artifacts`` workflow on the release branch. Enable
+``update_artifacts_toml`` and set ``release_tag`` to the new tag. Create the tag from the
+resulting commit. Before publication, the tag workflow verifies the applicable URLs in
+``Artifacts.toml``. The Julia interface ``binary`` tools contain the release recipe.
+
+Local BinaryBuilder runs require a working container runner. If Docker cleanup fails at
+``sudo chown``, use the GitHub workflow. A machine with passwordless ``sudo`` or
+unprivileged container support is another option.
+
+The project does not currently ship artifacts for other platforms or MPI implementations.
+This includes macOS, Linux aarch64, musl, Windows, OpenMPI, and custom MPI. Users on these
+systems build from source or use an installation prefix. ``MPItrampoline_jll`` is a normal
+dependency. Thus, a clean Julia environment can preload the artifact without extension
+activation.

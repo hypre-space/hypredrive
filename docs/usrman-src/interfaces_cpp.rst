@@ -8,10 +8,9 @@
 C++ Interface
 =============
 
-The C++ interface is a header-only C++17 wrapper over the public ``HYPREDRV_`` C
-API. It provides RAII ownership for ``HYPREDRV_t``, throwing error handling, a
-YAML-driven configuration path, and an idiomatic snake_case method mirror of the
-C API.
+The C++ interface is a header-only C++17 wrapper for the public ``HYPREDRV_`` C API.
+It provides resource acquisition is initialization (RAII) ownership for ``HYPREDRV_t``.
+It also provides exceptions, YAML configuration, and snake-case methods.
 
 Build
 -----
@@ -54,22 +53,22 @@ Usage
 ``hypredrive::driver`` is move-only and destroys its underlying ``HYPREDRV_t`` in
 its destructor. Methods throw ``hypredrive::error`` when the underlying C API
 returns a nonzero status. The original status is available through
-``error::code()``. Call ``hypredrive::describe_error(e.code())`` if a caught
-exception should also print the C-side diagnostic. Explicit
-``destroy_linear_solver()`` calls are only needed to release solver state before
-the driver goes out of scope.
+``error::code()``. To print the C-side diagnostic for a caught exception, call
+``hypredrive::describe_error(e.code())``. Explicit
+Call ``destroy_linear_solver()`` only to release solver state before the driver
+goes out of scope.
 
 Configuration
 -------------
 
-Solver configuration is intentionally YAML-driven. The C++ wrapper does not
-mirror the full solver option schema with C++ setters, because the YAML schema is
-the project-owned source of truth and supports new HYPREDRV options immediately.
-Use ``parse_yaml()`` for YAML from a string, string literal, input stream, or
-file path; use ``parse_args(argc, argv)`` for the same command-line style parsing
-exposed by the C API. String-like inputs are treated as file paths when they look
-like paths, otherwise as inline YAML text. YAML text is passed to the C parser as
-a C string, so embedded NUL bytes are rejected.
+YAML controls the solver configuration. The C++ wrapper does not duplicate all solver
+options as setters. The YAML schema is the project source for these options.
+Use ``parse_yaml()`` with a string, string literal, input stream, or file path.
+Use ``parse_args(argc, argv)`` for the C API command-line parsing. A string that looks
+like a path identifies a file.
+
+Other strings contain YAML text. The C parser rejects YAML text that contains a null
+byte.
 
 Example
 -------
@@ -81,8 +80,8 @@ solves it through the wrapper:
 
    mpiexec -n 4 ./build-cpp/laplacian-cpp -n 16 16 16 -P 2 2 1 -s 7
 
-Pass a custom YAML file with ``-i/--input options.yml``. Hypredrive
-command-line overrides can be appended after ``-a``/``--args``, for example
+Pass a custom YAML file with ``-i/--input options.yml``. Append `hypredrive`
+command-line overrides after ``-a`` or ``--args``. For example, use
 ``-a --solver:pcg:max_iter 50``.
 
 API correspondence
@@ -263,12 +262,12 @@ to the generated API reference.
 
 ``hypredrive::driver::get_solution_values_raw`` returns the same
 HYPREDRV-owned host pointer as ``HYPREDRV_LinearSystemGetSolutionValues``. On
-GPU builds, calling it migrates/synchronizes the solution to host memory before
-the pointer is returned.
+GPU builds, this method moves or synchronizes the solution to host memory before
+it returns the pointer.
 
 Installation
 ------------
 
 When ``HYPREDRV_ENABLE_CPP=ON``, CMake installs ``hypredrive.hpp`` and
-exports the ``HYPREDRV::CXX`` target. Downstream projects should link that target
-instead of manually adding include directories.
+exports the ``HYPREDRV::CXX`` target. Link downstream projects to this target
+instead of adding include directories manually.

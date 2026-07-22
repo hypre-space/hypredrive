@@ -9,19 +9,17 @@
 Library Examples (libHYPREDRV)
 ==============================
 
-This section demonstrates how to use the ``libHYPREDRV`` library from application
-codes that assemble their own linear systems. Unlike the :ref:`DriverExamples`,
-which drive the ``hypredrive-cli`` executable from YAML input files and
-file-based matrix/RHS data, these examples embed the matrix/vector assembly
-directly in the application. This is the right mode when the application owns the
-discretization, data layout, MPI partitioning, and solver lifecycle, but still
-wants hypredrive to configure and invoke HYPRE solvers and preconditioners.
+This section shows how applications use ``libHYPREDRV`` with their own linear systems.
+The :ref:`DriverExamples` use ``hypredrive-cli`` with YAML and system data files. In
+contrast, these library examples assemble matrices and vectors in the application. This
+mode supports applications that own the discretization, data layout, MPI partition, and
+solver lifecycle. `hypredrive` then configures and runs the HYPRE solvers and
+preconditioners.
 
 .. note::
-   Prefer the ``hypredrive-cli`` driver when working with matrices/vectors on
-   disk or when quickly comparing solver/preconditioner configurations. Prefer
-   ``libHYPREDRV`` when your application assembles matrices and vectors in
-   memory and needs a lightweight API to invoke HYPRE programmatically.
+   The ``hypredrive-cli`` driver is appropriate for system data on disk and quick solver
+   comparisons. ``libHYPREDRV`` is appropriate when an application assembles system data
+   in memory and requires a small API.
 
 Examples at a Glance
 --------------------
@@ -133,43 +131,49 @@ Overview of Typical Steps
    :ref:`Interfaces`, especially :ref:`PythonInterface` and
    :ref:`FortranInterface`.
 
-The library-side workflow in C/C++ generally follows these steps:
+Use this general C or C++ library workflow:
 
-1. Initialize MPI (if not already done).
-2. Initialize hypredrive and create an object handle.
-3. Call ``HYPREDRV_SetLibraryMode`` to signal library use (must precede step 4).
-4. Parse a YAML configuration string/file to set solver/preconditioner options.
-5. Assemble your matrix and vectors (``HYPRE_IJMatrix``/``HYPRE_IJVector``) in parallel.
-6. Tell hypredrive about your DOF layout (e.g., interleaved blocks).
-7. Attach matrix/RHS/initial guess/prec matrix to hypredrive.
-8. Create, set up, apply, and destroy the solver.
-9. Retrieve host-accessible solution values or statistics if needed. In library mode,
-   ``general.statistics`` is flushed automatically when the ``HYPREDRV_t``
-   object is destroyed; call ``HYPREDRV_StatsPrint`` only if you want an earlier
-   snapshot. Set ``general.statistics_filename`` to append summaries to a file
-   instead of ``stdout``.
-10. Destroy handles explicitly when practical, then finalize hypredrive.
-    ``HYPREDRV_Finalize()`` auto-destroys any remaining live handles, but it
-    cannot rewrite your local handle variables to ``NULL``.
+1. Initialize MPI when the application has not initialized it.
+2. Initialize `hypredrive`.
+3. Create an object handle.
+4. Call ``HYPREDRV_SetLibraryMode`` before you parse the configuration.
+5. Parse a YAML string or file.
+6. Assemble the HYPRE matrix and vectors in parallel.
+7. Define the degree-of-freedom (DOF) layout, such as interleaved blocks.
+8. Attach the matrix and vectors to `hypredrive`.
+9. Create the solver.
+10. Set up the solver.
+11. Apply the solver.
+12. Retrieve the solution values or statistics when required.
+13. Destroy the solver.
+14. Destroy the object handle.
+15. Finalize `hypredrive`.
+
+In library mode, object destruction writes the configured statistics. Call
+``HYPREDRV_StatsPrint`` only for an earlier snapshot. Set
+``general.statistics_filename`` to append summaries to a file instead of ``stdout``.
+``HYPREDRV_Finalize`` destroys remaining handles, but it cannot set local handle variables
+to ``NULL``.
 
 If you manage multiple handles, set ``general.name`` in YAML or call
 ``HYPREDRV_ObjectSetName`` so statistics can identify which object produced each
 summary.
 
-All example drivers in ``examples/src`` accept hypredrive command-line overrides
-after ``-a``/``--args``, using the same ``--path:to:key value`` syntax as
-``hypredrive-cli`` (for example, ``-a --solver:pcg:max_iter 100``). Overrides
-must come last on the command line. Drivers that fall back to built-in presets
-when no ``-i`` file is given (``laplacian``, ``elasticity``, ``graddiv``,
-``heatflow``, ``maxwell``) require ``-i`` together with ``-a``, while ``darcy``
-and ``lidcavity`` apply overrides on top of their built-in configuration.
+All drivers in ``examples/src`` accept `hypredrive` command-line overrides after ``-a``
+or ``--args``. They use the ``--path:to:key value`` syntax from ``hypredrive-cli``. For
+example, use ``-a --solver:pcg:max_iter 100``. Put overrides last on the command line.
 
-If your application owns multiple ``HYPREDRV_t`` objects concurrently, or if you want
-preconditioner reuse to respect application-defined timestep / nonlinear-iteration boundaries,
-use the annotation APIs (``HYPREDRV_AnnotateBegin`` / ``HYPREDRV_AnnotateEnd`` and
-``HYPREDRV_AnnotateLevelBegin`` / ``HYPREDRV_AnnotateLevelEnd``).
+Some drivers use built-in presets when ``-i`` is absent. The ``laplacian``,
+``elasticity``, ``graddiv``, ``heatflow``, and ``maxwell`` drivers require ``-i`` with
+``-a``. The ``darcy`` and ``lidcavity`` drivers apply overrides to their built-in
+configuration.
 
-A minimal skeleton of a program using the library is shown below.
+Use the annotation APIs when an application owns multiple concurrent ``HYPREDRV_t``
+objects. The APIs also define time-step or nonlinear-iteration boundaries for
+preconditioner reuse. Use ``HYPREDRV_AnnotateBegin`` and ``HYPREDRV_AnnotateEnd`` for
+regions. Use the corresponding ``Level`` functions for nested regions.
+
+This example shows a minimal library program:
 
 .. code-block:: c
 
@@ -231,29 +235,31 @@ A minimal skeleton of a program using the library is shown below.
      return 0;
    }
 
-- YAML configuration can be provided as an **in-memory string** (as shown above, where the
-  ``char*`` is passed directly as ``argv[0]``) or as a **path to a ``.yml`` / ``.yaml``
-  file** on disk. The YAML structure is identical in both cases.
-- For block linear systems, set row mapping information via ``HYPREDRV_LinearSystemSetDofmap``.
-- If compiled with GPU support, you may migrate assembled IJ objects to device memory with
-  ``HYPRE_IJMatrixMigrate(..., HYPRE_MEMORY_DEVICE)`` and analogous calls for vectors.
+- Provide the YAML configuration as an **in-memory string** or a **file path**. The
+  example passes a ``char*`` string as ``argv[0]``. Both forms use the same YAML
+  structure.
+- For block linear systems, set row mapping information with
+  ``HYPREDRV_LinearSystemSetDofmap``.
+- With GPU support, use ``HYPRE_IJMatrixMigrate(..., HYPRE_MEMORY_DEVICE)`` to
+  migrate assembled IJ matrices to device memory. Use the analogous calls for
+  vectors.
 - ``HYPREDRV_LinearSystemSetInitialGuess``,
   ``HYPREDRV_LinearSystemSetReferenceSolution``, and
   ``HYPREDRV_LinearSystemSetPrecMatrix`` accept optional external vectors/matrix.
   Passing ``NULL`` asks hypredrive to use the configured/default behavior.
   Passing non-``NULL`` uses the provided object.
-- Ownership follows library mode. After ``HYPREDRV_SetLibraryMode``, non-``NULL``
-  HYPRE objects supplied by the caller are borrowed and remain caller-owned.
-  Without library mode, non-``NULL`` objects passed through these setters are
-  treated as hypredrive-owned and destroyed with the ``HYPREDRV_t`` object.
+- Ownership follows library mode. After ``HYPREDRV_SetLibraryMode``, hypredrive
+  borrows non-``NULL`` HYPRE objects from the caller. The caller retains ownership.
+  Without library mode, hypredrive owns non-``NULL`` objects from these setters.
+  It destroys these objects with the ``HYPREDRV_t`` object.
 
 .. note::
-   Preconditioner reuse across a sequence of linear systems (time steps, multiple RHS) is
-   configured via the ``preconditioner.reuse`` YAML subsection. See
+   The ``preconditioner.reuse`` YAML subsection controls reuse across a system sequence.
+   This includes time steps and multiple right-hand sides. See
    :ref:`PreconReuse` in the :ref:`InputFileStructure` reference.
-   In embedded multi-handle applications, drive timestep boundaries with
-   ``HYPREDRV_AnnotateLevelBegin`` / ``HYPREDRV_AnnotateLevelEnd`` so reuse decisions stay
-   attached to the correct ``HYPREDRV_t`` object.
+   Embedded multi-handle applications use ``HYPREDRV_AnnotateLevelBegin`` and
+   ``HYPREDRV_AnnotateLevelEnd`` for timestep boundaries. These annotations attach
+   reuse decisions to the correct ``HYPREDRV_t`` object.
 
 For example, an embedded caller that wants reuse to restart at each timestep can bracket the
 solve lifecycle like this:
@@ -270,23 +276,23 @@ solve lifecycle like this:
    HYPREDRV_AnnotateLevelEnd(h, 1, "newton-0", -1);
    HYPREDRV_AnnotateLevelEnd(h, 0, "timestep-7", -1);
 
-You can also select a predefined preconditioner preset programmatically, without a YAML file:
+To select a predefined preconditioner preset without YAML, use the programmatic API:
 
 .. code-block:: c
 
    HYPREDRV_SetLibraryMode(h);
    HYPREDRV_InputArgsSetPreconPreset(h, "poisson");
 
-If you subsequently call ``HYPREDRV_InputArgsParse`` with a YAML string or file, the
-parsed YAML settings will override the preset for any keys it defines.
+If you then call ``HYPREDRV_InputArgsParse`` with YAML, its settings override the
+corresponding preset keys.
 
 .. _LibraryExample1:
 
 Example 1: Laplace's equation
 -----------------------------
 
-This section documents a scalar diffusion/Laplace example assembled directly from an
-application using the hypre IJ interface via ``libHYPREDRV``. It mirrors the driver in
+This section documents a scalar diffusion/Laplace example from an application.
+The application uses the hypre IJ interface through ``libHYPREDRV``. It mirrors the driver in
 ``examples/src/C_laplacian/laplacian.c`` and demonstrates multiple finite-difference
 stencils on a structured grid.
 
@@ -300,7 +306,7 @@ We solve
    u \;=\; 0 \ \text{on } \partial\Omega\setminus\{y=0\},\\
    u \;=\; 1 \ \text{on } \{y=0\}
 
-Anisotropy is supported through directional coefficients (see below). A pure Dirichlet
+Directional coefficients support anisotropy (see below). A pure Dirichlet
 setup yields a symmetric positive definite (SPD) linear system. We discretize on a
 uniform structured grid with global node counts :math:`N=(N_x,N_y,N_z)` and spacings
 :math:`h_x = 1/(N_x-1)`, :math:`h_y = 1/(N_y-1)`, :math:`h_z = 1/(N_z-1)`. Nodes are
@@ -312,7 +318,7 @@ Finite-difference stencils
 
 We support several stencils for :math:`-\nabla\!\cdot(\mathbf{c}\nabla u)` on a structured grid.
 All produce an M-matrix (positive diagonal, non-positive off-diagonals) and are second-order
-accurate when weights are chosen consistently.
+accurate when you choose weights consistently.
 
 7-point (faces only, classical 2nd order)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -331,70 +337,72 @@ the discrete negative-Laplacian operator at interior node :math:`(i,j,k)` is
 19-point (faces + edges)
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-Adds edge neighbors (e.g., :math:`(i\pm1,j\pm1,k)`, etc.) with scaled couplings to reduce
-directional bias. A common strategy is to assign edge weights that partially compensate
-cross-term truncation errors from a Taylor expansion, while preserving diagonal dominance
-and the M-matrix structure.
+This stencil adds edge neighbors, such as :math:`(i\pm1,j\pm1,k)`. Scaled couplings reduce
+directional bias. Edge weights can partially compensate for cross-term truncation errors
+in a Taylor expansion. The weights also preserve diagonal dominance and the M-matrix
+structure.
 
 27-point (faces + edges + corners)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Includes the full :math:`3\times3\times3` neighborhood (faces, edges, corners). Corner
-weights are smaller than faces; one can tune edge/corner weights (e.g., half/third of
-face weights) to further reduce dispersion and directional bias.
+This stencil includes the full :math:`3\times3\times3` neighborhood of faces, edges, and
+corners. Corner weights are smaller than face weights. Half or one-third of a face weight
+can further reduce dispersion and directional bias.
 
 125-point (radius-2 demo)
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Extends the neighborhood to radius 2 (up to 125 points). In the example driver, face-adjacent
-neighbors often receive stronger weights (e.g., :math:`-1`), while farther neighbors receive
-smaller negative weights (e.g., :math:`-0.01`), preserving an M-matrix with a dominant diagonal.
+This stencil extends the neighborhood to radius 2, for at most 125 points. In the example,
+face-adjacent neighbors receive weights such as :math:`-1`. More distant neighbors receive
+smaller weights, such as :math:`-0.01`. These weights preserve an M-matrix with a dominant
+diagonal.
 
 Coefficients and anisotropy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The example exposes coefficient arrays in the driver (``params->c``). For 7-point,
-only face-connected neighbors are used with directional weights, e.g., in dimension-wise
-form
+The driver exposes coefficient arrays through ``params->c``. The 7-point stencil uses only
+face-connected neighbors with directional weights. In dimension-wise form,
 
 .. math::
    (A u)_{i,j,k} \;\approx\; \sum_{\alpha\in\{x,y,z\}}
    \frac{c_\alpha}{h_\alpha^2}\,\big(-u_{i-\hat\alpha} + 2u_{i} - u_{i+\hat\alpha}\big).
 
-For 19/27-point, the example scales edge/corner couplings (e.g., half/third) to reduce
-cross terms, preserving a strictly diagonally dominant M-matrix. The 125-point variant
-uses uniform small weights for far neighbors to illustrate wide stencils.
+The 19-point and 27-point stencils scale edge and corner couplings to reduce cross terms.
+Typical factors are one-half and one-third. This scaling preserves a strictly diagonally
+dominant M-matrix. The 125-point variant uses uniform small weights for distant neighbors.
 
 Boundary Conditions and SPD Structure
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Dirichlet values are enforced during assembly. When a neighbor lies outside
+Assembly enforces Dirichlet values. When a neighbor lies outside
 :math:`\Omega`, or when the face corresponds to :math:`y=0` with :math:`u=1`,
-the known-value contribution is moved to the RHS. Rows for interior nodes use
-only valid neighbor columns; the diagonal entry is the negative sum of
-off-diagonals to maintain row-sum consistency and the SPD structure.
+assembly moves the known contribution to the right-hand side (RHS). Interior rows use
+only valid neighbor columns. The diagonal is the negative sum of the off-diagonal entries.
+This maintains row-sum consistency and the SPD structure.
 
 Linear System Creation (IJ interface)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - Create ``HYPRE_IJMatrix``/``HYPRE_IJVector`` on the Cartesian communicator with global
   row range ``[ilower, iupper]`` for this rank.
-- Set per-row nnz bounds according to the stencil (7, 19, 27, 125) with
-  ``HYPRE_IJMatrixSetRowSizes``; initialize IJ objects.
+- Set per-row nonzero bounds for the selected stencil with
+  ``HYPRE_IJMatrixSetRowSizes``.
+- Initialize the IJ objects.
 - For each local node, compute the global row (block-aware), enumerate stencil neighbors,
-  and build column/value arrays. Off-partition neighbors remain valid columns (IJ distributes);
-  out-of-domain neighbors contribute to the RHS via Dirichlet handling above.
+  and build the column and value arrays.
+- Keep off-partition neighbors as valid columns. IJ assembly distributes these entries.
+- Add out-of-domain neighbor contributions to the RHS with the stated Dirichlet rules.
 - Insert with ``HYPRE_IJMatrixSetValues`` (or ``AddToValues``) and ``HYPRE_IJVectorSetValues``,
   then assemble.
 
-This is a scalar problem (one DOF per node), so no interleaved dofmap is required before
-attaching the matrix/vector to hypredrive.
+This scalar problem has one DOF at each node. It does not require an interleaved
+dofmap before the application attaches the matrix and vector.
 
 Linear Solver Setup
 ~~~~~~~~~~~~~~~~~~~
 
-Solver and preconditioner options (PCG+AMG by default) are provided via YAML parsed with
-``HYPREDRV_InputArgsParse``; the create/setup/apply sequence honors those settings.
+``HYPREDRV_InputArgsParse`` reads the YAML solver and preconditioner options. The default
+uses PCG with AMG. The create, setup, and apply calls use these settings.
 
 .. code-block:: c
 
@@ -410,20 +418,22 @@ Solver and preconditioner options (PCG+AMG by default) are provided via YAML par
    HYPREDRV_LinearSolverApply(hdrv);
    HYPREDRV_LinearSolverDestroy(hdrv);
 
-The default in the example is a conjugate gradient solver with a BoomerAMG preconditioner.
-Additional AMG parameters (e.g., coarsening, interpolation) can be specified as needed in
-the YAML configuration.
+The example uses a conjugate gradient solver with a BoomerAMG preconditioner by default.
+The YAML configuration can specify more AMG parameters, such as coarsening and
+interpolation.
 
 Visualizing the Solution
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-With ``-vis`` the example writes the solution as VTK ``RectilinearGrid`` -- a per-rank
-``.vtr`` plus a ``.pvd`` collection -- with the scalar point field ``solution``. Ghost
-exchanges (faces/edges/corners) assemble an overlapped piece on negative faces to avoid
-cracks at partition boundaries. The bundled ``postprocess.py`` renders the field with
-`PyVista <https://pyvista.org>`_; by default it draws nested translucent isosurfaces
-(``--style`` also offers ``clip``, ``volume``, and ``slices``), matching the Maxwell and
-grad-div examples:
+With ``-vis``, the example writes a VTK ``RectilinearGrid`` solution. Each rank writes a
+``.vtr`` file, and the run writes a ``.pvd`` collection. The driver names the scalar
+point field ``solution``. Ghost exchanges add overlap on negative faces and prevent cracks at
+partition boundaries.
+
+The bundled ``postprocess.py`` uses `PyVista <https://pyvista.org>`_ to render the field.
+By default, it draws nested translucent isosurfaces. The ``--style`` option also supports
+``clip``, ``volume``, and ``slices``. This behavior matches the Maxwell and grad-div
+examples:
 
 .. code-block:: bash
 
@@ -470,39 +480,39 @@ partitioning, number of solves, printing, verbosity, and visualization.
                         0x4: Print system info
     -h|--help         : Print this message
 
-For a single-process run, the output should be similar to the following:
+Run the example with one process:
 
 .. code-block:: bash
 
   mpirun -np 1 /path/to/build/examples/src/C_laplacian/laplacian
 
+Compare the output with this reference:
+
 .. literalinclude:: ../../examples/refOutput/laplacian.txt
    :language: text
 
 .. note::
-   Python examples live under ``interfaces/python/examples``; see
-   :ref:`PythonInterface`. The Fortran Laplacian example lives under
-   ``interfaces/fortran/examples/laplacian``; see :ref:`FortranInterface`.
+   Python examples are in ``interfaces/python/examples``. See :ref:`PythonInterface`.
+   The Fortran Laplacian example is in ``interfaces/fortran/examples/laplacian``. See
+   :ref:`FortranInterface`.
 
 .. _LibraryExample2:
 
 Example 2: Mixed Darcy Flow
 ---------------------------
 
-This section documents the mixed Darcy driver implemented in
-``examples/src/C_darcy/darcy.c``. The example uses the standard C
-``libHYPREDRV`` interface: the application assembles ``HYPRE_IJMatrix`` and
-``HYPRE_IJVector`` objects, supplies a dofmap, and lets hypredrive configure GMRES
-with an MGR preconditioner. The current implementation provides an RT0/P0
-discretization descriptor; the assembly is organized so future mixed
-discretizations can replace the cell-local flux dofs and mass entries without
-changing the solver interface.
+This section describes the mixed Darcy driver in ``examples/src/C_darcy/darcy.c``.
+The example uses the standard C ``libHYPREDRV`` interface. The application assembles
+``HYPRE_IJMatrix`` and ``HYPRE_IJVector`` objects and supplies a degree-of-freedom map.
+`hypredrive` configures GMRES with an MGR preconditioner. The current implementation
+provides an RT0/P0 discretization descriptor. Other mixed discretizations can replace the
+cell-local flux DOFs and mass entries without a solver interface change.
 
 Governing Equations
 ~~~~~~~~~~~~~~~~~~~
 
-On a Cartesian domain :math:`\Omega=[0,L_x]\times[0,L_y]\times[0,L_z]`, Darcy
-flow is written in mixed first-order form
+On a Cartesian domain :math:`\Omega=[0,L_x]\times[0,L_y]\times[0,L_z]`, we
+write the Darcy flow equations in mixed first-order form
 
 .. math::
 
@@ -512,16 +522,16 @@ flow is written in mixed first-order form
 with pressure :math:`u`, flux :math:`\mathbf{q}`, permeability tensor :math:`K`,
 Dirichlet pressure data on :math:`\Gamma_D`, and prescribed normal flux on
 :math:`\Gamma_N`. The example uses ``f=0`` and supports diagonal permeability
-fields, either constant over the domain or read as per-cell heterogeneous
-values. By default it imposes a unit pressure drop along the selected active
-axis: :math:`u=1` on the low boundary, :math:`u=0` on the high boundary, and
-no-flow boundaries on the remaining active axes.
+fields. The driver accepts constant or heterogeneous cell values. By default, the driver
+applies a unit pressure drop along the selected active axis. It sets :math:`u=1` on the
+low boundary and :math:`u=0` on the high boundary. Other active boundaries have no flow.
 
 RT0/P0 Discretization
 ~~~~~~~~~~~~~~~~~~~~~
 
 The implemented discretization uses lowest-order Raviart--Thomas fluxes (RT0)
-and cellwise constant pressures (P0). One pressure unknown is stored per cell.
+and cellwise constant pressures (P0). The discretization stores one pressure unknown
+per cell.
 Flux unknowns live on mesh faces and represent integrated normal flux
 
 .. math::
@@ -566,38 +576,37 @@ convention before boundary row pinning, the global system is
    \end{bmatrix}.
 
 Dirichlet pressure data enters the flux equations through
-:math:`-\int_{\Gamma_D}u_D\,\mathbf{v}\cdot\mathbf{n}_{out}\,dS`. No-flow
-Neumann faces are enforced as zero-valued pinned flux rows. Since the pinned
-value is zero, the example leaves columns intact; this is parallel-safe for an
-IJ row-partitioned assembly and preserves the intended solution.
+:math:`-\int_{\Gamma_D}u_D\,\mathbf{v}\cdot\mathbf{n}_{out}\,dS`. The driver enforces
+no-flow Neumann faces as pinned flux rows with a zero value. It leaves their columns
+intact because the pinned value is zero. This operation is safe for parallel IJ row
+partitions and preserves the intended solution.
 
 Parallel Numbering and C Interface Assembly
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The C example uses a rank-contiguous global unknown ordering. Within each rank,
-owned unknowns are ordered
+The C example uses a rank-contiguous global unknown order. Within each rank, the
+driver orders the owned unknowns as follows:
 
 .. math::
 
    [\,x\text{-faces}\,][\,y\text{-faces}\,][\,z\text{-faces}\,][\,cells\,],
 
 with inactive face blocks omitted for 1D/2D prefix-active meshes. The Cartesian
-rank grid is selected automatically by default and can be set explicitly with
-``-P``/``--procs <px> <py> <pz>``. The product must match the MPI size, and
-inactive dimensions must have partition count ``1``.
+driver selects the rank grid automatically by default. To select it explicitly,
+use ``-P`` or ``--procs <px> <py> <pz>``. Make the product equal to the MPI
+size. Set the partition count to ``1`` for inactive dimensions.
 
-Faces are owned by the rank on their high-coordinate side, with the global high
-boundary face owned by the last rank in that direction. Cells are owned by their
-Cartesian subdomain. Each rank builds a local CSR slab over its contiguous row
-range and passes it to hypredrive, with off-rank columns left as global column
-indices.
+The rank on the high-coordinate side owns each face. The last rank in that
+direction owns the global high boundary face. Each Cartesian subdomain owns its
+cells. Each rank builds a local CSR slab over its contiguous row range and
+passes it to hypredrive. Off-rank columns keep their global column indices.
 
-The dofmap is supplied explicitly:
+The driver supplies the dofmap explicitly:
 
-- label ``1`` for flux-face rows,
-- label ``0`` for cell-pressure rows.
+- Label ``1`` for flux-face rows.
+- Label ``0`` for cell-pressure rows.
 
-This is intentionally independent of the RT0 cell-local helper. A higher-order
+This dofmap does not depend on the RT0 cell-local helper. A higher-order
 mixed method can keep the same solver-facing labels while replacing the
 discretization descriptor that enumerates cell dofs and local matrices.
 
@@ -606,13 +615,11 @@ Heterogeneous Permeability Files
 
 The ``-K`` option sets a constant diagonal permeability
 :math:`(K_x,K_y,K_z)`. Alternatively, ``--K-file`` reads a whitespace-delimited
-text file containing either one scalar permeability per source cell or three
-component blocks ``Kx``, ``Ky``, and ``Kz``. If ``--K-file-grid`` is omitted,
-the source grid is assumed to match ``-n`` exactly. If a source grid is supplied,
-the example samples the source field at cell centers onto the requested mesh.
-This is useful for experiments on a coarser mesh than the input data, for
-refinement studies across a sequence of mesh resolutions, and for mesh-sequence
-scalability measurements.
+text file. The file contains one scalar permeability per source cell or three component
+blocks named ``Kx``, ``Ky``, and ``Kz``. Without ``--K-file-grid``, provide a source grid
+that matches ``-n``. With a source grid, the example samples source cell centers onto the
+requested mesh. This supports coarse-mesh experiments, refinement studies, and mesh
+sequence scalability measurements.
 
 SPE10 model 2 permeability files use a ``60 x 220 x 85`` source grid with
 three component blocks. The helper script downloads and unpacks that dataset
@@ -636,9 +643,8 @@ Then run a coarse heterogeneous solve, for example:
 The ``-g y`` option imposes the pressure gradient in the y-direction, which is
 the standard SPE10 setup.
 
-For heterogeneous inputs, the driver reports successful solver completion
-rather than an analytic pressure error because the default linear pressure
-profile is no longer the exact solution.
+For heterogeneous input, the driver reports successful solver completion. It does not
+report an analytic pressure error because the default linear profile is not exact.
 
 SPE10 Reproduction Script
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -650,15 +656,18 @@ case:
 
    examples/src/C_darcy/reproduce.sh
 
-By default, the script downloads the ignored SPE10 data if needed, builds the
-``darcy`` example automatically when its executable is missing (set ``BUILD_DIR``
-to choose the build directory, ``HYPRE_ROOT`` to reuse an existing HYPRE install,
-or ``DARCY_BIN`` to point at a prebuilt binary), runs the
-full ``60 x 220 x 85`` heterogeneous C benchmark on 16 MPI ranks with a
-``1 x 4 x 4`` rank grid, writes the solver log to
-``examples/src/C_darcy/reproduce-out/darcy_spe10.log``, writes full-resolution
-VTK results to ``examples/src/C_darcy/reproduce-out/darcy_spe10.pvti`` plus one
-``.vti`` piece per rank, and regenerates the layer documentation figure below:
+By default, the script performs these actions:
+
+- Downloads the ignored SPE10 data when necessary.
+- Builds the ``darcy`` example when its executable is missing.
+- Runs the full ``60 x 220 x 85`` benchmark on 16 MPI ranks.
+- Uses a ``1 x 4 x 4`` rank grid.
+- Writes the solver log to ``examples/src/C_darcy/reproduce-out/darcy_spe10.log``.
+- Writes the VTK master file and one ``.vti`` file for each rank.
+- Regenerates the layer figure below.
+
+Set ``BUILD_DIR`` to select the build directory. Set ``HYPRE_ROOT`` to use an existing
+HYPRE installation. Set ``DARCY_BIN`` to select an existing executable.
 
 .. figure:: figures/spe10_darcy_fields.png
    :alt: SPE10 permeability and pressure fields on one layer
@@ -708,8 +717,8 @@ The performance run uses the C mixed RT0/P0 driver:
       --output examples/src/C_darcy/reproduce-out/darcy_spe10.vti \
       -g y -v 1
 
-The figures are generated from the C VTK output with NumPy and Matplotlib, so
-reproducing the images does not require VTK or ParaView. Set
+The reproduction script generates the figures from C VTK output with NumPy and
+Matplotlib. Thus, the image process does not require VTK or ParaView. Set
 ``SPE10_LAYER=<k>`` to choose a different physical layer for the layer figure.
 Set ``NP``, ``NXYZ``, ``PGRID``, ``RESULT_FILE``, ``BUILD_DIR``, or
 ``DARCY_BIN`` to override the benchmark command. Use ``--skip-run`` or
@@ -763,18 +772,18 @@ overrides after the Darcy-specific options:
 Preconditioner Strategy Comparison
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Before comparing strategies, it helps to size the problem. On the full SPE10
-grid the assembled system has 4,525,000 rows and 23,471,400 nonzeros, roughly
-``5.2`` per row. It keeps the saddle-point block structure introduced above,
-with 3,403,000 flux rows and 1,122,000 pressure rows. The blocks are very
-different in density: the flux mass block :math:`M` holds 10,071,200 nonzeros
-(about ``2.96`` per row, coupling each face to the same-direction faces of its
-neighbouring cells), the flux--pressure block :math:`B` holds 6,668,200
-(about ``1.96`` per flux row, one entry per cell a face borders), and
-:math:`B^{\top}` holds 6,732,000 (exactly ``6`` per pressure row -- the six
-faces of every cell). The pressure--pressure block is empty, so the operator is
-indefinite; this is exactly the structure the MGR splitting below is designed to
-exploit.
+The full SPE10 system has 4,525,000 rows and 23,471,400 nonzero entries. This is
+approximately 5.2 entries for each row. The saddle-point structure contains 3,403,000
+flux rows and 1,122,000 pressure rows.
+
+The flux mass block :math:`M` contains 10,071,200 nonzero entries. Each flux row has
+approximately 2.96 entries that connect same-direction faces of neighboring cells. The
+flux-pressure block :math:`B` contains 6,668,200 entries. Each flux row has approximately
+1.96 entries, one for each adjacent cell. :math:`B^{\top}` contains 6,732,000 entries,
+which is six for each pressure row.
+
+The pressure-pressure block is empty, so the operator is indefinite. The MGR split below
+uses this block structure.
 
 The flux/pressure splitting above leaves room for several preconditioner
 strategies. The example ships four MGR variants in ``examples/src/C_darcy/``
@@ -805,12 +814,10 @@ the SPE10 case:
         -g y -v 1 -i ${s}.yml > ${s}.log
    done
 
-Two helper scripts turn those logs into a side-by-side comparison.
-``scripts/plot_convergence.py`` (argparse-based; needs only the Python standard
-library and Matplotlib) parses the ``print_level: 2`` history and plots the
-relative residual against the Krylov iteration, while
-``scripts/analyze_statistics.py`` renders the setup/solve timing summary as a
-stacked bar chart (``-m bar+setup+solve``):
+Two helper scripts compare the logs. ``scripts/plot_convergence.py`` uses the Python
+standard library and Matplotlib. It parses the ``print_level: 2`` history and plots the
+relative residual for each Krylov iteration. ``scripts/analyze_statistics.py`` renders
+setup and solve times as a stacked bar chart. Use ``-m bar+setup+solve``:
 
 .. code-block:: bash
 
@@ -840,23 +847,22 @@ stacked bar chart (``-m bar+setup+solve``):
    setup/solve time per strategy. SPE10 case 2a Darcy problem (4.5M unknowns,
    16 MPI ranks, ``relative_tol = 1e-10``, HYPRE 3.1.0).
 
-For this RT0/P0 system the flux mass block is well conditioned, so the cost is
-dominated by the quality of the pressure Schur-complement approximation.
-Strengthening the coarse pressure solve (``mgr_amg_strong.yml``) is the only
-change that lowers the iteration count, from 24 down to 19. Pouring more work
-into the flux block instead -- BJ-ILU0 F-relaxation or a global BJ-ILU0 smoother
--- does not improve the Schur-complement approximation and only adds cost per
-iteration, so GMRES takes more iterations, not fewer.
+For this RT0/P0 system, the flux mass block is well conditioned. Thus, the pressure
+Schur-complement approximation controls the cost. The stronger coarse pressure solve in
+``mgr_amg_strong.yml`` reduces the iteration count from 24 to 19.
 
-The timing panel adds an important caveat: fewest iterations is not the same as
-fastest wall-clock. Each ``mgr_amg_strong`` iteration runs two l1-hybrid-SGS AMG
-cycles, so even though it needs the fewest iterations its solve time is slightly
-higher than the much cheaper default ``mgr_jacobi``, which remains the best
-time-to-solution here. Setup time is small and nearly constant across
-strategies, so the solve phase dominates the total. For reference, a plain
-GMRES+BoomerAMG preconditioner without the MGR splitting stalls on the
-indefinite saddle-point system and fails to reach the tolerance within 200
-iterations, which is why MGR is the default.
+More work in the flux block does not improve the Schur-complement approximation. This
+includes BJ-ILU0 F-relaxation and a global BJ-ILU0 smoother. These options increase the
+cost of each iteration. They also cause GMRES to use more iterations.
+
+The smallest iteration count does not give the shortest run time. Each
+``mgr_amg_strong`` iteration runs two l1-hybrid-SGS AMG cycles. Its solve time is slightly
+longer than the less costly default ``mgr_jacobi``. Thus, ``mgr_jacobi`` has the best
+time to solution in this test. Setup time is small and almost constant, so solves control
+the total time.
+
+Without the MGR split, a GMRES and BoomerAMG combination stalls on the indefinite system.
+It does not reach the tolerance in 200 iterations. Therefore, MGR is the default.
 
 Reproducible Run
 ~~~~~~~~~~~~~~~~
@@ -986,7 +992,7 @@ constant Jacobian
    J^{-1} \;=\; \mathrm{diag}\!\big(\tfrac{2}{h_x},\,\tfrac{2}{h_y},\,\tfrac{2}{h_z}\big),\qquad
    \det J \;=\; \tfrac{h_x h_y h_z}{8}.
 
-Physical gradients follow from :math:`\nabla_{\mathbf{x}} N_a = J^{-\top}\,\nabla_{\xi} N_a`, i.e.,
+Physical gradients follow from :math:`\nabla_{\mathbf{x}} N_a = J^{-\top}\,\nabla_{\xi} N_a`:
 
 .. math::
    \frac{\partial N_a}{\partial x} \;=\; \frac{2}{h_x}\,\frac{\partial N_a}{\partial \xi},\qquad
@@ -1023,7 +1029,7 @@ Element matrices and loads
 
 - Volume quadrature: tensor-product 2×2×2 Gauss points :math:`\{(\xi_q,\eta_q,\zeta_q),\,w_q\}`.
   With the constant mapping, the physical weight is :math:`w_q^{\Omega} = w_q \,\det J`.
-  The element stiffness and body-force load read
+  The element stiffness and body-force load are:
 
   .. math::
      K_e \;=\; \sum_q B(\xi_q,\eta_q,\zeta_q)^\top\, D \, B(\xi_q,\eta_q,\zeta_q)\; w_q^{\Omega},
@@ -1035,7 +1041,7 @@ Element matrices and loads
 
 - Traction on the top face :math:`\{y=L_y\}` corresponds to :math:`\eta = +1` on the reference element.
   Using 2×2 Gauss in :math:`(\xi,\zeta)` with surface Jacobian :math:`\det J_s=\tfrac{h_x h_z}{4}`, the
-  face load contribution is
+  face load contribution is:
 
   .. math::
      \mathbf{f}_e^{\text{trac}} \;=\;
@@ -1043,18 +1049,18 @@ Element matrices and loads
      N(\xi_q,\,\eta{=}+1,\,\zeta_q)^\top \,\mathbf{t}\; w_q^{\Gamma},\qquad
      w_q^{\Gamma} \;=\; w_q \,\det J_s.
 
-In practice, the driver precomputes the constant factors (e.g., :math:`J^{-1}`, :math:`\det J`,
-and the values of :math:`B` at Gauss points) to amortize cost across elements with identical size,
-and assembles :math:`K_e` and :math:`\mathbf{f}_e=\mathbf{f}_e^{\text{vol}}+\mathbf{f}_e^{\text{trac}}`
-into the global system using the interleaved dof map.
+The driver precomputes constant factors for elements that have the same size. These
+factors include :math:`J^{-1}`, :math:`\det J`, and :math:`B` at the Gauss points. The
+driver then assembles :math:`K_e` and the combined load into the global system. It uses
+the interleaved DOF map.
 
 Element Matrices and Vectors
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-For a single element with 8 nodes and 3 components per node (24 dofs), define the element
-strain-displacement operator :math:`B(\xi,\eta,\zeta) \in \mathbb{R}^{6\times 24}` in Voigt form,
-assembled from the physical derivatives :math:`(\partial N_a/\partial x,\partial N_a/\partial y,\partial N_a/\partial z)`.
-The element stiffness and loads are
+A single element has eight nodes and three components for each node. Thus, it has 24
+DOFs. Define the element strain-displacement operator
+:math:`B(\xi,\eta,\zeta) \in \mathbb{R}^{6\times 24}` in Voigt form. Assemble it from the
+physical derivatives of :math:`N_a`. The element stiffness and loads are
 
 .. math::
    K_e \;=\; \int_{\Omega_e} B^\top D\,B\, d\Omega
@@ -1093,26 +1099,29 @@ node, DOF IDs satisfy:
    \mathrm{dof}_{\mathrm{gid}}(a,c) \;=\; 3\,\mathrm{node}_{\mathrm{gid}}(a) \;+\; c,
    \qquad c\in\{0,1,2\}.
 
-The driver restricts insertion to owned rows; off-rank columns (couplings) are allowed by IJ assembly.
+The driver inserts only into owned rows. IJ assembly permits coupling columns from other
+ranks.
 
 Linear System Creation
 ~~~~~~~~~~~~~~~~~~~~~~
 
-- Create ``HYPRE_IJMatrix`` and ``HYPRE_IJVector`` on the solver communicator with global
-  dof bounds for this rank; set object type to ``HYPRE_PARCSR``.
+- Create ``HYPRE_IJMatrix`` and ``HYPRE_IJVector`` on the solver communicator.
+- Set the global DOF bounds for this rank.
+- Set the object type to ``HYPRE_PARCSR``.
 - Provide per-row nnz upper bounds (conservative 81) with
-  ``HYPRE_IJMatrixSetRowSizes``; initialize with ``HYPRE_IJMatrixInitialize_v2`` and
-  ``HYPRE_IJVectorInitialize_v2``.
+  ``HYPRE_IJMatrixSetRowSizes``.
+- Initialize the matrix with ``HYPRE_IJMatrixInitialize_v2``.
+- Initialize the vector with ``HYPRE_IJVectorInitialize_v2``.
 - Assemble element contributions using ``HYPRE_IJMatrixAddToValues`` and ``HYPRE_IJVectorAddToValues``.
 - Impose Dirichlet rows with ``HYPRE_IJMatrixSetValues`` and ``HYPRE_IJVectorSetValues``.
 - Finalize with ``HYPRE_IJMatrixAssemble`` and ``HYPRE_IJVectorAssemble``.
-- Optional GPU migration with ``HYPRE_IJMatrixMigrate``/``HYPRE_IJVectorMigrate`` if built with GPU.
+- If the build supports GPUs, migrate objects with the applicable ``HYPRE_*Migrate``
+  functions.
 
-For example, the following code snippet shows how to create a ``HYPRE_IJMatrix`` and ``HYPRE_IJVector``
-and assemble element contributions using ``HYPRE_IJMatrixAddToValues`` and ``HYPRE_IJVectorAddToValues``
-and set the linear system components to hypredrive. Note that the interleaved 3-DOF layout per node is
-announced to hypredrive before setting the matrix and vector components. This information might be useful
-for some preconditioners.
+The following code creates a ``HYPRE_IJMatrix`` and ``HYPRE_IJVector``. It then assembles
+element contributions and attaches the system to `hypredrive`. The code defines the
+interleaved three-DOF layout before it attaches the system. Some preconditioners use this
+layout information.
 
   .. code-block:: c
 
@@ -1132,20 +1141,21 @@ Near-Nullspace and Rigid Body Modes (RBMs)
 For linear elasticity, the near-nullspace of the operator (particularly under weak constraints)
 is spanned by the six rigid body modes (RBMs):
 
-- three translations: :math:`t_x=(1,0,0)`, :math:`t_y=(0,1,0)`, :math:`t_z=(0,0,1)`
-- three rotations about the domain center :math:`\mathbf{c}=(L_x/2, L_y/2, L_z/2)`:
+- Three translations: :math:`t_x=(1,0,0)`, :math:`t_y=(0,1,0)`, :math:`t_z=(0,0,1)`.
+- Three rotations about the domain center :math:`\mathbf{c}=(L_x/2, L_y/2, L_z/2)`:
   :math:`\mathbf{u}(\mathbf{x})=\boldsymbol{\omega}\times(\mathbf{x}-\mathbf{c})` with
   :math:`\boldsymbol{\omega}\in\{(1,0,0),(0,1,0),(0,0,1)\}`
 
-Supplying RBMs to the preconditioner (e.g., BoomerAMG) may improve robustness and convergence,
-especially when using nodal coarsening for vector-valued problems. From the HYPREDRV perspective:
+Rigid body modes (RBMs) can improve preconditioner robustness and convergence. BoomerAMG
+can use them during nodal coarsening for vector problems. HYPREDRV uses RBMs as follows:
 
 - The elasticity driver computes the six RBMs on the physical mesh coordinates.
-- The modes are arranged in component-major (SoA) order: six contiguous blocks, each of
+- The example arranges the modes in component-major (SoA) order: six contiguous blocks, each of
   length ``num_entries = 3 * num_local_nodes`` (interleaved dofs per node).
-- Dirichlet-clamped DOFs (the plane ``x=0`` in this example) are explicitly zeroed in all modes.
-- The application transfers the modes to hypre with a single call; the data is copied
-  internally by `libHYPREDRV`, so the application can free its buffer afterwards.
+- The example sets all Dirichlet-clamped DOFs to zero in every mode. In this
+  example, the clamped plane is ``x=0``.
+- The application transfers the modes to `hypre` with one call. ``libHYPREDRV`` copies
+  the data, so the application can then release its buffer.
 
 Driver-side mode computation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1174,7 +1184,7 @@ Using RBMs in libHYPREDRV
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 - Provide the six-mode buffer as above before creating the preconditioner and solver.
-- Hypredrive stores the near-nullspace vector internally and can pass it to the
+- `hypredrive` stores the near-null-space vector internally and can pass it to the
   configured preconditioner. For BoomerAMG nodal coarsening, typical settings involve:
 
   .. code-block:: yaml
@@ -1190,24 +1200,25 @@ Using RBMs in libHYPREDRV
          #   ...
 
 - Memory and layout:
-  - The call ``HYPREDRV_LinearSystemSetNearNullSpace(h, num_entries, num_components, values)`` expects the values in SoA layout: ``num_components`` contiguous blocks, each with ``num_entries`` degrees of freedom.
-  - The buffer is copied into ``libHYPREDRV``-owned storage; the caller must free its buffer after the call returns.
+
+  - Pass the values in structure-of-arrays (SoA) layout. The layout has
+    ``num_components`` contiguous blocks with ``num_entries`` DOFs in each block.
+  - ``libHYPREDRV`` copies the buffer into internal storage. Release the caller buffer
+    after the call returns.
 
 .. note::
-   Near null space modes are distinct from the *exact* null space modes set with
-   ``HYPREDRV_LinearSystemSetNullSpace()``: near null space modes inform the
-   preconditioner construction and are not projected out of the solution, while exact
-   null space modes are projected out of every computed solution to fix its gauge (see
-   the Q2-Q1 lid-driven cavity discretization below). The rigid body modes of a clamped
-   elastic body, as in this example, are near null space modes but not exact ones.
+   Near-null-space modes are different from the *exact* null-space modes that
+   ``HYPREDRV_LinearSystemSetNullSpace`` sets. Near-null-space modes inform the
+   preconditioner, and `hypredrive` does not project them from the solution. In contrast,
+   it projects exact modes from each solution to fix the gauge. See the Q2-Q1 cavity
+   example below. A clamped elastic body's RBMs are near modes, not exact modes.
 
 Linear Solver Setup
 ~~~~~~~~~~~~~~~~~~~
 
-The linear solver is created, setup, applied, and destroyed per solve. Solver and
-preconditioner choices (e.g., PCG/FGMRES, AMG/MGR), tolerances, stopping criteria, and
-other options are provided via the YAML configuration parsed earlier with
-``HYPREDRV_InputArgsParse``; the create/setup/apply sequence below honors those settings.
+Each solve creates, sets up, applies, and destroys the linear solver. The parsed YAML
+selects the solver, preconditioner, tolerances, and stop criteria. The sequence below uses
+these settings.
 
   .. code-block:: c
 
@@ -1216,9 +1227,9 @@ other options are provided via the YAML configuration parsed earlier with
      HYPREDRV_LinearSolverApply(hdrv);
      HYPREDRV_LinearSolverDestroy(hdrv);
 
-The default in the example is a conjugate gradient solver with an unknown-based BoomerAMG
-preconditioner (Prolongation operator considers only intra-variable couplings, i.e.,
-connections within the same type of displacement component).
+By default, the example uses a conjugate gradient solver with unknown-based BoomerAMG.
+The prolongation operator considers only connections within the same displacement
+component.
 
 Solver Comparison
 ~~~~~~~~~~~~~~~~~
@@ -1233,8 +1244,8 @@ The available values are:
 - ``elasticity_nodal_3D``: application-registered preset that matches ``elasticity_3D``
   and additionally sets ``coarsening.nodal: 1``.
 
-The two custom presets are registered at runtime by the application via
-``HYPREDRV_PreconPresetRegister`` before parsing YAML or applying command-line overrides.
+The application calls ``HYPREDRV_PreconPresetRegister`` to register the two custom
+presets before it parses YAML or applies command-line overrides.
 They are therefore example-local conveniences and not global built-in presets.
 
 To compare all three configurations over a DOF sweep (8 variants from about
@@ -1244,9 +1255,10 @@ To compare all three configurations over a DOF sweep (8 variants from about
 
    ./reproduce.sh
 
-The script runs each preset across all size variants, stores outputs in
-``elasticity_builtin.out``, ``elasticity_sdc.out``, and ``elasticity_nodal.out``,
-and then always generates plots by default. It calls ``scripts/analyze_statistics.py``
+The script runs each preset across all size variants and stores three output
+files. These files are ``elasticity_builtin.out``, ``elasticity_sdc.out``, and
+``elasticity_nodal.out``. By default, the script also generates plots. It calls
+``scripts/analyze_statistics.py``
 with ``-t rows`` and ``--log-x`` to produce separate comparison figures with a
 log-scale X axis (DOFs):
 
@@ -1271,7 +1283,7 @@ log-scale X axis (DOFs):
 
    Solve time vs DOFs.
 
-The script prints verbose messages indicating which plot is being generated.
+The verbose output identifies each plot.
 
 To regenerate only the plots from existing ``*.out`` logs (without rerunning solves):
 
@@ -1282,12 +1294,14 @@ To regenerate only the plots from existing ``*.out`` logs (without rerunning sol
 Visualizing the Solution
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-The driver can emit per-rank VTK ``RectilinearGrid`` pieces with one-layer overlap on the
-negative faces so adjacent subdomains stitch seamlessly. Ghost data for faces, edges,
-and corners are exchanged prior to writing to avoid cracks at partition boundaries.
+The driver can emit per-rank VTK ``RectilinearGrid`` pieces. A one-layer overlap
+on negative faces joins adjacent subdomains. Before output, the driver exchanges
+ghost data for faces, edges, and corners. This exchange prevents cracks at
+partition boundaries.
 
-- ``-vis 1``: ASCII VTK. Easy to inspect/diff but larger on disk and slower to write.
-- ``-vis 2``: Appended raw binary. Compact and faster; preferred for larger runs.
+- ``-vis 1``: ASCII VTK. This format supports text inspection and comparison, but
+  it is larger and slower to write.
+- ``-vis 2``: Appended raw binary. This format is compact and faster for larger runs.
 
 Output artifacts:
 
@@ -1358,11 +1372,13 @@ figure above and the reference output included below.
         0x4: Print linear system matrices
     -h|--help         : Print this message
 
-For a single-process run, the output should be similar to the following:
+Run the example with one process:
 
 .. code-block:: bash
 
    mpirun -np 1 /path/to/build/examples/src/C_elasticity/elasticity
+
+Compare the output with this reference:
 
 .. literalinclude:: ../../examples/refOutput/elasticity.txt
    :language: text
@@ -1372,10 +1388,10 @@ For a single-process run, the output should be similar to the following:
 Example 4: Nonlinear Heat Flow
 ------------------------------
 
-This section documents the transient nonlinear heat conduction driver implemented in
+This section describes the transient nonlinear heat driver in
 ``examples/src/C_heatflow/heatflow.c``. It solves a scalar diffusion equation with
-temperature-dependent conductivity on a structured 3D mesh using Q1 hexahedral elements,
-backward Euler time integration, and a full Newton method.
+temperature-dependent conductivity. The discretization uses a structured 3D mesh with Q1
+hexahedral elements. It uses backward Euler time integration and a full Newton method.
 
 Geometry and Boundary Conditions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1420,17 +1436,18 @@ The example uses a transient Method of Manufactured Solutions (MMS) with a 3D ex
    \sin\!\left(\frac{\pi y}{2 L_y}\right)\,
    \frac{1 + \cos(2\pi z/L_z)}{2},
 
-which satisfy the boundary conditions:
+which satisfies the boundary conditions:
 
   - :math:`T = 0` at :math:`y = 0` (since :math:`\sin(0) = 0`)
   - :math:`\partial T / \partial x = 0` at :math:`x = 0, L_x` (since :math:`\sin(0) = \sin(2\pi) = 0`)
   - :math:`\partial T / \partial y = 0` at :math:`y = L_y` (since :math:`\cos(\pi/2) = 0`)
   - :math:`\partial T / \partial z = 0` at :math:`z = 0, L_z` (since :math:`\sin(0) = \sin(2\pi) = 0`)
 
-The corresponding source term :math:`Q_{\text{MMS}}` is computed analytically so that
-:math:`T_{\text{exact}}` satisfies the PDE, enabling verification of the numerical
-implementation. The solution has full 3D spatial variation, with temperature maxima at the
-corners :math:`(0,L_y,0)` and :math:`(L_x,L_y,L_z)` and minima along the :math:`y=0` plane.
+The driver computes the source term :math:`Q_{\text{MMS}}` analytically.
+This source makes :math:`T_{\text{exact}}` satisfy the PDE and supports numerical
+verification. The solution varies in three dimensions. Its maximum temperatures
+occur at :math:`(0,L_y,0)` and :math:`(L_x,L_y,L_z)`. Its minimum occurs on the
+:math:`y=0` plane.
 
 Discretization and Nonlinear Formulation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1457,10 +1474,10 @@ The Jacobian applied to :math:`\delta T` is
 Implementation notes:
 
 - Precomputed Q1 templates provide consistent mass and unit-diffusion stiffness on uniform
-  hexes; conductivity and nonlinear terms are accumulated at Gauss points.
-- Dirichlet rows are set to identity with zero RHS (Newton solves for the update), and
-  interior rows include zero entries for Dirichlet columns to preserve a symmetric
-  sparsity pattern (AMG friendly).
+  hexahedra. The driver accumulates conductivity and nonlinear terms at Gauss points.
+- Dirichlet rows have an identity value and a zero RHS because Newton solves for an
+  update. Interior rows keep zero entries for Dirichlet columns. These entries preserve a
+  symmetric sparsity pattern for AMG.
 - Parallel assembly uses face/edge/corner ghost exchanges so each rank can evaluate
   boundary-straddling elements without cracks in the global solution or VTK output.
 
@@ -1479,9 +1496,9 @@ introduces asymmetry because :math:`\nabla v \cdot \nabla T^k` differs from
 
 - **PCG** (conjugate gradient) works correctly for :math:`\beta = 0` and may work for
   small :math:`|\beta|` where the asymmetry is negligible.
-- **GMRES** (or FGMRES) is recommended for nonlinear problems (:math:`\beta \neq 0`) as it
-  handles non-symmetric systems robustly. The default configuration uses GMRES+AMG for
-  this reason.
+- Use **GMRES** or FGMRES for nonlinear problems (:math:`\beta \neq 0`).
+  These solvers handle nonsymmetric systems. Thus, the default configuration
+  uses GMRES+AMG.
 
 Output and Diagnostics
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -1489,11 +1506,11 @@ Output and Diagnostics
 - VTK RectilinearGrid per rank with point fields:
 
   - ``temperature`` (numerical solution)
-  - ``conductivity`` (derived via :math:`k(T)`)
+  - ``conductivity`` (derived from :math:`k(T)`)
   - ``temperature_exact`` (MMS exact solution, enable with ``-vis 16`` bit)
   - ``heat_flux`` vector field :math:`\mathbf{q}=-k(T)\nabla T` (enable with ``-vis 8`` bit)
 
-- PVD collection at the end for easy time series loading in ParaView.
+- PVD collection for time-series loading in ParaView.
 - The header and iteration logs report:
 
   - Fourier number :math:`\text{Fo} = \alpha_0 \Delta t / h_{\min}^2` where :math:`\alpha_0 = k_0 / (\rho c)`
@@ -1544,11 +1561,11 @@ Reproducible Run
 Transient Visualization
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Enabling all-timestep VTK output (``-vis 4``) writes a ``.pvd`` time-series collection
-that the bundled ``postprocess.py`` renders into an animated GIF of the temperature
-isosurfaces with `PyVista <https://pyvista.org>`_. The ``-cfl 1.0`` flag caps the
-time-step size so the frames are uniformly spaced across the transient (otherwise the
-driver grows ``dt`` and only a handful of frames are produced).
+The ``-vis 4`` option writes a ``.pvd`` time-series collection for all time steps. The
+bundled ``postprocess.py`` uses `PyVista <https://pyvista.org>`_ to render an animated
+GIF of the temperature isosurfaces. The ``-cfl 1.0`` option limits the time-step size.
+This gives frames with uniform time intervals. Without the limit, the driver increases
+``dt`` and produces fewer frames.
 
 .. code-block:: bash
 
@@ -1564,8 +1581,8 @@ driver grows ``dt`` and only a handful of frames are produced).
 
       Nested translucent isosurfaces of the temperature field over the transient. The hot
       cores at the insulated corners gradually shrink and cool as heat diffuses out through
-      the isothermal cold base at :math:`y = 0`; the isosurface levels and color scale are
-      held fixed so the decay is apparent.
+      the isothermal cold base at :math:`y = 0`. The fixed isosurface levels and color
+      scale show the decay.
 
 .. only:: latex
 
@@ -1576,8 +1593,8 @@ driver grows ``dt`` and only a handful of frames are produced).
 
       Nested translucent isosurfaces of the temperature field over the transient. The hot
       cores at the insulated corners gradually shrink and cool as heat diffuses out through
-      the isothermal cold base at :math:`y = 0`; the isosurface levels and color scale are
-      held fixed so the decay is apparent.
+      the isothermal cold base at :math:`y = 0`. The fixed isosurface levels and color
+      scale show the decay.
 
 .. _LibraryExample5:
 
@@ -1640,44 +1657,46 @@ Spatial Discretization
 By default, we use equal-order bilinear (Q1) finite elements for both velocity and
 pressure on a structured quadrilateral mesh. This violates the
 Ladyzhenskaya-Babuška-Brezzi (LBB) inf-sup condition, requiring stabilization to obtain a
-well-posed system. In this discretization, the three degrees of freedom ``(u, v, p)``
-are interleaved at every node and the pressure is pinned at a reference node.
+well-posed system. In this discretization, the driver interleaves the three
+degrees of freedom ``(u, v, p)`` at every node. It pins the pressure at a
+reference node.
 
-Alternatively, the driver supports an inf-sup stable Q2-Q1 (Taylor-Hood) discretization
-via the ``-disc q2q1`` command line option, which requires no stabilization. The ``-n``
-option then gives the pressure (bilinear) grid, while the velocity (biquadratic) grid has
-``(2*nx - 1) x (2*ny - 1)`` nodes. Because the two fields live on staggered grids with
-different numbers of unknowns, the degrees of freedom are stored in a block layout —
-``(u, v)`` pairs interleaved over the velocity nodes followed by the pressure block — and
-the dof types are communicated to hypredrive with explicit labels
-(``HYPREDRV_LinearSystemSetDofmap()`` with ``u = 0``, ``v = 1``, ``p = 2``) instead of
-the interleaved dofmap helper. Moreover, the pressure is *not* pinned in this mode:
-since the enclosed flow determines the pressure only up to a constant, the example
-registers the constant pressure mode with
-``HYPREDRV_LinearSystemSetNullSpace()`` and hypredrive projects it out of the solution
-after every solve, fixing the pressure gauge. The default solver configuration for
-``-disc q2q1`` is a two-level MGR preconditioner with the velocity dof types as F points,
-the pressure as the C point, and ``blk-absrowsum`` prolongation. The Q2-Q1 path runs in
-serial and in parallel (``-P Px Py``); hypre requires at least version 3.1 for the MGR
-default configuration.
+Alternatively, ``-disc q2q1`` selects an inf-sup stable Q2-Q1 Taylor-Hood discretization.
+This discretization does not require stabilization. The ``-n`` option gives the bilinear
+pressure grid. The biquadratic velocity grid has
+``(2*nx - 1) x (2*ny - 1)`` nodes.
 
-The two discretizations can be compared side by side with
-``examples/src/C_lidcavity/compare.sh``, which sweeps Reynolds and CFL numbers at matched
-velocity resolution and reports time steps, nonlinear/linear iteration counts, the final
-kinetic energy (a solution observable printed by the driver and comparable between the
-discretizations), and wall times.
+The two fields use staggered grids and have different numbers of unknowns. Therefore, the
+driver stores the DOFs in a block layout. Interleaved ``(u, v)`` pairs come first. The
+pressure block follows them. ``HYPREDRV_LinearSystemSetDofmap`` sends explicit labels to
+`hypredrive`: ``u = 0``, ``v = 1``, and ``p = 2``.
+
+This mode does not pin pressure. The enclosed flow determines pressure only up to a
+constant. The driver registers this constant mode with
+``HYPREDRV_LinearSystemSetNullSpace``. `hypredrive` projects the mode from each solution
+and fixes the pressure gauge.
+
+By default, Q2-Q1 uses a two-level MGR preconditioner. The velocity DOF types are F
+points, and pressure is the C point. Prolongation uses ``blk-absrowsum``. The Q2-Q1 path
+runs in serial or in parallel with ``-P Px Py``. This MGR configuration requires `hypre`
+3.1 or newer.
+
+``examples/src/C_lidcavity/compare.sh`` compares the two discretizations at the same
+velocity resolution. It sweeps the Reynolds and CFL numbers. It reports time steps,
+nonlinear iterations, linear iterations, final kinetic energy, and elapsed times. The
+driver prints kinetic energy as a comparable solution value.
 
 Temporal Discretization
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-Backward Euler (implicit, first-order) is used for time integration:
+The driver uses first-order implicit backward Euler time integration:
 
 .. math::
 
    \frac{\mathbf{u}^{n+1} - \mathbf{u}^n}{\Delta t} + (\mathbf{u}^{n+1} \cdot \nabla) \mathbf{u}^{n+1}
    - \nu \nabla^2 \mathbf{u}^{n+1} + \nabla p^{n+1} = \mathbf{0}
 
-The nonlinear convective term is handled by Newton iteration within each time step.
+Newton iteration handles the nonlinear convective term in each time step.
 
 SUPG and PSPG Stabilization
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1706,7 +1725,7 @@ The PSPG term stabilizes the pressure field:
    \left( \rho \mathbf{u} \cdot \nabla \mathbf{u} + \nabla p \right) d\Omega
 
 where :math:`\mathbf{w}` and :math:`q` are velocity and pressure test functions,
-and :math:`\tau` is the element-wise stabilization parameter computed from:
+and :math:`\tau` is the element stabilization parameter from this formula:
 
 .. math::
 
@@ -1732,24 +1751,25 @@ where the Jacobian has a 2×2 block structure:
 - :math:`\mathbf{J}_{p\mathbf{u}}`: Continuity-velocity block (divergence, PSPG advection)
 - :math:`\mathbf{J}_{pp}`: Continuity-pressure block (PSPG pressure Laplacian)
 
-The PSPG stabilization populates :math:`\mathbf{J}_{pp}` with a pressure-Laplacian-like
-term, which would be zero in standard Galerkin Q1-Q1 formulation. This is the key
-mechanism that allows equal-order interpolation to work.
+The PSPG stabilization populates :math:`\mathbf{J}_{pp}` with a
+pressure-Laplacian-like term. Standard Galerkin Q1-Q1 leaves this term at zero.
+The PSPG term makes equal-order interpolation possible.
 
 Element Assembly
 ^^^^^^^^^^^^^^^^
 
-Each quadrilateral element has 4 nodes with 3 DOFs per node (interleaved as :math:`u, v, p`),
-giving 12 element DOFs. The element stiffness matrix :math:`K_e \in \mathbb{R}^{12 \times 12}`
-and residual vector :math:`\mathbf{r}_e \in \mathbb{R}^{12}` are computed using 2×2 Gauss
-quadrature. The global system is assembled using the hypre IJ interface.
+Each quadrilateral element has 4 nodes and 3 DOFs at each node. The DOF order is
+:math:`u, v, p`, which gives 12 element DOFs. The driver computes the element
+stiffness matrix :math:`K_e \in \mathbb{R}^{12 \times 12}` and residual vector
+:math:`\mathbf{r}_e \in \mathbb{R}^{12}` with 2×2 Gauss quadrature. It assembles
+the global system with the hypre IJ interface.
 
 Parallel Partitioning
 ~~~~~~~~~~~~~~~~~~~~~
 
-The domain is partitioned using an MPI Cartesian grid :math:`P = (P_x, P_y)`. Each rank
-owns a rectangular subdomain with local node counts determined by balanced partitioning.
-Ghost data exchange is performed for velocity values needed in element assembly at
+An MPI Cartesian grid :math:`P = (P_x, P_y)` partitions the domain. Each rank
+owns a rectangular subdomain. Balanced partitioning determines the local node
+counts. The driver exchanges ghost velocity data for element assembly at
 partition boundaries.
 
 The global DOF numbering uses block-aware lexicographic ordering: for a node with
@@ -1806,17 +1826,16 @@ The following code snippet shows the linear system setup and solve within a Newt
 State Vector Management for Time-Stepping
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For time-dependent problems, HYPREDRV provides a state vector management system that
-efficiently handles multiple solution states (e.g., previous time step, current time step)
-using a circular indexing scheme. This is particularly useful for time-stepping applications
-where you need to maintain and access multiple solution states.
+For time-dependent problems, HYPREDRV manages multiple solution states with circular
+indices. The states can represent the previous and current time steps. This scheme gives
+time-stepping applications access to multiple states without unnecessary copies.
 
-The state vector system is initialized with ``HYPREDRV_StateVectorSet``, which registers
-an array of ``HYPRE_IJVector`` objects that will be managed internally. The system uses
-logical indices (0, 1, ...) that map to physical state vectors through a circular buffer,
-allowing efficient state rotation without data copying.
+``HYPREDRV_StateVectorSet`` initializes the state vector system and registers an
+array of ``HYPRE_IJVector`` objects. HYPREDRV manages these objects. Logical
+indices map to physical state vectors through a circular buffer. This scheme
+rotates states without copying data.
 
-The following code snippet shows how to set up state vectors for a time-stepping application:
+This code sets up state vectors for a time-step application:
 
 .. code-block:: c
 
@@ -1859,11 +1878,11 @@ The following code snippet shows how to set up state vectors for a time-stepping
       HYPREDRV_StateVectorUpdateAll(hdrv);
    }
 
-The main function APIs are listed below:
+The main function APIs are:
 
 - **HYPREDRV_StateVectorSet**: Initializes the state vector management system with
-  an array of ``HYPRE_IJVector`` objects. Must be called before using other state vector
-  functions.
+  an array of ``HYPRE_IJVector`` objects. Call this function before other state
+  vector functions.
 
 - **HYPREDRV_StateVectorGetValues**: Retrieves a pointer to the underlying data
   array of a state vector, allowing direct read/write access without copying. The
@@ -1879,25 +1898,25 @@ The main function APIs are listed below:
 
 - **HYPREDRV_StateVectorUpdateAll**: Advances the internal state mapping by one
   position in a circular manner. After calling this, logical indices refer to different
-  physical state vectors. Typically called at the end of each time step.
+  physical state vectors. Call this function at the end of each time step.
 
-The circular indexing scheme allows efficient state management: after ``HYPREDRV_StateVectorUpdateAll``,
-what was previously state 1 becomes state 0, state 2 becomes state 1, etc., wrapping around.
-This avoids unnecessary data copying while maintaining clear logical indexing.
+``HYPREDRV_StateVectorUpdateAll`` advances the circular state indices. Previous state 1
+becomes state 0, and previous state 2 becomes state 1. The last index wraps to the start.
+This operation does not copy the state data.
 
 Linear Solver Configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-One of the main goals of hypredrive is to provide a flexible and easy-to-use interface for solving
-linear systems. In this example, we provide a comparison script to evaluate different preconditioner strategies:
+This example includes a comparison script for different preconditioner
+strategies:
 
 .. code-block:: bash
 
    ./reproduce.sh --solvers
 
-This script runs the simulation with five different solver configurations and
-generates performance comparison plots. The tested configurations are stored in
-the ``examples/src/C_lidcavity/`` directory and are listed below:
+This script runs the simulation with five solver configurations and generates
+performance comparison plots. The ``examples/src/C_lidcavity/`` directory contains
+these configurations:
 
 - **ILUK(0)**: Block Jacobi ILU with zero fill level (``fgmres-ilu0.yml``)
 - **ILUK(1)**: Block Jacobi ILU with fill level 1 (``fgmres-ilu1.yml``)
@@ -1934,24 +1953,24 @@ The simulation advances in time using backward Euler with adaptive time stepping
 2. For each time step until final time:
 
    a. Perform Newton iterations until the residual norm is below tolerance.
-   b. At each Newton iteration, assemble and solve the linearized system.
-   c. Update the solution with the Newton correction.
-   d. Optionally adjust :math:`\Delta t` based on Newton convergence (adaptive stepping).
+   b. Assemble the linearized system for each Newton iteration.
+   c. Solve the linearized system.
+   d. Update the solution with the Newton correction.
+   e. For adaptive stepping, adjust :math:`\Delta t` from the Newton convergence.
 
 3. Write VTK output at specified intervals or at steady state.
 
-The driver supports simple adaptive time stepping: if Newton converges quickly
-(≤3 iterations), :math:`\Delta t` is increased; if convergence is slow (≥6 iterations),
-:math:`\Delta t` is decreased. Additionally, a maximum CFL constraint can be specified
-using the ``-cfl`` option to prevent the time step from growing too large; when enabled,
-the time step is limited to :math:`\Delta t \leq \text{CFL}_{\max} \cdot h_{\min}`.
+The driver supports simple adaptive time steps. It increases :math:`\Delta t` when Newton
+converges in three iterations or fewer. It decreases :math:`\Delta t` after six iterations
+or more. The ``-cfl`` option sets a maximum CFL constraint. This constraint limits the
+time step to :math:`\Delta t \leq \text{CFL}_{\max} \cdot h_{\min}`.
 
 Visualizing the Solution
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-The driver outputs VTK ``RectilinearGrid`` files with velocity vectors, pressure,
-and divergence fields. A PVD collection file is written at the end to group all
-time steps for visualization in ParaView.
+The driver writes VTK ``RectilinearGrid`` files with velocity vectors, pressure,
+and divergence fields. At the end, it writes a PVD collection that groups all
+time steps for ParaView.
 
 - ``-vis 1``: Binary VTK, last time step only
 - ``-vis 2``: ASCII VTK, last time step only
@@ -1962,7 +1981,7 @@ Output includes:
 
 - ``velocity``: 3-component vector field :math:`(u, v, 0)`
 - ``pressure``: Scalar field :math:`p`
-- ``div_velocity``: Divergence :math:`\nabla \cdot \mathbf{u}` (should be near zero)
+- ``div_velocity``: Divergence :math:`\nabla \cdot \mathbf{u}` (expected near zero)
 
 Open the ``.pvd`` file in ParaView to visualize the flow evolution. Use "Stream Tracer"
 or "Glyph" filters to visualize the velocity field and vortex structures.
@@ -1970,12 +1989,11 @@ or "Glyph" filters to visualize the velocity field and vortex structures.
 Validation Results
 ~~~~~~~~~~~~~~~~~~
 
-In this section, we validate the lid-driven cavity simulation by comparing 128×128
-simulation centerline velocity profiles with high-resolution (8192×8192 grid) reference
-data from Marchi et al. (2021). The plots were generated using the ``postprocess.py`` script.
-They show the u-velocity profiles along the vertical centerline (x = 0.5) as a function of y
-and the v-velocity profiles along the horizontal centerline (y = 0.5) as a function of x.
-The error metrics (maximum error and RMSE) for both components are also displayed.
+This validation compares centerline velocity profiles on a 128×128 grid with reference
+data on an 8192×8192 grid. Marchi and others published the reference data in 2021. The
+``postprocess.py`` script generated the plots. They show horizontal velocity on the
+vertical centerline and vertical velocity on the horizontal centerline. The plots also
+show the maximum error and root mean square error (RMSE).
 
 .. code-block:: bash
 
@@ -2037,12 +2055,9 @@ The error metrics (maximum error and RMSE) for both components are also displaye
    :alt: Centerline velocity profiles for Re=7500
    :width: 100%
 
-The validation demonstrates that the current numerical implementation provides
-accurate results across a wide range of Reynolds numbers, from creeping flow
-(Re = 1) to turbulent flow (Re = 7500). The agreement with high-resolution reference
-data (Marchi et al., 2021) confirms the correctness of the implementation. The compact
-plots show excellent agreement between simulation results and reference data,
-with error metrics (maximum error and RMSE) displayed for each Reynolds number.
+The results agree with the reference data from Reynolds number 1 through 7500. This
+agreement validates the current numerical implementation for the tested cases. Each plot
+shows the maximum error and RMSE.
 
 Reproducible Run
 ~~~~~~~~~~~~~~~~
@@ -2090,9 +2105,9 @@ Example run for Re=100 with visualization:
 .. literalinclude:: ../../examples/src/C_lidcavity/refOutput/default_Re100.out
    :language: text
 
-The transient streamlines can be rendered as an animated GIF with the ``postprocess.py``
-script, which traces the velocity field at each timestep using
-`PyVista <https://pyvista.org>`_ (write all timesteps with ``-vis 4``):
+The ``postprocess.py`` script can render the transient streamlines as an animated GIF. It
+uses `PyVista <https://pyvista.org>`_ to trace the velocity field at each time step.
+Write all time steps with ``-vis 4``:
 
 .. code-block:: bash
 
@@ -2126,11 +2141,10 @@ script, which traces the velocity field at each timestep using
 Example 6: Definite curl-curl (AMS)
 -----------------------------------
 
-This example, implemented in ``examples/src/C_maxwell/maxwell.c``, is an
-electromagnetic benchmark for the **Auxiliary-space Maxwell Solver (AMS)**. It pairs a
-lowest-order edge-element discretization of a definite Maxwell problem with a
-manufactured solution, so that both the *algebraic* performance (iteration counts,
-timings) and the *discretization* accuracy can be measured directly.
+The example in ``examples/src/C_maxwell/maxwell.c`` is an electromagnetic benchmark for
+the **Auxiliary-space Maxwell Solver (AMS)**. It combines lowest-order edge elements with
+a manufactured definite Maxwell solution. The benchmark measures algebraic performance
+through iteration counts and times. It also measures discretization accuracy directly.
 
 Governing Equations (Definite Maxwell)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2152,12 +2166,10 @@ and :math:`\sigma\ge 0` is the conductivity / mass coefficient. Both default to
 boundary condition prescribes the **tangential trace** :math:`E\times n`, which is the
 natural Dirichlet datum for fields in :math:`H(\mathrm{curl})`.
 
-The mass term is what makes the operator definite: for :math:`\sigma>0` the bilinear
-form is coercive on all of :math:`H(\mathrm{curl})` (the gradient fields, which lie in
-the kernel of the curl, are controlled by the :math:`\sigma\,E` term). This is exactly
-the regime AMS is designed for, and AMS remains robust across the whole range from
-curl-dominated (:math:`\sigma\ll\mu^{-1}`) to mass-dominated (:math:`\sigma\gg\mu^{-1}`)
-as long as :math:`\sigma\ge 0`.
+The mass term makes the operator definite. For :math:`\sigma>0`, the bilinear form is
+coercive on all of :math:`H(\mathrm{curl})`. The :math:`\sigma\,E` term controls gradient
+fields in the curl kernel. AMS targets this regime. It remains robust from curl-dominated
+to mass-dominated problems when :math:`\sigma\ge 0`.
 
 Variational Formulation
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2173,14 +2185,14 @@ The weak problem reads: find :math:`E\in E_D+V` such that for all :math:`v\in V`
    \;=\;
    \int_\Omega f\cdot v\,d\Omega .
 
-The two volume integrals give, after discretization, a **stiffness (curl-curl)** matrix
-weighted by :math:`\mu^{-1}` and a **mass** matrix weighted by :math:`\sigma`; the
-system matrix is their sum.
+After discretization, the first volume integral gives a curl-curl stiffness matrix
+weighted by :math:`\mu^{-1}`. The second gives a mass matrix weighted by
+:math:`\sigma`. Their sum is the system matrix.
 
 Discretization: Lowest-Order Nedelec (Edge) Elements
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The field is discretized with the lowest-order Nedelec (Whitney) edge elements on a
+The example discretizes the field with lowest-order Nedelec (Whitney) edge elements on a
 structured hexahedral mesh. The degrees of freedom live on **edges**: the DOF of edge
 :math:`e` is the integral of the tangential component of :math:`E` along it,
 
@@ -2188,19 +2200,20 @@ structured hexahedral mesh. The degrees of freedom live on **edges**: the DOF of
 
    \mathrm{dof}_e(E) \;=\; \int_e E\cdot \tau \, ds ,
 
-with every edge oriented in the :math:`+`-axis direction. Each hexahedron carries 12
-edge DOFs (four per axis direction). The example builds the :math:`12\times12` element
-matrix :math:`S_K = \mu^{-1}\,K_K + \sigma\,M_K` by integrating the Whitney basis with a
-:math:`3`-point Gauss rule per direction, where :math:`(K_K)_{ab}=\int_K(\nabla\times
-W_a)\cdot(\nabla\times W_b)` and :math:`(M_K)_{ab}=\int_K W_a\cdot W_b`. The essential
-boundary condition is imposed by element-level static condensation: boundary-edge rows
-become identity rows whose right-hand side is the prescribed tangential value, and their
-columns are lifted to the load of the interior rows.
+with every edge oriented in the positive axis direction. Each hexahedron has 12 edge
+DOFs, with four in each axis direction. The example integrates the Whitney basis with a
+three-point Gauss rule in each direction. This integration builds the
+:math:`12\times12` element matrix :math:`S_K = \mu^{-1}\,K_K + \sigma\,M_K`.
+Here, :math:`(K_K)_{ab}=\int_K(\nabla\times W_a)\cdot(\nabla\times W_b)` and
+:math:`(M_K)_{ab}=\int_K W_a\cdot W_b`.
 
-Nodes, edges, and (for the H(div) example below) faces are numbered with a single
-**rank-monotonic** scheme so that the node, edge, and face partitions are mutually
-consistent -- a requirement for the auxiliary-space products formed internally by AMS
-and ADS.
+Element-level static condensation imposes the essential boundary condition. Boundary-edge
+rows become identity rows with the prescribed tangential value on the RHS. Assembly
+lifts their columns to the loads of interior rows.
+
+One **rank-monotonic** scheme numbers nodes, edges, and faces. Thus, their partitions are
+mutually consistent. The internal AMS and ADS auxiliary-space products require this
+consistency.
 
 Manufactured Solution and Error Measurement
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2222,11 +2235,10 @@ in closed form,
    f \;=\; \mu^{-1}\,\nabla\times\nabla\times E + \sigma\,E
        \;=\; (\mu^{-1}\kappa^2+\sigma)\,E ,
 
-and the exact edge DOFs reduce to one-dimensional integrals, e.g. for an
-:math:`x`-edge at nodal height :math:`y` the DOF is :math:`h_x\sin(\kappa y)`. After the
-solve the example compares the computed edge DOFs to this reference field and reports
-the relative discrete :math:`\ell_2` error, which confirms the solver converges to the
-*correct* field rather than merely to a small residual.
+The exact edge DOFs reduce to one-dimensional integrals. For an :math:`x`-edge at height
+:math:`y`, the DOF is :math:`h_x\sin(\kappa y)`. After the solve, the example compares
+the computed DOFs with this reference field. The relative discrete :math:`\ell_2` error
+verifies convergence to the correct field, not only to a small residual.
 
 Auxiliary-Space Inputs: the Discrete de Rham Complex
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2236,10 +2248,10 @@ AMS accelerates the edge system by mapping curl-free error components into nodal
 *operator inputs* beyond the system matrix, both reflecting the de Rham complex
 :math:`H^1 \xrightarrow{\nabla} H(\mathrm{curl}) \xrightarrow{\nabla\times} H(\mathrm{div})`:
 
-- the **discrete gradient** :math:`G` (an edge :math:`\times` node incidence matrix with
-  entries :math:`-1` at the tail node and :math:`+1` at the head node of each edge),
-  passed with ``HYPREDRV_LinearSystemSetDiscreteGradient()``; and
-- the **vertex coordinate vectors** :math:`x,y,z`, passed with
+- The **discrete gradient** :math:`G` is an edge-by-node incidence matrix. Its edge row
+  contains :math:`-1` at the tail and :math:`+1` at the head. Pass it with
+  ``HYPREDRV_LinearSystemSetDiscreteGradient()``.
+- The **vertex coordinate vectors** :math:`x,y,z`, passed with
   ``HYPREDRV_LinearSystemSetCoordinates()``.
 
 The example assembles :math:`G` as an ``HYPRE_IJMatrix`` (edges :math:`\times` nodes) and
@@ -2262,8 +2274,8 @@ The driver builds the IJ objects itself and hands them to HYPREDRV in library mo
                                        (HYPRE_Vector) ycoord,
                                        (HYPRE_Vector) zcoord);
 
-The solver and preconditioner are configured from
-``examples/src/C_maxwell/pcg-ams.yml`` (PCG + AMS). A typical run:
+The ``examples/src/C_maxwell/pcg-ams.yml`` file configures the PCG solver and AMS
+preconditioner. Run a typical case with this command:
 
 .. code-block:: bash
 
@@ -2272,14 +2284,14 @@ The solver and preconditioner are configured from
 Solution Visualization
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-Passing ``-vtk <base>`` writes the computed field as VTK ImageData -- a single
-``<base>.vti`` on one rank, or a ``<base>.pvti`` master plus per-rank ``<base>_pN.vti``
-pieces in parallel. The driver reconstructs the cell-centered electric field from the
-edge DOFs (Whitney basis) and stores both the vector and its magnitude. The bundled
-``postprocess.py`` renders the magnitude with `PyVista <https://pyvista.org>`_; by
-default it draws nested translucent isosurfaces (level sets) that show the 3D structure
-of the field. The ``--style`` flag also offers ``clip`` (octant cutaway), ``volume``
-(volume rendering), and ``slices``:
+The ``-vtk <base>`` option writes the computed field as VTK ImageData. A serial run
+writes ``<base>.vti``. A parallel run writes a ``<base>.pvti`` master and one piece for
+each rank. The driver reconstructs the cell-centered electric field from the edge DOFs.
+It stores the vector and its magnitude.
+
+The bundled ``postprocess.py`` uses `PyVista <https://pyvista.org>`_ to render the
+magnitude. By default, it draws nested translucent isosurfaces that show the 3D field.
+The ``--style`` option also provides ``clip``, ``volume``, and ``slices``:
 
 .. code-block:: bash
 
@@ -2314,16 +2326,18 @@ discrete :math:`\ell_2` error drops like :math:`O(h^2)`:
 Coefficient Robustness
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-The ``./reproduce.sh sweep`` mode probes robustness with respect to the coefficients on
-the :math:`64^3` mesh (~0.8M edge unknowns). Because the discrete operator is
-:math:`\mu^{-1}K+\sigma M`, what matters is the **curl-to-mass ratio**
-:math:`\sigma/\mu^{-1}`, so it suffices to fix :math:`\mu^{-1}=1` and sweep
-:math:`\sigma` over six orders of magnitude, :math:`\sigma\in\{10^{-3},\dots,10^{3}\}`:
-values below 1 are curl-dominated and values above 1 are mass-dominated. The iteration
-plot compares AMS against two generic preconditioners that are *not* tailored to
-:math:`H(\mathrm{curl})` -- BoomerAMG (``pcg-amg.yml``) and restricted additive Schwarz
-with one level of overlap and ILU(0) subdomain solves (``gmres-ras1-ilu0.yml``) -- all
-driven to ``relative_tol = 1e-8`` with a cap of 500 iterations.
+The ``./reproduce.sh sweep`` mode tests coefficient robustness on the
+:math:`64^3` mesh with approximately 0.8 million edge unknowns. The discrete
+operator is :math:`\mu^{-1}K+\sigma M`. Thus, the curl-to-mass ratio
+:math:`\sigma/\mu^{-1}` controls the behavior. The sweep fixes
+:math:`\mu^{-1}=1` and changes :math:`\sigma` across six orders of magnitude.
+Values below 1 are curl-dominated, and values above 1 are mass-dominated.
+
+The iteration plot compares AMS with two generic preconditioners. These
+preconditioners do not target :math:`H(\mathrm{curl})`. The first is BoomerAMG
+with ``pcg-amg.yml``. The second is restricted additive Schwarz with
+``gmres-ras1-ilu0.yml``. It uses one overlap level and ILU(0) subdomain solves.
+All runs use ``relative_tol = 1e-8`` and a limit of 500 iterations.
 
 .. code-block:: bash
 
@@ -2338,24 +2352,23 @@ driven to ``relative_tol = 1e-8`` with a cap of 500 iterations.
    versus :math:`\sigma` (log-log) for AMS, BoomerAMG, and RAS(1)-ILU0. Right: stacked
    AMS setup/solve time versus :math:`\sigma`.
 
-The contrast is stark. **AMS is flat and robust**: 12 iterations in the curl-dominated
-regime, easing to 7 as the mass term makes the system better conditioned -- essentially
-independent of :math:`\sigma`. The generic preconditioners, by contrast, **fail in the
-curl-dominated regime**: both BoomerAMG and RAS(1)-ILU0 hit the 500-iteration cap for
-small :math:`\sigma` (BoomerAMG for :math:`\sigma\le 1`, RAS for :math:`\sigma\le 10`),
-and recover only once the mass term dominates (:math:`\sigma\gtrsim 100`), where the
-matrix approaches a well-conditioned mass matrix and any reasonable smoother works. This
-is exactly why an auxiliary-space solver is needed: only AMS handles the large
-near-kernel of the curl operator. Finally, the **AMS setup time is independent of**
-:math:`\sigma` (~2 s throughout), because the auxiliary-space hierarchy is built from the
-discrete gradient and the vertex coordinates -- the problem topology and geometry -- not
-from the coefficient values; the solve time simply tracks the iteration count.
+**AMS is stable and robust.** It uses 12 iterations in the curl-dominated regime and 7 in
+the mass-dominated regime. Thus, its iteration count has little dependence on
+:math:`\sigma`.
 
-.. note::
+The generic preconditioners fail in the curl-dominated regime. BoomerAMG reaches the
+500-iteration limit when :math:`\sigma\le 1`. RAS(1)-ILU0 reaches this limit when
+:math:`\sigma\le 10`. They recover when the mass term dominates at approximately
+:math:`\sigma\ge 100`. In that regime, the matrix approaches a well-conditioned mass
+matrix. AMS alone handles the large near-kernel of the curl operator.
 
-   The comparison uses 4 MPI ranks because, in the bundled HYPRE build, the overlapping
-   Schwarz (RAS) setup aborts at higher rank counts on this :math:`64^3` system; AMS,
-   ADS, and BoomerAMG run at any rank count.
+The AMS setup time remains approximately two seconds for all :math:`\sigma` values. The
+auxiliary hierarchy uses the discrete gradient and vertex coordinates, not the coefficient
+values. The solve time follows the iteration count.
+
+The comparison uses four MPI ranks. In the bundled HYPRE build, RAS setup stops
+at higher rank counts for this :math:`64^3` system. AMS, ADS, and BoomerAMG do
+not have this rank limit.
 
 .. _graddiv_example:
 
@@ -2380,12 +2393,13 @@ On a box :math:`\Omega` we solve the grad-div + mass problem for a vector field
    \qquad
    u\cdot n = (u\cdot n)_D \quad\text{on } \partial\Omega ,
 
-where :math:`\alpha` weights the grad-div (divergence-stiffness) term and
-:math:`\beta\ge 0` is the mass coefficient; both default to :math:`1` and are set with
-``-alpha`` and ``-beta``. The essential boundary condition prescribes the **normal
-trace** :math:`u\cdot n`, the natural Dirichlet datum in :math:`H(\mathrm{div})`. As
-before the mass term makes the operator definite (it controls the divergence-free fields
-that lie in the kernel of the divergence), which is the regime ADS is built for.
+Here, :math:`\alpha` weights the divergence-stiffness term, and :math:`\beta\ge 0` is the
+mass coefficient. Both default to :math:`1`. The ``-alpha`` and ``-beta`` options set
+them.
+
+The essential boundary condition prescribes the normal trace :math:`u\cdot n`.
+This is the natural Dirichlet datum in :math:`H(\mathrm{div})`. The mass term controls
+divergence-free fields and makes the operator definite. ADS targets this regime.
 
 Variational Formulation
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2407,7 +2421,7 @@ matrix weighted by :math:`\beta`.
 Discretization: Lowest-Order Raviart-Thomas (Face) Elements
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The flux is discretized with lowest-order Raviart-Thomas (RT0) face elements. The
+The example discretizes the flux with lowest-order Raviart-Thomas (RT0) face elements. The
 degrees of freedom live on **faces**: the DOF of face :math:`F` is the integral of the
 normal flux through it,
 
@@ -2415,12 +2429,13 @@ normal flux through it,
 
    \mathrm{dof}_F(u) \;=\; \int_F u\cdot n \, dA ,
 
-with every face normal oriented in the :math:`+`-axis direction. Each hexahedron carries
-6 face DOFs. The :math:`6\times6` element matrix :math:`S_K=\alpha\,K^{\mathrm{div}}_K
-+ \beta\,M_K` is integrated from the RT0 basis, with
+with every face normal oriented in the positive axis direction. Each hexahedron has six
+face DOFs. The RT0 basis gives the :math:`6\times6` element matrix
+:math:`S_K=\alpha\,K^{\mathrm{div}}_K + \beta\,M_K`. Here,
 :math:`(K^{\mathrm{div}}_K)_{ab}=\int_K(\nabla\cdot v_a)(\nabla\cdot v_b)` and
-:math:`(M_K)_{ab}=\int_K v_a\cdot v_b`. The normal-trace boundary condition is imposed by
-the same element-level static condensation used in the Maxwell example.
+:math:`(M_K)_{ab}=\int_K v_a\cdot v_b`. The example imposes the normal-trace
+boundary condition with the same element static condensation as the Maxwell
+example.
 
 Manufactured Solution and Error Measurement
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2447,19 +2462,21 @@ Auxiliary-Space Inputs: the Full de Rham Complex
 
 ADS reduces the face system through the *edge* space (where it applies AMS) and then to
 the *nodal* space. It therefore needs the **whole discrete de Rham sequence**
-:math:`\text{nodes}\xrightarrow{G}\text{edges}\xrightarrow{C}\text{faces}`, i.e. three
+:math:`\text{nodes}\xrightarrow{G}\text{edges}\xrightarrow{C}\text{faces}`. ADS requires three
 operator inputs in addition to the system matrix:
 
-- the **discrete gradient** :math:`G` (edge :math:`\times` node), via
-  ``HYPREDRV_LinearSystemSetDiscreteGradient()``;
-- the **discrete curl** :math:`C` (face :math:`\times` edge incidence, with right-hand-rule
-  signs around each face), via ``HYPREDRV_LinearSystemSetDiscreteCurl()``; and
-- the **vertex coordinate vectors**, via ``HYPREDRV_LinearSystemSetCoordinates()``.
+- The **discrete gradient** :math:`G` (edge :math:`\times` node), passed with
+  ``HYPREDRV_LinearSystemSetDiscreteGradient()``.
+- The **discrete curl** :math:`C` (face :math:`\times` edge incidence with right-hand-rule
+  signs), passed with ``HYPREDRV_LinearSystemSetDiscreteCurl()``.
+- The **vertex coordinate vectors**, passed with
+  ``HYPREDRV_LinearSystemSetCoordinates()``.
 
-The example constructs :math:`G` and :math:`C` so that the fundamental identity
-:math:`C\,G=0` (the discrete *curl of a gradient is zero*) holds exactly -- a property
-ADS relies on. As in the Maxwell case these inputs are purely topological/geometric and
-independent of :math:`\alpha` and :math:`\beta`.
+The example constructs :math:`G` and :math:`C` to satisfy :math:`C\,G=0`
+exactly. This identity means that the discrete curl of a gradient is zero. ADS
+relies on this identity. As in the Maxwell case, these inputs contain only
+topology and geometry. They do not depend on :math:`\alpha` or
+:math:`\beta`.
 
 Linear System Creation
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2484,11 +2501,11 @@ The solver/preconditioner come from ``examples/src/C_graddiv/pcg-ads.yml`` (PCG 
 Solution Visualization
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-As in the Maxwell example, ``-vtk <base>`` writes the solution as VTK ImageData
-(serial ``<base>.vti`` or parallel ``<base>.pvti`` plus per-rank pieces); here the
-cell-centered flux is reconstructed from the face DOFs using the RT0 basis. The bundled
-``postprocess.py`` renders the magnitude with `PyVista <https://pyvista.org>`_, using
-the same isosurface default (and the same ``--style`` options) as the Maxwell example:
+As in the Maxwell example, ``-vtk <base>`` writes VTK ImageData. A serial run writes
+``<base>.vti``. A parallel run writes ``<base>.pvti`` and one piece for each rank. The
+driver reconstructs cell-centered flux from the face DOFs with the RT0 basis. The bundled
+``postprocess.py`` uses `PyVista <https://pyvista.org>`_ to render the magnitude. It uses
+the same defaults and ``--style`` options as the Maxwell example:
 
 .. code-block:: bash
 
@@ -2523,11 +2540,11 @@ Mesh Refinement (Discretization Accuracy)
 Coefficient Robustness
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-As for Maxwell, what matters is the **div-to-mass ratio** :math:`\beta/\alpha`, so
-``./reproduce.sh sweep`` fixes :math:`\alpha=1` and sweeps :math:`\beta` over six orders
-of magnitude (:math:`\{10^{-3},\dots,10^{3}\}`, crossing from div-dominated to
-mass-dominated) on the :math:`64^3` mesh, comparing ADS against BoomerAMG and
-RAS(1)-ILU0.
+The **div-to-mass ratio** :math:`\beta/\alpha` controls this problem.
+``./reproduce.sh sweep`` fixes :math:`\alpha=1` and changes :math:`\beta` across six
+orders of magnitude. The range is :math:`\{10^{-3},\dots,10^{3}\}` on the
+:math:`64^3` mesh. It crosses from div-dominated to mass-dominated problems. The test
+compares ADS with BoomerAMG and RAS(1)-ILU0.
 
 .. code-block:: bash
 
@@ -2542,14 +2559,14 @@ RAS(1)-ILU0.
    versus :math:`\beta` (log-log) for ADS, BoomerAMG, and RAS(1)-ILU0. Right: stacked
    ADS setup/solve time versus :math:`\beta`.
 
-ADS behaves exactly like its :math:`H(\mathrm{curl})` counterpart: it is flat and robust
-(14 iterations in the div-dominated regime, easing to 7 when the mass term dominates),
-while BoomerAMG and RAS(1)-ILU0 hit the 500-iteration cap for small :math:`\beta`,
-recovering only once the mass term dominates. The ADS setup time is again independent of
-the coefficients, since the face-edge-node auxiliary hierarchy is built only from the
-discrete curl :math:`C`, the discrete gradient :math:`G`, and the coordinates; the solve
-time tracks the iteration count. The shared auxiliary-space machinery makes both solvers
-robust to the relative weight of the differential and mass terms, where generic
-algebraic preconditioners are not. (As in the Maxwell example, the comparison uses
-4 MPI ranks because the bundled HYPRE's overlapping-Schwarz setup aborts at higher rank
-counts on this :math:`64^3` system.)
+ADS behaves like its :math:`H(\mathrm{curl})` counterpart. It uses 14 iterations in the
+div-dominated regime and 7 when the mass term dominates. BoomerAMG and RAS(1)-ILU0 reach
+the 500-iteration limit for small :math:`\beta`. They recover only when the mass term
+dominates.
+
+The ADS setup time does not depend on the coefficients. Its auxiliary hierarchy uses
+only the discrete curl, discrete gradient, and coordinates. The solve time follows the
+iteration count. The auxiliary-space method remains robust as the differential-to-mass
+ratio changes. The generic algebraic preconditioners do not.
+
+The comparison uses four MPI ranks for the same RAS limitation as the Maxwell comparison.

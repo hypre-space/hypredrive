@@ -5,8 +5,12 @@
 
 .. _index:
 
-Welcome to hypredrive's documentation!
-======================================
+`hypredrive` User Manual
+========================
+
+`hypredrive` configures and runs `hypre` solvers for sparse linear systems. Start with
+:ref:`Introduction` and :ref:`Installation`. Use :ref:`InputFileStructure` as the YAML
+reference. The example chapters show driver and library workflows.
 
 .. toctree::
    :maxdepth: 3

@@ -9,24 +9,29 @@ Fortran Interface
 =================
 
 The Fortran interface provides thin bindings to the public ``HYPREDRV_`` C API.
-It is intended for Fortran applications that already use MPI and want to drive
-hypredrive without writing C glue code.
+It supports Fortran applications that use MPI and need hypredrive without C glue
+code.
 
 Prerequisites
 -------------
 
-Prerequisites are a C compiler, a Fortran 2003 compiler, MPI C and Fortran
-wrappers (``mpicc``/``mpifort`` or equivalents), CMake, and a HYPRE build
-compatible with hypredrive. The current Fortran interface requires a real-valued
-HYPRE build where ``HYPRE_Real`` uses the C ``double`` ABI; single-precision and
-long-double HYPRE builds are rejected at configure time. The examples use
-``mpif.h`` for broad compiler/MPI compatibility, but the build still requires an
+The interface requires these components:
+
+- A C compiler.
+- A Fortran 2003 compiler.
+- MPI C and Fortran wrappers, such as ``mpicc`` and ``mpifort``.
+- CMake.
+- A HYPRE build that is compatible with `hypredrive`.
+
+The interface requires real-valued HYPRE with the C ``double`` ABI for
+``HYPRE_Real``. Configuration rejects single-precision and long-double builds. The
+examples use ``mpif.h`` for compiler and MPI compatibility. The build also requires an
 MPI Fortran wrapper and library.
 
 Build
 -----
 
-The interface is optional and disabled by default:
+CMake disables the optional interface by default:
 
 .. code-block:: bash
 
@@ -48,9 +53,9 @@ Build only the examples:
 
    cmake --build build-fortran --target fortran-examples
 
-The ``laplacian-fortran`` driver is installed whenever
-``HYPREDRV_ENABLE_FORTRAN=ON``. It is both a user-facing example and the
-reproducible smoke driver used by the Fortran tests.
+CMake installs the ``laplacian-fortran`` driver when
+``HYPREDRV_ENABLE_FORTRAN=ON``. This driver is a user example and the
+reproducible smoke driver for the Fortran tests.
 
 Installed use
 -------------
@@ -63,10 +68,10 @@ Installed Fortran consumers can use the exported CMake target:
    find_package(HYPREDRV REQUIRED)
    target_link_libraries(my_solver PRIVATE HYPREDRV::Fortran MPI::MPI_Fortran)
 
-Fortran module files are compiler-specific. Build downstream code with the same
-Fortran compiler family used to install hypredrive, otherwise the compiler may
-not be able to read ``hypredrive.mod``. The module is installed as
-``include/hypredrive.mod`` under the installation prefix.
+Fortran module files are compiler-specific. Use the same Fortran compiler family
+for hypredrive and downstream code. A different compiler can fail to read
+``hypredrive.mod``. CMake installs this module as ``include/hypredrive.mod`` under
+the installation prefix.
 
 Installed executables use a relative runtime search path so prefix-local
 libraries in ``lib`` are found without setting ``LD_LIBRARY_PATH``.
@@ -96,8 +101,8 @@ Applications use the ``hypredrive`` module and opaque ``type(c_ptr)`` handles:
       call MPI_Finalize(ierr)
    end program driver
 
-MPI communicators are passed as Fortran MPI handles and converted to C
-communicators inside the binding. The examples use ``mpif.h`` instead of
+The binding accepts MPI communicators as Fortran handles and converts them to C
+communicators. The examples use ``mpif.h`` instead of
 ``use mpi`` for compatibility with MPI installations whose ``mpi.mod`` was built
 by another Fortran compiler.
 
@@ -116,9 +121,9 @@ parses them through the same YAML input path as the C API:
 
    call HYPREDRV_Check(HYPREDRV_InputArgsParseYaml(drv, yaml))
 
-The companion helper ``HYPREDRV_InputArgsParseYamlArgs`` additionally accepts an
-array of CLI-style override tokens applied on top of the YAML configuration,
-e.g. ``args = [character(len=32) :: '--solver:pcg:max_iter', '100']``.
+The ``HYPREDRV_InputArgsParseYamlArgs`` helper also accepts command-line interface (CLI)
+override tokens. These tokens override the YAML configuration. One example is
+``args = [character(len=32) :: '--solver:pcg:max_iter', '100']``.
 
 CSR assembly
 ------------
@@ -134,11 +139,12 @@ Fortran arrays for local CSR slabs:
    call HYPREDRV_Check(HYPREDRV_LinearSystemSetMatrixFromCSR(drv, row_start, row_end, indptr, cols, data))
    call HYPREDRV_Check(HYPREDRV_LinearSystemSetRHSFromArray(drv, row_start, row_end, rhs))
 
-``indptr`` must be normalized: ``indptr(1) == 0`` and the final entry must equal
-``size(cols)`` and ``size(data)``. Empty local CSR slabs are rejected by the
-convenience helper. The Fortran 2003 binding accepts ordinary assumed-shape
-arrays; pass contiguous allocatable arrays for large systems to avoid
-compiler-generated packing copies for strided sections.
+Normalize ``indptr``. Set ``indptr(1)`` to zero. Set the final entry to
+``size(cols)``. Confirm that ``size(cols)`` equals ``size(data)``. The convenience
+helper rejects empty local CSR slabs.
+
+The Fortran 2003 binding accepts assumed-shape arrays. For large systems, pass contiguous
+allocatable arrays. This prevents packing copies for strided sections.
 
 Examples
 --------
@@ -161,18 +167,16 @@ for example ``-a --solver:pcg:max_iter 50``.
 API coverage
 ------------
 
-The module exposes procedures for the public ``HYPREDRV_`` functions in
-``include/HYPREDRV.h``. This includes lifecycle, error handling, input parsing,
-presets, matrix/RHS setup, solver and preconditioner lifecycle, state vectors,
-statistics, annotations, timing accessors, and small Fortran helper routines
-such as ``HYPREDRV_Check`` and ``HYPREDRV_BigIntSize``.
+The module provides procedures for the public ``HYPREDRV_`` functions in
+``include/HYPREDRV.h``. These procedures cover lifecycle control, errors, input, presets,
+linear systems, solvers, state vectors, statistics, annotations, and timing. The module
+also provides small Fortran helpers, such as ``HYPREDRV_Check`` and
+``HYPREDRV_BigIntSize``.
 
-The Fortran interface preserves the C API ownership rules. Borrowed HYPRE
-objects remain caller-owned unless the corresponding C function documents that
-hypredrive takes ownership. Raw array accessors such as
-``HYPREDRV_LinearSystemGetSolutionValues`` return C-owned host pointers; convert
-them with ``c_f_pointer`` if you need a Fortran view, and do not free them from
-Fortran.
+The Fortran interface preserves the C API ownership rules. Borrowed HYPRE objects remain
+under caller ownership unless a C function documents a transfer. Raw array accessors such
+as ``HYPREDRV_LinearSystemGetSolutionValues`` return C-owned host pointers. Use
+``c_f_pointer`` when you need a Fortran view. Do not free these pointers from Fortran.
 
 .. list-table::
    :header-rows: 1
@@ -212,21 +216,18 @@ Use CMake's convenience target for local validation:
 
    cmake --build build-fortran --target fortran-test --parallel
 
-The test target includes lifecycle checks and full ``argv`` input parsing from
-``test_lifecycle.f90``, expected ``HYPREDRV_Check`` failure behavior from
-``test_check_failure.f90``, MPI CSR assembly/solve coverage, and the
-namelist-driven Laplacian cases.
+The target tests lifecycle control and complete ``argv`` input parsing. It also tests
+``HYPREDRV_Check`` failures, MPI CSR assembly, solves, and namelist-driven Laplacian cases.
 
 Notes
 -----
 
-``HYPREDRV_SUCCESS`` is defined separately as a C macro and as a Fortran module
-parameter because Fortran ``bind(C)`` interfaces cannot import C preprocessor
-macros.
+The C header defines ``HYPREDRV_SUCCESS`` as a macro. The Fortran module defines
+it separately as a parameter because ``bind(C)`` interfaces cannot import C
+preprocessor macros.
 
-The current CI job exercises GNU Fortran on Ubuntu. Other compiler families
-such as Intel, NVHPC, Cray, and macOS Fortran stacks are intended future CI
-coverage.
+The current CI job exercises GNU Fortran on Ubuntu. The project plans future CI
+coverage for Intel, NVHPC, Cray, and macOS Fortran stacks.
 
 Limitations
 -----------
@@ -234,6 +235,6 @@ Limitations
 - The first implementation targets real-valued, double-precision HYPRE builds.
 - CSR/RHS convenience helpers use ``integer(c_int64_t)`` and ``real(c_double)``
   on the Fortran side and convert through a small C bridge.
-- Empty local CSR slabs are rejected by the convenience helper.
-- The interface is intentionally thin; it is not an object-oriented Fortran
-  redesign of hypredrive.
+- The convenience helper rejects empty local CSR slabs.
+- The interface is thin. It is not an object-oriented Fortran redesign of
+  `hypredrive`.

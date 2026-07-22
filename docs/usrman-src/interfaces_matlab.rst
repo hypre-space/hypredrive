@@ -13,10 +13,10 @@ by a compiled MEX entry point named ``hypredrive_mex``. It accepts a real double
 sparse matrix, a real double dense right-hand side, and optional solver options.
 It returns the dense solution vector and an optional information struct.
 
-The interface is intentionally serial in its first version. MATLAB/Octave sparse
-storage is converted from CSC to CSR inside the MEX wrapper, then hypredrive
-solves on ``MPI_COMM_SELF``. OpenMP-enabled host HYPRE builds are supported, but
-MATLAB/Octave MPI workflows are not exposed by this interface.
+The first interface version is serial. The MEX wrapper converts MATLAB/Octave
+sparse storage from CSC to CSR. Then hypredrive solves on ``MPI_COMM_SELF``.
+The interface supports OpenMP-enabled host HYPRE builds, but it does not expose
+MATLAB/Octave MPI workflows.
 
 Prerequisites
 -------------
@@ -26,17 +26,16 @@ Prerequisites
 - A real-valued HYPRE build where ``HYPRE_Real`` uses the C ``double`` ABI.
 - Non-complex HYPRE. Single-precision, long-double, and complex HYPRE builds are
   rejected when ``HYPREDRV_ENABLE_MATLAB=ON``.
-- The MEX file links to the same MPI implementation used to build HYPRE and
-  hypredrive. MATLAB can ship or preload its own MPI runtime, so MPI ABI
-  mismatches are the most common runtime failure. Prefer launching MATLAB or
-  Octave from an environment where the intended MPI ``bin`` and ``lib``
-  directories are first on ``PATH`` and the platform runtime library path.
+- The MEX file links to the MPI implementation that built HYPRE and `hypredrive`.
+  MATLAB can load a different MPI run time. An MPI ABI mismatch then causes a common
+  run-time failure. Start MATLAB or Octave in the intended MPI environment. Put its
+  ``bin`` and ``lib`` directories first in the applicable search paths.
 
 Build
 -----
 
-The interface is optional and disabled by default. The same option enables both
-runtimes; if MATLAB and Octave are both available, both MEX files are built:
+CMake disables the optional interface by default. The same option enables both run
+times. If MATLAB and Octave are available, CMake builds both MEX files:
 
 .. code-block:: bash
 
@@ -66,9 +65,8 @@ For Octave, use the Octave MEX directory:
    addpath("/path/to/source/interfaces/matlab-octave/src")
    addpath("/path/to/build-matlab/lib/octave")
 
-The build-tree paths differ because MATLAB MEX files are produced by
-``FindMatlab``, while Octave MEX files are produced by ``mkoctfile`` into the
-common library tree.
+The build-tree paths differ because ``FindMatlab`` produces MATLAB MEX files.
+``mkoctfile`` produces Octave MEX files in the common library tree.
 
 For an installed prefix, add ``/path/to/install/lib/matlab`` in MATLAB or
 ``/path/to/install/lib/octave`` in Octave. To make that persistent, put the
@@ -100,7 +98,7 @@ Solve a sparse system:
    relres = norm(b - A*x) / norm(b)
    info.iterations
 
-Custom solver options should usually be built with ``hypredrive_options``:
+Use ``hypredrive_options`` to build custom solver options:
 
 .. code-block:: matlab
 
@@ -148,9 +146,9 @@ The examples are regular MATLAB/Octave scripts that call ``hypredrive_solve``:
 
 ``laplacian.m`` assembles 1D, 2D, or 3D finite-difference Poisson problems.
 ``elasticity.m`` assembles 1D, 2D, or 3D linear-elasticity problems and uses
-the matching elasticity AMG preset. The helper files ``build_laplacian.m`` and
-``build_elasticity.m`` can also be called directly when a test or script needs
-just the matrix and right-hand side.
+the matching elasticity AMG preset. A test or script can call
+``build_laplacian.m`` or ``build_elasticity.m`` when it needs only the matrix and
+right-hand side.
 
 Information struct
 ------------------
@@ -178,7 +176,7 @@ When requested, the second output is a struct with these fields:
 Testing
 -------
 
-When testing is enabled, the ``matlab-test`` target runs the MEX wrapper smoke
+When you enable testing, the ``matlab-test`` target runs the MEX wrapper smoke
 test plus small serial Laplacian and elasticity examples for each available
 runtime:
 
@@ -189,8 +187,8 @@ runtime:
 Installation
 ------------
 
-MATLAB files are installed under ``lib/matlab`` and Octave files are installed
-under ``lib/octave``:
+CMake installs MATLAB files under ``lib/matlab`` and Octave files under
+``lib/octave``:
 
 .. code-block:: bash
 
@@ -199,12 +197,12 @@ under ``lib/octave``:
 Add ``/path/to/install/lib/matlab`` to MATLAB's path, or
 ``/path/to/install/lib/octave`` to Octave's path, before calling ``hypredrive_solve``.
 
-On Unix-like systems, installed MEX files use a relative runtime search path
-back to the prefix-local library directory. If you relocate the MEX file
-manually, keep it one directory below the installed library directory or set the
-platform runtime library path so ``libHYPREDRV`` and HYPRE are visible.
+On Unix-like systems, installed MEX files use a relative run-time search path. This path
+points to the library directory in the installation prefix. After you move a MEX file,
+keep it one directory below this library directory. Alternatively, add ``libHYPREDRV``
+and HYPRE to the platform run-time library path.
 
-Installed examples are placed under ``share/matlab/examples``. This includes
+CMake installs examples under ``share/matlab/examples``. This directory includes
 ``laplacian.m``, ``elasticity.m``, ``build_laplacian.m``, and
 ``build_elasticity.m``.
 

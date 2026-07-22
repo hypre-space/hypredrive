@@ -10,9 +10,9 @@ This chapter collects practical guidance for contributing to hypredrive with a f
 - Code coverage (gcov/gcovr, CTest)
 - Fuzzing replay and live fuzz campaigns
 
-It explains how the CI is structured, how to reproduce checks locally, and what
-options and targets are available in CMake to enable these workflows. New
-contributors should read this once before opening their first PR.
+It explains the CI structure, local checks, and the CMake options for these
+workflows. New contributors can use this chapter before they open their first
+pull request.
 
 Library API Ownership Semantics
 -------------------------------
@@ -28,13 +28,13 @@ When the argument is non-``NULL``, hypredrive uses the supplied object directly.
 
 Ownership depends on library mode:
 
-- ``HYPREDRV_SetLibraryMode`` enabled: supplied objects are borrowed and never destroyed
-  by hypredrive.
-- ``HYPREDRV_SetLibraryMode`` disabled: ownership is transferred to hypredrive, and the
-  objects can be destroyed on replacement or object teardown.
+- ``HYPREDRV_SetLibraryMode`` enabled: hypredrive borrows supplied objects and
+  never destroys them.
+- ``HYPREDRV_SetLibraryMode`` disabled: Ownership transfers to `hypredrive`.
+  `hypredrive` can destroy the objects during replacement or object teardown.
 
-When documenting or reviewing changes around these APIs, keep this object-lifetime contract
-explicit in both code comments and user docs.
+Keep this object-lifetime contract explicit in code comments and user
+documentation.
 
 
 CI Overview
@@ -43,19 +43,19 @@ CI Overview
 Workflows
 ~~~~~~~~~
 
-Hypredrive uses GitHub Actions with the following workflows (see ``.github/workflows``):
+`hypredrive` uses these GitHub Actions workflows in ``.github/workflows``:
 
-- ``ci.yml``: main build-and-test matrix (Ubuntu + macOS; compilers: gcc/clang; build type: Debug)
+- ``ci.yml``: Main build and test matrix for Ubuntu and macOS. It uses GCC and Clang with Debug builds.
 - ``format.yml``: code style checks (clang-format, private/public naming prefix validation, binary symbol prefix validation)
 - ``docs.yml``: builds documentation (Sphinx and Doxygen jobs)
 - ``coverage.yml``: builds with coverage instrumentation and generates HTML/XML reports
-- ``analysis.yml``: code analysis (static: cppcheck and clang-tidy; dynamic: ASan/UBSan with gcc/clang)
+- ``analysis.yml``: Static analysis with cppcheck and clang-tidy. Dynamic analysis with ASan and UBSan.
 
 To reduce duplication, CI uses composite actions in ``.github/actions``:
 
 - ``setup-ubuntu``: installs compilers, MPI, and tools
-- ``build-hypre``: builds and caches HYPRE from source and exposes its install prefix via the
-  ``hypre_prefix`` output
+- ``build-hypre``: Builds and caches HYPRE from source. Its ``hypre_prefix`` output
+  provides the installation prefix.
 
 HYPRE reuse and caching
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -68,21 +68,21 @@ All jobs that need HYPRE call the ``build-hypre`` action and pass:
 - ``hypre_shared_libs`` (``ON``)
 - ``os`` (``ubuntu-latest`` or ``macos-latest``)
 
-The action caches HYPRE under ``${{ runner.tool_cache }}/hypre/<version>`` with a descriptive key
-that includes OS, compiler, build type, and whether libraries are shared (``shared``/``static``).
+The action caches HYPRE under ``${{ runner.tool_cache }}/hypre/<version>``. Its key
+includes the OS, compiler, build type, and library type (``shared`` or ``static``).
 
 Automatic HYPRE build
 ~~~~~~~~~~~~~~~~~~~~~
 
-When building locally, *hypredrive* can automatically fetch and build HYPRE from source using
-CMake's `FetchContent` if ``HYPRE_ROOT`` is not specified. This feature:
+For a local build, CMake uses `FetchContent` to retrieve and build HYPRE when
+``HYPRE_ROOT`` is not set. This process:
 
-- Automatically downloads HYPRE from GitHub (default: ``master`` branch)
-- Inherits all CMake arguments from the parent project (build type, compilers, TPLs, etc.)
-- Builds HYPRE in the same build tree with unified library and include directories
-- Supports specifying HYPRE version via ``-DHYPRE_VERSION=<version>``
+- Downloads HYPRE from the default ``master`` branch on GitHub.
+- Passes the CMake arguments from the parent project to HYPRE.
+- Builds HYPRE in the same build tree.
+- Selects the HYPRE version with ``-DHYPRE_VERSION=<version>``.
 
-To use a pre-built HYPRE instead, specify ``-DHYPRE_ROOT=<path>``.
+To use an existing HYPRE installation, set ``-DHYPRE_ROOT=<path>``.
 
 MPI configuration
 ~~~~~~~~~~~~~~~~~
@@ -158,26 +158,26 @@ CMake options and targets
 - Static analysis targets:
   - ``cppcheck``: runs analysis on ``src/`` only, with includes to ``include/`` and the build dir.
   - ``clang-tidy``: runs clang-tidy (non-fix) across the project using the compile database.
-- Dynamic analysis: When ``HYPREDRV_ENABLE_ANALYSIS=ON``, sanitizers (ASan/UBSan) are automatically
-  enabled for all targets. Run tests with ``ctest`` to exercise the sanitizers.
+- Dynamic analysis: When ``HYPREDRV_ENABLE_ANALYSIS=ON``, CMake enables sanitizers
+  for all targets. Run the tests with ``ctest`` to exercise the sanitizers.
 
 cppcheck configuration
 ~~~~~~~~~~~~~~~~~~~~~~
 
-- Scope narrowed to ``src/`` to keep signal high and run time reasonable.
-- HYPRE includes are added so macros/types resolve.
+- The cppcheck tool examines only ``src/`` to keep the signal high and the run time short.
+- The configuration adds HYPRE includes so that macros and types resolve.
 - Threads: cppcheck uses the same number as CMake parallel level when available.
-- Known suppressions: irrelevant warnings for mixed precision or specific HYPRE headers can be
-  ignored (e.g., ``_hypre_IJ_mv.h``, ``_hypre_utilities.h``).
+- Known suppressions: Ignore irrelevant warnings for mixed precision or specific HYPRE
+  headers, such as ``_hypre_IJ_mv.h`` and ``_hypre_utilities.h``.
 
 clang-tidy usage
 ~~~~~~~~~~~~~~~~
 
 - Use the ``clang-tidy`` target for read-only reports.
-- Avoid running aggressive automatic fixes over the entire tree; they can mangle identifiers in
-  macro-heavy code. If you must use ``clang-tidy -fix``, constrain to specific files and review
-  diffs carefully. Prefer incremental, human-reviewed edits.
-- If you add checks, ensure they don't fight our established style or C idioms in this project.
+- Do not run aggressive automatic fixes on the full tree. They can damage identifiers in
+  macro-heavy code. If you use ``clang-tidy -fix``, limit it to specific files and review
+  each difference. Prefer incremental edits with human review.
+- Confirm that new checks agree with the project style and C patterns.
 
 Local runs
 ~~~~~~~~~~
@@ -222,7 +222,7 @@ Fuzzing
 Overview
 ~~~~~~~~
 
-Fuzzing is opt-in and is enabled with ``-DHYPREDRV_ENABLE_FUZZING=ON``. The fuzzing
+The ``-DHYPREDRV_ENABLE_FUZZING=ON`` option enables fuzzing. The fuzzing
 tree lives under ``tests/fuzz/`` and uses a single harness source,
 ``tests/fuzz/harness.c``, compiled into mode-specific targets:
 
@@ -240,8 +240,8 @@ The supported engines are:
 - ``afl``: AFL++ fuzzing with ``afl-clang-fast`` or ``afl-clang-lto``
 
 Enabling fuzzing also enables testing and analysis, disables shared libraries, and
-rejects coverage builds. Coverage and sanitizer/fuzzing instrumentation should stay in
-separate build trees.
+rejects coverage builds. Separate build trees prevent conflicts between coverage and
+sanitizer or fuzzing instrumentation.
 
 CMake options and targets
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -251,7 +251,7 @@ CMake options and targets
   ``replay``.
 - Enable MemorySanitizer for fuzzing builds: ``-DHYPREDRV_FUZZ_MSAN=ON``. This requires
   Clang and a compatible dependency stack.
-- Replay tests are registered under the ``fuzz-replay`` CTest label.
+- CMake registers replay tests under the ``fuzz-replay`` CTest label.
 - The build targets are ``hypredrv-fuzz-parse``, ``hypredrv-fuzz-solve``,
   ``hypredrv-fuzz-lsseq``, ``hypredrv-fuzz-matrix``, and ``hypredrv-fuzz-vector``.
 
@@ -280,13 +280,13 @@ To replay one mode:
 
    ctest --test-dir build-fuzz -L fuzz-replay -R "matrix" --output-on-failure
 
-Replay binaries are compiled with a mode-specific ``FUZZ_MODE`` definition. For manual
-debugging only, ``HYPREDRV_FUZZ_MODE=<mode>`` can override that baked-in mode in replay
-builds.
+CMake compiles replay binaries with a mode-specific ``FUZZ_MODE`` definition. For
+manual debugging, ``HYPREDRV_FUZZ_MODE=<mode>`` can override that build mode in
+replay builds.
 
 Because parse replay uses ``examples/*.yml`` directly, checked-in example YAML files
-are part of the fuzz replay corpus. New examples should be valid parser inputs unless
-the fuzz CMake registration is updated to exclude or gate them explicitly.
+are part of the fuzz replay corpus. Keep new examples valid as parser input. Otherwise,
+update the fuzz CMake registration to exclude or control them.
 
 Live libFuzzer runs
 ~~~~~~~~~~~~~~~~~~~
@@ -330,13 +330,13 @@ Configure AFL++ builds with the AFL compiler wrapper:
 The script chooses a default AFL timeout per mode. Override it with
 ``HYPREDRV_FUZZ_AFL_TIMEOUT_MS`` when investigating slower paths, especially ``solve``.
 For parse and solve modes, the harness runs a small warmup input before starting the
-AFL forkserver. This intentionally pays setup cost once so HYPRE and hypredrive global
-state are initialized before AFL forks persistent children.
+AFL forkserver. This warmup initializes the HYPRE and hypredrive global state
+before AFL forks persistent children.
 
 Corpora, dictionaries, and generated seeds
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The versioned fuzz inputs are intentionally small and deterministic:
+The versioned fuzz inputs are small and deterministic:
 
 - ``tests/fuzz/seeds/<mode>/`` contains mode-specific seed inputs that are not already
   represented elsewhere in the repository.
@@ -354,7 +354,7 @@ solve seeds.
 The live fuzzing helper creates per-run corpora under ``build-fuzz/fuzz-run/<mode>-<time>``
 and copies in the checked-in seeds, regressions, and reused example YAML inputs. Those
 run directories, generated corpora, crashes, hangs, and minimization artifacts are local
-outputs and should not be committed.
+outputs. Do not commit these directories or their generated files.
 
 Regression workflow
 ~~~~~~~~~~~~~~~~~~~
@@ -375,7 +375,7 @@ Typical replay commands:
    ctest --test-dir build-fuzz -L fuzz-replay -R "solve" --output-on-failure
    ctest --test-dir build-fuzz -L fuzz-replay --output-on-failure
 
-Mode ownership is a useful starting point for triage:
+Use mode ownership as the initial triage path:
 
 - ``parse`` maps primarily to ``src/yaml.c`` and ``src/args.c``.
 - ``solve`` also reaches ``src/linsys.c``, ``src/solver.c``, ``src/precon.c``, and
@@ -394,9 +394,8 @@ The fuzzing workflow has three tiers:
 - Labeled pull requests can run short libFuzzer smoke jobs.
 - Scheduled runs execute longer nightly libFuzzer campaigns and upload run artifacts.
 
-Replay failures should be treated like normal test failures. Live fuzz failures should be
-minimized and promoted into ``tests/fuzz/regressions/<mode>/`` so future CI catches the
-same bug deterministically.
+Treat replay failures as normal test failures. Minimize live fuzz failures and add them to
+``tests/fuzz/regressions/<mode>/``. Future CI can then reproduce the same bug.
 
 
 Code Coverage
@@ -405,9 +404,9 @@ Code Coverage
 Overview
 ~~~~~~~~
 
-Coverage is generated in ``coverage.yml`` using ``gcovr`` (HTML and XML artifacts). The build uses
-``-O0 -g --coverage`` and runs unit tests via CTest. We also expose a simple percentage summary in
-the job output.
+The ``coverage.yml`` workflow uses ``gcovr`` to generate HTML and XML coverage files. The
+build uses ``-O0 -g --coverage`` and runs unit tests with CTest. The job output also shows
+a percentage summary.
 
 CMake options and targets
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -439,9 +438,9 @@ Performance Profiling with Caliper
 Overview
 ~~~~~~~~
 
-When ``HYPREDRV_ENABLE_CALIPER=ON`` is set during configuration, hypredrive is instrumented with
-Caliper markers for performance profiling. Caliper provides runtime performance measurement and
-profiling capabilities that can help identify performance bottlenecks and optimize code paths.
+When you set ``HYPREDRV_ENABLE_CALIPER=ON``, hypredrive uses Caliper markers for
+performance profiles. Caliper measures run-time performance and helps identify
+code bottlenecks.
 
 Building with Caliper
 ~~~~~~~~~~~~~~~~~~~~~
@@ -455,9 +454,9 @@ Enable Caliper support during CMake configuration:
      -DCMAKE_PREFIX_PATH=${HYPRE_PREFIX}
    cmake --build build --parallel
 
-By default, Caliper will be automatically fetched and built from source if it's not found. To use
-a pre-built Caliper installation, set the ``CALIPER_DIR`` or ``CALIPER_ROOT`` environment variables,
-or ensure ``find_package(caliper)`` can locate it.
+By default, CMake retrieves and builds Caliper when it cannot find Caliper. To use an
+existing Caliper installation, set ``CALIPER_DIR`` or ``CALIPER_ROOT``. Alternatively,
+configure the search path so that ``find_package(caliper)`` finds Caliper.
 
 Using Caliper for Profiling
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -481,35 +480,37 @@ For more information about Caliper configurations and services, see the
 Documentation Builds
 --------------------
 
-Two documentation systems are wired:
+The project uses two documentation systems:
 
-- Doxygen (developer reference; target: ``doxygen-doc``)
-- Sphinx (user manual; targets: ``sphinx-doc``, ``sphinx-latexpdf``)
+- Doxygen provides the developer reference. Its target is ``doxygen-doc``.
+- Sphinx provides the user manual. Its targets are ``sphinx-doc`` and ``sphinx-latexpdf``.
 
-Enable via CMake: ``-DHYPREDRV_ENABLE_DOCS=ON``. The combined ``docs`` target builds Doxygen first,
-then invokes Sphinx (either via ``docs/Makefile`` if available or directly via ``sphinx-build``).
+Enable the documentation with ``-DHYPREDRV_ENABLE_DOCS=ON``. The combined ``docs``
+target builds Doxygen and then starts Sphinx. It uses ``docs/Makefile`` when that
+file is available. Otherwise, it uses ``sphinx-build`` directly.
 
 Notes:
 
-- Doxygen LaTeX can build a ``refman.pdf``; when present, CI copies it to
+- Doxygen LaTeX can build ``refman.pdf``. CI copies this file to
   ``build-docs/docs/devman-hypredrive.pdf``.
-- Sphinx PDF (``sphinx-latexpdf``) is copied to ``docs/usrman-hypredrive.pdf`` when available.
+- The ``sphinx-latexpdf`` target copies an available Sphinx PDF to
+  ``docs/usrman-hypredrive.pdf``.
 
 
-Coding Style & Project Conventions
-----------------------------------
+Coding Style and Project Conventions
+------------------------------------
 
-- ``clang-format`` is enforced in CI; run ``make format`` locally (or the ``format`` CMake target) to
-  format ``.c``/``.h`` files under ``include/``, ``src/``, and ``examples/src/``.
-- Some macros are guarded with ``// clang-format off``/``on`` to preserve required layout. Avoid
-  editing those blocks unless necessary.
-- Follow const-correctness and safe API patterns. Error-reporting helpers must be used consistently.
+- CI enforces ``clang-format``. Run ``make format`` or the ``format`` CMake target to
+  format C source and header files.
+- Some macros use ``// clang-format off`` and ``// clang-format on`` guards to
+  preserve their layout. Edit those blocks only when necessary.
+- Follow const-correctness and safe API patterns. Use error-reporting helpers consistently.
   The ``HYPREDRV_SAFE_CALL`` macro logs location info and aborts or traps under ``HYPREDRV_DEBUG=1``.
-- For internal runtime traces, use the environment variable ``HYPREDRV_LOG_LEVEL``:
+- For internal run-time traces, use ``HYPREDRV_LOG_LEVEL``:
   ``0`` disables traces (default), ``1`` logs lifecycle boundaries, ``2`` adds
   decision/context messages, and ``3`` enables deeper parse/linear-system/scaling subphase traces.
-  Trace output is emitted to ``stderr`` and filtered to rank 0 by default. Set
-  ``HYPREDRV_LOG_STREAM=stdout`` to emit the same traces to ``stdout`` instead.
+  By default, hypredrive writes trace output from rank 0 to ``stderr``. Set
+  ``HYPREDRV_LOG_STREAM=stdout`` to write the same traces to ``stdout`` instead.
 - ``HYPREDRV_LOG_LEVEL`` controls hypredrive traces only. Hypre's own logging remains controlled
   by ``HYPRE_LOG_LEVEL`` (forwarded during runtime initialization when supported by the linked
   Hypre version).
@@ -520,13 +521,13 @@ Coding Style & Project Conventions
 Troubleshooting CI
 ------------------
 
-- If a composite action cannot be found, ensure it is not excluded by ``.gitignore`` and that the
-  repo is checked out (``actions/checkout``) before using local actions.
+- If a composite action is missing, check whether ``.gitignore`` excludes it.
+  Run ``actions/checkout`` before you use local actions.
 - On Ubuntu, missing MPI headers require the include hint used by the action
   (``-DMPI_INCLUDE_DIR=/usr/lib/x86_64-linux-gnu/openmpi/include`` for OpenMPI, or
   ``/usr/include/x86_64-linux-gnu/mpich`` for MPICH).
-- If Doxygen fails with an ``OUTPUT_DIRECTORY`` error, the project already configures it to a build-
-  relative ``docs`` directory; rebuild after cleaning stale artifacts.
+- If Doxygen reports an ``OUTPUT_DIRECTORY`` error, remove stale build artifacts and build
+  again. The project uses a build-relative ``docs`` directory.
 - If ``clang-tidy-fix`` causes unexpected renames in macro contexts, restrict fixes to specific
   files and review diffs manually.
 
@@ -534,7 +535,7 @@ Troubleshooting CI
 Where to Look in the Tree
 -------------------------
 
-- CI config: ``.github/workflows/*.yml``
+- CI configuration: ``.github/workflows/*.yml``
 - Composite actions: ``.github/actions/setup-ubuntu``, ``.github/actions/build-hypre``
 - CMake options: see the top-level ``CMakeLists.txt`` and the ``cmake/`` modules
 - Tests: ``tests/`` and ``cmake/HYPREDRV_Testing.cmake``

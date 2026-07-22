@@ -8,13 +8,13 @@
 Python Interface
 ================
 
-The Python interface provides thin bindings to the hypredrive C library. It accepts
-solver options as Python dictionaries, YAML strings, or YAML files; assembles sparse
-matrices from CSR data or SciPy CSR matrices; runs the solve lifecycle; and returns the
-local solution as a NumPy array.
+The Python interface provides thin bindings to the `hypredrive` C library. It accepts solver
+options as Python dictionaries, YAML strings, or YAML files. The interface assembles sparse
+matrices from compressed sparse row (CSR) data or SciPy CSR matrices. It runs the solve
+lifecycle and returns the local solution as a NumPy array.
 
-The heavy lifting still happens in libHYPREDRV and HYPRE. The Python layer mainly handles
-input normalization, dtype checks, YAML conversion, and result extraction.
+libHYPREDRV and HYPRE perform the solver operations. The Python layer handles input
+normalization, data type checks, YAML conversion, and result extraction.
 
 Prerequisites
 -------------
@@ -31,9 +31,9 @@ Installation
 
 There are three install modes:
 
-- GitHub Actions wheel artifacts for quick host-only installs with a compatible MPI runtime;
-- source installs against an installed or build-tree libHYPREDRV;
-- in-tree CMake builds for developers and CI.
+- GitHub Actions wheel artifacts for host-only installation with a compatible MPI run time.
+- Source installation with an installed or build-tree ``libHYPREDRV``.
+- In-tree CMake builds for developers and continuous integration (CI).
 
 Source builds keep Python packaging independent from ordinary C builds while still
 linking against libHYPREDRV.
@@ -59,9 +59,9 @@ Against an installed hypredrive:
      --config-settings=cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=OFF \
      --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
 
-Python source distributions are intended for downstream packagers and developer
-environments where ``HYPREDRV`` and ``HYPRE`` are discoverable by CMake. They are not
-self-contained PyPI-style source packages for systems without the C library stack.
+Use Python source distributions for downstream packages and developer
+environments where CMake can find ``HYPREDRV`` and ``HYPRE``. These distributions
+require the C library stack.
 
 Against an in-tree development build:
 
@@ -79,8 +79,9 @@ The top-level CMake build can also build the Python extension directly:
    cmake -S . -B build -DHYPREDRV_ENABLE_PYTHON=ON
    cmake --build build --target _core --parallel
 
-This mode is intended for developer and CI builds. It requires Python, NumPy, and Cython
-at configure/build time, so ``HYPREDRV_ENABLE_PYTHON`` is disabled by default.
+Use this mode for developer and CI builds. It requires Python, NumPy, and Cython
+during configuration and build. Thus, CMake disables ``HYPREDRV_ENABLE_PYTHON``
+by default.
 
 Experimental wheel artifacts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -93,10 +94,11 @@ On pull requests, the wheel workflow runs only when the PR has the
 ``Run Python Wheels`` label. It can also be started manually with
 ``workflow_dispatch``.
 
-Download a wheel artifact from the GitHub Actions ``Python Wheels`` workflow
-run first. GitHub stores artifacts as zip files, so unzip the artifact before
-installing the wheel into a virtual environment on a machine with a compatible
-MPI runtime:
+1. Download a wheel artifact from a GitHub Actions ``Python Wheels`` workflow run.
+
+2. Extract the wheel from the zip file.
+
+3. Install the wheel in a virtual environment that has a compatible MPI run time:
 
 .. code-block:: bash
 
@@ -106,7 +108,7 @@ MPI runtime:
    unzip hypredrive-wheels-*.zip -d wheelhouse
    python -m pip install wheelhouse/hypredrive-*.whl
 
-Wheel artifacts are built by MPI flavor. Use an ``mpich`` wheel with an
+CI builds wheel artifacts for each MPI flavor. Use an ``mpich`` wheel with an
 MPICH-compatible runtime and an ``openmpi`` wheel with an OpenMPI-compatible
 runtime.
 
@@ -121,7 +123,7 @@ At runtime, the package records how it was built:
    import hypredrive as hd
    print(hd.BUILD_INFO)
 
-Optional dependencies can be installed through package extras:
+Install optional dependencies through package extras:
 
 .. code-block:: bash
 
@@ -181,16 +183,16 @@ driver lifecycle.
            drv.solve()
            x = drv.get_solution()
 
-Both ``HypreDrive`` and ``hd.solve`` accept an ``input_args`` keyword with
-CLI-style override tokens applied on top of ``options``, e.g.
-``input_args=["--solver:pcg:max_iter", "100"]``. The bundled examples expose
-this via ``-a``/``--args`` on their command line.
+Both ``HypreDrive`` and ``hd.solve`` accept an ``input_args`` keyword with CLI override
+tokens. These tokens override ``options``. For example, use
+``input_args=["--solver:pcg:max_iter", "100"]``. The bundled examples accept these tokens
+after ``-a`` or ``--args``.
 
 Distributed solve with MPI
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-When using ``mpi4py``, each rank provides its local CSR slab. Row bounds are global and
-inclusive; column indices are global.
+With ``mpi4py``, each rank provides its local CSR slab. Row bounds are global and
+inclusive. Column indices are global.
 
 .. code-block:: python
 
@@ -218,27 +220,28 @@ inclusive; column indices are global.
 CSR input details
 -----------------
 
-``set_matrix_from_csr`` accepts either a SciPy CSR matrix or the raw
-``(indptr, col_indices, data)`` arrays. With raw arrays, ``row_start`` and
-``row_end`` are required and describe the inclusive global row range owned by the
-rank. ``indptr`` has length ``nrows + 1`` where
-``nrows = row_end - row_start + 1``; ``col_indices`` contains global column
-indices; and all input buffers may be released after the call returns because HYPRE
-copies the data during IJ assembly.
+``set_matrix_from_csr`` accepts a SciPy CSR matrix or raw
+``(indptr, col_indices, data)`` arrays. Raw arrays require ``row_start`` and
+``row_end``. These values define the inclusive global rows that the rank owns.
+``indptr`` has the length ``nrows + 1``. Here,
+``nrows = row_end - row_start + 1``.
 
-Passing a SciPy sparse matrix with no explicit row range means single-rank/full-local
-assembly. CSR inputs are used directly; other SciPy sparse formats are converted to
-CSR first. Passing a SciPy sparse matrix with ``row_start`` and ``row_end`` means the
-matrix is this rank's local slab and must have
-``shape[0] == row_end - row_start + 1``.
+``col_indices`` contains global column indices.
+HYPRE copies the data during IJ assembly. Thus, you can release all input buffers after
+the call returns.
 
-Empty local row ranges are not currently supported by the CSR/array API; every
-participating MPI rank must own at least one row.
+A SciPy sparse matrix without an explicit row range selects single-rank, full-local
+assembly. The interface uses CSR input directly. It first converts other SciPy sparse
+formats to CSR. With ``row_start`` and ``row_end``, the matrix is the local rank slab.
+Set its row count to ``row_end - row_start + 1``.
+
+The CSR array API does not support empty local row ranges. Each participating
+MPI rank owns at least one row.
 
 Configuration input
 -------------------
 
-Anywhere ``options`` is accepted, pass one of:
+For the ``options`` argument, pass one of these values:
 
 .. list-table::
    :header-rows: 1
@@ -250,11 +253,11 @@ Anywhere ``options`` is accepted, pass one of:
    * - ``str`` containing a newline
      - Treated as a YAML document.
    * - ``str`` or ``pathlib.Path`` naming an existing file
-     - File contents are loaded and parsed.
+     - The binding loads and parses the file contents.
    * - ``None``
      - Uses the Python binding's minimal default YAML.
 
-The accepted YAML keys and solver/preconditioner options are the same as the CLI; see
+The Python interface and CLI accept the same YAML keys and solver options. See
 :ref:`InputFileStructure`.
 
 Testing
@@ -267,7 +270,7 @@ After installing the package in editable mode with test dependencies:
    pip install -e ./interfaces/python[test]
    python -m pytest interfaces/python/tests/test_solve_serial.py -v
 
-MPI tests must be launched under an MPI process manager:
+Run MPI tests under an MPI process manager:
 
 .. code-block:: bash
 
@@ -282,12 +285,11 @@ Current limitations
 -------------------
 
 - The Python interface currently targets real-valued solves.
-- Solution data is copied back to host NumPy arrays.
+- The binding copies solution data back to host NumPy arrays.
 - GPU/device execution is not exposed as a Python-native data path.
-- Result metadata is intentionally small; the one-shot API currently exposes the solution
-  array and solution norm.
+- The one-shot API exposes only the solution array and solution norm.
 - Distributed Python solves require ``mpi4py`` and use ``Comm.py2f()`` plus the
   C-side ``MPI_Comm_f2c`` bridge.
-- Python examples live under ``interfaces/python/examples``. ``laplacian/laplacian.py``
-  is the MPI-capable 3D example; ``laplacian/laplacian2d_seq.py`` is the serial
-  2D example; ``darcy/darcy_mixed.py`` is the mixed-form Darcy example.
+- Python examples are in ``interfaces/python/examples``. ``laplacian/laplacian.py`` is the
+  MPI-capable 3D example. ``laplacian/laplacian2d_seq.py`` is the serial 2D example.
+  ``darcy/darcy_mixed.py`` is the mixed Darcy example.
