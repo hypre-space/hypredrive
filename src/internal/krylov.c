@@ -123,7 +123,8 @@ NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
       args->precon_method = (precon_t)hypredrv_StrIntMapArrayGetImage(
          hypredrv_PreconGetValidTypeIntMap(), precon_node->val);
       args->has_precon = 1;
-      hypredrv_PreconArgsSetDefaultsForMethod(args->precon_method, &args->precon);
+      hypredrv_PreconArgsSetDefaultsForName(args->precon_method, precon_node->val,
+                                            &args->precon);
       return;
    }
 

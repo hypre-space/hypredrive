@@ -483,6 +483,8 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         # Add tests (ex1_1proc shows full system info, others use -q for faster runs)
         add_hypredrive_test(ex1_1proc 1 ex1.yml NO_QUIET)
         set(_hypredrv_base_examples
+            "ex1_jacobi|1|ex1-jacobi.yml"
+            "ex1_gs|1|ex1-gs.yml"
             "ex1a_1proc|1|ex1a.yml"
             "ex1_preset|1|ex1-preset.yml"
             "ex2_4proc|4|ex2.yml"

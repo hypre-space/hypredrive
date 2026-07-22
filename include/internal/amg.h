@@ -35,6 +35,7 @@ typedef struct AMGsmt_args_struct
 
 typedef struct AMGrlx_args_struct
 {
+   HYPRE_Int  type;
    HYPRE_Int  down_type;
    HYPRE_Int  up_type;
    HYPRE_Int  coarse_type;

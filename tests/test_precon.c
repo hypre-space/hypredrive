@@ -178,6 +178,12 @@ test_PreconGetValidTypeIntMap_contains_known_types(void)
    ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "amg"));
    ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "amg"), PRECON_BOOMERAMG);
 
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "jacobi"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "jacobi"), PRECON_BOOMERAMG);
+
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "gauss-seidel"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "gauss-seidel"), PRECON_BOOMERAMG);
+
    ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mgr"));
    ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mgr"), PRECON_MGR);
 
@@ -3486,6 +3492,97 @@ test_Precon_lifecycle_boomeramg_1x1(void)
    TEST_HYPRE_FINALIZE();
 }
 
+static HYPRE_IJMatrix
+precon_test_ij_matrix_2x2(void)
+{
+   HYPRE_IJMatrix mat = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 1, 0, 1, &mat), 0);
+   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJMatrixInitialize(mat), 0);
+   HYPRE_Int    ncols[2] = {2, 2};
+   HYPRE_BigInt rows[2]  = {0, 1};
+   HYPRE_BigInt cols[4]  = {0, 1, 0, 1};
+   double       values[4] = {4.0, 1.0, 1.0, 3.0};
+   ASSERT_EQ(HYPRE_IJMatrixSetValues(mat, 2, ncols, rows, cols, values), 0);
+   ASSERT_EQ(HYPRE_IJMatrixAssemble(mat), 0);
+   return mat;
+}
+
+static HYPRE_IJVector
+precon_test_ij_vector_2(double value0, double value1)
+{
+   HYPRE_IJVector vec = NULL;
+   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 1, &vec), 0);
+   ASSERT_EQ(HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJVectorInitialize(vec), 0);
+   HYPRE_BigInt indices[2] = {0, 1};
+   double       values[2]  = {value0, value1};
+   ASSERT_EQ(HYPRE_IJVectorSetValues(vec, 2, indices, values), 0);
+   ASSERT_EQ(HYPRE_IJVectorAssemble(vec), 0);
+   return vec;
+}
+
+static void
+test_Precon_lifecycle_stationary_2x2(void)
+{
+   struct
+   {
+      const char *name;
+      double      expected0;
+      double      expected1;
+   } cases[] = {{"jacobi", 0.25, 2.0 / 3.0},
+                {"gauss-seidel", 0.25, 7.0 / 12.0}};
+
+   TEST_HYPRE_INIT();
+
+   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+   {
+      precon_args args;
+      hypredrv_PreconArgsSetDefaultsForName(PRECON_BOOMERAMG, cases[i].name, &args);
+
+      HYPRE_Precon precon = NULL;
+      hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0,
+                            NULL);
+      ASSERT_NOT_NULL(precon);
+
+      HYPRE_Int max_levels = 0;
+      HYPRE_Int down_sweeps = -1;
+      HYPRE_Int up_sweeps = -1;
+      ASSERT_EQ(HYPRE_BoomerAMGGetMaxLevels(precon->main, &max_levels), 0);
+      ASSERT_EQ(HYPRE_BoomerAMGGetCycleNumSweeps(precon->main, &down_sweeps, 1), 0);
+      ASSERT_EQ(HYPRE_BoomerAMGGetCycleNumSweeps(precon->main, &up_sweeps, 2), 0);
+      ASSERT_EQ(max_levels, 1);
+      ASSERT_EQ(down_sweeps, 1);
+      ASSERT_EQ(up_sweeps, 0);
+
+      HYPRE_IJMatrix mat   = precon_test_ij_matrix_2x2();
+      HYPRE_IJVector vec_b = precon_test_ij_vector_2(1.0, 2.0);
+      HYPRE_IJVector vec_x = precon_test_ij_vector_2(0.0, 0.0);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconSetup(PRECON_BOOMERAMG, precon, mat);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_PreconApply(PRECON_BOOMERAMG, precon, mat, vec_b, vec_x);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+      HYPRE_BigInt indices[2] = {0, 1};
+      double       values[2]  = {0.0, 0.0};
+      ASSERT_EQ(HYPRE_IJVectorGetValues(vec_x, 2, indices, values), 0);
+      ASSERT_EQ_DOUBLE(values[0], cases[i].expected0, 1.0e-12);
+      ASSERT_EQ_DOUBLE(values[1], cases[i].expected1, 1.0e-12);
+
+      hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon, NULL, 0);
+      ASSERT_NULL(precon);
+      HYPRE_IJVectorDestroy(vec_x);
+      HYPRE_IJVectorDestroy(vec_b);
+      HYPRE_IJMatrixDestroy(mat);
+   }
+
+   TEST_HYPRE_FINALIZE();
+}
+
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
 static void
 test_Precon_lifecycle_ilu_1x1(void)
@@ -6257,6 +6354,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconSetup_null_precon);
    RUN_TEST(test_PreconSetup_null_A);
    RUN_TEST(test_Precon_lifecycle_boomeramg_1x1);
+   RUN_TEST(test_Precon_lifecycle_stationary_2x2);
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
    RUN_TEST(test_Precon_lifecycle_ilu_1x1);
 #endif
