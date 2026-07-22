@@ -73,9 +73,14 @@ StrIntMapArray
 hypredrv_PreconGetValidTypeIntMap(void)
 {
    static StrIntMap map[] = {
-      {"amg", (int)PRECON_BOOMERAMG},   {"mgr", (int)PRECON_MGR},
-      {"ilu", (int)PRECON_ILU},         {"fsai", (int)PRECON_FSAI},
-      {"ams", (int)PRECON_AMS},         {"ads", (int)PRECON_ADS},
+      {"amg", (int)PRECON_BOOMERAMG},
+      {"jacobi", (int)PRECON_BOOMERAMG},
+      {"gauss-seidel", (int)PRECON_BOOMERAMG},
+      {"mgr", (int)PRECON_MGR},
+      {"ilu", (int)PRECON_ILU},
+      {"fsai", (int)PRECON_FSAI},
+      {"ams", (int)PRECON_AMS},
+      {"ads", (int)PRECON_ADS},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       {"schwarz", (int)PRECON_SCHWARZ},
 #endif
@@ -243,6 +248,41 @@ hypredrv_PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
       default:
          break;
    }
+}
+
+void
+hypredrv_PreconArgsSetDefaultsForName(precon_t method, const char *name,
+                                      precon_args *args)
+{
+   hypredrv_PreconArgsSetDefaultsForMethod(method, args);
+
+   if (!args || !name || method != PRECON_BOOMERAMG)
+   {
+      return;
+   }
+
+   HYPRE_Int relax_type = -1;
+   if (!strcmp(name, "jacobi"))
+   {
+      relax_type = 0;
+   }
+   else if (!strcmp(name, "gauss-seidel"))
+   {
+      relax_type = 3;
+   }
+
+   if (relax_type < 0)
+   {
+      return;
+   }
+
+   args->amg.coarsening.max_levels    = 1;
+   args->amg.relaxation.type          = relax_type;
+   args->amg.relaxation.down_type     = relax_type;
+   args->amg.relaxation.coarse_type   = relax_type;
+   args->amg.relaxation.down_sweeps   = 1;
+   args->amg.relaxation.up_sweeps     = 0;
+   args->amg.relaxation.coarse_sweeps = 1;
 }
 
 void

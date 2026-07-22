@@ -657,14 +657,20 @@ The ``preconditioner`` section is mandatory and it specifies the preconditioner
 configuration. Available options for the preconditioner type are:
 
 - ``amg`` - algebraic multigrid (BoomerAMG).
+- ``jacobi`` - one Jacobi sweep.
+- ``gauss-seidel`` - one forward hybrid Gauss-Seidel sweep.
 - ``ilu``: incomplete LU factorization.
 - ``fsai``: factorized sparse approximate inverse.
 - ``mgr``: multigrid reduction.
 - ``ams``: auxiliary-space Maxwell solver (for H(curl) / edge-element problems).
 - ``ads``: auxiliary-space divergence solver (for H(div) / face-element problems).
 
-The preconditioner type must be entered as a key in a new indentation level under
-``preconditioner``.
+The configurable preconditioner types may be entered as a key in a new indentation
+level under ``preconditioner``. The fixed ``jacobi`` and ``gauss-seidel`` convenience
+types use the scalar forms ``preconditioner: jacobi`` and
+``preconditioner: gauss-seidel``. Internally, both limit BoomerAMG to one level and
+configure a V(1,0) cycle; BoomerAMG's global relaxation type is also set because its
+single-level execution path does not use the cycle-specific relaxation type.
 
 Preconditioner presets
 ~~~~~~~~~~~~~~~~~~~~~~

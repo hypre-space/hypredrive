@@ -170,6 +170,7 @@ hypredrv_AMGaggSetDefaultArgs(AMGagg_args *args)
 void
 hypredrv_AMGrlxSetDefaultArgs(AMGrlx_args *args)
 {
+   args->type = -1;
 #ifdef HYPRE_USING_GPU
    args->down_type = 18;
    args->up_type   = 18;
@@ -623,6 +624,10 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetChebyEigEst(precon, args->relaxation.chebyshev.eig_est);
    HYPRE_BoomerAMGSetChebyVariant(precon, args->relaxation.chebyshev.variant);
    HYPRE_BoomerAMGSetChebyScale(precon, args->relaxation.chebyshev.scale);
+   if (args->relaxation.type >= 0)
+   {
+      HYPRE_BoomerAMGSetRelaxType(precon, args->relaxation.type);
+   }
    HYPRE_BoomerAMGSetRelaxOrder(precon, args->relaxation.order);
    HYPRE_BoomerAMGSetRelaxWt(precon, args->relaxation.weight);
    HYPRE_BoomerAMGSetOuterWt(precon, args->relaxation.outer_weight);

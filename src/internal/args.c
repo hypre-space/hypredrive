@@ -791,7 +791,7 @@ InputArgsParsePreconValueOnly(input_args *iargs, YAMLnode *parent,
    }
 
    ctx->methods[0] = method;
-   hypredrv_PreconArgsSetDefaultsForMethod(method, &ctx->variants[0]);
+   hypredrv_PreconArgsSetDefaultsForName(method, parent->val, &ctx->variants[0]);
    ctx->parsed_variants = 1;
 
    InputArgsPreconVariant0Activate(iargs, ctx, 1);

@@ -176,6 +176,36 @@ test_InputArgsParsePrecon_value_only(void)
    hypredrv_InputArgsDestroy(&args);
 }
 
+static void
+test_InputArgsParsePrecon_stationary_value_only(void)
+{
+   struct
+   {
+      const char *name;
+      HYPRE_Int   relax_type;
+   } cases[] = {{"jacobi", 0}, {"gauss-seidel", 3}};
+
+   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+   {
+      char yaml_text[128];
+      snprintf(yaml_text, sizeof(yaml_text), "solver: gmres\npreconditioner: %s\n",
+               cases[i].name);
+
+      input_args *args = parse_config(yaml_text);
+      ASSERT_NOT_NULL(args);
+      ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
+      ASSERT_EQ(args->precon.amg.coarsening.max_levels, 1);
+      ASSERT_EQ(args->precon.amg.relaxation.type, cases[i].relax_type);
+      ASSERT_EQ(args->precon.amg.relaxation.down_type, cases[i].relax_type);
+      ASSERT_EQ(args->precon.amg.relaxation.coarse_type, cases[i].relax_type);
+      ASSERT_EQ(args->precon.amg.relaxation.down_sweeps, 1);
+      ASSERT_EQ(args->precon.amg.relaxation.up_sweeps, 0);
+      ASSERT_EQ(args->precon.amg.relaxation.coarse_sweeps, 1);
+
+      hypredrv_InputArgsDestroy(&args);
+   }
+}
+
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
 static void
 test_InputArgsParsePrecon_schwarz_value_only(void)
@@ -2066,6 +2096,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParseGeneral_use_millisec_sets_timer);
    RUN_TEST(test_InputArgsParseSolver_value_only);
    RUN_TEST(test_InputArgsParsePrecon_value_only);
+   RUN_TEST(test_InputArgsParsePrecon_stationary_value_only);
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    RUN_TEST(test_InputArgsParsePrecon_schwarz_value_only);
    RUN_TEST(test_InputArgsParsePrecon_schwarz_typed_block);
