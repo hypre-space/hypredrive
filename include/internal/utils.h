@@ -115,6 +115,14 @@ hypredrv_DoubleIsFinite(double value)
     (HYPREDRV_HYPRE_RELEASE_NUMBER == (release) && \
      ((develop) == 0 || HYPRE_DEVELOP_NUMBER_GE(develop))))
 
+/* Mark a function or variable that may be unused in some build configurations
+   (e.g. gated behind an optional dependency), suppressing -Wunused warnings. */
+#if defined(__GNUC__) || defined(__clang__) || defined(__NVCOMPILER)
+#define HYPREDRV_MAYBE_UNUSED __attribute__((unused))
+#else
+#define HYPREDRV_MAYBE_UNUSED
+#endif
+
 enum
 {
    GB_TO_BYTES        = (1 << 30),

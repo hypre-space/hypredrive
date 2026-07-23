@@ -519,7 +519,7 @@ CreateDistMesh(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Nz, HYPRE_In
                HYPRE_Int Py, HYPRE_Int Pz, DistMesh **mesh_ptr)
 {
    DistMesh *mesh = (DistMesh *)malloc(sizeof(DistMesh));
-   int       myid, num_procs;
+   int       myid, num_procs = 0;
    (void)num_procs; /* Reserved for future use */
 
    /* Store dimensions */
