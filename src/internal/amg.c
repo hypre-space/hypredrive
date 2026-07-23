@@ -746,11 +746,11 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       enough sweeps to do so. hypre takes ownership of the array. */
    if (args->relaxation.points == 1)
    {
-      HYPRE_Int ns_down = (args->relaxation.down_sweeps > -1)
-                             ? args->relaxation.down_sweeps
-                             : args->relaxation.num_sweeps;
-      HYPRE_Int ns_up   = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
-                                                            : args->relaxation.num_sweeps;
+      HYPRE_Int ns_down   = (args->relaxation.down_sweeps > -1)
+                               ? args->relaxation.down_sweeps
+                               : args->relaxation.num_sweeps;
+      HYPRE_Int ns_up     = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
+                                                              : args->relaxation.num_sweeps;
       HYPRE_Int ns_coarse = (args->relaxation.coarse_sweeps > -1)
                                ? args->relaxation.coarse_sweeps
                                : args->relaxation.num_sweeps;

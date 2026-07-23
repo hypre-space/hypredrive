@@ -159,7 +159,8 @@ SwirlShape(HYPRE_Real s, HYPRE_Real len)
    return t * t * (1.0 - t) * (1.0 - t);
 }
 
-static const HYPRE_Real SWIRL_GRAD_MAX = 0.0120281306; /* max(G) * max|G'| = 1/(48*sqrt(3)) */
+static const HYPRE_Real SWIRL_GRAD_MAX =
+   0.0120281306; /* max(G) * max|G'| = 1/(48*sqrt(3)) */
 
 /*--------------------------------------------------------------------------
  * Print usage info
@@ -331,8 +332,8 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
    {
       if (!myid)
       {
-         printf("Error: -P entries must be >= 1 (got %d x %d x %d)\n",
-                params->P[0], params->P[1], params->P[2]);
+         printf("Error: -P entries must be >= 1 (got %d x %d x %d)\n", params->P[0],
+                params->P[1], params->P[2]);
       }
       return 1;
    }
