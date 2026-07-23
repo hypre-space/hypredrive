@@ -18,11 +18,13 @@
  *-----------------------------------------------------------------------------*/
 
 /* AMG's interpolation fields */
-#define AMGint_FIELDS(_prefix)                                                  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, hypredrv_FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, hypredrv_FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, hypredrv_FieldTypeDoubleSet)
+#define AMGint_FIELDS(_prefix)                                                      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, hypredrv_FieldTypeDoubleSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restrict_strong_th, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restrict_filter_th, hypredrv_FieldTypeDoubleSet)
 
 /* AMG's coarsening fields */
 #define AMGcsn_FIELDS(_prefix)                                                 \
@@ -60,6 +62,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_sweeps, hypredrv_FieldTypeIntSet)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, order, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, points, hypredrv_FieldTypeIntSet)          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, weight, hypredrv_FieldTypeDoubleSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, outer_weight, hypredrv_FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, chebyshev, hypredrv_ChebySetArgs)
@@ -113,10 +116,12 @@ hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_AMG) // LCOV_EXCL_LINE
 
    void hypredrv_AMGintSetDefaultArgs(AMGint_args *args)
 {
-   args->prolongation_type = 6;
-   args->restriction_type  = 0;
-   args->max_nnz_row       = 4;
-   args->trunc_factor      = 0.0;
+   args->prolongation_type  = 6;
+   args->restriction_type   = 0;
+   args->max_nnz_row        = 4;
+   args->trunc_factor       = 0.0;
+   args->restrict_strong_th = 0.25;
+   args->restrict_filter_th = 0.0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -184,6 +189,7 @@ hypredrv_AMGrlxSetDefaultArgs(AMGrlx_args *args)
    args->coarse_sweeps = 1;
    args->num_sweeps    = 1;
    args->order         = 0;
+   args->points        = 0;
    args->weight        = 1.0;
    args->outer_weight  = 1.0;
 
@@ -353,6 +359,7 @@ hypredrv_AMGrlxGetValidValues(const char *key)
                                 {"hsgs",           6},
                                 {"jacobi",         7},
                                 {"l1-hsgs",        8},
+                                {"forward-solve", 10},
                                 {"2gs-it1",       11},
                                 {"2gs-it2",       12},
                                 {"forward-hl1gs", 13},
@@ -373,6 +380,7 @@ hypredrv_AMGrlxGetValidValues(const char *key)
                                 {"hsgs",            6},
                                 {"jacobi",          7},
                                 {"l1-hsgs",         8},
+                                {"forward-solve",  10},
                                 {"2gs-it1",        11},
                                 {"2gs-it2",        12},
                                 {"forward-hl1gs",  13},
@@ -381,6 +389,16 @@ hypredrv_AMGrlxGetValidValues(const char *key)
                                 {"chebyshev",      16},
                                 {"l1-jacobi",      18},
                                 {"l1sym-hgs",      89},};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   if (!strcmp(key, "points"))
+   {
+      /* Which grid points each sweep of the cycle relaxes. "all" leaves hypre's
+         default schedule untouched; "air" applies the F/C schedule that the
+         approximate ideal restriction algorithm expects. */
+      static StrIntMap map[] = {{"all", 0},
+                                {"air", 1},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -610,6 +628,11 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGCreate(&precon);
    HYPRE_BoomerAMGSetInterpType(precon, args->interpolation.prolongation_type);
    HYPRE_BoomerAMGSetRestriction(precon, args->interpolation.restriction_type);
+#if HYPRE_CHECK_MIN_VERSION(21800, 0)
+   /* Strength and filtering of the approximate ideal restriction operator */
+   HYPRE_BoomerAMGSetStrongThresholdR(precon, args->interpolation.restrict_strong_th);
+   HYPRE_BoomerAMGSetFilterThresholdR(precon, args->interpolation.restrict_filter_th);
+#endif
    HYPRE_BoomerAMGSetCoarsenType(precon, args->coarsening.type);
    HYPRE_BoomerAMGSetTol(precon, args->tolerance);
    HYPRE_BoomerAMGSetStrongThreshold(precon, args->coarsening.strong_th);
@@ -716,6 +739,38 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    else
    {
       HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 3);
+   }
+
+   /* Per-sweep grid point schedule. The AIR algorithm skips the down cycle and
+      relaxes F-points on the way up, finishing on the C-points when there are
+      enough sweeps to do so. hypre takes ownership of the array. */
+   if (args->relaxation.points == 1)
+   {
+      HYPRE_Int ns_down   = (args->relaxation.down_sweeps > -1)
+                               ? args->relaxation.down_sweeps
+                               : args->relaxation.num_sweeps;
+      HYPRE_Int ns_up     = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
+                                                              : args->relaxation.num_sweeps;
+      HYPRE_Int ns_coarse = (args->relaxation.coarse_sweeps > -1)
+                               ? args->relaxation.coarse_sweeps
+                               : args->relaxation.num_sweeps;
+
+      HYPRE_Int **grid_relax_points = hypre_CTAlloc(HYPRE_Int *, 4, HYPRE_MEMORY_HOST);
+
+      grid_relax_points[0] = NULL;
+      grid_relax_points[1] = hypre_CTAlloc(HYPRE_Int, ns_down, HYPRE_MEMORY_HOST);
+      grid_relax_points[2] = hypre_CTAlloc(HYPRE_Int, ns_up, HYPRE_MEMORY_HOST);
+      grid_relax_points[3] = hypre_CTAlloc(HYPRE_Int, ns_coarse, HYPRE_MEMORY_HOST);
+
+      /* Down cycle and coarsest level relax every point */
+      for (HYPRE_Int i = 0; i < ns_down; i++) grid_relax_points[1][i] = 0;
+      for (HYPRE_Int i = 0; i < ns_coarse; i++) grid_relax_points[3][i] = 0;
+
+      /* Up cycle: F-points, with a trailing C-point sweep when ns_up > 2 */
+      for (HYPRE_Int i = 0; i < ns_up; i++) grid_relax_points[2][i] = -1;
+      if (ns_up > 2) grid_relax_points[2][ns_up - 1] = 1;
+
+      HYPRE_BoomerAMGSetGridRelaxPoints(precon, grid_relax_points);
    }
 
    if (args->coarsening.nodal)

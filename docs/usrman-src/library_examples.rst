@@ -30,6 +30,14 @@ Click any panel (image or title) to jump to the full example.
    :target: LibraryExample1_
    :width: 100%
    :class: gallery-thumb
+.. |gl_convdif_v| image:: figures/convdif_transient.gif
+   :target: LibraryExample5_
+   :width: 100%
+   :class: gallery-thumb
+.. |gl_convdif_s| image:: figures/convdif_transient.png
+   :target: LibraryExample5_
+   :width: 100%
+   :class: gallery-thumb
 .. |gl_darcy| image:: figures/spe10_darcy_pressure.png
    :target: LibraryExample2_
    :width: 100%
@@ -51,7 +59,7 @@ Click any panel (image or title) to jump to the full example.
    :width: 100%
    :class: gallery-thumb
 .. |gl_lidcavity_v| image:: figures/lidcavity_streamlines.gif
-   :target: LibraryExample5_
+   :target: LibraryExample6_
    :width: 100%
    :class: gallery-thumb
 .. |gl_heatflow_s| image:: figures/heatflow_transient.png
@@ -59,7 +67,7 @@ Click any panel (image or title) to jump to the full example.
    :width: 100%
    :class: gallery-thumb
 .. |gl_lidcavity_s| image:: figures/lidcavity_streamlines.png
-   :target: LibraryExample5_
+   :target: LibraryExample6_
    :width: 100%
    :class: gallery-thumb
 
@@ -81,16 +89,18 @@ Click any panel (image or title) to jump to the full example.
       * - |gl_heatflow_v|
 
           :ref:`4. Nonlinear Heat Flow <LibraryExample4>`
+        - |gl_convdif_v|
+
+          :ref:`5. Convection-Diffusion <LibraryExample5>`
         - |gl_lidcavity_v|
 
-          :ref:`5. Navier-Stokes <LibraryExample5>`
-        - |gl_maxwell|
+          :ref:`6. Navier-Stokes <LibraryExample6>`
+      * - |gl_maxwell|
 
-          :ref:`6. Definite curl-curl (AMS) <maxwell_example>`
-      * - |gl_graddiv|
+          :ref:`7. Definite curl-curl (AMS) <maxwell_example>`
+        - |gl_graddiv|
 
-          :ref:`7. Definite grad-div (ADS) <graddiv_example>`
-        -
+          :ref:`8. Definite grad-div (ADS) <graddiv_example>`
         -
 
 .. only:: latex
@@ -111,16 +121,18 @@ Click any panel (image or title) to jump to the full example.
       * - |gl_heatflow_s|
 
           :ref:`4. Nonlinear Heat Flow <LibraryExample4>`
+        - |gl_convdif_s|
+
+          :ref:`5. Convection-Diffusion <LibraryExample5>`
         - |gl_lidcavity_s|
 
-          :ref:`5. Navier-Stokes <LibraryExample5>`
-        - |gl_maxwell|
+          :ref:`6. Navier-Stokes <LibraryExample6>`
+      * - |gl_maxwell|
 
-          :ref:`6. Definite curl-curl (AMS) <maxwell_example>`
-      * - |gl_graddiv|
+          :ref:`7. Definite curl-curl (AMS) <maxwell_example>`
+        - |gl_graddiv|
 
-          :ref:`7. Definite grad-div (ADS) <graddiv_example>`
-        -
+          :ref:`8. Definite grad-div (ADS) <graddiv_example>`
         -
 
 Overview of Typical Steps
@@ -882,7 +894,7 @@ external YAML file with ``-i`` to override the default GMRES+MGR options.
 .. _LibraryExample3:
 
 Example 3: Linear Elasticity
------------------------------
+----------------------------
 
 This section documents the mathematical model, discretization, and hypre usage
 for the 3D small-strain linear elasticity driver implemented in ``examples/src/C_elasticity/elasticity.c``.
@@ -1598,7 +1610,378 @@ This gives frames with uniform time intervals. Without the limit, the driver inc
 
 .. _LibraryExample5:
 
-Example 5: Lid-Driven Cavity (Navier-Stokes)
+Example 5: Convection-Diffusion
+-------------------------------
+
+This example transports a scalar through a three-dimensional duct and is driven by
+``examples/src/C_convdif/convdif.c``. Unlike Example 1, the discrete operator is
+**nonsymmetric**: the convective term is discretized with first-order upwinding, so the
+coupling between a cell and its upstream neighbor differs from the coupling to its
+downstream neighbor. A new linear system is assembled at every time step, which makes the
+example a compact testbed for the preconditioners that target this class of problems, in
+particular BoomerAMG with **approximate ideal restriction (AIR)** and **ILU**.
+
+Governing equation and boundary conditions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The concentration :math:`c` of a passive scalar carried by a prescribed velocity field
+:math:`\mathbf{v}` satisfies
+
+.. math::
+
+   \frac{\partial c}{\partial t} + \nabla \cdot (\mathbf{v}\, c)
+      - \kappa\, \nabla^2 c = 0
+   \qquad \text{in } \Omega = [0,L] \times [0,H] \times [0,H].
+
+The duct flow is aligned with the :math:`x`-axis and has a Poiseuille-like profile,
+
+.. math::
+
+   \mathbf{v}(y,z) = \bigl(u(y,z),\; 0,\; 0\bigr), \qquad
+   u(y,z) = 16\, u_{\max}\,
+            \frac{y}{H}\Bigl(1 - \frac{y}{H}\Bigr)
+            \frac{z}{H}\Bigl(1 - \frac{z}{H}\Bigr),
+
+which is divergence-free and vanishes on the walls. A swirl may be superposed with the
+``-w`` option, see :ref:`convdif_swirl` below.
+
+The scalar enters at the inlet, leaves through a convective outflow, and does not cross
+the walls:
+
+.. math::
+
+   c = 1 \ \text{ on } x = 0, \qquad
+   \kappa\, \frac{\partial c}{\partial x} = 0 \ \text{ on } x = L, \qquad
+   \kappa\, \frac{\partial c}{\partial n} = 0 \ \text{ on the walls},
+
+starting from :math:`c = 0` at :math:`t = 0`. Two dimensionless numbers characterize the
+discrete problem: the **cell Péclet number** :math:`\mathrm{Pe}_h = u_{\max} h_x / \kappa`,
+which measures convection against diffusion on the scale of one cell, and the **CFL
+number** :math:`u_{\max}\, \Delta t / h_x`. Both are reported in the run banner. The
+defaults give :math:`\mathrm{Pe}_h \approx 62`, i.e. a convection-dominated regime.
+
+Finite-volume discretization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The equation is integrated over each cell of a uniform Cartesian grid. Applying the
+divergence theorem turns the volume integrals into a sum over the six faces,
+
+.. math::
+
+   \frac{V}{\Delta t}\bigl(c_P - c_P^{\,n}\bigr)
+     + \sum_f \Bigl[ (m_f)^+ c_P - (m_f)^- c_N \Bigr]
+     + \sum_f D_f \bigl(c_P - c_N\bigr) = 0,
+
+where :math:`V` is the cell volume, :math:`m_f` the outward mass flux through face
+:math:`f`, :math:`(\cdot)^\pm = \max(\pm\,\cdot,\,0)` the upwind selector, and
+
+.. math::
+
+   D_f = \frac{\kappa A_f}{h_f}
+
+the two-point diffusive conductance. Time is advanced with backward Euler, so the whole
+flux balance is evaluated at the new time level and only the term
+:math:`V c_P^{\,n} / \Delta t` is carried over from the previous step.
+
+Because the axial velocity does not depend on :math:`x`, both :math:`x`-faces of a cell
+share the same convective coefficient :math:`C_f = u(y,z)\, A_x`, and an interior row reads
+
+.. math::
+
+   a_P = \frac{V}{\Delta t} + 2D_x + 2D_y + 2D_z + C_f, \qquad
+   a_W = -\bigl(D_x + C_f\bigr), \qquad
+   a_E = -D_x,
+
+with :math:`-D_y` and :math:`-D_z` on the transverse neighbors. The row sums to
+:math:`V/\Delta t`, so the operator is a **nonsymmetric M-matrix** and the scheme is
+conservative. Upwinding is what breaks the symmetry: the upstream coupling carries the
+convective flux while the downstream one does not.
+
+The boundary faces are treated as follows:
+
+* **Inlet** (:math:`x = 0`): the Dirichlet value is imposed across a half-cell distance,
+  contributing :math:`2 D_x` to the diagonal and :math:`(2 D_x + C_f)\, c_{\text{in}}` to
+  the right-hand side.
+* **Outlet** (:math:`x = L`): the diffusive flux is set to zero and the convective flux is
+  purely outgoing, adding :math:`C_f` to the diagonal only.
+* **Walls**: no flux, so the face is skipped entirely.
+
+The time step grows geometrically, :math:`\Delta t_n = \Delta t_0\, g^{\,n}`, so the
+diagonal contribution :math:`V/\Delta t` decays as the simulation proceeds. With the
+default settings it shrinks by a factor of about 38 over ten steps, which steadily removes
+the diagonal dominance that makes the early systems easy. Every step therefore poses a
+*different*, progressively harder linear system, and the preconditioner is set up again
+each time.
+
+.. _convdif_swirl:
+
+Adding a swirl
+~~~~~~~~~~~~~~
+
+By default the flow is a straight duct, whose characteristics run parallel to the grid
+lines. That is the easy case for a Gauss-Seidel sweep, which can simply follow the flow.
+The ``-w`` option superposes a wall-tangential swirl derived from a cross-plane stream
+function,
+
+.. math::
+
+   \psi(y,z) = a\, G\!\left(\frac{y}{H}\right) G\!\left(\frac{z}{H}\right), \qquad
+   G(t) = t^2 (1-t)^2, \qquad
+   v_y = -\frac{\partial \psi}{\partial z}, \quad
+   v_z = \frac{\partial \psi}{\partial y},
+
+turning the duct into a helical one. The transverse face fluxes are evaluated as
+*differences* of :math:`\psi` rather than by sampling the velocity, which makes the
+discrete face fluxes of every cell sum to zero exactly, so the swirl transports the scalar
+without creating or destroying mass. Since :math:`G` vanishes at the walls, the swirl also
+respects the no-flux boundaries automatically.
+
+The swirl hardens the linear systems for every method, not selectively for sweep-based
+ones: on the parallel benchmark of the next section, going from ``-w 0`` to ``-w 10``
+raises the final ramped system from 9 to 15 iterations for classical AMG, from 14 to 30
+for AIR, and (measured on a smaller variant) blows block-Jacobi ILU up several-fold.
+Closed cross-plane characteristics are *not* enough to overturn classical AMG's lead
+here — its strength on this operator comes from the coarse-grid correction rather than
+from a flow-following sweep order, so the swirl is best understood as a difficulty dial
+rather than as an AIR showcase.
+
+Linear System Creation (IJ interface)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Each step assembles a fresh ``HYPRE_IJMatrix`` and the matching right-hand side, exactly as
+in Example 1, and hands them to the driver:
+
+.. code-block:: c
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(hypredrv, 0, "timestep", t_step));
+
+   /* A new linear system starts here */
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(hypredrv, "system", -1));
+   BuildSystem(mesh, &params, c, dt, &A, &b, &x0);
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(hypredrv, "system", -1));
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(hypredrv, (HYPRE_Matrix) A));
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector) b));
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv, (HYPRE_Vector) x0));
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv, NULL));
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(hypredrv));
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverCreate(hypredrv));
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(hypredrv));
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &sol_data));
+   memcpy(c, sol_data, (size_t) mesh->local_size * sizeof(HYPRE_Real));
+
+Two details are worth highlighting:
+
+* The ``"system"`` annotation must be emitted for **every** new matrix. Without it, all
+  solves are attributed to a single linear system and the statistics table collapses to
+  one row.
+* The solution of the previous step is passed as initial guess through
+  ``HYPREDRV_LinearSystemSetInitialGuess``, so each solve is warm-started. Because the
+  problem is linear, there is no Newton loop: the system is solved directly for
+  :math:`c^{\,n+1}`.
+
+After the loop, ``HYPREDRV_StatsLevelPrint(hypredrv, 0)`` prints a per-time-step table and
+``HYPREDRV_StatsPrint(hypredrv)`` prints one row per solve.
+
+Linear Solver Setup
+~~~~~~~~~~~~~~~~~~~
+
+The operator is nonsymmetric, so the Krylov method must be GMRES or BiCGSTAB rather than
+CG. Three configurations ship with the example, all using the same GMRES settings and
+differing only in the preconditioner.
+
+**Approximate ideal restriction (AIR).** Classical AMG builds its restriction as
+:math:`R = P^T`, which is the right choice when the operator is symmetric. For an upwind
+advection operator it is not: information travels along the flow, and the transfer
+operator has to reflect that direction. AIR instead approximates the *ideal* restriction
+operator, and is normally paired with one-point (injection) interpolation, no
+pre-smoothing, and F-point relaxation on the way up the cycle:
+
+.. literalinclude:: ../../examples/src/C_convdif/gmres-air.yml
+   :language: yaml
+
+The ``relaxation: points: air`` key selects the F/C sweep schedule that the algorithm
+expects, and ``restrict_strong_th`` / ``restrict_filter_th`` control the strength and
+sparsity of the restriction operator. See :ref:`amg` for the full list of options.
+
+Note the two deliberate departures from the textbook AIR recipe, both needed for
+robustness in parallel on this operator:
+
+* Interpolation is ``extended+i`` rather than the usual ``one_point`` injection. With
+  one-point interpolation and no pre-smoothing the hierarchy is too weak to be stable
+  once the domain is split, and the solve diverges to non-numeric values on some
+  partitionings.
+* The post-smoother is ``jacobi`` rather than a hybrid Gauss-Seidel variant. Restricting
+  hybrid Gauss-Seidel to F-points is not parallel-safe; hypre's own AIR driver makes the
+  same choice.
+
+Switching ``restriction_type`` back to ``p_transpose`` while keeping everything else fixed
+raises the iteration count from 8.8 to between 11.5 and 12.3 on a refined, strongly
+convective variant of this problem, which isolates the contribution of the AIR restriction
+itself.
+
+.. warning::
+
+   ``points: air`` should be combined with ``order: 0`` (the default). Pairing an
+   ``air_*`` restriction with ``order: 1`` and a hybrid Gauss-Seidel down-cycle type is
+   known to produce a hierarchy containing non-numeric values in hypre 2.33.0 and later.
+
+.. note::
+
+   The AIR recipe used by MFEM's ``HypreBoomerAMG::SetAdvectiveOptions`` (one-point
+   interpolation, on-processor triangular forward solves for the F-relaxation —
+   available here as ``relaxation: up_type: forward-solve`` — and a restriction strength
+   threshold of ``0.01``) was also evaluated on this problem. Its structural ingredients
+   are not robust on this operator with the hypre versions tested: one-point
+   interpolation diverges to non-numeric values on several multi-rank partitionings
+   (and aborts outright when combined with Falgout coarsening), and the triangular
+   forward solve segfaults at the 512x64x64 problem size even on a single rank. The
+   loose restriction threshold works and improves convergence — dropping the final
+   ramped system from 14 to 7 iterations — but multiplies the setup cost roughly
+   thirtyfold, which a transient that rebuilds the preconditioner every step cannot
+   amortize; ``restrict_strong_th: 0.25`` is the better total-time choice here.
+
+**ILU.** When the unknowns happen to be numbered along the flow direction, the upwind
+operator is close to triangular, and an incomplete factorization is then a very effective
+single-level preconditioner:
+
+.. literalinclude:: ../../examples/src/C_convdif/gmres-ilu.yml
+   :language: yaml
+
+Its parallel variant factors only the on-rank block, so the iteration count grows with the
+number of ranks, and it degrades sharply once the swirl closes the characteristics.
+
+**Classical AMG.** Provided as a reference point:
+
+.. literalinclude:: ../../examples/src/C_convdif/gmres-amg.yml
+   :language: yaml
+
+On a single rank all three configurations solve the default problem in a handful of
+iterations, and classical AMG is in fact the fastest of the three: its hybrid
+Gauss-Seidel smoother and coarse-grid correction handle this upwind operator very well
+when the whole duct lives in one memory space. The picture changes in parallel, which is
+where the AIR configuration earns its place.
+
+Elongated duct in parallel
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The comparison below runs an elongated duct of about 2.1 million cells
+(``-n 512 64 64 -L 8``) with strongly convection-dominated transport (``-k 1e-4``, cell
+Péclet number of about 150) on **16 MPI ranks partitioned along the flow direction only**
+(``-P 16 1 1``). Splitting the duct into slabs perpendicular to the flow is exactly the
+decomposition that hurts sweep-based smoothers: hybrid Gauss-Seidel acts as Gauss-Seidel
+only within each rank and degenerates toward block-Jacobi across rank interfaces, while
+AIR's F/C Jacobi relaxation and advection-aware coarse correction do not depend on a
+sweep at all.
+
+The transient takes twelve time steps whose size doubles every step
+(``-nt 12 -dt 0.01 -dtg 2``), sweeping the CFL number from below one to above a thousand:
+every linear system in the sequence is harder than the one before it, and the plots show
+each solve individually.
+
+.. list-table::
+   :widths: 1 1
+   :align: center
+
+   * - .. image:: figures/convdif_512x64x64_iters.png
+          :width: 100%
+          :alt: Linear iterations per linear system
+     - .. image:: figures/convdif_512x64x64_total.png
+          :width: 100%
+          :alt: Total time per linear system
+
+Iterations (left) and total time (right) for every linear system of the sequence. The
+early, mass-dominated systems are easy for all three configurations. As the growing time
+step turns the operator into a pure transport problem, block-Jacobi ILU degrades sharply
+(3 to 63 iterations) and, despite its nearly-free setup, is overtaken by classical AMG in
+total time from the ninth system on. Classical AMG grows mildly (3 to 9) and remains the
+fastest overall at this rank count; AIR sits in between (4 to 14) with the flattest tail
+once the systems reach the steady transport limit, at a higher per-V-cycle cost.
+
+Where AIR pulls ahead is at scale. Replacing the ramp by its near-steady tail — the same
+duct and slab partitioning solving three large-CFL systems (``-nt 3 -dt 1e4 -dtg 4``),
+iterations summed over the three solves — and sweeping the rank count shows AIR's
+iteration count to be **exactly rank-invariant** (34 iterations at every count from 1 to
+64), while classical AMG climbs steadily (18 on one rank, 23 on 16, 32 on 64) as its
+sweeps fragment into ever-thinner slabs — the two extrapolate to a crossover at
+production rank counts, and earlier the thinner the slabs get. Oversubscribing cores
+leaves these iteration counts untouched, so the sweep can be repeated on a smaller
+machine (its timings cannot). That rank-invariance, not the single-machine horse race,
+is the property AIR buys.
+
+The data is reproduced with the companion script, which runs the sequence for the three
+configurations and generates both plots via ``scripts/analyze_statistics.py``
+(``MPI_RANKS`` overrides the rank count; keep it within the machine's physical cores):
+
+.. code-block:: bash
+
+   cd examples/src/C_convdif
+   EXEC=/path/to/build/convdif ./reproduce.sh
+
+Visualizing the Solution
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``-vis`` option writes the concentration field as a cell-centered VTK
+``RectilinearGrid`` (one ``.vtr`` per rank plus a ``.pvd`` collection): ``-vis`` alone
+stores the final state, while ``-vis 2`` stores every time step as a time series. Because
+the data lives at cell centers, neighboring blocks share faces rather than values, so no
+ghost exchange is needed and the pieces join seamlessly.
+
+.. code-block:: bash
+
+   mpirun -np 1 ./convdif -n 128 32 32 -w 2 -nt 8 -vis
+   python3 postprocess.py convdif_128x32x32_1x1x1.pvd --style slices
+
+When the input is a time series and the output name ends in ``.gif``, the same script
+renders an animation of the front advancing down the duct (this is how the gallery
+banner of this example is produced):
+
+.. code-block:: bash
+
+   mpirun -np 1 ./convdif -n 256 32 32 -L 8 -w 2 -nt 24 -dt 0.4 -dtg 1 -vis 2
+   python3 postprocess.py convdif_256x32x32_1x1x1.pvd -o convdif_transient.gif   # needs: pip install pyvista imageio
+
+.. only:: html
+
+   .. figure:: figures/convdif_transient.gif
+      :width: 85%
+      :align: center
+      :alt: Animated concentration front advancing down the duct
+
+      The inlet front advancing down the elongated duct. The parabolic velocity profile
+      shows in the curvature of the front, which travels fastest along the centerline and
+      lags near the no-slip walls, while the swirl winds the field around the duct axis.
+
+.. only:: latex
+
+   .. figure:: figures/convdif_transient.png
+      :width: 85%
+      :align: center
+      :alt: Concentration front advancing down the duct
+
+      The inlet front advancing down the elongated duct. The parabolic velocity profile
+      shows in the curvature of the front, which travels fastest along the centerline and
+      lags near the no-slip walls, while the swirl winds the field around the duct axis.
+
+
+Reproducible Run
+~~~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+   mpirun -np 1 /path/to/build/convdif -v 1 -i examples/src/C_convdif/gmres-air.yml
+
+Compare the output with this reference:
+
+.. literalinclude:: ../../examples/refOutput/convdif.txt
+   :language: text
+
+.. _LibraryExample6:
+
+Example 6: Lid-Driven Cavity (Navier-Stokes)
 --------------------------------------------
 
 This section documents the mathematical model, discretization, and hypre usage
@@ -2138,7 +2521,7 @@ Write all time steps with ``-vis 4``:
 
 .. _maxwell_example:
 
-Example 6: Definite curl-curl (AMS)
+Example 7: Definite curl-curl (AMS)
 -----------------------------------
 
 The example in ``examples/src/C_maxwell/maxwell.c`` is an electromagnetic benchmark for
@@ -2372,12 +2755,12 @@ not have this rank limit.
 
 .. _graddiv_example:
 
-Example 7: Definite grad-div (ADS)
+Example 8: Definite grad-div (ADS)
 ----------------------------------
 
 This example, in ``examples/src/C_graddiv/graddiv.c``, is the :math:`H(\mathrm{div})`
 counterpart of the Maxwell benchmark and targets the **Auxiliary-space Divergence
-Solver (ADS)**. It mirrors Example 6 one step down the de Rham complex: edges become
+Solver (ADS)**. It mirrors Example 7 one step down the de Rham complex: edges become
 faces, the curl-curl operator becomes grad-div, and Nedelec elements become
 Raviart-Thomas elements.
 

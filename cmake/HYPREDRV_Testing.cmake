@@ -82,6 +82,10 @@ set(HYPREDRV_GPU_DISABLED_TESTS
     laplacian_19pt_test_4proc
     laplacian_27pt_test_4proc
     laplacian_125pt_test_4proc
+    convdif_test_air_1proc
+    convdif_test_swirl_1proc
+    convdif_test_4proc
+    convdif_test_swirl_4proc
     elasticity_test_4proc
     heatflow_test_4proc
     lidcavity_test_4proc

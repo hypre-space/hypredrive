@@ -44,6 +44,7 @@ typedef struct AMGrlx_args_struct
    HYPRE_Int  coarse_sweeps;
    HYPRE_Int  num_sweeps;
    HYPRE_Int  order;
+   HYPRE_Int  points;
    HYPRE_Real weight;
    HYPRE_Real outer_weight;
    Cheby_args chebyshev;
@@ -95,6 +96,8 @@ typedef struct AMGint_args_struct
    HYPRE_Int  restriction_type;
    HYPRE_Int  max_nnz_row;
    HYPRE_Real trunc_factor;
+   HYPRE_Real restrict_strong_th;
+   HYPRE_Real restrict_filter_th;
 } AMGint_args;
 
 /*--------------------------------------------------------------------------
