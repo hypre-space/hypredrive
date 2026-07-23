@@ -990,6 +990,25 @@ preconditioner:
     - ``neumann_air_2``
     - ``air_1.5``
 
+    The ``air_*`` and ``neumann_air_*`` operators implement *approximate ideal
+    restriction*, which targets nonsymmetric, convection-dominated problems. They are
+    normally combined with ``prolongation_type: one_point`` and with
+    ``relaxation: points: air`` (see below), and require a nonsymmetric Krylov solver such
+    as GMRES or BiCGSTAB.
+
+  - ``restrict_strong_th`` - strength threshold used when building the approximate ideal
+    restriction operator. Only relevant for the ``air_*`` and ``neumann_air_*`` restriction
+    types. For detailed information, see `HYPRE_BoomerAMGSetStrongThresholdR
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html>`_. Available values are
+    any non-negative floating point number. Default value is `0.25`.
+
+  - ``restrict_filter_th`` - post-filtering threshold applied to the approximate ideal
+    restriction operator, used to drop small entries and keep it sparse. Only relevant for
+    the ``air_*`` and ``neumann_air_*`` restriction types. For detailed information, see
+    `HYPRE_BoomerAMGSetFilterThresholdR
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html>`_. Available values are
+    any non-negative floating point number. Default value is `0.0`.
+
   - ``trunc_factor`` - truncation factor for computing interpolation. Available values are
     any non-negative floating point number. Default value is `0.0`.
 
@@ -1171,6 +1190,23 @@ preconditioner:
     options, see `HYPRE_BoomerAMGSetRelaxOrder
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv428HYPRE_BoomerAMGSetRelaxOrder12HYPRE_Solver9HYPRE_Int>`_. Default value is `0`.
 
+  - ``points`` - which grid points each sweep of the cycle relaxes. For detailed
+    information, see `HYPRE_BoomerAMGSetGridRelaxPoints
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html>`_. Available options are:
+
+    - ``all`` (default) - leave hypre's default schedule untouched, i.e. every sweep
+      relaxes all points.
+    - ``air`` - use the schedule expected by approximate ideal restriction: the down cycle
+      and the coarsest level relax all points, while the up cycle relaxes F-points and
+      finishes with a C-point sweep when ``up_sweeps`` is greater than two.
+
+    .. warning::
+
+       ``points: air`` is meant to be used with ``order: 0``. Combining an ``air_*``
+       restriction with ``order: 1`` and a hybrid Gauss-Seidel down-cycle relaxation type
+       (``forward-hl1gs`` or ``backward-hl1gs``) is known to produce a hierarchy
+       containing non-numeric values in hypre 2.33.0 and later.
+
   - ``weight`` - relaxation weight for smoothed Jacobi and hybrid SOR. For available
     options, see `HYPRE_BoomerAMGSetRelaxWt
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv425HYPRE_BoomerAMGSetRelaxWt12HYPRE_Solver10HYPRE_Real>`_. Default value is `1.0`.
@@ -1210,6 +1246,8 @@ This example shows the default values for ``preconditioner:amg``:
         interpolation:
           prolongation_type: extended+i
           restriction_type: p_transpose
+          restrict_strong_th: 0.25
+          restrict_filter_th: 0.0
           trunc_factor: 0.0
           max_nnz_row: 4
         coarsening:
@@ -1242,6 +1280,7 @@ This example shows the default values for ``preconditioner:amg``:
           coarse_sweeps: -1
           num_sweeps: 1
           order: 0
+          points: all
           weight: 1.0
           outer_weight: 1.0
         smoother:

@@ -1,0 +1,45 @@
+# GMRES preconditioned by BoomerAMG with approximate ideal restriction (AIR).
+#
+# AIR replaces the usual R = P^T by an approximation to the ideal restriction
+# operator. That is what makes algebraic multigrid effective on the strongly
+# nonsymmetric operators produced by upwind discretizations of advection: the
+# restriction then follows the direction in which information travels.
+#
+# Two deviations from the textbook AIR recipe are deliberate, because the
+# textbook settings are not robust in parallel on this operator:
+#
+#   * interpolation is "extended+i" rather than the usual one-point injection,
+#   * the post-smoother is Jacobi rather than a hybrid Gauss-Seidel variant.
+#
+# See the notes in the user manual (Example 5) for the failure modes these two
+# choices avoid.
+
+general:
+  name: convdif-air
+
+solver:
+  gmres:
+    max_iter: 100
+    krylov_dim: 30
+    relative_tol: 1.0e-8
+    print_level: 0
+
+preconditioner:
+  amg:
+    max_iter: 1
+    tolerance: 0.0
+    print_level: 0
+    coarsening:
+      type: pmis
+      strong_th: 0.25
+      max_coarse_size: 64
+    interpolation:
+      prolongation_type: extended+i
+      restriction_type: air_2
+      restrict_strong_th: 0.25
+      restrict_filter_th: 0.0
+    relaxation:
+      points: air
+      down_sweeps: 0
+      up_type: jacobi
+      up_sweeps: 3
