@@ -4428,7 +4428,10 @@ test_PreconCreate_mgr_nested_krylov_inner_mgr_recreate_without_reuse(void)
    inner->level[0].f_dofs.data[0]            = 0;
    inner->level[0].f_dofs.data[1]            = 1;
    inner->level[0].f_dofs.data[2]            = 2;
-   inner->level[0].f_relaxation.type         = 2;
+   inner->level[0].f_relaxation.type = 2;
+   /* The f_relaxation solver args live in an uninitialized union until a type is
+      selected; default them before overriding fields, or AMGCreate reads garbage. */
+   hypredrv_AMGSetDefaultArgs(&inner->level[0].f_relaxation.amg);
    inner->level[0].f_relaxation.amg.max_iter = 1;
    inner->level[0].g_relaxation.type         = -1;
    inner->coarsest_level.type                = 0;

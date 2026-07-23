@@ -129,10 +129,13 @@ struct DarcyDiscretization
    "    print_level: 0\n"                     \
    "preconditioner: amg\n"
 
-static const char *default_mgr_config        = DEFAULT_MGR_CONFIG("0");
-static const char *default_mgr_stats_config  = DEFAULT_MGR_CONFIG("1");
+#if defined(HYPREDRV_HYPRE_RELEASE_NUMBER) && HYPREDRV_HYPRE_RELEASE_NUMBER < 30000
 static const char *legacy_hypre_config       = LEGACY_HYPRE_CONFIG("0");
 static const char *legacy_hypre_stats_config = LEGACY_HYPRE_CONFIG("1");
+#else
+static const char *default_mgr_config       = DEFAULT_MGR_CONFIG("0");
+static const char *default_mgr_stats_config = DEFAULT_MGR_CONFIG("1");
+#endif
 
 static const char *
 default_config(HYPRE_Int print_stats)
@@ -391,15 +394,6 @@ static HYPRE_BigInt
 cell_index(const DarcyMesh *mesh, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k)
 {
    return i + (HYPRE_BigInt)mesh->n[0] * (j + (HYPRE_BigInt)mesh->n[1] * k);
-}
-
-static void
-cell_ijk(const DarcyMesh *mesh, HYPRE_BigInt cell, HYPRE_BigInt *i, HYPRE_BigInt *j,
-         HYPRE_BigInt *k)
-{
-   *i = cell % mesh->n[0];
-   *j = (cell / mesh->n[0]) % mesh->n[1];
-   *k = cell / ((HYPRE_BigInt)mesh->n[0] * mesh->n[1]);
 }
 
 static HYPRE_BigInt

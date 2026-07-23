@@ -359,8 +359,9 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
 
 static int GetIntelXeCardByOrdinal(int gpu_ordinal, char *drm_path, size_t len);
 static int QueryIntelClinfoMemoryByOrdinal(int gpu_ordinal, size_t *total);
-static int QueryIntelXeMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total,
-                                     size_t *used);
+static int HYPREDRV_MAYBE_UNUSED QueryIntelXeMemoryByBusId(const char *pci_busid,
+                                                           int *gpu_index, size_t *total,
+                                                           size_t *used);
 static int QueryIntelXeMemoryByOrdinal(int gpu_ordinal, size_t *total, size_t *used);
 
 #ifndef __APPLE__
@@ -665,7 +666,7 @@ PciBusIdMatches(const char *lhs, const char *rhs)
    return strcmp(PciBusIdComparableSuffix(lhs), PciBusIdComparableSuffix(rhs)) == 0;
 }
 
-static int
+static int HYPREDRV_MAYBE_UNUSED
 QueryNvidiaMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total,
                          size_t *used)
 {
@@ -793,7 +794,7 @@ QueryAmdMetricMemoryByIndex(const char *amd_path, int gpu_index, size_t *total,
    return *total > 0;
 }
 
-static int
+static int HYPREDRV_MAYBE_UNUSED
 QueryAmdMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size_t *used)
 {
    char amd_path[PATH_MAX];

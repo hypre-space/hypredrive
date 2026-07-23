@@ -461,7 +461,7 @@ CreateDistMesh(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Nz, HYPRE_In
                HYPRE_Int Py, HYPRE_Int Pz, DistMesh **mesh_ptr)
 {
    DistMesh *mesh = (DistMesh *)malloc(sizeof(DistMesh));
-   int       myid, num_procs;
+   int       myid, num_procs = 0;
    (void)num_procs; /* Reserved for future use */
 
    mesh->gdims[0] = Nx;
@@ -802,7 +802,8 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
    HYPRE_Real Ke_t[24][24];
    HYPRE_Real Nvol_t[8];
    HYPRE_Real NfaceTop_t[8];
-   PrecomputeQ1HexTemplates(hx, hy, hz, D, Ke_t, Nvol_t, NfaceTop_t);
+   PrecomputeQ1HexTemplates(hx, hy, hz, (const HYPRE_Real(*)[6])D, Ke_t, Nvol_t,
+                            NfaceTop_t);
 
    /* Loop over elements intersecting this rank's node set:
     * gx in [max(start-1,0), min(end, Nx-1)) and similarly for gy,gz. */
