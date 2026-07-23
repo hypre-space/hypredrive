@@ -54,8 +54,8 @@ if [[ "${MODE}" == "help" ]]; then
     echo ""
     echo "Outputs:"
     echo "  convdif_air.out convdif_amg.out convdif_ilu.out"
-    echo "  iters_convdif_512x64x64.png"
-    echo "  total_convdif_512x64x64.png"
+    echo "  convdif_512x64x64_iters.png"
+    echo "  convdif_512x64x64_total.png"
     exit 0
 fi
 
@@ -65,7 +65,7 @@ MPIEXEC_EXECUTABLE="${MPIEXEC_EXECUTABLE:-mpirun}"
 MPIEXEC_NUMPROC_FLAG="${MPIEXEC_NUMPROC_FLAG:--np}"
 MPI_RANKS="${MPI_RANKS:-16}"
 EXEC="${EXEC:-./convdif}"
-STATS="${STATS:-../../../scripts/analyze_statistics.py}"
+STATS="${STATS:-${SCRIPT_DIR}/../../../scripts/analyze_statistics.py}"
 CONFIG_DIR="${CONFIG_DIR:-${SCRIPT_DIR}}"
 
 # Elongated duct (~2.1M cells), convection-dominated, twelve time steps whose
@@ -105,6 +105,11 @@ plot_results() {
     PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 "${STATS}" \
         -f "${OUT_FILES[@]}" -ln "${METHODS[@]}" -m "iters+total" \
         --style docs -s "convdif_512x64x64.png"
+
+    # analyze_statistics.py prefixes the plot mode to the file name; rename to
+    # the names the user manual embeds (figures/convdif_512x64x64_{iters,total}.png)
+    mv "iters_convdif_512x64x64.png" "convdif_512x64x64_iters.png"
+    mv "total_convdif_512x64x64.png" "convdif_512x64x64_total.png"
     echo "Done. Plots saved in current directory."
 }
 
@@ -114,6 +119,9 @@ if [[ "${MODE}" == "plot-only" ]]; then
     exit 0
 fi
 
+# max_iter is raised above the configs' 100 so that reruns at higher rank
+# counts (where block-Jacobi ILU degrades past 100 iterations) converge
+# instead of hitting the cap; it does not change any converged result.
 for i in "${!CONFIGS[@]}"; do
     config="${CONFIG_DIR}/${CONFIGS[$i]}"
     out="${OUT_FILES[$i]}"

@@ -40,6 +40,10 @@ preconditioner:
       restrict_filter_th: 0.0
     relaxation:
       points: air
+      # The down cycle runs zero sweeps, but down_type is still set to match
+      # up_type: hypre (<= 3.1) leaks the per-level l1-norm vectors when an
+      # l1-GS type (the default) is mixed with a Jacobi-family type.
+      down_type: jacobi
       down_sweeps: 0
       up_type: jacobi
       up_sweeps: 3

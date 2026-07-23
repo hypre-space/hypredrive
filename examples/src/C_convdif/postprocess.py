@@ -7,7 +7,7 @@
 
 Reads the VTK ``RectilinearGrid`` output written by ``convdif -vis`` (a per-rank
 ``.vtr`` plus a ``.pvd`` collection in parallel) and produces a publication-quality
-3D rendering of the scalar solution ``u``, in the same style as the Maxwell (AMS)
+3D rendering of the concentration field ``c``, in the same style as the Maxwell (AMS)
 and grad-div (ADS) examples.
 
 When the input is a time-series ``.pvd`` (written by ``convdif -vis 2``) and the

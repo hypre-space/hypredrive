@@ -999,14 +999,14 @@ preconditioner:
   - ``restrict_strong_th`` - strength threshold used when building the approximate ideal
     restriction operator. Only relevant for the ``air_*`` and ``neumann_air_*`` restriction
     types. For detailed information, see `HYPRE_BoomerAMGSetStrongThresholdR
-    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html>`_. Available values are
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv434HYPRE_BoomerAMGSetStrongThresholdR12HYPRE_Solver10HYPRE_Real>`_. Available values are
     any non-negative floating point number. Default value is `0.25`.
 
   - ``restrict_filter_th`` - post-filtering threshold applied to the approximate ideal
     restriction operator, used to drop small entries and keep it sparse. Only relevant for
     the ``air_*`` and ``neumann_air_*`` restriction types. For detailed information, see
     `HYPRE_BoomerAMGSetFilterThresholdR
-    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html>`_. Available values are
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv434HYPRE_BoomerAMGSetFilterThresholdR12HYPRE_Solver10HYPRE_Real>`_. Available values are
     any non-negative floating point number. Default value is `0.0`.
 
   - ``trunc_factor`` - truncation factor for computing interpolation. Available values are
@@ -1122,6 +1122,7 @@ preconditioner:
     - ``hsgs``: hybrid symmetric Gauss-Seidel.
     - ``jacobi``: Jacobi (based on SpMVs).
     - ``l1-hsgs``: L1-scaled hybrid symmetric Gauss-Seidel.
+    - ``forward-solve``: on-processor direct forward solve, for matrices with triangular structure.
     - ``2gs-it1``: single iteration two stage Gauss-Seidel.
     - ``2gs-it2``: double iteration two stage Gauss-Seidel.
     - ``forward-hl1gs``: forward hybrid L1-scaled Gauss-Seidel (default).
@@ -1143,6 +1144,7 @@ preconditioner:
     - ``hsgs``: hybrid symmetric Gauss-Seidel.
     - ``jacobi``: Jacobi (based on SpMVs).
     - ``l1-hsgs``: L1-scaled hybrid symmetric Gauss-Seidel.
+    - ``forward-solve``: on-processor direct forward solve, for matrices with triangular structure.
     - ``2gs-it1``: single iteration two stage Gauss-Seidel.
     - ``2gs-it2``: double iteration two stage Gauss-Seidel.
     - ``forward-hl1gs``: forward hybrid L1-scaled Gauss-Seidel.
@@ -1192,7 +1194,7 @@ preconditioner:
 
   - ``points`` - which grid points each sweep of the cycle relaxes. For detailed
     information, see `HYPRE_BoomerAMGSetGridRelaxPoints
-    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html>`_. Available options are:
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv433HYPRE_BoomerAMGSetGridRelaxPoints12HYPRE_SolverPP9HYPRE_Int>`_. Available options are:
 
     - ``all`` (default) - leave hypre's default schedule untouched, i.e. every sweep
       relaxes all points.

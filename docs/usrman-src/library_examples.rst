@@ -1901,13 +1901,16 @@ total time from the ninth system on. Classical AMG grows mildly (3 to 9) and rem
 fastest overall at this rank count; AIR sits in between (4 to 14) with the flattest tail
 once the systems reach the steady transport limit, at a higher per-V-cycle cost.
 
-Where AIR pulls ahead is at scale. Repeating the near-steady end of this sequence over a
-rank sweep partitioned the same way shows AIR's iteration count to be **exactly
-rank-invariant** (34 iterations at every count from 1 to 64), while classical AMG climbs
-steadily (18 on one rank, 23 on 16, 32 on 64) as its sweeps fragment into ever-thinner
-slabs — the two extrapolate to a crossover at production rank counts, and earlier the
-thinner the slabs get. That rank-invariance, not the single-machine horse race, is the
-property AIR buys.
+Where AIR pulls ahead is at scale. Replacing the ramp by its near-steady tail — the same
+duct and slab partitioning solving three large-CFL systems (``-nt 3 -dt 1e4 -dtg 4``),
+iterations summed over the three solves — and sweeping the rank count shows AIR's
+iteration count to be **exactly rank-invariant** (34 iterations at every count from 1 to
+64), while classical AMG climbs steadily (18 on one rank, 23 on 16, 32 on 64) as its
+sweeps fragment into ever-thinner slabs — the two extrapolate to a crossover at
+production rank counts, and earlier the thinner the slabs get. Oversubscribing cores
+leaves these iteration counts untouched, so the sweep can be repeated on a smaller
+machine (its timings cannot). That rank-invariance, not the single-machine horse race,
+is the property AIR buys.
 
 The data is reproduced with the companion script, which runs the sequence for the three
 configurations and generates both plots via ``scripts/analyze_statistics.py``
@@ -1969,7 +1972,7 @@ Reproducible Run
 
 .. code-block:: bash
 
-   mpirun -np 1 /path/to/build/convdif -i examples/src/C_convdif/gmres-air.yml
+   mpirun -np 1 /path/to/build/convdif -v 1 -i examples/src/C_convdif/gmres-air.yml
 
 Compare the output with this reference:
 

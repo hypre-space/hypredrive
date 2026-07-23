@@ -27,6 +27,8 @@ void           hypredrv_AMGcsnSetFieldByName(void *, const YAMLnode *);
 void           hypredrv_AMGcsnSetDefaultArgs(AMGcsn_args *);
 StrIntMapArray hypredrv_AMGcsnGetValidValues(const char *);
 StrIntMapArray hypredrv_AMGaggGetValidValues(const char *);
+void           hypredrv_AMGrlxSetFieldByName(void *, const YAMLnode *);
+void           hypredrv_AMGrlxSetDefaultArgs(AMGrlx_args *);
 StrIntMapArray hypredrv_AMGrlxGetValidValues(const char *);
 StrIntMapArray hypredrv_AMGsmtGetValidValues(const char *);
 
@@ -3303,6 +3305,48 @@ test_AMGSetDofFunc_labels(void)
 }
 
 static void
+test_AMGCreate_grid_relax_points_air(void)
+{
+   TEST_HYPRE_INIT();
+
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_AMGSetDefaultArgs(&args.amg);
+   args.amg.relaxation.points      = 1;
+   args.amg.relaxation.down_sweeps = 1;
+   args.amg.relaxation.up_sweeps   = 3;
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0, NULL);
+   ASSERT_NOT_NULL(precon);
+
+   hypre_ParAMGData *amg_data = (hypre_ParAMGData *)precon->main;
+   HYPRE_Int **points = hypre_ParAMGDataGridRelaxPoints(amg_data);
+   ASSERT_NOT_NULL(points);
+   ASSERT_EQ(points[1][0], 0);  /* down cycle: all points */
+   ASSERT_EQ(points[2][0], -1); /* up cycle: F, F, C */
+   ASSERT_EQ(points[2][1], -1);
+   ASSERT_EQ(points[2][2], 1);
+   ASSERT_EQ(points[3][0], 0);  /* coarsest level: all points */
+
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon, NULL, 0);
+
+   /* With up to two up sweeps, every up sweep stays on the F-points */
+   args.amg.relaxation.up_sweeps = 2;
+   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0, NULL);
+   ASSERT_NOT_NULL(precon);
+
+   amg_data = (hypre_ParAMGData *)precon->main;
+   points   = hypre_ParAMGDataGridRelaxPoints(amg_data);
+   ASSERT_NOT_NULL(points);
+   ASSERT_EQ(points[2][0], -1);
+   ASSERT_EQ(points[2][1], -1);
+
+   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon, NULL, 0);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_PreconApply_precon_none(void)
 {
    TEST_HYPRE_INIT();
@@ -6255,6 +6299,53 @@ test_hypredrv_AMGintSetFieldByName_all_fields(void)
 }
 
 static void
+test_hypredrv_AMGrlxSetFieldByName_all_fields(void)
+{
+   AMGrlx_args args;
+   hypredrv_AMGrlxSetDefaultArgs(&args);
+
+   /* Defaults of the fields not overwritten below */
+   ASSERT_EQ(args.points, 0);
+
+   static const struct
+   {
+      const char *key;
+      const char *value;
+   } updates[] = {
+      {.key = "down_type", .value = "10"},
+      {.key = "up_type", .value = "7"},
+      {.key = "coarse_type", .value = "9"},
+      {.key = "down_sweeps", .value = "0"},
+      {.key = "up_sweeps", .value = "3"},
+      {.key = "coarse_sweeps", .value = "2"},
+      {.key = "num_sweeps", .value = "2"},
+      {.key = "order", .value = "1"},
+      {.key = "points", .value = "1"},
+      {.key = "weight", .value = "0.8"},
+      {.key = "outer_weight", .value = "0.9"},
+   };
+
+   for (size_t i = 0; i < sizeof(updates) / sizeof(updates[0]); i++)
+   {
+      YAMLnode *node = make_scalar_node(updates[i].key, updates[i].value);
+      hypredrv_AMGrlxSetFieldByName(&args, node);
+      hypredrv_YAMLnodeDestroy(node);
+   }
+
+   ASSERT_EQ(args.down_type, 10);
+   ASSERT_EQ(args.up_type, 7);
+   ASSERT_EQ(args.coarse_type, 9);
+   ASSERT_EQ(args.down_sweeps, 0);
+   ASSERT_EQ(args.up_sweeps, 3);
+   ASSERT_EQ(args.coarse_sweeps, 2);
+   ASSERT_EQ(args.num_sweeps, 2);
+   ASSERT_EQ(args.order, 1);
+   ASSERT_EQ(args.points, 1);
+   ASSERT_EQ_DOUBLE(args.weight, 0.8, 1e-12);
+   ASSERT_EQ_DOUBLE(args.outer_weight, 0.9, 1e-12);
+}
+
+static void
 test_hypredrv_AMGcsnSetFieldByName_all_fields(void)
 {
    AMGcsn_args args;
@@ -6419,6 +6510,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconDestroy_none_with_main_logs);
    RUN_TEST(test_PreconSetup_default_case);
    RUN_TEST(test_AMGSetDofFunc_labels);
+   RUN_TEST(test_AMGCreate_grid_relax_points_air);
    RUN_TEST(test_PreconApply_default_case);
    RUN_TEST(test_PreconApply_precon_none);
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
@@ -6513,6 +6605,7 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_AMGsmtGetValidValues_type);
    RUN_TEST(test_hypredrv_AMGsmtGetValidValues_unknown_key);
    RUN_TEST(test_hypredrv_AMGintSetFieldByName_all_fields);
+   RUN_TEST(test_hypredrv_AMGrlxSetFieldByName_all_fields);
    RUN_TEST(test_hypredrv_AMGcsnSetFieldByName_all_fields);
 
    MPI_Finalize();

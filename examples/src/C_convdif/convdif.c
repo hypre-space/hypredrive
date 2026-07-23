@@ -159,7 +159,7 @@ SwirlShape(HYPRE_Real s, HYPRE_Real len)
    return t * t * (1.0 - t) * (1.0 - t);
 }
 
-static const HYPRE_Real SWIRL_GRAD_MAX = 0.0120281566; /* max(G) * max|G'| */
+static const HYPRE_Real SWIRL_GRAD_MAX = 0.0120281306; /* max(G) * max|G'| = 1/(48*sqrt(3)) */
 
 /*--------------------------------------------------------------------------
  * Print usage info
@@ -326,6 +326,17 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       return 1;
    }
 
+   /* Verify processor grid entries are positive */
+   if (params->P[0] < 1 || params->P[1] < 1 || params->P[2] < 1)
+   {
+      if (!myid)
+      {
+         printf("Error: -P entries must be >= 1 (got %d x %d x %d)\n",
+                params->P[0], params->P[1], params->P[2]);
+      }
+      return 1;
+   }
+
    /* Verify processor grid matches total number of processes */
    if (params->P[0] * params->P[1] * params->P[2] != num_procs)
    {
@@ -342,17 +353,28 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
    /* Verify the global grid can be partitioned */
    for (int d = 0; d < 3; d++)
    {
-      char *name[] = {"First", "Second", "Third"};
+      static const char *name[] = {"First", "Second", "Third"};
       if (params->P[d] > params->N[d])
       {
          if (!myid)
          {
-            printf("Error: %s grid dimension (N = %d) must be larger than the number of "
-                   "ranks (P = %d)\n",
+            printf("Error: %s grid dimension (N = %d) must be at least as large as the "
+                   "number of ranks (P = %d)\n",
                    name[d], params->N[d], params->P[d]);
          }
          return 1;
       }
+   }
+
+   /* Verify domain and physical parameters */
+   if (params->dom[0] <= 0.0 || params->dom[1] <= 0.0 || params->dom[2] <= 0.0 ||
+       params->kappa < 0.0)
+   {
+      if (!myid)
+      {
+         printf("Error: require -L > 0, -H > 0, and -k >= 0\n");
+      }
+      return 1;
    }
 
    /* Verify time stepping parameters */
@@ -561,14 +583,14 @@ main(int argc, char *argv[])
       HYPRE_IJVectorDestroy(b);
       HYPRE_IJVectorDestroy(x0);
 
+      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(hypredrv, 0, "timestep", t_step));
+
       /* Write the current state as a time-series frame */
       if (params.visualize > 1)
       {
          frame_times[t_step + 1] = time;
          WriteVTKsolution(mesh, &params, c, t_step + 1);
       }
-
-      HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelEnd(hypredrv, 0, "timestep", t_step));
    }
 
    /* Print per-timestep and per-solve statistics if requested */
@@ -772,7 +794,9 @@ BuildSystem(DistMesh *mesh, ProblemParams *params, HYPRE_Real *c_old, HYPRE_Real
    const HYPRE_Real Ax   = hy * hz;
    const HYPRE_Real c_in = 1.0;
 
-   /* Stream function amplitude realizing the requested peak swirl velocity */
+   /* Stream function amplitude realizing the requested peak swirl velocity.
+      The calibration assumes a square cross-section (dom[1] == dom[2], which
+      -H enforces); it needs a per-direction length if that ever changes. */
    const HYPRE_Real swirl_amp = params->wmax * params->dom[1] / SWIRL_GRAD_MAX * hx;
 
    /* Create the matrix and vectors */
