@@ -1147,6 +1147,12 @@ if(NOT HYPRE_FOUND)
         if(TARGET umpire_tpl_json AND DEFINED UMPIRE_ENABLE_FILESYSTEM AND
            NOT UMPIRE_ENABLE_FILESYSTEM)
             target_compile_definitions(umpire_tpl_json INTERFACE JSON_HAS_CPP_14=1)
+            # BLT copies dependency usage requirements when it creates object
+            # libraries, so changing umpire_tpl_json afterward does not update
+            # the already-created target that compiles Umpire's JSON users.
+            if(TARGET umpire_event)
+                target_compile_definitions(umpire_event PRIVATE JSON_HAS_CPP_14=1)
+            endif()
             message(STATUS
                 "  Umpire std::filesystem is unavailable; disabled JSON filesystem conversions")
         endif()
