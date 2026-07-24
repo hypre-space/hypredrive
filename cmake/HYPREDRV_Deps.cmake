@@ -821,10 +821,12 @@ if(NOT HYPRE_FOUND)
         endif()
     endif()
 
-    # Auto-fetched GPU builds use Umpire by default. Preserve an explicit
-    # -DHYPRE_BUILD_UMPIRE=OFF for an externally provided Umpire or a build
-    # that also sets -DHYPRE_ENABLE_UMPIRE=OFF.
-    if(NOT _hypre_use_autotools AND (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP))
+    # Auto-fetched GPU builds use Umpire by default unless the user points to
+    # an external Umpire or explicitly disables Umpire. Preserve explicit
+    # HYPRE_BUILD_UMPIRE settings.
+    if(NOT _hypre_use_autotools AND (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
+       NOT umpire_ROOT AND NOT umpire_DIR AND
+       NOT (DEFINED CACHE{HYPRE_ENABLE_UMPIRE} AND NOT HYPRE_ENABLE_UMPIRE))
         _hypredrv_set_cache_bool_default(HYPRE_BUILD_UMPIRE ON
             "Automatically download and build Umpire for HYPRE")
     endif()
