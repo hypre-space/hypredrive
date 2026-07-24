@@ -29,8 +29,6 @@ cmake -DHYPREDRV_ENABLE_DATA=ON -B build && cmake --build build -j -t check
 mpirun -np 1 ./build/hypredrive-cli examples/ex2.yml
 ```
 
-System information is hidden by default; add `-i` or `--info` to display it.
-
 **Library** -- call the API from your own code (see [example drivers](https://hypredrive.readthedocs.io/en/latest/library_examples.html) in the docs).
 
 ```C
