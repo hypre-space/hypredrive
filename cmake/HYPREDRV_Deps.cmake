@@ -821,6 +821,14 @@ if(NOT HYPRE_FOUND)
         endif()
     endif()
 
+    # Auto-fetched GPU builds use Umpire by default. Preserve an explicit
+    # -DHYPRE_BUILD_UMPIRE=OFF for an externally provided Umpire or a build
+    # that also sets -DHYPRE_ENABLE_UMPIRE=OFF.
+    if(NOT _hypre_use_autotools AND (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP))
+        _hypredrv_set_cache_bool_default(HYPRE_BUILD_UMPIRE ON
+            "Automatically download and build Umpire for HYPRE")
+    endif()
+
     set(_hypre_git_shallow TRUE)
     if(NOT HYPRE_VERSION MATCHES "^v?([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
         # HYPRE's CMake computes HYPRE_DEVELOP_NUMBER from git tag distance. A shallow
@@ -1129,6 +1137,17 @@ if(NOT HYPRE_FOUND)
         set(CMAKE_INSTALL_PREFIX "${_hypredrv_saved_install_prefix}" CACHE PATH
             "Install path prefix, prepended onto install directories." FORCE)
         unset(_hypredrv_saved_install_prefix)
+
+        # Umpire's filesystem probe correctly falls back to POSIX when the
+        # compiler lacks <filesystem>, but its bundled nlohmann JSON header
+        # still enables std::filesystem whenever C++17 is selected. Tell that
+        # header to use its C++14-compatible path in this configuration.
+        if(TARGET umpire_tpl_json AND DEFINED UMPIRE_ENABLE_FILESYSTEM AND
+           NOT UMPIRE_ENABLE_FILESYSTEM)
+            target_compile_definitions(umpire_tpl_json INTERFACE JSON_HAS_CPP_14=1)
+            message(STATUS
+                "  Umpire std::filesystem is unavailable; disabled JSON filesystem conversions")
+        endif()
     endif()
 
     # Remove Caliper include directory from HYPRE's INTERFACE_INCLUDE_DIRECTORIES and re-add with BUILD_INTERFACE
