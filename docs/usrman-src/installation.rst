@@ -160,7 +160,10 @@ Auto-fetched CUDA and HIP builds also enable ``HYPRE_BUILD_UMPIRE`` by
 default unless ``umpire_ROOT`` or ``umpire_DIR`` points to an external Umpire
 installation. An explicit ``HYPRE_BUILD_UMPIRE`` setting is always preserved.
 An explicit ``-DHYPRE_ENABLE_UMPIRE=OFF`` suppresses the automatic
-bundled-Umpire default.
+bundled-Umpire default. When Umpire is built automatically, Umpire and its
+bundled CAMP/fmt libraries are forced static by default; an explicit
+``-DBUILD_SHARED_LIBS=ON`` requests shared libraries for the complete bundled
+dependency stack.
 
 With HYPRE 2.31.0 or newer, HYPREDRV configures HYPRE's GPU-aware MPI mode
 during initialization. The mode is enabled when any of ``MV2_USE_CUDA``,

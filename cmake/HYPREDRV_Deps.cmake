@@ -1212,11 +1212,70 @@ if(NOT HYPRE_FOUND)
     if(NOT TARGET HYPRE::HYPRE)
         message(STATUS "Configuring HYPRE build...")
         message(STATUS "  Libraries will be built to: ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+
+        # HYPRE's automatic Umpire path adds Umpire, CAMP, and fmt as nested
+        # subprojects. Keep every library from that dependency stack static
+        # unless the top-level build explicitly requests shared libraries.
+        #
+        # Set both the directory-scope and cache values: BLT-based subprojects
+        # consult BUILD_SHARED_LIBS at several nesting levels, and a cache-only
+        # update can be shadowed by a normal variable in a parent scope.
+        set(_hypredrv_force_static_auto_umpire OFF)
+        if(HYPRE_BUILD_UMPIRE AND NOT BUILD_SHARED_LIBS)
+            set(_hypredrv_force_static_auto_umpire ON)
+            set(BUILD_SHARED_LIBS OFF)
+            set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+            message(STATUS
+                "  Automatic Umpire build: forcing Umpire, CAMP, and fmt libraries static")
+        elseif(HYPRE_BUILD_UMPIRE)
+            message(STATUS
+                "  Automatic Umpire build: honoring explicit BUILD_SHARED_LIBS=ON")
+        endif()
+
         set(_hypredrv_saved_install_prefix "${CMAKE_INSTALL_PREFIX}")
         add_subdirectory(${hypre_SOURCE_DIR}/src ${hypre_BINARY_DIR})
         set(CMAKE_INSTALL_PREFIX "${_hypredrv_saved_install_prefix}" CACHE PATH
             "Install path prefix, prepended onto install directories." FORCE)
         unset(_hypredrv_saved_install_prefix)
+
+        if(_hypredrv_force_static_auto_umpire)
+            set(_hypredrv_umpire_library_types)
+            foreach(_umpire_target IN ITEMS
+                    umpire
+                    umpire_resource
+                    umpire_strategy
+                    umpire_op
+                    umpire_event
+                    umpire_util
+                    umpire_interface
+                    camp
+                    fmt)
+                if(TARGET ${_umpire_target})
+                    get_target_property(_umpire_target_type
+                        ${_umpire_target} TYPE)
+                    list(APPEND _hypredrv_umpire_library_types
+                        "${_umpire_target}=${_umpire_target_type}")
+                    if(_umpire_target_type STREQUAL "SHARED_LIBRARY" OR
+                       _umpire_target_type STREQUAL "MODULE_LIBRARY")
+                        message(FATAL_ERROR
+                            "Automatic Umpire target ${_umpire_target} was "
+                            "created as ${_umpire_target_type} even though "
+                            "BUILD_SHARED_LIBS is not ON")
+                    endif()
+                endif()
+            endforeach()
+            if(_hypredrv_umpire_library_types)
+                list(JOIN _hypredrv_umpire_library_types ", "
+                    _hypredrv_umpire_library_types_text)
+                message(STATUS
+                    "  Automatic Umpire target types: "
+                    "${_hypredrv_umpire_library_types_text}")
+            endif()
+            unset(_hypredrv_umpire_library_types)
+            unset(_hypredrv_umpire_library_types_text)
+            unset(_umpire_target_type)
+        endif()
+        unset(_hypredrv_force_static_auto_umpire)
 
         # Umpire's filesystem probe correctly falls back to POSIX when the
         # compiler lacks <filesystem>, but its bundled nlohmann JSON header
