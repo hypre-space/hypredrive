@@ -238,6 +238,14 @@ PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
  * Push general.* runtime settings (exec policy, memory pools) into hypre
  *-----------------------------------------------------------------------------*/
 
+static void
+LogExecutionPolicy(HYPREDRV_t hypredrv)
+{
+   HYPREDRV_LOG_OBJECTF(
+      1, hypredrv, "HYPRE execution policy: %s",
+      hypredrv_ExecutionPolicyName(hypredrv->iargs->general.exec_policy));
+}
+
 static uint32_t
 ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
 {
@@ -376,20 +384,19 @@ SetPendingSolvePathContext(HYPREDRV_t hypredrv)
 static void
 PrintStatsWithConfiguredDestination(HYPREDRV_t hypredrv, int print_level)
 {
-   if (!hypredrv || !hypredrv->stats || print_level < 1) /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv || !hypredrv->stats || !hypredrv->iargs ||
+       print_level < 1) /* GCOVR_EXCL_BR_LINE */
    {
       return;
    }
 
-   const char *filename = NULL;
-   if (hypredrv->iargs)
-   {
-      filename = hypredrv->iargs->general.statistics_filename;
-   }
+   const char *filename = hypredrv->iargs->general.statistics_filename;
 
    if (!filename || filename[0] == '\0')
    {
       hypredrv_StatsPrint(hypredrv->stats, print_level);
+      hypredrv_PrintExecutionPolicy(hypredrv->comm, hypredrv->iargs->general.exec_policy,
+                                    stdout);
       return;
    }
 
@@ -402,10 +409,14 @@ PrintStatsWithConfiguredDestination(HYPREDRV_t hypredrv, int print_level)
               "for append (%s). Falling back to stdout.\n",
               filename, strerror(saved_errno));
       hypredrv_StatsPrint(hypredrv->stats, print_level);
+      hypredrv_PrintExecutionPolicy(hypredrv->comm, hypredrv->iargs->general.exec_policy,
+                                    stdout);
       return;
    }
 
    hypredrv_StatsPrintToStream(hypredrv->stats, print_level, stream);
+   hypredrv_PrintExecutionPolicy(hypredrv->comm, hypredrv->iargs->general.exec_policy,
+                                 stream);
    fclose(stream);
 }
 
@@ -783,7 +794,6 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
                                              &hypredrv->iargs->precon);
    }
 #endif
-   hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
    if (print_statistics > 0 && !hypredrv->stats_printed)
    {
@@ -796,6 +806,8 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
       HYPREDRV_LOG_OBJECTF(2, hypredrv,
                            "skipping statistics on destroy (already printed)");
    }
+
+   hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "DestroyObjectInternal end");
    hypredrv_StatsDestroy(&hypredrv->stats);
@@ -1202,6 +1214,7 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    }
 #endif
 
+   LogExecutionPolicy(hypredrv);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse end");
 
    return hypredrv_ErrorCodeGet();
@@ -1430,6 +1443,7 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
             "BoomerAMG standard interpolation");
       }
       HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
+      LogExecutionPolicy(hypredrv);
       PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_A, 1);
       if (hypredrv->mat_M && hypredrv->mat_M != hypredrv->mat_A)
       {

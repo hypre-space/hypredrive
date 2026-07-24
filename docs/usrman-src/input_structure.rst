@@ -53,7 +53,8 @@ The ``general`` section contains global settings that apply to the entire execut
 
   In library mode, hypredrive prints the configured summary on rank 0 when the
   application destroys the owning ``HYPREDRV_t`` object. Applications can call
-  ``HYPREDRV_StatsPrint`` earlier for an additional snapshot.
+  ``HYPREDRV_StatsPrint`` earlier for an additional snapshot. Each summary ends
+  with the configured HYPRE execution policy.
 
 - ``statistics_filename`` - Optional file path for statistics output. An empty path
   sends output to ``stdout`` and is the default. A file path makes hypredrive append

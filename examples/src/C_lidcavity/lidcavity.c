@@ -3024,7 +3024,6 @@ main(int argc, char *argv[])
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
-
    /* Create distributed mesh object */
    CreateDistMesh2D(comm, params.L[0], params.L[1], params.N[0], params.N[1], params.P[0],
                     params.P[1], &mesh);

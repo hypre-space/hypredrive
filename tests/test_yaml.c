@@ -1329,7 +1329,7 @@ static void
 test_YAMLtreeUpdate_pair_list_not_pairs_noop(void)
 {
    YAMLtree *tree = hypredrv_YAMLtreeCreate(2);
-   char     *argv[] = {(char *)"-q", (char *)"cfg.yml"};
+   char     *argv[] = {(char *)"-i", (char *)"cfg.yml"};
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_YAMLtreeUpdate(2, argv, tree);

@@ -231,7 +231,7 @@ make_grid(MPI_Comm comm, const params &par)
 constexpr const char *default_options_yaml = R"yaml(
 general:
   name: cpp-laplacian
-  statistics: 0
+  statistics: 1
 solver:
   pcg:
     max_iter: 100
@@ -329,6 +329,7 @@ main(int argc, char **argv)
                    << "solution norm  : " << drv.get_solution_norm("l2") << "\n"
                    << "iterations     : " << drv.get_linear_solver_num_iter() << "\n";
       }
+      if (rank == 0) drv.print_stats();
       hd::finalize();
    }
    catch (const std::exception &e)

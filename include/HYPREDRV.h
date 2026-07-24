@@ -1907,7 +1907,8 @@ extern "C"
     * @brief Print the statistics associated with the HYPREDRV object.
     *
     * This function is responsible for printing the statistics collected during the
-    * operations performed by the HYPREDRV object.
+    * operations performed by the HYPREDRV object. The summary ends with the
+    * configured HYPRE execution policy.
     *
     * @param hypredrv The HYPREDRV_t object whose statistics are to be printed.
     *

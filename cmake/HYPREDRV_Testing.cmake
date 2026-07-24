@@ -67,7 +67,7 @@ endfunction()
 
 # Function for adding tests
 # Options:
-#   NO_QUIET - if set, don't pass -q flag (shows full system info)
+#   INFO - if set, pass -i to show full system info
 set(HYPREDRV_FAIL_REGEX_DEFAULT
     "HYPREDRIVE Failure!!!|BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES|Segmentation fault|Abort\\("
 )
@@ -148,7 +148,7 @@ function(hypredrv_scale_problem_size_args out_var)
 endfunction()
 
 function(add_hypredrive_test test_name num_procs config_file)
-    cmake_parse_arguments(TEST_OPTS "NO_QUIET" "" "" ${ARGN})
+    cmake_parse_arguments(TEST_OPTS "INFO" "" "" ${ARGN})
 
     # Automatically prepend "hypredrive_test_" to the test name
     set(full_test_name "hypredrive_test_${test_name}")
@@ -165,9 +165,9 @@ function(add_hypredrive_test test_name num_procs config_file)
         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/${config_file}
     )
 
-    # Pass -q flag by default to skip system info (faster tests)
-    if(NOT TEST_OPTS_NO_QUIET)
-        list(APPEND _cmd_args "-DTARGET_ARGS=-q")
+    # System info is quiet by default; opt in for coverage of the info path.
+    if(TEST_OPTS_INFO)
+        list(APPEND _cmd_args "-DTARGET_ARGS=-i")
     endif()
 
     add_test(NAME ${full_test_name}
@@ -199,7 +199,6 @@ function(add_hypredrive_cli_test test_name num_procs config_file)
 
     # CLI overrides via -a
     set(_cli_args
-        -q
         -a
     )
     if(TEST_OPTS_OVERRIDES)
@@ -484,8 +483,8 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     )
 
     if (HYPREDRV_HAVE_HYPRE_21900_DEV0)
-        # Add tests (ex1_1proc shows full system info, others use -q for faster runs)
-        add_hypredrive_test(ex1_1proc 1 ex1.yml NO_QUIET)
+        # Add tests (ex1_1proc shows full system info; others use the quiet default)
+        add_hypredrive_test(ex1_1proc 1 ex1.yml INFO)
         set(_hypredrv_base_examples
             "ex1_jacobi|1|ex1-jacobi.yml"
             "ex1_gs|1|ex1-gs.yml"
@@ -738,7 +737,6 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                             -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                             -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                             -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/${_cfg}
-                            "-DTARGET_ARGS:STRING=-q"
                             "-DREQUIRE_CONTAINS:STRING=Solving linear system #4"
                             -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -783,7 +781,6 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-reuse.yml
-                        "-DTARGET_ARGS:STRING=-q"
                         "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #24"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -808,7 +805,6 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-grelax-reuse.yml
-                        "-DTARGET_ARGS:STRING=-q"
                         "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|grelax=1|MGR G-relax setup reuse at level 2: reuse=1|Solving linear system #24"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -833,7 +829,6 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-coarse-reuse.yml
-                        "-DTARGET_ARGS:STRING=-q"
                         "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|coarse=1|MGR coarsest setup reuse: reuse=1|Solving linear system #24"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -858,7 +853,6 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-ilu-reuse.yml
-                        "-DTARGET_ARGS:STRING=-q"
                         "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|frelax=1|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #24"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -881,10 +875,17 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         add_executable_test(hypredrive_no_args hypredrive-cli 1 ARGS "" FAIL_REGULAR_EXPRESSION "^$")
         set_tests_properties(hypredrive_no_args PROPERTIES WILL_FAIL TRUE)
 
-        # Exercise the long-form quiet flag parsing ("--quiet")
-        add_executable_test(hypredrive_quiet_longflag hypredrive-cli 1
-            ARGS "--quiet" "examples/ex1.yml"
-            FAIL_REGULAR_EXPRESSION "^$"
+        # System information is hidden by default.
+        add_executable_test(hypredrive_info_default hypredrive-cli 1
+            ARGS "examples/ex1.yml"
+            REQUIRE_CONTAINS "HYPRE execution policy:"
+            FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}|System Information"
+        )
+
+        # Exercise the long-form info flag parsing ("--info").
+        add_executable_test(hypredrive_info_longflag hypredrive-cli 1
+            ARGS "--info" "examples/ex1.yml"
+            REQUIRE_CONTAINS "System Information" "HYPRE execution policy:"
         )
 
         # Exercise config-file detection when override args are present

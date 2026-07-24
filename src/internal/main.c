@@ -19,7 +19,7 @@ PrintUsage(const char *argv0)
    fprintf(stdout, "  filename: config file in YAML format\n");
    fprintf(stdout, "\nOptions:\n");
    fprintf(stdout, "  -h, --help         Show this help message\n");
-   fprintf(stdout, "  -q, --quiet        Skip system information printout\n");
+   fprintf(stdout, "  -i, --info         Show system information\n");
    fprintf(stdout, "  -a, --args         Override YAML parameters from the CLI\n");
    fprintf(stdout, "  -p, --prec-preset  Override preconditioner with a preset\n");
    fprintf(stdout, "\nOverride syntax (after -a/--args):\n");
@@ -86,11 +86,11 @@ PrintBanner(void)
 // clang-format on
 
 static int
-QuietModeRequested(int argc, char **argv)
+InfoModeRequested(int argc, char **argv)
 {
    for (int i = 1; i < argc; i++)
    {
-      if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0)
+      if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--info") == 0)
       {
          return 1;
       }
@@ -183,11 +183,11 @@ main(int argc, char **argv)
     * Create driver object and print libraries/driver info
     *-----------------------------------------------------------*/
 
-   int quiet_mode = QuietModeRequested(argc, argv);
+   int info_mode = InfoModeRequested(argc, argv);
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &obj));
    HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm, 1));
-   if (!quiet_mode)
+   if (info_mode)
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
    }
@@ -204,7 +204,6 @@ main(int argc, char **argv)
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(obj, preset_name));
    }
-
    /*-----------------------------------------------------------
     * Build and solve linear system(s)
     *-----------------------------------------------------------*/

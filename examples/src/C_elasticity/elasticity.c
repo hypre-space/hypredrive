@@ -1717,7 +1717,6 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, "pcg"));
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, params.solver_preset));
-
    /* Set HYPREDRV global options */
 
    if (!myid)

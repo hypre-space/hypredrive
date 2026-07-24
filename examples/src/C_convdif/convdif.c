@@ -457,7 +457,6 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, "gmres"));
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "poisson"));
    }
-
    /* Create distributed mesh object */
    CreateDistMesh(comm, &params, &mesh);
 

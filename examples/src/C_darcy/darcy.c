@@ -1879,7 +1879,6 @@ main(int argc, char **argv)
       hypredrv_argv[i + 1] = params.hypredrv_argv[i];
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
-
    HYPRE_Int mpi_grid[3];
    if (params.mpi_grid[0])
    {
