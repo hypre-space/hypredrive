@@ -119,10 +119,10 @@ A few conventions appear in the output:
 
 System information is hidden by default. Pass ``-i`` or ``--info`` to print the
 detected machine and software environment. The selected HYPRE execution policy
-is printed at the end of every statistics summary. With HYPRE 3.0 or newer, the
-policy name identifies the device backend when applicable (for example, ``Host``
-or ``Device (CUDA)``). At every nonzero ``HYPREDRV_LOG_LEVEL``, the effective
-policy is also logged after input configuration and whenever it changes.
+is printed after input configuration is resolved and whenever it changes. With
+HYPRE 3.0 or newer, the policy name identifies the device backend when applicable
+(for example, ``Host`` or ``Device (CUDA)``). At every nonzero
+``HYPREDRV_LOG_LEVEL``, the effective policy is also logged at those points.
 
 .. _CLIOverrides:
 

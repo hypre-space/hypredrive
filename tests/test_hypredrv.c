@@ -1197,6 +1197,31 @@ test_HYPREDRV_log_level_input_args_internal_logs_use_object_name(void)
 }
 
 static void
+run_preset_only_configuration_for_capture(void *context)
+{
+   (void)context;
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_InputArgsSetSolverPreset(obj, "pcg"), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_InputArgsSetPreconPreset(obj, "poisson"), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_preset_only_configuration_prints_execution_policy_once(void)
+{
+   reset_state();
+
+   char output[8192];
+   capture_stdout_output(run_preset_only_configuration_for_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_EQ(count_substr(output, "HYPRE execution policy:"), 1);
+}
+
+static void
 run_named_library_linear_solve_trace_capture(void *context)
 {
    (void)context;
@@ -3247,11 +3272,8 @@ test_HYPREDRV_library_mode_destroy_prints_named_statistics_summary(void)
    struct DestroyObjectContext destroy_context = {&obj};
    capture_stdout_output(destroy_object_for_capture, &destroy_context, output, sizeof(output));
 
-   const char *summary = strstr(output, "STATISTICS SUMMARY for named-handle:");
-   const char *policy  = strstr(output, "HYPRE execution policy: Host");
-   ASSERT_NOT_NULL(summary);
-   ASSERT_NOT_NULL(policy);
-   ASSERT_TRUE(policy > summary);
+   ASSERT_NOT_NULL(strstr(output, "STATISTICS SUMMARY for named-handle:"));
+   ASSERT_NULL(strstr(output, "HYPRE execution policy:"));
    ASSERT_TRUE(strstr(output, "|          0 |") != NULL);
    ASSERT_NULL(obj);
 
@@ -3291,11 +3313,8 @@ test_HYPREDRV_library_mode_finalize_prints_named_statistics_summary(void)
    char output[8192];
    capture_stdout_output(finalize_for_capture, NULL, output, sizeof(output));
 
-   const char *summary = strstr(output, "STATISTICS SUMMARY for finalize-handle:");
-   const char *policy  = strstr(output, "HYPRE execution policy: Host");
-   ASSERT_NOT_NULL(summary);
-   ASSERT_NOT_NULL(policy);
-   ASSERT_TRUE(policy > summary);
+   ASSERT_NOT_NULL(strstr(output, "STATISTICS SUMMARY for finalize-handle:"));
+   ASSERT_NULL(strstr(output, "HYPRE execution policy:"));
    ASSERT_TRUE(strstr(output, "|          0 |") != NULL);
 
    ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
@@ -3346,7 +3365,7 @@ test_HYPREDRV_statistics_filename_routes_stats_to_file(void)
    read_text_file(stats_file, file_output, sizeof(file_output));
    ASSERT_NOT_NULL(strstr(file_output, "STATISTICS SUMMARY"));
    ASSERT_NOT_NULL(strstr(file_output, "|          0 |"));
-   ASSERT_NOT_NULL(strstr(file_output, "HYPRE execution policy: Host"));
+   ASSERT_NULL(strstr(file_output, "HYPRE execution policy:"));
 
    ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
@@ -3400,7 +3419,7 @@ test_HYPREDRV_statistics_filename_fallbacks_to_stdout_on_open_failure(void)
    capture_stdout_output(stats_print_for_capture, &stats_context, stdout_output,
                          sizeof(stdout_output));
    ASSERT_NOT_NULL(strstr(stdout_output, "STATISTICS SUMMARY"));
-   ASSERT_NOT_NULL(strstr(stdout_output, "HYPRE execution policy: Host"));
+   ASSERT_NULL(strstr(stdout_output, "HYPRE execution policy:"));
 
    ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
@@ -5408,6 +5427,7 @@ run_hypredrv_lifecycle_and_guards(void)
    RUN_TEST(test_HYPREDRV_log_stream_stdout_stays_off_stderr);
    RUN_TEST(test_HYPREDRV_log_stream_invalid_value_falls_back_to_stderr);
    RUN_TEST(test_HYPREDRV_log_level_input_args_internal_logs_use_object_name);
+   RUN_TEST(test_HYPREDRV_preset_only_configuration_prints_execution_policy_once);
    RUN_TEST(test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name);
    RUN_TEST(
       test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_default_object_name);
