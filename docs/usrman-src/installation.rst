@@ -165,6 +165,10 @@ bundled CAMP/fmt libraries are forced static by default; an explicit
 ``-DBUILD_SHARED_LIBS=ON`` requests shared libraries for the complete bundled
 dependency stack.
 
+The auto-fetched HYPRE test drivers remain disabled by default. Set
+``-DHYPRE_BUILD_TESTS=ON`` to add native drivers such as ``struct`` to the
+same HYPREDRV build tree; an explicit setting is preserved.
+
 With HYPRE 2.31.0 or newer, HYPREDRV configures HYPRE's GPU-aware MPI mode
 during initialization. The mode is enabled when any of ``MV2_USE_CUDA``,
 ``MV2_USE_HIP``, ``MPIR_CVAR_ENABLE_GPU``, or

@@ -1100,8 +1100,15 @@ if(NOT HYPRE_FOUND)
         set(CMAKE_C_COMPILER ${MPI_C_COMPILER} CACHE FILEPATH "C compiler" FORCE)
     endif()
 
-    # Configure HYPRE-specific build options (override any user settings)
-    set(HYPRE_BUILD_TESTS OFF CACHE BOOL "Build HYPRE tests" FORCE)
+    # HYPRE's test drivers are not needed by default, but preserve an explicit
+    # HYPRE_BUILD_TESTS setting so consumers can add native drivers such as
+    # struct to the same FetchContent build tree.
+    if(NOT DEFINED HYPRE_BUILD_TESTS)
+        set(HYPRE_BUILD_TESTS OFF CACHE BOOL "Build HYPRE tests")
+    else()
+        message(STATUS
+            "Preserving caller-provided HYPRE_BUILD_TESTS=${HYPRE_BUILD_TESTS}")
+    endif()
     set(HYPRE_BUILD_EXAMPLES OFF CACHE BOOL "Build HYPRE examples" FORCE)
     if(HYPREDRV_ENABLE_PYTHON OR HYPREDRV_ENABLE_MATLAB OR HYPREDRV_ENABLE_FORTRAN OR HYPREDRV_ENABLE_JULIA)
         set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL
