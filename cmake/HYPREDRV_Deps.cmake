@@ -107,6 +107,81 @@ function(_hypredrv_patch_hypre_ads_pi_col_starts_leak hypre_source_dir)
     unset(_hypredrv_hypre_ads_new)
 endfunction()
 
+function(_hypredrv_patch_hypre_umpire_header_linkage hypre_source_dir)
+    set(_hypredrv_umpire_header_old [=[
+#if defined(HYPRE_USING_UMPIRE)
+#include "umpire/config.hpp"
+#if UMPIRE_VERSION_MAJOR >= 2022
+#include "umpire/interface/c_fortran/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_quick_pool
+#else
+#include "umpire/interface/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_pool
+#endif /* UMPIRE_VERSION_MAJOR >= 2022 */
+#define HYPRE_UMPIRE_POOL_NAME_MAX_LEN 1024
+#endif /* defined(HYPRE_USING_UMPIRE) */
+]=])
+    set(_hypredrv_umpire_header_new [=[
+#if defined(HYPRE_USING_UMPIRE)
+#ifdef __cplusplus
+/* HYPREDRV: Umpire C++ headers require C++ linkage. */
+extern "C++" {
+#endif
+#include "umpire/config.hpp"
+#if UMPIRE_VERSION_MAJOR >= 2022
+#include "umpire/interface/c_fortran/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_quick_pool
+#else
+#include "umpire/interface/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_pool
+#endif /* UMPIRE_VERSION_MAJOR >= 2022 */
+#ifdef __cplusplus
+}
+#endif
+#define HYPRE_UMPIRE_POOL_NAME_MAX_LEN 1024
+#endif /* defined(HYPRE_USING_UMPIRE) */
+]=])
+
+    set(_hypredrv_umpire_header_patched FALSE)
+    foreach(_hypredrv_umpire_header_file IN ITEMS
+            "${hypre_source_dir}/src/utilities/handle.h"
+            "${hypre_source_dir}/src/utilities/_hypre_utilities.h")
+        if(NOT EXISTS "${_hypredrv_umpire_header_file}")
+            continue()
+        endif()
+
+        file(READ "${_hypredrv_umpire_header_file}"
+             _hypredrv_umpire_header_content)
+        if(_hypredrv_umpire_header_content MATCHES
+           "HYPREDRV: Umpire C\\+\\+ headers require C\\+\\+ linkage")
+            continue()
+        endif()
+
+        set(_hypredrv_umpire_header_original
+            "${_hypredrv_umpire_header_content}")
+        string(REPLACE
+            "${_hypredrv_umpire_header_old}"
+            "${_hypredrv_umpire_header_new}"
+            _hypredrv_umpire_header_content
+            "${_hypredrv_umpire_header_content}")
+        if("${_hypredrv_umpire_header_content}" STREQUAL
+           "${_hypredrv_umpire_header_original}")
+            message(WARNING
+                "Could not isolate Umpire's C++ headers from HYPRE's C linkage in "
+                "${_hypredrv_umpire_header_file}; upstream HYPRE may have changed")
+        else()
+            file(WRITE "${_hypredrv_umpire_header_file}"
+                 "${_hypredrv_umpire_header_content}")
+            set(_hypredrv_umpire_header_patched TRUE)
+        endif()
+    endforeach()
+
+    if(_hypredrv_umpire_header_patched)
+        message(STATUS
+            "  HYPRE Umpire C++ headers patched to use C++ linkage")
+    endif()
+endfunction()
+
 function(_hypredrv_link_mpi_interface target_name)
     if(TARGET MPI::MPI_C)
         target_link_libraries(${target_name} INTERFACE MPI::MPI_C)
@@ -1056,6 +1131,9 @@ if(NOT HYPRE_FOUND)
     message(STATUS "HYPRE source fetched successfully")
     message(STATUS "  Source directory: ${hypre_SOURCE_DIR}")
     _hypredrv_patch_hypre_ads_pi_col_starts_leak("${hypre_SOURCE_DIR}")
+    if(HYPRE_BUILD_UMPIRE OR HYPRE_ENABLE_UMPIRE)
+        _hypredrv_patch_hypre_umpire_header_linkage("${hypre_SOURCE_DIR}")
+    endif()
 
     # Patch HYPRE's CMakeLists.txt to skip export when TPLs are auto-built
     # This must be done before add_subdirectory is called
@@ -1155,6 +1233,25 @@ if(NOT HYPRE_FOUND)
             endif()
             message(STATUS
                 "  Umpire std::filesystem is unavailable; disabled JSON filesystem conversions")
+        endif()
+
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
+            foreach(_umpire_target IN ITEMS
+                    umpire
+                    umpire_resource
+                    umpire_strategy
+                    umpire_op
+                    umpire_event
+                    umpire_util
+                    umpire_interface)
+                if(TARGET ${_umpire_target})
+                    target_compile_options(${_umpire_target} PRIVATE
+                        "$<$<COMPILE_LANGUAGE:CXX>:SHELL:--diag_suppress code_is_unreachable>")
+                endif()
+            endforeach()
+            unset(_umpire_target)
+            message(STATUS
+                "  Suppressed NVHPC code_is_unreachable diagnostics for Umpire")
         endif()
     endif()
 
