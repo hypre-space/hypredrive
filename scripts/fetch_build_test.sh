@@ -194,19 +194,19 @@ get_cluster_cmake_args() {
       printf '%s\n' ''
       ;;
     tux-gfx1100)
-      printf '%s\n' '-DHYPRE_ENABLE_HIP=ON -DHYPRE_ENABLE_UMPIRE=OFF -DCMAKE_HIP_ARCHITECTURES=gfx1100'
+      printf '%s\n' '-DHYPRE_ENABLE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100'
       ;;
     tux-sm120)
-      printf '%s\n' '-DHYPRE_ENABLE_CUDA=ON -DHYPRE_ENABLE_UMPIRE=OFF -DCMAKE_CUDA_ARCHITECTURES=120'
+      printf '%s\n' '-DHYPRE_ENABLE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=120'
       ;;
     matrix)
-      printf '%s\n' '-DMPIEXEC_EXECUTABLE=/usr/global/tools/flux_wrappers/bin/srun -DHYPRE_ENABLE_CUDA=ON -DHYPRE_ENABLE_UMPIRE=OFF -DCMAKE_CUDA_ARCHITECTURES=90'
+      printf '%s\n' '-DMPIEXEC_EXECUTABLE=/usr/global/tools/flux_wrappers/bin/srun -DHYPRE_ENABLE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=90'
       ;;
     tioga)
-      printf '%s\n' '-DCMAKE_C_COMPILER=cc -DCMAKE_CXX_COMPILER=CC -DMPIEXEC_EXECUTABLE=/usr/global/tools/flux_wrappers/bin/srun -DHYPRE_ENABLE_HIP=ON -DHYPRE_ENABLE_UMPIRE=OFF -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=ON'
+      printf '%s\n' '-DCMAKE_C_COMPILER=cc -DCMAKE_CXX_COMPILER=CC -DMPIEXEC_EXECUTABLE=/usr/global/tools/flux_wrappers/bin/srun -DHYPRE_ENABLE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=ON'
       ;;
     tuolumne)
-      printf '%s\n' '-DCMAKE_C_COMPILER=cc -DCMAKE_CXX_COMPILER=CC -DMPIEXEC_EXECUTABLE=/usr/global/tools/flux_wrappers/bin/srun -DHYPRE_ENABLE_HIP=ON -DHYPRE_ENABLE_UMPIRE=OFF -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=ON'
+      printf '%s\n' '-DCMAKE_C_COMPILER=cc -DCMAKE_CXX_COMPILER=CC -DMPIEXEC_EXECUTABLE=/usr/global/tools/flux_wrappers/bin/srun -DHYPRE_ENABLE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=ON'
       ;;
     *)
       printf '%s\n' ''

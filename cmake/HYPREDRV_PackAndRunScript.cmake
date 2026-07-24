@@ -34,7 +34,6 @@ if(NOT _pack_ret EQUAL 0)
 endif()
 
 set(_target_args
-  -q
   -a
   --linear_system:sequence_filename "${SEQ_OUTPUT}"
 )

@@ -117,6 +117,13 @@ A few conventions appear in the output:
    ``--help`` shows the schema in your build. It shows version-dependent options only
    when the current `hypre` version supports them.
 
+System information is hidden by default. Pass ``-i`` or ``--info`` to print the
+detected machine and software environment. The selected HYPRE execution policy
+is printed after input configuration is resolved and whenever it changes. With
+HYPRE 3.0 or newer, the policy name identifies the device backend when applicable
+(for example, ``Host`` or ``Device (CUDA)``). At every nonzero
+``HYPREDRV_LOG_LEVEL``, the effective policy is also logged at those points.
+
 .. _CLIOverrides:
 
 CLI Overrides (``-a/--args``)
@@ -138,12 +145,12 @@ Examples (based on ``examples/ex1.yml``):
 .. code-block:: bash
 
    # Keep solver as PCG, but change max_iter
-   mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver:pcg:max_iter 50
+   mpirun -np 1 ./hypredrive-cli examples/ex1.yml -a --solver:pcg:max_iter 50
 
 .. code-block:: bash
 
    # Switch solver type and set a nested option
-   mpirun -np 1 ./hypredrive-cli examples/ex1.yml -q -a --solver gmres --solver:gmres:max_iter 30
+   mpirun -np 1 ./hypredrive-cli examples/ex1.yml -a --solver gmres --solver:gmres:max_iter 30
 
 Use these override rules:
 
@@ -408,7 +415,7 @@ at the start of this page explain how to retrieve it.
 
 .. code-block:: bash
 
-   $ mpirun -np 1 ./hypredrive-cli examples/ex8.yml -q
+   $ mpirun -np 1 ./hypredrive-cli examples/ex8.yml
 
 3. Compare your output with this reference:
 

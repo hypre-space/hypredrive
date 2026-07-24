@@ -363,7 +363,6 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, "pcg"));
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "poisson"));
    }
-
    /* Set HYPREDRV global options */
 
    /* Print problem parameters */
@@ -499,11 +498,13 @@ static inline HYPRE_BigInt
 grid2idx(const HYPRE_BigInt gcoords[3], const HYPRE_Int bcoords[3],
          const HYPRE_Int gdims[3], HYPRE_BigInt **pstarts)
 {
-   return pstarts[2][bcoords[2]] * gdims[0] * gdims[1] +
-          pstarts[1][bcoords[1]] * gdims[0] *
-             (pstarts[2][bcoords[2] + 1] - pstarts[2][bcoords[2]]) +
-          pstarts[0][bcoords[0]] * (pstarts[1][bcoords[1] + 1] - pstarts[1][bcoords[1]]) *
-             (pstarts[2][bcoords[2] + 1] - pstarts[2][bcoords[2]]) +
+   /* Blocks are numbered in MPI Cartesian rank order (row-major, z fastest) so
+    * that each rank's row range is ascending with rank, as required by hypre */
+   return pstarts[0][bcoords[0]] * gdims[1] * gdims[2] +
+          pstarts[1][bcoords[1]] * gdims[2] *
+             (pstarts[0][bcoords[0] + 1] - pstarts[0][bcoords[0]]) +
+          pstarts[2][bcoords[2]] * (pstarts[0][bcoords[0] + 1] - pstarts[0][bcoords[0]]) *
+             (pstarts[1][bcoords[1] + 1] - pstarts[1][bcoords[1]]) +
           ((gcoords[2] - pstarts[2][bcoords[2]]) *
               (pstarts[1][bcoords[1] + 1] - pstarts[1][bcoords[1]]) +
            (gcoords[1] - pstarts[1][bcoords[1]])) *

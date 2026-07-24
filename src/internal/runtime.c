@@ -7,6 +7,7 @@
 
 #include "runtime.h"
 #include <stdlib.h>
+#include <string.h>
 #include "internal/error.h"
 #include "internal/presets.h"
 #include "logging.h"
@@ -28,6 +29,30 @@ static RuntimeState g_runtime_state = {
    .next_object_id       = 1,
    .live_head            = NULL,
 };
+
+#if HYPRE_CHECK_MIN_VERSION(23100, 0)
+static const char *
+RuntimeGpuAwareMPIEnvGet(void)
+{
+   static const char *const env_names[] = {
+      "MV2_USE_CUDA",
+      "MV2_USE_HIP",
+      "MPIR_CVAR_ENABLE_GPU",
+      "MPICH_GPU_SUPPORT_ENABLED",
+   };
+
+   for (size_t i = 0; i < sizeof(env_names) / sizeof(env_names[0]); i++)
+   {
+      const char *value = getenv(env_names[i]);
+      if (value && strcmp(value, "1") == 0)
+      {
+         return env_names[i];
+      }
+   }
+
+   return NULL;
+}
+#endif
 
 static bool
 RuntimeListContains(HYPREDRV_t hypredrv)
@@ -85,6 +110,20 @@ hypredrv_RuntimeInitialize(void)
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
       HYPRE_Initialize();
 #if HYPRE_CHECK_MIN_VERSION(23100, 0)
+      const char *gpu_aware_mpi_env = RuntimeGpuAwareMPIEnvGet();
+      HYPRE_SetGpuAwareMPI(gpu_aware_mpi_env != NULL);
+      if (gpu_aware_mpi_env)
+      {
+         HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "GPU-aware MPI enabled by %s=1",
+                            gpu_aware_mpi_env);
+      }
+      else
+      {
+         HYPREDRV_LOG_COMMF(
+            1, MPI_COMM_WORLD, NULL, 0,
+            "GPU-aware MPI disabled (no recognized environment variable is set to 1)");
+      }
+
       HYPRE_DeviceInitialize();
 #endif
 #endif

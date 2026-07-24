@@ -4639,6 +4639,46 @@ hypredrv_PrintLibInfo(MPI_Comm comm, int print_datetime)
 }
 
 /*--------------------------------------------------------------------------
+ * ExecutionPolicyName
+ *--------------------------------------------------------------------------*/
+
+const char *
+hypredrv_ExecutionPolicyName(int exec_policy)
+{
+   HYPRE_ExecutionPolicy hypre_exec_policy =
+      exec_policy ? HYPRE_EXEC_DEVICE : HYPRE_EXEC_HOST;
+
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   return HYPRE_GetExecutionPolicyName(hypre_exec_policy);
+#else
+   return hypre_exec_policy == HYPRE_EXEC_DEVICE ? "Device" : "Host";
+#endif
+}
+
+/*--------------------------------------------------------------------------
+ * PrintExecutionPolicy
+ *--------------------------------------------------------------------------*/
+
+void
+hypredrv_PrintExecutionPolicy(MPI_Comm comm, int exec_policy, FILE *stream)
+{
+   int myid = 0;
+
+   if (!stream)
+   {
+      return;
+   }
+
+   MPI_Comm_rank(comm, &myid);
+
+   if (!myid)
+   {
+      fprintf(stream, "HYPRE execution policy: %s\n\n",
+              hypredrv_ExecutionPolicyName(exec_policy));
+   }
+}
+
+/*--------------------------------------------------------------------------
  * PrintExitInfo
  *--------------------------------------------------------------------------*/
 

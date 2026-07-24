@@ -1088,7 +1088,7 @@ test_InputArgsParse_driver_mode_with_config_file(void)
    fprintf(fp, "solver: pcg\npreconditioner: amg\n");
    fclose(fp);
 
-   char *argv[] = {"hypredrive", "-q", yaml_file};
+   char *argv[] = {"hypredrive", "-i", yaml_file};
    hypredrv_ErrorCodeResetAll();
    hypredrv_InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
 
@@ -1176,7 +1176,7 @@ test_InputArgsParse_driver_mode_with_nodash_overrides(void)
                "    coarsest_level: amg\n");
    fclose(fp);
 
-   char *argv2[] = {"hypredrive-cli", "-q", yaml_file, "--args",
+   char *argv2[] = {"hypredrive-cli", "-i", yaml_file, "--args",
                     "preconditioner:mgr:print_level", "1"};
    hypredrv_ErrorCodeResetAll();
    hypredrv_InputArgsParse(MPI_COMM_SELF, false, 6, argv2, &args);
@@ -1730,7 +1730,7 @@ test_InputArgsParse_driver_mode_config_not_argv0_with_overrides(void)
    fclose(fp);
 
    /* Config is argv[2], not argv[0]; driver mode requires --args before override pairs. */
-   char *argv[] = {"hypredrive", "-q", yaml_file, "--args",
+   char *argv[] = {"hypredrive", "-i", yaml_file, "--args",
                    "--preconditioner:amg:print_level", "2"};
    input_args *args = NULL;
 
@@ -1936,7 +1936,7 @@ static void
 test_InputArgsParse_driver_mode_missing_config_file(void)
 {
    input_args *args   = NULL;
-   char       *argv[] = {"hypredrive", "-q", "/tmp/hypred_args_missing_config_xyz.yml"};
+   char       *argv[] = {"hypredrive", "-i", "/tmp/hypred_args_missing_config_xyz.yml"};
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);

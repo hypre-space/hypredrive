@@ -107,6 +107,81 @@ function(_hypredrv_patch_hypre_ads_pi_col_starts_leak hypre_source_dir)
     unset(_hypredrv_hypre_ads_new)
 endfunction()
 
+function(_hypredrv_patch_hypre_umpire_header_linkage hypre_source_dir)
+    set(_hypredrv_umpire_header_old [=[
+#if defined(HYPRE_USING_UMPIRE)
+#include "umpire/config.hpp"
+#if UMPIRE_VERSION_MAJOR >= 2022
+#include "umpire/interface/c_fortran/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_quick_pool
+#else
+#include "umpire/interface/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_pool
+#endif /* UMPIRE_VERSION_MAJOR >= 2022 */
+#define HYPRE_UMPIRE_POOL_NAME_MAX_LEN 1024
+#endif /* defined(HYPRE_USING_UMPIRE) */
+]=])
+    set(_hypredrv_umpire_header_new [=[
+#if defined(HYPRE_USING_UMPIRE)
+#ifdef __cplusplus
+/* HYPREDRV: Umpire C++ headers require C++ linkage. */
+extern "C++" {
+#endif
+#include "umpire/config.hpp"
+#if UMPIRE_VERSION_MAJOR >= 2022
+#include "umpire/interface/c_fortran/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_quick_pool
+#else
+#include "umpire/interface/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_pool
+#endif /* UMPIRE_VERSION_MAJOR >= 2022 */
+#ifdef __cplusplus
+}
+#endif
+#define HYPRE_UMPIRE_POOL_NAME_MAX_LEN 1024
+#endif /* defined(HYPRE_USING_UMPIRE) */
+]=])
+
+    set(_hypredrv_umpire_header_patched FALSE)
+    foreach(_hypredrv_umpire_header_file IN ITEMS
+            "${hypre_source_dir}/src/utilities/handle.h"
+            "${hypre_source_dir}/src/utilities/_hypre_utilities.h")
+        if(NOT EXISTS "${_hypredrv_umpire_header_file}")
+            continue()
+        endif()
+
+        file(READ "${_hypredrv_umpire_header_file}"
+             _hypredrv_umpire_header_content)
+        if(_hypredrv_umpire_header_content MATCHES
+           "HYPREDRV: Umpire C\\+\\+ headers require C\\+\\+ linkage")
+            continue()
+        endif()
+
+        set(_hypredrv_umpire_header_original
+            "${_hypredrv_umpire_header_content}")
+        string(REPLACE
+            "${_hypredrv_umpire_header_old}"
+            "${_hypredrv_umpire_header_new}"
+            _hypredrv_umpire_header_content
+            "${_hypredrv_umpire_header_content}")
+        if("${_hypredrv_umpire_header_content}" STREQUAL
+           "${_hypredrv_umpire_header_original}")
+            message(WARNING
+                "Could not isolate Umpire's C++ headers from HYPRE's C linkage in "
+                "${_hypredrv_umpire_header_file}; upstream HYPRE may have changed")
+        else()
+            file(WRITE "${_hypredrv_umpire_header_file}"
+                 "${_hypredrv_umpire_header_content}")
+            set(_hypredrv_umpire_header_patched TRUE)
+        endif()
+    endforeach()
+
+    if(_hypredrv_umpire_header_patched)
+        message(STATUS
+            "  HYPRE Umpire C++ headers patched to use C++ linkage")
+    endif()
+endfunction()
+
 function(_hypredrv_link_mpi_interface target_name)
     if(TARGET MPI::MPI_C)
         target_link_libraries(${target_name} INTERFACE MPI::MPI_C)
@@ -821,6 +896,16 @@ if(NOT HYPRE_FOUND)
         endif()
     endif()
 
+    # Auto-fetched GPU builds use Umpire by default unless the user points to
+    # an external Umpire or explicitly disables Umpire. Preserve explicit
+    # HYPRE_BUILD_UMPIRE settings.
+    if(NOT _hypre_use_autotools AND (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
+       NOT umpire_ROOT AND NOT umpire_DIR AND
+       NOT (DEFINED CACHE{HYPRE_ENABLE_UMPIRE} AND NOT HYPRE_ENABLE_UMPIRE))
+        _hypredrv_set_cache_bool_default(HYPRE_BUILD_UMPIRE ON
+            "Automatically download and build Umpire for HYPRE")
+    endif()
+
     set(_hypre_git_shallow TRUE)
     if(NOT HYPRE_VERSION MATCHES "^v?([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
         # HYPRE's CMake computes HYPRE_DEVELOP_NUMBER from git tag distance. A shallow
@@ -1015,8 +1100,15 @@ if(NOT HYPRE_FOUND)
         set(CMAKE_C_COMPILER ${MPI_C_COMPILER} CACHE FILEPATH "C compiler" FORCE)
     endif()
 
-    # Configure HYPRE-specific build options (override any user settings)
-    set(HYPRE_BUILD_TESTS OFF CACHE BOOL "Build HYPRE tests" FORCE)
+    # HYPRE's test drivers are not needed by default, but preserve an explicit
+    # HYPRE_BUILD_TESTS setting so consumers can add native drivers such as
+    # struct to the same FetchContent build tree.
+    if(NOT DEFINED HYPRE_BUILD_TESTS)
+        set(HYPRE_BUILD_TESTS OFF CACHE BOOL "Build HYPRE tests")
+    else()
+        message(STATUS
+            "Preserving caller-provided HYPRE_BUILD_TESTS=${HYPRE_BUILD_TESTS}")
+    endif()
     set(HYPRE_BUILD_EXAMPLES OFF CACHE BOOL "Build HYPRE examples" FORCE)
     if(HYPREDRV_ENABLE_PYTHON OR HYPREDRV_ENABLE_MATLAB OR HYPREDRV_ENABLE_FORTRAN OR HYPREDRV_ENABLE_JULIA)
         set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL
@@ -1046,6 +1138,9 @@ if(NOT HYPRE_FOUND)
     message(STATUS "HYPRE source fetched successfully")
     message(STATUS "  Source directory: ${hypre_SOURCE_DIR}")
     _hypredrv_patch_hypre_ads_pi_col_starts_leak("${hypre_SOURCE_DIR}")
+    if(HYPRE_BUILD_UMPIRE OR HYPRE_ENABLE_UMPIRE)
+        _hypredrv_patch_hypre_umpire_header_linkage("${hypre_SOURCE_DIR}")
+    endif()
 
     # Patch HYPRE's CMakeLists.txt to skip export when TPLs are auto-built
     # This must be done before add_subdirectory is called
@@ -1124,11 +1219,106 @@ if(NOT HYPRE_FOUND)
     if(NOT TARGET HYPRE::HYPRE)
         message(STATUS "Configuring HYPRE build...")
         message(STATUS "  Libraries will be built to: ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+
+        # HYPRE's automatic Umpire path adds Umpire, CAMP, and fmt as nested
+        # subprojects. Keep every library from that dependency stack static
+        # unless the top-level build explicitly requests shared libraries.
+        #
+        # Set both the directory-scope and cache values: BLT-based subprojects
+        # consult BUILD_SHARED_LIBS at several nesting levels, and a cache-only
+        # update can be shadowed by a normal variable in a parent scope.
+        set(_hypredrv_force_static_auto_umpire OFF)
+        if(HYPRE_BUILD_UMPIRE AND NOT BUILD_SHARED_LIBS)
+            set(_hypredrv_force_static_auto_umpire ON)
+            set(BUILD_SHARED_LIBS OFF)
+            set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+            message(STATUS
+                "  Automatic Umpire build: forcing Umpire, CAMP, and fmt libraries static")
+        elseif(HYPRE_BUILD_UMPIRE)
+            message(STATUS
+                "  Automatic Umpire build: honoring explicit BUILD_SHARED_LIBS=ON")
+        endif()
+
         set(_hypredrv_saved_install_prefix "${CMAKE_INSTALL_PREFIX}")
         add_subdirectory(${hypre_SOURCE_DIR}/src ${hypre_BINARY_DIR})
         set(CMAKE_INSTALL_PREFIX "${_hypredrv_saved_install_prefix}" CACHE PATH
             "Install path prefix, prepended onto install directories." FORCE)
         unset(_hypredrv_saved_install_prefix)
+
+        if(_hypredrv_force_static_auto_umpire)
+            set(_hypredrv_umpire_library_types)
+            foreach(_umpire_target IN ITEMS
+                    umpire
+                    umpire_resource
+                    umpire_strategy
+                    umpire_op
+                    umpire_event
+                    umpire_util
+                    umpire_interface
+                    camp
+                    fmt)
+                if(TARGET ${_umpire_target})
+                    get_target_property(_umpire_target_type
+                        ${_umpire_target} TYPE)
+                    list(APPEND _hypredrv_umpire_library_types
+                        "${_umpire_target}=${_umpire_target_type}")
+                    if(_umpire_target_type STREQUAL "SHARED_LIBRARY" OR
+                       _umpire_target_type STREQUAL "MODULE_LIBRARY")
+                        message(FATAL_ERROR
+                            "Automatic Umpire target ${_umpire_target} was "
+                            "created as ${_umpire_target_type} even though "
+                            "BUILD_SHARED_LIBS is not ON")
+                    endif()
+                endif()
+            endforeach()
+            if(_hypredrv_umpire_library_types)
+                list(JOIN _hypredrv_umpire_library_types ", "
+                    _hypredrv_umpire_library_types_text)
+                message(STATUS
+                    "  Automatic Umpire target types: "
+                    "${_hypredrv_umpire_library_types_text}")
+            endif()
+            unset(_hypredrv_umpire_library_types)
+            unset(_hypredrv_umpire_library_types_text)
+            unset(_umpire_target_type)
+        endif()
+        unset(_hypredrv_force_static_auto_umpire)
+
+        # Umpire's filesystem probe correctly falls back to POSIX when the
+        # compiler lacks <filesystem>, but its bundled nlohmann JSON header
+        # still enables std::filesystem whenever C++17 is selected. Tell that
+        # header to use its C++14-compatible path in this configuration.
+        if(TARGET umpire_tpl_json AND DEFINED UMPIRE_ENABLE_FILESYSTEM AND
+           NOT UMPIRE_ENABLE_FILESYSTEM)
+            target_compile_definitions(umpire_tpl_json INTERFACE JSON_HAS_CPP_14=1)
+            # BLT copies dependency usage requirements when it creates object
+            # libraries, so changing umpire_tpl_json afterward does not update
+            # the already-created target that compiles Umpire's JSON users.
+            if(TARGET umpire_event)
+                target_compile_definitions(umpire_event PRIVATE JSON_HAS_CPP_14=1)
+            endif()
+            message(STATUS
+                "  Umpire std::filesystem is unavailable; disabled JSON filesystem conversions")
+        endif()
+
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
+            foreach(_umpire_target IN ITEMS
+                    umpire
+                    umpire_resource
+                    umpire_strategy
+                    umpire_op
+                    umpire_event
+                    umpire_util
+                    umpire_interface)
+                if(TARGET ${_umpire_target})
+                    target_compile_options(${_umpire_target} PRIVATE
+                        "$<$<COMPILE_LANGUAGE:CXX>:SHELL:--diag_suppress code_is_unreachable>")
+                endif()
+            endforeach()
+            unset(_umpire_target)
+            message(STATUS
+                "  Suppressed NVHPC code_is_unreachable diagnostics for Umpire")
+        endif()
     endif()
 
     # Remove Caliper include directory from HYPRE's INTERFACE_INCLUDE_DIRECTORIES and re-add with BUILD_INTERFACE

@@ -509,6 +509,8 @@ Coding Style and Project Conventions
 - For internal run-time traces, use ``HYPREDRV_LOG_LEVEL``:
   ``0`` disables traces (default), ``1`` logs lifecycle boundaries, ``2`` adds
   decision/context messages, and ``3`` enables deeper parse/linear-system/scaling subphase traces.
+  At every nonzero level, HYPREDRV logs the effective HYPRE execution policy after input
+  configuration and whenever it changes.
   By default, hypredrive writes trace output from rank 0 to ``stderr``. Set
   ``HYPREDRV_LOG_STREAM=stdout`` to write the same traces to ``stdout`` instead.
 - ``HYPREDRV_LOG_LEVEL`` controls hypredrive traces only. Hypre's own logging remains controlled

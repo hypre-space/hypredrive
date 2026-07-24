@@ -1810,7 +1810,7 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
     *      argv = ["--path:to:key", "val", ...]
     *
     * 2) Driver "full argv" mode:
-    *      argv contains many tokens including -q, config file, etc.
+    *      argv contains many tokens including -i, config file, etc.
     *      Overrides are only parsed after -a/--args and stop at the YAML filename
     *      if it appears after -a (some test harnesses append it at the end).
     */

@@ -1054,7 +1054,6 @@ main(int argc, char *argv[])
          HYPREDRV_InputArgsSetSolverPreset(hypredrv, params.solver_preset));
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "ams"));
    }
-
    /* Name the object after parsing (input parsing re-initializes the stats). */
    if (params.name)
    {

@@ -238,6 +238,22 @@ PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
  * Push general.* runtime settings (exec policy, memory pools) into hypre
  *-----------------------------------------------------------------------------*/
 
+static void
+LogExecutionPolicy(HYPREDRV_t hypredrv)
+{
+   HYPREDRV_LOG_OBJECTF(
+      1, hypredrv, "HYPRE execution policy: %s",
+      hypredrv_ExecutionPolicyName(hypredrv->iargs->general.exec_policy));
+}
+
+static void
+ReportExecutionPolicy(HYPREDRV_t hypredrv)
+{
+   hypredrv_PrintExecutionPolicy(hypredrv->comm, hypredrv->iargs->general.exec_policy,
+                                 stdout);
+   LogExecutionPolicy(hypredrv);
+}
+
 static uint32_t
 ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
 {
@@ -783,7 +799,6 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
                                              &hypredrv->iargs->precon);
    }
 #endif
-   hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
    if (print_statistics > 0 && !hypredrv->stats_printed)
    {
@@ -796,6 +811,8 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
       HYPREDRV_LOG_OBJECTF(2, hypredrv,
                            "skipping statistics on destroy (already printed)");
    }
+
+   hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "DestroyObjectInternal end");
    hypredrv_StatsDestroy(&hypredrv->stats);
@@ -1202,6 +1219,7 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    }
 #endif
 
+   ReportExecutionPolicy(hypredrv);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse end");
 
    return hypredrv_ErrorCodeGet();
@@ -1430,6 +1448,7 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
             "BoomerAMG standard interpolation");
       }
       HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
+      ReportExecutionPolicy(hypredrv);
       PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_A, 1);
       if (hypredrv->mat_M && hypredrv->mat_M != hypredrv->mat_A)
       {
@@ -1456,6 +1475,8 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
 uint32_t
 HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
 {
+   bool created_input_args = false;
+
    HYPREDRV_CHECK_INIT_AND_OBJ();
    if (!preset) /* GCOVR_EXCL_BR_LINE */
    {
@@ -1469,6 +1490,7 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
       hypredrv_InputArgsCreate(hypredrv->lib_mode, &hypredrv->iargs);
       hypredrv_PreconArgsSetDefaultsForMethod(hypredrv->iargs->precon_method,
                                               &hypredrv->iargs->precon);
+      created_input_args = true;
    }
 
    int      variant_idx    = hypredrv->iargs->active_precon_variant;
@@ -1515,6 +1537,10 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
    }
 
    hypredrv_InputArgsApplyPreconPreset(hypredrv->iargs, preset, variant_idx);
+   if (!hypredrv_ErrorCodeGet() && created_input_args)
+   {
+      ReportExecutionPolicy(hypredrv);
+   }
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1526,6 +1552,8 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
 uint32_t
 HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
 {
+   bool created_input_args = false;
+
    HYPREDRV_CHECK_INIT_AND_OBJ();
 
    if (!preset)
@@ -1538,6 +1566,7 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
    if (!hypredrv->iargs)
    {
       hypredrv_InputArgsCreate(hypredrv->lib_mode, &hypredrv->iargs);
+      created_input_args = true;
    }
 
    if (hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(),
@@ -1548,6 +1577,10 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
          hypredrv_SolverGetValidTypeIntMap(), preset);
       hypredrv_SolverArgsSetDefaultsForMethod(hypredrv->iargs->solver_method,
                                               &hypredrv->iargs->solver);
+      if (created_input_args)
+      {
+         ReportExecutionPolicy(hypredrv);
+      }
       return hypredrv_ErrorCodeGet();
    }
 
@@ -1558,6 +1591,10 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
    }
 
    DestroyActiveSolver(hypredrv);
+   if (created_input_args)
+   {
+      ReportExecutionPolicy(hypredrv);
+   }
 
    return hypredrv_ErrorCodeGet();
 }

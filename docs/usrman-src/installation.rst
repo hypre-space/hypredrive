@@ -156,6 +156,26 @@ and standard ``CMAKE_*`` variables to the HYPRE build. Examples:
             -DCMAKE_HIP_ARCHITECTURES=gfx90a \
             -B build -S .
 
+Auto-fetched CUDA and HIP builds also enable ``HYPRE_BUILD_UMPIRE`` by
+default unless ``umpire_ROOT`` or ``umpire_DIR`` points to an external Umpire
+installation. An explicit ``HYPRE_BUILD_UMPIRE`` setting is always preserved.
+An explicit ``-DHYPRE_ENABLE_UMPIRE=OFF`` suppresses the automatic
+bundled-Umpire default. When Umpire is built automatically, Umpire and its
+bundled CAMP/fmt libraries are forced static by default; an explicit
+``-DBUILD_SHARED_LIBS=ON`` requests shared libraries for the complete bundled
+dependency stack.
+
+The auto-fetched HYPRE test drivers remain disabled by default. Set
+``-DHYPRE_BUILD_TESTS=ON`` to add native drivers such as ``struct`` to the
+same HYPREDRV build tree; an explicit setting is preserved.
+
+With HYPRE 2.31.0 or newer, HYPREDRV configures HYPRE's GPU-aware MPI mode
+during initialization. The mode is enabled when any of ``MV2_USE_CUDA``,
+``MV2_USE_HIP``, ``MPIR_CVAR_ENABLE_GPU``, or
+``MPICH_GPU_SUPPORT_ENABLED`` is set exactly to ``1``. Otherwise, HYPREDRV
+explicitly disables GPU-aware MPI. Set ``HYPREDRV_LOG_LEVEL`` to a nonzero
+value to log the selected mode.
+
 *Caliper (optional performance profiling)*
 
 - ``-DCALIPER_VERSION=<version>`` — Caliper revision to fetch. Default: ``master``.

@@ -486,10 +486,12 @@ static inline HYPRE_BigInt
 grid2idx(const HYPRE_BigInt g[3], const HYPRE_Int c[3], const HYPRE_Int gd[3],
          HYPRE_BigInt **ps)
 {
-   return ps[2][c[2]] * gd[0] * gd[1] +
-          ps[1][c[1]] * gd[0] * (ps[2][c[2] + 1] - ps[2][c[2]]) +
-          ps[0][c[0]] * (ps[1][c[1] + 1] - ps[1][c[1]]) *
-             (ps[2][c[2] + 1] - ps[2][c[2]]) +
+   /* Blocks are numbered in MPI Cartesian rank order (row-major, z fastest) so
+    * that each rank's row range is ascending with rank, as required by hypre */
+   return ps[0][c[0]] * gd[1] * gd[2] +
+          ps[1][c[1]] * gd[2] * (ps[0][c[0] + 1] - ps[0][c[0]]) +
+          ps[2][c[2]] * (ps[0][c[0] + 1] - ps[0][c[0]]) *
+             (ps[1][c[1] + 1] - ps[1][c[1]]) +
           ((g[2] - ps[2][c[2]]) * (ps[1][c[1] + 1] - ps[1][c[1]]) +
            (g[1] - ps[1][c[1]])) *
              (ps[0][c[0] + 1] - ps[0][c[0]]) +
@@ -2720,7 +2722,6 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, "gmres"));
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "poisson"));
    }
-
    /* Set HYPREDRV global options */
 
    /* Create distributed mesh object */

@@ -68,7 +68,6 @@ program laplacian
       yaml = default_yaml()
    end if
    call HYPREDRV_Check(HYPREDRV_InputArgsParseYamlArgs(drv, yaml, hypredrv_args))
-
    if (rank == 0) call print_setup(n, p, c, stencil, nsolve, verbose, solver_yaml)
    if (rank == 0 .and. verbose > 0) print '(a)', 'Assembling 3D Laplacian system...'
    call build_laplacian_7pt(rank, n, p, c, row_start, row_end, indptr, cols, data, rhs, nnz)
