@@ -110,6 +110,7 @@ Usage:
   scripts/node_scaling.sh -m MACHINE -p PROBLEM [options]
   scripts/node_scaling.sh --summary [RESULTS_DIR]
   scripts/node_scaling.sh -m MACHINE --pack
+  scripts/node_scaling.sh [--plot1|--plot2] SUMMARY.tsv [-p PROBLEM]
 
 Run a single-node problem-size scaling study inside an interactive allocation,
 or post-process an existing results tree.
@@ -134,6 +135,12 @@ Options:
       --pack              Tar all results for -m MACHINE (and MACHINE-*
                           family members) into
                           <results>/tarballs/<machine>.tar.gz
+      --plot1 FILE        Plot total time vs problem size (log-log) from
+                          aggregate summary FILE; all problems unless -p
+                          is given; writes plot1-<problem>.png/.pdf
+      --plot2 FILE        Side-by-side setup/solve times vs problem size
+                          (log-log); all problems unless -p is given;
+                          shared legend; writes plot2-<problem>.png/.pdf
   -h, --help              Show this help
 
 Environment:
@@ -160,6 +167,10 @@ Examples:
     scripts/node_scaling.sh -m frontier --pack
   HYPREDRV_SCALING_RESULTS_DIR=~/workspace/hypredrive-node-scaling \\
     scripts/node_scaling.sh -m tuo --pack
+  scripts/node_scaling.sh \\
+    --plot1 ~/workspace/hypredrive-node-scaling/summary.tsv
+  scripts/node_scaling.sh -p lap-7 \\
+    --plot2 ~/workspace/hypredrive-node-scaling/summary.tsv
 
 Notes:
   - The script uses one complete compute node and never requests an allocation.
@@ -169,7 +180,39 @@ Notes:
   - --pack archives every dated run under matching trees: exact -m name and
     any <name>-* siblings (e.g. -m tuo packs tuo-cpu / tuo-gpu-cpx /
     tuo-gpu-spx when present; -m frontier packs frontier-cpu / frontier-gpu).
+  - --plot1/--plot2 read an aggregate summary.tsv; omit -p to plot every
+    problem present in the file.
 EOF
+}
+
+# Resolve a summary path and print its problem names (preferred order first).
+problems_from_summary() {
+  local summary_file="$1"
+  local preferred p
+  declare -A seen=()
+
+  summary_file="${summary_file/#\~/${HOME}}"
+  if [[ "${summary_file}" != /* ]]; then
+    summary_file="${ROOT_DIR}/${summary_file}"
+  fi
+  [[ -f "${summary_file}" ]] || die "summary file not found: ${summary_file}"
+
+  preferred=(lap-7 lap-27 elast)
+  while IFS=$'\t' read -r _mach prob _rest; do
+    [[ "${_mach}" == "machine" ]] && continue
+    [[ -n "${prob}" ]] || continue
+    seen["${prob}"]=1
+  done <"${summary_file}"
+
+  for p in "${preferred[@]}"; do
+    [[ -n "${seen[$p]+x}" ]] && printf '%s\n' "${p}"
+  done
+  for p in "${!seen[@]}"; do
+    case "${p}" in
+      lap-7|lap-27|elast) ;;
+      *) printf '%s\n' "${p}" ;;
+    esac
+  done
 }
 
 # Extract min setup/solve (and total) from a driver log STATISTICS SUMMARY table.
@@ -286,6 +329,401 @@ pack_machine_results() {
   printf 'Wrote %s (%d trees)\n' "${out}" "${#members[@]}"
 }
 
+# Plot total time vs unknowns for one problem across all machines in SUMMARY.
+plot1_total_vs_size() {
+  local summary_file="$1"
+  local problem="$2"
+  local out_png
+
+  summary_file="${summary_file/#\~/${HOME}}"
+  if [[ "${summary_file}" != /* ]]; then
+    summary_file="${ROOT_DIR}/${summary_file}"
+  fi
+  [[ -f "${summary_file}" ]] || die "summary file not found: ${summary_file}"
+  [[ -n "${problem}" ]] || die "internal error: empty problem for --plot1"
+
+  out_png="$(cd "$(dirname "${summary_file}")" && pwd)/plot1-${problem}.png"
+  python3 - "${summary_file}" "${problem}" "${out_png}" <<'PY'
+import sys
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+summary_path = Path(sys.argv[1])
+problem = sys.argv[2]
+out_png = Path(sys.argv[3])
+
+PROBLEM_TITLE = {
+    "lap-7": "7-point Laplacian",
+    "lap-27": "27-point Laplacian",
+    "elast": "3D Linear Elasticity",
+}
+
+# Presentation palette (Okabe–Ito) + distinct markers per known machine.
+MACHINE_STYLE = {
+    "dane":          ("#0072B2", "o"),
+    "matrix":        ("#E69F00", "s"),
+    "tuo-cpu":       ("#009E73", "^"),
+    "tuo-gpu-cpx":   ("#56B4E9", "D"),
+    "tuo-gpu-spx":   ("#CC79A7", "v"),
+    "polaris-cpu":   ("#D55E00", "P"),
+    "polaris-gpu":   ("#AA3377", "X"),
+    "aurora":        ("#000000", "h"),
+    "frontier-cpu":  ("#332288", "o"),
+    "frontier-gpu":  ("#66CCEE", "s"),
+    "tioga-cpu":     ("#117733", "^"),
+    "tioga-gpu":     ("#999933", "D"),
+}
+FALLBACK_COLORS = [
+    "#0072B2", "#E69F00", "#009E73", "#CC79A7", "#D55E00",
+    "#56B4E9", "#AA3377", "#000000", "#332288", "#66CCEE",
+]
+FALLBACK_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "h", "*", "p"]
+
+rows = []
+with summary_path.open() as fh:
+    header = fh.readline().rstrip("\n").split("\t")
+    idx = {name: i for i, name in enumerate(header)}
+    for key in ("machine", "problem", "unknowns", "total"):
+        if key not in idx:
+            sys.exit(f"summary is missing column '{key}'")
+    for line in fh:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) <= max(idx.values()):
+            continue
+        if parts[idx["problem"]] != problem:
+            continue
+        rows.append(
+            (
+                parts[idx["machine"]],
+                float(parts[idx["unknowns"]]),
+                float(parts[idx["total"]]),
+            )
+        )
+
+if not rows:
+    sys.exit(f"no rows for problem '{problem}' in {summary_path}")
+
+by_machine = {}
+for machine, unknowns, total in rows:
+    by_machine.setdefault(machine, []).append((unknowns, total))
+for machine in by_machine:
+    by_machine[machine].sort(key=lambda t: t[0])
+
+machines = sorted(by_machine)
+
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "savefig.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.sans-serif": ["DejaVu Sans", "Helvetica", "Arial", "sans-serif"],
+        "axes.linewidth": 1.35,
+        "axes.edgecolor": "#222222",
+        "axes.labelcolor": "#111111",
+        "xtick.color": "#222222",
+        "ytick.color": "#222222",
+        "grid.color": "#9a9a9a",
+        "grid.linestyle": "--",
+        "grid.linewidth": 0.8,
+        "grid.alpha": 0.55,
+        "legend.frameon": True,
+        "legend.fancybox": True,
+        "legend.framealpha": 0.95,
+        "legend.edgecolor": "#b0b0b0",
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    }
+)
+
+fig, ax = plt.subplots(figsize=(10.5, 7.2), dpi=160)
+fig.subplots_adjust(left=0.10, right=0.98, top=0.90, bottom=0.28)
+
+for i, machine in enumerate(machines):
+    pts = by_machine[machine]
+    x = np.array([p[0] for p in pts], dtype=float)
+    y = np.array([p[1] for p in pts], dtype=float)
+    color, marker = MACHINE_STYLE.get(
+        machine,
+        (FALLBACK_COLORS[i % len(FALLBACK_COLORS)],
+         FALLBACK_MARKERS[i % len(FALLBACK_MARKERS)]),
+    )
+    ax.loglog(
+        x,
+        y,
+        color=color,
+        marker=marker,
+        markersize=8.5,
+        markerfacecolor=color,
+        markeredgecolor="white",
+        markeredgewidth=0.9,
+        linewidth=2.4,
+        label=machine,
+        zorder=3,
+    )
+
+ax.grid(True, which="major", zorder=0)
+ax.grid(True, which="minor", alpha=0.25, linewidth=0.5, zorder=0)
+ax.set_axisbelow(True)
+for spine in ("top", "right"):
+    ax.spines[spine].set_visible(False)
+
+ax.set_xlabel("Problem size (unknowns)", fontsize=16, labelpad=10)
+ax.set_ylabel("Total time (s)", fontsize=16, labelpad=10)
+ax.set_title(
+    f"{PROBLEM_TITLE.get(problem, problem)}  ·  Single-node BoomerAMG-CG scaling",
+    fontsize=18,
+    fontweight="semibold",
+    pad=14,
+    color="#111111",
+)
+ax.tick_params(axis="both", which="major", labelsize=13, length=6, width=1.1)
+ax.tick_params(axis="both", which="minor", labelsize=10, length=3.5, width=0.8)
+
+handles, labels = ax.get_legend_handles_labels()
+ncol = min(4, max(1, len(labels)))
+leg = fig.legend(
+    handles,
+    labels,
+    loc="upper center",
+    bbox_to_anchor=(0.54, 0.105),
+    ncol=ncol,
+    fontsize=15,
+    handlelength=2.4,
+    columnspacing=1.4,
+    handletextpad=0.6,
+    borderaxespad=0.0,
+    frameon=True,
+    fancybox=True,
+    edgecolor="#b0b0b0",
+    framealpha=0.95,
+    borderpad=0.8,
+)
+frame = leg.get_frame()
+frame.set_linewidth(1.05)
+frame.set_boxstyle("round", pad=0.45, rounding_size=0.35)
+
+fig.savefig(out_png, dpi=220, bbox_inches="tight", pad_inches=0.25)
+out_pdf = out_png.with_suffix(".pdf")
+fig.savefig(out_pdf, dpi=220, bbox_inches="tight", pad_inches=0.25)
+print(f"Wrote {out_png}")
+print(f"Wrote {out_pdf}")
+PY
+}
+
+# Side-by-side setup/solve vs unknowns for one problem across all machines.
+plot2_setup_solve_vs_size() {
+  local summary_file="$1"
+  local problem="$2"
+  local out_png
+
+  summary_file="${summary_file/#\~/${HOME}}"
+  if [[ "${summary_file}" != /* ]]; then
+    summary_file="${ROOT_DIR}/${summary_file}"
+  fi
+  [[ -f "${summary_file}" ]] || die "summary file not found: ${summary_file}"
+  [[ -n "${problem}" ]] || die "internal error: empty problem for --plot2"
+
+  out_png="$(cd "$(dirname "${summary_file}")" && pwd)/plot2-${problem}.png"
+  python3 - "${summary_file}" "${problem}" "${out_png}" <<'PY'
+import sys
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+summary_path = Path(sys.argv[1])
+problem = sys.argv[2]
+out_png = Path(sys.argv[3])
+
+PROBLEM_TITLE = {
+    "lap-7": "7-point Laplacian",
+    "lap-27": "27-point Laplacian",
+    "elast": "3D Linear Elasticity",
+}
+
+MACHINE_STYLE = {
+    "dane":          ("#0072B2", "o"),
+    "matrix":        ("#E69F00", "s"),
+    "tuo-cpu":       ("#009E73", "^"),
+    "tuo-gpu-cpx":   ("#56B4E9", "D"),
+    "tuo-gpu-spx":   ("#CC79A7", "v"),
+    "polaris-cpu":   ("#D55E00", "P"),
+    "polaris-gpu":   ("#AA3377", "X"),
+    "aurora":        ("#000000", "h"),
+    "frontier-cpu":  ("#332288", "o"),
+    "frontier-gpu":  ("#66CCEE", "s"),
+    "tioga-cpu":     ("#117733", "^"),
+    "tioga-gpu":     ("#999933", "D"),
+}
+FALLBACK_COLORS = [
+    "#0072B2", "#E69F00", "#009E73", "#CC79A7", "#D55E00",
+    "#56B4E9", "#AA3377", "#000000", "#332288", "#66CCEE",
+]
+FALLBACK_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "h", "*", "p"]
+
+rows = []
+with summary_path.open() as fh:
+    header = fh.readline().rstrip("\n").split("\t")
+    idx = {name: i for i, name in enumerate(header)}
+    for key in ("machine", "problem", "unknowns", "setup", "solve"):
+        if key not in idx:
+            sys.exit(f"summary is missing column '{key}'")
+    for line in fh:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) <= max(idx.values()):
+            continue
+        if parts[idx["problem"]] != problem:
+            continue
+        rows.append(
+            (
+                parts[idx["machine"]],
+                float(parts[idx["unknowns"]]),
+                float(parts[idx["setup"]]),
+                float(parts[idx["solve"]]),
+            )
+        )
+
+if not rows:
+    sys.exit(f"no rows for problem '{problem}' in {summary_path}")
+
+by_machine = {}
+for machine, unknowns, setup, solve in rows:
+    by_machine.setdefault(machine, []).append((unknowns, setup, solve))
+for machine in by_machine:
+    by_machine[machine].sort(key=lambda t: t[0])
+
+machines = sorted(by_machine)
+
+plt.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "savefig.facecolor": "white",
+        "font.family": "sans-serif",
+        "font.sans-serif": ["DejaVu Sans", "Helvetica", "Arial", "sans-serif"],
+        "axes.linewidth": 1.35,
+        "axes.edgecolor": "#222222",
+        "axes.labelcolor": "#111111",
+        "xtick.color": "#222222",
+        "ytick.color": "#222222",
+        "grid.color": "#9a9a9a",
+        "grid.linestyle": "--",
+        "grid.linewidth": 0.8,
+        "grid.alpha": 0.55,
+        "legend.frameon": True,
+        "legend.fancybox": True,
+        "legend.framealpha": 0.95,
+        "legend.edgecolor": "#b0b0b0",
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    }
+)
+
+fig, axes = plt.subplots(1, 2, figsize=(17.5, 7.2), dpi=160, sharey=False)
+fig.subplots_adjust(left=0.06, right=0.99, top=0.90, bottom=0.28, wspace=0.18)
+
+panel_specs = (
+    (axes[0], 1, "Setup time (s)", "Setup"),
+    (axes[1], 2, "Solve time (s)", "Solve"),
+)
+panel_box = dict(
+    boxstyle="round,pad=0.4,rounding_size=0.3",
+    facecolor="white",
+    edgecolor="#b0b0b0",
+    linewidth=1.05,
+    alpha=0.95,
+)
+
+for ax, y_idx, ylabel, panel_title in panel_specs:
+    for i, machine in enumerate(machines):
+        pts = by_machine[machine]
+        x = np.array([p[0] for p in pts], dtype=float)
+        y = np.array([p[y_idx] for p in pts], dtype=float)
+        color, marker = MACHINE_STYLE.get(
+            machine,
+            (FALLBACK_COLORS[i % len(FALLBACK_COLORS)],
+             FALLBACK_MARKERS[i % len(FALLBACK_MARKERS)]),
+        )
+        ax.loglog(
+            x,
+            y,
+            color=color,
+            marker=marker,
+            markersize=8.5,
+            markerfacecolor=color,
+            markeredgecolor="white",
+            markeredgewidth=0.9,
+            linewidth=2.4,
+            label=machine,
+            zorder=3,
+        )
+
+    ax.grid(True, which="major", zorder=0)
+    ax.grid(True, which="minor", alpha=0.25, linewidth=0.5, zorder=0)
+    ax.set_axisbelow(True)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+
+    ax.set_xlabel("Problem size (unknowns)", fontsize=15, labelpad=10)
+    ax.set_ylabel(ylabel, fontsize=15, labelpad=8)
+    ax.text(
+        0.5,
+        0.965,
+        panel_title,
+        transform=ax.transAxes,
+        ha="center",
+        va="top",
+        fontsize=14,
+        fontweight="semibold",
+        color="#111111",
+        bbox=panel_box,
+        zorder=5,
+    )
+    ax.tick_params(axis="both", which="major", labelsize=12.5, length=6, width=1.1)
+    ax.tick_params(axis="both", which="minor", labelsize=10, length=3.5, width=0.8)
+
+fig.suptitle(
+    f"{PROBLEM_TITLE.get(problem, problem)}  ·  Single-node BoomerAMG-CG scaling",
+    fontsize=18,
+    fontweight="semibold",
+    y=0.97,
+    color="#111111",
+)
+
+handles, labels = axes[0].get_legend_handles_labels()
+ncol = min(5, max(1, len(labels)))
+leg = fig.legend(
+    handles,
+    labels,
+    loc="upper center",
+    bbox_to_anchor=(0.525, 0.105),
+    ncol=ncol,
+    fontsize=15,
+    handlelength=2.4,
+    columnspacing=1.4,
+    handletextpad=0.6,
+    borderaxespad=0.0,
+    frameon=True,
+    fancybox=True,
+    edgecolor="#b0b0b0",
+    framealpha=0.95,
+    borderpad=0.8,
+)
+frame = leg.get_frame()
+frame.set_linewidth(1.05)
+frame.set_boxstyle("round", pad=0.45, rounding_size=0.35)
+
+fig.savefig(out_png, dpi=220, bbox_inches="tight", pad_inches=0.25)
+out_pdf = out_png.with_suffix(".pdf")
+fig.savefig(out_pdf, dpi=220, bbox_inches="tight", pad_inches=0.25)
+print(f"Wrote {out_png}")
+print(f"Wrote {out_pdf}")
+PY
+}
+
 die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
@@ -306,6 +744,10 @@ dry_run=0
 summary_mode=0
 summary_dir=""
 pack_mode=0
+plot1_mode=0
+plot1_file=""
+plot2_mode=0
+plot2_file=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -351,6 +793,18 @@ while [[ $# -gt 0 ]]; do
       pack_mode=1
       shift
       ;;
+    --plot1)
+      [[ $# -ge 2 ]] || die "missing value for --plot1"
+      plot1_mode=1
+      plot1_file="$2"
+      shift 2
+      ;;
+    --plot2)
+      [[ $# -ge 2 ]] || die "missing value for --plot2"
+      plot2_mode=1
+      plot2_file="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -376,6 +830,32 @@ fi
 if ((pack_mode)); then
   [[ -n "${machine}" ]] || die "-m/--machine is required with --pack"
   pack_machine_results "${RESULTS_ROOT}" "${machine}"
+  exit 0
+fi
+
+if ((plot1_mode)); then
+  if [[ -n "${problem}" ]]; then
+    plot1_total_vs_size "${plot1_file}" "${problem}"
+  else
+    mapfile -t _plot_problems < <(problems_from_summary "${plot1_file}")
+    ((${#_plot_problems[@]} > 0)) || die "no problems found in ${plot1_file}"
+    for problem in "${_plot_problems[@]}"; do
+      plot1_total_vs_size "${plot1_file}" "${problem}"
+    done
+  fi
+  exit 0
+fi
+
+if ((plot2_mode)); then
+  if [[ -n "${problem}" ]]; then
+    plot2_setup_solve_vs_size "${plot2_file}" "${problem}"
+  else
+    mapfile -t _plot_problems < <(problems_from_summary "${plot2_file}")
+    ((${#_plot_problems[@]} > 0)) || die "no problems found in ${plot2_file}"
+    for problem in "${_plot_problems[@]}"; do
+      plot2_setup_solve_vs_size "${plot2_file}" "${problem}"
+    done
+  fi
   exit 0
 fi
 
