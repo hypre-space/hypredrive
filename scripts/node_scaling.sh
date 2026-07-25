@@ -84,8 +84,8 @@ declare -A LAP27_CAPS=(
   [polaris-cpu]=64000000
   [polaris-gpu]=12000000
   [aurora]=64000000
-  [frontier-cpu]=64000000
-  [frontier-gpu]=64000000
+  [frontier-cpu]=96000000
+  [frontier-gpu]=96000000
   [tioga-cpu]=64000000
   [tioga-gpu]=64000000
 )
@@ -98,8 +98,8 @@ declare -A ELAST_CAPS=(
   [polaris-cpu]=32000000
   [polaris-gpu]=12000000
   [aurora]=32000000
-  [frontier-cpu]=32000000
-  [frontier-gpu]=32000000
+  [frontier-cpu]=64000000
+  [frontier-gpu]=64000000
   [tioga-cpu]=32000000
   [tioga-gpu]=32000000
 )
