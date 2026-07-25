@@ -23,7 +23,7 @@ declare -A LAP7_CAPS=(
   [tuo-gpu-cpx]=128000000
   [tuo-gpu-spx]=128000000
   [polaris-cpu]=128000000
-  [polaris-gpu]=32000000
+  [polaris-gpu]=45000000
   [aurora]=128000000
   [frontier-cpu]=128000000
   [frontier-gpu]=128000000
@@ -37,7 +37,7 @@ declare -A LAP27_CAPS=(
   [tuo-gpu-cpx]=64000000
   [tuo-gpu-spx]=64000000
   [polaris-cpu]=64000000
-  [polaris-gpu]=16000000
+  [polaris-gpu]=12000000
   [aurora]=64000000
   [frontier-cpu]=64000000
   [frontier-gpu]=64000000
@@ -51,7 +51,7 @@ declare -A ELAST_CAPS=(
   [tuo-gpu-cpx]=32000000
   [tuo-gpu-spx]=32000000
   [polaris-cpu]=32000000
-  [polaris-gpu]=8000000
+  [polaris-gpu]=12000000
   [aurora]=32000000
   [frontier-cpu]=32000000
   [frontier-gpu]=32000000
@@ -256,7 +256,7 @@ case "${machine}" in
     pz=2
     scheduler="pbs"
     resource_description="32 physical CPU cores"
-    launcher=(mpiexec -n 32 --ppn 32 --depth=2 --cpu-bind depth)
+    launcher=(mpiexec -n 32 --ppn 32 --depth=1 --cpu-bind depth)
     ;;
   polaris-gpu)
     ranks=4
