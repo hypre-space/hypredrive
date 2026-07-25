@@ -10,9 +10,54 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RESULTS_ROOT="${HYPREDRV_SCALING_RESULTS_DIR:-${ROOT_DIR}/results/node-scaling}"
+STRATEGY_DIR="${ROOT_DIR}/results"
 START_UNKNOWNS=100000
 NSOLVE=5
 VERBOSE=1
+
+# Write the baked-in base linear-solver strategies used by -i. Cluster-specific
+# tweaks are applied later with -a (requires a YAML input file).
+write_base_strategies() {
+  mkdir -p "${STRATEGY_DIR}"
+
+  cat >"${STRATEGY_DIR}/lap-7.yml" <<'EOF'
+# Base strategy for lap-7 (7-point Laplacian): PCG + BoomerAMG (poisson).
+general:
+  use_vendor_spmv: on
+
+solver: pcg
+
+preconditioner:
+  preset: poisson
+EOF
+
+  cat >"${STRATEGY_DIR}/lap-27.yml" <<'EOF'
+# Base strategy for lap-27 (27-point Laplacian): PCG + BoomerAMG (poisson).
+general:
+  use_vendor_spmv: on
+
+solver: pcg
+
+preconditioner:
+  preset: poisson
+EOF
+
+  cat >"${STRATEGY_DIR}/elast.yml" <<'EOF'
+# Base strategy for elast (3D linear elasticity): PCG + elasticity AMG.
+# The elasticity driver also applies --solver-preset elasticity_3D after YAML
+# parse; keep the AMG coarsening options aligned with that preset.
+general:
+  use_vendor_spmv: on
+
+solver: pcg
+
+preconditioner:
+  amg:
+    coarsening:
+      num_functions: 3
+      strong_th: 0.8
+EOF
+}
 
 # Conservative starting points for each machine. These are tuning limits, not
 # guaranteed out-of-memory boundaries. Override one with --max-unknowns.
@@ -83,6 +128,11 @@ Options:
 Environment:
   HYPREDRV_SCALING_RESULTS_DIR
                           Output root (default: results/node-scaling)
+
+Base strategies:
+  results/lap-7.yml, results/lap-27.yml, and results/elast.yml are written
+  from baked-in YAML and passed to the driver with -i. Selected machines add
+  trailing -a overrides (AMD GPU configs disable vendor SpMV).
 
 Examples:
   scripts/node_scaling.sh -m dane -p lap-7
@@ -319,22 +369,29 @@ case "${machine}" in
     ;;
 esac
 
+write_base_strategies
+
 driver_args=()
+cli_overrides=()
 dofs_per_grid_point=1
+strategy_file=""
 case "${problem}" in
   lap-7)
     executable="${build_dir}/laplacian"
-    driver_args=(-s 7)
+    strategy_file="${STRATEGY_DIR}/lap-7.yml"
+    driver_args=(-i "${strategy_file}" -s 7)
     default_cap="${LAP7_CAPS[${machine}]}"
     ;;
   lap-27)
     executable="${build_dir}/laplacian"
-    driver_args=(-s 27)
+    strategy_file="${STRATEGY_DIR}/lap-27.yml"
+    driver_args=(-i "${strategy_file}" -s 27)
     default_cap="${LAP27_CAPS[${machine}]}"
     ;;
   elast)
     executable="${build_dir}/elasticity"
-    driver_args=(--solver-preset elasticity_3D)
+    strategy_file="${STRATEGY_DIR}/elast.yml"
+    driver_args=(-i "${strategy_file}" --solver-preset elasticity_3D)
     dofs_per_grid_point=3
     default_cap="${ELAST_CAPS[${machine}]}"
     ;;
@@ -343,9 +400,20 @@ case "${problem}" in
     ;;
 esac
 
+# Machine-specific hypredrive -a overrides. Must remain last on the driver
+# command line (example drivers treat -a as consuming the rest of argv).
+case "${machine}" in
+  tuo-gpu-cpx|tuo-gpu-spx|frontier-gpu|tioga-gpu)
+    # Prefer hypre's internal SpMV over rocSPARSE on AMD GPU nodes.
+    cli_overrides=(-a --general:use_vendor_spmv off)
+    ;;
+esac
+
 if [[ -n "${executable_override}" ]]; then
   executable="${executable_override}"
 fi
+
+[[ -f "${strategy_file}" ]] || die "strategy file was not written: ${strategy_file}"
 
 if [[ -n "${max_unknowns}" ]]; then
   [[ "${max_unknowns}" =~ ^[1-9][0-9]*$ ]] ||
@@ -436,6 +504,12 @@ fi
 printf 'Single-node hypredrive scaling\n'
 printf '  Machine:      %s (%s)\n' "${machine}" "${resource_description}"
 printf '  Problem:      %s\n' "${problem}"
+printf '  Strategy:     %s\n' "${strategy_file}"
+if ((${#cli_overrides[@]} > 0)); then
+  printf '  CLI overrides:%s\n' "$(printf ' %q' "${cli_overrides[@]}")"
+else
+  printf '  CLI overrides:(none)\n'
+fi
 printf '  MPI layout:   %d ranks, %d x %d x %d\n' "${ranks}" "${px}" "${py}" "${pz}"
 printf '  Size range:   %d to %d unknowns\n' "${START_UNKNOWNS}" "${max_unknowns}"
 printf '  Executable:   %s\n' "${executable}"
@@ -464,6 +538,12 @@ if ((dry_run == 0)); then
     printf 'processor_grid=%d %d %d\n' "${px}" "${py}" "${pz}"
     printf 'max_unknowns=%d\n' "${max_unknowns}"
     printf 'executable=%s\n' "${executable}"
+    printf 'strategy_file=%s\n' "${strategy_file}"
+    if ((${#cli_overrides[@]} > 0)); then
+      printf 'cli_overrides=%s\n' "$(shell_command "${cli_overrides[@]}")"
+    else
+      printf 'cli_overrides=\n'
+    fi
     printf 'launcher=%s\n' "${launcher_text}"
     printf 'OMP_NUM_THREADS=1\n'
     [[ -z "${gpu_aware_env}" ]] || printf '%s\n' "${gpu_aware_env}"
@@ -487,6 +567,7 @@ for edge in "${edges[@]}"; do
     -P "${px}" "${py}" "${pz}"
     -ns "${NSOLVE}"
     -v "${VERBOSE}"
+    "${cli_overrides[@]}"
   )
 
   environment=(env OMP_NUM_THREADS=1)
