@@ -73,6 +73,7 @@ Required:
   -p, --problem PROBLEM   lap-7 | lap-27 | elast
 
 Options:
+  -e, --executable PATH   Use PATH instead of the driver in --build-dir
       --build-dir DIR     Directory containing laplacian and elasticity
                           (default: build)
       --max-unknowns N    Replace the conservative machine/problem size cap
@@ -90,6 +91,7 @@ Examples:
   scripts/node_scaling.sh -m aurora -p lap-7 --dry-run
   scripts/node_scaling.sh -m frontier-gpu -p lap-27 --dry-run
   scripts/node_scaling.sh -m tioga-gpu -p elast --dry-run
+  scripts/node_scaling.sh -m dane -p lap-7 -e install/bin/laplacian
 
 Notes:
   - The script uses one complete compute node and never requests an allocation.
@@ -111,6 +113,7 @@ shell_command() {
 machine=""
 problem=""
 build_dir="${ROOT_DIR}/build"
+executable_override=""
 max_unknowns=""
 dry_run=0
 
@@ -124,6 +127,11 @@ while [[ $# -gt 0 ]]; do
     -p|--problem)
       [[ $# -ge 2 ]] || die "missing value for $1"
       problem="$2"
+      shift 2
+      ;;
+    -e|--executable)
+      [[ $# -ge 2 ]] || die "missing value for $1"
+      executable_override="$2"
       shift 2
       ;;
     --build-dir)
@@ -333,6 +341,10 @@ case "${problem}" in
     die "unsupported problem: ${problem}"
     ;;
 esac
+
+if [[ -n "${executable_override}" ]]; then
+  executable="${executable_override}"
+fi
 
 if [[ -n "${max_unknowns}" ]]; then
   [[ "${max_unknowns}" =~ ^[1-9][0-9]*$ ]] ||

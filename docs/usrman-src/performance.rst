@@ -59,9 +59,12 @@ The supported problems are:
      - ``elasticity``
      - 3D linear elasticity
 
-Use ``--build-dir`` when the example executables are not in ``build``. Use
-``--max-unknowns`` to replace the conservative size cap, or ``--dry-run`` to
-inspect all generated commands without launching MPI:
+Use ``-e`` or ``--executable`` to provide the driver executable directly, or
+``--build-dir`` when both example executables are in a build directory other
+than ``build``. The problem selection still controls the driver arguments and,
+for elasticity, the number of unknowns per grid point. Use ``--max-unknowns``
+to replace the conservative size cap, or ``--dry-run`` to inspect all generated
+commands without launching MPI:
 
 .. code-block:: console
 
@@ -69,6 +72,8 @@ inspect all generated commands without launching MPI:
        --build-dir build-tuolumne --max-unknowns 80000000
    $ scripts/node_scaling.sh -m polaris-gpu -p elast \
        --build-dir build-polaris --dry-run
+   $ scripts/node_scaling.sh -m tioga-gpu -p lap-7 \
+       --executable install/bin/laplacian --dry-run
 
 Machine configurations
 ~~~~~~~~~~~~~~~~~~~~~~
