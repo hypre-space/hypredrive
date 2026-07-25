@@ -983,6 +983,7 @@ Q2Q1ExchangeHalo(DistMesh2D *mesh, Q2Q1Ctx *ctx, double *u, double *halo_col,
    const size_t    col_len = 2 * (size_t)ctx->wvy + (size_t)ctx->wpy;
    const size_t    row_len = 2 * (size_t)ctx->wvx + (size_t)ctx->wpx;
    MPI_Request     reqs[6];
+   MPI_Status      statuses[6];
 
    (void)bx;
    (void)by;
@@ -1025,7 +1026,7 @@ Q2Q1ExchangeHalo(DistMesh2D *mesh, Q2Q1Ctx *ctx, double *u, double *halo_col,
    MPI_Isend(ctx->send_row, (int)row_len, MPI_DOUBLE, mesh->nbrs[2], 102, mesh->cart_comm,
              &reqs[4]);
    MPI_Isend(ctx->send_cor, 3, MPI_DOUBLE, mesh->nbrs[4], 103, mesh->cart_comm, &reqs[5]);
-   MPI_Waitall(6, reqs, MPI_STATUSES_IGNORE);
+   MPI_Waitall(6, reqs, statuses);
 
    return 0;
 }
