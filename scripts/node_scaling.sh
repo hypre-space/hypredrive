@@ -44,8 +44,8 @@ EOF
 
   cat >"${STRATEGY_DIR}/elast.yml" <<'EOF'
 # Base strategy for elast (3D linear elasticity): PCG + elasticity AMG.
-# The elasticity driver also applies --solver-preset elasticity_3D after YAML
-# parse; keep the AMG coarsening options aligned with that preset.
+# Keep AMG coarsening options aligned with the elasticity_3D precon preset
+# that the driver applies by default after YAML parse.
 general:
   use_vendor_spmv: on
 
@@ -391,7 +391,7 @@ case "${problem}" in
   elast)
     executable="${build_dir}/elasticity"
     strategy_file="${STRATEGY_DIR}/elast.yml"
-    driver_args=(-i "${strategy_file}" --solver-preset elasticity_3D)
+    driver_args=(-i "${strategy_file}")
     dofs_per_grid_point=3
     default_cap="${ELAST_CAPS[${machine}]}"
     ;;
