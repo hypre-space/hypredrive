@@ -14,6 +14,7 @@ This directory contains utility scripts for validation, data preparation, plotti
 - [generate_example_output.sh](./generate_example_output.sh): Runs the example YAML inputs and regenerates normalized reference outputs for the examples.
 - [generate_release.sh](./generate_release.sh): Bumps version strings in `CMakeLists.txt` and `conf.py` for a new release.
 - [list_public_apis.sh](./list_public_apis.sh): Generates a sorted list of all public `HYPREDRV_` API function names by parsing `include/HYPREDRV.h`.
+- [node_scaling.sh](./node_scaling.sh): Runs single-node problem-size scaling studies on supported LLNL, ALCF, and OLCF machines.
 - [perf_laplacian.sh](./perf_laplacian.sh): Builds and runs a Laplacian driver across hypre versions with optional profiling and scaling summaries.
 
 ## Python Scripts

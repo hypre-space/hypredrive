@@ -21,6 +21,7 @@ reference. The example chapters show driver and library workflows.
    input_structure
    driver_examples
    library_examples
+   performance
    interfaces
    api_reference
    developer_notes
