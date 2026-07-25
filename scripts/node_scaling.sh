@@ -17,8 +17,8 @@ VERBOSE=1
 # Conservative starting points for each machine. These are tuning limits, not
 # guaranteed out-of-memory boundaries. Override one with --max-unknowns.
 declare -A LAP7_CAPS=(
-  [dane]=64000000
-  [matrix]=64000000
+  [dane]=128000000
+  [matrix]=90000000
   [tuo-cpu]=128000000
   [tuo-gpu-cpx]=128000000
   [tuo-gpu-spx]=128000000
@@ -31,8 +31,8 @@ declare -A LAP7_CAPS=(
   [tioga-gpu]=128000000
 )
 declare -A LAP27_CAPS=(
-  [dane]=32000000
-  [matrix]=32000000
+  [dane]=96000000
+  [matrix]=45000000
   [tuo-cpu]=64000000
   [tuo-gpu-cpx]=64000000
   [tuo-gpu-spx]=64000000
@@ -45,8 +45,8 @@ declare -A LAP27_CAPS=(
   [tioga-gpu]=64000000
 )
 declare -A ELAST_CAPS=(
-  [dane]=16000000
-  [matrix]=16000000
+  [dane]=64000000
+  [matrix]=26000000
   [tuo-cpu]=32000000
   [tuo-gpu-cpx]=32000000
   [tuo-gpu-spx]=32000000
@@ -193,12 +193,13 @@ case "${machine}" in
     scheduler="slurm"
     resource_description="4 NVIDIA H100 GPUs"
     launcher=(srun --nodes=1 --ntasks=4 --exclusive --gpus-per-task=1)
-    rank_wrapper=(
-      bash -c
-      'export CUDA_VISIBLE_DEVICES="${SLURM_LOCAL_ID}"; exec "$@"'
-      bash
-    )
-    gpu_aware_env="MV2_USE_CUDA=1"
+    rank_wrapper=()
+    # rank_wrapper=(
+    #   bash -c
+    #   'export CUDA_VISIBLE_DEVICES="${SLURM_LOCAL_ID}"; exec "$@"'
+    #   bash
+    # )
+    gpu_aware_env="MV2_USE_CUDA=0"
     ;;
   tuo-cpu)
     ranks=80
