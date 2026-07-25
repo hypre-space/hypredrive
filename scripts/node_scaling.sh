@@ -27,6 +27,8 @@ declare -A LAP7_CAPS=(
   [aurora]=128000000
   [frontier-cpu]=128000000
   [frontier-gpu]=128000000
+  [tioga-cpu]=128000000
+  [tioga-gpu]=128000000
 )
 declare -A LAP27_CAPS=(
   [dane]=32000000
@@ -39,6 +41,8 @@ declare -A LAP27_CAPS=(
   [aurora]=64000000
   [frontier-cpu]=64000000
   [frontier-gpu]=64000000
+  [tioga-cpu]=64000000
+  [tioga-gpu]=64000000
 )
 declare -A ELAST_CAPS=(
   [dane]=16000000
@@ -51,6 +55,8 @@ declare -A ELAST_CAPS=(
   [aurora]=32000000
   [frontier-cpu]=32000000
   [frontier-gpu]=32000000
+  [tioga-cpu]=32000000
+  [tioga-gpu]=32000000
 )
 
 usage() {
@@ -62,7 +68,8 @@ Run a single-node problem-size scaling study inside an interactive allocation.
 Required:
   -m, --machine MACHINE   dane | matrix | tuo-cpu | tuo-gpu-cpx |
                           tuo-gpu-spx | polaris-cpu | polaris-gpu |
-                          aurora | frontier-cpu | frontier-gpu
+                          aurora | frontier-cpu | frontier-gpu |
+                          tioga-cpu | tioga-gpu
   -p, --problem PROBLEM   lap-7 | lap-27 | elast
 
 Options:
@@ -82,6 +89,7 @@ Examples:
   scripts/node_scaling.sh -m polaris-gpu -p elast --dry-run
   scripts/node_scaling.sh -m aurora -p lap-7 --dry-run
   scripts/node_scaling.sh -m frontier-gpu -p lap-27 --dry-run
+  scripts/node_scaling.sh -m tioga-gpu -p elast --dry-run
 
 Notes:
   - The script uses one complete compute node and never requests an allocation.
@@ -211,6 +219,25 @@ case "${machine}" in
     scheduler="flux"
     resource_description="4 AMD MI300A GPUs in SPX mode"
     launcher=(flux run --nodes=1 --ntasks=4 --exclusive)
+    gpu_aware_env="MPICH_GPU_SUPPORT_ENABLED=1"
+    ;;
+  tioga-cpu)
+    ranks=64
+    px=4
+    py=4
+    pz=4
+    scheduler="flux"
+    resource_description="64 AMD EPYC CPU cores"
+    launcher=(flux run --nodes=1 --ntasks=64 --exclusive)
+    ;;
+  tioga-gpu)
+    ranks=8
+    px=2
+    py=2
+    pz=2
+    scheduler="flux"
+    resource_description="8 AMD MI250X GPU devices"
+    launcher=(flux run --nodes=1 --ntasks=8 --exclusive)
     gpu_aware_env="MPICH_GPU_SUPPORT_ENABLED=1"
     ;;
   polaris-cpu)

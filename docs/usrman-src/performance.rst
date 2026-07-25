@@ -38,6 +38,7 @@ with ``-m`` or ``--machine``:
    $ scripts/node_scaling.sh --machine polaris-gpu --problem lap-7
    $ scripts/node_scaling.sh --machine aurora --problem lap-27
    $ scripts/node_scaling.sh --machine frontier-gpu --problem elast
+   $ scripts/node_scaling.sh --machine tioga-gpu --problem lap-7
 
 The supported problems are:
 
@@ -102,6 +103,14 @@ Each configuration uses one MPI rank per computational CPU core or GPU:
      - 4 AMD MI300A GPUs
      - 4
      - ``flux run``
+   * - ``tioga-cpu``
+     - 64 AMD EPYC CPU cores
+     - 64
+     - ``flux run``
+   * - ``tioga-gpu``
+     - 8 AMD MI250X GPU devices
+     - 8
+     - ``flux run``
    * - ``polaris-cpu``
      - 32 physical CPU cores
      - 32
@@ -123,9 +132,10 @@ Each configuration uses one MPI rank per computational CPU core or GPU:
      - 8
      - ``srun``
 
-Tuolumne uses Flux and mpibind for process and GPU placement. The
-``tuo-gpu-cpx`` configuration requires an interactive allocation created in CPX
-mode:
+Tioga and Tuolumne use Flux and mpibind for process and GPU placement. The
+Tioga modes use all 64 CPU cores or all eight GPU devices in a node. The
+``tuo-gpu-cpx`` configuration requires an interactive allocation created in
+CPX mode:
 
 .. code-block:: console
 
@@ -133,7 +143,9 @@ mode:
 
 SPX is the default four-GPU mode. See the `LLNL Flux and mpibind guide
 <https://hpc.llnl.gov/documentation/user-guides/using-el-capitan-systems/running-jobs-flux-and-mpi>`_
-for allocation and launcher details.
+for allocation and launcher details, and the `LLNL Tioga hardware page
+<https://hpc.llnl.gov/hardware/compute-platforms/tioga>`_ for Tioga's node
+configuration.
 
 On Polaris, the script uses the documented reverse-order GPU affinity mapping
 and enables GPU-aware MPI. See the `ALCF Polaris GPU guide
