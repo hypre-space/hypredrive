@@ -1768,6 +1768,18 @@ hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
                YAML_NODE_SET_INVALID_KEY(grandchild);
                continue;
             }
+            /* A level must be a mapping.  In particular, never accept an
+             * unsupported or malformed inline mapping as a scalar and then
+             * silently retain the level defaults. */
+            if (grandchild->val && grandchild->val[0] != '\0')
+            {
+               hypredrv_ErrorCodeSet(ERROR_UNEXPECTED_VAL);
+               hypredrv_ErrorMsgAdd("MGR level %d must be a mapping (for example, "
+                                    "\"%d: { f_dofs: [2] }\")",
+                                    lvl, lvl);
+               grandchild->valid = YAML_NODE_UNEXPECTED_VAL;
+               continue;
+            }
             /* Reject duplicate level indices, which would double-count num_levels. */
             if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1 &&
                 (seen_levels & (1u << (unsigned)lvl)))

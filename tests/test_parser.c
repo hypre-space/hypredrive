@@ -544,6 +544,29 @@ test_mgr_f_dofs_symbolic_flow_sequence_with_dof_labels(void)
    hypredrv_DofLabelMapDestroy(&labels);
 }
 
+static void
+test_mgr_scalar_level_is_rejected(void)
+{
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "not-a-mapping", 2);
+   add_child(mgr, "coarsest_level", "amg", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet() & ERROR_UNEXPECTED_VAL, ERROR_UNEXPECTED_VAL);
+   ASSERT_EQ(lvl0->valid, YAML_NODE_UNEXPECTED_VAL);
+   ASSERT_EQ(args.num_levels, 1);
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+   hypredrv_ErrorCodeResetAll();
+}
+
 /* Symbolic f_dofs block sequence with dof_labels */
 static void
 test_mgr_f_dofs_symbolic_block_sequence_with_dof_labels(void)
@@ -1094,6 +1117,7 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_parser_flat_scalars_and_grelax_krylov_type_promotion);
    RUN_TEST(test_mgr_f_dofs_yaml_block_sequence_extra_non_dash_keys);
    RUN_TEST(test_mgr_f_dofs_symbolic_flow_sequence_with_dof_labels);
+   RUN_TEST(test_mgr_scalar_level_is_rejected);
    RUN_TEST(test_mgr_f_dofs_symbolic_block_sequence_with_dof_labels);
    RUN_TEST(test_mgr_f_dofs_symbolic_without_dof_labels_errors);
    RUN_TEST(test_mgr_f_dofs_unknown_symbolic_label_errors);
