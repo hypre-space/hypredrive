@@ -106,11 +106,14 @@ declare -A ELAST_CAPS=(
 
 usage() {
   cat <<'EOF'
-Usage: scripts/node_scaling.sh -m MACHINE -p PROBLEM [options]
+Usage:
+  scripts/node_scaling.sh -m MACHINE -p PROBLEM [options]
+  scripts/node_scaling.sh --summary [RESULTS_DIR]
 
-Run a single-node problem-size scaling study inside an interactive allocation.
+Run a single-node problem-size scaling study inside an interactive allocation,
+or post-process an existing results tree.
 
-Required:
+Required (run mode):
   -m, --machine MACHINE   dane | matrix | tuo-cpu | tuo-gpu-cpx |
                           tuo-gpu-spx | polaris-cpu | polaris-gpu |
                           aurora | frontier-cpu | frontier-gpu |
@@ -123,6 +126,10 @@ Options:
                           (default: build)
       --max-unknowns N    Replace the conservative machine/problem size cap
       --dry-run           Print commands without requiring an allocation
+      --summary [DIR]     Post-process results only; write DIR/summary.tsv
+                          from the newest dated run of each machine/problem
+                          (default DIR: HYPREDRV_SCALING_RESULTS_DIR or
+                          results/node-scaling)
   -h, --help              Show this help
 
 Environment:
@@ -142,11 +149,95 @@ Examples:
   scripts/node_scaling.sh -m frontier-gpu -p lap-27 --dry-run
   scripts/node_scaling.sh -m tioga-gpu -p elast --dry-run
   scripts/node_scaling.sh -m dane -p lap-7 -e install/bin/laplacian
+  scripts/node_scaling.sh --summary ~/workspace/hypredrive-node-scaling
 
 Notes:
   - The script uses one complete compute node and never requests an allocation.
   - tuo-gpu-cpx requires an allocation created with --amd-gpumode=CPX.
+  - --summary timings are the minimum setup/solve from each STATISTICS SUMMARY
+    table; total = setup + solve.
 EOF
+}
+
+# Extract min setup/solve (and total) from a driver log STATISTICS SUMMARY table.
+# Prints: setup<TAB>solve<TAB>total   or nothing if the table is missing.
+min_timings_from_log() {
+  awk '
+    /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
+      n = split($0, a, "|")
+      if (n < 6) next
+      setup = a[4]; solve = a[5]
+      gsub(/[[:space:]]/, "", setup)
+      gsub(/[[:space:]]/, "", solve)
+      if (setup ~ /^[0-9]+([.][0-9]+)?$/) {
+        if (min_setup == "" || setup + 0 < min_setup + 0) min_setup = setup
+      }
+      if (solve ~ /^[0-9]+([.][0-9]+)?$/) {
+        if (min_solve == "" || solve + 0 < min_solve + 0) min_solve = solve
+      }
+    }
+    END {
+      if (min_setup != "" && min_solve != "")
+        printf "%.6g\t%.6g\t%.6g\n", min_setup, min_solve, min_setup + min_solve
+    }
+  ' "$1"
+}
+
+# Scan RESULTS_DIR for machine/problem pairs, use the newest dated subfolder of
+# each, and write RESULTS_DIR/summary.tsv with min setup/solve/total per size.
+write_aggregate_summary() {
+  local root="$1"
+  local out tmp machine_dir problem_dir machine problem latest run_dir
+  local log_file unknowns timings base
+
+  [[ -d "${root}" ]] || die "results directory not found: ${root}"
+  out="${root}/summary.tsv"
+  tmp="$(mktemp)"
+
+  for machine_dir in "${root}"/*/; do
+    [[ -d "${machine_dir}" ]] || continue
+    machine="${machine_dir%/}"
+    machine="${machine##*/}"
+    [[ "${machine}" == "tarballs" ]] && continue
+
+    for problem_dir in "${machine_dir}"*/; do
+      [[ -d "${problem_dir}" ]] || continue
+      problem="${problem_dir%/}"
+      problem="${problem##*/}"
+
+      latest=""
+      for d in "${problem_dir}"*/; do
+        [[ -d "${d}" ]] || continue
+        base="${d%/}"
+        base="${base##*/}"
+        if [[ -z "${latest}" || "${base}" > "${latest}" ]]; then
+          latest="${base}"
+        fi
+      done
+      [[ -n "${latest}" ]] || continue
+      run_dir="${problem_dir}${latest}"
+
+      printf '  %s / %s <- %s\n' "${machine}" "${problem}" "${latest}"
+      for log_file in "${run_dir}"/run_*.log; do
+        [[ -f "${log_file}" ]] || continue
+        base="${log_file##*/}"
+        unknowns="${base#run_}"
+        unknowns="${unknowns%.log}"
+        timings="$(min_timings_from_log "${log_file}")"
+        [[ -n "${timings}" ]] || continue
+        printf '%s\t%s\t%s\t%s\n' "${machine}" "${problem}" "${unknowns}" "${timings}"
+      done >>"${tmp}"
+    done
+  done
+
+  {
+    printf 'machine\tproblem\tunknowns\tsetup\tsolve\ttotal\n'
+    if [[ -s "${tmp}" ]]; then
+      sort -t$'\t' -k1,1 -k2,2 -k3,3n "${tmp}"
+    fi
+  } >"${out}"
+  rm -f "${tmp}"
+  printf 'Wrote %s\n' "${out}"
 }
 
 die() {
@@ -166,6 +257,8 @@ build_dir="${ROOT_DIR}/build"
 executable_override=""
 max_unknowns=""
 dry_run=0
+summary_mode=0
+summary_dir=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -198,6 +291,15 @@ while [[ $# -gt 0 ]]; do
       dry_run=1
       shift
       ;;
+    --summary)
+      summary_mode=1
+      if [[ $# -ge 2 && "$2" != -* ]]; then
+        summary_dir="$2"
+        shift 2
+      else
+        shift
+      fi
+      ;;
     -h|--help)
       usage
       exit 0
@@ -207,6 +309,18 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if ((summary_mode)); then
+  if [[ -z "${summary_dir}" ]]; then
+    summary_dir="${RESULTS_ROOT}"
+  fi
+  summary_dir="${summary_dir/#\~/${HOME}}"
+  if [[ "${summary_dir}" != /* ]]; then
+    summary_dir="${ROOT_DIR}/${summary_dir}"
+  fi
+  write_aggregate_summary "${summary_dir}"
+  exit 0
+fi
 
 [[ -n "${machine}" ]] || die "-m/--machine is required"
 [[ -n "${problem}" ]] || die "-p/--problem is required"
