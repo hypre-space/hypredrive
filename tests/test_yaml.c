@@ -1262,6 +1262,80 @@ test_YAMLtreeBuild_inline_sequence_mapping_siblings(void)
    hypredrv_YAMLtreeDestroy(&tree);
 }
 
+static void
+test_YAMLtreeBuild_flow_mappings(void)
+{
+   const char *yaml_text =
+      "root: { first: one, nested: { second: two }, values: [1, 2], "
+      "quoted: \"Comma,Colon:Value\", display_name: MixedCase, } # trailing comment\n"
+      "list:\n"
+      "  - { tag: a, options: { mode: Fast } }\n"
+      "  - wrapper: { inner: Yes }\n";
+   YAMLtree *tree = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeBuild(2, yaml_text, &tree);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(tree);
+
+   YAMLnode *root = hypredrv_YAMLnodeFindChildByKey(tree->root, "root");
+   ASSERT_NOT_NULL(root);
+   ASSERT_STREQ(root->val, "");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(root, "first"), "one");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(root, "values"), "[1, 2]");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(root, "quoted"),
+                "comma,colon:value");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(root, "display_name"), "MixedCase");
+
+   YAMLnode *nested = hypredrv_YAMLnodeFindChildByKey(root, "nested");
+   ASSERT_NOT_NULL(nested);
+   ASSERT_STREQ(nested->val, "");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(nested, "second"), "two");
+
+   YAMLnode *list = hypredrv_YAMLnodeFindChildByKey(tree->root, "list");
+   ASSERT_NOT_NULL(list);
+   YAMLnode *dash = list->children;
+   ASSERT_NOT_NULL(dash);
+   ASSERT_STREQ(dash->key, "-");
+   ASSERT_STREQ(dash->val, "");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(dash, "tag"), "a");
+
+   YAMLnode *options = hypredrv_YAMLnodeFindChildByKey(dash, "options");
+   ASSERT_NOT_NULL(options);
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(options, "mode"), "fast");
+
+   ASSERT_NOT_NULL(dash->next);
+   YAMLnode *wrapper = hypredrv_YAMLnodeFindChildByKey(dash->next, "wrapper");
+   ASSERT_NOT_NULL(wrapper);
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(wrapper, "inner"), "yes");
+
+   hypredrv_YAMLtreeDestroy(&tree);
+}
+
+static void
+test_YAMLtreeBuild_malformed_flow_mappings(void)
+{
+   const char *bad_yaml[] = {
+      "root: { first }\n",
+      "root: { first: [1, 2 }\n",
+      "root: { first: value } trailing\n",
+      "root: { first: \"unterminated }\n",
+   };
+
+   for (size_t i = 0; i < sizeof(bad_yaml) / sizeof(bad_yaml[0]); i++)
+   {
+      YAMLtree *tree = NULL;
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_YAMLtreeBuild(2, bad_yaml[i], &tree);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ_U32(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL, ERROR_INVALID_VAL);
+      ASSERT_NOT_NULL(tree);
+      hypredrv_YAMLtreeDestroy(&tree);
+   }
+   hypredrv_ErrorCodeResetAll();
+}
+
 /*-----------------------------------------------------------------------------
  * hypredrv_YAMLtextRead: pre-sized output buffer (prefix + file append)
  *-----------------------------------------------------------------------------*/
@@ -2359,6 +2433,8 @@ main(void)
    RUN_TEST(test_YAMLnodeCreate_nonname_lowercases_and_strips_quotes);
    RUN_TEST(test_YAMLtreeBuild_sequence_scalar_item);
    RUN_TEST(test_YAMLtreeBuild_inline_sequence_mapping_siblings);
+   RUN_TEST(test_YAMLtreeBuild_flow_mappings);
+   RUN_TEST(test_YAMLtreeBuild_malformed_flow_mappings);
    RUN_TEST(test_YAMLtextRead_appends_to_nonempty_buffer);
 
    RUN_TEST(test_YAMLtreeUpdate_null_tree_errors);

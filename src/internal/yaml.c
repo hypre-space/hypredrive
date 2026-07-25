@@ -1087,6 +1087,20 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
          return 1; /* GCOVR_EXCL_LINE */
       }
 
+      /* Preserve flow mappings for the tree builder.  Treating this as the
+       * existing "- key: value" shorthand would incorrectly make "{ key" the
+       * key and leave the closing brace in the value. */
+      if (*inline_content == '{')
+      {
+         free(token_out->val);
+         token_out->val = NULL;
+         if (!YAMLtokenSetString(&token_out->val, inline_content))
+         {
+            return -1; /* GCOVR_EXCL_LINE */
+         }
+         return 1;
+      }
+
       if (!strchr(inline_content, ':'))
       {
          free(token_out->val);
@@ -1244,6 +1258,330 @@ YAMLtokenizeText(const char *text, int base_indent, YAMLtokenArray *tokens)
    return true;
 }
 
+/*-----------------------------------------------------------------------------
+ * Flow mappings
+ *
+ * Convert the single-line YAML flow-mapping form
+ *
+ *   key: { first: value, nested: { second: value } }
+ *
+ * into the same YAMLnode hierarchy produced by its block-mapping equivalent.
+ * Flow sequences remain scalar values because the component field setters
+ * already parse values such as "[0, 1]".
+ *-----------------------------------------------------------------------------*/
+
+static void
+YAMLflowMappingError(const YAMLnode *parent, const char *detail)
+{
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   hypredrv_ErrorMsgAdd("Malformed YAML flow mapping for key '%s': %s",
+                        (parent && parent->key) ? parent->key : "", detail);
+}
+
+static char *
+YAMLflowDupTrimmed(const char *begin, const char *end)
+{
+   char  *copy = NULL;
+   size_t len  = 0;
+
+   while (begin < end && (*begin == ' ' || *begin == '\t' || *begin == '\r'))
+   {
+      begin++;
+   }
+   while (end > begin && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r'))
+   {
+      end--;
+   }
+
+   len  = (size_t)(end - begin);
+   copy = (char *)malloc(len + 1);
+   if (!copy)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorMsgAdd(                    /* GCOVR_EXCL_LINE */
+                           "Failed to allocate YAML flow-mapping token");
+      return NULL; /* GCOVR_EXCL_LINE */
+   }
+   memcpy(copy, begin, len);
+   copy[len] = '\0';
+   return copy;
+}
+
+static void
+YAMLflowUnquoteKey(char *key)
+{
+   size_t len = key ? strlen(key) : 0;
+
+   if (len >= 2 && ((key[0] == '"' && key[len - 1] == '"') ||
+                    (key[0] == '\'' && key[len - 1] == '\'')))
+   {
+      key[len - 1] = '\0';
+      memmove(key, key + 1, len - 1);
+   }
+}
+
+static const char *
+YAMLflowSkipSpace(const char *pos, const char *end)
+{
+   while (pos < end && (*pos == ' ' || *pos == '\t' || *pos == '\r'))
+   {
+      pos++;
+   }
+   return pos;
+}
+
+/* Advance over a quoted character.  Double-quoted strings use backslash
+ * escapes; YAML single-quoted strings escape a quote by doubling it. */
+static bool
+YAMLflowAdvanceQuoted(const char **pos_ptr, const char *end, char *quote_ptr)
+{
+   const char *pos   = *pos_ptr;
+   char        quote = *quote_ptr;
+
+   if (!quote)
+   {
+      if (*pos == '"' || *pos == '\'')
+      {
+         *quote_ptr = *pos;
+         *pos_ptr   = pos + 1;
+         return true;
+      }
+      return false;
+   }
+
+   if (quote == '"' && *pos == '\\' && pos + 1 < end)
+   {
+      *pos_ptr = pos + 2;
+      return true;
+   }
+   if (quote == '\'' && *pos == '\'' && pos + 1 < end && pos[1] == '\'')
+   {
+      *pos_ptr = pos + 2;
+      return true;
+   }
+   if (*pos == quote)
+   {
+      *quote_ptr = '\0';
+   }
+   *pos_ptr = pos + 1;
+   return true;
+}
+
+static bool YAMLflowMappingAddChildren(YAMLnode *, const char *);
+
+static YAMLnode *
+YAMLnodeCreateWithFlowMapping(const char *key, const char *raw_val, int level)
+{
+   const char *begin = raw_val;
+   const char *end   = NULL;
+   YAMLnode   *node  = NULL;
+
+   if (!raw_val)
+   {
+      return hypredrv_YAMLnodeCreate(key, NULL, level);
+   }
+
+   end = begin + strlen(begin);
+
+   begin = YAMLflowSkipSpace(begin, end);
+   while (end > begin && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r'))
+   {
+      end--;
+   }
+
+   if (begin < end && *begin == '{')
+   {
+      node = hypredrv_YAMLnodeCreate(key, "", level);
+      if (!node)
+      {
+         return NULL; /* GCOVR_EXCL_LINE */
+      }
+      if (!YAMLflowMappingAddChildren(node, begin))
+      {
+         hypredrv_YAMLnodeDestroy(node);
+         return NULL;
+      }
+      return node;
+   }
+
+   return hypredrv_YAMLnodeCreate(key, raw_val, level);
+}
+
+static bool
+YAMLflowMappingAddEntry(YAMLnode *parent, const char *key_begin, const char *key_end,
+                        const char *val_begin, const char *val_end)
+{
+   char     *key   = YAMLflowDupTrimmed(key_begin, key_end);
+   char     *value = NULL;
+   YAMLnode *child = NULL;
+
+   if (!key)
+   {
+      return false; /* GCOVR_EXCL_LINE */
+   }
+   YAMLflowUnquoteKey(key);
+   if (key[0] == '\0')
+   {
+      YAMLflowMappingError(parent, "mapping keys must not be empty");
+      free(key);
+      return false;
+   }
+
+   value = YAMLflowDupTrimmed(val_begin, val_end);
+   if (!value)
+   {
+      free(key);
+      return false; /* GCOVR_EXCL_LINE */
+   }
+
+   child = YAMLnodeCreateWithFlowMapping(key, value, parent->level + 1);
+   free(key);
+   free(value);
+   if (!child)
+   {
+      return false;
+   }
+
+   hypredrv_YAMLnodeAddChild(parent, child);
+   return true;
+}
+
+static bool
+YAMLflowMappingAddChildren(YAMLnode *parent, const char *text)
+{
+   const char *begin = text ? text : "";
+   const char *end   = begin + strlen(begin);
+   const char *pos   = NULL;
+
+   begin = YAMLflowSkipSpace(begin, end);
+   while (end > begin && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r'))
+   {
+      end--;
+   }
+
+   if (begin == end || *begin != '{' || end[-1] != '}')
+   {
+      YAMLflowMappingError(parent, "expected matching '{' and '}'");
+      return false;
+   }
+
+   pos = begin + 1;
+   while (true)
+   {
+      const char *key_begin = NULL;
+      const char *key_end   = NULL;
+      const char *val_begin = NULL;
+      const char *val_end   = NULL;
+      char        quote     = '\0';
+      int         braces    = 0;
+      int         brackets  = 0;
+
+      pos = YAMLflowSkipSpace(pos, end - 1);
+      if (pos == end - 1)
+      {
+         return true;
+      }
+
+      key_begin = pos;
+      while (pos < end - 1)
+      {
+         if (YAMLflowAdvanceQuoted(&pos, end - 1, &quote))
+         {
+            continue;
+         }
+         if (*pos == ':')
+         {
+            break;
+         }
+         if (*pos == ',' || *pos == '}' || *pos == '{' || *pos == '[' || *pos == ']')
+         {
+            YAMLflowMappingError(parent, "expected ':' after a simple mapping key");
+            return false;
+         }
+         pos++;
+      }
+      if (quote)
+      {
+         YAMLflowMappingError(parent, "unterminated quoted mapping key");
+         return false;
+      }
+      if (pos == end - 1)
+      {
+         YAMLflowMappingError(parent, "expected ':' after mapping key");
+         return false;
+      }
+
+      key_end   = pos;
+      val_begin = ++pos;
+      quote     = '\0';
+
+      while (pos < end - 1)
+      {
+         if (YAMLflowAdvanceQuoted(&pos, end - 1, &quote))
+         {
+            continue;
+         }
+
+         if (*pos == '{')
+         {
+            braces++;
+         }
+         else if (*pos == '}')
+         {
+            if (braces == 0)
+            {
+               YAMLflowMappingError(parent, "unexpected '}' in mapping value");
+               return false;
+            }
+            braces--;
+         }
+         else if (*pos == '[')
+         {
+            brackets++;
+         }
+         else if (*pos == ']')
+         {
+            if (brackets == 0)
+            {
+               YAMLflowMappingError(parent, "unexpected ']' in mapping value");
+               return false;
+            }
+            brackets--;
+         }
+         else if (*pos == ',' && braces == 0 && brackets == 0)
+         {
+            break;
+         }
+         pos++;
+      }
+
+      if (quote)
+      {
+         YAMLflowMappingError(parent, "unterminated quoted mapping value");
+         return false;
+      }
+      if (braces != 0 || brackets != 0)
+      {
+         YAMLflowMappingError(parent, "unbalanced nested collection");
+         return false;
+      }
+
+      val_end = pos;
+      if (!YAMLflowMappingAddEntry(parent, key_begin, key_end, val_begin, val_end))
+      {
+         return false;
+      }
+
+      if (pos == end - 1)
+      {
+         return true;
+      }
+
+      /* Skip the comma. A trailing comma is valid YAML flow syntax. */
+      pos++;
+   }
+}
+
 static void
 YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
                         YAMLtree **tree_ptr)
@@ -1268,8 +1606,15 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
          return;
       }
 
-      YAMLnode *node = hypredrv_YAMLnodeCreate(token->key, token->val, token->level);
+      YAMLnode *node =
+         YAMLnodeCreateWithFlowMapping(token->key, token->val, token->level);
       YAMLnode *validation_node = node;
+
+      if (!node)
+      {
+         *tree_ptr = tree;
+         return;
+      }
 
       hypredrv_YAMLnodeAppend(node, &parent);
 
@@ -1278,8 +1623,13 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
       if (token->is_sequence_item && token->inline_key && token->inline_val)
       /* GCOVR_EXCL_BR_STOP */
       {
-         YAMLnode *inline_node = hypredrv_YAMLnodeCreate(
+         YAMLnode *inline_node = YAMLnodeCreateWithFlowMapping(
             token->inline_key, token->inline_val, token->level + 1);
+         if (!inline_node)
+         {
+            *tree_ptr = tree;
+            return;
+         }
          hypredrv_YAMLnodeAddChild(node, inline_node);
          parent          = inline_node;
          validation_node = inline_node;
