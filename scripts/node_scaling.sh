@@ -109,6 +109,7 @@ usage() {
 Usage:
   scripts/node_scaling.sh -m MACHINE -p PROBLEM [options]
   scripts/node_scaling.sh --summary [RESULTS_DIR]
+  scripts/node_scaling.sh -m MACHINE --pack
 
 Run a single-node problem-size scaling study inside an interactive allocation,
 or post-process an existing results tree.
@@ -130,6 +131,9 @@ Options:
                           from the newest dated run of each machine/problem
                           (default DIR: HYPREDRV_SCALING_RESULTS_DIR or
                           results/node-scaling)
+      --pack              Tar all results for -m MACHINE (and MACHINE-*
+                          family members) into
+                          <results>/tarballs/<machine>.tar.gz
   -h, --help              Show this help
 
 Environment:
@@ -150,12 +154,21 @@ Examples:
   scripts/node_scaling.sh -m tioga-gpu -p elast --dry-run
   scripts/node_scaling.sh -m dane -p lap-7 -e install/bin/laplacian
   scripts/node_scaling.sh --summary ~/workspace/hypredrive-node-scaling
+  HYPREDRV_SCALING_RESULTS_DIR=~/workspace/hypredrive-node-scaling \\
+    scripts/node_scaling.sh -m dane --pack
+  HYPREDRV_SCALING_RESULTS_DIR=~/workspace/hypredrive-node-scaling \\
+    scripts/node_scaling.sh -m frontier --pack
+  HYPREDRV_SCALING_RESULTS_DIR=~/workspace/hypredrive-node-scaling \\
+    scripts/node_scaling.sh -m tuo --pack
 
 Notes:
   - The script uses one complete compute node and never requests an allocation.
   - tuo-gpu-cpx requires an allocation created with --amd-gpumode=CPX.
   - --summary timings are the minimum setup/solve from each STATISTICS SUMMARY
     table; total = setup + solve.
+  - --pack archives every dated run under matching trees: exact -m name and
+    any <name>-* siblings (e.g. -m tuo packs tuo-cpu / tuo-gpu-cpx /
+    tuo-gpu-spx when present; -m frontier packs frontier-cpu / frontier-gpu).
 EOF
 }
 
@@ -240,6 +253,39 @@ write_aggregate_summary() {
   printf 'Wrote %s\n' "${out}"
 }
 
+# Tar all results for MACHINE (exact match and MACHINE-* family members)
+# under RESULTS_DIR into RESULTS_DIR/tarballs/MACHINE.tar.gz.
+pack_machine_results() {
+  local root="$1"
+  local machine="$2"
+  local out_dir out d name
+  local -a members=()
+
+  root="${root/#\~/${HOME}}"
+  if [[ "${root}" != /* ]]; then
+    root="${ROOT_DIR}/${root}"
+  fi
+  out_dir="${root}/tarballs"
+  out="${out_dir}/${machine}.tar.gz"
+
+  for d in "${root}"/*/; do
+    [[ -d "${d}" ]] || continue
+    name="${d%/}"
+    name="${name##*/}"
+    [[ "${name}" == "tarballs" ]] && continue
+    if [[ "${name}" == "${machine}" || "${name}" == "${machine}"-* ]]; then
+      members+=("${name}")
+      printf '  + %s\n' "${name}"
+    fi
+  done
+  ((${#members[@]} > 0)) ||
+    die "no results for machine/family '${machine}' under ${root}"
+
+  mkdir -p "${out_dir}"
+  tar -C "${root}" -czf "${out}" "${members[@]}"
+  printf 'Wrote %s (%d trees)\n' "${out}" "${#members[@]}"
+}
+
 die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
@@ -259,6 +305,7 @@ max_unknowns=""
 dry_run=0
 summary_mode=0
 summary_dir=""
+pack_mode=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -300,6 +347,10 @@ while [[ $# -gt 0 ]]; do
         shift
       fi
       ;;
+    --pack)
+      pack_mode=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -319,6 +370,12 @@ if ((summary_mode)); then
     summary_dir="${ROOT_DIR}/${summary_dir}"
   fi
   write_aggregate_summary "${summary_dir}"
+  exit 0
+fi
+
+if ((pack_mode)); then
+  [[ -n "${machine}" ]] || die "-m/--machine is required with --pack"
+  pack_machine_results "${RESULTS_ROOT}" "${machine}"
   exit 0
 fi
 
