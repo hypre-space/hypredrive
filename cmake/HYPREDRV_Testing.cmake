@@ -541,6 +541,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         endif()
         if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
             add_hypredrive_test(ex3_1proc 1 ex3.yml)
+            add_hypredrive_test(ex3_flow_1proc 1 ex3-flow.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_30000_DEV0)
             add_hypredrive_cli_test(ex7_cli_tagres 1 ex7-tagged-gmres.yml

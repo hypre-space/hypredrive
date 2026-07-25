@@ -252,7 +252,17 @@ of this page explain how to retrieve it.
 
     $ mpirun -np 1 ./hypredrive-cli examples/ex3.yml
 
-4. Compare your output with this reference:
+4. For a more compact equivalent, use YAML flow mappings to keep each MGR level
+   on one line:
+
+.. literalinclude:: ../../examples/ex3-flow.yml
+   :language: yaml
+
+.. code-block:: bash
+
+    $ mpirun -np 1 ./hypredrive-cli examples/ex3-flow.yml
+
+5. Compare your output with this reference:
 
 .. literalinclude:: ../../examples/refOutput/ex3.txt
    :language: text
