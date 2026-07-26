@@ -74,6 +74,7 @@ declare -A LAP7_CAPS=(
   [frontier-gpu]=128000000
   [tioga-cpu]=128000000
   [tioga-gpu]=128000000
+  [8xB200]=2000000000
 )
 declare -A LAP27_CAPS=(
   [dane]=96000000
@@ -88,6 +89,7 @@ declare -A LAP27_CAPS=(
   [frontier-gpu]=96000000
   [tioga-cpu]=64000000
   [tioga-gpu]=64000000
+  [8xB200]=1000000000
 )
 declare -A ELAST_CAPS=(
   [dane]=64000000
@@ -102,6 +104,7 @@ declare -A ELAST_CAPS=(
   [frontier-gpu]=64000000
   [tioga-cpu]=32000000
   [tioga-gpu]=32000000
+  [8xB200]=750000000
 )
 
 usage() {
@@ -119,7 +122,7 @@ Required (run mode):
   -m, --machine MACHINE   dane | matrix | tuo-cpu | tuo-gpu-cpx |
                           tuo-gpu-spx | polaris-cpu | polaris-gpu |
                           aurora | frontier-cpu | frontier-gpu |
-                          tioga-cpu | tioga-gpu
+                          tioga-cpu | tioga-gpu | 8xB200
   -p, --problem PROBLEM   lap-7 | lap-27 | elast
 
 Options:
@@ -159,6 +162,7 @@ Examples:
   scripts/node_scaling.sh -m aurora -p lap-7 --dry-run
   scripts/node_scaling.sh -m frontier-gpu -p lap-27 --dry-run
   scripts/node_scaling.sh -m tioga-gpu -p elast --dry-run
+  scripts/node_scaling.sh -m 8xB200 -p lap-7 --dry-run
   scripts/node_scaling.sh -m dane -p lap-7 -e install/bin/laplacian
   scripts/node_scaling.sh --summary ~/workspace/hypredrive-node-scaling
   HYPREDRV_SCALING_RESULTS_DIR=~/workspace/hypredrive-node-scaling \\
@@ -374,12 +378,15 @@ MACHINE_STYLE = {
     "frontier-gpu":  ("#66CCEE", "s"),
     "tioga-cpu":     ("#117733", "^"),
     "tioga-gpu":     ("#999933", "D"),
+    "8xB200":        ("#E41A1C", "*"),
 }
+# Fallbacks intentionally avoid the primary MACHINE_STYLE pairs above.
 FALLBACK_COLORS = [
-    "#0072B2", "#E69F00", "#009E73", "#CC79A7", "#D55E00",
-    "#56B4E9", "#AA3377", "#000000", "#332288", "#66CCEE",
+    "#44AA99", "#882255", "#DDCC77", "#661100", "#888888",
+    "#6699CC", "#AA4499", "#FDB462", "#B3B3B3", "#1B9E77",
+    "#7570B3", "#E7298A", "#66A61E", "#E6AB02", "#A6761D",
 ]
-FALLBACK_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "h", "*", "p"]
+FALLBACK_MARKERS = ["*", "p", "H", "8", "<", ">", "d", "1", "2", "3", "4", "+"]
 
 rows = []
 with summary_path.open() as fh:
@@ -412,6 +419,22 @@ for machine in by_machine:
     by_machine[machine].sort(key=lambda t: t[0])
 
 machines = sorted(by_machine)
+used_styles = {MACHINE_STYLE[m] for m in machines if m in MACHINE_STYLE}
+fallback_i = 0
+
+def style_for(machine):
+    global fallback_i
+    if machine in MACHINE_STYLE:
+        return MACHINE_STYLE[machine]
+    while True:
+        cand = (
+            FALLBACK_COLORS[fallback_i % len(FALLBACK_COLORS)],
+            FALLBACK_MARKERS[fallback_i % len(FALLBACK_MARKERS)],
+        )
+        fallback_i += 1
+        if cand not in used_styles or fallback_i > 64:
+            used_styles.add(cand)
+            return cand
 
 plt.rcParams.update(
     {
@@ -441,15 +464,11 @@ plt.rcParams.update(
 fig, ax = plt.subplots(figsize=(10.5, 7.2), dpi=160)
 fig.subplots_adjust(left=0.10, right=0.98, top=0.90, bottom=0.28)
 
-for i, machine in enumerate(machines):
+for machine in machines:
     pts = by_machine[machine]
     x = np.array([p[0] for p in pts], dtype=float)
     y = np.array([p[1] for p in pts], dtype=float)
-    color, marker = MACHINE_STYLE.get(
-        machine,
-        (FALLBACK_COLORS[i % len(FALLBACK_COLORS)],
-         FALLBACK_MARKERS[i % len(FALLBACK_MARKERS)]),
-    )
+    color, marker = style_for(machine)
     ax.loglog(
         x,
         y,
@@ -483,7 +502,8 @@ ax.tick_params(axis="both", which="major", labelsize=13, length=6, width=1.1)
 ax.tick_params(axis="both", which="minor", labelsize=10, length=3.5, width=0.8)
 
 handles, labels = ax.get_legend_handles_labels()
-ncol = min(4, max(1, len(labels)))
+# Prefer two legend rows: ncol = ceil(n / 2).
+ncol = max(1, (len(labels) + 1) // 2)
 leg = fig.legend(
     handles,
     labels,
@@ -557,12 +577,15 @@ MACHINE_STYLE = {
     "frontier-gpu":  ("#66CCEE", "s"),
     "tioga-cpu":     ("#117733", "^"),
     "tioga-gpu":     ("#999933", "D"),
+    "8xB200":        ("#E41A1C", "*"),
 }
+# Fallbacks intentionally avoid the primary MACHINE_STYLE pairs above.
 FALLBACK_COLORS = [
-    "#0072B2", "#E69F00", "#009E73", "#CC79A7", "#D55E00",
-    "#56B4E9", "#AA3377", "#000000", "#332288", "#66CCEE",
+    "#44AA99", "#882255", "#DDCC77", "#661100", "#888888",
+    "#6699CC", "#AA4499", "#FDB462", "#B3B3B3", "#1B9E77",
+    "#7570B3", "#E7298A", "#66A61E", "#E6AB02", "#A6761D",
 ]
-FALLBACK_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "h", "*", "p"]
+FALLBACK_MARKERS = ["*", "p", "H", "8", "<", ">", "d", "1", "2", "3", "4", "+"]
 
 rows = []
 with summary_path.open() as fh:
@@ -596,6 +619,24 @@ for machine in by_machine:
     by_machine[machine].sort(key=lambda t: t[0])
 
 machines = sorted(by_machine)
+used_styles = {MACHINE_STYLE[m] for m in machines if m in MACHINE_STYLE}
+fallback_i = 0
+
+def style_for(machine):
+    global fallback_i
+    if machine in MACHINE_STYLE:
+        return MACHINE_STYLE[machine]
+    while True:
+        cand = (
+            FALLBACK_COLORS[fallback_i % len(FALLBACK_COLORS)],
+            FALLBACK_MARKERS[fallback_i % len(FALLBACK_MARKERS)],
+        )
+        fallback_i += 1
+        if cand not in used_styles or fallback_i > 64:
+            used_styles.add(cand)
+            return cand
+
+machine_styles = {m: style_for(m) for m in machines}
 
 plt.rcParams.update(
     {
@@ -638,15 +679,11 @@ panel_box = dict(
 )
 
 for ax, y_idx, ylabel, panel_title in panel_specs:
-    for i, machine in enumerate(machines):
+    for machine in machines:
         pts = by_machine[machine]
         x = np.array([p[0] for p in pts], dtype=float)
         y = np.array([p[y_idx] for p in pts], dtype=float)
-        color, marker = MACHINE_STYLE.get(
-            machine,
-            (FALLBACK_COLORS[i % len(FALLBACK_COLORS)],
-             FALLBACK_MARKERS[i % len(FALLBACK_MARKERS)]),
-        )
+        color, marker = machine_styles[machine]
         ax.loglog(
             x,
             y,
@@ -694,7 +731,8 @@ fig.suptitle(
 )
 
 handles, labels = axes[0].get_legend_handles_labels()
-ncol = min(5, max(1, len(labels)))
+# Prefer two legend rows: ncol = ceil(n / 2).
+ncol = max(1, (len(labels) + 1) // 2)
 leg = fig.legend(
     handles,
     labels,
@@ -1015,6 +1053,27 @@ case "${machine}" in
     )
     gpu_aware_env="MPICH_GPU_SUPPORT_ENABLED=1"
     ;;
+  8xB200)
+    ranks=8
+    px=2
+    py=2
+    pz=2
+    scheduler="local"
+    resource_description="8 NVIDIA B200 GPUs"
+    launcher=(
+      mpirun --allow-run-as-root
+      --map-by ppr:8:node:PE=8 --bind-to core
+      --mca pml ucx
+    )
+    rank_wrapper=(
+      bash -c
+      'gpu="${OMPI_COMM_WORLD_LOCAL_RANK:-0}"; export CUDA_VISIBLE_DEVICES="${gpu}"; exec "$@"'
+      bash
+    )
+    # Open MPI is CUDA-aware without a master switch. Since UCX_TLS is
+    # explicit here, "cuda" must remain in the list for device-pointer support.
+    gpu_aware_env="UCX_TLS=sm,self,cuda"
+    ;;
   *)
     die "unsupported machine: ${machine}"
     ;;
@@ -1099,6 +1158,9 @@ if ((dry_run == 0)); then
         command -v gpu_tile_compact.sh >/dev/null 2>&1 ||
           die "Aurora's gpu_tile_compact.sh was not found"
       fi
+      ;;
+    local)
+      command -v mpirun >/dev/null 2>&1 || die "mpirun was not found"
       ;;
   esac
 fi
