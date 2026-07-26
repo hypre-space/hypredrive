@@ -1869,7 +1869,7 @@ main(int argc, char **argv)
    HYPREDRV_t hypredrv;
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
-   char     *config_arg =
+   char *config_arg =
       params.yaml_file ? params.yaml_file : (char *)default_config(params.verbose & 0x1);
    HYPRE_Int n_print       = (params.verbose >= 1) ? 2 : 0;
    HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc + n_print;
