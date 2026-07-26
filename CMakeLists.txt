@@ -36,6 +36,7 @@ option(HYPREDRV_ENABLE_ANALYSIS     "Enable static code analysis (clang-tidy) an
 option(HYPREDRV_ENABLE_DATA         "Enable 'data' target to fetch example datasets" OFF)
 option(HYPREDRV_ENABLE_DOCS         "Enable documentation generation" OFF)
 option(HYPREDRV_ENABLE_EXAMPLES     "Enable the HYPREDRV examples" OFF)
+option(HYPREDRV_ENABLE_EXAMPLE_OMP  "Enable OpenMP parallel assembly in example drivers" OFF)
 option(HYPREDRV_ENABLE_HWLOC        "Enable hwloc support for detailed system topology information" OFF)
 option(HYPREDRV_ENABLE_CALIPER      "Enable Caliper instrumentation support" OFF)
 option(HYPREDRV_ENABLE_COMPRESSION  "Enable optional lossless compression backends" OFF)

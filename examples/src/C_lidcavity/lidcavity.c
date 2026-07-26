@@ -983,6 +983,7 @@ Q2Q1ExchangeHalo(DistMesh2D *mesh, Q2Q1Ctx *ctx, double *u, double *halo_col,
    const size_t    col_len = 2 * (size_t)ctx->wvy + (size_t)ctx->wpy;
    const size_t    row_len = 2 * (size_t)ctx->wvx + (size_t)ctx->wpx;
    MPI_Request     reqs[6];
+   MPI_Status      statuses[6];
 
    (void)bx;
    (void)by;
@@ -1025,7 +1026,7 @@ Q2Q1ExchangeHalo(DistMesh2D *mesh, Q2Q1Ctx *ctx, double *u, double *halo_col,
    MPI_Isend(ctx->send_row, (int)row_len, MPI_DOUBLE, mesh->nbrs[2], 102, mesh->cart_comm,
              &reqs[4]);
    MPI_Isend(ctx->send_cor, 3, MPI_DOUBLE, mesh->nbrs[4], 103, mesh->cart_comm, &reqs[5]);
-   MPI_Waitall(6, reqs, MPI_STATUSES_IGNORE);
+   MPI_Waitall(6, reqs, statuses);
 
    return 0;
 }
@@ -3017,15 +3018,24 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
-   HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc;
-   char     *hypredrv_argv[hypredrv_argc];
-   hypredrv_argv[0] = config_arg;
-   for (HYPRE_Int k = 0; k < params.hypredrv_argc; k++)
-   {
-      hypredrv_argv[k + 1] = params.hypredrv_argv[k];
-   }
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
+   {
+      HYPRE_Int n_print       = (params.verbose >= 1) ? 2 : 0;
+      HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc + n_print;
+      char     *hypredrv_argv[hypredrv_argc];
+      hypredrv_argv[0] = config_arg;
+      for (HYPRE_Int k = 0; k < params.hypredrv_argc; k++)
+      {
+         hypredrv_argv[k + 1] = params.hypredrv_argv[k];
+      }
+      if (n_print)
+      {
+         /* Print the parsed YAML (with any -a/--args overrides applied). */
+         hypredrv_argv[1 + params.hypredrv_argc] = "--general:print_config_params";
+         hypredrv_argv[2 + params.hypredrv_argc] = "1";
+      }
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
+   }
    /* Create distributed mesh object */
    CreateDistMesh2D(comm, params.L[0], params.L[1], params.N[0], params.N[1], params.P[0],
                     params.P[1], &mesh);

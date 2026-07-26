@@ -1063,12 +1063,19 @@ main(int argc, char *argv[])
 
    if (params.yaml_file)
    {
-      HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc;
+      HYPRE_Int n_print       = (params.verbose >= 1) ? 2 : 0;
+      HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc + n_print;
       char     *hypredrv_argv[hypredrv_argc];
       hypredrv_argv[0] = params.yaml_file;
       for (HYPRE_Int k = 0; k < params.hypredrv_argc; k++)
       {
          hypredrv_argv[k + 1] = params.hypredrv_argv[k];
+      }
+      if (n_print)
+      {
+         /* Print the parsed YAML (with any -a/--args overrides applied). */
+         hypredrv_argv[1 + params.hypredrv_argc] = "--general:print_config_params";
+         hypredrv_argv[2 + params.hypredrv_argc] = "1";
       }
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
    }

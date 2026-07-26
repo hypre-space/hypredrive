@@ -42,14 +42,11 @@ if(HYPREDRV_ENABLE_CALIPER)
     endif()
 endif()
 
-# Add OpenMP support for parallel assembly
-find_package(OpenMP)
-if(OpenMP_C_FOUND)
-    target_link_libraries(laplacian PRIVATE OpenMP::OpenMP_C)
-    message(STATUS "OpenMP enabled for laplacian driver")
-else()
-    message(STATUS "OpenMP not found - laplacian driver will build without OpenMP")
+# Add opt-in OpenMP support for parallel assembly
+if(NOT COMMAND hypredrv_link_example_omp)
+    include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/HYPREDRV_Platform.cmake")
 endif()
+hypredrv_link_example_omp(laplacian)
 
 # Apply sanitizer link flags if sanitizers are enabled
 get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)

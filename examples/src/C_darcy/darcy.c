@@ -1871,12 +1871,19 @@ main(int argc, char **argv)
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
    char *config_arg =
       params.yaml_file ? params.yaml_file : (char *)default_config(params.verbose & 0x1);
-   HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc;
+   HYPRE_Int n_print       = (params.verbose >= 1) ? 2 : 0;
+   HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc + n_print;
    char     *hypredrv_argv[hypredrv_argc];
    hypredrv_argv[0] = config_arg;
    for (HYPRE_Int i = 0; i < params.hypredrv_argc; i++)
    {
       hypredrv_argv[i + 1] = params.hypredrv_argv[i];
+   }
+   if (n_print)
+   {
+      /* Print the parsed YAML (with any -a/--args overrides applied). */
+      hypredrv_argv[1 + params.hypredrv_argc] = "--general:print_config_params";
+      hypredrv_argv[2 + params.hypredrv_argc] = "1";
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
    HYPRE_Int mpi_grid[3];
