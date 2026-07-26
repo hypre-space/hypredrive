@@ -89,51 +89,55 @@ Each configuration uses one MPI rank per computational CPU core or GPU:
      - MPI ranks
      - Launcher
    * - ``dane``
-     - 112 CPU cores
+     - 2x Intel(R) Xeon(R) Platinum 8480+
      - 112
      - ``srun``
    * - ``matrix``
-     - 4 NVIDIA H100 GPUs
+     - 4x NVIDIA H100 80GB GPUs
      - 4
      - ``srun``
    * - ``tuo-cpu``
-     - 80 CPU cores
+     - 4x AMD MI300A 128GB (CPU cores)
      - 80
      - ``flux run``
    * - ``tuo-gpu-cpx``
-     - 24 logical AMD MI300A GPUs
+     - 4x AMD MI300A 128GB (GPU cores)
      - 24
      - ``flux run``
    * - ``tuo-gpu-spx``
-     - 4 AMD MI300A GPUs
+     - 4x AMD MI300A 128GB (GPU cores)
      - 4
      - ``flux run``
    * - ``tioga-cpu``
-     - 64 AMD EPYC CPU cores
+     - 1x AMD EPYC 7A53 64-Core
      - 64
      - ``flux run``
    * - ``tioga-gpu``
-     - 8 AMD MI250X GPU devices
+     - 4x AMD MI250X 128GB GPUs
      - 8
      - ``flux run``
    * - ``polaris-cpu``
-     - 32 physical CPU cores
+     - 1x AMD EPYC 7543P 32-Core
      - 32
      - ``mpiexec``
    * - ``polaris-gpu``
-     - 4 NVIDIA A100 GPUs
+     - 4x NVIDIA A100 40GB GPUs
      - 4
      - ``mpiexec``
    * - ``aurora``
-     - 12 Intel GPU Max tiles
+     - 6x Intel(R) Data Center GPU Max 1550
      - 12
      - ``mpiexec``
+   * - ``8xB200``
+     - 8x NVIDIA B200 180GB GPUs
+     - 8
+     - ``mpiexec``
    * - ``frontier-cpu``
-     - 56 allocatable physical CPU cores
+     - 1x AMD EPYC 7A53 64-Core
      - 56
      - ``srun``
    * - ``frontier-gpu``
-     - 8 AMD MI250X GPU compute dies
+     - 4x AMD MI250X 128GB GPUs
      - 8
      - ``srun``
 
@@ -204,3 +208,43 @@ Each results directory contains:
 Set ``HYPREDRV_SCALING_RESULTS_DIR`` to use a different output root. If a run
 fails, the script records its status and output, stops the sweep, and returns
 the failing status.
+
+Representative single-node results
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The measurements below use one full node per machine and separate BoomerAMG
+setup time from CG solve time. They compare node-level time to solution rather
+than per-core or per-device efficiency, since the machines have different
+processor counts and architectures. At the smallest problem sizes, fixed
+launch and communication costs can dominate, so CPU and accelerator timings
+may overlap. As the amount of work increases, the accelerator configurations
+generally provide lower setup and solve times, while the relative ordering and
+largest completed problem size depend on the discretization and phase. Both
+axes use logarithmic scales.
+
+7-point Laplacian
+^^^^^^^^^^^^^^^^^
+
+.. figure:: figures/node_scaling_lap7.png
+   :alt: Setup and solve scaling for the 7-point Laplacian on one node
+   :width: 100%
+
+   Single-node BoomerAMG-CG setup and solve times for the 7-point Laplacian.
+
+27-point Laplacian
+^^^^^^^^^^^^^^^^^^
+
+.. figure:: figures/node_scaling_lap27.png
+   :alt: Setup and solve scaling for the 27-point Laplacian on one node
+   :width: 100%
+
+   Single-node BoomerAMG-CG setup and solve times for the 27-point Laplacian.
+
+3D linear elasticity
+^^^^^^^^^^^^^^^^^^^^
+
+.. figure:: figures/node_scaling_elasticity.png
+   :alt: Setup and solve scaling for 3D linear elasticity on one node
+   :width: 100%
+
+   Single-node BoomerAMG-CG setup and solve times for 3D linear elasticity.
