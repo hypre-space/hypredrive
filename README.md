@@ -19,6 +19,9 @@ cmake -DHYPREDRV_ENABLE_DATA=ON -B build && cmake --build build -j -t check
 ```
 
 - hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use an existing install.
+- Pass `-DHYPREDRV_BUILD_DSUPERLU=ON` to fetch SuperLU_DIST and enable
+  HYPRE's distributed direct-solver support. Accelerator builds use
+  `HYPREDRV_ENABLE_CUDA`, `HYPREDRV_ENABLE_HIP`, or `HYPREDRV_ENABLE_SYCL`.
 - Check [installation instructions](https://hypredrive.readthedocs.io/en/latest/installation.html) for details, including the available library options.
 
 ## Examples
