@@ -444,6 +444,42 @@ function(_hypredrv_forward_hypre_cache_vars forwarded_count_var)
 endfunction()
 
 ############################################################
+# Propagate HYPREDRV dependency options
+############################################################
+
+# Keep accelerator selection at the HYPREDRV level and propagate it to every
+# bundled dependency that supports the selected backend. HYPRE forwards these
+# options to its own nested dependencies (for example, Umpire).
+set(_hypredrv_enabled_accelerators "")
+foreach(_hypredrv_accelerator IN ITEMS CUDA HIP SYCL)
+    if(HYPREDRV_ENABLE_${_hypredrv_accelerator})
+        list(APPEND _hypredrv_enabled_accelerators
+             "${_hypredrv_accelerator}")
+        set(HYPRE_ENABLE_${_hypredrv_accelerator} ON CACHE BOOL
+            "Enabled by HYPREDRV_ENABLE_${_hypredrv_accelerator}" FORCE)
+        message(STATUS
+            "HYPREDRV_ENABLE_${_hypredrv_accelerator}=ON: enabling "
+            "HYPRE_ENABLE_${_hypredrv_accelerator}")
+    endif()
+endforeach()
+list(LENGTH _hypredrv_enabled_accelerators
+     _hypredrv_enabled_accelerator_count)
+if(_hypredrv_enabled_accelerator_count GREATER 1)
+    list(JOIN _hypredrv_enabled_accelerators ", "
+         _hypredrv_enabled_accelerators_text)
+    message(FATAL_ERROR
+        "HYPREDRV accelerator backends are mutually exclusive; enabled: "
+        "${_hypredrv_enabled_accelerators_text}")
+endif()
+
+# Enable HYPRE's SuperLU_DIST integration whenever HYPREDRV owns the
+# SuperLU_DIST build.
+if(HYPREDRV_BUILD_DSUPERLU)
+    set(HYPRE_ENABLE_DSUPERLU ON CACHE BOOL
+        "Use TPL SuperLU_DIST" FORCE)
+endif()
+
+############################################################
 # Sync Caliper options between HYPREDRV and HYPRE
 ############################################################
 
@@ -636,13 +672,17 @@ endif()
 ############################################################
 
 set(SUPERLU_DIST_VERSION "v9.2.1" CACHE STRING
-    "SuperLU_DIST version/branch/tag to fetch when HYPRE_ENABLE_DSUPERLU=ON (e.g., v9.2.1)")
+    "SuperLU_DIST version/branch/tag to fetch (e.g., v9.2.1)")
 
-if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
+if(HYPRE_ENABLE_DSUPERLU)
     set(SUPERLU_DIST_FOUND FALSE)
 
     if(HYPRE_BUILD_DSUPERLU)
         message(STATUS "Reconfiguring auto-built SuperLU_DIST dependency")
+    elseif(HYPREDRV_BUILD_DSUPERLU)
+        message(STATUS
+            "HYPREDRV_BUILD_DSUPERLU=ON: SuperLU_DIST will be fetched "
+            "and built")
     elseif(TPL_DSUPERLU_INCLUDE_DIRS AND TPL_DSUPERLU_LIBRARIES)
         set(SUPERLU_DIST_FOUND TRUE)
         message(STATUS "Using user-provided SuperLU_DIST include/lib paths for HYPRE")
@@ -746,10 +786,25 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
             "Enable SuperLU_DIST COLAMD support")
         _hypredrv_set_cache_bool_default(TPL_ENABLE_LAPACKLIB OFF
             "Enable SuperLU_DIST LAPACK support")
-        _hypredrv_set_cache_bool_default(TPL_ENABLE_CUDALIB OFF
-            "Enable SuperLU_DIST CUDA support")
-        _hypredrv_set_cache_bool_default(TPL_ENABLE_HIPLIB OFF
-            "Enable SuperLU_DIST HIP support")
+        if(HYPREDRV_ENABLE_CUDA)
+            set(TPL_ENABLE_CUDALIB ON CACHE BOOL
+                "Enable SuperLU_DIST CUDA support" FORCE)
+        else()
+            _hypredrv_set_cache_bool_default(TPL_ENABLE_CUDALIB OFF
+                "Enable SuperLU_DIST CUDA support")
+        endif()
+        if(HYPREDRV_ENABLE_HIP)
+            set(TPL_ENABLE_HIPLIB ON CACHE BOOL
+                "Enable SuperLU_DIST HIP support" FORCE)
+        else()
+            _hypredrv_set_cache_bool_default(TPL_ENABLE_HIPLIB OFF
+                "Enable SuperLU_DIST HIP support")
+        endif()
+        if(HYPREDRV_ENABLE_SYCL)
+            message(STATUS
+                "SuperLU_DIST ${SUPERLU_DIST_VERSION} has no SYCL backend; "
+                "building its CPU implementation for SYCL-enabled HYPRE")
+        endif()
         _hypredrv_set_cache_bool_default(TPL_ENABLE_NVSHMEM OFF
             "Enable SuperLU_DIST NVSHMEM support")
         _hypredrv_set_cache_bool_default(TPL_ENABLE_ROCSHMEM OFF
@@ -771,6 +826,10 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
 
         _hypredrv_set_common_output_directories()
 
+        set(_hypredrv_superlu_dist_static_build OFF)
+        if(NOT BUILD_SHARED_LIBS)
+            set(_hypredrv_superlu_dist_static_build ON)
+        endif()
         message(STATUS
             "  Using inherited BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} for SuperLU_DIST build")
 
@@ -797,9 +856,22 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
                 $<BUILD_INTERFACE:${superlu_dist_BINARY_DIR}/SRC>)
         endif()
 
+        if(_hypredrv_superlu_dist_static_build AND TARGET superlu_dist)
+            get_target_property(_hypredrv_superlu_dist_target_type
+                                superlu_dist TYPE)
+            if(NOT _hypredrv_superlu_dist_target_type STREQUAL
+                   "STATIC_LIBRARY")
+                message(FATAL_ERROR
+                    "The bundled HYPRE build is static, but SuperLU_DIST "
+                    "target superlu_dist is ${_hypredrv_superlu_dist_target_type}")
+            endif()
+            message(STATUS
+                "  Verified bundled SuperLU_DIST target is static")
+        endif()
+
         # HYPRE needs concrete library paths in TPL_DSUPERLU_LIBRARIES. These paths
         # assume the project's single-config, unified output directories.
-        if(BUILD_SHARED_LIBS)
+        if(NOT _hypredrv_superlu_dist_static_build)
             set(SUPERLU_DIST_LIBRARY_FILE
                 "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_SHARED_LIBRARY_PREFIX}superlu_dist${CMAKE_SHARED_LIBRARY_SUFFIX}")
         else()
@@ -809,7 +881,7 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
 
         set(_hypredrv_dsuperlu_libraries ${SUPERLU_DIST_LIBRARY_FILE})
         if(TPL_ENABLE_INTERNAL_BLASLIB)
-            if(BUILD_SHARED_LIBS)
+            if(NOT _hypredrv_superlu_dist_static_build)
                 list(APPEND _hypredrv_dsuperlu_libraries
                     "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_SHARED_LIBRARY_PREFIX}blas${CMAKE_SHARED_LIBRARY_SUFFIX}")
             else()
@@ -839,6 +911,8 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
         message(STATUS "  Setting TPL_DSUPERLU_LIBRARIES: ${TPL_DSUPERLU_LIBRARIES}")
         message(STATUS "SuperLU_DIST configured and ready (built via FetchContent)")
         unset(_hypredrv_dsuperlu_libraries)
+        unset(_hypredrv_superlu_dist_static_build)
+        unset(_hypredrv_superlu_dist_target_type)
     endif()
 endif()
 

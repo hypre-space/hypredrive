@@ -81,8 +81,17 @@ For a local build, CMake uses `FetchContent` to retrieve and build HYPRE when
 - Passes the CMake arguments from the parent project to HYPRE.
 - Builds HYPRE in the same build tree.
 - Selects the HYPRE version with ``-DHYPRE_VERSION=<version>``.
+- Maps ``HYPREDRV_ENABLE_CUDA``, ``HYPREDRV_ENABLE_HIP``, and
+  ``HYPREDRV_ENABLE_SYCL`` to HYPRE and any bundled dependency that supports
+  the selected backend.
 
 To use an existing HYPRE installation, set ``-DHYPRE_ROOT=<path>``.
+
+Set ``-DHYPREDRV_BUILD_DSUPERLU=ON`` to fetch the pinned SuperLU_DIST
+release before configuring HYPRE and to enable HYPRE's distributed
+SuperLU_DIST integration. ``-DSUPERLU_DIST_VERSION=<revision>`` overrides the
+pin. The automatic SuperLU_DIST build follows ``BUILD_SHARED_LIBS`` so a
+static automatic HYPRE build also uses static SuperLU_DIST.
 
 MPI configuration
 ~~~~~~~~~~~~~~~~~

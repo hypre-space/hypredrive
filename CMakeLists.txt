@@ -41,11 +41,15 @@ option(HYPREDRV_ENABLE_HWLOC        "Enable hwloc support for detailed system to
 option(HYPREDRV_ENABLE_CALIPER      "Enable Caliper instrumentation support" OFF)
 option(HYPREDRV_ENABLE_COMPRESSION  "Enable optional lossless compression backends" OFF)
 option(HYPREDRV_ENABLE_FUZZING      "Enable opt-in fuzzing harnesses and replay tests" OFF)
+option(HYPREDRV_ENABLE_CUDA         "Enable CUDA support in HYPRE and bundled dependencies" OFF)
+option(HYPREDRV_ENABLE_HIP          "Enable HIP support in HYPRE and bundled dependencies" OFF)
+option(HYPREDRV_ENABLE_SYCL         "Enable SYCL support in HYPRE and bundled dependencies" OFF)
 option(HYPREDRV_ENABLE_CPP          "Enable the hypredrive C++ interface" OFF)
 option(HYPREDRV_ENABLE_FORTRAN      "Enable the hypredrive Fortran interface" OFF)
 option(HYPREDRV_ENABLE_PYTHON       "Enable the hypredrive Python interface" OFF)
 option(HYPREDRV_ENABLE_MATLAB       "Enable the hypredrive MATLAB/Octave MEX interface" OFF)
 option(HYPREDRV_ENABLE_JULIA        "Enable the hypredrive Julia interface" OFF)
+option(HYPREDRV_BUILD_DSUPERLU      "Fetch and build SuperLU_DIST for HYPRE" OFF)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Fuzzing.cmake)
 

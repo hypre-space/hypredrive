@@ -126,6 +126,11 @@ CMake options reference
 - ``-DHYPREDRV_ENABLE_HWLOC=ON`` — hwloc-based topology reporting. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_CALIPER=ON`` — Caliper instrumentation. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_COMPRESSION=ON`` — Lossless compression backends and the ``hypredrive-lsseq`` utility. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_CUDA=ON`` — Enable CUDA in HYPRE and bundled dependencies that support it. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_HIP=ON`` — Enable HIP in HYPRE and bundled dependencies that support it. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_SYCL=ON`` — Enable SYCL in HYPRE and bundled dependencies that support it. Default: ``OFF``.
+- ``-DHYPREDRV_BUILD_DSUPERLU=ON`` — Fetch and build SuperLU_DIST and
+  enable it in the automatic HYPRE build. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_PYTHON=ON`` — Build the Python extension as part of the top-level CMake build. Default: ``OFF``.
 
 *Option interactions*
@@ -134,16 +139,23 @@ CMake options reference
 - ``HYPREDRV_ENABLE_COVERAGE=ON`` implies testing, examples, and data.
 - The ``check`` smoke-test target is always available regardless of ``HYPREDRV_ENABLE_TESTING``.
 
-*GPU builds (forwarded to the automatic HYPRE build)*
+*Accelerator builds*
 
-When CMake builds HYPRE automatically, it forwards ``HYPRE_ENABLE_*``, ``*_ROOT``, ``*_DIR``,
-and standard ``CMAKE_*`` variables to the HYPRE build. Examples:
+The HYPREDRV accelerator options select one backend for the complete bundled
+dependency stack. They enable the corresponding ``HYPRE_ENABLE_*`` option and
+are propagated by HYPRE to nested dependencies such as Umpire. When
+SuperLU_DIST is built with ``HYPREDRV_BUILD_DSUPERLU=ON``, CUDA also
+enables ``TPL_ENABLE_CUDALIB`` and HIP enables ``TPL_ENABLE_HIPLIB``.
+SuperLU_DIST 9.2.1 has no SYCL backend, so a SYCL-enabled HYPRE build uses its
+CPU implementation. CUDA, HIP, and SYCL are mutually exclusive.
+
+Examples:
 
 .. code-block:: bash
 
     # CUDA
     $ cmake -DCMAKE_BUILD_TYPE=Release \
-            -DHYPRE_ENABLE_CUDA=ON \
+            -DHYPREDRV_ENABLE_CUDA=ON \
             -DCMAKE_CUDA_ARCHITECTURES=80 \
             -B build -S .
 
@@ -151,10 +163,21 @@ and standard ``CMAKE_*`` variables to the HYPRE build. Examples:
 
     # HIP / ROCm
     $ cmake -DCMAKE_BUILD_TYPE=Release \
-            -DHYPRE_ENABLE_HIP=ON \
+            -DHYPREDRV_ENABLE_HIP=ON \
             -DROCM_PATH=/opt/rocm \
             -DCMAKE_HIP_ARCHITECTURES=gfx90a \
             -B build -S .
+
+.. code-block:: bash
+
+    # SYCL / oneAPI
+    $ cmake -DCMAKE_BUILD_TYPE=Release \
+            -DHYPREDRV_ENABLE_SYCL=ON \
+            -DHYPRE_SYCL_TARGET=spir64_gen \
+            -B build -S .
+
+Low-level ``HYPRE_ENABLE_*``, ``*_ROOT``, ``*_DIR``, and standard
+``CMAKE_*`` variables are still forwarded to an automatic HYPRE build.
 
 Auto-fetched CUDA and HIP builds also enable ``HYPRE_BUILD_UMPIRE`` by
 default unless ``umpire_ROOT`` or ``umpire_DIR`` points to an external Umpire
@@ -186,11 +209,20 @@ default Makefile generator or an existing Caliper installation.
 
 *SuperLU_DIST (optional HYPRE DSUPERLU support)*
 
-- ``-DHYPRE_ENABLE_DSUPERLU=ON`` — Enable HYPRE's SuperLU_DIST integration.
-- ``-DSUPERLU_DIST_VERSION=<version>`` — SuperLU_DIST revision to fetch if
-  ``superlu_dist`` is not found. Default: ``v9.2.1``.
+- ``-DHYPREDRV_BUILD_DSUPERLU=ON`` — Always fetch and build SuperLU_DIST,
+  and automatically enable HYPRE's SuperLU_DIST integration by setting
+  ``HYPRE_ENABLE_DSUPERLU=ON``.
+- ``-DSUPERLU_DIST_VERSION=<version>`` — Override the SuperLU_DIST revision to
+  fetch. The default is the latest release, ``v9.2.1``.
+- ``-DHYPRE_ENABLE_DSUPERLU=ON`` — Use an existing SuperLU_DIST installation
+  when found, falling back to an automatic fetch. This lower-level option is
+  retained for compatibility.
 - ``DSUPERLU_DIR`` / ``DSUPERLU_ROOT`` / ``SUPERLU_DIST_ROOT`` — Search hints for an
   existing SuperLU_DIST installation.
+
+``BUILD_SHARED_LIBS`` applies to HYPREDRV, automatic HYPRE, and automatic
+SuperLU_DIST builds. With the default ``BUILD_SHARED_LIBS=OFF``, all three are
+static libraries.
 
 *Compression backends*
 
