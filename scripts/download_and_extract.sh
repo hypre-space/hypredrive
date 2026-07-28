@@ -39,8 +39,8 @@ MD5=$(echo "$MD5" | sed 's/^"//;s/"$//')
 mkdir -p "$(dirname "$TARBALL")"
 mkdir -p "$DEST"
 
-# Download with curl
-curl -L -f -o "$TARBALL" "$URL"
+# Download with curl (retry transient gateway/server errors, e.g. Zenodo 504s)
+curl -L -f --retry 5 --retry-delay 3 --retry-all-errors -o "$TARBALL" "$URL"
 
 # Verify file exists
 if [ ! -f "$TARBALL" ]; then
