@@ -30,8 +30,8 @@
 #define FUZZ_MATRIX_MAX_NNZ 100000u
 #define FUZZ_VECTOR_MAX_ROWS 100000u
 #define FUZZ_MAX_ARGC 32
-#define FUZZ_SOLVE_ARGC_CAP 21
-#define FUZZ_SOLVE_BASE_ARGC 17
+#define FUZZ_SOLVE_ARGC_CAP 33
+#define FUZZ_SOLVE_BASE_ARGC 29
 #define FUZZ_SOLVE_FORCED_ARGC 4
 #define FUZZ_MULTIPART_MAX_PARTS 3u
 #define FUZZ_MULTIPART_HEADER_SIZE 10u
@@ -643,7 +643,21 @@ fuzz_solve_yaml_text_once(const uint8_t *data, size_t size, int force_solver)
    FUZZ_ARGV_ADD_COPY("0");
    FUZZ_ARGV_ADD_COPY("--linear_system:dofmap_filename");
    FUZZ_ARGV_ADD_COPY("");
+   FUZZ_ARGV_ADD_COPY("--linear_system:dofmap_basename");
+   FUZZ_ARGV_ADD_COPY("");
    FUZZ_ARGV_ADD_COPY("--linear_system:sequence_filename");
+   FUZZ_ARGV_ADD_COPY("");
+   /* Pin every file-input key so fuzzed configs cannot redirect reads to
+    * nonexistent files and abort the process inside HYPREDRV_LinearSystemBuild. */
+   FUZZ_ARGV_ADD_COPY("--linear_system:x0_filename");
+   FUZZ_ARGV_ADD_COPY("");
+   FUZZ_ARGV_ADD_COPY("--linear_system:xref_filename");
+   FUZZ_ARGV_ADD_COPY("");
+   FUZZ_ARGV_ADD_COPY("--linear_system:xref_basename");
+   FUZZ_ARGV_ADD_COPY("");
+   FUZZ_ARGV_ADD_COPY("--linear_system:precmat_filename");
+   FUZZ_ARGV_ADD_COPY("");
+   FUZZ_ARGV_ADD_COPY("--linear_system:precmat_basename");
    FUZZ_ARGV_ADD_COPY("");
    FUZZ_ARGV_ADD_COPY("--general:num_repetitions");
    FUZZ_ARGV_ADD_COPY("1");
