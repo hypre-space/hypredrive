@@ -13,6 +13,16 @@
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
 
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) \
+   HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) \
+   HYPRE_IJVectorInitialize_v2((vec), HYPRE_MEMORY_HOST)
+#else
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) HYPRE_IJMatrixInitialize((mat))
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) HYPRE_IJVectorInitialize((vec))
+#endif
+
 /*==========================================================================
  *   Definite grad-div (grad-div + mass) Example Driver -- ADS preconditioner
  *==========================================================================
@@ -618,27 +628,27 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm,
    HYPRE_IJMatrixCreate(comm, m->face_ilower, m->face_iupper, m->face_ilower,
                         m->face_iupper, &A);
    HYPRE_IJMatrixSetObjectType(A, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(A);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(A);
    HYPRE_IJMatrixCreate(comm, m->edge_ilower, m->edge_iupper, m->node_ilower,
                         m->node_iupper, &G);
    HYPRE_IJMatrixSetObjectType(G, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(G);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(G);
    HYPRE_IJMatrixCreate(comm, m->face_ilower, m->face_iupper, m->edge_ilower,
                         m->edge_iupper, &C);
    HYPRE_IJMatrixSetObjectType(C, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(C);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(C);
    HYPRE_IJVectorCreate(comm, m->face_ilower, m->face_iupper, &b);
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize(b);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(b);
    HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cx);
    HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cy);
    HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cz);
    HYPRE_IJVectorSetObjectType(cx, HYPRE_PARCSR);
    HYPRE_IJVectorSetObjectType(cy, HYPRE_PARCSR);
    HYPRE_IJVectorSetObjectType(cz, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize(cx);
-   HYPRE_IJVectorInitialize(cy);
-   HYPRE_IJVectorInitialize(cz);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(cx);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(cy);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(cz);
 
    HYPRE_Real *xref = (HYPRE_Real *)calloc(
       (size_t)(m->num_faces_local > 0 ? m->num_faces_local : 1), sizeof(HYPRE_Real));

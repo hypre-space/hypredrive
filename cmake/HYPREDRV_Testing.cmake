@@ -92,6 +92,10 @@ set(HYPREDRV_GPU_DISABLED_TESTS
     lidcavity_test_mgr_1proc
     lidcavity_test_print_1proc
     lidcavity_test_adaptive_reuse_1proc
+    lidcavity_test_mgr_schwarz_frelax_iluk_1proc
+    lidcavity_test_mgr_schwarz_grelax_iluk_1proc
+    lidcavity_test_mgr_schwarz_frelax_iluk_4proc
+    lidcavity_test_mgr_schwarz_grelax_iluk_4proc
     lidcavity_test_mgr_4proc
 )
 

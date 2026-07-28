@@ -84,7 +84,6 @@ struct DarcyDiscretization
 #define DEFAULT_MGR_CONFIG(statistics_value) \
    "general:\n"                              \
    "  statistics: " statistics_value "\n"    \
-   "  exec_policy: host\n"                   \
    "linear_system:\n"                        \
    "  init_guess_mode: zeros\n"              \
    "solver:\n"                               \
@@ -117,7 +116,6 @@ struct DarcyDiscretization
 #define LEGACY_HYPRE_CONFIG(statistics_value) \
    "general:\n"                               \
    "  statistics: " statistics_value "\n"     \
-   "  exec_policy: host\n"                    \
    "linear_system:\n"                         \
    "  init_guess_mode: zeros\n"               \
    "solver:\n"                                \

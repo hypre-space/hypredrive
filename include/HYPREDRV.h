@@ -206,8 +206,9 @@ extern "C"
     * @p error_code is non-zero it prints the originating source location,
     * describes the error via HYPREDRV_ErrorCodeDescribe(), then either raises
     * @c SIGTRAP (when the environment variable @c HYPREDRV_DEBUG=1 is set, for
-    * use with a debugger) or calls @c MPI_Abort(@p comm, @p error_code). When
-    * @p error_code is zero it returns without doing anything.
+    * use with a debugger) or calls @c MPI_Abort() with a nonzero process status
+    * derived from @p error_code. When @p error_code is zero it returns without
+    * doing anything.
     *
     * @param error_code Error code returned by the wrapped HYPREDRV call; zero
     * means success and no action is taken.

@@ -70,7 +70,8 @@ if(HYPREDRV_ENABLE_TESTING)
             "relative pressure L2 error"
     )
     add_executable_test(darcy_rt0_heterogeneous_1proc darcy 1
-        ARGS -n 4 3 1 --K-file "${_darcy_heterogeneous_perm}" -g x -v 0
+        ARGS -n 4 3 1 --K-file "${_darcy_heterogeneous_perm}"
+             --K-file-grid 4 3 1 -g x -v 0
         RUN_SERIAL
         REQUIRE_CONTAINS
             "heterogeneous pressure solve completed"

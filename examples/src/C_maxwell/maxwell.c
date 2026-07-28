@@ -636,16 +636,16 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm,
    HYPRE_IJMatrixCreate(comm, m->edge_ilower, m->edge_iupper, m->edge_ilower,
                         m->edge_iupper, &A);
    HYPRE_IJMatrixSetObjectType(A, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(A);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(A);
 
    HYPRE_IJMatrixCreate(comm, m->edge_ilower, m->edge_iupper, m->node_ilower,
                         m->node_iupper, &G);
    HYPRE_IJMatrixSetObjectType(G, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(G);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(G);
 
    HYPRE_IJVectorCreate(comm, m->edge_ilower, m->edge_iupper, &b);
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize(b);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(b);
 
    HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cx);
    HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cy);
@@ -653,9 +653,9 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm,
    HYPRE_IJVectorSetObjectType(cx, HYPRE_PARCSR);
    HYPRE_IJVectorSetObjectType(cy, HYPRE_PARCSR);
    HYPRE_IJVectorSetObjectType(cz, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize(cx);
-   HYPRE_IJVectorInitialize(cy);
-   HYPRE_IJVectorInitialize(cz);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(cx);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(cy);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(cz);
 
    HYPRE_Real *xref = (HYPRE_Real *)calloc(
       (size_t)(m->num_edges_local > 0 ? m->num_edges_local : 1), sizeof(HYPRE_Real));

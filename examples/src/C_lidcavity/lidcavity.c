@@ -131,6 +131,9 @@ static const char *default_config_q2q1 = "solver:\n"
                                          "          amg:\n"
                                          "            max_iter: 1\n"
                                          "            tolerance: 0.0\n"
+#ifdef HYPRE_USING_GPU
+                                         "          reuse: always\n"
+#endif
                                          "        g_relaxation: none\n"
                                          "        restriction_type: injection\n"
                                          "        prolongation_type: blk-absrowsum\n"
@@ -138,7 +141,11 @@ static const char *default_config_q2q1 = "solver:\n"
                                          "    coarsest_level:\n"
                                          "      amg:\n"
                                          "        max_iter: 1\n"
-                                         "        tolerance: 0.0\n";
+                                         "        tolerance: 0.0\n"
+#ifdef HYPRE_USING_GPU
+                                         "      reuse: always\n"
+#endif
+   ;
 
 /*--------------------------------------------------------------------------
  * Problem parameters struct
@@ -3052,7 +3059,7 @@ main(int argc, char *argv[])
    {
       HYPRE_IJVectorCreate(MPI_COMM_WORLD, mesh->dof_ilower, mesh->dof_iupper, &vec_s[i]);
       HYPRE_IJVectorSetObjectType(vec_s[i], HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize(vec_s[i]);
+      HYPREDRV_IJ_VECTOR_INIT_HOST(vec_s[i]);
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorSet(hypredrv, 2, vec_s));
 

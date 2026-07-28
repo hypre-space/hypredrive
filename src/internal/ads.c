@@ -8,35 +8,53 @@
 #include "internal/ads.h"
 #include "internal/gen_macros.h"
 
+/* hypre's host ADS defaults use interpolation and relaxation paths that are not
+ * device-capable. Use the same device-safe AMG choices as AMS for both auxiliary
+ * blocks in GPU builds. */
+#ifdef HYPRE_USING_GPU
+#define ADS_DEFAULT_RELAX_TYPE 1
+#define ADS_DEFAULT_AMG_COARSEN_TYPE 8
+#define ADS_DEFAULT_AMG_RELAX_TYPE 18
+#define ADS_DEFAULT_AMG_INTERP_TYPE 6
+#define ADS_DEFAULT_AMG_PMAX 4
+#else
+#define ADS_DEFAULT_RELAX_TYPE 2
+#define ADS_DEFAULT_AMG_COARSEN_TYPE 10
+#define ADS_DEFAULT_AMG_RELAX_TYPE 3
+#define ADS_DEFAULT_AMG_INTERP_TYPE 0
+#define ADS_DEFAULT_AMG_PMAX 0
+#endif
+
 /*-----------------------------------------------------------------------------
- * Define Field/Offset/Setter mapping (defaults match hypre, except
- * max_iter/tolerance/print_level tuned for preconditioner use)
+ * Define Field/Offset/Setter mapping (defaults match hypre's host defaults or use
+ * device-safe ADS choices, except max_iter/tolerance/print_level tuned for
+ * preconditioner use)
  *-----------------------------------------------------------------------------*/
 
-#define ADS_FIELDS(_X, _p)                                           \
-   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 1)                     \
-   _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)                  \
-   _X(_p, cycle_type, hypredrv_FieldTypeIntSet, 1)                   \
-   _X(_p, tolerance, hypredrv_FieldTypeDoubleSet, 0.0)               \
-   _X(_p, relax_type, hypredrv_FieldTypeIntSet, 2)                   \
-   _X(_p, relax_times, hypredrv_FieldTypeIntSet, 1)                  \
-   _X(_p, relax_weight, hypredrv_FieldTypeDoubleSet, 1.0)            \
-   _X(_p, omega, hypredrv_FieldTypeDoubleSet, 1.0)                   \
-   _X(_p, cheby_order, hypredrv_FieldTypeIntSet, 2)                  \
-   _X(_p, cheby_fraction, hypredrv_FieldTypeDoubleSet, 0.3)          \
-   _X(_p, ams_cycle_type, hypredrv_FieldTypeIntSet, 11)              \
-   _X(_p, ams_coarsen_type, hypredrv_FieldTypeIntSet, 10)            \
-   _X(_p, ams_agg_levels, hypredrv_FieldTypeIntSet, 1)               \
-   _X(_p, ams_relax_type, hypredrv_FieldTypeIntSet, 3)               \
-   _X(_p, ams_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25) \
-   _X(_p, ams_interp_type, hypredrv_FieldTypeIntSet, 0)              \
-   _X(_p, ams_Pmax, hypredrv_FieldTypeIntSet, 0)                     \
-   _X(_p, amg_coarsen_type, hypredrv_FieldTypeIntSet, 10)            \
-   _X(_p, amg_agg_levels, hypredrv_FieldTypeIntSet, 1)               \
-   _X(_p, amg_relax_type, hypredrv_FieldTypeIntSet, 3)               \
-   _X(_p, amg_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25) \
-   _X(_p, amg_interp_type, hypredrv_FieldTypeIntSet, 0)              \
-   _X(_p, amg_Pmax, hypredrv_FieldTypeIntSet, 0)
+#define ADS_FIELDS(_X, _p)                                                          \
+   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 1)                                    \
+   _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)                                 \
+   _X(_p, cycle_type, hypredrv_FieldTypeIntSet, 1)                                  \
+   _X(_p, tolerance, hypredrv_FieldTypeDoubleSet, 0.0)                              \
+   _X(_p, relax_type, hypredrv_FieldTypeIntSet, ADS_DEFAULT_RELAX_TYPE)             \
+   _X(_p, relax_times, hypredrv_FieldTypeIntSet, 1)                                 \
+   _X(_p, relax_weight, hypredrv_FieldTypeDoubleSet, 1.0)                           \
+   _X(_p, omega, hypredrv_FieldTypeDoubleSet, 1.0)                                  \
+   _X(_p, cheby_order, hypredrv_FieldTypeIntSet, 2)                                 \
+   _X(_p, cheby_fraction, hypredrv_FieldTypeDoubleSet, 0.3)                         \
+   _X(_p, ams_cycle_type, hypredrv_FieldTypeIntSet, 11)                             \
+   _X(_p, ams_coarsen_type, hypredrv_FieldTypeIntSet, ADS_DEFAULT_AMG_COARSEN_TYPE) \
+   _X(_p, ams_agg_levels, hypredrv_FieldTypeIntSet, 1)                              \
+   _X(_p, ams_relax_type, hypredrv_FieldTypeIntSet, ADS_DEFAULT_AMG_RELAX_TYPE)     \
+   _X(_p, ams_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25)                \
+   _X(_p, ams_interp_type, hypredrv_FieldTypeIntSet, ADS_DEFAULT_AMG_INTERP_TYPE)   \
+   _X(_p, ams_Pmax, hypredrv_FieldTypeIntSet, ADS_DEFAULT_AMG_PMAX)                 \
+   _X(_p, amg_coarsen_type, hypredrv_FieldTypeIntSet, ADS_DEFAULT_AMG_COARSEN_TYPE) \
+   _X(_p, amg_agg_levels, hypredrv_FieldTypeIntSet, 1)                              \
+   _X(_p, amg_relax_type, hypredrv_FieldTypeIntSet, ADS_DEFAULT_AMG_RELAX_TYPE)     \
+   _X(_p, amg_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25)                \
+   _X(_p, amg_interp_type, hypredrv_FieldTypeIntSet, ADS_DEFAULT_AMG_INTERP_TYPE)   \
+   _X(_p, amg_Pmax, hypredrv_FieldTypeIntSet, ADS_DEFAULT_AMG_PMAX)
 
 /* Define num_fields macro */
 #define ADS_NUM_FIELDS (sizeof(ADS_field_offset_map) / sizeof(ADS_field_offset_map[0]))

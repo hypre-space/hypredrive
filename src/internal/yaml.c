@@ -2065,81 +2065,98 @@ YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int star
       return; /* GCOVR_EXCL_LINE */
    }
 
-   YAMLnode *cur = node;
-   for (int i = start_idx; i < ctx->num_segments; i++)
-   {
-      const char *seg_const = ctx->segments[i];
-      bool        is_last   = (i == ctx->num_segments - 1);
+   const char *seg_const = ctx->segments[start_idx];
+   bool        is_last   = (start_idx == ctx->num_segments - 1);
 
-      if (!is_last) /* intermediate */
+   /* Overrides must apply to every occurrence of a duplicated key: section
+    * parsers iterate all children with last-wins semantics, so updating only
+    * the first occurrence would let a duplicate in the YAML input shadow this
+    * command-line override. */
+   if (!is_last) /* intermediate */
+   {
+      YAMLnode *child = NULL;
+      for (YAMLnode *walker = node->children; walker; walker = walker->next)
       {
-         YAMLnode *child = YAMLnodeGetOrCreateChild(cur, seg_const);
+         if (strcmp(walker->key, seg_const) != 0)
+         {
+            continue;
+         }
+
+         child = walker;
          YAMLnodeEnsureMapping(child);
 
          /* Check if this child has sequence items */
          if (YAMLnodeHasSequenceItems(child))
          {
             /* Apply remaining path to all sequence items */
-            YAMLnode *seq_walk = child->children;
-            while (seq_walk != NULL)
+            for (YAMLnode *seq_walk = child->children; seq_walk;
+                 seq_walk           = seq_walk->next)
             {
                /* GCOVR_EXCL_BR_START */
                if (!strcmp(seq_walk->key, "-")) /* GCOVR_EXCL_BR_STOP */
                {
-                  YAMLtreeUpdateApplyPathToNode(ctx, seq_walk, i + 1, value);
+                  YAMLtreeUpdateApplyPathToNode(ctx, seq_walk, start_idx + 1, value);
                }
-               seq_walk = seq_walk->next;
             }
-            return; /* Done with this branch */
-         }
-
-         cur = child;
-      }
-      else /* leaf */
-      {
-         /* Check if current node has sequence items */
-         /* GCOVR_EXCL_BR_START */
-         if (YAMLnodeHasSequenceItems(cur)) /* GCOVR_EXCL_BR_STOP */
-         {
-            YAMLnode *seq_walk = cur->children; /* GCOVR_EXCL_LINE */
-            while (seq_walk != NULL)            /* GCOVR_EXCL_LINE */
-            {
-               /* GCOVR_EXCL_BR_START */
-               if (!strcmp(seq_walk->key, "-"))
-               /* GCOVR_EXCL_BR_STOP */ /* GCOVR_EXCL_LINE */
-               {
-                  YAMLnode *item_leaf = hypredrv_YAMLnodeFindChildByKey(
-                     seq_walk, seg_const); /* GCOVR_EXCL_LINE */
-                  /* GCOVR_EXCL_BR_START */
-                  if (!item_leaf) /* GCOVR_EXCL_BR_STOP */ /* GCOVR_EXCL_LINE */
-                  {
-                     item_leaf = hypredrv_YAMLnodeCreate(
-                        seg_const, value, seq_walk->level + 1);      /* GCOVR_EXCL_LINE */
-                     hypredrv_YAMLnodeAddChild(seq_walk, item_leaf); /* GCOVR_EXCL_LINE */
-                  }
-                  else
-                  {
-                     YAMLnodeDestroyChildren(item_leaf);       /* GCOVR_EXCL_LINE */
-                     YAMLnodeSetScalarValue(item_leaf, value); /* GCOVR_EXCL_LINE */
-                  }
-               }
-               seq_walk = seq_walk->next; /* GCOVR_EXCL_LINE */
-            }
-            return; /* Done */ /* GCOVR_EXCL_LINE */
-         }
-
-         YAMLnode *leaf = hypredrv_YAMLnodeFindChildByKey(cur, seg_const);
-         if (!leaf)
-         {
-            leaf = hypredrv_YAMLnodeCreate(seg_const, value, cur->level + 1);
-            hypredrv_YAMLnodeAddChild(cur, leaf);
          }
          else
          {
-            YAMLnodeDestroyChildren(leaf);
-            YAMLnodeSetScalarValue(leaf, value);
+            YAMLtreeUpdateApplyPathToNode(ctx, child, start_idx + 1, value);
          }
       }
+
+      if (!child)
+      {
+         child = YAMLnodeGetOrCreateChild(node, seg_const);
+         YAMLnodeEnsureMapping(child);
+         YAMLtreeUpdateApplyPathToNode(ctx, child, start_idx + 1, value);
+      }
+      return;
+   }
+
+   /* Leaf: check if current node has sequence items */
+   /* GCOVR_EXCL_BR_START */
+   if (YAMLnodeHasSequenceItems(node)) /* GCOVR_EXCL_BR_STOP */
+   {
+      for (YAMLnode *seq_walk = node->children; seq_walk; seq_walk = seq_walk->next)
+      {
+         /* GCOVR_EXCL_BR_START */
+         if (!strcmp(seq_walk->key, "-")) /* GCOVR_EXCL_BR_STOP */
+         {
+            YAMLnode *item_leaf = NULL;
+            for (YAMLnode *walker = seq_walk->children; walker; walker = walker->next)
+            {
+               if (!strcmp(walker->key, seg_const))
+               {
+                  YAMLnodeDestroyChildren(walker);
+                  YAMLnodeSetScalarValue(walker, value);
+                  item_leaf = walker;
+               }
+            }
+            if (!item_leaf)
+            {
+               item_leaf = hypredrv_YAMLnodeCreate(seg_const, value, seq_walk->level + 1);
+               hypredrv_YAMLnodeAddChild(seq_walk, item_leaf);
+            }
+         }
+      }
+      return;
+   }
+
+   YAMLnode *leaf = NULL;
+   for (YAMLnode *walker = node->children; walker; walker = walker->next)
+   {
+      if (!strcmp(walker->key, seg_const))
+      {
+         YAMLnodeDestroyChildren(walker);
+         YAMLnodeSetScalarValue(walker, value);
+         leaf = walker;
+      }
+   }
+   if (!leaf)
+   {
+      leaf = hypredrv_YAMLnodeCreate(seg_const, value, node->level + 1);
+      hypredrv_YAMLnodeAddChild(node, leaf);
    }
 }
 
@@ -2379,6 +2396,47 @@ hypredrv_YAMLtreeValidate(YAMLtree *tree)
    tree->is_validated = true; // Mark tree as validated
 }
 
+/* A node holding both mapping children and sequence items ("-") is mixed
+ * content: not expressible in strict YAML, and keys on either side become
+ * silently unreachable depending on which side a consumer reads. Flag the
+ * tree as invalid so parsers reject the input instead of using defaults. */
+static void
+YAMLnodeFlagMixedContent(YAMLnode *node)
+{
+   if (!node || hypredrv_ErrorCodeActive())
+   {
+      return;
+   }
+
+   bool has_mapping  = false;
+   bool has_sequence = false;
+   for (YAMLnode *child = node->children; child; child = child->next)
+   {
+      if (!strcmp(child->key, "-"))
+      {
+         has_sequence = true;
+      }
+      else
+      {
+         has_mapping = true;
+      }
+   }
+
+   if (has_mapping && has_sequence)
+   {
+      hypredrv_ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      hypredrv_ErrorMsgAdd(
+         "Invalid YAML content: node '%s' mixes mapping keys and sequence items",
+         node->key);
+      return;
+   }
+
+   for (YAMLnode *child = node->children; child; child = child->next)
+   {
+      YAMLnodeFlagMixedContent(child);
+   }
+}
+
 void
 hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
 {
@@ -2399,6 +2457,7 @@ hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
    }
    YAMLnodeExpandIncludesRecursive(tree->root, dir, bi, &ctx);
    YAMLincludeContextDestroy(&ctx);
+   YAMLnodeFlagMixedContent(tree->root);
 }
 
 /******************************************************************************

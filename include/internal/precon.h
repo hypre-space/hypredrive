@@ -8,6 +8,7 @@
 #ifndef PRECON_HEADER
 #define PRECON_HEADER
 
+#include <stddef.h>
 #include <stdint.h>
 #include "internal/ads.h"
 #include "internal/amg.h"
@@ -114,6 +115,11 @@ void hypredrv_PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector,
 /* Returns 1 if the method needs externally supplied operator inputs
  * (AMS: discrete gradient + coordinates; ADS: + discrete curl), else 0. */
 int hypredrv_PreconMethodRequiresOperators(precon_t);
+
+/* Returns nonzero when the configured preconditioner has a complete device
+ * implementation. On failure, writes an actionable description to reason. */
+int hypredrv_PreconSupportsDevice(precon_t, const precon_args *, char *reason,
+                                  size_t reason_size);
 
 /* Returns 1 if every operator input required by the method is present in ops
  * (ops may be NULL, which counts as "all missing" for AMS/ADS). Methods that
