@@ -8,36 +8,59 @@
 #include "internal/ams.h"
 #include "internal/gen_macros.h"
 
+/* Hypre's host AMS defaults use interpolation and relaxation paths that are not
+ * device-capable. Match the GPU settings used by hypre's AMS driver so a CUDA/HIP
+ * build is device-safe by default. These choices also remain valid when a GPU build
+ * is explicitly run with host execution. */
+#ifdef HYPRE_USING_GPU
+#define AMS_DEFAULT_RELAX_TYPE 1
+#define AMS_DEFAULT_AMG_COARSEN_TYPE 8
+#define AMS_DEFAULT_AMG_RELAX_TYPE 18
+#define AMS_DEFAULT_AMG_INTERP_TYPE 6
+#define AMS_DEFAULT_AMG_PMAX 4
+#define AMS_DEFAULT_AMG_COARSE_RELAX_TYPE 18
+#else
+#define AMS_DEFAULT_RELAX_TYPE 2
+#define AMS_DEFAULT_AMG_COARSEN_TYPE 10
+#define AMS_DEFAULT_AMG_RELAX_TYPE 3
+#define AMS_DEFAULT_AMG_INTERP_TYPE 0
+#define AMS_DEFAULT_AMG_PMAX 0
+#define AMS_DEFAULT_AMG_COARSE_RELAX_TYPE 8
+#endif
+
 /*-----------------------------------------------------------------------------
- * Define Field/Offset/Setter mapping (defaults match hypre, except
- * max_iter/tolerance/print_level tuned for preconditioner use)
+ * Define Field/Offset/Setter mapping (defaults match hypre's host defaults or
+ * hypre's device AMS driver, except max_iter/tolerance/print_level tuned for
+ * preconditioner use)
  *-----------------------------------------------------------------------------*/
 
-#define AMS_FIELDS(_X, _p)                                             \
-   _X(_p, dimension, hypredrv_FieldTypeIntSet, 3)                      \
-   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 1)                       \
-   _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)                    \
-   _X(_p, cycle_type, hypredrv_FieldTypeIntSet, 1)                     \
-   _X(_p, tolerance, hypredrv_FieldTypeDoubleSet, 0.0)                 \
-   _X(_p, relax_type, hypredrv_FieldTypeIntSet, 2)                     \
-   _X(_p, relax_times, hypredrv_FieldTypeIntSet, 1)                    \
-   _X(_p, relax_weight, hypredrv_FieldTypeDoubleSet, 1.0)              \
-   _X(_p, omega, hypredrv_FieldTypeDoubleSet, 1.0)                     \
-   _X(_p, proj_freq, hypredrv_FieldTypeIntSet, 5)                      \
-   _X(_p, alpha_coarsen_type, hypredrv_FieldTypeIntSet, 10)            \
-   _X(_p, alpha_agg_levels, hypredrv_FieldTypeIntSet, 1)               \
-   _X(_p, alpha_relax_type, hypredrv_FieldTypeIntSet, 3)               \
-   _X(_p, alpha_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25) \
-   _X(_p, alpha_interp_type, hypredrv_FieldTypeIntSet, 0)              \
-   _X(_p, alpha_Pmax, hypredrv_FieldTypeIntSet, 0)                     \
-   _X(_p, alpha_coarse_relax_type, hypredrv_FieldTypeIntSet, 8)        \
-   _X(_p, beta_coarsen_type, hypredrv_FieldTypeIntSet, 10)             \
-   _X(_p, beta_agg_levels, hypredrv_FieldTypeIntSet, 1)                \
-   _X(_p, beta_relax_type, hypredrv_FieldTypeIntSet, 3)                \
-   _X(_p, beta_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25)  \
-   _X(_p, beta_interp_type, hypredrv_FieldTypeIntSet, 0)               \
-   _X(_p, beta_Pmax, hypredrv_FieldTypeIntSet, 0)                      \
-   _X(_p, beta_coarse_relax_type, hypredrv_FieldTypeIntSet, 8)
+#define AMS_FIELDS(_X, _p)                                                            \
+   _X(_p, dimension, hypredrv_FieldTypeIntSet, 3)                                     \
+   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 1)                                      \
+   _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)                                   \
+   _X(_p, cycle_type, hypredrv_FieldTypeIntSet, 1)                                    \
+   _X(_p, tolerance, hypredrv_FieldTypeDoubleSet, 0.0)                                \
+   _X(_p, relax_type, hypredrv_FieldTypeIntSet, AMS_DEFAULT_RELAX_TYPE)               \
+   _X(_p, relax_times, hypredrv_FieldTypeIntSet, 1)                                   \
+   _X(_p, relax_weight, hypredrv_FieldTypeDoubleSet, 1.0)                             \
+   _X(_p, omega, hypredrv_FieldTypeDoubleSet, 1.0)                                    \
+   _X(_p, proj_freq, hypredrv_FieldTypeIntSet, 5)                                     \
+   _X(_p, alpha_coarsen_type, hypredrv_FieldTypeIntSet, AMS_DEFAULT_AMG_COARSEN_TYPE) \
+   _X(_p, alpha_agg_levels, hypredrv_FieldTypeIntSet, 1)                              \
+   _X(_p, alpha_relax_type, hypredrv_FieldTypeIntSet, AMS_DEFAULT_AMG_RELAX_TYPE)     \
+   _X(_p, alpha_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25)                \
+   _X(_p, alpha_interp_type, hypredrv_FieldTypeIntSet, AMS_DEFAULT_AMG_INTERP_TYPE)   \
+   _X(_p, alpha_Pmax, hypredrv_FieldTypeIntSet, AMS_DEFAULT_AMG_PMAX)                 \
+   _X(_p, alpha_coarse_relax_type, hypredrv_FieldTypeIntSet,                          \
+      AMS_DEFAULT_AMG_COARSE_RELAX_TYPE)                                              \
+   _X(_p, beta_coarsen_type, hypredrv_FieldTypeIntSet, AMS_DEFAULT_AMG_COARSEN_TYPE)  \
+   _X(_p, beta_agg_levels, hypredrv_FieldTypeIntSet, 1)                               \
+   _X(_p, beta_relax_type, hypredrv_FieldTypeIntSet, AMS_DEFAULT_AMG_RELAX_TYPE)      \
+   _X(_p, beta_strength_threshold, hypredrv_FieldTypeDoubleSet, 0.25)                 \
+   _X(_p, beta_interp_type, hypredrv_FieldTypeIntSet, AMS_DEFAULT_AMG_INTERP_TYPE)    \
+   _X(_p, beta_Pmax, hypredrv_FieldTypeIntSet, AMS_DEFAULT_AMG_PMAX)                  \
+   _X(_p, beta_coarse_relax_type, hypredrv_FieldTypeIntSet,                           \
+      AMS_DEFAULT_AMG_COARSE_RELAX_TYPE)
 
 /* Define num_fields macro */
 #define AMS_NUM_FIELDS (sizeof(AMS_field_offset_map) / sizeof(AMS_field_offset_map[0]))

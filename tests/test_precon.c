@@ -3762,14 +3762,29 @@ test_AMSSetArgs_defaults_and_yaml(void)
    ASSERT_EQ(args.print_level, 0);
    ASSERT_EQ(args.cycle_type, 1);
    ASSERT_EQ_DOUBLE(args.tolerance, 0.0, 1.0e-12);
+#ifdef HYPRE_USING_GPU
+   /* Match hypre's device AMS driver defaults. */
+   ASSERT_EQ(args.relax_type, 1);
+   ASSERT_EQ(args.alpha_coarsen_type, 8);
+   ASSERT_EQ(args.alpha_relax_type, 18);
+   ASSERT_EQ(args.alpha_interp_type, 6);
+   ASSERT_EQ(args.alpha_Pmax, 4);
+   ASSERT_EQ(args.alpha_coarse_relax_type, 18);
+   ASSERT_EQ(args.beta_coarsen_type, 8);
+   ASSERT_EQ(args.beta_relax_type, 18);
+   ASSERT_EQ(args.beta_interp_type, 6);
+   ASSERT_EQ(args.beta_Pmax, 4);
+   ASSERT_EQ(args.beta_coarse_relax_type, 18);
+#else
    ASSERT_EQ(args.relax_type, 2);
-   ASSERT_EQ(args.proj_freq, 5);
    /* Defaults mirror hypre's internal alpha/beta AMG defaults */
    ASSERT_EQ(args.alpha_coarsen_type, 10);
    ASSERT_EQ(args.alpha_relax_type, 3);
    ASSERT_EQ(args.alpha_interp_type, 0);
    ASSERT_EQ(args.alpha_coarse_relax_type, 8);
    ASSERT_EQ(args.beta_relax_type, 3);
+#endif
+   ASSERT_EQ(args.proj_freq, 5);
    ASSERT_EQ_DOUBLE(args.beta_strength_threshold, 0.25, 1.0e-12);
 
    /* GetValidValues accepts raw hypre integers (void map) */
@@ -3806,15 +3821,27 @@ test_ADSSetArgs_defaults_and_yaml(void)
    ASSERT_EQ(args.print_level, 0);
    ASSERT_EQ(args.cycle_type, 1);
    ASSERT_EQ_DOUBLE(args.tolerance, 0.0, 1.0e-12);
+#ifdef HYPRE_USING_GPU
+   ASSERT_EQ(args.relax_type, 1);
+   ASSERT_EQ(args.ams_coarsen_type, 8);
+   ASSERT_EQ(args.ams_relax_type, 18);
+   ASSERT_EQ(args.ams_interp_type, 6);
+   ASSERT_EQ(args.ams_Pmax, 4);
+   ASSERT_EQ(args.amg_coarsen_type, 8);
+   ASSERT_EQ(args.amg_relax_type, 18);
+   ASSERT_EQ(args.amg_interp_type, 6);
+   ASSERT_EQ(args.amg_Pmax, 4);
+#else
    ASSERT_EQ(args.relax_type, 2);
-   ASSERT_EQ(args.cheby_order, 2);
-   ASSERT_EQ_DOUBLE(args.cheby_fraction, 0.3, 1.0e-12);
    /* AMS/AMG block defaults mirror hypre's internal ADS defaults */
-   ASSERT_EQ(args.ams_cycle_type, 11);
    ASSERT_EQ(args.ams_relax_type, 3);
    ASSERT_EQ(args.amg_coarsen_type, 10);
    ASSERT_EQ(args.amg_relax_type, 3);
    ASSERT_EQ(args.amg_interp_type, 0);
+#endif
+   ASSERT_EQ(args.cheby_order, 2);
+   ASSERT_EQ_DOUBLE(args.cheby_fraction, 0.3, 1.0e-12);
+   ASSERT_EQ(args.ams_cycle_type, 11);
 
    StrIntMapArray vv = hypredrv_ADSGetValidValues("cycle_type");
    ASSERT_EQ(vv.size, 0);
@@ -3867,6 +3894,36 @@ test_PreconSetArgsFromYAML_ams_ads_dispatch(void)
    ASSERT_EQ(ads_node->valid, YAML_NODE_VALID);
    ASSERT_EQ(args.ads.ams_cycle_type, 13);
    hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_PreconSupportsDevice(void)
+{
+   precon_args args;
+   char        reason[160];
+
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_BOOMERAMG, &args);
+   ASSERT_TRUE(
+      hypredrv_PreconSupportsDevice(PRECON_BOOMERAMG, &args, reason, sizeof(reason)));
+
+   args.amg.interpolation.prolongation_type = 8;
+   ASSERT_FALSE(
+      hypredrv_PreconSupportsDevice(PRECON_BOOMERAMG, &args, reason, sizeof(reason)));
+   ASSERT_NOT_NULL(strstr(reason, "interpolation type 8"));
+
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &args);
+   args.mgr.num_levels                 = 2;
+   args.mgr.level[0].f_relaxation.type = MGR_SOLVER_TYPE_SCHWARZ;
+   args.mgr.level[0].g_relaxation.type = -1;
+   ASSERT_FALSE(hypredrv_PreconSupportsDevice(PRECON_MGR, &args, reason, sizeof(reason)));
+   ASSERT_NOT_NULL(strstr(reason, "Schwarz F-relaxation"));
+
+   args.mgr.level[0].f_relaxation.type = 7;
+   args.mgr.level[0].g_relaxation.type = MGR_SOLVER_TYPE_SCHWARZ;
+   ASSERT_FALSE(hypredrv_PreconSupportsDevice(PRECON_MGR, &args, reason, sizeof(reason)));
+   ASSERT_NOT_NULL(strstr(reason, "Schwarz global relaxation"));
+#endif
 }
 
 /* AMS create + operator injection + destroy (no setup: a 1x1 system has no
@@ -6506,6 +6563,7 @@ main(int argc, char **argv)
    RUN_TEST(test_AMSSetArgs_defaults_and_yaml);
    RUN_TEST(test_ADSSetArgs_defaults_and_yaml);
    RUN_TEST(test_PreconSetArgsFromYAML_ams_ads_dispatch);
+   RUN_TEST(test_PreconSupportsDevice);
    RUN_TEST(test_Precon_lifecycle_ams_1x1);
    RUN_TEST(test_Precon_create_ams_null_operators);
    RUN_TEST(test_Precon_lifecycle_ads_1x1);

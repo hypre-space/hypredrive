@@ -2740,7 +2740,7 @@ main(int argc, char *argv[])
    {
       HYPRE_IJVectorCreate(MPI_COMM_WORLD, mesh->ilower, mesh->iupper, &vec_s[i]);
       HYPRE_IJVectorSetObjectType(vec_s[i], HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize(vec_s[i]);
+      HYPREDRV_IJ_VECTOR_INIT_HOST(vec_s[i]);
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorSet(hypredrv, 2, vec_s));
 

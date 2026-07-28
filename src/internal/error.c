@@ -639,9 +639,17 @@ hypredrv_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *fil
       }
       else
       {
-         MPI_Abort(comm, (int)error_code);
+         /* HYPREDRV error codes are a bitfield and may have only bits above the
+            process-status byte set. Avoid passing a value that POSIX launchers
+            can truncate to a successful (zero) exit status. */
+         int process_status = (int)(error_code & 0xffu);
+         if (process_status == 0)
+         {
+            process_status = EXIT_FAILURE;
+         }
+         MPI_Abort(comm, process_status);
          /* Defensive fallback for non-conforming or mocked MPI runtimes that return. */
-         exit((int)error_code);
+         exit(process_status);
       }
    }
    /* GCOVR_EXCL_BR_STOP */

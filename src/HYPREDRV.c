@@ -254,6 +254,36 @@ ReportExecutionPolicy(HYPREDRV_t hypredrv)
    LogExecutionPolicy(hypredrv);
 }
 
+static int
+ValidateDevicePreconditioner(HYPREDRV_t hypredrv, int device_requested, precon_t method,
+                             const precon_args *args)
+{
+#ifndef HYPRE_USING_GPU
+   (void)hypredrv;
+   (void)device_requested;
+   (void)method;
+   (void)args;
+   return 1;
+#else
+   char reason[160];
+
+   if (!device_requested ||
+       hypredrv_PreconSupportsDevice(method, args, reason, sizeof(reason)))
+   {
+      return 1;
+   }
+
+   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+   hypredrv_ErrorMsgAdd(
+      "GPU execution requested, but the configured linear solver strategy is "
+      "not available on GPUs: %s. Select a GPU-supported strategy or set "
+      "general.exec_policy to host.",
+      reason);
+   HYPREDRV_LOG_OBJECTF(1, hypredrv, "rejecting unsupported GPU strategy: %s", reason);
+   return 0;
+#endif
+}
+
 static uint32_t
 ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
 {
@@ -1200,22 +1230,13 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
                                          &hypredrv->precon_reuse_timesteps.starts);
    }
 
-#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22100, 0)
+#ifdef HYPRE_USING_GPU
    hypredrv->preferred_exec_policy = hypredrv->iargs->general.exec_policy;
-   if (hypredrv->preferred_exec_policy &&
-       hypredrv->iargs->precon_method == PRECON_BOOMERAMG)
+   if (!ValidateDevicePreconditioner(hypredrv, hypredrv->preferred_exec_policy,
+                                     hypredrv->iargs->precon_method,
+                                     &hypredrv->iargs->precon))
    {
-      int interp_type = hypredrv->iargs->precon.amg.interpolation.prolongation_type;
-      if (interp_type == 8 || interp_type == 9)
-      {
-         hypredrv->iargs->general.exec_policy = 0;
-         hypredrv->iargs->ls.exec_policy      = 0;
-         HYPREDRV_LOG_OBJECTF(
-            1, hypredrv,
-            "forcing host execution for compatibility in InputArgsParse: "
-            "BoomerAMG standard interpolation");
-         HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
-      }
+      return hypredrv_ErrorCodeGet();
    }
 #endif
 
@@ -1360,6 +1381,16 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
    int      current_variant = hypredrv->iargs->active_precon_variant;
    int      variant_changed = (variant_idx != current_variant);
    precon_t current_method  = hypredrv->iargs->precon_method;
+
+#ifdef HYPRE_USING_GPU
+   if (!ValidateDevicePreconditioner(hypredrv, hypredrv->preferred_exec_policy,
+                                     hypredrv->iargs->precon_methods[variant_idx],
+                                     &hypredrv->iargs->precon_variants[variant_idx]))
+   {
+      return hypredrv_ErrorCodeGet();
+   }
+#endif
+
    HYPREDRV_LOG_OBJECTF(
       2, hypredrv, "preconditioner variant selection: current=%d requested=%d changed=%d",
       current_variant, variant_idx, variant_changed);
@@ -1419,48 +1450,6 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
       hypredrv->iargs->precon        = hypredrv->iargs->precon_variants[variant_idx];
    }
 
-   /* GPU-only exec-policy coupling */
-#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22100, 0)
-   int desired_exec_policy = hypredrv->preferred_exec_policy;
-   if (hypredrv->iargs->precon_method == PRECON_BOOMERAMG)
-   {
-      int interp_type = hypredrv->iargs->precon.amg.interpolation.prolongation_type;
-      if (interp_type == 8 || interp_type == 9)
-      {
-         desired_exec_policy = 0;
-      }
-   }
-   if (hypredrv->iargs->general.exec_policy != desired_exec_policy)
-   {
-      hypredrv->iargs->general.exec_policy = desired_exec_policy;
-      hypredrv->iargs->ls.exec_policy      = desired_exec_policy;
-      if (desired_exec_policy)
-      {
-         HYPREDRV_LOG_OBJECTF(1, hypredrv,
-                              "restoring device execution in InputArgsSetPreconVariant: "
-                              "active variant is GPU-compatible");
-      }
-      else
-      {
-         HYPREDRV_LOG_OBJECTF(
-            1, hypredrv,
-            "forcing host execution for compatibility in InputArgsSetPreconVariant: "
-            "BoomerAMG standard interpolation");
-      }
-      HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
-      ReportExecutionPolicy(hypredrv);
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_A, 1);
-      if (hypredrv->mat_M && hypredrv->mat_M != hypredrv->mat_A)
-      {
-         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_M, 1);
-      }
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_b, 0);
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_x, 0);
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_x0, 0);
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_xref, 0);
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_nn, 0);
-   } /* GCOVR_EXCL_BR_LINE */
-#endif
    HYPREDRV_LOG_OBJECTF(2, hypredrv, "preconditioner variant selected: idx=%d method=%d",
                         variant_idx, (int)hypredrv->iargs->precon_method);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsSetPreconVariant end");

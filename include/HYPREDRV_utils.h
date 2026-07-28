@@ -35,7 +35,8 @@
  * On error this macro prints the source location, calls
  * HYPREDRV_ErrorCodeDescribe() to print the error message, then either
  * raises SIGTRAP (when @c HYPREDRV_DEBUG=1 is set in the environment, for
- * use with a debugger) or calls @c MPI_Abort(MPI_COMM_WORLD, error_code).
+ * use with a debugger) or calls @c MPI_Abort() with a nonzero process status
+ * derived from the HYPREDRV error code.
  *
  * @note Uses @c MPI_COMM_WORLD as the communicator for @c MPI_Abort. If
  * your application runs on a sub-communicator and you need the abort to

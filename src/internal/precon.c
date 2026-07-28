@@ -12,6 +12,8 @@
 #include "internal/krylov.h"
 #include "logging.h"
 
+#include <stdio.h>
+
 #if !HYPRE_CHECK_MIN_VERSION(22500, 0)
 static HYPRE_Int
 PreconUnavailable(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
@@ -566,6 +568,70 @@ int
 hypredrv_PreconMethodRequiresOperators(precon_t precon_method)
 {
    return (precon_method == PRECON_AMS || precon_method == PRECON_ADS);
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_PreconSupportsDevice
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_PreconSupportsDevice(precon_t precon_method, const precon_args *args,
+                              char *reason, size_t reason_size)
+{
+   if (!args)
+   {
+      return 1;
+   }
+
+   if (precon_method == PRECON_BOOMERAMG)
+   {
+      int interp_type = args->amg.interpolation.prolongation_type;
+      if (interp_type == 8 || interp_type == 9)
+      {
+         if (reason && reason_size)
+         {
+            snprintf(reason, reason_size,
+                     "BoomerAMG interpolation type %d is not ported to GPUs",
+                     interp_type);
+         }
+         return 0;
+      }
+   }
+
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+   if (precon_method == PRECON_MGR)
+   {
+      int fine_levels = args->mgr.num_levels > 0 ? args->mgr.num_levels - 1 : 0;
+      for (int level = 0; level < fine_levels; level++)
+      {
+         if (args->mgr.level[level].f_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+         {
+            if (reason && reason_size)
+            {
+               snprintf(reason, reason_size,
+                        "MGR level %d Schwarz F-relaxation is not ported to GPUs", level);
+            }
+            return 0;
+         }
+         if (args->mgr.level[level].g_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+         {
+            if (reason && reason_size)
+            {
+               snprintf(reason, reason_size,
+                        "MGR level %d Schwarz global relaxation is not ported to GPUs",
+                        level);
+            }
+            return 0;
+         }
+      }
+   }
+#endif
+
+   if (reason && reason_size)
+   {
+      reason[0] = '\0';
+   }
+   return 1;
 }
 
 /*-----------------------------------------------------------------------------
