@@ -1602,7 +1602,7 @@ hypredrv_HelpPrint(FILE *out, const char *argv0, const char *topic)
 
    if (node == &NodeRoot)
    {
-      fprintf(out, "Usage: %s [options] <input.yml>\n", argv0 ? argv0 : "hypredrive-cli");
+      fprintf(out, "\nUsage: %s [options] <input.yml>\n", argv0 ? argv0 : "hypredrive-cli");
       fprintf(out, "\nList of valid sections for input.yml:\n");
    }
    else

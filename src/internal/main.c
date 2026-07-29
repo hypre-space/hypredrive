@@ -163,6 +163,8 @@ main(int argc, char **argv)
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
    if (hypredrv_HelpRequested(argc, argv, help_topic, sizeof(help_topic)))
    {
+      HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm, 1));
+
       int help_status = 0;
       if (!myid)
       {
