@@ -1664,6 +1664,7 @@ hypredrv_MGRlvlGetValidValues(const char *key)
       static StrIntMap map[] = {
          {"injection", 0},   {"jacobi", 2},    {"approx-inv", 3},
          {"blk-jacobi", 12}, {"cpr-like", 13}, {"columped", 14},
+         {"columped-partial", 15},
       };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
