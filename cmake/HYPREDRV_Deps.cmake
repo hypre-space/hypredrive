@@ -308,6 +308,130 @@ function(_hypredrv_detect_hypre_sycl_usage)
     endforeach()
 endfunction()
 
+function(_hypredrv_hypre_needs_cuda_nvjitlink result_var)
+    set(_needs_nvjitlink FALSE)
+
+    if(HYPRE_ENABLE_CUDA AND (HYPRE_ENABLE_CUSPARSE OR HYPRE_ENABLE_CUSOLVER))
+        set(_needs_nvjitlink TRUE)
+    endif()
+
+    if(TARGET HYPRE::HYPRE)
+        get_target_property(_hypre_link_libs HYPRE::HYPRE INTERFACE_LINK_LIBRARIES)
+        if(_hypre_link_libs)
+            foreach(_hypre_link_lib IN LISTS _hypre_link_libs)
+                if(_hypre_link_lib MATCHES "(^|[:>/])CUDA::(cusparse|cusolver|nvrtc)($|[>,])" OR
+                   _hypre_link_lib MATCHES "libcu(sparse|solver)\\.(so|dylib|dll|a)" OR
+                   _hypre_link_lib MATCHES "(^|[/-])cu(sparse|solver)$")
+                    set(_needs_nvjitlink TRUE)
+                    break()
+                endif()
+            endforeach()
+        endif()
+    endif()
+
+    set(${result_var} ${_needs_nvjitlink} PARENT_SCOPE)
+endfunction()
+
+function(_hypredrv_find_cuda_nvjitlink out_var)
+    if(TARGET CUDA::nvJitLink)
+        set(${out_var} CUDA::nvJitLink PARENT_SCOPE)
+        return()
+    endif()
+
+    find_package(CUDAToolkit QUIET)
+    if(TARGET CUDA::nvJitLink)
+        set(${out_var} CUDA::nvJitLink PARENT_SCOPE)
+        return()
+    endif()
+
+    set(_cuda_roots "")
+    foreach(_cuda_root IN ITEMS
+            "${CUDAToolkit_ROOT}"
+            "${CUDA_TOOLKIT_ROOT_DIR}"
+            "${CUDA_ROOT}")
+        if(_cuda_root)
+            list(APPEND _cuda_roots "${_cuda_root}")
+        endif()
+    endforeach()
+
+    if(CUDAToolkit_BIN_DIR)
+        get_filename_component(_cuda_root_from_bin "${CUDAToolkit_BIN_DIR}" DIRECTORY)
+        list(APPEND _cuda_roots "${_cuda_root_from_bin}")
+    endif()
+
+    set(_cuda_lib_hints "")
+    foreach(_cuda_lib IN ITEMS
+            "${CUDA_nvJitLink_LIBRARY}"
+            "${CUDA_cudart_LIBRARY}"
+            "${CUDA_CUDART}")
+        if(_cuda_lib)
+            get_filename_component(_cuda_lib_dir "${_cuda_lib}" DIRECTORY)
+            list(APPEND _cuda_lib_hints "${_cuda_lib_dir}")
+        endif()
+    endforeach()
+
+    foreach(_cuda_root IN LISTS _cuda_roots)
+        list(APPEND _cuda_lib_hints
+             "${_cuda_root}/lib64"
+             "${_cuda_root}/lib"
+             "${_cuda_root}/targets/x86_64-linux/lib")
+    endforeach()
+    if(CUDAToolkit_LIBRARY_DIR)
+        list(APPEND _cuda_lib_hints "${CUDAToolkit_LIBRARY_DIR}")
+    endif()
+
+    list(REMOVE_DUPLICATES _cuda_lib_hints)
+    find_library(HYPREDRV_CUDA_NVJITLINK_LIBRARY
+                 NAMES nvJitLink libnvJitLink.so
+                 HINTS ${_cuda_lib_hints}
+                 PATH_SUFFIXES lib64 lib targets/x86_64-linux/lib)
+
+    if(HYPREDRV_CUDA_NVJITLINK_LIBRARY)
+        set(${out_var} "${HYPREDRV_CUDA_NVJITLINK_LIBRARY}" PARENT_SCOPE)
+    else()
+        set(${out_var} "" PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(_hypredrv_ensure_hypre_cuda_nvjitlink)
+    if(NOT TARGET HYPRE::HYPRE)
+        return()
+    endif()
+
+    set(_hypre_link_target HYPRE::HYPRE)
+    get_target_property(_hypre_aliased_target HYPRE::HYPRE ALIASED_TARGET)
+    if(_hypre_aliased_target)
+        set(_hypre_link_target "${_hypre_aliased_target}")
+    endif()
+
+    _hypredrv_hypre_needs_cuda_nvjitlink(_needs_nvjitlink)
+    if(NOT _needs_nvjitlink)
+        return()
+    endif()
+
+    get_target_property(_hypre_link_libs ${_hypre_link_target} INTERFACE_LINK_LIBRARIES)
+    if(_hypre_link_libs)
+        foreach(_hypre_link_lib IN LISTS _hypre_link_libs)
+            if(_hypre_link_lib MATCHES "(^|[:>/])CUDA::nvJitLink($|[>,])" OR
+               _hypre_link_lib MATCHES "libnvJitLink\\.(so|dylib|dll|a)")
+                return()
+            endif()
+        endforeach()
+    endif()
+
+    _hypredrv_find_cuda_nvjitlink(_nvjitlink_lib)
+    if(_nvjitlink_lib)
+        set_property(TARGET ${_hypre_link_target} APPEND PROPERTY
+                     INTERFACE_LINK_LIBRARIES "${_nvjitlink_lib}")
+        message(STATUS "  Added CUDA nvJitLink dependency for HYPRE: ${_nvjitlink_lib}")
+    else()
+        message(WARNING
+            "HYPRE links CUDA libraries that may require nvJitLink, but "
+            "libnvJitLink was not found. Runtime may require LD_LIBRARY_PATH "
+            "to include the CUDA toolkit lib directory.")
+    endif()
+endfunction()
+
 function(_hypredrv_set_using_caliper enabled)
     if(enabled)
         set(HYPREDRV_USING_CALIPER 1 PARENT_SCOPE)
@@ -1459,6 +1583,7 @@ endif()
 # Get HYPRE properties
 if(TARGET HYPRE::HYPRE)
     _hypredrv_detect_hypre_sycl_usage()
+    _hypredrv_ensure_hypre_cuda_nvjitlink()
     get_target_property(HYPRE_INCLUDE_DIRS HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
 
     # Try to get library location - handle both Release and Debug configurations.
