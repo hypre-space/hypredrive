@@ -48,19 +48,11 @@ if(HYPREDRV_ENABLE_ANALYSIS)
     # Note: Sanitizers are disabled when coverage is enabled to avoid conflicts
     # Coverage and sanitizers both use compiler instrumentation and can conflict
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT HYPREDRV_ENABLE_COVERAGE)
-        # Sanitizer flags - ASan and UBSan are most commonly used
-        # Note: -O1 is recommended for sanitizers, but we respect CMAKE_BUILD_TYPE's optimization
-        # if it's set. We only add -fno-omit-frame-pointer for better stack traces.
-        set(_sanitizer_flags "-fno-omit-frame-pointer")
-        set(_sanitizer_link_flags "")
-
-        # AddressSanitizer (detects memory errors, use-after-free, buffer overflows)
-        list(APPEND _sanitizer_flags "-fsanitize=address")
-        list(APPEND _sanitizer_link_flags "-fsanitize=address")
-
-        # UndefinedBehaviorSanitizer (detects undefined behavior)
-        list(APPEND _sanitizer_flags "-fsanitize=undefined")
-        list(APPEND _sanitizer_link_flags "-fsanitize=undefined")
+        # Reuse the instrumentation flags configured before dependencies were
+        # added.  For HIP, that configuration keeps UBSan on the host action;
+        # passing it to the AMDGPU action is unsupported.
+        set(_sanitizer_flags "${HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS}")
+        set(_sanitizer_link_flags "${HYPREDRV_SANITIZER_LINK_FLAGS}")
 
         # MemorySanitizer (detects uninitialized memory reads) - Clang only, experimental
         # Note: MSan is very slow and may not work with all libraries (e.g., MPI)

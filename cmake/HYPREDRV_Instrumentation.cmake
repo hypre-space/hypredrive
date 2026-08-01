@@ -25,15 +25,33 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     endif()
 
     if(HYPREDRV_ENABLE_ANALYSIS AND NOT HYPREDRV_ENABLE_COVERAGE)
-        list(APPEND _hypredrv_instrumentation_compile_flags
-            -fno-omit-frame-pointer
-            -fsanitize=address
-            -fsanitize=undefined
-        )
-        list(APPEND _hypredrv_sanitizer_link_flags
-            -fsanitize=address
-            -fsanitize=undefined
-        )
+        # HIP compilation has both host and AMDGPU actions.  UBSan is
+        # supported by the host compiler, but not by the AMDGPU target.  Keep
+        # ASan on HIP device code (GPU ASan requires an xnack+ architecture),
+        # and route UBSan only to the host action.
+        if(HYPREDRV_ENABLE_HIP OR HYPRE_ENABLE_HIP OR CMAKE_HIP_COMPILER)
+            list(APPEND _hypredrv_instrumentation_compile_flags
+                -fno-omit-frame-pointer
+                "$<$<COMPILE_LANGUAGE:HIP>:-fsanitize=address>"
+                "$<$<COMPILE_LANGUAGE:HIP>:-Xarch_host>"
+                "$<$<COMPILE_LANGUAGE:HIP>:-fsanitize=undefined>"
+                "$<$<NOT:$<COMPILE_LANGUAGE:HIP>>:-fsanitize=address,undefined>"
+            )
+            list(APPEND _hypredrv_sanitizer_link_flags
+                "$<$<LINK_LANGUAGE:HIP>:-fsanitize=address>"
+                "$<$<LINK_LANGUAGE:HIP>:-Xarch_host>"
+                "$<$<LINK_LANGUAGE:HIP>:-fsanitize=undefined>"
+                "$<$<NOT:$<LINK_LANGUAGE:HIP>>:-fsanitize=address,undefined>"
+            )
+        else()
+            list(APPEND _hypredrv_instrumentation_compile_flags
+                -fno-omit-frame-pointer
+                -fsanitize=address,undefined
+            )
+            list(APPEND _hypredrv_sanitizer_link_flags
+                -fsanitize=address,undefined
+            )
+        endif()
         list(APPEND _hypredrv_instrumentation_link_flags
             ${_hypredrv_sanitizer_link_flags}
         )
