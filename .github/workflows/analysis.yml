@@ -193,6 +193,9 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
             -DHYPREDRV_ENABLE_ANALYSIS=ON \
+            -DHYPREDRV_ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:print_stacktrace=1:fast_unwind_on_malloc=0 \
+            -DHYPREDRV_LSAN_OPTIONS=suppressions=${{ github.workspace }}/.github/lsan.supp \
+            -DHYPREDRV_UBSAN_OPTIONS=print_stacktrace=1:abort_on_error=1 \
             -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }} \
             -DCMAKE_C_COMPILER=mpicc
 
@@ -205,9 +208,6 @@ jobs:
       - name: Run tests with sanitizers
         timeout-minutes: 8
         env:
-          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1:print_stacktrace=1:fast_unwind_on_malloc=0"
-          LSAN_OPTIONS: "suppressions=${{ github.workspace }}/.github/lsan.supp"
-          UBSAN_OPTIONS: "print_stacktrace=1:abort_on_error=1"
           OMPI_ALLOW_RUN_AS_ROOT: 1
           OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
           OMPI_MCA_btl_vader_single_copy_mechanism: none

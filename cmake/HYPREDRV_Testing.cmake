@@ -10,6 +10,33 @@ set(HYPREDRV_TESTING_DIR "${CMAKE_CURRENT_LIST_DIR}")
 # configure time by probing Hypre version macros from headers.
 include(CheckCSourceCompiles)
 
+set(_hypredrv_asan_options_default
+    "symbolize=1:print_stacktrace=1:abort_on_error=1:detect_leaks=1")
+set(_hypredrv_ubsan_options_default
+    "print_stacktrace=1:abort_on_error=1")
+if(HYPRE_ENABLE_HIP)
+    set(_hypredrv_asan_options_default
+        "symbolize=1:print_stacktrace=1:abort_on_error=1:detect_leaks=0")
+    set(_hypredrv_ubsan_options_default
+        "print_stacktrace=1:halt_on_error=0:abort_on_error=0")
+endif()
+
+set(HYPREDRV_ASAN_OPTIONS "${_hypredrv_asan_options_default}" CACHE STRING
+    "AddressSanitizer runtime options applied to CTest tests")
+set(HYPREDRV_UBSAN_OPTIONS "${_hypredrv_ubsan_options_default}" CACHE STRING
+    "UndefinedBehaviorSanitizer runtime options applied to CTest tests")
+if(EXISTS "${CMAKE_SOURCE_DIR}/.github/lsan.supp")
+    set(_hypredrv_lsan_options_default
+        "suppressions=${CMAKE_SOURCE_DIR}/.github/lsan.supp")
+else()
+    set(_hypredrv_lsan_options_default "")
+endif()
+set(HYPREDRV_LSAN_OPTIONS "${_hypredrv_lsan_options_default}" CACHE STRING
+    "LeakSanitizer runtime options applied to CTest tests")
+unset(_hypredrv_asan_options_default)
+unset(_hypredrv_ubsan_options_default)
+unset(_hypredrv_lsan_options_default)
+
 function(_hypredrv_collect_plain_include_dirs out_var)
     set(_plain_include_dirs "")
     foreach(_inc_dir IN LISTS ARGN)
@@ -52,9 +79,17 @@ function(hypredrv_append_test_environment test_name)
         list(APPEND _env_list "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
     endif()
     get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
-    if(_sanitizer_enabled AND EXISTS "${CMAKE_SOURCE_DIR}/.github/lsan.supp")
+    if(_sanitizer_enabled AND HYPREDRV_ASAN_OPTIONS)
         list(APPEND _env_list
-            "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/.github/lsan.supp")
+            "ASAN_OPTIONS=${HYPREDRV_ASAN_OPTIONS}")
+    endif()
+    if(_sanitizer_enabled AND HYPREDRV_UBSAN_OPTIONS)
+        list(APPEND _env_list
+            "UBSAN_OPTIONS=${HYPREDRV_UBSAN_OPTIONS}")
+    endif()
+    if(_sanitizer_enabled AND HYPREDRV_LSAN_OPTIONS)
+        list(APPEND _env_list
+            "LSAN_OPTIONS=${HYPREDRV_LSAN_OPTIONS}")
     endif()
     if(ARGN)
         list(APPEND _env_list ${ARGN})
@@ -548,12 +583,30 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             add_hypredrive_test(ex3_flow_1proc 1 ex3-flow.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_30000_DEV0)
+            if(HYPREDRV_ENABLE_HIP)
+                set(_ex7_tagres_require_contains
+                    "Initial L2 norm of residual"
+                    "Final L2 norm of residual"
+                )
+                set(_ex7_tagerr_require_contains
+                    "Initial L2 norm of error"
+                    "Final L2 norm of error"
+                )
+            else()
+                set(_ex7_tagres_require_contains
+                    "Initial L2 norm of r0"
+                    "Initial L2 norm of r1"
+                )
+                set(_ex7_tagerr_require_contains
+                    "Initial L2 norm of e0"
+                    "Final L2 norm of e0"
+                )
+            endif()
             add_hypredrive_cli_test(ex7_cli_tagres 1 ex7-tagged-gmres.yml
                 OVERRIDES
                     --solver:gmres:print_level 4
                 REQUIRE_CONTAINS
-                    "Initial L2 norm of r0"
-                    "Initial L2 norm of r1"
+                    ${_ex7_tagres_require_contains}
             )
             add_hypredrive_cli_test(ex7_cli_tagerr_randsol 1 ex7-tagged-gmres.yml
                 OVERRIDES
@@ -561,8 +614,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     --linear_system:rhs_mode randsol
                 REQUIRE_CONTAINS
                     "rhs_mode: randsol"
-                    "Initial L2 norm of e0"
-                    "Final L2 norm of e0"
+                    ${_ex7_tagerr_require_contains}
             )
             add_hypredrive_cli_test(ex7_cli_tagerr_scale 1 ex7-tagged-gmres.yml
                 OVERRIDES
@@ -573,9 +625,10 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 REQUIRE_CONTAINS
                     "rhs_mode: randsol"
                     "type: dofmap_mag"
-                    "Initial L2 norm of e0"
-                    "Final L2 norm of e0"
+                    ${_ex7_tagerr_require_contains}
             )
+            unset(_ex7_tagres_require_contains)
+            unset(_ex7_tagerr_require_contains)
             add_hypredrive_cli_test(ex7_cli_stats2 1 ex7.yml
                 OVERRIDES
                     --general:statistics 2
